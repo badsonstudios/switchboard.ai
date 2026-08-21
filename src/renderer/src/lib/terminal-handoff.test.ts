@@ -8,6 +8,13 @@ import fs from 'fs';
 import path from 'path';
 import { terminalHandoff, toneToken, HandoffTone, HandoffInputs } from './terminal-handoff';
 
+/**
+ * A theme overlay file, as far as this test is concerned: the two shapes
+ * `src/renderer/src/theme/themes/*.json` come in — `{ name, tokens }`, or a
+ * bare token map with the tokens at the top level.
+ */
+type ThemeOverlayFile = { name?: string; tokens?: Record<string, string> };
+
 const inputs = (over: Partial<Parameters<typeof terminalHandoff>[0]> = {}) => ({
   status: undefined,
   hasApproval: false,
@@ -126,10 +133,23 @@ describe('terminalHandoff', () => {
       'utf8'
     );
     const themeDir = path.join(__dirname, '..', 'theme', 'themes');
+    // `JSON.parse` hands back `any`; this is where that stops for this file
+    // (#255 T4). An assertion, not a validation — these are data files with no
+    // TypeScript source of truth, so it buys the reads below a declared shape
+    // and nothing more. It does NOT close the vacuity this loop already had:
+    // an overlay that stopped carrying `--status-*` keys is simply skipped.
+    // See the guard under the loop.
     const overlays = fs
       .readdirSync(themeDir)
       .filter((f) => f.endsWith('.json'))
-      .map((f) => JSON.parse(fs.readFileSync(path.join(themeDir, f), 'utf8')));
+      .map(
+        (f) => JSON.parse(fs.readFileSync(path.join(themeDir, f), 'utf8')) as ThemeOverlayFile
+      );
+
+    // ...and something must actually have been checked. Without this the whole
+    // inner loop can be skipped — no overlays on disk, or none of them touching
+    // status hues — and the test passes having asserted nothing about them.
+    let overlaysChecked = 0;
 
     for (const tone of ['permission', 'input'] as HandoffTone[]) {
       const name = toneToken(tone);
@@ -139,14 +159,16 @@ describe('terminalHandoff', () => {
       // …and every overlay that touches status hues must carry it too, or the
       // bar loses its colour on that theme alone
       for (const overlay of overlays) {
-        const map = overlay.tokens ?? overlay;
+        const map: Record<string, unknown> = overlay.tokens ?? overlay;
         const touchesStatus = Object.keys(map).some((k) => k.startsWith('--status-'));
         if (touchesStatus) {
+          overlaysChecked++;
           expect(Object.keys(map), `${name} missing from ${overlay.name ?? 'an overlay'}`).toContain(
             name
           );
         }
       }
     }
+    expect(overlaysChecked, 'no overlay carried a --status- token to check').toBeGreaterThan(0);
   });
 });

@@ -13,6 +13,7 @@ import { LanguageChoice, loadLanguage, setLanguage } from './i18n';
 import { TitleBar, StatusBar } from './components/chrome';
 import { SessionsRail, RailGroup } from './components/SessionsRail';
 import { SessionGrid, GridController } from './components/SessionGrid';
+import type { SwitchboardApi } from '../../preload';
 import type { HistoryRepairNotice } from '../../shared/history-repair';
 import { EventDto } from './components/EventsPanel';
 import { EventsDrawer } from './components/EventsDrawer';
@@ -98,19 +99,55 @@ const LIVE_INSTALL: ReadonlySet<UpdateInstallStatus['phase']> = new Set([
   'launching',
 ]);
 
+/**
+ * What the shell may actually be handed — as opposed to what preload promises.
+ *
+ * `SwitchboardApi` declares every namespace present, and every one of them IS
+ * present when preload ran. The fallback below is the other case: a stub with
+ * the identity fields and nothing else, which is exactly why every call in this
+ * file is written `bridge.x?.y?.()`. Against `SwitchboardApi` those chains are
+ * decoration — the compiler believes `bridge.push` can never be missing, so
+ * `bridge.push?.getConfig?.()` types as a plain `Promise` and every "no
+ * namespace" guard below is provably dead code. That is what made #255's
+ * `no-misused-promises` fire on three of them: a bare `Promise` in a boolean
+ * conditional is normally a forgotten `await`.
+ *
+ * So say it in the type instead of in the punctuation. The four IDENTITY
+ * fields the stub really supplies stay required; every namespace becomes
+ * optional, the optional chains start meaning something, and the guards become
+ * live code. Nothing about the runtime changes — this is the shape App already
+ * coded to.
+ *
+ * `workspace` is deliberately NOT in the required half even though the stub
+ * carries a two-method version of it: it is a namespace like the rest, App
+ * never reads it, and requiring it would put the same "the compiler believes a
+ * partial stub is the whole api" lie back one field further down.
+ */
+type BridgeIdentity = 'platform' | 'appVersion' | 'seedPanels' | 'seedSessionFolder';
+type ShellBridge = Pick<SwitchboardApi, BridgeIdentity> &
+  Partial<Omit<SwitchboardApi, BridgeIdentity>>;
+
 // Control-room shell (P1-E3-01): titlebar / rail / grid / statusbar.
 // Terminals (E3-02), identity kit (E3-03), and live badges (E3-05) land next.
 export function App(): React.JSX.Element {
-  // fail-open: a broken preload bridge must degrade, not blank the window
-  const bridge =
+  // fail-open: a broken preload bridge must degrade, not blank the window.
+  // Typed `ShellBridge` (above), not `SwitchboardApi`, because this stub is the
+  // living proof that the namespaces can be absent.
+  //
+  // `getLayout` is a deliberately empty entry, not a forgotten `await`: the
+  // contract is the RETURN TYPE, so `Promise.resolve` satisfies it without the
+  // `async` that `require-await` reads as a mistake (same call T1 made for
+  // `credentialStoreToken.resolve`). Put `async` back the day it has a body
+  // with an `await` in it.
+  const bridge: ShellBridge =
     window.switchboard ??
     ({
       platform: 'bridge unavailable',
       appVersion: '?',
       seedPanels: 0,
       seedSessionFolder: '',
-      workspace: { getLayout: async () => null, setLayout: () => {} },
-    } as unknown as typeof window.switchboard);
+      workspace: { getLayout: () => Promise.resolve(null), setLayout: () => {} },
+    } as unknown as ShellBridge);
   // Themes are contributions now (§5.20/§5.23): the registry is filled at the
   // entry point, before the first render, so resolving once here is safe — and
   // a memo rather than module scope, which would read an empty registry at

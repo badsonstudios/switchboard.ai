@@ -85,9 +85,12 @@ async function mountComposer(): Promise<HTMLTextAreaElement> {
  * so the write goes through the prototype setter the tracker patched over.
  */
 async function type(box: HTMLTextAreaElement, text: string): Promise<void> {
-  const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
+  // Kept as the DESCRIPTOR: `PropertyDescriptor.set` is declared a METHOD in
+  // lib.es5.d.ts, so pulling it out into a variable is `unbound-method` (#255
+  // T4). Calling through it with an explicit `this` is the same write.
+  const valueProp = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!;
   await act(async () => {
-    setValue.call(box, text);
+    valueProp.set!.call(box, text);
     box.dispatchEvent(new Event('input', { bubbles: true }));
   });
 }

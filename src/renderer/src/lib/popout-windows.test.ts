@@ -293,7 +293,11 @@ describe('the popout registry: windows that die without saying so (issue 279)', 
     addPopoutWindow(first);
     addPopoutWindow(second);
     addPopoutWindow(survivor);
-    const removed = vi.fn();
+    // Typed to the listener's real signature, not a bare `vi.fn()`: the
+    // assertion below reads `.mock.calls`, and an untyped mock records `any[]`
+    // — `toEqual([first, second])` would then compile against whatever the
+    // sweep actually announced (#255 T4).
+    const removed = vi.fn<(win: Window) => void>();
     subscribePopoutWindows({ removed });
 
     first.closed = true;

@@ -297,6 +297,17 @@ describe('argumentSummary — the one line both bars show', () => {
   it('says nothing rather than "undefined" for a tool with none of them', () => {
     expect(argumentSummary({ pattern: '*.ts' })).toBe('');
   });
+
+  it('says nothing rather than "[object Object]" for a malformed field (#255)', () => {
+    // `input` comes off the CLI's `tool_use` block, so a field we expect to be
+    // a path can be anything. `String()` used to render this as the literal
+    // text `[object Object]` on the approval card; the honest answer is that
+    // there is no summary, which is a state both bars already handle.
+    expect(argumentSummary({ file_path: { path: 'x.ts' } })).toBe('');
+    expect(argumentSummary({ command: ['ls', '-l'] })).toBe('');
+    // ...and a falsy PRIMITIVE is still a real value, not an absence
+    expect(argumentSummary({ file_path: '', command: 'ls' })).toBe('');
+  });
 });
 
 describe('argumentDetail — what the GROUPED card shows when there is no summary', () => {
@@ -318,6 +329,13 @@ describe('argumentDetail — what the GROUPED card shows when there is no summar
 
   it('stays empty for a tool that takes no arguments at all', () => {
     expect(argumentDetail({})).toBe('');
+  });
+
+  it('dumps the arguments when the summary field was malformed (#255)', () => {
+    // The grouped card's half of the behaviour above: no summary means the
+    // fallback runs, so a malformed `file_path` is READ rather than shown as
+    // punctuation.
+    expect(argumentDetail({ file_path: { path: 'x.ts' } })).toBe('file_path={"path":"x.ts"}');
   });
 });
 

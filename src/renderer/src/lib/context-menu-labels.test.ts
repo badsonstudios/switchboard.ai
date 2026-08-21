@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
 import i18next from 'i18next';
 import { initI18nForTests } from '../i18n/test-i18n';
 import { contextMenuLabels, publishContextMenuLabels } from './context-menu-labels';
+import type { ContextMenuLabels } from '../../../shared/context-menu';
 
 beforeAll(async () => {
   await initI18nForTests();
@@ -34,8 +35,12 @@ describe('contextMenuLabels', () => {
 });
 
 describe('publishContextMenuLabels', () => {
+  // Typed to the bridge call's real signature. A bare `vi.fn()` records
+  // `any[]`, and the language test below reads `send.mock.calls[1][0].paste` —
+  // on an `any` that member access is unchecked, so a rename of the field
+  // would keep passing as `undefined !== 'Paste'` (#255 T4).
   function bridge() {
-    const setContextMenuLabels = vi.fn();
+    const setContextMenuLabels = vi.fn<(labels: ContextMenuLabels) => void>();
     vi.stubGlobal('window', { switchboard: { setContextMenuLabels } });
     return setContextMenuLabels;
   }

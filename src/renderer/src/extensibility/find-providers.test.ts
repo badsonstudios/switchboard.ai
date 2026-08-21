@@ -18,7 +18,11 @@ import {
   sessionFindProvider,
   terminalFindProvider,
 } from './find-providers';
-import type { TranscriptSearchResult } from '../../../shared/transcripts';
+import type { SwitchboardApi } from '../../../preload';
+import type {
+  TranscriptSearchRequest,
+  TranscriptSearchResult,
+} from '../../../shared/transcripts';
 import { ipcRefusal } from '../../../shared/ipc/refusal';
 
 function fresh(): RendererRegistry {
@@ -118,10 +122,22 @@ describe('the find-provider point (P2-E17-02, §5.23)', () => {
 });
 
 describe('the Session view provider (the E17-01 engine behind the bar)', () => {
+  // Hoisted and typed to the bridge call's real signature, rather than reached
+  // for as `window.switchboard.transcripts.search as ReturnType<typeof vi.fn>`.
+  // That cast handed back an `any`, so `call.sessionIds` and `call.query` below
+  // were unchecked member reads: the two tests that exist to pin the REQUEST
+  // SHAPE would have gone on passing against a request that no longer had those
+  // fields (#255 T4).
+  const search = vi.fn<(req: TranscriptSearchRequest) => Promise<TranscriptSearchResult>>();
   beforeEach(() => {
-    (window as unknown as { switchboard: unknown }).switchboard = {
-      transcripts: { search: vi.fn().mockResolvedValue(result()) },
-    };
+    search.mockReset();
+    search.mockResolvedValue(result());
+    // The stub is typed against the REAL bridge slot, so the hand-written
+    // signature above cannot drift away from `preload`'s without a compile
+    // error. `window` itself still needs the cast — the global says the whole
+    // api is there and this hands it one namespace.
+    (window as unknown as { switchboard: { transcripts: Pick<SwitchboardApi['transcripts'], 'search'> } }).switchboard =
+      { transcripts: { search } };
   });
 
   it('searches EXACTLY ONE session — the focused card’s', async () => {
@@ -129,7 +145,7 @@ describe('the Session view provider (the E17-01 engine behind the bar)', () => {
     // whole webContents and would match the other three cards on screen; the
     // scope here is a list of one, built from the context the bar was handed.
     await sessionFindProvider.search?.({ sessionId: 's1', cardId: 'c1', surface: null }, { term: 'x' });
-    const call = (window.switchboard.transcripts.search as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const call = search.mock.calls[0][0];
     expect(call.sessionIds).toEqual(['s1']);
   });
 
@@ -141,7 +157,7 @@ describe('the Session view provider (the E17-01 engine behind the bar)', () => {
       { sessionId: 's1', surface: null },
       { term: 'x', caseSensitive: true, wholeWord: true },
     );
-    const call = (window.switchboard.transcripts.search as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const call = search.mock.calls[0][0];
     expect(call.query).toEqual({ term: 'x', caseSensitive: true, wholeWord: true });
     expect(call.query.regex).toBeUndefined();
   });
@@ -154,8 +170,13 @@ describe('the Session view provider (the E17-01 engine behind the bar)', () => {
     // (#439's pattern, and #440 swapped this one over): a literal keeps passing
     // if the shape on the wire changes underneath it, which is the one failure
     // a test about the shape must not have.
-    (window.switchboard.transcripts.search as ReturnType<typeof vi.fn>).mockResolvedValue(
-      ipcRefusal('transcripts:search', 'capability-not-held')
+    // The cast is the test's whole subject, and it now sits where the lie
+    // actually is: the CHANNEL's declared type says this call resolves a
+    // `TranscriptSearchResult`, and the broker's refusal is precisely the value
+    // that arrives anyway. Writing it here rather than laundering the reader
+    // keeps `call.sessionIds` / `call.query` above properly typed.
+    search.mockResolvedValue(
+      ipcRefusal('transcripts:search', 'capability-not-held') as unknown as TranscriptSearchResult
     );
     const res = await sessionFindProvider.search?.({ sessionId: 's1', surface: null }, { term: 'x' });
     expect(res?.notice).toEqual({ key: 'find.notice.failed', tone: 'error' });
