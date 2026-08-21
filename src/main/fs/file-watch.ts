@@ -43,20 +43,32 @@
 // line changed: the same 150ms/1s coalesce, the same stat-floor authority, the
 // same refcounted teardown, now with a bound that does not move with the tabs.
 //
-// THE ONE THING THE WHEEL COSTS is the staggering the per-file intervals used to
-// get for free. The total floor work per `FILE_WATCH_POLL_MS` is unchanged — the
-// per-file version stat'd and re-resolved every open file on every tick too,
-// just from M timers created at M different moments — but it now lands in one
-// synchronous burst on main. Local disk, thirty tabs: single-digit milliseconds.
-// A slow network share is the case where that would be felt, and the answer if
-// it ever is, is to slice the wheel (run at `pollMs / K` and walk 1/K of `files`
-// each sub-tick, which keeps per-file latency at `pollMs` and one timer) — not
-// to skip the scope re-resolve, which `read-scope.ts` has already explained once
-// cannot be replaced by a cheap string pre-check.
+// AND THE WHEEL IS SLICED, because one timer for the service is not the same
+// thing as one BURST for the service (#682). Consolidating the per-file
+// intervals did not change the total floor work per `FILE_WATCH_POLL_MS` — the
+// per-file version stat'd and re-resolved every open file on every tick too —
+// but it did take away the staggering that M timers created at M different
+// moments got for free, and landed the lot in one synchronous run on main.
+// Thirty tabs on a local disk is single-digit milliseconds; thirty tabs on a
+// slow SMB share is 100–300ms of a main process that is also pumping PTY data,
+// every two seconds. So the wheel runs at `pollMs / FILE_WATCH_POLL_SLICES` and
+// each sub-tick walks the files in ONE slot: still one timer, still one full
+// pass per `pollMs`, at a quarter of the peak. The slot is assigned round-robin
+// as files open, so ten tabs opened together are spread across the slots rather
+// than piled into whichever one was next.
+//
+// WHAT THE SLICING DOES NOT DO is weaken the floor. Every file is still checked
+// exactly once per `pollMs`, so `FILE_WATCH_POLL_MS` remains the worst-case
+// latency of the whole feature — a slot is a phase, not a sampling rate. What
+// moves is only WHEN inside the period a given file's turn falls, which is why
+// the sub-tick period is `floor`ed rather than `round`ed: a full revolution must
+// never come out longer than `pollMs`. And the answer to a slow share is still
+// not to skip the scope re-resolve, which `read-scope.ts` has already explained
+// once cannot be replaced by a cheap string pre-check.
 import fs from 'fs';
 import path from 'path';
 import type { Logger } from '../log/logger';
-import { HOST_STYLE, type ReadScope } from './read-scope';
+import { HOST_STYLE, type PathStyle, type ReadScope } from './read-scope';
 import {
   FILE_WATCH_DEBOUNCE_MS,
   FILE_WATCH_MAX_WAIT_MS,
@@ -64,6 +76,25 @@ import {
   FileWatchNotice,
   FileWatchResult,
 } from '../../shared/ipc/fs';
+
+/**
+ * How many sub-ticks one `FILE_WATCH_POLL_MS` period is cut into (#682).
+ *
+ * Four, and the two directions bound each other. Fewer means a bigger burst,
+ * which is the thing being fixed: the peak main-thread stall is the slowest
+ * slot's stats, so K is the divisor on it. More means more wake-ups for the
+ * same total work — a wheel that only runs while a document panel is open, but
+ * still a timer on a laptop, and past a point it is dividing a burst that is
+ * already under a millisecond. Four takes 300ms of worst-case SMB stall to
+ * ~75ms while leaving the wheel at two wake-ups a second.
+ *
+ * NOT in `shared/ipc/fs.ts` beside `FILE_WATCH_POLL_MS`, deliberately: the poll
+ * period is part of the contract the renderer's tests reason in ("the viewer is
+ * at worst two seconds behind"), and this is main's private business of how it
+ * spends those two seconds. Exported only so a test can derive the sub-tick
+ * period rather than hard-code 500.
+ */
+export const FILE_WATCH_POLL_SLICES = 4;
 
 /** Closeable handle — `fs.FSWatcher` in production, a stub in tests. Declared
  *  here rather than imported from the transcript scheduler: `main/fs` reaching
@@ -99,6 +130,22 @@ export interface FileWatchDeps {
   ) => FileWatchHandle | null;
   /** stat, injectable for the same reason. Null means "not there". */
   probe?: (file: string) => FileSignature | null;
+  /**
+   * How paths compare on the filesystem being watched (#683).
+   *
+   * A parameter rather than a `HOST_STYLE` read inside `fold`, for exactly
+   * `read-scope.ts`'s reason and now with more riding on it: since #544 the
+   * fold decides THREE keys — the file entry, the directory entry, and the name
+   * an event is fanned out by — and a rule that can only be exercised against
+   * the host's own table is a rule half the CI matrix never checks. A fold that
+   * disagreed with the platform would not fail loudly; it would silently stop
+   * delivering events for a whole folder. Defaults to `HOST_STYLE`, which is
+   * what production always wants.
+   *
+   * Only `caseInsensitive` is read here — `sep` belongs to the path COMPARISONS
+   * in `read-scope.ts`, and nothing in this file compares path prefixes.
+   */
+  pathStyle?: PathStyle;
 }
 
 /** One viewer's interest in one file. */
@@ -141,6 +188,11 @@ interface WatchedFile {
   readonly owner: WatchedDir;
   /** viewer keys holding this file open — the last one out releases it */
   readonly refs: Set<string>;
+  /** which sub-tick of the floor wheel stats this file (#682). Fixed for the
+   *  life of the entry, so "checked once per `pollMs`" holds whatever else
+   *  opens and closes around it — a cursor into a live map would skip a file
+   *  whose neighbour was released mid-revolution. */
+  readonly slot: number;
   timer: NodeJS.Timeout | null;
   /** when the current run of events began, for the max-wait ceiling */
   dirtySince: number | null;
@@ -191,26 +243,6 @@ function defaultProbe(file: string): FileSignature | null {
 }
 
 /**
- * Two spellings of one path are one file on the filesystems that say so — and
- * an event names THIS file under the same rule.
- *
- * ONE rule for all three keys here (file, directory, event name), taken from
- * `read-scope.ts`'s `HOST_STYLE`, which is where this project already decided
- * the question (win32 always, macOS by default, Linux never). Two helpers three
- * lines apart disagreeing about macOS is how one file ends up with two
- * `WatchedFile` entries — or one folder with two `WatchedDir` entries, two
- * directory watches for one directory — while the other half of the pair
- * happily matches events for a neighbour that differs only in case.
- */
-function fold(s: string): string {
-  return HOST_STYLE.caseInsensitive ? s.toLowerCase() : s;
-}
-
-function fileKey(p: string): string {
-  return fold(p);
-}
-
-/**
  * Every file some viewer currently has open, one handle per DIRECTORY, and one
  * timer for the whole service.
  *
@@ -243,16 +275,32 @@ export class FileWatchService {
    *  "nothing survives the panel closing" a statement about the process and not
    *  just about one file. */
   private floor: NodeJS.Timeout | null = null;
+  /** which slot the next sub-tick stats (#682) */
+  private slice = 0;
+  /** the slot the next file opened gets — round-robin, so a burst of tabs is
+   *  spread over the wheel rather than piled into one sub-tick */
+  private nextSlot = 0;
   private readonly debounceMs: number;
   private readonly maxWaitMs: number;
   private readonly pollMs: number;
+  /** the wheel's period: one slot's turn, `FILE_WATCH_POLL_SLICES` of them to a
+   *  full pass over every watched file */
+  private readonly sliceMs: number;
   private readonly probe: (file: string) => FileSignature | null;
+  private readonly style: PathStyle;
 
   constructor(private readonly deps: FileWatchDeps) {
     this.debounceMs = deps.debounceMs ?? FILE_WATCH_DEBOUNCE_MS;
     this.maxWaitMs = deps.maxWaitMs ?? FILE_WATCH_MAX_WAIT_MS;
     this.pollMs = deps.pollMs ?? FILE_WATCH_POLL_MS;
+    // FLOOR, not round: `pollMs` is a promise about the worst case, so a full
+    // revolution rounding UP would quietly make the floor slower than the
+    // constant every caller reasons in. At least 1ms, because a caller is free
+    // to pass a `pollMs` smaller than the slice count and `setInterval(0)` is a
+    // busy loop.
+    this.sliceMs = Math.max(1, Math.floor(this.pollMs / FILE_WATCH_POLL_SLICES));
     this.probe = deps.probe ?? defaultProbe;
+    this.style = deps.pathStyle ?? HOST_STYLE;
   }
 
   /**
@@ -368,17 +416,41 @@ export class FileWatchService {
 
   // --- internals -----------------------------------------------------------
 
+  /**
+   * Two spellings of one path are one file on the filesystems that say so — and
+   * an event names THIS file under the same rule.
+   *
+   * ONE rule for all three keys here (file, directory, event name), from the
+   * injected `PathStyle` — which is where `read-scope.ts` already decided the
+   * question (win32 always, macOS by default, Linux never) and now also where a
+   * test can ask BOTH answers on one machine. Two helpers three lines apart
+   * disagreeing about macOS is how one file ends up with two `WatchedFile`
+   * entries — or one folder with two `WatchedDir` entries, two directory
+   * watches for one directory — while the other half of the pair happily
+   * matches events for a neighbour that differs only in case.
+   */
+  private fold(s: string): string {
+    return this.style.caseInsensitive ? s.toLowerCase() : s;
+  }
+
+  private fileKey(p: string): string {
+    return this.fold(p);
+  }
+
   private fileFor(real: string): WatchedFile {
-    const key = fileKey(real);
+    const key = this.fileKey(real);
     const existing = this.files.get(key);
     if (existing) return existing;
     const sig = this.probe(real);
     const owner = this.dirFor(path.dirname(real));
+    const slot = this.nextSlot;
+    this.nextSlot = (this.nextSlot + 1) % FILE_WATCH_POLL_SLICES;
     const file: WatchedFile = {
       path: real,
       base: path.basename(real),
       owner,
       refs: new Set(),
+      slot,
       timer: null,
       dirtySince: null,
       force: false,
@@ -388,7 +460,7 @@ export class FileWatchService {
       gone: sig === null,
     };
     this.files.set(key, file);
-    owner.files.set(fold(file.base), file);
+    owner.files.set(this.fold(file.base), file);
     this.startFloor();
     return file;
   }
@@ -407,7 +479,7 @@ export class FileWatchService {
    * than by a timer, so it cannot become the retry loop `degrade` argues against.
    */
   private dirFor(dir: string): WatchedDir {
-    const key = fold(dir);
+    const key = this.fold(dir);
     const existing = this.dirs.get(key);
     if (existing) {
       if (!existing.handle) this.openWatch(existing);
@@ -460,7 +532,7 @@ export class FileWatchService {
       for (const file of [...entry.files.values()]) this.schedule(file, false);
       return;
     }
-    const file = entry.files.get(fold(String(filename)));
+    const file = entry.files.get(this.fold(String(filename)));
     if (file) this.schedule(file, true);
   }
 
@@ -499,16 +571,28 @@ export class FileWatchService {
 
   // --- the floor wheel -----------------------------------------------------
 
-  /** One interval for the whole service, armed by the first watched file.
+  /**
+   * One interval for the whole service, armed by the first watched file and
+   * running at one SLOT's period rather than the whole poll period (#682).
    *
-   *  A file opened later inherits the wheel's PHASE, so its first floor check
-   *  lands anywhere in `[0, pollMs)` rather than at exactly `pollMs`. Harmless
-   *  in both directions: `fileFor` seeds `sig` from a fresh probe, so an
-   *  immediate check is a no-op, and the scope resolve on a path granted a
-   *  moment ago passes. The floor is a ceiling on latency, not a schedule. */
+   * A file opened later inherits the wheel's PHASE, so its first floor check
+   * lands anywhere in `(0, pollMs]` rather than at exactly `pollMs` — it waits
+   * for its own slot to come round, which is at worst a full revolution away.
+   * Harmless in both directions, and for the reasons it always was: `fileFor`
+   * seeds `sig` from a fresh probe, so an early check is a no-op, and the scope
+   * resolve on a path granted a moment ago passes. The floor is a ceiling on
+   * latency, not a schedule.
+   *
+   * The slice cursor is reset here rather than left where the last teardown put
+   * it. `startFloor` runs when the service goes from zero watched files to one,
+   * so there is no phase left to preserve, and starting at slot 0 next to a
+   * `nextSlot` that also starts at 0 is what makes the FIRST file opened the
+   * first one checked — the shape a test can state without reaching inside.
+   */
   private startFloor(): void {
     if (this.floor) return;
-    this.floor = setInterval(() => this.floorTick(), this.pollMs);
+    this.slice = 0;
+    this.floor = setInterval(() => this.floorTick(), this.sliceMs);
     this.floor.unref?.();
   }
 
@@ -516,12 +600,31 @@ export class FileWatchService {
     if (!this.floor) return;
     clearInterval(this.floor);
     this.floor = null;
+    // So the next wheel starts where `startFloor` says it does, whatever the
+    // last one was mid-way through.
+    this.nextSlot = 0;
   }
 
-  /** Copied before iterating: a check can close its own file (a path that left
-   *  the scope), and that mutates `files` underneath us. */
+  /**
+   * One slot's turn: stat the files in it, and nothing else.
+   *
+   * Gathered into a list before any of them is checked, for the reason the
+   * whole-map copy was there before slicing: a check can close its own file (a
+   * path that left the scope), and that mutates `files` underneath the walk.
+   * Only the DUE files are collected, so the burst this exists to cut is cut in
+   * the only place it costs anything — the stat and the scope resolve inside
+   * `floorCheck`. Filtering by walking the map is deliberate: `files` is bounded
+   * by open tabs and the walk is a pointer comparison per entry, while a second
+   * index keyed by slot would be a fourth structure `closeFile` has to keep in
+   * step with the other three — the exact bug class its by-identity deletes are
+   * already guarding against.
+   */
   private floorTick(): void {
-    for (const file of [...this.files.values()]) this.floorCheck(file);
+    const slot = this.slice;
+    this.slice = (this.slice + 1) % FILE_WATCH_POLL_SLICES;
+    const due: WatchedFile[] = [];
+    for (const file of this.files.values()) if (file.slot === slot) due.push(file);
+    for (const file of due) this.floorCheck(file);
   }
 
   /**
@@ -677,14 +780,14 @@ export class FileWatchService {
     // handle nobody holds and a `WatchedFile.owner` pointing at an entry no
     // longer in `dirs` — so the next file in that folder opens a second handle,
     // which is the exact bug this item exists to remove, reintroduced silently.
-    if (this.files.get(fileKey(file.path)) !== file) return;
-    this.files.delete(fileKey(file.path));
+    if (this.files.get(this.fileKey(file.path)) !== file) return;
+    this.files.delete(this.fileKey(file.path));
     for (const key of file.refs) this.viewers.delete(key);
     file.refs.clear();
     if (file.timer) clearTimeout(file.timer);
     file.timer = null;
     const owner = file.owner;
-    const nameKey = fold(file.base);
+    const nameKey = this.fold(file.base);
     if (owner.files.get(nameKey) === file) owner.files.delete(nameKey);
     if (owner.files.size === 0) this.closeDir(owner);
     if (this.files.size === 0) this.stopFloor();
@@ -696,8 +799,8 @@ export class FileWatchService {
    *  the handle can outlive several of them — the release of the OS resource is
    *  the thing a real session needs to be able to read back. */
   private closeDir(entry: WatchedDir): void {
-    if (this.dirs.get(fold(entry.dir)) !== entry) return;
-    this.dirs.delete(fold(entry.dir));
+    if (this.dirs.get(this.fold(entry.dir)) !== entry) return;
+    this.dirs.delete(this.fold(entry.dir));
     const handle = entry.handle;
     entry.handle = null;
     try {

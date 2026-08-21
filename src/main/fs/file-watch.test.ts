@@ -10,9 +10,9 @@
 // real file in a real window.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Logger } from '../log/logger';
-import type { ReadScope } from './read-scope';
+import { HOST_STYLE, POSIX_STYLE, WIN32_STYLE, type PathStyle, type ReadScope } from './read-scope';
 import type { FileWatchNotice } from '../../shared/ipc/fs';
-import { FileSignature, FileWatchService } from './file-watch';
+import { FILE_WATCH_POLL_SLICES, FileSignature, FileWatchService } from './file-watch';
 
 const DIR = '/proj';
 const FILE = '/proj/PROGRESS.md';
@@ -560,6 +560,254 @@ describe('FileWatchService (P2-E16-04)', () => {
       expect(fs.live()).toBe(0);
       expect(vi.getTimerCount()).toBe(0);
       expect(states()).toEqual([]);
+    });
+  });
+
+  /**
+   * #682: one timer for the service was never the same claim as one BURST.
+   *
+   * #544 removed M standing intervals and, with them, the staggering M timers
+   * created at M different moments got for free — every open file's stat and
+   * scope resolve landed in one synchronous run on main. These pin the fix and,
+   * more importantly, the thing the fix must not quietly buy it with: the floor
+   * is what GUARANTEES the viewer follows the file, so slicing may move a file's
+   * turn inside the period and may not lengthen the period.
+   *
+   * The services here are built locally rather than using the fixture's `svc`
+   * because what they count is `probe` calls, which needs a probe that keeps a
+   * log; `svc` is left with nothing open, so it holds no timer of its own and
+   * the counts below are this block's alone.
+   */
+  describe('the floor wheel is sliced, not one burst (#682)', () => {
+    /** one slot's turn — derived, so the numbers below follow the constant */
+    const SLICE = POLL / FILE_WATCH_POLL_SLICES;
+
+    /** every path `sliced` stat'd, in order */
+    let probed: string[];
+    let sliced: FileWatchService;
+    let opened: number;
+
+    beforeEach(() => {
+      probed = [];
+      opened = 0;
+      sliced = new FileWatchService({
+        log: rec.log,
+        scope: fakeScope(() => allowed),
+        push: (callerId, notice) => notices.push({ callerId, notice }),
+        debounceMs: DEBOUNCE,
+        maxWaitMs: MAX_WAIT,
+        pollMs: POLL,
+        watchFactory: fs.factory,
+        probe: (p) => {
+          probed.push(p);
+          return fs.probe(p);
+        },
+      });
+    });
+
+    afterEach(() => sliced.stop());
+
+    /** `n` more documents in `DIR`, open on `sliced` as tokens `s0`, `s1`, …
+     *  Opening probes twice per file (the not-a-file check, then the seed), so
+     *  every test below clears `probed` after it opens what it needs. */
+    const open = (n: number): string[] => {
+      const paths: string[] = [];
+      for (let i = 0; i < n; i += 1) {
+        const p = `${DIR}/slice-${opened}.md`;
+        fs.sigs.set(p, { mtimeMs: 1000, size: 10, ino: 200 + opened });
+        allowed.push(p);
+        expect(sliced.watch(1, `s${opened}`, p)).toMatchObject({ ok: true });
+        paths.push(p);
+        opened += 1;
+      }
+      return paths;
+    };
+
+    it('a sub-tick stats only its own slot, not every open file', () => {
+      // Eight tabs, four slots: the burst #682 is about would be eight stats at
+      // once, every two seconds.
+      open(8);
+      probed.length = 0;
+      vi.advanceTimersByTime(SLICE);
+      expect(probed.length).toBe(2);
+      probed.length = 0;
+      vi.advanceTimersByTime(SLICE);
+      expect(probed.length).toBe(2);
+    });
+
+    it('and the wheel runs at the SLICE period, not the poll period', () => {
+      // The half of the change a count alone cannot see: four sub-ticks per
+      // `pollMs` rather than one, still from a single timer.
+      open(4);
+      probed.length = 0;
+      vi.advanceTimersByTime(SLICE - 1);
+      expect(probed).toEqual([]);
+      vi.advanceTimersByTime(1);
+      expect(probed.length).toBe(1);
+      expect(vi.getTimerCount()).toBe(1);
+    });
+
+    it('every open file is still stat`d exactly once per pollMs', () => {
+      // The floor is the authority, so "sliced" has to mean a different PHASE
+      // per file and not a lower rate for any of them. Nine over four slots is
+      // deliberately uneven — 3, 2, 2, 2 — so a test that only worked when the
+      // division came out whole would not pass here.
+      const paths = open(9);
+      probed.length = 0;
+      vi.advanceTimersByTime(POLL);
+      expect([...probed].sort()).toEqual([...paths].sort());
+    });
+
+    it('a slot never holds more than its share, however the tabs opened', () => {
+      // Round-robin assignment, so ten tabs opened in one go are spread over
+      // the wheel. Assigning every new file to whichever slot was next to fire
+      // would pass the "once per pollMs" test above and put all ten back in one
+      // burst.
+      open(10);
+      for (let i = 0; i < FILE_WATCH_POLL_SLICES; i += 1) {
+        probed.length = 0;
+        vi.advanceTimersByTime(SLICE);
+        expect(probed.length).toBeLessThanOrEqual(Math.ceil(10 / FILE_WATCH_POLL_SLICES));
+      }
+    });
+
+    it('the ceiling is unchanged: a write is reported within pollMs from any slot', () => {
+      // The done-when's "semantics preserved", stated as the promise the rest of
+      // the app makes — `FILE_WATCH_POLL_MS` is the worst case for the whole
+      // feature. One file per slot, and the writes land mid-revolution so no
+      // slot is sitting at a convenient phase.
+      const paths = open(FILE_WATCH_POLL_SLICES);
+      vi.advanceTimersByTime(POLL + 1);
+      notices.length = 0;
+      paths.forEach((p, i) => fs.write(p, 40 + i));
+      vi.advanceTimersByTime(POLL + DEBOUNCE);
+      expect(notices.map((n) => n.notice.token).sort()).toEqual(['s0', 's1', 's2', 's3']);
+    });
+
+    it('a file opened mid-revolution waits for its own slot, and no longer', () => {
+      // A late tab inherits the wheel's phase — it cannot get a fresh `pollMs`
+      // of its own without a second timer, which is the thing #544 removed. So
+      // the claim is only that its first check lands inside one revolution.
+      open(1);
+      vi.advanceTimersByTime(SLICE + 7); // arbitrary point inside the wheel
+      const [late] = open(1);
+      fs.write(late, 44);
+      notices.length = 0;
+      vi.advanceTimersByTime(POLL + DEBOUNCE);
+      expect(notices.map((n) => n.notice.token)).toEqual(['s1']);
+    });
+
+    it('a quiet sub-tick still arms nothing, and an idle service holds no timer', () => {
+      // #544's rule, re-checked at the finer grain: four chances a period to
+      // accidentally arm a debounce per file instead of one.
+      open(6);
+      for (let i = 0; i < FILE_WATCH_POLL_SLICES * 2; i += 1) {
+        vi.advanceTimersByTime(SLICE);
+        expect(vi.getTimerCount()).toBe(1);
+      }
+      expect(states()).toEqual([]);
+      sliced.stop();
+      expect(vi.getTimerCount()).toBe(0);
+    });
+  });
+
+  /**
+   * #683: the fold is a parameter, so both of its answers can be asked here.
+   *
+   * `read-scope.ts` made `PathStyle` injectable for the reason repeated below —
+   * "a test that can only assert its own platform's half is half a test" — and
+   * since #544 this module folds THREE keys with it: the file entry, the
+   * directory entry, and the name an event is fanned out by. The failure mode is
+   * the quiet one. A fold that disagreed with the platform would not throw; it
+   * would look like a folder whose documents simply stopped re-rendering.
+   */
+  describe('the fold style is injected, not read off the host (#683)', () => {
+    const running: FileWatchService[] = [];
+
+    /** the fixture's service, built again with a chosen filesystem convention */
+    const styled = (pathStyle?: PathStyle): FileWatchService => {
+      const svc2 = new FileWatchService({
+        log: rec.log,
+        scope: fakeScope(() => allowed),
+        push: (callerId, notice) => notices.push({ callerId, notice }),
+        debounceMs: DEBOUNCE,
+        maxWaitMs: MAX_WAIT,
+        pollMs: POLL,
+        watchFactory: fs.factory,
+        probe: fs.probe,
+        pathStyle,
+      });
+      running.push(svc2);
+      return svc2;
+    };
+
+    afterEach(() => {
+      running.splice(0).forEach((s) => s.stop());
+    });
+
+    it('delivers an event that differs only in case where the filesystem folds it', () => {
+      const win = styled(WIN32_STYLE);
+      expect(win.watch(1, 'tok', FILE)).toMatchObject({ ok: true });
+      // What Windows actually hands back: the name as the WRITER spelled it,
+      // which is not necessarily the spelling the tab was opened with.
+      fs.fire('progress.MD');
+      vi.advanceTimersByTime(DEBOUNCE);
+      expect(states()).toEqual(['changed']);
+    });
+
+    it('and treats it as a neighbour where the filesystem does not', () => {
+      const posix = styled(POSIX_STYLE);
+      expect(posix.watch(1, 'tok', FILE)).toMatchObject({ ok: true });
+      fs.fire('progress.MD');
+      vi.advanceTimersByTime(DEBOUNCE * 2);
+      expect(states()).toEqual([]);
+      // …and the same service delivers the exact name, so the assertion above is
+      // about the FOLD and not about a watch that was never wired up.
+      fs.fire('PROGRESS.md');
+      vi.advanceTimersByTime(DEBOUNCE);
+      expect(states()).toEqual(['changed']);
+    });
+
+    it('folds the file and directory keys by the same rule: one entry, one watch', () => {
+      // The other two keys #544 added. Two spellings of one path on a folding
+      // filesystem are one file, one folder and ONE OS handle — the sharing
+      // this module exists for, decided entirely by the fold.
+      const other = '/PROJ/Progress.MD';
+      fs.sigs.set(other, { mtimeMs: 1000, size: 10, ino: 7 });
+      allowed.push(other);
+
+      const win = styled(WIN32_STYLE);
+      win.watch(1, 'a', FILE);
+      win.watch(1, 'b', other);
+      expect(win.stats()).toMatchObject({ files: 1, dirs: 1, viewers: 2, watched: [FILE] });
+      expect(fs.live()).toBe(1);
+    });
+
+    it('and keeps them apart where two spellings really are two files', () => {
+      const other = '/PROJ/Progress.MD';
+      fs.sigs.set(other, { mtimeMs: 1000, size: 10, ino: 9 });
+      allowed.push(other);
+
+      const posix = styled(POSIX_STYLE);
+      posix.watch(1, 'a', FILE);
+      posix.watch(1, 'b', other);
+      expect(posix.stats()).toMatchObject({ files: 2, dirs: 2, viewers: 2 });
+      expect(fs.live()).toBe(2);
+
+      // …and each folder's watch answers only for its own file.
+      fs.write(other, 40);
+      fs.fire('Progress.MD', '/PROJ');
+      vi.advanceTimersByTime(DEBOUNCE);
+      expect(notices.map((n) => n.notice.token)).toEqual(['b']);
+    });
+
+    it('defaults to the host rule, so nothing in production changed', () => {
+      // The one thing an injectable knob can silently get wrong: the default.
+      const host = styled(undefined);
+      host.watch(1, 'tok', FILE);
+      fs.fire('progress.MD');
+      vi.advanceTimersByTime(DEBOUNCE);
+      expect(states()).toEqual(HOST_STYLE.caseInsensitive ? ['changed'] : []);
     });
   });
 });
