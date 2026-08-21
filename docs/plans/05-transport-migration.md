@@ -274,8 +274,14 @@ distinguishes a wind-down from a crash; the native session id is learned from
 
 **What.** One `stdin.write(JSON.stringify(msg) + '\n')`. The bracketed-paste
 wrapper and the 75 ms delayed CR (S-03) — an entire class of timing bug — stop
-existing in stream mode. `--replay-user-messages` gives us a real send
-acknowledgment instead of inferring one.
+existing in stream mode. ~~`--replay-user-messages` gives us a real send
+acknowledgment instead of inferring one.~~ — **corrected 2026-08-21 (#666).**
+The echo is *observation*, not acknowledgment: the CLI emits the identical
+`user` envelope, `isReplay:!0` and all, for a turn it **dropped** as a
+duplicate ("Sending acknowledgment for duplicate user message", then `continue`
+past `new_user_message`). An echo proves the text reached the CLI; only a
+`result` proves the turn ran. Evidence and the quoted block are in
+`fake-stream-protocol.ts` → `onUser`.
 
 *Done when:* a multi-line prompt containing backticks, a leading `/`, and a
 trailing newline arrives **verbatim** (asserted against the fake's received
@@ -328,8 +334,9 @@ Scope: `providers/claude.ts` builds S-10 §1's flags (`--output-format
 stream-json --verbose --input-format stream-json --permission-prompt-tool
 stdio`, copied from the SDK's own arg builder) and declares `transport:
 'stream'`; `StreamService` is constructed in `index.ts` and handed to
-`SessionManager` and `StreamPermissions`; `--replay-user-messages` acknowledges
-a sent prompt.
+`SessionManager` and `StreamPermissions`; `--replay-user-messages` echoes a sent
+prompt back (~~acknowledges~~ — see the E18-06 correction above: an echo is not
+proof the turn ran).
 
 *Done when:* a stream session spawns, takes a prompt and reaches `done` — driven
 by an **e2e against the E18-04 fake** (the criterion inherited from E18-04, and
