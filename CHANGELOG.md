@@ -89,6 +89,16 @@ on the floor, and say so in your PR.
   already knows how to draw, and the check is enforced by the unit suite so a
   new one cannot be written. No visible change today: this window holds every
   capability, so nothing here can be refused yet (#650).
+- The window's picture of a running session lost the last of its hand-copied
+  parts. #590 stopped the main process and the window keeping two separate
+  descriptions of a session RECORD; the same thing was still true of the message
+  that says a session changed state, of the saved session cards, of the four
+  autonomy modes and of the notification settings — each written out twice or
+  more, on two sides of a boundary nothing compared. The looseness had a shape:
+  a session's state was described as "any text at all" in three of those places,
+  so the window could compare it against a state that cannot happen and quietly
+  never match. Every one of them is now a single description both sides read, so
+  a mismatch stops the build instead of shipping. No visible change (#618).
 
 
 ## 0.8.2 — 2026-08-21

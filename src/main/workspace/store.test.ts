@@ -14,7 +14,13 @@ import {
   PersistedSession,
   CURRENT_VERSION,
   PLACEHOLDER_GROUP_NAME,
+  type NotificationPrefs,
 } from './store';
+// TYPE-ONLY, and it must stay that way: `preload/index.ts` calls
+// `contextBridge.exposeInMainWorld` at import time and there is no
+// contextBridge in a vitest process. `import type` is erased entirely.
+import type { SwitchboardApi } from '../../preload/index';
+import type { AutonomyMode } from '../../shared/sessions';
 import { Logger } from '../log/logger';
 import { SOUND_IDS } from '../../shared/sounds';
 import { SUPPRESSED_CAP, SuppressedEvent } from '../../shared/suppressed';
@@ -2547,5 +2553,52 @@ describe('the quiet window is all-or-nothing, and says when it dropped one', () 
     const { prefs, notes } = load({ enabled: true, quietStart: '22:00', quietEnd: '07:00' });
     expect(prefs).toMatchObject({ quietStart: '22:00', quietEnd: '07:00' });
     expect(notes.filter((n) => n.includes('notification settings'))).toEqual([]);
+  });
+});
+
+// #618 — the notification prefs are one declaration, not two.
+//
+// `notifications:getPrefs` returns `workspace.getNotificationPrefs()` VERBATIM,
+// so main's record and the preload's `NotifPrefs` were the same object described
+// twice, on opposite sides of a boundary that carries JSON and therefore
+// compares nothing. They had drifted before: the preload's copy was INLINE three
+// times until P2-E14-05a added `sounds` and `speak`, and naming it fixed the
+// three against each other while leaving the gap that mattered wide open. Both
+// are now `NotificationPrefs` in `shared/notifications.ts`.
+//
+// TYPECHECK gates, not runtime ones — the assignments fail `tsc`, and the
+// `expect`s exist only so `noUnusedLocals` keeps the locals alive. (Same helper
+// as `sessions/transport-seam.test.ts`; it is four tokens of type algebra, and
+// exporting it from product code to share it would be the tail wagging the dog.)
+type Exact<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+
+describe('the prefs record crosses IPC as one type (#618)', () => {
+  it("what `getPrefs` resolves with is what the store holds", () => {
+    const derived: Exact<Awaited<ReturnType<SwitchboardApi['notifications']['getPrefs']>>, NotificationPrefs> =
+      true;
+    expect(derived).toBe(true);
+  });
+
+  it('...and `setPrefs` takes a patch of the same record, not a lookalike', () => {
+    // `Partial<>` on BOTH sides deliberately: the dialog writes one switch at a
+    // time (`setPrefs({ sounds: next })`), and main merges. A patch typed
+    // against a second declaration is how a field gets written that nothing
+    // reads.
+    const patch: Exact<
+      Parameters<SwitchboardApi['notifications']['setPrefs']>[0],
+      Partial<NotificationPrefs>
+    > = true;
+    expect(patch).toBe(true);
+  });
+});
+
+describe("a card's persisted autonomy is the shared vocabulary (#618)", () => {
+  it('the workspace file and the wire agree about the four profiles', () => {
+    // The card's stored choice is the copy furthest from the boundary and the
+    // easiest to forget: `sessions:create` reads it back and hands it to the
+    // spawn. A fifth profile added everywhere but here would round-trip through
+    // the workspace file as `undefined`.
+    const stored: Exact<PersistedSession['autonomy'], AutonomyMode | undefined> = true;
+    expect(stored).toBe(true);
   });
 });

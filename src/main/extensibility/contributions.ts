@@ -4,6 +4,7 @@
 // half of that. Contracts here may reference main-only concepts freely.
 import { SlashCommand } from '../../shared/slash-commands';
 import { CapabilityManifest } from '../../shared/extensibility/registry';
+import type { AutonomyMode } from '../../shared/sessions';
 import { TransportKind } from '../transport/transport';
 
 /**
@@ -281,7 +282,7 @@ export interface SpawnOptions {
   /** provider-native session id to resume */
   resumeSessionId?: string;
   /** autonomy profile (§5.9): how much the session may do unprompted */
-  autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
+  autonomy?: AutonomyMode;
   /** extra settings to inject at spawn (S-02 mechanism); hooks land in E2-05 */
   settings?: Record<string, unknown>;
   /**

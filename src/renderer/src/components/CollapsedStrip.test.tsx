@@ -14,6 +14,7 @@ import i18next from 'i18next';
 import { initI18nForTests } from '../i18n/test-i18n';
 import { CollapsedStrip } from './CollapsedStrip';
 import { collapsedRows, CollapsedRow } from '../lib/ladder';
+import type { CardStatus } from '../../../shared/sessions';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -22,7 +23,7 @@ declare global {
 let root: Root | null = null;
 const expanded: string[] = [];
 
-const rowOf = (cardId: string, status: string): CollapsedRow =>
+const rowOf = (cardId: string, status: CardStatus): CollapsedRow =>
   collapsedRows([{ id: cardId, title: cardId, status }], () => 'collapsed')[0];
 
 async function mount(rows: readonly CollapsedRow[], activeCardId?: string): Promise<void> {
