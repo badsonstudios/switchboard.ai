@@ -235,7 +235,7 @@ export default tseslint.config(
   // measured work remaining, not a budget.
   // ---------------------------------------------------------------------------
   {
-    // TODO(#255 T1): src/main product code — 19 errors. 12 are
+    // TODO(#255 T1): src/main product code — 20 errors. 12 are
     // `no-base-to-string` on `String(x ?? '')` at untrusted-JSON boundaries
     // (stream-permissions, fake-stream-protocol, feed/blocks); one shared
     // `asDisplayString(unknown)` closes all of them.
@@ -250,7 +250,7 @@ export default tseslint.config(
     },
   },
   {
-    // TODO(#255 T2): src/renderer product code — 7 errors. The 3
+    // TODO(#255 T2): src/renderer product code — 8 errors. The 3
     // `no-misused-promises` are `if (!answer)` in App.tsx where `answer` is
     // `Promise<T> | undefined`; `answer === undefined` is behaviour-identical.
     files: ['src/renderer/**/*.{ts,tsx}'],
@@ -264,12 +264,12 @@ export default tseslint.config(
     },
   },
   {
-    // TODO(#255 T3): src/main tests — 56 errors. 16 are `no-floating-promises`
+    // TODO(#255 T3): src/main tests — 57 errors. 16 are `no-floating-promises`
     // in events/sound-actions.test.ts alone, because `RuleActionHandler` is
     // `void | Promise<void>` while `soundHandler` is concretely synchronous
     // (`void h.actions.soundHandler(…)` closes all 16 — nothing is racing). The
-    // other 40 are the `no-unsafe-*` family: one typed reader per boundary,
-    // the #245 pattern.
+    // other 41 are led by the `no-unsafe-*` family (33): one typed reader per
+    // boundary, the #245 pattern.
     files: ['src/main/**/*.test.ts'],
     rules: {
       '@typescript-eslint/no-floating-promises': 'off',
@@ -282,7 +282,7 @@ export default tseslint.config(
     },
   },
   {
-    // TODO(#255 T4): src/renderer tests — 24 errors across 47 files. Last, so
+    // TODO(#255 T4): src/renderer tests — 24 errors across 13 files. Last, so
     // T3's typed boundary readers already exist to copy.
     files: ['src/renderer/**/*.test.{ts,tsx}'],
     rules: {
