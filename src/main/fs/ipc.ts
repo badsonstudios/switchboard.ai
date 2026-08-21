@@ -104,7 +104,7 @@ export interface FsIpcHandle {
   /** release every open file watch — quit, and the teardown assertion */
   stop(): void;
   /** what is being watched right now, for tests and diagnostics */
-  watchStats(): { files: number; viewers: number; watched: string[] };
+  watchStats(): { files: number; dirs: number; viewers: number; watched: string[] };
 }
 
 export function registerFsIpc(deps: FsIpcDeps): FsIpcHandle {
