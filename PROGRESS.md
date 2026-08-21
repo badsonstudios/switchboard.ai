@@ -22,8 +22,8 @@
 > | Issue | Worktree | Branch | Status |
 > |---|---|---|---|
 > | #650 value-channel refusals | sb-wt-1 | feature/650-value-channel-refusals | dispatched |
-> | #471 main-process i18n (USER-FACING) | sb-wt-2 | feature/471-main-i18n | dispatched |
-> | (idle — next: #666+#667+#668 after #665 merges) | sb-wt-3 | — | — |
+> | #544 shared directory watches | sb-wt-2 | feature/544-shared-dir-watches | dispatched ~10:25 |
+> | #666+#667+#668 fake-fidelity bundle | sb-wt-3 | feature/666-fake-replay-fidelity | dispatched ~10:25 |
 >
 > **Wave 1 complete:** #490 → PR #665 (green, base-bumped, merge on re-green);
 > #255 T2/T4 + #663 → PR #669 **MERGED** (da0aa78, #663 closed, #255 umbrella
@@ -33,11 +33,23 @@
 > aria-modal; gates 5798 unit / 349+3sk e2e / 4 mutation runs red). #672 merges
 > after #665 (serial base-bumps; repo has NO auto-merge — manual on green).
 >
-> **Merge queue (ordered — strict up-to-date base protection):** 1) PR #669
-> (#255 T2/T4 + #663, internal) — up to date, merge on green. 2) PR #665
-> (#490, internal) — green but base moved (orchestrator doc commits);
-> update-branch AFTER #669 merges, then auto-squash-merge. Lesson folded into
-> the skill: batch PROGRESS pushes, land them right after merges.
+> **Merge queue:** PR #672 (#654, internal) — base-bumped, merge manually on
+> green (repo has NO auto-merge). MERGED so far: #669 (da0aa78), #665 (010b5de
+> — its re-run CI doubled as the union check of the collapsed eslint config x
+> new provider code: green).
+> **Dan's queue (user-facing, do NOT merge):** PR #674 (#471 main-process i18n)
+> — ready-for-review. Test list in the PR; headline items: non-English locale
+> toast text, mid-session locale switch affects the NEXT toast instantly,
+> Action Center identity now correct (dev claims a NEW identity — old per-app
+> notification settings reset), expired-toast Allow may still fail (#675 filed,
+> needs installer CLSID).
+> **#471 outcome:** shared i18n base config (src/shared/i18n/), main-side
+> i18next instance, locale read from the workspace ui blob per t() call (zero
+> new IPC, instant mid-session switch). All four notification channels covered
+> (toast/push/webhook/spoken). Packaging landmine closed (i18next-icu's
+> undeclared intl-messageformat peer bundled into main). Only real locale is
+> en + generated pseudo — mechanism is the deliverable. DESIGN 5.21 updated.
+> Gates: 5800 unit / 350+3sk e2e x2. Handoff: orchestrator/471.md.
 > **#255 T2/T4 outcome:** all five tranches done, src/ whole on
 > recommendedTypeChecked, ZERO inline disables campaign-wide, config collapsed.
 > #663 landed + its renderer twin (FindProviderContribution.search). Real
