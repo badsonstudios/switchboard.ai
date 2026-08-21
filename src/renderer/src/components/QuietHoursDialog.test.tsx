@@ -49,8 +49,11 @@ const status = (): string =>
 
 async function type(el: HTMLInputElement, value: string): Promise<void> {
   await act(async () => {
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-    setter?.call(el, value);
+    // Kept as the DESCRIPTOR: `PropertyDescriptor.set` is declared a METHOD in
+    // lib.es5.d.ts, so pulling it out into a variable is `unbound-method`
+    // (#255 T4). Calling through it with an explicit `this` is the same write.
+    const valueProp = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+    valueProp?.set?.call(el, value);
     el.dispatchEvent(new Event('input', { bubbles: true }));
   });
 }

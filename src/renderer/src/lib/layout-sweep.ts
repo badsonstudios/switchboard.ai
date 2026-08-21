@@ -55,8 +55,18 @@ export interface SweepPort<Req extends SweepRequest> {
   plan(req: Req): readonly LayoutMove[];
   /** Make one move. Awaited; see `runMoves`. */
   applyMove(move: LayoutMove, req: Req): Promise<void> | void;
-  /** Abandon the rest of the plan (teardown began underneath it). */
-  aborted(): boolean;
+  /**
+   * Abandon the rest of the plan (teardown began underneath it).
+   *
+   * A PROPERTY, not a method shorthand, because this is the one member that
+   * gets handed to `runMoves` as a bare reference — and a method declaration
+   * says the function may want the `this` it was read off, which is what
+   * `unbound-method` objects to (#255 T2, same call as #663). It never has:
+   * every implementer already writes `aborted: () => …`, so the signature is
+   * type-identical for all of them and only stops promising a `this` that was
+   * never used.
+   */
+  aborted: () => boolean;
   /** Fail-open: a layout mode is a convenience, never a reason to throw out of
    *  an event handler and leave the workspace half-swept. */
   onError(err: unknown): void;

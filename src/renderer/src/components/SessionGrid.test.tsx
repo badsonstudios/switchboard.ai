@@ -880,7 +880,13 @@ describe('docking a card back — where it lands (#558)', () => {
     sessionStore.setPresentation('a', { home: { groupId: 'g-vanished', index: 0, location: 'grid' } });
     const a = grid.api.getPanel('session-a')!;
     let movingDuringMove = false;
-    const moveTo = a.api.moveTo;
+    // `.bind(a.api)` and not a bare `const moveTo = a.api.moveTo`: dockview
+    // declares `moveTo` as a method, so carrying the original around as a
+    // loose reference drops the receiver it is allowed to want
+    // (`unbound-method`, #255 T4). The fake behind this api does not use
+    // `this`, so this is the same call today and the correct one if the real
+    // DockviewApi is ever put underneath the test.
+    const moveTo = a.api.moveTo.bind(a.api);
     a.api.moveTo = (opts) => {
       movingDuringMove = sessionStore.isMoving('a');
       moveTo(opts);

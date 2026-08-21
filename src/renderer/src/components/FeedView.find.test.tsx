@@ -254,7 +254,14 @@ describe('jumping to a hit expands what the view was hiding (§5.31)', () => {
     // On the PROTOTYPE, because the block element is created during the very
     // commit the layout effect measures — there is no instance to stub first.
     const proto = Object.getPrototypeOf(scroller) as Element;
-    const original = proto.getBoundingClientRect;
+    // Saved as the DESCRIPTOR rather than as `const original =
+    // proto.getBoundingClientRect`: pulling a method off an object is
+    // `unbound-method` (#255 T4), and the descriptor is the truer save anyway.
+    // `getBoundingClientRect` lives further up the chain, on Element.prototype,
+    // so there is normally nothing OWN here to save and the restore has to
+    // DELETE the stub — putting the inherited one back by assignment would
+    // leave a permanent shadow on this prototype for every later test.
+    const savedRect = Object.getOwnPropertyDescriptor(proto, 'getBoundingClientRect');
     proto.getBoundingClientRect = function (this: Element): DOMRect {
       return { top: this === scroller ? 100 : 500 } as DOMRect;
     };
@@ -263,7 +270,8 @@ describe('jumping to a hit expands what the view was hiding (§5.31)', () => {
         surface().jumpTo(2);
       });
     } finally {
-      proto.getBoundingClientRect = original;
+      if (savedRect) Object.defineProperty(proto, 'getBoundingClientRect', savedRect);
+      else Reflect.deleteProperty(proto, 'getBoundingClientRect');
     }
 
     // the block's 500, less the scroller's 100, less 24px of air above it

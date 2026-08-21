@@ -153,7 +153,11 @@ The prompt must contain, concretely:
      re-attach instructions (this recovered all three cleanly; the
      detached suites themselves survived).
   4. Gate before push: lint + typecheck + unit green, e2e green under the
-     lock. **Gate-number integrity: a count the worker did not personally
+     lock. **Self-review diffs against the MERGE-BASE (`git diff
+     origin/main...HEAD`, triple-dot), never two-dot against a possibly
+     moved origin/main** — 2026-08-21: a reviewer read the orchestrator's
+     own PROGRESS commits on main as the worker's deletions and raised a
+     false Blocker; put this in reviewer subagent prompts too. **Gate-number integrity: a count the worker did not personally
      read off an actual counts line in real output does not exist. A
      missing, empty, or truncated output file means the run is VOID — say
      so and re-run it; never reconstruct, remember, or infer a number**
@@ -214,7 +218,16 @@ On each worker completion notification:
    - **Internal PR:** wait for green CI, then squash-merge
      (`gh pr merge --squash`), confirm the issue closed, delete the branch.
      If main moved under it, bump (`update-branch`) and re-green first —
-     internals merge as they finish, so this stays rare. **Exception —
+     internals merge as they finish, so this stays rare. **Branch
+     protection is STRICT up-to-date (learned 2026-08-21): ANY commit to
+     main — including the orchestrator's own PROGRESS doc commits —
+     invalidates every open PR's mergeability and forces a full
+     update-branch + re-green cycle.** So: batch PROGRESS pushes and
+     prefer landing them immediately AFTER a merge (when open PRs are
+     already invalidated), never between a PR going green and its merge;
+     and when two internal PRs race, merge the up-to-date one first,
+     then update-branch the other once (`gh pr merge --auto --squash`
+     after the bump lands it unattended). **Exception —
      wide mechanical internals while a train is pending (2026-08-20,
      #255-T0):** an internal PR whose diff brushes many files (lint
      campaigns, format sweeps) is PARKED green-and-unmerged until after

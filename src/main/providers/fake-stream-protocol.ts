@@ -239,7 +239,22 @@ export class FakeStreamProtocol {
     // the transcript (P2-E18-10) that omission means a stream session shows no
     // user prompt at all — a fake missing something the real thing does is a
     // fake that hides a bug.
-    this.emit({ type: 'user', message, session_id: this.sessionId, parent_tool_use_id: null });
+    //
+    // `uuid` and `origin` ride the echo BACK when they came in (#490), the way
+    // the real CLI's replay builder does — `RCg`: `{type:"user",message:e.message,
+    // session_id:Vt(),parent_tool_use_id:null,uuid:e.uuid,…isReplay:!0,
+    // …e.origin&&{origin:e.origin}}`. Conditionally, so a hand-written test
+    // frame without them echoes without them, exactly as the real one would.
+    // A fake that dropped the id could not tell a builder that stopped minting
+    // one from a wire that lost it.
+    this.emit({
+      type: 'user',
+      message,
+      session_id: this.sessionId,
+      parent_tool_use_id: null,
+      ...(typeof msg.uuid === 'string' && { uuid: msg.uuid }),
+      ...(msg.origin !== undefined && { origin: msg.origin }),
+    });
 
     // WHAT THE MODEL SAW (P2-E10-09). The real CLI answers an image by talking
     // about it, which is not a thing a fake can do — so it answers by SAYING

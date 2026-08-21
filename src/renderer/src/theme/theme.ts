@@ -22,8 +22,21 @@ import { uiGet, uiSet } from '../lib/ui-state';
  *  are whatever is registered at the `theme` contribution point. */
 export type ThemeId = string;
 
-/** What the user chose: a theme id, or 'system' to follow the OS. */
-export type ThemePreference = 'system' | ThemeId;
+/**
+ * What the user chose: a theme id, or the reserved id `'system'` to follow the
+ * OS (see `RESERVED_THEME_IDS` in extensibility/themes.ts).
+ *
+ * An ALIAS of `ThemeId`, not `'system' | ThemeId`, because that union was a
+ * lie (#255 T2). Theme ids are open — whatever the `theme` contribution point
+ * registers — so `ThemeId` is `string`, and a union of a string literal with
+ * `string` collapses to `string`: the `'system'` half looked like it was
+ * checking something and was not (`pref = 'systm'` typed clean). The reserved
+ * value is enforced where it actually can be, at runtime: `listThemes`
+ * (extensibility/themes.ts) drops a contributed theme that claims the id and
+ * says so on the console, and `loadPreference` below is the one place an
+ * untrusted stored string becomes a preference at all.
+ */
+export type ThemePreference = ThemeId;
 
 export interface ThemeDefinition {
   id: ThemeId;

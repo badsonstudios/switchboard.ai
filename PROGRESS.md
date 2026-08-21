@@ -3,6 +3,77 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🟢 ORCHESTRATION RUN ACTIVE — started 2026-08-21 (~morning), Fable orchestrating
+>
+> **Single-writer rule: this file is written ONLY by the orchestrator.** Workers
+> report through `.claude/work_files/orchestrator/<issue#>.md` handoffs; those are
+> the inputs, this block is the output. A fresh session resuming this run reads
+> this block, the handoff files, and `gh pr list` — then continues the loop.
+>
+> **Run plan (from the staged queue below):** T2/T4 + main-side items fill the
+> empty window first; #650 serializes into wt-1 the moment T2/T4 merges (same
+> files); the three renderer tracks (events / rail-cards / store-popout) dispatch
+> only after #650 is in. #588 probe SKIPPED (spends live tokens — needs Dan's
+> explicit ok); #490 dispatched directly, the stream seam is otherwise free.
+> NOTE: `.claude/work_files/loud-class.txt` (referenced by #650) is GONE — #650's
+> worker must regenerate the site list via the #649 scanner / 440.md.
+>
+> **Active workers (wave 2, dispatched ~10:15):**
+> | Issue | Worktree | Branch | Status |
+> |---|---|---|---|
+> | #650 value-channel refusals | sb-wt-1 | feature/650-value-channel-refusals | dispatched |
+> | #544 shared directory watches | sb-wt-2 | feature/544-shared-dir-watches | dispatched ~10:25 |
+> | #666+#667+#668 fake-fidelity bundle | sb-wt-3 | feature/666-fake-replay-fidelity | dispatched ~10:25 |
+>
+> **Wave 1 complete:** #490 → PR #665 (green, base-bumped, merge on re-green);
+> #255 T2/T4 + #663 → PR #669 **MERGED** (da0aa78, #663 closed, #255 umbrella
+> open pending #670); #654 → PR #672 (internal — sanitizer forbids <label>,
+> literal ids → useId in 3 dialogs; measured zero bare-in-prose across both
+> corpora; Chromium check showed label toggles/renames controls through
+> aria-modal; gates 5798 unit / 349+3sk e2e / 4 mutation runs red). #672 merges
+> after #665 (serial base-bumps; repo has NO auto-merge — manual on green).
+>
+> **Merge queue:** PR #672 (#654, internal) — base-bumped, merge manually on
+> green (repo has NO auto-merge). MERGED so far: #669 (da0aa78), #665 (010b5de
+> — its re-run CI doubled as the union check of the collapsed eslint config x
+> new provider code: green).
+> **Dan's queue (user-facing, do NOT merge):** PR #674 (#471 main-process i18n)
+> — ready-for-review. Test list in the PR; headline items: non-English locale
+> toast text, mid-session locale switch affects the NEXT toast instantly,
+> Action Center identity now correct (dev claims a NEW identity — old per-app
+> notification settings reset), expired-toast Allow may still fail (#675 filed,
+> needs installer CLSID).
+> **#471 outcome:** shared i18n base config (src/shared/i18n/), main-side
+> i18next instance, locale read from the workspace ui blob per t() call (zero
+> new IPC, instant mid-session switch). All four notification channels covered
+> (toast/push/webhook/spoken). Packaging landmine closed (i18next-icu's
+> undeclared intl-messageformat peer bundled into main). Only real locale is
+> en + generated pseudo — mechanism is the deliverable. DESIGN 5.21 updated.
+> Gates: 5800 unit / 350+3sk e2e x2. Handoff: orchestrator/471.md.
+> **#255 T2/T4 outcome:** all five tranches done, src/ whole on
+> recommendedTypeChecked, ZERO inline disables campaign-wide, config collapsed.
+> #663 landed + its renderer twin (FindProviderContribution.search). Real
+> runtime delta: moveHome async→void (microtask only, chased). Assertions
+> strengthened (vacuity closed in terminal-handoff.test.ts; reader-side cast in
+> find-providers.test.ts was silently disabling two shape assertions). Gates:
+> lint 0/0, typecheck 3/3, 5777 unit, 349+3sk e2e (one VOID unit run declared
+> and re-run — starvation timeouts). Umbrella #255 stays OPEN pending #670.
+> Handoff: orchestrator/255-t2t4.md.
+> **Filed this run:** #666 (fake isReplay echo fidelity), #667 (fake-stream-check
+> envelope drift), #668 (ref-impls doc: PATH binary as greppable third source),
+> #670 (String(err) catch-block class — #255 umbrella blocker), #671 (post-#255
+> type-hygiene stragglers), #673 (identifierPrefix on createRoot — closes the
+> id-collision space #654's useId move only narrowed).
+> **#490 outcome:** ADD both fields — uuid gates the CLI's entire duplicate-replay
+> guard (without it every frame always executes); origin stops a presumed-human
+> guess. Fresh randomUUID per delivery, pinned by 10 new unit tests. Gates: 5785
+> unit / 349+3sk e2e / check:fake-stream PASS. Handoff: orchestrator/490.md.
+> NOTE for Dan's hand-test list: real-CLI round trip (prompt runs, identical
+> prompt twice both answer, image prompt) — no repo test spends tokens.
+> **Dan's queue (user-facing PRs):** empty so far.
+> **Next up:** #650 (after T2/T4) → #618 (after #490) → #642/#491 → events /
+> rail-cards / store-popout tracks (after #650). Dan-only: #528 #529 #521, #588 probe ok?
+
 > # ▶▶ START HERE — READY FOR THE NEXT ORCHESTRATION (prepped 2026-08-21)
 >
 > **v0.8.2 RELEASED 2026-08-21** — train #664 (5 PRs: #643 #644 #646 #653
