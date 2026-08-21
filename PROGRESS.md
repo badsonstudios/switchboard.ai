@@ -21,7 +21,16 @@
 > **Active workers (wave 2, dispatched ~10:15):**
 > | Issue | Worktree | Branch | Status |
 > |---|---|---|---|
-> | #642 placeMenu audit (USER-FACING) | sb-wt-1 | feature/642-placemenu-audit | dispatched ~15:05 |
+> | #333 stream routing (classify-on-completion) | sb-wt-1 | feature/333-stream-routing | dispatched ~16:35 |
+>
+> **#642 DONE — PR #694 ready, in DAN'S QUEUE (5th).** Audit: 19 surfaces
+> enumerated, exactly ONE was the vulnerable class (already fixed by #641) —
+> honest null result. RTL: placeMenu takes direction, returns logical insets;
+> audit found the SAME physical-into-logical bug in the rail resize gripper
+> (rtl: rail snapped to max + dragged backwards) — fixed. Flip branch far-edge
+> hole closed. Mutation: RTL e2e fails 726px off against direction-blind
+> placement. Gates: 5861 unit, 350+3sk e2e. Filed #695 (card ⋯ menu clips on
+> 3-4 splits — needs rect-anchored variant). Handoff: orchestrator/642.md.
 > | #682+#683 watcher follow-ups (internal) | sb-wt-2 | feature/682-watcher-followups | dispatched ~15:45 |
 >
 > **#618 DONE — PR #689 (internal), readied + bumped, merge on green.** Shared-
