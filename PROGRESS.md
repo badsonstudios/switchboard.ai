@@ -21,9 +21,30 @@
 > **Active workers (wave 2, dispatched ~10:15):**
 > | Issue | Worktree | Branch | Status |
 > |---|---|---|---|
-> | #650 value-channel refusals | sb-wt-1 | feature/650-value-channel-refusals | dispatched |
-> | #544 shared directory watches | sb-wt-2 | feature/544-shared-dir-watches | dispatched ~10:25 |
-> | #666+#667+#668 fake-fidelity bundle | sb-wt-3 | feature/666-fake-replay-fidelity | dispatched ~10:25 |
+> | #650 value-channel refusals | sb-wt-1 | DONE — PR #676 (internal), CI running, needs base-bump after #672 |
+> | #544 shared directory watches | sb-wt-2 | DONE — PR #681 (internal) |
+> | #666+#667+#668 fake-fidelity bundle | sb-wt-3 | DONE — PR #679 (internal) |
+>
+> **Wave 2/3 all DONE. Serial merge chain:** #672 → #676 → #679 → #681 (each:
+> bump, re-green, squash-merge — strict base, no auto-merge). Next dispatches
+> AFTER #676 merges (renderer collision clears): events track (wt-1),
+> rail/cards track (wt-3), #618 (wt-2).
+> **#544 outcome:** WatchedDir owns one fs.watch per folder + one floor wheel
+> per service (M tabs/1 dir = 1 handle, timers O(1)); self-review caught a
+> degraded-folder-never-retried blocker (transient EMFILE would have pinned a
+> folder to the 2s floor); #412's 19 tests pass UNMODIFIED, 11 new (7 proven
+> red on main). Gates: 5798 unit, 349+3sk e2e. Filed #682 (sync stat burst on
+> SMB), #683 (fold() HOST_STYLE injectability). Lesson to skill: the suite is
+> `npm run e2e` (test:e2e does not exist). Handoff: orchestrator/544.md.
+> **#666-bundle outcome:** fake echoes isReplay:true unconditionally (verified
+> against the 2.1.233 binary); duplicate-ack pinned (echo = heard, not ran);
+> fake-stream-check imports the real builder (its local copy had ALREADY
+> drifted — missing uuid/origin); ref-impls doc gains 2.1 (binary as third
+> source). Gates: 5792 unit, check:fake-stream 19 assertions, 349+3sk e2e.
+> Filed #680 (feed ignores isReplay). Also: CLAUDE.md ref-impls row + CLI size
+> corrected by orchestrator; CHANGELOG has NO open unreleased section (v0.8.2
+> skipped it) — next user-facing merge/train must open it (#674 touches
+> CHANGELOG, likely already does). Handoff: orchestrator/666-bundle.md.
 >
 > **Wave 1 complete:** #490 → PR #665 (green, base-bumped, merge on re-green);
 > #255 T2/T4 + #663 → PR #669 **MERGED** (da0aa78, #663 closed, #255 umbrella
@@ -33,8 +54,17 @@
 > aria-modal; gates 5798 unit / 349+3sk e2e / 4 mutation runs red). #672 merges
 > after #665 (serial base-bumps; repo has NO auto-merge — manual on green).
 >
-> **Merge queue:** PR #672 (#654, internal) — base-bumped, merge manually on
-> green (repo has NO auto-merge). MERGED so far: #669 (da0aa78), #665 (010b5de
+> **Merge queue (serial):** 1) PR #672 (#654, internal) — bumped, e2e legs
+> finishing. 2) PR #676 (#650, internal) — after #672: bump, re-green, merge.
+> **#650 outcome:** story = answered() at the boundary + per-site judgement
+> fallback (typed union REJECTED in writing in refusal.ts + extensibility.md);
+> 48 sites / 41 answered() calls / 8 files, list regenerated + preserved in
+> handoff; scanner grew valuePositionOf() + 3 see-through modes, mutation-proved
+> 49/55 with the 6 blind seams documented (5 newly unit-tested). Headline save:
+> layout-restore refusal degrades knownCards to null NOT [] — [] would have
+> mass-pruned every pin/policy/layout. Gates: 5799 unit, 349+3sk e2e, scanner
+> clean. Filed: #677 (applyPushAnswer unpinned), #678 (null-vs-[] prune guard
+> decision + pin). Handoff: orchestrator/650.md. MERGED so far: #669 (da0aa78), #665 (010b5de
 > — its re-run CI doubled as the union check of the collapsed eslint config x
 > new provider code: green).
 > **Dan's queue (user-facing, do NOT merge):** PR #674 (#471 main-process i18n)

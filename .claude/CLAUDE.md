@@ -26,7 +26,7 @@ approvals, and usage tracking.
 | `docs/DESIGN.md` | The design record — 29 feature sections, roadmap, open questions, competitive research |
 | `docs/PHILOSOPHY.md` | The constitution — principles + the feature litmus test **every feature must pass** |
 | `docs/extensibility.md` | Internal contributor guide — contribution points, capability manifests, the bootstrap rule (§5.23 seams; NOT a public plugin API) |
-| `docs/reference-implementations.md` | **When a CLI contract is unclear, read this first.** The Claude Code VS Code extension is unpacked on this machine — a known-correct consumer of every contract we depend on (the embedded Agent SDK, the stream-json protocol, the full `settings.json` schema). How to navigate the minified bundle, and the rules for using it |
+| `docs/reference-implementations.md` | **When a CLI contract is unclear, read this first.** Two sources on this machine: the unpacked Claude Code VS Code extension (a known-correct consumer — the embedded Agent SDK, the stream-json protocol, the full `settings.json` schema) and the PATH `claude` binary itself, greppable, embedding its zod schemas and message loop (§2.1 — shows what the CLI *does*, not just what a client sends). Navigation recipes and the rules for using both |
 | `docs/plans/00-process.md` | How we work: phases → work items → GitHub issues → PRs |
 | `docs/plans/01-spike-foundations.md` | Current work: spike spec (S-01…S-08) |
 | `docs/plans/02-phase-1-mvp.md` | Phase 1 epics & work items |
@@ -66,7 +66,7 @@ in the doc.
 
 **The rules:** read *contracts*, don't copy *code* · **verify anything
 load-bearing against the CLI on PATH** — the extension ships its own `claude`
-binary (265 MB, `resources/native-binary/`) and can differ from Dan's install,
+binary (~287 MB, `resources/native-binary/`) and can differ from Dan's install,
 which is exactly why S-10 probe A had to be run instead of assumed.
 
 ---
