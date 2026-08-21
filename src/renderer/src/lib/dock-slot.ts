@@ -99,3 +99,53 @@ export function openerRelative(box: Box, opener: { screenX: number; screenY: num
     height: box.height,
   };
 }
+
+/** The shape of a dockview group `homeGroupId` needs to judge — structural, so
+ *  the tests can hand it plain objects. */
+export interface HomeCandidate {
+  id: string;
+  /** dockview's `group.api.location.type` */
+  location: string;
+  /** does it hold a document viewer? #462's document area, by its only tell */
+  hasDocument: boolean;
+}
+
+/**
+ * The group a card DOCKING BACK should return to — its own slot, or nothing.
+ *
+ * `placeAt` above answers the reveal's question ("where was this panel"), and
+ * deliberately treats a popout slot as a place to go back to. A dock-back is
+ * the opposite motion: the popout is what the card is LEAVING, so the record it
+ * must be placed from is `home` — the last grid slot it occupied (#558).
+ *
+ * `null` is a real answer and the reason this exists: a card born inside a
+ * popped-out window (#531) has no grid slot, and the group dockview would hand
+ * it — the one the WINDOW was created from, i.e. its opener's — is a slot it
+ * never earned. The caller falls back to `sessionCardHome`'s ordinary placement
+ * rules, which is where a brand new session would land.
+ *
+ * Three ways a remembered home stops being one, all of them ordinary:
+ *
+ *  * it was a POPOUT slot — never written here, but a persisted blob outlives
+ *    the code that wrote it, and a `home` naming another OS window would send a
+ *    docking card straight back out of the main window;
+ *  * the group is GONE, or is itself in a popout now (someone dragged the whole
+ *    group out while this card was away);
+ *  * the group became the DOCUMENT AREA. A viewer never displaces a session and
+ *    a session never displaces what you are reading (#462/#501) — the rule
+ *    holds even when the group used to be this card's, because what the user
+ *    can see now beats what the card remembers.
+ *
+ * NOTE the group may be INVISIBLE and that is not a disqualifier: an empty
+ * hidden grid group is exactly the dock-back husk dockview leaves behind when a
+ * card is torn out, and it IS the card's slot. The caller un-hides it.
+ */
+export function homeGroupId(
+  home: SlotRef | null | undefined,
+  groups: readonly HomeCandidate[]
+): string | null {
+  if (!home || home.location !== 'grid') return null;
+  const g = groups.find((c) => c.id === home.groupId);
+  if (!g || g.location !== 'grid' || g.hasDocument) return null;
+  return g.id;
+}

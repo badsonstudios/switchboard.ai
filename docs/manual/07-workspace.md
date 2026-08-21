@@ -104,7 +104,9 @@ sessions are simply the list.)
 Click **⤢** in a card header to tear that session into its own window — useful
 for a second monitor. The session keeps running throughout; nothing restarts.
 
-- Click **⤡** to dock it back into the main window.
+- Click **⤡** to dock it back into the main window. It goes back to the spot it
+  came from — the space it left is held open while it is away — so a session you
+  pop out and put back does not shuffle your layout around.
 - **Closing the pop-out window** instead *suspends* the session: the card
   returns to the main window with a **Resume** button, and the conversation is
   kept.
@@ -122,7 +124,10 @@ for a second monitor. The session keeps running throughout; nothing restarts.
 
   The new session is an ordinary one in every other way: it gets a row in the
   Sessions list, it can ask for your attention, and **⤡** docks it back into
-  the main window on its own — it isn't tied to the window it started in.
+  the main window on its own — it isn't tied to the window it started in. It has
+  never had a spot on the grid, so it comes home the way a *new* session does:
+  beside the sessions already there, never on top of a document, and never into
+  the spot belonging to the session whose window it was started in.
 - **A new session always opens somewhere you can see it.** Started from the main
   window, it opens there: at full size in the space a popped-out session left
   behind rather than in the sliver that space collapses to, and never on top of

@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { captureSlot, openerRelative, placeAt, type SlotSource } from './dock-slot';
+import {
+  captureSlot,
+  homeGroupId,
+  openerRelative,
+  placeAt,
+  type SlotSource,
+} from './dock-slot';
 
 function panel(id: string, groupId: string, siblings: string[], location = 'grid'): SlotSource {
   return {
@@ -70,5 +76,47 @@ describe('openerRelative', () => {
       width: 800,
       height: 600,
     });
+  });
+});
+
+describe('homeGroupId — where a card docking back belongs (#558)', () => {
+  const grid = (id: string): { id: string; location: string; hasDocument: boolean } => ({
+    id,
+    location: 'grid',
+    hasDocument: false,
+  });
+  const HOME = { groupId: 'g-left', index: 2, location: 'grid' as const };
+
+  it('gives the card its own slot back, hidden husk and all', () => {
+    // the husk IS the slot — an empty invisible group with the geometry still
+    // on it — and this function does not care that it is empty; nothing about
+    // a group says whether it is one, and the caller un-hides whatever it gets
+    expect(homeGroupId(HOME, [grid('g-right'), grid('g-left')])).toBe('g-left');
+  });
+
+  it('refuses a home that is gone, or has left the grid', () => {
+    expect(homeGroupId(HOME, [grid('g-right')])).toBeNull();
+    expect(
+      homeGroupId(HOME, [{ id: 'g-left', location: 'popout', hasDocument: false }])
+    ).toBeNull();
+  });
+
+  it('refuses the document area even when it used to be the card’s own group', () => {
+    // #462/#501: a session never displaces what you are reading. What the user
+    // can see now beats what the card remembers.
+    expect(homeGroupId(HOME, [{ id: 'g-left', location: 'grid', hasDocument: true }])).toBeNull();
+  });
+
+  it('a card with no grid home has none — which is the whole bug', () => {
+    // the popout-born card (#531). Answering anything else here is how it
+    // inherited its opener's slot: null sends the caller to the ordinary
+    // placement rules, where a brand new session would land.
+    expect(homeGroupId(null, [grid('g-left')])).toBeNull();
+    expect(homeGroupId(undefined, [grid('g-left')])).toBeNull();
+    // ...and a POPOUT home is not one either: it names another OS window, and
+    // a blob outlives the code that wrote it
+    expect(
+      homeGroupId({ groupId: 'g-left', index: 0, location: 'popout' }, [grid('g-left')])
+    ).toBeNull();
   });
 });

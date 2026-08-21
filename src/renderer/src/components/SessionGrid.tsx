@@ -44,7 +44,7 @@ import {
   RescuedPopout,
   sanitizePopoutLayout,
 } from '../lib/layout';
-import { captureSlot, openerRelative, placeAt } from '../lib/dock-slot';
+import { captureSlot, homeGroupId, openerRelative, placeAt } from '../lib/dock-slot';
 import { hasPanel, slotIsLive, stepDown, stepUp } from '../lib/ladder';
 import { autonomyTooltip, DEFAULT_AUTONOMY, isAutonomy, nextAutonomy } from '../lib/autonomy';
 import { submitTarget } from '../lib/presentation-policy';
@@ -2262,13 +2262,70 @@ function gridRefGroup(
  * its own window, refuse every shell and pay for a fresh group instead.
  */
 function sessionCardHome(api: DockviewApi): DockviewApi['groups'][number] {
-  const viewerIsOut = api.panels.some(
-    (p) => p.id.startsWith('doc-') && p.group.api.location.type === 'popout'
-  );
+  const viewerIsOut = viewerIsPoppedOut(api);
   return gridRefGroup(
     api,
     (g) => !isDocumentArea(g) && !(viewerIsOut && g.panels.length === 0)
   );
+}
+
+/** Is a document viewer out in its own OS window? Named once because two
+ *  placements refuse an empty shell on the strength of it — see the paragraph
+ *  above about why the question has to be this coarse. */
+function viewerIsPoppedOut(api: DockviewApi): boolean {
+  return api.panels.some(
+    (p) => p.id.startsWith('doc-') && p.group.api.location.type === 'popout'
+  );
+}
+
+/**
+ * Where a card DOCKING BACK from a popout lands (#558).
+ *
+ * Its own slot when it still has one, and `sessionCardHome`'s ordinary rules
+ * when it does not — the second half being the whole of the owner's bug. A
+ * popout window carries ONE dock-back reference, the group it was torn from,
+ * and every card in it inherits that on the way home. The card born inside the
+ * window (#531) never had a slot in the grid, so it was handed its opener's:
+ * the opener came home to whatever group was visible, and the newcomer took the
+ * half of the screen the opener used to own.
+ *
+ * `homeGroupId` is the decision and is pure; the dockview verbs are here.
+ * The `setVisible` is the same husk revival `gridRefGroup` does and for the
+ * same reason: a card's slot survives its absence as an empty hidden group with
+ * the geometry still on it, and landing in one without un-hiding it puts the
+ * card in the DOM, in the right window, and 0px wide (#434). `revived` is
+ * reported back so a move that then fails can put the shell away again rather
+ * than leaving an empty pane on screen.
+ *
+ * A NAMED SLOT DOES NOT BEAT THE VIEWER RULE, which is the one place this could
+ * quietly undo #462. `sessionCardHome` refuses EVERY empty shell while a viewer
+ * is out in its own window, because a shell is empty by construction and
+ * nothing about it says whether a card or a viewer left it — and dockview hands
+ * that viewer back into the same group when its window closes. A card's claim
+ * on its own slot says nothing about that, since the two can have shared a
+ * group; so the coarse rule is applied here too and the card pays for a group
+ * of its own until the viewer is home.
+ */
+function dockBackTarget(
+  api: DockviewApi,
+  cardId: string
+): { group: DockviewApi['groups'][number]; index: number; revived: boolean } {
+  const home = sessionStore.getPresentation(cardId).home;
+  const id = homeGroupId(
+    home,
+    api.groups.map((g) => ({
+      id: g.id,
+      location: g.api.location.type,
+      hasDocument: isDocumentArea(g),
+    }))
+  );
+  const group = id ? api.groups.find((g) => g.id === id) : undefined;
+  if (!group || (group.panels.length === 0 && viewerIsPoppedOut(api))) {
+    return { group: sessionCardHome(api), index: -1, revived: false };
+  }
+  const revived = !group.api.isVisible;
+  if (revived) group.api.setVisible(true);
+  return { group, index: home?.index ?? -1, revived };
 }
 
 /**
@@ -2704,9 +2761,10 @@ export function popOutCardPanel(api: DockviewApi | null, cardId: string): void {
     // home?", which is about the WINDOW and not this panel's group — a split
     // inside a popout, or a document viewer sharing it, counts the same way.
     //
-    // `sessionCardHome` picks where it lands, so #501's placement rules stay in
-    // one place: a card coming home arrives where a new one would, never in the
-    // document area and never inside a hidden husk.
+    // `dockBackTarget` picks where it lands: the card's OWN slot when it still
+    // has one, and otherwise #501's placement rules, in one place — a card that
+    // never lived in the grid arrives where a new one would, never in the
+    // document area and never inside somebody else's hidden husk.
     const company =
       !!w &&
       api.panels.some((p) => {
@@ -2715,10 +2773,60 @@ export function popOutCardPanel(api: DockviewApi | null, cardId: string): void {
         return l.type === 'popout' && l.getWindow() === w;
       });
     if (company) {
-      sessionStore.markDockingBack(cardId); // a move, not a close: stay alive
-      panel.api.moveTo({ group: sessionCardHome(api) });
+      const dest = dockBackTarget(api, cardId);
+      // `setMoving` and not `markDockingBack`, which it replaces. Both keep the
+      // session alive across the location change — the handler bails before the
+      // suspend either way — and this one ALSO stops E12-04 reading a dock-back
+      // as a user drag. That was harmless while the card landed in whatever
+      // group happened to be visible; now that it lands in its OWN slot, which
+      // is an EMPTY husk in the ordinary case, adoption would see no siblings
+      // and erase the session's persistent group outright (`pickAdoptedGroupId`
+      // returns null). Docking a card back is a placement, not a regrouping.
+      sessionStore.setMoving(cardId, true);
+      try {
+        panel.api.moveTo({ group: dest.group, ...(dest.index >= 0 ? { index: dest.index } : {}) });
+      } catch (err) {
+        // The group died between the lookup and the move. `moveTo` is
+        // synchronous, so this is an exception and would otherwise escape a
+        // click handler; the card stays in its window instead, which is a
+        // dock-back that visibly did nothing — hence the log, so it is not also
+        // an INVISIBLE one.
+        console.error('[popout] could not dock the card back', err);
+        // ...and put the slot away again. We un-hid it to land in, and an empty
+        // shell left visible is a blank pane the user has to look at.
+        if (dest.revived && dest.group.panels.length === 0) dest.group.api.setVisible(false);
+      } finally {
+        sessionStore.setMoving(cardId, false);
+      }
       return;
     }
+    // ── THE LAST CARD OUT STILL LEAVES BY CLOSING THE WINDOW ────────────────
+    //
+    // and it must, which is worth writing down because the obvious symmetry —
+    // `moveTo` here as well, then close the empty window — is a trap that has
+    // already cost one attempt at this issue (#564). dockview's
+    // `_doMoveGroupOrPanel` removes the panel from its group, then destroys the
+    // now-empty group BEFORE re-opening the panel at its destination
+    // (`doRemoveGroup(sourceGroup)` sits between the two, outside the moving
+    // lock). Destroying a popout group closes its OS window, and Chromium
+    // strips every listener off the document it tears down — including React's,
+    // on the card DOM dockview had adopted into that window. The card arrives
+    // home rendering perfectly and answering nothing: #292's story, reached
+    // from the other side. The window-close path does the move from INSIDE the
+    // window's own teardown, while the document is still alive, which is why it
+    // is the one that keeps a session usable.
+    //
+    // dockview then hands the panel to the group the WINDOW was created from,
+    // which for the card that tore that window off IS its own slot: the two
+    // placements agree on the case this branch actually serves. The card born
+    // in the window (#531) reaches here only after its opener has left, and in
+    // the ordinary way of leaving — docking back — the opener is standing in
+    // that slot by then, so the newcomer arrives as a tab beside it rather than
+    // instead of it. Empty it the other ways (close the opener's card, drag its
+    // tab into the grid) and the survivor still inherits a slot it never
+    // earned; correcting that means a second move AFTER the panel is safely
+    // home, which is a different shape from this one and wants its own ticket.
+    //
     // only arm the "stay alive" flag when a window actually exists to close —
     // else a stale flag would later mis-classify a genuine user close as a
     // toggle and skip the suspend (E8-04 review).
@@ -2906,7 +3014,7 @@ function popoutBoxOf(panel: IDockviewPanel): Box | null {
  * does not. Writes that change nothing are dropped by the store, so this is
  * cheap despite firing on every drag frame's settle.
  */
-function captureSlots(api: DockviewApi): void {
+export function captureSlots(api: DockviewApi): void {
   // Never during teardown: quit removes panels one at a time, so the survivors'
   // index inside a shrinking group keeps changing and we would persist that
   // churn as the LAST write before exit. Same guard as its two neighbours.
@@ -2922,7 +3030,26 @@ function captureSlots(api: DockviewApi): void {
     // may write one.
     if (!slotIsLive(sessionStore.getPresentation(m[1]).ladder)) continue;
     const slot = captureSlot(panel, popoutBoxOf(panel));
-    if (slot) sessionStore.setPresentation(m[1], { slot });
+    // A GRID slot is also this card's HOME — the thing ⤡ brings it back to
+    // (#558). Written here rather than in `popOutCardPanel` because the button
+    // is not the only way into a window: a tab dragged across, a reveal that
+    // re-opens a popout and a layout restore all get there too, and a home
+    // recorded on only one of those routes is a home that is missing exactly
+    // when it is needed. A popout slot never overwrites it — a card in another
+    // OS window has not moved house, it has gone out.
+    //
+    // `isConnected` is the guard, and it earns its place: a saved popout is
+    // rebuilt by `fromJSON` as an ordinary group that reports `location: 'grid'`
+    // and does not become a popout until dockview's restoration timer fires
+    // ~100ms later (#494 measured that window from the other side). It is a
+    // grid slot in every way this loop can see, and it is not one — it is in no
+    // document at all, because the OS window it belongs to has not been opened
+    // yet. Recording it would REPLACE the real home the blob just restored, and
+    // nothing would ever put that back: `slot` is corrected by the very next
+    // layout change, once the group is honestly a popout, but a home is only
+    // ever written from the grid, so the correction never comes.
+    const settled = slot?.location === 'grid' && panel.group.element.isConnected;
+    if (slot) sessionStore.setPresentation(m[1], { slot, ...(settled ? { home: slot } : {}) });
   }
 }
 
