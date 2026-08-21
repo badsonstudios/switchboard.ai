@@ -131,7 +131,7 @@ export function isIpcRefusal(value: unknown): value is IpcRefusal {
 // visible failure, just the wrong path taken in silence. #439 found the first
 // one in `lib/composer.ts` (a refusal suppressed the terminal fallback, quietly
 // reinstating the #154 defect that function exists to prevent) and #440 swept
-// the renderer for the rest — NINETEEN more, in five files, and not one of them
+// the renderer for the rest — nineteen more, in five files, and not one of them
 // wore the `if (await bridge.x())` shape the issue title names: ten put the
 // value in a `.then` parameter, five parked it in a `const` first (one of those
 // two files away, behind `latestWins`), and four handed it point-free to a
