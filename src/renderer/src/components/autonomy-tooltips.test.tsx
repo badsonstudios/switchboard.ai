@@ -22,7 +22,7 @@ import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import i18next from 'i18next';
 import { initI18nForTests } from '../i18n/test-i18n';
-import en from '../i18n/locales/en.json';
+import en from '../../../shared/i18n/locales/en.json';
 import { TitleBar } from './chrome';
 import { sessionPanels } from '../extensibility/panels';
 import { PanelContext } from '../extensibility/contributions';

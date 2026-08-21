@@ -28,8 +28,10 @@
 //      to a window is fire-and-forget, so without that report a machine with no
 //      audio device would be silent while every log line said "taken".
 import type { Logger } from '../log/logger';
-import { AudioChannelName, announcementFor } from '../../shared/sounds';
+import { AudioChannelName } from '../../shared/sounds';
+import { announcementFor } from './notification-text';
 import type { RuleActionContext, RuleActionHandler } from './rules-engine';
+import type { Translate } from '../../shared/i18n';
 
 /** Somewhere that can make a noise. The app's is a renderer window; a test's
  *  is an array. Both answers are synchronous and mean DISPATCHED, not HEARD —
@@ -48,6 +50,12 @@ export interface SoundActionsDeps {
   soundFor: (cardId: string | null) => string;
   /** what to do when the sink took nothing — `shell.beep()` in the app */
   fallback?: () => void;
+  /**
+   * The user's language (#471). The voice was the last notification channel
+   * still speaking English after the toast, the phone and the webhook stopped,
+   * and it is the one that reaches someone who is not looking at the screen.
+   */
+  t: Translate;
   log?: Logger;
 }
 
@@ -109,7 +117,7 @@ export class SoundActions {
       // auto task label when it has one, the session title when it does not
       // (`main/index.ts` → `titleFor`). Speaking anything else would make the
       // voice the one channel that names sessions differently.
-      const text = announcementFor(ctx.title, ctx.event.kind);
+      const text = announcementFor(ctx.title, ctx.event.kind, this.deps.t);
       const taken = this.safe(() => this.deps.sink.speak(text), false);
       // No beep fallback: the `sound` action has usually just made one, and a
       // beep standing in for a sentence tells the user nothing the beep did not

@@ -12,10 +12,20 @@
 // "nothing on this path awaits the audio device" asserts further down. `void`
 // says "the promise half of that union never arrives here"; it is not a
 // swallowed await, and removing it would not change what any test observes.
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeAll } from 'vitest';
 import { SoundActions, type AudioSink } from './sound-actions';
+import { createMainI18n } from '../i18n';
+import type { Translate } from '../../shared/i18n';
 import type { RuleActionContext } from './rules-engine';
 import type { FeedEvent } from './feed';
+
+// The real translator, at the real catalog (#471): the spoken sentence is now
+// composed from keys, so a fake `t` would let a missing key pass. English,
+// because these assertions are about WHAT is said, not which language.
+let t: Translate;
+beforeAll(async () => {
+  t = (await createMainI18n({ language: () => 'en' })).t;
+});
 
 const ev = (kind: FeedEvent['kind'] = 'needs-input'): FeedEvent => ({
   id: 1,
@@ -68,6 +78,7 @@ function harness(
     fallback: () => {
       beeps.count++;
     },
+    t,
     log,
   });
   const line = (msg: string) => logged.filter((l) => l.msg === msg);
@@ -166,6 +177,7 @@ describe('fail-open (§5.9: an audio failure never costs the event)', () => {
     const actions = new SoundActions({
       sink: { play: () => false, speak: () => false },
       soundFor: () => 'chime',
+      t,
       fallback: () => {
         throw new Error('shell.beep exploded');
       },
@@ -178,6 +190,7 @@ describe('fail-open (§5.9: an audio failure never costs the event)', () => {
     const actions = new SoundActions({
       sink: { play: () => false, speak: () => false },
       soundFor: () => 'chime',
+      t,
     });
     expect(() => actions.soundHandler({ type: 'sound' }, ctx())).not.toThrow();
     expect(() => actions.speakHandler({ type: 'speak' }, ctx())).not.toThrow();
@@ -293,6 +306,7 @@ describe('the window took it and could not play it', () => {
     const actions = new SoundActions({
       sink: { play: () => true, speak: () => true },
       soundFor: () => 'chime',
+      t,
       fallback: () => {
         throw new Error('shell.beep exploded');
       },

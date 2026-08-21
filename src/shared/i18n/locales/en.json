@@ -739,6 +739,27 @@
     "paste": "Paste",
     "selectAll": "Select All"
   },
+  "notification": {
+    "permissionDetail": "Allow {tool}? {detail}",
+    "unknownTool": "a tool",
+    "question": "A question for you: {question}{more, plural, =0 {} other { (+# more)}}",
+    "questionFallback": "Claude is asking you a question",
+    "kind": {
+      "done": "done",
+      "ready": "ready",
+      "needs-input": "needs input",
+      "needs-permission": "needs permission",
+      "crashed": "crashed"
+    },
+    "speak": {
+      "anonymous": "A session",
+      "needs-input": "{who} needs your input",
+      "needs-permission": "{who} needs permission",
+      "done": "{who} is done",
+      "crashed": "{who} crashed",
+      "other": "{who} {what}"
+    }
+  },
   "terminal": {
     "streamTitle": "No terminal for this session",
     "streamBody": "This session talks to Claude Code directly instead of through a terminal, so there is nothing to show here. In exchange, permission requests appear in this window — including the ones that used to escape into the terminal and ask you twice. Switch this session to Terminal mode from the ⋯ menu if you need the terminal itself."

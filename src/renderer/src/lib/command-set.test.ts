@@ -3,7 +3,7 @@ import type { Mock } from 'vitest';
 import { buildCommands, CommandDeps } from './command-set';
 import { Command, CommandContext } from './commands';
 import { TERMINAL_ACCELERATORS } from '../../../shared/terminal-accelerators';
-import en from '../i18n/locales/en.json';
+import en from '../../../shared/i18n/locales/en.json';
 import { POLICY_ORDER } from './presentation-policy';
 import { LAYOUT_MODES } from './layout-mode';
 
