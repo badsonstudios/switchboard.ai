@@ -3,6 +3,52 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ TRAIN #641 MERGED + v0.8.1 CUT — 2026-08-20 evening (Dan authorized)
+>
+> **All 12 user-facing PRs are on main** (merge commit `7e6158e`): #576 #578
+> #584 #586 #599 #605 #602 #580 #610 #579 #624 #629 — every member PR flipped
+> to merged, all 12 issues closed, 13 branches deleted. Conflicts resolved in
+> one sitting (10× dogfood tracker, EventsPanel #556×#539, SessionGrid
+> #546×#494); CHANGELOG consolidated; local gate 5602 unit + 344 e2e green.
+>
+> **The train caught a real bug no member PR could see:** CI's windows e2e
+> failed twice on `focus-policy.spec.ts:195` — root cause was the rail
+> context menu drawing at the raw pointer with NO viewport clamping; #559's
+> new "Order in this group" section (+72px) pushed the menu 7px past the
+> 655px runner client area, making the bottom items unreachable — true on
+> any short window, not just CI. Fixed at the product layer
+> (`lib/menu-placement.ts`: flip/clamp/self-scroll; regression e2e pinned at
+> the app's 600px minimum). Filed **#642** (audit other pointer-anchored
+> fixed-position surfaces + the RTL clientX/insetInlineStart oddity).
+>
+> **v0.8.1 cut** per the CHANGELOG procedure (version + lock + dated section
+> + fresh `0.8.2 — unreleased` opened; release-notes test 46/46). Tag pushed;
+> release.yml publishes the GitHub release.
+>
+> **Still in flight:** #628 (eslint T0) — rebase worker merging the train
+> into the branch in sb-wt-3, re-gating; orchestrator squash-merges on green.
+> Next dispatches: **#621** (stale "N need you" counters — owner bug), then
+> #440, #567, and the newly unparked follow-up queue; **#640** (turn-divider
+> visibility, owner report) queues with them.
+>
+> **Orchestrator incident, logged for honesty:** the first attempt at this
+> release cut ran in sb-wt-3 (the T0 worker's worktree) because the shell's
+> working directory persisted from branch prep — staged a version bump into
+> an active worker's tree. Caught before it entered history; the worker
+> cleared it; the cut was redone in the main checkout. Rule reaffirmed: every
+> main-checkout command starts with an absolute `cd`.
+>
+> `train/2026-08-20` built in the main checkout: all 12 PRs merged (10 tracker
+> conflicts auto-resolved keeping main's updated rows + each branch's new
+> rows; EventsPanel #556×#539 both-props resolution; SessionGrid #546×#494
+> drafts-prune + willBePruned integration, predicate verified equivalent-and-
+> wider; CHANGELOG consolidated to one group each, release-notes test 46/46).
+> Gate so far: lint clean, typecheck clean ×3, unit **221 files / 5602
+> passed**. Full e2e running under the machine lock (owner: train). Next:
+> push → one CI run → merge-commit → delete branches → merge parked #628 →
+> cut 0.8.1 → dispatch #621. New owner report noted mid-run: **#640** (turn
+> divider too subtle) — queue with #621-era dispatches.
+>
 > # 🏁 ORCHESTRATION RUN COMPLETE — 2026-08-20 (started ~09:30, ended ~15:45)
 >
 > **Every dispatched item landed.** 5 issues closed by merge (#488, #616,

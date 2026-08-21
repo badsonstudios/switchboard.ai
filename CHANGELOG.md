@@ -59,7 +59,9 @@ on the floor, and say so in your PR.
 
 ---
 
-## 0.8.1 — unreleased
+## 0.8.2 — unreleased
+
+## 0.8.1 — 2026-08-20
 
 ### Added
 
