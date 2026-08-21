@@ -287,6 +287,15 @@ const FILLED_RULES: Array<[string, number]> = [
   // the list for the same reason: a warning nobody can read is a warning that
   // did not arrive.
   ['.service-health-banner', 4.5],
+  // The conversation's turn boundary (#640). Not a warning — the opposite, a
+  // piece of permanent furniture — but it is on this list because it is the
+  // first divider in the app that makes a PROMINENCE claim, and the way that
+  // claim dies is silently: swap the ink back for `--border` and the rule is
+  // 1.30:1 on nordic again, which is the defect #640 was filed over rather than
+  // a subtler take on it. AA rather than 1.4.11's 3:1 because the caption is
+  // real text (9px), and the rule itself is `currentColor`, so this one number
+  // covers both halves of the divider.
+  ['.turn-divider', 4.5],
 ];
 
 /**

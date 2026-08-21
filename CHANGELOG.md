@@ -61,6 +61,18 @@ on the floor, and say so in your PR.
 
 ## 0.8.2 — unreleased
 
+### Changed
+
+- **You can see where each of your prompts starts.** The conversation already
+  drew a line above every prompt you sent, but it was a one-pixel hairline in
+  the same grey as everything else — scrolling back through a long session, it
+  was easier to lose your place than to find it. That line is now a proper
+  break: a full-width rule, a **NEW PROMPT** caption under it, and a real gap
+  above, so the turns in a session are something you can scan for rather than
+  read for. It stays deliberately colourless in all four themes — a turn
+  boundary is part of the furniture, and the colours are reserved for sessions
+  that actually want something from you.
+
 ## 0.8.1 — 2026-08-20
 
 ### Added

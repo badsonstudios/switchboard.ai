@@ -327,6 +327,56 @@ body {
   white-space: nowrap;
 }
 
+/* ---- Turn boundary in the conversation (#640, §5.10) -----------------------
+ * A new user prompt starts a new turn, and this is the rule that says so.
+ *
+ * It was a 1px `--border` hairline with 8px of air either side. That pair
+ * measures 1.30:1 on nordic and 1.31:1 on daylight against the surface the feed
+ * paints on — a line you cannot navigate a long session by, which is the
+ * complaint #640 was filed over ("really show it").
+ *
+ * THREE CUES, NOT ONE, because a busy conversation is already full of bordered
+ * tool boxes and diff panes: one more line does not break through that texture.
+ * A full-bleed 2px rule, a caption in the same ink, and roughly triple the
+ * vertical air. The whitespace is doing as much work as the line is.
+ *
+ * NEUTRAL ON PURPOSE. A turn boundary is static structure, not an alarm, and
+ * #640 asks for a boundary rather than a wall: spending a status hue on it
+ * would put permanent colour exactly where the eye is trained to look for "this
+ * session wants you" (#528's signal system), and this appears on EVERY turn,
+ * where the working strip appears on one. A §5.11 identity accent is out for a
+ * second reason — #269 measured the eight accents at 1.80-3.11:1 on daylight,
+ * so a rule painted in one would be the prominent divider that fails contrast
+ * on one theme, i.e. a regression rather than a win.
+ *
+ * `--muted` is the app's SECONDARY INK and the only neutral that clears AA on
+ * the feed's surface in all four themes: 5.20:1 nordic, 6.00:1 daylight,
+ * 15.57:1 high contrast, 8.76:1 soft contrast. The two obvious alternatives do
+ * not — `--border` is a hairline value (1.30:1) and `--group-frame`, the app's
+ * "make the split obvious" edge, lands at 2.91:1 on nordic, under 1.4.11's 3:1.
+ *
+ * THE LOOK LIVES HERE rather than inline for the #206 reason: the pair carries
+ * a contrast promise and tokens.drift.test.ts has to be able to read it. The
+ * LINE is `currentColor` so the caption's measured ink is the rule's ink too —
+ * a second value there could drift away from the one the test checks.
+ * `background` names `--panel` because that is what `--card-bg` resolves to,
+ * i.e. what the feed really paints on; move the conversation onto another
+ * surface and this declaration has to move with it, or the promise measures a
+ * fiction. */
+.turn-divider {
+  color: var(--muted);
+  background: var(--panel);
+  border-block-start: 2px solid currentColor;
+  margin-block: 22px 8px;
+  padding-block-start: 5px;
+  padding-inline: 8px;
+  font-family: var(--font-ui);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
 /* Feed view markdown blocks (P2-E12-06, §5.10) — vars only, theme-safe */
 .feed-md {
   color: var(--text);
