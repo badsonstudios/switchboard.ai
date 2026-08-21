@@ -21,7 +21,7 @@
 > **Active workers (wave 2, dispatched ~10:15):**
 > | Issue | Worktree | Branch | Status |
 > |---|---|---|---|
-> | #650 value-channel refusals | sb-wt-1 | feature/650-value-channel-refusals | dispatched |
+> | #650 value-channel refusals | sb-wt-1 | DONE — PR #676 (internal), CI running, needs base-bump after #672 |
 > | #544 shared directory watches | sb-wt-2 | feature/544-shared-dir-watches | dispatched ~10:25 |
 > | #666+#667+#668 fake-fidelity bundle | sb-wt-3 | feature/666-fake-replay-fidelity | dispatched ~10:25 |
 >
@@ -33,8 +33,17 @@
 > aria-modal; gates 5798 unit / 349+3sk e2e / 4 mutation runs red). #672 merges
 > after #665 (serial base-bumps; repo has NO auto-merge — manual on green).
 >
-> **Merge queue:** PR #672 (#654, internal) — base-bumped, merge manually on
-> green (repo has NO auto-merge). MERGED so far: #669 (da0aa78), #665 (010b5de
+> **Merge queue (serial):** 1) PR #672 (#654, internal) — bumped, e2e legs
+> finishing. 2) PR #676 (#650, internal) — after #672: bump, re-green, merge.
+> **#650 outcome:** story = answered() at the boundary + per-site judgement
+> fallback (typed union REJECTED in writing in refusal.ts + extensibility.md);
+> 48 sites / 41 answered() calls / 8 files, list regenerated + preserved in
+> handoff; scanner grew valuePositionOf() + 3 see-through modes, mutation-proved
+> 49/55 with the 6 blind seams documented (5 newly unit-tested). Headline save:
+> layout-restore refusal degrades knownCards to null NOT [] — [] would have
+> mass-pruned every pin/policy/layout. Gates: 5799 unit, 349+3sk e2e, scanner
+> clean. Filed: #677 (applyPushAnswer unpinned), #678 (null-vs-[] prune guard
+> decision + pin). Handoff: orchestrator/650.md. MERGED so far: #669 (da0aa78), #665 (010b5de
 > — its re-run CI doubled as the union check of the collapsed eslint config x
 > new provider code: green).
 > **Dan's queue (user-facing, do NOT merge):** PR #674 (#471 main-process i18n)
