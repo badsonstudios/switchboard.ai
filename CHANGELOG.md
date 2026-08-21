@@ -61,6 +61,25 @@ on the floor, and say so in your PR.
 
 ## 0.8.2 — unreleased
 
+### Changed
+
+- **A reply can no longer put a media player in your conversation.** Raw HTML in
+  a Markdown file or an assistant reply could contain `<video>` or `<audio>`,
+  and rendered it drew a real player: something that starts fetching as soon as
+  it appears, can play on its own, lands under your Tab key, and carries a
+  right-click menu with *Download* on it. The document viewer already replaced
+  those with a small "media isn't shown here" chip; the session feed had no such
+  step, and neither did the release-notes pane you are reading this in. They are
+  now removed for every one of those places at once, along with clickable
+  regions drawn over a picture and one tag (`<dialog>`) that hid whatever was
+  put inside it. Ordinary pictures are untouched. Two consequences worth naming:
+  the viewer's "media isn't shown here" chip no longer appears, because there is
+  no longer an element left for it to replace, and whatever was written inside
+  the `<video>` or `<audio>` tag as a fallback — a line of text, or a download
+  link — goes with the tag. Measured before deciding — across
+  7,602 recorded transcripts and 1,182 real Markdown files, not one of them used
+  any of these tags outside a code block. (#625)
+
 ### Internal
 
 - **A refused IPC call can no longer be mistaken for a yes.** The broker answers

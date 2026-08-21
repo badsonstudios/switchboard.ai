@@ -282,6 +282,21 @@ export function decorateImages(root: ParentNode, labels: DecorationLabels): void
  * profile, and a `src` on any of them is a request the moment the node reaches
  * the page. There is no v1 story for playing media inside a document, so there
  * is nothing to weigh against deleting them.
+ *
+ * THAT FIRST SENTENCE IS NO LONGER TRUE OF THIS PIPELINE (#625). `audio`,
+ * `video`, `source`, `track` and `picture` are in `SANITIZE_CONFIG.FORBID_TAGS`
+ * now, and `iframe`, `embed` and `object` were never in the html profile at all
+ * — so nothing this function looks for can reach it from `renderMarkdown`, and
+ * the chip below fires on nothing the viewer opens. It was settled at the
+ * profile because a pass here would have closed the VIEWER and left the feed and
+ * the update dialog (which has no decoration pass at all) open; the argument is
+ * written out in `markdown.tsx`'s seventh block.
+ *
+ * IT STAYS ANYWAY, and not out of sentiment: same status as the `style` line in
+ * `decoration-guard.ts` — belt-and-braces for HTML that reaches a decoration
+ * pass from anywhere but `renderMarkdown`, which is a thing this codebase has
+ * had before. `document-render.test.ts` therefore calls it DIRECTLY with raw
+ * markup, so deleting it still reds; a pipeline-level test would not notice.
  */
 export function stripMedia(root: ParentNode, labels: DecorationLabels): void {
   for (const el of [...root.querySelectorAll('video, audio, iframe, embed, object')]) {

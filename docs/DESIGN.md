@@ -2111,6 +2111,37 @@ a pointer where they left.)*
   > viewer is the exception that can promise more, because `decorateLinks`
   > takes `href` off every link and writes the affordance back itself.
   >
+  > **#625 (2026-08-20) closes the last two stops CONTENT could plant.** It
+  > does *not* upgrade "content cannot plant a control" to "every stop in
+  > rendered content is a link or a disclosure or ours" — that stronger sentence
+  > was written on this branch and struck out in review, for the third time in
+  > this family (see the end of this note). #612 wrote its version while two
+  > content-planted stops were still open, and said so in its own
+  > comment: `<audio controls>` / `<video controls>` are focusable media (a tab
+  > stop, a context menu and a Download item), and an `<area href>` inside a
+  > `<map>` is a hot spot on a rendered image. The document viewer chipped both
+  > in a decoration pass; the SESSION FEED had no media pass at all, and the
+  > update dialog — which renders release notes fetched from GitHub through the
+  > same `<Markdown>` — has no decoration pass of any kind. So the media tags
+  > joined `FORBID_TAGS` at the profile rather than getting a pass per surface:
+  > the profile is the layer that does not depend on a surface remembering.
+  > Measured first, the way this family always is — 7,602 transcripts and 1,182
+  > real `.md` files on the author's machine, and not one bare-in-prose use of
+  > any tag in the family. `<img>` stays, because markdown emits one for every
+  > `![alt](src)`.
+  >
+  > **What is provable after #625, and what is not.** Provable, and pinned by a
+  > test: *no element the sanitizer profile still admits is focusable by default
+  > except `<a href>` and `<summary>`.* Not provable, and the reason the stronger
+  > sentence was struck: focus is not only a tag property. Chromium makes an
+  > overflowing scroll container keyboard-focusable (127+), and `.feed-md pre` is
+  > `overflow-x: auto` — so a code fence with a line wider than the pane IS a tab
+  > stop, and the CONTENT decides whether it overflows. Verified in Chromium 149
+  > on this branch. That stop is not suppressed, deliberately: it is the same
+  > reachability rule the viewer applies on purpose to wide tables. The budget
+  > note therefore stands as written — this is a property of chrome, and rendered
+  > content adds stops the app did not budget for.
+  >
   > **A fifth rule, added by #253 (2026-08-05):** *a drag is never the only way
   > to do something.* The sweep above made every CONTROL reachable and left one
   > INTERACTION that wasn't — a session's group could only be changed by
