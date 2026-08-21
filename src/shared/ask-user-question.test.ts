@@ -10,6 +10,7 @@ import { describe, it, expect } from 'vitest';
 import {
   allAnswered,
   answeredInput,
+  anyAnswered,
   AskQuestion,
   buildAnswers,
   emptySelections,
@@ -183,7 +184,7 @@ describe('what counts as answered', () => {
     expect(questionAnswered({ labels: [], other: true, otherText: 'x' })).toBe(true);
   });
 
-  it('requires EVERY question, because a partial answers map is unmeasured', () => {
+  it('allAnswered requires EVERY question — it describes a COMPLETE answer', () => {
     expect(
       allAnswered([
         { labels: ['Red'], other: false, otherText: '' },
@@ -200,6 +201,84 @@ describe('what counts as answered', () => {
 
   it('is false for no questions at all', () => {
     expect(allAnswered([])).toBe(false);
+    expect(anyAnswered([])).toBe(false);
+  });
+});
+
+// ── #567: a partial answer is a real answer, and one is the floor ────────────
+describe('what counts as SENDABLE (#567)', () => {
+  // The probe measured it (findings §3a): a partial `answers` map comes back
+  // with the same success tool_result as a complete one, and the CLI reads the
+  // omitted question as SKIPPED. So the gate is one, not all.
+  const answeredSel = { labels: ['Red'], other: false, otherText: '' };
+  const blankSel = { labels: [] as string[], other: false, otherText: '' };
+
+  it('one answer out of two is sendable, and is NOT complete', () => {
+    expect(anyAnswered([answeredSel, blankSel])).toBe(true);
+    expect(allAnswered([answeredSel, blankSel])).toBe(false);
+  });
+
+  it('is false while nothing at all is answered — zero entries is unmeasured', () => {
+    // `empty` in the probe sent no `answers` key and got "The user did not
+    // answer the questions."; an `answers` key holding zero entries was never
+    // sent at all. One answer is the smallest map with evidence behind it.
+    expect(anyAnswered([blankSel, blankSel])).toBe(false);
+  });
+
+  it('a ticked Other with nothing typed still does not make it sendable', () => {
+    expect(anyAnswered([{ labels: [], other: true, otherText: '   ' }, blankSel])).toBe(false);
+    expect(anyAnswered([{ labels: [], other: true, otherText: 'teal' }, blankSel])).toBe(true);
+  });
+});
+
+describe('the partial payload shape (#567)', () => {
+  // THE DISTINCTION THAT IS THE WHOLE PROBE. The unanswered question's key is
+  // ABSENT, not present-and-empty. The CLI happens to filter `""` out of the
+  // map before writing its tool_result — `partial` and `blank` produced
+  // byte-identical results — but omission is the shape that was measured and
+  // the one that cannot be misread if that filtering ever changes.
+  it('omits the unanswered question rather than sending it as an empty string', () => {
+    const questions = parseAskUserQuestion(REAL_INPUT)!;
+    const sel = [
+      toggleOption(questions[0], emptySelections(questions)[0], 'Red'),
+      { labels: [], other: false, otherText: '' },
+    ];
+
+    const answers = buildAnswers(questions, sel);
+    expect(answers).toEqual({ 'Which colour do you prefer?': 'Red' });
+    // the key is not there AT ALL — `toEqual` alone would pass on `{q2: ''}`
+    // in some shapes, and this is the one assertion the probe exists for
+    expect('Which of these languages do you use?' in answers).toBe(false);
+    expect(Object.keys(answers)).toEqual(['Which colour do you prefer?']);
+    expect(Object.values(answers).every((v) => v.length > 0)).toBe(true);
+  });
+
+  it('is the same map the probe sent in `partial` mode, on updatedInput', () => {
+    // `spike/findings/artifacts/s11/ask-user-question-partial.json` — Q1 "Red",
+    // Q2's key absent entirely, accepted with `result.subtype: "success"`.
+    const questions = parseAskUserQuestion(REAL_INPUT)!;
+    const sel = [
+      toggleOption(questions[0], emptySelections(questions)[0], 'Red'),
+      { labels: [], other: false, otherText: '' },
+    ];
+
+    const out = answeredInput(REAL_INPUT, questions, sel);
+    // the questions still travel back verbatim — a partial ANSWER is not a
+    // partial input, and the CLI is told what it asked either way
+    expect(out.questions).toEqual(REAL_INPUT.questions);
+    expect(out.answers).toEqual({ 'Which colour do you prefer?': 'Red' });
+  });
+
+  it('answers a multi-select question alone, leaving the pick-one out', () => {
+    // the other way round, so nothing here is accidentally about ORDER
+    const questions = parseAskUserQuestion(REAL_INPUT)!;
+    let sel = emptySelections(questions);
+    sel = [sel[0], toggleOption(questions[1], sel[1], 'Rust')];
+    sel = [sel[0], toggleOption(questions[1], sel[1], 'Go')];
+
+    expect(buildAnswers(questions, sel)).toEqual({
+      'Which of these languages do you use?': 'Rust, Go',
+    });
   });
 });
 

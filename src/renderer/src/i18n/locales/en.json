@@ -266,7 +266,8 @@
   "question": {
     "title": "Claude is asking you a question",
     "submit": "Send answer",
-    "submitHint": "Answer every question first",
+    "submitHint": "Answer at least one question first",
+    "submitPartialHint": "Sends the answers you've given; the rest go back marked as skipped",
     "dismiss": "Don't answer",
     "other": "Other",
     "otherPlaceholder": "Type your own answer…",
@@ -275,7 +276,10 @@
     "tabFallback": "Question {n}",
     "tabAnswered": "{label} — answered",
     "tabUnanswered": "{label} — not answered yet",
-    "stillToAnswer": "Still to answer: {headers}"
+    "tabSkipped": "{label} — not answered, will be sent as skipped",
+    "stillToAnswer": "Still to answer: {headers}",
+    "willSkip": "Sending now skips: {headers}",
+    "willSkipThis": "Not answered — will be sent as skipped"
   },
   "batchApproval": {
     "title": "{count, plural, one {# session wants} other {# sessions want}} to run {tool}",

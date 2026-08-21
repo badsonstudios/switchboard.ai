@@ -62,17 +62,42 @@ across the top of the panel** — one question on screen at a time, with a tab f
 each. The tab's name is Claude's own short label for that question ("Colour",
 "Approach"), so you can see everything it asked without answering anything yet.
 
-**Send answer** stays greyed out until every question has an answer, and the
-panel makes sure you can always tell which one is holding it up:
+**Send answer** lights up as soon as **one** question has an answer — you do not
+have to answer all of them. The panel makes sure you can always tell what state
+you are in:
 
 - **Each tab shows its own state.** A tick (✓) means that question is answered;
   an empty ring (○) means it isn't. It's the shape that tells you, not just the
   colour.
-- **The panel says it in words too.** While **Send answer** is greyed out you'll
-  see *"Still to answer: Languages"* next to it, naming the questions that are
-  still empty. No hunting through tabs to find the one you missed.
+- **The panel says it in words too.** A line beside the button names the
+  questions that are still empty — *"Still to answer: Languages"* while the
+  button is greyed out, and *"Sending now skips: Languages"* once it isn't. No
+  hunting through tabs to find the one you missed.
 - **It opens where the work is.** The panel starts on the first unanswered
   question — including when you come back to it after looking at something else.
+
+### Answering only some of the questions
+
+You can send an answer with questions still blank. It is a normal thing to do —
+"I have an opinion about the first one and none about the second" — and Claude
+handles it properly: the questions you left alone are reported to it as
+**skipped**, not as answered with silence. In practice Claude notices the gap
+and usually offers to ask that one again.
+
+Because that's easy to do by accident with a question hidden behind a tab, the
+panel makes the skipping obvious *before* you send:
+
+- the tab of any unanswered question goes **dashed and struck through**, and
+  reads *"Languages — not answered, will be sent as skipped"* to a screen reader;
+- the question itself, when you're looking at it, says **"Not answered — will be
+  sent as skipped"** where its tick would go;
+- the line beside the button changes to **"Sending now skips: Languages"**, and
+  hovering **Send answer** says the same thing.
+
+Nothing asks you to confirm and nothing nags — skipping a question is a real
+answer. The panel's only job is to make sure you can see what you are choosing
+not to say. (You do have to answer at least one; sending a completely blank
+answer is what **Don't answer** is for.)
 
 A single question — which is what you'll usually get — has no tabs at all. It
 looks exactly as it always did.

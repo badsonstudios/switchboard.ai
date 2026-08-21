@@ -61,6 +61,24 @@ on the floor, and say so in your PR.
 
 ## 0.8.2 — unreleased
 
+### Changed
+
+- **You can now answer just some of Claude's questions.** When Claude asks
+  several things at once, **Send answer** used to stay greyed out until every
+  one of them had an answer — so "I have an opinion about the first, none about
+  the second" meant inventing something to say. It now lights up as soon as one
+  question is answered, and the ones you leave blank go back to Claude marked as
+  **skipped** rather than as answered with nothing. Claude generally notices and
+  offers to ask that one again.
+
+  Because a question can be hidden behind a tab, the panel shows what you are
+  about to leave out before you send it: the unanswered tab goes dashed and
+  struck through, the question itself says *"Not answered — will be sent as
+  skipped"*, and the line beside the button changes from *"Still to answer:
+  Languages"* to *"Sending now skips: Languages"*. Nothing asks you to confirm —
+  skipping is a real answer, and this only makes it a visible one. Sending a
+  completely blank answer is still what **Don't answer** is for.
+
 ## 0.8.1 — 2026-08-20
 
 ### Added
