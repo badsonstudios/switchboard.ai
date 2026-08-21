@@ -3916,7 +3916,9 @@ describe('pty:snapshot hands find the buffer that actually has the answer (#517)
 
   it('refuses a non-string id rather than reaching into the map with it', () => {
     const h = harness(undefined, folder);
-    expect(h.call('pty:snapshot', 42 as unknown as string)).toBeNull();
+    // 42 is passed bare on purpose: harness.call takes ...unknown[], so a cast
+    // to string would be a no-op the type-checked preset rejects (#255 T0).
+    expect(h.call('pty:snapshot', 42)).toBeNull();
     expect(h.warn).toHaveBeenCalledWith(
       expect.stringContaining('pty:snapshot refused'),
       expect.anything()
