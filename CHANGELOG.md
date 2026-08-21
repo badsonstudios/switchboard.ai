@@ -61,6 +61,18 @@ on the floor, and say so in your PR.
 
 ## 0.8.3 — unreleased
 
+### Added
+
+- **A pinned session no longer scrolls out of the Sessions list.** Once you have
+  more sessions than fit, the list scrolls — and until now a pinned session slid
+  away with everything else, which is the opposite of what pinning is for. It now
+  stays parked at the top while the rest scroll underneath it. Two pins park as a
+  pair, in their own order. If you use groups, a pinned session stays put while
+  its group card is on screen; scroll past the whole group and it goes with it,
+  because pinning promotes a session inside its group rather than lifting it out.
+  Tabbing through the list can no longer land on a row hidden behind the pinned
+  ones (#295).
+
 ### Changed
 
 - **A reply or a document can no longer put a name on one of switchboard.ai's
@@ -78,7 +90,26 @@ on the floor, and say so in your PR.
   command palette stopped giving their controls fixed, predictable internal
   names, so there is less for content to aim at even if a label got through.
 
+### Fixed
+
+- **A card that says "Session didn't start" now has a header like every other
+  card.** It was the last card state that drew none at all, so it was the one
+  card on screen with no name on it, nothing to double-click, and no clue which
+  session it belonged to once you had two of them up. It now carries what a
+  suspended card's header carries: the session's name, its colour and badge, and
+  the words *not started*. (A session that ran and then ended or crashed keeps
+  the header it already had; this was only ever about the one that never got
+  going.) Nothing about it restarts the session — **Try again** is still the only
+  thing that does (#606).
+
 ### Internal
+
+- The identity chip's own documentation claimed to be "the one way a session's
+  identity renders", and the Sessions list has never used it — by design, not by
+  neglect: the approved rail design rules out a per-session icon and makes the
+  coloured left edge bar the identity mark there. The claim was withdrawn rather
+  than enforced, so the next reader does not go and "finish" an adoption the
+  design forbids. No visible change (#337).
 
 - A refused IPC call can no longer crash the part of the app that asked. The
   broker answers a capability-denied call with a marker object rather than an

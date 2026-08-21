@@ -1,13 +1,50 @@
-// Identity chip (P1-E3-03, §5.11): the ONE way a session's identity renders,
-// so seven sessions read identically everywhere. Accent survives theme switches
-// by design.
+// Identity chip (P1-E3-03, §5.11) — the DOT+NAME+BADGE composition, and the
+// home of the badge's look. NOT "the one way a session's identity renders":
+// that claim was false on the surface it named, and #337 is it being withdrawn
+// rather than enforced.
 //
-// "used verbatim in the rail rows and the card tab header" is what this line
-// used to claim and it was never true of the rail: `SessionsRail` hand-rolls its
-// own row (#337 is the held issue for folding it back in). Today the chip has
-// exactly ONE consumer, the card's dockview tab (SessionGrid's `IdentityTab`) —
-// and, since #269, one exported piece: `identityBadgeStyle`, which the card
-// HEADER uses so the badge really is one look in both places.
+// WHAT THIS FILE IS, EXACTLY:
+//
+//   • `IdentityChip` — one composition of §5.11's identity, with exactly one
+//     consumer today: the card's dockview tab (SessionGrid's `IdentityTab`,
+//     wired by #312).
+//   • `identityBadgeStyle` — the badge's LOOK, and the piece that genuinely IS
+//     shared: the chip and the card HEADER both paint through it, which is what
+//     #269 made true and what §5.11's "renders identically everywhere" buys on
+//     this surface. Add a third badge site and it paints through here too.
+//
+// ── WHY THE RAIL DOES NOT USE THIS, AND WHY THAT IS NOT A BUG (#337) ────────
+//
+// The header used to claim the chip was "used verbatim in the rail rows"; that
+// was corrected to "the rail hand-rolls its own row (#337 is the held issue for
+// folding it back in)", which still framed the rail as the surface that had not
+// caught up yet. It is not. The rail's appearance is a separately APPROVED,
+// high-fidelity design (`design_handoff_sessions_rail/README.md`, "The chosen
+// direction: no session icon"), and it rules this composition out in as many
+// words:
+//
+//   "Sessions deliberately have no icon or avatar. Earlier rounds tried folder
+//    icons, language glyphs, monograms, provider marks, geometric shapes,
+//    channel numbers and identicons; all were rejected as noise. The colored
+//    left edge bar IS the identity mark, which means every session name starts
+//    at one flush left margin and the name itself becomes the thing you scan.
+//    Do not reintroduce a per-session icon."
+//
+// ...and, of the accents: "Used only for the left edge bar and the selected-row
+// tint." A chip in a rail row is a dot plus a badge in front of the name — the
+// two things that sentence forbids and the indent it exists to prevent. So the
+// rail renders the SAME identity (same accent, same title, same fallback) in a
+// different SHAPE, on purpose. §5.11 asks an identity to be recognisable on
+// every surface, not to be the same widget on every surface; the promise that
+// has to hold literally is the one about a single badge look, and that one is
+// `identityBadgeStyle` and is enforced by tests.
+//
+// KNOWN DIVERGENCE, reported not silently patched: §5.11's accent bullet still
+// says the accent is "applied to card border, sidebar DOT, feed entries, toast
+// edge". The rail has drawn an edge bar rather than a dot since its 2026-07-26
+// redesign, and the handoff quoted above is the later and more specific
+// artifact — but only Dan can amend §5.11, so the wording is flagged on #337's
+// PR instead of edited here.
 import React from 'react';
 
 /**
