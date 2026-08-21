@@ -42,7 +42,8 @@ on an empty box, leaves the name alone. Right-click for
 [what this session does when you submit a prompt](#changing-it).
 
 A **pinned** session (📌) sorts to the top of the list — of its group, if it is
-in one — and is skipped by everything that acts on sessions in bulk. See
+in one — stays put at the top while the rest of the list scrolls underneath it,
+and is skipped by everything that acts on sessions in bulk. See
 [Pinning a session](02-sessions.md#pinning-a-session-you-always-want-to-find).
 
 Sessions that are suspended or not currently on screen still appear here — the
@@ -323,6 +324,12 @@ colour and badge, and the word *suspended* — so there's something to
 double-click, and `Ctrl+Shift+M` does the same thing from the keyboard.
 Maximizing a suspended session doesn't wake it up: it stays suspended, with its
 **Resume** button, until you press that.
+
+It works on a session that has **ended**, or that never started, for the same
+reason: those cards keep a header too — name, colour and badge, and the word
+*crashed*, *done* or *not started* — so every card in the workspace answers the
+same double-click. Maximizing one doesn't restart it; the **Restart** / **Try
+again** button stays where it was.
 
 ## Getting out of the way by itself
 

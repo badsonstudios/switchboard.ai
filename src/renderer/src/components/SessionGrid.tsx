@@ -177,6 +177,33 @@ export function endedCopy(ended: CardEnded): {
 }
 
 /**
+ * The status pill an ENDED card's header wears (#606).
+ *
+ * Separate from `endedCopy` and not another field on it: that one is the
+ * OVERLAY's words, it is asserted with `toEqual`, and a pill is a different
+ * register — the overlay explains, the pill names the state in one word, the
+ * way every other header does.
+ *
+ * The word comes out of the SAME vocabulary the rail rows, the urgency lamps
+ * and the collapsed rows read (`presentStatus`), so a dead card cannot look
+ * like one state here and another one in the list beside it:
+ *
+ *   • a session that ran and CRASHED  → `crashed`, the ramp's alarm position;
+ *   • a session that closed cleanly   → `done`, which is what it is;
+ *   • a session that NEVER STARTED    → the neutral `idle` position, with its
+ *     own word. It is not "idle" — nothing is sitting there waiting — but the
+ *     ramp has no seventh colour and inventing one would paint a hue the
+ *     contrast tests never measured (#221). The colour says "nothing is
+ *     happening"; the word says which nothing.
+ */
+export function endedPill(ended: CardEnded): { status: string; labelKey: string } {
+  if (ended.kind === 'never-started') return { status: 'idle', labelKey: 'status.notStarted' };
+  return ended.crashed
+    ? { status: 'crashed', labelKey: 'status.crashed' }
+    : { status: 'done', labelKey: 'status.done' };
+}
+
+/**
  * What the card's live region should be SAYING right now — the keys, not the
  * words (#358).
  *
@@ -1871,7 +1898,45 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       ) : ended ? (
         // spawn/resume failed before a terminal existed — still recoverable, and
         // this is the branch a never-started card lands on (#355)
-        <div style={{ ...overlayBackdrop, position: 'relative', flex: 1 }}>{endedOverlay}</div>
+        <div style={cardColumn}>
+          {/* THE ENDED CARD'S HEADER (#606) — the third and last card state
+              that drew no header, and the same gap #216 closed for suspended.
+              Without it §5.8's "double-click a session header toggles maximize"
+              had no target on a card whose session died or never started, while
+              `Ctrl+Shift+M` and the palette command worked on it the whole
+              time. A gesture that works from the keyboard and not from the
+              mouse on one card in three is exactly the kind of exception the
+              manual ends up writing down.
+
+              Deliberately the SAME subset as the suspended header, through the
+              same three module-scope pieces (`cheadStyle`, `cheadName`,
+              `maximizeOnDoubleClick`): identity, the state in a word, and the
+              maximize target — and no controls. Restart/Try again and Close are
+              the overlay's own buttons a couple of centimetres below, and a
+              header copy of them would be a second way to do the same thing on
+              the smallest surface the card has. */}
+          <div
+            data-testid="card-header"
+            title={t('layout.maximizeHint')}
+            onDoubleClick={maximizeOnDoubleClick}
+            style={cheadStyle(headerAccent)}
+          >
+            {headerBadge && (
+              <span data-testid="identity-badge" style={identityBadgeStyle(headerAccent)}>
+                {headerBadge}
+              </span>
+            )}
+            <span data-testid="card-header-name" style={cheadName}>
+              {headerTitle}
+            </span>
+            <span style={{ flex: 1, minInlineSize: 8 }} />
+            <StatusPill
+              status={endedPill(ended).status}
+              label={t(endedPill(ended).labelKey)}
+            />
+          </div>
+          <div style={{ ...overlayBackdrop, position: 'relative', flex: 1 }}>{endedOverlay}</div>
+        </div>
       ) : (
         <span style={{ margin: 'auto' }}>
           {t('grid.resuming', { title: headerTitle })}

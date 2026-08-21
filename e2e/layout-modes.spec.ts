@@ -248,6 +248,47 @@ test.describe('layout modes (E9-07)', () => {
     await expect(strip(w)).toHaveCount(0);
   });
 
+  // #606 — the LAST card state that had nowhere to receive the gesture. A card
+  // whose session died, or never started at all, drew its overlay and no header,
+  // so this is the same defect #216 closed for suspended, one arm over. Driven
+  // through the never-started path because it is the one an everyday gesture
+  // reaches without a real process to kill: a seeded card whose folder is not
+  // there (`sessions:create` answers null, #347/#355).
+  test('an ENDED card takes the same double-click (#606)', async () => {
+    test.slow(); // two sessions and a maximize pair
+    const gone = path.join(tempProjectFolder(), 'a-folder-that-was-deleted');
+    a = await launchApp({ seedFolder: gone });
+    const w = a.window;
+    const dead = path.basename(gone);
+    await expect(w.getByTestId('card-overlay').getByText("Session didn't start")).toBeVisible({
+      timeout: 25_000,
+    });
+    const second = await addSession(a);
+    await expect(tabs(w)).toHaveCount(2);
+
+    // stand in the dead card: its header is the one on screen
+    await row(w, dead).click();
+    await expect(w.locator('.dv-active-tab')).toContainText(dead);
+    const deadHeader = cardHeader(w);
+    await expect(deadHeader).toBeVisible({ timeout: 15_000 });
+    // it wears the card's identity and its own word, not a live session's
+    await expect(deadHeader.getByTestId('card-header-name')).toHaveText(dead);
+    await expect(deadHeader.locator('.status-pill')).toHaveText('not started');
+
+    await deadHeader.dblclick({ position: { x: 4, y: 4 } });
+    await expect(tabs(w)).toHaveCount(1, { timeout: 15_000 });
+    await expect(tabs(w).first()).toContainText(dead);
+    await expect(stripRow(w, second)).toBeVisible();
+    // ...and nothing quietly restarted it: rearranging the workspace is a
+    // request about the WORKSPACE (the same promise #216's case makes)
+    await expect(w.getByTestId('card-overlay').getByText("Session didn't start")).toBeVisible();
+
+    await deadHeader.dblclick({ position: { x: 4, y: 4 } });
+    await expect(tabs(w)).toHaveCount(2, { timeout: 25_000 });
+    await expect(strip(w)).toHaveCount(0);
+    await expect(w.getByTestId('card-overlay').getByText("Session didn't start")).toBeVisible();
+  });
+
   // #216 — the gesture on the one card that used to have nowhere to receive it.
   // A suspended card (restored with the app, or handed back by a popout window
   // closing) drew its overlay and no header at all, so `Ctrl+Shift+M` worked on

@@ -14,6 +14,11 @@
 //     at one flush left margin and the NAME becomes the thing you scan.
 //     Groups DO get a folder icon — the group glyph and the session rows must
 //     read as different kinds of thing.
+//     This is the rule #337 was filed against, and the rule WON: `IdentityChip`
+//     (a dot + a badge in front of the name) is exactly the composition the
+//     handoff forbids here, so the chip's docstring stopped claiming the rail
+//     as a consumer instead of the rail growing a chip. Do not "finish" the
+//     adoption — see IdentityChip.tsx's header for the quoted paragraph.
 //  2. A session that needs you is loud: status-tinted row, 4px status-colored
 //     bar, name at 700, and its sub-label replaced by what it is actually
 //     asking for. Calm sessions stay plain. The contrast is the point.
@@ -341,6 +346,43 @@ export function SessionsRail(props: {
   // document. #197's blocker was a `document.activeElement` read that answered
   // for the wrong window; a container ref makes that class of bug unavailable.
   const navRef = React.useRef<HTMLElement | null>(null);
+  // The scroll container itself (#295) — the one box `keepClearOfPins` may move.
+  const scrollRef = React.useRef<HTMLDivElement | null>(null);
+  /**
+   * #295, decision 4: a row may not be focused UNDERNEATH a stuck pinned block.
+   *
+   * Focusing an element inside a scroll container scrolls it into view, and the
+   * browser's idea of "in view" is the SCROLLPORT — which is exactly where a
+   * `position: sticky` block is parked. So Tab (and `scrollIntoView` from the
+   * palette, and a click that lands mid-scroll) would walk the keyboard into
+   * rows hidden behind the pins: focused, operable, invisible. That is WCAG
+   * 2.4.11's "focus not obscured" and it is created by the sticky block, so it
+   * is fixed here rather than left for the next reader to discover.
+   *
+   * The mechanism is a nudge, not a policy: measure how far the pinned block of
+   * THIS bucket overhangs the newly focused element and give the container that
+   * many pixels back. `scroll-margin-block-start` is the idiomatic CSS answer
+   * and was the first attempt, but it needs the block's height as a length and
+   * that height is a measurement — the same measurement, taken by a
+   * ResizeObserver on every render, to hand back to a stylesheet. Reading it at
+   * the one moment it matters is smaller and cannot go stale.
+   *
+   * Two guards keep it inert where it should be: a target inside the block is
+   * already visible, and a non-positive overhang means nothing was covered.
+   * jsdom has no layout, so every rect is zero and this is a no-op there —
+   * which is why the e2e is the test that means anything.
+   */
+  const keepClearOfPins = (e: React.FocusEvent<HTMLDivElement>): void => {
+    const scroll = scrollRef.current;
+    const target = e.target as HTMLElement;
+    if (!scroll || typeof target.closest !== 'function') return;
+    const block = target
+      .closest('[data-rail-body]')
+      ?.querySelector<HTMLElement>('[data-pinned-block]');
+    if (!block || block.contains(target)) return;
+    const overhang = block.getBoundingClientRect().bottom - target.getBoundingClientRect().top;
+    if (overhang > 0) scroll.scrollTop -= overhang;
+  };
   // #253: what the last keyboard-driven move should say, once it has actually
   // happened. Empty until then — the region itself is always in the DOM.
   const [moveSaid, setMoveSaid] = React.useState('');
@@ -950,6 +992,86 @@ export function SessionsRail(props: {
   };
 
   /**
+   * §5.8's pinning contract, the OVERFLOW clause (#295, deferred from #78):
+   *
+   *   "a pinned session sorts first in the rail, NEVER SCROLLS OUT OF VIEW
+   *    UNDER OVERFLOW, and is exempt from EVERY bulk operation"
+   *
+   * #78/#287 shipped the sort and the exemptions and said plainly that this
+   * clause was the unfinished one (`lib/pinning.ts`, "WHAT IS NOT IMPLEMENTED").
+   * This is it: a bucket's pinned rows are lifted into ONE `position: sticky`
+   * block, so scrolling slides the unpinned rows underneath them instead of
+   * carrying them away.
+   *
+   * ── THE FOUR DECISIONS, and they are all vetoable by taste ───────────────
+   *
+   * 1. STICKY ROWS, NOT A PINNED SHELF. The other structural option was a
+   *    "Pinned" section hoisted above the scroll region. `lib/groups`' own
+   *    `railOrder` already rejected hoisting once, in writing, and the reasons
+   *    still hold: it empties the count on the header the user deliberately
+   *    filed the session under, it fights the stored group order, and rail
+   *    order IS what Ctrl+1..9 counts against. Sticky moves NO session — the
+   *    rows render in the same order, in the same bucket, from the same list.
+   *
+   * 2. STACKING: ONE BLOCK PER BUCKET, not one sticky row each. `sortPinnedFirst`
+   *    guarantees a bucket's pins are a contiguous PREFIX, so they are lifted as
+   *    a prefix (`slice`, not `filter` — a pin that somehow appeared later would
+   *    render as an ordinary row rather than silently reordering the list). Two
+   *    pins in one group therefore park as a pair in their own order; they can
+   *    never overlap each other, and no per-row offset has to be measured.
+   *
+   * 3. THE GROUP HEADER SCROLLS UNDER THE PINS, and is not itself sticky. A
+   *    sticky header would need the pins offset by its measured height, and
+   *    then two groups' worth of sticky furniture would compete for the top of
+   *    a 286px rail. The pin glyph is on the row, so a stuck row is still
+   *    legible as "the one you pinned"; what it loses while its header is off
+   *    screen is its group NAME, which is the honest cost of not moving it.
+   *
+   * 4. KEYBOARD: A ROW MAY NOT BE FOCUSED UNDERNEATH THE BLOCK. See
+   *    `keepClearOfPins` below — the browser scrolls a focused row to the top
+   *    edge of the scrollport, which is exactly where the stuck block is, so
+   *    Tab would otherwise walk into rows nobody can see.
+   *
+   * ── THE LIMIT, stated rather than glossed ────────────────────────────────
+   *
+   * A sticky box cannot leave its containing block. With NO groups — the
+   * default and commonest shape — the loose list IS the whole scroll content,
+   * so a pinned session is visible at every scroll position, full stop. Inside
+   * a GROUP card the guarantee is "while that card is on screen": scroll past
+   * the whole group and its pins go with it. Getting past that means taking the
+   * pin out of its group, which is decision 1 in reverse. Flagged on the PR.
+   */
+  const bucketRows = (
+    members: readonly RailSession[],
+    bucket: string,
+    /** the opaque surface the block paints, so rows slide UNDER it, not through */
+    surface: string
+  ): React.JSX.Element[] => {
+    const cut = members.findIndex((m) => !props.pinned.has(m.id));
+    const pins = cut === -1 ? members : members.slice(0, cut);
+    const rest = cut === -1 ? [] : members.slice(cut);
+    const out = rest.map((m) => sessionRow(m, bucket));
+    if (pins.length === 0) return out;
+    out.unshift(
+      <div
+        key="__pinned"
+        data-pinned-block={bucket}
+        style={{
+          position: 'sticky',
+          insetBlockStart: 0,
+          // a positioned box already paints over the un-positioned header; the
+          // z-index says so on purpose rather than by luck
+          zIndex: 1,
+          background: surface,
+        }}
+      >
+        {pins.map((m) => sessionRow(m, bucket))}
+      </div>
+    );
+    return out;
+  };
+
+  /**
    * A group card. Three kinds share this shape, and telling them apart at a
    * glance is the point (Dan 2026-07-26 round 3: two of his four cards refused
    * drops and it "took a while to figure out" they were automatic):
@@ -1051,7 +1173,13 @@ export function SessionsRail(props: {
           border: '1px solid var(--group-frame)',
           borderRadius: 8,
           marginBlockEnd: 9,
-          overflow: 'hidden',
+          // NO `overflow: hidden` here, and that is load-bearing (#295):
+          // `overflow` other than `visible` makes this box a scroll container,
+          // and a `position: sticky` descendant is measured against its NEAREST
+          // scroll container — so the clip that used to round the header's
+          // corners would have pinned the pinned rows to a box that never
+          // scrolls, i.e. to nothing. The header rounds its own two corners
+          // instead (`.rail-head` below); no other child reaches an edge.
           boxShadow: isDropTarget
             ? `0 0 0 2px ${opts.color}, var(--group-lift)`
             : 'var(--group-lift)',
@@ -1068,6 +1196,10 @@ export function SessionsRail(props: {
               gap: 7,
               padding: '8px 9px 8px 10px',
               background: isAuto ? 'var(--auto-head)' : tint(opts.color, 7),
+              // what the card's `overflow: hidden` used to do for it (#295).
+              // 7px, not 8: the radius of the INSIDE of a 1px border.
+              borderStartStartRadius: 7,
+              borderStartEndRadius: 7,
               borderBlockEnd: '1px solid var(--rail-divider)',
               // --g feeds .rail-group-ink, which darkens the color per theme so
               // the name clears AA on the white card (see tokens.css)
@@ -1339,13 +1471,13 @@ export function SessionsRail(props: {
         {/* Always in the DOM so the header's `aria-controls` always resolves;
             `hidden` (display:none) when collapsed, so nothing is rendered,
             measured or focusable — the members themselves are still skipped. */}
-        <div id={bodyId} hidden={isCollapsed} style={{ padding: 5 }}>
+        <div id={bodyId} data-rail-body hidden={isCollapsed} style={{ padding: 5 }}>
           {isCollapsed ? null : opts.members.length === 0 && opts.showEmpty ? (
             <div style={{ color: 'var(--faint)', fontSize: 10, padding: '4px 8px' }}>
               {t('rail.groupEmpty')}
             </div>
           ) : (
-            opts.members.map((m) => sessionRow(m, opts.key))
+            bucketRows(opts.members, opts.key, isAuto ? 'var(--auto-surface)' : 'var(--rail-card)')
           )}
         </div>
       </div>
@@ -1431,7 +1563,12 @@ export function SessionsRail(props: {
         </button>
       </div>
 
-      <div className="rail-scroll" style={{ flex: 1, overflowY: 'auto', padding: 10 }}>
+      <div
+        className="rail-scroll"
+        ref={scrollRef}
+        onFocus={keepClearOfPins}
+        style={{ flex: 1, overflowY: 'auto', padding: 10 }}
+      >
         {props.groups.map((g) =>
           groupCard({
             key: g.id,
@@ -1467,6 +1604,7 @@ export function SessionsRail(props: {
               (
                 <div
                   key="ungrouped"
+                  data-rail-body
                   style={{
                     background: 'var(--rail-card)',
                     border: '1px solid var(--group-frame)',
@@ -1475,7 +1613,11 @@ export function SessionsRail(props: {
                     padding: 5,
                   }}
                 >
-                  {order.loose.map((m) => sessionRow(m, LOOSE_BUCKET))}
+                  {/* the headerless shape, and the one where #295's guarantee
+                      is unconditional: this box IS the scroll content, so a
+                      sticky pin inside it is on screen at every scroll
+                      position, not only while some card is */}
+                  {bucketRows(order.loose, LOOSE_BUCKET, 'var(--rail-card)')}
                 </div>
               ))}
         {props.groups.length === 0 && props.sessions.length === 0 && (

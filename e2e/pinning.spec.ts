@@ -8,10 +8,12 @@
 // sort, the bulk-close exemption), lib/groups.test.ts (sorts first),
 // lib/ladder.test.ts (never aggregates), lib/presentation-policy.test.ts (never
 // auto-collapses on submit), store/session-store.test.ts (derives + persists).
-// This file owns the three claims those cannot make, which are exactly the
-// item's done-when: a real pin taken with a real gesture STILL SORTS FIRST
-// AFTER RELAUNCH, a real pinned idle session DOES NOT AGGREGATE among real
-// idle ones, and a real bulk close LEAVES IT RUNNING.
+// This file owns the four claims those cannot make: a real pin taken with a
+// real gesture STILL SORTS FIRST AFTER RELAUNCH, a real pinned idle session
+// DOES NOT AGGREGATE among real idle ones, a real bulk close LEAVES IT RUNNING
+// — and (#295) a real OVERFLOWING rail, scrolled to its end, STILL SHOWS IT.
+// That last one is the clause #78 deferred, and it is geometry: it needs a
+// layout engine, a scrollbar and a window, so it exists nowhere but here.
 //
 // Statuses are driven through the REAL hook listener, exactly as
 // idle-collapse.spec.ts does: a spawned session is `starting`, which reads as
@@ -64,6 +66,12 @@ async function addSession(a: LaunchedApp): Promise<string> {
   await expect(row(a.window, name)).toBeVisible({ timeout: 25_000 });
   return name;
 }
+
+/** the rail's scroll container — the box #295's clause is about */
+const railScroll = (w: Page) => rail(w).locator('.rail-scroll');
+
+/** the sticky block a bucket's pinned rows are lifted into (#295) */
+const pinBlock = (w: Page) => rail(w).locator('[data-pinned-block]');
 
 /** how many live sessions the main process is running */
 async function liveCount(w: Page): Promise<number> {
@@ -206,5 +214,80 @@ test.describe('pinning contract (E9-09)', () => {
     await expect.poll(() => said).toContain('pinned');
     await expect(rows(w)).toHaveCount(1);
     expect(await liveCount(w)).toBe(1);
+  });
+
+  // #295 — "never scrolls out of view under overflow", the clause #78 shipped
+  // without and said so. Everything about it is geometry, so there is no unit
+  // test that can be wrong in an interesting way here: the rail has to really
+  // overflow, the scrollbar has to really move, and the row has to really still
+  // be on screen afterwards.
+  test('a pinned session stays on screen when the rail is scrolled past it', async () => {
+    test.slow(); // five sessions, then a real scroll
+    const ws = await workspace(5);
+    a = ws.a;
+    const w = a.window;
+
+    // MAKE IT OVERFLOW, deterministically. Five rows do not fill a 600px-tall
+    // rail, and `minHeight: 600` (main/index.ts) is what stops the window being
+    // shrunk into one — so the minimum is lifted first. This is the OS window,
+    // not product code: nothing test-only is reachable inside the app.
+    await a.app.evaluate(({ BrowserWindow }) => {
+      const win = BrowserWindow.getAllWindows()[0];
+      win.setMinimumSize(600, 260);
+      win.setSize(1000, 260);
+    });
+    // ...and PROVE it overflowed, or everything below is a false green
+    await expect
+      .poll(
+        () => railScroll(w).evaluate((el) => el.scrollHeight - el.clientHeight),
+        { timeout: 15_000 }
+      )
+      .toBeGreaterThan(40);
+
+    // pin the LAST session, so "first" is a real move and the row we watch
+    // would otherwise be the one furthest from the top
+    const target = ws.titles[ws.titles.length - 1];
+    await togglePin(w, target);
+    await expect(row(w, target)).toHaveAttribute('data-pinned', 'true');
+    await expect(pinBlock(w)).toHaveCount(1);
+    // it is the pinned row that was lifted, not some other one
+    await expect(pinBlock(w).locator('[draggable="true"]')).toHaveCount(1);
+    await expect(pinBlock(w)).toContainText(target);
+
+    // scroll to the very end of the rail — the state the clause is about
+    await railScroll(w).evaluate((el) => {
+      el.scrollTop = el.scrollHeight;
+    });
+    await expect
+      .poll(() => railScroll(w).evaluate((el) => el.scrollTop), { timeout: 10_000 })
+      .toBeGreaterThan(20);
+
+    // THE CLAUSE: still visible, and still inside the rail's own box rather
+    // than merely "in the DOM"
+    await expect(row(w, target)).toBeInViewport();
+    const boxes = await railScroll(w).evaluate((el) => {
+      const scroll = el.getBoundingClientRect();
+      const pinned = el.querySelector('[data-pinned-block]')!.getBoundingClientRect();
+      return { scrollTop: scroll.top, scrollBottom: scroll.bottom, pinTop: pinned.top, pinBottom: pinned.bottom };
+    });
+    expect(boxes.pinTop).toBeGreaterThanOrEqual(boxes.scrollTop - 1);
+    expect(boxes.pinBottom).toBeLessThanOrEqual(boxes.scrollBottom + 1);
+
+    // DECISION 4: and the keyboard cannot be walked in behind it. The rail is
+    // scrolled to the bottom, so focusing an EARLY row makes the browser scroll
+    // it to the top edge of the scrollport — which is where the block is parked.
+    const covered = ws.titles.find((tt) => tt !== target)!;
+    await row(w, covered).locator('[data-rail-open]').focus();
+    const after = await railScroll(w).evaluate(() => {
+      const block = document.querySelector('[data-pinned-block]')!.getBoundingClientRect();
+      const focused = (document.activeElement as HTMLElement).getBoundingClientRect();
+      return { blockBottom: block.bottom, focusedTop: focused.top };
+    });
+    expect(after.focusedTop).toBeGreaterThanOrEqual(after.blockBottom - 1);
+
+    // ...and unpinning puts the row back in the flow: the lift is derived from
+    // the pin, not from a block someone forgot to take down
+    await togglePin(w, target);
+    await expect(pinBlock(w)).toHaveCount(0);
   });
 });

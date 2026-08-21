@@ -61,6 +61,18 @@ on the floor, and say so in your PR.
 
 ## 0.8.3 — unreleased
 
+### Added
+
+- **A pinned session no longer scrolls out of the Sessions list.** Once you have
+  more sessions than fit, the list scrolls — and until now a pinned session slid
+  away with everything else, which is the opposite of what pinning is for. It now
+  stays parked at the top while the rest scroll underneath it. Two pins park as a
+  pair, in their own order. If you use groups, a pinned session stays put while
+  its group card is on screen; scroll past the whole group and it goes with it,
+  because pinning promotes a session inside its group rather than lifting it out.
+  Tabbing through the list can no longer land on a row hidden behind the pinned
+  ones (#295).
+
 ### Changed
 
 - **A reply or a document can no longer put a name on one of switchboard.ai's
@@ -78,7 +90,24 @@ on the floor, and say so in your PR.
   command palette stopped giving their controls fixed, predictable internal
   names, so there is less for content to aim at even if a label got through.
 
+### Fixed
+
+- **A card whose session ended, crashed, or never started now keeps its header.**
+  It was the last card state that drew none, so it was the one card you could not
+  double-click to maximize — the keyboard shortcut worked on it the whole time,
+  the mouse gesture had nothing to land on. The header carries the same things a
+  suspended card's does: the session's name, its colour and badge, and one word
+  for what happened (*crashed*, *done*, or *not started*). Maximizing it does not
+  restart anything (#606).
+
 ### Internal
+
+- The identity chip's own documentation claimed to be "the one way a session's
+  identity renders", and the Sessions list has never used it — by design, not by
+  neglect: the approved rail design rules out a per-session icon and makes the
+  coloured left edge bar the identity mark there. The claim was withdrawn rather
+  than enforced, so the next reader does not go and "finish" an adoption the
+  design forbids. No visible change (#337).
 
 - A refused IPC call can no longer crash the part of the app that asked. The
   broker answers a capability-denied call with a marker object rather than an
