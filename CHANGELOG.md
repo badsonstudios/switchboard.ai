@@ -99,6 +99,17 @@ on the floor, and say so in your PR.
   so the window could compare it against a state that cannot happen and quietly
   never match. Every one of them is now a single description both sides read, so
   a mismatch stops the build instead of shipping. No visible change (#618).
+- A Direct-mode session that switchboard.ai has lost track of no longer freezes
+  for five minutes before declining. A permission request is shown on the card
+  that owns the session; if a running session has somehow lost its card — a
+  bookkeeping failure inside switchboard.ai, not something you can do on
+  purpose — the request has nowhere to appear, and it used to sit there
+  unanswered until a five-minute limit expired and told the agent that nobody
+  had replied in time. Nobody was ever asked. Such a request is now declined the
+  moment it arrives, the agent is told plainly that the session was not attached
+  to any window rather than that someone refused it, and the mistake is written
+  to the log where it can be traced. You should never see it; if you do, the log
+  now says which of the "nobody could answer" cases it was (#333).
 
 
 ## 0.8.2 — 2026-08-21

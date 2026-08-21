@@ -129,6 +129,37 @@ export type SendToSession = (sessionId: string, msg: unknown) => boolean;
 export type ApplyStatus = (sessionId: string, ev: SessionEvent) => void;
 
 /**
+ * Is there a surface in the app that could SHOW this session's question? (#333)
+ *
+ * Not the same question as `hasLiveWindow`, and the difference is the whole of
+ * this issue. A window can be wide open and a particular session still be
+ * unreachable: a stream request is pushed as `sessions:permissionRequest`
+ * stamped with the card that owns the live session (`registerSessionIpc`'s
+ * `cardOfLive`), and every mounted card drops what is not its own
+ * (`intakePermission` returns early on `r.cardId !== cardId`). A request whose
+ * session has NO card is therefore stamped `cardId: undefined`, matches no card,
+ * and is shown to nobody — while the router happily holds it, the badge says
+ * `needs-permission`, and the CLI blocks. Before #319 that was for ever; after
+ * it, it was five minutes of silence followed by a decline the user never saw
+ * offered. Neither is an answer.
+ *
+ * An unbound live session is a main-side INVARIANT VIOLATION, not a user
+ * situation: `sessions:create` binds the card in the same synchronous stretch
+ * that spawns the session, and `tearDownLive` unbinds only after
+ * `manager.remove` has already killed the process. So there is no card, no rail
+ * row, no name (§5.11 identity is keyed by card) and no way to reveal it — which
+ * is exactly why the answer is a fast, distinct decline rather than a new
+ * surface. `permission-toast.ts` makes the same argument about the same hazard:
+ * "a toast with an Allow button that says only 'needs permission' asks the user
+ * to grant a tool call they cannot see — which is worse than no toast at all".
+ *
+ * Wired by `registerSessionIpc` (see `setAnswerSurfaceProbe`), which owns the
+ * binding this reads. Absent, this router behaves exactly as it did before
+ * #333.
+ */
+export type AnswerSurfaceProbe = (sessionId: string) => boolean;
+
+/**
  * The fail-open half (#319). Optional, and both default to the hook path's
  * behaviour, so a call site that knows nothing about either is no worse off
  * than it was — but the app wires both, and there is only one app.
@@ -180,6 +211,16 @@ export class StreamPermissions {
    * ever": `offer` re-arms it the moment a live window is seen again (#334).
    */
   private readonly noWindowWarned = new Set<string>();
+  /**
+   * Sessions already reported as having no surface to ask on (#333).
+   *
+   * `noWindowWarned`'s twin, re-armed the same way and for the same reason:
+   * membership means "reported about the state we are IN". A session that
+   * regains a binding re-arms, so a second unbinding is loud again.
+   */
+  private readonly unroutableWarned = new Set<string>();
+  /** see `setAnswerSurfaceProbe` — absent until `registerSessionIpc` wires it */
+  private answerSurface: AnswerSurfaceProbe | null = null;
 
   constructor(
     private readonly send: SendToSession,
@@ -209,19 +250,76 @@ export class StreamPermissions {
   }
 
   /**
+   * Teach this router which live sessions have a surface that can show a
+   * question (#333). See `AnswerSurfaceProbe` for what the question means.
+   *
+   * A SETTER rather than a fourth constructor option, unlike #319's two, and
+   * the ownership is why: the binding this reads is `registerSessionIpc`'s own
+   * `cardOfLive` map, which does not exist until that function runs — and this
+   * router is constructed several hundred lines before it, in `main/index.ts`.
+   * The alternative was a late-bound `let` in `index.ts` (the shape
+   * `cardIdForLive` and `sessionIpcRef` use for the rules engine and the toast),
+   * whose unwired default is `() => null` — i.e. "no card", i.e. DENY
+   * EVERYTHING, for the window between construction and wiring. Nothing can
+   * offer in that window today, but a default that is one refactor away from
+   * denying every gated call in the app is not a default to write down. Unset,
+   * this probe means "hold", which is the pre-#333 behaviour and the safe half.
+   *
+   * `manager.setPermissionHoldSuppressor` is the same shape for the same
+   * reason: a predicate that only its owner can answer, handed over when the
+   * owner exists.
+   */
+  setAnswerSurfaceProbe(probe: AnswerSurfaceProbe): void {
+    this.answerSurface = probe;
+  }
+
+  /**
+   * Could a request for this session be SHOWN to someone? (#333)
+   *
+   * Fails toward HOLDING — no probe, or a probe that throws, means yes — and
+   * that is the opposite of `windowLive` above, deliberately. The asymmetry is
+   * in what each mistake costs. Holding when no window exists parks the CLI with
+   * nothing that can ever answer, so "I can't tell" must resolve to deny.
+   * Holding when we cannot tell whether a card owns the session costs at most
+   * the pre-#333 behaviour — the push still goes out, a card that does own it
+   * still shows it, and the 300s deadline is still underneath — whereas denying
+   * on a hunch takes a question the user COULD have answered off their screen.
+   */
+  private answerable(sessionId: string): boolean {
+    if (!this.answerSurface) return true;
+    try {
+      return this.answerSurface(sessionId) !== false;
+    } catch (err) {
+      this.log.warn('answer-surface probe threw — holding the request anyway', {
+        sessionId,
+        error: String(err),
+      });
+      return true;
+    }
+  }
+
+  /**
    * Offer one `control_request` to the user. Ignores anything that is not
    * `can_use_tool` — `hook_callback` and `mcp_message` ride the same channel
    * and are plumbing, not questions.
    *
-   * Three ways out, in the hook path's order (#319):
+   * Four ways out — the first three in the hook path's order (#319), the fourth
+   * added by #333:
    *
    * 1. **allow-all** — answered here, no hold, no push, no beep;
    * 2. **no live window** — answered here as a DENY, because nobody can;
-   * 3. otherwise it is held, on a deadline.
+   * 3. **no card owns this session** — answered here as a DENY too, with a
+   *    DIFFERENT reason, because the window is fine and this one session's
+   *    question has nowhere to appear;
+   * 4. otherwise it is held, on a deadline.
    *
-   * Order matters and is the same order `HookListener.maybeHold` uses: an
-   * allow-all verdict never needed a renderer, so checking liveness first would
-   * turn allows into denies the moment the user closed the window.
+   * Order matters. 1 before 2 is the same order `HookListener.maybeHold` uses:
+   * an allow-all verdict never needed a renderer, so checking liveness first
+   * would turn allows into denies the moment the user closed the window. 2
+   * before 3 is #333's own choice: they answer the same way, so the only thing
+   * the order decides is WHICH reason the model is told, and "there was no
+   * window open" is the true and useful one when both are so — the missing card
+   * is a consequence of the app going away, not a separate fault to report.
    */
   offer(sessionId: string, msg: Record<string, unknown>): void {
     if (msg.type !== 'control_request') return;
@@ -326,13 +424,56 @@ export class StreamPermissions {
     // session itself ends; a session outlives many windows.
     this.noWindowWarned.delete(sessionId);
 
-    // 3. Held, on a deadline.
+    // 3. There is a window, and this session is not in it (#333).
+    //
+    //    The push below is stamped with the card that owns the live session,
+    //    and every mounted card drops what is not its own. With no card there
+    //    is no stamp, so the request is offered to a room with nobody in it:
+    //    held here, `needs-permission` on a badge nothing renders, and the CLI
+    //    blocked. #319 stopped that being FOR EVER by putting a 300s deadline
+    //    under it — a backstop, and the reason this issue exists. Five minutes
+    //    of silence followed by a decline is not better than a decline; it is
+    //    the same decline with the session wedged first.
+    //
+    //    So: decline it now, and say something DIFFERENT from every other way
+    //    this router can decline, because the user-visible symptom is different
+    //    and the fix is ours, not theirs. See `AnswerSurfaceProbe` for why the
+    //    answer is not "show it somewhere global instead": an unbound live
+    //    session has no card, no rail row and no name, so any surface offering
+    //    Allow for it would be asking the user to grant a tool call they cannot
+    //    see or locate.
+    if (!this.answerable(sessionId)) {
+      // Loud the first time per session, quiet after — `noWindowWarned`'s rule,
+      // because a busy unbound session produces one of these per gated call.
+      // `error` rather than `warn` on that first one: a live session with no
+      // card is a binding this process lost, not a state the user put it in.
+      const first = !this.unroutableWarned.has(sessionId);
+      this.unroutableWarned.add(sessionId);
+      const where = { sessionId, requestId, tool: request.tool };
+      const message = this.unavailable(
+        'This session is not attached to any window in switchboard and had nowhere to show ' +
+          'this request'
+      );
+      this.send(sessionId, controlResponse(nativeRequestId, { behavior: 'deny', message }));
+      // Same reason as the no-window branch: this session is ALIVE and carries
+      // on, so the `permission-held` applied one message ago has to end.
+      this.applyStatus(sessionId, { kind: 'permission-resolved' });
+      const line = 'no card owns this session — denying at once rather than parking it';
+      if (first) this.log.error(line, where);
+      else this.log.debug(line, where);
+      return;
+    }
+    // Bound again — re-arm, exactly as the window gate above does.
+    this.unroutableWarned.delete(sessionId);
+
+    // 4. Held, on a deadline.
     //
     // A QUESTION GETS A LONGER ONE (#563), and the asymmetry is the point. The
     // 300s deadline exists to stop a session wedging when nobody CAN answer —
-    // and that case is already handled two blocks up, where a dead window is
-    // denied outright. What is left is a live window with a person in front of
-    // it, and the two request classes ask very different things of that person:
+    // and both of those cases are already handled above, where a dead window
+    // (#319) and an unbound session (#333) are denied outright. What is left is
+    // a live window with a person in front of it who can see THIS session, and
+    // the two request classes ask very different things of that person:
     // a permission is a glance and a click, a question is "which of these three
     // approaches should I take?" — read the options, think, quite possibly type
     // a paragraph into Other. Five minutes is a plausible amount of time to
@@ -542,6 +683,7 @@ export class StreamPermissions {
     // `HookListener.unregisterSession`.
     this.allowAllSessions.delete(sessionId);
     this.noWindowWarned.delete(sessionId);
+    this.unroutableWarned.delete(sessionId);
     for (const [id, p] of [...this.pending]) {
       if (p.sessionId !== sessionId) continue;
       this.pending.delete(id);
@@ -600,6 +742,15 @@ export class StreamPermissions {
    * and asking again is the way through. And one thing `verdict`'s denial says
    * that this must NOT: that the user decided. The user decided nothing — that
    * is the entire problem being reported.
+   *
+   * `what` is the DISTINCT half, and it is a requirement rather than a flourish
+   * (#333). Three different things can reach here — no window was open (#319),
+   * nobody answered in time (#319), and no card owned the session (#333) — and
+   * they are three different faults with three different fixes. A shared
+   * sentence would leave the model, the log and anyone reading a transcript
+   * unable to tell "you had the app closed" from "switchboard lost track of
+   * this session", which is the difference between something the user did and a
+   * bug worth reporting. Every caller passes a clause nothing else passes.
    */
   private unavailable(what: string): string {
     return (

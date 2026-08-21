@@ -597,6 +597,19 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   // The stream transport's identical half (P2-E18-07). Same events, same
   // shape, same bar: the user is answering the same question, and the renderer
   // must not have to know which channel carried it.
+  // …and the router asks US, before it holds anything, whether that stamp is
+  // going to exist (#333). The line below is the whole of the routing problem:
+  // `cardId` is what every mounted card filters on, so a session with no
+  // binding produces a push nothing can match — held, badged
+  // `needs-permission`, and shown to nobody until the 300s deadline declined it
+  // on the user's behalf. The probe lets the router decline it AT ONCE, with a
+  // reason that says which of the fail-open cases this was.
+  //
+  // Wired here rather than in `main/index.ts` because `cardOfLive` is this
+  // function's own state — see `setAnswerSurfaceProbe` for why a late-bound
+  // `let` in `index.ts` was the wrong shape. `has`, not `get(...) !== undefined`:
+  // the same map, asked the question it is actually being asked.
+  streamPermissions?.setAnswerSurfaceProbe((liveSessionId) => cardOfLive.has(liveSessionId));
   streamPermissions?.onPermissionRequest((r) =>
     send('sessions:permissionRequest', { ...r, cardId: cardOfLive.get(r.sessionId) })
   );
