@@ -13,8 +13,10 @@
 // WHAT WAS MEASURED, before the fix (two groups, A left / B right):
 //
 //   pop A out     -> A's group survives as an invisible 1px HUSK, which is
-//                    dockview's dock-back placeholder (`_doAddPopoutGroup`
-//                    calls `itemToPopout.api.setVisible(false)`)
+//                    dockview's dock-back placeholder. We pop out a PANEL, but
+//                    `_doAddPopoutGroup` re-dispatches a panel that is alone in
+//                    its group as a whole-GROUP popout, and that branch is the
+//                    one that calls `referenceGroup.api.setVisible(false)`
 //   dock A back   -> A joins B's group, ABANDONING its own half of the screen
 //   dock C back   -> C is handed the husk by dockview's window-close path and
 //                    takes that half — a card born in the popout, which never
@@ -235,6 +237,63 @@ test.describe('docking back from a popout (#558)', () => {
     for (const grp of after) {
       expect(grp.width, 'a dead sliver of a group is still in the layout').toBeGreaterThan(40);
     }
+    await expect(w.getByRole('button', { name: 'Resume' })).toHaveCount(0);
+  });
+
+  test('a card still knows its slot after a quit and relaunch', async () => {
+    // THE ONE THING THE OTHER THREE CANNOT SEE. A card's home is a record, and
+    // the app can be quit with the card still out in its window — so the record
+    // has to survive in the ui blob and come back meaning the same thing. It is
+    // also the case a layout RESTORE could quietly break: dockview reopens a
+    // saved popout on a timer, and until that timer fires the restored group
+    // reports itself as a grid group holding the card (#494 measured exactly
+    // that window), which is a plausible-looking grid slot that is not one.
+    //
+    // Driven through the COMPANY branch on purpose — a lone card is handed home
+    // by dockview's own reference and would pass this whatever the record said.
+    skipPopoutOnLinux();
+    test.setTimeout(240_000);
+    const g = await twoGroups();
+    a = g.a;
+
+    await a.window.locator('.dv-tab', { hasText: g.nameA }).first().click();
+    await popButton(a.window, g.nameA, 'Pop out into its own window').click();
+    const popout = await popoutWindow(a);
+    await expect(tabs(popout)).toHaveCount(1, { timeout: 15_000 });
+    const folderC = tempProjectFolder();
+    const nameC = path.basename(folderC);
+    await answerFolderDialog(a, folderC);
+    await popout.getByTestId('card-new-session').click();
+    await expect(tabs(popout)).toHaveCount(2, { timeout: 25_000 });
+    await a.window.waitForTimeout(1_500); // let the layout + the record persist
+
+    const home = a.home;
+    await a.close();
+    a = undefined;
+
+    // relaunch: the popout comes back with BOTH cards in it
+    a = await launchApp({ home });
+    const w = a.window;
+    await expect.poll(() => a!.app.windows().length, { timeout: 25_000 }).toBe(2);
+    const popout2 = a.app.windows().find((pg) => pg !== w)!;
+    await popout2.waitForLoadState('domcontentloaded');
+    await expect(tabs(popout2)).toHaveCount(2, { timeout: 25_000 });
+    await w.waitForTimeout(1_500);
+
+    // ...and A still goes back to ITS half, not into B's tabs
+    await popout2.locator('.dv-tab', { hasText: g.nameA }).first().click();
+    await popout2.getByTitle('Pop back into the main window').click();
+    await expect(tabs(popout2)).toHaveCount(1, { timeout: 25_000 });
+    await w.waitForTimeout(2_000);
+
+    const after = await groups(w);
+    const homeAgain = after.find((grp) => grp.cards.some((c) => c.includes(g.nameA)));
+    expect(homeAgain, `${g.nameA} did not come home`).toBeDefined();
+    expect(
+      homeAgain!.cards.some((c) => c.includes(g.nameB)),
+      `${g.nameA} forgot its slot across the relaunch and joined ${g.nameB}`,
+    ).toBe(false);
+    expect(homeAgain!.cards.some((c) => c.includes(nameC))).toBe(false);
     await expect(w.getByRole('button', { name: 'Resume' })).toHaveCount(0);
   });
 

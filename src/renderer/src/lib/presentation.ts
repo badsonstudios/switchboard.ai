@@ -46,8 +46,19 @@ export interface CardPresentation {
   /** where it was when it was last placed — how a reveal finds its way back */
   readonly slot: SlotRef | null;
   /**
-   * The last GRID slot this card sat in — its home, the place ⤡ brings it back
-   * to (#558).
+   * The last grid slot this card occupied WHILE EXPANDED — its home, the place
+   * ⤡ brings it back to (#558).
+   *
+   * "While expanded" is `captureSlots`' gate, not a separate rule, and it does
+   * leave a gap worth knowing about: a card stacked into the tab group and then
+   * popped out of it docks back to the slot it held before the stack, not to
+   * the stack it visibly left. That is the same reasoning `slot` uses — a
+   * tabbed card is not AT its home — and it is not a regression, since before
+   * this the card went to the first visible group either way.
+   *
+   * Note lib/ladder calls `slot` the card's "home" in prose, meaning the rung
+   * question "is this card at its own slot". This field is the narrower thing:
+   * the slot itself, for one gesture.
    *
    * Not the same question as `slot`, which is "where is it now" and becomes a
    * POPOUT slot the moment the card is torn off. That is right for a reveal

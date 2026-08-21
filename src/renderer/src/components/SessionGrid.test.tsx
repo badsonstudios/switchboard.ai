@@ -17,6 +17,7 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import {
   applyLayout,
+  captureSlots,
   applySubmitPolicy,
   cycleLayoutMode,
   endedCopy,
@@ -483,6 +484,7 @@ describe('overlaySaid', () => {
 interface FakeGroup {
   id: string;
   panels: FakePanel[];
+  element: HTMLElement;
   api: {
     location: { type: string; getWindow?: () => Window | null };
     isVisible: boolean;
@@ -504,6 +506,15 @@ interface GroupSpec {
   win?: Window | null;
   /** a dock-back husk is a grid group that is EMPTY and hidden (#434/#558) */
   hidden?: boolean;
+  /** registered with dockview but in no document — a popout mid-restore (#558) */
+  detached?: boolean;
+}
+
+/** a group's element: in the document (a real slot) or merely created (#558) */
+function makeElement(detached?: boolean): HTMLElement {
+  const el = document.createElement('div');
+  if (!detached) document.body.appendChild(el);
+  return el;
 }
 
 function fakeGrid(): {
@@ -528,6 +539,11 @@ function fakeGrid(): {
     const g: FakeGroup = {
       id: spec.id,
       panels: [],
+      // `captureSlots` asks whether the group is really in a document — a saved
+      // popout is rebuilt as a DETACHED group that claims to be a grid one, so
+      // an element that is merely created is the mid-restore case and one in
+      // the body is a real slot.
+      element: makeElement(spec.detached),
       api: {
         location:
           spec.type === 'popout'
@@ -875,5 +891,60 @@ describe('docking a card back — where it lands (#558)', () => {
     expect(grid.groupOf('session-a')).toBe('g-right'); // the ordinary rules
     expect(movingDuringMove).toBe(true);
     expect(sessionStore.isMoving('a')).toBe(false); // ...and cleared after
+  });
+});
+
+// ── WHAT COUNTS AS A CARD'S HOME (#558) ─────────────────────────────────────
+//
+// `captureSlots` banks two records per card on every layout change: `slot`,
+// which is where it is NOW, and `home`, which is the grid slot ⤡ brings it back
+// to. The difference between them is the whole reason the dock-back can be
+// fixed at all, and both of the rules below were bugs before they were tests —
+// the second one was measured: without it, quitting with a card popped out lost
+// its slot on the next launch.
+describe('captureSlots — what counts as a card’s home (#558)', () => {
+  afterEach(() => sessionStore.forgetPresentation('a'));
+
+  it('banks the grid slot as home, and a popout never overwrites it', () => {
+    const grid = fakeGrid();
+    grid.addGroups({ id: 'g-left' }, { id: 'pop', type: 'popout', win: liveWindow });
+    grid.addPanel('session-a', 'g-left');
+
+    captureSlots(grid.api);
+    expect(sessionStore.getPresentation('a').home).toEqual({
+      groupId: 'g-left',
+      index: 0,
+      location: 'grid',
+    });
+
+    // now it goes out into a window. `slot` follows it — that is how a reveal
+    // finds the monitor again — and `home` must not: a card in another OS
+    // window has not moved house, it has gone out.
+    grid.api.getPanel('session-a')!.api.moveTo({
+      group: grid.api.groups.find((g) => g.id === 'pop')!,
+    });
+    captureSlots(grid.api);
+    expect(sessionStore.getPresentation('a').slot?.location).toBe('popout');
+    expect(sessionStore.getPresentation('a').home?.groupId).toBe('g-left');
+  });
+
+  it('refuses a group that is in no document — the popout mid-restore', () => {
+    // dockview rebuilds a saved popout as an ordinary group and only makes it a
+    // popout ~100ms later, so for that window it is a grid group holding the
+    // card and it is not a slot at all: its OS window does not exist yet.
+    // Writing it would REPLACE the home the blob just restored, and nothing
+    // would put that back — `slot` self-corrects on the next layout change,
+    // `home` is only ever written from the grid.
+    const grid = fakeGrid();
+    grid.addGroups({ id: 'restoring', detached: true });
+    grid.addPanel('session-a', 'restoring');
+    sessionStore.setPresentation('a', {
+      home: { groupId: 'g-real', index: 0, location: 'grid' },
+    });
+
+    captureSlots(grid.api);
+
+    expect(sessionStore.getPresentation('a').home?.groupId).toBe('g-real');
+    expect(sessionStore.getPresentation('a').slot?.groupId).toBe('restoring');
   });
 });
