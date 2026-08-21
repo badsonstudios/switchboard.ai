@@ -61,6 +61,22 @@ on the floor, and say so in your PR.
 
 ## 0.8.2 — unreleased
 
+### Fixed
+
+- **Docking a session back now puts it where it came from.** Pop a session out
+  into its own window and bring it back and it returned to *some* group — often
+  whichever one happened to be on screen — rather than the spot on the grid it
+  left. The spot it left is still there while it is away (that is how it comes
+  back at all), so the session it belonged to went one way and its half of the
+  screen stayed empty. Worse when you start a second session inside the pop-out
+  window (`＋` in the card header): that new session has never had a place on
+  the grid, and when you brought it back it was handed the *first* session's
+  empty spot — so the two swapped places, and the one that owned that half of
+  the screen was the one that lost it. Every card now remembers its own spot and
+  goes back to it, and a session started inside a pop-out comes home where a
+  brand new session would: beside what is already there, never on top of a
+  document you are reading. (#558)
+
 ### Internal
 
 - **A refused IPC call can no longer be mistaken for a yes.** The broker answers

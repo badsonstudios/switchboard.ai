@@ -9,8 +9,13 @@
 //
 // WHAT IS PERSISTED AND WHAT IS NOT is the load-bearing distinction here:
 //
-//   • view, ladder, slot   — persisted. They are the user's arrangement and
+//   • view, ladder, slot,
+//     home                 — persisted. They are the user's arrangement and
 //                            §5.25 says the workspace comes back as it was.
+//                            `home` outlives a relaunch for the same reason it
+//                            exists at all (#558): a card can be popped out
+//                            when the app quits, and the slot it must come back
+//                            to is the one it left BEFORE the window.
 //   • poppedOut, suspended — reflected only. dockview's own layout JSON already
 //                            round-trips popout location and geometry, and a
 //                            second copy of that in our blob is just two
@@ -40,6 +45,19 @@ export interface CardPresentation {
   readonly ladder: Ladder;
   /** where it was when it was last placed — how a reveal finds its way back */
   readonly slot: SlotRef | null;
+  /**
+   * The last GRID slot this card sat in — its home, the place ⤡ brings it back
+   * to (#558).
+   *
+   * Not the same question as `slot`, which is "where is it now" and becomes a
+   * POPOUT slot the moment the card is torn off. That is right for a reveal
+   * (§5.8 restores a card to its monitor) and useless for a dock-back, which
+   * needs the thing the popout replaced. So this is only ever written from a
+   * grid slot, and a card BORN in a popout window (#531) has none — which is
+   * the whole point: it never earned a slot in the grid, so it docks back
+   * through the ordinary placement rules instead of inheriting its opener's.
+   */
+  readonly home: SlotRef | null;
   /** in its own OS window (a reflection of dockview's truth, never persisted) */
   readonly poppedOut: boolean;
   /** restored-but-not-resumed, or its popout window was closed (not persisted) */
@@ -52,6 +70,7 @@ export const DEFAULT_PRESENTATION: CardPresentation = Object.freeze({
   view: DEFAULT_PANEL_ID,
   ladder: 'expanded',
   slot: null,
+  home: null,
   poppedOut: false,
   suspended: false,
 });
@@ -61,6 +80,7 @@ export interface PersistedPresentation {
   view?: PanelId;
   ladder?: Ladder;
   slot?: SlotRef | null;
+  home?: SlotRef | null;
 }
 
 export const PRESENTATION_KEY = 'presentation';
@@ -106,6 +126,7 @@ export function fromPersisted(raw: unknown): CardPresentation {
     view: typeof r.view === 'string' && r.view ? r.view : DEFAULT_PRESENTATION.view,
     ladder: isLadder(r.ladder) ? r.ladder : DEFAULT_PRESENTATION.ladder,
     slot: readSlot(r.slot),
+    home: readSlot(r.home),
     poppedOut: false,
     suspended: false,
   });
@@ -153,6 +174,7 @@ export function persistablePresentation(
     if (p.view !== DEFAULT_PRESENTATION.view) entry.view = p.view;
     if (p.ladder !== DEFAULT_PRESENTATION.ladder) entry.ladder = p.ladder;
     if (p.slot) entry.slot = p.slot;
+    if (p.home) entry.home = p.home;
     if (Object.keys(entry).length > 0) out[cardId] = entry;
   }
   return out;
@@ -181,13 +203,19 @@ export function samePresentation(a: CardPresentation, b: CardPresentation): bool
     a.ladder === b.ladder &&
     a.poppedOut === b.poppedOut &&
     a.suspended === b.suspended &&
-    sameSlot(a.slot, b.slot)
+    sameSlot(a.slot, b.slot) &&
+    sameSlot(a.home, b.home)
   );
 }
 
 /** Does this change need writing to the blob? Reflected-only fields don't. */
 export function persistedChanged(a: CardPresentation, b: CardPresentation): boolean {
-  return a.view !== b.view || a.ladder !== b.ladder || !sameSlot(a.slot, b.slot);
+  return (
+    a.view !== b.view ||
+    a.ladder !== b.ladder ||
+    !sameSlot(a.slot, b.slot) ||
+    !sameSlot(a.home, b.home)
+  );
 }
 
 /** Drop records for cards that no longer exist. Returns null when there is

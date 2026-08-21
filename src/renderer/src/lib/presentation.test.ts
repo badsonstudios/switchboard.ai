@@ -27,9 +27,27 @@ describe('presentation — reading a ui blob (P2-E15-08)', () => {
       view: 'terminal',
       ladder: 'hidden',
       slot: { groupId: 'g1', index: 3, location: 'grid' },
+      home: null,
       poppedOut: false,
       suspended: false,
     });
+  });
+
+  it('reads the dock-back home back out, and round-trips it (#558)', () => {
+    // `home` is the slot ⤡ brings a card back to, and it has to survive a
+    // relaunch: the app can quit with a card out in its own window, and the
+    // grid slot that card must return to is precisely the one the blob is the
+    // only remaining record of.
+    const home = { groupId: 'g-left', index: 0, location: 'grid' as const };
+    const popout = { groupId: 'g-pop', index: 0, location: 'popout' as const };
+    const { map } = loadPresentation({
+      presentation: { 'card-A': { slot: popout, home } },
+    });
+    expect(map.get('card-A')?.home).toEqual(home);
+    expect(map.get('card-A')?.slot).toEqual(popout);
+    expect(persistablePresentation(map)).toEqual({ 'card-A': { slot: popout, home } });
+    // and a half-written one is no home at all, like every other slot read
+    expect(fromPersisted({ home: { index: 2 } }).home).toBeNull();
   });
 
   it('a blob written by other code never costs the user their workspace', () => {
@@ -107,6 +125,16 @@ describe('presentation — change detection', () => {
     expect(samePresentation(a, b)).toBe(false); // the card must re-render
     expect(persistedChanged(a, b)).toBe(false); // ...but nothing goes in the blob
     expect(persistedChanged(a, { ...a, ladder: 'hidden' })).toBe(true);
+  });
+
+  it('a new dock-back home is a change, and a write (#558)', () => {
+    // `captureSlots` writes slot and home together on every layout change, so a
+    // home the comparison could not see would be a home that never reached the
+    // blob — and the card would come back from a relaunch with nowhere to dock.
+    const a = DEFAULT_PRESENTATION;
+    const b = { ...a, home: { groupId: 'g1', index: 0, location: 'grid' as const } };
+    expect(samePresentation(a, b)).toBe(false);
+    expect(persistedChanged(a, b)).toBe(true);
   });
 });
 
