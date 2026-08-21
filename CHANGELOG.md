@@ -73,6 +73,22 @@ on the floor, and say so in your PR.
   call, so none of those refusals can happen today. It becomes reachable the day
   plugins hold partial permissions. (#440)
 
+### Fixed
+
+- **Dismissing an event now clears the "N need you" counts.** The number on the
+  Events tab dropped when you dismissed something, but the other three readouts
+  did not: the **"N need you"** on the strip across the top of the window, and
+  the ones on each group header and at the foot of the Sessions list, all sat
+  there on their old total over an Events drawer you had just emptied. They were
+  counting something different from what the drawer was listing. Now all four
+  count the same thing, so dismissing — or opening a finished session, which is
+  what turns **Done.** into **Ready** — drops every one of them at once, and the
+  text goes away entirely at zero.
+  Dismissing is still not answering: if a session is genuinely still waiting on
+  you, its row in the Sessions list goes on saying so in the status color, and
+  it will call again if it asks something new. What the ✕ clears is the count,
+  not the session's state.
+
 ## 0.8.1 — 2026-08-20
 
 ### Added

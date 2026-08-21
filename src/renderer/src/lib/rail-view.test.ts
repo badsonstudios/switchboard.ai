@@ -75,28 +75,37 @@ describe('statusVars', () => {
   });
 });
 
-describe('needCount', () => {
-  it('counts only the sessions a human has to unblock', () => {
-    expect(
-      needCount([
-        { status: 'working' },
-        { status: 'needs-input' },
-        { status: 'idle' },
-        { status: 'crashed' },
-        { status: 'done' },
-        { status: 'needs-permission' },
-      ])
-    ).toBe(4);
+describe('needCount (#621)', () => {
+  const group = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }];
+
+  it('counts the members with an outstanding demand on them', () => {
+    expect(needCount(group, new Set(['a', 'c']))).toBe(2);
   });
 
-  it('is zero for an empty or entirely calm group', () => {
-    expect(needCount([])).toBe(0);
-    expect(needCount([{ status: 'working' }, { status: 'idle' }])).toBe(0);
+  it('is zero for an empty group, and for one with nothing outstanding', () => {
+    expect(needCount([], new Set(['a']))).toBe(0);
+    expect(needCount(group, new Set())).toBe(0);
   });
 
-  it('agrees with presentStatus on every session it counts', () => {
-    const sessions = [{ status: 'done' }, { status: 'working' }, { status: 'crashed' }];
-    expect(needCount(sessions)).toBe(sessions.filter((s) => presentStatus(s.status).needsYou).length);
+  it('counts MEMBERS, not entries — a card elsewhere is not this one’s', () => {
+    // the group summary is per-group and the set is workspace-wide, so a needy
+    // session in the next group must not inflate this header
+    expect(needCount([{ id: 'a' }], new Set(['a', 'zz', 'yy']))).toBe(1);
+  });
+
+  it('counts each card once however often it appears in the set', () => {
+    // a Set makes this true by construction; asserted so a future "list of
+    // events" refactor cannot quietly start double-counting a session that
+    // raised two
+    expect(needCount([{ id: 'a' }], new Set(['a']))).toBe(1);
+  });
+
+  it('is NOT presentStatus — that is the bug it was (#621)', () => {
+    // the whole point: a dismissed session still HAS a needy status (the CLI
+    // may still be blocked, and the row still says so), and the counter must
+    // not report it anyway
+    expect(presentStatus('needs-input').needsYou).toBe(true);
+    expect(needCount([{ id: 'a' }], new Set())).toBe(0);
   });
 });
 

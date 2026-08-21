@@ -2,8 +2,21 @@
 //
 // The rail's whole job is answering two questions instantly: which group is a
 // session in, and which sessions need me right now. The second one is decided
-// HERE — one pure function — so the row treatment, the per-group "N need you"
-// summary and the footer count can never disagree about what "needs you" means.
+// HERE — one pure function per half — so no two surfaces can disagree.
+//
+// THERE ARE TWO HALVES, and #621 is what taught us they are not the same
+// question:
+//
+//   presentStatus().needsYou  what the session IS. Drives the row treatment
+//                             (tint, 4px bar, name at 700, the ask instead of
+//                             a state word) and the urgency lamp. Purely a
+//                             function of STATUS: a blocked session looks
+//                             blocked whatever the user has told us about it.
+//   needCount()               how many demands are still ON YOUR PLATE. Drives
+//                             the per-group summary, the rail footer and the
+//                             strip's aggregate — and it counts the Events
+//                             window's own list, so dismissing an event
+//                             decrements it. See `lib/queue`'s `needingCards`.
 //
 // Kept free of React and of colors: the component turns `token` into
 // var(--status-<token>) / var(--status-<token>-ink), which is the only place
@@ -126,10 +139,27 @@ export function statusVars(token: StatusToken): { hue: string; ink: string } {
   return { hue: `var(--status-${token})`, ink: `var(--status-${token}-ink)` };
 }
 
-/** How many of these sessions need a human — drives the group header summary
- *  and the rail footer, from the same rule the rows paint themselves with. */
-export function needCount(sessions: ReadonlyArray<{ status?: string }>): number {
-  return sessions.filter((s) => presentStatus(s.status).needsYou).length;
+/**
+ * How many of these sessions have an OUTSTANDING DEMAND on them — the one rule
+ * behind every "N need you" readout: the group-header summary, the rail footer
+ * and the urgency strip's aggregate.
+ *
+ * `needing` is `lib/queue`'s `needingCards` — the cards the Events window still
+ * lists something for. It is NOT `presentStatus(status).needsYou`, which is
+ * what this function used to count and what #621 was: dismissing an event took
+ * it out of the Events window without moving the session's status, so the
+ * counters went on reporting a demand nobody was still being shown. See
+ * `needingCards` for why the feed is the authority here and why the ROW
+ * treatment (which is still status-driven, three lines up) deliberately is not.
+ *
+ * A set rather than a predicate so all three call sites are provably reading
+ * the same derivation — the store computes it once, per push.
+ */
+export function needCount(
+  sessions: ReadonlyArray<{ id: string }>,
+  needing: ReadonlySet<string>
+): number {
+  return sessions.reduce((n, s) => (needing.has(s.id) ? n + 1 : n), 0);
 }
 
 /** Rail width bounds. 286px is the design's figure; the clamp keeps a dragged

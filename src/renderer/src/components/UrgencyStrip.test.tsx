@@ -64,6 +64,10 @@ async function mountNode(node: ReactNode): Promise<{
  *  back the host so a test can read any lamp by card id. */
 async function mountStrip(opts: {
   sessions: RailSession[];
+  /** the cards with an outstanding demand (#621) — the aggregate's only input.
+   *  Defaults to "nothing outstanding", which is what every lamp test wants:
+   *  the LAMPS are a function of status and say nothing about the count. */
+  needing?: ReadonlySet<string>;
   urgency?: UrgencyMarks;
   onExpire?: () => void;
   onBeatStart?: (cardIds: readonly string[]) => void;
@@ -71,6 +75,7 @@ async function mountStrip(opts: {
   const { host } = await mountNode(
     <UrgencyStrip
       sessions={opts.sessions}
+      needing={opts.needing ?? new Set<string>()}
       urgency={opts.urgency ?? new Map<string, number>()}
       activeCardId={opts.sessions[0]?.id ?? null}
       onFocus={noop}
@@ -392,6 +397,7 @@ describe('the beat starts at the paint, not the keypress (issue 320)', () => {
     const held = (): ReactElement => (
       <UrgencyStrip
         sessions={two}
+        needing={new Set<string>()}
         urgency={new Map([['c1', null]])} // a NEW map each time, as a repeat makes
         activeCardId={null}
         onFocus={noop}
@@ -598,6 +604,7 @@ function Harness(props: {
   return (
     <UrgencyStrip
       sessions={props.sessions}
+      needing={new Set<string>()}
       urgency={urgency}
       activeCardId={null}
       onFocus={noop}

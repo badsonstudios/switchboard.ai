@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { attentionQueue, nextInQueue, panelOrder, withVisit, AttentionEvent } from './queue';
+import {
+  attentionQueue,
+  needingCards,
+  nextInQueue,
+  panelOrder,
+  queueable,
+  withVisit,
+  AttentionEvent,
+} from './queue';
 
 let nextId = 1;
 function ev(
@@ -160,5 +168,49 @@ describe('panelOrder — what the Events panel renders', () => {
   it('never drops an event the feed is holding', () => {
     const events = [ev('ready', 'r', 1), ev('crashed', 'c', 2), ev('done', 'd', 3)];
     expect(panelOrder(events)).toHaveLength(events.length);
+  });
+});
+
+describe('needingCards — what every "N need you" counts (#621)', () => {
+  /** the app's map: live session id -> the card it is bound to */
+  const bound = (m: Record<string, string>) => (liveId: string) => m[liveId] ?? liveId;
+
+  it('is the set of cards with an outstanding demand', () => {
+    const events = [ev('needs-permission', 'l1', 1), ev('done', 'l2', 2)];
+    expect([...needingCards(events, bound({ l1: 'c1', l2: 'c2' }))].sort()).toEqual(['c1', 'c2']);
+  });
+
+  it('DROPS a dismissed session — the whole of #621', () => {
+    // `EventFeed.forget` is what the ✕ calls: the event simply leaves the list.
+    // Nothing about the session's STATUS moved, which is why a status-derived
+    // counter went on reporting it.
+    const events = [ev('needs-permission', 'l1', 1), ev('done', 'l2', 2)];
+    const afterDismiss = events.filter((e) => e.sessionId !== 'l1');
+    expect([...needingCards(afterDismiss, bound({ l1: 'c1', l2: 'c2' }))]).toEqual(['c2']);
+  });
+
+  it('drops an ACKNOWLEDGED done — `ready` is not a demand', () => {
+    // EventFeed.acknowledge rewrites done -> ready when you open the session.
+    // "Finished, and you have looked at it" is not something still waiting.
+    expect([...needingCards([ev('ready', 'l1', 1)], bound({ l1: 'c1' }))]).toEqual([]);
+    expect(queueable(ev('ready', 'l1', 1))).toBe(false);
+  });
+
+  it('is keyed by CARD, so two live ids of one card count once', () => {
+    // a restarted session is a new live id under the same card; the rail draws
+    // one row for it and the header must say 1, not 2
+    const events = [ev('done', 'l1', 1), ev('needs-input', 'l2', 2)];
+    expect([...needingCards(events, bound({ l1: 'c1', l2: 'c1' }))]).toEqual(['c1']);
+  });
+
+  it('agrees with the queue about what is outstanding', () => {
+    // one predicate behind both, so the to-do list and the counters cannot
+    // describe different work
+    const events = [ev('ready', 'l1', 1), ev('crashed', 'l2', 2), ev('done', 'l3', 3)];
+    expect(needingCards(events, bound({})).size).toBe(attentionQueue(events).length);
+  });
+
+  it('is empty for an empty feed', () => {
+    expect(needingCards([], bound({})).size).toBe(0);
   });
 });

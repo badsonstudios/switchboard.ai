@@ -20,7 +20,7 @@
 // synchronous read and a subscription, and that is the whole of it.
 import { EventDto, RailGroup, RailSession } from '../model/types';
 import { railOrder, RailOrderResult } from '../lib/groups';
-import { attentionQueue, nextInQueue, withVisit } from '../lib/queue';
+import { attentionQueue, needingCards, nextInQueue, withVisit } from '../lib/queue';
 import {
   CardPresentation,
   DEFAULT_PRESENTATION,
@@ -207,6 +207,15 @@ export class SessionStore {
   // recomputing the filter at each of those call sites is how two of them end
   // up disagreeing about which sessions are silenced.
   private derivedAttention: readonly EventDto[] = [];
+  // The cards every "N need you" readout counts (#621) — one per session with
+  // an outstanding item in the Events window.
+  //
+  // Derived from the RAW feed, not from `derivedAttention`: `lib/focus-policy`
+  // states in as many words that a `none` session's rail row, lamp and "N need
+  // you" count keep reporting it, because `none` silences the WORKSPACE
+  // response, not the session's existence. Filtering here would make a held
+  // permission invisible rather than quiet — §4's fail-open rule.
+  private derivedNeeding: ReadonlySet<string> = new Set();
   // §5.8's batch prompt (P2-E9-11): the ONE group currently on screen, and the
   // request ids it has taken responsibility for. Derived on mutation like the
   // rest, and — unlike the rest — deliberately identity-STABLE across a
@@ -271,6 +280,17 @@ export class SessionStore {
     return this.derivedAttention;
   }
 
+  /**
+   * The cards with an outstanding demand — what the rail's group summaries, its
+   * footer and the urgency strip's aggregate all count (#621).
+   *
+   * A stored set with a stable identity, like every other derived value here:
+   * three `useSyncExternalStore` readers compare it by reference.
+   */
+  getNeedingCards(): ReadonlySet<string> {
+    return this.derivedNeeding;
+  }
+
   private set(patch: Partial<SessionState>): void {
     this.state = { ...this.state, ...patch };
     // KEY presence, not truthiness: `setEvents([])` must still recompute, and
@@ -326,6 +346,13 @@ export class SessionStore {
       this.focusPolicyFor(this.cardIdForLive(liveId))
     );
     this.derivedQueue = attentionQueue(this.derivedAttention);
+    // …and the counters' set, off the UNfiltered feed — see `derivedNeeding`.
+    // Same three inputs as above, so it belongs in the same recompute: a card
+    // bound after its first event landed would otherwise be counted under the
+    // live id `cardIdForLive` falls back to, which no rail row carries.
+    this.derivedNeeding = needingCards(this.state.events, (liveId) =>
+      this.cardIdForLive(liveId)
+    );
   }
 
   /**

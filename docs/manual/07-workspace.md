@@ -31,7 +31,10 @@ should be able to spot the ones that need you from across the room.
 
 Each group header counts its own waiting sessions (**"2 need you"**, or
 **"calm"** when none are), and the bar at the bottom of the list totals them
-for the whole workspace.
+for the whole workspace. Those counts — and the one on the strip across the top
+of the window — count exactly what the [Events
+drawer](09-notifications.md#the-events-drawer) is listing, so dismissing an
+entry there drops them straight away.
 
 Click a row to jump to that session. Double-click to rename it — `Esc`, or Enter
 on an empty box, leaves the name alone. Right-click for

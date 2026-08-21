@@ -65,6 +65,7 @@ async function mount(opts: {
       <SessionsRail
         sessions={opts.sessions}
         groups={opts.groups ?? []}
+        needing={new Set<string>()}
         palette={['var(--status-working)']}
         selectedId={null}
         policies={DEFAULT_BOOK}
