@@ -63,7 +63,7 @@ import { canStep, LOOSE_BUCKET, ManualOrder, planReorder } from '../lib/rail-ord
 import { presentStatus, needCount, clampRailWidth, RAIL_WIDTH_DEFAULT } from '../lib/rail-view';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { getDraggedCard, setDraggedCard } from '../lib/drag-context';
-import { MenuPlacement, placeMenu } from '../lib/menu-placement';
+import { MenuPlacement, WritingDirection, placeMenu } from '../lib/menu-placement';
 import {
   cardOverride,
   groupOverride,
@@ -100,6 +100,17 @@ const tint = (color: string, pct: number): string =>
  */
 const bodyKey = (key: string): string =>
   key.replace(/[^A-Za-z0-9-]/g, (c) => `_${c.charCodeAt(0).toString(16)}_`);
+
+/**
+ * The writing direction an element is actually laid out in (#642).
+ *
+ * `dir` is inheritable, so this asks the ELEMENT and not the document: a
+ * right-to-left locale sets it at the root, but a single subtree can carry it
+ * too, and a menu placed by the document's answer would be wrong in exactly the
+ * case that is hardest to notice.
+ */
+const directionOf = (el: Element): WritingDirection =>
+  el.ownerDocument.defaultView?.getComputedStyle(el).direction === 'rtl' ? 'rtl' : 'ltr';
 
 /** A context-menu row. Shared because the commands and the policy radios are
  *  the same row in two roles, and they used to drift a property at a time. */
@@ -443,13 +454,17 @@ export function SessionsRail(props: {
   React.useLayoutEffect(() => {
     const el = menuRef.current;
     if (!menu || !el) return;
+    // `clientX` is physical whichever way the menu reads, so `placeMenu` is
+    // told the direction and hands back an inline-start offset (#642).
+    const direction = directionOf(el);
     setMenuPlace(
       placeMenu(
         { x: menu.x, y: menu.y },
         // the NATURAL size: this pass runs before `maxBlockSize` is applied,
         // so the box has not been clamped by a previous answer
         { width: el.offsetWidth, height: el.offsetHeight },
-        { width: window.innerWidth, height: window.innerHeight }
+        { width: window.innerWidth, height: window.innerHeight },
+        { direction }
       )
     );
   }, [menu]);
@@ -694,12 +709,17 @@ export function SessionsRail(props: {
           // instead, or the menu opens in the window's top-left corner.
           const kb = e.clientX === 0 && e.clientY === 0;
           const box = e.currentTarget.getBoundingClientRect();
+          // the row's INLINE-start edge, a little way in — the same offset the
+          // pointer would have landed at, mirrored so the keyboard's menu opens
+          // over the grid in both directions rather than off the far side of
+          // the rail (#642)
+          const kbX = directionOf(e.currentTarget) === 'rtl' ? box.right - 12 : box.left + 12;
           menuAnchor.current = (e.target as HTMLElement).closest<HTMLElement>('button');
           // the previous answer describes a menu that is about to be replaced
           setMenuPlace(null);
           setMenu({
             session: s,
-            x: kb ? box.left + 12 : e.clientX,
+            x: kb ? kbX : e.clientX,
             y: kb ? box.bottom : e.clientY,
           });
         }}
@@ -1568,8 +1588,18 @@ export function SessionsRail(props: {
           }}
           style={{
             position: 'fixed',
-            insetInlineStart: menuPlace ? menuPlace.left : menu.x,
-            insetBlockStart: menuPlace ? menuPlace.top : menu.y,
+            // Before the measuring pass above has answered, the menu is parked
+            // in the corner rather than at the pointer, and NOT because the
+            // corner is a sensible place for it: this render exists only to be
+            // measured (the layout effect's setState re-renders synchronously,
+            // so the browser paints once, already placed). At `0` the box has
+            // the whole window to lay out in and reports its NATURAL size,
+            // where an inset taken from the pointer squeezes it against the far
+            // edge and measures something narrower and taller than the menu the
+            // user will see. It is also the only value that needs no direction:
+            // `menu.x` is physical and this property is logical (#642).
+            insetInlineStart: menuPlace ? menuPlace.insetInlineStart : 0,
+            insetBlockStart: menuPlace ? menuPlace.insetBlockStart : 0,
             // only ever reached by a menu taller than the whole window; with a
             // scroll container of its own, `scrollIntoView` can finally do
             // something for the items past the fold

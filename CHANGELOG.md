@@ -80,6 +80,17 @@ on the floor, and say so in your PR.
 
 ### Internal
 
+- Every surface that opens at the mouse pointer was audited after #641, and the
+  one that exists — the session row's right-click menu — was taught to place
+  itself correctly in a right-to-left layout. It had been given the pointer's
+  distance from the *left* edge of the window and told to measure from the
+  *inline start* edge, which is the right edge when the app reads
+  right-to-left: the menu opened a whole window-width away from the click, off
+  the screen entirely. The arithmetic now mirrors the axis in one place, and the
+  menu grows leftward from the pointer the way a right-to-left menu should.
+  Nothing changes in English — no right-to-left language ships yet — but §5.21's
+  "RTL insurance now, not later" is only insurance if it is right before the
+  claim is made (#642).
 - A refused IPC call can no longer crash the part of the app that asked. The
   broker answers a capability-denied call with a marker object rather than an
   error; forty-one places in the renderer used that marker as if it were the
