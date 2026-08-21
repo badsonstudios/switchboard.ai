@@ -219,8 +219,16 @@ On each worker completion notification:
    and report. Use `SendMessage` to continue a worker whose question you can
    answer from the docs.
 3. **Merge queue:**
-   - **Internal PR:** wait for green CI, then squash-merge
-     (`gh pr merge --squash`), confirm the issue closed, delete the branch.
+   - **Internal PR:** mark it ready-for-review THE MOMENT you process its
+     handoff (a draft cannot merge, and `gh pr merge` on a draft fails),
+     wait for green CI, then squash-merge (`gh pr merge --squash`), confirm
+     the issue closed, delete the branch. **Delete a PR's head branch ONLY
+     after confirming the PR state is MERGED — and never chain
+     merge-then-delete-then-push with `;` (2026-08-21: a draft-state merge
+     failure was plowed past by the `;` chain and the branch delete ORPHANED
+     the open PR; recovery = fetch `refs/pull/<n>/head`, push it back as the
+     branch, reopen). Destructive follow-ups go in a separate call after
+     reading the merge result.**
      If main moved under it, bump (`update-branch`) and re-green first —
      internals merge as they finish, so this stays rare. **Branch
      protection is STRICT up-to-date (learned 2026-08-21): ANY commit to
