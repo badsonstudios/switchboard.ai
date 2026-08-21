@@ -12,6 +12,7 @@
 // (`spike/s10/probe-*.cjs` + the findings note), not invented.
 
 import { ASK_USER_QUESTION_TOOL } from '../../shared/ask-user-question';
+import { asDisplayString } from '../../shared/display-string';
 import { FAKE_SESSION_ID } from './fake-stream-ids';
 
 export type OutMessage = Record<string, unknown>;
@@ -657,7 +658,7 @@ export class FakeStreamProtocol {
       type: 'control_response',
       response: {
         subtype: 'success',
-        request_id: String(msg.request_id ?? ''),
+        request_id: asDisplayString(msg.request_id),
         response: { still_queued: [] },
       },
     });
@@ -669,7 +670,7 @@ export class FakeStreamProtocol {
 
   private onControlResponse(msg: Record<string, unknown>): void {
     const r = msg.response as Record<string, unknown> | undefined;
-    const id = String(r?.request_id ?? '');
+    const id = asDisplayString(r?.request_id);
     const req = this.pending.get(id);
     if (!req) return; // an answer to something we never asked: ignore, do not crash
     this.pending.delete(id);
@@ -693,13 +694,13 @@ export class FakeStreamProtocol {
       return;
     }
 
-    const filePath = String(req.input.file_path ?? '');
+    const filePath = asDisplayString(req.input.file_path);
     let said = '';
     if (inner.behavior === 'allow') {
       try {
         // Actually perform it, so a test can assert the FILE rather than our
         // narration — the same thing S-10 probe B checked.
-        this.host.writeFile(filePath, String(req.input.content ?? ''));
+        this.host.writeFile(filePath, asDisplayString(req.input.content));
         said = `wrote ${filePath}`;
       } catch (e) {
         said = `failed to write ${filePath}: ${String(e)}`;
@@ -742,8 +743,8 @@ export class FakeStreamProtocol {
         ...(question
           ? {}
           : {
-              description: String(input.file_path ?? ''),
-              decision_reason: `Claude requested permissions to edit ${String(input.file_path ?? '')}, which is a sensitive file.`,
+              description: asDisplayString(input.file_path),
+              decision_reason: `Claude requested permissions to edit ${asDisplayString(input.file_path)}, which is a sensitive file.`,
               decision_reason_type: 'safetyCheck',
               permission_suggestions: [{ type: 'setMode', mode: 'acceptEdits', destination: 'session' }],
               classifier_approvable: true,

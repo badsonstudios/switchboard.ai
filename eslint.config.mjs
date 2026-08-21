@@ -235,21 +235,6 @@ export default tseslint.config(
   // measured work remaining, not a budget.
   // ---------------------------------------------------------------------------
   {
-    // TODO(#255 T1): src/main product code — 20 errors. 12 are
-    // `no-base-to-string` on `String(x ?? '')` at untrusted-JSON boundaries
-    // (stream-permissions, fake-stream-protocol, feed/blocks); one shared
-    // `asDisplayString(unknown)` closes all of them.
-    files: ['src/main/**/*.ts'],
-    ignores: ['src/main/**/*.test.ts'],
-    rules: {
-      '@typescript-eslint/no-base-to-string': 'off',
-      '@typescript-eslint/no-unsafe-argument': 'off',
-      '@typescript-eslint/no-redundant-type-constituents': 'off',
-      '@typescript-eslint/restrict-template-expressions': 'off',
-      '@typescript-eslint/require-await': 'off',
-    },
-  },
-  {
     // TODO(#255 T2): src/renderer product code — 8 errors. The 3
     // `no-misused-promises` are `if (!answer)` in App.tsx where `answer` is
     // `Promise<T> | undefined`; `answer === undefined` is behaviour-identical.

@@ -128,7 +128,12 @@ export class IpcBroker {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     handler: (event: IpcMainInvokeEvent, ...args: any[]) => unknown
   ): void {
-    ipcMain.handle(channel, (event, ...args) => {
+    // `...args: unknown[]` and not the inferred `any[]`: Electron types the
+    // listener's rest parameter as `any[]`, and spreading an `any[]` into
+    // `handler` would hand the call site's own annotations an unchecked value.
+    // `unknown` is assignable to the `any` `handler` declares, so nothing here
+    // is cast and nothing downstream loses a type.
+    ipcMain.handle(channel, (event, ...args: unknown[]) => {
       const denied = this.denyReason(channel, event.sender);
       if (denied) {
         // Answer, don't throw. The old throw arrived as a rejected promise in
@@ -157,7 +162,8 @@ export class IpcBroker {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     handler: (event: Electron.IpcMainEvent, ...args: any[]) => void
   ): void {
-    ipcMain.on(channel, (event, ...args) => {
+    // as above — `unknown[]` rather than Electron's inferred `any[]`
+    ipcMain.on(channel, (event, ...args: unknown[]) => {
       if (!this.allowed(channel, event.sender)) return;
       handler(event, ...args);
     });

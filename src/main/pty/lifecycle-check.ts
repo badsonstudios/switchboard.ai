@@ -64,7 +64,7 @@ async function main(): Promise<number> {
     `[pty-check] markers=${N - missing.length}/${N} scrollback=${N - sbMissing.length}/${N} ` +
       `exited=${exits.size}/${N} stillAlive=${stillAlive.length}`
   );
-  console.log(ok ? '[pty-check] PASS' : `[pty-check] FAIL missing=${missing} sb=${sbMissing}`);
+  console.log(ok ? '[pty-check] PASS' : `[pty-check] FAIL missing=${missing.join(',')} sb=${sbMissing.join(',')}`);
   return ok ? 0 : 1;
 }
 
