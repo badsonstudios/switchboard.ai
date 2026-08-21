@@ -2388,6 +2388,78 @@ describe('a retired session takes its parked approvals with it (#202)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// #333 — the router is TOLD which sessions have a card, before it holds.
+//
+// The push two lines below the probe stamps `cardId: cardOfLive.get(...)`, and
+// every mounted card drops what is not its own. So a live session with no
+// binding produced a `sessions:permissionRequest` that matched nothing, a badge
+// reading `needs-permission` with no bar anywhere, and a CLI blocked until the
+// 300s deadline declined it for a user who was never offered it. The wiring
+// under test is one line — delete it and every test here goes red, because the
+// router falls back to holding.
+describe('a stream request for an unbound session is declined, not parked (#333)', () => {
+  const CARD = 'card-1';
+  let dir: string;
+  tempDirEach('sb-unrouted-', (d) => (dir = d));
+  const { card, start } = cardHelpers(() => dir, CARD);
+
+  it('holds a BOUND session normally — the probe must not deny everything', () => {
+    const { perms, sent } = streamPerms();
+    const h = harness(undefined, dir, { prior: card(), streamPermissions: perms });
+    start(h); // binds live-1 to card-1
+
+    perms.offer('live-1', canUseTool('req-1'));
+
+    expect(perms.pendingRequests()).toHaveLength(1);
+    expect(asked(h)).toEqual([
+      expect.objectContaining({ requestId: 'stream:live-1:req-1', cardId: CARD }),
+    ]);
+    expect(sent).toEqual([]); // nothing answered on the user's behalf
+
+    h.call('sessions:dropLive', CARD); // clear the hold and its timer
+  });
+
+  it('declines an UNBOUND session at once, with nothing pushed and nothing parked', () => {
+    const { perms, sent } = streamPerms();
+    const h = harness(undefined, dir, { prior: card(), streamPermissions: perms });
+    start(h); // only live-1 is bound; `ghost` never was
+
+    perms.offer('ghost', canUseTool('req-9'));
+
+    expect(perms.pendingRequests()).toEqual([]);
+    // The push that would have gone out with `cardId: undefined` — the one no
+    // card can match. It must not be sent at all.
+    expect(asked(h)).toEqual([]);
+    expect(sent).toHaveLength(1);
+    const answer = sent[0].msg as {
+      response?: { response?: { behavior?: string; message?: string } };
+    };
+    expect(answer.response?.response?.behavior).toBe('deny');
+    expect(String(answer.response?.response?.message)).toMatch(/lost track of which of its cards/i);
+  });
+
+  // The binding is what the probe reads, so a torn-down session must stop being
+  // routable the moment it is unbound — otherwise the gate is reading a map
+  // that outlives the thing it describes.
+  it('a session that was bound and is torn down is unroutable afterwards', () => {
+    const { perms, sent } = streamPerms();
+    const h = harness(undefined, dir, { prior: card(), streamPermissions: perms });
+    start(h);
+    h.call('sessions:closeCard', CARD); // tearDownLive → unbindLive
+
+    perms.offer('live-1', canUseTool('req-2'));
+
+    expect(perms.pendingRequests()).toEqual([]);
+    expect(asked(h)).toEqual([]);
+    expect(sent).toHaveLength(1);
+    // …and denied by THIS gate, not by the no-window one. Without the message
+    // check the assertions above pass for any deny from any branch.
+    const answer = sent[0].msg as { response?: { response?: { message?: string } } };
+    expect(String(answer.response?.response?.message)).toMatch(/lost track of which of its cards/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // #219 — a teardown step that throws must not take the rest of the teardown
 // with it.
 //

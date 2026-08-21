@@ -61,6 +61,21 @@ on the floor, and say so in your PR.
 
 ## 0.8.3 — unreleased
 
+### Fixed
+
+- **A Direct-mode session no longer freezes for five minutes when
+  switchboard.ai has lost track of which card it belongs to.** A permission
+  request is shown on the card that owns the session. If a running session has
+  somehow lost its card — a bookkeeping failure inside switchboard.ai, not
+  anything you can do on purpose — the request has nowhere to appear, and it
+  used to sit there unanswered until a five-minute limit expired and told the
+  agent nobody had replied in time. Nobody was ever asked. It is now declined
+  the moment it arrives, and the agent is told that switchboard.ai lost track of
+  the session rather than that someone refused the request — deliberately
+  different wording from the other reasons a request can go unanswered, so the
+  cases can be told apart. The app log records it too. You should not see this
+  one; if you do, it is worth reporting.
+
 ### Changed
 
 - **A reply or a document can no longer put a name on one of switchboard.ai's
