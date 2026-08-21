@@ -28,8 +28,11 @@ import type { RuleActionContext } from './rules-engine';
  * `RequestInit['body']` is the whole `BodyInit` union — Blob, ArrayBuffer,
  * FormData, a stream — and `String()` on any of those yields '[object Object]',
  * which a `JSON.parse` assertion would then blame on the wrong thing. Every
- * transport in this file sends a string, so the fake ASSERTS that instead of
- * assuming it: a transport that started streaming fails here, by name.
+ * transport in this file sends a string — `post()`'s own `body` parameter is
+ * typed `string`, so a streaming transport is a compile error before it is a
+ * runtime one. The fake records the violation rather than throwing, because
+ * `post()` catches (turning a throw into an ordinary `{ ok: false }` and an
+ * empty `calls`); a marker string puts it in the assertion diff instead.
  */
 type RecordedCall = { url: string; init: Omit<RequestInit, 'body'> & { body: string } };
 
@@ -38,10 +41,9 @@ function fakeFetch(res: Partial<{ ok: boolean; status: number; body: string }> =
   const calls: RecordedCall[] = [];
   const impl = vi.fn(async (url: unknown, init: unknown) => {
     const req = (init ?? {}) as RequestInit;
-    if (typeof req.body !== 'string') {
-      throw new Error(`fake fetch expected a string body, got ${typeof req.body}`);
-    }
-    calls.push({ url: String(url), init: { ...req, body: req.body } });
+    const body =
+      typeof req.body === 'string' ? req.body : `<non-string body: ${typeof req.body}>`;
+    calls.push({ url: String(url), init: { ...req, body } });
     return {
       ok: res.ok ?? true,
       status: res.status ?? 200,

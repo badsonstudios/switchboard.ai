@@ -95,11 +95,10 @@ interface HookResponse {
 /**
  * `JSON.parse` hands back `any`; this is where that stops for this file.
  *
- * Returning the INNER object — and throwing when it is absent — is what keeps
- * the assertions below honest: reading fields off `any` makes every
- * `toMatchObject` compile no matter what the body actually contained, so a
- * response that quietly stopped carrying a verdict would still pass. Now it
- * fails here, with the body in the message.
+ * Returning the INNER object — and throwing when it is absent — is about the
+ * FAILURE, not about catching one that used to escape: a response that stopped
+ * carrying a verdict already failed, three lines later, as `received
+ * undefined`. Now it fails here, naming the body it actually got.
  */
 function verdictOf(body: string): NonNullable<HookResponse['hookSpecificOutput']> {
   const verdict = (JSON.parse(body) as HookResponse).hookSpecificOutput;

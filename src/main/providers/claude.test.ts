@@ -184,7 +184,10 @@ describe('readAiTitle — the conversation title Claude writes into its transcri
     // an identity COMPARISON, not an extracted reference: `unbound-method`
     // cannot lose a `this` that is never called, and this has to compare the
     // capability slot itself rather than the wrapper above it.
-    expect(titles.titleFrom === readAiTitle).toBe(true);
+    expect(
+      titles.titleFrom === readAiTitle,
+      'capabilities.titles.titleFrom must BE readAiTitle, not a copy of it'
+    ).toBe(true);
   });
 
   it('says nothing about every other kind of line', () => {

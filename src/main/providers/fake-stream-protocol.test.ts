@@ -52,7 +52,8 @@ function userMsg(text: string): Record<string, unknown> {
  * `type` and `subtype` read off a `Record<string, unknown>` are `unknown`, and
  * the protocol says both are strings. Reading them through here means a message
  * that broke that contract shows up as an obviously-wrong tag in the assertion
- * diff, instead of as the '[object Object]' a bare `String()` would produce.
+ * diff — an object-valued subtype used to render as the indistinguishable
+ * '[object Object]'.
  */
 const tag = (v: unknown): string => (typeof v === 'string' ? v : `<not a string: ${typeof v}>`);
 

@@ -28,11 +28,9 @@ import {
 type Handler = (e: unknown, ...args: unknown[]) => unknown;
 
 /**
- * vitest's asymmetric matchers are declared `any`, so dropping one into an
- * object literal launders that `any` through the whole assertion — the other
- * fields of the surrounding `toEqual` then compile whatever they say. These
- * name the same matcher `unknown`: identical object, identical matching, but
- * the `any` stops here.
+ * vitest's asymmetric matchers are declared `any`. Same matcher, typed
+ * `unknown`, so that `any` does not spread into the object literal around it —
+ * identical object, identical matching, only the static type differs.
  */
 const anyString = (): unknown => expect.any(String);
 const stringContaining = (str: string): unknown => expect.stringContaining(str);
@@ -3930,7 +3928,7 @@ describe('pty:snapshot hands find the buffer that actually has the answer (#517)
     // to string would be a no-op the type-checked preset rejects (#255 T0).
     expect(h.call('pty:snapshot', 42)).toBeNull();
     expect(h.warn).toHaveBeenCalledWith(
-      expect.stringContaining('pty:snapshot refused'),
+      stringContaining('pty:snapshot refused'),
       expect.anything()
     );
   });

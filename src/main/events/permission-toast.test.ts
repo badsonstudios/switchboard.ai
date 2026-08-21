@@ -21,9 +21,14 @@ import {
 
 /**
  * A real `Logger` whose four levels are spies, so the assertions below can read
- * `l.warn.mock.calls` while `PermissionToasts` still receives the type it
- * actually declares. `child` returns the same object, so a chained logger
- * records into the same spies rather than into a second, unwatched one.
+ * `l.warn.mock.calls` while `PermissionToasts` receives the type it actually
+ * declares — which is the point: the `as any` this replaced was suppressing the
+ * argument check on every `toHaveBeenCalledWith` below, and those are now
+ * checked against `Parameters<Logger['warn']>`.
+ *
+ * `child` is required by `Logger` and nothing in `permission-toast.ts` calls
+ * it; returning the same object means a future chained logger would still
+ * record into these spies rather than into a second, unwatched one.
  */
 type MockLogger = Logger & {
   info: ReturnType<typeof vi.fn>;
@@ -44,9 +49,9 @@ function log(): MockLogger {
 }
 
 /**
- * vitest's asymmetric matchers are declared `any`; nesting one inside another
- * matcher launders that `any` through the whole assertion. Same matcher, named
- * `unknown`, so the `any` stops here.
+ * vitest's asymmetric matchers are declared `any`. Same matcher, typed
+ * `unknown`, so that `any` does not spread into the matcher around it —
+ * identical object, identical matching, only the static type differs.
  */
 const stringContaining = (str: string): unknown => expect.stringContaining(str);
 

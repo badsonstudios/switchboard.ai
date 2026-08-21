@@ -323,13 +323,12 @@ describe('Send test', () => {
     const bodies: string[] = [];
     const fetchImpl = (async (_u: unknown, init: unknown) => {
       // `RequestInit['body']` is the whole `BodyInit` union, which `String()`
-      // renders as '[object Object]'. The webhook sends JSON text, so read it
-      // as text and fail loudly if that ever changes.
+      // renders as '[object Object]'. The webhook sends JSON text; recording a
+      // marker instead of throwing puts a violation into the `JSON.parse`
+      // failure below, where it is readable — `PushActions.test` catches, so a
+      // throw here would only show up as an empty `bodies`.
       const { body } = (init ?? {}) as RequestInit;
-      if (typeof body !== 'string') {
-        throw new Error(`webhook test expected a string body, got ${typeof body}`);
-      }
-      bodies.push(body);
+      bodies.push(typeof body === 'string' ? body : `<non-string body: ${typeof body}>`);
       return { ok: true, status: 200, text: async () => '' } as unknown as Response;
     }) as unknown as typeof fetch;
     const actions = new PushActions({

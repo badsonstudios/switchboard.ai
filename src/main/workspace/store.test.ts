@@ -22,11 +22,9 @@ import { MAX_HISTORY_REPAIR_NOTICES } from '../../shared/history-repair';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 
 /**
- * vitest's asymmetric matchers are declared `any`, so dropping one straight
- * into an object literal launders that `any` through the whole assertion — the
- * surrounding `toMatchObject` then compiles no matter what the other fields
- * are. These name the same matcher `unknown` instead: identical object,
- * identical matching behaviour, but the `any` stops here.
+ * vitest's asymmetric matchers are declared `any`. Same matcher, typed
+ * `unknown`, so that `any` does not spread into the object literal around it —
+ * identical object, identical matching, only the static type differs.
  */
 const stringContaining = (s: string): unknown => expect.stringContaining(s);
 const stringMatching = (re: RegExp): unknown => expect.stringMatching(re);
