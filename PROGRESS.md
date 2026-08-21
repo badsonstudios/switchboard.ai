@@ -21,7 +21,7 @@
 > **Active workers (wave 2, dispatched ~10:15):**
 > | Issue | Worktree | Branch | Status |
 > |---|---|---|---|
-> | EVENTS track #268+#577+#648 (USER-FACING) | sb-wt-1 | feature/268-events-track | dispatched ~12:35 |
+> | EVENTS track #268+#577+#648 | sb-wt-1 | DONE — PR #684 ready, in DAN'S QUEUE |
 > | #618 sessions DTO (internal) | sb-wt-2 | feature/618-sessions-status-dto | dispatched ~12:35 |
 > | RAIL/CARDS track #337+#295+#606 (USER-FACING) | sb-wt-3 | feature/337-rail-cards-track | dispatched ~12:35 |
 >
