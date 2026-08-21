@@ -70,6 +70,7 @@ function rail(
     <SessionsRail
       sessions={over.sessions ?? sessions}
       groups={over.groups ?? groups}
+      needing={new Set<string>()}
       selectedId={'selectedId' in over ? (over.selectedId ?? null) : 'c1'}
       palette={['var(--status-working)', 'var(--status-crashed)']}
       policies={DEFAULT_BOOK}
@@ -649,6 +650,7 @@ describe('urgency lamps (issue 197)', () => {
     const host = await mount(
       <UrgencyStrip
         sessions={sessions}
+        needing={new Set<string>()}
         urgency={new Map<string, number>()}
         activeCardId="c2"
         onFocus={noop}
@@ -666,6 +668,7 @@ describe('urgency lamps (issue 197)', () => {
     const host = await mount(
       <UrgencyStrip
         sessions={sessions}
+        needing={new Set<string>()}
         urgency={new Map<string, number>()}
         activeCardId="c2"
         onFocus={noop}

@@ -58,6 +58,7 @@ async function mountRail(
       <SessionsRail
         sessions={sessions}
         groups={groups}
+        needing={new Set<string>()}
         selectedId="c1"
         palette={['var(--status-working)']}
         policies={DEFAULT_BOOK}

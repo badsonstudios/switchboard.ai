@@ -13,8 +13,8 @@
 // They are separate signals and this module keeps them separate:
 //
 //   token / needsYou — the LIVE status, straight from lib/rail-view so the
-//                      strip, the rail rows and the group counts can never
-//                      disagree about what "needs you" means;
+//                      strip's lamps and the rail's rows can never disagree
+//                      about what a session IS;
 //   lit              — "this is the one you were just sent to", true for a beat
 //                      after the jump and independent of what the status did in
 //                      the meantime.
@@ -31,6 +31,13 @@ import { presentStatus, StatusToken } from './rail-view';
  * focus-stealing policy, where the rest of the attention knobs land.
  */
 export const URGENCY_LINGER_MS = 1500;
+
+// The strip's "N need you" aggregate used to live here as `litCount(lamps)` —
+// a second copy of `rail-view`'s `needCount`, counting the same `needsYou`
+// flag. #621 unified them: the strip now calls `needCount` directly, over
+// `lib/queue`'s needing-cards set, so the aggregate and the rail's own two
+// counters are one derivation and dismissal moves all three at once. The lamps
+// keep `needsYou` — that is the lamp's HUE, not the count.
 
 /**
  * The lit map: card id -> the epoch ms at which that lamp's beat ends, or
@@ -111,12 +118,6 @@ export function buildLamps(
       labelKey: p.labelKey,
     };
   });
-}
-
-/** How many lamps are asking for a human — the strip's own summary, from the
- *  same rule the rail counts with. */
-export function litCount(lamps: readonly UrgencyLamp[]): number {
-  return lamps.filter((l) => l.needsYou).length;
 }
 
 /**

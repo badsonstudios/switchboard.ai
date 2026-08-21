@@ -37,8 +37,60 @@ const PRIORITY: Readonly<Record<AttentionEvent['kind'], number>> = {
   ready: -1, // never queued; see queueable()
 };
 
-function queueable(e: AttentionEvent): boolean {
+/**
+ * Is this event an OUTSTANDING DEMAND — something still waiting on a human?
+ *
+ * Exported since #621, because it is also the rule the "N need you" counters
+ * read (see `needingCards`). One predicate, so the queue, the panel's reviewed
+ * tail and every counter cannot disagree about what "still needs me" means.
+ */
+export function queueable(e: AttentionEvent): boolean {
   return (PRIORITY[e.kind] ?? -1) >= 0;
+}
+
+/**
+ * The CARDS with an outstanding demand on them (#621) — the set every
+ * "N need you" readout counts.
+ *
+ * ── WHY THE FEED AND NOT THE STATUS ─────────────────────────────────────────
+ *
+ * The counters used to be `sessions.filter(s => presentStatus(s.status).needsYou)`,
+ * which asks a different question from the one the Events window answers, and
+ * the two disagreed the moment the user acted: dismissing an event calls
+ * `EventFeed.forget` and acknowledging a finished one rewrites `done` -> `ready`
+ * — neither of which moves the session's STATUS, because neither of them is a
+ * thing the session did. So "3 need you" sat there over an empty Events list.
+ *
+ * The feed is the authority for "is this still calling for eyes": it is the
+ * list the user is looking at when they dismiss, `ready` is a kind that exists
+ * only in it (a `done` that has been looked at), and "resolved means gone"
+ * (§5.12) is already how a granted permission leaves. The counters therefore
+ * count exactly what the Events window lists, and dismissal decrements them by
+ * construction rather than by a second rule that has to be kept in step.
+ *
+ * ── WHAT THIS DELIBERATELY DOES NOT TOUCH ───────────────────────────────────
+ *
+ * The rail row's tint, the lamp's hue and `data-needs-you` still paint the
+ * session's real STATUS, for the reason `lib/focus-policy` gives when `none`
+ * silences a session: "§4's fail-open rule does not let a preference of ours
+ * make a session's true state unknowable." A dismissal says "stop counting
+ * this", not "the session is no longer blocked" — the CLI may well still be
+ * waiting, and the row is where you find that out.
+ *
+ * The two can only disagree in the safe direction: a queued event exists only
+ * for a session in an attention status, so the count is never larger than the
+ * number of rows painted needy. There is no "1 need you" over a calm rail.
+ *
+ * Keyed by CARD, not by live session: the counters count rail rows, and a card
+ * outlives the live sessions bound to it. `cardIdFor` is the store's map.
+ */
+export function needingCards(
+  events: readonly AttentionEvent[],
+  cardIdFor: (sessionId: string) => string
+): ReadonlySet<string> {
+  const cards = new Set<string>();
+  for (const e of events) if (queueable(e)) cards.add(cardIdFor(e.sessionId));
+  return cards;
 }
 
 /**
