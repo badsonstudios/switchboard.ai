@@ -53,14 +53,18 @@ describe('loadUiState reads the prefs blob', () => {
     expect(uiGet('theme', 'fallback')).toBe('fallback');
   });
 
-  it('...and is therefore never pushed back to main, or to workspace.json', () => {
+  it('...and is therefore never pushed back to main, or to workspace.json', async () => {
     // The consequence that outlives the session: `push()` sends the WHOLE
-    // cache, so a brand that got in on load is written to disk on the next
-    // focus change, and every launch after that reads it back.
-    const { pushed } = bridgeAnswering(null);
+    // cache, so a brand that got IN ON LOAD is written to disk on the next
+    // focus change, and every launch after that reads it back. So the refusal
+    // has to be loaded first — a test that only pushes a clean cache would pass
+    // with the fix removed, which is no test at all.
+    const { pushed } = bridgeAnswering(ipcRefusal('workspace:getUi', 'capability-not-held'));
+    await loadUiState();
     uiSet('theme', 'midnight');
     expect(pushed).toHaveLength(1);
     expect(JSON.stringify(pushed[0])).not.toContain('ipcRefused');
+    expect(pushed[0]).toEqual({ theme: 'midnight' });
   });
 
   it('still falls back to {} for the ordinary non-answers', async () => {

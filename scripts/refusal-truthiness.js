@@ -20,10 +20,13 @@
 //     node, and the defect is a two-node fact: a VALUE that came from the
 //     bridge, reaching a BOOLEAN position. A selector can express "if (await
 //     …)" and would then flag `if (await mainTook(…))`, which is correct code,
-//     while missing `const r = await bridge.x(); if (r)` entirely — the shape
-//     eight of the fifteen real sites actually wore. The repo's other custom
-//     rules (raw hex, `ipcMain`, monaco imports) are all genuinely one-node
-//     facts, which is why they fit there and this does not.
+//     while missing `const r = await bridge.x(); if (r)` entirely. That matters
+//     more than it sounds: NOT ONE of the nineteen real sites was
+//     `if (await bridge.x())` — ten separated the two nodes by a `.then`
+//     callback, five by a statement, four handed the answer to a React setter
+//     point-free. The repo's other custom rules (raw hex, `ipcMain`, monaco
+//     imports) are all genuinely one-node facts, which is why they fit there
+//     and this does not.
 //
 //   * NOT the type system. Making a refusal impossible to miss means widening
 //     ~60 preload signatures to `| IpcRefusal`, which #346 considered and
@@ -36,8 +39,9 @@
 //     an order of magnitude larger than the defect.
 //
 // So: parse the renderer, find the bridge calls, follow their results one hop,
-// and fail if any of them is read as a boolean. One hop is deliberate — see
-// WHAT THIS DOES NOT SEE at the bottom.
+// and fail if any of them is read as a boolean — or if the hop cannot be
+// followed at all, which is its own finding (`unfollowable-then`) rather than a
+// silent pass. One hop is deliberate; see WHAT THIS DOES NOT SEE at the bottom.
 //
 // THE FIX AT A CALL SITE is never "add a cast". It is one of:
 //
@@ -117,7 +121,7 @@ function invokeBackedMethods(preloadSource) {
  * `??` counts. It is not truthiness — a refusal is neither null nor undefined,
  * so it sails straight through `list ?? []` and lands in the state that was
  * supposed to hold the answer — but it is the identical defect: a non-answer
- * read as an answer, silently. Three of the real sites wore exactly that shape.
+ * read as an answer, silently. Four of the real sites wore exactly that shape.
  */
 function booleanPositionOf(node) {
   const p = node.parent;
@@ -219,17 +223,31 @@ function scanSource(fileName, source, invokeMethods) {
   };
 
   // ── pass 2: bridge results, followed one hop ────────────────────────────
-  const trackBinding = (name, scope) => {
-    if (!scope) return;
+  //
+  // NOT scope-aware: an inner binding that reuses the name is followed as if it
+  // were the tracked one, so a shadowed `f` in a nested callback can be reported
+  // when the outer `f` was laundered correctly. That direction is deliberate —
+  // a false positive costs a rename, a false negative costs the defect — and
+  // nothing in this tree currently trips it.
+  const trackBinding = (name, scope, seen = new Set()) => {
+    if (!scope || seen.has(name)) return;
+    seen.add(name);
     (function walk(node) {
-      // a shadowing re-declaration ends the trail; deliberately not modelled —
-      // nothing in this tree does it, and guessing wrong would mean a MISS
       if (ts.isIdentifier(node) && node.text === name &&
           !(ts.isPropertyAccessExpression(node.parent) && node.parent.name === node) &&
           !(ts.isPropertyAssignment(node.parent) && node.parent.name === node) &&
           !(ts.isBindingElement(node.parent) && node.parent.name === node)) {
         const pos = booleanPositionOf(node);
         if (pos) report(node, pos, guardOf(node));
+        // `const b = answer;` — the trail continues under the new name. #440's
+        // OWN fixes introduced this shape (`const record = answered(answer)`),
+        // and without this rule deleting the launderer left the scanner green:
+        // the boolean read is on the second name, not the tracked one.
+        const decl = node.parent;
+        if (ts.isVariableDeclaration(decl) && decl.initializer &&
+            strip(decl.initializer) === node && ts.isIdentifier(decl.name)) {
+          trackBinding(decl.name.text, scope, seen);
+        }
       }
       ts.forEachChild(node, walk);
     })(scope);
@@ -240,10 +258,13 @@ function scanSource(fileName, source, invokeMethods) {
     while (p && !ts.isBlock(p) && !ts.isSourceFile(p)) p = p.parent;
     return p;
   };
-  /** a call of `took` / `answered` / `isIpcRefusal` — the value is laundered */
+  /** is this node an ARGUMENT of `took` / `answered` / `isIpcRefusal`? */
   const isLaundered = (node) => {
-    const p = strip(node).parent;
-    return !!p && ts.isCallExpression(p) && LAUNDERERS.includes(p.expression.getText(sf));
+    const p = node.parent;
+    return (
+      !!p && ts.isCallExpression(p) && LAUNDERERS.includes(p.expression.getText(sf)) &&
+      p.arguments.includes(node)
+    );
   };
 
   (function pass2(node) {
@@ -258,13 +279,35 @@ function scanSource(fileName, source, invokeMethods) {
         isBridgeCall(strip(node.initializer).expression)) {
       trackBinding(node.name.text, enclosingBody(node));
     }
-    // `bridge.x().then((r) => …)` — then every boolean read of `r`
+    // `took(bridge.x())` — a laundered result with the `await` FORGOTTEN. Both
+    // helpers take the resolved value, so a Promise means `took` is a permanent
+    // silent `false` and `answered` hands the Promise itself straight on. The
+    // signature cannot catch it (`took` takes `unknown` on purpose, so it can
+    // judge junk), and it looks exactly like the correct code, so it is caught
+    // here instead.
+    if (ts.isCallExpression(node) && LAUNDERERS.includes(node.expression.getText(sf))) {
+      for (const arg of node.arguments) {
+        if (isBridgeCall(arg)) report(arg, 'un-awaited', guardOf(node));
+      }
+    }
+    // `bridge.x().then(cb)` — every boolean read of the value `cb` receives
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) &&
         node.expression.name.text === 'then' && isBridgeCall(node.expression.expression)) {
       const cb = node.arguments[0];
-      if (cb && (ts.isArrowFunction(cb) || ts.isFunctionExpression(cb))) {
-        const p0 = cb.parameters[0];
-        if (p0 && ts.isIdentifier(p0.name)) trackBinding(p0.name.text, cb.body);
+      const inline = cb && (ts.isArrowFunction(cb) || ts.isFunctionExpression(cb));
+      const p0 = inline ? cb.parameters[0] : undefined;
+      if (inline && !p0) {
+        // `.then(() => …)` discards the answer. Nothing to misread.
+      } else if (inline && ts.isIdentifier(p0.name)) {
+        trackBinding(p0.name.text, cb.body);
+      } else {
+        // POINT-FREE (`.then(setAutoTrust)`) or a destructured parameter
+        // (`.then(({hits}) => …)`). Neither can be followed, and the point-free
+        // form is where four of #440's real sites hid: the raw answer goes
+        // straight into a React setter, so a refusal becomes the state and the
+        // next render reads a chip, a length or a `.map` off the brand. Report
+        // the SHAPE — the fix is to launder before handing it on.
+        report(cb ?? node, 'unfollowable-then', guardOf(node));
       }
     }
     ts.forEachChild(node, pass2);
@@ -341,14 +384,29 @@ if (require.main === module) {
 
 // WHAT THIS DOES NOT SEE, stated so nobody mistakes green for proof.
 //
-//   * A result carried further than one hop — stored on a ref, returned from a
-//     helper, put in React state. Following those needs a type checker and a
-//     symbol table; this is a net for the shape the defect actually wears,
-//     which in all fifteen real sites was the value's FIRST read.
-//   * A bridge method reached through an injected dependency rather than the
-//     global — `lib/markdown-links.ts` takes `openExternal` as a parameter, so
-//     nothing here can tell it from any other function. That file declares the
-//     parameter as `Promise<unknown>` ON PURPOSE, which forces its call site to
-//     narrow and is the better guard where it is available.
-//   * `src/main` and `src/preload`. Neither calls `invoke`; the broker is the
-//     thing answering, not asking.
+//   * A result carried further than one hop THROUGH A CALL — stored on a ref,
+//     returned from a helper, put in React state. (A plain rename,
+//     `const b = answer`, IS followed: #440's own fixes wear that shape, and
+//     without following it deleting a launderer left this green.) Anything
+//     further needs a type checker and a symbol table; this is a net for the
+//     shape the defect actually wears, which in all nineteen real sites was the
+//     value's FIRST read.
+//   * A bridge method reached through an INJECTED DEPENDENCY rather than the
+//     global. Three exist, and they differ in how well they defend themselves:
+//     `lib/markdown-links.ts` takes `openExternal` typed `Promise<unknown>` ON
+//     PURPOSE, which forces its call site to narrow and is the better guard
+//     where it is available; `lib/latest-wins.ts` takes a whole FETCH closure
+//     and so is the only place that can see what it resolves to, which is why
+//     it launders centrally (#440); `components/DocumentViewer.tsx`'s `files()`
+//     accessor degrades a refusal to `{ok: undefined}`, i.e. "unreadable",
+//     which is fail-safe by accident rather than by design.
+//   * Destructuring at the boundary — `const {hits} = await bridge.search()`,
+//     `.then(({binding}) => …)`. The second form is REPORTED as
+//     `unfollowable-then`; the first is not, and nothing in the tree writes it.
+//   * A `.then`/`.catch` chained BEFORE the value is read
+//     (`await bridge.x().catch(() => null)`). The chain is not a bridge call, so
+//     nothing is tracked. The one instance in the tree (SessionGrid's
+//     `groups.list().then(gs => gs.map(…)).catch(() => null)`) is fail-safe: a
+//     refusal throws inside the `.then` and the `.catch` answers null.
+//   * `src/main`, `src/preload` and `src/shared`. None of them calls `invoke`;
+//     the broker is the thing answering, not asking.

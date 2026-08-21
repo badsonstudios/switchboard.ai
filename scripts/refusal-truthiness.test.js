@@ -14,6 +14,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import {
   PRELOAD,
   invokeBackedMethods,
@@ -22,7 +23,10 @@ import {
   formatReport,
 } from './refusal-truthiness.js';
 
-const ROOT = process.cwd();
+// From this file, not `process.cwd()` — the same house rule the script under
+// test writes down for itself. cwd happens to be the repo root under vitest and
+// would not be if anyone ran it from `scripts/`.
+const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /** the real bridge surface — these tests judge snippets against the real thing */
 let methods;
@@ -41,8 +45,17 @@ describe('the bridge surface it derives from the preload', () => {
   // deriving it still works — and that it draws the invoke/subscribe line in
   // the right place, since a subscription cannot be refused and `const off =
   // bridge.x.onY(...)` is a truthiness test that must stay legal.
-  it('finds the brokered methods', () => {
-    expect(methods.size).toBeGreaterThan(40);
+  it('finds the brokered methods — and roughly as many as there are invokes', () => {
+    // A loose floor would let the extraction silently halve and still pass. The
+    // preload's raw `ipcRenderer.invoke(` count is the independent number: a few
+    // methods invoke more than once, so names <= invokes, and a big gap means
+    // the walk up to the enclosing binding stopped finding names.
+    const invokes = (
+      fs.readFileSync(path.join(ROOT, PRELOAD), 'utf8').match(/ipcRenderer[?]?[.]invoke[(]/g) ?? []
+    ).length;
+    expect(invokes).toBeGreaterThan(60);
+    expect(methods.size).toBeGreaterThan(invokes * 0.75);
+    expect(methods.size).toBeLessThanOrEqual(invokes);
   });
 
   it.each([
@@ -110,8 +123,45 @@ describe('shapes it MUST catch', () => {
       'an optional-chained call',
       `void window.switchboard?.sessions?.pickFolder?.().then((f) => { if (f) console.log(f); });`,
     ],
+    [
+      // the point-free shape, where four of the nineteen real sites hid: the raw
+      // answer goes straight into a React setter and becomes the state
+      'a point-free .then(setter)',
+      `void window.switchboard.settings.getAutoTrust().then(setAutoTrust);`,
+    ],
+    [
+      'a .then with a DESTRUCTURED parameter — unfollowable, so reported',
+      `void window.switchboard.transcripts.binding('s').then(({ binding }) => use(binding));`,
+    ],
+    [
+      // `took`/`answered` take the RESOLVED value; a Promise makes `took` a
+      // permanent silent false, and reads exactly like the correct code
+      'a launderer with the await FORGOTTEN',
+      wrap(`if (took(window.switchboard.sessions.isDirectory('/x'))) return;`),
+    ],
+    [
+      // #440's OWN fixes wear this shape; without the rename rule, deleting the
+      // launderer from three of them left this scanner green
+      'a boolean read one RENAME away from the tracked name',
+      `void window.switchboard.sessions.create({}).then((a) => { const record = a; if (!record) return; use(record); });`,
+    ],
   ])('catches %s', (_label, source) => {
     expect(kinds(source).length).toBeGreaterThan(0);
+  });
+
+  it('reports the RIGHT node, not merely some node', () => {
+    const found = scanSource(
+      'src/renderer/src/probe.ts',
+      wrap(`const r = await window.switchboard.sessions.pickFolder();
+if (!r) return;`),
+      methods
+    );
+    expect(found).toHaveLength(1);
+    expect(found[0].kind).toBe('negation');
+    // the whole guard expression, which is what a reader needs to act on —
+    // not the bare identifier, and not the statement wrapped around it
+    expect(found[0].source).toBe('!r');
+    expect(found[0].line).toBe(3);
   });
 });
 
@@ -153,8 +203,16 @@ describe('shapes it MUST NOT flag', () => {
       wrap(`if (await somethingElse.pickFolder()) return;`),
     ],
     [
-      'a local helper that already narrows (composer mainTook)',
+      // Not because the scanner knows `mainTook` narrows — it has no idea. It
+      // passes because `mainTook` is not a bridge method, so an identically
+      // shaped helper that DID leak the raw answer would pass too. That is the
+      // injected-dependency blind spot, stated rather than papered over.
+      'a call of a local helper rather than of the bridge (composer mainTook)',
       wrap(`if (await mainTook('submitPrompt', () => window.switchboard.sessions.submitPrompt('s', 't'))) return;`),
+    ],
+    [
+      '.then(() => …) that discards the answer entirely',
+      `void window.switchboard.sessions.closeCard('c').then(() => refresh());`,
     ],
     [
       // the false positive that cost the first draft of this scanner: a closure
@@ -165,6 +223,10 @@ describe('shapes it MUST NOT flag', () => {
         wrap(`const out = await shadow().search('q');\nreturn out && { ...out };`),
     ],
     [
+      // In scope for the ISSUE and out of scope for this NET, on purpose: a
+      // refusal here throws (`cards.length` is undefined, `cards.map` is a
+      // TypeError) rather than being silently misread, and loud is the failure
+      // mode #440 is not trying to prevent.
       'a bridge result used as a VALUE rather than a boolean',
       wrap(`const cards = await window.switchboard.sessions.cards();\nconsole.log(cards.length);`),
     ],

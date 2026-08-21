@@ -414,38 +414,6 @@ pass-through is what buys the zero-churn contract, and this is what it costs, so
 put "the bridge checks `isIpcRefusal`" on the plugin-bridge work item rather than
 trusting this paragraph.
 
-#### The bill for a branded object: a refusal is TRUTHY (#440)
-
-An object is truthy, so `if (await bridge.x())` reads *"you may not do that"* as
-*"yes"* — no throw, no log line, just the wrong branch taken in silence. #439
-found the first one (`lib/composer.ts`: a refusal suppressed the terminal
-fallback and quietly reinstated the #154 defect that function exists to prevent);
-#440 swept the renderer and found **fourteen more** in five files, three of them
-wearing `?? fallback`, which a refusal walks straight through because it is
-neither `null` nor `undefined`.
-
-**The rule for every renderer call site:** a brokered bridge answer is not a
-boolean until it has been through one of these, from
-[`src/shared/ipc/refusal.ts`](../src/shared/ipc/refusal.ts):
-
-```ts
-took(result)              // === true — for the yes/no channels
-answered(result)          // the handler's answer, or undefined if refused
-result === true / false   // where the three non-answers must be told apart
-```
-
-**What enforces it:** [`scripts/refusal-truthiness.js`](../scripts/refusal-truthiness.js),
-run by the unit suite. It reads the brokered method list off the preload (never a
-hand-kept list), follows every bridge result one hop — a direct `await`, a
-`const`, a `.then` parameter — and fails if one reaches a boolean position
-without being laundered. A lint rule could not: the defect is a two-node fact (a
-value *from the bridge* reaching a *boolean position*), and eight of the fifteen
-real sites separated the two nodes by a statement. Widening the ~60 preload
-signatures to `| IpcRefusal` would not do it either — TypeScript truthiness-tests
-a union happily, and the rule that objects (`strict-boolean-expressions`) needs
-the type-checked preset, which here covers `e2e/` alone. Its blind spots are
-listed at the bottom of the script.
-
 - **Not bare `null`** (what `groups:*` and `sessions:*` answer). A handler knows
   what `null` means for its own channel; the broker is generic and does not.
   `groups:update`, `pty:attach` and `sessions:create` all answer `null` for
@@ -474,6 +442,41 @@ renderer holds `allCapabilities()`, so it cannot be refused and its declared
 return types are exact. The day a bridge is handed to a caller with a partial
 grant, that bridge's types carry the refusal — the check belongs where the
 refusal can arrive, not everywhere it cannot.
+
+#### The bill for a branded object: a refusal is TRUTHY (#440)
+
+An object is truthy, so `if (await bridge.x())` reads *"you may not do that"* as
+*"yes"* — no throw, no log line, just the wrong branch taken in silence. #439
+found the first one (`lib/composer.ts`: a refusal suppressed the terminal
+fallback and quietly reinstated the #154 defect that function exists to prevent);
+#440 swept the renderer and found **nineteen more** in five files — and not one
+of them wore the `if (await bridge.x())` shape the issue title names. Ten put the
+answer in a `.then` parameter, five parked it in a `const` first, four handed it
+point-free to a React setter. Four wore `?? fallback`, which a refusal walks
+straight through because it is neither `null` nor `undefined`.
+
+**The rule for every renderer call site:** a brokered bridge answer is not a
+boolean until it has been through one of these, from
+[`src/shared/ipc/refusal.ts`](../src/shared/ipc/refusal.ts):
+
+```ts
+took(result)              // === true — for the yes/no channels
+answered(result)          // the handler's answer, or undefined if refused
+result === true / false   // where the three non-answers must be told apart
+```
+
+**What enforces it:** [`scripts/refusal-truthiness.js`](../scripts/refusal-truthiness.js),
+run by the unit suite. It reads the brokered method list off the preload (never a
+hand-kept list), follows every bridge result one hop — a direct `await`, a
+`const`, a `.then` parameter — and fails if one reaches a boolean position
+without being laundered, or if the hop cannot be followed at all (a point-free
+`.then(setX)`, which is where four of the nineteen hid). A lint rule could not:
+the defect is a two-node fact (a value *from the bridge* reaching a *boolean
+position*), and all nineteen real sites separated the two nodes. Widening the ~60 preload
+signatures to `| IpcRefusal` would not do it either — TypeScript truthiness-tests
+a union happily, and the rule that objects (`strict-boolean-expressions`) needs
+the type-checked preset, which here covers `e2e/` alone. Its blind spots are
+listed at the bottom of the script.
 
 ### The vocabulary
 

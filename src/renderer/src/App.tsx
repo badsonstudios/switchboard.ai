@@ -522,8 +522,13 @@ export function App(): React.JSX.Element {
       setSoundsOn(p.sounds === true);
       setSpeakOn(p.speak === true);
     });
-    void bridge.settings?.getAutoTrust?.().then(setAutoTrust);
-    void bridge.settings?.getAutoLabels?.().then(setAutoLabels);
+    // `took`, not the setter point-free (#440). These two answers become the
+    // state behind a CHIP: a truthy refusal draws auto-trust as ON, and the
+    // first click then computes `!autoTrust` and writes the opposite of what
+    // main actually holds. A refusal means we could not read the setting, and
+    // the honest default for a setting we could not read is off.
+    void bridge.settings?.getAutoTrust?.().then((on) => setAutoTrust(took(on)));
+    void bridge.settings?.getAutoLabels?.().then((on) => setAutoLabels(took(on)));
     void bridge.preflight?.check?.().then((r) => {
       setPreflightOk(r.ok);
       setCliVersion(r.version);
@@ -844,7 +849,10 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     void refreshGroups();
-    void bridge.groups?.palette?.().then(setPalette);
+    // #440: a refusal is truthy, so it would become `palette: string[]` — and
+    // the rail's recolour menu calls `.indexOf` on it, which is a TypeError in
+    // a click handler rather than a missing colour.
+    void bridge.groups?.palette?.().then((p) => setPalette(answered(p) ?? []));
   }, [refreshGroups]);
 
   // display reconnected: OFFER to restore rescued popouts — never automatic
@@ -1531,8 +1539,11 @@ export function App(): React.JSX.Element {
           const next = !autoLabels;
           setAutoLabels(next); // optimistic: the chip must move on the click…
           // …and main answers with what it actually stored, which is also what
-          // re-publishes every visible label under the new setting.
-          void bridge.settings?.setAutoLabels?.(next).then(setAutoLabels);
+          // re-publishes every visible label under the new setting. `took`
+          // (#440) so a refusal — nothing was stored — reads as off rather than
+          // as a truthy object, the same convention as the card's own
+          // notify-when-done toggle.
+          void bridge.settings?.setAutoLabels?.(next).then((on) => setAutoLabels(took(on)));
         }}
         railHidden={railHidden}
         onToggleRail={toggleRail}

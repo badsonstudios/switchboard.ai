@@ -131,11 +131,15 @@ export function isIpcRefusal(value: unknown): value is IpcRefusal {
 // visible failure, just the wrong path taken in silence. #439 found the first
 // one in `lib/composer.ts` (a refusal suppressed the terminal fallback, quietly
 // reinstating the #154 defect that function exists to prevent) and #440 swept
-// the renderer for the rest — fourteen more, in five files.
+// the renderer for the rest — NINETEEN more, in five files, and not one of them
+// wore the `if (await bridge.x())` shape the issue title names: ten put the
+// value in a `.then` parameter, five parked it in a `const` first (one of those
+// two files away, behind `latestWins`), and four handed it point-free to a
+// React setter.
 //
 // So: two one-line readers, here beside the contract rather than hand-rolled at
-// fourteen call sites. They exist to make the RIGHT check the short one — a
-// sweep that leaves behind fourteen bespoke `=== true`s is a sweep that gets
+// nineteen call sites. They exist to make the RIGHT check the short one — a
+// sweep that leaves behind nineteen bespoke `=== true`s is a sweep that gets
 // half-undone by the next person who copies the wrong neighbour.
 //
 // `scripts/refusal-truthiness.js` is what keeps it swept: it parses the
@@ -186,9 +190,11 @@ export function took(result: unknown): boolean {
  * The generic is `T`, not `T | IpcRefusal`, because the preload's declared
  * types are deliberately NOT widened (see WHAT IT MEANS FOR THE DECLARED TYPES
  * above) — so at every real call site `T` is already the handler's own return
- * type and `answered()` is a runtime guard the compiler sees as identity. That
- * is the honest description of it: the types say this cannot happen, this is
- * what runs when it does.
+ * type, and `Exclude<T, IpcRefusal>` is identity because nothing in the app is
+ * assignable to `IpcRefusal`. The `| undefined` is the part that does work: it
+ * is what makes `if (!folder)` and `?? []` type-check as live branches rather
+ * than as dead ones. That is the honest description of the whole helper — the
+ * types say this cannot happen, and this is what runs when it does.
  */
 export function answered<T>(result: T): Exclude<T, IpcRefusal> | undefined {
   return isIpcRefusal(result) ? undefined : (result as Exclude<T, IpcRefusal>);
