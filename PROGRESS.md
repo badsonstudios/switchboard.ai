@@ -34,7 +34,17 @@
 > freshness. Gates: 5844 unit, 349+3sk e2e x2 (48-min lock wait, in-turn).
 > Filed #690 (TransportKind literal sweep), #691 (sessions:create autonomy
 > unvalidated, §5.29). Handoff: orchestrator/618.md.
-> | #491 feed image marker (USER-FACING) | sb-wt-3 | feature/491-image-marker | dispatched ~15:05 |
+> | STORE/POPOUT track #656+#657+#502+#503 (USER-FACING) | sb-wt-3 | feature/656-store-popout-track | dispatched ~16:10 |
+>
+> **#491 DONE — PR #692 ready, in DAN'S QUEUE (4th).** Marker derives from the
+> WIRE (envelope image/document parts), not composer state; absent key when no
+> attachments (byte-identical old blocks). Found+fixed the bug behind the bug:
+> attachment-only turns previously derived NO feed block at all (reply appeared
+> under thin air). Scope call to veto: counts documents too ("1 image and 2
+> files attached"). Review caught title= becoming the accessible name. Gates:
+> 5866 unit, 349+3sk e2e x2. Filed #693 (isMeta question — Dan-gated, one live
+> turn). Handoff: orchestrator/491.md.
+> **#618/PR #689 MERGED ~16:05** (#618 closed) — 7 internal merges this run.
 >
 > **Merge chain:** MERGED so far: #669, #665, #672 (12:03), #676 (12:34,
 > b2a7201, #650 closed — CHANGELOG conflict resolved by orchestrator, 0.8.3
