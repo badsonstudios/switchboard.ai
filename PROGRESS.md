@@ -3,6 +3,33 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🟢 ORCHESTRATION RUN ACTIVE — started 2026-08-21 (~morning), Fable orchestrating
+>
+> **Single-writer rule: this file is written ONLY by the orchestrator.** Workers
+> report through `.claude/work_files/orchestrator/<issue#>.md` handoffs; those are
+> the inputs, this block is the output. A fresh session resuming this run reads
+> this block, the handoff files, and `gh pr list` — then continues the loop.
+>
+> **Run plan (from the staged queue below):** T2/T4 + main-side items fill the
+> empty window first; #650 serializes into wt-1 the moment T2/T4 merges (same
+> files); the three renderer tracks (events / rail-cards / store-popout) dispatch
+> only after #650 is in. #588 probe SKIPPED (spends live tokens — needs Dan's
+> explicit ok); #490 dispatched directly, the stream seam is otherwise free.
+> NOTE: `.claude/work_files/loud-class.txt` (referenced by #650) is GONE — #650's
+> worker must regenerate the site list via the #649 scanner / 440.md.
+>
+> **Active workers:**
+> | Issue | Worktree | Branch | Status |
+> |---|---|---|---|
+> | #255 T2+T4 (+#663 rider) | sb-wt-1 | feature/255-t2t4-renderer-tranches | dispatched |
+> | #490 user envelope | sb-wt-2 | feature/490-user-envelope | dispatched |
+> | #654 sanitizer label-for | sb-wt-3 | feature/654-label-for | dispatched |
+>
+> **Merge queue:** empty. Internal PRs merge on green; user-facing PRs queue for Dan.
+> **Dan's queue (user-facing PRs):** empty so far.
+> **Next up:** #650 (after T2/T4) → #618 (after #490) → #642/#491 → events /
+> rail-cards / store-popout tracks (after #650). Dan-only: #528 #529 #521, #588 probe ok?
+
 > # ▶▶ START HERE — READY FOR THE NEXT ORCHESTRATION (prepped 2026-08-21)
 >
 > **v0.8.2 RELEASED 2026-08-21** — train #664 (5 PRs: #643 #644 #646 #653
