@@ -19,6 +19,7 @@ import {
   terminalFindProvider,
 } from './find-providers';
 import type { TranscriptSearchResult } from '../../../shared/transcripts';
+import { ipcRefusal } from '../../../shared/ipc/refusal';
 
 function fresh(): RendererRegistry {
   const r = new ContributionRegistry<RendererContributions>();
@@ -148,9 +149,14 @@ describe('the Session view provider (the E17-01 engine behind the bar)', () => {
   it('reports a search that could not run, rather than reporting no matches', async () => {
     // A refused IPC call RESOLVES with a branded refusal (shared/ipc/refusal),
     // so "not the shape we asked for" must never be read as "nothing found".
-    (window.switchboard.transcripts.search as ReturnType<typeof vi.fn>).mockResolvedValue({
-      __ipcRefused: true,
-    });
+    //
+    // The real `ipcRefusal()` factory, not a hand-written `{__ipcRefused:true}`
+    // (#439's pattern, and #440 swapped this one over): a literal keeps passing
+    // if the shape on the wire changes underneath it, which is the one failure
+    // a test about the shape must not have.
+    (window.switchboard.transcripts.search as ReturnType<typeof vi.fn>).mockResolvedValue(
+      ipcRefusal('transcripts:search', 'capability-not-held')
+    );
     const res = await sessionFindProvider.search?.({ sessionId: 's1', surface: null }, { term: 'x' });
     expect(res?.notice).toEqual({ key: 'find.notice.failed', tone: 'error' });
     expect(res?.total).toBe(0);

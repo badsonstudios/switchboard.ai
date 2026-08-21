@@ -54,6 +54,7 @@ import { snippetAround, type TerminalMatch } from '../lib/terminal-find';
 import type { RendererRegistry } from './registry-instance';
 import { safely } from './boundary';
 import type { TranscriptSearchResult } from '../../../shared/transcripts';
+import { answered } from '../../../shared/ipc/refusal';
 
 const manifest = (id: string, displayName: string): ReturnType<typeof manifestFor> =>
   manifestFor(id, displayName, 'find.provide');
@@ -200,14 +201,19 @@ export const sessionFindProvider: FindProviderContribution = {
     // search is this call with more ids). The bar passes exactly one, and that
     // one is the focused card's: the "never matches another card" guarantee
     // reduced to a single expression.
-    const res = await window.switchboard.transcripts.search({
-      sessionIds: [ctx.sessionId],
-      query: { term: query.term, caseSensitive: query.caseSensitive, wholeWord: query.wholeWord },
-      limit: 500,
-    });
     // A refused capability resolves to a non-result rather than rejecting
     // (shared/ipc/refusal) — treat anything that is not the shape we asked for
-    // as "could not search", never as "no matches".
+    // as "could not search", never as "no matches". `answered()` turns the
+    // refusal into `undefined` up front (#440) so the shape check below is the
+    // only thing left to get right; it was already correct here, and this makes
+    // it correct for the same reason as everywhere else rather than by luck.
+    const res = answered(
+      await window.switchboard.transcripts.search({
+        sessionIds: [ctx.sessionId],
+        query: { term: query.term, caseSensitive: query.caseSensitive, wholeWord: query.wholeWord },
+        limit: 500,
+      })
+    );
     if (!res || !Array.isArray(res.hits)) {
       return { hits: [], total: 0, truncated: false, notice: { key: 'find.notice.failed', tone: 'error' } };
     }
