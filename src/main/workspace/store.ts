@@ -42,6 +42,8 @@ import {
 } from '../../shared/suppressed';
 import { Rule, isSaneRule } from '../events/rules';
 import { isUsableQuietWindow } from '../../shared/quiet-hours';
+import type { AutonomyMode } from '../../shared/sessions';
+import type { NotificationPrefs } from '../../shared/notifications';
 
 export interface PersistedSession {
   id: string;
@@ -74,7 +76,7 @@ export interface PersistedSession {
   usage?: { input: number; output: number; cacheRead: number; cacheCreate: number };
   model?: string;
   /** autonomy mode this card runs at (stable across resumes) */
-  autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
+  autonomy?: AutonomyMode;
   /**
    * Which transport this card's sessions run on (P2-E18-08b). Stored per CARD,
    * not per live session, so the choice survives a resume the same way autonomy
@@ -141,24 +143,16 @@ export interface PersistedWindow extends WindowState {
   displayFingerprint: string;
 }
 
-export interface NotificationPrefsState {
-  enabled: boolean;
-  quietStart?: string;
-  quietEnd?: string;
-  /** OS toast popups — opt-in, default OFF (Dan 2026-07-22) */
-  osToasts?: boolean;
-  /**
-   * Per-session cues instead of the one plain beep (P2-E14-05a, §5.9).
-   *
-   * Opt-in, default OFF — E14's exit criterion is that each channel is opt-in,
-   * and OFF is also what makes this item cost an existing user nothing: with it
-   * off the beep in `notifier.ts` is exactly the sound they have today.
-   */
-  sounds?: boolean;
-  /** Spoken announcements (P2-E14-05a). Opt-in, default OFF, and of the two
-   *  this is the one nobody should ever meet without asking for it. */
-  speak?: boolean;
-}
+// The notification prefs record moved to `shared/notifications.ts` in #618,
+// losing the `State` suffix on the way (it was `NotificationPrefsState` here).
+// `notifications:getPrefs` returns it verbatim, so the preload held a second
+// hand-written copy and nothing compared the two.
+//
+// Persisted shape and wire shape are the same fields — there is no main-only
+// half to add — so this is an import rather than an `extends`, and there is no
+// alias either: one record, one name, in both processes. Re-exported because
+// every existing importer says `from './workspace/store'`.
+export type { NotificationPrefs };
 
 export interface WorkspaceState {
   version: 1;
@@ -171,7 +165,7 @@ export interface WorkspaceState {
    *  §5.25). Lives here, not localStorage: the packaged renderer's loopback
    *  origin changes port per launch, so localStorage resets every run. */
   ui: unknown;
-  notifications: NotificationPrefsState;
+  notifications: NotificationPrefs;
   /**
    * Notification rules (P2-E14-03, §5.9) — `when [event] in [session | any] ->
    * [actions]`. A TOP-LEVEL typed field for the same reason `updates` is one:
@@ -994,11 +988,11 @@ export class WorkspaceStore {
     return this.state.ui;
   }
 
-  getNotificationPrefs(): NotificationPrefsState {
+  getNotificationPrefs(): NotificationPrefs {
     return { ...this.state.notifications };
   }
 
-  setNotificationPrefs(p: Partial<NotificationPrefsState>): void {
+  setNotificationPrefs(p: Partial<NotificationPrefs>): void {
     // merge-patch semantics: the enabled-toggle must not reset osToasts /
     // quiet hours to defaults (review P1 #13 — replace-then-sanitize wiped
     // every pref the caller didn't send)
@@ -1602,13 +1596,13 @@ function badFields(o: object, keys: readonly [string, 'string' | 'boolean'][]): 
   return keys.filter(([k, t]) => wrongType(o, k, t)).map(([k]) => k);
 }
 
-function sanitizeNotifications(n: unknown): Repaired<NotificationPrefsState> {
+function sanitizeNotifications(n: unknown): Repaired<NotificationPrefs> {
   // A whole block that is not an object (an ARRAY is not one either) loses
   // every setting in it at once, so it is named as one repair rather than
   // field by field.
   if (typeof n !== 'object' || n === null || Array.isArray(n))
     return { value: { enabled: true }, repaired: n == null ? [] : ['notifications'] };
-  const x = n as Partial<NotificationPrefsState>;
+  const x = n as Partial<NotificationPrefs>;
   const usable = isUsableQuietWindow(x.quietStart, x.quietEnd);
   return {
     value: {

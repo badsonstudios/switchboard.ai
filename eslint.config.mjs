@@ -98,7 +98,24 @@ export default tseslint.config(
     // into either. An import from main/ or renderer/ would bundle that
     // process's code into the other and quietly re-make the contribution
     // registry main-only — the exact defect P2-E15-02 fixed (AR-P0-2).
-    files: ['src/shared/**/*.{ts,tsx}'],
+    //
+    // `src/preload` joined the list in #618, because it is the same surface
+    // seen from the other end. The preload is the WIRE: main's handlers on one
+    // side, the renderer's `window.switchboard` on the other, and it is
+    // compiled into its own bundle that both of them are typed against. An
+    // `import type { SessionRecord } from '../main/…'` there is the shortcut
+    // that #590 and #618 exist to close — it makes the boundary look declared
+    // while it is really just main's shape borrowed, and the value form of the
+    // same import bundles main into the preload. Everything the preload needs
+    // from either process belongs in `src/shared`, which is why nothing here
+    // had to change to satisfy this: the preload already imports only from
+    // `electron` and `../shared/*`.
+    //
+    // `mts`/`cts` are in the glob for the reason they are in the type-checked
+    // blocks below — a file extension is not a reason to fall off a rule, and
+    // the last list in this file that quietly omitted part of its surface is
+    // what #618 was filed about.
+    files: ['src/{shared,preload}/**/*.{ts,tsx,mts,cts}'],
     rules: {
       'no-restricted-syntax': ['error', ...EFFECT_BODY_RULES],
       'no-restricted-imports': [

@@ -52,6 +52,7 @@ import { IpcBroker } from '../ipc/broker';
 import { Channel } from '../../shared/ipc/capabilities';
 import type { PtyAttachment, PtyChunk, PtySnapshot } from '../../shared/ipc/pty';
 import type { PermissionRequest } from '../../shared/ipc/permissions';
+import { isAutonomyMode, type AutonomyMode, type SessionCardWire } from '../../shared/sessions';
 import type { ProviderCapabilities } from '../extensibility/contributions';
 import { TranscriptWatcher } from '../transcripts/watcher';
 import { searchTranscripts } from '../transcripts/search';
@@ -850,7 +851,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         cardId: string;
         folder: string;
         title: string;
-        autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
+        autonomy?: AutonomyMode;
         groupId?: string;
       }
     ) => {
@@ -1360,7 +1361,11 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   // `await` is `autoKeyFor`, and it is evaluated AFTER `status` in the object
   // literal. Hoist any resolution above those reads and the renderer's ordering
   // guard silently degrades to a coin flip, with every test still green.
-  broker.handle('sessions:cards', async () => {
+  // The RETURN TYPE is the drift pin (#618). `SessionCardWire` is what the
+  // preload declares too, so a field added here and not there — or a `status`
+  // widened back to `string` — fails `tsc` at this handler instead of at a
+  // renderer that reads a field nobody sends.
+  broker.handle('sessions:cards', async (): Promise<SessionCardWire[]> => {
     const live = manager.list();
     // The reverse of `cardOfLive`, and no longer a tie-break: a card holds ONE
     // binding since #187, because `sessions:create` reaps a dead session before
@@ -1494,9 +1499,14 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   // mode mid-flight, so it applies on the NEXT spawn/resume of this card
   broker.handle('sessions:setAutonomy', (_e, cardId: string, autonomy: string) => {
     if (typeof cardId !== 'string') return;
-    if (!['plan', 'ask', 'auto-edit', 'full-auto'].includes(autonomy)) return;
+    // §5.29: untrusted renderer input, so the parameter stays `string` and the
+    // vocabulary is checked at runtime. The check is the SHARED guard as of
+    // #618 — it was an inline `['plan', 'ask', …]` array, which is the one copy
+    // of the list whose going stale means silently refusing a mode the chips
+    // still offer.
+    if (!isAutonomyMode(autonomy)) return;
     const prior = deps.persist.list().find((s) => s.id === cardId);
-    if (prior) deps.persist.upsert({ ...prior, autonomy: autonomy as PersistedSession['autonomy'] });
+    if (prior) deps.persist.upsert({ ...prior, autonomy });
   });
 
   // Freeform task label for a card (E7-03), persisted across restarts — and
