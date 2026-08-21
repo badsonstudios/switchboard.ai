@@ -61,6 +61,36 @@ on the floor, and say so in your PR.
 
 ## 0.8.3 — unreleased
 
+### Changed
+
+- **A reply or a document can no longer put a name on one of switchboard.ai's
+  own controls.** Raw HTML can contain a `<label>`, and a label is not just
+  words: it points at a control *anywhere on the page* by its internal name, and
+  from then on it is that control's label — a screen reader reads the label's
+  words as the control's name, and clicking the words operates the control. So a
+  sentence in a reply could make your screen reader announce the *ntfy topic*
+  box in Push setup as "Paste your API key here to continue" — words that are
+  nowhere on your screen and that switchboard.ai never wrote. Labels are now
+  removed from rendered Markdown everywhere: the session feed, the document
+  viewer and the release-notes pane you are reading this in. The words inside
+  them stay, so you still read everything the reply or the document said, and
+  nothing else changes on screen. Alongside it, Push setup, Quiet hours and the
+  command palette stopped giving their controls fixed, predictable internal
+  names, so there is less for content to aim at even if a label got through.
+
+### Internal
+
+- A refused IPC call can no longer crash the part of the app that asked. The
+  broker answers a capability-denied call with a marker object rather than an
+  error; forty-one places in the renderer used that marker as if it were the
+  real answer — mapping over it, reading fields off it, casting it into a typed
+  store — which would have thrown inside a callback nobody catches. Every one
+  of them now checks first and falls back to the empty, inert answer that site
+  already knows how to draw, and the check is enforced by the unit suite so a
+  new one cannot be written. No visible change today: this window holds every
+  capability, so nothing here can be refused yet (#650).
+
+
 ## 0.8.2 — 2026-08-21
 
 ### Changed

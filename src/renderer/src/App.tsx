@@ -421,7 +421,11 @@ export function App(): React.JSX.Element {
     void bridge.sessions
       ?.pendingPermissions?.()
       // one write for the whole replay, not one per request
-      .then((list) => sessionStore.addPendingPermissions(list.filter(groupable)))
+      // `answered` first (#650): a refused replay would reach `.filter` as the
+      // brand and throw `list.filter is not a function` inside a `.then` this
+      // call drives with `void` - an unhandled rejection instead of the
+      // fail-open the next comment promises. An empty replay IS the fail-open.
+      .then((list) => sessionStore.addPendingPermissions((answered(list) ?? []).filter(groupable)))
       // fail-open: a ledger that never fills costs the grouped card, not a
       // session — every one of these requests is still on its own card's bar
       .catch(() => {});
@@ -562,7 +566,13 @@ export function App(): React.JSX.Element {
   }, []);
 
   useEffect(() => {
-    void bridge.notifications?.getPrefs?.().then((p) => {
+    void bridge.notifications?.getPrefs?.().then((raw) => {
+      // A refusal is not a prefs record (#650). Reading `.enabled` off the
+      // brand answers `undefined`, which lands in the state as "off" without
+      // anything having been read - so learn nothing, change nothing, and
+      // leave the three toggles on the defaults this component mounted with.
+      const p = answered(raw);
+      if (!p) return;
       setNotifEnabled(p.enabled);
       setSoundsOn(p.sounds === true);
       setSpeakOn(p.speak === true);
@@ -574,7 +584,12 @@ export function App(): React.JSX.Element {
     // the honest default for a setting we could not read is off.
     void bridge.settings?.getAutoTrust?.().then((on) => setAutoTrust(took(on)));
     void bridge.settings?.getAutoLabels?.().then((on) => setAutoLabels(took(on)));
-    void bridge.preflight?.check?.().then((r) => {
+    void bridge.preflight?.check?.().then((answer) => {
+      // Same as above (#650): `r.ok` off a refusal is `undefined`, which would
+      // paint the CLI as BROKEN on the strength of a call we were not allowed
+      // to make. Not knowing is not the same as a failed preflight.
+      const r = answered(answer);
+      if (!r) return;
       setPreflightOk(r.ok);
       setCliVersion(r.version);
     });
@@ -616,11 +631,21 @@ export function App(): React.JSX.Element {
     // holding the answer; this is the only thing that ever asks for it.
     void bridge.update
       ?.handshake?.()
-      .then((h) => h?.updatedTo && setUpdateNotice({ kind: 'installed', version: h.updatedTo }))
+      .then((answer) => {
+        // #650: `h?.updatedTo` on a refusal reads `undefined` off the brand,
+        // which happens to be the right branch by luck. Say it on purpose.
+        const h = answered(answer);
+        if (h?.updatedTo) setUpdateNotice({ kind: 'installed', version: h.updatedTo });
+      })
       .catch(() => {});
     void bridge.update
       ?.getPrefs?.()
-      .then((p) => setAutoCheckUpdates(p.autoCheck !== false))
+      .then((answer) => {
+        // #650: `undefined !== false` is `true`, so a refusal would tick the
+        // auto-check box as if main had said so. Leave it as it was.
+        const p = answered(answer);
+        if (p) setAutoCheckUpdates(p.autoCheck !== false);
+      })
       .catch(() => {});
     // THE STARTUP CHECK. Driven from here rather than from main's bootstrap
     // for one reason: this is the first moment a window provably exists to
@@ -629,7 +654,12 @@ export function App(): React.JSX.Element {
     // coalesces repeats, so a second mount costs no second API call.
     void bridge.update
       ?.check?.({ manual: false })
-      .then((s) => applyUpdateStatus(s))
+      // #650: `applyUpdateStatus` reads `.state` off its argument, so a refusal
+      // would render as a status with no state - a dialog saying nothing.
+      .then((s) => {
+        const status = answered(s);
+        if (status) applyUpdateStatus(status);
+      })
       // fail-open, and this is the load-bearing one: a rejected update check
       // must never reach the console as an unhandled rejection, let alone stop
       // the shell from mounting
@@ -654,11 +684,20 @@ export function App(): React.JSX.Element {
     const off = bridge.health?.onStatus?.((s) => setServiceHealth(s));
     void bridge.health
       ?.get?.()
-      .then((s) => setServiceHealth((prev) => prev ?? s))
+      .then((s) => {
+        // #650: the brand as the health record draws the dot off an unread
+        // field. No answer means no dot, which is what this starts as.
+        const status = answered(s);
+        if (status) setServiceHealth((prev) => prev ?? status);
+      })
       .catch(() => {});
     void bridge.health
       ?.getPrefs?.()
-      .then((p) => setStatusPolling(p.poll !== false))
+      // #650: `undefined !== false` is `true` - see the update prefs above
+      .then((answer) => {
+        const p = answered(answer);
+        if (p) setStatusPolling(p.poll !== false);
+      })
       .catch(() => {});
     return () => off?.();
   }, []);
@@ -666,7 +705,11 @@ export function App(): React.JSX.Element {
   const checkForUpdates = React.useCallback(() => {
     void bridge.update
       ?.check?.({ manual: true })
-      .then((s) => applyUpdateStatus(s))
+      // #650, as above - a refused manual check leaves the dialog where it was
+      .then((s) => {
+        const status = answered(s);
+        if (status) applyUpdateStatus(status);
+      })
       .catch(() => {});
     // eslint's exhaustive-deps plugin isn't installed; bridge is stable
   }, [applyUpdateStatus]);
@@ -686,7 +729,15 @@ export function App(): React.JSX.Element {
     // an empty working one. A Save button that silently does nothing is worse
     // than a disabled one that says why (review finding).
     if (!answer) return setPushConfig(unavailablePushConfig());
-    void answer.then((c) => setPushConfig(c)).catch(() => setPushConfig(unavailablePushConfig()));
+    // #650: a refusal is the same thing as no `push` namespace — we could not
+    // ask — so it takes the branch two lines up rather than becoming the config.
+    // `PushConfig`'s own contract says why: the dialog computes
+    // `available = cfg?.storeAvailable !== false`, and the brand has no
+    // `storeAvailable`, so an unlaundered refusal renders a WORKING, empty
+    // setup form with Save enabled — the one state that comment forbids.
+    void answer
+      .then((c) => setPushConfig(answered(c) ?? unavailablePushConfig()))
+      .catch(() => setPushConfig(unavailablePushConfig()));
     // eslint's exhaustive-deps plugin isn't installed; bridge is stable
   }, []);
   // ── quiet hours (E14-05b, §5.9) ──────────────────────────────────────────
@@ -698,7 +749,10 @@ export function App(): React.JSX.Element {
   const refreshQuiet = React.useCallback(() => {
     const answer = bridge.notifications?.quietState?.();
     if (!answer) return setQuietState(null);
-    void answer.then((s) => setQuietState(s)).catch(() => setQuietState(null));
+    // #650: `null` is this state's designed "cannot tell", and it is already
+    // what the `.catch` and the line above answer. A refusal is a third way of
+    // not being told, not a quiet state with an undefined `heldCount`.
+    void answer.then((s) => setQuietState(answered(s) ?? null)).catch(() => setQuietState(null));
     // eslint's exhaustive-deps plugin isn't installed; bridge is stable
   }, []);
   const openQuietHours = React.useCallback(() => {
@@ -734,7 +788,20 @@ export function App(): React.JSX.Element {
     (key: string, p: Promise<PushWriteResult> | undefined) => {
       if (!p) return setPushConfig(unavailablePushConfig());
       void p
-        .then((r) => {
+        .then((answer) => {
+          // #650: the brand has no `config` and no `ok`, so an unlaundered
+          // refusal would put `undefined` into a `PushConfig | null` state (the
+          // empty-working-form again) AND report `problem: 'refused'` — a
+          // failed WRITE — for a call that never reached the store. Refused is
+          // the honest word for both halves, and it is what the `.catch` below
+          // already says; `unavailablePushConfig()` is what the caller above
+          // shows when it could not ask at all.
+          const r = answered(answer);
+          if (!r) {
+            setPushConfig(unavailablePushConfig());
+            setPushWrite({ key, problem: 'refused' });
+            return;
+          }
           setPushConfig(r.config);
           // What the dialog renders beside the field: main is the authority on
           // whether the write happened, and a credential cannot be read back to
@@ -747,7 +814,16 @@ export function App(): React.JSX.Element {
   );
   const testPush = React.useCallback(
     (channel: 'push' | 'webhook'): Promise<PushSendResult> =>
-      bridge.push?.test?.(channel) ?? Promise.resolve({ ok: false, reason: 'not-configured' }),
+      // #650, and this one is the worst of the family because the brand carries
+      // a field the reader USES: the dialog renders
+      // `t('push.reason.' + (r.reason ?? 'network'))`, and a refusal's `reason`
+      // is `'capability-not-held'` — no such key exists, so the literal string
+      // `push.reason.capability-not-held` goes on screen. `refused` is the key
+      // this list already has for "main would not do it".
+      bridge.push
+        ?.test?.(channel)
+        .then((r) => answered(r) ?? { ok: false, reason: 'refused' }) ??
+      Promise.resolve({ ok: false, reason: 'not-configured' }),
     []
   );
 
@@ -983,7 +1059,12 @@ export function App(): React.JSX.Element {
       sessionStore.setEvents(l as EventDto[]);
     });
     void window.switchboard?.events?.list?.().then((l) => {
-      if (!gotPush) sessionStore.setEvents(l as EventDto[]);
+      // `answered` BEFORE the cast (#650). `events:list` is declared
+      // `Promise<unknown[]>`, so the cast is the only thing standing between
+      // the wire and a typed store - and a refusal would be cast straight into
+      // it and `.map`ped on the next render. An empty attention queue is the
+      // fail-open: no badges, no crash.
+      if (!gotPush) sessionStore.setEvents((answered(l) ?? []) as EventDto[]);
     });
     return off;
   }, []);
@@ -1557,8 +1638,14 @@ export function App(): React.JSX.Element {
         onToggleSounds={() => {
           const next = !soundsOn;
           setSoundsOn(next); // optimistic; main answers with what it stored
-          void bridge.notifications?.setPrefs?.({ sounds: next }).then((p) => {
-            const on = p?.sounds === true;
+          void bridge.notifications?.setPrefs?.({ sounds: next }).then((answer) => {
+            // #650: a refused write stored nothing, so main has no answer to
+            // win with. Keep the optimistic chip (what every other failure
+            // here already does - the sibling calls swallow rejections) and
+            // above all do not play a cue for a setting nobody changed.
+            const p = answered(answer);
+            if (!p) return;
+            const on = p.sounds === true;
             setSoundsOn(on);
             if (on) sharedAnnouncer().play(DEFAULT_SOUND.id); // hear what you turned on
           });
@@ -1569,8 +1656,11 @@ export function App(): React.JSX.Element {
         onToggleSpeak={(sample) => {
           const next = !speakOn;
           setSpeakOn(next);
-          void bridge.notifications?.setPrefs?.({ speak: next }).then((p) => {
-            const on = p?.speak === true;
+          void bridge.notifications?.setPrefs?.({ speak: next }).then((answer) => {
+            // #650, as for sounds above
+            const p = answered(answer);
+            if (!p) return;
+            const on = p.speak === true;
             setSpeakOn(on);
             // A voice switch you cannot hear until the next event is a switch
             // you cannot test. Saying the words on the way ON is the whole
@@ -1610,7 +1700,11 @@ export function App(): React.JSX.Element {
             ?.setPrefs?.({ autoCheck: on })
             // …then main's sanitized answer wins: it is the authority, and a
             // refused write must not leave the box saying otherwise
-            .then((p) => setAutoCheckUpdates(p.autoCheck !== false))
+            .then((answer) => {
+              // #650: a refused write is not an answer to be overruled by
+              const p = answered(answer);
+              if (p) setAutoCheckUpdates(p.autoCheck !== false);
+            })
             .catch(() => {});
         }}
         statusPolling={statusPolling}
@@ -1619,7 +1713,11 @@ export function App(): React.JSX.Element {
           void bridge.health
             ?.setPrefs?.({ poll: on })
             // …then main's answer wins: it is the authority on what it will do
-            .then((p) => setStatusPolling(p.poll !== false))
+            .then((answer) => {
+              // #650, as above
+              const p = answered(answer);
+              if (p) setStatusPolling(p.poll !== false);
+            })
             .catch(() => {});
         }}
         // a second dialog is above this one: two stacked `aria-modal` regions
@@ -1758,19 +1856,23 @@ export function App(): React.JSX.Element {
                the same way — quietly, with a line in the log. */
             onCreateGroup={(name) => {
               void bridge.groups?.create?.({ name }).then((made) => {
-                groupChangeLanded('create', made);
+                // `answered` (#650): `groupChangeLanded` calls a change refused
+                // when its argument is null/undefined, and the brand is
+                // neither - so a broker refusal would log "created" for a group
+                // that is not there. The refresh below reverts the rail anyway.
+                groupChangeLanded('create', answered(made));
                 return refreshGroups();
               });
             }}
             onRenameGroup={(id, name) => {
               void bridge.groups?.update?.(id, { name }).then((next) => {
-                groupChangeLanded('rename', next);
+                groupChangeLanded('rename', answered(next)); // #650, as above
                 return refreshGroups();
               });
             }}
             onRecolorGroup={(id, color) => {
               void bridge.groups?.update?.(id, { color }).then((next) => {
-                groupChangeLanded('recolor', next);
+                groupChangeLanded('recolor', answered(next)); // #650, as above
                 return refreshGroups();
               });
             }}

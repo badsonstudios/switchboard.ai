@@ -100,7 +100,7 @@ const quietField = (w: Page, name: string) => w.locator(`[data-quiet-field="${na
 async function openFromPalette(w: Page, filter: string, commandId: string): Promise<void> {
   await w.keyboard.press(`${MOD}+Shift+P`);
   await w.getByPlaceholder('Type a command or a session name…').fill(filter);
-  await w.locator(`[id="palette-row-${commandId}"]`).click();
+  await w.locator(`[data-palette-row="${commandId}"]`).click();
 }
 
 /**

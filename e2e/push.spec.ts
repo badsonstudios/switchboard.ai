@@ -70,7 +70,7 @@ const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 async function openSetup(w: Page): Promise<void> {
   await w.keyboard.press(`${MOD}+Shift+P`);
   await w.getByPlaceholder('Type a command or a session name…').fill('phone push');
-  await w.locator('[id="palette-row-attention.pushSetup"]').click();
+  await w.locator('[data-palette-row="attention.pushSetup"]').click();
   await expect(dialog(w)).toBeVisible();
 }
 

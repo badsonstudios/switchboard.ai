@@ -16,6 +16,7 @@ import { Terminal } from '@xterm/xterm';
 import { SearchAddon } from '@xterm/addon-search';
 import { TerminalShadow } from './terminal-shadow';
 import type { PtySnapshot } from '../../../shared/ipc/pty';
+import { ipcRefusal } from '../../../shared/ipc/refusal';
 
 /**
  * jsdom has no `matchMedia`, and xterm's `CoreBrowserService` calls it while
@@ -66,6 +67,32 @@ describe('TerminalShadow replays main’s ring buffer and searches it', () => {
   it('…and when the read THROWS, rather than taking find down with it', async () => {
     shadow = new TerminalShadow({ read: vi.fn().mockRejectedValue(new Error('main is gone')) });
     expect(await shadow.search({ term: 'NEEDLE' })).toBeNull();
+  });
+
+  it('…and when the BROKER refuses the read (#650)', async () => {
+    // `read` is an injected closure, so `scripts/refusal-truthiness.js` cannot
+    // see that it calls `pty.snapshot` — this test is the whole net for that
+    // site. Without the `answered` in `load()`, the brand is truthy and gets
+    // replayed as a snapshot with no `snapshot`, `cols` or `rows`: a 0x0
+    // screen that answers "found nothing" for a scrollback nobody was allowed
+    // to read, which is #516's blocker with a different cause.
+    // The cast is the POINT, not a shortcut: the preload declares
+    // `pty:snapshot` as `Promise<PtySnapshot | null>` and #346 declined to
+    // widen it, so "a refusal arrives here" is a thing the types say cannot
+    // happen and the runtime does anyway. That is the whole reason `answered`
+    // exists rather than a type guard.
+    const read = (): Promise<PtySnapshot | null> =>
+      Promise.resolve(ipcRefusal('pty:snapshot', 'capability-not-held') as unknown as PtySnapshot);
+    shadow = new TerminalShadow({ read });
+    expect(await shadow.search({ term: 'NEEDLE' })).toBeNull();
+    // …and it never got as far as BUILDING one. The null above is not enough on
+    // its own: without `answered` the brand is truthy, `ensureTerminal` runs,
+    // and the replay of `snap.snapshot` (undefined) throws — which also ends in
+    // null, by a route that has already appended an off-screen xterm to the
+    // document and sized it 0x0. This is the assertion that tells the two
+    // apart, and it is the difference between "we could not look" and "we
+    // looked at nothing".
+    expect(document.body.querySelector('[aria-hidden="true"]')).toBeNull();
   });
 
   it('does NOT interpret the bytes — an escape sequence is not text', async () => {

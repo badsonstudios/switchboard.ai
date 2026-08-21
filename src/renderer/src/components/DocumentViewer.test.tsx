@@ -11,6 +11,7 @@ import React, { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
 import type { FileReadResult, FileWatchNotice } from '../../../shared/ipc/fs';
+import { ipcRefusal } from '../../../shared/ipc/refusal';
 
 const sourceProps: Array<Record<string, unknown>> = [];
 vi.mock('./DocumentSource', () => ({
@@ -290,6 +291,21 @@ describe('files that are not shown', () => {
       await mount(`/p/${reason}.md`);
       expect(q('[data-testid="doc-refusal"]')?.textContent).toContain(copy);
     }
+  });
+
+  it('a BROKER refusal reads as "unreadable", not as a raw i18n key (#650)', async () => {
+    // `files.read` is reached through the `files()` accessor, so
+    // `scripts/refusal-truthiness.js` cannot see this call site — this test is
+    // the net for it. Without `answered`, the brand goes into `result`
+    // unchanged (`applyRead` sees no `.ok` and, with `keep` false, stores it),
+    // and the strip renders `t('document.refusal.' + undefined)` — the literal
+    // string `document.refusal.undefined` on screen. The whole point of the
+    // #650 sweep is that a refusal degrades to something already designed.
+    answer = () => ipcRefusal('fs:read', 'capability-not-held') as unknown as FileReadResult;
+    await mount('/p/refused.md');
+    const strip = q('[data-testid="doc-refusal"]');
+    expect(strip?.textContent).toContain("couldn't be read");
+    expect(strip?.textContent).not.toContain('document.refusal');
   });
 
   it('a truncated read says how much of the file it is showing', async () => {

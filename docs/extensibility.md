@@ -443,20 +443,45 @@ return types are exact. The day a bridge is handed to a caller with a partial
 grant, that bridge's types carry the refusal — the check belongs where the
 refusal can arrive, not everywhere it cannot.
 
-#### The bill for a branded object: a refusal is TRUTHY (#440)
+#### The bill for a branded object: a refusal is a VALUE (#440, #650)
 
-An object is truthy, so `if (await bridge.x())` reads *"you may not do that"* as
-*"yes"* — no throw, no log line, just the wrong branch taken in silence. #439
-found the first one (`lib/composer.ts`: a refusal suppressed the terminal
-fallback and quietly reinstated the #154 defect that function exists to prevent);
-#440 swept the renderer and found **nineteen more** in five files — and not one
-of them wore the `if (await bridge.x())` shape the issue title names. Ten put the
-answer in a `.then` parameter, five parked it in a `const` first, four handed it
-point-free to a React setter. Four wore `?? fallback`, which a refusal walks
-straight through because it is neither `null` nor `undefined`.
+Pass-through is what makes this contract free at the point of use, and this is
+what it costs: the brand is loose in the renderer, and it gets misread in two
+opposite directions.
 
-**The rule for every renderer call site:** a brokered bridge answer is not a
-boolean until it has been through one of these, from
+**Silent (#440).** An object is truthy, so `if (await bridge.x())` reads *"you
+may not do that"* as *"yes"* — no throw, no log line, just the wrong branch taken
+in silence. #439 found the first one (`lib/composer.ts`: a refusal suppressed the
+terminal fallback and quietly reinstated the #154 defect that function exists to
+prevent); #440 swept the renderer and found **nineteen more** in five files — and
+not one of them wore the `if (await bridge.x())` shape the issue title names. Ten
+put the answer in a `.then` parameter, five parked it in a `const` first, four
+handed it point-free to a React setter. Four wore `?? fallback`, which a refusal
+walks straight through because it is neither `null` nor `undefined`.
+
+**Loud (#650).** The same object used as the *answer*:
+`events.list().then((l) => setEvents(l as EventDto[]))`. `l.map` on the next
+render is `l.map is not a function`, inside a `.then` nobody catches — an
+unhandled rejection, or a dead component tree. Where the site reads a field
+instead of calling a method it is quieter and no better: `status.files` off the
+brand is `undefined`, and the pane renders as if git had answered. #650 found
+**forty-one** across eight files. Two wore an `as` cast over a channel declared
+`Promise<unknown[]>`, which puts the brand into a typed store under a promise it
+cannot keep; four more parked the promise in a local and called `.then` on
+*that*, which the first draft of the scanner could not see at all — one of them
+handed the brand to a dialog that rendered `t('push.reason.' + r.reason)`, and
+the brand's own `reason` is `'capability-not-held'`, so a missing i18n key would
+have gone on screen verbatim.
+
+Loud beats silent. Neither is **fail-open** — a hard constraint (PHILOSOPHY §3):
+our breakage never blocks a session, and an unhandled rejection on the
+session-list refresh is our breakage blocking one. #650 therefore added no third
+helper and no per-channel envelope (that shape is ruled out above, for the same
+reason it was then); it generalised the rule the two readers already imply.
+
+**The rule for every renderer call site:** *launder a brokered answer before you
+use it, in any way at all* — then fall back to whatever this site already does
+with "nothing came back". The launderers, from
 [`src/shared/ipc/refusal.ts`](../src/shared/ipc/refusal.ts):
 
 ```ts
@@ -465,14 +490,35 @@ answered(result)          // the handler's answer, or undefined if refused
 result === true / false   // where the three non-answers must be told apart
 ```
 
+…and the fallback, which is a per-site judgement rather than a default:
+
+```ts
+setEvents(answered(l) ?? [])                 // an empty list
+const p = answered(raw); if (!p) return;     // leave the state as it was
+answered(gs)?.map((g) => g.id) ?? null       // `null` = "we do not know";
+                                             // `[]` would say "there are none"
+```
+
+That third line is why the fallback has to be chosen rather than reached for:
+`SessionGrid`'s layout restore *prunes* persisted records against that list, so
+degrading a refusal to `[]` would delete every pin, policy, override, saved
+layout and rail position in the app. (The two *draft* prunes would survive —
+they already return early on an empty set. Same hazard, spotted once for the
+biggest payloads and not generalised, which is what the `null` here fixes.) Cast **outside** the launderer, never inside —
+`answered(s) as GitStatusDto | undefined`, because the cast is the thing that
+hides the brand.
+
 **What enforces it:** [`scripts/refusal-truthiness.js`](../scripts/refusal-truthiness.js),
 run by the unit suite. It reads the brokered method list off the preload (never a
 hand-kept list), follows every bridge result one hop — a direct `await`, a
-`const`, a `.then` parameter — and fails if one reaches a boolean position
-without being laundered, or if the hop cannot be followed at all (a point-free
-`.then(setX)`, which is where four of the nineteen hid). A lint rule could not:
-the defect is a two-node fact (a value *from the bridge* reaching a *boolean
-position*), and all nineteen real sites separated the two nodes.
+`const`, a rename (with or without a cast), a `.then` parameter — and fails if
+one is **read** without being laundered: as a boolean (`if`, `!`, `??` left,
+`Boolean()`) or as a value (a property, a call argument, a return, a spread, an
+iteration, a destructuring, either arm of a ternary, the right of `??`). A hop it
+cannot follow at all is reported too, not skipped — a point-free `.then(setX)`,
+which is where four of #440's nineteen hid. A lint rule could not: the defect is
+a two-node fact (a value *from the bridge* reaching a *read*), and every real
+site separated the two nodes.
 
 **And not the type system either** — worth stating precisely, now that #628 has
 put `src/` on `recommendedTypeChecked` and a type-aware rule is available here
@@ -483,7 +529,15 @@ means widening ~60 signatures to `| IpcRefusal`, which #346 declined in writing.
 And even widened, TypeScript truthiness-tests a union happily — the one rule that
 objects, `strict-boolean-expressions`, is in no preset and, once switched on,
 fires on every `if (folder)` in the tree whether or not a refusal is possible.
-The scanner's blind spots are listed at the bottom of the script.
+The scanner's blind spots are listed at the bottom of the script; the one worth
+knowing here is the **injected closure** (`read: () => pty.snapshot(id)`), which
+nothing static can tie back to the bridge. There are five —
+`lib/markdown-links.ts`, `lib/latest-wins.ts`, `lib/terminal-shadow.ts`,
+`lib/terminal-attach.ts` and `components/DocumentViewer.tsx` — and each launders
+centrally, in the one place that can see the value, with a unit test in place of
+the scanner. Reporting the *escape* instead (a bridge promise returned or passed
+on) was tried in #650 and backed out: it found eleven sites and no defect,
+because every hit was one of these deliberate seams.
 
 ### The vocabulary
 

@@ -11,7 +11,7 @@
 //  • the app works with none of it configured — which here means the dialog
 //    renders and behaves with a bridge that answered nothing at all.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { act } from 'react';
+import React, { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
 import en from '../i18n/locales/en.json';
@@ -341,5 +341,67 @@ describe('the modal contract it shares with About', () => {
     await render(true);
     expect(dialog()?.getAttribute('aria-label')).toBe(en.push.title);
     expect(dialog()?.getAttribute('aria-modal')).toBe('true');
+  });
+
+  it('its fields carry no id rendered content could name (#654)', async () => {
+    // These fields were `id="push-field-ntfy.topic"` and friends: LITERAL,
+    // stable, and therefore a NAME a document or a reply could address. `id`
+    // survives the markdown sanitizer profile, and every IDREF in the DOM
+    // resolves to the FIRST element in tree order carrying that id. Verified in
+    // Chromium 149 with the forgery placed first: a planted
+    // `<span id="push-field-ntfy.topic">` took THIS label away from THIS field
+    // (`label.control` → `null`, `input.labels` → empty), so the credential box
+    // lost its accessible name; and a `<label for>` in a reply both forwarded a
+    // click to the field and joined the field's announced name. `markdown.tsx`
+    // forbids the `<label>` TAG for the second half; this is the first.
+    //
+    // "PLACED FIRST" IS A CONDITION THIS DIALOG ALREADY MET: `App.tsx` renders
+    // it BEFORE `SessionGrid`, so feed and viewer content is always later and
+    // never captured these ids. This is prophylaxis against a reorder, not the
+    // fix for a live capture — `CommandPalette` is the one that was live.
+    //
+    // WHAT THIS BUYS, AND WHAT IT DOES NOT, stated exactly because the first
+    // draft of this test asserted more than `useId` delivers and went red
+    // saying so. `React.useId()` is NOT random and it is NOT a secret: it is
+    // DETERMINISTIC for a given render tree, so re-rendering the same dialog in
+    // the same place gives the same string back. What it removes is a STABLE,
+    // PUBLISHED name — `push-field-ntfy.topic` is the same string in every
+    // build and every workspace, and it is written down in an issue — and
+    // replaces it with one that is a property of THE WHOLE TREE: it moves when
+    // anything else in the app calls `useId` first, which depends on which
+    // panels are open and how many sessions are running. So this is
+    // defence-in-depth, not the closure. THE CLOSURE IS THE TAG: `markdown.tsx`
+    // forbids `<label>`, and that does not depend on a name at all.
+    //
+    // The rule is scanned across the whole renderer in `markdown.test.tsx`.
+    // What is here is the RUNTIME half, and the label assertion is the one that
+    // matters most: an id nobody publishes is worthless if the label stopped
+    // pointing at the field.
+    await render(true);
+    const ids = [...host.querySelectorAll('[id]')].map((el) => el.id);
+    expect(ids.length).toBeGreaterThan(0);
+    for (const id of ids) expect(id).not.toMatch(/push-field-/);
+
+    // the label still binds — `useId` changed the string, not the wiring
+    const topic = field('ntfy.topic')!;
+    expect(topic.labels?.length).toBe(1);
+    expect(topic.labels?.[0]?.textContent).toContain(en.push.ntfyTopic);
+
+    // …and the string belongs to the TREE, not to this component: one more
+    // `useId` caller mounted ahead of it and every id in the dialog moves.
+    // That is the property that makes it not-a-published-name, and it is the
+    // most this can honestly claim.
+    const Ahead = (): React.JSX.Element => <i data-ahead={React.useId()} />;
+    await act(async () => {
+      root!.render(
+        <>
+          <Ahead />
+          <PushSetupDialog open config={config()} write={null} {...handlers} />
+        </>
+      );
+    });
+    const shifted = [...host.querySelectorAll('[id]')].map((el) => el.id);
+    expect(shifted.length).toBe(ids.length);
+    expect(shifted.filter((id) => ids.includes(id))).toEqual([]);
   });
 });
