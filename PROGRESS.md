@@ -3,6 +3,28 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🏁 RUN COMPLETE — 2026-08-20→21 (~09:30 → ~03:30). Fresh session: read this block, then the two act-blocks below.
+>
+> **Totals for the whole run:** **26 issues closed by merge** (wave 1: #488
+> #616 #538 #630 #626 #627 #600 #440 #639 + the train's 12 + #255's
+> T0/T1/T3 tranche PRs #628/#660/#662 merged with #255 open as umbrella),
+> **v0.8.1 released** (train of 12 + menu-placement fix), **5 user-facing
+> PRs in Dan's queue** (#643 #644 #646 #653 #655 — all green-gated, all
+> ready-for-review; train them on his word, CHANGELOG entries are under
+> `0.8.2 — unreleased`), **19 issues filed** from worker findings (#625
+> #626 #627 #630 #637 #639 #642 #647 #648 #650 #651 #654 #656 #657 #659
+> #661 #663 + comments on #529/#255/#651), **#256 still wants /pm
+> reconciliation** (stale since v0.8.0). Main @ 8b843240, stamp matches,
+> lock clear, all three worktrees clean on dead branches (safe to reuse).
+> **Parked pending Dan:** T2/T4 tranches + #268/#295/#337/#606/#577/#491/
+> #499/#650 (collide with his 5 open PRs), #528/#529 design sittings,
+> #521 scoping. **Unparked after his next merge round:** all of the above
+> plus #588/#490/#618 (stream/preload, free once no worker holds those
+> seams). Process lessons already folded into the /orchestrate skill
+> (dead-waiter ×5 now — #625 made it four workers five breaches — plus
+> gate-integrity, wide-internal-parking, cd-discipline, lightweight tags
+> need explicit push).
+>
 > # ✅ TRAIN #641 MERGED + v0.8.1 CUT — 2026-08-20 evening (Dan authorized)
 >
 > **All 12 user-facing PRs are on main** (merge commit `7e6158e`): #576 #578
@@ -49,12 +71,81 @@
 >   typed error fixed (still zero inline disables), tranche counts now
 >   T1=20/T2=8/T3=57/T4=24. src/ is on the type-checked preset on main.
 >   T0's flagged document-peek e2e failure GONE post-train (no ticket).
-> - **#627 hook-listener flake** — worker out in sb-wt-3 (post-T0 base,
->   deterministic wait, 8/8-under-load standard, unit-only).
-> - **#640 turn divider (owner request)** — worker out in sb-wt-2
->   (dispatched ~21:30; four-theme screenshots + AA numbers required).
-> - **#440 refusal sweep** — worker out in sb-wt-1 (dispatched ~20:55;
->   told to keep callsite edits minimal where #643/#567 files overlap).
+> - **#627 ✅ MERGED** (PR #645) — all 14 fixed sleeps in
+>   hook-listener.test.ts replaced with `until(signal, predicate)`; pre-fix
+>   reddened 2 of 3 full runs at 100% CPU, fix 8/8 at same load; mutation:
+>   12 tests fail RED (named signals, no hang) when holds never park.
+>   Reviewer catch: self-clearing signal swapped for monotonic counter at 6
+>   waits. Filed: **#651** (check-nul wall-clock budget, same class —
+>   sighted failing under load). Handoff ranks further thin-margin idioms.
+> - **#440 ✅ MERGED** (PR #649) — see entry below.
+> - **#625 DONE — reclassified USER-FACING: PR #653 ready-for-review, in
+>   Dan's queue** (viewer's "Media isn't shown here" chip disappears).
+>   FORBID_TAGS 11→20 (media family + map/area/canvas/dialog) at the
+>   PROFILE, forced by UpdateDialog rendering release notes with zero
+>   decorators. Two corpora (7,602 transcripts + 1,182 md files): 38 hits,
+>   ALL fenced; img stays (3 bare uses). Review retracted a false
+>   "every tab stop is a link/disclosure/ours" absolute (overflow scroll
+>   containers are focusable — 3rd retraction in this family). 5 mutation
+>   runs. Gates: 5,723 unit, 345/4 e2e. Worker breached dead-waiter (4th),
+>   recovered; its orphaned job's EXIT trap deleted the lock mid-run →
+>   ~4-min overlap with #558's acquisition (558 warned to re-run if its
+>   window looks odd). Filed: **#654** (label-for + literal push-field ids).
+> - **#600 ✅ MERGED** (PR #652) — perf budget → median-of-three + rank
+>   statistic; old metric would have failed 3/8 of the very runs the new
+>   one passed. Sightings appended to #651.
+> - **#639 DONE** — PR #658 (internal), auto-merging on green. FOUR untagged
+>   PTY tests (not 3 — swept all 9 launch sites), two-clause rule written
+>   into launchApp's docblock, lane split proven by --list (349 total both
+>   ways). Filed: **#659** (4 specs inherit default-PTY + assert .xterm —
+>   lane semantics).
+> - **#255 T1 DONE** — PR #660 (internal), auto-merging on green. 20 errors,
+>   ZERO disables; new shared `asDisplayString`; require-await was 1 site
+>   not 3 (other 2 are T2's); **real latent bug fixed**: stream-permissions'
+>   unanswerable guard no-op'd on '[object Object]' (truthy) — malformed
+>   request_id parked permission cards 300s. Structural note posted on
+>   #255: ~50 `String(err)` catch blocks are UNREACHABLE by this campaign
+>   (checkUnknown:false) — own decision needed.
+> - **#255 T3** — worker out in sb-wt-2 (~02:00; main tests, 57 errors,
+>   zero-disable bar, assertion-strength preservation rule).
+> - **#558 follow-ups filed:** #656 (lone dock-back asymmetry), #657
+>   (window-emptying paths + home stale-id).
+> - **#558 DONE — PR #655 ready-for-review, in Dan's queue** (5th). The
+>   issue's "fine" step was already wrong: dock-back-with-company went to
+>   sessionCardHome (B's group), abandoning A's husk — single-group setups
+>   hid it. Fix: persisted `CardPresentation.home` + `dockBackTarget` (own
+>   slot, else standard rules, #462/#501 honoured); restore-clobber bug in
+>   the fix itself caught by suspicion-test + isConnected guard (reviewer
+>   reached the same guard independently). #564's failure root-caused by
+>   reading (dockview destroys the emptied group before re-open). Gates:
+>   5697 unit, 347/3 e2e in an uncontested hold; headline e2e red on main
+>   both assertions. Filed: **#656** (lone dock-back asymmetry), **#657**
+>   (other window-emptying paths + home's stale-id exposure).
+> - **#640 turn divider DONE — PR #646 ready-for-review, in Dan's queue**
+>   (taste call: screenshots in the PR, before/after ×4 themes; copies in
+>   work_files/orchestrator/640-shots/). Old divider measured 1.30:1
+>   (below visible); new = 2px rule + NEW PROMPT caption + 3× air at
+>   5.20–15.57:1; accent-ink rejected on #269's numbers; pinned via
+>   tokens.drift + new FeedView.turns tests. Gates: 5619 unit, 345/4 e2e
+>   (one task-label flake re-run clean). Filed from handoff: **#647**
+>   (task-label flake sighting), **#648** (--group-frame 2.91:1 on nordic);
+>   accent-plumbing note posted on #529. Asset branch
+>   `assets/640-turn-divider` holds the PR's screenshots — delete after
+>   sign-off.
+> - **#600 search perf budget** — worker out in sb-wt-2 (dispatched ~22:15;
+>   relative-measure preference, mutation-proof the guard, unit-only).
+> - **#440 refusal sweep DONE — PR #649 (INTERNAL), auto-merging on green
+>   CI.** 19 real laundering sites, ZERO matching the issue's grep shape
+>   (AST-walk audit); two latent bugs killed (refusal object persisted into
+>   workspace.json via the prefs cache; list.map crash in latest-wins).
+>   Treatment: `took()`/`answered()` readers beside the contract. Prevention:
+>   AST scanner in the unit suite (bundle-guard pattern), mutation matrix
+>   18/19 red + 2 unit tests for the uncatchable injected-closure site.
+>   Gates: 5685 unit (224 files), 345/4 e2e. Filed: **#650** (the loud
+>   value-channel class, ~30 sites). ⚠️ Its note: any branch cut BEFORE
+>   #628 and not rebased may fail CI lint on new code under the typed
+>   preset — applies to PR #646 (cut at 4c264f4); the next train's gate
+>   catches it, or bump #646 if its CI shows red.
 > - Then: unparked follow-ups (#625 now free post-#624, #627, #577, #600,
 >   #588, #618, #544/#504/#506/#508, #268, #295/#337, #606, #558, #581/#582,
 >   #639, #640 owner report, T1–T4 after #628).
