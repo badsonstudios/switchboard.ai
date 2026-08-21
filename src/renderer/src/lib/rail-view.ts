@@ -22,6 +22,8 @@
 // var(--status-<token>) / var(--status-<token>-ink), which is the only place
 // the theme is allowed to matter (§5.20).
 
+import type { WritingDirection } from './writing-direction';
+
 /** The status vocabulary the rail can receive — SessionStatus plus the
  *  card-level 'suspended' (restored, not yet resumed). */
 export type RailStatusName =
@@ -171,4 +173,29 @@ export const RAIL_WIDTH_MAX = 520;
 export function clampRailWidth(px: number): number {
   if (!Number.isFinite(px)) return RAIL_WIDTH_DEFAULT;
   return Math.min(RAIL_WIDTH_MAX, Math.max(RAIL_WIDTH_MIN, Math.round(px)));
+}
+
+/**
+ * The width the rail should take while its edge is being dragged (#642).
+ *
+ * The rail's width is an INLINE size — a distance from the inline-start edge of
+ * the window, which is the LEFT one in English and the RIGHT one under
+ * `dir="rtl"`, where a flex row puts the rail on the other side. A pointer's
+ * `clientX` is physical and always measures from the left. Passing one for the
+ * other was the same confusion that put the context menu off screen, with a
+ * nastier symptom: the first `pointermove` clamps to the maximum and the rail
+ * then drags BACKWARDS for the rest of the gesture.
+ *
+ * Pure and unit-tested for the same reason `placeMenu` is: the mirror is one
+ * subtraction, and the failure is invisible to anyone reading in English.
+ *
+ * @param clientX physical pointer x, i.e. `PointerEvent.clientX`
+ * @param viewportWidth the window's client width, in the same CSS px
+ */
+export function railWidthAtPointer(
+  clientX: number,
+  viewportWidth: number,
+  direction: WritingDirection
+): number {
+  return clampRailWidth(direction === 'rtl' ? viewportWidth - clientX : clientX);
 }

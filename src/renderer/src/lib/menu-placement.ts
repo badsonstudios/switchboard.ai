@@ -34,11 +34,10 @@
 // RTL BEHAVIOUR for free — in mirrored space "grow forward from the pointer"
 // means growing leftward on screen, which is what a native RTL menu does.
 
+import type { WritingDirection } from './writing-direction';
+
 /** Gap kept between the menu and the window edge, in CSS px. */
 export const MENU_EDGE_MARGIN = 4;
-
-/** The inline direction the menu will be laid out in. */
-export type WritingDirection = 'ltr' | 'rtl';
 
 export interface MenuPlacement {
   /**
@@ -53,8 +52,14 @@ export interface MenuPlacement {
 }
 
 export interface PlaceMenuOptions {
-  /** the writing direction of the menu's own subtree; defaults to `ltr` */
-  direction?: WritingDirection;
+  /**
+   * The writing direction of the menu's OWN subtree — {@link directionOf}.
+   *
+   * Required, and not defaulted to `ltr`, because a default is how #642
+   * happened: the mismatch is invisible in English and off by the width of the
+   * window everywhere else, so the compiler asks rather than the reviewer.
+   */
+  direction: WritingDirection;
   /** gap kept between the menu and the window edge; defaults to {@link MENU_EDGE_MARGIN} */
   margin?: number;
 }
@@ -66,15 +71,16 @@ export interface PlaceMenuOptions {
  *   in PHYSICAL client coordinates — i.e. exactly `event.clientX/clientY`
  * @param size    the menu's natural, unclamped size
  * @param viewport the window's client area
- * @param options  writing direction and edge margin
+ * @param options  writing direction (required — see {@link PlaceMenuOptions})
+ *   and edge margin
  */
 export function placeMenu(
   anchor: { x: number; y: number },
   size: { width: number; height: number },
   viewport: { width: number; height: number },
-  options: PlaceMenuOptions = {}
+  options: PlaceMenuOptions
 ): MenuPlacement {
-  const { direction = 'ltr', margin = MENU_EDGE_MARGIN } = options;
+  const { direction, margin = MENU_EDGE_MARGIN } = options;
 
   const fit = (at: number, extent: number, limit: number): number => {
     const room = Math.max(0, limit - margin * 2);

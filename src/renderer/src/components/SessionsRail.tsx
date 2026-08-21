@@ -60,10 +60,17 @@ import { useTranslation } from 'react-i18next';
 import { RailGroup, RailSession } from '../model/types';
 import { railOrder } from '../lib/groups';
 import { canStep, LOOSE_BUCKET, ManualOrder, planReorder } from '../lib/rail-order';
-import { presentStatus, needCount, clampRailWidth, RAIL_WIDTH_DEFAULT } from '../lib/rail-view';
+import {
+  presentStatus,
+  needCount,
+  clampRailWidth,
+  railWidthAtPointer,
+  RAIL_WIDTH_DEFAULT,
+} from '../lib/rail-view';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { getDraggedCard, setDraggedCard } from '../lib/drag-context';
-import { MenuPlacement, WritingDirection, placeMenu } from '../lib/menu-placement';
+import { MenuPlacement, placeMenu } from '../lib/menu-placement';
+import { directionOf } from '../lib/writing-direction';
 import {
   cardOverride,
   groupOverride,
@@ -100,17 +107,6 @@ const tint = (color: string, pct: number): string =>
  */
 const bodyKey = (key: string): string =>
   key.replace(/[^A-Za-z0-9-]/g, (c) => `_${c.charCodeAt(0).toString(16)}_`);
-
-/**
- * The writing direction an element is actually laid out in (#642).
- *
- * `dir` is inheritable, so this asks the ELEMENT and not the document: a
- * right-to-left locale sets it at the root, but a single subtree can carry it
- * too, and a menu placed by the document's answer would be wrong in exactly the
- * case that is hardest to notice.
- */
-const directionOf = (el: Element): WritingDirection =>
-  el.ownerDocument.defaultView?.getComputedStyle(el).direction === 'rtl' ? 'rtl' : 'ltr';
 
 /** A context-menu row. Shared because the commands and the policy radios are
  *  the same row in two roles, and they used to drift a property at a time. */
@@ -382,8 +378,14 @@ export function SessionsRail(props: {
   // (and the rail) without the resize sticking to it
   React.useEffect(() => {
     if (!dragging) return;
+    // Read ONCE per drag, not per move: both are style/layout reads, and doing
+    // them inside a handler that also writes a width is how you thrash. Neither
+    // can change mid-gesture without a resize, which ends this drag anyway.
+    const nav = navRef.current;
+    const direction = nav ? directionOf(nav) : 'ltr';
+    const viewportWidth = nav?.ownerDocument.documentElement.clientWidth ?? 0;
     const onMove = (e: PointerEvent): void => {
-      widthRef.current = clampRailWidth(e.clientX);
+      widthRef.current = railWidthAtPointer(e.clientX, viewportWidth, direction);
       setWidth(widthRef.current);
     };
     const onUp = (): void => {
@@ -421,7 +423,7 @@ export function SessionsRail(props: {
     if (restoreFocus) menuAnchor.current?.focus();
   }, []);
 
-  // dismiss the context menu on any click elsewhere, Escape, or a scroll
+  // dismiss the context menu on any click elsewhere, Escape, or a window resize
   React.useEffect(() => {
     if (!menu) return;
     const close = (): void => closeMenu(false);
@@ -431,10 +433,18 @@ export function SessionsRail(props: {
       // strands the keyboard at the top of the document
       if (e.key === 'Escape') closeMenu(true);
     };
+    // A resize invalidates the placement outright, and the menu is measured
+    // once, when it opens (#642). Under `dir="rtl"` it is anchored to the RIGHT
+    // edge, so a drag of the window's corner would physically walk the open
+    // menu across the screen, away from the row it belongs to. Dismissing is
+    // both cheaper than re-placing and the more honest answer: the menu was
+    // opened at a pointer that is no longer where it was pointing.
     window.addEventListener('pointerdown', close);
+    window.addEventListener('resize', close);
     window.addEventListener('keydown', onKey);
     return () => {
       window.removeEventListener('pointerdown', close);
+      window.removeEventListener('resize', close);
       window.removeEventListener('keydown', onKey);
     };
   }, [menu, closeMenu]);
@@ -454,16 +464,24 @@ export function SessionsRail(props: {
   React.useLayoutEffect(() => {
     const el = menuRef.current;
     if (!menu || !el) return;
-    // `clientX` is physical whichever way the menu reads, so `placeMenu` is
-    // told the direction and hands back an inline-start offset (#642).
+    // The MENU's own direction, not the row's: `insetInlineStart` resolves
+    // against the box it is set on, so that element is the only authority on
+    // which edge it counts from. `clientX` is physical whichever way the menu
+    // reads, so `placeMenu` is told the direction and hands back an
+    // inline-start offset (#642).
     const direction = directionOf(el);
+    // `documentElement.clientWidth/Height`, not `window.inner*`: the former is
+    // the containing block a `position: fixed` box is actually laid out in —
+    // the latter includes any root scrollbar, which Chromium puts on the LEFT
+    // under rtl, i.e. on the very edge the inline answer is measured from.
+    const root = el.ownerDocument.documentElement;
     setMenuPlace(
       placeMenu(
         { x: menu.x, y: menu.y },
         // the NATURAL size: this pass runs before `maxBlockSize` is applied,
         // so the box has not been clamped by a previous answer
         { width: el.offsetWidth, height: el.offsetHeight },
-        { width: window.innerWidth, height: window.innerHeight },
+        { width: root.clientWidth, height: root.clientHeight },
         { direction }
       )
     );
@@ -709,10 +727,12 @@ export function SessionsRail(props: {
           // instead, or the menu opens in the window's top-left corner.
           const kb = e.clientX === 0 && e.clientY === 0;
           const box = e.currentTarget.getBoundingClientRect();
-          // the row's INLINE-start edge, a little way in — the same offset the
+          // the ROW's inline-start edge, a little way in — the same offset the
           // pointer would have landed at, mirrored so the keyboard's menu opens
           // over the grid in both directions rather than off the far side of
-          // the rail (#642)
+          // the rail. The row is the right element to ask here for the same
+          // reason the menu is the right one to ask at placement time: this is
+          // a fact about where the ROW's edges are (#642).
           const kbX = directionOf(e.currentTarget) === 'rtl' ? box.right - 12 : box.left + 12;
           menuAnchor.current = (e.target as HTMLElement).closest<HTMLElement>('button');
           // the previous answer describes a menu that is about to be replaced
@@ -1600,6 +1620,12 @@ export function SessionsRail(props: {
             // `menu.x` is physical and this property is logical (#642).
             insetInlineStart: menuPlace ? menuPlace.insetInlineStart : 0,
             insetBlockStart: menuPlace ? menuPlace.insetBlockStart : 0,
+            // ...and not shown until it has been. A hidden box still lays out,
+            // so the measurement is unaffected, and the argument above stops
+            // being an argument: if the placement ever failed to land, the menu
+            // would be absent rather than sitting in the wrong corner — which
+            // is a loud failure instead of a quiet one.
+            visibility: menuPlace ? undefined : 'hidden',
             // only ever reached by a menu taller than the whole window; with a
             // scroll container of its own, `scrollIntoView` can finally do
             // something for the items past the fold

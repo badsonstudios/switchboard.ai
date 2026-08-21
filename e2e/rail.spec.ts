@@ -207,8 +207,13 @@ test.describe('sessions rail', () => {
       .poll(async () => w.evaluate(() => window.innerHeight), { timeout: 10_000 })
       .toBeLessThan(600);
 
+    // The click goes to the coordinate that was MEASURED, not to wherever
+    // Playwright re-resolves the row's centre a moment later: `pointerY` is the
+    // precondition below, and a rail that reflows between the two (a status
+    // change, a need count landing) would make it a lie.
     const rowBox = (await row(w, title).boundingBox())!;
-    await row(w, title).click({ button: 'right' });
+    const pointerY = rowBox.y + rowBox.height / 2;
+    await w.mouse.click(rowBox.x + rowBox.width / 2, pointerY, { button: 'right' });
     const menu = w.getByRole('menu');
     await expect(menu).toBeVisible();
 
@@ -225,7 +230,6 @@ test.describe('sessions rail', () => {
     });
 
     // the precondition: at the pointer, this menu genuinely does not fit
-    const pointerY = rowBox.y + rowBox.height / 2;
     expect(
       pointerY + geom.menu.height,
       'the window is no longer tight enough for this test to mean anything'
@@ -270,8 +274,10 @@ test.describe('sessions rail', () => {
       )
       .toBe('rtl');
 
+    // clicked at the coordinate that was measured, for the same reason as above
     const rowBox = (await row(w, title).boundingBox())!;
-    await row(w, title).click({ button: 'right' });
+    const pointerX = rowBox.x + rowBox.width / 2;
+    await w.mouse.click(pointerX, rowBox.y + rowBox.height / 2, { button: 'right' });
     const menu = w.getByRole('menu');
     await expect(menu).toBeVisible();
 
@@ -288,7 +294,6 @@ test.describe('sessions rail', () => {
         width: b.width,
       };
     });
-    const pointerX = rowBox.x + rowBox.width / 2;
 
     // the precondition, stated so this cannot quietly stop testing anything:
     // the old formula and the new one are further apart than the menu is wide,

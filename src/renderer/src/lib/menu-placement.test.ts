@@ -3,21 +3,22 @@ import { placeMenu, MENU_EDGE_MARGIN as M } from './menu-placement';
 
 /** the windows-latest runner's client area, measured in #416/#524 */
 const CI = { width: 1008, height: 655 };
+const LTR = { direction: 'ltr' } as const;
 
 describe('placeMenu (#641)', () => {
   it('leaves a menu that fits exactly where it was asked for', () => {
-    const p = placeMenu({ x: 142, y: 100 }, { width: 254, height: 449 }, CI);
+    const p = placeMenu({ x: 142, y: 100 }, { width: 254, height: 449 }, CI, LTR);
     expect(p).toMatchObject({ insetInlineStart: 142, insetBlockStart: 100 });
   });
 
   it('flips a menu that would run off the bottom so its foot lands on the pointer', () => {
     // 300 + 200 = 500 <= 655 - 4, so it fits; 500 + 200 does not
-    const p = placeMenu({ x: 10, y: 500 }, { width: 100, height: 200 }, CI);
+    const p = placeMenu({ x: 10, y: 500 }, { width: 100, height: 200 }, CI, LTR);
     expect(p.insetBlockStart).toBe(300);
   });
 
   it('flips off the right edge the same way', () => {
-    const p = placeMenu({ x: 950, y: 10 }, { width: 254, height: 100 }, CI);
+    const p = placeMenu({ x: 950, y: 10 }, { width: 254, height: 100 }, CI, LTR);
     expect(p.insetInlineStart).toBe(950 - 254);
   });
 
@@ -25,7 +26,7 @@ describe('placeMenu (#641)', () => {
     // the measured numbers — right-click on rail row 2 opens at y=217, and the
     // menu is 449px tall once #559's Order section is in it. 217 + 449 = 666,
     // which is 11px past the runner's usable 651.
-    const p = placeMenu({ x: 142, y: 217 }, { width: 254, height: 449 }, CI);
+    const p = placeMenu({ x: 142, y: 217 }, { width: 254, height: 449 }, CI, LTR);
     expect(p.insetBlockStart + 449).toBeLessThanOrEqual(CI.height - M);
     expect(p.insetBlockStart).toBeGreaterThanOrEqual(M);
   });
@@ -33,14 +34,14 @@ describe('placeMenu (#641)', () => {
   it('sits against the far edge when NEITHER side has room', () => {
     // anchored in the middle of a short window by a menu taller than both halves
     const vp = { width: 400, height: 300 };
-    const p = placeMenu({ x: 10, y: 160 }, { width: 100, height: 200 }, vp);
+    const p = placeMenu({ x: 10, y: 160 }, { width: 100, height: 200 }, vp, LTR);
     expect(p.insetBlockStart).toBe(300 - M - 200);
     expect(p.insetBlockStart).toBeGreaterThanOrEqual(M);
   });
 
   it('a menu taller than the window is pinned to the top and told to scroll', () => {
     const vp = { width: 400, height: 300 };
-    const p = placeMenu({ x: 10, y: 200 }, { width: 100, height: 900 }, vp);
+    const p = placeMenu({ x: 10, y: 200 }, { width: 100, height: 900 }, vp, LTR);
     expect(p.insetBlockStart).toBe(M);
     expect(p.maxBlockSize).toBe(300 - M * 2);
   });
@@ -64,7 +65,7 @@ describe('placeMenu (#641)', () => {
   });
 
   it('honours an explicit margin', () => {
-    const p = placeMenu({ x: 0, y: 0 }, { width: 10, height: 10 }, CI, { margin: 20 });
+    const p = placeMenu({ x: 0, y: 0 }, { width: 10, height: 10 }, CI, { ...LTR, margin: 20 });
     expect(p).toMatchObject({ insetInlineStart: 20, insetBlockStart: 20 });
     expect(p.maxBlockSize).toBe(CI.height - 40);
   });
@@ -126,11 +127,4 @@ describe('placeMenu — right-to-left (#642)', () => {
     }
   });
 
-  it('defaults to ltr when no direction is given, so existing callers are unmoved', () => {
-    const bare = placeMenu({ x: 142, y: 217 }, { width: 254, height: 449 }, CI);
-    const ltr = placeMenu({ x: 142, y: 217 }, { width: 254, height: 449 }, CI, {
-      direction: 'ltr',
-    });
-    expect(bare).toEqual(ltr);
-  });
 });
