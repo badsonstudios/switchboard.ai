@@ -26,11 +26,13 @@
 // `fixtures/stream-session.ts` — five files need it now, so it is imported
 // rather than copied five times.
 //
-// TRANSPORT SCOPE (P2-E18-18, #404): Direct, except "a PTY session keeps the
-// curated list", which is the deliberate control for the Direct assertion above
-// it. It carries no `[pty]` tag — a pre-existing inconsistency with the
-// convention in `launchApp` (`fixtures/app.ts`), not something the split
-// introduced.
+// TRANSPORT SCOPE (P2-E18-18, #404): Direct, except "[pty] a PTY session keeps
+// the curated list", which is the deliberate control for the Direct assertion
+// above it — it asks for the terminal by env and asserts the curated fallback
+// list, which only a PTY session is ever shown. Tagged at the test rather than
+// the `describe`, because the group around it is mixed (see `launchApp` in
+// `fixtures/app.ts` for the rule). The tag was missing until #639; #626 split
+// this file move-only and could not add it.
 //
 // Uses the stream-json fake (`SWITCHBOARD_FAKE_PROVIDER=stream`), so it needs
 // no `claude` login and no network — the same property the PTY fake gives the
@@ -264,7 +266,7 @@ test.describe('slash commands come from the CLI in Direct mode (P2-E18-09)', () 
     await expect(w.getByText('Arrived mid-session')).toBeVisible();
   });
 
-  test('a PTY session keeps the curated list', async () => {
+  test('[pty] a PTY session keeps the curated list', async () => {
     const folder = tempProjectFolder();
     // the dual-capable fake, asked for the PTY. Asking is now REQUIRED: until
     // #381 a session that asked for nothing got the PTY, and this test relied on

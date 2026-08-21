@@ -5,13 +5,20 @@
 // Split out of `stream.spec.ts` by #626 (move-only). See that file's header for
 // the whole `stream*.spec.ts` family and what belongs where.
 //
-// TRANSPORT SCOPE (P2-E18-18, #404): MIXED, and the mixing is the subject. Most
-// tests here deliberately START a session on the PTY so that a switch has
-// somewhere to come from, and "a PTY session still gets a real terminal" is
-// PTY-by-construction outright. None carry the `[pty]` tag: that is a
-// pre-existing inconsistency with the convention in `launchApp`
-// (`fixtures/app.ts`), not something the split introduced — retagging would
-// change test titles, and #626 was move-only.
+// TRANSPORT SCOPE (P2-E18-18, #404; tags corrected by #639): MIXED, and the
+// mixing is the subject. Exactly ONE test here is PTY-by-construction —
+// "[pty] a PTY session still gets a real terminal", which takes the PTY-only
+// fake and asserts a real terminal behind the Terminal tab. It is the only
+// `[pty]` in this file.
+//
+// EVERY OTHER TEST THAT PASSES `SWITCHBOARD_TRANSPORT: 'pty'` IS DELIBERATELY
+// UNTAGGED, and this is the file that makes the distinction worth stating: a
+// switch test has to START somewhere the switch can move it away FROM, so it
+// asks for the terminal and then asserts DIRECT behaviour. Its green is real
+// evidence about the app's default transport, and a `[pty]` on it would be a
+// lie in the opposite direction. The rule — reach the terminal on purpose AND
+// assert the terminal's own answer — lives with `launchApp` in
+// `fixtures/app.ts`.
 //
 // Uses the stream-json fake (`SWITCHBOARD_FAKE_PROVIDER=stream`), so it needs no
 // `claude` login and no network.
@@ -55,7 +62,7 @@ test.describe('the Terminal tab degrades honestly (P2-E18-08b)', () => {
     await expect(w.getByText(/permission requests appear in this window/i)).toBeVisible();
   });
 
-  test('a PTY session still gets a real terminal', async () => {
+  test('[pty] a PTY session still gets a real terminal', async () => {
     const folder = tempProjectFolder();
     // the PTY-only fake (`SWITCHBOARD_FAKE_PROVIDER=1`), which every other spec
     // in the suite uses. Since #381 the host ASKS it for Direct and it answers

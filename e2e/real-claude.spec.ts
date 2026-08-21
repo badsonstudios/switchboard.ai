@@ -12,6 +12,13 @@
 // output tokens; measured at ~4 output tokens per turn). Keep it that way: a
 // test here that needs a big turn belongs against the fake instead, and a new
 // test here needs a reason the fake genuinely cannot serve.
+//
+// TRANSPORT SCOPE (P2-E18-18, #404; tag added by #639): SPLIT BY GROUP, and
+// deliberately so — both transports ship. The first `describe` is `[pty]`: it
+// pins the session to the terminal by env and reads TERMINAL text, so its green
+// says nothing about the default. The second is the DEFAULT (Direct, #384) and
+// names no transport at all, which is the point of it. The rule for the tag
+// lives with `launchApp` in `fixtures/app.ts`.
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import os from 'os';
@@ -25,7 +32,7 @@ import {
   workspaceJsonPath,
 } from './fixtures/app';
 
-test.describe('real claude end-to-end (opt-in)', () => {
+test.describe('[pty] real claude end-to-end (opt-in)', () => {
   test.skip(process.env.SWITCHBOARD_REAL_E2E !== '1', 'set SWITCHBOARD_REAL_E2E=1 (needs a logged-in claude)');
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
