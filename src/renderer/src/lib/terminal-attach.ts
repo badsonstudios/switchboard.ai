@@ -37,6 +37,7 @@
 // xterm's write queue, output still pending from a previous attach can be
 // parsed after the reset and before the new snapshot.
 import type { PtyAttachment, PtyChunk } from '../../../shared/ipc/pty';
+import { answered } from '../../../shared/ipc/refusal';
 
 /** Everything this module needs from the outside world. Structurally typed so
  *  the tests can hand it plain functions — no xterm, no preload bridge. */
@@ -153,7 +154,21 @@ export function attachTerminalFeed(ports: TerminalFeedPorts): TerminalFeed {
 
   let ready = Promise.resolve();
   try {
-    ready = ports.attach().then((attachment) => {
+    ready = ports.attach().then((answer) => {
+      // `answered` centrally (#650), same reason as `terminal-shadow.ts`:
+      // `attach` is an injected closure and this is the only place that can
+      // see its value.
+      //
+      // BEHAVIOUR-IDENTICAL TODAY, and said plainly rather than dressed up: a
+      // refusal has no `epoch` and no `snapshot`, so `?.` already lands it on
+      // exactly the "no live PTY" path a `null` attachment takes. What the
+      // launderer buys is that it lands there BY CONSTRUCTION instead of by
+      // the brand happening to lack two fields — and the cost of being wrong
+      // about that is the one named two comments down: an `epoch` that stays
+      // null while the feed goes live drops every later chunk, silently and
+      // for good, which is #117's failure mode through the path written to
+      // survive it.
+      const attachment = answered(answer);
       if (closed) return;
       // FIRST, before anything that can throw. If a reset() failure left this
       // null while the catch below marked the feed live, every later chunk would

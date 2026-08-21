@@ -9,6 +9,7 @@
 // against the single plain worker below. The full reasoning, and the numbers,
 // are in `lib/monaco-languages.ts` — read that before changing this import.
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { answered } from '../../../shared/ipc/refusal';
 import { useTranslation } from 'react-i18next';
 import * as monaco from 'monaco-editor/esm/vs/editor/edcore.main';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
@@ -129,7 +130,15 @@ export function DiffPane(props: {
 
   useEffect(() => {
     void window.switchboard.git.status(props.folder).then((s) => {
-      const next = s as GitStatusDto;
+      // `answered` BEFORE the cast (#650). `git:status` is declared
+      // `Promise<unknown>`, so this cast is the only thing between the wire and
+      // a typed record - and a refusal cast into `GitStatusDto` reaches
+      // `next.files.map` three lines down and throws `files is undefined`
+      // inside a `.then` driven with `void`. Fail-open is to learn nothing:
+      // the pane keeps the status it had (`null` on first mount, which renders
+      // as "no changes" rather than as a crash).
+      const next = answered(s) as GitStatusDto | undefined;
+      if (!next) return;
       setStatus(next);
       // A REMEMBERED FILE IS ONLY AS GOOD AS THE CHANGE UNDER IT (#562 review).
       // Between leaving the tab and coming back, the change can have been
@@ -254,9 +263,14 @@ export function DiffPane(props: {
   useEffect(() => {
     if (!selected || !editorRef.current) return;
     let cancelled = false; // stale selections / editor disposed mid-load
-    void window.switchboard.git.fileVersions(props.folder, selected).then((v) => {
+    void window.switchboard.git.fileVersions(props.folder, selected).then((answer) => {
+      // #650: `v.original` off a refusal is `undefined`, and
+      // `monaco.editor.createModel(undefined, ...)` is a throw inside a `.then`
+      // nobody catches. Leaving the editor on its previous model is the inert
+      // choice, and it matches what `cancelled` does one line down.
+      const v = answered(answer);
       const ed = editorRef.current;
-      if (cancelled || !ed) return;
+      if (cancelled || !ed || !v) return;
       const old = ed.getModel();
       // Same language on both sides — they are two versions of one file, and a
       // mismatch would colour the "before" pane differently from the "after".

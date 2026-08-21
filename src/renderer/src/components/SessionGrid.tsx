@@ -402,8 +402,14 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const toggleTransport = (): void => {
     if (!cardId) return;
     const next = cardTransport === 'stream' ? 'pty' : 'stream';
-    void window.switchboard.sessions.setTransport(cardId, next).then((r) => {
-      if (!r.ok) return;
+    void window.switchboard.sessions.setTransport(cardId, next).then((answer) => {
+      // #650: `{ok:false, reason}` is this channel's own way of saying no, and
+      // a broker refusal is a THIRD thing that is neither - `r.ok` off the
+      // brand is `undefined`, so this read happens to bail, but only by luck.
+      // `answered` makes a refusal take the same path the handler's own no
+      // takes: the switch does not move, because nothing switched.
+      const r = answered(answer);
+      if (!r?.ok) return;
       setCardTransport(next);
       setTransportPending(!!r.pending);
     });
@@ -839,7 +845,13 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     let cancelled = false;
     const refresh = () => {
       void window.switchboard.git.status(folder).then((s) => {
-        if (!cancelled) setGit(s as GitStatusDto);
+        // `answered` BEFORE the cast (#650): `git:status` is declared
+        // `Promise<unknown>`, and the brand cast into `GitStatusDto` is read
+        // for `.files.length` by `GitContext` on the next render. Keeping the
+        // previous status (or `null`, which draws no context line at all) is
+        // the fail-open - a card must not lose its pane over a git read.
+        const next = answered(s) as GitStatusDto | undefined;
+        if (!cancelled && next) setGit(next);
       });
     };
     refresh();
@@ -891,7 +903,12 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     });
     // replay holds that arrived before this card subscribed (reload / mount
     // race) — a missed push must never park the CLI (review P0#3)
-    void window.switchboard.sessions.pendingPermissions().then((list) => list.forEach(enqueue));
+    // `answered` (#650): a refused replay would reach `.forEach` as the brand
+    // and throw inside a `.then` driven with `void`. Replaying nothing is the
+    // fail-open - the bar on each card still shows its own live request.
+    void window.switchboard.sessions
+      .pendingPermissions()
+      .then((list) => (answered(list) ?? []).forEach(enqueue));
     return () => {
       offReq();
       offRes();
@@ -2381,7 +2398,10 @@ async function addSessionCardTo(
   // dockview group already holding another member, when one is in the grid.
   let sibling: DockviewApi['groups'][number] | undefined;
   if (groupId && !into) {
-    const cards = await window.switchboard.sessions.cards();
+    // #650: no card list means no siblings to cluster with, so the new card
+    // lands in the grid the ordinary way. `.filter` on the brand would throw
+    // and lose the card entirely, which is the opposite of fail-open.
+    const cards = answered(await window.switchboard.sessions.cards()) ?? [];
     const siblings = new Set(
       cards.filter((c) => c.groupId === groupId).map((c) => `session-${c.cardId}`)
     );
@@ -3539,7 +3559,8 @@ function moveHome(
 
 /** Create a card's panel at its remembered slot (or monitor). */
 async function revealNow(api: DockviewApi, cardId: string, focus = true): Promise<void> {
-  const card = (await window.switchboard.sessions.cards()).find((c) => c.cardId === cardId);
+  const cards = answered(await window.switchboard.sessions.cards()) ?? []; // #650
+  const card = cards.find((c) => c.cardId === cardId);
   if (!card) return; // the record is gone — there is nothing to reveal
   const place = placeAt(
     sessionStore.getPresentation(cardId).slot,
@@ -3605,7 +3626,10 @@ async function revealNow(api: DockviewApi, cardId: string, focus = true): Promis
     // restored layout gets (E8-02) — a monitor that has since been unplugged
     // must not swallow the card. No position = dockview opens it on top of the
     // main window, which is exactly the E8-02 rescue.
-    const areas = await window.switchboard.workAreas();
+    // #650: `.some` on the brand throws. No display list means we cannot
+    // prove the remembered rect is on a monitor, so take the rescue below -
+    // opening on top of the main window is visible, and off-screen is not.
+    const areas = answered(await window.switchboard.workAreas()) ?? [];
     const onScreen = boxOnAnyDisplay(place.popout, areas);
     void api.addPopoutGroup(panel, {
       popoutUrl: new URL('popout.html', window.location.href).toString(),
@@ -3628,7 +3652,7 @@ async function adoptMembershipFromDockGroup(
   const siblingIds = panel.group.panels
     .map((p) => /^session-(.+)$/.exec(p.id)?.[1])
     .filter((x): x is string => !!x);
-  const cards = await window.switchboard.sessions.cards();
+  const cards = answered(await window.switchboard.sessions.cards()) ?? []; // #650
   const mine = cards.find((c) => c.cardId === cardId);
   if (!mine) return; // brand-new card, no record yet — create() carries its groupId
   const target = pickAdoptedGroupId(cardId, siblingIds, cards);
@@ -3913,7 +3937,11 @@ export function SessionGrid(props: {
         if (!api || !groupId) return; // ungrouping keeps the panel where it sits
         const panel = api.getPanel(`session-${cardId}`);
         if (!panel) return;
-        void window.switchboard.sessions.cards().then((cards) => {
+        void window.switchboard.sessions.cards().then((answer) => {
+          // #650: no card list means no siblings, so the panel stays where it
+          // sits - which is what this whole callback already does when it
+          // finds none.
+          const cards = answered(answer) ?? [];
           const siblings = new Set(
             cards
               .filter((c) => c.groupId === groupId && c.cardId !== cardId)
@@ -4396,7 +4424,11 @@ export function SessionGrid(props: {
           // prune below treats as "prune no groups".
           const groupIds = await window.switchboard.groups
             .list()
-            .then((gs) => gs.map((g) => g.id))
+            // #650: `?? null` and NOT `?? []`. The comment above is the reason
+            // — `null` here means "we do not know", which prunes no groups,
+            // while an empty array would assert that no group exists and prune
+            // every one of them. A refusal is the first, never the second.
+            .then((gs) => answered(gs)?.map((g) => g.id) ?? null)
             .catch(() => null);
           try {
             // WHICH PANELS ARE NOT COMING BACK, decided once and used twice
@@ -4412,17 +4444,26 @@ export function SessionGrid(props: {
             //    relaunch" is named in E16's *Not in scope*, and a viewer
             //    restored blind would also re-read a file whose folder may no
             //    longer be in the read scope.
-            const known = new Set(
-              (await window.switchboard.sessions.knownCards()).map((c) => c.cardId)
-            );
+            // #650, and the same distinction as `groupIds` above: `.map` on
+            // the brand throws, but degrading to an EMPTY set would be worse
+            // than the throw — it says "no card has a record" and prunes every
+            // session panel out of the restored layout. `null` says "we could
+            // not ask", and prunes no session. Derived panels are dropped
+            // either way: that verdict never depended on the answer.
+            const cardRecords = answered(await window.switchboard.sessions.knownCards());
+            const known = cardRecords ? new Set(cardRecords.map((c) => c.cardId)) : null;
             const willBePruned = (panelId: string): boolean => {
               const s = /^session-(.+)$/.exec(panelId);
-              return isDerivedPanelId(panelId) || (!!s && !known.has(s[1]));
+              return isDerivedPanelId(panelId) || (!!s && known !== null && !known.has(s[1]));
             };
             // popouts persist in the layout, but their stored url has last
             // launch's (random) loopback port and their position may be on a
             // now-missing monitor — fix both before restoring (E8-02)
-            const workAreas = await window.switchboard.workAreas();
+            // #650: an empty list makes `sanitizePopoutLayout` skip the
+            // rescue entirely (it guards on `workAreas.length > 0`), so a
+            // refusal moves no window rather than moving all of them on the
+            // strength of a display list we never received.
+            const workAreas = answered(await window.switchboard.workAreas()) ?? [];
             const rescuedNow: RescuedPopout[] = [];
             // ...and no popout window is restored holding a panel that verdict
             // condemns (#494): a window left with nothing is not opened at all,
@@ -4452,38 +4493,47 @@ export function SessionGrid(props: {
             if (rescuedNow.length > 0) {
               uiSet('rescuedPopouts', [...uiGet<RescuedPopout[]>('rescuedPopouts', []), ...rescuedNow]);
             }
-            // presentation records outlive their panels by design (that is the
-            // point of hiding), so the only thing that can retire one is the card
-            // itself being gone — otherwise the blob grows for ever
-            sessionStore.prunePresentation(known);
-            // the presentation POLICY overrides (E9-06) are keyed the same way and
-            // outlive their cards the same way, so they are retired at the same
-            // moment. A FAILED group list keeps every group override rather than
-            // pruning against an empty set: "the IPC rejected" and "you have no
-            // groups" are the same value otherwise, and one of them would silently
-            // delete settings the user made.
-            sessionStore.prunePolicies(known, groupIds ?? Object.keys(sessionStore.getPolicies().groups));
-            // and E9-07's maximize, which names a card and snapshots every other
-            // card's rung: a maximize held for a session that has since been
-            // closed would keep the workspace blown up around nothing.
-            sessionStore.pruneLayout(known);
-            // E9-10's per-session focus overrides are card-keyed and outlive
-            // their cards exactly as the presentation overrides above do.
-            sessionStore.pruneFocusPolicies(known);
-            // and E9-09's pins, keyed the same way and outliving their cards
-            // the same way.
-            sessionStore.prunePins(known);
-            // ...and #559's manual rail order, which names cards the same way
-            // and would otherwise keep ranking sessions that no longer exist.
-            sessionStore.pruneManualOrder(known);
-            // ...and #485's unsent prompts. The same rule, and the one with the
-            // biggest payload: a draft is whatever the user pasted.
-            pruneDrafts(known);
-            // and #546's half of the same draft — the NAMES of the files that
-            // were attached to it, plus the retained bytes those names refer
-            // to. Same key shape, same rule, so the two halves of one draft
-            // cannot end up with different lifetimes.
-            pruneAttachmentDrafts(known);
+            // #650: EVERY prune below deletes records whose card is not in
+            // `known`, so a refused `knownCards` read must prune nothing at
+            // all — the identical argument the group-override comment inside
+            // makes for a failed group list, and the reason `known` is `null`
+            // rather than an empty set. Running these against "we could not
+            // ask" would delete the user's pins, policies, drafts and
+            // attachments for every session in the app.
+            if (known !== null) {
+              // presentation records outlive their panels by design (that is the
+              // point of hiding), so the only thing that can retire one is the card
+              // itself being gone — otherwise the blob grows for ever
+              sessionStore.prunePresentation(known);
+              // the presentation POLICY overrides (E9-06) are keyed the same way and
+              // outlive their cards the same way, so they are retired at the same
+              // moment. A FAILED group list keeps every group override rather than
+              // pruning against an empty set: "the IPC rejected" and "you have no
+              // groups" are the same value otherwise, and one of them would silently
+              // delete settings the user made.
+              sessionStore.prunePolicies(known, groupIds ?? Object.keys(sessionStore.getPolicies().groups));
+              // and E9-07's maximize, which names a card and snapshots every other
+              // card's rung: a maximize held for a session that has since been
+              // closed would keep the workspace blown up around nothing.
+              sessionStore.pruneLayout(known);
+              // E9-10's per-session focus overrides are card-keyed and outlive
+              // their cards exactly as the presentation overrides above do.
+              sessionStore.pruneFocusPolicies(known);
+              // and E9-09's pins, keyed the same way and outliving their cards
+              // the same way.
+              sessionStore.prunePins(known);
+              // ...and #559's manual rail order, which names cards the same way
+              // and would otherwise keep ranking sessions that no longer exist.
+              sessionStore.pruneManualOrder(known);
+              // ...and #485's unsent prompts. The same rule, and the one with the
+              // biggest payload: a draft is whatever the user pasted.
+              pruneDrafts(known);
+              // and #546's half of the same draft — the NAMES of the files that
+              // were attached to it, plus the retained bytes those names refer
+              // to. Same key shape, same rule, so the two halves of one draft
+              // cannot end up with different lifetimes.
+              pruneAttachmentDrafts(known);
+            }
             // The same verdict, on the grid this time. Only GRID panels reach
             // here, and that is now guaranteed rather than usual:
             // `prunePopoutGroups` (#494) already took every condemned id out of

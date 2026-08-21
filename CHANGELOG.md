@@ -61,6 +61,18 @@ on the floor, and say so in your PR.
 
 ## 0.8.3 — unreleased
 
+### Internal
+
+- A refused IPC call can no longer crash the part of the app that asked. The
+  broker answers a capability-denied call with a marker object rather than an
+  error; forty places in the renderer used that marker as if it were the real
+  answer — mapping over it, reading fields off it, casting it into a typed
+  store — which would have thrown inside a callback nobody catches. Every one
+  of them now checks first and falls back to the empty, inert answer that site
+  already knows how to draw, and the check is enforced by the unit suite so a
+  new one cannot be written. No visible change today: this window holds every
+  capability, so nothing here can be refused yet (#650).
+
 ## 0.8.2 — 2026-08-21
 
 ### Changed

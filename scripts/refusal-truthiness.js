@@ -1,18 +1,43 @@
-// #440 — the net under `shared/ipc/refusal.ts`: a REFUSAL IS TRUTHY.
+// #440 + #650 — the net under `shared/ipc/refusal.ts`: A REFUSAL IS NOT AN
+// ANSWER, and every renderer call site has to say so before it uses one.
 //
 // Since #346 the IPC broker refuses a capability-denied `invoke` by RESOLVING
 // an `IpcRefusal` object (`{__ipcRefused: true, channel, reason}`) instead of
 // throwing. That was the right call — a throw reaches third-party code as an
-// unhandled rejection — but it opened a quieter hole on the other side:
+// unhandled rejection — but it left the brand loose in the renderer, where it
+// gets misread in two opposite ways.
 //
-//     if (await window.switchboard.sessions.isDirectory(p)) …
+//   THE SILENT ONE (#440). An object is truthy:
 //
-// An object is truthy. So a caller that was told "you may not do that" reads
-// "yes", and the branch that exists to handle "no" never runs. It fails the
-// wrong way, in silence, with no log line anywhere. #439 found the first one
-// (`lib/composer.ts`, where a refusal suppressed the terminal fallback and
-// silently reinstated the #154 defect) and pinned it with `=== true`; #440
-// swept the rest. This is what stops the next one being written.
+//       if (await window.switchboard.sessions.isDirectory(p)) …
+//
+//   A caller told "you may not do that" reads "yes", and the branch that
+//   exists to handle "no" never runs. Wrong way, in silence, no log line
+//   anywhere. #439 found the first (`lib/composer.ts`, where a refusal
+//   suppressed the terminal fallback and silently reinstated the #154 defect)
+//   and pinned it with `=== true`; #440 swept the other nineteen.
+//
+//   THE LOUD ONE (#650). The same object used as the ANSWER:
+//
+//       events.list().then((l) => setEvents(l as EventDto[]))
+//
+//   `l.map` on the next render is `l.map is not a function`, inside a `.then`
+//   nobody catches — an unhandled rejection, or a dead component tree. Where
+//   the site reads a field instead of a method it is quieter but no better:
+//   `status.files` off the brand is `undefined`, and the pane renders as if
+//   git had answered. Two of these wore an `as` CAST (`as EventDto[]`,
+//   `as FeedBlockDto[]`) over a channel declared `Promise<unknown[]>`, which
+//   is the brand laundered INTO a typed store under a promise it cannot keep.
+//
+// Loud is better than silent. Neither is FAIL-OPEN, and fail-open is a hard
+// constraint (PHILOSOPHY §3, litmus #3): our breakage never blocks a session.
+// So the rule this file enforces is one rule for both classes —
+//
+//     LAUNDER A BROKERED ANSWER BEFORE YOU USE IT, IN ANY WAY AT ALL.
+//
+// — and the degraded value is the site's own already-written "nothing came
+// back" path: an empty list, a `null` that means "we do not know", a state
+// left on the default it mounted with.
 //
 // WHY A SCANNER AND NOT A LINT RULE OR A TYPE.
 //
@@ -49,20 +74,35 @@
 //         path.
 //
 // So: parse the renderer, find the bridge calls, follow their results one hop,
-// and fail if any of them is read as a boolean — or if the hop cannot be
-// followed at all, which is its own finding (`unfollowable-then`) rather than a
-// silent pass. One hop is deliberate; see WHAT THIS DOES NOT SEE at the bottom.
+// and fail if any of them is READ — as a boolean (`booleanPositionOf`) or as a
+// value (`valuePositionOf`) — before going through a launderer. A hop that
+// cannot be followed at all is its own finding (`unfollowable-then`) rather
+// than a silent pass. One hop is deliberate; see WHAT THIS DOES NOT SEE.
 //
-// THE FIX AT A CALL SITE is never "add a cast". It is one of:
+// THE FIX AT A CALL SITE is never "add a cast" — a cast is the defect, not the
+// remedy. It is one of:
 //
 //     took(result)          — `=== true`, for the boolean channels
 //     answered(result)      — the handler's answer, or `undefined` if refused
 //     result === true/false — an explicit comparison, where the two non-answers
 //                             must be told apart (App.tsx's `decidePermission`)
 //
-// The first two live in `src/shared/ipc/refusal.ts` next to the contract. Both
-// LAUNDER the value: once it has been through one, this scanner stops tracking
-// it, because it is no longer a value that can be a refusal.
+// …followed by whatever this site already does with "nothing came back":
+//
+//     setEvents(answered(l) ?? [])                  — an empty list
+//     const p = answered(raw); if (!p) return;      — leave the state alone
+//     answered(gs)?.map(…) ?? null                  — where `null` means "we do
+//                                                     not know" and `[]` would
+//                                                     mean "there are none"
+//
+// That last one is not a stylistic choice. `SessionGrid`'s layout restore
+// prunes persisted records against a list of known cards; degrading a refusal
+// to `[]` there would delete every pin, policy and draft in the app. WHICH
+// empty value is right is a per-site judgement — that there must BE one is not.
+//
+// The launderers live in `src/shared/ipc/refusal.ts` next to the contract.
+// Once a value has been through one, this scanner stops tracking it, because
+// it is no longer a value that can be a refusal.
 'use strict';
 
 const fs = require('fs');
@@ -92,6 +132,21 @@ function strip(node) {
     }
     return e;
   }
+}
+
+/**
+ * The same peel, upwards: the outermost wrapper this node is buried in.
+ * `strip` finds the value inside `x as T`; this finds the `x as T` around it,
+ * which is what tells you what the value is actually being HANDED TO.
+ */
+function unwrapped(node) {
+  let e = node;
+  while (e.parent && (ts.isParenthesizedExpression(e.parent) || ts.isNonNullExpression(e.parent) ||
+         ts.isAsExpression(e.parent) || ts.isTypeAssertionExpression(e.parent) ||
+         ts.isSatisfiesExpression(e.parent))) {
+    e = e.parent;
+  }
+  return e;
 }
 
 /**
@@ -158,6 +213,83 @@ function booleanPositionOf(node) {
 }
 
 /**
+ * The VALUE position this node sits in, or `null` if it is not read as one
+ * (#650).
+ *
+ * The sibling of `booleanPositionOf`, and the other half of the same defect.
+ * #440 swept the SILENT direction — a refusal read as a yes. What it left
+ * behind, and named in its own blind-spot list, was the LOUD direction: a
+ * refusal used as the ANSWER. `list.map(…)` on the brand throws `list.map is
+ * not a function`; `status.staged` reads `undefined`; `setEvents(l as
+ * EventDto[])` launders the brand straight into a typed store under a cast
+ * that says it cannot be there.
+ *
+ * Loud is better than silent, but it is still not fail-open, and fail-open is
+ * a hard constraint (PHILOSOPHY §3): our breakage never blocks a session. A
+ * `TypeError` inside a `.then` on the session-list refresh is an unhandled
+ * rejection; inside a render or a click handler it takes the component tree
+ * with it. So a brokered answer must be laundered BEFORE it is used at all —
+ * `answered(x) ?? <the empty/inert answer>` — and this reports every first
+ * read that is not.
+ *
+ * COMPARISONS ARE NOT REPORTED (`r === null`, `typeof r`, `r === true`).
+ * A comparison cannot itself misbehave on a refusal, and whatever the code
+ * does with `r` afterwards is a read this catches on its own. Reporting them
+ * too would fire twice on one defect and make the explicit-comparison escape
+ * hatch that `booleanPositionOf`'s doc-comment recommends unusable.
+ */
+function valuePositionOf(node) {
+  const p = node.parent;
+  if (!p) return null;
+  if (ts.isParenthesizedExpression(p) || ts.isNonNullExpression(p) ||
+      ts.isAsExpression(p) || ts.isTypeAssertionExpression(p) || ts.isSatisfiesExpression(p)) {
+    // A cast does not make the brand go away — `l as EventDto[]` is the shape
+    // this exists to catch — so peel it and judge what the cast is handed to.
+    return valuePositionOf(p);
+  }
+  if ((ts.isPropertyAccessExpression(p) || ts.isElementAccessExpression(p)) && p.expression === node) {
+    // `list.map`, `status.staged`, `r?.ok` — `?.` included on purpose: it
+    // answers `undefined` for a refusal, which is the "reads undefined off the
+    // brand" half of the defect rather than a guard against it.
+    return 'property-read';
+  }
+  if (ts.isCallExpression(p) && p.expression === node) return 'called';
+  if ((ts.isCallExpression(p) || ts.isNewExpression(p)) && p.arguments?.includes(node)) {
+    // `setEvents(l)`, `enqueue(list)` — the answer handed on unchecked.
+    return 'passed-on';
+  }
+  if (ts.isSpreadElement(p) || ts.isJsxSpreadAttribute(p)) return 'spread';
+  if (ts.isForOfStatement(p) && p.expression === node) return 'iterated';
+  if (ts.isReturnStatement(p)) return 'returned';
+  if (ts.isArrowFunction(p) && p.body === node) return 'returned';
+  if (ts.isJsxExpression(p)) return 'rendered';
+  if (ts.isTemplateSpan(p) && p.expression === node) return 'stringified';
+  if (ts.isPropertyAssignment(p) && p.initializer === node) return 'stored';
+  if (ts.isShorthandPropertyAssignment(p)) return 'stored';
+  if (ts.isArrayLiteralExpression(p)) return 'stored';
+  if (ts.isBinaryExpression(p) && p.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      p.right === node) {
+    return 'assigned';
+  }
+  // `prev ?? s` — the RIGHT of `??` is the value that gets used when the left
+  // is missing, which is the opposite side from `booleanPositionOf`'s
+  // `nullish` and just as much a way for the brand to become the answer.
+  // Same for either arm of a ternary.
+  if (ts.isBinaryExpression(p) && p.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken &&
+      p.right === node) {
+    return 'stored';
+  }
+  if (ts.isConditionalExpression(p) && (p.whenTrue === node || p.whenFalse === node)) return 'stored';
+  // `const {hits} = await bridge.search()` — the blind spot named in WHAT THIS
+  // DOES NOT SEE. A plain `const b = a` rename is followed instead (null here),
+  // but a destructuring pattern reads properties off the brand and cannot be.
+  if (ts.isVariableDeclaration(p) && p.initializer === node) {
+    return ts.isIdentifier(p.name) ? null : 'destructured';
+  }
+  return null;
+}
+
+/**
  * Every place in ONE file where a brokered bridge result is read as a boolean.
  *
  * @param {string} fileName  used for the report and to pick TS vs TSX
@@ -208,6 +340,14 @@ function scanSource(fileName, source, invokeMethods) {
     const e = strip(node);
     if (!ts.isCallExpression(e)) return false;
     const callee = strip(e.expression);
+    // `Promise.resolve(bridge.x?.())` — the wrapper `WorkspaceNoticeBanner`
+    // uses so an optional-chained call that answers `undefined` is still
+    // thenable. It changes nothing about the value, so see through it (#650);
+    // without this the whole file read as bridge-free.
+    if (ts.isPropertyAccessExpression(callee) && callee.name.text === 'resolve' &&
+        callee.expression.getText(sf) === 'Promise' && e.arguments.length === 1) {
+      return isBridgeCall(e.arguments[0]);
+    }
     if (!ts.isPropertyAccessExpression(callee) || !invokeMethods.has(callee.name.text)) return false;
     return rootsAtBridge(callee.expression);
   };
@@ -249,11 +389,24 @@ function scanSource(fileName, source, invokeMethods) {
           !(ts.isBindingElement(node.parent) && node.parent.name === node)) {
         const pos = booleanPositionOf(node);
         if (pos) report(node, pos, guardOf(node));
+        // …and the other half of the same defect: read as a VALUE without
+        // being laundered first (#650). Checked only when the boolean test did
+        // not fire, so one site never reports twice.
+        else if (!isLaundered(node)) {
+          const vpos = valuePositionOf(node);
+          if (vpos) report(node, vpos, guardOf(node));
+        }
         // `const b = answer;` — the trail continues under the new name. #440's
         // OWN fixes introduced this shape (`const record = answered(answer)`),
         // and without this rule deleting the launderer left the scanner green:
         // the boolean read is on the second name, not the tracked one.
-        const decl = node.parent;
+        //
+        // The rename is looked for OUTSIDE the wrappers (#650): `const next = s
+        // as GitStatusDto` is a rename wearing a cast, and reading `node.parent`
+        // literally found the `as` and ended the trail there — which is how
+        // `DiffPane.tsx`'s `git.status()` answer, one of the two casts this
+        // item was filed to fix, was invisible to the first version of this.
+        const decl = unwrapped(node).parent;
         if (ts.isVariableDeclaration(decl) && decl.initializer &&
             strip(decl.initializer) === node && ts.isIdentifier(decl.name)) {
           trackBinding(decl.name.text, scope, seen);
@@ -270,17 +423,18 @@ function scanSource(fileName, source, invokeMethods) {
   };
   /** is this node an ARGUMENT of `took` / `answered` / `isIpcRefusal`? */
   const isLaundered = (node) => {
-    const p = node.parent;
+    const outer = unwrapped(node);
+    const p = outer.parent;
     return (
       !!p && ts.isCallExpression(p) && LAUNDERERS.includes(p.expression.getText(sf)) &&
-      p.arguments.includes(node)
+      p.arguments.includes(outer)
     );
   };
 
   (function pass2(node) {
     // `await bridge.x()` used directly as a boolean
     if (ts.isAwaitExpression(node) && isBridgeCall(node.expression) && !isLaundered(node)) {
-      const pos = booleanPositionOf(node);
+      const pos = booleanPositionOf(node) ?? valuePositionOf(node);
       if (pos) report(node, pos, guardOf(node));
     }
     // `const r = await bridge.x()` — then every boolean read of `r`
@@ -364,10 +518,16 @@ function formatReport({ offenders, files, invokeMethods }) {
     ];
   }
   return [
-    `[refusal-truthiness] ${offenders.length} bridge result(s) read as a boolean —`,
-    '  a refused call resolves an IpcRefusal OBJECT, which is truthy (#346/#440).',
-    '  Launder it: took(x) for the boolean channels, answered(x) otherwise,',
-    '  or an explicit x === true / x === false. See src/shared/ipc/refusal.ts.',
+    `[refusal-truthiness] ${offenders.length} unlaundered bridge result(s) —`,
+    '  a refused call RESOLVES an IpcRefusal object (#346). Read as a boolean it',
+    '  is truthy and lies (#440); read as a value it throws or answers undefined',
+    '  off a field it does not have (#650). Neither is fail-open.',
+    '  Launder it AT THE BOUNDARY, then use the site\'s own empty answer:',
+    '    took(x)                     — the boolean channels',
+    '    answered(x) ?? []           — a list',
+    '    const v = answered(x); if (!v) return;   — a record',
+    '    x === true / x === false    — where the two non-answers differ',
+    '  See src/shared/ipc/refusal.ts.',
     ...offenders.map((o) => `  ${o.file}:${o.line}  [${o.kind}]  ${o.source}`),
   ];
 }
@@ -378,6 +538,7 @@ module.exports = {
   LAUNDERERS,
   invokeBackedMethods,
   booleanPositionOf,
+  valuePositionOf,
   scanSource,
   sourceFiles,
   scanTree,
@@ -394,47 +555,59 @@ if (require.main === module) {
 
 // WHAT THIS DOES NOT SEE, stated so nobody mistakes green for proof.
 //
-//   * A result carried further than one hop THROUGH A CALL — stored on a ref,
-//     returned from a helper, put in React state. (A plain rename,
-//     `const b = answer`, IS followed: #440's own fixes wear that shape, and
-//     without following it deleting a launderer left this green.) Anything
-//     further needs a type checker and a symbol table; this is a net for the
-//     shape the defect actually wears, which in all nineteen real sites was the
-//     value's FIRST read.
+//   * A result carried further than one hop THROUGH A CALL. Handing it to one
+//     is now REPORTED (`passed-on`), and so is storing it (`stored`,
+//     `assigned`), returning it (`returned`) and rendering it (`rendered`) —
+//     but what the callee then does with it is not followed. A plain rename,
+//     `const b = answer` (or `const b = answer as T`, which #650 added), IS
+//     followed: #440's own fixes wear that shape, and without following it
+//     deleting a launderer left this green. Anything further needs a type
+//     checker and a symbol table; this is a net for the shape the defect
+//     actually wears, which in every real site so far was the value's FIRST
+//     read.
 //   * A bridge method reached through an INJECTED DEPENDENCY rather than the
-//     global. Three exist, and they differ in how well they defend themselves:
-//     `lib/markdown-links.ts` takes `openExternal` typed `Promise<unknown>` ON
-//     PURPOSE, which forces its call site to narrow and is the better guard
-//     where it is available; `lib/latest-wins.ts` takes a whole FETCH closure
-//     and so is the only place that can see what it resolves to, which is why
-//     it launders centrally (#440); `components/DocumentViewer.tsx`'s `files()`
-//     accessor degrades a refusal to `{ok: undefined}`, i.e. "unreadable",
-//     which is fail-safe by accident rather than by design.
-//   * Destructuring at the boundary — `const {hits} = await bridge.search()`,
-//     `.then(({binding}) => …)`. The second form is REPORTED as
-//     `unfollowable-then`; the first is not, and nothing in the tree writes it.
+//     global. Nothing static can tell that an injected closure calls the
+//     bridge, so each of these launders CENTRALLY — in the one place that can
+//     see the value — and each is covered by unit tests instead of by this
+//     scanner. There are five:
+//       - `lib/markdown-links.ts` takes `openExternal` typed `Promise<unknown>`
+//         ON PURPOSE, which forces its call site to narrow. The best guard of
+//         the five, where the signature is ours to choose.
+//       - `lib/latest-wins.ts` takes a whole FETCH closure (#440).
+//       - `lib/terminal-shadow.ts` takes `read: () => pty.snapshot(id)` (#650):
+//         a refusal replayed into the shadow terminal is a 0×0 screen that
+//         finds nothing in a scrollback nobody was allowed to read.
+//       - `lib/terminal-attach.ts` takes `attach: () => pty.attach(id)` (#650):
+//         a refusal has no `epoch`, and the epoch test then drops every chunk
+//         for ever — #117's failure mode through the path written to avoid it.
+//       - `components/DocumentViewer.tsx`'s `files()` accessor (#650): a
+//         refusal used to degrade to `{ok: undefined}` = "unreadable", which
+//         was fail-safe by accident; it now says so, with the same `UNREADABLE`
+//         value the no-bridge branch uses.
+//   * Destructuring at the boundary. Both forms are now reported: the callback
+//     one (`.then(({binding}) => …)`) as `unfollowable-then`, the statement one
+//     (`const {hits} = await bridge.search()`) as `destructured` (#650).
+//     Nothing in the tree writes either today.
 //   * A `.then`/`.catch` chained BEFORE the value is read
 //     (`await bridge.x().catch(() => null)`). The chain is not a bridge call, so
-//     nothing is tracked. The one instance in the tree (SessionGrid's
-//     `groups.list().then(gs => gs.map(…)).catch(() => null)`) is fail-safe: a
-//     refusal throws inside the `.then` and the `.catch` answers null.
+//     nothing is tracked — but the FIRST `.then` in the chain is followed, and
+//     that is where the value is actually read. SessionGrid's
+//     `groups.list().then(gs => …).catch(() => null)` used to rely on the
+//     `.catch` to turn a refusal's TypeError into `null`; #650 laundered it in
+//     the `.then` instead, so the `.catch` is back to catching real failures.
 //   * `src/main`, `src/preload` and `src/shared`. None of them calls `invoke`;
 //     the broker is the thing answering, not asking.
 //
-//   * A bridge answer used as a VALUE rather than as a boolean — handed to a
-//     React setter, `.map`ped, `.filter`ed, or read for a property. There are
-//     about thirty of those (`events.list().then(l => setEvents(l))`,
-//     `pendingPermissions().then(list => list.forEach(…))`,
-//     `git.status().then(s => setGit(s))`, …) and they are a DIFFERENT DEFECT:
-//     a refusal there throws `x.map is not a function` or reads `undefined` off
-//     the brand. Loud. #440 is about the SILENT direction — a refusal read as a
-//     good answer — and fixing the loud one wants a shape check or an envelope
-//     per channel, not a launderer. Reported for a follow-up, deliberately not
-//     swept here.
+//   * COMPARISONS, deliberately: `r === null`, `typeof r`, `r === true`. A
+//     comparison cannot itself misbehave on the brand, and whatever the code
+//     does with `r` afterwards is a read this catches on its own — reporting
+//     the comparison too would fire twice on one defect and would outlaw the
+//     explicit `=== true` / `=== false` form the contract recommends.
 //
-//     Note the asymmetry this creates, because it is a choice and not an
-//     oversight: `.then(setEvents)` IS reported (point-free — the uses cannot
-//     be seen, so "unknown" is treated as "unsafe") while
-//     `.then((l) => setEvents(l))` is not (inline — the uses CAN be seen, and
-//     none of them is a boolean). The rule is "judge what you can see, report
-//     what you cannot", and it lands on the safe side of both.
+// A NOTE ON THE ASYMMETRY between point-free and inline `.then`, because it is
+// a choice and not an oversight. `.then(setEvents)` is reported
+// (`unfollowable-then`: the uses cannot be seen, so unknown is treated as
+// unsafe) while `.then((l) => setEvents(answered(l) ?? []))` is not (inline —
+// the uses CAN be seen, and every one of them goes through a launderer). The
+// rule is "judge what you can see, report what you cannot", and it lands on
+// the safe side of both.

@@ -62,6 +62,7 @@ import {
   SlashCommand,
   slashToken,
 } from '../../../shared/slash-commands';
+import { answered } from '../../../shared/ipc/refusal';
 
 export type { FeedBlockDto } from '../lib/feed';
 
@@ -350,7 +351,13 @@ export function FeedView(props: {
   React.useEffect(() => {
     let cancelled = false;
     void window.switchboard.transcripts.blocks(props.sessionId).then((b) => {
-      if (!cancelled) setBlocks(b as FeedBlockDto[]);
+      // `answered` BEFORE the cast (#650). `transcripts:blocks` is declared
+      // `Promise<unknown[]>`, so this cast is the only thing between the wire
+      // and the block list the feed renders - and a refusal cast into
+      // `FeedBlockDto[]` reaches `blocks.map` on the very next render and takes
+      // the whole feed down. An empty feed is the fail-open: the session keeps
+      // running and the live `onBlock` stream still fills it from here on.
+      if (!cancelled) setBlocks((answered(b) ?? []) as FeedBlockDto[]);
     });
     const off = window.switchboard.transcripts.onBlock((p) => {
       if (p.sessionId !== props.sessionId) return;
@@ -1617,7 +1624,10 @@ function Composer({
     }
     let cancelled = false;
     void window.switchboard.sessions.slashCommands(sessionId).then((list) => {
-      if (!cancelled) setCommands(list);
+      // #650: the brand in `commands` is `.filter`ed by the popup on the next
+      // keystroke. No commands is the honest answer to a refused read, and the
+      // popup already renders that (it is what `null` means one branch up).
+      if (!cancelled) setCommands(answered(list) ?? []);
     });
     return () => {
       cancelled = true;

@@ -16,6 +16,7 @@ import { Terminal } from '@xterm/xterm';
 import { SearchAddon } from '@xterm/addon-search';
 import { TerminalShadow } from './terminal-shadow';
 import type { PtySnapshot } from '../../../shared/ipc/pty';
+import { ipcRefusal } from '../../../shared/ipc/refusal';
 
 /**
  * jsdom has no `matchMedia`, and xterm's `CoreBrowserService` calls it while
@@ -65,6 +66,18 @@ describe('TerminalShadow replays main’s ring buffer and searches it', () => {
 
   it('…and when the read THROWS, rather than taking find down with it', async () => {
     shadow = new TerminalShadow({ read: vi.fn().mockRejectedValue(new Error('main is gone')) });
+    expect(await shadow.search({ term: 'NEEDLE' })).toBeNull();
+  });
+
+  it('…and when the BROKER refuses the read (#650)', async () => {
+    // `read` is an injected closure, so `scripts/refusal-truthiness.js` cannot
+    // see that it calls `pty.snapshot` — this test is the whole net for that
+    // site. Without the `answered` in `load()`, the brand is truthy and gets
+    // replayed as a snapshot with no `snapshot`, `cols` or `rows`: a 0x0
+    // screen that answers "found nothing" for a scrollback nobody was allowed
+    // to read, which is #516's blocker with a different cause.
+    const read = vi.fn().mockResolvedValue(ipcRefusal('pty:snapshot', 'capability-not-held'));
+    shadow = new TerminalShadow({ read: read as unknown as () => Promise<PtySnapshot | null> });
     expect(await shadow.search({ term: 'NEEDLE' })).toBeNull();
   });
 
