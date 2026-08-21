@@ -126,10 +126,12 @@ export interface SessionRecordWire {
  * sends `manager.onStatusChange`'s argument verbatim, so main's event type and
  * the renderer's picture of it are the same object and there is no room for two
  * declarations to be right. There WERE two — the preload took `change: unknown`
- * and both readers in `SessionGrid` cast it back to
- * `{ sessionId: string; to: string }`, which is the exact #590 defect one level
- * out: `to` is a `SessionStatus`, and a `string` there let a comparison against
- * a status no state machine can produce compile and silently never fire.
+ * and both readers in `SessionGrid` cast it back by hand, one to
+ * `{ sessionId: string; to: string }` and one to `{ …; to?: string }`. That is
+ * the exact #590 defect one level out, twice: `to` is a REQUIRED
+ * `SessionStatus`, so the `string` let a comparison against a status no state
+ * machine can produce compile and silently never fire, and the optional
+ * spelling bought a truthiness guard against a shape main cannot send.
  *
  * `main/sessions/session-manager.ts` re-exports this as `StatusChange` for its
  * own importers; `main/events/feed.ts` ingests it.
@@ -167,10 +169,11 @@ export type CardStatus = SessionStatus | 'suspended';
  * spawn option (`SpawnOptions`, `SessionManager.create`), the live record
  * (`SessionRecord`), the `sessions:create` argument in main and again in the
  * preload, the result the preload re-publishes, the keys of
- * `AUTONOMY_PERMISSION_MODE`, and the renderer's own `Autonomy` — plus a tenth
- * copy as a runtime array in `sessions:setAutonomy`'s validator. One name now,
- * because a fifth profile added to eight of nine copies is a bug that
- * compiles.
+ * `AUTONOMY_PERMISSION_MODE`, and the renderer's own `Autonomy` — plus two
+ * RUNTIME copies of the same list: the inline array in `sessions:setAutonomy`'s
+ * validator and the renderer's `AUTONOMIES`. One name now, because a fifth
+ * profile added to eight of those nine is a bug that compiles, and one added to
+ * the types but not the runtime list is a mode the chips never offer.
  *
  * THE VALUES ARE THE DEFINITION and the type is derived from them, following
  * `STATUS_TOKENS` in `renderer/src/lib/rail-view.ts`: a fifth entry added to a
@@ -198,9 +201,9 @@ export type AutonomyMode = (typeof AUTONOMY_MODES)[number];
  * a predicate in either process. Main validates untrusted renderer input with
  * it (§5.29: `sessions:setAutonomy` drops anything else on the floor) — and
  * that check was a literal `['plan', 'ask', 'auto-edit', 'full-auto']` array
- * inline in the handler until #618, i.e. a tenth copy of the vocabulary, in the
- * one place where being out of date means silently refusing a mode the rest of
- * the app offers. The renderer needs it because a workspace blob outlives the
+ * inline in the handler until #618 — a copy of the vocabulary in the one place
+ * where being out of date means silently refusing a mode the rest of the app
+ * offers. The renderer needs it because a workspace blob outlives the
  * code that wrote it, and an unrecognised value must fall back to the default
  * rather than render as a missing translation key.
  */

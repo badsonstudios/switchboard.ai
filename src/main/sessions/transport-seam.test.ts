@@ -480,7 +480,7 @@ describe('sessions:cards is one declaration, not two (#618)', () => {
 
 describe('the autonomy vocabulary is declared once (#618)', () => {
   it('the record, the card and the create argument all say the same four', () => {
-    // Eight hand-written copies of this union before #618, on both sides of the
+    // Nine hand-written copies of this union before #618, on both sides of the
     // boundary and in the workspace file. These three are the ones that cross
     // it.
     const onRecord: Exact<SessionRecord['autonomy'], AutonomyMode | undefined> = true;

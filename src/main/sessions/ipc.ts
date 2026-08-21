@@ -53,6 +53,7 @@ import { Channel } from '../../shared/ipc/capabilities';
 import type { PtyAttachment, PtyChunk, PtySnapshot } from '../../shared/ipc/pty';
 import type { PermissionRequest } from '../../shared/ipc/permissions';
 import { isAutonomyMode, type AutonomyMode, type SessionCardWire } from '../../shared/sessions';
+import type { TransportKind } from '../../shared/transport';
 import type { ProviderCapabilities } from '../extensibility/contributions';
 import { TranscriptWatcher } from '../transcripts/watcher';
 import { searchTranscripts } from '../transcripts/search';
@@ -129,7 +130,7 @@ export interface SessionIpcDeps {
    *  because it is the only way to aim a WHOLE app instance at one transport —
    *  which is how the e2e suite starts a session on the Terminal now that
    *  Direct is the default (#381). */
-  preferredTransport?: () => 'pty' | 'stream' | undefined;
+  preferredTransport?: () => TransportKind | undefined;
   /**
    * A repair the user should SEE, not just find in the log (#539).
    *
@@ -1362,9 +1363,13 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   // literal. Hoist any resolution above those reads and the renderer's ordering
   // guard silently degrades to a coin flip, with every test still green.
   // The RETURN TYPE is the drift pin (#618). `SessionCardWire` is what the
-  // preload declares too, so a field added here and not there — or a `status`
-  // widened back to `string` — fails `tsc` at this handler instead of at a
-  // renderer that reads a field nobody sends.
+  // preload declares too, so a `status` widened back to `string` fails `tsc`
+  // here instead of at a renderer that compares against a value nobody sends.
+  //
+  // The pin on EXTRA fields is the annotation on the `map` callback below, not
+  // this one: an object literal returned from an unannotated callback loses its
+  // freshness before it meets this type, so excess-property checking never
+  // runs and a field added here and not to `SessionCardWire` would compile.
   broker.handle('sessions:cards', async (): Promise<SessionCardWire[]> => {
     const live = manager.list();
     // The reverse of `cardOfLive`, and no longer a tie-break: a card holds ONE
@@ -1381,7 +1386,11 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     const liveByCard = new Map<string, string>(); // cardId -> liveId
     for (const [liveId, cardId] of cardOfLive) liveByCard.set(cardId, liveId);
     return Promise.all(
-      deps.persist.list().map(async (card) => {
+      // ANNOTATED, and the annotation is load-bearing (#618) — see the note on
+      // the handler above. Without it, an extra field on this literal compiles
+      // and arrives in the renderer undeclared, which is the drift the shared
+      // type exists to stop.
+      deps.persist.list().map(async (card): Promise<SessionCardWire> => {
         const liveId = liveByCard.get(card.id);
         const rec = liveId ? live.find((r) => r.id === liveId) : undefined;
         return {

@@ -39,28 +39,37 @@ import { shell } from 'electron';
 import type { BrowserWindow } from 'electron';
 import { FeedEvent, FeedKind } from './feed';
 import { QuietWindow, inQuietWindow } from './rules';
+// One record, one declaration (#618). This module had its OWN
+// `interface NotificationPrefs` with the same six fields until then, and
+// `main/index.ts` handed it `workspace.getNotificationPrefs()` verbatim —
+// structurally compatible, so `tsc` never looked, which is exactly the drift
+// class `shared/notifications.ts` exists to close. Re-exported because
+// `notifier.test.ts` and the rules engine import the name from here.
+//
+// What the NOTIFIER does with two of those fields is worth saying, and says it
+// here rather than on the shared declaration, because it is this module's
+// behaviour and not part of the contract:
+//
+//   `sounds`  when it is on, the beep below steps aside for the `sound` rule
+//             action, which fires on the same four events at every visibility
+//             (`rules.ts` → `defaultRules`). One event has to make one noise.
+//   `speak`   read only by the rules engine; the notifier has nothing
+//             unconditional to say.
+import type { NotificationPrefs } from '../../shared/notifications';
 
-export interface NotificationPrefs {
-  enabled: boolean;
-  /** "HH:MM" 24h local; both set = quiet window (may span midnight) */
-  quietStart?: string;
-  quietEnd?: string;
-  /** OS toast popups — OFF by default (Dan 2026-07-22: sound + Events
-   *  panel are the signal; popups are opt-in via settings, E14 adds UI) */
-  osToasts?: boolean;
-  /**
-   * Per-session cues (P2-E14-05a, §5.9) — OFF by default.
-   *
-   * Read HERE for one reason: when it is on, the beep below steps aside for the
-   * `sound` rule action, which fires on the same four events at every
-   * visibility (`rules.ts` → `defaultRules`). One event has to make one noise.
-   */
-  sounds?: boolean;
-  /** spoken announcements (P2-E14-05a) — OFF by default, and read only by the
-   *  rules engine; the notifier has nothing unconditional to say */
-  speak?: boolean;
-}
+export type { NotificationPrefs };
 
+/**
+ * What the notifier assumes when nobody has asked it anything.
+ *
+ * NOT the store's defaults, and deliberately so: `sanitizeNotifications`
+ * (`workspace/store.ts`) writes `{ enabled: true }` into an unreadable
+ * workspace file, while this is the fallback for a notifier constructed with no
+ * prefs at all — a test, or a boot that has not read the workspace yet. Both
+ * say "notifications on, popups off"; this one spells the second half out
+ * because `osToasts` being absent has to mean OFF at the only place that reads
+ * it as a boolean.
+ */
 export const DEFAULT_PREFS: NotificationPrefs = { enabled: true, osToasts: false };
 
 /**

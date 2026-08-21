@@ -43,6 +43,7 @@ import {
 import { Rule, isSaneRule } from '../events/rules';
 import { isUsableQuietWindow } from '../../shared/quiet-hours';
 import type { AutonomyMode } from '../../shared/sessions';
+import type { TransportKind } from '../../shared/transport';
 import type { NotificationPrefs } from '../../shared/notifications';
 
 export interface PersistedSession {
@@ -95,7 +96,7 @@ export interface PersistedSession {
    * makes the default safe to flip, and `sessions:create` is where the two are
    * ordered.
    */
-  transport?: 'pty' | 'stream';
+  transport?: TransportKind;
   /** freeform "what is this doing" label, distinct from the folder title */
   taskLabel?: string;
   /**

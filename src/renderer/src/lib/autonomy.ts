@@ -46,13 +46,14 @@ import { AUTONOMY_MODES, isAutonomyMode, type AutonomyMode } from '../../../shar
  * The four profiles.
  *
  * DERIVED, not declared (#618). The same union was hand-written nine times —
- * here, main's live record, the card's persisted record, the spawn option, the
- * `sessions:create` argument in main and again in the preload, the result the
- * preload re-publishes, and `AUTONOMY_PERMISSION_MODE`'s keys — with a tenth
- * copy as a runtime array in `sessions:setAutonomy`'s validator.
- * `shared/sessions.ts` declares it once. The local NAME stays because every
- * renderer call site says `Autonomy`, and this file is still where the
- * renderer's half of the feature lives.
+ * here, main's live record, the card's persisted record, the spawn option,
+ * `SessionManager.create`'s options, the `sessions:create` argument in main and
+ * again in the preload, the result the preload re-publishes, and
+ * `AUTONOMY_PERMISSION_MODE`'s keys — with two runtime copies of the list
+ * besides: `sessions:setAutonomy`'s inline validator array and `AUTONOMIES`
+ * just below. `shared/sessions.ts` declares all of it once. The local NAME
+ * stays because every renderer call site says `Autonomy`, and this file is
+ * still where the renderer's half of the feature lives.
  */
 export type Autonomy = AutonomyMode;
 
