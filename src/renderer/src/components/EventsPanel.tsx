@@ -42,11 +42,17 @@ const DISMISS_GUTTER = 64;
  * 3.41-4.49:1 on nordic. The ring keeps the hue (an edge is held to 3:1, and
  * it clears that); the word takes the ink and lands at 5.25-12.36:1.
  *
- * `ready` has no ramp position and stays `--faint` in both — it is the only
- * kind that is not a status, and `--faint` is deliberately a hint rather than
- * text. Left alone rather than quietly promoted: see #246's hand-off, along
- * with this row's `opacity: 0.82`, which dims EVERY colour on a reviewed row
- * and is the reason those still miss 4.5:1 even with the ink.
+ * `ready` still has no ramp position — it is the only kind that is not a
+ * status, so it takes a NEUTRAL rather than being quietly promoted into the
+ * status ramp. Which neutral moved in #268: it was `--faint`, which is
+ * deliberately a hairline hint rather than text (2.50:1 on nordic, 2.68:1 on
+ * daylight, and 2.15:1 once the row's old `opacity: 0.82` was folded in) — and
+ * a `ready` row is the ONLY row that ever shows this word, because `reviewed`
+ * IS `kind === 'ready'`. A state nobody can read is not a quiet state. It is
+ * `--muted` now: still a neutral, still not the ramp, and the app's secondary
+ * ink, which is the one neutral that clears AA on every surface in all four
+ * themes (the same call #640 made for the turn divider). 4.7-14.2:1 on the
+ * reviewed row's fill.
  */
 const KIND_HUE: Record<EventDto['kind'], string> = {
   done: 'var(--status-done)',
@@ -57,7 +63,7 @@ const KIND_HUE: Record<EventDto['kind'], string> = {
 };
 const KIND_INK: Record<EventDto['kind'], string> = {
   done: 'var(--status-done-ink)',
-  ready: 'var(--faint)',
+  ready: 'var(--muted)',
   'needs-input': 'var(--status-needs-input-ink)',
   'needs-permission': 'var(--status-needs-permission-ink)',
   crashed: 'var(--status-crashed-ink)',
@@ -381,6 +387,7 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
           <div style={{ display: 'flex', gap: 6 }}>
             {props.updateNotice.kind === 'available' && (
               <button
+                className="events-btn"
                 onClick={props.onUpdateNow}
                 style={{
                   background: 'var(--btn-primary-bg)',
@@ -397,6 +404,7 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
               </button>
             )}
             <button
+              className="events-btn"
               onClick={props.onDismissUpdateNotice}
               style={{
                 background: 'transparent',
@@ -449,6 +457,7 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
                     : t('events.historyCeded', { card: r.cardTitle, kept: r.keptByTitle ?? '' })}
                 </span>
                 <button
+                  className="events-btn"
                   onClick={() => props.onDismissHistoryRepair?.(r.id)}
                   // Named per ROW, because a slot with three of these would
                   // otherwise be three buttons all called "Got it" (§5.32).
@@ -497,6 +506,7 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
             <button
+              className="events-btn"
               onClick={props.onRestoreLayout}
               style={{
                 background: 'var(--btn-primary-bg)',
@@ -512,6 +522,7 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
               {t('events.restore')}
             </button>
             <button
+              className="events-btn"
               onClick={props.onDismissOffer}
               style={{
                 background: 'transparent',
@@ -556,13 +567,17 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
             <div
               key={e.id}
               role="listitem"
+              className="event-row"
               data-event-kind={e.kind}
               data-next={isNext ? 'true' : undefined}
+              // the de-emphasis lives in tokens.css, keyed on this attribute
+              // (#268) — the fill AND the ink it writes are a measured pair,
+              // and an inline `opacity` was neither
+              data-reviewed={reviewed ? 'true' : undefined}
               title={reviewed ? t('events.reviewed') : undefined}
               onClick={open}
               style={{
                 position: 'relative',
-                background: 'var(--panel2)',
                 borderRadius: 'var(--radius-chip)',
                 padding: '6px 9px 6px 12px',
                 marginBlockEnd: 4,
@@ -572,9 +587,6 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
                 // make the whole list jump every time the head changes
                 outline: isNext ? `1px solid ${KIND_HUE[e.kind]}` : undefined,
                 outlineOffset: -1,
-                // the reviewed tail is a log, not a to-do — it recedes, but it
-                // still has to be readable (Dan 2026-07-26: 0.65 was too dim)
-                opacity: reviewed ? 0.82 : 1,
               }}
             >
               <span
@@ -621,7 +633,10 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
                   <span
                     style={{
                       fontWeight: 600,
-                      color: 'var(--text)',
+                      // the ROW's colour, so the reviewed step down the neutral
+                      // ladder is one declaration in tokens.css rather than a
+                      // ternary here (#268)
+                      color: 'inherit',
                       flex: 1,
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',

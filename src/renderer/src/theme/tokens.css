@@ -41,8 +41,19 @@
      2026-07-26 (round 2) and now shared by BOTH containers — the grid's
      session groups and the rail's group cards are the same kind of object, so
      they get the same edge (Dan: "whatever we do here is what we're going to
-     want to do for the session windows too"). */
-  --group-frame: #6b7793;
+     want to do for the session windows too").
+     Strengthened a THIRD time in the same direction (#648, 2026-08-21), this
+     time on a measurement rather than on a look: a frame is a meaningful
+     non-text object, so WCAG 1.4.11 asks 3:1 of it against EVERY surface it
+     borders, and this value cleared that against only two of the six. It sits
+     between the workspace behind a card (--bg / --rail-canvas), the card body
+     inside it (--panel / --rail-card / --auto-surface) and the tab strip along
+     its top edge (--panel2) — and against those last four it was 2.55-2.91:1.
+     Was #6b7793; the value below is that colour lightened in HSL (same hue,
+     same saturation) until the tightest of the six clears the bar, which is
+     --panel2 at 3.06:1. tokens.drift.test.ts asserts all six, in all four
+     themes. */
+  --group-frame: #7a849e;
   /* the lift that separates a container from the surface behind it */
   --group-lift: 0 1px 3px rgba(0, 0, 0, 0.3);
   --chip: #39414f;
@@ -98,7 +109,12 @@
   --panel: #ffffff;
   --panel2: #f4f6f9;
   --border: #dde1e7;
-  --group-frame: #8593a6;
+  /* darkened for the same audit as nordic's (#648) — this one was under 3:1
+     against the workspace it is drawn ON (--bg, 2.76:1) as well as against the
+     tab strip and the rail canvas, and only cleared it against pure white.
+     Was #8593a6, darkened in HSL until --bg, the tightest of the six, is
+     3.06:1. */
+  --group-frame: #7c8ba0;
   --group-lift: 0 1px 3px rgba(20, 30, 50, 0.1);
   --chip: #e9edf2;
   --bar: #ffffff;
@@ -590,6 +606,20 @@ mark[data-feed-match-current] {
 .event-dismiss:focus-visible,
 /* the Events drawer's own ✕ (#556) — same ring as the Dismiss beside it */
 .events-close:focus-visible,
+/* ...and the rest of that drawer (#577). The EDGE TAB was never on this list,
+ * so the one control that is on screen while the drawer is SHUT — and the
+ * first thing a Tab walk over the workspace reaches — drew Chromium's default
+ * outline while the ✕ two inches away drew ours. `.events-btn` is the drawer's
+ * notice buttons (Restore layout, Update now, Got it, Not now, the
+ * history-repair dismissals), which were stragglers of the same kind: they
+ * appear ABOVE the rows, so a keyboard walk met them first.
+ * `.events-body` is the drawer's own scroll container, which OPENING focuses —
+ * and a programmatic focus() a key press caused still matches
+ * `:focus-visible`, so `Mod+E` painted the UA's outline around the whole
+ * drawer. Same shape as `[data-feed-region]` above, same answer. */
+.events-tab:focus-visible,
+.events-btn:focus-visible,
+.events-body:focus-visible,
 /* the small chips in the document viewer's header and the Changes tab's
  * toolbar — both were taking Chromium's default ring, which is not "the same
  * ring" §5.32 rule 4 names (#532, drive-by for `.doc-btn`) */
@@ -992,6 +1022,43 @@ mark[data-feed-match-current] {
    asking the wrong question (P2-E15-05) */
 :root[data-color-scheme='light'] .rail-group-ink {
   color: color-mix(in srgb, var(--g) 55%, #0d1424);
+}
+
+/* ---- Events drawer rows (§5.12, #268) --------------------------------------
+ *
+ * A row you have already dealt with — kind `ready` — is the log tail rather
+ * than the to-do list, and it recedes. It did that with `opacity: 0.82` on the
+ * whole row, a number Dan tuned by hand (2026-07-26: "0.65 was too dim"), and
+ * that is the mechanism this replaces rather than the intent.
+ *
+ * GROUP OPACITY IS NOT A DE-EMPHASIS, IT IS A CONTRAST CUT. It does not fade
+ * the text toward the fill behind it; it fades the text AND the fill toward
+ * whatever is behind BOTH — so every colour on the row loses ratio at once,
+ * including the ones #265 had just measured. The row's task label
+ * (`--muted` on `--panel2`) has 0.05 of headroom over AA to begin with: it is
+ * 4.55:1 on nordic at full strength, so 0.82 put it at 3.61:1 and 5.54 -> 3.74
+ * on daylight. RAISING the opacity does not rescue it — nordic needs 0.996
+ * before `--muted` is legal again, i.e. no opacity at all — which is why this
+ * takes the issue's other branch and says the same thing in tokens.
+ *
+ * The FILL is the exact colour the compositor already painted: 82% of
+ * `--panel2` over the drawer's `--panel` is `#323846` on nordic and `#f6f8fa`
+ * on daylight either way, so the row's box does not move or change shade. What
+ * changes is that the ink is now a TOKEN CHOICE — the title steps one rung
+ * down the neutral ladder (`--text` -> `--muted`) instead of being faded — and
+ * every word on the row is back at its audited value. Named `var(--panel)`
+ * rather than mixed into `transparent` for the `.collapsed-row` reason (#246):
+ * the surface the promise depends on has to be computable.
+ *
+ * It lives here rather than inline for the #206 reason: the pair carries a
+ * contrast promise and tokens.drift.test.ts has to be able to read it. */
+.event-row {
+  background: var(--panel2);
+  color: var(--text);
+}
+.event-row[data-reviewed='true'] {
+  background: color-mix(in srgb, var(--panel2) 82%, var(--panel));
+  color: var(--muted);
 }
 
 /* ─── The §5.30 document viewer (P2-E16-02) ───────────────────────────────

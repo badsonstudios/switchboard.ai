@@ -303,6 +303,11 @@ export function EventsDrawer(props: EventsDrawerProps): React.JSX.Element {
       <button
         ref={tab}
         type="button"
+        // the app's ONE focus ring (§5.32 rule 4, #577). Without the class this
+        // drew Chromium's default outline — on the one control that is on
+        // screen while the drawer is shut, and against `--panel`, a surface the
+        // UA knows nothing about.
+        className="events-tab"
         data-testid="events-tab"
         data-count={badge.count}
         data-hottest={badge.hottest ?? undefined}
@@ -397,6 +402,14 @@ export function EventsDrawer(props: EventsDrawerProps): React.JSX.Element {
         <div
           id={bodyId}
           ref={body}
+          // OPENING MOVES FOCUS HERE (see the note below), and a programmatic
+          // focus() that a key press caused still matches `:focus-visible` in
+          // Chromium — so this drew the UA's outline, in the UA's colour,
+          // around the whole drawer every time `Mod+E` opened it. Same class of
+          // straggler as the tab (#577), same fix: the app's one ring. The feed
+          // region is the precedent — a container that RECEIVES focus is on the
+          // ring list too.
+          className="events-body"
           data-testid="events-drawer"
           tabIndex={-1}
           // NAMED, because opening MOVES FOCUS HERE. A bare `<div tabIndex=-1>`

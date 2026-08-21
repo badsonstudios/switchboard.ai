@@ -405,13 +405,24 @@ test.describe('sessions rail', () => {
         return {
           // the grid's session window against its own surface
           vsCard: ratio(frame, tok('--panel')),
+          // the dockview tab strip, which runs along the top edge INSIDE the
+          // frame — the lightest surface the edge touches on nordic, and the
+          // one that binds the token's value (#648)
+          vsTabStrip: ratio(frame, tok('--panel2')),
           // the rail's group card, and the canvas the card sits on
           vsRailCard: ratio(frame, tok('--rail-card')),
           vsRailCanvas: ratio(frame, tok('--rail-canvas')),
+          // the workspace the grid's frames are drawn on
+          vsWorkspace: ratio(frame, tok('--bg')),
         };
       });
       for (const [where, r] of Object.entries(ratios)) {
-        expect(r, `${theme} frame ${where}`).toBeGreaterThan(1.55);
+        // 1.4.11's bar for a meaningful non-text object, not the "is it more
+        // prevalent than the first pass" floor of 1.55 this used to carry
+        // (#648). The computed half is tokens.drift.test.ts, which measures the
+        // same six pairs in all four themes; this is the half that proves the
+        // running app resolves the token it was told to.
+        expect(r, `${theme} frame ${where}`).toBeGreaterThanOrEqual(3);
       }
     }
   });
