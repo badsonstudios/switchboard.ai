@@ -144,6 +144,13 @@ export interface FileWatchDeps {
    *
    * Only `caseInsensitive` is read here — `sep` belongs to the path COMPARISONS
    * in `read-scope.ts`, and nothing in this file compares path prefixes.
+   *
+   * NOT plumbed through `FsIpcDeps.watch`, deliberately, and that is what keeps
+   * the seam honest: `ReadScope` folds with `HOST_STYLE` of its own accord, so a
+   * service running on some OTHER style would be keying its entries by one rule
+   * while the scope that grants them used another. There is no way to reach that
+   * state from `ipc.ts` — a style can only be handed to the constructor
+   * directly, which is to say by a test that supplies the matching scope too.
    */
   pathStyle?: PathStyle;
 }
@@ -295,9 +302,11 @@ export class FileWatchService {
     this.pollMs = deps.pollMs ?? FILE_WATCH_POLL_MS;
     // FLOOR, not round: `pollMs` is a promise about the worst case, so a full
     // revolution rounding UP would quietly make the floor slower than the
-    // constant every caller reasons in. At least 1ms, because a caller is free
-    // to pass a `pollMs` smaller than the slice count and `setInterval(0)` is a
-    // busy loop.
+    // constant every caller reasons in. That holds for any `pollMs` of at least
+    // `FILE_WATCH_POLL_SLICES`, which every real one is by three orders of
+    // magnitude. BELOW that the clamp wins instead and a revolution comes out
+    // longer than asked: `setInterval(0)` is a busy loop on main, and a test
+    // that passed a 3ms poll would rather have a 4ms revolution than a spin.
     this.sliceMs = Math.max(1, Math.floor(this.pollMs / FILE_WATCH_POLL_SLICES));
     this.probe = deps.probe ?? defaultProbe;
     this.style = deps.pathStyle ?? HOST_STYLE;
@@ -433,6 +442,9 @@ export class FileWatchService {
     return this.style.caseInsensitive ? s.toLowerCase() : s;
   }
 
+  /** The same fold, named for the key it makes — `files` is keyed by the whole
+   *  path where `dirs` and `WatchedDir.files` are keyed by one segment, and the
+   *  call sites read better for saying which. */
   private fileKey(p: string): string {
     return this.fold(p);
   }
@@ -614,7 +626,7 @@ export class FileWatchService {
    * Only the DUE files are collected, so the burst this exists to cut is cut in
    * the only place it costs anything — the stat and the scope resolve inside
    * `floorCheck`. Filtering by walking the map is deliberate: `files` is bounded
-   * by open tabs and the walk is a pointer comparison per entry, while a second
+   * by open tabs and the walk is an integer compare per entry, while a second
    * index keyed by slot would be a fourth structure `closeFile` has to keep in
    * step with the other three — the exact bug class its by-identity deletes are
    * already guarding against.

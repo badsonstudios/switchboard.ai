@@ -579,8 +579,9 @@ describe('FileWatchService (P2-E16-04)', () => {
    * the counts below are this block's alone.
    */
   describe('the floor wheel is sliced, not one burst (#682)', () => {
-    /** one slot's turn — derived, so the numbers below follow the constant */
-    const SLICE = POLL / FILE_WATCH_POLL_SLICES;
+    /** one slot's turn, derived the way the service derives it — so the counts
+     *  below follow `FILE_WATCH_POLL_SLICES` rather than assuming it is 4 */
+    const SLICE = Math.floor(POLL / FILE_WATCH_POLL_SLICES);
 
     /** every path `sliced` stat'd, in order */
     let probed: string[];
@@ -624,9 +625,9 @@ describe('FileWatchService (P2-E16-04)', () => {
     };
 
     it('a sub-tick stats only its own slot, not every open file', () => {
-      // Eight tabs, four slots: the burst #682 is about would be eight stats at
-      // once, every two seconds.
-      open(8);
+      // Two tabs' worth of every slot: the burst #682 is about would be all of
+      // them stat'd at once, every two seconds.
+      open(FILE_WATCH_POLL_SLICES * 2);
       probed.length = 0;
       vi.advanceTimersByTime(SLICE);
       expect(probed.length).toBe(2);
@@ -647,12 +648,12 @@ describe('FileWatchService (P2-E16-04)', () => {
       expect(vi.getTimerCount()).toBe(1);
     });
 
-    it('every open file is still stat`d exactly once per pollMs', () => {
+    it("every open file is still stat'd exactly once per pollMs", () => {
       // The floor is the authority, so "sliced" has to mean a different PHASE
-      // per file and not a lower rate for any of them. Nine over four slots is
-      // deliberately uneven — 3, 2, 2, 2 — so a test that only worked when the
-      // division came out whole would not pass here.
-      const paths = open(9);
+      // per file and not a lower rate for any of them. One more than a whole
+      // number of slots, deliberately, so a test that only worked when the
+      // division came out even would not pass here.
+      const paths = open(FILE_WATCH_POLL_SLICES * 2 + 1);
       probed.length = 0;
       vi.advanceTimersByTime(POLL);
       expect([...probed].sort()).toEqual([...paths].sort());
@@ -674,17 +675,21 @@ describe('FileWatchService (P2-E16-04)', () => {
     it('the ceiling is unchanged: a write is reported within pollMs from any slot', () => {
       // The done-when's "semantics preserved", stated as the promise the rest of
       // the app makes — `FILE_WATCH_POLL_MS` is the worst case for the whole
-      // feature. One file per slot, and the writes land mid-revolution so no
-      // slot is sitting at a convenient phase.
+      // feature. One file per slot, and the writes land 1ms after a slot's turn
+      // has just gone by, which is that slot's worst case: it now waits a full
+      // revolution. The window is a slice wider than the claim so the test is
+      // asserting the ceiling rather than sitting on it.
       const paths = open(FILE_WATCH_POLL_SLICES);
       vi.advanceTimersByTime(POLL + 1);
       notices.length = 0;
       paths.forEach((p, i) => fs.write(p, 40 + i));
-      vi.advanceTimersByTime(POLL + DEBOUNCE);
-      expect(notices.map((n) => n.notice.token).sort()).toEqual(['s0', 's1', 's2', 's3']);
+      vi.advanceTimersByTime(POLL + DEBOUNCE + SLICE);
+      expect(notices.map((n) => n.notice.token).sort()).toEqual(
+        paths.map((_, i) => `s${i}`).sort()
+      );
     });
 
-    it('a file opened mid-revolution waits for its own slot, and no longer', () => {
+    it('a file opened mid-revolution is followed within one revolution', () => {
       // A late tab inherits the wheel's phase — it cannot get a fresh `pollMs`
       // of its own without a second timer, which is the thing #544 removed. So
       // the claim is only that its first check lands inside one revolution.
@@ -695,6 +700,43 @@ describe('FileWatchService (P2-E16-04)', () => {
       notices.length = 0;
       vi.advanceTimersByTime(POLL + DEBOUNCE);
       expect(notices.map((n) => n.notice.token)).toEqual(['s1']);
+    });
+
+    it("a file released mid-revolution does not shift its neighbours' turn", () => {
+      // Why the slot is a FIELD on the entry rather than a cursor into `files`:
+      // a cursor renumbers every entry BEHIND a released one, so a file that has
+      // not had its turn yet slides down into a window the cursor has already
+      // passed and is skipped for the rest of the revolution — a viewer that
+      // silently stops updating, which is the one failure the floor exists to
+      // prevent. It has to happen HALF WAY THROUGH a revolution to bite, which
+      // is what the two advances below are for.
+      const paths = open(FILE_WATCH_POLL_SLICES * 2);
+      probed.length = 0;
+      vi.advanceTimersByTime(SLICE * 2);
+      // A tab whose slot has already been round this revolution: the release
+      // costs it nothing, and under a cursor it costs its NEIGHBOUR everything.
+      sliced.unwatch(1, 's0');
+      vi.advanceTimersByTime(SLICE * (FILE_WATCH_POLL_SLICES - 2));
+      // Every file, once — `s0` included, because its turn came before it went.
+      expect([...probed].sort()).toEqual([...paths].sort());
+    });
+
+    it('a wheel that stopped and restarted begins at the beginning', () => {
+      // The last tab closing stops the wheel mid-revolution, and the next one
+      // opening starts a fresh one — so the cursor and the slot counter have to
+      // come back to zero together, or the first file opened is not the first
+      // one checked and a reader would be reasoning about a phase nobody can
+      // see. Nothing about correctness rides on it (every file is still checked
+      // within `pollMs` either way); it is the shape this block asserts.
+      open(1);
+      vi.advanceTimersByTime(SLICE); // the cursor is off zero now
+      sliced.unwatch(1, 's0');
+      expect(vi.getTimerCount()).toBe(0);
+
+      const restarted = open(2);
+      probed.length = 0;
+      vi.advanceTimersByTime(SLICE);
+      expect(probed).toEqual([restarted[0]]);
     });
 
     it('a quiet sub-tick still arms nothing, and an idle service holds no timer', () => {
@@ -781,6 +823,16 @@ describe('FileWatchService (P2-E16-04)', () => {
       win.watch(1, 'b', other);
       expect(win.stats()).toMatchObject({ files: 1, dirs: 1, viewers: 2, watched: [FILE] });
       expect(fs.live()).toBe(1);
+
+      // …and the TEARDOWN folds by the same rule, which is the silent half. A
+      // `closeFile` still folding by the host's table would compare a path it
+      // had not lowercased against a map key it had, take the by-identity guard
+      // as a miss, and leave the entry — and its OS handle — behind for the life
+      // of the process.
+      win.unwatch(1, 'a');
+      win.unwatch(1, 'b');
+      expect(win.stats()).toMatchObject({ files: 0, dirs: 0, viewers: 0 });
+      expect(fs.live()).toBe(0);
     });
 
     it('and keeps them apart where two spellings really are two files', () => {
@@ -799,6 +851,13 @@ describe('FileWatchService (P2-E16-04)', () => {
       fs.fire('Progress.MD', '/PROJ');
       vi.advanceTimersByTime(DEBOUNCE);
       expect(notices.map((n) => n.notice.token)).toEqual(['b']);
+
+      // Both folders released, both handles back — the same teardown claim from
+      // the other side of the fold.
+      posix.unwatch(1, 'a');
+      posix.unwatch(1, 'b');
+      expect(posix.stats()).toMatchObject({ files: 0, dirs: 0, viewers: 0 });
+      expect(fs.live()).toBe(0);
     });
 
     it('defaults to the host rule, so nothing in production changed', () => {
