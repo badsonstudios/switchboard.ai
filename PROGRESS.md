@@ -21,7 +21,23 @@
 > **Active workers (wave 2, dispatched ~10:15):**
 > | Issue | Worktree | Branch | Status |
 > |---|---|---|---|
-> | #333 stream routing (classify-on-completion) | sb-wt-1 | feature/333-stream-routing | dispatched ~16:35 |
+> | #333 stream routing | sb-wt-1 | DONE — PR #698 (INTERNAL) readied+bumped, merge on green |
+>
+> **#333 outcome (PR #698):** AnswerSurfaceProbe — StreamPermissions asks
+> whether the session has a card BEFORE holding a can_use_tool; no card →
+> immediate structured decline with a DISTINCT fault (only #319's says
+> "window"; test asserts the vocabulary, not string inequality) + permission-
+> resolved so the badge tells the truth; 300s deadline stays as backstop. Not
+> a new surface — §5.12 argument written out (global Allow on an unlocatable
+> row is the forbidden hazard). Review caught: unbound state IS reachable
+> (tearDownLive removes transport a step before unbinding — buffered straggler
+> after Restart), and the first "distinct" message blamed the same fault as
+> #319's. Gates: 5874 unit, 349+3sk full e2e + 41 scoped, 6 mutations caught,
+> one VOID declared (stale-bundle guard). i18n-catalog instruction correctly
+> refused (string is read by the model, not chrome — #471's own line). Filed
+> #699 (hook path same hole), #700 (listener hygiene), comment on #691
+> (cardId:''). Handoff: orchestrator/333.md.
+> **#696 MERGED ~17:45** (#682/#683 closed) — 8 internal merges this run.
 >
 > **#642 DONE — PR #694 ready, in DAN'S QUEUE (5th).** Audit: 19 surfaces
 > enumerated, exactly ONE was the vulnerable class (already fixed by #641) —
