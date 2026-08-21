@@ -21,8 +21,26 @@
 > **Active workers (wave 2, dispatched ~10:15):**
 > | Issue | Worktree | Branch | Status |
 > |---|---|---|---|
-> | #642 placeMenu audit (USER-FACING) | sb-wt-1 | feature/642-placemenu-audit | dispatched ~15:05 |
-> | #682+#683 watcher follow-ups (internal) | sb-wt-2 | feature/682-watcher-followups | dispatched ~15:45 |
+> | #333 stream routing (classify-on-completion) | sb-wt-1 | feature/333-stream-routing | dispatched ~16:35 |
+>
+> **#642 DONE — PR #694 ready, in DAN'S QUEUE (5th).** Audit: 19 surfaces
+> enumerated, exactly ONE was the vulnerable class (already fixed by #641) —
+> honest null result. RTL: placeMenu takes direction, returns logical insets;
+> audit found the SAME physical-into-logical bug in the rail resize gripper
+> (rtl: rail snapped to max + dragged backwards) — fixed. Flip branch far-edge
+> hole closed. Mutation: RTL e2e fails 726px off against direction-blind
+> placement. Gates: 5861 unit, 350+3sk e2e. Filed #695 (card ⋯ menu clips on
+> 3-4 splits — needs rect-anchored variant). Handoff: orchestrator/642.md.
+> | #682+#683 watcher follow-ups | sb-wt-2 | DONE — PR #696 readied+bumped, merge on green |
+>
+> **#682-bundle outcome (PR #696):** wheel sliced K=4 via round-robin slot
+> FIELD (not cursor) — every file still checked exactly once per pollMs, zero
+> #412-test edits (the predicted phase-shift break never existed); PathStyle
+> injected folding all three keys, deliberately NOT exposed through FsIpcDeps.
+> All 14 new tests falsified against 8 broken builds — one vacuous test of its
+> own caught and rewritten. Gates: 5860 unit, 349+3sk e2e. Filed #697 (tuning
+> residues: K unmeasured/SMB, ReadScope fold convention, per-file stat cost).
+> Handoff: orchestrator/682-bundle.md.
 >
 > **#618 DONE — PR #689 (internal), readied + bumped, merge on green.** Shared-
 > typed: StatusChange, SessionCardWire+CardStatus, AutonomyMode (9 copies + 2
@@ -34,7 +52,17 @@
 > freshness. Gates: 5844 unit, 349+3sk e2e x2 (48-min lock wait, in-turn).
 > Filed #690 (TransportKind literal sweep), #691 (sessions:create autonomy
 > unvalidated, §5.29). Handoff: orchestrator/618.md.
-> | #491 feed image marker (USER-FACING) | sb-wt-3 | feature/491-image-marker | dispatched ~15:05 |
+> | STORE/POPOUT track #656+#657+#502+#503 (USER-FACING) | sb-wt-3 | feature/656-store-popout-track | dispatched ~16:10 |
+>
+> **#491 DONE — PR #692 ready, in DAN'S QUEUE (4th).** Marker derives from the
+> WIRE (envelope image/document parts), not composer state; absent key when no
+> attachments (byte-identical old blocks). Found+fixed the bug behind the bug:
+> attachment-only turns previously derived NO feed block at all (reply appeared
+> under thin air). Scope call to veto: counts documents too ("1 image and 2
+> files attached"). Review caught title= becoming the accessible name. Gates:
+> 5866 unit, 349+3sk e2e x2. Filed #693 (isMeta question — Dan-gated, one live
+> turn). Handoff: orchestrator/491.md.
+> **#618/PR #689 MERGED ~16:05** (#618 closed) — 7 internal merges this run.
 >
 > **Merge chain:** MERGED so far: #669, #665, #672 (12:03), #676 (12:34,
 > b2a7201, #650 closed — CHANGELOG conflict resolved by orchestrator, 0.8.3
