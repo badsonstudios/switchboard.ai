@@ -420,3 +420,21 @@ if (require.main === module) {
 //     refusal throws inside the `.then` and the `.catch` answers null.
 //   * `src/main`, `src/preload` and `src/shared`. None of them calls `invoke`;
 //     the broker is the thing answering, not asking.
+//
+//   * A bridge answer used as a VALUE rather than as a boolean — handed to a
+//     React setter, `.map`ped, `.filter`ed, or read for a property. There are
+//     about thirty of those (`events.list().then(l => setEvents(l))`,
+//     `pendingPermissions().then(list => list.forEach(…))`,
+//     `git.status().then(s => setGit(s))`, …) and they are a DIFFERENT DEFECT:
+//     a refusal there throws `x.map is not a function` or reads `undefined` off
+//     the brand. Loud. #440 is about the SILENT direction — a refusal read as a
+//     good answer — and fixing the loud one wants a shape check or an envelope
+//     per channel, not a launderer. Reported for a follow-up, deliberately not
+//     swept here.
+//
+//     Note the asymmetry this creates, because it is a choice and not an
+//     oversight: `.then(setEvents)` IS reported (point-free — the uses cannot
+//     be seen, so "unknown" is treated as "unsafe") while
+//     `.then((l) => setEvents(l))` is not (inline — the uses CAN be seen, and
+//     none of them is a boolean). The rule is "judge what you can see, report
+//     what you cannot", and it lands on the safe side of both.
