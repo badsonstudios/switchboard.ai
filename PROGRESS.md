@@ -3,6 +3,34 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ▶▶ START HERE — READY FOR THE NEXT ORCHESTRATION (prepped 2026-08-21)
+>
+> **v0.8.2 RELEASED 2026-08-21** — train #664 (5 PRs: #643 #644 #646 #653
+> #655) merged, all issues closed, branches + the screenshot asset branch
+> deleted, annotated tag pushed, installer assets live. Main @ 564fd98b,
+> stamp matches, ZERO open PRs, lock clear, worktrees clean.
+>
+> **The next run's queue, in suggested order (zero-open-PRs window is NOW):**
+> 1. **T2+T4 eslint tranches** (32 mechanical fixes, renderer product +
+>    tests) — cheapest in the empty window; closes #255's tranche plan
+>    (T2 note: 2 require-await sites in App.tsx/SessionGrid.tsx mean
+>    removing async → signature changes; #663's one-liner rides along).
+> 2. **#650 value-channel refusals** (~30 sites, renderer-wide) — the run's
+>    biggest correctness item; wants the window before new PRs open.
+>    Serialize AFTER T2/T4 (same files).
+> 3. Parallel tracks, three worktrees: **events** (#268 opacity-AA + #577
+>    focus ring + #648 group-frame), **rail/cards** (#337 IdentityChip +
+>    #295 pinned-scroll + #606 ended-card header), **store/popout** (#656 +
+>    #657 + #502/#503).
+> 4. Then: **feed** (#491 image marker), **composer** (#499), **sanitizer**
+>    (#654 label-for), **stream serial track** (#588 probe → #490 envelope
+>    → #618 preload DTO → #333 routing), #642 placeMenu audit, #471 i18n.
+> 5. **Dan-only:** #528/#529 design sittings (inputs posted on #529);
+>    #521 Files-tab scoping; /pm: #256 reconciliation + findings-§4 stale
+>    sentence (567-ui.md) + search.ts stale comment (600.md).
+> 6. **Flake watch (no dispatch without recurrence):** #450 #550 #637 #647
+>    #661; #651 has the fix-shape precedent (#652) when it recurs.
+>
 > # 🏁 RUN COMPLETE — 2026-08-20→21 (~09:30 → ~03:30). Fresh session: read this block, then the two act-blocks below.
 >
 > **Totals for the whole run:** **26 issues closed by merge** (wave 1: #488
