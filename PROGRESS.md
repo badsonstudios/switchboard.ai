@@ -25,12 +25,12 @@
 > | #544 shared directory watches | sb-wt-2 | DONE — PR #681 (internal) |
 > | #666+#667+#668 fake-fidelity bundle | sb-wt-3 | DONE — PR #679 (internal) |
 >
-> **Wave 2/3 all DONE. Merge chain:** #672 and #676 both bumped ~11:45 and
-> racing (orchestrator error + recovery: #672 was merged-attempted while still
-> DRAFT, the `;`-chained branch delete then orphaned it; restored from
-> refs/pull/672/head, reopened, readied, bumped — lesson in the skill). Then
-> #679, #681 serially. NO pushes to main until the next merge lands (both
-> bumped branches would be invalidated). Next dispatches
+> **Merge chain:** #672 MERGED 12:03 (103d697, #654 closed). #676 conflicted
+> on bump (both PRs opened the missing 0.8.3 unreleased CHANGELOG section);
+> orchestrator resolved in wt-1 (Changed + Internal consolidated, aed561b),
+> CI re-running — merge on green, then bump #679, then #681, serially.
+> After #676 merges: dispatch events track (wt-1), rail/cards track (wt-3),
+> #618 (wt-2). Next dispatches
 > AFTER #676 merges (renderer collision clears): events track (wt-1),
 > rail/cards track (wt-3), #618 (wt-2).
 > **#544 outcome:** WatchedDir owns one fs.watch per folder + one floor wheel
