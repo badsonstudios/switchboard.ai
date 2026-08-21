@@ -21,14 +21,28 @@
 > **Active workers:**
 > | Issue | Worktree | Branch | Status |
 > |---|---|---|---|
-> | #255 T2+T4 (+#663 rider) | sb-wt-1 | feature/255-t2t4-renderer-tranches | dispatched |
-> | #490 user envelope | sb-wt-2 | feature/490-user-envelope | DONE — PR #665 awaiting CI |
+> | #255 T2+T4 (+#663 rider) | sb-wt-1 | feature/255-t2t4-renderer-tranches | DONE — PR #669 awaiting CI |
+> | #490 user envelope | sb-wt-2 | feature/490-user-envelope | DONE — PR #665 green, held for base-bump |
 > | #654 sanitizer label-for | sb-wt-3 | feature/654-label-for | dispatched |
 >
-> **Merge queue:** PR #665 (#490, internal) — marked ready, squash-merge on green CI.
+> **Merge queue (ordered — strict up-to-date base protection):** 1) PR #669
+> (#255 T2/T4 + #663, internal) — up to date, merge on green. 2) PR #665
+> (#490, internal) — green but base moved (orchestrator doc commits);
+> update-branch AFTER #669 merges, then auto-squash-merge. Lesson folded into
+> the skill: batch PROGRESS pushes, land them right after merges.
+> **#255 T2/T4 outcome:** all five tranches done, src/ whole on
+> recommendedTypeChecked, ZERO inline disables campaign-wide, config collapsed.
+> #663 landed + its renderer twin (FindProviderContribution.search). Real
+> runtime delta: moveHome async→void (microtask only, chased). Assertions
+> strengthened (vacuity closed in terminal-handoff.test.ts; reader-side cast in
+> find-providers.test.ts was silently disabling two shape assertions). Gates:
+> lint 0/0, typecheck 3/3, 5777 unit, 349+3sk e2e (one VOID unit run declared
+> and re-run — starvation timeouts). Umbrella #255 stays OPEN pending #670.
+> Handoff: orchestrator/255-t2t4.md.
 > **Filed this run:** #666 (fake isReplay echo fidelity), #667 (fake-stream-check
-> envelope drift), #668 (ref-impls doc: PATH binary as greppable third source) —
-> all from #490's handoff.
+> envelope drift), #668 (ref-impls doc: PATH binary as greppable third source),
+> #670 (String(err) catch-block class — #255 umbrella blocker), #671 (post-#255
+> type-hygiene stragglers).
 > **#490 outcome:** ADD both fields — uuid gates the CLI's entire duplicate-replay
 > guard (without it every frame always executes); origin stops a presumed-human
 > guess. Fresh randomUUID per delivery, pinned by 10 new unit tests. Gates: 5785
