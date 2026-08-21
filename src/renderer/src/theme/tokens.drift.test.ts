@@ -626,11 +626,21 @@ describe('a de-emphasised rule recedes from the rule it refines (issue 268)', ()
     // just be measuring a row nobody recognises. The base rule is on
     // FILLED_RULES, so `pair()` reads its background out of the file too and
     // neither side is spelled here.
-    const [, base] = pair(`.${classOf(selector)}`);
+    const [baseInk, base] = pair(`.${classOf(selector)}`);
     const m = mixed(selector);
     expect(m.top, `${selector} must recede from ${base}`).toBe(base);
     expect(m.pct, `${selector}: a 100% mix is not a mix`).toBeLessThan(1);
     expect(m.pct, `${selector}: the base surface has to be most of the fill`).toBeGreaterThan(0.5);
+    // ...and it has to be a DIFFERENT ink from the rule it refines. Without
+    // this the whole file passes with `color: var(--text)` here — i.e. with
+    // the de-emphasis gone entirely, which is not an AA failure (it is MORE
+    // contrast) and is therefore the one regression no floor can object to.
+    // The per-theme block below turns it into the stronger claim: less
+    // contrast than the base rule, in every theme.
+    expect(
+      m.ink,
+      `${selector} writes the same ink as the rule it is supposed to recede from`
+    ).not.toBe(baseInk);
   });
 });
 
@@ -652,6 +662,18 @@ describe.each(builtinThemes.map((t) => [t.id, t] as const))(
         `${id}: ${m.ink} on ${m.pct * 100}% ${m.top} over ${m.under} ` +
           `(${tokens[m.ink]} on ${fill})`
       ).toBeGreaterThanOrEqual(min);
+      // BOTH DIRECTIONS. The floor above says the quiet row is readable; this
+      // says it is still quiet. Measured against the rule it refines rather
+      // than against a number, so retuning either ink keeps the relationship
+      // honest and only an inversion fails. A "de-emphasis" that has drifted
+      // into being the LOUDER of the two clears every floor in this file, and
+      // it is the exact way a hand-tuned look dies.
+      const [baseInk, base] = pair(`.${classOf(selector)}`);
+      expect(
+        ratio(tokens[m.ink], fill),
+        `${id}: ${selector} is no quieter than ${base} — ${m.ink} on the mix vs ` +
+          `${baseInk} on ${base}`
+      ).toBeLessThan(ratio(tokens[baseInk], tokens[base]));
     });
   }
 );
@@ -706,32 +728,56 @@ describe.each(builtinThemes.map((t) => [t.id, t] as const))(
 // A 1px line lives between two colours and has to be seen against both, so the
 // list is every surface either side of it: the workspace behind a card
 // (`--bg`, `--rail-canvas`), the body inside one (`--panel` = `--card-bg`,
-// `--rail-card`, and the auto-group's own tinted fill), and the dockview tab
-// strip that runs along the top edge inside the frame (`--panel2`).
+// `--rail-card`, and the auto-group's own tinted fill), the dockview tab strip
+// that runs along the top edge inside a session group (`--panel2`), and the
+// header strip along the top of an auto-group card (`--auto-head`). Those last
+// two are the same shape and both are easy to miss, because "the surface
+// inside the frame" sounds like one thing and is two: a card is a strip and a
+// body, and the frame touches both.
 //
-// NOT on the list, deliberately: the ACTIVE group's frame, which
-// `.dv-groupview.dv-active-group` repaints in `--link`. That is a different
-// token making a different promise, and folding it in here would measure a
-// border this one never draws.
+// TWO THINGS ARE NOT ON THE LIST, and the reasons differ:
+//
+//   - the ACTIVE group's frame, which `.dv-groupview.dv-active-group` repaints
+//     in `--link`. A different token making a different promise; folding it in
+//     would measure a border this one never draws.
+//   - a HAND-MADE group's header strip, which is `color-mix(<the group's
+//     colour> 7%, transparent)` over `--rail-card` (`SessionsRail.tsx`). The
+//     colour is a user's pick out of a palette the main process persists, so it
+//     is runtime data and there is nothing in these files to read. An exemption
+//     by necessity rather than by choice, written down because an unstated
+//     omission from a list like this is exactly how the frame stayed unaudited
+//     on five surfaces in the first place.
 
 const FRAME = '--group-frame';
 const FRAME_SURFACES = ['--bg', '--panel', '--panel2', '--rail-canvas', '--rail-card'];
 
-/** layer 3, where the derived surfaces live */
-const layer3 = declaredValues(block(':root {\n  --card-bg'));
+/** the derived surfaces the frame borders — layer-3 `color-mix` tokens */
+const FRAME_DERIVED = ['--auto-surface', '--auto-head'];
 
 /**
  * A layer-3 surface whose value is a color-mix of two theme tokens, resolved
  * for one theme — read out of the file rather than spelled here, so a retuned
  * auto-group fill is measured at its new value instead of at this test's
  * memory of the old one.
+ *
+ * `block()` is called INSIDE rather than at module scope, for `pair()`'s stated
+ * reason: a reordered layer-3 block would otherwise throw during COLLECTION and
+ * take every case in this file down with it, instead of failing the ones that
+ * read it.
  */
-function derivedSurface(token: string, tokens: Record<string, string>): string {
+function derivedSurface(token: string, id: string, tokens: Record<string, string>): string {
+  const layer3 = declaredValues(block(':root {\n  --card-bg'));
   const m =
     /^color-mix\(in srgb,\s*var\((--[a-z0-9-]+)\)\s*([\d.]+)%,\s*var\((--[a-z0-9-]+)\)\)$/.exec(
       layer3[token] ?? ''
     );
   expect(m, `${token} must be a color-mix of two tokens to be measured`).not.toBeNull();
+  // the same guard every sibling case has. Without it an undefined token throws
+  // inside mix(), and a non-hex one yields a colour of NaNs and a failure that
+  // says "expected NaN" rather than naming the value that is wrong.
+  for (const t of [m![1], m![3]]) {
+    expect(tokens[t], `${id} ${t} must be #rrggbb to be measured`).toMatch(/^#[0-9a-f]{6}$/i);
+  }
   return mix(tokens[m![1]], tokens[m![3]], Number(m![2]) / 100);
 }
 
@@ -739,24 +785,28 @@ describe.each(builtinThemes.map((t) => [t.id, t] as const))(
   '%s: the container frame reads against every surface it borders',
   (id, theme) => {
     const tokens = resolved(theme);
+    const frame = (): string => {
+      expect(tokens[FRAME], `${id} ${FRAME} must be #rrggbb to be measured`).toMatch(
+        /^#[0-9a-f]{6}$/i
+      );
+      return tokens[FRAME];
+    };
 
     it.each(FRAME_SURFACES)(`${FRAME} on %s clears 3:1`, (surface) => {
-      for (const token of [FRAME, surface]) {
-        expect(tokens[token], `${id} ${token} must be #rrggbb to be measured`).toMatch(
-          /^#[0-9a-f]{6}$/i
-        );
-      }
+      expect(tokens[surface], `${id} ${surface} must be #rrggbb to be measured`).toMatch(
+        /^#[0-9a-f]{6}$/i
+      );
       expect(
-        ratio(tokens[FRAME], tokens[surface]),
+        ratio(frame(), tokens[surface]),
         `${id}: ${FRAME} on ${surface} (${tokens[FRAME]} on ${tokens[surface]})`
       ).toBeGreaterThanOrEqual(3);
     });
 
-    it(`${FRAME} clears 3:1 on the auto-group's own fill`, () => {
-      const fill = derivedSurface('--auto-surface', tokens);
+    it.each(FRAME_DERIVED)(`${FRAME} on %s clears 3:1`, (surface) => {
+      const fill = derivedSurface(surface, id, tokens);
       expect(
-        ratio(tokens[FRAME], fill),
-        `${id}: ${FRAME} on --auto-surface (${tokens[FRAME]} on ${fill})`
+        ratio(frame(), fill),
+        `${id}: ${FRAME} on ${surface} (${tokens[FRAME]} on ${fill})`
       ).toBeGreaterThanOrEqual(3);
     });
   }

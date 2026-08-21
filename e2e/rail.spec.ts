@@ -419,9 +419,11 @@ test.describe('sessions rail', () => {
       for (const [where, r] of Object.entries(ratios)) {
         // 1.4.11's bar for a meaningful non-text object, not the "is it more
         // prevalent than the first pass" floor of 1.55 this used to carry
-        // (#648). The computed half is tokens.drift.test.ts, which measures the
-        // same six pairs in all four themes; this is the half that proves the
-        // running app resolves the token it was told to.
+        // (#648). The computed half is tokens.drift.test.ts, which measures
+        // SEVEN pairs in all four themes — these five plus the two derived
+        // `color-mix` surfaces of an auto-group card, which add nothing here.
+        // This is the half that proves the running app resolves the token it
+        // was told to.
         expect(r, `${theme} frame ${where}`).toBeGreaterThanOrEqual(3);
       }
     }

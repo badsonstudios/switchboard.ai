@@ -56,8 +56,12 @@ const DISMISS_GUTTER = 64;
  * be a second value to keep in step with that pair by hand — and the last time
  * this map held its own opinion about a colour it held it for months at 1.80:1
  * (#246). Whichever way `reviewed` is defined the inherited value is a measured
- * one: `--muted` on the de-emphasised fill (4.7-14.2:1) for a reviewed row,
- * `--text` on `--panel2` for a live one.
+ * one — `--muted` on the de-emphasised fill (4.7-14.2:1), or `--text` on
+ * `--panel2` if a `ready` row could ever be a live one. Today it cannot:
+ * `reviewed` IS `kind === 'ready'`, and `lib/queue.ts` gives `ready` a negative
+ * priority so it is never the head either. `KIND_HUE.ready` is dead for the
+ * same reason — the outline it would feed only paints on the queue's head —
+ * and both are kept so the maps stay total over the kind union.
  */
 const KIND_HUE: Record<EventDto['kind'], string> = {
   done: 'var(--status-done)',
@@ -658,6 +662,15 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
                 <span
                   style={{
                     display: 'block',
+                    // The task label — the text #268 was actually filed over
+                    // (4.55:1 on nordic at full strength, 3.61:1 once the old
+                    // group opacity was folded in). It stays an explicit token
+                    // rather than inheriting, because on a LIVE row it is the
+                    // step below the title and inheriting would flatten that.
+                    // The consequence to know: it is covered by the drift test
+                    // only because `.event-row[data-reviewed='true']` happens
+                    // to name this same token, so retuning that rule's `color`
+                    // means retuning this with it.
                     color: 'var(--muted)',
                     fontSize: 10,
                     overflow: 'hidden',

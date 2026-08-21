@@ -499,7 +499,19 @@ describe('the visible way out (#556)', () => {
 // DECLARATION, not by the selector — so a class that is on the list but whose
 // rule was changed to something else stops counting.
 describe('every focusable surface in the drawer draws the app ring', () => {
-  /** the classes the app's one focus-ring rule names, read out of the file */
+  /**
+   * The classes the app's one focus-ring rule names, read out of the file.
+   *
+   * By the DECLARATION, not by the selector: a class listed on a rule that has
+   * been changed to something else is not on the ring any more, and a list
+   * gathered from `:focus-visible` alone would still count it. `RING` is the
+   * one hardcoded string in here and it is the guard's anchor — the `size > 5`
+   * case below is what catches it going stale.
+   *
+   * Only a selector that is the WHOLE compound counts: `.x .events-btn` is a
+   * scoped rule that says nothing about `.events-btn` anywhere else, so the
+   * list is split on commas and each part matched end to end.
+   */
   const ringClasses = (): Set<string> => {
     const css = fs
       .readFileSync(path.join(__dirname, '..', 'theme', 'tokens.css'), 'utf8')
@@ -507,7 +519,10 @@ describe('every focusable surface in the drawer draws the app ring', () => {
     const out = new Set<string>();
     for (const rule of css.matchAll(/([^{}]*)\{([^{}]*)\}/g)) {
       if (!rule[2].includes(RING)) continue;
-      for (const c of rule[1].matchAll(/\.([a-z0-9-]+):focus-visible/g)) out.add(c[1]);
+      for (const part of rule[1].split(',')) {
+        const m = /^\.([a-z0-9-]+):focus-visible$/.exec(part.trim());
+        if (m) out.add(m[1]);
+      }
     }
     return out;
   };
@@ -539,15 +554,32 @@ describe('every focusable surface in the drawer draws the app ring', () => {
     });
     const ring = ringClasses();
     // `[tabindex]` with no exclusion: the drawer body is -1 and is focused by
-    // OPENING, which is a keyboard-caused focus() and therefore paints a ring
+    // OPENING, which is a keyboard-caused focus() and therefore paints a ring.
+    // The form controls are on the list because nothing in the drawer needs
+    // them today, which is exactly when adding them is free.
     const focusables = [
-      ...host.querySelectorAll<HTMLElement>('button, [href], [tabindex]'),
+      ...host.querySelectorAll<HTMLElement>(
+        'button, a[href], input, select, textarea, [contenteditable], [tabindex]'
+      ),
     ];
     expect(focusables.length, 'nothing focusable was rendered — the walk proves nothing').toBeGreaterThan(8);
-    const naked = focusables.filter((el) => ![...el.classList].some((c) => ring.has(c)));
+    // TWO WAYS TO HAVE NO RING, and the second one shipped: the drawer body
+    // carried `outline: 'none'` in its own style attribute, which beats any
+    // author rule on the cascade before specificity is consulted. Adding the
+    // class to it changed nothing on screen, and a membership check alone said
+    // it was fixed — the assertion passing while the thing it names is broken.
+    const naked = focusables.filter(
+      (el) => ![...el.classList].some((c) => ring.has(c)) || el.style.outline !== ''
+    );
     expect(
-      naked.map((el) => `${el.tagName.toLowerCase()}[${el.className || 'no class'}]: ${el.textContent?.slice(0, 30)}`),
-      'these draw Chromium default outline instead of the app ring'
+      naked.map(
+        (el) =>
+          `${el.tagName.toLowerCase()}[${el.className || 'no class'}]` +
+          `${el.style.outline ? ` inline outline:${el.style.outline}` : ''}: ` +
+          `${el.textContent?.slice(0, 30)}`
+      ),
+      'these draw no app ring — either no class the ring rule names, or an ' +
+        'inline outline that outranks it'
     ).toEqual([]);
   });
 });
