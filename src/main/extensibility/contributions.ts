@@ -122,11 +122,11 @@ export interface TitleCapability {
    * the session rather than losing the transcript (fail-open, P6).
    *
    * A PROPERTY signature, not a method shorthand (#663). This is a plain
-   * function slot — every implementer assigns the free function `readAiTitle`,
-   * and nothing here ever touches `this` — but a method declaration promises a
-   * receiver, which made every test that reads the slot as a value an
-   * `unbound-method` error. Type-identical for all of them; it just stops
-   * claiming a `this` that was never used.
+   * function slot: the three shipping adapters assign the free function
+   * `readAiTitle`, the test doubles assign arrows, and not one of them mentions
+   * `this`. A method declaration promises a receiver anyway, which made reading
+   * the slot as a value an `unbound-method` error. Type-identical for every
+   * implementer; it just stops claiming a `this` that was never used.
    */
   titleFrom: (line: Record<string, unknown>) => string | undefined;
 }

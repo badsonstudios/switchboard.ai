@@ -134,15 +134,22 @@ describe('terminalHandoff', () => {
     );
     const themeDir = path.join(__dirname, '..', 'theme', 'themes');
     // `JSON.parse` hands back `any`; this is where that stops for this file
-    // (#255 T4). Without it `Object.keys(overlay.tokens ?? overlay)` is an
-    // unchecked read and the `toContain(name)` below would keep passing if the
-    // overlay format grew a level.
+    // (#255 T4). An assertion, not a validation — these are data files with no
+    // TypeScript source of truth, so it buys the reads below a declared shape
+    // and nothing more. It does NOT close the vacuity this loop already had:
+    // an overlay that stopped carrying `--status-*` keys is simply skipped.
+    // See the guard under the loop.
     const overlays = fs
       .readdirSync(themeDir)
       .filter((f) => f.endsWith('.json'))
       .map(
         (f) => JSON.parse(fs.readFileSync(path.join(themeDir, f), 'utf8')) as ThemeOverlayFile
       );
+
+    // ...and something must actually have been checked. Without this the whole
+    // inner loop can be skipped — no overlays on disk, or none of them touching
+    // status hues — and the test passes having asserted nothing about them.
+    let overlaysChecked = 0;
 
     for (const tone of ['permission', 'input'] as HandoffTone[]) {
       const name = toneToken(tone);
@@ -155,11 +162,13 @@ describe('terminalHandoff', () => {
         const map: Record<string, unknown> = overlay.tokens ?? overlay;
         const touchesStatus = Object.keys(map).some((k) => k.startsWith('--status-'));
         if (touchesStatus) {
+          overlaysChecked++;
           expect(Object.keys(map), `${name} missing from ${overlay.name ?? 'an overlay'}`).toContain(
             name
           );
         }
       }
     }
+    expect(overlaysChecked, 'no overlay carried a --status- token to check').toBeGreaterThan(0);
   });
 });

@@ -168,8 +168,10 @@ export default tseslint.config(
     // held off anywhere. The switch surfaced 552 errors, so it landed in five
     // tranches (T0 config + autofixes, T1/T2 product, T3/T4 tests), each one
     // deleting its own `rules: { … 'off' }` block in the same PR as its fixes.
-    // T4 was the last; nothing is left to delete, and the whole campaign added
-    // not one inline disable comment anywhere under `src/`.
+    // T4 was the last, and nothing is left to delete. One scoped rule-off
+    // survives on purpose — `require-await` on test files, in its own block
+    // below, with the reason written out — and the whole campaign added not one
+    // inline disable comment anywhere under `src/`.
     //
     // Two blocks, not one, because `src/shared/**` is a member of BOTH tsconfigs
     // and a `project` ARRAY resolves a file against the first project that

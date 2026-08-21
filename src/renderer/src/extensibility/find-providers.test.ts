@@ -18,6 +18,7 @@ import {
   sessionFindProvider,
   terminalFindProvider,
 } from './find-providers';
+import type { SwitchboardApi } from '../../../preload';
 import type {
   TranscriptSearchRequest,
   TranscriptSearchResult,
@@ -131,7 +132,12 @@ describe('the Session view provider (the E17-01 engine behind the bar)', () => {
   beforeEach(() => {
     search.mockReset();
     search.mockResolvedValue(result());
-    (window as unknown as { switchboard: unknown }).switchboard = { transcripts: { search } };
+    // The stub is typed against the REAL bridge slot, so the hand-written
+    // signature above cannot drift away from `preload`'s without a compile
+    // error. `window` itself still needs the cast — the global says the whole
+    // api is there and this hands it one namespace.
+    (window as unknown as { switchboard: { transcripts: Pick<SwitchboardApi['transcripts'], 'search'> } }).switchboard =
+      { transcripts: { search } };
   });
 
   it('searches EXACTLY ONE session — the focused card’s', async () => {

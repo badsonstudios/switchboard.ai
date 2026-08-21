@@ -3465,7 +3465,8 @@ async function toTabbed(api: DockviewApi, cardId: string): Promise<void> {
  *
  * Synchronous, and says so (#255 T2). There was never an `await` in the body —
  * that is what `require-await` fired on — and nothing it calls hands back a
- * promise to lose, which `no-floating-promises` now checks for this file. So
+ * promise to lose, which `no-floating-promises` has checked for this file
+ * since #255's T0 put the renderer on the typed preset. So
  * the `async` bought exactly one thing: a microtask between the last move and
  * the caller's `finally`. Dropping it means `revealCardPanel` clears its
  * `laddering` guard in the same tick as the move it was guarding, rather than

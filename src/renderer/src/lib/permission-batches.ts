@@ -260,10 +260,15 @@ export function argumentSummary(input: Record<string, unknown>): string {
   // `input` is a tool_use block off the CLI, so every field here is `unknown`
   // and `String()` would render a malformed one as the literal `[object
   // Object]` on the approval card — T1's finding, and the reason
-  // `asDisplayString` exists (#255). Same fail-open behaviour, same result for
-  // every primitive; a non-primitive now comes back EMPTY, which routes into
-  // `argumentDetail`'s existing "no summary" path (the JSON dump) instead of
-  // onto the card as punctuation.
+  // `asDisplayString` exists (#255). Same fail-open behaviour and the same
+  // answer for every primitive; a non-primitive now comes back EMPTY.
+  //
+  // The two placements then diverge, and both are better than the old text:
+  // the GROUPED card goes through `argumentDetail`, which already treats an
+  // empty summary as "fall back to the JSON dump", while the per-card bar
+  // (`FeedView`) renders this string straight and shows nothing at all. A
+  // blank line beside a tool name is a worse answer than a dump and a better
+  // one than punctuation the user cannot act on.
   return asDisplayString(input.file_path ?? input.command ?? input.url);
 }
 

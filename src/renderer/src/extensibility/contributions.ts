@@ -531,13 +531,17 @@ export interface FindProviderContribution {
    *
    * A PROPERTY signature, not a method shorthand like its neighbours. The bar
    * only ever CALLS it (`p.search?.(ctx, query)`), but the point's own suite
-   * reads the slot as a value — "a `delegated` provider brought no search" is
+   * reads the slot as a VALUE — "a `delegated` provider brought no search" is
    * half of what makes `mode` mean anything — and pulling a method-declared
    * function off an object is an `unbound-method` error, because a method
-   * declaration says it may want the `this` it was read off. This one never
-   * has: every registrant assigns a free function or an arrow, so the two
-   * spellings are type-identical for all of them. (#255 T4; #663 is the same
-   * call, made in the main-process twin of this file.)
+   * declaration says it may want the `this` it was read off.
+   *
+   * None of the three registrants does. All three still WRITE method shorthand
+   * in their object literal (`find-providers.ts:199, 298, 429`) and none of the
+   * three bodies mentions `this`, so a property signature accepts them
+   * unchanged — it only stops the declaration promising a receiver that no
+   * implementation asks for. (#255 T4; #663 is the same call, made in the
+   * main-process twin of this file.)
    */
   search?: (ctx: FindContext, query: FindQuery) => Promise<FindResults>;
   /**

@@ -112,12 +112,18 @@ const LIVE_INSTALL: ReadonlySet<UpdateInstallStatus['phase']> = new Set([
  * `no-misused-promises` fire on three of them: a bare `Promise` in a boolean
  * conditional is normally a forgotten `await`.
  *
- * So say it in the type instead of in the punctuation. The identity fields the
- * stub really supplies stay required; every namespace becomes optional, the
- * optional chains start meaning something, and the guards become live code.
- * Nothing about the runtime changes — this is the shape App already coded to.
+ * So say it in the type instead of in the punctuation. The four IDENTITY
+ * fields the stub really supplies stay required; every namespace becomes
+ * optional, the optional chains start meaning something, and the guards become
+ * live code. Nothing about the runtime changes — this is the shape App already
+ * coded to.
+ *
+ * `workspace` is deliberately NOT in the required half even though the stub
+ * carries a two-method version of it: it is a namespace like the rest, App
+ * never reads it, and requiring it would put the same "the compiler believes a
+ * partial stub is the whole api" lie back one field further down.
  */
-type BridgeIdentity = 'platform' | 'appVersion' | 'seedPanels' | 'seedSessionFolder' | 'workspace';
+type BridgeIdentity = 'platform' | 'appVersion' | 'seedPanels' | 'seedSessionFolder';
 type ShellBridge = Pick<SwitchboardApi, BridgeIdentity> &
   Partial<Omit<SwitchboardApi, BridgeIdentity>>;
 
