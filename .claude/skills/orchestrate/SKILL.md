@@ -134,7 +134,11 @@ The prompt must contain, concretely:
      full wasted suite run). **Poll in one Bash call, run the suite in
      the NEXT call — never poll-then-run in a single command:** the
      10-minute Bash cap can kill the call between acquiring the lock
-     and finishing the suite, leaving the lock orphaned while held
+     and finishing the suite, leaving the lock orphaned while held.
+     **The suite command is `npm run e2e` — `npm run test:e2e` does NOT
+     exist and its exit-1 reads like a suite failure (2026-08-21, #544's
+     worker lost one launch to it); put the exact command in dispatch
+     prompts**
      (learned 2026-08-08, run 10: #358's combined wait-7-min-then-run
      call was killed mid-suite while holding the lock; the worker
      recovered, but only because it checked for orphan electrons and

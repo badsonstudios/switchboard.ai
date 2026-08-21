@@ -22,8 +22,29 @@
 > | Issue | Worktree | Branch | Status |
 > |---|---|---|---|
 > | #650 value-channel refusals | sb-wt-1 | DONE — PR #676 (internal), CI running, needs base-bump after #672 |
-> | #544 shared directory watches | sb-wt-2 | feature/544-shared-dir-watches | dispatched ~10:25 |
-> | #666+#667+#668 fake-fidelity bundle | sb-wt-3 | feature/666-fake-replay-fidelity | dispatched ~10:25 |
+> | #544 shared directory watches | sb-wt-2 | DONE — PR #681 (internal) |
+> | #666+#667+#668 fake-fidelity bundle | sb-wt-3 | DONE — PR #679 (internal) |
+>
+> **Wave 2/3 all DONE. Serial merge chain:** #672 → #676 → #679 → #681 (each:
+> bump, re-green, squash-merge — strict base, no auto-merge). Next dispatches
+> AFTER #676 merges (renderer collision clears): events track (wt-1),
+> rail/cards track (wt-3), #618 (wt-2).
+> **#544 outcome:** WatchedDir owns one fs.watch per folder + one floor wheel
+> per service (M tabs/1 dir = 1 handle, timers O(1)); self-review caught a
+> degraded-folder-never-retried blocker (transient EMFILE would have pinned a
+> folder to the 2s floor); #412's 19 tests pass UNMODIFIED, 11 new (7 proven
+> red on main). Gates: 5798 unit, 349+3sk e2e. Filed #682 (sync stat burst on
+> SMB), #683 (fold() HOST_STYLE injectability). Lesson to skill: the suite is
+> `npm run e2e` (test:e2e does not exist). Handoff: orchestrator/544.md.
+> **#666-bundle outcome:** fake echoes isReplay:true unconditionally (verified
+> against the 2.1.233 binary); duplicate-ack pinned (echo = heard, not ran);
+> fake-stream-check imports the real builder (its local copy had ALREADY
+> drifted — missing uuid/origin); ref-impls doc gains 2.1 (binary as third
+> source). Gates: 5792 unit, check:fake-stream 19 assertions, 349+3sk e2e.
+> Filed #680 (feed ignores isReplay). Also: CLAUDE.md ref-impls row + CLI size
+> corrected by orchestrator; CHANGELOG has NO open unreleased section (v0.8.2
+> skipped it) — next user-facing merge/train must open it (#674 touches
+> CHANGELOG, likely already does). Handoff: orchestrator/666-bundle.md.
 >
 > **Wave 1 complete:** #490 → PR #665 (green, base-bumped, merge on re-green);
 > #255 T2/T4 + #663 → PR #669 **MERGED** (da0aa78, #663 closed, #255 umbrella
