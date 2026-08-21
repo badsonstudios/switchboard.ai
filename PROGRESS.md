@@ -3,7 +3,38 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🟢 ORCHESTRATION RUN ACTIVE — started 2026-08-21 (~morning), Fable orchestrating
+> # 🏁 RUN COMPLETE — 2026-08-21 (~07:45 → ~18:20), Fable orchestrating. Fresh session: read this block first.
+>
+> **Totals: 16 issues closed by merge across 9 internal PRs** (#665→#490,
+> #669→#255-T2/T4+#663, #672→#654, #676→#650, #679→#666/#667/#668, #681→#544,
+> #689→#618, #696→#682/#683, #698→#333) — the #255 eslint campaign is COMPLETE
+> (src/ whole on recommendedTypeChecked, zero inline disables; umbrella #255
+> open pending only the #670 String(err) decision). **SIX user-facing PRs in
+> Dan's queue, all green-gated and ready-for-review: #674 (main i18n), #684
+> (events a11y track), #686 (rail/cards track), #692 (image marker), #694
+> (placeMenu/RTL), #701 (store/popout track).** Suggested TRAIN order:
+> #674 → #684 → #686 → #701 → #692 → #694 (686 before 701: both touch
+> SessionGrid; 684/686 both touch rail-adjacent css). CHANGELOG 0.8.3 —
+> unreleased section is OPEN and every PR adds under it — expect merge
+> conflicts there on the train; consolidate like train-664 did.
+> **17 issues filed from findings (#666–#702, the open ones):** #670 #671
+> #673 #675 #677 #678 #680 #685 #687 #688 #690 #691 #693 #695 #697 #699
+> #700 #702. Dogfood-tracker rows: NOT added (nothing user-facing merged);
+> ready-to-paste rows sit in each handoff (491.md, 642.md, 656-track.md...).
+> **Dan-gated:** #528/#529 sittings (new input commented on #528: needy rail
+> rows show no accent), #521 Files-tab scoping, #588 probe (live tokens),
+> #670 String(err) decision, #675 installer CLSID, #693 isMeta (one live
+> turn). **Next-run queue (small, mostly S):** #673+#677+#678 renderer-pin
+> bundle, #690+#691 typed-plumbing bundle, #699+#700 transport-hygiene
+> bundle, #687, #688 (doc-only), #680, #695, #702, #607, #619; older tail
+> #504 #506 #508 #518 #581 #582 #635 #631 #632 #633 #620 #420 #483; /pm:
+> #256 reconciliation still owed. Worktrees: all three clean on dead
+> branches, safe to reuse. Process lessons folded into /orchestrate live:
+> strict-base push batching, draft-merge + `;`-chain orphaning (recovery
+> recipe included), merge-base triple-dot reviews, `npm run e2e` naming,
+> reset--soft-vs-merge-base squash.
+>
+> ---- (run log below, newest first) ----
 >
 > **Single-writer rule: this file is written ONLY by the orchestrator.** Workers
 > report through `.claude/work_files/orchestrator/<issue#>.md` handoffs; those are
@@ -68,7 +99,19 @@
 > freshness. Gates: 5844 unit, 349+3sk e2e x2 (48-min lock wait, in-turn).
 > Filed #690 (TransportKind literal sweep), #691 (sessions:create autonomy
 > unvalidated, §5.29). Handoff: orchestrator/618.md.
-> | STORE/POPOUT track #656+#657+#502+#503 (USER-FACING) | sb-wt-3 | feature/656-store-popout-track | dispatched ~16:10 |
+> | STORE/POPOUT track #656+#657+#502+#503 | sb-wt-3 | DONE — PR #701 ready, DAN'S QUEUE (6th) |
+>
+> **STORE/POPOUT outcome (PR #701):** popout hand-back re-placed AFTER the
+> card is safely in the grid (grid→grid move; last-panel-out is what kills
+> the DOM, #564); moveHome + moveCardToGroup got #501's husk rules via
+> clusterCardWithGroup. MEASURED: #656's defect does NOT reproduce on main —
+> dockview fires onDidGroupChange before doAddPanel registers the panel, so
+> E12-04 adoption finds nothing and the group survived BY ACCIDENT; fix makes
+> it deliberate, e2e labelled guard-not-repro. Worker caught two bugs in its
+> own fix (banked inherited slot; teleporting expired note). One raw-checkout
+> incident self-reported, recovered. Gates: 5885 unit, 353+3sk e2e (3 shards).
+> Filed #702 (E12-04 adoption liveness audit). Handoff: orchestrator/656-track.md.
+> **#698 MERGED ~18:15** (#333 closed) — internal chain fully clear.
 >
 > **#491 DONE — PR #692 ready, in DAN'S QUEUE (4th).** Marker derives from the
 > WIRE (envelope image/document parts), not composer state; absent key when no
