@@ -361,7 +361,8 @@ appear on a shared screen.
 ### Pop-ups follow the language you picked
 
 Everything switchboard writes in a pop-up — "needs input", "Allow Bash?", the
-**Allow** and **Deny** buttons on it — is in the language set in
+**Allow** and **Deny** buttons on it, and the sentence it **says out loud** if
+you have announcements on — is in the language set in
 [Settings › Language](10-settings.md#language). It is the same
 setting, and the same words, as the ones in the window: the **Allow** on a
 pop-up is literally the **Allow** on the approval bar, so the two can never end
@@ -381,6 +382,10 @@ Two things stay as they are, on purpose:
 
 The phone and webhook messages carry exactly the same text, so a translated
 pop-up means a translated notification on your phone too.
+
+*The **menus** at the top of the window (File, View, Window, Help) and the
+"sessions are mid-task" box you get when quitting are still English whatever
+this is set to. They are being caught up separately.*
 
 *Today switchboard ships one real language, English, plus `pseudo` — a
 development aid that mangles every word so a missed translation stands out.

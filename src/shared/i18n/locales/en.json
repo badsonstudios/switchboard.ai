@@ -750,6 +750,14 @@
       "needs-input": "needs input",
       "needs-permission": "needs permission",
       "crashed": "crashed"
+    },
+    "speak": {
+      "anonymous": "A session",
+      "needs-input": "{who} needs your input",
+      "needs-permission": "{who} needs permission",
+      "done": "{who} is done",
+      "crashed": "{who} crashed",
+      "other": "{who} {what}"
     }
   },
   "terminal": {

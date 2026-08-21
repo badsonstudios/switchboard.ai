@@ -1443,9 +1443,21 @@ detail half of "Allow Bash? npm run build" is never translated, which is this
 section's last bullet made literal. The repo still ships exactly one real locale
 — #471 fixed the mechanism, not the coverage.
 
+**Scope, stated so nobody has to grep for it.** All four NOTIFICATION channels
+are translated: the OS toast, push, the webhook, and the spoken announcement
+(`announcementFor` moved from `shared/sounds.ts` to `main/events/
+notification-text.ts` with the code, since composing a sentence needs a
+translator and a `src/shared` test may not import one from `src/main`). Main's
+remaining English is chrome rather than notification — the application menu
+(`app-menu.ts`) and the quit-with-busy-sessions dialog — both reachable only
+with the window in front of you, both out of #471's scope, both still open.
+
 Folded in from the same discovery: `app.setAppUserModelId` is called at boot
 with the installer's `appId`, so Windows files a toast under the app's identity
-rather than Electron's default (`src/shared/app-identity.ts`).
+rather than Electron's default (`src/shared/app-identity.ts`). That buys
+attribution and filing; *re-activating* an expired toast from the Action Center
+is documented as needing a ToastActivatorCLSID, which the NSIS shortcut does not
+write — recorded as a hand-test rather than claimed.
 
 ### 5.22 Logging & diagnostics
 

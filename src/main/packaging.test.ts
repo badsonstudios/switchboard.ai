@@ -274,6 +274,10 @@ describe('the node_modules allowlist covers what the main-process bundle imports
     // declare, which is a MODULE_NOT_FOUND the moment a packaged build tries
     // to compose a notification. The scan above would say nothing, because it
     // skips exactly these names.
+    // A byte-exact grep of one config line — there is no way to introspect a
+    // vite plugin's options from here, so reformatting that line breaks this
+    // test. That is the trade: a brittle pin beats no pin on a fact whose only
+    // symptom is a packaged-build crash.
     const config = read('electron.vite.config.ts');
     expect(config).toContain('externalizeDepsPlugin({ exclude: [...BUNDLED_INTO_MAIN] })');
     // …and they are genuinely imported, or the list is a lie in the other
@@ -281,6 +285,38 @@ describe('the node_modules allowlist covers what the main-process bundle imports
     for (const dep of BUNDLED_INTO_MAIN) {
       expect(imported.has(dep), `${dep} is in BUNDLED_INTO_MAIN but nothing imports it`).toBe(true);
     }
+  });
+
+  it('no PEER of a bundled dep has been declared, which would re-externalize it', () => {
+    // The hole in the direction someone will actually walk. `intl-messageformat`
+    // is i18next-icu's peer, and the ONLY reason `externalizeDepsPlugin` leaves
+    // it alone is that it is not in `dependencies`. The obvious future tidy-up
+    // — "this peer is undeclared, let's declare it" — turns it into a bare
+    // `require()` from `out/main/index.js`, and nothing above would notice:
+    // that scan only reads `src/**`, and nothing in `src` imports it by name.
+    // The symptom is MODULE_NOT_FOUND from inside a notification, in a packaged
+    // build, on Windows.
+    //
+    // If you do want to declare one, that is fine — add it to
+    // BUNDLED_INTO_MAIN in the same commit and this test goes quiet.
+    const peers = new Set<string>();
+    for (const dep of BUNDLED_INTO_MAIN) {
+      const meta = JSON.parse(read(path.join('node_modules', dep, 'package.json'))) as {
+        peerDependencies?: Record<string, string>;
+      };
+      for (const peer of Object.keys(meta.peerDependencies ?? {})) peers.add(peer);
+    }
+    // The witness: a scan that found no peers would make the assertion vacuous.
+    expect(peers.has('intl-messageformat')).toBe(true);
+    const declaredButNotBundled = [...peers].filter(
+      (p) => p in pkg.dependencies && !BUNDLED_INTO_MAIN.includes(p)
+    );
+    expect(
+      declaredButNotBundled,
+      'these are peers of a bundle-inlined package AND declared dependencies, so ' +
+        'externalizeDepsPlugin will emit a bare require() for them. Add them to ' +
+        'BUNDLED_INTO_MAIN, or ship them in the files allowlist.'
+    ).toEqual([]);
   });
 
   it('nothing bundled into main is ALSO shipped as node_modules', () => {

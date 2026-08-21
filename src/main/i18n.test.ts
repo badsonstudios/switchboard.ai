@@ -54,7 +54,11 @@ describe('createMainI18n', () => {
     const { t } = await createMainI18n({
       language: () => 'kl' as unknown as LanguageChoice,
     });
-    expect(t('approval.allow')).toBe('Allow');
+    // A key that needs INTERPOLATION, deliberately: `t('approval.allow')` would
+    // also read 'Allow' from the raw-English fallback, so it would pass with
+    // the whole instance dead. Only a live i18next resolving through
+    // `fallbackLng` can turn `{tool}` into `Edit`.
+    expect(t('approval.title', { tool: 'Edit' })).toBe('Allow Edit?');
   });
 
   it('never throws out of t(), because it runs on an OS callback', async () => {
@@ -74,6 +78,45 @@ describe('createMainI18n', () => {
   it('a key nobody wrote comes back as the key, i18next own behaviour', async () => {
     const { t } = await createMainI18n({ language: () => 'en' });
     expect(t('notification.thisDoesNotExist')).toBe('notification.thisDoesNotExist');
+  });
+
+  it('a key that lands on a NAMESPACE never renders "[object Object]"', async () => {
+    const { t } = await createMainI18n({ language: () => 'en' });
+    // i18next resolves `notification.kind` to the sub-OBJECT. `String()` on
+    // that is the literal text "[object Object]", and it would have gone onto
+    // an OS toast and to a phone. The key back is the same thing a missing key
+    // gives, which is what a developer already knows how to read.
+    expect(t('notification.kind')).toBe('notification.kind');
+    expect(t('approval')).toBe('approval');
+  });
+
+  it('a failed init degrades to raw English instead of taking the app down', async () => {
+    const log = spyLogger();
+    const { t, ready } = await createMainI18n({
+      language: () => 'en',
+      log,
+      configure: () => Promise.reject(new Error('catalog is rubble')),
+    });
+    // The first of the two fail-open promises in `i18n.ts`, with a witness.
+    expect(ready).toBe(false);
+    expect(log.error).toHaveBeenCalled();
+    // Raw English, ICU arguments unexpanded — the honest symptom. `'Allow'`
+    // alone would prove nothing here, so the interpolating key is the one
+    // asserted: it comes back with its braces showing.
+    expect(t('approval.title', { tool: 'Edit' })).toBe('Allow {tool}?');
+    expect(t('approval.allow')).toBe('Allow');
+  });
+
+  it('a persistently broken language thunk warns ONCE, not once per string', async () => {
+    const log = spyLogger();
+    const { t } = await createMainI18n({
+      language: () => {
+        throw new Error('nope');
+      },
+      log,
+    });
+    for (let i = 0; i < 20; i++) t('approval.allow');
+    expect(log.warn).toHaveBeenCalledTimes(1);
   });
 });
 

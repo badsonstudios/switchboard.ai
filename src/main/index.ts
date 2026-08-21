@@ -829,16 +829,17 @@ app
     // NO IPC CHANNEL AND NO SUBSCRIPTION: the thunk is called afresh on every
     // string, so a language changed at 10:31 is spoken by the toast that fires
     // at 10:31.0001. `main/i18n.ts` explains why that beats `changeLanguage`.
+    const i18nLog = createLogger(sink, 'i18n');
     const i18n = await createMainI18n({
       language: () => languageFromUi(workspace.getUi()),
-      log: createLogger(sink, 'ui'),
+      log: i18nLog,
     });
     // Said out loud for the same reason the context-menu labels are (#526): if
     // this quietly failed, the symptom is "the notifications are in English",
     // which is indistinguishable from a missing translation. It is also the
     // only assertion an e2e can make that the REAL, bundled main process — CJS,
     // `require('i18next-icu')`, no Vite — got its interpolator (`e2e/boot.spec.ts`).
-    log.ui.info('main i18n ready', {
+    i18nLog.info('main i18n ready', {
       ready: i18n.ready,
       language: languageFromUi(workspace.getUi()),
     });
@@ -1613,6 +1614,9 @@ app
       // The beep the notifier stopped making while cues are on. Without it, an
       // event whose cue reached nobody would be completely silent.
       fallback: () => shell.beep(),
+      // The spoken announcement follows the language chip too (#471) — it would
+      // otherwise be the only notification channel left in English.
+      t: i18n.t,
       log: rulesLog,
     });
     ruleActions.register(ACTION_SOUND, soundActions.soundHandler);

@@ -1,25 +1,22 @@
 // The sound bank and the sentence (P2-E14-05a).
 //
-// The done-when this file owns is "two sessions ring distinguishably" and "TTS
-// speaks the label and falls back to the title". The second one is mostly
-// somebody else's code — `main/index.ts` resolves label-or-title into
-// `ctx.title` for every channel — so what is pinned here is that the sentence
-// is built from THAT string and not from the event body, plus the bank really
-// does hold cues a person can tell apart.
+// The done-when this file owns is "two sessions ring distinguishably": the bank
+// really does hold cues a person can tell apart.
+//
+// The SENTENCE half moved to `src/main/events/notification-text.test.ts` in
+// #471, along with the code — composing it needs a translator, and a translator
+// is main's (a `src/shared` test may not import from `src/main`, and rightly).
 import { describe, it, expect } from 'vitest';
 import {
   DEFAULT_SOUND,
   SOUND_BANK,
   SOUND_IDS,
-  SPOKEN_TITLE_MAX,
-  announcementFor,
   isSoundId,
   nextCardSound,
   nextSoundId,
   soundById,
   soundDurationMs,
   soundForIndex,
-  speakableTitle,
 } from './sounds';
 
 describe('the bank (done-when: two sessions ring distinguishably)', () => {
@@ -132,65 +129,5 @@ describe('assigning a cue to a card', () => {
     expect(isSoundId('')).toBe(false);
     expect(isSoundId(null)).toBe(false);
     expect(isSoundId(3)).toBe(false);
-  });
-});
-
-describe('what the voice says (§5.9: "TradingApp needs permission")', () => {
-  it.each([
-    ['needs-input', 'Add markdown preview needs your input'],
-    ['needs-permission', 'Add markdown preview needs permission'],
-    ['done', 'Add markdown preview is done'],
-    ['crashed', 'Add markdown preview crashed'],
-  ])('%s -> %s', (kind, expected) => {
-    expect(announcementFor('Add markdown preview', kind)).toBe(expected);
-  });
-
-  it('says SOMETHING for a kind it has never met', () => {
-    // a newer build's feed kind reaching an older sentence table must not
-    // produce "undefined" read aloud
-    expect(announcementFor('Trading app', 'went-weird')).toBe('Trading app went weird');
-  });
-
-  it('falls back to the title, because the title is what it is handed', () => {
-    // The label/title fallback lives in `main/index.ts` (`titleFor`), which is
-    // the SAME string every other channel uses. This is the pin that says so:
-    // whatever arrives is what gets spoken, so turning auto labels off changes
-    // the sentence without changing a line of this code.
-    expect(announcementFor('switchboard.ai', 'done')).toBe('switchboard.ai is done');
-  });
-
-  it('never reads out a paragraph', () => {
-    const long = 'refactor the whole notification stack and also the rules engine and the store';
-    const said = announcementFor(long, 'done');
-    expect(said.length).toBeLessThan(long.length);
-    expect(said.endsWith(' is done')).toBe(true);
-  });
-
-  it('a nameless session is still announced', () => {
-    expect(announcementFor('', 'needs-input')).toBe('A session needs your input');
-    expect(announcementFor('   ', 'done')).toBe('A session is done');
-  });
-});
-
-describe('trimming a label for a voice', () => {
-  it('leaves a short label alone', () => {
-    expect(speakableTitle('Add markdown preview')).toBe('Add markdown preview');
-  });
-
-  it('collapses the whitespace a pasted label brings with it', () => {
-    expect(speakableTitle('  Add\n  markdown   preview  ')).toBe('Add markdown preview');
-  });
-
-  it('cuts at a word boundary, not mid-syllable', () => {
-    const said = speakableTitle('alpha bravo charlie delta echo foxtrot golf hotel india juliet');
-    expect(said.length).toBeLessThanOrEqual(SPOKEN_TITLE_MAX);
-    expect(said.endsWith(' ')).toBe(false);
-    // the cut landed between words: every word in the result is whole
-    expect('alpha bravo charlie delta echo foxtrot golf hotel india juliet').toContain(said);
-  });
-
-  it('still cuts a label with no spaces in it at all', () => {
-    const said = speakableTitle('x'.repeat(200));
-    expect(said.length).toBe(SPOKEN_TITLE_MAX);
   });
 });

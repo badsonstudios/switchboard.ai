@@ -468,8 +468,10 @@ describe('a toast is composed in the user language (#471)', () => {
     const [allow, deny] = decideButtonActions(t);
     expect(allow.text).toBe(pseudolocalize('Allow'));
     expect(deny.text).toBe(pseudolocalize('Deny'));
-    // …and the order still decodes to the right verdict.
-    expect(DECIDE_BUTTONS[0]).toBe('allow');
+    // …and neither is still English, which is what a `t` that quietly ignored
+    // the language would have produced.
+    expect(allow.text).not.toBe('Allow');
+    expect(deny.text).not.toBe('Deny');
   });
 
   it('translates a question, ICU plural and all', () => {
@@ -488,12 +490,18 @@ describe('a toast is composed in the user language (#471)', () => {
       },
       t
     );
-    // The plural block survived pseudo-localization (its braces are preserved)
-    // and still counted — a `{{more}}`-style mistake would have rendered the
-    // braces at the user instead.
-    expect(summary).toContain('(+1 more)');
-    expect(summary).toContain('⟦');
-    expect(summary).toContain('First?');
+    // The WHOLE string, not three `toContain`s: `(+1 more)` and `First?` are
+    // both locale-blind (the pseudo generator preserves everything inside
+    // `{…}`, so an ICU plural's sub-messages are never mangled — see
+    // `shared/i18n/pseudo.ts`), so only an exact match carries the claim.
+    //
+    // It also pins that the plural block survived pseudo-localization and still
+    // COUNTED: a `{{more}}`-style mistake would have put the braces on screen.
+    expect(summary).toBe(
+      pseudolocalize('A question for you: {question}{more, plural, =0 {} other { (+# more)}}')
+        .replace('{question}', 'First?')
+        .replace('{more, plural, =0 {} other { (+# more)}}', ' (+1 more)')
+    );
   });
 
   it('goes back to English when the preference does', () => {

@@ -69,8 +69,9 @@ on the floor, and say so in your PR.
   pop-up, which is the last place a mismatch belongs. The pop-up's **Allow** is
   now literally the same word as the approval bar's, so the two cannot end up
   worded differently, and changing the language takes effect on the very next
-  notification. What Claude Code said or wants to run — a command, a path, a
-  reason — is still shown exactly as it came, in any language.
+  notification. The **spoken announcement** follows it too. What Claude Code
+  said or wants to run — a command, a path, a reason — is still shown exactly as
+  it came, in any language. (The window's menus are still English for now.)
 - **Windows: pop-ups are filed under switchboard's own name** in the Action
   Center instead of appearing as *Electron*.
 

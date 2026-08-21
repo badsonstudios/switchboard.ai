@@ -19,8 +19,18 @@
  * `WinShell::SetLnkAUMI`), and `APP_ID` is `appInfo.id`, which is `appId` from
  * `electron-builder.js`. So the value below is the same one the shortcut
  * carries — which is what makes a packaged build's toasts show the app's own
- * name and icon, and what lets Windows associate a toast ACTION with the app.
- * `src/main/packaging.test.ts` pins the two together, because "they agree" is a
- * fact that would otherwise be true only until someone renamed one of them.
+ * name and icon rather than Electron's. `src/main/packaging.test.ts` pins the
+ * two together, because "they agree" is a fact that would otherwise be true
+ * only until someone renamed one of them.
+ *
+ * **WHAT THIS DOES NOT BUY, stated rather than assumed** (the standing rule:
+ * never guess a contract). Attribution and filing are the AUMID's job.
+ * *Reactivating* a toast from the Action Center after it has expired is
+ * documented as needing a registered **ToastActivatorCLSID**, and
+ * `WinShell::SetLnkAUMI` does not write one. That matters here specifically
+ * because `permission-toast.ts` deliberately keeps a toast alive in the Action
+ * Center after `close` — so whether an **Allow** pressed there still reaches
+ * the session is a HAND-TEST, logged in `docs/plans/dogfood-testing.md`, not
+ * something this constant settles.
  */
 export const APP_USER_MODEL_ID = 'com.badsonstudios.switchboard';
