@@ -88,12 +88,44 @@ export interface StreamDocumentBlock {
 
 export type StreamContentBlock = StreamTextBlock | StreamImageBlock | StreamDocumentBlock;
 
+/**
+ * WHO sent this turn (#490).
+ *
+ * The CLI's own zod schema for the inbound user message carries
+ * `origin: oxc().optional()`, and `oxc` is a discriminated union on `kind`
+ * whose first arm is the only one a desktop host has any business asserting
+ * (read out of `claude` 2.1.233 on PATH — the compiled binary embeds its
+ * schemas):
+ *
+ *   oxc=ve(()=>WA("kind",[be({kind:kt("human")}),be({kind:kt("channel"),server:F()}),
+ *     be({kind:kt("peer"),from:F(),…}),be({kind:kt("task-notification"),…}),
+ *     be({kind:kt("coordinator")}),be({kind:kt("unclassified")})…]))
+ *
+ * Every other arm describes a message the ANTHROPIC side classified — a Slack
+ * ping, a cross-session peer, a fired schedule. They are server-asserted
+ * provenance, not something a client may claim; `peer.verifiedPeerPid`'s own
+ * description says identity is keyed on the kernel, "never on `from`". So the
+ * type here is deliberately narrowed to the one arm we can honestly assert.
+ *
+ * WE ONLY EVER SEND `human` because there is only one way into this builder:
+ * `sessions:submitPrompt` ← the renderer's composer ← the user pressing Enter.
+ * The day something else sends a turn — DESIGN §5.15 Dispatch briefings, the
+ * §5.4 Tier-3 bus — this becomes a parameter and the union above is the menu.
+ * Widening it before then would be inventing a claim we cannot back.
+ */
+export interface StreamUserOrigin {
+  kind: 'human';
+}
+
 /** One user turn, as the CLI expects it on stdin. */
 export interface StreamUserMessage {
   type: 'user';
+  /** See `userMessage` — the CLI's at-most-once key. */
+  uuid: string;
   message: { role: 'user'; content: StreamContentBlock[] };
   parent_tool_use_id: null;
   session_id: string;
+  origin: StreamUserOrigin;
 }
 
 /**
@@ -131,6 +163,77 @@ export type { PromptAttachment };
  * An EMPTY prompt contributes no text block at all, rather than an empty one:
  * a file dropped and sent with nothing typed is a legitimate turn, and a
  * zero-length text block is not a thing the message format accepts.
+ *
+ * ---------------------------------------------------------------------------
+ * `uuid` IS THE CLI'S AT-MOST-ONCE KEY (#490, added 2026-08-21)
+ * ---------------------------------------------------------------------------
+ *
+ * We shipped without it from P2-E18-06 to here, and nothing visibly broke —
+ * because the CLI's whole de-duplication pass is guarded on the field being
+ * present. Verbatim from `claude` 2.1.233 on PATH (the version Dan runs; the
+ * VS Code extension is 2.1.226 and ships its own binary, so PATH is the one
+ * that counts):
+ *
+ *   if(Vr=!0,yt.uuid){let Pt=Vt(),Pr=await ZCi(Pt,yt.uuid,p.storageV5),fo=ran.has(yt.uuid),…
+ *     else if(Pr||fo){…Rr("info","cli_user_message_dedup_skipped",{exists_in_session:Pr,runtime_dup:fo}),
+ *       w(`Skipping duplicate user message: ${yt.uuid}`),…continue}
+ *     cns(yt.uuid)}
+ *   Ta("new_user_message");                                  // ← normal processing
+ *
+ * Read it as English: with a uuid, a turn already in this session's transcript
+ * (`ZCi`) or already seen by this process (`ran`) is DROPPED before it can run
+ * a second time. Without one, control falls straight past the whole block to
+ * `new_user_message` — every frame executes, always. That is not "the CLI does
+ * not care"; that is us opting out of the only replay protection on offer, on
+ * a transport where a resend is one crash-and-retry away from running a
+ * destructive prompt twice.
+ *
+ * A FRESH `randomUUID()` PER CALL, never derived from the text. The dedup key
+ * is meant to identify a delivery, not a prompt: sending "run the tests" twice
+ * on purpose is normal, and a content-hashed id would make the CLI silently
+ * swallow the second one. `globalThis.crypto` rather than `node:crypto`
+ * because this module is `shared/`.
+ *
+ * The field is `.optional()` in the CLI's inbound schema — `ixc=ve(()=>jkg()
+ * .extend({uuid:Bu().optional(),session_id:F().optional(),…}))`, one arm of the
+ * stdin union — and `Bu=ve(()=>F())` is a plain string with no format check.
+ * So both the old shape and this one are valid; we are choosing the protection,
+ * not fixing a rejection. We still mint a real RFC-4122 v4 id, because the
+ * reference does and because the CLI echoes it back on
+ * `--replay-user-messages` (`RCg`: `…uuid:e.uuid,timestamp:e.timestamp,
+ * isReplay:!0,…`), where a recognisable id is worth more than an arbitrary one.
+ *
+ * ---------------------------------------------------------------------------
+ * `origin` SAYS A PERSON TYPED IT
+ * ---------------------------------------------------------------------------
+ *
+ * Absence is not neutral, but it is very nearly so: three separate predicates
+ * in the same binary spell out that a missing origin MEANS human —
+ *
+ *   function VZ(e){return e===void 0||e.kind==="human"}
+ *   function pce(e){return e===void 0||e.kind==="human"||e.kind==="auto-continuation"}
+ *   function $kc(e){return e.origin===void 0||e.origin.kind==="human"||e.origin.kind==="auto-continuation"}
+ *
+ * — and the CLI even counts how often it had to make that assumption
+ * (`L("tengu_human_origin_presumed",{consumer:…,count_bucket:…})`). One
+ * predicate does NOT extend the courtesy:
+ *
+ *   function KMo(e){return e?.kind==="human"}
+ *   …let U=N&&KMo(v);…{isRegularUserPrompt:N,isHumanTypedPrompt:U,…}
+ *
+ * `isHumanTypedPrompt` gates two attachment producers — `peer_mentions` and
+ * `workflow_keyword_request` — that therefore never fired for us. Niche today.
+ * The reason to send it anyway is not those two: it is that the field exists so
+ * a host can state provenance, we know ours, and a guess the CLI has to log is
+ * worse than a fact. Saying it costs one key.
+ *
+ * Sending it cannot cost us anything either. The only places where explicit
+ * `human` differs from absent the other way are `RNs` (absent counts as
+ * `unclassified`) and the `Sai`/`y5p`/`bHa` fallback that infers human from
+ * `client_platform`; the first is gated on `isMeta`, which a typed prompt never
+ * is, and the second only ever RE-DERIVES the same `{kind:"human"}` we are now
+ * stating outright — and from a field described as "@internal … Injected
+ * server[-side]", which a local stdin frame does not carry anyway.
  */
 export function userMessage(
   text: string,
@@ -160,9 +263,11 @@ export function userMessage(
   if (text.length > 0 || content.length === 0) content.push({ type: 'text', text });
   return {
     type: 'user',
+    uuid: globalThis.crypto.randomUUID(),
     message: { role: 'user', content },
     parent_tool_use_id: null,
     session_id: '',
+    origin: { kind: 'human' },
   };
 }
 
