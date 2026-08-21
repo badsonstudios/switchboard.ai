@@ -63,6 +63,34 @@ on the floor, and say so in your PR.
 
 ### Changed
 
+- **Events you've already dealt with are quiet instead of faded.** A row in the
+  Events drawer that you've seen (**Ready**) used to recede by having the whole
+  row turned down to 82% — which does not just soften it, it drains contrast
+  out of every word on the row at once, and the small task label under the
+  title was the text it hurt most. The row now recedes the way the rest of
+  switchboard.ai does it: the same slightly-settled background it always had,
+  with the title written in the app's secondary grey. Same box, same place in
+  the list, and the title, the task label and the **Ready** state word are all
+  back at their measured values on all four themes. That state word moved with
+  it — it was the palest grey the app has, on the one row where it is the only
+  thing telling you what the session is doing.
+- **Session frames and group cards have a stronger edge.** The border around a
+  session window in the grid, and around a group card in the sessions rail, is
+  the same colour in both places — and measured, it was too close to the
+  surfaces on either side of it to count as a visible boundary on the default
+  dark theme *or* on Daylight. It has been nudged a step in each (lighter on
+  the default dark theme, darker on Daylight; the two contrast themes were
+  already well clear and are untouched) so the edge reads against the workspace
+  behind a card, the card's own body, and the header strip along its top. Same
+  colour family, same one-edge-everywhere treatment; just visible now.
+- **The Events drawer's edge tab and its notice buttons draw switchboard.ai's
+  focus ring.** Tabbing to them used to produce the browser's own focus outline
+  instead — a different colour, chosen against a background it knows nothing
+  about — while the ✕ inside the drawer drew the app's. The drawer itself is
+  fixed the other way round: opening it with `Ctrl+E` moves your cursor into
+  it and it had been suppressing its focus outline entirely, so there was
+  nothing at all to say where you had landed. It draws the app's ring now too.
+
 - **A reply or a document can no longer put a name on one of switchboard.ai's
   own controls.** Raw HTML can contain a `<label>`, and a label is not just
   words: it points at a control *anywhere on the page* by its internal name, and
