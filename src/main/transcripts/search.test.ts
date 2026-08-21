@@ -350,7 +350,7 @@ describe('what it searches', () => {
 
     // What the FEED holds does not contain it — that is the lie a DOM search
     // would tell, one layer down.
-    const displayed = deriveIntents(entries[1] as Record<string, unknown>)[0];
+    const displayed = deriveIntents(entries[1])[0];
     expect(displayed.t).toBe('tool-result');
     expect(displayed.t === 'tool-result' && displayed.out).not.toContain('ENOENT-marker');
 

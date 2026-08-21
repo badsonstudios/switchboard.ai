@@ -81,7 +81,7 @@ function fakeContext(state = 'running'): AudioContextLike & { notes: Note[]; res
       ctx.resumed++;
     },
   };
-  return ctx as unknown as AudioContextLike & { notes: Note[]; resumed: number };
+  return ctx;
 }
 
 describe('scheduling a cue', () => {

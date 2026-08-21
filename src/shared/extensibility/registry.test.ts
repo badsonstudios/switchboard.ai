@@ -80,9 +80,12 @@ describe('ContributionRegistry', () => {
   it('exposes manifests for future about/debug UI', () => {
     const r = fresh();
     r.register('greeter', greeter('a'));
-    expect(r.manifests()).toEqual([
-      { point: 'greeter', manifest: expect.objectContaining({ id: 'a' }) },
-    ]);
+    // `expect.objectContaining` is typed `any`, and an `any` inside an object
+    // literal is what `no-unsafe-assignment` is for. The local pins it to
+    // `unknown` — the matcher is a value to hand back to `toEqual`, not
+    // something this test reads (#255 T0).
+    const withIdA: unknown = expect.objectContaining({ id: 'a' });
+    expect(r.manifests()).toEqual([{ point: 'greeter', manifest: withIdA }]);
   });
 
   it('imports nothing from main/ or renderer/ — the property that makes it shared', () => {

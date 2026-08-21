@@ -591,7 +591,7 @@ function priorCard(over: Partial<PersistedSession> & { folder: string }): Persis
     layoutSlot: 0,
     suspendedAt: '',
     ...over,
-  } as PersistedSession;
+  };
 }
 
 /**
@@ -1233,7 +1233,7 @@ describe('starting a session preserves the card (#153 follow-up)', () => {
       layoutSlot: 3,
       suspendedAt: '2026-01-01T00:00:00.000Z',
       ...over,
-    } as PersistedSession;
+    };
   }
 
   // `pty` and not `stream` since #381, and deliberately: Direct is the default
@@ -1496,7 +1496,7 @@ describe('a resumed Direct session replays its history (#395)', () => {
     ({
       transcripts: { projectsRoot: () => rootDir() },
       resume: { canResume: () => true },
-    }) as unknown as ProviderCapabilities;
+    });
 
   /** the conversation, where the CLI would have written it */
   function seedTranscript(id = NATIVE): void {
@@ -1553,7 +1553,7 @@ describe('a resumed Direct session replays its history (#395)', () => {
     seedTranscript();
     const streamFeed = new StreamFeed();
     const h = harness(
-      { transcripts: { projectsRoot: () => root }, resume: { canResume: () => false } } as unknown as ProviderCapabilities,
+      { transcripts: { projectsRoot: () => root }, resume: { canResume: () => false } },
       dir,
       { transport: 'stream', liveIds: ['live-1'], streamFeed, prior: priorCard({ folder: dir, nativeSessionId: NATIVE }) }
     );
@@ -2178,7 +2178,7 @@ describe('a card respawning over a crashed session reaps it (#187)', () => {
       type: 'system',
       subtype: 'init',
       slash_commands: ['cli-only'],
-    } as unknown as Record<string, unknown>);
+    });
     expect(streamFeed.blocks('live-1')).toHaveLength(1);
     expect(streamCommands.commandsFor('live-1')).not.toBeNull();
 
@@ -2507,7 +2507,7 @@ describe('a teardown step that throws releases the rest anyway (#219)', () => {
       type: 'system',
       subtype: 'init',
       slash_commands: ['cli-only'],
-    } as unknown as Record<string, unknown>);
+    });
 
     h.call('sessions:dropLive', CARD);
 
@@ -3088,7 +3088,7 @@ describe('allow-all is granted on both channels (#319)', () => {
     const h = harness(undefined, dir, { prior: card(), streamPermissions: perms });
     start(h);
 
-    h.call('sessions:allowAllSession', 42 as unknown as string);
+    h.call('sessions:allowAllSession', 42); // a number where a card id belongs
 
     expect(h.allowedAll).toEqual([]);
     expect(perms.isAllowAll('live-1')).toBe(false);
@@ -3916,7 +3916,9 @@ describe('pty:snapshot hands find the buffer that actually has the answer (#517)
 
   it('refuses a non-string id rather than reaching into the map with it', () => {
     const h = harness(undefined, folder);
-    expect(h.call('pty:snapshot', 42 as unknown as string)).toBeNull();
+    // 42 is passed bare on purpose: harness.call takes ...unknown[], so a cast
+    // to string would be a no-op the type-checked preset rejects (#255 T0).
+    expect(h.call('pty:snapshot', 42)).toBeNull();
     expect(h.warn).toHaveBeenCalledWith(
       expect.stringContaining('pty:snapshot refused'),
       expect.anything()

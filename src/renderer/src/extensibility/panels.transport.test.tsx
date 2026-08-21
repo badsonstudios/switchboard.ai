@@ -54,7 +54,7 @@ function ctx(over: Partial<PanelContext>): PanelContext {
     changed: 0,
     setView: () => {},
     ...over,
-  } as PanelContext;
+  };
 }
 
 /** What the panel renders, WITHOUT mounting it — the PTY branch builds a real

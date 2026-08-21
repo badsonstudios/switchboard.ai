@@ -164,6 +164,136 @@ export default tseslint.config(
     },
   },
   {
+    // #255: src/ joins e2e/ on the TYPE-CHECKED preset. Two blocks, not one,
+    // because `src/shared/**` is a member of BOTH tsconfigs and a `project`
+    // ARRAY resolves a file against the first project that happens to include
+    // it — one block would quietly type-lint shared through the node lens while
+    // looking like it considered both. Two blocks say which lens each tree is
+    // checked under, out loud.
+    //
+    // `src/*.ts` (test-setup, test-temp-dirs, test-fake-timers) are the node
+    // project's root-level members; without the second glob they would be the
+    // only files under src/ left on the untyped tier.
+    files: ['src/{main,preload,shared,build}/**/*.{ts,tsx,mts,cts}', 'src/*.{ts,tsx,mts,cts}'],
+    ignores: ['**/__eslint-probe__*'],
+    extends: [...tseslint.configs.recommendedTypeChecked],
+    languageOptions: {
+      parserOptions: {
+        project: './tsconfig.node.json',
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+  },
+  {
+    // The renderer half of the block above. `tsconfig.web.json` is the same
+    // project `npm run typecheck` uses, so lint and tsc see one program.
+    //
+    // `ignores` (both blocks): `scripts/eslint-hex-rule.test.js` lints snippets
+    // at the fictional path `src/renderer/src/__eslint-probe__.ts` — "the file
+    // never has to exist; the path is what picks the config block". Under
+    // `parserOptions.project` a path in no tsconfig is a FATAL parse error, and
+    // one fatal message makes ESLint drop every other message for that text, so
+    // all 13 of those tests go red. The probe only ever exercises the untyped
+    // `no-restricted-syntax` rules, so keeping it off the typed tier costs
+    // nothing and needs no change to the test.
+    files: ['src/renderer/**/*.{ts,tsx,mts,cts}'],
+    ignores: ['**/__eslint-probe__*'],
+    extends: [...tseslint.configs.recommendedTypeChecked],
+    languageOptions: {
+      parserOptions: {
+        project: './tsconfig.web.json',
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+  },
+  {
+    // `require-await` was 365 of the 552 errors the switch surfaced, and 270 of
+    // those are React Testing Library's `act(async () => …)`: the callback is
+    // `async` to ASK React for the async path, not because an `await` went
+    // missing. The rule takes no options in typescript-eslint 8.64, so it is
+    // per-glob all-or-nothing — and a test file is the one place in this tree
+    // where an `async` with no `await` is routinely load-bearing rather than a
+    // mistake.
+    //
+    // Product code keeps the rule — but only in `src/{preload,shared,build}`
+    // and the root `src/*.ts` until #255 T1 and T2 land: those tranches own the
+    // three product hits, so their blocks below (which are LATER, and therefore
+    // win) hold the rule off `src/main` and `src/renderer` product code too.
+    files: ['src/**/*.test.{ts,tsx}'],
+    rules: { '@typescript-eslint/require-await': 'off' },
+  },
+  // ---------------------------------------------------------------------------
+  // #255 is landing in tranches, because the switch above surfaced 552 real
+  // errors and one 552-error PR is not reviewable. T0 (this config, plus every
+  // `no-unnecessary-type-assertion`) went first; the four blocks below hold the
+  // REST of the preset off one directory each so `main` is never red in
+  // between. Each block is a whole tranche: T<n> deletes its own block in the
+  // same PR as its fixes, and when the last one goes, `src/` is on the preset
+  // with no disables — the state e2e/ has had since #245.
+  //
+  // Nothing here is a judgement that the rule is wrong. The counts are the
+  // measured work remaining, not a budget.
+  // ---------------------------------------------------------------------------
+  {
+    // TODO(#255 T1): src/main product code — 20 errors. 12 are
+    // `no-base-to-string` on `String(x ?? '')` at untrusted-JSON boundaries
+    // (stream-permissions, fake-stream-protocol, feed/blocks); one shared
+    // `asDisplayString(unknown)` closes all of them.
+    files: ['src/main/**/*.ts'],
+    ignores: ['src/main/**/*.test.ts'],
+    rules: {
+      '@typescript-eslint/no-base-to-string': 'off',
+      '@typescript-eslint/no-unsafe-argument': 'off',
+      '@typescript-eslint/no-redundant-type-constituents': 'off',
+      '@typescript-eslint/restrict-template-expressions': 'off',
+      '@typescript-eslint/require-await': 'off',
+    },
+  },
+  {
+    // TODO(#255 T2): src/renderer product code — 8 errors. The 3
+    // `no-misused-promises` are `if (!answer)` in App.tsx where `answer` is
+    // `Promise<T> | undefined`; `answer === undefined` is behaviour-identical.
+    files: ['src/renderer/**/*.{ts,tsx}'],
+    ignores: ['src/renderer/**/*.test.{ts,tsx}'],
+    rules: {
+      '@typescript-eslint/no-misused-promises': 'off',
+      '@typescript-eslint/require-await': 'off',
+      '@typescript-eslint/unbound-method': 'off',
+      '@typescript-eslint/no-base-to-string': 'off',
+      '@typescript-eslint/no-redundant-type-constituents': 'off',
+    },
+  },
+  {
+    // TODO(#255 T3): src/main tests — 57 errors. 16 are `no-floating-promises`
+    // in events/sound-actions.test.ts alone, because `RuleActionHandler` is
+    // `void | Promise<void>` while `soundHandler` is concretely synchronous
+    // (`void h.actions.soundHandler(…)` closes all 16 — nothing is racing). The
+    // other 41 are led by the `no-unsafe-*` family (33): one typed reader per
+    // boundary, the #245 pattern.
+    files: ['src/main/**/*.test.ts'],
+    rules: {
+      '@typescript-eslint/no-floating-promises': 'off',
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/no-unsafe-member-access': 'off',
+      '@typescript-eslint/no-unsafe-return': 'off',
+      '@typescript-eslint/no-base-to-string': 'off',
+      '@typescript-eslint/unbound-method': 'off',
+      '@typescript-eslint/restrict-template-expressions': 'off',
+    },
+  },
+  {
+    // TODO(#255 T4): src/renderer tests — 24 errors across 13 files. Last, so
+    // T3's typed boundary readers already exist to copy.
+    files: ['src/renderer/**/*.test.{ts,tsx}'],
+    rules: {
+      '@typescript-eslint/unbound-method': 'off',
+      '@typescript-eslint/no-unsafe-assignment': 'off',
+      '@typescript-eslint/no-unsafe-member-access': 'off',
+      '@typescript-eslint/no-unsafe-return': 'off',
+      '@typescript-eslint/no-unsafe-argument': 'off',
+    },
+  },
+  {
     // e2e/ is the one tree on the TYPE-CHECKED preset (#245). The rest of the
     // repo is on plain `recommended`; here the extra rules earn their keep,
     // because a spec's assertion is only as good as the types under it — an

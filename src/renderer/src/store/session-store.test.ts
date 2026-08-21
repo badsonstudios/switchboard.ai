@@ -75,7 +75,7 @@ describe('SessionStore', () => {
   });
 
   it('derives rail order from sessions + groups — the Ctrl+1..9 numbering', () => {
-    const groups: RailGroup[] = [{ id: 'g1', name: 'Work', color: 'var(--accent-test)' } as RailGroup];
+    const groups: RailGroup[] = [{ id: 'g1', name: 'Work', color: 'var(--accent-test)' }];
     store.setGroups(groups);
     store.setSessions([
       session('loose-1', { folder: 'C:/one' }),

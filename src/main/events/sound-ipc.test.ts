@@ -47,7 +47,7 @@ function harness(knownCards: string[] = [CARD]) {
     warn: record('warn'),
     error: record('error'),
     child: () => log,
-  } as unknown as Logger;
+  };
 
   const unplayable: string[] = [];
   registerSoundIpc({

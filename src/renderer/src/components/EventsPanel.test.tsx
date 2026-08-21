@@ -54,7 +54,7 @@ const notice = (): HTMLElement | null => host.querySelector<HTMLElement>('[data-
 function button(label: string): HTMLButtonElement {
   const found = [...host.querySelectorAll('button')].find((b) => b.textContent === label);
   if (!found) throw new Error(`no button labelled "${label}"`);
-  return found as HTMLButtonElement;
+  return found;
 }
 async function click(el: Element): Promise<void> {
   await act(async () => {

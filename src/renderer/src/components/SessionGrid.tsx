@@ -43,7 +43,6 @@ import {
   prunePopoutGroups,
   RescuedPopout,
   sanitizePopoutLayout,
-  WorkArea,
 } from '../lib/layout';
 import { captureSlot, openerRelative, placeAt } from '../lib/dock-slot';
 import { hasPanel, slotIsLive, stepDown, stepUp } from '../lib/ladder';
@@ -1678,7 +1677,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               // selected one the moment focus leaves the strip entirely
               onFocus={(e) => setTabFocus((e.target as HTMLElement).dataset.vtab ?? null)}
               onBlur={(e) => {
-                if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setTabFocus(null);
+                if (!e.currentTarget.contains(e.relatedTarget)) setTabFocus(null);
               }}
               // a flex item does not shrink below its content unless told to;
               // without this the tabs would push the git chip and the usage
@@ -3452,7 +3451,7 @@ async function revealNow(api: DockviewApi, cardId: string, focus = true): Promis
     // must not swallow the card. No position = dockview opens it on top of the
     // main window, which is exactly the E8-02 rescue.
     const areas = await window.switchboard.workAreas();
-    const onScreen = boxOnAnyDisplay(place.popout, areas as WorkArea[]);
+    const onScreen = boxOnAnyDisplay(place.popout, areas);
     void api.addPopoutGroup(panel, {
       popoutUrl: new URL('popout.html', window.location.href).toString(),
       ...(onScreen ? { position: openerRelative(place.popout, window) } : {}),

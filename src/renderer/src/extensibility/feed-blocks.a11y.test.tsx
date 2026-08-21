@@ -24,7 +24,7 @@ declare global {
 const registry = createRendererRegistry();
 
 function block(over: Partial<FeedBlockDto>): FeedBlockDto {
-  return { seq: 1, kind: 'assistant', sidechain: false, ...over } as FeedBlockDto;
+  return { seq: 1, kind: 'assistant', sidechain: false, ...over };
 }
 
 /** render a block the way FeedView does, and hand back its root element */

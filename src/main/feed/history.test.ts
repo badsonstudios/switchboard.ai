@@ -28,7 +28,7 @@ const noopLog = (): Logger => {
     warn: vi.fn((m: string) => warned.push(m)),
     error: vi.fn(),
     child: vi.fn(),
-  } as unknown as Logger;
+  };
 };
 
 /** Write a transcript for `id` under the layout the CLI uses. */

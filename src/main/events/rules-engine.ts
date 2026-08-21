@@ -101,8 +101,8 @@ export class RuleActionRegistry {
       // therefore means DISPATCHED, and a later rejection is logged where a
       // synchronous throw would have been.
       const maybe = handler(action, ctx);
-      if (maybe && typeof (maybe as Promise<void>).catch === 'function') {
-        void (maybe as Promise<void>).catch(failed);
+      if (maybe && typeof maybe.catch === 'function') {
+        void maybe.catch(failed);
       }
       return true;
     } catch (err) {

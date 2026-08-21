@@ -1612,12 +1612,12 @@ describe('a failed set-aside is retried before the file is overwritten (#352)', 
    *  rename still work and a blocked rescue never masquerades as a dead disk. */
   const blockPostMortems = (name: 'writeFileSync' | 'renameSync', code: string) => {
     const real = fs[name] as (...args: unknown[]) => unknown;
-    return vi.spyOn(fs, name).mockImplementation(((...args: unknown[]) => {
+    return vi.spyOn(fs, name).mockImplementation((...args: unknown[]) => {
       // renameSync's DESTINATION is the second argument; writeFileSync's is the first
       const target = String(name === 'renameSync' ? args[1] : args[0]);
       if (target.includes('.corrupt-')) throw boom(code, name);
       return real(...args);
-    }) as never);
+    });
   };
   const failCopies = () =>
     vi.spyOn(fs, 'copyFileSync').mockImplementation(() => {
@@ -1715,12 +1715,12 @@ describe('a failed set-aside is retried before the file is overwritten (#352)', 
     const st = makeStore(file, fakeLogger(warns));
     const copy = failCopies();
     const real = fs.writeFileSync;
-    const write = vi.spyOn(fs, 'writeFileSync').mockImplementation(((...args: unknown[]) => {
+    const write = vi.spyOn(fs, 'writeFileSync').mockImplementation((...args: unknown[]) => {
       const target = String(args[0]);
       if (!target.includes('.corrupt-')) return (real as (...a: unknown[]) => unknown)(...args);
       real(target, CORRUPT.slice(0, 4)); // got some of it down, then...
       throw boom('ENOSPC', 'writeFileSync');
-    }) as never);
+    });
     try {
       st.load();
       st.upsertSession(sess('a'));

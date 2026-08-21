@@ -50,7 +50,7 @@ export interface CardPresentation {
  *  because useSyncExternalStore compares snapshots by identity. */
 export const DEFAULT_PRESENTATION: CardPresentation = Object.freeze({
   view: DEFAULT_PANEL_ID,
-  ladder: 'expanded' as Ladder,
+  ladder: 'expanded',
   slot: null,
   poppedOut: false,
   suspended: false,

@@ -87,7 +87,7 @@ export function unwrapMarks(root: ParentNode, attr: string): void {
 export function wrapMatches(root: ParentNode, spec: MarkSpec): HTMLElement[] {
   const doc = ownerDocumentOf(root);
   if (!doc) return [];
-  const walker = doc.createTreeWalker(root as Node, NodeFilter.SHOW_TEXT, {
+  const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
     acceptNode: (node) => {
       const parent = node.parentElement;
       if (!parent) return NodeFilter.FILTER_REJECT;

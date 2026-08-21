@@ -75,7 +75,7 @@ export function installCspHeaders(
     try {
       if (isRendererResponse(details.url, rendererOrigin())) {
         response = {
-          responseHeaders: withCspHeader(details.responseHeaders as Headers, cspPolicy(isDev)),
+          responseHeaders: withCspHeader(details.responseHeaders, cspPolicy(isDev)),
         };
       }
     } catch (err) {

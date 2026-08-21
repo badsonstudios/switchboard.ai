@@ -105,8 +105,5 @@ export function isSaneSuppressedEvent(v: unknown): v is SuppressedEvent {
   if (typeof x.title !== 'string' || typeof x.body !== 'string') return false;
   if (!Array.isArray(x.actions) || !x.actions.every((a) => typeof a === 'string')) return false;
   if (!Array.isArray(x.ruleIds) || !x.ruleIds.every((r) => typeof r === 'string')) return false;
-  return (
-    typeof x.reason === 'string' &&
-    SUPPRESSION_REASONS.includes(x.reason as SuppressionReason)
-  );
+  return typeof x.reason === 'string' && SUPPRESSION_REASONS.includes(x.reason);
 }

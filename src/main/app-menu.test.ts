@@ -72,11 +72,9 @@ describe('Help ▸ Check for Updates… (P2-E19-03)', () => {
       expect(labels(template), platform).toContain('Check for Updates…');
       const help = template.find((t) => t.label === 'Help')!;
       const item = (help.submenu as MenuItemConstructorOptions[])[0];
-      item.click?.(
-        undefined as never,
-        undefined as never,
-        undefined as never
-      );
+      // only the MIDDLE parameter (`browserWindow`) is declared
+      // `BaseWindow | undefined`; the other two are not optional
+      item.click?.(undefined as never, undefined, undefined as never);
       expect(checkForUpdates).toHaveBeenCalledTimes(1);
     }
   });

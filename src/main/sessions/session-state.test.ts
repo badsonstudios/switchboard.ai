@@ -598,13 +598,13 @@ describe('the bootstrap sweep takes what previous runs left (#290)', () => {
     for (const id of ids) age(stateDir, id, old);
     const real = fs.rmSync;
     let first = true;
-    vi.spyOn(fs, 'rmSync').mockImplementation(((p: fs.PathLike, o?: fs.RmOptions) => {
+    vi.spyOn(fs, 'rmSync').mockImplementation((p: fs.PathLike, o?: fs.RmOptions) => {
       if (first) {
         first = false;
         throw Object.assign(new Error('EPERM'), { code: 'EPERM' });
       }
       return real(p, o);
-    }) as typeof fs.rmSync);
+    });
 
     expect(sweepOrphanSessionStateDirs(stateDir, { log })).toEqual({
       removed: 1,

@@ -1623,7 +1623,7 @@ function sanitizeNotifications(n: unknown): Repaired<NotificationPrefsState> {
       // silencing nothing. Neither is `"10pm"`, which used to survive here, nor
       // an equal pair, which is a window of zero length wearing the costume of
       // a 24-hour one.
-      ...(usable ? { quietStart: x.quietStart as string, quietEnd: x.quietEnd as string } : {}),
+      ...(usable ? { quietStart: x.quietStart, quietEnd: x.quietEnd } : {}),
     },
     repaired: [
       ...badFields(n, [

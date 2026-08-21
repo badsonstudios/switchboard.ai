@@ -53,7 +53,7 @@ function harness(prior: Rule[] = [], knownCards: string[] = [CARD]) {
     warn: record('warn'),
     error: record('error'),
     child: () => log,
-  } as unknown as Logger;
+  };
 
   registerRulesIpc({
     broker,

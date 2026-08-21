@@ -202,7 +202,12 @@ export class UpdateService {
     // process, and "nothing in the update path throws" has to be true even if
     // someone changes the checker.
     const p = impl(deps)
-      .catch((err: unknown) => {
+      // The return-type ANNOTATION is what pins `state` to the literal union:
+      // `.catch<TResult>` infers `TResult` from this callback, so without it the
+      // object literal's `state` widens to `string` and `p` stops being a
+      // `Promise<UpdateCheckResult>` (#255 T0 — this used to be a trailing
+      // `as UpdateCheckResult`, which reads as a no-op assertion and is not).
+      .catch((err: unknown): UpdateCheckResult => {
         this.deps.log.warn('update check threw — treating as a failed check', {
           error: String(err),
         });
@@ -212,7 +217,7 @@ export class UpdateService {
           currentVersion: this.deps.currentVersion,
           reason: 'network',
           checkedAt: new Date((this.deps.now ?? Date.now)()).toISOString(),
-        } as UpdateCheckResult;
+        };
       })
       .finally(() => {
         this.inFlight = null;

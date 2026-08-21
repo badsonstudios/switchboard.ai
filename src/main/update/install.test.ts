@@ -80,9 +80,9 @@ function make(over: Record<string, unknown> = {}): Harness {
       launched.push(file);
       return 'quit' as const;
     },
-    downloadImpl: download as never,
-    fetchTextImpl: (async () => 'sidecar-text') as never,
-    verifyImpl: (async () => true) as never,
+    downloadImpl: download,
+    fetchTextImpl: async () => 'sidecar-text',
+    verifyImpl: async () => true,
     ...over,
   });
   return { installer, dir, pushed, prefs, launched, download };

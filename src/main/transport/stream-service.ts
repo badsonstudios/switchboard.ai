@@ -96,12 +96,12 @@ export class StreamSession {
     this.proc = spawn(file, argv, {
       cwd: opts.cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: buildEnv(process.env, opts.env) as NodeJS.ProcessEnv,
+      env: buildEnv(process.env, opts.env),
       // NEVER omit. S-11's first run set this on one spawn and missed it on
       // another, and flashed a console window on the user's desktop 96 times
       // over eight hours. Every spawn on Windows needs it.
       windowsHide: true,
-    }) as ChildProcessWithoutNullStreams;
+    });
 
     // setEncoding, NOT `chunk.toString('utf8')` per chunk. The S-10 probes do
     // the latter and it is subtly wrong: a multi-byte character straddling a

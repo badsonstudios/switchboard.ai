@@ -286,7 +286,7 @@ describe('files that are not shown', () => {
       ['not-a-file', "That's a folder"],
       ['unreadable', "couldn't be read"],
     ] as const) {
-      answer = () => ({ ok: false, reason }) as FileReadResult;
+      answer = () => ({ ok: false, reason });
       await mount(`/p/${reason}.md`);
       expect(q('[data-testid="doc-refusal"]')?.textContent).toContain(copy);
     }

@@ -98,9 +98,8 @@ function canonical(v: unknown, seen: Set<object>): string {
   if (v === undefined) return NUL + 'undefined';
   if (typeof v === 'number' && !Number.isFinite(v)) return NUL + 'num:' + String(v);
   if (v === null || typeof v !== 'object') return JSON.stringify(v) ?? NUL + 'undefined';
-  const o = v as object;
-  if (seen.has(o)) throw new Error('cyclic permission input');
-  seen.add(o);
+  if (seen.has(v)) throw new Error('cyclic permission input');
+  seen.add(v);
   try {
     if (Array.isArray(v)) return '[' + v.map((x) => canonical(x, seen)).join(',') + ']';
     const rec = v as Record<string, unknown>;
@@ -113,7 +112,7 @@ function canonical(v: unknown, seen: Set<object>): string {
       '}'
     );
   } finally {
-    seen.delete(o);
+    seen.delete(v);
   }
 }
 

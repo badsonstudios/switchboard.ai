@@ -34,7 +34,7 @@ function clipboard(files: File[], text = ''): Pick<DataTransfer, 'files' | 'getD
   return {
     files: files as unknown as FileList,
     getData: (t: string) => (t === 'text/plain' ? text : ''),
-  } as Pick<DataTransfer, 'files' | 'getData'>;
+  };
 }
 
 describe('which clipboard items count as an image', () => {
