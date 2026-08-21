@@ -18,18 +18,72 @@
 > NOTE: `.claude/work_files/loud-class.txt` (referenced by #650) is GONE — #650's
 > worker must regenerate the site list via the #649 scanner / 440.md.
 >
-> **Active workers:**
+> **Active workers (wave 2, dispatched ~10:15):**
 > | Issue | Worktree | Branch | Status |
 > |---|---|---|---|
-> | #255 T2+T4 (+#663 rider) | sb-wt-1 | feature/255-t2t4-renderer-tranches | DONE — PR #669 awaiting CI |
-> | #490 user envelope | sb-wt-2 | feature/490-user-envelope | DONE — PR #665 green, held for base-bump |
-> | #654 sanitizer label-for | sb-wt-3 | feature/654-label-for | dispatched |
+> | #650 value-channel refusals | sb-wt-1 | DONE — PR #676 (internal), CI running, needs base-bump after #672 |
+> | #544 shared directory watches | sb-wt-2 | DONE — PR #681 (internal) |
+> | #666+#667+#668 fake-fidelity bundle | sb-wt-3 | DONE — PR #679 (internal) |
 >
-> **Merge queue (ordered — strict up-to-date base protection):** 1) PR #669
-> (#255 T2/T4 + #663, internal) — up to date, merge on green. 2) PR #665
-> (#490, internal) — green but base moved (orchestrator doc commits);
-> update-branch AFTER #669 merges, then auto-squash-merge. Lesson folded into
-> the skill: batch PROGRESS pushes, land them right after merges.
+> **Wave 2/3 all DONE. Merge chain:** #672 and #676 both bumped ~11:45 and
+> racing (orchestrator error + recovery: #672 was merged-attempted while still
+> DRAFT, the `;`-chained branch delete then orphaned it; restored from
+> refs/pull/672/head, reopened, readied, bumped — lesson in the skill). Then
+> #679, #681 serially. NO pushes to main until the next merge lands (both
+> bumped branches would be invalidated). Next dispatches
+> AFTER #676 merges (renderer collision clears): events track (wt-1),
+> rail/cards track (wt-3), #618 (wt-2).
+> **#544 outcome:** WatchedDir owns one fs.watch per folder + one floor wheel
+> per service (M tabs/1 dir = 1 handle, timers O(1)); self-review caught a
+> degraded-folder-never-retried blocker (transient EMFILE would have pinned a
+> folder to the 2s floor); #412's 19 tests pass UNMODIFIED, 11 new (7 proven
+> red on main). Gates: 5798 unit, 349+3sk e2e. Filed #682 (sync stat burst on
+> SMB), #683 (fold() HOST_STYLE injectability). Lesson to skill: the suite is
+> `npm run e2e` (test:e2e does not exist). Handoff: orchestrator/544.md.
+> **#666-bundle outcome:** fake echoes isReplay:true unconditionally (verified
+> against the 2.1.233 binary); duplicate-ack pinned (echo = heard, not ran);
+> fake-stream-check imports the real builder (its local copy had ALREADY
+> drifted — missing uuid/origin); ref-impls doc gains 2.1 (binary as third
+> source). Gates: 5792 unit, check:fake-stream 19 assertions, 349+3sk e2e.
+> Filed #680 (feed ignores isReplay). Also: CLAUDE.md ref-impls row + CLI size
+> corrected by orchestrator; CHANGELOG has NO open unreleased section (v0.8.2
+> skipped it) — next user-facing merge/train must open it (#674 touches
+> CHANGELOG, likely already does). Handoff: orchestrator/666-bundle.md.
+>
+> **Wave 1 complete:** #490 → PR #665 (green, base-bumped, merge on re-green);
+> #255 T2/T4 + #663 → PR #669 **MERGED** (da0aa78, #663 closed, #255 umbrella
+> open pending #670); #654 → PR #672 (internal — sanitizer forbids <label>,
+> literal ids → useId in 3 dialogs; measured zero bare-in-prose across both
+> corpora; Chromium check showed label toggles/renames controls through
+> aria-modal; gates 5798 unit / 349+3sk e2e / 4 mutation runs red). #672 merges
+> after #665 (serial base-bumps; repo has NO auto-merge — manual on green).
+>
+> **Merge queue (serial):** 1) PR #672 (#654, internal) — bumped, e2e legs
+> finishing. 2) PR #676 (#650, internal) — after #672: bump, re-green, merge.
+> **#650 outcome:** story = answered() at the boundary + per-site judgement
+> fallback (typed union REJECTED in writing in refusal.ts + extensibility.md);
+> 48 sites / 41 answered() calls / 8 files, list regenerated + preserved in
+> handoff; scanner grew valuePositionOf() + 3 see-through modes, mutation-proved
+> 49/55 with the 6 blind seams documented (5 newly unit-tested). Headline save:
+> layout-restore refusal degrades knownCards to null NOT [] — [] would have
+> mass-pruned every pin/policy/layout. Gates: 5799 unit, 349+3sk e2e, scanner
+> clean. Filed: #677 (applyPushAnswer unpinned), #678 (null-vs-[] prune guard
+> decision + pin). Handoff: orchestrator/650.md. MERGED so far: #669 (da0aa78), #665 (010b5de
+> — its re-run CI doubled as the union check of the collapsed eslint config x
+> new provider code: green).
+> **Dan's queue (user-facing, do NOT merge):** PR #674 (#471 main-process i18n)
+> — ready-for-review. Test list in the PR; headline items: non-English locale
+> toast text, mid-session locale switch affects the NEXT toast instantly,
+> Action Center identity now correct (dev claims a NEW identity — old per-app
+> notification settings reset), expired-toast Allow may still fail (#675 filed,
+> needs installer CLSID).
+> **#471 outcome:** shared i18n base config (src/shared/i18n/), main-side
+> i18next instance, locale read from the workspace ui blob per t() call (zero
+> new IPC, instant mid-session switch). All four notification channels covered
+> (toast/push/webhook/spoken). Packaging landmine closed (i18next-icu's
+> undeclared intl-messageformat peer bundled into main). Only real locale is
+> en + generated pseudo — mechanism is the deliverable. DESIGN 5.21 updated.
+> Gates: 5800 unit / 350+3sk e2e x2. Handoff: orchestrator/471.md.
 > **#255 T2/T4 outcome:** all five tranches done, src/ whole on
 > recommendedTypeChecked, ZERO inline disables campaign-wide, config collapsed.
 > #663 landed + its renderer twin (FindProviderContribution.search). Real
@@ -42,7 +96,8 @@
 > **Filed this run:** #666 (fake isReplay echo fidelity), #667 (fake-stream-check
 > envelope drift), #668 (ref-impls doc: PATH binary as greppable third source),
 > #670 (String(err) catch-block class — #255 umbrella blocker), #671 (post-#255
-> type-hygiene stragglers).
+> type-hygiene stragglers), #673 (identifierPrefix on createRoot — closes the
+> id-collision space #654's useId move only narrowed).
 > **#490 outcome:** ADD both fields — uuid gates the CLI's entire duplicate-replay
 > guard (without it every frame always executes); origin stops a presumed-human
 > guess. Fresh randomUUID per delivery, pinned by 10 new unit tests. Gates: 5785

