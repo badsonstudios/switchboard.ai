@@ -96,22 +96,37 @@ function logText(): string {
  * needs, for as long as the machine needs — and fails LOUDLY, naming the
  * signal, if the signal never comes.
  *
- * The predicate runs from a TIMER callback, never inline, which is what makes
- * it safe to assert on the rest of the handler's work afterwards: the
- * listener's request handler runs start to finish synchronously, so a signal
- * observed from a later macrotask means everything that handler does *after*
- * that signal (ingest, the `permission-held` apply) has landed too.
+ * Waiting on ONE signal is enough to assert on the rest of the handler's work,
+ * because `handle`'s `end` callback — maybeHold, the listener fan-out, ingest,
+ * the `permission-held` apply — contains no `await` at all. Test code cannot
+ * run part-way through it, in any tick, so observing any signal at all means
+ * the whole callback finished. Prefer a MONOTONIC signal (`requests.length`,
+ * `applied.length`) over one that clears itself: `pendingRequests()` empties
+ * again when the hold times out, so polling for it in a short-`holdTimeoutMs`
+ * suite could miss its window and report "never parked" for something that
+ * parked and then expired.
+ *
+ * Hand-rolled rather than `vi.waitFor` (used across `health/service.test.ts`)
+ * on purpose: `waitFor` only retries when its callback THROWS, so a boolean
+ * predicate returning `false` would satisfy it immediately and every call site
+ * would have to be written as an `expect` — losing the plain-English signal
+ * name that makes the failure message worth reading.
  *
  * The deadline is a failure detector, not a timing assertion — deliberately
  * generous, and under vitest's own 5s test timeout so the failure carries this
  * message rather than an anonymous timeout.
  */
 async function until(signal: string, what: () => boolean, timeoutMs = 3_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
+  const started = Date.now();
+  const deadline = started + timeoutMs;
   for (;;) {
     if (what()) return;
     if (Date.now() >= deadline) {
-      throw new Error(`timed out after ${timeoutMs}ms waiting for ${signal}`);
+      // the elapsed time as well as the budget: on a box loaded enough for this
+      // to fire, "waited 3012ms" and "waited 9400ms" mean different things
+      throw new Error(
+        `timed out waiting for ${signal} (budget ${timeoutMs}ms, waited ${Date.now() - started}ms)`
+      );
     }
     await new Promise((r) => setTimeout(r, 2));
   }
@@ -253,7 +268,7 @@ describe('PreToolUse hold + decision round-trip (P2-E10-03, §5.16)', () => {
   it('holds a gated call until allow; verdict JSON returns to the hook', async () => {
     const t = heldToken('s1');
     const pending = postHeld(preToolUse('Edit'), t);
-    await until('the call to park', () => heldApplied.some((a) => a.ev.kind === 'permission-held'));
+    await until('the call to park', () => requests.length === 1);
     // parked: the request surfaced, the session flipped to needs-permission
     expect(requests).toHaveLength(1);
     expect(requests[0]).toMatchObject({ tool: 'Edit', sessionId: 's1' });
@@ -315,7 +330,7 @@ describe('PreToolUse hold + decision round-trip (P2-E10-03, §5.16)', () => {
   it('pendingRequests() replays in-flight holds; empties after decide (P0#3)', async () => {
     const t = heldToken('s1');
     const pending = postHeld(preToolUse('Edit'), t);
-    await until('the hold to park', () => held.pendingRequests().length === 1);
+    await until('the call to park', () => requests.length === 1);
     const replay = held.pendingRequests();
     expect(replay).toHaveLength(1);
     expect(replay[0]).toMatchObject({ tool: 'Edit', sessionId: 's1' });
@@ -327,7 +342,7 @@ describe('PreToolUse hold + decision round-trip (P2-E10-03, §5.16)', () => {
   it('unregisterSession releases in-flight holds (fail-open)', async () => {
     const t = heldToken('s1');
     const pending = postHeld(preToolUse('Edit'), t);
-    await until('the hold to park', () => held.pendingRequests().length === 1);
+    await until('the call to park', () => requests.length === 1);
     held.unregisterSession('s1');
     expect((await pending).body).toBe('{}');
   });
@@ -475,7 +490,7 @@ describe('a hold needs somebody to ask: window liveness (P2-E15-09, AR-P1-7)', (
   it('live window: the same call still holds (the control — else the test above is vacuous)', async () => {
     const t = heldToken('s1');
     const pending = postHeld(edit, t);
-    await until('the call to park', () => heldApplied.some((a) => a.ev.kind === 'permission-held'));
+    await until('the call to park', () => requests.length === 1);
     expect(requests).toHaveLength(1);
     expect(heldApplied.some((a) => a.ev.kind === 'permission-held')).toBe(true);
     held.decide(requests[0].requestId, 'allow');
@@ -485,7 +500,7 @@ describe('a hold needs somebody to ask: window liveness (P2-E15-09, AR-P1-7)', (
   it('the pendingPermissions replay path still works with a live window (must not regress)', async () => {
     const t = heldToken('s1');
     const pending = postHeld(edit, t);
-    await until('the hold to park', () => held.pendingRequests().length === 1);
+    await until('the call to park', () => requests.length === 1);
     // this is what a reloading renderer re-reads on mount — a reload leaves the
     // window neither destroyed nor crashed, so it must still find its hold here
     const replay = held.pendingRequests();
@@ -512,7 +527,7 @@ describe('a hold needs somebody to ask: window liveness (P2-E15-09, AR-P1-7)', (
     // the request that was already waiting when the user hit ✕
     const t = heldToken('s1');
     const pending = postHeld(edit, t);
-    await until('the hold to park', () => held.pendingRequests().length === 1);
+    await until('the call to park', () => requests.length === 1);
     expect(held.pendingRequests()).toHaveLength(1);
 
     // deliberately NOT flipping windowLive: releaseHeld is the teardown path
