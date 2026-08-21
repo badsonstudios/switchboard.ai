@@ -1,7 +1,8 @@
 // The PTY fake's transport REFUSAL, pinned (P2-E18-14).
 //
 // This is the single most load-bearing fact about the e2e suite, and until this
-// file it was asserted in exactly one place — an e2e in `stream.spec.ts` that
+// file it was asserted in exactly one place — an e2e now in
+// `stream-transport.spec.ts` that
 // launches the whole app to check a Terminal tab has a terminal behind it.
 //
 // The fact: since #381 the host asks every session for `stream`, and this
@@ -58,7 +59,7 @@ describe('the PTY fake refuses the stream transport (P2-E18-14)', () => {
   // compiled `fake-stream-cli.js` and throws a named error when there is none,
   // and the CI unit job does not run a build — so a test of it could only ever
   // fail there (the #107 lesson, in reverse). That branch is proved by
-  // `npm run check:fake-stream` and by `stream.spec.ts`, both of which run
+  // `npm run check:fake-stream` and by the `stream*.spec.ts` family, both of which run
   // against a build.
   it('the dual-capable fake still honours a PTY request, which is what makes switching testable', () => {
     expect(

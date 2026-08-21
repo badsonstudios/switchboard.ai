@@ -118,6 +118,10 @@
     "menuPin": "Pin session",
     "menuUnpin": "Unpin session",
     "menuLabel": "Actions for {title}",
+    "menuOrder": "Order in this group",
+    "menuMoveUp": "Move up",
+    "menuMoveDown": "Move down",
+    "reordered": "{title} is now {position} of {count} in {group}",
     "menuMove": "Move to group",
     "movedTo": "{title} moved to {group}",
     "movedOut": "{title} is no longer in a group",
@@ -201,6 +205,8 @@
     "menuStarting": "Still starting — controls unlock once the session is ready",
     "menuDead": "The session has ended — restart it to use session controls",
     "closeTab": "Close (ends the session)",
+    "closeDocumentTab": "Close document",
+    "closeDerivedTab": "Close",
     "closeTabIcon": "✕",
     "closeConfirm": "Close \"{title}\"? This ends the session and removes the card.",
     "closeAllConfirm": "Close {count, plural, one {# session} other {# sessions}}? This ends them and removes their cards.{spared, plural, =0 {} one { # pinned session is kept.} other { # pinned sessions are kept.}}",
@@ -264,7 +270,12 @@
     "dismiss": "Don't answer",
     "other": "Other",
     "otherPlaceholder": "Type your own answer…",
-    "otherLabel": "Your own answer to: {question}"
+    "otherLabel": "Your own answer to: {question}",
+    "tabs": "Questions in this request",
+    "tabFallback": "Question {n}",
+    "tabAnswered": "{label} — answered",
+    "tabUnanswered": "{label} — not answered yet",
+    "stillToAnswer": "Still to answer: {headers}"
   },
   "batchApproval": {
     "title": "{count, plural, one {# session wants} other {# sessions want}} to run {tool}",
@@ -291,7 +302,17 @@
     "ask": "🛡 ask",
     "auto-edit": "🛡 auto-edit",
     "full-auto": "🛡 full-auto",
-    "title": "Autonomy mode this session runs at"
+    "desc": {
+      "ask": "ask — every file change, shell command and web fetch comes to you first, and so does reading anything outside the session's folder. Full gatekeeping, and the safe default.",
+      "plan": "plan — Claude reads, explores and writes you a plan, but changes nothing until you approve it. The block is Claude Code's own; switchboard adds nothing to it and asks you nothing.",
+      "auto-edit": "auto-edit — Claude edits files inside the session's folder without asking you. Shell commands, web fetches, and reading anything outside the folder still come to you. Let it write code, and keep gatekeeping what it runs.",
+      "full-auto": "full-auto — nothing comes to you. Every tool call runs the moment Claude asks for it, including writes outside the session's folder. This is Claude Code's bypassPermissions, the mode --dangerously-skip-permissions turns on: deny rules in your settings still block, a few things always need a person (a question for you, rm on a critical path), and nothing else stops anything. It is not a sandbox."
+    },
+    "scope": {
+      "workspace": "Click to cycle. This sets the mode NEW sessions start at — each session keeps its own from then on.",
+      "session": "Click to cycle. The change applies the next time this session starts or resumes; Claude Code cannot switch mode mid-flight.",
+      "badge": "The mode this session is running at. Change it with the shield button under the prompt box."
+    }
   },
   "workspace": {
     "readOnlyTitle": "Nothing in this workspace will be saved.",
@@ -381,6 +402,9 @@
     "updateInstalled": "You're now on v{version}.",
     "updateAvailable": "v{version} is ready to install.",
     "updateNow": "Update",
+    "historyAdopted": "“{card}” had lost track of its conversation — it's been reconnected to the most recent one in its folder.",
+    "historyCeded": "“{card}” and “{kept}” were both pointing at one conversation. “{kept}” kept it, and “{card}” starts a new one — nothing was deleted. The manual explains how to swap them back.",
+    "historyDismiss": "Got it — hide the history notice for {card}",
     "gotIt": "Got it",
     "dismiss": "Dismiss",
     "dismissHint": "Remove this event from the list (the session is untouched)",
@@ -393,7 +417,10 @@
       "waiting": "{count, plural, =0 {nothing waiting} one {# session waiting} other {# sessions waiting}}",
       "notices": "{count, plural, one {# notice} other {# notices}}",
       "announce": "{count, plural, one {# notice} other {# notices}} in the events drawer — press {binding} to open",
-      "announceNoBinding": "{count, plural, one {# notice} other {# notices}} in the events drawer"
+      "announceNoBinding": "{count, plural, one {# notice} other {# notices}} in the events drawer",
+      "close": "Close the events drawer",
+      "closeHint": "Close the events drawer (Esc)",
+      "closeIcon": "✕"
     },
     "kind": {
       "done": "Done.",
@@ -545,9 +572,9 @@
       "directory": "Folders cannot be attached to a prompt. Drop it outside the prompt box to open it as a session, or drop the files inside it.",
       "unsupported": "That file type cannot be attached. Images (PNG, JPEG, GIF, WebP), text and source files, and PDFs work. For anything else, put its full file path in the prompt instead.",
       "terminalMode": "Files can only be sent by a session in Direct mode. This one runs in Terminal mode — use the Terminal tab instead.",
-      "notSent": "That prompt wasn't sent, so nothing has been cleared. The session may have stopped, or it may not be in Direct mode."
+      "notSent": "That prompt wasn't sent, so nothing has been cleared. The session may have stopped, or it may not be in Direct mode.",
+      "notRestored": "Not restored: {names}. Your typed prompt is kept when switchboard.ai restarts; attached files are not, because no copy of them is ever left on disk. Attach them again."
     },
-    "autonomyHint": "Autonomy for this session (applies on next resume)",
     "modelHint": "Model last seen in this session's transcript",
     "send": "Send to the session",
     "sendIcon": "↑",
@@ -605,7 +632,10 @@
     "newSession": "New session…",
     "closeSession": "Close session",
     "closeAllSessions": "Close all sessions (keeps pinned ones)",
+    "closeAllDocuments": "Close all documents (keeps popped-out ones)",
     "togglePin": "Pin / unpin session",
+    "reorderUp": "Move session up in its group",
+    "reorderDown": "Move session down in its group",
     "popOut": "Pop out / dock in session",
     "hideSession": "Hide session (keeps it running)",
     "collapseSession": "Collapse session to a strip",
@@ -644,6 +674,7 @@
     "disabled": {
       "noSuchSession": "There is no session in that slot",
       "noSessions": "No sessions are open",
+      "noDocuments": "No documents to close — popped-out ones are kept",
       "noActiveSession": "No session is focused",
       "noFindTarget": "No session or document is focused",
       "emptyQueue": "Nothing is waiting on you",
@@ -724,6 +755,7 @@
     "countTruncatedAtLeast": "{index} of {shown} shown ({total}+ found)",
     "groupCount": "{total} in {group}",
     "groupCountAtLeast": "{total}+ in {group}",
+    "groupCountUnknown": "— in {group}",
     "groupSeparator": " · ",
     "noticeInGroup": "{group}: {message}",
     "group": {
@@ -758,7 +790,6 @@
       "noSession": "There is no session here to search.",
       "diffNotReady": "The diff hasn't loaded yet — open a changed file and try again.",
       "noTerminal": "This session has no terminal, so there's no scrollback to search.",
-      "terminalNotShown": "Open the Terminal tab to search its scrollback — switchboard only keeps the terminal's view while you're looking at it.",
       "noDocument": "There is no document here to search.",
       "documentNotReady": "This document hasn't finished opening, so there's nothing to search yet.",
       "failed": "Find isn't available on this tab right now."
@@ -768,6 +799,8 @@
       "timedOut": "The search stopped early, so this is only part of what's there.",
       "noTranscript": "Nothing to search yet — this session hasn't written anything down.",
       "cannotJump": "These matches can be read here, but this session can't be scrolled to them.",
+      "terminalNotShown": "These matches are really in the terminal's scrollback — open the Terminal tab if you want to scroll to them.",
+      "terminalNotShownTruncated": "Showing the first {shown}. They are really in the terminal's scrollback — open the Terminal tab if you want to scroll to them.",
       "truncated": "Showing the first {shown} matches.",
       "failed": "The search couldn't run. The session is untouched."
     }

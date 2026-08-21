@@ -10,7 +10,7 @@
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { claudeAdapter, resetCliPathCache } from './claude';
+import { AUTONOMY_PERMISSION_MODE, claudeAdapter, resetCliPathCache } from './claude';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 
 let dir: string;
@@ -141,5 +141,25 @@ describe('stream composes with the other flags (P2-E18-08a)', () => {
 
     expect(args[args.indexOf('--permission-mode') + 1]).toBe('acceptEdits');
     expect(args).toContain('--permission-prompt-tool');
+  });
+
+  it('gives every autonomy the SAME permission mode on both transports (#587)', () => {
+    // The two transports build their args in one place but down different
+    // branches. `ask` in particular must not mean "Manual" on one and "whatever
+    // the CLI defaults to this month" on the other.
+    for (const autonomy of ['plan', 'ask', 'auto-edit', 'full-auto'] as const) {
+      const modeOn = (transport?: 'stream') => {
+        const args = claudeAdapter.buildSpawn({
+          cwd: dir,
+          sessionId: 's1',
+          stateDir: dir,
+          transport,
+          autonomy,
+        }).args;
+        return args[args.indexOf('--permission-mode') + 1];
+      };
+      expect(modeOn('stream')).toBe(modeOn(undefined));
+      expect(modeOn('stream')).toBe(AUTONOMY_PERMISSION_MODE[autonomy]);
+    }
   });
 });

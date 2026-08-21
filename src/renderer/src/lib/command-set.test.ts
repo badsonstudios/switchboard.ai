@@ -18,6 +18,7 @@ function deps(): CommandDeps & DepMocks {
     closeCard: vi.fn(),
     closeAllCards: vi.fn(),
     togglePin: vi.fn(),
+    reorderSession: vi.fn(),
     toggleCardView: vi.fn(),
     popOutCard: vi.fn(),
     hideCard: vi.fn(),
@@ -41,6 +42,7 @@ function deps(): CommandDeps & DepMocks {
     openAbout: vi.fn(),
     checkForUpdates: vi.fn(),
     openFile: vi.fn(),
+    closeAllDocuments: vi.fn(),
     openPushSetup: vi.fn(),
     openQuietHours: vi.fn(),
   };
@@ -123,6 +125,21 @@ describe('seed command set (E9-01)', () => {
     expect(byId(cmds, 'session.pin').binding).toBe('Mod+Alt+P');
     byId(cmds, 'session.pin').run(ctxWith(['a', 'b'], 'b'));
     expect(d.togglePin).toHaveBeenCalledWith('b');
+  });
+
+  it('the reorder PAIR steps the active card inside its own group (#559)', () => {
+    // A pair where pinning is a single toggle, because this is a STEP and not
+    // a state — there is no one gesture that could carry both directions. The
+    // chords sit one modifier away from the ladder's, which move the CARD
+    // rather than the row.
+    const d = deps();
+    const cmds = buildCommands(d);
+    expect(byId(cmds, 'session.reorder.up').binding).toBe('Mod+Alt+ArrowUp');
+    expect(byId(cmds, 'session.reorder.down').binding).toBe('Mod+Alt+ArrowDown');
+    byId(cmds, 'session.reorder.up').run(ctxWith(['a', 'b'], 'b'));
+    expect(d.reorderSession).toHaveBeenCalledWith('b', 'up');
+    byId(cmds, 'session.reorder.down').run(ctxWith(['a', 'b'], 'b'));
+    expect(d.reorderSession).toHaveBeenCalledWith('b', 'down');
   });
 
   it('close-all routes to the bulk closer and has NO binding', () => {
@@ -273,6 +290,37 @@ describe('seed command set (E9-01)', () => {
       'palette.open',
       'view.openFile',
     ]);
+  });
+
+  it('Close all documents is palette-only, and greys out with nothing to close (#543)', () => {
+    // The answer to the accretion #530 opened: with the peek slot gone, thirty
+    // opened files are thirty tabs and the only way out was thirty clicks.
+    const d = deps();
+    const cmd = byId(buildCommands(d), 'view.closeAllDocuments');
+
+    // UNBOUND, like `session.closeAll`: shutting every document at once is not
+    // a thing to reach by mistyping a chord.
+    expect(cmd.binding).toBeUndefined();
+    expect(cmd.scope).toBe('app');
+
+    // COUNTED, not merely "are documents open": the count is of the CLOSABLE
+    // ones, so a workspace whose only document is popped out (and therefore
+    // spared — see lib/document-panels' closableDocuments) greys this out and
+    // says why, instead of running and appearing broken.
+    const none: CommandContext = { ...ctxWith([]), closableDocumentCount: 0 };
+    expect(cmd.enabled?.(none)).toBe(false);
+    expect(cmd.disabledReasonKey).toBe('commands.disabled.noDocuments');
+
+    // ...and a context that never heard of documents at all (every unit harness
+    // built before #543) reads as zero rather than throwing.
+    expect(cmd.enabled?.(ctxWith([]))).toBe(false);
+
+    const some: CommandContext = { ...ctxWith([]), closableDocumentCount: 3 };
+    expect(cmd.enabled?.(some)).toBe(true);
+    cmd.run(some);
+    expect(d.closeAllDocuments).toHaveBeenCalledTimes(1);
+    // it is a DOCUMENT command: no session is touched on the way past
+    expect(d.closeAllCards).not.toHaveBeenCalled();
   });
 
   it('every i18n key a command carries resolves in en.json (the palette shows these)', () => {

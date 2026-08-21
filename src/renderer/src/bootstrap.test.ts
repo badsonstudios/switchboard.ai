@@ -18,6 +18,7 @@ function noopDeps(): CommandDeps {
     closeCard: () => {},
     closeAllCards: () => {},
     togglePin: () => {},
+    reorderSession: () => false,
     toggleCardView: () => {},
     popOutCard: () => {},
     hideCard: () => {},
@@ -41,6 +42,7 @@ function noopDeps(): CommandDeps {
     openAbout: () => {},
     checkForUpdates: () => {},
     openFile: () => {},
+    closeAllDocuments: () => {},
     openPushSetup: () => {},
     openQuietHours: () => {},
   };

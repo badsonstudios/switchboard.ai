@@ -85,21 +85,28 @@ describe('the notice marker speaks for all three tenants', () => {
     expect(liveNotices({ incidents: [{ id: 'i1' }] })).toBe(1);
   });
 
+  it('is raised by a history repair (#539)', () => {
+    expect(liveNotices({ historyRepairs: [{ id: 'r1' }] })).toBe(1);
+  });
+
   it('counts them, so the accessible name can say how many', () => {
     expect(
       liveNotices({
         updateNotice: { kind: 'installed', version: '0.6.0' },
         reconnectOffer: true,
         incidents: [{ id: 'i1' }, { id: 'i2' }],
+        historyRepairs: [{ id: 'r1' }, { id: 'r2' }],
       })
-    ).toBe(3); // three TENANTS, not four notices — two incidents are one card
+    ).toBe(4); // four TENANTS, not six notices — a slot's rows are one card
   });
 
   it('stays down for the empty shapes each tenant actually sends', () => {
     // every one of these is a real value from App: a null notice, a false
     // offer, and the empty array `serviceHealth.incidents` is when all is well
     expect(liveNotices({})).toBe(0);
-    expect(liveNotices({ updateNotice: null, reconnectOffer: false, incidents: [] })).toBe(0);
+    expect(
+      liveNotices({ updateNotice: null, reconnectOffer: false, incidents: [], historyRepairs: [] })
+    ).toBe(0);
   });
 
   it('is independent of the queue — a notice with an empty queue still marks', () => {

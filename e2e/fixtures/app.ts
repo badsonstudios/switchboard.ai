@@ -600,7 +600,8 @@ export async function launchSecondInstance(
  * an adapter that cannot speak stream-json is honoured, so `session-manager.ts`
  * falls back. **Every session launched through here therefore runs on the PTY,
  * which is no longer the configuration most users are in.** The refusal itself
- * is pinned by `stream.spec.ts` → "a PTY session still gets a real terminal"
+ * is pinned by `stream-transport.spec.ts` → "a PTY session still gets a real
+ * terminal"
  * and by `providers/fake.test.ts`, so it cannot change meaning silently.
  *
  * Most specs do not care: a rail reorder or a palette row behaves the same on
@@ -614,8 +615,11 @@ export async function launchSecondInstance(
  *
  * **Those carry a literal `[pty]` prefix in their `describe`/`test` title**, and
  * their file header carries a `TRANSPORT SCOPE` note saying what is
- * PTY-by-construction and where the Direct counterpart lives (`stream.spec.ts`,
- * `stream-approval.spec.ts`, `stream-attention.spec.ts`, `stream-feed.spec.ts`).
+ * PTY-by-construction and where the Direct counterpart lives — the
+ * `stream*.spec.ts` family: `stream.spec.ts` (the turn loop),
+ * `stream-transport.spec.ts`, `stream-resume.spec.ts`,
+ * `stream-permissions.spec.ts`, `stream-trust.spec.ts`,
+ * `stream-approval.spec.ts`, `stream-attention.spec.ts`, `stream-feed.spec.ts`.
  *
  * Tag at the HIGHEST level that is wholly PTY-scoped, and only there — a
  * `describe` when every test under it is, individual tests when the group is
@@ -758,7 +762,8 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
     // throws usually fails the test, Playwright restarts the worker, and a
     // teardown parked in `app.close()` when that happens never reaches the kill,
     // in exactly the wedged-main-process case that burns the whole budget. And
-    // killing promptly keeps the pid-recycle window (`stream.spec.ts`) short
+    // killing promptly keeps the pid-recycle window (`fixtures/stream-session.ts`)
+    // short
     // rather than waiting out a graceful close that may already have reaped it.
     // Killing before the `rmSync` below is also what lets that removal succeed
     // on Windows, where the live process holds the folder open.
@@ -983,6 +988,49 @@ export async function sessionStatuses(a: LaunchedApp): Promise<Map<string, strin
     status: string;
   }>;
   return new Map(records.map((r) => [r.identity.title, r.status]));
+}
+
+/**
+ * Put the app AWAY — no window of ours focused — and PROVE it stuck (#538).
+ *
+ * Every `WHEN_AWAY` rule (the toast, the voice, push) is gated on the user not
+ * looking at us, so five specs opened with a bare
+ * `BrowserWindow.getAllWindows()[0].blur()` and then waited for `isFocused()`
+ * to go false. That is a fire-and-forget command with a passive wait behind it,
+ * and on Windows the command can simply not take: deactivating a window means
+ * handing the foreground to the next window in the Z-order, and when that
+ * neighbour is itself mid-destruction — routine on a machine running several
+ * Electron suites at once — the request is dropped. Nothing re-sent it, so the
+ * spec then sat out its whole timeout waiting for a state change that had
+ * already been lost.
+ *
+ * MEASURED (#538, under ~4x load): the blur normally lands in **1-5 ms**, and
+ * in the one repeat that failed it never landed at all — `isFocused()` was
+ * still true 15 s later. So the failure is a DROPPED command, not a slow one,
+ * which is exactly why this re-issues the blur on every attempt instead of
+ * waiting longer. A longer timeout cannot deliver a message nobody re-sent.
+ *
+ * EVERY window, not `[0]`: the rules ask `visibilityAcross(...)`, so a single
+ * focused popout is enough to keep the whole app "in front of the user" and
+ * hold every away-rule back.
+ *
+ * Throws — with the state it could not reach — rather than returning a boolean:
+ * a spec that carried on from here would go on to prove its rule fired for a
+ * reason it did not have.
+ */
+export async function blurApp(a: LaunchedApp, timeoutMs = 15_000): Promise<void> {
+  await pollAsync(
+    async () => {
+      const stillFocused = await a.app.evaluate(({ BrowserWindow }) => {
+        const wins = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed());
+        for (const w of wins) w.blur();
+        return wins.filter((w) => w.isFocused()).length;
+      });
+      return stillFocused === 0 ? true : null;
+    },
+    `the app never went away: a window still reports isFocused() after repeatedly asking every window to blur (${timeoutMs}ms)`,
+    timeoutMs
+  );
 }
 
 /**

@@ -3,6 +3,7 @@ import type { PluginOption } from 'vite';
 import react from '@vitejs/plugin-react';
 import { CSP_PROD_META } from './src/shared/csp';
 import { describeIdentity, probeBuildIdentity } from './src/build/git-identity';
+import { stampChunkFileNames, stampManualChunks } from './src/build/stamp-chunk';
 
 /**
  * Build identity (P2-E15-15) — git SHA + branch + dirty + build time, asked
@@ -97,6 +98,18 @@ export default defineConfig({
           // main app window + the same-origin popout window dockview opens
           index: 'src/renderer/index.html',
           popout: 'src/renderer/popout.html',
+        },
+        /**
+         * The build stamp gets a chunk of its own, at a name with no [hash]
+         * in it (#630). Without this, `builtAt` — a millisecond timestamp —
+         * sat inside the hashed `index` chunk, so two builds of the same
+         * commit renamed index and, transitively, eight more chunks. See
+         * src/build/stamp-chunk.ts for the full mechanism and for why an
+         * unhashed asset name is safe for this renderer.
+         */
+        output: {
+          manualChunks: stampManualChunks,
+          chunkFileNames: stampChunkFileNames,
         },
       },
     },

@@ -126,6 +126,36 @@ lived only there and three consecutive items sailed past it.
   there is no unreleased section at all (a cut skipped its step 2), open one and
   say so in the PR.
 
+## Comparing two builds of the same commit (added 2026-08-20, #630)
+
+Bisecting a flake, proving a rebuild changed nothing, or chasing a
+stale-bundle hunch all end in the same question: **did these two builds
+produce the same app?** They can now be compared directly.
+
+`npm run build` is deterministic apart from the build stamp itself. Two builds
+of the same clean commit emit **identical file names**, and differ in exactly
+two files — both of which are the stamp:
+
+- `out/renderer/assets/build-stamp.js`
+- `out/main/index.js`
+
+Anything else that differs is a real difference. The recipe:
+
+```bash
+npm run build && cp -r out /tmp/build-a
+npm run build && cp -r out /tmp/build-b
+diff -qr /tmp/build-a /tmp/build-b
+```
+
+Before #630 this did not work: `builtAt` is a millisecond timestamp, it sat
+inside the content-hashed `index` chunk, and a new hash there renamed eight
+more chunks transitively — nine files churned on every build and the diff was
+all false positives. `src/build/stamp-chunk.ts` now gives the stamp a chunk of
+its own at a fixed, unhashed name, so nothing downstream of it moves. Do not
+"simplify" that away, and do not make `builtAt` stable instead: the timestamp
+is what makes a stale `out/` visible (`scripts/bundle-guard.js`, the About
+panel).
+
 ## Plan files
 
 - `01-spike-foundations.md` — de-risking spike (current)

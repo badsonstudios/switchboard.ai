@@ -121,6 +121,82 @@ test.describe('sessions rail', () => {
     await expect(w.locator('.dv-active-tab')).toContainText('· diff', { timeout: 15_000 });
   });
 
+  test('the right-click menu stays INSIDE the window, however little room is under it (#641)', async () => {
+    // The regression #559 fired and nothing caught until CI: the rail's menu is
+    // `position: fixed` at the pointer, so a menu taller than the room beneath
+    // it hangs off the bottom edge — and a fixed box has no scroll container,
+    // so the items past the fold are unreachable. `Move up`/`Move down` added
+    // ~72px, the bottom radio landed 7px below the windows-latest runner's
+    // 655px viewport, and `click()` retried for 30s against an element
+    // Playwright itself called "visible, enabled and stable".
+    //
+    // Stated as geometry rather than inherited from the developer's monitor:
+    // the window is squeezed to its own 600px minimum, which is short enough
+    // that this menu cannot fit below row 2 on ANY machine — and the test
+    // asserts that precondition, so it can never quietly stop testing anything.
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    const first = path.basename(folder);
+    await expect(row(w, first)).toBeVisible({ timeout: 25_000 });
+
+    // a second session, so the menu carries #559's `Order in this group`
+    // section — the shape that actually shipped, not a trimmed-down one
+    const second = tempProjectFolder();
+    await a.app.evaluate(({ dialog }, d) => {
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [d] });
+    }, second);
+    await w.getByRole('button', { name: '+ session' }).click();
+    const title = path.basename(second);
+    await expect(row(w, title)).toBeVisible({ timeout: 25_000 });
+
+    await a.app.evaluate(({ BrowserWindow }) => {
+      const win = BrowserWindow.getAllWindows()[0];
+      const b = win.getBounds();
+      win.setBounds({ x: b.x, y: b.y, width: 1024, height: 600 }); // the app's own minimum
+    });
+    await expect
+      .poll(async () => w.evaluate(() => window.innerHeight), { timeout: 10_000 })
+      .toBeLessThan(600);
+
+    const rowBox = (await row(w, title).boundingBox())!;
+    await row(w, title).click({ button: 'right' });
+    const menu = w.getByRole('menu');
+    await expect(menu).toBeVisible();
+
+    const geom = await w.evaluate(() => {
+      const el = document.querySelector('[role="menu"]') as HTMLElement;
+      const last = document.querySelector('[data-focus-item="none"]') as HTMLElement;
+      const m = el.getBoundingClientRect();
+      const l = last.getBoundingClientRect();
+      return {
+        viewport: window.innerHeight,
+        menu: { top: m.top, bottom: m.bottom, height: el.scrollHeight },
+        last: { top: l.top, bottom: l.bottom },
+      };
+    });
+
+    // the precondition: at the pointer, this menu genuinely does not fit
+    const pointerY = rowBox.y + rowBox.height / 2;
+    expect(
+      pointerY + geom.menu.height,
+      'the window is no longer tight enough for this test to mean anything'
+    ).toBeGreaterThan(geom.viewport);
+
+    // ...and it was placed anyway — whole menu on screen, last item included
+    expect(geom.menu.top).toBeGreaterThanOrEqual(0);
+    expect(geom.menu.bottom).toBeLessThanOrEqual(geom.viewport);
+    expect(geom.last.bottom).toBeLessThanOrEqual(geom.viewport);
+
+    // and it is OPERABLE, not merely on screen. A short timeout on purpose: the
+    // failure this guards against is a 30s click retry, and a regression should
+    // say so in seconds.
+    await w.locator('[data-focus-item="none"]').click({ timeout: 10_000 });
+    await expect(menu).toHaveCount(0);
+    await row(w, title).click({ button: 'right' });
+    await expect(w.locator('[data-focus-item="none"]')).toHaveAttribute('aria-checked', 'true');
+  });
+
   test('a session can be dropped ANYWHERE on a group card, not just its header', async () => {
     // Dan: "I have to drag it to the little folder icon when really I should
     // just be able to drag it right into the group window anywhere."

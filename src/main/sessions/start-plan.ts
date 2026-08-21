@@ -243,6 +243,20 @@ export function planSessionStart(input: StartPlanInput, host: HookSettingsHost):
   // they carry an id with no transcript, no ancestors, and their real history
   // under an id nothing now refers to. The lineage prevents the next one; only a
   // look in the folder recovers the ones already made.
+  //
+  // A CEDED ID IS NOT A TICKET TO A REPAIR (#539), and this is deliberately
+  // `candidates.length` and not "has this card ever held a conversation". A card
+  // that gave its only conversation to a duplicate holds nothing resumable, so
+  // widening the precondition to include ceded ids reads like the kind thing to
+  // do — and it is exactly wrong. The adoption rests on one inference: *my
+  // conversation is genuinely missing from disk, so the newest unclaimed one in
+  // this folder is probably the one I lost.* For a ceded card the evidence is
+  // the opposite — its conversation is present and demonstrably someone else's —
+  // and `ownIds` would be EMPTY, so the adapter's own "are they really absent?"
+  // guard becomes vacuous at the same moment. It would take the newest unrelated
+  // transcript in a busy folder and append the user's next turn to it. So a
+  // fully-ceded card starts fresh, keeps its ceded pointer, and the notice plus
+  // the manual's hand-edit are the way back.
   if (!resumeSessionId && !resumeBroken && candidates.length > 0 && caps?.resume?.findOrphaned) {
     // NOT `?? []`. This list is the guarantee that two cards cannot end up in
     // one conversation, so a workspace read that threw skips the repair rather

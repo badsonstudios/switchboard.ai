@@ -26,14 +26,27 @@ import { IdentityChip, identityBadgeStyle } from './IdentityChip';
 import { DiffPane } from './DiffPane';
 import { DocumentViewer } from './DocumentViewer';
 import { baseName } from '../lib/document-kind';
-import { forgetDocumentPanel, isDocumentPanelId, planDocumentOpen } from '../lib/document-panels';
+import {
+  closableDocuments,
+  forgetDocumentPanel,
+  isDocumentPanelId,
+  planDocumentOpen,
+} from '../lib/document-panels';
 import { UsageStrip } from './UsageStrip';
 import { GitContext, GitStatusDto } from './GitContext';
 import { Usage, ZERO_USAGE } from '../lib/usage';
 import type { BindingDiagnostics, BindingState } from '../../../shared/transcripts';
-import { Box, boxOnAnyDisplay, RescuedPopout, sanitizePopoutLayout } from '../lib/layout';
+import {
+  Box,
+  boxOnAnyDisplay,
+  isDerivedPanelId,
+  prunePopoutGroups,
+  RescuedPopout,
+  sanitizePopoutLayout,
+} from '../lib/layout';
 import { captureSlot, openerRelative, placeAt } from '../lib/dock-slot';
 import { hasPanel, slotIsLive, stepDown, stepUp } from '../lib/ladder';
+import { autonomyTooltip, DEFAULT_AUTONOMY, isAutonomy, nextAutonomy } from '../lib/autonomy';
 import { submitTarget } from '../lib/presentation-policy';
 import { bulkClose } from '../lib/pinning';
 import { newSessionHostGroup } from '../lib/new-session-target';
@@ -62,6 +75,7 @@ import { addPopoutWindow, removePopoutWindow, subscribePopoutWindows } from '../
 import { strandedByGroup } from '../lib/popout-rescue';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { pruneDrafts } from '../lib/composer-draft';
+import { pruneAttachmentDrafts } from '../lib/composer-attachment-draft';
 import { setDraggedCard } from '../lib/drag-context';
 import { findBarState, subscribeFindBar } from '../lib/find-bar-state';
 import { FindBar } from './FindBar';
@@ -235,6 +249,28 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
   const badge = React.useSyncExternalStore(subscribeStore, () =>
     sessionStore.getCardBadge(cardId)
   );
+  // WHAT THE ✕ ACTUALLY DOES, said in three strings rather than one (#543).
+  //
+  // Every tab in the app used to be titled "Close (ends the session)", which is
+  // true of a session card and false of everything else this same component
+  // draws a tab for: a `doc-` viewer closes no session, and neither does a
+  // `diff-` Changes tab. #530 made the first one load-bearing — the ✕ is now
+  // the ONLY way to close a document — but the second was always wrong, and the
+  // rule below fixes the sentence rather than one instance of it.
+  //
+  // The condition is the one the click handler already branches on: `cardId` is
+  // exactly "closing this ends a session", which is why it is also what decides
+  // whether we confirm. A tab with no card is then a document or a derived
+  // panel, told apart by the id prefix — `isDocumentPanelId`, the same
+  // authority commands use.
+  //
+  // `?? ''` because a unit fake may hand this component a panel api with no id;
+  // dockview always sets one.
+  const closeLabelKey = cardId
+    ? 'grid.closeTab'
+    : isDocumentPanelId(props.api.id ?? '')
+      ? 'grid.closeDocumentTab'
+      : 'grid.closeDerivedTab';
   return (
     <div style={{ paddingInline: 8, display: 'flex', alignItems: 'center', gap: 4, blockSize: '100%' }}>
       {/* undefined accent/badge are passed through as undefined on purpose: the
@@ -253,7 +289,7 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
           props.api.close();
         }}
         onMouseDown={(e) => e.stopPropagation()} // don't start a tab drag
-        title={t('grid.closeTab')}
+        title={t(closeLabelKey)}
         style={{
           background: 'transparent',
           border: 'none',
@@ -318,6 +354,17 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const cardTitle = React.useSyncExternalStore(subscribeStore, () =>
     sessionStore.getCardTitle(cardId)
   );
+  // The rest of the identity, for the header a card draws while it has NO live
+  // session (#216, the suspended state). `live.accent` / `live.badge` below are
+  // the same two fields off the session record; these are the card record's
+  // copy, which is the one that still exists when the session does not — the
+  // same pair, from the same `sessions:cards` push, that the card TAB reads.
+  const cardAccent = React.useSyncExternalStore(subscribeStore, () =>
+    sessionStore.getCardAccent(cardId)
+  );
+  const cardBadge = React.useSyncExternalStore(subscribeStore, () =>
+    sessionStore.getCardBadge(cardId)
+  );
   const view = presentation.view;
   const poppedOut = presentation.poppedOut;
   const suspended = presentation.suspended;
@@ -330,8 +377,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const [cardAutonomy, setCardAutonomy] = React.useState<string | undefined>(undefined);
   const cycleCardAutonomy = (): void => {
     if (!cardId) return;
-    const order = ['ask', 'plan', 'auto-edit', 'full-auto'];
-    const next = order[(order.indexOf(cardAutonomy ?? 'ask') + 1) % order.length];
+    const next = nextAutonomy(cardAutonomy);
     setCardAutonomy(next);
     void window.switchboard.sessions.setAutonomy(cardId, next);
   };
@@ -622,9 +668,8 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     spawning.current = true;
     // titlebar autonomy chip applies to NEW cards; main keeps a card's own
     // autonomy across resumes
-    const stored = uiGet<string>('autonomy', 'ask');
-    const autonomy =
-      stored === 'plan' || stored === 'auto-edit' || stored === 'full-auto' ? stored : 'ask';
+    const stored = uiGet<string>('autonomy', DEFAULT_AUTONOMY);
+    const autonomy = isAutonomy(stored) ? stored : DEFAULT_AUTONOMY;
     // A start that did not happen, from either of the two ways to learn that
     // (#347). `sessions:create` used to REJECT for everything — bad input, a
     // folder that is gone, a spawn that failed — and this effect's `.catch` was
@@ -1053,6 +1098,38 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // (#358). Computed from the same three values the branch below switches on,
   // through the one function that knows their order.
   const said = overlaySaid({ live: !!live, suspended, ended });
+  /**
+   * §5.8's maximize, verbatim: "double-click a session header (or one command)
+   * toggles maximize and restores the prior layout on repeat". The command is
+   * the keyboard path — hiding chrome never removes capability, and a
+   * double-click has none.
+   *
+   * Anything in the header that owns its own clicks keeps them: the task label
+   * is click-to-edit and the buttons act on one press, so a second press there
+   * is not a request to rearrange the workspace. Controls opt out by BEING one
+   * (a button, a field) or by marking themselves — the marker is what covers
+   * the click-to-edit task label, which is a plain span and would otherwise
+   * depend on React having swapped its input in between the two clicks.
+   *
+   * One handler for both headers this card can draw (#216): the suspended one
+   * has no controls to exempt today, and the exemptions are the part that must
+   * not be re-derived if it ever grows one.
+   */
+  const maximizeOnDoubleClick = (e: React.MouseEvent): void => {
+    const el = e.target as HTMLElement;
+    if (el.closest('button, input, textarea, select, [data-no-maximize]')) return;
+    if (cardId) toggleMaximizeCard(props.containerApi, cardId);
+  };
+  // ONE identity for whichever header is drawn (§5.11). The live session's copy
+  // first — it is the record this card is bound to right now — and the card
+  // record's copy under it, which is the one that still exists when the session
+  // does not. They cannot disagree for long (main reuses `prior?.identity` on
+  // every resume), but they DO differ for a frame or two: a card restored at
+  // boot renders before the first `sessions:cards` push lands, and reading only
+  // one of them there is a grey border that pops to the real accent in front of
+  // the user.
+  const headerAccent = live?.accent ?? cardAccent;
+  const headerBadge = live?.badge ?? cardBadge;
   const changed = git?.files.length ?? 0;
   // Contributed view tabs (§5.23). The strip and the panel bodies below both
   // render from this list, so a new tab is a contribution plus a bootstrap
@@ -1210,69 +1287,23 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         ) : null}
       </div>
       {live ? (
-        <div style={{ flex: 1, minInlineSize: 0, display: 'flex', flexDirection: 'column', position: 'relative' }}>
+        <div style={cardColumn}>
           {/* card header (.chead) — accent border, identity, status, window controls */}
           <div
             data-testid="card-header"
             title={t('layout.maximizeHint')}
-            /* §5.8's maximize, verbatim: "double-click a session header (or one
-               command) toggles maximize and restores the prior layout on
-               repeat". The command is the keyboard path — hiding chrome never
-               removes capability, and a double-click has none.
-               Anything in the header that owns its own clicks keeps them: the
-               task label is click-to-edit and the buttons act on one press, so
-               a second press there is not a request to rearrange the
-               workspace. Controls opt out by BEING one (a button, a field) or by
-               marking themselves — the marker is what covers the click-to-edit
-               task label, which is a plain span and would otherwise depend on
-               React having swapped its input in between the two clicks. */
-            onDoubleClick={(e) => {
-              const el = e.target as HTMLElement;
-              if (el.closest('button, input, textarea, select, [data-no-maximize]')) return;
-              if (cardId) toggleMaximizeCard(props.containerApi, cardId);
-            }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 9,
-              paddingInline: 10,
-              paddingBlock: 7,
-              borderBlockEnd: '1px solid var(--border)',
-              borderInlineStart: `3px solid ${live.accent ?? 'var(--faint)'}`,
-              background: 'var(--panel2)',
-            }}
+            onDoubleClick={maximizeOnDoubleClick}
+            style={cheadStyle(headerAccent)}
           >
             {/* the SAME badge the tab above draws (#269) — §5.11's "renders
                 identically everywhere", and the accent is the field, never the
                 ink: as 9px text it measured 1.80-3.11:1 on daylight */}
-            {live.badge && (
-              <span data-testid="identity-badge" style={identityBadgeStyle(live.accent)}>
-                {live.badge}
+            {headerBadge && (
+              <span data-testid="identity-badge" style={identityBadgeStyle(headerAccent)}>
+                {headerBadge}
               </span>
             )}
-            <span
-              data-testid="card-header-name"
-              style={{
-                fontWeight: 650,
-                fontSize: 13,
-                color: 'var(--text)',
-                fontFamily: 'var(--font-ui)',
-                whiteSpace: 'nowrap',
-                // #294. `nowrap` alone made the row a promise it could not keep:
-                // a flex item's automatic minimum size is its own content until
-                // its inline-axis `overflow` stops being `visible` (CSS Sizing 3
-                // §5.2), so a 120-character title — main's cap — grew the header
-                // past its card and carried the status pill and the window
-                // buttons off the end with it. The controls, not the name, were
-                // what got lost. Measured, not assumed: with these two the
-                // header overflows its card by 0px; without them, by 1170px at
-                // a 1280-wide window. This is the pair IdentityChip and the rail
-                // rows already truncate with — no `min-inline-size` needed, and
-                // none used there either.
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-              }}
-            >
+            <span data-testid="card-header-name" style={cheadName}>
               {headerTitle}
             </span>
             {editingLabel ? (
@@ -1325,7 +1356,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
             <span style={{ flex: 1, minInlineSize: 8 }} />
             {live.autonomy && live.autonomy !== 'ask' && (
               <span
-                title={t('autonomy.title')}
+                title={autonomyTooltip(t, live.autonomy, 'badge')}
                 style={{
                   fontSize: 9.5,
                   fontFamily: 'var(--font-mono)',
@@ -1762,7 +1793,49 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
           </div>
         </div>
       ) : suspended ? (
-        <div style={{ ...overlayBackdrop, position: 'relative', flex: 1 }}>{suspendedOverlay}</div>
+        <div style={cardColumn}>
+          {/* THE SUSPENDED CARD'S HEADER (#216). A restored-not-yet-resumed
+              session drew no header at all, so §5.8's "double-click a session
+              header toggles maximize" had nothing to land on — the one gesture
+              in the ladder that a suspended card could not be given, while the
+              binding and the palette command worked on it the whole time. The
+              manual had to write that exception down; this is the exception
+              going away.
+
+              The SUSPENDED-APPROPRIATE SUBSET of the live header, and nothing
+              else: identity (accent, badge, name — §5.11's one identity), the
+              state in a word, and the maximize gesture. Deliberately NOT the
+              controls: the collapse/pop-out/⋯ buttons act on a running session,
+              and the two things this card genuinely offers — Resume and Close —
+              are already the overlay's own buttons, two centimetres below.
+              Repeating them in the header would be a second way to do the same
+              thing on the smallest surface the card has.
+
+              The pill says `suspended` from the branch rather than from the
+              status state, which is still whatever the session last reported
+              (or `starting`, for a card restored this launch). Same token the
+              rail row and the urgency lamp use for this card right now —
+              presentStatus is the one vocabulary, so the card cannot look like
+              two different states in two places. */}
+          <div
+            data-testid="card-header"
+            title={t('layout.maximizeHint')}
+            onDoubleClick={maximizeOnDoubleClick}
+            style={cheadStyle(headerAccent)}
+          >
+            {headerBadge && (
+              <span data-testid="identity-badge" style={identityBadgeStyle(headerAccent)}>
+                {headerBadge}
+              </span>
+            )}
+            <span data-testid="card-header-name" style={cheadName}>
+              {headerTitle}
+            </span>
+            <span style={{ flex: 1, minInlineSize: 8 }} />
+            <StatusPill status="suspended" label={t('status.suspended')} />
+          </div>
+          <div style={{ ...overlayBackdrop, position: 'relative', flex: 1 }}>{suspendedOverlay}</div>
+        </div>
       ) : ended ? (
         // spawn/resume failed before a terminal existed — still recoverable, and
         // this is the branch a never-started card lands on (#355)
@@ -1796,6 +1869,63 @@ function docTheme(): { theme: string; colorScheme: 'light' | 'dark' } {
     colorScheme: d.colorScheme === 'light' ? 'light' : 'dark',
   };
 }
+
+/**
+ * The card header row (.chead) — accent border, identity, status.
+ *
+ * A function at module scope rather than two object literals inside the render
+ * because a card has TWO headers to draw (#216): the live one, with its window
+ * controls, and the suspended one, which is the same row minus every control
+ * that would act on a session that is not running. §5.11's "one identity,
+ * rendered identically everywhere" is a promise about pixels, and the way that
+ * promise rots is a second copy of the row drifting from the first.
+ *
+ * The accent is a parameter because it comes from two places: the live session
+ * record while there is one, and the card record in the store while there is
+ * not. Same field (`identity.accentColor`), two routes to it.
+ */
+function cheadStyle(accent?: string): React.CSSProperties {
+  return {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 9,
+    paddingInline: 10,
+    paddingBlock: 7,
+    borderBlockEnd: '1px solid var(--border)',
+    borderInlineStart: `3px solid ${accent ?? 'var(--faint)'}`,
+    background: 'var(--panel2)',
+  };
+}
+
+/** The column a card's header and body share — both branches that draw a
+ *  header (live, and #216's suspended one) are this box. */
+const cardColumn: React.CSSProperties = {
+  flex: 1,
+  minInlineSize: 0,
+  display: 'flex',
+  flexDirection: 'column',
+  position: 'relative',
+};
+
+/** The session name in a card header. */
+const cheadName: React.CSSProperties = {
+  fontWeight: 650,
+  fontSize: 13,
+  color: 'var(--text)',
+  fontFamily: 'var(--font-ui)',
+  whiteSpace: 'nowrap',
+  // #294. `nowrap` alone made the row a promise it could not keep: a flex
+  // item's automatic minimum size is its own content until its inline-axis
+  // `overflow` stops being `visible` (CSS Sizing 3 §5.2), so a 120-character
+  // title — main's cap — grew the header past its card and carried the status
+  // pill and the window buttons off the end with it. The controls, not the
+  // name, were what got lost. Measured, not assumed: with these two the header
+  // overflows its card by 0px; without them, by 1170px at a 1280-wide window.
+  // This is the pair IdentityChip and the rail rows already truncate with — no
+  // `min-inline-size` needed, and none used there either.
+  overflow: 'hidden',
+  textOverflow: 'ellipsis',
+};
 
 const cheadBtn: React.CSSProperties = {
   background: 'transparent',
@@ -2345,6 +2475,23 @@ export function popOutDocumentPanel(api: DockviewApi | null, panelId: string): v
   }
   const popoutUrl = new URL('popout.html', window.location.href).toString();
   void api.addPopoutGroup(panel, { popoutUrl });
+}
+
+/**
+ * The viewers "Close all documents" may take, in dockview's terms (#543).
+ *
+ * The RULE — which ones, and why a popped-out one is spared — is
+ * `lib/document-panels`' `closableDocuments`, unit-pinned there. This is only
+ * the dockview half: asking each panel where it currently lives. Written as one
+ * function because both the command's ENABLED state and its RUN need the same
+ * answer, and two reads of it are how a palette entry ends up offered and then
+ * doing nothing.
+ */
+function closableDocumentIds(api: DockviewApi | null): string[] {
+  if (!api) return [];
+  return closableDocuments(
+    api.panels.map((p) => ({ id: p.id, poppedOut: p.api.location.type === 'popout' }))
+  );
 }
 
 function DocumentViewerPanel(
@@ -3413,6 +3560,13 @@ export interface GridController {
   /** close EVERY session at once, sparing the pinned ones (§5.8's pinning
    *  contract, E9-09). One confirm for the lot, not one per card. */
   closeAllCards: () => void;
+  /** close every DOCKED §5.30 viewer at once — the answer to tab accretion that
+   *  #530 left open (#543). Popped-out documents are spared; see
+   *  `lib/document-panels`' `closableDocuments` for why. */
+  closeAllDocuments: () => void;
+  /** how many documents `closeAllDocuments` would actually take, so the
+   *  palette's enabled state and the command's effect are one read (#543) */
+  closableDocumentCount: () => number;
   /** switch a card's active view tab; 'terminal' toggles back to the Session
    *  view when the Terminal is already showing (E9-01) */
   toggleCardView: (cardId: string, view: PanelId) => void;
@@ -3795,6 +3949,29 @@ export function SessionGrid(props: {
         if (!window.confirm(t('grid.closeAllConfirm', { count: doomed.length, spared }))) return;
         for (const cardId of doomed) retireCard(cardId);
       },
+      closableDocumentCount: () => closableDocumentIds(apiRef.current).length,
+      closeAllDocuments: () => {
+        const api = apiRef.current;
+        if (!api) return;
+        // NO CONFIRM, and unlike `closeAllCards` above that is deliberate
+        // (#543). A card's confirm is not about the count — it is there because
+        // closing one ENDS A CHILD PROCESS and forgets its record, which no
+        // amount of clicking undoes. A viewer is a read-only lens on a file:
+        // closing thirty of them costs re-opening the ones you still wanted,
+        // and #530's own argument for accretion is that a visible mess you can
+        // undo beats a document that vanishes. A modal on the command whose
+        // entire purpose is to remove friction would be ceremony.
+        //
+        // IDS SNAPSHOTTED FIRST: `api.panels` is live and `removePanel` mutates
+        // it, so iterating it directly skips every other panel. The registry
+        // half is `onDidRemovePanel`'s `forgetDocumentPanel`, which fires for
+        // each of these — nothing to forget by hand, and deliberately not a
+        // second copy of that list (the lesson `retireCard` records).
+        for (const id of closableDocumentIds(api)) {
+          const panel = api.getPanel(id);
+          if (panel) api.removePanel(panel);
+        }
+      },
       toggleCardView: (cardId, view) => {
         // straight at the store: this used to go through a handle the card
         // registered only while LIVE, so a suspended or hidden card silently
@@ -4064,12 +4241,43 @@ export function SessionGrid(props: {
             .then((gs) => gs.map((g) => g.id))
             .catch(() => null);
           try {
+            // WHICH PANELS ARE NOT COMING BACK, decided once and used twice
+            // (#494): the popout groups are filtered by it before `fromJSON`
+            // opens their windows, and the grid is swept by it afterwards.
+            // Read BEFORE the restore for that reason — a second spelling of
+            // this rule, or a second moment for it, is the bug.
+            //
+            //  * session cards that still have a persisted record stay (they
+            //    resume-on-focus); one with no record behind it goes.
+            //  * diff panes and document viewers are DERIVED — always dropped,
+            //    the user reopens them. "Restoring open viewers across
+            //    relaunch" is named in E16's *Not in scope*, and a viewer
+            //    restored blind would also re-read a file whose folder may no
+            //    longer be in the read scope.
+            const known = new Set(
+              (await window.switchboard.sessions.knownCards()).map((c) => c.cardId)
+            );
+            const willBePruned = (panelId: string): boolean => {
+              const s = /^session-(.+)$/.exec(panelId);
+              return isDerivedPanelId(panelId) || (!!s && !known.has(s[1]));
+            };
             // popouts persist in the layout, but their stored url has last
             // launch's (random) loopback port and their position may be on a
             // now-missing monitor — fix both before restoring (E8-02)
             const workAreas = await window.switchboard.workAreas();
             const rescuedNow: RescuedPopout[] = [];
-            const sane = sanitizePopoutLayout(saved, window.location.origin, workAreas, rescuedNow);
+            // ...and no popout window is restored holding a panel that verdict
+            // condemns (#494): a window left with nothing is not opened at all,
+            // and one that survives comes back without those tabs. Opening a
+            // window only to empty it races dockview's deferred popout
+            // restoration and strands it on screen. FIRST, so a window we are
+            // not reopening is never offered to the reconnect prompt either.
+            const sane = sanitizePopoutLayout(
+              prunePopoutGroups(saved, willBePruned),
+              window.location.origin,
+              workAreas,
+              rescuedNow
+            );
             // How many popouts the saved layout asked for, before dockview tries
             // to reopen them. Pairs with the main process's "popout geometry
             // flushed" line to say which side of the quit lost one (#165).
@@ -4086,12 +4294,6 @@ export function SessionGrid(props: {
             if (rescuedNow.length > 0) {
               uiSet('rescuedPopouts', [...uiGet<RescuedPopout[]>('rescuedPopouts', []), ...rescuedNow]);
             }
-            // keep restored session cards that still have a persisted record
-            // (they resume-on-focus); drop any panel with no record behind it.
-            // Diff panes are derived — always drop and let the user reopen.
-            const known = new Set(
-              (await window.switchboard.sessions.knownCards()).map((c) => c.cardId)
-            );
             // presentation records outlive their panels by design (that is the
             // point of hiding), so the only thing that can retire one is the card
             // itself being gone — otherwise the blob grows for ever
@@ -4113,19 +4315,25 @@ export function SessionGrid(props: {
             // and E9-09's pins, keyed the same way and outliving their cards
             // the same way.
             sessionStore.prunePins(known);
+            // ...and #559's manual rail order, which names cards the same way
+            // and would otherwise keep ranking sessions that no longer exist.
+            sessionStore.pruneManualOrder(known);
             // ...and #485's unsent prompts. The same rule, and the one with the
             // biggest payload: a draft is whatever the user pasted.
             pruneDrafts(known);
-            for (const p of [...api.panels]) {
-              const s = /^session-(.+)$/.exec(p.id);
-              // Diff panes and document viewers are both DERIVED — drop them
-              // and let the user reopen. "Restoring open viewers across
-              // relaunch" is named in E16's *Not in scope*, and a viewer
-              // restored blind would also re-read a file whose folder may no
-              // longer be in the read scope.
-              const d = /^(diff|doc)-/.exec(p.id);
-              if (d || (s && !known.has(s[1]))) api.removePanel(p);
-            }
+            // and #546's half of the same draft — the NAMES of the files that
+            // were attached to it, plus the retained bytes those names refer
+            // to. Same key shape, same rule, so the two halves of one draft
+            // cannot end up with different lifetimes.
+            pruneAttachmentDrafts(known);
+            // The same verdict, on the grid this time. Only GRID panels reach
+            // here, and that is now guaranteed rather than usual:
+            // `prunePopoutGroups` (#494) already took every condemned id out of
+            // the layout's popout groups. It matters because `fromJSON` builds
+            // grid groups SYNCHRONOUSLY while it opens popout windows on a
+            // timer — removing a panel from a popout that has not finished
+            // opening strands that window on screen, empty, for ever.
+            for (const p of [...api.panels]) if (willBePruned(p.id)) api.removePanel(p);
             // land the user exactly where they were (§5.25): refocus the saved
             // card — resume-on-focus then brings that session back first
             const focused = uiGet<string | null>('focusedCardId', null);

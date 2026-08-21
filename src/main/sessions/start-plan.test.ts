@@ -1,6 +1,6 @@
 import { describe, beforeEach, it, expect, vi } from 'vitest';
 import { planSessionStart, StartPlanInput } from './start-plan';
-import { ProviderCapabilities, ResumeQuery } from '../extensibility/contributions';
+import { OrphanQuery, ProviderCapabilities, ResumeQuery } from '../extensibility/contributions';
 
 /** Ids the host was asked to release, so the undo half is assertable (#470). */
 const released: string[] = [];
@@ -374,6 +374,38 @@ describe('planSessionStart', () => {
       });
       expect(findOrphaned).not.toHaveBeenCalled();
       expect(p.resumeSessionId).toBeUndefined();
+    });
+
+    it('is NEVER offered to a card whose only conversation was CEDED (#539)', () => {
+      // The kind-looking widening, and the reason it is wrong: this card's
+      // conversation is not missing, it is someone else's. `ownIds` would be
+      // empty, so the adapter's own absence check goes vacuous at the same
+      // moment — and the newest unclaimed transcript in a busy folder is almost
+      // certainly a stranger's. It starts fresh; the notice is the way back.
+      const findOrphaned = vi.fn(() => 'orphan-1');
+      const p = plan({
+        capabilitiesOf: () => fullCaps({ resume: { ...gone, findOrphaned } }),
+        prior: { cededNativeIds: ['someone-elses-conversation'] },
+      });
+      expect(findOrphaned).not.toHaveBeenCalled();
+      expect(p.resumeSessionId).toBeUndefined();
+    });
+
+    it('does not put a ceded id in ownIds for a card that still has a chain', () => {
+      // `ownIds` is the list the adapter re-verifies as definitively ABSENT, and
+      // a ceded conversation is present and someone else's — listing it there
+      // would make the adapter decline every repair for this card.
+      const asked: OrphanQuery[] = [];
+      const findOrphaned = (q: OrphanQuery): string => {
+        asked.push(q);
+        return 'orphan-1';
+      };
+      plan({
+        capabilitiesOf: () => fullCaps({ resume: { ...gone, findOrphaned } }),
+        prior: { nativeSessionId: 'mine', cededNativeIds: ['ceded'] },
+      });
+      expect(asked[0].ownIds).toEqual(['mine']);
+      expect(asked[0].ownIds).not.toContain('ceded');
     });
 
     it('is not reached at all when the chain resolved', () => {

@@ -20,16 +20,57 @@
 // `shared/ask-user-question`). Adding it is carrying a capability the CLI
 // already has, which is the opposite of faking one it kept.
 //
-// WHY NOT THE EXTENSION'S TAB STRIP
-// ---------------------------------
-// The VS Code extension renders a multi-question call as tabs across the top
-// with a 300ms auto-advance after each pick-one. It is nicer to look at and it
-// has a failure this cannot have: an unanswered tab is off screen, so Submit
-// can be reached without ever seeing what else was asked. Stacked in one
-// scroller, every question is visible, and Submit does not light up until they
-// all have an answer — the rule the extension's tab dots are trying to convey.
+// TABS FOR A MULTI-QUESTION CALL, AND THE HAZARD THAT CAME WITH THEM (#566)
+// -------------------------------------------------------------------------
+// #563 shipped a multi-question call STACKED in one scroller, and said why:
+// the VS Code extension's tab strip has a failure a stack cannot have — an
+// unanswered tab is OFF SCREEN, so a user can reach Submit without ever seeing
+// what else was asked, and the only thing telling them is a subtle dot.
+//
+// The owner asked for tabs anyway (2026-08-17, answered through this very
+// panel — #563's first real use). So this is not the stacked reasoning being
+// forgotten; it is the same reasoning being made to hold with tabs, which is
+// the whole of #566:
+//
+//  1. **Submit still requires EVERY question answered.** Unchanged from #563
+//     (`allAnswered`): a partial `answers` map is a shape the probe never
+//     measured. So the hazard is not "submit blind" — it is milder and
+//     different: Submit is dead and the user cannot see why.
+//  2. **So every tab states its own answered/unanswered state**, in SHAPE as
+//     well as hue (§5.32, never hue alone): `✓` answered, `○` not, and the
+//     tab's accessible name SAYS which — "Colour — not answered yet". A dot
+//     you have to already understand is exactly what the stacked layout was
+//     avoiding.
+//  3. **And the panel names what is missing in words.** While Submit is dead,
+//     a multi-question panel prints "Still to answer: Languages" beside it.
+//     That is the sentence the tab dots were trying to be, and it is the one
+//     thing a strip of tabs genuinely cannot say at a glance once there are
+//     five of them.
+//  4. **The panel OPENS on the first unanswered question** — on arrival, and
+//     again after the remount that #563's draft map exists for. You never come
+//     back to a panel parked on work that is already done.
+//
+// NOT taken from the extension: the 300ms auto-advance after a pick-one.
+// Pleasant when it guesses right, and a small theft when you wanted to change
+// the answer you just gave. Ship without it; add it if the panel ever feels
+// slow.
+//
+// ONE QUESTION IS NOT A TAB STRIP. The overwhelmingly common call carries one
+// question, and it renders with no tab furniture at all — same panel #563
+// shipped, to the pixel.
+//
+// Keyboard (§5.32): Left/Right walk the STRIP, Up/Down walk the options of the
+// question in front of you. The strip is a real `tablist`, so it owes the
+// roving tab stop and the arrow keys `tabStripAction` already spells out for
+// the card's view tabs — reused rather than re-derived. It differs from that
+// strip in one way, deliberately: activation is AUTOMATIC here. The view strip
+// is manual because arrowing onto Changes would build a Monaco diff; a
+// question panel costs nothing to show, and automatic activation means an
+// arrow key cannot leave a user looking at a tab they have not selected —
+// which is the off-screen hazard sneaking back in through the keyboard.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { tabStripAction } from '../lib/tabstrip-keys';
 import {
   allAnswered,
   answeredInput,
@@ -99,6 +140,27 @@ function rememberDraft(requestId: string, selections: AskSelection[]): void {
   }
 }
 
+/**
+ * The panel's own background, in one place because the tab strip STICKS to the
+ * top of the scroller and has to paint the same thing the panel does — a
+ * transparent sticky strip shows the options sliding under it. Two literals
+ * would drift the first time either is tuned.
+ */
+const PANEL_TINT = 'color-mix(in srgb, var(--status-needs-input) 8%, var(--panel2))';
+
+/**
+ * Which question to put in front of the user — the first one still missing an
+ * answer, or the first question if they are all answered.
+ *
+ * Used on arrival AND after the remount `drafts` exists for (#563): coming back
+ * from the Changes tab onto a tab you already answered, with the unanswered one
+ * hidden behind it, is the off-screen hazard #566 owns.
+ */
+function firstUnanswered(selections: readonly AskSelection[]): number {
+  const i = selections.findIndex((s) => !questionAnswered(s));
+  return i === -1 ? 0 : i;
+}
+
 export function QuestionPanel({
   requestId,
   questions,
@@ -126,12 +188,33 @@ export function QuestionPanel({
   const [selections, setSelections] = React.useState<AskSelection[]>(
     () => drafts.get(requestId) ?? emptySelections(questions)
   );
+  // Which tab is open. Seeded from the SELECTIONS rather than to 0, so a panel
+  // that comes back from a remount half-answered opens on the half that is
+  // still missing (see `firstUnanswered`).
+  const [active, setActive] = React.useState<number>(() => firstUnanswered(selections));
   React.useEffect(() => {
-    setSelections(drafts.get(requestId) ?? emptySelections(questions));
+    const next = drafts.get(requestId) ?? emptySelections(questions);
+    setSelections(next);
+    setActive(firstUnanswered(next));
   }, [requestId, questions]);
   const otherRefs = React.useRef<Array<HTMLInputElement | null>>([]);
+  // The effect above resets `active` when the questions change, but it runs
+  // AFTER the render that saw the new list — so a call that shrank from three
+  // questions to one would index past the end once, on that render, with
+  // nothing to catch it. Clamping costs a line and removes the whole class.
+  const activeIndex = Math.min(Math.max(active, 0), questions.length - 1);
+  const tabbed = questions.length > 1;
+  const tabsId = React.useId();
 
   const complete = allAnswered(selections);
+  const tabLabel = (q: AskQuestion, i: number): string =>
+    q.header ?? t('question.tabFallback', { n: i + 1 });
+  const answeredAt = (i: number): boolean =>
+    questionAnswered(selections[i] ?? { labels: [], other: false, otherText: '' });
+  // The unanswered questions, named in WORDS rather than implied by a glyph on
+  // a tab that may be one of five. This is the sentence the extension's tab
+  // dots are trying to be, and it is what answers "why is Send answer dead?".
+  const missing = questions.map((q, i) => tabLabel(q, i)).filter((_, i) => !answeredAt(i));
   const finish = (decision: 'allow' | 'deny', updatedInput?: unknown): void => {
     // The draft dies with the request, whichever way it was answered: the id is
     // never reused, so an entry left behind is a leak that also cannot be read.
@@ -179,7 +262,7 @@ export function QuestionPanel({
         // it is the only one there is: `QUESTION_HOLD_MS`.)
         flexShrink: 0,
         borderBlockStart: '2px solid var(--status-needs-input)',
-        background: 'color-mix(in srgb, var(--status-needs-input) 8%, var(--panel2))',
+        background: PANEL_TINT,
         padding: '8px 10px',
         fontSize: 11,
         maxBlockSize: 320,
@@ -204,24 +287,55 @@ export function QuestionPanel({
           <span style={{ fontSize: 10, color: 'var(--muted)' }}>{t('approval.more', { n: queued })}</span>
         )}
       </div>
-      {questions.map((q, i) => (
-        <QuestionBlock
-          key={`${i}:${q.question}`}
-          index={i}
-          question={q}
-          selection={selections[i] ?? { labels: [], other: false, otherText: '' }}
-          onPick={pick}
-          onPickOther={pickOther}
-          onOtherText={(text) => {
-            const sel = selections[i];
-            if (sel) update(i, { ...sel, otherText: text });
-          }}
-          onSubmit={submit}
-          otherRef={(el) => {
-            otherRefs.current[i] = el;
-          }}
+      {/* ONE question gets no tab furniture — the common call, unchanged from
+          #563. Several get a real tablist, and then only the selected question
+          is in the DOM at all. */}
+      {tabbed && (
+        <QuestionTabs
+          idBase={tabsId}
+          labels={questions.map((q, i) => tabLabel(q, i))}
+          answered={questions.map((_, i) => answeredAt(i))}
+          active={activeIndex}
+          onSelect={setActive}
         />
-      ))}
+      )}
+      {questions.map((q, i) => {
+        if (tabbed && i !== activeIndex) return null;
+        const block = (
+          <QuestionBlock
+            key={`${i}:${q.question}`}
+            index={i}
+            question={q}
+            // the tab already carries the header, in bigger letters and with
+            // the answered state on it — the chip would just say it twice
+            showHeader={!tabbed}
+            selection={selections[i] ?? { labels: [], other: false, otherText: '' }}
+            onPick={pick}
+            onPickOther={pickOther}
+            onOtherText={(text) => {
+              const sel = selections[i];
+              if (sel) update(i, { ...sel, otherText: text });
+            }}
+            onSubmit={submit}
+            otherRef={(el) => {
+              otherRefs.current[i] = el;
+            }}
+          />
+        );
+        if (!tabbed) return block;
+        return (
+          <div
+            key={`panel:${i}`}
+            role="tabpanel"
+            id={`${tabsId}qpanel-${i}`}
+            aria-labelledby={`${tabsId}qtab-${i}`}
+            // no tabIndex: APG asks for one only when the panel holds nothing
+            // focusable, and every option row in here is a tab stop
+          >
+            {block}
+          </div>
+        );
+      })}
       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
         <button
           type="button"
@@ -267,13 +381,187 @@ export function QuestionPanel({
         >
           {t('question.dismiss')}
         </button>
+        {/* WHY THIS SENTENCE EXISTS (#566). With the questions stacked, "which
+            one is still missing?" was answered by looking down the panel. With
+            tabs it is answered by a glyph on a tab that might be off the end of
+            the strip — so the panel says it in words instead, right next to the
+            button whose deadness is the thing being explained. Only when there
+            IS more than one question: a single-question panel keeps exactly the
+            #563 layout, and its Submit title already says the same thing.
+            NOT a live region: it changes on every tick, and re-reading it each
+            time would talk over the option the user just chose. */}
+        {tabbed && !complete && (
+          <span data-testid="question-remaining" style={{ fontSize: 10.5, color: 'var(--muted)' }}>
+            {t('question.stillToAnswer', { headers: missing.join(', ') })}
+          </span>
+        )}
       </div>
     </div>
   );
 }
 
 /**
+ * The tab strip for a multi-question call (#566) — one tab per question,
+ * labelled by the CLI's own `header`.
+ *
+ * A REAL `tablist`, because the role is TRUE here (§5.32 rule 3: composite
+ * roles only where they are): these tabs select which one of several question
+ * panels is shown. Declaring it obliges the roving tab stop and the arrow keys,
+ * and `tabStripAction` — written for the card's view strip (#197) — already
+ * spells out exactly those semantics, wrap included.
+ *
+ * Two things it does that the view strip does not:
+ *
+ *   • **Automatic activation.** The view strip is manual because arrowing onto
+ *     Changes would mount a Monaco diff for a tab you were only passing
+ *     through. A question costs nothing to show, and manual activation would
+ *     let an arrow key leave the user LOOKING at a tab they have not selected —
+ *     the off-screen hazard, back in through the keyboard.
+ *   • **Every tab states whether it is answered**, in shape as well as hue and
+ *     in its accessible NAME, not only as a glyph. This is the half of #566
+ *     that keeps the stacked layout's guarantee: an unanswered question is off
+ *     screen now, so the tab has to be the one saying so.
+ *
+ * It STICKS to the top of the panel's scroller: a strip that scrolls away is a
+ * strip that stops answering "what else was asked" at exactly the moment a long
+ * question makes the panel scroll.
+ */
+function QuestionTabs({
+  idBase,
+  labels,
+  answered,
+  active,
+  onSelect,
+}: {
+  /** `useId` prefix, so tab <-> tabpanel wiring is unique per mounted panel */
+  idBase: string;
+  /** one per question, in order — the CLI's `header`, or a numbered fallback */
+  labels: readonly string[];
+  /** one per question, in order */
+  answered: readonly boolean[];
+  active: number;
+  onSelect: (index: number) => void;
+}): React.JSX.Element {
+  const { t } = useTranslation();
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
+    // `ownerDocument`, not the global `document`: a popped-out card portals this
+    // panel into another window, whose focus the main document knows nothing
+    // about (the lesson #573 wrote into the view strip's own handler).
+    const doc = e.currentTarget.ownerDocument;
+    const tabs = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('[role="tab"]'));
+    const action = tabStripAction(e.key, {
+      count: tabs.length,
+      current: tabs.indexOf(doc.activeElement as HTMLElement),
+    });
+    if (!action) return;
+    e.preventDefault();
+    // Up/Down belong to the option list below and Left/Right belong here; the
+    // feed above owns some of both. A walk inside this strip is none of those.
+    e.stopPropagation();
+    const to = action.kind === 'focus' ? action.index : tabs.indexOf(doc.activeElement as HTMLElement);
+    if (to < 0) return;
+    // focus BEFORE selecting: the roving tab stop follows selection, so the tab
+    // we are leaving loses its stop in the same commit — focus it first and the
+    // browser never has to guess where focus went.
+    tabs[to]?.focus();
+    onSelect(to);
+  };
+
+  return (
+    <div
+      role="tablist"
+      data-testid="question-tabs"
+      aria-label={t('question.tabs')}
+      onKeyDown={onKeyDown}
+      style={{
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: 4,
+        marginBlockEnd: 6,
+        // Pinned to the top of the panel's scroller, painting the panel's own
+        // background so the options slide BEHIND it rather than through it. A
+        // strip that scrolls away stops answering "what else was asked" at
+        // exactly the moment a long question makes the panel scroll. The
+        // negative inline margin cancels the panel's side padding, so the strip
+        // spans the full width and nothing shows past its edges.
+        position: 'sticky',
+        insetBlockStart: 0,
+        marginInline: -10,
+        paddingInline: 10,
+        paddingBlock: '2px 4px',
+        background: PANEL_TINT,
+        zIndex: 1,
+      }}
+    >
+      {labels.map((text, i) => {
+        const on = i === active;
+        const done = answered[i] === true;
+        return (
+          <button
+            key={`${i}:${text}`}
+            type="button"
+            role="tab"
+            id={`${idBase}qtab-${i}`}
+            data-question-tab={i}
+            data-question-tab-answered={done}
+            aria-selected={on}
+            aria-controls={on ? `${idBase}qpanel-${i}` : undefined}
+            // The roving stop a tablist owes: one Tab reaches the strip, arrows
+            // move inside it. Activation is automatic, so the stop is simply
+            // the selected tab — focus and selection cannot come apart.
+            tabIndex={on ? 0 : -1}
+            // The state in WORDS. The glyph is for the eye and is aria-hidden;
+            // this is what a screen reader hears, and "Colour — not answered
+            // yet" is a thing a subtle dot has never managed to say.
+            aria-label={t(done ? 'question.tabAnswered' : 'question.tabUnanswered', { label: text })}
+            onClick={() => onSelect(i)}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              maxInlineSize: 160,
+              background: on ? 'var(--panel)' : 'transparent',
+              color: on ? 'var(--text)' : 'var(--muted)',
+              border: `1px solid ${on ? 'var(--status-needs-input)' : 'var(--border)'}`,
+              borderRadius: 'var(--radius-chip)',
+              padding: '2px 8px',
+              cursor: 'pointer',
+              fontFamily: 'var(--font-ui)',
+              fontSize: 11,
+              fontWeight: on ? 600 : 400,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {/* SHAPE first, hue second (§5.32: never hue alone). A filled tick
+                and an empty ring are different glyphs before they are different
+                colours, and the unanswered one wears the panel's own
+                needs-input hue because the missing answer is the thing worth
+                looking at. `-ink`, not the bare hue: this is a glyph rendered
+                as TEXT (`tokens.drift.test.ts` guards exactly that). */}
+            <span
+              aria-hidden
+              style={{ color: done ? 'var(--status-idle-ink)' : 'var(--status-needs-input-ink)' }}
+            >
+              {done ? '✓' : '○'}
+            </span>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{text}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
  * One question: its header, its text, its options, and always an Other row.
+ *
+ * The header chip is suppressed when the panel is TABBED (#566): the tab is
+ * already showing it, with the answered state on it, and a chip repeating it
+ * two lines lower is noise. The per-question tick stays either way — it is the
+ * confirmation for the question actually in front of you.
  *
  * §5.32 keyboard-complete, and built out of the ARIA pattern rather than out of
  * divs that look like it. The group is a `radiogroup` or a plain `group`
@@ -285,6 +573,7 @@ export function QuestionPanel({
 function QuestionBlock({
   index,
   question,
+  showHeader,
   selection,
   onPick,
   onPickOther,
@@ -294,6 +583,8 @@ function QuestionBlock({
 }: {
   index: number;
   question: AskQuestion;
+  /** false when a tab already carries the header (#566) — it would say it twice */
+  showHeader: boolean;
   selection: AskSelection;
   onPick: (index: number, label: string) => void;
   onPickOther: (index: number) => void;
@@ -315,7 +606,13 @@ function QuestionBlock({
     if (!host) return;
     const rows = Array.from(host.querySelectorAll<HTMLElement>('[role="radio"],[role="checkbox"]'));
     if (rows.length === 0) return;
-    const at = rows.findIndex((r) => r === document.activeElement);
+    // `ownerDocument`, NOT the global `document` — the same lesson #573 wrote
+    // into the card's tab strip, and the same one the strip above obeys. A
+    // popped-out card portals this panel into ANOTHER window, whose focus the
+    // main document knows nothing about: with the global, every arrow in a
+    // popout computes `at = -1` and Down lands on the second row instead of the
+    // next one, while preventDefault has already eaten the browser's own move.
+    const at = rows.findIndex((r) => r === host.ownerDocument.activeElement);
     const next =
       e.key === 'ArrowUp'
         ? at <= 0
@@ -354,7 +651,7 @@ function QuestionBlock({
       }}
     >
       <div style={{ display: 'flex', gap: 6, alignItems: 'baseline', marginBlockEnd: 4 }}>
-        {question.header && (
+        {showHeader && question.header && (
           <span
             style={{
               fontSize: 9.5,

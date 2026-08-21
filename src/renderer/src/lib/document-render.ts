@@ -18,6 +18,7 @@
 // we work — by the time the nodes reach the page the `<img>` elements are
 // gone.
 import { DOC_DECORATION, stripDecorationNamespace } from './decoration-guard';
+import { TASK_GLYPH } from './markdown';
 
 export interface OutlineEntry {
   readonly id: string;
@@ -175,19 +176,60 @@ export function decorateTables(root: ParentNode): void {
   }
 }
 
-/** GFM task lists — agents write plans as `- [ ]`, so this is most of them. */
+/**
+ * GFM task lists — agents write plans as `- [ ]`, so this is most of them.
+ *
+ * IT LOOKS FOR A GLYPH, NOT AN `<input>` (#612). It used to find
+ * `input[type="checkbox"]`, force `disabled` on it and class the `<li>` — but
+ * `input` is now in `SANITIZE_CONFIG.FORBID_TAGS`, and `marked`'s own
+ * task-list checkbox is drawn as a `☐`/`☑` character before the sanitizer runs
+ * (`TaskListGlyphRenderer`). That deleted the belt-and-braces `disabled` line
+ * along with the element it braced — no bad thing, since there is no longer an
+ * element that could be interactive — but it ALSO stopped this pass finding
+ * anything, which left the list with its bullet AND a glyph. `list-style: none`
+ * on `.doc-task-list` is what removes the bullet, so this has to keep working.
+ *
+ * IT READS THE ITEM'S OWN LEADING TEXT, and both halves of that are load-bearing
+ * because the pass it replaced got them for free — `box.closest('li')` is
+ * always the innermost item, and always the item the marker belongs to.
+ *
+ *  - NOT `textContent`, which reaches into descendants: an outer `<li>` whose
+ *    first SUB-item is a task would match on its child's marker and lose the
+ *    bullet it should keep.
+ *  - BUT THROUGH A `<p>`, because `marked` renders a LOOSE list — one with a
+ *    blank line anywhere in it — as `<li><p>☐ one</p></li>`, and a blank line
+ *    between two items makes every item in that list loose. Reading only a
+ *    direct text child would have decorated tight checklists and quietly left
+ *    loose ones with their bullet AND a glyph, which is the exact failure this
+ *    whole change exists to avoid. Found in review; `document-render.test.ts`
+ *    pins both shapes.
+ *
+ * Content typing a `☐` as the first character of a list item gets the same
+ * class, and that is fine: the effect is a missing bullet on that list — the
+ * class goes on the parent, so one forged glyph unbullets its siblings too,
+ * exactly as a forged `<input type="checkbox">` did before. There is no
+ * protocol here for content to speak — unlike `doc-` DATA attributes, which
+ * handlers read back off the DOM and `stripDecorationNamespace` therefore takes
+ * away first.
+ */
 export function decorateTaskLists(root: ParentNode): void {
-  for (const box of root.querySelectorAll('input[type="checkbox"]')) {
-    // Belt to DOMPurify's braces: a checkbox in a rendered document is never
-    // interactive, whatever the markup said.
-    box.setAttribute('disabled', '');
-    box.classList.add('doc-task-box');
-    const li = box.closest('li');
-    if (li) {
-      li.classList.add('doc-task');
-      li.parentElement?.classList.add('doc-task-list');
-    }
+  for (const li of root.querySelectorAll('li')) {
+    // The tight form (`<li>☐ one`) or the loose one (`<li><p>☐ one`), and
+    // nothing else: a first child that is neither is not a task item.
+    const first = li.firstChild;
+    const text = first?.nodeType === Node.TEXT_NODE ? first : lead(first);
+    const glyph = text?.nodeValue?.trimStart()[0];
+    if (glyph !== TASK_GLYPH.checked && glyph !== TASK_GLYPH.unchecked) continue;
+    li.classList.add('doc-task');
+    li.parentElement?.classList.add('doc-task-list');
   }
+}
+
+/** the leading text node of a loose item's wrapping `<p>`, if that is what this is */
+function lead(node: ChildNode | null): ChildNode | null {
+  if (node?.nodeName !== 'P') return null;
+  const inner = node.firstChild;
+  return inner?.nodeType === Node.TEXT_NODE ? inner : null;
 }
 
 /**

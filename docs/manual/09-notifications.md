@@ -25,7 +25,7 @@ Closing a session clears its entries. So does starting it again: a **crashed**
 entry goes as soon as a fresh session takes its place, whether you restarted it
 yourself or just came back to the card.
 
-### Three ways to open it, and one to close it
+### Three ways to open it, and four to close it
 
 | | |
 |---|---|
@@ -33,8 +33,18 @@ yourself or just came back to the card.
 | **`Ctrl+E`** | from anywhere except inside a terminal or a text box |
 | **The command palette** | `Ctrl+Shift+P` → "Show or hide the events drawer" |
 
-**`Esc`** closes it and puts your cursor back where it was. So does clicking the
-tab again, or pressing `Ctrl+E`.
+To close it, use whichever you reach for first:
+
+| | |
+|---|---|
+| **The ✕** | top right of the drawer, next to the word **EVENTS** |
+| **`Esc`** | |
+| **Click the tab again** | |
+| **`Ctrl+E`** | |
+
+All four do the same thing, including putting your cursor back where it was
+before you opened the drawer. The ✕ is there because the edge tab looks like a
+way *in* — it's easy to open the drawer and then hunt for the way back out.
 
 The drawer **sits on top of** the workspace rather than pushing it aside, so
 opening and closing it never moves your sessions around. It's also not a dialog:

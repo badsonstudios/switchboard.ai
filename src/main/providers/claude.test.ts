@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import {
+  AUTONOMY_PERMISSION_MODE,
   RECENTLY_ACTIVE_MS,
   claudeAdapter,
   claudeProjectsRoot,
@@ -103,8 +104,37 @@ describe('claudeAdapter.buildSpawn', () => {
     expect(argsFor('plan')).toEqual(['--permission-mode', 'plan']);
     expect(argsFor('auto-edit')).toEqual(['--permission-mode', 'acceptEdits']);
     expect(argsFor('full-auto')).toEqual(['--permission-mode', 'bypassPermissions']);
-    expect(argsFor('ask')).toEqual([]);
-    expect(argsFor(undefined)).toEqual([]);
+    // #587: `ask` used to pass NO flag and inherit the CLI's built-in default,
+    // which became the `auto` classifier in 2.1.228/2.1.233. It now names
+    // Manual mode explicitly. `default` is Manual's canonical config value.
+    expect(argsFor('ask')).toEqual(['--permission-mode', 'default']);
+    expect(argsFor(undefined)).toEqual(['--permission-mode', 'default']);
+  });
+
+  it('never leaves the permission mode to the CLI default (#587)', () => {
+    withCliOnPath();
+    // The contract this pins is "no profile inherits", not the specific values
+    // — a new profile added without a mode would silently pick up whatever the
+    // CLI's built-in starting mode happens to be that month.
+    for (const autonomy of ['plan', 'ask', 'auto-edit', 'full-auto'] as const) {
+      const args = claudeAdapter.buildSpawn({
+        cwd: tmp,
+        sessionId: 's',
+        stateDir: path.join(tmp, 'st'),
+        autonomy,
+      }).args;
+      const i = args.indexOf('--permission-mode');
+      expect(i).toBeGreaterThanOrEqual(0);
+      expect(args[i + 1]).toBe(AUTONOMY_PERMISSION_MODE[autonomy]);
+      // `auto` is the classifier; no profile may start a session in it.
+      expect(args[i + 1]).not.toBe('auto');
+    }
+    expect(Object.keys(AUTONOMY_PERMISSION_MODE).sort()).toEqual([
+      'ask',
+      'auto-edit',
+      'full-auto',
+      'plan',
+    ]);
   });
 
   it('omits --settings when none provided', () => {

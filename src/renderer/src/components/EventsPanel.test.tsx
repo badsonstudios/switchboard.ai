@@ -16,6 +16,7 @@ import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
 import en from '../i18n/locales/en.json';
 import { EventsPanel } from './EventsPanel';
+import type { HistoryRepairNotice } from '../../../shared/history-repair';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -122,5 +123,96 @@ describe('the update notice', () => {
       expect(controls.length, kind).toBeGreaterThan(0);
       for (const b of controls) expect(b.textContent?.trim()).toBeTruthy();
     }
+  });
+});
+
+// #539 — the repair sweep and the duplicate untangle both move a card's
+// conversation without being asked. Until this notice they reported that only
+// to the log, which makes "my card came back somewhere else" indistinguishable
+// from the bug the sweep exists to repair.
+describe('the history-repair notice (#539)', () => {
+  const onDismiss = vi.fn();
+  const repair = (over: Partial<HistoryRepairNotice> = {}): HistoryRepairNotice => ({
+    id: 'r1',
+    kind: 'adopted',
+    cardId: 'card-1',
+    cardTitle: 'Switchboard.ai',
+    nativeSessionId: 'conv-x',
+    ...over,
+  });
+
+  async function show(repairs: HistoryRepairNotice[]): Promise<void> {
+    await act(async () => {
+      root!.render(
+        <EventsPanel
+          sessions={[]}
+          events={[]}
+          queueEvents={[]}
+          visited={new Set<number>()}
+          onFocus={() => {}}
+          onVisit={() => {}}
+          queueBinding="Ctrl+Space"
+          historyRepairs={repairs}
+          onDismissHistoryRepair={onDismiss}
+        />
+      );
+    });
+  }
+
+  const rows = (): HTMLElement[] => [
+    ...host.querySelectorAll<HTMLElement>('[data-history-repair]'),
+  ];
+
+  beforeEach(() => onDismiss.mockReset());
+
+  it('names the card that was reconnected', async () => {
+    await show([repair()]);
+    expect(host.querySelector('[data-events-notice="history-repair"]')).not.toBeNull();
+    expect(rows()).toHaveLength(1);
+    expect(rows()[0].getAttribute('data-history-repair')).toBe('adopted');
+    expect(rows()[0].textContent).toContain('Switchboard.ai');
+  });
+
+  it('names BOTH cards when one gave a conversation up', async () => {
+    await show([
+      repair({ kind: 'ceded', cardTitle: 'Switchboard.ai-2', keptByTitle: 'Switchboard.ai' }),
+    ]);
+    expect(rows()[0].getAttribute('data-history-repair')).toBe('ceded');
+    expect(rows()[0].textContent).toContain('Switchboard.ai-2');
+    expect(rows()[0].textContent).toContain('Switchboard.ai');
+  });
+
+  it('announces itself — it is already true when the window mounts', async () => {
+    await show([repair()]);
+    const live = host.querySelector('[data-events-notice="history-repair"] [role="status"]');
+    expect(live).not.toBeNull();
+    expect(live!.getAttribute('aria-live')).toBe('polite');
+  });
+
+  it('is dismissible, one row at a time', async () => {
+    await show([repair(), repair({ id: 'r2', cardTitle: 'other' })]);
+    expect(rows()).toHaveLength(2);
+    await click(rows()[1].querySelector('button')!);
+    expect(onDismiss).toHaveBeenCalledWith('r2');
+  });
+
+  it('gives each dismiss button a name of its own (§5.32)', async () => {
+    // three buttons all reading "Got it" would be three identical controls to
+    // anyone who cannot see which row they sit in
+    await show([repair(), repair({ id: 'r2', cardTitle: 'other' })]);
+    const names = rows().map((r) => r.querySelector('button')!.getAttribute('aria-label'));
+    expect(new Set(names).size).toBe(2);
+    expect(names[0]).toContain('Switchboard.ai');
+  });
+
+  it('keeps the panel from claiming to be empty while it is up', async () => {
+    await show([repair()]);
+    expect(host.textContent).not.toContain(en.events.empty);
+  });
+
+  it('shows nothing for an empty list', async () => {
+    await show([]);
+    expect(host.querySelector('[data-events-notice="history-repair"]')).toBeNull();
+    expect(host.textContent).toContain(en.events.empty);
   });
 });

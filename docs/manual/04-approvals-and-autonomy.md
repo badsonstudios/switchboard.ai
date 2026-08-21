@@ -55,9 +55,27 @@ click.
   as an option, and it's the honest way to say "none of these, here's what I
   actually want".
 
-Claude can ask more than one question at once. They're all shown stacked, each
-with its own tick in the corner once it's answered, and **Send answer** stays
-greyed out until every one of them has an answer. Hovering it tells you why.
+### More than one question at a time
+
+Claude can ask several questions in one go. When it does, they arrive as **tabs
+across the top of the panel** — one question on screen at a time, with a tab for
+each. The tab's name is Claude's own short label for that question ("Colour",
+"Approach"), so you can see everything it asked without answering anything yet.
+
+**Send answer** stays greyed out until every question has an answer, and the
+panel makes sure you can always tell which one is holding it up:
+
+- **Each tab shows its own state.** A tick (✓) means that question is answered;
+  an empty ring (○) means it isn't. It's the shape that tells you, not just the
+  colour.
+- **The panel says it in words too.** While **Send answer** is greyed out you'll
+  see *"Still to answer: Languages"* next to it, naming the questions that are
+  still empty. No hunting through tabs to find the one you missed.
+- **It opens where the work is.** The panel starts on the first unanswered
+  question — including when you come back to it after looking at something else.
+
+A single question — which is what you'll usually get — has no tabs at all. It
+looks exactly as it always did.
 
 **Don't answer** sends your refusal back. That's a real answer and a safe one:
 Claude is told you declined, and it will usually just ask again in ordinary
@@ -74,9 +92,15 @@ anything you typed are still there.
 ### Everything works from the keyboard
 
 Tab into the list, **Up** and **Down** move between the answers of one question,
-**Space** or **Enter** picks the one you're on. Tab moves on to the next
-question, and to the buttons. If you're typing in an "Other" box, **Enter**
-sends the whole thing once everything is answered.
+**Space** or **Enter** picks the one you're on. Tab moves on to the buttons. If
+you're typing in an "Other" box, **Enter** sends the whole thing once everything
+is answered.
+
+When there's more than one question, Tab also reaches the **tab strip**, and
+there **Left** and **Right** move between the questions (**Home** and **End**
+jump to the first and last). Moving to a tab opens it straight away — you can't
+end up looking at a question you haven't actually selected. Up and Down stay
+inside the question you're on and never wander into another one.
 
 ### Two things worth knowing
 
@@ -134,22 +158,56 @@ runs on the card next.
 ## Autonomy modes
 
 Each session runs at one of four levels. Click the shield chip under the prompt
-box to cycle it.
+box to cycle it — **and hover it to read what the mode you are about to pick
+actually does.** The same hover works on the shield chip in the title bar and on
+the little mode marker in a card's header.
 
-| Mode | What it stops for |
-|---|---|
-| **ask** | Commands and file changes both need your OK. The safe default. |
-| **plan** | Claude researches and proposes, but writes nothing. |
-| **auto-edit** | File edits happen freely; commands and web fetches still ask. |
-| **full-auto** | Nothing asks. Use deliberately. |
-
-Under **ask** and **auto-edit**, switchboard also asks before Claude reads
-files *outside* the session's folder — mirroring what Claude Code does on its
-own.
+| Mode | What runs without asking you | What still stops for you |
+|---|---|---|
+| **ask** | Reading files inside the session's folder. | Everything else: file changes, shell commands, web fetches, and reading anything outside the folder. The safe default. |
+| **plan** | Reading and exploring. | Claude writes you a plan and changes nothing until you approve it. Claude Code enforces that block itself. |
+| **auto-edit** | File edits inside the session's folder. | Shell commands, web fetches, and reading anything outside the folder. |
+| **full-auto** | Everything. | Almost nothing — see below. |
 
 Changing the mode applies **the next time the session starts or resumes** —
 Claude Code can't switch modes mid-flight. The chip in the title bar sets the
 mode that *new* sessions start at; each session keeps its own after that.
+
+### What full-auto really is
+
+**full-auto is not a gentler version of "skip the prompts" — it is that.** It
+starts Claude Code in its `bypassPermissions` mode, which is the same mode the
+`--dangerously-skip-permissions` flag turns on. Every tool call runs the moment
+Claude asks for it, including writes *outside* the session's folder and into
+files a normal mode would never touch unasked. It is not a sandbox: nothing is
+containing what a command can reach, only whether you were asked first.
+
+A short list of things still hold, and they are all Claude Code's, not
+switchboard's:
+
+- **`deny` rules in your `settings.json`** block in every mode, this one
+  included. (`allow` rules stop meaning anything, because nothing is being
+  asked.)
+- **Explicit `ask` rules** you have written still prompt.
+- **Things that need an actual person** — a question Claude asks you, and an
+  MCP tool marked as needing a human — still wait for you.
+- **`rm` aimed at a critical path** still prompts.
+
+That is the whole list. Use full-auto where you would be happy to hand someone
+else the keyboard for the length of the task.
+
+### The two smaller print items
+
+- Under **ask** and **auto-edit**, switchboard also asks before Claude reads
+  files *outside* the session's folder — mirroring what Claude Code does on its
+  own.
+- Under **auto-edit**, switchboard is slightly *stricter* than Claude Code
+  would be on its own. Left alone, Claude Code's accept-edits mode also waves
+  through a handful of in-folder housekeeping commands — `mkdir`, `touch`,
+  `mv`, `cp`, `rm`, `sed` — and switchboard brings every shell command to you
+  instead. You will occasionally be asked about a `mkdir` you would not have
+  been asked about in a bare terminal. That is deliberate: being asked when you
+  expected not to be is a small surprise, and the other way round is not.
 
 ## Good to know
 
@@ -160,6 +218,16 @@ mode that *new* sessions start at; each session keeps its own after that.
   *allow* without showing you the question is **Allow all (this session)**, and
   that is you having answered it in advance. Everything else, if it can't reach
   you, is handled by one of the two rules below — and neither of them says yes.
+- **switchboard names the mode; it never leaves it to chance.** Each of the four
+  modes maps to one of Claude Code's own permission modes, and switchboard says
+  which one every time it starts a session. That matters most for **ask**: it
+  used to say nothing and let Claude Code choose, and recent versions changed
+  what Claude Code chooses — on a Pro, Max or Team plan a session that specifies
+  nothing now starts in **auto** mode, where a second model reviews each action
+  instead of you. An **ask** session is now told to stop for *you*, which is
+  what the name always promised. If you *want* the reviewing model, press
+  **Shift+Tab** inside the session's **Terminal** tab — that is Claude Code's
+  own control, and switchboard doesn't take it away.
 - **If switchboard can't reach you, it stops asking.** When does that happen?
   On **macOS**, closing the window leaves your sessions running in the
   background. On any platform, switchboard's display can crash while the
@@ -188,3 +256,6 @@ mode that *new* sessions start at; each session keeps its own after that.
   waiting on an answer that can no longer go anywhere. Starting the card again
   clears the bar and begins fresh.
 - **full-auto** is shown in red as a reminder.
+- **The hover is the short version of this page.** Every mode control carries a
+  description of what the mode does; if you only ever read one thing about
+  autonomy, read the one on **full-auto**.

@@ -109,6 +109,8 @@ const BADGE_INK: Record<EventDto['kind'], string> = {
 export interface EventsDrawerProps extends EventsPanelProps {
   open: boolean;
   onOpen: () => void;
+  /** REQUIRED here, though `EventsPanelProps` leaves it optional: the panel can
+   *  be mounted in something with no way out to offer, a drawer cannot. */
   onClose: () => void;
   /** the drawer's own accelerator, already formatted — for the tab's tooltip */
   drawerBinding?: string;
@@ -116,6 +118,8 @@ export interface EventsDrawerProps extends EventsPanelProps {
 
 export function EventsDrawer(props: EventsDrawerProps): React.JSX.Element {
   const { t } = useTranslation();
+  // `onClose` comes OUT of `panel` here and goes back in explicitly at the
+  // bottom — the panel renders it as the header's ✕ (#556).
   const { open, onOpen, onClose, drawerBinding, ...panel } = props;
   const bodyId = React.useId();
   const body = React.useRef<HTMLDivElement | null>(null);
@@ -142,7 +146,7 @@ export function EventsDrawer(props: EventsDrawerProps): React.JSX.Element {
 
   // ── the notice announcer, and why collapsing needed one ──────────────────
   //
-  // All three notice tenants carry `role="status" aria-live="polite"` inside
+  // Every notice tenant carries `role="status" aria-live="polite"` inside
   // `EventsPanel`, and #314 put them there for a stated reason: both the update
   // notice and the reconnect offer arrive AFTER mount — one off a handshake
   // round-trip, one when a dialog closes — so a screen reader would otherwise
@@ -173,9 +177,9 @@ export function EventsDrawer(props: EventsDrawerProps): React.JSX.Element {
   // ── focus, on the way in and on the way out ─────────────────────────────
   //
   // BOTH HALVES LIVE HERE, keyed off `open`, and that is deliberate rather than
-  // tidy: there are FOUR ways this drawer shuts (the tab, Escape, `Mod+E` a
-  // second time, and the palette entry), and only two of them go through a
-  // handler this component owns. Hanging the restore off the two it does own
+  // tidy: there are FIVE ways this drawer shuts (the tab, the header's ✕,
+  // Escape, `Mod+E` a second time, and the palette entry), and only three of
+  // them go through a handler this component owns. Hanging the restore off those
   // would leave the other two unmounting a focused body and dropping the
   // keyboard on `<body>` — a dead end you can only leave by Tabbing from the
   // top of the document, which is exactly the capability §5.8 promises
@@ -282,11 +286,20 @@ export function EventsDrawer(props: EventsDrawerProps): React.JSX.Element {
         {announcement}
       </div>
 
-      {/* THE TAB. Always rendered, open or shut — it is the one control, and it
-          slides in to sit against the body's edge rather than being replaced by
-          a second "close" button, so `aria-expanded` describes one thing the
-          whole time. Vertically centred on the workspace, which is the one
-          place on that edge no strip or bar can ever reach. */}
+      {/* THE TAB. Always rendered, open or shut — it slides in to sit against
+          the body's edge rather than being swapped for something else, so
+          `aria-expanded` describes one thing the whole time and its name can
+          stay "what this is" instead of flipping between "open" and "close".
+          Vertically centred on the workspace, which is the one place on that
+          edge no strip or bar can ever reach.
+
+          IT IS NO LONGER THE ONLY CONTROL (#556): the open drawer carries a ✕
+          in its header too. That is a second ROUTE, not a second mechanism —
+          both call `onClose` — and the tab keeps `aria-expanded` because it is
+          still the only thing on screen while the drawer is shut. The owner
+          hunted for a way out of the open drawer and found only this tab, which
+          reads as a way in; a disclosure control that is off to the side and
+          turned on its edge is not where anyone looks for "close". */}
       <button
         ref={tab}
         type="button"
@@ -421,7 +434,13 @@ export function EventsDrawer(props: EventsDrawerProps): React.JSX.Element {
             outline: 'none', // focusable for key handling, not as a control
           }}
         >
-          <EventsPanel {...panel} />
+          {/* `onClose` is destructured out of `panel` above, so it is handed
+              down EXPLICITLY here — the drawer's own close, rendered as the ✕
+              in the panel's header row (#556). The button asks App the same
+              thing the tab and Escape ask, and App answers all five routes by
+              flipping the one `open` flag, so no two of them can land in
+              different states. */}
+          <EventsPanel {...panel} onClose={onClose} />
         </div>
       )}
     </>

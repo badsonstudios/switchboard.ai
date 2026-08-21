@@ -11,11 +11,12 @@
 // P2-E14-01 (Shape B): this is no longer a 220px column in the workspace row —
 // it is the BODY of `EventsDrawer`, which overlays the grid and is collapsed by
 // default. Nothing about the content changed: the same queue-ordered rows, the
-// same three notice tenants, the same dismiss and open gestures. What changed
-// is that it now fills its container instead of claiming a fixed width from the
+// same notice tenants, the same dismiss and open gestures. What changed is
+// that it now fills its container instead of claiming a fixed width from the
 // session grid, and the drawer above it owns the edge, the shadow and the
 // open/close. App still owns the subscription and the cursor — the drawer is a
 // shape, not a new home for state.
+import type { HistoryRepairNotice } from '../../../shared/history-repair';
 import { EventDto } from '../model/types';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
@@ -124,6 +125,36 @@ export interface EventsPanelProps {
    * own when the incident does.
    */
   incidents?: readonly { id: string; name: string; status: string }[];
+  /**
+   * How to dismiss the surface this content is mounted in — rendered as a ✕ in
+   * the header row beside the eyebrow (#556).
+   *
+   * IT LIVES HERE RATHER THAN IN THE DRAWER because the eyebrow IS the header:
+   * a close button in a strip of its own above this would be a second row of
+   * chrome saying nothing, and one absolutely positioned over this row would
+   * fight the panel's own scrollbar. The panel still knows nothing about
+   * drawers — it is handed a callback and a place to put it.
+   *
+   * OPTIONAL, so the content stays mountable in something that has no way out
+   * to offer. `EventsDrawer` always passes its own `onClose`, which is why the
+   * drawer's version of this prop is required.
+   */
+  onClose?: () => void;
+  /**
+   * What the app changed about a card's conversation history without being
+   * asked (#539) — a conversation the repair sweep ADOPTED for an orphaned
+   * card, or one a card CEDED because two cards pointed at it.
+   *
+   * The fourth tenant of this slot (the #425 coordination note), and it belongs
+   * here for the same reason the incidents do: `events/feed.ts` is one item per
+   * SESSION and this is not the session's state — it is a thing the app did to
+   * the card while nobody was watching. Dismissible, unlike an incident,
+   * because it is finished news rather than a live condition; there is nothing
+   * left for it to stop being true about.
+   */
+  historyRepairs?: readonly HistoryRepairNotice[];
+  /** the notice's one control: I have read this. */
+  onDismissHistoryRepair?: (id: string) => void;
 }
 
 export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
@@ -161,25 +192,114 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
         blockSize: '100%',
         background: 'var(--panel)',
         paddingInline: 7,
-        paddingBlock: 8,
+        // the TOP 8px lives on the sticky header instead (#556) — a negative
+        // margin would have pulled the rest of the panel up under it, because
+        // in normal flow a negative block-start margin moves the following
+        // siblings too. The header carries the padding it wants to keep when
+        // it is pinned; nothing else changes.
+        paddingBlockStart: 0,
+        paddingBlockEnd: 8,
         overflowY: 'auto',
         display: 'flex',
         flexDirection: 'column',
         boxSizing: 'border-box',
       }}
     >
+      {/* THE HEADER ROW. Role-less on purpose (§5.32 rule 2): it holds a
+          control, and a container role would make that control presentational.
+          The eyebrow keeps `eyebrowId` — the id labels the LIST below, and a
+          label that swept in the ✕ would name the list "Events ✕".
+
+          STICKY, because this row now holds the WAY OUT (#556). The `<aside>`
+          around it is the scroll container, so before this the header simply
+          scrolled away — which is fine for an eyebrow and not fine for a close
+          button whose entire reason for existing is being findable. A control
+          that vanishes once there are enough events to scroll is the same bug
+          the item was filed about, one screenful later.
+
+          It OWNS the padding on all four sides rather than sitting inside the
+          aside's: `marginInline: -7` widens it back out over the aside's inline
+          padding so its background spans edge to edge and rows cannot show
+          through beside it when it is pinned, and the aside gives up its
+          `paddingBlockStart` to the `paddingBlock` here. A negative
+          `marginBlockStart` was the obvious way to do the block half and is
+          wrong — it moves every following sibling up by the same 8px, which
+          measured as an 8px overlap of this row over the hotkey hint.
+
+          `zIndex` because the rows below are `position: relative` (each one
+          hangs a Dismiss off itself), and a positioned sibling at the same
+          level would otherwise paint over this. */}
       <div
-        id={eyebrowId}
         style={{
-          fontSize: 9,
-          letterSpacing: 1.3,
-          fontWeight: 600,
-          color: 'var(--faint)',
-          textTransform: 'uppercase',
-          marginBlockEnd: 8,
+          position: 'sticky',
+          insetBlockStart: 0,
+          zIndex: 1,
+          background: 'var(--panel)',
+          marginInline: -7,
+          paddingBlock: 8,
+          paddingInline: 7,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
         }}
       >
-        {t('events.eyebrow')}
+        <div
+          id={eyebrowId}
+          style={{
+            flex: 1,
+            minInlineSize: 0,
+            fontSize: 9,
+            letterSpacing: 1.3,
+            fontWeight: 600,
+            color: 'var(--faint)',
+            textTransform: 'uppercase',
+          }}
+        >
+          {t('events.eyebrow')}
+        </div>
+        {/* THE WAY OUT, VISIBLE (#556). Every route out already existed — the
+            edge tab, Escape, the accelerator, the palette — and the owner still
+            hunted for one, because an edge tab reads as a way IN and nothing
+            on the open drawer said it was also the way back. So this is
+            discoverability rather than mechanism: it calls the very `onClose`
+            the tab and Escape call, which App answers by flipping the same
+            `open` flag `Mod+E` and the palette flip. That is what makes "closed
+            by button" and "closed by Escape" the same state by construction,
+            rather than by a second code path kept in step by hand.
+
+            FIRST FOCUSABLE THING IN THE DRAWER, which is deliberate: opening
+            moves focus to the body, so the very first Tab lands here and the
+            keyboard user meets the way out before the list — the same order
+            the eye reads it in.
+
+            A real `<button>` with a worded name, not a bare glyph: `✕` is
+            decoration, and a screen reader that reads it announces nothing
+            useful (§5.32 rule 1). */}
+        {props.onClose && (
+          <button
+            type="button"
+            className="events-close"
+            data-testid="events-close"
+            onClick={props.onClose}
+            aria-label={t('events.drawer.close')}
+            // the tooltip teaches the keyboard route the way the tab's does
+            title={t('events.drawer.closeHint')}
+            style={{
+              flex: '0 0 auto',
+              background: 'var(--chip)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-chip)',
+              color: 'var(--muted)',
+              cursor: 'pointer',
+              fontSize: 10,
+              lineHeight: 1.2,
+              padding: '1px 6px',
+              fontFamily: 'var(--font-ui)',
+            }}
+          >
+            {t('events.drawer.closeIcon')}
+          </button>
+        )}
       </div>
       {head !== null && props.queueBinding && (
         <div
@@ -294,6 +414,64 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
           </div>
         </div>
       )}
+      {!!props.historyRepairs?.length && (
+        <div
+          data-events-notice="history-repair"
+          style={{
+            background: 'var(--panel2)',
+            // `--border`-weight like the update notice rather than a status hue:
+            // this is news about something already finished, not attention.
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-chip)',
+            padding: '7px 9px',
+            marginBlockEnd: 6,
+            fontSize: 11,
+          }}
+        >
+          <div
+            // The panel's one announcement idiom (#314), and this notice needs
+            // it more than most: the ceded half is decided during the workspace
+            // load, so it is ALREADY TRUE when the window mounts and there is no
+            // later event to notice it by.
+            role="status"
+            aria-live="polite"
+            style={{ color: 'var(--text)' }}
+          >
+            {props.historyRepairs.map((r) => (
+              <div
+                key={r.id}
+                data-history-repair={r.kind}
+                style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBlockEnd: 4 }}
+              >
+                <span style={{ flex: 1, minInlineSize: 0 }}>
+                  {r.kind === 'adopted'
+                    ? t('events.historyAdopted', { card: r.cardTitle })
+                    : t('events.historyCeded', { card: r.cardTitle, kept: r.keptByTitle ?? '' })}
+                </span>
+                <button
+                  onClick={() => props.onDismissHistoryRepair?.(r.id)}
+                  // Named per ROW, because a slot with three of these would
+                  // otherwise be three buttons all called "Got it" (§5.32).
+                  aria-label={t('events.historyDismiss', { card: r.cardTitle })}
+                  style={{
+                    background: 'transparent',
+                    color: 'var(--muted)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-chip)',
+                    padding: '2px 10px',
+                    cursor: 'pointer',
+                    fontSize: 11,
+                    fontFamily: 'var(--font-ui)',
+                    flexShrink: 0,
+                  }}
+                >
+                  {t('events.gotIt')}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {props.reconnectOffer && (
         <div
           style={{
@@ -351,7 +529,11 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
           </div>
         </div>
       )}
-      {events.length === 0 && !props.reconnectOffer && !props.updateNotice && !props.incidents?.length && (
+      {events.length === 0 &&
+        !props.reconnectOffer &&
+        !props.updateNotice &&
+        !props.incidents?.length &&
+        !props.historyRepairs?.length && (
         <div style={{ color: 'var(--muted)', fontSize: 11 }}>{t('events.empty')}</div>
       )}
       {/* A real list, so the rows read as a set and their count is announced

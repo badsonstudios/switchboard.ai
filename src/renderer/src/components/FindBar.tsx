@@ -693,10 +693,18 @@ export function FindBar(props: {
                   fontWeight: at?.groupIndex === i ? 700 : undefined,
                 }}
               >
-                {t(g.totalIsFloor ? 'find.groupCountAtLeast' : 'find.groupCount', {
-                  total: g.total,
-                  group: t(g.labelKey),
-                })}
+                {/* A group that could not be READ shows an em dash where the
+                    digit goes (#517). "0 in Terminal (scrollback only)" is a
+                    statement about the last 5,000 lines, and making it when
+                    nobody managed to look at them is the confident zero §5.31
+                    exists to prevent — the group's own error notice, just
+                    below, says what went wrong. */}
+                {g.totalUnknown
+                  ? t('find.groupCountUnknown', { group: t(g.labelKey) })
+                  : t(g.totalIsFloor ? 'find.groupCountAtLeast' : 'find.groupCount', {
+                      total: g.total,
+                      group: t(g.labelKey),
+                    })}
               </span>
             </span>
           ))}

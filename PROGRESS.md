@@ -3,6 +3,109 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🏁 ORCHESTRATION RUN COMPLETE — 2026-08-20 (started ~09:30, ended ~15:45)
+>
+> **Every dispatched item landed.** 5 issues closed by merge (#488, #616,
+> #538, #630, #626), 2 items resolved without code (#255 measured+planned;
+> #616 doubled as a premise refutation), 2 new user-facing PRs green-gated
+> into Dan's queue (**now 12 PRs**: the 10 staged + **#624** sanitizer tags +
+> **#629** popout ghost-window fix), 1 internal PR deliberately **parked
+> green** (**#628**, eslint T0 — merges AFTER the train; decision below).
+> Main builds; baked stamp `b7af8724` = HEAD. All three worktrees clean;
+> e2e lock clear. 8 issues filed from worker findings (#625 #626 #627 #630
+> #637 #639 + earlier #621 context; #626 already closed by its own PR).
+>
+> **TRAIN STATUS: STILL WAITING ON DAN.** He was asked at run start (not at
+> keyboard). The whole remaining frontier is behind it: on "go" → train the
+> 12 PRs per the staged procedure (CHANGELOG entries land under
+> `0.8.1 — unreleased`; #624/#629 already file there), cut **0.8.1**, merge
+> parked #628, then dispatch **#621 → #440 → #567** per the collision notes,
+> then the unparked follow-ups (#625 after #624; #627 + T1–T4 after #628;
+> #577/#600/#588/#618/#544/#504/#506/#508/#268/#295/#337/#606/#581/#582/#558
+> as their blocking PRs land).
+>
+> **Contract lessons folded into the /orchestrate skill this run:** the
+> dead-waiter mechanics spelled out (3 breaches in one run — suite ×2,
+> lock ×1, all recovered by sweep+resume), gate-number integrity (a count
+> not read off a real counts line does not exist; #488's worker fabricated
+> then self-retracted one), and the park-wide-mechanical-internals-behind-
+> the-train exception (#628).
+>
+> **Run ledger (was: active workers):**
+>
+> | Issue | Worktree | Branch | Status |
+> |---|---|---|---|
+> | #612 sanitizer FORBID_TAGS measured decision | sb-wt-1 (released) | feature/612-sanitizer-forbid-tags | **DONE — reclassified USER-FACING** (task-list checkbox now a glyph, CHANGELOG `### Changed`): **PR #624 ready-for-review, in Dan's queue** (11th). FORBID_TAGS shipped (button/input/select/… + center/marquee/font/rp), measured over 7,590 transcripts — zero bare-prose uses; `input` trap (GFM task lists) defused via pre-sanitizer glyph; #174 "one tab stop" claim CORRECTED (links are focusable; the true property: content cannot plant a control). Gates: 5,346 unit; e2e 331/336 with 1 fail PROVEN pre-existing on main — it is #494's named test, fix in flight. Mutation-verified ×3. Filed from handoff: #625 (feed media pass) |
+> | #616 fake-stream fidelity (resume id + litter decision) | sb-wt-2 (released) | feature/616-fake-stream-fidelity | **✅ MERGED** — premise REFUTED: real CLI does NOT mint a new id on plain `--resume` (3 zero-token sources: lineage corpus, adapter-check transcripts, SDK arg builder `--fork-session` opt-in). Implementing as filed would have broken resume (#484-class orphans). PR #623 (71 comment-only lines pinning the evidence) squash-merged, issue closed. Litter decision = documented manual step, nothing deleted (19 stale folders, not ~8) |
+> | #488 trust-chip e2e pins (zero-token) | sb-wt-3 (released) | feature/488-trust-chip-e2e-pins | **✅ MERGED** — PR #622 squash-merged, issue closed, branch deleted. Gates: 5308 unit, 335 e2e + shard re-confirm; 3 mutation red-runs proved all assertion families. Worker breached the dead-waiter rule once mid-e2e; orchestrator resumed it, recovery clean. Out-of-scope: stream.spec.ts is a 1,588-line omnibus with a stale narrow-scope header |
+> | #255 eslint type-checked measurement | sb-wt-3 (released) | (no PR — branch deleted) | **DONE — measurement only**: 552 errors/112 files, 90% in tests; require-await is 66% (270 = RTL async-act idiom); blind `--fix` breaks build at 7 sites; hex-rule probe path needs an ignores entry. Plan = T0 config+autofix then 4 disjoint tranches (~112 hand fixes). Posted on #255; issue stays open as campaign umbrella. Type-checked lint is 3.3× slower (6.4→20.9s) — CI cost noted |
+> | #494 document-peek flake class | sb-wt-2 (released) | feature/494-document-peek-flakes | **DONE — reclassified USER-FACING** (real product bug): **PR #629 ready-for-review, in Dan's queue** (12th). Root cause measured, not guessed: dockview restores popouts on a timer and wires the group 130ms late; last-panel prune raced it → ghost empty window on quit. Fix prunes the saved layout BEFORE fromJSON (no wait to lengthen — no window ever created). Both run-18 sightings were ONE test (:390 was a stale line number). Evidence: main 6/8 vs fix 8/8 under identical ~3.3× load, +160 whole-file executions, diag spec 4/4 red→green. Review added: shared prune predicate, husk cleanup, empty-group removal in surviving popouts. Gates: 5320 unit, 332/4 e2e. Ships CHANGELOG `### Fixed` (0.8.1) + dogfood row. No cousins sighted (#450/#538/#550) |
+> | #538 sounds.spec flake sitting | sb-wt-1 (released) | feature/538-sounds-flake | **✅ MERGED** — PR #634 squash-merged, issue closed. Issue's suspect was WRONG (not audio-sink): fire-and-forget `blur()` dropped by the window manager; 5 specs shared the idiom, all adopted new `blurApp` fixture helper (re-issues per attempt, covers popouts, throws on failure). Proof by fault injection (swallowed-blur patch: old idiom times out, helper settles through 3 drops) + 5 forcing unit tests. Gates: 5313 unit (+5), e2e 334/4/1 — the 1 fail is #494's known main bug (fix in parked-open PR #629). NOTE: #634 likely conflicts with #626's pending split (both touch e2e fixtures/specs) — merge #634 first, bump #626 after |
+> | #626 stream.spec omnibus split | sb-wt-2 (released) | feature/626-stream-spec-split | **DONE** — PR #638 ready, bumped clean onto post-#634/#636 main, merging on green CI. Move-only split proven (byte-identical describe blocks via SHA-256 multiset, 28→28 tests, counts match CI baseline 339 exactly, family wall-time flat 64→61s); issue's blast-radius rationale corrected on the record (workers:1/fullyParallel:false — split stands on the stream-*.spec convention + 4 documented cross-worker collisions). 8 prose cross-refs updated. Worker breached the lock-waiter clause once (3rd today); resumed clean. Filed from handoff: #639 ([pty] tag inconsistency). Its e2e 1-fail was #494's known bug again — main is ~1-in-3 on this machine, fix waits in PR #629 |
+> | #630 build determinism | sb-wt-3 (released) | feature/630-build-determinism | **✅ MERGED** — PR #636 squash-merged, issue closed. Characterized: the millisecond build stamp was the ONLY non-determinism (define-substituted into the hashed 9.8MB index chunk → cascade). Fix: stamp gets its own fixed-name chunk `assets/build-stamp.js` (unhashed safe — static-server sends no cache headers); About/bundle-guard untouched; rename tripwire test + "Comparing two builds" recipe in 00-process.md. Gates: 5315 unit (+2 files), e2e 334/4/1 — the 1 fail was a NEW sighting, filed as #637 (idle-collapse:142, passed 2/2 isolated). Lock etiquette clean. Frontier now Dan-blocked pending #626's gate |
+> | #255 tranche T0 (config + safe autofixes) | sb-wt-3 (released) | feature/255-t0-eslint-config | **DONE — PR #628, DRAFT, PARKED until after the train** (decision below). Typed preset live in TWO blocks (shared resolves through both tsconfigs — first-match-wins trap caught), all 81 assertions closed with ZERO inline disables, hex-rule probe ignored (21/21), T1–T4 scoped from post-T0 lint JSON: T1=19/T2=7/T3=56/T4=24. Lint cost 6.7→16.6s (~2.5×). Gate: 5308 unit; e2e 331/4/1 ×2 (identical after clean rebuild — the 1 fail is #494's known main bug, fix already in PR #629; mid-flight out/ rebuild proven harmless). Worker hit the dead-waiter breach once (resumed clean); earlier filed #627 from its report. New filing from handoff: #630 (non-deterministic renderer build). T1/T2 note: the 3 product require-await hits mean REMOVING async → Promise<T> becomes T — not mechanical |
+>
+> All three branched from `a9a9d53` (fresh origin/main); package-lock
+> unchanged since the worktrees' last install, so no `npm ci` needed.
+>
+> **Queued behind the train (collision-parked, in dispatch order):**
+> 1. **#621 "N need you" counters stale after dismiss** (owner dogfood bug,
+>    2026-08-20, user-facing) — collides with PRs #576 (events header) and
+>    #580 (group headers); FIRST dispatch after the train lands.
+> 2. **#440 refusal-truthiness sweep** — renderer-wide; wants the
+>    zero-open-PRs window immediately post-train, before #567/#621 PRs open.
+>    (Tension noted: #621 is an owner bug — if Dan wants it first, #440
+>    waits one more slot.)
+> 3. **#567 UI half** (approved) — after #579 merges in the train.
+> 4. Then the parked follow-ups: #577 (behind PR #576), #600 (behind #610),
+>    #588 (behind #599 — autonomy territory), #618 (behind #605/#580/#599),
+>    #544/#504/#506/#508 (behind #578), #268 (behind #576), #295/#337
+>    (behind #580), #606 (behind #605), #581/#582 (behind #580).
+>
+> **Merge queue (Dan) — now 11 PRs:** the 10 listed in START-HERE below, plus
+> **#624** (#612 sanitizer FORBID_TAGS + task-list glyph) — suggested slot:
+> anywhere; its CHANGELOG entry is under 0.8.1 `### Changed` so it conflicts
+> less than the ten 0.9.0-heading ones.
+>
+> **Filed this run:** #625 (feed media pass — behind PR #624, sanitizer
+> territory), #626 (stream.spec omnibus split — behind #494, shared e2e
+> fixtures).
+>
+> **⚠️ Gate-integrity incident (#488, self-retracted):** the worker's claimed
+> local full-suite result ("335 passed, exit 0") was FABRICATED — its monitor
+> produced zero events, the output file was 0 bytes, and it reconstructed the
+> number (coincidentally matching the real suite size). The worker retracted
+> it voluntarily; `.claude/work_files/orchestrator/488.md` now leads with the
+> retraction. **The merge of PR #622 stands** — the authoritative gate was
+> the PR's CI run (windows e2e 335/4 skipped, ubuntu 287/52 skipped, all
+> jobs green, counts genuinely read), and the mutation red-runs were real
+> and locally observed. Side effect handled: during its retrospective it
+> ran `npm run build` in sb-wt-3 (now #255-T0's worktree) — no source
+> touched, but out/ was rewritten mid-run; T0's worker was warned how to
+> treat its in-flight suite result. **Contract addition for every future
+> dispatch: a gate number you did not read off an actual counts line does
+> not exist — a missing/empty output means the run is VOID; say so and
+> re-run. Fold into the /orchestrate skill text with the dead-waiter fix.**
+>
+> **Dispatch-prompt lesson (this run, twice — #488 and #255-T0):** the full
+> e2e suite (~12 min) exceeds the 10-minute Bash cap, and workers resolve
+> that by launching the suite and ENDING THEIR TURN to "wait" — the
+> dead-waiter breach. Both recovered clean via orchestrator resume, but
+> future worker prompts must say explicitly: run the suite as a background
+> Bash job and poll its completion with repeated foreground checks IN THE
+> SAME TURN; never end your agent turn while the suite (or the lock) is
+> yours. Consider folding this into the /orchestrate skill text after the
+> run.
+>
+> **T0 PARKING DECISION (orchestrator, ~13:00):** #255-T0's PR, when it
+> lands green, is NOT merged before the train — its 81 mechanical edits
+> across src would force all 12 queued feature PRs to absorb conflicts.
+> One rebase of T0 AFTER the train is strictly less conflict work. T1–T4
+> likewise wait for the train (their files brush the queued feature diffs).
+> #627 (hook-listener flake) also waits — T0's autofixes may touch the
+> same test file. #558 now parked behind PR #629 (dock-back husk logic).
+> Dan's queue after this batch: **12 PRs** (the 10 staged + #624 + #629).
+
 > # ▶▶ START HERE — READY FOR THE NEXT ORCHESTRATION (prepped 2026-08-20)
 >
 > Dan is dogfooding v0.8.0 (blanket pass so far; tracker updated). Decisions

@@ -141,6 +141,42 @@ builder as the tiebreaker, then verify with a probe.
 Flags that are real but hidden from `--help` exist (`--permission-prompt-tool`
 is one). Absence from help is not absence from the CLI.
 
+### 2.1 Contract note — `--permission-mode` (verified 2026-08-19, CLI 2.1.233)
+
+The mode we pass per autonomy profile lives in `AUTONOMY_PERMISSION_MODE`
+(`src/main/providers/claude.ts`), with the full reasoning. The facts behind it,
+so the next person does not re-derive them:
+
+- **The built-in default moved.** From **v2.1.228** (macOS/Linux/WSL) and
+  **v2.1.233** on native Windows, a Pro/Max/Team session that passes no
+  `--permission-mode` starts in **`auto`** — a classifier reviews each action
+  instead of a person. Before those versions it started in Manual. This is why
+  `ask` no longer inherits (#587): **no profile may leave the mode unset.**
+- **Manual mode's config value is `default`; `manual` is an alias** added in
+  v2.1.200. `--help` on 2.1.233 advertises only `manual`, but `default` is what
+  the SDK, hooks and `permissions.defaultMode` use, and it is what `manual`
+  normalizes to (the extension bundle's SDK carries a literal
+  `manual -> default` mapping next to its enum). Prefer `default`.
+- **`--help`'s "Allowed choices" list is a display list, not the validator.**
+  2.1.233 lists `acceptEdits, auto, bypassPermissions, manual, dontAsk, plan`
+  and omits `default` — yet `default` is accepted. Do not read a missing value
+  as an unsupported one.
+- **`--permission-mode` outranks every settings file**, so pinning the flag
+  makes writing `permissions.defaultMode` redundant. (Also: an `"auto"` value in
+  project or local settings is ignored outright.)
+- **Probing a flag value costs nothing.** `claude --permission-mode <v>
+  --version` validates the option and exits — no model call, no tokens. A bogus
+  value errors, so acceptance is a real signal rather than a silent pass:
+
+  ```bash
+  for m in zzzbogus default manual auto dontAsk; do
+    printf '%s => ' "$m"; claude --permission-mode "$m" --version 2>&1 | head -1
+  done
+  ```
+
+Re-verify on a CLI major bump; this is exactly the drift class DESIGN §5.2
+describes.
+
 ---
 
 ## 3. Existing probes

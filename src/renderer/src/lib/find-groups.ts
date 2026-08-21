@@ -35,6 +35,8 @@ export interface FindGroup {
   total: number;
   /** `total` is "at least this many" — the provider stopped counting */
   totalIsFloor: boolean;
+  /** `total` is nothing at all — the provider could not look (#517) */
+  totalUnknown: boolean;
   hits: FindHit[];
   notice?: FindNotice;
 }
@@ -70,6 +72,7 @@ export function buildFindGroups(inputs: FindGroupInput[]): FindGroupsView {
     labelKey: input.labelKey,
     total: input.results.total,
     totalIsFloor: !!input.results.totalIsFloor,
+    totalUnknown: !!input.results.totalUnknown,
     notice: input.results.notice,
     hits: input.results.hits.map((h) => ({ ...h, id: `${input.id}::${h.id}` })),
   }));
