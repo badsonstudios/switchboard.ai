@@ -12,6 +12,7 @@ import {
   extractImages,
 } from './fake-stream-protocol';
 import { FAKE_SESSION_ID, fakeSessionId } from './fake-stream-ids';
+import { userMessage } from '../../shared/stream-protocol';
 
 let out: Record<string, unknown>[];
 let writes: Array<{ path: string; content: string }>;
@@ -802,6 +803,48 @@ describe('images on the inbound envelope (P2-E10-09)', () => {
     expect(echo?.message.content).toEqual([{ type: 'text', text: 'hello' }]);
     expect(types().filter((t) => t === 'assistant').length).toBeGreaterThan(0);
     expect(JSON.stringify(out)).not.toContain('IMAGE-SEEN');
+  });
+});
+
+// The real CLI's replay builder carries the sender's own id and origin back out
+// (`RCg`: `…uuid:e.uuid,…isReplay:!0,…e.origin&&{origin:e.origin}`). The fake
+// does the same, conditionally, so it stays a strict reader of #490's contract
+// rather than a kind one.
+describe('uuid and origin on the echo (#490)', () => {
+  const userEcho = () => out.find((m) => m.type === 'user');
+
+  it('echoes the uuid and origin the turn arrived with', () => {
+    proto.handle({ ...userMsg('hello'), uuid: 'u-1', origin: { kind: 'human' } });
+    const echo = userEcho();
+    expect(echo?.uuid).toBe('u-1');
+    expect(echo?.origin).toEqual({ kind: 'human' });
+  });
+
+  // A frame without them echoes without them — exactly what the real CLI's
+  // conditional spread does. Inventing an id here would hide a builder that
+  // stopped minting one.
+  it('adds neither field when the turn carried neither', () => {
+    proto.handle(userMsg('hello'));
+    const echo = userEcho();
+    expect(echo).toBeDefined();
+    expect(Object.keys(echo ?? {})).not.toContain('uuid');
+    expect(Object.keys(echo ?? {})).not.toContain('origin');
+  });
+
+  // The id identifies a delivery; a non-string is not one, and guessing at it
+  // is how a fake starts disagreeing with the thing it stands in for.
+  it('ignores a uuid that is not a string', () => {
+    proto.handle({ ...userMsg('hello'), uuid: 42 });
+    expect(Object.keys(userEcho() ?? {})).not.toContain('uuid');
+  });
+
+  // The whole envelope our own builder produces makes the round trip.
+  it('round-trips what shared/stream-protocol actually builds', () => {
+    const sent = userMessage('hello');
+    proto.handle(sent as unknown as Record<string, unknown>);
+    const echo = userEcho();
+    expect(echo?.uuid).toBe(sent.uuid);
+    expect(echo?.origin).toEqual({ kind: 'human' });
   });
 });
 
