@@ -129,10 +129,14 @@ export class IpcBroker {
     handler: (event: IpcMainInvokeEvent, ...args: any[]) => unknown
   ): void {
     // `...args: unknown[]` and not the inferred `any[]`: Electron types the
-    // listener's rest parameter as `any[]`, and spreading an `any[]` into
-    // `handler` would hand the call site's own annotations an unchecked value.
-    // `unknown` is assignable to the `any` `handler` declares, so nothing here
-    // is cast and nothing downstream loses a type.
+    // listener's rest parameter as `any[]`, and spreading an `any[]` is
+    // `no-unsafe-argument`'s definition of unsafe. `unknown` is assignable to
+    // the `any` `handler` still declares, so nothing is cast and no call site
+    // changes — and to be clear about what this does NOT buy: a handler's own
+    // `(_e, id: string) => …` annotation is still unchecked, because the `any[]`
+    // above is deliberately kept so those annotations survive at all. This
+    // stops broker.ts from laundering an `any`; it does not validate a payload.
+    // That is the call site's job (`sanitize*`, or a `typeof` narrow).
     ipcMain.handle(channel, (event, ...args: unknown[]) => {
       const denied = this.denyReason(channel, event.sender);
       if (denied) {

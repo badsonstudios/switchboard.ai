@@ -28,7 +28,10 @@ function check(label: string, ok: boolean): void {
 
 const tag = (m: StreamMessage): string => {
   const sub = asDisplayString(m.subtype);
-  return `${asDisplayString(m.type)}${sub ? ':' + sub : ''}`;
+  // '?' rather than '' for the type: this line is read by a human debugging a
+  // failed check, and a tag that says nothing arrived is worse than one that
+  // says something unprintable did.
+  return `${asDisplayString(m.type, '?')}${sub ? ':' + sub : ''}`;
 };
 
 function waitFor(pred: () => boolean, ms: number, what: string): Promise<void> {

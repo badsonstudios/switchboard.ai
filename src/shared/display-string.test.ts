@@ -1,10 +1,14 @@
 // The boundary read that used to say `[object Object]` (#255 T1).
 //
-// Twelve `String(x ?? fallback)` calls across the stream protocol, the hook
-// forwarder and the Feed derivation all read a field out of a payload we did
-// not write. `no-base-to-string` flagged every one of them: the static type is
-// `unknown`, so a malformed payload rendered as literal `[object Object]` — on
-// a permission card, in a feed block, and once as a FILE NAME.
+// Thirteen call sites across the stream protocol, the stream fake's CLI and
+// check script, the permission-offer path and the Feed derivation each read a
+// field out of a payload they did not shape. Twelve were `no-base-to-string`
+// errors (eleven of them literally `String(x ?? fallback)`, one a `String()`
+// inside a truthiness ternary); the thirteenth was a
+// `restrict-template-expressions` error on `${m.type}` and came along because
+// it is the same read. In every one the static type is `unknown`, so a
+// malformed payload rendered as literal `[object Object]` — on a permission
+// card, in a Feed checklist, and potentially as a FILE NAME.
 //
 // What is pinned here is the pair of promises the callers depend on: it never
 // throws (fail-open, the same as `String`), and a value that is not display

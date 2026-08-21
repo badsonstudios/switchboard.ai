@@ -215,19 +215,20 @@ export default tseslint.config(
     // where an `async` with no `await` is routinely load-bearing rather than a
     // mistake.
     //
-    // Product code keeps the rule — but only in `src/{preload,shared,build}`
-    // and the root `src/*.ts` until #255 T1 and T2 land: those tranches own the
-    // three product hits, so their blocks below (which are LATER, and therefore
-    // win) hold the rule off `src/main` and `src/renderer` product code too.
+    // Product code keeps the rule everywhere EXCEPT `src/renderer`, and only
+    // until #255 T2 lands: that tranche owns the two remaining product hits, so
+    // its block below (which is LATER, and therefore wins) holds the rule off
+    // renderer product code for now. T1 landed and `src/main` product code
+    // keeps it for real.
     files: ['src/**/*.test.{ts,tsx}'],
     rules: { '@typescript-eslint/require-await': 'off' },
   },
   // ---------------------------------------------------------------------------
   // #255 is landing in tranches, because the switch above surfaced 552 real
   // errors and one 552-error PR is not reviewable. T0 (this config, plus every
-  // `no-unnecessary-type-assertion`) went first; the four blocks below hold the
-  // REST of the preset off one directory each so `main` is never red in
-  // between. Each block is a whole tranche: T<n> deletes its own block in the
+  // `no-unnecessary-type-assertion`) went first, then T1 (`src/main` product
+  // code); the three blocks below hold the REST of the preset off one directory
+  // each so `main` is never red in between. Each block is a whole tranche: T<n> deletes its own block in the
   // same PR as its fixes, and when the last one goes, `src/` is on the preset
   // with no disables — the state e2e/ has had since #245.
   //

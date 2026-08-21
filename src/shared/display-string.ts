@@ -1,13 +1,14 @@
 /**
  * Turn an untrusted value into something safe to show a person.
  *
- * Every caller reads a field out of a payload we did not write — a
+ * Every caller reads a field out of a payload it did not shape — a
  * `stream-json` control message, a hook's JSON body, a `tool_use` block from
  * the CLI — so the static type is `unknown` and the runtime type is whatever
  * arrived on the wire. The idiom these calls used to share was
  * `String(x ?? fallback)`, which is fail-open (it never throws) but renders a
  * malformed payload as the literal text `[object Object]`: on a permission
- * card, in a feed block, or — worse — as a FILE NAME in the stream fake.
+ * card, in a Feed checklist, and — in the stream fake, if its own input were
+ * ever malformed — as a FILE NAME.
  *
  * This keeps the fail-open half and drops the `[object Object]` half. A
  * primitive is shown as itself; anything that is not a primitive (an object,
