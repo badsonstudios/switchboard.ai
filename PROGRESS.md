@@ -18,12 +18,20 @@
 > NOTE: `.claude/work_files/loud-class.txt` (referenced by #650) is GONE — #650's
 > worker must regenerate the site list via the #649 scanner / 440.md.
 >
-> **Active workers:**
+> **Active workers (wave 2, dispatched ~10:15):**
 > | Issue | Worktree | Branch | Status |
 > |---|---|---|---|
-> | #255 T2+T4 (+#663 rider) | sb-wt-1 | feature/255-t2t4-renderer-tranches | DONE — PR #669 awaiting CI |
-> | #490 user envelope | sb-wt-2 | feature/490-user-envelope | DONE — PR #665 green, held for base-bump |
-> | #654 sanitizer label-for | sb-wt-3 | feature/654-label-for | dispatched |
+> | #650 value-channel refusals | sb-wt-1 | feature/650-value-channel-refusals | dispatched |
+> | #471 main-process i18n (USER-FACING) | sb-wt-2 | feature/471-main-i18n | dispatched |
+> | (idle — next: #666+#667+#668 after #665 merges) | sb-wt-3 | — | — |
+>
+> **Wave 1 complete:** #490 → PR #665 (green, base-bumped, merge on re-green);
+> #255 T2/T4 + #663 → PR #669 **MERGED** (da0aa78, #663 closed, #255 umbrella
+> open pending #670); #654 → PR #672 (internal — sanitizer forbids <label>,
+> literal ids → useId in 3 dialogs; measured zero bare-in-prose across both
+> corpora; Chromium check showed label toggles/renames controls through
+> aria-modal; gates 5798 unit / 349+3sk e2e / 4 mutation runs red). #672 merges
+> after #665 (serial base-bumps; repo has NO auto-merge — manual on green).
 >
 > **Merge queue (ordered — strict up-to-date base protection):** 1) PR #669
 > (#255 T2/T4 + #663, internal) — up to date, merge on green. 2) PR #665
@@ -42,7 +50,8 @@
 > **Filed this run:** #666 (fake isReplay echo fidelity), #667 (fake-stream-check
 > envelope drift), #668 (ref-impls doc: PATH binary as greppable third source),
 > #670 (String(err) catch-block class — #255 umbrella blocker), #671 (post-#255
-> type-hygiene stragglers).
+> type-hygiene stragglers), #673 (identifierPrefix on createRoot — closes the
+> id-collision space #654's useId move only narrowed).
 > **#490 outcome:** ADD both fields — uuid gates the CLI's entire duplicate-replay
 > guard (without it every frame always executes); origin stops a presumed-human
 > guess. Fresh randomUUID per delivery, pinned by 10 new unit tests. Gates: 5785
