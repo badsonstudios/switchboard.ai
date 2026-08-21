@@ -255,12 +255,22 @@ into your own tools is always one click away.
   the words inside them stay, so you still read everything the document or the
   reply said. A few obsolete tags go with them — `<center>`, `<marquee>` and
   `<font>` — for the same reason as the colours above.
+  **Embedded players go too.** A `<video>` or `<audio>` tag in a Markdown file
+  or a reply would otherwise draw a real media player: something that starts
+  fetching the moment it appears, can play on its own, lands under your Tab key,
+  and carries its own right-click menu with a *Download* item on it. Nothing
+  plays inside switchboard.ai, so the player is removed rather than shown
+  switched off. Clickable regions drawn on top of a picture (an "image map") go
+  with them, and so does one tag — `<dialog>` — that hid whatever was put inside
+  it. Ordinary pictures are untouched.
   What is still reachable with Tab inside the text is what the text genuinely
   contains: **links**, any `<details>` sections it uses to fold parts of itself
   away, and the scroll box around a wide table, which the viewer makes reachable
-  on purpose. In the document viewer, links are switchboard.ai's own — it takes
-  the address off every link and decides itself what opening one does. In a
-  session reply, a link is the reply's own.
+  on purpose. That list is now complete rather than approximate: nothing else in
+  a document or a reply can put itself under your Tab key. In the document
+  viewer, links are switchboard.ai's own — it takes the address off every link
+  and decides itself what opening one does. In a session reply, a link is the
+  reply's own.
 - **Checklists show a box, not a checkbox.** A markdown task list
   (`- [ ] not done`, `- [x] done`) is drawn with ☐ and ☑ characters rather than
   a real checkbox control. They were never clickable — markdown checkboxes are

@@ -2111,6 +2111,21 @@ a pointer where they left.)*
   > viewer is the exception that can promise more, because `decorateLinks`
   > takes `href` off every link and writes the affordance back itself.
   >
+  > **#625 (2026-08-20) makes the sentence above literally true.** #612 wrote
+  > it while two content-planted stops were still open, and said so in its own
+  > comment: `<audio controls>` / `<video controls>` are focusable media (a tab
+  > stop, a context menu and a Download item), and an `<area href>` inside a
+  > `<map>` is a hot spot on a rendered image. The document viewer chipped both
+  > in a decoration pass; the SESSION FEED had no media pass at all, and the
+  > update dialog — which renders release notes fetched from GitHub through the
+  > same `<Markdown>` — has no decoration pass of any kind. So the media tags
+  > joined `FORBID_TAGS` at the profile rather than getting a pass per surface:
+  > the profile is the layer that does not depend on a surface remembering.
+  > Measured first, the way this family always is — 7,602 transcripts and 1,182
+  > real `.md` files on the author's machine, and not one bare-in-prose use of
+  > any tag in the family. `<img>` stays, because markdown emits one for every
+  > `![alt](src)`.
+  >
   > **A fifth rule, added by #253 (2026-08-05):** *a drag is never the only way
   > to do something.* The sweep above made every CONTROL reachable and left one
   > INTERACTION that wasn't — a session's group could only be changed by
