@@ -12,6 +12,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { asDisplayString } from '../../shared/display-string';
 import { StreamService, StreamMessage } from '../transport/stream-service';
 import { fakeStreamAdapter } from './fake-stream';
 
@@ -25,7 +26,13 @@ function check(label: string, ok: boolean): void {
   console.log(`[fake-stream-check] ${ok ? 'ok  ' : 'FAIL'} ${label}`);
 }
 
-const tag = (m: StreamMessage): string => `${m.type}${m.subtype ? ':' + String(m.subtype) : ''}`;
+const tag = (m: StreamMessage): string => {
+  const sub = asDisplayString(m.subtype);
+  // '?' rather than '' for the type: this line is read by a human debugging a
+  // failed check, and a tag that says nothing arrived is worse than one that
+  // says something unprintable did.
+  return `${asDisplayString(m.type, '?')}${sub ? ':' + sub : ''}`;
+};
 
 function waitFor(pred: () => boolean, ms: number, what: string): Promise<void> {
   return new Promise((res, rej) => {

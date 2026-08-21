@@ -20,6 +20,7 @@
 // would mean a second bar to keep in step with the first.
 import { PermissionRequest } from '../hooks/hook-listener';
 import { Logger } from '../log/logger';
+import { asDisplayString } from '../../shared/display-string';
 import { controlResponse } from '../../shared/stream-protocol';
 import { ASK_USER_QUESTION_TOOL } from '../../shared/ask-user-question';
 import { SessionEvent } from './state-machine';
@@ -220,7 +221,7 @@ export class StreamPermissions {
     const req = msg.request as Record<string, unknown> | undefined;
     if (req?.subtype !== 'can_use_tool') return;
 
-    const nativeRequestId = String(msg.request_id ?? '');
+    const nativeRequestId = asDisplayString(msg.request_id);
     if (!nativeRequestId) {
       // Unanswerable: with no id there is nothing to echo back, so offering it
       // would park the card on a question whose answer goes nowhere.
@@ -235,7 +236,7 @@ export class StreamPermissions {
     const request: PermissionRequest = {
       requestId,
       sessionId,
-      tool: String(req.tool_name ?? 'unknown'),
+      tool: asDisplayString(req.tool_name, 'unknown'),
       input: (req.input as Record<string, unknown>) ?? {},
       source: 'stream',
       reason: typeof req.decision_reason === 'string' ? req.decision_reason : undefined,

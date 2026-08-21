@@ -38,10 +38,15 @@ const GH_TIMEOUT_MS = 5_000;
  * Intentionally empty. Kept as a real entry rather than a comment so the order
  * is expressed in code — the day the credential store exists, this function
  * gets a body and no caller changes.
+ *
+ * `Promise.resolve(null)` rather than `async`, because there is nothing here to
+ * await yet and `TokenSource.resolve`'s contract is the RETURN TYPE, not the
+ * keyword. `ghCliToken` below does the same. Whoever gives this a real body can
+ * put `async` back the moment it has an `await` in it.
  */
 export const credentialStoreToken: TokenSource = {
   id: 'credential-store',
-  resolve: async () => null,
+  resolve: () => Promise.resolve(null),
 };
 
 /**

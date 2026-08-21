@@ -16,6 +16,7 @@ import path from 'path';
 import { spawnSync } from 'child_process';
 import { FakeStreamProtocol } from './fake-stream-protocol';
 import { claimFakeSessionId } from './fake-stream-ids';
+import { asDisplayString } from '../../shared/display-string';
 import { slugForCwd } from '../transcripts/paths';
 import { claudeProjectsRoot } from './claude';
 
@@ -37,7 +38,7 @@ import { claudeProjectsRoot } from './claude';
  * usable fake for everything else, and it must not take the session down.
  */
 function fireHook(payload: Record<string, unknown>): void {
-  const event = String(payload.hook_event_name ?? '');
+  const event = asDisplayString(payload.hook_event_name);
   try {
     const i = process.argv.indexOf('--settings');
     if (i < 0 || !process.argv[i + 1]) return;

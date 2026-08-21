@@ -128,7 +128,16 @@ export class IpcBroker {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     handler: (event: IpcMainInvokeEvent, ...args: any[]) => unknown
   ): void {
-    ipcMain.handle(channel, (event, ...args) => {
+    // `...args: unknown[]` and not the inferred `any[]`: Electron types the
+    // listener's rest parameter as `any[]`, and spreading an `any[]` is
+    // `no-unsafe-argument`'s definition of unsafe. `unknown` is assignable to
+    // the `any` `handler` still declares, so nothing is cast and no call site
+    // changes — and to be clear about what this does NOT buy: a handler's own
+    // `(_e, id: string) => …` annotation is still unchecked, because the `any[]`
+    // above is deliberately kept so those annotations survive at all. This
+    // stops broker.ts from laundering an `any`; it does not validate a payload.
+    // That is the call site's job (`sanitize*`, or a `typeof` narrow).
+    ipcMain.handle(channel, (event, ...args: unknown[]) => {
       const denied = this.denyReason(channel, event.sender);
       if (denied) {
         // Answer, don't throw. The old throw arrived as a rejected promise in
@@ -157,7 +166,8 @@ export class IpcBroker {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     handler: (event: Electron.IpcMainEvent, ...args: any[]) => void
   ): void {
-    ipcMain.on(channel, (event, ...args) => {
+    // as above — `unknown[]` rather than Electron's inferred `any[]`
+    ipcMain.on(channel, (event, ...args: unknown[]) => {
       if (!this.allowed(channel, event.sender)) return;
       handler(event, ...args);
     });

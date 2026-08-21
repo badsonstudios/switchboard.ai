@@ -26,7 +26,10 @@ export interface LivePopout {
 
 interface PopoutGroup {
   position?: Box | null;
-  data?: { id?: string } | unknown;
+  // `unknown` and not `{ id?: string }`: this is dockview's own layout JSON
+  // read back off disk, so the shape is a hope, not a guarantee. `idOf`
+  // narrows it at the one place that reads it.
+  data?: unknown;
   [k: string]: unknown;
 }
 interface Layout {

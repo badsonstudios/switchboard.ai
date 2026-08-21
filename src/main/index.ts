@@ -11,7 +11,7 @@ import {
 } from 'electron';
 import path from 'path';
 import { windowOptionsFrom, WindowState } from './window-state';
-import { WorkspaceStore, displayFingerprint } from './workspace/store';
+import { WorkspaceStore, displayFingerprint, NotificationPrefsState } from './workspace/store';
 import os from 'os';
 import { LogSink, createLogger } from './log/logger';
 import { registerBuiltinContributions } from './bootstrap';
@@ -1729,7 +1729,7 @@ app
       getWindow: () => currentWindow,
     });
     broker.handle('notifications:getPrefs', () => workspace.getNotificationPrefs());
-    broker.handle('notifications:setPrefs', (_e, p) => {
+    broker.handle('notifications:setPrefs', (_e, p: Partial<NotificationPrefsState>) => {
       workspace.setNotificationPrefs(p);
       return workspace.getNotificationPrefs();
     });

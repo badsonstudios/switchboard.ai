@@ -16,6 +16,7 @@
 // Deliberately pure: no I/O, no state, no logger. It answers "what does this
 // message MEAN for the Feed" and hands back intents; applying them — seq
 // numbers, the block cap, tool-result stitching — is `FeedBuffer`'s job.
+import { asDisplayString } from '../../shared/display-string';
 import { ToolCategory, toolCategory } from '../../shared/tool-taxonomy';
 
 /**
@@ -383,7 +384,10 @@ function toolIntent(
   if (name === 'TodoWrite' && Array.isArray(input.todos)) {
     const todos = (input.todos as Array<{ content?: unknown; status?: unknown }>)
       .slice(0, caps.todos)
-      .map((td) => ({ content: String(td?.content ?? ''), status: String(td?.status ?? '') }));
+      .map((td) => ({
+        content: asDisplayString(td?.content),
+        status: asDisplayString(td?.status),
+      }));
     // No `toolUseId` on the intent (a checklist has no OUT section to await),
     // but it still gets the identity: it is a block find can be asked to reach.
     return { t: 'block', block: { kind: 'todos', todos, ts, ...srcId }, index };
