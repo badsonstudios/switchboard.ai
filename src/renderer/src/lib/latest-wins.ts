@@ -46,6 +46,8 @@
 // Pure by construction: no React, no DOM, no timers. Every rule below is a
 // unit test rather than an e2e guess.
 
+import { answered } from '../../../shared/ipc/refusal';
+
 /** A refresh whose response can never overwrite a newer one. */
 export type GuardedRefresh = () => Promise<void>;
 
@@ -59,7 +61,8 @@ type Fetched<T> = PromiseLike<T | null | undefined> | T | null | undefined;
  * resolved to is still the newest anyone has seen. Nullish means "no snapshot"
  * — an absent bridge method reached through optional chaining, or an empty
  * answer over IPC — and is never applied. Critically it also never COUNTS as a
- * snapshot, so it cannot retire a real one that is still in flight.
+ * snapshot, so it cannot retire a real one that is still in flight. A broker
+ * REFUSAL is a non-answer too, and the only one that is not nullish (#440).
  *
  * A rejected `fetch` rejects the returned promise; it is deliberately the
  * caller's to handle (or, as the refreshes in `App` do under the fail-open
@@ -75,7 +78,19 @@ export function latestWins<T>(fetch: () => Fetched<T>, apply: (value: T) => void
 
   return async (): Promise<void> => {
     const seq = ++issued;
-    const value = await fetch();
+    // `answered` FIRST (#440). "Nothing came back" is the guard below, and a
+    // broker refusal is not nothing: it is a truthy object, so it sails past
+    // the nullish test and is applied AS the snapshot — `list.map is not a
+    // function`, thrown inside an async function every caller drives with
+    // `void`, i.e. exactly the unhandled rejection #326/#347/#346 removed.
+    //
+    // Centrally here and not at the two call sites, because this is the only
+    // place that can see the value: `App.tsx` hands `latestWins` a FETCH
+    // (`() => bridge.sessions?.cards?.()`) and never touches what it resolves
+    // to. That is also why `scripts/refusal-truthiness.js` cannot catch a
+    // regression here — nothing static can tell this closure's result came from
+    // the bridge — and why the two cases in the spec are the guard instead.
+    const value = answered(await fetch());
     if (value === undefined || value === null) return; // nothing came back — not a snapshot
     if (seq <= applied) return; // a newer snapshot already landed; this one is stale
     // Marked applied BEFORE the apply, not after: `apply` writes to a store

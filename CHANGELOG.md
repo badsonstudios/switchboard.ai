@@ -61,6 +61,18 @@ on the floor, and say so in your PR.
 
 ## 0.8.2 — unreleased
 
+### Internal
+
+- **A refused IPC call can no longer be mistaken for a yes.** The broker answers
+  a call the caller is not allowed to make with a small "refused" object rather
+  than an error (#346), and an object counts as "true" in JavaScript — so
+  nineteen places in the window read *"you may not do that"* as *"done"* and took
+  the wrong path in silence. All nineteen now check properly, through one of two
+  shared readers, and a scan that runs with the tests fails the build if a new
+  one appears. Nothing you can see changes: this window is allowed to make every
+  call, so none of those refusals can happen today. It becomes reachable the day
+  plugins hold partial permissions. (#440)
+
 ## 0.8.1 — 2026-08-20
 
 ### Added

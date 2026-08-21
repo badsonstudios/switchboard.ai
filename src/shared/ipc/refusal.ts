@@ -121,3 +121,81 @@ export function isIpcRefusal(value: unknown): value is IpcRefusal {
     (value as Record<string, unknown>)[IPC_REFUSAL_BRAND] === true
   );
 }
+
+// ── READING AN ANSWER THAT MIGHT BE A REFUSAL (#440) ────────────────────────
+//
+// The shape above chose a branded OBJECT over a bare null, and everything in
+// the argument for that is still right — but an object is TRUTHY, and that is
+// the bill. `if (await bridge.x())` reads "you may not do that" as "yes", and
+// the branch written to handle "no" never runs: no throw, no log line, no
+// visible failure, just the wrong path taken in silence. #439 found the first
+// one in `lib/composer.ts` (a refusal suppressed the terminal fallback, quietly
+// reinstating the #154 defect that function exists to prevent) and #440 swept
+// the renderer for the rest — nineteen more, in five files, and not one of them
+// wore the `if (await bridge.x())` shape the issue title names: ten put the
+// value in a `.then` parameter, five parked it in a `const` first (one of those
+// two files away, behind `latestWins`), and four handed it point-free to a
+// React setter.
+//
+// So: two one-line readers, here beside the contract rather than hand-rolled at
+// nineteen call sites. They exist to make the RIGHT check the short one — a
+// sweep that leaves behind nineteen bespoke `=== true`s is a sweep that gets
+// half-undone by the next person who copies the wrong neighbour.
+//
+// `scripts/refusal-truthiness.js` is what keeps it swept: it parses the
+// renderer, follows every brokered bridge result one hop, and fails the unit
+// run if one of them reaches a boolean position without going through one of
+// these. A value that has been through `took`, `answered` or `isIpcRefusal` is
+// laundered — the scanner stops following it, because it can no longer be a
+// refusal.
+
+/**
+ * Did main actually DO it?
+ *
+ * For the boolean channels — `sessions:submitPrompt`, `sessions:interrupt`,
+ * `fs:openExternal`, `sessions:isDirectory` and the rest. `=== true` and
+ * nothing else, so that all three ways of not getting a yes collapse to one
+ * answer: `false` (the handler declined), an `IpcRefusal` (the broker
+ * declined), and `undefined` (there was no bridge method to call at all, which
+ * is the fail-open shim in `App.tsx` and every partial `window.switchboard` a
+ * unit test builds).
+ *
+ * NOT a type predicate (`result is true`). It is called on values the preload
+ * already declares as `boolean`, where narrowing to `true` buys nothing, and a
+ * predicate would invite `if (!took(x))` to be read as "x is false" — which is
+ * exactly the conflation the three cases above must not have. Where the
+ * difference matters, compare explicitly: `App.tsx`'s `decidePermission`
+ * self-heals on `=== false` (main never had the request) and deliberately does
+ * NOT on a refusal, which tells it nothing about who holds what.
+ */
+export function took(result: unknown): boolean {
+  return result === true;
+}
+
+/**
+ * The handler's answer, or `undefined` when the broker refused.
+ *
+ * For every channel whose answer is a VALUE rather than a yes/no — a folder
+ * path, a session record, a saved layout, a list of notices. Those call sites
+ * are already written to handle "nothing came back" (`if (!folder) return`,
+ * `list ?? []`), and this is the one line that makes a refusal take that path
+ * instead of sailing through as a truthy object and being used as the answer.
+ *
+ * `undefined` and not `null`: `null` is a real answer on several of these
+ * channels (`groups:update`, `sessions:create`, `sounds:get`) and collapsing a
+ * refusal into it would throw away the distinction the brand was invented to
+ * preserve. Both are falsy, so every existing guard keeps working unchanged;
+ * a caller that needs to tell them apart still has `isIpcRefusal`.
+ *
+ * The generic is `T`, not `T | IpcRefusal`, because the preload's declared
+ * types are deliberately NOT widened (see WHAT IT MEANS FOR THE DECLARED TYPES
+ * above) — so at every real call site `T` is already the handler's own return
+ * type, and `Exclude<T, IpcRefusal>` is identity because nothing in the app is
+ * assignable to `IpcRefusal`. The `| undefined` is the part that does work: it
+ * is what makes `if (!folder)` and `?? []` type-check as live branches rather
+ * than as dead ones. That is the honest description of the whole helper — the
+ * types say this cannot happen, and this is what runs when it does.
+ */
+export function answered<T>(result: T): Exclude<T, IpcRefusal> | undefined {
+  return isIpcRefusal(result) ? undefined : (result as Exclude<T, IpcRefusal>);
+}

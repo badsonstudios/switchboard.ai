@@ -443,6 +443,48 @@ return types are exact. The day a bridge is handed to a caller with a partial
 grant, that bridge's types carry the refusal — the check belongs where the
 refusal can arrive, not everywhere it cannot.
 
+#### The bill for a branded object: a refusal is TRUTHY (#440)
+
+An object is truthy, so `if (await bridge.x())` reads *"you may not do that"* as
+*"yes"* — no throw, no log line, just the wrong branch taken in silence. #439
+found the first one (`lib/composer.ts`: a refusal suppressed the terminal
+fallback and quietly reinstated the #154 defect that function exists to prevent);
+#440 swept the renderer and found **nineteen more** in five files — and not one
+of them wore the `if (await bridge.x())` shape the issue title names. Ten put the
+answer in a `.then` parameter, five parked it in a `const` first, four handed it
+point-free to a React setter. Four wore `?? fallback`, which a refusal walks
+straight through because it is neither `null` nor `undefined`.
+
+**The rule for every renderer call site:** a brokered bridge answer is not a
+boolean until it has been through one of these, from
+[`src/shared/ipc/refusal.ts`](../src/shared/ipc/refusal.ts):
+
+```ts
+took(result)              // === true — for the yes/no channels
+answered(result)          // the handler's answer, or undefined if refused
+result === true / false   // where the three non-answers must be told apart
+```
+
+**What enforces it:** [`scripts/refusal-truthiness.js`](../scripts/refusal-truthiness.js),
+run by the unit suite. It reads the brokered method list off the preload (never a
+hand-kept list), follows every bridge result one hop — a direct `await`, a
+`const`, a `.then` parameter — and fails if one reaches a boolean position
+without being laundered, or if the hop cannot be followed at all (a point-free
+`.then(setX)`, which is where four of the nineteen hid). A lint rule could not:
+the defect is a two-node fact (a value *from the bridge* reaching a *boolean
+position*), and all nineteen real sites separated the two nodes.
+
+**And not the type system either** — worth stating precisely, now that #628 has
+put `src/` on `recommendedTypeChecked` and a type-aware rule is available here
+for the first time. It still does not reach this. The preload declares
+`isDirectory` as `Promise<boolean>`, so `if (await bridge.isDirectory(p))` is a
+plain boolean test no rule has grounds to object to; making it objectionable
+means widening ~60 signatures to `| IpcRefusal`, which #346 declined in writing.
+And even widened, TypeScript truthiness-tests a union happily — the one rule that
+objects, `strict-boolean-expressions`, is in no preset and, once switched on,
+fires on every `if (folder)` in the tree whether or not a refusal is possible.
+The scanner's blind spots are listed at the bottom of the script.
+
 ### The vocabulary
 
 | Capability | Covers |

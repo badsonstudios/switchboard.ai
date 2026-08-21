@@ -3,6 +3,8 @@
 // IPC — NOT localStorage: the packaged renderer is served from a random
 // loopback port, so its origin (and localStorage) changes every launch.
 // App.tsx awaits loadUiState() once at boot; afterwards reads are sync.
+import { answered } from '../../../shared/ipc/refusal';
+
 let cache: Record<string, unknown> = {};
 
 export async function loadUiState(): Promise<void> {
@@ -12,7 +14,13 @@ export async function loadUiState(): Promise<void> {
   // composer exists before the second call — and one line to keep it that way.
   cancelPendingPush();
   try {
-    const raw = await window.switchboard.workspace.getUi();
+    // `answered` (#440) is load-bearing here in a way it is nowhere else: a
+    // refusal IS an object, so `typeof raw === 'object'` waves it through, the
+    // brand becomes the whole prefs cache, and the next `uiSet` pushes it back
+    // to main — which writes it to `workspace.json`. `shared/ipc/refusal.ts`
+    // names a hand-edited workspace file as the one residual place the brand
+    // could appear in real data; this is the path that would have PUT it there.
+    const raw = answered(await window.switchboard.workspace.getUi());
     cache = raw && typeof raw === 'object' ? { ...(raw as Record<string, unknown>) } : {};
   } catch {
     cache = {}; // fail-open: prefs are nice-to-have, never a boot blocker

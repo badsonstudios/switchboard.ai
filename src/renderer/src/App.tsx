@@ -41,6 +41,9 @@ import { ServiceHealthBanner } from './components/ServiceHealthBanner';
 import type { ServiceHealthStatus } from '../../shared/service-health';
 import { installAnnouncer, setAudioMuted, sharedAnnouncer } from './lib/announcer';
 import { DEFAULT_SOUND } from '../../shared/sounds';
+// #440: a refused call RESOLVES a truthy object — read every bridge answer
+// through one of these, never as a bare boolean. See shared/ipc/refusal.ts.
+import { answered, took } from '../../shared/ipc/refusal';
 import { PushSetupDialog } from './components/PushSetupDialog';
 import { QuietHoursDialog } from './components/QuietHoursDialog';
 import type { QuietState } from '../../shared/quiet-hours';
@@ -311,8 +314,16 @@ export function App(): React.JSX.Element {
           // something else, and no `permissionResolved` is coming for it. Self-
           // heal, or the ledger would count a phantom session on the card for
           // the rest of the run.
+          //
+          // `=== false`, not `!owned`, and NOT `took()` (#440): a REFUSAL is
+          // the third answer, and it belongs with the rejection below rather
+          // than with `false`. A refusal says we were not allowed to ask — it
+          // says nothing about whether main still holds the request — so it
+          // must not trigger a self-heal that takes a live question off screen
+          // on a guess. Truthiness got that right by accident, which is exactly
+          // the kind of accident this is written down to stop someone "fixing".
           .then((owned) => {
-            if (!owned) sessionStore.removePendingPermission(requestId);
+            if (owned === false) sessionStore.removePendingPermission(requestId);
           })
           // A REJECTION is not the same answer. `sessions:decidePermission`
           // resolves false rather than throwing, so this is the channel itself
@@ -511,8 +522,13 @@ export function App(): React.JSX.Element {
       setSoundsOn(p.sounds === true);
       setSpeakOn(p.speak === true);
     });
-    void bridge.settings?.getAutoTrust?.().then(setAutoTrust);
-    void bridge.settings?.getAutoLabels?.().then(setAutoLabels);
+    // `took`, not the setter point-free (#440). These two answers become the
+    // state behind a CHIP: a truthy refusal draws auto-trust as ON, and the
+    // first click then computes `!autoTrust` and writes the opposite of what
+    // main actually holds. A refusal means we could not read the setting, and
+    // the honest default for a setting we could not read is off.
+    void bridge.settings?.getAutoTrust?.().then((on) => setAutoTrust(took(on)));
+    void bridge.settings?.getAutoLabels?.().then((on) => setAutoLabels(took(on)));
     void bridge.preflight?.check?.().then((r) => {
       setPreflightOk(r.ok);
       setCliVersion(r.version);
@@ -768,8 +784,11 @@ export function App(): React.JSX.Element {
       if (!file) return;
       const p = window.switchboard.pathForFile(file);
       if (!p) return;
+      // `took`, not truthiness (#440): a refused `sessions:isDirectory`
+      // resolves an object, and an object is a yes — so a dropped FILE would
+      // open a session card on a path that is not a folder.
       void window.switchboard.sessions.isDirectory(p).then((isDir) => {
-        if (isDir) void grid.current?.addSessionCard(p);
+        if (took(isDir)) void grid.current?.addSessionCard(p);
       });
     };
     window.addEventListener('dragover', onDragOver);
@@ -830,7 +849,10 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     void refreshGroups();
-    void bridge.groups?.palette?.().then(setPalette);
+    // #440: a refusal is truthy, so it would become `palette: string[]` — and
+    // the rail's recolour menu calls `.indexOf` on it, which is a TypeError in
+    // a click handler rather than a missing colour.
+    void bridge.groups?.palette?.().then((p) => setPalette(answered(p) ?? []));
   }, [refreshGroups]);
 
   // display reconnected: OFFER to restore rescued popouts — never automatic
@@ -859,7 +881,10 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     void bridge.sessions
       ?.historyRepairs?.()
-      .then((list) => setHistoryRepairs(list ?? []))
+      // `answered` before `??` (#440): a refusal is neither null nor undefined,
+      // so it walks straight through `?? []` and lands in state as the list —
+      // and the next render maps over it.
+      .then((list) => setHistoryRepairs(answered(list) ?? []))
       // a refused channel is a missing notice, never an unhandled rejection —
       // and never a reason to drop one a push has already delivered
       .catch(() => undefined);
@@ -1187,7 +1212,10 @@ export function App(): React.JSX.Element {
             const folder = grid.current?.activeSessionFolder() ?? null;
             void bridge.files
               ?.pickFile?.(openFileStartFolder(folder))
-              .then((file) => {
+              .then((picked) => {
+                // #440: a refusal is a truthy object, so `if (!file)` would let
+                // one past and hand it to `openDocument` as a path.
+                const file = answered(picked);
                 if (!file) return;
                 rememberOpenedFile(file);
                 grid.current?.openDocument(file);
@@ -1511,8 +1539,11 @@ export function App(): React.JSX.Element {
           const next = !autoLabels;
           setAutoLabels(next); // optimistic: the chip must move on the click…
           // …and main answers with what it actually stored, which is also what
-          // re-publishes every visible label under the new setting.
-          void bridge.settings?.setAutoLabels?.(next).then(setAutoLabels);
+          // re-publishes every visible label under the new setting. `took`
+          // (#440) so a refusal — nothing was stored — reads as off rather than
+          // as a truthy object, the same convention as the card's own
+          // notify-when-done toggle.
+          void bridge.settings?.setAutoLabels?.(next).then((on) => setAutoLabels(took(on)));
         }}
         railHidden={railHidden}
         onToggleRail={toggleRail}
@@ -1712,7 +1743,8 @@ export function App(): React.JSX.Element {
               });
             }}
             onOpenInGroup={(gid) => {
-              void bridge.sessions?.pickFolder?.().then((folder) => {
+              void bridge.sessions?.pickFolder?.().then((picked) => {
+                const folder = answered(picked); // #440: a refusal is truthy
                 if (folder) void grid.current?.addSessionCard(folder, gid);
               });
             }}

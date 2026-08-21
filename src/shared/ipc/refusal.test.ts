@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { IPC_REFUSAL_BRAND, ipcRefusal, isIpcRefusal, IpcRefusal } from './refusal';
+import { IPC_REFUSAL_BRAND, ipcRefusal, isIpcRefusal, IpcRefusal, took, answered } from './refusal';
 
 // The refusal contract (issue 346). The broker's refusal path is UNREACHABLE
 // today — our one renderer is granted every capability — so there is no
@@ -66,6 +66,84 @@ describe('isIpcRefusal does not mistake a HANDLER answer for a refusal', () => {
     if (!isIpcRefusal(answer)) throw new Error('unreachable');
     const narrowed: IpcRefusal = answer;
     expect(narrowed.reason).toBe('capability-not-held');
+  });
+});
+
+// #440 — the readers. Same deliverable-is-the-test situation as above: the
+// refusal path is unreachable while the renderer holds every capability, so
+// these ARE the proof that a refusal reads as "no" rather than as "yes". Built
+// with the real `ipcRefusal()` factory, never a hand-written literal, so a
+// change to the shape reaches them (the pattern #439 established).
+
+describe('took — did main actually do it', () => {
+  it('says yes to true, and to nothing else', () => {
+    expect(took(true)).toBe(true);
+  });
+
+  it.each<[string, unknown]>([
+    ['a REFUSAL — the whole reason this exists', ipcRefusal('fs:openExternal', 'capability-not-held')],
+    ['false, the handler declining', false],
+    ['undefined, a bridge with no such method', undefined],
+    ['null', null],
+    ['a truthy string', 'true'],
+    ['a truthy number', 1],
+    ['a truthy object', {}],
+    ['a non-empty array', ['ok']],
+  ])('says no to %s', (_what, value) => {
+    expect(took(value)).toBe(false);
+  });
+
+  it('collapses all three ways of not getting a yes into one answer', () => {
+    // The point of the helper: a call site that writes `if (took(x))` cannot
+    // accidentally treat "refused" as different from "declined" — and a call
+    // site that NEEDS the difference is told to compare explicitly instead.
+    const answers = [false, undefined, ipcRefusal('sessions:interrupt', 'not-granted')];
+    expect(answers.map(took)).toEqual([false, false, false]);
+  });
+});
+
+describe('answered — the handler answer, or nothing', () => {
+  it('passes a real answer through untouched, identity included', () => {
+    const record = { id: 's1', identity: { accentColor: '#4a90d9' } };
+    expect(answered(record)).toBe(record);
+  });
+
+  it.each<[string, unknown]>([
+    ['a folder path', '/home/dan/project'],
+    ['an empty list', []],
+    ['false', false],
+    ['zero', 0],
+    ['the empty string', ''],
+  ])('passes %s through — it is an ANSWER, not an absence', (_what, value) => {
+    expect(answered(value)).toEqual(value);
+  });
+
+  it('turns a refusal into undefined, so every existing falsy guard fires', () => {
+    expect(answered(ipcRefusal('sessions:pickFolder', 'capability-not-held'))).toBeUndefined();
+  });
+
+  it('keeps null distinct from a refusal — null is a real answer', () => {
+    // `groups:update`, `sessions:create` and `sounds:get` all answer null for
+    // ordinary reasons (#346's first argument). Folding a refusal into null
+    // would throw away exactly what the brand was invented to preserve.
+    expect(answered(null)).toBeNull();
+    expect(answered(ipcRefusal('sounds:get', 'capability-not-held'))).toBeUndefined();
+  });
+
+  it('makes the `?? fallback` shape do the right thing on a refusal', () => {
+    // The three sites that wore this shape (App.tsx's history repairs, the
+    // card's two sound reads) were the quiet ones: `??` never fires on an
+    // object, so the brand went into React state as the answer.
+    const refused = ipcRefusal('sessions:historyRepairs', 'capability-not-held');
+    expect(refused ?? []).toBe(refused); // what the code used to do
+    expect(answered(refused) ?? []).toEqual([]); // what it does now
+  });
+
+  it('survives the round trip a refusal actually makes', () => {
+    // Structured clone, not the literal: this is the value as it arrives.
+    const overTheWire = structuredClone(ipcRefusal('workspace:getUi', 'not-granted'));
+    expect(answered(overTheWire)).toBeUndefined();
+    expect(took(overTheWire)).toBe(false);
   });
 });
 

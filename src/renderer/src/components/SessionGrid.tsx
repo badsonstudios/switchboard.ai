@@ -53,6 +53,9 @@ import { newSessionHostGroup } from '../lib/new-session-target';
 import { createSweeper, SweepPort, SweepRequest } from '../lib/layout-sweep';
 import { sharedAnnouncer } from '../lib/announcer';
 import { CardSound, nextCardSound } from '../../../shared/sounds';
+// #440: a refused call RESOLVES a truthy object — read a bridge answer through
+// `answered()` (or `took()`), never as a bare truthiness test.
+import { answered } from '../../../shared/ipc/refusal';
 import {
   cycleMode,
   isEnforced,
@@ -543,7 +546,10 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     void soundsApi
       .get(cardId)
       .then((s) => {
-        if (alive && seq === soundSeq.current) setCardSound(s ?? null);
+        // #440: `?? null` does not catch a refusal — it is an object, not
+        // nullish — so it would land in state and the menu would read `.id`
+        // off the brand.
+        if (alive && seq === soundSeq.current) setCardSound(answered(s) ?? null);
       })
       .catch(() => {
         /* fail-open: an unreadable cue shows nothing rather than a wrong one */
@@ -584,9 +590,12 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         if (seq !== soundSeq.current) return; // a later click already answered
         // A REFUSED write answers `null`, which is also what "back to auto"
         // answers — so ask rather than guess, and let the menu show the truth
-        // instead of the thing that was just clicked.
-        if (s) setCardSound(s);
-        else void soundsApi.get(cardId).then((truth) => setCardSound(truth ?? null));
+        // instead of the thing that was just clicked. (A refusal from the
+        // BROKER is a third thing again, and `answered` folds it in here —
+        // #440: without it the truthy brand would be set as the cue.)
+        const cue = answered(s);
+        if (cue) setCardSound(cue);
+        else void soundsApi.get(cardId).then((truth) => setCardSound(answered(truth) ?? null));
       })
       .catch(() => {
         /* leave the optimistic value: the next menu open re-reads the truth */
@@ -700,7 +709,12 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     };
     void window.switchboard.sessions
       .create({ cardId, folder, title: props.api.title ?? folder, autonomy, groupId: props.params?.groupId })
-      .then((record) => {
+      .then((answer) => {
+        // #440: a refused `sessions:create` resolves a truthy brand, so
+        // `if (!record)` would sail past `startFailed` and then throw on
+        // `record.identity` from inside a `.then` — a card stuck on "starting"
+        // instead of the honest "never started".
+        const record = answered(answer);
         if (!record) return startFailed(null);
         if (cardId) sessionStore.mapLiveToCard(record.id, cardId);
         setLive({
@@ -806,9 +820,10 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     // from the one it replaced, with no push coming to clear it.
     setBinding(null);
     let cancelled = false;
-    void window.switchboard.transcripts.binding(live.id).then((b) => {
+    void window.switchboard.transcripts.binding(live.id).then((answer) => {
       // A live push that landed while this was in flight is NEWER than what we
       // asked for — it must not be overwritten by the reply.
+      const b = answered(answer); // #440: a refusal is truthy, and has no `.binding`
       if (!cancelled && b) setBinding((prev) => prev ?? { binding: b.binding, bindingDiag: b.bindingDiag });
     });
     return () => {
@@ -2365,7 +2380,9 @@ async function newSessionIn(
     // INSIDE the try, unlike the `addCard` this replaces: both call sites drive
     // this with `void`, so a rejection out here was an unhandled rejection
     // rather than a message anyone saw.
-    const folder = await window.switchboard.sessions.pickFolder(into?.id);
+    // `answered` (#440): a refused picker resolves a truthy object, which would
+    // reach `addSessionCardTo` as the folder path.
+    const folder = answered(await window.switchboard.sessions.pickFolder(into?.id));
     if (!folder) return;
     // `into` was sampled BEFORE the picker opened, and a group can die while it
     // is up: the dialog is modal to that popout, so the user cannot close it
@@ -4229,7 +4246,10 @@ export function SessionGrid(props: {
       // and both bindings into no-ops. A layout mode is a convenience; it must
       // never be able to fail QUIETLY (E9-07).
       try {
-        const saved = await window.switchboard.workspace.getLayout();
+        // `answered` (#440): a refused `workspace:getLayout` is a truthy
+        // object, and handing it to `fromJSON` would report itself as a corrupt
+        // layout — the one failure mode this whole block is written to avoid.
+        const saved = answered(await window.switchboard.workspace.getLayout());
         if (saved) {
           // Resolved BEFORE the restore's try/catch, not inside it: an await in
           // there whose rejection is unrelated to the layout would abort the

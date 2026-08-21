@@ -6,6 +6,7 @@
 // reproduce it by construction and are deterministic.
 import { describe, it, expect, vi } from 'vitest';
 import { GuardedRefresh, latestWins } from './latest-wins';
+import { ipcRefusal } from '../../../shared/ipc/refusal';
 
 /** A promise the test resolves when it wants to, not when a timer says so. */
 function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void; reject: (e: unknown) => void } {
@@ -164,6 +165,45 @@ describe('latestWins', () => {
     await refresh();
 
     expect(apply).not.toHaveBeenCalled();
+  });
+
+  // A BROKER REFUSAL is the third non-answer (#440), and the only one that is
+  // not falsy: since #346 a capability-denied `invoke` RESOLVES a branded
+  // object rather than throwing, so `value === undefined || value === null`
+  // waves it through and it is applied as the snapshot. Both call sites then do
+  // `list.map(...)` inside an async function they drive with `void` — an
+  // unhandled rejection on the session-list refresh, which is the exact class
+  // #326/#347/#346 exist to remove.
+  //
+  // This is also the ONE #440 fix the scanner cannot protect: `latestWins`
+  // receives a FETCH closure, so nothing static can tell its result came from
+  // the bridge. This test is the guard instead.
+  it('treats a broker REFUSAL as a non-answer too, though it is truthy', async () => {
+    const apply = vi.fn();
+    const refusal = ipcRefusal('sessions:cards', 'capability-not-held');
+    const refresh = latestWins<unknown>(async () => refusal, apply);
+
+    await refresh();
+
+    expect(apply).not.toHaveBeenCalled();
+  });
+
+  it('...and a refusal does not retire a real snapshot still in flight', async () => {
+    // The half that matters as much as not applying it: a non-answer must not
+    // count as a snapshot, or the good one behind it can never land.
+    const real = deferred<string>();
+    const responses: unknown[] = [real.promise, ipcRefusal('sessions:cards', 'not-granted')];
+    const apply = vi.fn();
+    const refresh = latestWins<unknown>(() => responses.shift(), apply);
+
+    void refresh();
+    await refresh();
+    expect(apply).not.toHaveBeenCalled();
+
+    real.resolve('needs-permission');
+    await settle();
+
+    expect(apply).toHaveBeenCalledExactlyOnceWith('needs-permission');
   });
 
   // `apply` writes to a store whose subscribers run synchronously, and one of
