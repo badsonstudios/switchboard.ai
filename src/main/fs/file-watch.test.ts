@@ -39,9 +39,12 @@ function recordingLog(): { log: Logger; lines: Array<{ level: string; msg: strin
 /**
  * The filesystem, as far as this module is concerned.
  *
- * Watchers are a LIST, not a map keyed by directory: two files in one folder are
- * two independent handles in Node, and a fake that collapsed them would quietly
- * report a leak as a pass (and the reverse).
+ * Watchers are a LIST, not a map keyed by directory: `fs.watch` called twice on
+ * one folder really does hand back two independent handles, and a fake that
+ * collapsed them would quietly report a leak as a pass (and the reverse). Since
+ * #544 that is also the only way the sharing is observable — `live()` counting
+ * ONE handle behind ten open files is the assertion, and it means nothing unless
+ * the fake was capable of counting ten.
  */
 function fakeFs() {
   const sigs = new Map<string, FileSignature>([
@@ -366,5 +369,197 @@ describe('FileWatchService (P2-E16-04)', () => {
     vi.advanceTimersByTime(DEBOUNCE);
     expect(notices.map((n) => n.notice.token)).toEqual(['b']);
     boom.stop();
+  });
+
+  /**
+   * #544: the bound the peek slot used to provide, put back into the plumbing.
+   *
+   * Nothing above this block changed when these were written, which is the
+   * claim: this is consolidation, not new behaviour. What these pin is the cost
+   * — one OS handle per FOLDER rather than per file, and one interval for the
+   * whole service rather than one per file — plus the two things that get
+   * subtler once a handle is shared: an event must still reach exactly the file
+   * it names, and a folder must still be released the moment its last file goes.
+   */
+  describe('one handle per DIRECTORY, one timer for the service (#544)', () => {
+    /** More documents out of one repo than the peek slot ever allowed. */
+    const many = (n: number, dir = DIR): string[] => {
+      const paths: string[] = [];
+      for (let i = 0; i < n; i += 1) {
+        const p = `${dir}/doc-${i}.md`;
+        fs.sigs.set(p, { mtimeMs: 1000, size: 10, ino: 100 + i });
+        allowed.push(p);
+        paths.push(p);
+      }
+      return paths;
+    };
+
+    const openAll = (paths: string[]): void => {
+      paths.forEach((p, i) => {
+        expect(svc.watch(1, `t${i}`, p)).toMatchObject({ ok: true });
+      });
+    };
+
+    it('ten tabs across one folder hold ONE watch and ONE timer', () => {
+      openAll(many(10));
+      expect(svc.stats()).toMatchObject({ files: 10, dirs: 1, viewers: 10 });
+      expect(fs.live()).toBe(1);
+      // …and it was opened once, not opened and closed nine times on the way.
+      expect(fs.open()).toBe(1);
+      // The floor wheel, and not one stat timer per file.
+      expect(vi.getTimerCount()).toBe(1);
+    });
+
+    it('a quiet floor tick arms nothing per file', () => {
+      // The trap this closes: moving the per-file cost from `setInterval` to a
+      // `setTimeout` armed by every tick would look identical at rest and be the
+      // same ten timers a moment later.
+      openAll(many(10));
+      vi.advanceTimersByTime(POLL);
+      expect(vi.getTimerCount()).toBe(1);
+      expect(states()).toEqual([]);
+    });
+
+    it('the shared floor still finds a change on every file, with no events at all', () => {
+      const paths = many(3);
+      openAll(paths);
+      paths.forEach((p) => fs.write(p, 33));
+      vi.advanceTimersByTime(POLL + DEBOUNCE);
+      expect(states()).toEqual(['changed', 'changed', 'changed']);
+      expect(notices.map((n) => n.notice.token).sort()).toEqual(['t0', 't1', 't2']);
+    });
+
+    it('one shared handle fans an event out by NAME, and only to that file', () => {
+      svc.watch(1, 'a', FILE);
+      svc.watch(1, 'b', OTHER);
+      expect(fs.live()).toBe(1);
+      fs.write(OTHER, 40);
+      fs.fire('notes.md');
+      vi.advanceTimersByTime(DEBOUNCE);
+      expect(notices).toEqual([{ callerId: 1, notice: { token: 'b', state: 'changed' } }]);
+    });
+
+    it('an event with NO name is a hint for every file under the folder', () => {
+      svc.watch(1, 'a', FILE);
+      svc.watch(1, 'b', OTHER);
+      fs.write(FILE, 40); // only this one actually moved
+      fs.fire(null);
+      vi.advanceTimersByTime(DEBOUNCE);
+      expect(notices.map((n) => n.notice.token)).toEqual(['a']);
+    });
+
+    it('the handle survives one tab closing and goes with the last', () => {
+      svc.watch(1, 'a', FILE);
+      svc.watch(1, 'b', OTHER);
+      expect(svc.stats()).toMatchObject({ files: 2, dirs: 1 });
+
+      svc.unwatch(1, 'a');
+      expect(svc.stats()).toMatchObject({ files: 1, dirs: 1 });
+      expect(fs.live()).toBe(1);
+
+      // …and the SURVIVOR still hears its own events through it. Counts alone
+      // would look identical if the closing file had taken its neighbour's
+      // entry out of the folder's name index with it.
+      fs.write(OTHER, 40);
+      fs.fire('notes.md');
+      vi.advanceTimersByTime(DEBOUNCE);
+      expect(notices.map((n) => n.notice.token)).toEqual(['b']);
+
+      svc.unwatch(1, 'b');
+      expect(svc.stats()).toMatchObject({ files: 0, dirs: 0, viewers: 0 });
+      expect(fs.live()).toBe(0);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('two FOLDERS are two watches — sharing is not a global collapse', () => {
+      const elsewhere = '/other/README.md';
+      fs.sigs.set(elsewhere, { mtimeMs: 1000, size: 10, ino: 99 });
+      allowed.push(elsewhere);
+      svc.watch(1, 'a', FILE);
+      svc.watch(1, 'b', OTHER);
+      svc.watch(1, 'c', elsewhere);
+      expect(svc.stats()).toMatchObject({ files: 3, dirs: 2 });
+      expect(fs.live()).toBe(2);
+      expect(vi.getTimerCount()).toBe(1);
+
+      // A name that exists in the OTHER folder, delivered on this one, is a
+      // neighbour's event and nothing more.
+      fs.write(elsewhere, 40);
+      fs.fire('README.md', DIR);
+      vi.advanceTimersByTime(DEBOUNCE);
+      expect(states()).toEqual([]);
+
+      fs.fire('README.md', '/other');
+      vi.advanceTimersByTime(DEBOUNCE);
+      expect(notices.map((n) => n.notice.token)).toEqual(['c']);
+    });
+
+    it('a folder whose watch is refused degrades ONCE, and every file follows', () => {
+      fs.refuse(true);
+      svc.watch(1, 'a', FILE);
+      svc.watch(1, 'b', OTHER);
+      expect(
+        rec.lines.filter(
+          (l) => l.msg === 'fs watch unavailable — following the file on the stat floor'
+        ).length
+      ).toBe(1);
+
+      fs.write(FILE, 40);
+      fs.write(OTHER, 40);
+      vi.advanceTimersByTime(POLL + DEBOUNCE);
+      expect(notices.map((n) => n.notice.token).sort()).toEqual(['a', 'b']);
+    });
+
+    it('a degraded folder gets a fresh attempt when the next tab opens', () => {
+      // The one thing sharing a handle could quietly take away: with a watch per
+      // FILE, a transient EMFILE cost that file its accelerator and the next tab
+      // tried again. Latching it on the directory would pin the whole folder to
+      // the floor until its last tab closed — and inotify's ENOSPC arrives
+      // exactly in the folder with a lot of tabs.
+      fs.refuse(true);
+      svc.watch(1, 'a', FILE);
+      expect(fs.live()).toBe(0);
+
+      fs.refuse(false);
+      svc.watch(1, 'b', OTHER);
+      expect(fs.live()).toBe(1);
+      expect(svc.stats()).toMatchObject({ files: 2, dirs: 1 });
+
+      // …and the file that opened while it was refused is on the accelerator
+      // too, because the handle it was always going to use is the folder's.
+      fs.write(FILE, 40);
+      fs.fire('PROGRESS.md');
+      vi.advanceTimersByTime(DEBOUNCE);
+      expect(notices.map((n) => n.notice.token)).toEqual(['a']);
+    });
+
+    it('re-pointing a viewer at the SAME path leaves exactly one of everything', () => {
+      // The case `watch()`'s unwatch-before-register comment reasons about: A
+      // and B are the same file, so `fileFor` would hand back the very entry the
+      // unwatch is about to tear down if the order were reversed.
+      svc.watch(1, 'tok', FILE);
+      svc.watch(1, 'tok', FILE);
+      expect(svc.stats()).toMatchObject({ files: 1, dirs: 1, viewers: 1, watched: [FILE] });
+      expect(fs.live()).toBe(1);
+      expect(vi.getTimerCount()).toBe(1);
+
+      fs.write();
+      fs.fire('PROGRESS.md');
+      vi.advanceTimersByTime(DEBOUNCE);
+      expect(states()).toEqual(['changed']);
+    });
+
+    it('a QUIET file whose folder left the scope is still released, by the floor', () => {
+      // Nobody is writing to it, so no event and no moved stat will ever wake
+      // it — the wheel is the only thing that can notice the session card
+      // closed, and it has to notice without arming a debounce to do it.
+      svc.watch(1, 'tok', FILE);
+      allowed = [];
+      vi.advanceTimersByTime(POLL);
+      expect(svc.stats()).toMatchObject({ files: 0, dirs: 0, viewers: 0 });
+      expect(fs.live()).toBe(0);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(states()).toEqual([]);
+    });
   });
 });

@@ -1,4 +1,4 @@
-// Following ONE open file, for the document viewer (P2-E16-04, §5.30).
+// Following the open files, for the document viewer (P2-E16-04, §5.30).
 //
 // This is the differentiator, not the polish: §5.30's whole attention-ROI case
 // for the viewer is reading `PROGRESS.md` while an agent rewrites it, which is
@@ -30,6 +30,29 @@
 // one non-recursive handle answers "changed", "replaced" and "deleted" alike.
 // Every event for any other name is dropped here and never leaves main — the
 // scope grants a FILE, and nothing about its neighbours is ever reported.
+//
+// AND BECAUSE THE DIRECTORY IS WHAT IS WATCHED, ONE HANDLE SERVES ALL OF IT
+// (#544). The first version refcounted per FILE, which was right while the peek
+// slot meant roughly one document was open at a time; with always-new-tab
+// (#530) ten documents out of one repo took ten OS watches on one folder and
+// ten stat timers. So the structure here is two levels — `WatchedDir` owns the
+// single `fs.watch` handle and fans its events out by NAME to the `WatchedFile`
+// entries under it, and one interval per service (the "floor wheel") walks every
+// watched file every `FILE_WATCH_POLL_MS`. M tabs over one folder are one
+// handle; the standing timer count is one, whatever M is. Nothing above this
+// line changed: the same 150ms/1s coalesce, the same stat-floor authority, the
+// same refcounted teardown, now with a bound that does not move with the tabs.
+//
+// THE ONE THING THE WHEEL COSTS is the staggering the per-file intervals used to
+// get for free. The total floor work per `FILE_WATCH_POLL_MS` is unchanged — the
+// per-file version stat'd and re-resolved every open file on every tick too,
+// just from M timers created at M different moments — but it now lands in one
+// synchronous burst on main. Local disk, thirty tabs: single-digit milliseconds.
+// A slow network share is the case where that would be felt, and the answer if
+// it ever is, is to slice the wheel (run at `pollMs / K` and walk 1/K of `files`
+// each sub-tick, which keeps per-file latency at `pollMs` and one timer) — not
+// to skip the scope re-resolve, which `read-scope.ts` has already explained once
+// cannot be replaced by a cheap string pre-check.
 import fs from 'fs';
 import path from 'path';
 import type { Logger } from '../log/logger';
@@ -85,24 +108,44 @@ interface Viewer {
   readonly file: WatchedFile;
 }
 
+/**
+ * One directory, one OS watch handle, however many files are open under it.
+ *
+ * The handle is the scarce thing and the ONLY thing this level owns: no timer
+ * lives here (the floor is one wheel for the whole service) and no state that a
+ * file could disagree with. `degraded` is here rather than on the file because
+ * a watch that cannot be created is a fact about the DIRECTORY — latching it
+ * here is what makes ten tabs over a folder `fs.watch` refuses log one line
+ * instead of ten.
+ */
+interface WatchedDir {
+  /** the directory, as `path.dirname` answered it for the files under it */
+  readonly dir: string;
+  /** `fold(basename)` -> the file. Keyed by the NAME an event carries, so
+   *  fanning one event out to its file is a lookup and not a scan of the folder
+   *  — the difference between O(1) and O(open tabs) on every write. */
+  readonly files: Map<string, WatchedFile>;
+  handle: FileWatchHandle | null;
+  /** the watch is gone and the stat floor is carrying every file under this
+   *  directory — latched, so one `FSWatcher` erroring repeatedly is one log line
+   *  and not a stream of them (`DiscoverySchedule.markWatchFailed`'s rule, same
+   *  reason) */
+  degraded: boolean;
+}
+
 interface WatchedFile {
   /** the REAL path, as `ReadScope.resolve` answered it */
   readonly path: string;
-  readonly dir: string;
   readonly base: string;
-  /** viewer keys holding this file open — the last one out closes the handle */
+  /** the directory watch this file's events arrive through */
+  readonly owner: WatchedDir;
+  /** viewer keys holding this file open — the last one out releases it */
   readonly refs: Set<string>;
-  handle: FileWatchHandle | null;
-  poll: NodeJS.Timeout | null;
   timer: NodeJS.Timeout | null;
   /** when the current run of events began, for the max-wait ceiling */
   dirtySince: number | null;
   /** an event NAMED this file, so re-read it whether or not the stat moved */
   force: boolean;
-  /** the watch is gone and the stat floor is carrying it — latched, so one
-   *  `FSWatcher` erroring repeatedly is one log line and not a stream of them
-   *  (`DiscoverySchedule.markWatchFailed`'s rule, same reason) */
-  degraded: boolean;
   /** the signature as of the last settle, or null while the file is gone */
   sig: string | null;
   gone: boolean;
@@ -114,7 +157,7 @@ function defaultWatchFactory(
   onError: (err: unknown) => void
 ): FileWatchHandle | null {
   try {
-    // NOT recursive: one directory, and the file we care about is directly in
+    // NOT recursive: one directory, and the files we care about are directly in
     // it. `persistent: false` plus `unref` so a watch never keeps the app alive
     // — the same pair the transcript scheduler uses.
     //
@@ -151,12 +194,13 @@ function defaultProbe(file: string): FileSignature | null {
  * Two spellings of one path are one file on the filesystems that say so — and
  * an event names THIS file under the same rule.
  *
- * ONE rule for both, taken from `read-scope.ts`'s `HOST_STYLE`, which is where
- * this project already decided the question (win32 always, macOS by default,
- * Linux never). Two helpers three lines apart disagreeing about macOS is how one
- * file ends up with two `WatchedFile` entries — two directory watches and two
- * stat timers for one document — while the other half of the pair happily
- * matches events for a neighbour that differs only in case.
+ * ONE rule for all three keys here (file, directory, event name), taken from
+ * `read-scope.ts`'s `HOST_STYLE`, which is where this project already decided
+ * the question (win32 always, macOS by default, Linux never). Two helpers three
+ * lines apart disagreeing about macOS is how one file ends up with two
+ * `WatchedFile` entries — or one folder with two `WatchedDir` entries, two
+ * directory watches for one directory — while the other half of the pair
+ * happily matches events for a neighbour that differs only in case.
  */
 function fold(s: string): string {
   return HOST_STYLE.caseInsensitive ? s.toLowerCase() : s;
@@ -166,37 +210,39 @@ function fileKey(p: string): string {
   return fold(p);
 }
 
-function sameName(a: string, b: string): boolean {
-  return fold(a) === fold(b);
-}
-
 /**
- * Every file some viewer currently has open, and one handle per file.
+ * Every file some viewer currently has open, one handle per DIRECTORY, and one
+ * timer for the whole service.
  *
  * REFCOUNTED PER FILE rather than per viewer: two viewers on `PROGRESS.md` —
- * a docked tab and one in a popped-out window, say — share one directory watch
- * and one stat timer, and the second one closing releases nothing. "A leaked
- * watcher per opened file is exactly the kind of thing that only shows up at
- * session 12" is the done-when's own wording, and `stats()` exists so a test
- * can say it rather than assume it.
+ * a docked tab and one in a popped-out window, say — share one entry, and the
+ * second one closing releases nothing. "A leaked watcher per opened file is
+ * exactly the kind of thing that only shows up at session 12" is the done-when's
+ * own wording, and `stats()` exists so a test can say it rather than assume it.
  *
- * #530 REMOVED WHAT USED TO BOUND THE FILE COUNT, recorded here rather than
- * only in that issue. Under the peek slot there was ONE replaceable viewer, so
- * the ordinary number of watched files was about one; every file now opens its
- * own tab and thirty is an ordinary afternoon. Thirty files means thirty
- * handles and thirty poll timers — and because the refcount keys on the FILE,
- * ten documents from one repo take ten separate watches on one DIRECTORY.
- * Nothing here is wrong today and nothing leaks; the ceiling simply moved.
- * Sharing one handle per directory (a `Map<dirKey, {handle, files}>` under
- * `WatchedFile`) is the fix when it is worth doing — a follow-up, not a rider
- * on the change that raised the ceiling.
+ * SHARED PER DIRECTORY on top of that (#544), because the refcount alone stopped
+ * bounding anything once #530 gave every document its own tab: the peek slot had
+ * kept the live count near one, and thirty tabs meant thirty OS handles and
+ * thirty stat timers — ten of those handles on the SAME folder when the ten
+ * documents came out of one repo. Nothing leaked; the ceiling had simply moved.
+ * So the handle belongs to the `WatchedDir` and the floor is one wheel over
+ * `files`: M tabs across one folder are ONE `fs.watch`, and the standing timer
+ * count is one whatever M is. `stats()` reports `dirs` for the same reason it
+ * reports `files` — so a test can assert the sharing rather than trust it.
  */
 export class FileWatchService {
   /** `<callerId>:<token>` -> viewer. The id is a number, so the colon can never
    *  be ambiguous however the renderer spells its token. */
   private readonly viewers = new Map<string, Viewer>();
-  /** `fileKey(path)` -> the one watch behind it */
+  /** `fileKey(path)` -> the one entry behind it */
   private readonly files = new Map<string, WatchedFile>();
+  /** `fold(dir)` -> the one OS watch behind every file in it */
+  private readonly dirs = new Map<string, WatchedDir>();
+  /** the stat floor, for every watched file at once. Null when nothing is
+   *  watched — an idle service holds no timer at all, which is what makes
+   *  "nothing survives the panel closing" a statement about the process and not
+   *  just about one file. */
+  private floor: NodeJS.Timeout | null = null;
   private readonly debounceMs: number;
   private readonly maxWaitMs: number;
   private readonly pollMs: number;
@@ -249,7 +295,11 @@ export class FileWatchService {
       return { ok: false, reason: 'not-a-file' };
     }
     // Re-point before registering, so a viewer that moves from A to B never
-    // holds both — the leak this whole item's done-when is about.
+    // holds both — the leak this whole item's done-when is about. Taking B's
+    // directory FIRST to save a same-folder re-point one close/open pair is not
+    // worth what it costs: when A and B are the same path, `fileFor` would hand
+    // back the very entry the `unwatch` below then tears down, and the ref would
+    // land on an object no longer in `files`.
     this.unwatch(callerId, token);
 
     const key = viewerKey(callerId, token);
@@ -259,7 +309,7 @@ export class FileWatchService {
     return { ok: true, path: decision.path };
   }
 
-  /** This viewer is done with its file. The last one out closes the handle. */
+  /** This viewer is done with its file. The last one out releases it. */
   unwatch(callerId: number, token: unknown): void {
     if (typeof token !== 'string') return;
     const key = viewerKey(callerId, token);
@@ -294,12 +344,23 @@ export class FileWatchService {
       this.closeFile(file, 'the app is quitting');
     }
     this.viewers.clear();
+    // Belt and braces. Emptying `files` releases every directory and stops the
+    // wheel on the way through; these two say so rather than rely on it, because
+    // "nothing is left running after quit" is the one claim in this file that no
+    // later bug gets to quietly falsify.
+    for (const entry of [...this.dirs.values()]) this.closeDir(entry);
+    this.stopFloor();
   }
 
-  /** What is actually open right now — the observable the teardown test needs. */
-  stats(): { files: number; viewers: number; watched: string[] } {
+  /** What is actually open right now — the observable the teardown and the
+   *  sharing tests both need. `dirs` is one entry per folder being followed,
+   *  which is the OS handle count except where a watch was refused and the floor
+   *  is carrying that folder; it is what #544 is about, and it is not derivable
+   *  from `watched` without knowing this platform's case rules. */
+  stats(): { files: number; dirs: number; viewers: number; watched: string[] } {
     return {
       files: this.files.size,
+      dirs: this.dirs.size,
       viewers: this.viewers.size,
       watched: [...this.files.values()].map((f) => f.path),
     };
@@ -312,75 +373,106 @@ export class FileWatchService {
     const existing = this.files.get(key);
     if (existing) return existing;
     const sig = this.probe(real);
+    const owner = this.dirFor(path.dirname(real));
     const file: WatchedFile = {
       path: real,
-      dir: path.dirname(real),
       base: path.basename(real),
+      owner,
       refs: new Set(),
-      handle: null,
-      poll: null,
       timer: null,
       dirtySince: null,
       force: false,
-      degraded: false,
       // Seeded from the file as it is NOW, so the first floor tick does not
       // report a change nobody made. The viewer has just read it.
       sig: sig ? signature(sig) : null,
       gone: sig === null,
     };
     this.files.set(key, file);
-    this.openWatch(file);
-    file.poll = setInterval(() => this.schedule(file, false), this.pollMs);
-    file.poll.unref?.();
+    owner.files.set(fold(file.base), file);
+    this.startFloor();
     return file;
   }
 
-  private openWatch(file: WatchedFile): void {
+  /**
+   * The one watch behind a directory, opened on the first file under it.
+   *
+   * A DEGRADED ENTRY GETS ONE FRESH ATTEMPT PER NEWLY-OPENED FILE, which is
+   * what the per-file version gave away for free and would be the one real
+   * behaviour change in #544 if it were dropped. The failures that land here are
+   * transient by nature — `EMFILE`, inotify's `ENOSPC`, a share that was
+   * unreachable for a moment — and `ENOSPC` in particular arrives when a lot of
+   * watches are open, i.e. precisely in the folder with a lot of tabs. Latching
+   * the first failure for the life of the directory would pin that folder to the
+   * 2s floor until its last tab closed. Retrying is bounded by tab opens rather
+   * than by a timer, so it cannot become the retry loop `degrade` argues against.
+   */
+  private dirFor(dir: string): WatchedDir {
+    const key = fold(dir);
+    const existing = this.dirs.get(key);
+    if (existing) {
+      if (!existing.handle) this.openWatch(existing);
+      return existing;
+    }
+    const entry: WatchedDir = { dir, files: new Map(), handle: null, degraded: false };
+    this.dirs.set(key, entry);
+    this.openWatch(entry);
+    return entry;
+  }
+
+  private openWatch(entry: WatchedDir): void {
     const factory = this.deps.watchFactory ?? defaultWatchFactory;
     let handle: FileWatchHandle | null = null;
     try {
       handle = factory(
-        file.dir,
-        (filename) => this.onEvent(file, filename),
-        (err) => this.onWatchError(file, err)
+        entry.dir,
+        (filename) => this.onEvent(entry, filename),
+        (err) => this.onWatchError(entry, err)
       );
     } catch (err) {
       handle = null;
-      this.deps.log.debug('fs watch factory threw', { dir: file.dir, error: String(err) });
+      this.deps.log.debug('fs watch factory threw', { dir: entry.dir, error: String(err) });
     }
-    file.handle = handle;
-    if (!handle) this.degrade(file, 'the watch could not be created');
+    entry.handle = handle;
+    if (handle) {
+      // A retry that LANDED un-latches the log, so a folder that degrades again
+      // later says so again. One line per episode, not one line ever.
+      entry.degraded = false;
+      return;
+    }
+    this.degrade(entry, 'the watch could not be created');
   }
 
   /**
-   * A filesystem event. The NAME decides what it means (see the header).
+   * A filesystem event on a directory. The NAME decides which file it is about
+   * (see the header), and now also WHETHER it is about one of ours at all.
    *
    * A named hit is FORCED — re-read it even if the stat looks unmoved — because
    * the event is the more reliable witness of the two: `mtime` resolution is a
    * filesystem's business, and a rewrite that keeps the same length inside one
    * timestamp tick is exactly the case where trusting the stat would show the
    * reader a document that has already changed. An event with no name at all
-   * (some platforms decline to say) is treated as a hint and gated on the stat,
-   * because the alternative is re-rendering on every write to every neighbour in
-   * a busy project folder.
+   * (some platforms decline to say) is a hint for EVERY file under this
+   * directory and is gated on the stat for each of them, because the alternative
+   * is re-rendering on every write to every neighbour in a busy project folder.
    */
-  private onEvent(file: WatchedFile, filename?: string | null): void {
+  private onEvent(entry: WatchedDir, filename?: string | null): void {
     if (filename == null) {
-      this.schedule(file, false);
+      for (const file of [...entry.files.values()]) this.schedule(file, false);
       return;
     }
-    if (sameName(String(filename), file.base)) this.schedule(file, true);
+    const file = entry.files.get(fold(String(filename)));
+    if (file) this.schedule(file, true);
   }
 
-  private onWatchError(file: WatchedFile, err: unknown): void {
-    const dead = file.handle;
-    file.handle = null;
+  private onWatchError(entry: WatchedDir, err: unknown): void {
+    const dead = entry.handle;
+    entry.handle = null;
     try {
       dead?.close();
     } catch {
       /* already gone */
     }
-    this.degrade(file, String(err));
+    this.degrade(entry, String(err));
   }
 
   /**
@@ -389,21 +481,95 @@ export class FileWatchService {
    * Deliberately NOT re-armed on a timer the way `DiscoverySchedule` re-arms
    * its root watch, and the difference is what is at stake: there, a dead watch
    * pins the process to 500ms full-tree scans forever, so getting it back is
-   * worth the retry loop. Here the fallback is ONE stat every two seconds on
-   * ONE file for as long as a panel is open, and re-arming would mean an
+   * worth the retry loop. Here the fallback is ONE stat every two seconds per
+   * open file for as long as a panel is open, and re-arming would mean an
    * `fs.watch` attempt every two seconds against a directory that has already
    * refused. Latency degrades from 150ms to 2s and nothing else does.
    */
-  private degrade(file: WatchedFile, reason: string): void {
-    if (file.degraded) return;
-    file.degraded = true;
+  private degrade(entry: WatchedDir, reason: string): void {
+    if (entry.degraded) return;
+    entry.degraded = true;
     this.deps.log.info('fs watch unavailable — following the file on the stat floor', {
-      path: file.path,
+      dir: entry.dir,
       reason,
       everyMs: this.pollMs,
-      note: 'the viewer still updates; only its latency changes',
+      note: 'every viewer in this folder still updates; only its latency changes',
     });
   }
+
+  // --- the floor wheel -----------------------------------------------------
+
+  /** One interval for the whole service, armed by the first watched file.
+   *
+   *  A file opened later inherits the wheel's PHASE, so its first floor check
+   *  lands anywhere in `[0, pollMs)` rather than at exactly `pollMs`. Harmless
+   *  in both directions: `fileFor` seeds `sig` from a fresh probe, so an
+   *  immediate check is a no-op, and the scope resolve on a path granted a
+   *  moment ago passes. The floor is a ceiling on latency, not a schedule. */
+  private startFloor(): void {
+    if (this.floor) return;
+    this.floor = setInterval(() => this.floorTick(), this.pollMs);
+    this.floor.unref?.();
+  }
+
+  private stopFloor(): void {
+    if (!this.floor) return;
+    clearInterval(this.floor);
+    this.floor = null;
+  }
+
+  /** Copied before iterating: a check can close its own file (a path that left
+   *  the scope), and that mutates `files` underneath us. */
+  private floorTick(): void {
+    for (const file of [...this.files.values()]) this.floorCheck(file);
+  }
+
+  /**
+   * One file's turn on the floor: stat it, and wake it only if that said
+   * something.
+   *
+   * The stat is taken HERE rather than by handing every file to `schedule` and
+   * letting `settle` do it two hundred milliseconds later, and the difference is
+   * the whole point of the wheel. Waking unconditionally would arm one debounce
+   * timeout per open file per tick — thirty tabs, thirty timers every two
+   * seconds — which is the per-file timer cost #544 exists to remove, merely
+   * moved from `setInterval` to `setTimeout`. It is also strictly less work:
+   * `settle` would stat and re-resolve the scope anyway, so a quiet file pays
+   * the same stat-plus-resolve here that it used to pay there, and saves the
+   * timer and the second wake-up that used to sit between them.
+   *
+   * A file whose signature MOVED goes through the normal path — `schedule`, the
+   * debounce, `settle` — so the floor and an `fs.watch` event are indistinguish-
+   * able downstream, which is what keeps the coalescing rules in one place.
+   */
+  private floorCheck(file: WatchedFile): void {
+    const sig = this.probe(file.path);
+    if (!sig) {
+      // Gone. Announced once, by `settle`, on the transition only — so a file
+      // that is already known-gone costs one stat a tick and says nothing. The
+      // scope is deliberately NOT re-checked for it: `settle` does not either,
+      // and for a file the user picked through the dialog a deletion makes the
+      // grant unresolvable, so checking would tear down the watch that is there
+      // to notice the file coming back.
+      if (!file.gone) this.schedule(file, false);
+      return;
+    }
+    if (signature(sig) !== file.sig) {
+      this.schedule(file, false);
+      return;
+    }
+    // Unmoved. The only thing that can still have changed under a quiet file is
+    // the SCOPE — the roots are the folders of the sessions that are OPEN, and
+    // closing that card takes the folder out of scope while the viewer is still
+    // on screen. `settle` makes the same check on the change path; this is the
+    // half of it that a file nobody is writing to would otherwise never reach,
+    // and it is why a closed session's watches do not outlive it.
+    if (!this.deps.scope.resolve(file.path).ok) {
+      this.closeFile(file, 'the path left the read scope');
+    }
+  }
+
+  // --- coalescing ----------------------------------------------------------
 
   /** Coalesce: trailing debounce, with a ceiling so a continuous writer still
    *  reaches the reader (`FILE_WATCH_MAX_WAIT_MS`). */
@@ -449,9 +615,9 @@ export class FileWatchService {
       //
       // The watch is NOT closed here, deliberately: a deleted file comes back —
       // a `git checkout`, a rename that lands, the agent writing it again — and
-      // the panel is still open on it. So the handle and the stat floor outlive
-      // the deletion for the life of the viewer, and the return goes through the
-      // scope check below like any other change.
+      // the panel is still open on it. So the directory handle and the stat
+      // floor outlive the deletion for the life of the viewer, and the return
+      // goes through the scope check below like any other change.
       if (!file.gone) {
         file.gone = true;
         file.sig = null;
@@ -495,25 +661,51 @@ export class FileWatchService {
     }
   }
 
-  /** Release one file's OS resources. Idempotent; logged, because "the watch is
-   *  torn down when the panel closes" is a done-when and a log line is how it is
-   *  read back in a real session rather than only in a test. */
+  // --- teardown ------------------------------------------------------------
+
+  /** Release one file. Idempotent; logged, because "the watch is torn down when
+   *  the panel closes" is a done-when and a log line is how it is read back in a
+   *  real session rather than only in a test. The OS handle goes with the LAST
+   *  file under its directory, and the wheel with the last file anywhere. */
   private closeFile(file: WatchedFile, why: string): void {
-    if (!this.files.delete(fileKey(file.path))) return;
+    // BY IDENTITY, not by key, in all three maps below. Today nothing can put a
+    // second live entry under one key — `watch()` unwatches before it calls
+    // `fileFor`, deliberately (see there) — so this is a guard on that ORDERING
+    // INVARIANT rather than on a reachable state. It is worth the four extra
+    // characters because of what breaks if the invariant ever slips: deleting by
+    // key would drop the LIVE replacement instead, leaving a `WatchedDir` whose
+    // handle nobody holds and a `WatchedFile.owner` pointing at an entry no
+    // longer in `dirs` — so the next file in that folder opens a second handle,
+    // which is the exact bug this item exists to remove, reintroduced silently.
+    if (this.files.get(fileKey(file.path)) !== file) return;
+    this.files.delete(fileKey(file.path));
     for (const key of file.refs) this.viewers.delete(key);
     file.refs.clear();
     if (file.timer) clearTimeout(file.timer);
     file.timer = null;
-    if (file.poll) clearInterval(file.poll);
-    file.poll = null;
-    const handle = file.handle;
-    file.handle = null;
+    const owner = file.owner;
+    const nameKey = fold(file.base);
+    if (owner.files.get(nameKey) === file) owner.files.delete(nameKey);
+    if (owner.files.size === 0) this.closeDir(owner);
+    if (this.files.size === 0) this.stopFloor();
+    this.deps.log.info('fs watch closed', { path: file.path, reason: why });
+  }
+
+  /** The last file under a directory went: give the OS its handle back. Logged
+   *  separately from `fs watch closed`, because that line now fires per FILE and
+   *  the handle can outlive several of them — the release of the OS resource is
+   *  the thing a real session needs to be able to read back. */
+  private closeDir(entry: WatchedDir): void {
+    if (this.dirs.get(fold(entry.dir)) !== entry) return;
+    this.dirs.delete(fold(entry.dir));
+    const handle = entry.handle;
+    entry.handle = null;
     try {
       handle?.close();
     } catch (err) {
-      this.deps.log.debug('fs watch close failed', { path: file.path, error: String(err) });
+      this.deps.log.debug('fs watch close failed', { dir: entry.dir, error: String(err) });
     }
-    this.deps.log.info('fs watch closed', { path: file.path, reason: why });
+    this.deps.log.info('fs directory watch closed', { dir: entry.dir });
   }
 }
 
