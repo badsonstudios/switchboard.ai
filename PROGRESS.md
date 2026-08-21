@@ -21,9 +21,9 @@
 > **Active workers (wave 2, dispatched ~10:15):**
 > | Issue | Worktree | Branch | Status |
 > |---|---|---|---|
-> | EVENTS track #268+#577+#648 | sb-wt-1 | DONE — PR #684 ready, in DAN'S QUEUE |
+> | #642 placeMenu audit (USER-FACING) | sb-wt-1 | feature/642-placemenu-audit | dispatched ~15:05 |
 > | #618 sessions DTO (internal) | sb-wt-2 | feature/618-sessions-status-dto | dispatched ~12:35 |
-> | RAIL/CARDS track #337+#295+#606 (USER-FACING) | sb-wt-3 | feature/337-rail-cards-track | dispatched ~12:35 |
+> | #491 feed image marker (USER-FACING) | sb-wt-3 | feature/491-image-marker | dispatched ~15:05 |
 >
 > **Merge chain:** MERGED so far: #669, #665, #672 (12:03), #676 (12:34,
 > b2a7201, #650 closed — CHANGELOG conflict resolved by orchestrator, 0.8.3
