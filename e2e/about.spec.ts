@@ -71,7 +71,7 @@ test.describe('build identity (E15-15)', () => {
     // By ROW ID, not by text: the palette splits a matched title into one
     // element per character to bold the hits, so a text locator is at the mercy
     // of how the fuzzy matcher happened to chop this particular title up.
-    const row = w.locator('[id="palette-row-help.about"]');
+    const row = w.locator('[data-palette-row="help.about"]');
     await expect(row).toContainText('About this build');
     await row.click();
     await expect(about(w)).toBeVisible();

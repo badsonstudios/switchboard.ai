@@ -61,6 +61,22 @@ on the floor, and say so in your PR.
 
 ## 0.8.3 — unreleased
 
+### Changed
+
+- **A reply or a document can no longer put a name on one of switchboard.ai's
+  own controls.** Raw HTML can contain a `<label>`, and a label is not just
+  words: it points at a control *anywhere on the page* and takes over both
+  clicking it and what a screen reader calls it. A line of text in a reply could
+  therefore tick a checkbox in one of switchboard.ai's own dialogs, press one of
+  its buttons, or have your screen reader announce the *ntfy topic* box as
+  "Paste your API key here to continue". Labels are now removed from rendered
+  Markdown everywhere — the session feed, the document viewer and the
+  release-notes pane you are reading this in. The words inside them stay, so you
+  still read everything the reply or the document said, and nothing else changes
+  on screen. Alongside it, switchboard.ai's own setup dialogs and the command
+  palette stopped giving their controls fixed, predictable names for content to
+  aim at.
+
 ## 0.8.2 — 2026-08-21
 
 ### Changed

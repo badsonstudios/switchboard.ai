@@ -258,7 +258,7 @@ test.describe('update check (E19-03)', () => {
     // nothing is worse than no button.
     await a.window.keyboard.press(`${MOD}+Shift+P`);
     await a.window.getByPlaceholder('Type a command or a session name…').fill('updates');
-    await a.window.locator('[id="palette-row-help.checkForUpdates"]').click();
+    await a.window.locator('[data-palette-row="help.checkForUpdates"]').click();
     await expect(dialog(a.window)).toBeVisible();
     await expect(dialog(a.window)).toContainText('9.9.9');
     await a.window.keyboard.press('Escape');
@@ -284,7 +284,7 @@ test.describe('update check (E19-03)', () => {
 
     await w.keyboard.press(`${MOD}+Shift+P`);
     await w.getByPlaceholder('Type a command or a session name…').fill('updates');
-    await w.locator('[id="palette-row-help.checkForUpdates"]').click();
+    await w.locator('[data-palette-row="help.checkForUpdates"]').click();
     await expect(dialog(w)).toHaveAttribute('data-update-state', 'up-to-date');
   });
 
@@ -357,7 +357,7 @@ test.describe('update check (E19-03)', () => {
 
     await w.keyboard.press(`${MOD}+Shift+P`);
     await w.getByPlaceholder('Type a command or a session name…').fill('updates');
-    await w.locator('[id="palette-row-help.checkForUpdates"]').click();
+    await w.locator('[data-palette-row="help.checkForUpdates"]').click();
     await expect(dialog(w)).toHaveAttribute('data-update-state', 'failed');
     await expect(dialog(w)).toContainText('Nothing is wrong with your app');
     // …and it is a plain dialog, not an alert demanding attention. Scoped to

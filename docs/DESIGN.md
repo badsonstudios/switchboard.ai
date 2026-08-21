@@ -2142,6 +2142,35 @@ a pointer where they left.)*
   > note therefore stands as written — this is a property of chrome, and rendered
   > content adds stops the app did not budget for.
   >
+  > **#654 (2026-08-21) closes the one channel that pointed the OTHER WAY.**
+  > Everything above is about what content can put *in itself*. `<label for>` is
+  > not that: it names a control by id **anywhere in the document**, and it then
+  > forwards a click to it — focusing a text box, toggling a checkbox, firing a
+  > button's handler — *and* contributes to its accessible name, with content's
+  > words first because rendered content sits above the app's dialogs in tree
+  > order. Both verified in Chromium 149: a field named "ntfy topic" was
+  > announced as "Paste your API key here to continue — ntfy topic", and a
+  > button named "Delete session" was renamed outright. That is §5.29's ARIA
+  > argument (#509) arriving on a TAG after the attribute half was closed, and it
+  > passes through both a `position:fixed` scrim and `aria-modal="true"`. `label`
+  > joins `FORBID_TAGS`; measured first, as always — 7,737 transcripts and 1,188
+  > real `.md` files, `<label` 7 occurrences, every one in a code span, bare in
+  > prose **zero**. It costs the reader nothing: `KEEP_CONTENT` keeps the words
+  > and `<label>` has no UA styling but `cursor: default`.
+  >
+  > **The half a tag list cannot reach, recorded so nobody reads this as more
+  > than it is.** `id` survives the profile — heading anchors are the viewer's
+  > own — so content can still PLANT one of the app's names, and every IDREF
+  > resolves to the FIRST element in tree order carrying it. Verified in
+  > Chromium 149: a planted `<span>` took a dialog's own `<label for>` away from
+  > its own field (the field lost its accessible name), and a combobox's
+  > `aria-activedescendant` resolved to a planted `<div>` with no `role` on it.
+  > So #654 also took the literal ids out of `PushSetupDialog`,
+  > `QuietHoursDialog` and `CommandPalette` in favour of `React.useId()` — which
+  > is **not a secret**: it is deterministic for a given render tree. What it
+  > removes is a *stable, published* name. The closure is the tag; the ids are
+  > defence in depth, and both are pinned by tests.
+  >
   > **A fifth rule, added by #253 (2026-08-05):** *a drag is never the only way
   > to do something.* The sweep above made every CONTROL reachable and left one
   > INTERACTION that wasn't — a session's group could only be changed by

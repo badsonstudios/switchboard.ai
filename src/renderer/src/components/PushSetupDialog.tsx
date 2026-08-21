@@ -56,6 +56,37 @@ export function PushSetupDialog(props: PushSetupDialogProps): React.JSX.Element 
   const [testing, setTesting] = React.useState<'push' | 'webhook' | null>(null);
   const [results, setResults] = React.useState<Record<string, PushSendResult>>({});
 
+  /**
+   * The prefix for every `id` in this dialog (#654). A HOOK, so it lives up here
+   * with the others and above the `props.open` early return.
+   *
+   * These fields used to be `id="push-field-ntfy.topic"` and friends — LITERAL,
+   * STABLE and therefore GUESSABLE, which is only a problem because this app
+   * renders markdown from files and replies it did not write. `id` survives the
+   * sanitizer profile (it is an ordinary member of DOMPurify's allow-list, and
+   * `ALLOW_DATA_ATTR: false` does not reach it), and an `id` is a NAME the rest
+   * of the document can address:
+   *
+   *  - `<label for="push-field-ntfy.topic">` in a reply is a SECOND label on
+   *    this input — it forwards a click to it, and it prepends its own words to
+   *    the field's accessible name. `markdown.tsx` forbids `<label>` at the
+   *    profile, which is where that half is settled, for every surface at once.
+   *  - THE HALF A TAG LIST CANNOT SETTLE, and the reason this line exists:
+   *    content planting the SAME id EARLIER in tree order takes this dialog's
+   *    own label away from its own field. `<label for>` binds to the FIRST
+   *    element in tree order with that id, and a `<span id="push-field-…">` is
+   *    not labelable — so the association silently becomes NOTHING and the
+   *    credential field loses its accessible name. Verified in Chromium 149
+   *    (`label.control` → `null`, `input.labels` → empty), not reasoned about.
+   *
+   * `React.useId()` is what the rest of the renderer already uses (QuestionPanel,
+   * EventsPanel, FindBar) and it is per-MOUNT, so there is no string for content
+   * to name. `data-push-field` stays as it is: it is the test hook, it is not an
+   * `id`, and content cannot emit a `data-*` attribute at all
+   * (`ALLOW_DATA_ATTR: false`).
+   */
+  const fieldId = React.useId();
+
   React.useEffect(() => {
     if (!props.open) return;
     // A re-open starts clean: a half-typed token left in the box from last time
@@ -119,7 +150,7 @@ export function PushSetupDialog(props: PushSetupDialogProps): React.JSX.Element 
   const secretRow = (key: PushSecretKey, label: string, hint?: string): React.JSX.Element => (
     <div style={{ display: 'grid', gap: 4 }}>
       <label
-        htmlFor={`push-field-${key}`}
+        htmlFor={`${fieldId}${key}`}
         style={{ fontSize: 11.5, color: 'var(--muted)', display: 'flex', gap: 8 }}
       >
         {label}
@@ -129,7 +160,7 @@ export function PushSetupDialog(props: PushSetupDialogProps): React.JSX.Element 
       </label>
       <div style={{ display: 'flex', gap: 6 }}>
         <input
-          id={`push-field-${key}`}
+          id={`${fieldId}${key}`}
           data-push-field={key}
           // A password field: this is a credential, and the person setting it up
           // may well be sharing their screen while they do it.
@@ -303,13 +334,13 @@ export function PushSetupDialog(props: PushSetupDialogProps): React.JSX.Element 
                       the one field here that belongs in the workspace file. */}
                   <div style={{ display: 'grid', gap: 4 }}>
                     <label
-                      htmlFor="push-field-ntfy-server"
+                      htmlFor={`${fieldId}ntfy-server`}
                       style={{ fontSize: 11.5, color: 'var(--muted)' }}
                     >
                       {t('push.ntfyServer')}
                     </label>
                     <input
-                      id="push-field-ntfy-server"
+                      id={`${fieldId}ntfy-server`}
                       data-push-field="ntfy-server"
                       type="text"
                       autoComplete="off"

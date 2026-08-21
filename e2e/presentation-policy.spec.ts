@@ -263,7 +263,7 @@ test.describe('presentation policy (E9-06)', () => {
     await w
       .getByPlaceholder('Type a command or a session name…')
       .fill('This session on submit: follow the default');
-    await expect(w.locator('#palette-rows [role="option"]').first()).toContainText(
+    await expect(w.locator('[data-palette-rows] [role="option"]').first()).toContainText(
       'follow the default'
     );
     await w.keyboard.press('Escape');

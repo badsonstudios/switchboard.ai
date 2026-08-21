@@ -263,6 +263,18 @@ into your own tools is always one click away.
   switched off. Clickable regions drawn on top of a picture (an "image map") go
   with them, and so does one tag — `<dialog>` — that hid whatever was put inside
   it. Ordinary pictures are untouched.
+  **And it can't put a name on one of switchboard.ai's controls either.** A
+  `<label>` is the one piece of HTML that reaches out of the text and attaches
+  itself to something else on the page: it names a control by its internal id,
+  and from then on clicking the label operates that control and a screen reader
+  reads the label's words as that control's name. So a sentence in a reply could
+  tick a checkbox in one of switchboard.ai's own dialogs, press one of its
+  buttons, or have your screen reader announce the *ntfy topic* box as "Paste
+  your API key here to continue" — words that are nowhere on your screen.
+  Labels are removed; as always the words inside them stay, and nothing else
+  about the text changes. switchboard.ai's own dialogs also stopped giving their
+  controls fixed, predictable internal names, so there is nothing for a document
+  to aim at even if a label ever got through.
   What is still reachable with Tab inside the text is either something the text
   genuinely contains — **links**, and any `<details>` sections it uses to fold
   parts of itself away — or something switchboard.ai put there: the **Copy**

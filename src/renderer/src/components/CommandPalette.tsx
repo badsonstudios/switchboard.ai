@@ -26,6 +26,25 @@ export function CommandPalette(props: {
   // where focus was before we stole it — restored on close, so closing the
   // palette never strands the user with nothing focused
   const returnFocusTo = React.useRef<HTMLElement | null>(null);
+  /**
+   * The prefix for every `id` in this palette (#654).
+   *
+   * `<label for>` was the reason that item existed, and this component has no
+   * label — but it has the OTHER id consumer, and it is the one with an
+   * audience: `aria-activedescendant` and `aria-controls` are IDREFs, and an
+   * IDREF resolves to the FIRST element in tree order carrying that id. `id`
+   * survives the sanitizer profile (see `markdown.tsx`), so a reply containing
+   * `<div id="palette-row-quit">Open a file</div>` sat ABOVE this palette in
+   * the document and CAPTURED the reference: verified in Chromium 149, where
+   * the combobox's `activedescendant` relation resolved to the planted `<div>`
+   * — with no `role` on it, because content cannot write one. The screen-reader
+   * user is then told the highlighted command is whatever the reply said, while
+   * Enter still runs the real one. That is #509's harm exactly (a lie the
+   * sighted reader cannot see) reached through a NAME rather than an attribute.
+   *
+   * `React.useId()` is per-mount, so there is no string to plant.
+   */
+  const paletteId = React.useId();
 
   const rows: PaletteRow[] = React.useMemo(() => {
     if (!props.open) return [];
@@ -151,8 +170,10 @@ export function CommandPalette(props: {
           aria-label={t('palette.placeholder')}
           role="combobox"
           aria-expanded
-          aria-controls="palette-rows"
-          aria-activedescendant={visible[selected] ? `palette-row-${visible[selected].id}` : undefined}
+          aria-controls={`${paletteId}rows`}
+          aria-activedescendant={
+            visible[selected] ? `${paletteId}row-${visible[selected].id}` : undefined
+          }
           style={{
             background: 'var(--panel2)',
             color: 'var(--text)',
@@ -164,7 +185,13 @@ export function CommandPalette(props: {
             outline: 'none',
           }}
         />
-        <div id="palette-rows" role="listbox" aria-label={t('palette.label')} style={{ overflowY: 'auto' }}>
+        {/* `data-palette-rows` / `data-palette-row` are the TEST HOOKS, and they
+            exist because the ids above stopped being nameable (#654). They are
+            the same shape `data-push-field` and `data-quiet-field` already use,
+            and they are safe to select on for the reason those are: content
+            cannot emit a `data-*` attribute at all (`ALLOW_DATA_ATTR: false`),
+            so a hook is not a second guessable name. */}
+        <div data-palette-rows id={`${paletteId}rows`} role="listbox" aria-label={t('palette.label')} style={{ overflowY: 'auto' }}>
           {visible.length === 0 && (
             <div style={{ padding: '14px', color: 'var(--muted)', fontSize: 12 }}>
               {t('palette.empty')}
@@ -173,7 +200,8 @@ export function CommandPalette(props: {
           {visible.map((row, i) => (
             <div
               key={row.id}
-              id={`palette-row-${row.id}`}
+              id={`${paletteId}row-${row.id}`}
+              data-palette-row={row.id}
               role="option"
               aria-selected={i === selected}
               aria-disabled={!row.enabled}

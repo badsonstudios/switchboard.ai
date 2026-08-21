@@ -56,6 +56,17 @@ export function QuietHoursDialog(props: QuietHoursDialogProps): React.JSX.Elemen
   const seeded = React.useRef(false);
   /** …or has the user already typed, making the answer no longer theirs to take? */
   const touched = React.useRef(false);
+  /**
+   * The prefix for every `id` in this dialog (#654). A HOOK, so it sits with the
+   * others and above the `props.open` early return. Same argument as
+   * `PushSetupDialog.tsx`, which carries it in full: a LITERAL `id` is a name
+   * rendered content can address, `id` survives the sanitizer profile, and
+   * `<label for>` binds to the FIRST element in tree order with that id — so a
+   * `quiet-field-start` planted above this dialog took this label away from this
+   * field. `React.useId()` is per-mount, so there is no string to plant.
+   * `data-quiet-field` stays: it is the test hook, not an `id`.
+   */
+  const fieldId = React.useId();
 
   React.useEffect(() => {
     if (!props.open) {
@@ -125,11 +136,11 @@ export function QuietHoursDialog(props: QuietHoursDialogProps): React.JSX.Elemen
     set: (v: string) => void
   ): React.JSX.Element => (
     <div style={{ display: 'grid', gap: 4 }}>
-      <label htmlFor={`quiet-field-${id}`} style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+      <label htmlFor={`${fieldId}${id}`} style={{ fontSize: 11.5, color: 'var(--muted)' }}>
         {t(`quiet.${id}`)}
       </label>
       <input
-        id={`quiet-field-${id}`}
+        id={`${fieldId}${id}`}
         data-quiet-field={id}
         type="time"
         value={value}

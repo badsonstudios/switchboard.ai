@@ -13,7 +13,7 @@
 //  • it says the webhook keeps going, because that is the surprising half of
 //    the decision and the user should not have to find out from a dashboard.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { act } from 'react';
+import React, { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
 import { QuietHoursDialog } from './QuietHoursDialog';
@@ -219,6 +219,38 @@ describe('the quiet-hours dialog', () => {
     await render(true);
     expect(dialog()!.textContent).toMatch(/webhook/i);
     expect(dialog()!.textContent).toMatch(/phone push/i);
+  });
+
+  it('its fields carry no id rendered content could name (#654)', async () => {
+    // `PushSetupDialog.test.tsx` carries the argument in full; the mechanism is
+    // identical and so is the fix. A literal `id` is a NAME rendered content
+    // can plant, IDREFs resolve to the first element in tree order, and the
+    // feed sits above this dialog — so `quiet-field-start` in a reply took this
+    // label away from this field. `React.useId()` is not random — it is
+    // deterministic for a given render tree — so what it removes is a STABLE,
+    // PUBLISHED name, not the possibility of a collision. The closure is the
+    // `<label>` tag in `markdown.tsx`; this is defence-in-depth.
+    await render(true);
+    const ids = [...host.querySelectorAll('[id]')].map((el) => el.id);
+    expect(ids.length).toBeGreaterThan(0);
+    for (const id of ids) expect(id).not.toMatch(/quiet-field-/);
+    // the label still binds — the string changed, the wiring did not
+    expect(field('start').labels?.length).toBe(1);
+    expect(field('end').labels?.length).toBe(1);
+    // …and the string belongs to the TREE: one more `useId` caller ahead of it
+    // and every id in the dialog moves.
+    const Ahead = (): React.JSX.Element => <i data-ahead={React.useId()} />;
+    await act(async () => {
+      root!.render(
+        <>
+          <Ahead />
+          <QuietHoursDialog open state={state()} {...handlers} />
+        </>
+      );
+    });
+    const shifted = [...host.querySelectorAll('[id]')].map((el) => el.id);
+    expect(shifted.length).toBe(ids.length);
+    expect(shifted.filter((id) => ids.includes(id))).toEqual([]);
   });
 
   it('is a modal a keyboard can leave', async () => {
