@@ -275,6 +275,23 @@ describe('a reviewed row recedes by token, never by opacity', () => {
     }
   });
 
+  it("writes the row's TITLE in the row's own ink", async () => {
+    // The title is the loudest thing on the row and is therefore what the
+    // de-emphasis is mostly made of: `--text` on a live row, one rung down the
+    // neutral ladder on a reviewed one. Spelling either token here would put
+    // the step in a component, where nothing measures it — and reverting this
+    // to a fixed `var(--text)` is not an AA failure (it is MORE contrast), it
+    // is the reviewed tail quietly ceasing to recede at all, which is the one
+    // regression a contrast test cannot have an opinion about.
+    for (const row of await rowsFor([evt(1, 'needs-input'), evt(2, 'ready')])) {
+      const title = [...row.querySelectorAll<HTMLElement>('span')].find(
+        (w) => w.textContent === 'alpha'
+      );
+      expect(title, 'the row stopped naming its session').toBeDefined();
+      expect(title!.style.color).toBe('inherit');
+    }
+  });
+
   it("writes the reviewed row's state word in the row's own ink", async () => {
     // The one word on a reviewed row that says what the row IS. It used to
     // carry its own token (`--faint`, the app's hairline hint) and measured
