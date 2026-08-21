@@ -5,7 +5,7 @@
 // and "the CLI was told deny" is pinned here, and the e2e
 // (`e2e/permission-toast.spec.ts`) proves the toast that carries those buttons
 // is really built and really withdrawn.
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import type { Logger } from '../log/logger';
@@ -13,11 +13,37 @@ import type { PermissionRequest } from '../../shared/ipc/permissions';
 import {
   answerableFromToast,
   DECIDE_BUTTONS,
-  DECIDE_BUTTON_LABELS,
+  decideButtonActions,
   PermissionToasts,
   permissionSummary,
   toastActionsSupported,
 } from './permission-toast';
+import { createMainI18n } from '../i18n';
+import type { LanguageChoice, Translate } from '../../shared/i18n';
+import { pseudolocalize } from '../../shared/i18n/pseudo';
+
+// THE REAL TRANSLATOR, not a fake (#471).
+//
+// `permissionSummary` composes the one sentence in this app that stands between
+// a user and an **Allow** button, and since #471 it composes it out of catalog
+// keys. A stub `t` would assert that the code asked for `approval.title` and
+// prove nothing about whether that key exists, parses as ICU, or interpolates
+// `{tool}` — which is the whole class of defect #207 shipped. So these tests run
+// the process's own i18next, against the shipped `en.json`, through ICU.
+//
+// `lang` is a mutable module variable and `language` is a thunk over it, which
+// is exactly how `main/index.ts` wires it: that is what lets the locale-switch
+// block below flip languages between two calls with nothing to re-initialise.
+let lang: LanguageChoice = 'en';
+let t: Translate;
+beforeAll(async () => {
+  t = (await createMainI18n({ language: () => lang })).t;
+});
+// English unless a test says otherwise, so a locale left behind by one block
+// cannot silently decide another one's assertions.
+beforeEach(() => {
+  lang = 'en';
+});
 
 /**
  * A real `Logger` whose four levels are spies, so the assertions below can read
@@ -82,8 +108,12 @@ describe('PermissionToasts — the button routing (P2-E14-04)', () => {
     // The whole failure this pins: reorder the buttons on the notification and
     // forget the routing, and Allow sends deny. There is exactly one source.
     expect(DECIDE_BUTTONS).toEqual(['allow', 'deny']);
-    // …and every button has a label, so a third one cannot ship blank.
-    expect(DECIDE_BUTTONS.map((d) => DECIDE_BUTTON_LABELS[d])).toEqual(['Allow', 'Deny']);
+    // …and every button has a label, in the SAME order, so a third one cannot
+    // ship blank and a reorder cannot label Allow "Deny".
+    expect(decideButtonActions(t)).toEqual([
+      { type: 'button', text: 'Allow' },
+      { type: 'button', text: 'Deny' },
+    ]);
   });
 
   it('an index this build never attached decides NOTHING', () => {
@@ -250,40 +280,40 @@ describe('permissionSummary — a toast that names what Allow would allow', () =
   });
 
   it('names the tool, in the approval bar wording', () => {
-    expect(permissionSummary(req())).toBe('Allow Edit?');
+    expect(permissionSummary(req(), t)).toBe('Allow Edit?');
   });
 
   it('prefers the CLI own display name over our tool id', () => {
-    expect(permissionSummary(req({ displayName: 'Write file' }))).toContain('Allow Write file?');
+    expect(permissionSummary(req({ displayName: 'Write file' }), t)).toContain('Allow Write file?');
   });
 
   it('shows the sharpest field it has — the command, the path, the url', () => {
-    expect(permissionSummary(req({ tool: 'Bash', input: { command: 'rm -rf build' } }))).toBe(
+    expect(permissionSummary(req({ tool: 'Bash', input: { command: 'rm -rf build' } }), t)).toBe(
       'Allow Bash? rm -rf build'
     );
-    expect(permissionSummary(req({ input: { file_path: 'C:/proj/x.ts' } }))).toBe(
+    expect(permissionSummary(req({ input: { file_path: 'C:/proj/x.ts' } }), t)).toBe(
       'Allow Edit? C:/proj/x.ts'
     );
-    expect(permissionSummary(req({ tool: 'WebFetch', input: { url: 'https://x.dev' } }))).toBe(
+    expect(permissionSummary(req({ tool: 'WebFetch', input: { url: 'https://x.dev' } }), t)).toBe(
       'Allow WebFetch? https://x.dev'
     );
   });
 
   it('a command beats a description when both are there', () => {
     expect(
-      permissionSummary(req({ tool: 'Bash', input: { command: 'ls', description: 'List' } }))
+      permissionSummary(req({ tool: 'Bash', input: { command: 'ls', description: 'List' } }), t)
     ).toBe('Allow Bash? ls');
   });
 
   it("falls back to the CLI own prose, which is text we did not write (P7)", () => {
-    expect(permissionSummary(req({ input: {}, reason: 'edits inside .claude/' }))).toBe(
+    expect(permissionSummary(req({ input: {}, reason: 'edits inside .claude/' }), t)).toBe(
       'Allow Edit? edits inside .claude/'
     );
   });
 
   it('collapses newlines and truncates — a toast is one or two lines', () => {
     const long = 'x'.repeat(400);
-    const out = permissionSummary(req({ tool: 'Bash', input: { command: `a\n  b ${long}` } }));
+    const out = permissionSummary(req({ tool: 'Bash', input: { command: `a\n  b ${long}` } }), t);
     expect(out).not.toContain('\n');
     expect(out.length).toBeLessThan(120);
     expect(out.endsWith('…')).toBe(true);
@@ -293,7 +323,10 @@ describe('permissionSummary — a toast that names what Allow would allow', () =
     // The hook path carries far less than the stream path does (#312); a body
     // built from a missing field must still be a sentence.
     expect(
-      permissionSummary({ requestId: 'r', sessionId: 's', tool: '', input: undefined as never })
+      permissionSummary(
+        { requestId: 'r', sessionId: 's', tool: '', input: undefined as never },
+        t
+      )
     ).toBe('Allow a tool?');
   });
 });
@@ -359,7 +392,8 @@ describe("the CLI's own question on a toast (#563)", () => {
     const summary = permissionSummary(
       question([
         { question: 'Which colour do you prefer?', options: [{ label: 'Red' }], multiSelect: false },
-      ])
+      ]),
+      t
     );
     expect(summary).toBe('A question for you: Which colour do you prefer?');
     expect(summary).not.toContain('Allow');
@@ -371,12 +405,101 @@ describe("the CLI's own question on a toast (#563)", () => {
         { question: 'First?', options: [{ label: 'a' }] },
         { question: 'Second?', options: [{ label: 'b' }] },
         { question: 'Third?', options: [{ label: 'c' }] },
-      ])
+      ]),
+      t
     );
     expect(summary).toBe('A question for you: First? (+2 more)');
   });
 
   it('falls back to plain prose when the payload will not parse', () => {
-    expect(permissionSummary(question('not an array'))).toBe('Claude is asking you a question');
+    expect(permissionSummary(question('not an array'), t)).toBe(
+      'Claude is asking you a question'
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #471 — the toast speaks the user's language, and switches mid-session.
+// ---------------------------------------------------------------------------
+//
+// The issue's done-when, pinned: "a test pins locale-switched toast text".
+//
+// `pseudo` is the only non-English locale this build ships, and that is exactly
+// what makes it the right witness here — every string it renders is a
+// MECHANICAL transform of the English one, so the assertion can be "this is the
+// English string, put through the locale" rather than a hand-copied literal
+// that would still pass if the language never changed at all. A real second
+// locale, when one lands, needs nothing new: it is a JSON file.
+describe('a toast is composed in the user language (#471)', () => {
+  const bash = (): PermissionRequest => ({
+    requestId: 'r',
+    sessionId: 's',
+    tool: 'Bash',
+    input: { command: 'npm run build' },
+  });
+
+  it('renders the SAME request differently once the language moves', () => {
+    lang = 'en';
+    const english = permissionSummary(bash(), t);
+    expect(english).toBe('Allow Bash? npm run build');
+
+    // The switch. Nothing is re-initialised, nothing is awaited, no channel is
+    // pushed — `main/index.ts` passes a thunk over the workspace preference and
+    // this is the same thunk. A toast fired on the next line is already in the
+    // new language, which is the behaviour a mid-session switch has to have.
+    lang = 'pseudo';
+    const other = permissionSummary(bash(), t);
+    expect(other).not.toBe(english);
+    expect(other).toContain('⟦');
+
+    // The COMMAND is untouched, in either language. §5.21's last bullet: we
+    // translate our chrome, not CLI output — a pseudolocalized `npm run build`
+    // would be a lie about what Allow would run.
+    expect(other).toContain('npm run build');
+    expect(other).toBe(
+      pseudolocalize('Allow {tool}? {detail}')
+        .replace('{tool}', 'Bash')
+        .replace('{detail}', 'npm run build')
+    );
+  });
+
+  it('translates the BUTTONS too, in order', () => {
+    lang = 'pseudo';
+    const [allow, deny] = decideButtonActions(t);
+    expect(allow.text).toBe(pseudolocalize('Allow'));
+    expect(deny.text).toBe(pseudolocalize('Deny'));
+    // …and the order still decodes to the right verdict.
+    expect(DECIDE_BUTTONS[0]).toBe('allow');
+  });
+
+  it('translates a question, ICU plural and all', () => {
+    lang = 'pseudo';
+    const summary = permissionSummary(
+      {
+        requestId: 'r',
+        sessionId: 's',
+        tool: 'AskUserQuestion',
+        input: {
+          questions: [
+            { question: 'First?', options: [{ label: 'a' }] },
+            { question: 'Second?', options: [{ label: 'b' }] },
+          ],
+        },
+      },
+      t
+    );
+    // The plural block survived pseudo-localization (its braces are preserved)
+    // and still counted — a `{{more}}`-style mistake would have rendered the
+    // braces at the user instead.
+    expect(summary).toContain('(+1 more)');
+    expect(summary).toContain('⟦');
+    expect(summary).toContain('First?');
+  });
+
+  it('goes back to English when the preference does', () => {
+    lang = 'pseudo';
+    expect(permissionSummary(bash(), t)).toContain('⟦');
+    lang = 'en';
+    expect(permissionSummary(bash(), t)).toBe('Allow Bash? npm run build');
   });
 });

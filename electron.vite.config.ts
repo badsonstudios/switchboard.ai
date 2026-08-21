@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react';
 import { CSP_PROD_META } from './src/shared/csp';
 import { describeIdentity, probeBuildIdentity } from './src/build/git-identity';
 import { stampChunkFileNames, stampManualChunks } from './src/build/stamp-chunk';
+import { BUNDLED_INTO_MAIN } from './src/build/bundled-deps';
 
 /**
  * Build identity (P2-E15-15) — git SHA + branch + dirty + build time, asked
@@ -65,8 +66,11 @@ function cspMetaBackstop(): PluginOption {
 export default defineConfig({
   main: {
     // native/runtime deps (node-pty) must stay external — bundling a native
-    // module breaks it
-    plugins: [externalizeDepsPlugin()],
+    // module breaks it. The exceptions are listed in src/build/bundled-deps.ts,
+    // with the reason: i18next + i18next-icu are inlined because ICU's
+    // formatter arrives through a PEER dependency this app never declares, so
+    // externalizing them would ship an app that cannot compose a notification.
+    plugins: [externalizeDepsPlugin({ exclude: [...BUNDLED_INTO_MAIN] })],
     define: buildDefine,
     build: {
       rollupOptions: {

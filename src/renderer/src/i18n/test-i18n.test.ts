@@ -17,8 +17,8 @@ import { join, relative } from 'node:path';
 import i18next from 'i18next';
 import { initI18nForTests } from './test-i18n';
 import { configureI18n } from './index';
-import { pseudolocalize } from './pseudo';
-import en from './locales/en.json';
+import { pseudolocalize } from '../../../shared/i18n/pseudo';
+import en from '../../../shared/i18n/locales/en.json';
 
 /** Keys no shipped resource has, added after init so this file proves the
  *  CONFIGURATION rather than re-testing whatever `en.json` happens to say. */
@@ -171,5 +171,7 @@ const WHY =
   'this file configures i18next itself, so it is free to drift from the app — ' +
   'and the drift that already happened cost #207 a banner that would have read ' +
   '"…failing to write {{file}}" on screen while its test stayed green. Call ' +
-  '`initI18nForTests()` from `src/renderer/src/i18n/test-i18n.ts`; if the app ' +
-  'needs different options, change `configureI18n` and both move together.';
+  '`initI18nForTests()` from `src/renderer/src/i18n/test-i18n.ts` (renderer) or ' +
+  '`createMainI18n()` from `src/main/i18n.ts` (main); if the app needs different ' +
+  'options, change `configureI18nBase` in `src/shared/i18n` and all three move ' +
+  'together.';

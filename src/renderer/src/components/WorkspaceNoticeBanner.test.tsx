@@ -16,7 +16,7 @@ import { act, StrictMode } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import type { WorkspaceSaveState } from '../../../shared/workspace';
 import { initI18nForTests } from '../i18n/test-i18n';
-import en from '../i18n/locales/en.json';
+import en from '../../../shared/i18n/locales/en.json';
 import { WorkspaceNoticeBanner } from './WorkspaceNoticeBanner';
 import { addPopoutWindow, removePopoutWindow, resetPopoutWindows } from '../lib/popout-windows';
 

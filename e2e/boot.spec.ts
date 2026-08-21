@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { launchApp, LaunchedApp } from './fixtures/app';
+import fs from 'fs';
+import { findFile, launchApp, LaunchedApp, poll } from './fixtures/app';
 
 test.describe('app boots', () => {
   let a: LaunchedApp;
@@ -39,5 +40,31 @@ test.describe('app boots', () => {
     a = await launchApp();
     const url = a.window.url();
     expect(url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\//);
+  });
+
+  test('the MAIN process got its translator (#471)', async () => {
+    a = await launchApp();
+    // The one thing a unit test cannot reach. `src/main/i18n.test.ts` runs
+    // under vitest, where everything is ESM and Vite resolves it; PRODUCTION
+    // main is a rolled-up bundle inside an Electron process. i18next-icu's
+    // formatter arrives through a PEER dependency this app never declares
+    // (`intl-messageformat`), so "does main have an interpolator at all" is a
+    // BUILD fact — and `src/build/bundled-deps.ts` is the answer only while the
+    // vite config still says so. If that ever regresses, every notification
+    // silently goes back to raw English with the ICU braces showing, and this
+    // line is what says so instead.
+    const log = await poll(() => {
+      const f = findFile(a.home, 'switchboard.log');
+      const text = f ? fs.readFileSync(f, 'utf8') : '';
+      return text.includes('main i18n ready') ? text : null;
+    });
+    const line = [...log.matchAll(/\{[^\n]*"msg":"main i18n ready"[^\n]*\}/g)].pop();
+    expect(line, 'main never logged that i18n came up').toBeTruthy();
+    const parsed = JSON.parse(line![0]) as { ready?: boolean; language?: string };
+    expect(parsed.ready).toBe(true);
+    // A fresh home has no stored preference, so English is the honest default —
+    // and a `language` that came back undefined would mean main is not reading
+    // the workspace blob at all, which is the whole locale mechanism.
+    expect(parsed.language).toBe('en');
   });
 });

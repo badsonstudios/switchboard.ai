@@ -14,6 +14,8 @@ import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import { APP_USER_MODEL_ID } from '../shared/app-identity';
+import { BUNDLED_INTO_MAIN } from '../build/bundled-deps';
 
 const root = process.cwd();
 const read = (f: string) => fs.readFileSync(path.join(root, f), 'utf8');
@@ -80,6 +82,22 @@ describe('packaging config (P2-E19-01)', () => {
     // upgrade on. Changing it after a release orphans every installed copy.
     expect(config.appId).toBe('com.badsonstudios.switchboard');
     expect(config.productName).toBe('switchboard');
+  });
+
+  it('the RUNNING app claims the same identity the installer stamps (#471)', () => {
+    // Windows files a toast under the process's AppUserModelID and matches it
+    // against the AUMID on the Start-Menu shortcut. The installer writes
+    // `${APP_ID}` onto that shortcut (app-builder-lib/templates/nsis/include/
+    // installer.nsh -> WinShell::SetLnkAUMI, with APP_ID = appInfo.id = appId
+    // below), and `main/index.ts` calls `app.setAppUserModelId` with the
+    // constant asserted here. If the two ever disagree, a packaged build's
+    // notifications go back to being filed under "Electron" — silently, on
+    // Windows only, in a path no unit test exercises. So they are pinned
+    // together, in the one file that already reads both.
+    expect(APP_USER_MODEL_ID).toBe(config.appId);
+    expect(read(path.join('src', 'main', 'index.ts'))).toContain(
+      'app.setAppUserModelId(APP_USER_MODEL_ID)'
+    );
   });
 
   it('installs PER-USER, which is what makes it UAC-free', () => {
@@ -210,7 +228,14 @@ describe('the node_modules allowlist covers what the main-process bundle imports
 
   // `dependencies` only: electron and every devDependency are supplied by the
   // runtime or compiled away, and node builtins are not packages at all.
-  const runtimeDeps = [...imported].filter((d) => d in pkg.dependencies).sort();
+  //
+  // MINUS the ones the main bundle INLINES (#471). `externalizeDepsPlugin` is
+  // told to leave i18next + i18next-icu alone, so they are inside
+  // `out/main/index.js` and there is nothing to ship — see
+  // `src/build/bundled-deps.ts` for why those two, and only those two.
+  const runtimeDeps = [...imported]
+    .filter((d) => d in pkg.dependencies && !BUNDLED_INTO_MAIN.includes(d))
+    .sort();
 
   const shipped = (dep: string) =>
     files.some((p) => !p.startsWith('!') && p.startsWith(`node_modules/${dep}/`));
@@ -240,5 +265,28 @@ describe('the node_modules allowlist covers what the main-process bundle imports
       .filter((d, i, a) => a.indexOf(d) === i)
       .filter((d) => !runtimeDeps.includes(d));
     expect(stale, 'shipped but never imported by main or preload').toEqual([]);
+  });
+
+  it('the bundled-in deps are really excluded from externalization (#471)', () => {
+    // The list is only true because the vite config says so. If someone
+    // deletes the `exclude`, `require('i18next-icu')` comes back — and with it
+    // a `require('intl-messageformat')` for a package this app does not
+    // declare, which is a MODULE_NOT_FOUND the moment a packaged build tries
+    // to compose a notification. The scan above would say nothing, because it
+    // skips exactly these names.
+    const config = read('electron.vite.config.ts');
+    expect(config).toContain('externalizeDepsPlugin({ exclude: [...BUNDLED_INTO_MAIN] })');
+    // …and they are genuinely imported, or the list is a lie in the other
+    // direction: two names excluded from externalization for nothing.
+    for (const dep of BUNDLED_INTO_MAIN) {
+      expect(imported.has(dep), `${dep} is in BUNDLED_INTO_MAIN but nothing imports it`).toBe(true);
+    }
+  });
+
+  it('nothing bundled into main is ALSO shipped as node_modules', () => {
+    // Dead weight that reads like a requirement — the same complaint the stale
+    // -allowlist test makes, for the packages the stale test can no longer see.
+    const both = BUNDLED_INTO_MAIN.filter((d) => shipped(d));
+    expect(both, 'inlined into out/main and shipped again in files').toEqual([]);
   });
 });

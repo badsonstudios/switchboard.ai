@@ -5,6 +5,11 @@
     "moduleResolution": "node",
     "strict": true,
     "esModuleInterop": true,
+    // #471: the main process translates its own strings now, so the shared
+    // catalog (`src/shared/i18n/locales/*.json`) is imported from THIS project
+    // too. `tsconfig.web.json` gets this for free — `moduleResolution: bundler`
+    // turns it on by default — but `node`/`commonjs` resolution does not.
+    "resolveJsonModule": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "noUnusedLocals": true,

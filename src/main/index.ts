@@ -50,11 +50,15 @@ import { RuleActionRegistry, RulesEngine } from './events/rules-engine';
 import {
   answerableFromToast,
   DECIDE_BUTTONS,
-  DECIDE_BUTTON_LABELS,
+  decideButtonActions,
   PermissionToasts,
   permissionSummary,
   toastActionsSupported,
 } from './events/permission-toast';
+import { notificationBody } from './events/notification-text';
+import { createMainI18n } from './i18n';
+import { languageFromUi } from '../shared/i18n';
+import { APP_USER_MODEL_ID } from '../shared/app-identity';
 import { registerRulesIpc } from './events/rules-ipc';
 import { DEFAULT_SOUND } from '../shared/sounds';
 import { SoundActions } from './events/sound-actions';
@@ -162,6 +166,20 @@ const APP_NAME = 'switchboard.ai';
 
 // Safe-by-default for every window this app will ever open (§5.29 posture).
 app.enableSandbox();
+
+// Tell Windows who we are BEFORE anything can raise a notification (#471; found
+// in #422's self-review). Without this, every toast is filed in the Action
+// Center under Electron's default identity — Electron's name, Electron's icon,
+// pooled with every other unconfigured Electron app. The value is the same
+// `appId` the NSIS installer stamps onto the Start-Menu shortcut, which is what
+// Windows matches a toast against; `shared/app-identity.ts` says why at length
+// and `packaging.test.ts` keeps the two from drifting.
+//
+// At module scope, not inside `whenReady`: it is a process-wide identity, it is
+// documented as safe before ready, and a toast must never be able to beat it.
+// A no-op everywhere but win32 — Electron ignores it on the other platforms, so
+// there is no platform branch to get wrong.
+app.setAppUserModelId(APP_USER_MODEL_ID);
 
 function logsDir(): string {
   try {
@@ -803,6 +821,27 @@ app
       (state) => pushToRenderer?.(currentWindow, 'workspace:saveStateChanged', state)
     );
     workspace.load();
+    // Main's own translator (#471, §5.21). AFTER `workspace.load()`, because
+    // the language preference lives in the workspace `ui` blob — the same
+    // value the renderer's language switcher writes — and BEFORE anything that
+    // can raise a notification, which is everything below.
+    //
+    // NO IPC CHANNEL AND NO SUBSCRIPTION: the thunk is called afresh on every
+    // string, so a language changed at 10:31 is spoken by the toast that fires
+    // at 10:31.0001. `main/i18n.ts` explains why that beats `changeLanguage`.
+    const i18n = await createMainI18n({
+      language: () => languageFromUi(workspace.getUi()),
+      log: createLogger(sink, 'ui'),
+    });
+    // Said out loud for the same reason the context-menu labels are (#526): if
+    // this quietly failed, the symptom is "the notifications are in English",
+    // which is indistinguishable from a missing translation. It is also the
+    // only assertion an e2e can make that the REAL, bundled main process — CJS,
+    // `require('i18next-icu')`, no Vite — got its interpolator (`e2e/boot.spec.ts`).
+    log.ui.info('main i18n ready', {
+      ready: i18n.ready,
+      language: languageFromUi(workspace.getUi()),
+    });
     // WHAT WE REPAIRED ABOUT A CARD'S HISTORY, ON SCREEN (#539). Created after
     // the load so the untangle's verdicts can be poured straight in, and given
     // the push so an adoption that happens minutes later reaches the same slot.
@@ -1457,14 +1496,11 @@ app
           title: ctx.title,
           body: ctx.body,
           silent: true, // the Notifier's beep is the sound cue
-          ...(decidable
-            ? {
-                actions: DECIDE_BUTTONS.map((d) => ({
-                  type: 'button' as const,
-                  text: DECIDE_BUTTON_LABELS[d],
-                })),
-              }
-            : {}),
+          // Labels resolved per toast, never hoisted to a module constant
+          // (#471): they have to be in the language the user is in NOW, and
+          // anything computed once at boot would still be saying "Allow" after
+          // they switched.
+          ...(decidable ? { actions: decideButtonActions(i18n.t) } : {}),
         });
         // A toast the desktop refused is not a toast: without this line the
         // failure is invisible, and "it worked yesterday" has nowhere to look.
@@ -1630,12 +1666,16 @@ app
       // not do — the promise is that answering from the toast is the same
       // decision they would have made at the bar (§5.9, P6). Every other kind
       // keeps the plain wording.
+      //
+      // Both halves speak the user's language since #471, and both reach
+      // further than the desktop: `push.ts` and the webhook forward this body
+      // verbatim, so the phone gets the same sentence in the same language.
       bodyFor: (e) => {
         if (e.kind === 'needs-permission') {
           const req = sessionIpcRef?.pendingPermissionFor(e.sessionId);
-          if (req) return permissionSummary(req);
+          if (req) return permissionSummary(req, i18n.t);
         }
-        return e.kind.replace(/-/g, ' ');
+        return notificationBody(e.kind, i18n.t);
       },
       registry: ruleActions,
       log: rulesLog,

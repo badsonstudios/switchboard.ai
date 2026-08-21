@@ -4,7 +4,7 @@ import React from 'react';
 import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
-import en from '../i18n/locales/en.json';
+import en from '../../../shared/i18n/locales/en.json';
 import { FindBar } from './FindBar';
 import { rendererRegistry } from '../extensibility/registry-instance';
 import { registerBuiltinContributions } from '../bootstrap';

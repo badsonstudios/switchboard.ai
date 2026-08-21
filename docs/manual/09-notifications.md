@@ -358,6 +358,35 @@ turned **🏷 auto labels** off (see
 pop-ups go back to the session name too — so a phrase from your prompt does not
 appear on a shared screen.
 
+### Pop-ups follow the language you picked
+
+Everything switchboard writes in a pop-up — "needs input", "Allow Bash?", the
+**Allow** and **Deny** buttons on it — is in the language set in
+[Settings › Language](10-settings.md#language). It is the same
+setting, and the same words, as the ones in the window: the **Allow** on a
+pop-up is literally the **Allow** on the approval bar, so the two can never end
+up worded differently.
+
+**Change the language and the very next pop-up is in the new one.** There is
+nothing to restart and nothing to wait for.
+
+Two things stay as they are, on purpose:
+
+- **What Claude Code said, and what it wants to run.** In "Allow Bash? `npm run
+  build`", the `npm run build` half is the command itself. Translating it would
+  be a lie about what pressing **Allow** would do. The same goes for a file
+  path, a URL, or a reason Claude Code gave in its own words.
+- **Your session's name or task label**, which is the pop-up's heading — those
+  are your words (or the conversation's), not ours.
+
+The phone and webhook messages carry exactly the same text, so a translated
+pop-up means a translated notification on your phone too.
+
+*Today switchboard ships one real language, English, plus `pseudo` — a
+development aid that mangles every word so a missed translation stands out.
+Adding a language is a matter of dropping in one more file; nothing about
+notifications needs to change when that happens.*
+
 ## Getting told on your phone
 
 A desktop pop-up is no use once you've walked away from the machine. So a
@@ -583,6 +612,9 @@ Consequences worth knowing:
   nothing is sent anywhere.
 - **Quiet hours don't stop webhooks** — see [Quiet hours](#quiet-hours) above
   for why, and how to override it per rule.
+- **On Windows, pop-ups are filed under switchboard's own name** in the Action
+  Center (the panel that keeps notifications you missed). Before v0.8.3 they
+  appeared there as *Electron*, pooled with any other app built the same way.
 
 TODO: there is no rules *editor* yet — the per-session checkbox is the only rule
 you can write from the UI, so the `quietHours` override is a hand-edit for now.
