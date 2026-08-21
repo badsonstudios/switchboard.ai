@@ -472,11 +472,18 @@ hand-kept list), follows every bridge result one hop — a direct `await`, a
 without being laundered, or if the hop cannot be followed at all (a point-free
 `.then(setX)`, which is where four of the nineteen hid). A lint rule could not:
 the defect is a two-node fact (a value *from the bridge* reaching a *boolean
-position*), and all nineteen real sites separated the two nodes. Widening the ~60 preload
-signatures to `| IpcRefusal` would not do it either — TypeScript truthiness-tests
-a union happily, and the rule that objects (`strict-boolean-expressions`) needs
-the type-checked preset, which here covers `e2e/` alone. Its blind spots are
-listed at the bottom of the script.
+position*), and all nineteen real sites separated the two nodes.
+
+**And not the type system either** — worth stating precisely, now that #628 has
+put `src/` on `recommendedTypeChecked` and a type-aware rule is available here
+for the first time. It still does not reach this. The preload declares
+`isDirectory` as `Promise<boolean>`, so `if (await bridge.isDirectory(p))` is a
+plain boolean test no rule has grounds to object to; making it objectionable
+means widening ~60 signatures to `| IpcRefusal`, which #346 declined in writing.
+And even widened, TypeScript truthiness-tests a union happily — the one rule that
+objects, `strict-boolean-expressions`, is in no preset and, once switched on,
+fires on every `if (folder)` in the tree whether or not a refusal is possible.
+The scanner's blind spots are listed at the bottom of the script.
 
 ### The vocabulary
 

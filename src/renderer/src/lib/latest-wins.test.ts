@@ -194,7 +194,7 @@ describe('latestWins', () => {
     const real = deferred<string>();
     const responses: unknown[] = [real.promise, ipcRefusal('sessions:cards', 'not-granted')];
     const apply = vi.fn();
-    const refresh = latestWins<unknown>(() => responses.shift() as Promise<unknown>, apply);
+    const refresh = latestWins<unknown>(() => responses.shift(), apply);
 
     void refresh();
     await refresh();

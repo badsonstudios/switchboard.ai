@@ -28,15 +28,25 @@
 //     imports) are all genuinely one-node facts, which is why they fit there
 //     and this does not.
 //
-//   * NOT the type system. Making a refusal impossible to miss means widening
-//     ~60 preload signatures to `| IpcRefusal`, which #346 considered and
-//     declined in writing — the first-party renderer holds every capability, so
-//     its declared types are exact and the obligation belongs where a refusal
-//     can actually land. Even widened, TypeScript is happy to truthiness-test a
-//     union; only `@typescript-eslint/strict-boolean-expressions` would object,
-//     and that rule needs the type-checked preset, which in this repo covers
-//     `e2e/` alone (#245). Putting `src/` on it to reach one rule is a change
-//     an order of magnitude larger than the defect.
+//   * NOT the type system — and #628 is what makes that a finding rather than
+//     an excuse. `src/` is now on `recommendedTypeChecked`, so a type-AWARE
+//     rule is available here for the first time, and it still does not reach
+//     this. Two reasons, both structural:
+//
+//       - The declared types say the defect is impossible. `isDirectory` is
+//         `Promise<boolean>`, so `if (await bridge.isDirectory(p))` is a plain
+//         boolean test that no rule has grounds to object to. Making it
+//         objectionable means widening ~60 preload signatures to
+//         `| IpcRefusal` — which #346 considered and declined IN WRITING: the
+//         first-party renderer holds every capability, so its declared types
+//         are exact, and the obligation belongs where a refusal can land.
+//       - Even widened, TypeScript truthiness-tests a union happily. The only
+//         rule that would object is `strict-boolean-expressions`, which is in
+//         no preset (not even `strictTypeChecked`) and would have to be turned
+//         on by hand — whereupon it fires on every `if (folder)` in the tree,
+//         refusal or not, because `string | null` is not a boolean either.
+//         That is a repo-wide sweep that still cannot tell a refusal from a
+//         path.
 //
 // So: parse the renderer, find the bridge calls, follow their results one hop,
 // and fail if any of them is read as a boolean — or if the hop cannot be
