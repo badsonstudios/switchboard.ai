@@ -275,6 +275,24 @@ describe('a reviewed row recedes by token, never by opacity', () => {
     }
   });
 
+  it("writes the reviewed row's state word in the row's own ink", async () => {
+    // The one word on a reviewed row that says what the row IS. It used to
+    // carry its own token (`--faint`, the app's hairline hint) and measured
+    // 2.15:1 with the old opacity folded in — a value no test in the token
+    // suite could reach, because the map that held it is a component's. It
+    // inherits now, so the colour on screen IS the pair
+    // `.event-row[data-reviewed='true']` declares and tokens.drift.test.ts
+    // measures. A token named here again would be a second opinion about it.
+    const [, reviewed] = await rowsFor([evt(1, 'needs-input'), evt(2, 'ready')]);
+    const words = [...reviewed.querySelectorAll<HTMLElement>('span')];
+    const state = words.find((w) => w.textContent?.startsWith(en.events.kind.ready));
+    expect(state, 'the reviewed row stopped saying what state it is in').toBeDefined();
+    expect(
+      state!.style.color,
+      'a colour of its own here is a colour the drift test cannot see'
+    ).toBe('inherit');
+  });
+
   it('leaves the fill to the stylesheet, so the pair stays measurable', async () => {
     // an inline background would beat the rule on specificity and the drift
     // test would be measuring a colour nobody paints

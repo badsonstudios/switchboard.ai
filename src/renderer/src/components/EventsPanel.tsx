@@ -44,15 +44,20 @@ const DISMISS_GUTTER = 64;
  *
  * `ready` still has no ramp position — it is the only kind that is not a
  * status, so it takes a NEUTRAL rather than being quietly promoted into the
- * status ramp. Which neutral moved in #268: it was `--faint`, which is
- * deliberately a hairline hint rather than text (2.50:1 on nordic, 2.68:1 on
- * daylight, and 2.15:1 once the row's old `opacity: 0.82` was folded in) — and
- * a `ready` row is the ONLY row that ever shows this word, because `reviewed`
- * IS `kind === 'ready'`. A state nobody can read is not a quiet state. It is
- * `--muted` now: still a neutral, still not the ramp, and the app's secondary
- * ink, which is the one neutral that clears AA on every surface in all four
- * themes (the same call #640 made for the turn divider). 4.7-14.2:1 on the
- * reviewed row's fill.
+ * ramp. Which neutral changed in #268. It was `--faint`, which is deliberately
+ * a hairline hint rather than text: 2.50:1 on nordic and 2.68:1 on daylight,
+ * and 2.15:1 once the row's old `opacity: 0.82` was folded in — on the ONLY
+ * row that ever shows this word, because `reviewed` IS `kind === 'ready'`. A
+ * state nobody can read is not a quiet state.
+ *
+ * It is `inherit` now, and that is the point rather than a shrug: the word
+ * takes the ROW's ink, which `tokens.css` declares and `tokens.drift.test.ts`
+ * measures against the fill the row actually paints. A named token here would
+ * be a second value to keep in step with that pair by hand — and the last time
+ * this map held its own opinion about a colour it held it for months at 1.80:1
+ * (#246). Whichever way `reviewed` is defined the inherited value is a measured
+ * one: `--muted` on the de-emphasised fill (4.7-14.2:1) for a reviewed row,
+ * `--text` on `--panel2` for a live one.
  */
 const KIND_HUE: Record<EventDto['kind'], string> = {
   done: 'var(--status-done)',
@@ -63,7 +68,7 @@ const KIND_HUE: Record<EventDto['kind'], string> = {
 };
 const KIND_INK: Record<EventDto['kind'], string> = {
   done: 'var(--status-done-ink)',
-  ready: 'var(--muted)',
+  ready: 'inherit',
   'needs-input': 'var(--status-needs-input-ink)',
   'needs-permission': 'var(--status-needs-permission-ink)',
   crashed: 'var(--status-crashed-ink)',
