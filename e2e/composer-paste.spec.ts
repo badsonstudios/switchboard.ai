@@ -120,6 +120,16 @@ test.describe('pasting an image into the composer (P2-E10-09)', () => {
     // 4. the composer cleared itself, both halves
     await expect(w.locator('[data-composer-attachment]')).toHaveCount(0);
     await expect(box).toHaveValue('');
+
+    // 5. ...and the Feed still says a picture went with that prompt (#491).
+    //    This is the whole point of the marker: step 4 is what DESTROYS the
+    //    evidence, so the assertion has to come after it. Nothing here holds
+    //    the bytes any more — the count is read off the message the CLI echoed
+    //    back, which is the only honest source left.
+    //    `.first()`: the assertion is about THIS prompt's marker, and a count
+    //    over the whole window would fail the day a second Feed is mounted
+    //    (a pop-out) for a reason with nothing to do with #491.
+    await expect(w.locator('[data-feed-attachments]').first()).toHaveText('1 image attached');
   });
 
   test('a clipboard with text AND an image keeps both', async () => {

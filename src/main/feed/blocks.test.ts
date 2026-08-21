@@ -215,3 +215,96 @@ describe('local slash-command output (#156)', () => {
     expect(deriveIntents({ type: 'system', subtype: 'init', content: 'x' })).toEqual([]);
   });
 });
+
+// #491 — the Feed used to render a prompt's WORDS and nothing else, so a turn
+// that carried a screenshot looked exactly like one that did not, and an
+// attachment-only turn ("look at this", nothing typed) produced no block at
+// all: the reply arrived under no prompt. The composer's chip strip clears on
+// send, so the message itself is the only surviving record of what went.
+describe('attachments that rode with a prompt (#491)', () => {
+  const png = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } };
+  const doc = {
+    type: 'document',
+    source: { type: 'text', media_type: 'text/plain', data: '# hi' },
+    title: 'notes.md',
+  };
+  const user = (content: unknown[]): ReturnType<typeof deriveIntents> =>
+    deriveIntents({ type: 'user', message: { role: 'user', content } });
+
+  it('counts the image blocks that travelled with the prompt', () => {
+    const b = blocks(user([png, png, { type: 'text', text: 'what is this?' }]));
+    expect(b).toHaveLength(1);
+    expect(b[0].block).toMatchObject({
+      kind: 'user',
+      text: 'what is this?',
+      attachments: { images: 2, documents: 0 },
+    });
+  });
+
+  it('counts documents — a PDF or a text file — separately from pictures', () => {
+    expect(blocks(user([doc, { type: 'text', text: 'read this' }]))[0].block.attachments).toEqual({
+      images: 0,
+      documents: 1,
+    });
+    expect(blocks(user([png, doc, doc, { type: 'text', text: 'x' }]))[0].block.attachments).toEqual({
+      images: 1,
+      documents: 2,
+    });
+  });
+
+  // The case that produced NOTHING before: `userMessage` sends no text block at
+  // all for a turn with an empty prompt, so the loop had nothing to emit.
+  it('an attachment-only turn still gets a block, carrying no text', () => {
+    const b = blocks(user([png]));
+    expect(b).toHaveLength(1);
+    expect(b[0].block.kind).toBe('user');
+    expect(b[0].block.text).toBeUndefined();
+    expect(b[0].block.attachments).toEqual({ images: 1, documents: 0 });
+    // it stands for the attachments, not for one content item — see the
+    // comment in `userIntents`; a stream delta must not be able to address it
+    expect(b[0].index).toBeUndefined();
+  });
+
+  // "zero attachments renders exactly as today" is the done-when, and ABSENT
+  // rather than zeroed is how that is enforced rather than hoped for.
+  it('is absent — not zeroed — on an ordinary prompt', () => {
+    expect(blocks(user([{ type: 'text', text: 'do it' }]))[0].block.attachments).toBeUndefined();
+    const asString = blocks(
+      deriveIntents({ type: 'user', message: { role: 'user', content: 'do it' } })
+    );
+    expect(asString[0].block.attachments).toBeUndefined();
+  });
+
+  // The count is only trustworthy if it cannot be fed by anything but the
+  // composer. A Read of a `.png` comes back as an image NESTED in a
+  // tool_result, and rendering that as "the user attached a picture" would be
+  // the confident lie this marker exists to remove.
+  it('does not count an image or a document a TOOL returned', () => {
+    const intents = user([
+      {
+        type: 'tool_result',
+        tool_use_id: 'toolu_1',
+        content: [png, doc, { type: 'text', text: 'ok' }],
+      },
+    ]);
+    expect(blocks(intents)).toEqual([]);
+    expect(results(intents)).toHaveLength(1);
+  });
+
+  it('exactly one block wears the counts, however many prose blocks a message has', () => {
+    const b = blocks(user([png, { type: 'text', text: 'first' }, { type: 'text', text: 'second' }]));
+    expect(b.map((i) => i.block.attachments)).toEqual([{ images: 1, documents: 0 }, undefined]);
+  });
+
+  // The identity-only pass exists to keep the search engine's block ordinals in
+  // step with the Feed's `seq`. An attachment-only turn is a block on one side,
+  // so it has to be a block on the other — and the counts are not text, so no
+  // cap may erase them.
+  it('survives an identity-only derivation, counts intact', () => {
+    const b = blocks(
+      deriveIntents({ type: 'user', message: { role: 'user', content: [png, doc] } }, IDENTITY_ONLY_CAPS)
+    );
+    expect(b).toHaveLength(1);
+    expect(b[0].block.attachments).toEqual({ images: 1, documents: 1 });
+  });
+});
