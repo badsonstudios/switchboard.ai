@@ -242,6 +242,14 @@ export function App(): React.JSX.Element {
     subscribeStore,
     () => sessionStore.getQueue()[0]?.kind ?? null
   );
+  // The cards with an outstanding demand (#621) — the ONE input behind every
+  // "N need you" readout: the rail's per-group summaries, the rail footer and
+  // the urgency strip's aggregate. Off the store's own memoized set rather than
+  // recomputed here, for the reason `attentionDepth` is: three readers compare
+  // it by identity, and it has to move on the same push the Events list does,
+  // or a dismissal would clear the list and leave the counters behind — which
+  // is exactly what it did before.
+  const needing = useSyncExternalStore(subscribeStore, () => sessionStore.getNeedingCards());
   // The urgency strip (E9-04). It renders from RAIL ORDER, not the raw session
   // list, so the Nth lamp is the Nth Ctrl+1..9 target — the derived value has a
   // stable identity (recomputed only when sessions/groups change), which is
@@ -1648,6 +1656,7 @@ export function App(): React.JSX.Element {
           surfaces remembering to draw it. §5.8. */}
       <UrgencyStrip
         sessions={railFlat}
+        needing={needing}
         urgency={urgency}
         activeCardId={activeCard}
         onFocus={focusCard}
@@ -1690,6 +1699,7 @@ export function App(): React.JSX.Element {
           <SessionsRail
             sessions={sessions}
             groups={groups}
+            needing={needing}
             palette={palette}
             onRename={(cardId, title) => {
               void bridge.sessions?.renameCard?.(cardId, title).then(() => refreshSessions());

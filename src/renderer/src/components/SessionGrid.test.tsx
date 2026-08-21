@@ -17,11 +17,13 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import {
   applyLayout,
+  captureSlots,
   applySubmitPolicy,
   cycleLayoutMode,
   endedCopy,
   layoutSweepPort,
   overlaySaid,
+  popOutCardPanel,
   rescueStrandedPopouts,
   setCardLadder,
   setLayoutMode,
@@ -482,18 +484,37 @@ describe('overlaySaid', () => {
 interface FakeGroup {
   id: string;
   panels: FakePanel[];
-  api: { location: { type: string; getWindow?: () => Window | null } };
+  element: HTMLElement;
+  api: {
+    location: { type: string; getWindow?: () => Window | null };
+    isVisible: boolean;
+    setVisible: (v: boolean) => void;
+  };
 }
 interface FakePanel {
   id: string;
   group: FakeGroup;
   focus: () => void;
-  api: { location: { type: string; getWindow?: () => Window | null } };
+  api: {
+    location: { type: string; getWindow?: () => Window | null };
+    moveTo: (opts: { group: FakeGroup; index?: number }) => void;
+  };
 }
 interface GroupSpec {
   id: string;
   type?: string;
   win?: Window | null;
+  /** a dock-back husk is a grid group that is EMPTY and hidden (#434/#558) */
+  hidden?: boolean;
+  /** registered with dockview but in no document — a popout mid-restore (#558) */
+  detached?: boolean;
+}
+
+/** a group's element: in the document (a real slot) or merely created (#558) */
+function makeElement(detached?: boolean): HTMLElement {
+  const el = document.createElement('div');
+  if (!detached) document.body.appendChild(el);
+  return el;
 }
 
 function fakeGrid(): {
@@ -506,6 +527,8 @@ function fakeGrid(): {
   built: string[];
   /** panel ids this run of the rescue removed */
   removed: string[];
+  /** which group a panel is sitting in right now */
+  groupOf: (panelId: string) => string | undefined;
 } {
   const groups: FakeGroup[] = [];
   let panels: FakePanel[] = [];
@@ -516,18 +539,45 @@ function fakeGrid(): {
     const g: FakeGroup = {
       id: spec.id,
       panels: [],
+      // `captureSlots` asks whether the group is really in a document — a saved
+      // popout is rebuilt as a DETACHED group that claims to be a grid one, so
+      // an element that is merely created is the mid-restore case and one in
+      // the body is a real slot.
+      element: makeElement(spec.detached),
       api: {
         location:
           spec.type === 'popout'
             ? { type: 'popout', getWindow: () => spec.win ?? null }
             : { type: spec.type ?? 'grid' },
+        isVisible: !spec.hidden,
+        setVisible: (v: boolean) => {
+          g.api.isVisible = v;
+        },
       },
     };
     groups.push(g);
     return g;
   };
   const attach = (id: string, g: FakeGroup): FakePanel => {
-    const p: FakePanel = { id, group: g, focus: () => {}, api: { location: g.api.location } };
+    const p: FakePanel = {
+      id,
+      group: g,
+      focus: () => {},
+      // `location` is READ THROUGH the group, not copied off it: a moved panel
+      // whose location still says `popout` would make the dock-back tests pass
+      // for the wrong reason.
+      api: {
+        get location() {
+          return p.group.api.location;
+        },
+        moveTo: ({ group, index }: { group: FakeGroup; index?: number }) => {
+          p.group.panels = p.group.panels.filter((x) => x !== p);
+          p.group = group;
+          if (typeof index === 'number' && index >= 0) group.panels.splice(index, 0, p);
+          else group.panels.push(p);
+        },
+      },
+    };
     g.panels.push(p);
     panels.push(p);
     return p;
@@ -554,6 +604,7 @@ function fakeGrid(): {
   return {
     api: api as unknown as DockviewApi,
     addGroups: (...specs: GroupSpec[]) => specs.forEach(makeGroup),
+    groupOf: (panelId: string) => panels.find((p) => p.id === panelId)?.group.id,
     addPanel: (id: string, groupId: string) => attach(id, groups.find((x) => x.id === groupId)!),
     ids: () => panels.map((p) => p.id),
     built,
@@ -739,5 +790,161 @@ describe('rescueStrandedPopouts (#292)', () => {
 
   it('is a no-op with no grid at all', () => {
     expect(() => rescueStrandedPopouts(null)).not.toThrow();
+  });
+});
+
+// ── ⤡ PUTS A CARD BACK WHERE IT CAME FROM (#558) ────────────────────────────
+//
+// The owner's repro in four lines: pop A out, start B inside that window (#531),
+// dock A back, dock B back — and B landed in A's old slot while A was left in
+// somebody else's group. One popout window carries ONE dock-back reference, the
+// group it was torn from, and every card in it inherited that on the way home.
+//
+// What is pinned here is the DESTINATION, which is the whole of the fix: the
+// decision (`homeGroupId`) is unit-tested in lib/dock-slot, the ordering and
+// the aliveness are e2e's in `popout-dock-back.spec.ts`, and this is the layer
+// between — `popOutCardPanel` reading a card's remembered home and choosing a
+// group with it. The window-close half cannot be modelled here (a fake window
+// does not tear a document down) and is deliberately not tried.
+describe('docking a card back — where it lands (#558)', () => {
+  const popoutWin = { closed: false, close: () => {} } as unknown as Window;
+
+  afterEach(() => {
+    for (const id of ['a', 'b', 'c']) sessionStore.forgetPresentation(id);
+  });
+
+  it('sends a card home to its OWN slot, reviving the husk it left', () => {
+    // A is out in a window it shares with C, so ⤡ moves the panel rather than
+    // closing the window. Its slot survives as the empty hidden group dockview
+    // left behind — that husk IS the slot, and it must come back on screen.
+    const grid = fakeGrid();
+    grid.addGroups({ id: 'g-left', hidden: true }, { id: 'g-right' }, { id: 'pop', type: 'popout', win: popoutWin });
+    grid.addPanel('session-b', 'g-right');
+    grid.addPanel('session-a', 'pop');
+    grid.addPanel('session-c', 'pop');
+    sessionStore.setPresentation('a', { home: { groupId: 'g-left', index: 0, location: 'grid' } });
+
+    popOutCardPanel(grid.api, 'a');
+
+    expect(grid.groupOf('session-a')).toBe('g-left');
+    expect(grid.api.groups.find((g) => g.id === 'g-left')?.api.isVisible).toBe(true);
+    // ...and it did NOT join the first visible group it could find, which is
+    // what the bug looked like from the outside: A abandoning its own half of
+    // the screen for whatever else happened to be on it
+    expect(grid.groupOf('session-b')).toBe('g-right');
+  });
+
+  it('a card born in the popout has no slot to claim, so it takes the ordinary one', () => {
+    // C is #531's card: created inside A's window, never in the grid, no home.
+    // The reference it would otherwise inherit is A's — the bug. `sessionCardHome`
+    // is where a brand new session lands, which is the right answer for a card
+    // that is, as far as the grid is concerned, brand new.
+    const grid = fakeGrid();
+    grid.addGroups({ id: 'g-left', hidden: true }, { id: 'g-right' }, { id: 'pop', type: 'popout', win: popoutWin });
+    grid.addPanel('session-b', 'g-right');
+    grid.addPanel('session-a', 'pop');
+    grid.addPanel('session-c', 'pop');
+
+    popOutCardPanel(grid.api, 'c');
+
+    expect(grid.groupOf('session-c')).toBe('g-right');
+    // A's slot is untouched — still empty, still hidden, still A's
+    expect(grid.api.groups.find((g) => g.id === 'g-left')?.api.isVisible).toBe(false);
+  });
+
+  it('refuses a home that has become the document area', () => {
+    // #462/#501 hold even for the card's own former group: a session never
+    // displaces what you are reading.
+    const grid = fakeGrid();
+    grid.addGroups({ id: 'g-left' }, { id: 'g-right' }, { id: 'pop', type: 'popout', win: popoutWin });
+    grid.addPanel('doc-1', 'g-left');
+    grid.addPanel('session-b', 'g-right');
+    grid.addPanel('session-a', 'pop');
+    grid.addPanel('session-c', 'pop');
+    sessionStore.setPresentation('a', { home: { groupId: 'g-left', index: 0, location: 'grid' } });
+
+    popOutCardPanel(grid.api, 'a');
+
+    expect(grid.groupOf('session-a')).toBe('g-right');
+  });
+
+  it('falls back when the slot is gone, and never rewrites the session’s group', () => {
+    // The group A remembers was closed while it was away. And whichever branch
+    // it takes, the move must not read as a user drag: E12-04 would adopt the
+    // destination's membership, which for an empty slot means erasing A's.
+    const grid = fakeGrid();
+    grid.addGroups({ id: 'g-right' }, { id: 'pop', type: 'popout', win: popoutWin });
+    grid.addPanel('session-b', 'g-right');
+    grid.addPanel('session-a', 'pop');
+    grid.addPanel('session-c', 'pop');
+    sessionStore.setPresentation('a', { home: { groupId: 'g-vanished', index: 0, location: 'grid' } });
+    const a = grid.api.getPanel('session-a')!;
+    let movingDuringMove = false;
+    const moveTo = a.api.moveTo;
+    a.api.moveTo = (opts) => {
+      movingDuringMove = sessionStore.isMoving('a');
+      moveTo(opts);
+    };
+
+    popOutCardPanel(grid.api, 'a');
+
+    expect(grid.groupOf('session-a')).toBe('g-right'); // the ordinary rules
+    expect(movingDuringMove).toBe(true);
+    expect(sessionStore.isMoving('a')).toBe(false); // ...and cleared after
+  });
+});
+
+// ── WHAT COUNTS AS A CARD'S HOME (#558) ─────────────────────────────────────
+//
+// `captureSlots` banks two records per card on every layout change: `slot`,
+// which is where it is NOW, and `home`, which is the grid slot ⤡ brings it back
+// to. The difference between them is the whole reason the dock-back can be
+// fixed at all, and both of the rules below were bugs before they were tests —
+// the second one was measured: without it, quitting with a card popped out lost
+// its slot on the next launch.
+describe('captureSlots — what counts as a card’s home (#558)', () => {
+  afterEach(() => sessionStore.forgetPresentation('a'));
+
+  it('banks the grid slot as home, and a popout never overwrites it', () => {
+    const grid = fakeGrid();
+    grid.addGroups({ id: 'g-left' }, { id: 'pop', type: 'popout', win: liveWindow });
+    grid.addPanel('session-a', 'g-left');
+
+    captureSlots(grid.api);
+    expect(sessionStore.getPresentation('a').home).toEqual({
+      groupId: 'g-left',
+      index: 0,
+      location: 'grid',
+    });
+
+    // now it goes out into a window. `slot` follows it — that is how a reveal
+    // finds the monitor again — and `home` must not: a card in another OS
+    // window has not moved house, it has gone out.
+    grid.api.getPanel('session-a')!.api.moveTo({
+      group: grid.api.groups.find((g) => g.id === 'pop')!,
+    });
+    captureSlots(grid.api);
+    expect(sessionStore.getPresentation('a').slot?.location).toBe('popout');
+    expect(sessionStore.getPresentation('a').home?.groupId).toBe('g-left');
+  });
+
+  it('refuses a group that is in no document — the popout mid-restore', () => {
+    // dockview rebuilds a saved popout as an ordinary group and only makes it a
+    // popout ~100ms later, so for that window it is a grid group holding the
+    // card and it is not a slot at all: its OS window does not exist yet.
+    // Writing it would REPLACE the home the blob just restored, and nothing
+    // would put that back — `slot` self-corrects on the next layout change,
+    // `home` is only ever written from the grid.
+    const grid = fakeGrid();
+    grid.addGroups({ id: 'restoring', detached: true });
+    grid.addPanel('session-a', 'restoring');
+    sessionStore.setPresentation('a', {
+      home: { groupId: 'g-real', index: 0, location: 'grid' },
+    });
+
+    captureSlots(grid.api);
+
+    expect(sessionStore.getPresentation('a').home?.groupId).toBe('g-real');
+    expect(sessionStore.getPresentation('a').slot?.groupId).toBe('restoring');
   });
 });

@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   buildLamps,
   isLit,
-  litCount,
   markLit,
   nextLitExpiry,
   pruneLit,
@@ -96,15 +95,10 @@ describe('buildLamps — one lamp per session, live status (E9-04)', () => {
     expect(lamp.lit).toBe(true);
   });
 
-  it("counts the sessions needing a human — the strip's own summary", () => {
-    const lamps = buildLamps(
-      [session('a', 'needs-permission'), session('b', 'working'), session('c', 'done')],
-      new Map(),
-      T
-    );
-    expect(litCount(lamps)).toBe(2);
-    expect(litCount([])).toBe(0);
-  });
+  // The strip's "N need you" aggregate used to be `litCount(lamps)`, counted
+  // here. #621 moved it to `rail-view`'s `needCount` over the feed's
+  // needing-cards set — see rail-view.test.ts. The lamps keep `needsYou`
+  // because that is the lamp's HUE; it is no longer anybody's count.
 });
 
 describe('the delayed urgency reset (§5.8 force_display_urgency_hint)', () => {

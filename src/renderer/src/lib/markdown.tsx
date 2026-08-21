@@ -407,11 +407,22 @@ Object.freeze(MARKED_OPTIONS);
  *  - `option` and `optgroup` FINISH `select`. Forbidding the parent alone
  *    hoisted them out as orphaned elements rather than as text, which made
  *    "the element goes, its children stay" true only in the loosest sense.
- *  - `rp` IS THE LAST UA-HIDDEN TAG IN THE PROFILE: `ruby > rp` is
- *    `display: none`, so `<ruby>x<rp>hidden</rp></ruby>` is `datalist` again in
- *    miniature. `ruby` and `rt` STAY — they show what they contain, and taking
- *    a whole typographic feature to close its parenthesis fallback would be the
+ *  - `rp` IS A UA-HIDDEN TAG: `ruby > rp` is `display: none`, so
+ *    `<ruby>x<rp>hidden</rp></ruby>` is `datalist` again in miniature. `ruby`
+ *    and `rt` STAY — they show what they contain, and taking a whole
+ *    typographic feature to close its parenthesis fallback would be the
  *    over-reach this list is trying not to be.
+ *
+ *    THIS BULLET SAID "THE LAST UA-HIDDEN TAG IN THE PROFILE" AND THAT WAS
+ *    FALSE (corrected by #625, which was measuring one family over and checked).
+ *    `<dialog>` is UA-hidden too and IS taken — SEVENTH block below. So is
+ *    `<template>`, and it is deliberately LEFT: its children are not children.
+ *    The parser puts them in a separate `DocumentFragment` on `.content`, so
+ *    `querySelectorAll('pre')` never reaches them (no Copy button is attached),
+ *    `textContent` is empty (no find hit) and nothing renders. That is what
+ *    makes it unlike `datalist`, and it is pinned by a test rather than
+ *    asserted here — the failure this bullet is a correction OF was a claim
+ *    about a set nobody re-checked.
  *
  * `center`, `marquee`, `font` — THE LEGACY TAGS, and this is the smaller half.
  * `<center>` aligns a block the theme did not, `<marquee>` moves content the
@@ -456,22 +467,180 @@ Object.freeze(MARKED_OPTIONS);
  *
  * WHAT IS STILL FOCUSABLE IN RENDERED CONTENT, said plainly because the
  * `tabindex` block above got burned on exactly this: `<a href>` is a tab stop
- * and ORDINARY MARKDOWN EMITS ONE for every link, `<summary>` is a tab stop and
- * `<details><summary>` is a collapsible section real agents write by hand,
- * `<audio controls>` / `<video controls>` are focusable media, and `<area
- * href>` inside a `<map>` is the exhaustive-list footnote (unreachable in
- * practice: every `<img>` becomes a chip in the viewer, and CSP `'self'` stops a
- * remote one rendering at all). The viewer replaces media with a "media not
- * shown" chip; THE FEED HAS NO SUCH PASS, so a `<video controls>` in a reply is
- * a stop that is not a link, not a disclosure and not ours.
+ * and ORDINARY MARKDOWN EMITS ONE for every link, and `<summary>` is a tab stop
+ * and `<details><summary>` is a collapsible section real agents write by hand.
+ *
+ * WHEN #612 WROTE THIS PARAGRAPH IT HAD TWO MORE ENTRIES — `<audio controls>` /
+ * `<video controls>` ("the viewer replaces media with a chip; THE FEED HAS NO
+ * SUCH PASS") and `<area href>` inside a `<map>`, filed as an exhaustive-list
+ * footnote. Both are closed by the SEVENTH block below (#625), which measured
+ * them and forbade the tags rather than giving the feed a pass of its own. What
+ * is left is the two above, and they are there because MARKDOWN ITSELF WRITES
+ * THEM.
  *
  * So "the conversation is ONE tab stop" (#174) is a statement about the app's
  * own CHROME, and it cannot be made true of content by any tag list that still
  * renders links. What #612 closes is narrower and is what the sentence should
- * say: CONTENT CANNOT PLANT A CONTROL — no button, no text box, no dropdown.
- * NOT "every stop is a link or ours": that sentence was written here first and
- * review struck it out, because the media two paragraphs up already disprove
- * it. The honest form is the one with the list of exceptions attached.
+ * say: CONTENT CANNOT PLANT A CONTROL — no button, no text box, no dropdown
+ * (and after #625, no media player and no image-map hot spot).
+ *
+ * THE SHORTER SENTENCE IS STILL NOT AVAILABLE, and #625 nearly shipped it.
+ * "Every tab stop in rendered content is a link, a disclosure triangle, or
+ * ours" was written here, and review falsified it before it left the branch —
+ * the third time in a row this family has had to strike out an absolute
+ * (#598's, then #612's, now this one), which is the reason the exceptions get
+ * listed instead. What is TRUE and is what the tag list can support:
+ *
+ *   NO ELEMENT THE PROFILE STILL ADMITS IS FOCUSABLE BY DEFAULT EXCEPT
+ *   `<a href>` AND `<summary>`.
+ *
+ * That is a statement about TAGS, and it is pinned by a test. It is not a
+ * statement about the page, because focus is not only a tag property:
+ *
+ *  - A SCROLL CONTAINER IS A TAB STOP WHEN IT OVERFLOWS. Chromium has made
+ *    user-scrollable boxes keyboard-focusable since 127, and `.feed-md pre`
+ *    and `.doc-front-body` are `overflow-x: auto` in `tokens.css`. So a code
+ *    fence with a line wider than the pane IS a stop, and CONTENT decides
+ *    whether it overflows. Verified in Chromium 149, not reasoned about: a
+ *    400-character fence takes focus, the same fence with a short line does
+ *    not. It is OURS in the sense that our CSS made the box, and it is
+ *    deliberately not suppressed — `document-render.ts` says why when it does
+ *    the same thing on purpose for wide tables ("a scroll container that only a
+ *    mouse can reach is not reachable"). jsdom has no layout, so no unit test
+ *    in this repo can see this case; that is stated in the test rather than
+ *    left for the next reader to assume it is covered.
+ *  - AND THE DECORATION PASSES ADD THEIR OWN, which is the "or ours" clause
+ *    doing real work: the viewer's Copy button and its "Open in browser" chip
+ *    button are stops with no `tabindex`, and content decides HOW MANY exist by
+ *    how many fences and remote images it writes.
+ *
+ * The SEVENTH block is the rest of `FORBID_TAGS` (#625), and it exists because
+ * #612 shipped with the paragraph above naming its own leftovers: MEDIA. The
+ * document viewer replaces `<video>`/`<audio>` with a "media not shown" chip in
+ * its decoration pass (`document-render.ts`, `stripMedia`); the feed has no such
+ * pass and the update dialog has no decoration pass AT ALL, so `<audio
+ * controls>` in a reply was a platform media player — a tab stop, a context
+ * menu and a Download item — sitting inside assistant prose.
+ *
+ * IT IS SETTLED HERE RATHER THAN IN A FEED PASS, and that is the whole design
+ * decision; the tag list is just the consequence. A surface pass would have
+ * closed the feed and left `UpdateDialog.tsx` open, which renders release notes
+ * FETCHED FROM GITHUB through `<Markdown>` with no `decorate` prop — content we
+ * did not write, in a modal, with no pass to forget to add because there was
+ * never one there. That is this file's own thesis arriving as evidence: the
+ * profile is the layer that does not depend on a surface REMEMBERING, and the
+ * `style` note four blocks up is the same argument in the other direction (the
+ * viewer stripping `style` privately made two effective profiles out of one
+ * constant).
+ *
+ * `audio`, `video`, `source`, `track`, `picture` — THE MEDIA FAMILY.
+ *
+ *  - `controls` IS THE FOCUS SWITCH, and it is measured, not reasoned: in
+ *    Chromium 149 `<audio controls>` takes focus with no `tabindex` and lays out
+ *    at 300×54, and the same element WITHOUT `controls` is not focusable at all.
+ *    So this is the `<button>` case one tag over — the tag (plus one attribute
+ *    the profile allows) is the thing, which is why `tabindex` never reached it.
+ *  - AND IT FETCHES. A `src` on any of them is a request the moment the node
+ *    reaches the page, plus `autoplay` and `loop`, which survive the profile.
+ *    CSP `default-src 'self'` is what stops a remote one TODAY — a different
+ *    layer, holding a hole this one should not be leaving to it.
+ *  - `source` and `track` ARE THE CHILDREN, and they go for #612's `option` /
+ *    `optgroup` reason: forbidding only the parent hoists them out as orphaned
+ *    elements rather than as text. `<source srcset>` also fetches on its own
+ *    inside a `<picture>`.
+ *  - `picture` IS THEN A BARE WRAPPER around its `<img>` fallback, which
+ *    `KEEP_CONTENT` keeps and which stays allowed. `<img>` IS NOT ON THIS LIST
+ *    and must not be: markdown emits one for every `![alt](src)`, and the repo
+ *    scan below found real READMEs writing `<img src>` by hand in prose.
+ *
+ * TWO OF THE TWENTY TAKE THEIR CHILDREN WITH THEM, and it is written here
+ * because this file states "the element goes, its children stay" as a property
+ * of the whole list. `audio` and `video` are in DOMPurify's DEFAULT
+ * `FORBID_CONTENTS` — the set alongside `iframe`, `noembed`, `noframes`,
+ * `plaintext` and `xmp`, whose inner text the parser can re-read as markup — so
+ * `KEEP_CONTENT` does not apply to them and the fallback goes too. Not just
+ * text: `<audio>fallback <a href="…">download</a></audio>` renders as nothing
+ * at all. Found by the surface×payload rows going red, not predicted.
+ *
+ * NOT OVERRIDDEN, and that is a decision rather than an oversight.
+ * `FORBID_CONTENTS` is settable, and setting it would mean owning an upstream
+ * security default in this file — precisely the trade the last paragraph of
+ * this comment refuses. The cost is measured instead (zero bare-in-prose media
+ * in either corpus), and what `<video>`'s children ARE by spec is a message
+ * about a capability this app has decided not to have.
+ *
+ * `map`, `area` — THE IMAGE-MAP FOOTNOTE #612 LEFT, and checking it is what
+ * turned it from a footnote into an entry: `<area href>` inside a `<map>`
+ * applied to a rendered image really does take focus in Chromium 149. #612
+ * called it "unreachable in practice" on the strength of the VIEWER chipping
+ * every `<img>` — but the feed has no image pass either, so in a reply the image
+ * renders and its hot spots are live. Both go, for the `option`/`optgroup`
+ * reason again: `map` alone leaves orphaned `<area>`s. `usemap` on the `<img>`
+ * itself survives and now points at a map that can never exist — a dangling
+ * attribute with nothing on the other end, left rather than named in
+ * `FORBID_ATTR` because taking it would buy nothing this line has not.
+ *
+ * `canvas` — THE WEAKEST ENTRY ON THIS LIST, said plainly. It is not focusable
+ * and it cannot be drawn into: content cannot run script (`script-src 'self'`,
+ * and DOMPurify refuses `on*` anyway), so a `<canvas>` in rendered markdown
+ * renders NOTHING, ever. That is `<font>`'s argument from the sixth block — an
+ * element kept only by the profile's inertia — with one addition: `width` and
+ * `height` survive (they are in the layout set two paragraphs down), and a
+ * `<canvas width="40" height="400">` measures 40×400 of empty box in Chromium
+ * 149, so it was also a spacer a reply could push its own text down with.
+ *
+ * THAT SECOND ARGUMENT DOES NOT CLOSE THE NUISANCE and must not be read as
+ * doing so: `<img width="1" height="4000">` survives this profile untouched and
+ * lays out at that box even when it fails to load, and `img` stays for reasons
+ * that outrank a spacer. What removing `canvas` closes is `canvas`. The entry
+ * stands on the first argument — an element that can never render anything is
+ * dead weight in an allow-list — and the second is a note, not a fix.
+ *
+ * `dialog` — NOT MEDIA, and it is here because #625 checked the sixth block's
+ * claim that `rp` was the last UA-hidden tag in the profile and found it false.
+ * `dialog:not([open])` is `display: none` in the UA sheet; verified in Chromium
+ * 149, where a `<pre>` inside a closed `<dialog>` measures 0×0. That is
+ * `datalist` exactly — a `<pre>` in the document, in the DOM, in a find, with a
+ * working Copy button and no visible code — so it is fixed where it was found
+ * rather than filed for later.
+ *
+ * WHAT NEEDED NO ENTRY, checked rather than assumed, because the obvious list to
+ * write is the one in `stripMedia`: `iframe`, `embed`, `object`, `param` and
+ * inline `<svg>` are NOT in DOMPurify's html profile at all and never survived
+ * this function. Verified against the shipped 3.4.12 with this exact config.
+ * Adding them would be a line that reads as protection and does nothing, and the
+ * thing that would actually notice a profile change upstream is a test — so they
+ * are pinned in `markdown.test.tsx` instead of named here.
+ *
+ * TWO CORPORA, because these tags have TWO input classes and the usual one
+ * cannot speak for the viewer. Same method as #436 (`style`), #509 (aria/role),
+ * #466/#598 (the presentational set) and #612 (the control tags):
+ *
+ *  - THE FEED's input is assistant prose. On this machine, 2026-08-20: 7,602
+ *    captured transcripts, 18,639 assistant text blocks, 10.2 MB — `<audio` 5,
+ *    `<video` 3, `<canvas` 1, `<map` 2, `<area` 3, `<iframe` 1, and ZERO for
+ *    `<source`, `<track`, `<picture`, `<embed`, `<object`, `<param`, `<dialog`.
+ *    Every one of the 15 was inside a code span, where `marked` escapes it to
+ *    text and the sanitizer never sees an element. BARE IN PROSE: zero.
+ *  - THE VIEWER's input is FILES, so the transcript corpus cannot price its
+ *    chip. Scanned the markdown on this machine's project roots the same day:
+ *    1,182 `.md` files, 15.4 MB — `<video` 2, `<audio` 3, `<source` 1,
+ *    `<picture` 1, `<canvas` 7, `<map` 5, `<area` 1, `<iframe` 1, `<embed` 1,
+ *    `<object` 1, `<track` 0, `<dialog` 0. Every one inside a fence or a span.
+ *    BARE IN PROSE: zero — so the "media not shown" chip fires on NONE of the
+ *    1,182 real documents, and what this costs the viewer is measured rather
+ *    than argued. In the same scan `<img` had THREE bare-in-prose uses (a README
+ *    centring screenshots by hand), which is the whole reason `img` stays.
+ *
+ * MARKDOWN EMITS NONE OF THEM. `marked` has no construct that produces a media,
+ * embed or image-map element — `![alt](src)` is an `<img>` and that is the end
+ * of the overlap — so unlike #612 this needed no renderer of its own. The GFM
+ * surface is rendered in `markdown.test.tsx` and asserted against the whole
+ * list, because #612's `input` is the lesson that this claim gets checked.
+ *
+ * `stripMedia` STAYS in the viewer, now unreachable from this pipeline. Same
+ * status as `decoration-guard.ts`'s `style` line: belt-and-braces for HTML that
+ * reaches a decoration pass from anywhere but here, not a second profile.
  *
  * THE PURE LAYOUT ATTRIBUTES ARE STILL LEFT, and are weaker than any of the
  * above: `border`, `cellpadding`, `cellspacing`, `valign`, `nowrap`, `noshade`,
@@ -513,17 +682,25 @@ export const SANITIZE_CONFIG: SanitizeConfig = {
     'inert',
     'tabindex',
   ],
-  // The tag half (#612). Same shape as `FORBID_ATTR` and for the same reason:
-  // all seven are ordinary members of the html profile's TAG allow-list, so no
-  // flag reaches them and each has to be named. `KEEP_CONTENT` is left at its
-  // default `true`, which is the half that makes this safe to do at all —
-  // the element goes, its children stay.
+  // The tag half (#612, extended by #625). Same shape as `FORBID_ATTR` and for
+  // the same reason: every one of these is an ordinary member of the html
+  // profile's TAG allow-list, so no flag reaches them and each has to be named.
+  // `KEEP_CONTENT` is left at its default `true`, which is the half that makes
+  // this safe to do at all — the element goes, its children stay. TWO
+  // EXCEPTIONS, and they are DOMPurify's, not ours: `audio` and `video` are in
+  // its default `FORBID_CONTENTS`, so those two take their fallback with them.
+  // See the seventh block above for why that is accepted rather than overridden.
   //
   // `input` is the one markdown emits, and it is only safe to name here
   // because `MARKED_OPTIONS`' renderer draws the task-list checkbox as a glyph
   // before this runs. Delete that renderer and this line starts eating
   // checklists — see the comment above, and the test that pins it.
+  //
+  // NOT HERE, and deliberately: `img` (markdown's own, for every `![alt](src)`),
+  // and `iframe` / `embed` / `object` / `param`, which are not in the profile at
+  // all — see the seventh block above, and the test that pins the difference.
   FORBID_TAGS: [
+    // #612 — controls, legacy presentation, and the UA-hidden tags
     'button',
     'input',
     'select',
@@ -535,6 +712,17 @@ export const SANITIZE_CONFIG: SanitizeConfig = {
     'marquee',
     'font',
     'rp',
+    // #625 — media and its children, the image map, the empty box, and the
+    // second UA-hidden tag `rp` claimed to be the last of
+    'audio',
+    'video',
+    'source',
+    'track',
+    'picture',
+    'map',
+    'area',
+    'canvas',
+    'dialog',
   ],
   ALLOW_DATA_ATTR: false,
   ALLOW_ARIA_ATTR: false,

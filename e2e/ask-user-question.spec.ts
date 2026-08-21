@@ -92,19 +92,26 @@ test.describe("the CLI's own questions (#563)", () => {
       timeout: 15_000,
     });
 
-    // Submit stays shut until every question has an answer — a partial answers
-    // map is a shape the probe never measured, so we never send one
+    // Submit stays shut until SOMETHING is answered (#567 — one is the floor,
+    // and zero is the allow-all skip this panel exists to prevent)
     await expect(w.getByTestId('question-submit')).toBeDisabled();
     await option(w, 0, 'Red').click();
-    await expect(w.getByTestId('question-submit')).toBeDisabled();
+    await expect(w.getByTestId('question-submit')).toBeEnabled();
     // the tab now says so — unmistakably, and in its accessible name rather
     // than only as a glyph (#566)
     await expect(qtab(w, 0)).toHaveAttribute('data-question-tab-answered', 'true');
     await expect(qtab(w, 0)).toHaveAttribute('aria-label', 'Colour — answered');
-    await expect(qtab(w, 1)).toHaveAttribute('aria-label', 'Languages — not answered yet');
+    // …and the one that is NOT answered now says what would happen if you sent
+    // it like this (#567), rather than merely sitting un-ticked off screen
+    await expect(qtab(w, 1)).toHaveAttribute('data-question-tab-skipping', 'true');
+    await expect(qtab(w, 1)).toHaveAttribute(
+      'aria-label',
+      'Languages — not answered, will be sent as skipped'
+    );
     // still naming the one that IS missing, and no longer the one that is not —
     // asserted in that order, so a line that vanished entirely cannot pass the
     // negative half by simply not being there
+    await expect(w.getByTestId('question-remaining')).toContainText('Sending now skips');
     await expect(w.getByTestId('question-remaining')).toContainText('Languages');
     await expect(w.getByTestId('question-remaining')).not.toContainText('Colour');
 
@@ -160,6 +167,56 @@ test.describe("the CLI's own questions (#563)", () => {
       timeout: 15_000,
     });
     expect(await heldIds(w)).toEqual([]);
+  });
+
+  // #567 — a PARTIAL answer, end to end. The probe measured what the CLI does
+  // with a short `answers` map (findings §3a: the omitted question reads as
+  // skipped, same success result, no error); this proves the short map is what
+  // actually leaves the app, through the validator whose whole job is to reject
+  // payloads — `answersLookRight` allows a short map and refuses an empty one,
+  // and a regression either way lands here rather than on a live session.
+  test('answering ONE of two questions sends a short answers map, and the panel closes', async () => {
+    test.setTimeout(90_000);
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder, env: DIRECT });
+    const w = a.window;
+    await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
+
+    const box = w.getByPlaceholder(/Prompt this session/);
+    await box.click();
+    await box.fill('!ask');
+    await box.press('Enter');
+
+    await expect(panel(w)).toBeVisible({ timeout: 30_000 });
+    await option(w, 0, 'Red').click();
+    await expect(w.getByTestId('question-submit')).toBeEnabled();
+
+    // BEFORE sending, the user can see what they are choosing not to say — on
+    // the tab, and in words on the question itself once they look at it
+    await expect(qtab(w, 1)).toHaveAttribute('data-question-tab-skipping', 'true');
+    await qtab(w, 1).click();
+    await expect(w.getByTestId('question-skip-note')).toHaveText(
+      'Not answered — will be sent as skipped'
+    );
+    await expect(w.getByTestId('question-remaining')).toContainText('Sending now skips: Languages');
+
+    await w.getByTestId('question-submit').click();
+
+    // THE CLAIM: the fake is reporting the `answers` map that came down its own
+    // stdin, and it has ONE entry. The skipped question is absent — not present
+    // as an empty string, which is the distinction the whole probe was about.
+    await expect(w.getByText('ANSWERS: Which colour do you prefer?=Red')).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(w.getByText(/Which of these languages do you use\?=/)).toHaveCount(0);
+
+    // and it is a completed exchange, not a stalled one: nothing held, nothing
+    // still asking, the panel gone
+    await expect(panel(w)).toHaveCount(0);
+    expect(await heldIds(w)).toEqual([]);
+    await expect(w.locator('nav .rail-row[data-session-status="needs-permission"]')).toHaveCount(0, {
+      timeout: 15_000,
+    });
   });
 
   // The owner's "Other" is not decoration — it is how a question that offers the

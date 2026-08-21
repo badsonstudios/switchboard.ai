@@ -891,9 +891,21 @@ export function FeedView(props: {
           <FeedRevealProvider value={reveal}>
             {visibleBlocks.map((b, i) => (
               <React.Fragment key={b.seq}>
-                {/* a new prompt starts a new turn — rule it off (Dan #11) */}
+                {/* A new prompt starts a new turn — rule it off (Dan #11), and
+                    since #640 rule it off so the eye LANDS on it: scanning a
+                    long session, the turn boundaries have to be findable
+                    without reading. Everything it looks like is `.turn-divider`
+                    in tokens.css, deliberately — the ink it writes on the
+                    feed's surface is a contrast promise in four themes, and the
+                    drift test can only measure a promise the stylesheet holds.
+                    `aria-hidden`: this is a landmark for the EYE. The prompt
+                    under it is already announced as the user's own words, and a
+                    screen reader stopping to say "new prompt" before each one
+                    would be reading the furniture out loud. */}
                 {b.kind === 'user' && i > 0 && (
-                  <div style={{ borderBlockStart: '1px solid var(--border)', marginBlock: 8, marginInline: 8 }} />
+                  <div className="turn-divider" aria-hidden>
+                    {t('feedView.turnMarker')}
+                  </div>
                 )}
                 <Block b={b} />
               </React.Fragment>

@@ -28,6 +28,15 @@
 //     nothing to focus. `KEEP_CONTENT` is why the label is still readable. This
 //     file's own row for it is `a forged control is not a control any more`.
 //
+//     THE MEDIA AND IMAGE-MAP HALF IS CLOSED TOO (#625, 2026-08-20). #612 named
+//     both as its own leftovers — `<audio controls>` / `<video controls>` are
+//     focusable media and `<area href>` in a `<map>` is a tab stop, and the
+//     document viewer chipped them in a decoration pass while THIS surface had
+//     no media pass at all. They are in `FORBID_TAGS` now rather than in a pass
+//     of the feed's own, because the update dialog renders release notes
+//     fetched from GitHub with no decoration pass to add one to. This file's row
+//     for it is `nor a media player, nor an image-map hot spot`.
+//
 //     THE `<a href>` HALF IS NOT, and it is not a bug to be fixed here: GFM
 //     emits `<a href>` for every link an agent writes, so a link is content's
 //     own and a link is focusable. That is why "#174 — the conversation is one
@@ -89,6 +98,14 @@ const FORGED = [
   // that asserts "no `<input>` survives" would be green with `FORBID_TAGS`
   // reverted, which is what review found.
   '<input type="text" name="token" value="paste your token">',
+  // #625's half, and it carries no text for #612's reason: neither an `<audio>`
+  // with a `src` nor an `<area>` contributes anything to `textContent`, so
+  // `HONEST` needs no matching line and the count rows stay comparable. Both
+  // were real tab stops in a reply before this — verified in Chromium 149, where
+  // `<audio controls>` takes focus with no `tabindex` and lays out at 300×54,
+  // and an `<area href>` in an applied `<map>` is a stop of its own.
+  '<audio controls autoplay src="https://exfil.test/a.mp3"></audio>',
+  '<img src="./d.png" usemap="#m" alt=""><map name="m"><area coords="0,0,9,9" href="https://exfil.test/hot" alt=""></map>',
   '<span data-feed-seq="4">not the block you searched for</span>',
   '<a href="https://exfil.test/leak" data-feed-expander>Open the log</a>',
   '<span class="feed-md keep-me">borrowed styling</span>',
@@ -259,6 +276,29 @@ describe('a reply cannot forge the feed’s expander protocol (#465)', () => {
     // future change strips it, that is a decision to make on purpose and this
     // line is where it gets noticed.
     expect(body.querySelector('a')?.getAttribute('href')).toBe('https://exfil.test/leak');
+  });
+
+  it('nor a media player, nor an image-map hot spot (#625)', async () => {
+    // #612 closed the CONTROLS and said so in its own comment: what it left was
+    // media and the image map, because the document viewer chips both in a
+    // decoration pass and THIS surface had no media pass at all. #625 settled it
+    // at the profile instead of writing one here — a feed pass would have left
+    // `UpdateDialog` open, which renders GitHub's release notes through the same
+    // `<Markdown>` with no `decorate` prop to hang a pass on.
+    //
+    // Measured before deciding, the way this family always does (2026-08-20):
+    // 7,602 transcripts and 1,182 real `.md` files on this machine, and not one
+    // bare-in-prose use of any tag in the family. `markdown.test.tsx` carries
+    // the numbers and the surface×payload rows; this pins the FEED, end to end
+    // through the real registry and the real block renderers.
+    const body = prose(await mountFeed(FORGED));
+    expect(body.querySelector('audio')).toBeNull();
+    expect(body.querySelector('map')).toBeNull();
+    expect(body.querySelector('area')).toBeNull();
+    // `img` is NOT swept with them, deliberately: markdown emits one for every
+    // `![alt](src)`, so it stays, and only its hot spots go. If a later sweep
+    // takes it, this line is where the feed notices.
+    expect(body.querySelector('img')).not.toBeNull();
   });
 
   it('cannot capture a find jump by claiming another block’s seq', async () => {

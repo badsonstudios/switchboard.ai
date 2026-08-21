@@ -214,6 +214,16 @@ function OverrideGroup<T extends string>(props: {
 export function SessionsRail(props: {
   sessions: readonly RailSession[];
   groups: readonly RailGroup[];
+  /**
+   * The cards with an outstanding demand — what the group summaries and the
+   * footer count (#621). The store's `getNeedingCards()`, so the rail, the
+   * urgency strip and the Events window are three views of one derivation.
+   *
+   * REQUIRED, and deliberately not defaulted to "every needy status": a mount
+   * that forgot it would silently go back to counting statuses, which is the
+   * bug — the counters would ignore dismissal again and nothing would fail.
+   */
+  needing: ReadonlySet<string>;
   onRename: (id: string, title: string) => void;
   onFocus: (id: string) => void;
   onDiff: (s: RailSession) => void;
@@ -965,7 +975,7 @@ export function SessionsRail(props: {
     showEmpty?: boolean;
   }): React.JSX.Element => {
     const isCollapsed = collapsed.has(opts.key);
-    const need = needCount(opts.members);
+    const need = needCount(opts.members, props.needing);
     const g = opts.group;
     const isAuto = opts.kind === 'auto';
     // Membership in an auto-group is DERIVED from the session's folder, so
@@ -1342,7 +1352,7 @@ export function SessionsRail(props: {
     );
   };
 
-  const totalNeed = needCount(props.sessions);
+  const totalNeed = needCount(props.sessions, props.needing);
   // The Ungrouped bucket only earns a header when there is something to
   // distinguish it FROM — on a fresh workspace it would be pure chrome.
   const hasOtherCards = props.groups.length > 0 || order.autoGroups.length > 0;

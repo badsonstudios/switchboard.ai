@@ -9,7 +9,10 @@ Each card has four tabs: **Session**, **Terminal**, **Changes**, and
 
 This is the conversation, rendered to be read rather than scrolled past:
 
-- **Your prompts** appear as tinted boxes.
+- **Your prompts** appear as tinted boxes. Each one starts a new turn, and the
+  conversation says so: a full-width rule with **NEW PROMPT** under it, with a
+  gap above. It's there so you can scroll a long session and find where each
+  exchange began without reading a word of it.
 - **Claude's replies** are formatted text, with no marker in the left margin —
   they're the answer, not something that happened, so they sit clean.
 - **Anything Claude *did*** — running a command, editing a file, reading

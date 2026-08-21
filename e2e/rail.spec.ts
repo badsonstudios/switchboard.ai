@@ -6,7 +6,13 @@
 // numeric contrast between a needy row and a calm one.
 import { test, expect, Page } from '@playwright/test';
 import path from 'path';
-import { launchApp, LaunchedApp, tempProjectFolder, hookPoster } from './fixtures/app';
+import {
+  launchApp,
+  LaunchedApp,
+  openEventsDrawer,
+  tempProjectFolder,
+  hookPoster,
+} from './fixtures/app';
 
 const rail = (w: Page) => w.locator('nav');
 const row = (w: Page, title: string) =>
@@ -87,6 +93,48 @@ test.describe('sessions rail', () => {
     await expect(r).toHaveAttribute('data-needs-you', 'false', { timeout: 15_000 });
     await expect(rail(w).getByText('calm')).toBeVisible();
     await expect(rail(w).getByText('need you')).toHaveCount(0);
+  });
+
+  test('dismissing the event clears every "N need you" (#621)', async () => {
+    // The owner's dogfood report: he dismissed the events and the counters sat
+    // there. They counted the session's STATUS, and dismissing an event calls
+    // `EventFeed.forget` — which moves the Events window and nothing else. So
+    // the two surfaces disagreed about what "addressed" meant.
+    //
+    // Driven end to end on purpose: the real hook listener raises it, the real
+    // ✕ dismisses it, and the assertion is the three readouts a human reads.
+    const { w, title } = await oneSessionInAGroup();
+    const post = await hookPoster(a);
+    await post(title, {
+      hook_event_name: 'Notification',
+      message: 'Claude needs your permission to use Bash',
+    });
+
+    const r = row(w, title);
+    await expect(r).toHaveAttribute('data-needs-you', 'true', { timeout: 15_000 });
+    // all three agree BEFORE: group summary + footer, and the strip's aggregate
+    await expect(rail(w).getByText('1 need you')).toHaveCount(2);
+    await expect(w.getByTestId('urgency-count')).toHaveAttribute('data-needing', '1');
+
+    await openEventsDrawer(w);
+    const item = w.getByTestId('events-drawer').locator('[data-event-kind]').first();
+    await expect(item).toBeVisible({ timeout: 15_000 });
+    await item.locator('.event-dismiss').click();
+    await expect(w.getByTestId('events-drawer').locator('[data-event-kind]')).toHaveCount(0, {
+      timeout: 15_000,
+    });
+
+    // ...and all three follow it down. This is the regression: before #621 they
+    // stayed at 1 for as long as the session lived.
+    await expect(rail(w).getByText('need you')).toHaveCount(0, { timeout: 15_000 });
+    await expect(rail(w).getByText('calm')).toBeVisible();
+    await expect(w.getByTestId('urgency-count')).toHaveAttribute('data-needing', '0');
+
+    // The ROW is deliberately unmoved: the CLI is still waiting for permission,
+    // and §4's fail-open rule does not let a dismissal make that unknowable.
+    // Dismissing takes the item off your plate; it does not answer it.
+    await expect(r).toHaveAttribute('data-session-status', 'needs-permission');
+    await expect(r).toHaveAttribute('data-needs-you', 'true');
   });
 
   test("the row's ✕ ends the session, and only after the confirm", async () => {

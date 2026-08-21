@@ -451,6 +451,16 @@ both allow-all paths and from the OS toast's buttons; and an unanswered question
 parks **for ever** — 180s with no TUI fallback and no CLI-side timeout — which
 makes the existing 300s fail-open the only thing between it and a wedged session.
 
+**Extended 2026-08-19/20 (#567):** two more probe modes closed the hole #563
+left open — a **partial** `answers` map (a question's key omitted) and a
+**blank** one (the key present, `""`). Both are accepted like a complete answer,
+byte-identically, and the CLI strips empty-string values before writing its
+`tool_result`, so an unanswered question reads as **skipped** and can never be
+handed to the model as answered-with-silence (findings §3a). **Send answer**
+therefore gates on one answer rather than all of them, and the panel shows what
+a send would leave out. Still unmeasured, and still refused by
+`answersLookRight`: an `answers` key holding **zero** entries.
+
 **Still open here: plan mode and `ExitPlanMode`,** which remain unmeasured. The
 gate stands for that half.
 

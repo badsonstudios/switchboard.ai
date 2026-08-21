@@ -61,6 +61,81 @@ on the floor, and say so in your PR.
 
 ## 0.8.2 — unreleased
 
+### Changed
+
+- **A reply can no longer put a media player in your conversation.** Raw HTML in
+  a Markdown file or an assistant reply could contain `<video>` or `<audio>`,
+  and rendered it drew a real player: something that starts fetching as soon as
+  it appears, can play on its own, lands under your Tab key, and carries a
+  right-click menu with *Download* on it. The document viewer already replaced
+  those with a small "media isn't shown here" chip; the session feed had no such
+  step, and neither did the release-notes pane you are reading this in. They are
+  now removed for every one of those places at once, along with clickable
+  regions drawn over a picture and one tag (`<dialog>`) that hid whatever was
+  put inside it. Ordinary pictures are untouched. Two consequences worth naming:
+  the viewer's "media isn't shown here" chip no longer appears, because there is
+  no longer an element left for it to replace, and whatever was written inside
+  the `<video>` or `<audio>` tag as a fallback — a line of text, or a download
+  link — goes with the tag. Measured before deciding — across
+  7,602 recorded transcripts and 1,182 real Markdown files, not one of them used
+  any of these tags outside a code block. (#625)
+
+- **You can now answer just some of Claude's questions.** When Claude asks
+  several things at once, **Send answer** used to stay greyed out until every
+  one of them had an answer — so "I have an opinion about the first, none about
+  the second" meant inventing something to say. It now lights up as soon as one
+  question is answered, and the ones you leave blank go back to Claude marked as
+  **skipped** rather than as answered with nothing. Claude generally notices and
+  offers to ask that one again.
+
+  Because a question can be hidden behind a tab, the panel shows what you are
+  about to leave out before you send it: the unanswered tab goes dashed and
+  struck through, the question itself says *"Not answered — will be sent as
+  skipped"*, and the line beside the button changes from *"Still to answer:
+  Languages"* to *"Sending now skips: Languages"*. Nothing asks you to confirm —
+  skipping is a real answer, and this only makes it a visible one. Sending a
+  completely blank answer is still what **Don't answer** is for.
+
+- **You can see where each of your prompts starts.** The conversation already
+  drew a line above every prompt you sent, but it was a one-pixel hairline in
+  the same grey as everything else — scrolling back through a long session, it
+  was easier to lose your place than to find it. That line is now a proper
+  break: a full-width rule, a **NEW PROMPT** caption under it, and a real gap
+  above, so the turns in a session are something you can scan for rather than
+  read for. It stays deliberately colourless in all four themes — a turn
+  boundary is part of the furniture, and the colours are reserved for sessions
+  that actually want something from you.
+
+### Fixed
+
+- **Docking a session back now puts it where it came from.** Pop a session out
+  into its own window and bring it back and it returned to *some* group — often
+  whichever one happened to be on screen — rather than the spot on the grid it
+  left. The spot it left is still there while it is away (that is how it comes
+  back at all), so the session it belonged to went one way and its half of the
+  screen stayed empty. Worse when you start a second session inside the pop-out
+  window (`＋` in the card header): that new session has never had a place on
+  the grid, and when you brought it back it was handed the *first* session's
+  empty spot — so the two swapped places, and the one that owned that half of
+  the screen was the one that lost it. Every card now remembers its own spot and
+  goes back to it, and a session started inside a pop-out comes home where a
+  brand new session would: beside what is already there, never on top of a
+  document you are reading. (#558)
+
+- **Dismissing an event now clears the "N need you" counts.** The number on the
+  Events tab dropped when you dismissed something, but the other three readouts
+  did not: the **"N need you"** on the strip across the top of the window, and
+  the ones on each group header and at the foot of the Sessions list, all sat
+  there on their old total over an Events drawer you had just emptied. They were
+  counting something different from what the drawer was listing. Now all four
+  count the same thing, so dismissing — or opening a finished session, which is
+  what turns **Done.** into **Ready** — drops every one of them at once, and the
+  text goes away entirely at zero.
+  Dismissing is still not answering: if a session is genuinely still waiting on
+  you, its row in the Sessions list goes on saying so in the status color, and
+  it will call again if it asks something new. What the ✕ clears is the count,
+  not the session's state.
+
 ### Internal
 
 - **A refused IPC call can no longer be mistaken for a yes.** The broker answers

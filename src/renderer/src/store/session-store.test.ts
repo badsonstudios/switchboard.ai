@@ -107,6 +107,76 @@ describe('SessionStore', () => {
   });
 });
 
+// #621: the counters used to be `presentStatus(status).needsYou` over the
+// session list, which no user action can move — so dismissing an event emptied
+// the Events window and left "3 need you" standing over it. The set below is
+// what the rail's group summaries, the rail footer and the urgency strip's
+// aggregate all count now.
+describe('the needing-cards set — every "N need you" readout (#621)', () => {
+  let store: SessionStore;
+  beforeEach(() => {
+    store = new SessionStore();
+  });
+
+  it('is the cards with something outstanding in the Events window', () => {
+    store.mapLiveToCard('live-1', 'card-A');
+    store.mapLiveToCard('live-2', 'card-B');
+    store.setEvents([event(1, 'live-1', 'needs-permission'), event(2, 'live-2', 'done')]);
+    expect([...store.getNeedingCards()].sort()).toEqual(['card-A', 'card-B']);
+  });
+
+  it('DISMISSING clears the card, though its status has not moved', () => {
+    store.mapLiveToCard('live-1', 'card-A');
+    store.setSessions([session('card-A', { status: 'needs-input' })]);
+    store.setEvents([event(1, 'live-1', 'needs-input')]);
+    expect(store.getNeedingCards().has('card-A')).toBe(true);
+
+    // main's `EventFeed.forget` pushes the list back without the item; the
+    // session is still `needs-input`, because dismissing is not answering
+    store.setEvents([]);
+    expect(store.getNeedingCards().has('card-A')).toBe(false);
+    expect(store.getState().sessions[0].status).toBe('needs-input');
+  });
+
+  it('ACKNOWLEDGING a done clears it too — `ready` is not a demand', () => {
+    store.mapLiveToCard('live-1', 'card-A');
+    store.setEvents([event(1, 'live-1', 'done')]);
+    expect(store.getNeedingCards().has('card-A')).toBe(true);
+    store.setEvents([event(2, 'live-1', 'ready')]);
+    expect(store.getNeedingCards().has('card-A')).toBe(false);
+  });
+
+  it('counts a `none`-silenced session — `none` quiets the workspace, not the rail', () => {
+    // lib/focus-policy is explicit: the rail row, the lamp and the "N need
+    // you" count keep reporting a `none` session. So this set is derived from
+    // the RAW feed, unlike the queue.
+    store.mapLiveToCard('live-1', 'card-A');
+    store.setFocusPolicies(withFocusCard(DEFAULT_FOCUS_BOOK, 'card-A', 'none'));
+    store.setEvents([event(1, 'live-1', 'needs-permission')]);
+    expect(store.getQueue()).toHaveLength(0); // off the to-do list…
+    expect(store.getNeedingCards().has('card-A')).toBe(true); // …still counted
+  });
+
+  it('re-derives when a live id is BOUND, not only when events arrive', () => {
+    // a session that finished before `sessions:create` resolved: the event
+    // lands first and maps to the live id, which no rail row carries
+    store.setEvents([event(1, 'live-1', 'done')]);
+    expect(store.getNeedingCards().has('card-A')).toBe(false);
+    store.mapLiveToCard('live-1', 'card-A');
+    expect(store.getNeedingCards().has('card-A')).toBe(true);
+  });
+
+  it('keeps a stable identity until events change it', () => {
+    // three useSyncExternalStore readers compare it by reference
+    store.setEvents([event(1, 'live-1', 'done')]);
+    const n = store.getNeedingCards();
+    store.setSessions([session('a')]); // unrelated write
+    expect(store.getNeedingCards()).toBe(n);
+    store.setEvents([]);
+    expect(store.getNeedingCards()).not.toBe(n);
+  });
+});
+
 describe('the attention walk (the batching behaviour the refs protected)', () => {
   let store: SessionStore;
   beforeEach(() => {

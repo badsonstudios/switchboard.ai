@@ -15,11 +15,20 @@ the session's name and task label, so you know what it is without decoding an
 ID.
 
 - **Click an entry** to jump straight to that session.
-- **✕** dismisses it.
+- **✕** dismisses it. The entry goes, and so does its share of every
+  **"N need you"** count — the tab's number, the strip along the top of the
+  window, and the Sessions list's group headers and footer all drop by one, and
+  the text disappears altogether at zero.
 - Entries read **needs permission**, **needs input**, **crashed**, or **Done.**
   A finished session relaxes from **Done.** to **Ready** once you've looked at
   it.
 - When nothing is outstanding it says **Nothing needs you right now**.
+
+**Dismissing is not answering.** It takes the item off your plate; it does not
+tell Claude anything. If the session is genuinely still waiting — a permission
+it's holding, a question it asked — its row in the Sessions list goes on saying
+so in the status color, and the session itself still shows the ask. Only the
+counts go quiet. If it asks again, it comes back.
 
 Closing a session clears its entries. So does starting it again: a **crashed**
 entry goes as soon as a fresh session takes its place, whether you restarted it

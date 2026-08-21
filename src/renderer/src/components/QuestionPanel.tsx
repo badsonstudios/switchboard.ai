@@ -35,7 +35,8 @@
 //  1. **Submit still requires EVERY question answered.** Unchanged from #563
 //     (`allAnswered`): a partial `answers` map is a shape the probe never
 //     measured. So the hazard is not "submit blind" — it is milder and
-//     different: Submit is dead and the user cannot see why.
+//     different: Submit is dead and the user cannot see why. *(Superseded by
+//     #567 — see below. Everything else in this list still holds.)*
 //  2. **So every tab states its own answered/unanswered state**, in SHAPE as
 //     well as hue (§5.32, never hue alone): `✓` answered, `○` not, and the
 //     tab's accessible name SAYS which — "Colour — not answered yet". A dot
@@ -49,6 +50,32 @@
 //  4. **The panel OPENS on the first unanswered question** — on arrival, and
 //     again after the remount that #563's draft map exists for. You never come
 //     back to a panel parked on work that is already done.
+//
+// A PARTIAL ANSWER IS A REAL ANSWER (#567)
+// ----------------------------------------
+// #563 and #566 both gated Submit on `allAnswered` for one stated reason: a
+// partial `answers` map was unmeasured. It is measured now (2026-08-19,
+// findings §3a) — the CLI accepts a short map exactly like a complete one and
+// reads the missing question as SKIPPED, not as answered-with-silence. So the
+// gate drops to `anyAnswered`: one answer is enough to send.
+//
+// That trades a milder hazard for a sharper one, and the sharper one is what
+// most of the code below is about. "Submit is dead and you cannot see why" is
+// annoying; "you sent an answer and did not notice you had skipped a question
+// that was off screen behind a tab" is the extension's own failure, arriving
+// through the front door. So an unanswered question, from the moment sending is
+// possible, is not merely un-ticked anywhere it appears:
+//
+//  • **its tab** goes dashed and struck through, and its accessible name stops
+//    saying "not answered yet" and starts saying "will be sent as skipped";
+//  • **the question in front of you** replaces its grey dot with those words;
+//  • **the sentence beside the button** changes from "Still to answer: X" —
+//    which explains a dead button — to "Sending now skips: X", which explains a
+//    live one. Same element, opposite job, and the button's own tooltip agrees.
+//
+// The user should be able to SEE what they are choosing not to say. Nothing
+// here nags, blocks or confirms: skipping is a legitimate answer, and the panel
+// only has to make it a visible one.
 //
 // NOT taken from the extension: the 300ms auto-advance after a pick-one.
 // Pleasant when it guesses right, and a small theft when you wanted to change
@@ -74,6 +101,7 @@ import { tabStripAction } from '../lib/tabstrip-keys';
 import {
   allAnswered,
   answeredInput,
+  anyAnswered,
   AskQuestion,
   AskSelection,
   emptySelections,
@@ -207,13 +235,23 @@ export function QuestionPanel({
   const tabsId = React.useId();
 
   const complete = allAnswered(selections);
+  // What Submit is gated on since #567: ONE answer, not all of them. `complete`
+  // has not gone anywhere — it is what decides whether anything is being
+  // skipped, which is what the rest of the panel has to show.
+  const sendable = anyAnswered(selections);
+  // Sending RIGHT NOW would leave a question unanswered. The state every skip
+  // affordance below is keyed off — and, with one question, a state that cannot
+  // exist: `sendable` and `complete` are the same thing when there is only one.
+  const skipping = sendable && !complete;
   const tabLabel = (q: AskQuestion, i: number): string =>
     q.header ?? t('question.tabFallback', { n: i + 1 });
   const answeredAt = (i: number): boolean =>
     questionAnswered(selections[i] ?? { labels: [], other: false, otherText: '' });
   // The unanswered questions, named in WORDS rather than implied by a glyph on
   // a tab that may be one of five. This is the sentence the extension's tab
-  // dots are trying to be, and it is what answers "why is Send answer dead?".
+  // dots are trying to be, and it answers whichever question is live: "why is
+  // Send answer dead?" before anything is answered, and "what am I about to
+  // leave out?" once it is not.
   const missing = questions.map((q, i) => tabLabel(q, i)).filter((_, i) => !answeredAt(i));
   const finish = (decision: 'allow' | 'deny', updatedInput?: unknown): void => {
     // The draft dies with the request, whichever way it was answered: the id is
@@ -222,7 +260,10 @@ export function QuestionPanel({
     onDecide(decision, false, updatedInput);
   };
   const submit = (): void => {
-    if (!complete) return;
+    // ONE answer is the floor (#567). Zero is not a send: an `answers` map with
+    // no entries is the one shape around here nobody has measured, and an allow
+    // carrying nothing is the allow-all skip this panel exists to prevent.
+    if (!sendable) return;
     finish('allow', answeredInput(input, questions, selections));
   };
 
@@ -295,6 +336,7 @@ export function QuestionPanel({
           idBase={tabsId}
           labels={questions.map((q, i) => tabLabel(q, i))}
           answered={questions.map((_, i) => answeredAt(i))}
+          skipping={skipping}
           active={activeIndex}
           onSelect={setActive}
         />
@@ -309,6 +351,7 @@ export function QuestionPanel({
             // the tab already carries the header, in bigger letters and with
             // the answered state on it — the chip would just say it twice
             showHeader={!tabbed}
+            skipping={skipping}
             selection={selections[i] ?? { labels: [], other: false, otherText: '' }}
             onPick={pick}
             onPickOther={pickOther}
@@ -341,18 +384,29 @@ export function QuestionPanel({
           type="button"
           data-testid="question-submit"
           onClick={submit}
-          disabled={!complete}
-          // A disabled button says nothing about WHY. The title does, and it is
-          // the only place the "all of them" rule is visible to someone who has
-          // answered one question and is looking for the way out.
-          title={complete ? undefined : t('question.submitHint')}
+          disabled={!sendable}
+          data-question-submit-partial={skipping}
+          // A button that is dead says nothing about WHY, and a button that is
+          // live says nothing about what it is ABOUT to do. Both need a
+          // sentence, and they are different sentences: "answer one of them
+          // first" while nothing is answered, and "the rest go back marked
+          // skipped" once something is. Belt to the visible affordances rather
+          // than a replacement for them — a tooltip nobody hovers is not how
+          // anyone finds out they skipped a question (#567).
+          title={
+            !sendable
+              ? t('question.submitHint')
+              : skipping
+                ? t('question.submitPartialHint')
+                : undefined
+          }
           style={{
-            background: complete ? 'var(--btn-primary-bg)' : 'var(--panel)',
-            color: complete ? 'var(--btn-primary-text)' : 'var(--muted)',
+            background: sendable ? 'var(--btn-primary-bg)' : 'var(--panel)',
+            color: sendable ? 'var(--btn-primary-text)' : 'var(--muted)',
             border: '1px solid var(--border)',
             borderRadius: 'var(--radius-chip)',
             padding: '4px 14px',
-            cursor: complete ? 'pointer' : 'not-allowed',
+            cursor: sendable ? 'pointer' : 'not-allowed',
             fontFamily: 'var(--font-ui)',
             fontSize: 12,
           }}
@@ -385,14 +439,27 @@ export function QuestionPanel({
             one is still missing?" was answered by looking down the panel. With
             tabs it is answered by a glyph on a tab that might be off the end of
             the strip — so the panel says it in words instead, right next to the
-            button whose deadness is the thing being explained. Only when there
-            IS more than one question: a single-question panel keeps exactly the
-            #563 layout, and its Submit title already says the same thing.
+            button it is about. Only when there IS more than one question: a
+            single-question panel keeps exactly the #563 layout, and its Submit
+            title already says the same thing.
+
+            IT NOW HAS TWO JOBS (#567), because the button beside it does. While
+            nothing is answered it explains a dead button — "Still to answer".
+            The moment sending becomes possible it explains a LIVE one, naming
+            the questions that will go back skipped, and it is deliberately the
+            same element in the same place: the sentence a user has already
+            learned to read is the one that has to carry the news.
             NOT a live region: it changes on every tick, and re-reading it each
             time would talk over the option the user just chose. */}
         {tabbed && !complete && (
-          <span data-testid="question-remaining" style={{ fontSize: 10.5, color: 'var(--muted)' }}>
-            {t('question.stillToAnswer', { headers: missing.join(', ') })}
+          <span
+            data-testid="question-remaining"
+            data-question-skipping={skipping}
+            style={{ fontSize: 10.5, color: skipping ? 'var(--status-needs-input-ink)' : 'var(--muted)' }}
+          >
+            {t(skipping ? 'question.willSkip' : 'question.stillToAnswer', {
+              headers: missing.join(', '),
+            })}
           </span>
         )}
       </div>
@@ -430,6 +497,7 @@ function QuestionTabs({
   idBase,
   labels,
   answered,
+  skipping,
   active,
   onSelect,
 }: {
@@ -439,6 +507,13 @@ function QuestionTabs({
   labels: readonly string[];
   /** one per question, in order */
   answered: readonly boolean[];
+  /**
+   * Sending is possible AND something here is unanswered (#567), so every
+   * unanswered tab is now a tab that is about to be sent as skipped. Not a
+   * per-tab flag: it is one fact about the panel, and an unanswered tab means
+   * something different depending on it.
+   */
+  skipping: boolean;
   active: number;
   onSelect: (index: number) => void;
 }): React.JSX.Element {
@@ -497,6 +572,8 @@ function QuestionTabs({
       {labels.map((text, i) => {
         const on = i === active;
         const done = answered[i] === true;
+        // this tab is one of the ones a click on Send answer would leave out
+        const willSkip = !done && skipping;
         return (
           <button
             key={`${i}:${text}`}
@@ -505,6 +582,7 @@ function QuestionTabs({
             id={`${idBase}qtab-${i}`}
             data-question-tab={i}
             data-question-tab-answered={done}
+            data-question-tab-skipping={willSkip}
             aria-selected={on}
             aria-controls={on ? `${idBase}qpanel-${i}` : undefined}
             // The roving stop a tablist owes: one Tab reaches the strip, arrows
@@ -513,8 +591,18 @@ function QuestionTabs({
             tabIndex={on ? 0 : -1}
             // The state in WORDS. The glyph is for the eye and is aria-hidden;
             // this is what a screen reader hears, and "Colour — not answered
-            // yet" is a thing a subtle dot has never managed to say.
-            aria-label={t(done ? 'question.tabAnswered' : 'question.tabUnanswered', { label: text })}
+            // yet" is a thing a subtle dot has never managed to say. Three
+            // states rather than two since #567: "not answered yet" is a
+            // to-do, "will be sent as skipped" is a consequence, and once
+            // Send answer is live it is the second one that is true.
+            aria-label={t(
+              done
+                ? 'question.tabAnswered'
+                : willSkip
+                  ? 'question.tabSkipped'
+                  : 'question.tabUnanswered',
+              { label: text }
+            )}
             onClick={() => onSelect(i)}
             style={{
               display: 'inline-flex',
@@ -523,7 +611,11 @@ function QuestionTabs({
               maxInlineSize: 160,
               background: on ? 'var(--panel)' : 'transparent',
               color: on ? 'var(--text)' : 'var(--muted)',
-              border: `1px solid ${on ? 'var(--status-needs-input)' : 'var(--border)'}`,
+              // DASHED once this tab would be sent as skipped (#567). A border
+              // style, not a hue and not a fourth colour to learn: dashed is
+              // already how everything reads "provisional / not filled in", and
+              // it survives high-contrast and daylight without being tuned.
+              border: `1px ${willSkip ? 'dashed' : 'solid'} ${on ? 'var(--status-needs-input)' : 'var(--border)'}`,
               borderRadius: 'var(--radius-chip)',
               padding: '2px 8px',
               cursor: 'pointer',
@@ -547,7 +639,18 @@ function QuestionTabs({
             >
               {done ? '✓' : '○'}
             </span>
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{text}</span>
+            {/* STRUCK THROUGH when it is about to be left out — the plainest
+                "this is not going" a label can be, and it is a shape rather
+                than a colour, so it reads the same in every theme (§5.32). */}
+            <span
+              style={{
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                textDecoration: willSkip ? 'line-through' : undefined,
+              }}
+            >
+              {text}
+            </span>
           </button>
         );
       })}
@@ -574,6 +677,7 @@ function QuestionBlock({
   index,
   question,
   showHeader,
+  skipping,
   selection,
   onPick,
   onPickOther,
@@ -585,6 +689,12 @@ function QuestionBlock({
   question: AskQuestion;
   /** false when a tab already carries the header (#566) — it would say it twice */
   showHeader: boolean;
+  /**
+   * Send answer is live and something in this call is unanswered (#567). If
+   * THIS question is the unanswered one, its own dot stops being a dot and
+   * starts being a sentence.
+   */
+  skipping: boolean;
   selection: AskSelection;
   onPick: (index: number, label: string) => void;
   onPickOther: (index: number) => void;
@@ -677,13 +787,33 @@ function QuestionBlock({
             done?" without making the user re-read every group. `-ink` and not
             the bare hue: this is a GLYPH rendered as text, and tokens.css tunes
             the --status-* hues for dots and rings (the drift guard in
-            `tokens.drift.test.ts` catches exactly this). */}
-        <span
-          aria-hidden
-          style={{ marginInlineStart: 'auto', color: answered ? 'var(--status-idle-ink)' : 'var(--faint)' }}
-        >
-          {answered ? '✓' : '·'}
-        </span>
+            `tokens.drift.test.ts` catches exactly this).
+
+            WHEN SENDING WOULD SKIP THIS ONE (#567) the dot is not enough. A
+            faint `·` is exactly the "merely un-ticked" the issue asked us to
+            stop relying on, so the question the user is LOOKING AT says it in
+            words instead — and says it out loud, unlike the glyph, because a
+            skipped answer is not a decorative state. */}
+        {!answered && skipping ? (
+          <span
+            data-testid="question-skip-note"
+            style={{
+              marginInlineStart: 'auto',
+              flexShrink: 0,
+              fontSize: 10,
+              color: 'var(--status-needs-input-ink)',
+            }}
+          >
+            {t('question.willSkipThis')}
+          </span>
+        ) : (
+          <span
+            aria-hidden
+            style={{ marginInlineStart: 'auto', color: answered ? 'var(--status-idle-ink)' : 'var(--faint)' }}
+          >
+            {answered ? '✓' : '·'}
+          </span>
+        )}
       </div>
       <div
         ref={optionsRef}

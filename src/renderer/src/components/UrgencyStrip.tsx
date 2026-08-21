@@ -29,11 +29,19 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { RailSession } from '../model/types';
-import { buildLamps, litCount, nextLitExpiry, UrgencyLamp, UrgencyMarks } from '../lib/urgency';
+import { buildLamps, nextLitExpiry, UrgencyLamp, UrgencyMarks } from '../lib/urgency';
+import { needCount } from '../lib/rail-view';
 
 export function UrgencyStrip(props: {
   /** every session, in rail order — the same order Ctrl+1..9 counts against */
   sessions: readonly RailSession[];
+  /**
+   * The cards with an outstanding demand — the aggregate's whole input (#621).
+   * The store's `getNeedingCards()`, counted through `rail-view`'s `needCount`,
+   * so this readout and the rail's two are one derivation rather than three
+   * copies of the same filter. REQUIRED for the reason the rail's is.
+   */
+  needing: ReadonlySet<string>;
   /** card id -> epoch ms its post-jump highlight expires, or null for one that
    *  has not painted yet and so has no deadline (store state) */
   urgency: UrgencyMarks;
@@ -55,7 +63,7 @@ export function UrgencyStrip(props: {
   // changes nothing, and the effect below deliberately re-reads the clock.
   const now = Date.now();
   const lamps = buildLamps(props.sessions, props.urgency, now);
-  const needing = litCount(lamps);
+  const needingCount = needCount(props.sessions, props.needing);
 
   // ONE timer for the whole strip, armed at the soonest deadline: the strip has
   // no other reason to re-render when a beat runs out, and polling a clock for
@@ -241,15 +249,15 @@ export function UrgencyStrip(props: {
       </div>
       <span
         data-testid="urgency-count"
-        data-needing={needing}
+        data-needing={needingCount}
         style={{
           flex: '0 0 auto',
           fontSize: 10,
           whiteSpace: 'nowrap',
-          color: needing > 0 ? 'var(--status-needs-input-ink)' : 'var(--muted)',
+          color: needingCount > 0 ? 'var(--status-needs-input-ink)' : 'var(--muted)',
         }}
       >
-        {needing > 0 ? t('urgency.needYou', { n: needing }) : t('urgency.calm')}
+        {needingCount > 0 ? t('urgency.needYou', { n: needingCount }) : t('urgency.calm')}
       </span>
     </div>
   );

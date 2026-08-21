@@ -297,17 +297,49 @@ describe('answering', () => {
   });
 });
 
-describe('submit is gated on a COMPLETE answer', () => {
-  it('is disabled until every question has one', async () => {
+describe('submit is gated on ONE answer, not all of them (#567)', () => {
+  it('lights up as soon as a single question is answered', async () => {
+    // Was `allAnswered` (#563/#566), on the stated grounds that a partial map
+    // was unmeasured. It is measured now — findings §3a, the CLI reads the
+    // omitted question as skipped — so the gate is `anyAnswered`.
     const host = await mountPanel(REAL_INPUT);
     expect(submitButton(host).disabled).toBe(true);
 
     await click(optionRow(host, 0, 'Red'));
-    expect(submitButton(host).disabled).toBe(true); // one of two
+    expect(submitButton(host).disabled).toBe(false); // one of two is enough
 
     await openTab(host, 1);
     await click(optionRow(host, 1, 'Go'));
     expect(submitButton(host).disabled).toBe(false);
+  });
+
+  it('sends a SHORT answers map — the skipped key omitted, not empty', async () => {
+    // The distinction the whole probe was about: an unanswered question is
+    // absent from the map, never present as `""`.
+    const calls: Decision[] = [];
+    const host = await mountPanel(REAL_INPUT, calls);
+
+    await click(optionRow(host, 0, 'Red'));
+    await click(submitButton(host));
+
+    expect(calls).toHaveLength(1);
+    const answers = (calls[0].updatedInput as { answers: Record<string, string> }).answers;
+    expect(answers).toEqual({ 'Which colour do you prefer?': 'Red' });
+    expect('Which of these languages do you use?' in answers).toBe(false);
+    // and the CLI's own input still travels back whole — a partial answer is
+    // not a partial input (P7)
+    expect((calls[0].updatedInput as { questions: unknown }).questions).toEqual(
+      REAL_INPUT.questions
+    );
+  });
+
+  it('goes back to dead if the one answer is un-ticked again', async () => {
+    const host = await mountPanel(REAL_INPUT);
+    await click(optionRow(host, 0, 'Red'));
+    expect(submitButton(host).disabled).toBe(false);
+
+    await click(optionRow(host, 0, 'Red')); // pick-one un-ticks on a re-click
+    expect(submitButton(host).disabled).toBe(true);
   });
 
   it('a ticked Other with nothing typed does not count as an answer', async () => {
@@ -439,8 +471,9 @@ describe('an answer in progress is not thrown away by a remount (#563 review)', 
   it('does not outlive the request — a NEW question starts blank', async () => {
     let host = await mountPanel(REAL_INPUT);
     await click(optionRow(host, 0, 'Red'));
-    await click(submitButton(host)); // incomplete, so this is a no-op…
-    forgetQuestionDraft(DRAFT_ID); // …and this is what answering does
+    // one answer is a real send since #567, and answering is what forgets the
+    // draft — the panel's own `finish`, not a poke from the test
+    await click(submitButton(host));
 
     const r = root;
     root = null;
@@ -530,16 +563,23 @@ describe('a multi-question call is a tab strip (#566)', () => {
 
     expect(tab(host, 0).getAttribute('data-question-tab-answered')).toBe('true');
     expect(tab(host, 0).getAttribute('aria-label')).toBe('Colour — answered');
-    // and the one still missing has not changed its story
-    expect(tab(host, 1).getAttribute('aria-label')).toBe('Languages — not answered yet');
+    // and the one still missing has changed its story, because what it MEANS
+    // has changed: sending is possible now, so it is no longer a to-do (#567)
+    expect(tab(host, 1).getAttribute('aria-label')).toBe(
+      'Languages — not answered, will be sent as skipped'
+    );
   });
 
-  it('names what is still missing while Submit is dead, and stops when it is not', async () => {
+  it('names what is still missing, whether Submit is dead or live', async () => {
     const host = await mountPanel(REAL_INPUT);
+    expect(remaining(host)?.textContent).toContain('Still to answer');
     expect(remaining(host)?.textContent).toContain('Colour');
     expect(remaining(host)?.textContent).toContain('Languages');
 
     await click(optionRow(host, 0, 'Red'));
+    // same element, opposite job (#567): it explained a dead button, now it
+    // explains a live one
+    expect(remaining(host)?.textContent).toContain('Sending now skips');
     expect(remaining(host)?.textContent).not.toContain('Colour');
     expect(remaining(host)?.textContent).toContain('Languages');
 
@@ -576,6 +616,101 @@ describe('a multi-question call is a tab strip (#566)', () => {
 
     expect(optionRow(host, 0, 'Red').getAttribute('aria-checked')).toBe('true');
     expect(calls).toEqual([]); // walking the tabs is not answering anything
+  });
+});
+
+// ── #567: what you are choosing not to say has to be visible ────────────────
+describe('an unanswered question is VISIBLY skipped, not merely un-ticked (#567)', () => {
+  // The hazard the lower gate buys: sending with a question still unanswered
+  // BEHIND A TAB is the extension's own failure arriving through the front
+  // door. Every assertion here is one of the affordances that stops it.
+  const remaining = (host: HTMLElement): HTMLElement | null =>
+    host.querySelector<HTMLElement>('[data-testid="question-remaining"]');
+  const skipNote = (host: HTMLElement): HTMLElement | null =>
+    host.querySelector<HTMLElement>('[data-testid="question-skip-note"]');
+
+  it('marks the unanswered TAB as skipping — attribute, name and strike', async () => {
+    const host = await mountPanel(REAL_INPUT);
+    // nothing answered: nothing is being skipped, because nothing can be sent
+    expect(tab(host, 1).getAttribute('data-question-tab-skipping')).toBe('false');
+
+    await click(optionRow(host, 0, 'Red'));
+
+    expect(tab(host, 0).getAttribute('data-question-tab-skipping')).toBe('false');
+    expect(tab(host, 1).getAttribute('data-question-tab-skipping')).toBe('true');
+    expect(tab(host, 1).getAttribute('aria-label')).toContain('will be sent as skipped');
+    // and to the EYE as well as to a screen reader: struck through, in a shape
+    // rather than a hue (§5.32)
+    const label = tab(host, 1).querySelector<HTMLElement>('span:not([aria-hidden])');
+    expect(label?.style.textDecoration).toBe('line-through');
+    expect(tab(host, 1).style.border).toContain('dashed');
+  });
+
+  it('stops marking anything once every question is answered', async () => {
+    const host = await mountPanel(REAL_INPUT);
+    await click(optionRow(host, 0, 'Red'));
+    await openTab(host, 1);
+    await click(optionRow(host, 1, 'Go'));
+
+    expect(tab(host, 0).getAttribute('data-question-tab-skipping')).toBe('false');
+    expect(tab(host, 1).getAttribute('data-question-tab-skipping')).toBe('false');
+    expect(tab(host, 1).getAttribute('aria-label')).toBe('Languages — answered');
+    expect(remaining(host)).toBeNull();
+    expect(skipNote(host)).toBeNull();
+  });
+
+  it('says it in words on the question you are LOOKING at', async () => {
+    // The tab strip covers the ones off screen; this covers the one on screen,
+    // whose only previous marker was a faint `·` — exactly the "merely
+    // un-ticked" the issue named.
+    const host = await mountPanel(REAL_INPUT);
+    expect(skipNote(host)).toBeNull(); // nothing sendable, nothing skipped
+
+    await click(optionRow(host, 0, 'Red'));
+    expect(skipNote(host)).toBeNull(); // this one IS answered
+
+    await openTab(host, 1);
+    expect(skipNote(host)?.textContent).toBe('Not answered — will be sent as skipped');
+    // not aria-hidden, unlike the decorative tick it replaces: a skipped
+    // answer is not a decorative state
+    expect(skipNote(host)?.getAttribute('aria-hidden')).toBeNull();
+
+    await click(optionRow(host, 1, 'Go'));
+    expect(skipNote(host)).toBeNull();
+  });
+
+  it('a single-question panel can never be in the skip state at all', async () => {
+    // With one question, sendable and complete are the same thing — so none of
+    // the furniture above may appear, and the #563 layout is untouched.
+    const host = await mountPanel(ONE_INPUT);
+    expect(submitButton(host).disabled).toBe(true);
+    expect(skipNote(host)).toBeNull();
+    expect(remaining(host)).toBeNull();
+
+    await click(optionRow(host, 0, 'Red'));
+    expect(submitButton(host).disabled).toBe(false);
+    expect(skipNote(host)).toBeNull();
+    expect(remaining(host)).toBeNull();
+    expect(submitButton(host).getAttribute('data-question-submit-partial')).toBe('false');
+  });
+
+  it("the button's own tooltip changes with what it is about to do", async () => {
+    const host = await mountPanel(REAL_INPUT);
+    expect(submitButton(host).title).toBe('Answer at least one question first');
+
+    await click(optionRow(host, 0, 'Red'));
+    expect(submitButton(host).getAttribute('data-question-submit-partial')).toBe('true');
+    // the WHOLE string, apostrophe included: ICU treats `'` as an escape when
+    // it meets a brace, and a hint that silently lost half of itself is the
+    // kind of thing only a full-string assertion catches
+    expect(submitButton(host).title).toBe(
+      "Sends the answers you've given; the rest go back marked as skipped"
+    );
+
+    await openTab(host, 1);
+    await click(optionRow(host, 1, 'Go'));
+    expect(submitButton(host).getAttribute('data-question-submit-partial')).toBe('false');
+    expect(submitButton(host).title).toBe('');
   });
 });
 
