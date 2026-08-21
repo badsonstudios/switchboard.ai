@@ -25,11 +25,39 @@
 > + fresh `0.8.2 — unreleased` opened; release-notes test 46/46). Tag pushed;
 > release.yml publishes the GitHub release.
 >
-> **Still in flight:** #628 (eslint T0) — rebase worker merging the train
-> into the branch in sb-wt-3, re-gating; orchestrator squash-merges on green.
-> Next dispatches: **#621** (stale "N need you" counters — owner bug), then
-> #440, #567, and the newly unparked follow-up queue; **#640** (turn-divider
-> visibility, owner report) queues with them.
+> **v0.8.1 PUBLISHED** — release workflow green, installer + sha256 assets
+> up. (Tag lesson: lightweight tags don't ride `--follow-tags`; push the tag
+> explicitly or use annotated tags.)
+>
+> **Post-release wave:**
+> - **#621 DONE — PR #643 ready-for-review, in Dan's queue.** Root cause:
+>   counters derived from session STATUS while dismissal moved only the
+>   FEED; all three readouts now one feed-based derivation (`needingCards()`
+>   on the `queueable` predicate; `urgency.litCount` duplicate deleted).
+>   Deliberate semantics (tint/lamp still paint true status) flagged as PR
+>   test item 4 — Dan's call, one-line flip if he disagrees (#528 boundary).
+>   Gates: 5624 unit, 346/4 e2e incl. new regression. CHANGELOG 0.8.2 Fixed,
+>   two manual pages, tracker RE-TEST row.
+> - **#567 UI half DONE — PR #644 ready-for-review, in Dan's queue.**
+>   Findings verified verbatim before code (skipped, not silence; zero-entry
+>   floor obeyed — `anyAnswered` gates send, `answersLookRight` unchanged).
+>   Skipping is loud: dashed struck-through tabs + "will be sent as skipped"
+>   + footer "Sending now skips: X". Gates: 5624 unit, 346/4 e2e incl. new
+>   partial-send lane. Out-of-scope note: findings §4's "gates Submit on all
+>   of them" sentence now stale — /pm doc sweep, not filed as an issue.
+> - **#628 T0-rebase ✅ MERGED** — merge-not-rebase, one conflict, one new
+>   typed error fixed (still zero inline disables), tranche counts now
+>   T1=20/T2=8/T3=57/T4=24. src/ is on the type-checked preset on main.
+>   T0's flagged document-peek e2e failure GONE post-train (no ticket).
+> - **#627 hook-listener flake** — worker out in sb-wt-3 (post-T0 base,
+>   deterministic wait, 8/8-under-load standard, unit-only).
+> - **#640 turn divider (owner request)** — worker out in sb-wt-2
+>   (dispatched ~21:30; four-theme screenshots + AA numbers required).
+> - **#440 refusal sweep** — worker out in sb-wt-1 (dispatched ~20:55;
+>   told to keep callsite edits minimal where #643/#567 files overlap).
+> - Then: unparked follow-ups (#625 now free post-#624, #627, #577, #600,
+>   #588, #618, #544/#504/#506/#508, #268, #295/#337, #606, #558, #581/#582,
+>   #639, #640 owner report, T1–T4 after #628).
 >
 > **Orchestrator incident, logged for honesty:** the first attempt at this
 > release cut ran in sb-wt-3 (the T0 worker's worktree) because the shell's
