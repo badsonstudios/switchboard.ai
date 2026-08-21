@@ -80,52 +80,6 @@ on the floor, and say so in your PR.
   7,602 recorded transcripts and 1,182 real Markdown files, not one of them used
   any of these tags outside a code block. (#625)
 
-### Fixed
-
-- **Docking a session back now puts it where it came from.** Pop a session out
-  into its own window and bring it back and it returned to *some* group — often
-  whichever one happened to be on screen — rather than the spot on the grid it
-  left. The spot it left is still there while it is away (that is how it comes
-  back at all), so the session it belonged to went one way and its half of the
-  screen stayed empty. Worse when you start a second session inside the pop-out
-  window (`＋` in the card header): that new session has never had a place on
-  the grid, and when you brought it back it was handed the *first* session's
-  empty spot — so the two swapped places, and the one that owned that half of
-  the screen was the one that lost it. Every card now remembers its own spot and
-  goes back to it, and a session started inside a pop-out comes home where a
-  brand new session would: beside what is already there, never on top of a
-  document you are reading. (#558)
-
-### Internal
-
-- **A refused IPC call can no longer be mistaken for a yes.** The broker answers
-  a call the caller is not allowed to make with a small "refused" object rather
-  than an error (#346), and an object counts as "true" in JavaScript — so
-  nineteen places in the window read *"you may not do that"* as *"done"* and took
-  the wrong path in silence. All nineteen now check properly, through one of two
-  shared readers, and a scan that runs with the tests fails the build if a new
-  one appears. Nothing you can see changes: this window is allowed to make every
-  call, so none of those refusals can happen today. It becomes reachable the day
-  plugins hold partial permissions. (#440)
-
-### Fixed
-
-- **Dismissing an event now clears the "N need you" counts.** The number on the
-  Events tab dropped when you dismissed something, but the other three readouts
-  did not: the **"N need you"** on the strip across the top of the window, and
-  the ones on each group header and at the foot of the Sessions list, all sat
-  there on their old total over an Events drawer you had just emptied. They were
-  counting something different from what the drawer was listing. Now all four
-  count the same thing, so dismissing — or opening a finished session, which is
-  what turns **Done.** into **Ready** — drops every one of them at once, and the
-  text goes away entirely at zero.
-  Dismissing is still not answering: if a session is genuinely still waiting on
-  you, its row in the Sessions list goes on saying so in the status color, and
-  it will call again if it asks something new. What the ✕ clears is the count,
-  not the session's state.
-
-### Changed
-
 - **You can now answer just some of Claude's questions.** When Claude asks
   several things at once, **Send answer** used to stay greyed out until every
   one of them had an answer — so "I have an opinion about the first, none about
@@ -142,8 +96,6 @@ on the floor, and say so in your PR.
   skipping is a real answer, and this only makes it a visible one. Sending a
   completely blank answer is still what **Don't answer** is for.
 
-### Changed
-
 - **You can see where each of your prompts starts.** The conversation already
   drew a line above every prompt you sent, but it was a one-pixel hairline in
   the same grey as everything else — scrolling back through a long session, it
@@ -153,6 +105,48 @@ on the floor, and say so in your PR.
   read for. It stays deliberately colourless in all four themes — a turn
   boundary is part of the furniture, and the colours are reserved for sessions
   that actually want something from you.
+
+### Fixed
+
+- **Docking a session back now puts it where it came from.** Pop a session out
+  into its own window and bring it back and it returned to *some* group — often
+  whichever one happened to be on screen — rather than the spot on the grid it
+  left. The spot it left is still there while it is away (that is how it comes
+  back at all), so the session it belonged to went one way and its half of the
+  screen stayed empty. Worse when you start a second session inside the pop-out
+  window (`＋` in the card header): that new session has never had a place on
+  the grid, and when you brought it back it was handed the *first* session's
+  empty spot — so the two swapped places, and the one that owned that half of
+  the screen was the one that lost it. Every card now remembers its own spot and
+  goes back to it, and a session started inside a pop-out comes home where a
+  brand new session would: beside what is already there, never on top of a
+  document you are reading. (#558)
+
+- **Dismissing an event now clears the "N need you" counts.** The number on the
+  Events tab dropped when you dismissed something, but the other three readouts
+  did not: the **"N need you"** on the strip across the top of the window, and
+  the ones on each group header and at the foot of the Sessions list, all sat
+  there on their old total over an Events drawer you had just emptied. They were
+  counting something different from what the drawer was listing. Now all four
+  count the same thing, so dismissing — or opening a finished session, which is
+  what turns **Done.** into **Ready** — drops every one of them at once, and the
+  text goes away entirely at zero.
+  Dismissing is still not answering: if a session is genuinely still waiting on
+  you, its row in the Sessions list goes on saying so in the status color, and
+  it will call again if it asks something new. What the ✕ clears is the count,
+  not the session's state.
+
+### Internal
+
+- **A refused IPC call can no longer be mistaken for a yes.** The broker answers
+  a call the caller is not allowed to make with a small "refused" object rather
+  than an error (#346), and an object counts as "true" in JavaScript — so
+  nineteen places in the window read *"you may not do that"* as *"done"* and took
+  the wrong path in silence. All nineteen now check properly, through one of two
+  shared readers, and a scan that runs with the tests fails the build if a new
+  one appears. Nothing you can see changes: this window is allowed to make every
+  call, so none of those refusals can happen today. It becomes reachable the day
+  plugins hold partial permissions. (#440)
 
 ## 0.8.1 — 2026-08-20
 
