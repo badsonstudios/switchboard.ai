@@ -526,8 +526,20 @@ export interface FindProviderContribution {
   unavailableKey(ctx: FindContext): string | null;
   /** `delegated` only: open the surface's own find. False if it could not. */
   delegate?(ctx: FindContext, query: FindQuery): boolean;
-  /** `bar` only: run a query. Never throws — see the point's fail-open rule. */
-  search?(ctx: FindContext, query: FindQuery): Promise<FindResults>;
+  /**
+   * `bar` only: run a query. Never throws — see the point's fail-open rule.
+   *
+   * A PROPERTY signature, not a method shorthand like its neighbours. The bar
+   * only ever CALLS it (`p.search?.(ctx, query)`), but the point's own suite
+   * reads the slot as a value — "a `delegated` provider brought no search" is
+   * half of what makes `mode` mean anything — and pulling a method-declared
+   * function off an object is an `unbound-method` error, because a method
+   * declaration says it may want the `this` it was read off. This one never
+   * has: every registrant assigns a free function or an arrow, so the two
+   * spellings are type-identical for all of them. (#255 T4; #663 is the same
+   * call, made in the main-process twin of this file.)
+   */
+  search?: (ctx: FindContext, query: FindQuery) => Promise<FindResults>;
   /**
    * `bar` only: scroll to a hit, expanding whatever the view was hiding.
    * Returns whether it actually moved.

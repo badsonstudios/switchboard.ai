@@ -135,11 +135,11 @@ async function type(input: HTMLInputElement, text: string): Promise<void> {
   await act(async () => {
     // React's onChange rides the native input event; setting `.value` alone is
     // invisible to it, which is why this goes through the value-setter dance.
-    const setter = Object.getOwnPropertyDescriptor(
-      window.HTMLInputElement.prototype,
-      'value'
-    )?.set;
-    setter?.call(input, text);
+    // Kept as the DESCRIPTOR: `PropertyDescriptor.set` is declared a METHOD in
+    // lib.es5.d.ts, so pulling it out into a variable is `unbound-method`
+    // (#255 T4). Calling through it with an explicit `this` is the same write.
+    const valueProp = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+    valueProp?.set?.call(input, text);
     input.dispatchEvent(new Event('input', { bubbles: true }));
   });
 }

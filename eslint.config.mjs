@@ -164,12 +164,18 @@ export default tseslint.config(
     },
   },
   {
-    // #255: src/ joins e2e/ on the TYPE-CHECKED preset. Two blocks, not one,
-    // because `src/shared/**` is a member of BOTH tsconfigs and a `project`
-    // ARRAY resolves a file against the first project that happens to include
-    // it — one block would quietly type-lint shared through the node lens while
-    // looking like it considered both. Two blocks say which lens each tree is
-    // checked under, out loud.
+    // #255: src/ joins e2e/ on the TYPE-CHECKED preset — WHOLE, with no rule
+    // held off anywhere. The switch surfaced 552 errors, so it landed in five
+    // tranches (T0 config + autofixes, T1/T2 product, T3/T4 tests), each one
+    // deleting its own `rules: { … 'off' }` block in the same PR as its fixes.
+    // T4 was the last; nothing is left to delete, and the whole campaign added
+    // not one inline disable comment anywhere under `src/`.
+    //
+    // Two blocks, not one, because `src/shared/**` is a member of BOTH tsconfigs
+    // and a `project` ARRAY resolves a file against the first project that
+    // happens to include it — one block would quietly type-lint shared through
+    // the node lens while looking like it considered both. Two blocks say which
+    // lens each tree is checked under, out loud.
     //
     // `src/*.ts` (test-setup, test-temp-dirs, test-fake-timers) are the node
     // project's root-level members; without the second glob they would be the
@@ -215,56 +221,15 @@ export default tseslint.config(
     // where an `async` with no `await` is routinely load-bearing rather than a
     // mistake.
     //
-    // Product code keeps the rule everywhere EXCEPT `src/renderer`, and only
-    // until #255 T2 lands: that tranche owns the two remaining product hits, so
-    // its block below (which is LATER, and therefore wins) holds the rule off
-    // renderer product code for now. T1 landed and `src/main` product code
-    // keeps it for real.
+    // This is the campaign's ONLY carve-out, and it is a scoped rule-off with a
+    // reason rather than a disable comment: PRODUCT code keeps `require-await`
+    // everywhere, in both processes. The three product hits it had were fixed
+    // by saying what the function really is — `() => Promise.resolve(x)` where
+    // the contract is the return type (T1's `credentialStoreToken.resolve`,
+    // T2's bridge stub), and a plain `void` where nothing was ever async
+    // (T2's `moveHome`).
     files: ['src/**/*.test.{ts,tsx}'],
     rules: { '@typescript-eslint/require-await': 'off' },
-  },
-  // ---------------------------------------------------------------------------
-  // #255 is landing in tranches, because the switch above surfaced 552 real
-  // errors and one 552-error PR is not reviewable. T0 (this config, plus every
-  // `no-unnecessary-type-assertion`) went first, then T1 (`src/main` product
-  // code) and T3 (`src/main` tests); the two blocks below hold the REST of the
-  // preset off one directory each so `main` is never red in between. Each block
-  // is a whole tranche: T<n> deletes its own block in the same PR as its fixes,
-  // and when the last one goes, `src/` is on the preset with no disables — the
-  // state e2e/ has had since #245.
-  //
-  // Nothing here is a judgement that the rule is wrong. The counts are the
-  // measured work remaining, not a budget.
-  // ---------------------------------------------------------------------------
-  {
-    // TODO(#255 T2): src/renderer product code — 8 errors. The 3
-    // `no-misused-promises` are `if (!answer)` in App.tsx where `answer` is
-    // `Promise<T> | undefined`; `answer === undefined` is behaviour-identical.
-    files: ['src/renderer/**/*.{ts,tsx}'],
-    ignores: ['src/renderer/**/*.test.{ts,tsx}'],
-    rules: {
-      '@typescript-eslint/no-misused-promises': 'off',
-      '@typescript-eslint/require-await': 'off',
-      '@typescript-eslint/unbound-method': 'off',
-      '@typescript-eslint/no-base-to-string': 'off',
-      '@typescript-eslint/no-redundant-type-constituents': 'off',
-    },
-  },
-  {
-    // TODO(#255 T4): src/renderer tests — 24 errors across 13 files. Last, so
-    // T3's typed boundary readers already exist to copy: `verdictOf` in
-    // `hooks/hook-listener.test.ts`, the `unknown`-typed aliases for vitest's
-    // `any`-declared asymmetric matchers in `workspace/store.test.ts` and
-    // `sessions/ipc.test.ts`, and the real `Logger` mock in
-    // `events/permission-toast.test.ts`.
-    files: ['src/renderer/**/*.test.{ts,tsx}'],
-    rules: {
-      '@typescript-eslint/unbound-method': 'off',
-      '@typescript-eslint/no-unsafe-assignment': 'off',
-      '@typescript-eslint/no-unsafe-member-access': 'off',
-      '@typescript-eslint/no-unsafe-return': 'off',
-      '@typescript-eslint/no-unsafe-argument': 'off',
-    },
   },
   {
     // e2e/ is the one tree on the TYPE-CHECKED preset (#245). The rest of the

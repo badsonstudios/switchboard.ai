@@ -3403,7 +3403,7 @@ export async function revealCardPanel(
     // A TABBED card is a panel too, buried in the shared stack — expanding it
     // has to move it home, not merely select its tab, or the ladder would have
     // a rung with no way back up.
-    if (existing) await moveHome(api, cardId, existing, focus);
+    if (existing) moveHome(api, cardId, existing, focus);
     else await revealNow(api, cardId, focus);
   } finally {
     laddering.delete(cardId);
@@ -3460,13 +3460,23 @@ async function toTabbed(api: DockviewApi, cardId: string): Promise<void> {
   }
 }
 
-/** Put a card that HAS a panel back at its home slot, and mark it expanded. */
-async function moveHome(
+/**
+ * Put a card that HAS a panel back at its home slot, and mark it expanded.
+ *
+ * Synchronous, and says so (#255 T2). There was never an `await` in the body —
+ * that is what `require-await` fired on — and nothing it calls hands back a
+ * promise to lose, which `no-floating-promises` now checks for this file. So
+ * the `async` bought exactly one thing: a microtask between the last move and
+ * the caller's `finally`. Dropping it means `revealCardPanel` clears its
+ * `laddering` guard in the same tick as the move it was guarding, rather than
+ * one turn of the microtask queue later.
+ */
+function moveHome(
   api: DockviewApi,
   cardId: string,
   panel: IDockviewPanel,
   focus: boolean
-): Promise<void> {
+): void {
   const place = placeAt(
     sessionStore.getPresentation(cardId).slot,
     api.groups.map((g) => g.id)

@@ -36,6 +36,7 @@
 // would move a question off the card that raised it for no gain.
 import type { PermissionRequestDto } from '../../../shared/ipc/permissions';
 import { ASK_USER_QUESTION_TOOL } from '../../../shared/ask-user-question';
+import { asDisplayString } from '../../../shared/display-string';
 import type { RailSession } from '../model/types';
 
 /** One request inside a group. */
@@ -256,7 +257,14 @@ export function memberViews(
  * shown two things and told they are the same.
  */
 export function argumentSummary(input: Record<string, unknown>): string {
-  return String(input.file_path ?? input.command ?? input.url ?? '');
+  // `input` is a tool_use block off the CLI, so every field here is `unknown`
+  // and `String()` would render a malformed one as the literal `[object
+  // Object]` on the approval card — T1's finding, and the reason
+  // `asDisplayString` exists (#255). Same fail-open behaviour, same result for
+  // every primitive; a non-primitive now comes back EMPTY, which routes into
+  // `argumentDetail`'s existing "no summary" path (the JSON dump) instead of
+  // onto the card as punctuation.
+  return asDisplayString(input.file_path ?? input.command ?? input.url);
 }
 
 /**

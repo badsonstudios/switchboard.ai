@@ -194,9 +194,12 @@ async function drop(
 /** type into the CONTROLLED textarea, through the setter React's tracker patched */
 async function type(host: HTMLElement, text: string): Promise<void> {
   const box = boxOf(host);
-  const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
+  // Kept as the DESCRIPTOR: `PropertyDescriptor.set` is declared a METHOD in
+  // lib.es5.d.ts, so pulling it out into a variable is `unbound-method` (#255
+  // T4). Calling through it with an explicit `this` is the same write.
+  const valueProp = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!;
   await act(async () => {
-    setValue.call(box, text);
+    valueProp.set!.call(box, text);
     box.dispatchEvent(new Event('input', { bubbles: true }));
   });
 }
