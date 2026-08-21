@@ -235,9 +235,6 @@ export class SessionStore {
   // the key is ephemeral but nothing used to drop it, so a grant outlived its
   // session — and its card — for the whole app run.
   private readonly allowAllByLive = new Set<string>();
-  // Cards docking back via the pop-out BUTTON, as opposed to a bare window
-  // close: the two look identical to dockview and mean opposite things (E8-04).
-  private readonly dockingBackByButton = new Set<string>();
   // Cards whose panel is being removed BY US to hide it, as opposed to the user
   // closing it: dockview cannot tell the difference and they mean opposite
   // things — hiding keeps the record and the running session, closing forgets
@@ -619,6 +616,36 @@ export class SessionStore {
     if (!this.state.presentation.has(cardId)) return;
     const map = new Map(this.state.presentation);
     map.delete(cardId);
+    this.set({ presentation: map });
+    this.persistPresentation(persistablePresentation(map));
+  }
+
+  /**
+   * Forget every card's remembered `slot` and `home` — the LAYOUT did not come
+   * back (#657).
+   *
+   * A slot names a dockview group by its id, and those ids are minted per
+   * dockview instance ("1", "2", ...). While the saved layout restores they
+   * round-trip with it and a remembered id means what it meant last launch. If
+   * it does NOT restore — nothing was saved, or `fromJSON` threw on a corrupt
+   * blob — the grid starts minting from the beginning, and a persisted
+   * `groupId: '2'` now names a group that belongs to somebody else entirely.
+   * `homeGroupId`/`placeAt` can refuse an id that is GONE; neither can see a
+   * live id that is a coincidence.
+   *
+   * So the records are dropped at exactly the moment they stopped meaning
+   * anything, rather than read later and half-trusted. The user loses nothing
+   * they can see: without the layout there are no slots to go back to.
+   */
+  forgetSlots(): void {
+    let changed = false;
+    const map = new Map(this.state.presentation);
+    for (const [cardId, p] of map) {
+      if (!p.slot && !p.home) continue;
+      map.set(cardId, Object.freeze({ ...p, slot: null, home: null }));
+      changed = true;
+    }
+    if (!changed) return;
     this.set({ presentation: map });
     this.persistPresentation(persistablePresentation(map));
   }
@@ -1062,14 +1089,6 @@ export class SessionStore {
   }
   isAllowAll(liveId: string): boolean {
     return this.allowAllByLive.has(liveId);
-  }
-
-  // ── dock-back disambiguation (E8-04) ────────────────────────────────────
-  markDockingBack(cardId: string): void {
-    this.dockingBackByButton.add(cardId);
-  }
-  takeDockingBack(cardId: string): boolean {
-    return this.dockingBackByButton.delete(cardId);
   }
 
   // ── hide vs close (P2-E15-08) ───────────────────────────────────────────

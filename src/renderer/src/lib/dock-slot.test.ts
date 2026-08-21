@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   captureSlot,
   homeGroupId,
+  keepsInheritedGroup,
   openerRelative,
   placeAt,
   type SlotSource,
@@ -118,5 +119,44 @@ describe('homeGroupId — where a card docking back belongs (#558)', () => {
     expect(
       homeGroupId({ groupId: 'g-left', index: 0, location: 'popout' }, [grid('g-left')])
     ).toBeNull();
+  });
+});
+
+describe('keepsInheritedGroup — a card dockview handed back (#657)', () => {
+  const landed = (over: Partial<Parameters<typeof keepsInheritedGroup>[0]> = {}) =>
+    keepsInheritedGroup({
+      landingGroupId: 'g-left',
+      landingGroupSize: 1,
+      homeId: null,
+      ...over,
+    });
+
+  it('keeps its own slot — the card that tore the window off', () => {
+    // dockview's reference IS this card's home, so the two placements agree and
+    // the ordinary round trip costs nothing
+    expect(landed({ homeId: 'g-left' })).toBe(true);
+  });
+
+  it('keeps a group it arrived BESIDE somebody in', () => {
+    // #558's own words for where a card with no claim belongs: "a tab beside
+    // the card that owns that half rather than instead of it". A group that
+    // still holds other panels is not a slot being claimed.
+    expect(landed({ landingGroupSize: 2 })).toBe(true);
+    expect(landed({ homeId: 'g-right', landingGroupSize: 3 })).toBe(true);
+  });
+
+  it('refuses a whole slot it never earned — alone, and not its own', () => {
+    // the popout-born card (#531) left holding its opener's reference after the
+    // opener has gone: this is #657 exactly
+    expect(landed()).toBe(false);
+    // ...and the same for a card whose home has moved on somewhere else
+    expect(landed({ homeId: 'g-right' })).toBe(false);
+  });
+
+  it('counts the card itself, so ONE means alone', () => {
+    // a landing size of 0 cannot happen (the card is in it), but the boundary
+    // is worth stating: it is `> 1` that means company
+    expect(landed({ landingGroupSize: 1 })).toBe(false);
+    expect(landed({ landingGroupSize: 2 })).toBe(true);
   });
 });

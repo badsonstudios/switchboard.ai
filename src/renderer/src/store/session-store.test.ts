@@ -425,14 +425,6 @@ describe('identity maps that used to be module globals', () => {
     expect(liveMapSize(store)).toBe(1);
   });
 
-  it('dock-back is a one-shot flag: taking it consumes it', () => {
-    // a button dock-back and a bare window close look identical to dockview
-    // and mean opposite things (E8-04)
-    store.markDockingBack('card-A');
-    expect(store.takeDockingBack('card-A')).toBe(true);
-    expect(store.takeDockingBack('card-A')).toBe(false);
-  });
-
   it('hiding is flagged per card, so dockview removals can be told apart', () => {
     // removing a panel to HIDE it and the user closing the tab look identical
     // to dockview and mean opposite things (P2-E15-08)
@@ -584,6 +576,42 @@ describe('SessionStore — presentation (P2-E15-08)', () => {
     store.prunePresentation(['card-B']);
     expect(store.isHidden('card-A')).toBe(false); // record gone with the card
     expect(persisted.at(-1)).toEqual({ 'card-B': { view: 'terminal' } });
+  });
+
+  it('forgets every slot and home when the LAYOUT did not come back (#657)', () => {
+    // A slot names a dockview group by an id minted per grid ("1", "2", ...).
+    // They mean what they meant last launch only because `fromJSON` restores
+    // them with the layout; without it the grid mints from the beginning and a
+    // persisted `groupId: '1'` names a stranger's group. `homeGroupId` can
+    // refuse an id that is GONE and cannot see one that is a coincidence.
+    store.setPresentation('card-A', {
+      ladder: 'hidden',
+      slot: { groupId: '1', index: 2, location: 'grid' },
+      home: { groupId: '1', index: 2, location: 'grid' },
+    });
+    store.setPresentation('card-B', { view: 'terminal' });
+
+    store.forgetSlots();
+
+    expect(store.getPresentation('card-A').slot).toBeNull();
+    expect(store.getPresentation('card-A').home).toBeNull();
+    // ...and only the slots: the rung is the user's arrangement and survives
+    expect(store.isHidden('card-A')).toBe(true);
+    expect(persisted.at(-1)).toEqual({
+      'card-A': { ladder: 'hidden' },
+      'card-B': { view: 'terminal' },
+    });
+  });
+
+  it('forgetting slots twice writes the blob once', () => {
+    // it runs at boot on a path that can be reached from two places (no saved
+    // layout, and a restore that threw); a no-op write would publish a new
+    // presentation object and re-render every card for nothing
+    store.setPresentation('card-A', { slot: { groupId: '1', index: 0, location: 'grid' } });
+    store.forgetSlots();
+    const after = persisted.length;
+    store.forgetSlots();
+    expect(persisted.length).toBe(after);
   });
 
   it('init seeds the map without writing it back', () => {
