@@ -22,10 +22,19 @@
 > | Issue | Worktree | Branch | Status |
 > |---|---|---|---|
 > | #255 T2+T4 (+#663 rider) | sb-wt-1 | feature/255-t2t4-renderer-tranches | dispatched |
-> | #490 user envelope | sb-wt-2 | feature/490-user-envelope | dispatched |
+> | #490 user envelope | sb-wt-2 | feature/490-user-envelope | DONE — PR #665 awaiting CI |
 > | #654 sanitizer label-for | sb-wt-3 | feature/654-label-for | dispatched |
 >
-> **Merge queue:** empty. Internal PRs merge on green; user-facing PRs queue for Dan.
+> **Merge queue:** PR #665 (#490, internal) — marked ready, squash-merge on green CI.
+> **Filed this run:** #666 (fake isReplay echo fidelity), #667 (fake-stream-check
+> envelope drift), #668 (ref-impls doc: PATH binary as greppable third source) —
+> all from #490's handoff.
+> **#490 outcome:** ADD both fields — uuid gates the CLI's entire duplicate-replay
+> guard (without it every frame always executes); origin stops a presumed-human
+> guess. Fresh randomUUID per delivery, pinned by 10 new unit tests. Gates: 5785
+> unit / 349+3sk e2e / check:fake-stream PASS. Handoff: orchestrator/490.md.
+> NOTE for Dan's hand-test list: real-CLI round trip (prompt runs, identical
+> prompt twice both answer, image prompt) — no repo test spends tokens.
 > **Dan's queue (user-facing PRs):** empty so far.
 > **Next up:** #650 (after T2/T4) → #618 (after #490) → #642/#491 → events /
 > rail-cards / store-popout tracks (after #650). Dan-only: #528 #529 #521, #588 probe ok?
