@@ -22,7 +22,18 @@
 > | Issue | Worktree | Branch | Status |
 > |---|---|---|---|
 > | #642 placeMenu audit (USER-FACING) | sb-wt-1 | feature/642-placemenu-audit | dispatched ~15:05 |
-> | #618 sessions DTO (internal) | sb-wt-2 | feature/618-sessions-status-dto | dispatched ~12:35 |
+> | #682+#683 watcher follow-ups (internal) | sb-wt-2 | feature/682-watcher-followups | dispatched ~15:45 |
+>
+> **#618 DONE — PR #689 (internal), readied + bumped, merge on green.** Shared-
+> typed: StatusChange, SessionCardWire+CardStatus, AutonomyMode (9 copies + 2
+> runtime lists → 1), NotificationPrefs (3 → 1, review found a 4th in
+> notifier.ts). Documented-loose with do-not-tidy pins: transport? (#445),
+> presentStatus string (fail-open for old blobs). eslint §5.23 guard now covers
+> src/{shared,preload} — preload could previously import src/main and undo the
+> seam. Review also caught the cards annotation missing excess-property
+> freshness. Gates: 5844 unit, 349+3sk e2e x2 (48-min lock wait, in-turn).
+> Filed #690 (TransportKind literal sweep), #691 (sessions:create autonomy
+> unvalidated, §5.29). Handoff: orchestrator/618.md.
 > | #491 feed image marker (USER-FACING) | sb-wt-3 | feature/491-image-marker | dispatched ~15:05 |
 >
 > **Merge chain:** MERGED so far: #669, #665, #672 (12:03), #676 (12:34,
