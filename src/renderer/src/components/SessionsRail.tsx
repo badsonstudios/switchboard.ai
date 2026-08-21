@@ -359,18 +359,30 @@ export function SessionsRail(props: {
    * 2.4.11's "focus not obscured" and it is created by the sticky block, so it
    * is fixed here rather than left for the next reader to discover.
    *
-   * The mechanism is a nudge, not a policy: measure how far the pinned block of
-   * THIS bucket overhangs the newly focused element and give the container that
-   * many pixels back. `scroll-margin-block-start` is the idiomatic CSS answer
-   * and was the first attempt, but it needs the block's height as a length and
-   * that height is a measurement — the same measurement, taken by a
-   * ResizeObserver on every render, to hand back to a stylesheet. Reading it at
-   * the one moment it matters is smaller and cannot go stale.
+   * It does it with `scroll-padding-block-start`, the property that exists for
+   * precisely this ("the top N pixels of my scrollport are furniture") - set on
+   * the CONTAINER, from the measured height of the block belonging to the
+   * focused row's own bucket, and then one explicit `scrollIntoView`.
+   *
+   * Both halves earn their place. The arithmetic version this replaced
+   * (`scrollTop -= overhang`) fixes the position but tells the ENGINE nothing,
+   * and Blink runs its own scroll-into-view pass AFTER `focusin` - so on a short
+   * rail, where the row is taller than the gap below the block, the browser
+   * would put it straight back under. With the padding set, that later pass
+   * agrees with us instead of fighting; the explicit call is what makes it a
+   * no-op rather than a correction the user watches happen. And the padding is
+   * read at the one moment it matters, so no ResizeObserver has to keep a stale
+   * copy of a height in sync.
+   *
+   * It measures the ROW, not the focused button: the button is inset by the
+   * row's 8px padding and the status edge bar sits outside it, so aligning the
+   * button leaves the top of the row still behind the block.
    *
    * Two guards keep it inert where it should be: a target inside the block is
-   * already visible, and a non-positive overhang means nothing was covered.
-   * jsdom has no layout, so every rect is zero and this is a no-op there —
-   * which is why the e2e is the test that means anything.
+   * already visible, and no block means nothing to clear - the padding goes back
+   * to 0 in that case, so a bucket without pins never inherits another one's
+   * offset. jsdom has no layout, so every rect is zero and this is a no-op
+   * there, which is why the e2e case is the test that means anything.
    */
   const keepClearOfPins = (e: React.FocusEvent<HTMLDivElement>): void => {
     const scroll = scrollRef.current;
@@ -379,9 +391,12 @@ export function SessionsRail(props: {
     const block = target
       .closest('[data-rail-body]')
       ?.querySelector<HTMLElement>('[data-pinned-block]');
-    if (!block || block.contains(target)) return;
-    const overhang = block.getBoundingClientRect().bottom - target.getBoundingClientRect().top;
-    if (overhang > 0) scroll.scrollTop -= overhang;
+    if (block?.contains(target)) return;
+    scroll.style.scrollPaddingBlockStart = block
+      ? `${Math.ceil(block.getBoundingClientRect().height)}px`
+      : '0px';
+    if (!block) return;
+    (target.closest<HTMLElement>('.rail-row') ?? target).scrollIntoView({ block: 'nearest' });
   };
   // #253: what the last keyboard-driven move should say, once it has actually
   // happened. Empty until then — the region itself is always in the DOM.
@@ -398,6 +413,23 @@ export function SessionsRail(props: {
     destKey: string;
     said: string;
   } | null>(null);
+  /**
+   * A PIN the menu started, held for the same reason `pendingMove` is (#295).
+   *
+   * Pinning used to be safe to restore focus from synchronously — the sort only
+   * reordered siblings under one parent, so the button the menu was opened from
+   * survived it. #295 changed that: a bucket's pinned rows now live in their own
+   * sticky block, and a child that changes PARENT ELEMENT cannot reuse its
+   * fiber, so React unmounts and remounts the row. `menuAnchor.current` is a
+   * detached node by the time the store answers, and focusing it strands the
+   * keyboard on <body> — which is exactly what the menu item's comment promises
+   * does not happen.
+   *
+   * `undefined` here means "no pin in flight"; the boolean is the state we are
+   * waiting for the store to agree with, so a pin somebody else took first
+   * settles the errand rather than leaving it open.
+   */
+  const pendingPin = React.useRef<{ cardId: string; want: boolean } | null>(null);
 
   const toggleCollapsed = (id: string): void => {
     setCollapsed((prev) => {
@@ -555,6 +587,27 @@ export function SessionsRail(props: {
     const target = row && !row.closest('[hidden]') ? row : at('data-rail-group-toggle', p.destKey);
     target?.focus();
   }, [props.sessions]);
+
+  /** The pin half of the same errand (#295) — see `pendingPin`. Values, not
+   *  events: "the pin is where I asked it to be" is the condition, and it is
+   *  equally true if something else got there first. */
+  React.useEffect(() => {
+    const p = pendingPin.current;
+    const nav = navRef.current;
+    if (!p || !nav) return;
+    if (props.pinned.has(p.cardId) !== p.want) return; // hasn't landed yet
+    pendingPin.current = null;
+    // the same courtesy the move makes: never yank focus back from wherever
+    // the user has since gone under their own steam
+    const doc = nav.ownerDocument;
+    const active = doc.activeElement as HTMLElement | null;
+    if (active && active !== doc.body && !nav.contains(active)) return;
+    const row =
+      Array.from(nav.querySelectorAll<HTMLElement>('[data-rail-open]')).find(
+        (el) => el.getAttribute('data-rail-open') === p.cardId
+      ) ?? null;
+    if (row && !row.closest('[hidden]')) row.focus();
+  }, [props.pinned]);
 
   // one ordering function for the rail AND for Ctrl+1..9 (E9-01): persistent
   // groups and their members, then emergent auto-groups (E12-05), then loose
@@ -1013,19 +1066,25 @@ export function SessionsRail(props: {
    *    order IS what Ctrl+1..9 counts against. Sticky moves NO session — the
    *    rows render in the same order, in the same bucket, from the same list.
    *
-   * 2. STACKING: ONE BLOCK PER BUCKET, not one sticky row each. `sortPinnedFirst`
-   *    guarantees a bucket's pins are a contiguous PREFIX, so they are lifted as
-   *    a prefix (`slice`, not `filter` — a pin that somehow appeared later would
-   *    render as an ordinary row rather than silently reordering the list). Two
-   *    pins in one group therefore park as a pair in their own order; they can
-   *    never overlap each other, and no per-row offset has to be measured.
+   * 2. STACKING: ONE BLOCK PER BUCKET, not one sticky row each. Two pins in one
+   *    group park as a pair in their own order; they can never overlap each
+   *    other, and no per-row offset has to be measured. That is affordable
+   *    because `sortPinnedFirst` (through `railOrder`, and again through
+   *    `planReorder`) makes a bucket's pins a contiguous PREFIX - proved in
+   *    `lib/groups.test` and `lib/pinning.test`, not re-proved here. The prefix
+   *    is taken with `slice` rather than `filter` so this code READS as leaning
+   *    on that invariant instead of quietly re-deriving it; for every input the
+   *    component can be handed the two are the same list.
    *
-   * 3. THE GROUP HEADER SCROLLS UNDER THE PINS, and is not itself sticky. A
-   *    sticky header would need the pins offset by its measured height, and
-   *    then two groups' worth of sticky furniture would compete for the top of
-   *    a 286px rail. The pin glyph is on the row, so a stuck row is still
-   *    legible as "the one you pinned"; what it loses while its header is off
-   *    screen is its group NAME, which is the honest cost of not moving it.
+   * 3. THE GROUP HEADER IS NOT STICKY, so a stuck pin outlives its group's NAME.
+   *    (They never overlap, note: the block's containing block is the body,
+   *    which starts below the header, so the header has already scrolled off by
+   *    the time the block sticks. The `zIndex` is for the frame in between.) A
+   *    sticky header would need the pins offset by its measured height, and then
+   *    two groups' worth of sticky furniture would compete for the top of a
+   *    286px rail. The pin glyph is on the row, so a stuck row is still legible
+   *    as "the one you pinned"; losing the group name while its header is off
+   *    screen is the honest cost of not moving the session.
    *
    * 4. KEYBOARD: A ROW MAY NOT BE FOCUSED UNDERNEATH THE BLOCK. See
    *    `keepClearOfPins` below — the browser scrolls a focused row to the top
@@ -1200,6 +1259,12 @@ export function SessionsRail(props: {
               // 7px, not 8: the radius of the INSIDE of a 1px border.
               borderStartStartRadius: 7,
               borderStartEndRadius: 7,
+              // ...and when the group is COLLAPSED the body is display:none, so
+              // this strip is the card's bottom edge too and owes it the other
+              // two. Without them a collapsed card wears two square nubs over
+              // its own rounded corners.
+              borderEndStartRadius: isCollapsed ? 7 : 0,
+              borderEndEndRadius: isCollapsed ? 7 : 0,
               borderBlockEnd: '1px solid var(--rail-divider)',
               // --g feeds .rail-group-ink, which darkens the color per theme so
               // the name clears AA on the white card (see tokens.css)
@@ -1307,6 +1372,19 @@ export function SessionsRail(props: {
               }}
               style={{
                 inlineSize: '100%',
+                // #295. This field is one flex item among eight (chevron, dot,
+                // count chip, AUTO badge, the calm/need line, three buttons —
+                // every one of them `flexShrink: 0`), and a flex item's
+                // automatic minimum size is its own intrinsic width until this
+                // is set (CSS Sizing 3 5.2). At ~150px against ~70px of room it
+                // has always overflowed the header; the card's
+                // `overflow: hidden` was hiding it, and that clip had to go so
+                // the pinned block could stick. Same pair `cheadName` carries
+                // for the same reason - and it matters more here, because
+                // `.rail-scroll` sets only `overflow-y`, which makes the x axis
+                // `auto`: an overflowing header is a horizontal scrollbar on
+                // the whole rail.
+                minInlineSize: 0,
                 background: 'var(--panel2)',
                 color: 'var(--text)',
                 border: '1px solid var(--border)',
@@ -1739,9 +1817,14 @@ export function SessionsRail(props: {
               to say what it will DO"), and it is what VS Code's own pinned-tab
               menu does. A `menuitemcheckbox` with a tick column would be the
               only item in this list carrying one, indenting its label away from
-              the other three for a state the label already spells out. It
-              restores focus: the row is still there afterwards, and it is
-              exactly the row whose pin you just changed. */}
+              the other three for a state the label already spells out.
+
+              It restores focus to the row whose pin you just changed — but NOT
+              synchronously, and #295 is why: the row is re-parented into (or out
+              of) the sticky pinned block, which unmounts and remounts it, so the
+              node this menu was opened from is detached by then. The errand is
+              handed to `pendingPin` and finished by the effect that watches
+              `props.pinned`, exactly as a cross-group move is. */}
           {(
             [
               ['rail.menuDiff', () => props.onDiff(menu.session), true],
@@ -1755,8 +1838,14 @@ export function SessionsRail(props: {
               ],
               [
                 props.pinned.has(menu.session.id) ? 'rail.menuUnpin' : 'rail.menuPin',
-                () => props.onTogglePin(menu.session.id),
-                true,
+                () => {
+                  pendingPin.current = {
+                    cardId: menu.session.id,
+                    want: !props.pinned.has(menu.session.id),
+                  };
+                  props.onTogglePin(menu.session.id);
+                },
+                false,
               ],
               ['rail.menuClose', () => props.onClose(menu.session.id), false],
             ] as const

@@ -1,25 +1,28 @@
 // @vitest-environment jsdom
-// The ENDED card's header (#606, §5.8 + §5.11) — the third and last card state
-// that drew no header, and the same defect #216 closed for the suspended one.
+// The ENDED card's header (#606, §5.8 + §5.11) — the last card state that drew
+// none, and the same defect #216 closed for the suspended one.
 //
-// A card whose session died, or never started at all, rendered its overlay and
-// nothing else, so §5.8's "double-click a session header toggles maximize" had
-// no target on it: `Ctrl+Shift+M` and the palette command worked the whole
-// time, the mouse gesture did not. That asymmetry is invisible in a screenshot
-// — a header that is missing and a header that is dead look identical — which
-// is why it survived #216 and needed its own ticket.
+// WHICH CARD, precisely: one whose session NEVER STARTED. A session that ran and
+// then died keeps its record (`onExited` sets `ended` and leaves `live` alone,
+// deliberately), so it renders through the live arm with the header it always
+// had. The arm this file is about is `live === null && ended`, and it drew its
+// overlay and nothing else — so §5.8's "double-click a session header toggles
+// maximize" had no target on it while `Ctrl+Shift+M` and the palette command
+// worked the whole time. That asymmetry is invisible in a screenshot — a header
+// that is missing and a header that is dead look identical — which is why it
+// survived #216 and needed its own ticket.
 //
 // What this pins, in order of what a user would notice:
-//   • the header EXISTS on an ended card, with the card's identity on it;
+//   • the header EXISTS on that card, with the card's identity on it;
 //   • double-clicking it maximizes — and again puts the layout back;
-//   • it says which ending this was, in the ramp's own vocabulary;
+//   • it says so in one word, from the ramp's own vocabulary;
 //   • it carries none of the controls that act on a running session, because
-//     Restart/Try again and Close are the overlay's two buttons below it.
+//     Try again and Close are the overlay's two buttons below it;
+//   • and nothing here re-arms the spawn the card was refused.
 //
 // The route to the state is the one a user reaches (#347/#355): `sessions:create`
 // answers `null` for a start it refused, and the spawn effect paints
-// `never-started`. The `exited` arm is `endedPill`'s to prove — the overlay
-// itself needs a live dockview, so the mapping is asserted directly.
+// `never-started`.
 //
 // The dockview wall is climbed exactly as `SessionGrid.suspended-header.test.tsx`
 // does; see its header for why the stub is the honest way in.
@@ -237,9 +240,13 @@ describe('the maximize gesture (§5.8), which is why the header is here', () => 
   });
 });
 
-// The `exited` arm cannot be reached without a live dockview and a real PTY, so
-// the part worth pinning is the same part `endedCopy` pins: which words go with
-// which ending.
+// `endedPill` is a TOTAL function over `CardEnded`, and only one of its answers
+// renders today: a session that ran and then died keeps its record, so it draws
+// the LIVE header and takes its pill from `status`. The `exited` answers below
+// are the ones that would be used the moment anyone routes that header through
+// here - which is the obvious next step, and the reason the function is total
+// rather than a one-armed `if`. Pinned for the same reason `endedCopy` is
+// pinned: which words go with which ending, and that every key really exists.
 describe('endedPill', () => {
   it('calls a crash a crash, on the ramp position the alarm lives at', () => {
     expect(endedPill({ kind: 'exited', code: 137, crashed: true })).toEqual({

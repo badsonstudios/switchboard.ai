@@ -30,6 +30,7 @@ import { DEFAULT_BOOK } from '../lib/presentation-policy';
 import { DEFAULT_FOCUS_BOOK } from '../lib/focus-policy';
 import { NO_ORDER } from '../lib/rail-order';
 import { initI18nForTests } from '../i18n/test-i18n';
+import en from '../i18n/locales/en.json';
 import { uiDelete } from '../lib/ui-state';
 
 declare global {
@@ -57,6 +58,7 @@ async function mount(opts: {
   sessions: RailSession[];
   groups?: RailGroup[];
   pinned?: string[];
+  onTogglePin?: (cardId: string) => void;
 }): Promise<void> {
   await act(async () => {
     root.render(
@@ -81,7 +83,7 @@ async function mount(opts: {
         onDeleteGroup={noop}
         onOpenInGroup={noop}
         onMoveToGroup={noop}
-        onTogglePin={noop}
+        onTogglePin={opts.onTogglePin ?? noop}
         onSetSessionPolicy={noop}
         onSetSessionFocusPolicy={noop}
         onCycleGroupPolicy={noop}
@@ -133,14 +135,24 @@ describe('the pinned rows of a bucket become one sticky block (#295)', () => {
     expect(painted()).toEqual(['b', 'a', 'c']);
   });
 
-  it('sticks it to the top of the scroll region, on an opaque surface', async () => {
+  it('sticks it to the top of the scroll region, painting its own card surface', async () => {
     await mount({ sessions: [session('a'), session('b')], pinned: ['a'] });
     const block = blocks()[0];
     expect(block.style.position).toBe('sticky');
     expect(block.style.insetBlockStart).toBe('0px');
-    // the rows have to slide UNDER it. A transparent block is the bug that
-    // looks like it works until something scrolls.
-    expect(block.style.background).toBe('var(--rail-card)');
+    // The rows have to slide UNDER it, so it needs a background - and the one
+    // it needs is the surface it is sitting on, or a stuck block reads as a
+    // different kind of thing from the card it came out of. Asserted as "the
+    // same value the card paints" rather than as a token name, so the pair
+    // cannot drift and the test is not a copy of the line it is checking.
+    // (Whether that surface is OPAQUE is a token fact, not a component one -
+    // `--rail-card` and `--auto-surface` are, in every shipped theme.)
+    let card = block.parentElement;
+    while (card && !card.style.background) card = card.parentElement;
+    expect(card).not.toBeNull();
+    expect(block.style.background).toBe(card!.style.background);
+    expect(block.style.background).not.toBe('');
+    expect(block.style.background).not.toBe('transparent');
   });
 
   it('stacks two pins as ONE block, in rail order (decision 2)', async () => {
@@ -212,5 +224,82 @@ describe('sticky moves no session (decision 1)', () => {
     const row = host.querySelector<HTMLElement>('[data-pinned-block] .rail-row')!;
     expect(row.getAttribute('draggable')).toBe('true');
     expect(row.getAttribute('data-pinned')).toBe('true');
+  });
+});
+
+// The focus half of the same change, and the one a screenshot cannot show.
+//
+// Pinning from the row's context menu used to be safe to restore focus from
+// synchronously: the sort only reordered SIBLINGS, so the button the menu was
+// opened from survived it. Lifting the pins into their own block makes the row
+// change PARENT ELEMENT, which React cannot do without unmounting and
+// remounting it - so the node the menu was holding is detached by the time the
+// store answers, and focusing it drops the keyboard on <body>. The menu item's
+// own comment promises the opposite ("the row is still there afterwards"), so
+// this is that promise being kept rather than a new one.
+describe('pinning from the keyboard keeps the keyboard (#295 / #197)', () => {
+  /** open the row menu the way Shift+F10 does - no pointer, so (0, 0) */
+  async function openMenu(id: string): Promise<void> {
+    const open = host.querySelector<HTMLElement>(`[data-rail-open="${id}"]`)!;
+    open.focus();
+    await act(async () => {
+      open.dispatchEvent(
+        new MouseEvent('contextmenu', { bubbles: true, clientX: 0, clientY: 0 })
+      );
+    });
+  }
+
+  const menuItem = (label: string): HTMLElement =>
+    Array.from(host.querySelectorAll<HTMLElement>('[role="menuitem"]')).find(
+      (el) => el.textContent === label
+    )!;
+
+  it('lands focus back on the row it just pinned, after the store agrees', async () => {
+    let asked: string | null = null;
+    const sessions = [session('a'), session('b'), session('c')];
+    await mount({ sessions, onTogglePin: (id) => (asked = id) });
+    await openMenu('c');
+
+    await act(async () => {
+      menuItem(en.rail.menuPin).click();
+    });
+    expect(asked).toBe('c');
+    // ...and NOT yet: the row is still where it was, and the store has not
+    // answered. Restoring here is what put focus on a doomed node.
+    expect(host.querySelector('[data-pinned-block]')).toBeNull();
+
+    // the store answers — this is the re-render the effect is waiting for
+    await mount({ sessions, pinned: ['c'], onTogglePin: noop });
+    const row = host.querySelector<HTMLElement>('[data-rail-open="c"]')!;
+    expect(row.closest('[data-pinned-block]')).not.toBeNull();
+    expect(document.activeElement).toBe(row);
+  });
+
+  it('does the same on the way back out, when the block disappears', async () => {
+    const sessions = [session('a'), session('b')];
+    await mount({ sessions, pinned: ['b'] });
+    await openMenu('b');
+    await act(async () => {
+      menuItem(en.rail.menuUnpin).click();
+    });
+    await mount({ sessions });
+    expect(host.querySelector('[data-pinned-block]')).toBeNull();
+    expect(document.activeElement).toBe(host.querySelector('[data-rail-open="b"]'));
+  });
+
+  it('does not yank focus back from wherever the user has since gone', async () => {
+    const sessions = [session('a'), session('b')];
+    await mount({ sessions });
+    await openMenu('b');
+    await act(async () => {
+      menuItem(en.rail.menuPin).click();
+    });
+    // somewhere else entirely, outside the rail, before the store answers
+    const elsewhere = document.createElement('button');
+    document.body.appendChild(elsewhere);
+    elsewhere.focus();
+    await mount({ sessions, pinned: ['b'] });
+    expect(document.activeElement).toBe(elsewhere);
+    elsewhere.remove();
   });
 });

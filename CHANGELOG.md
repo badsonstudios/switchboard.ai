@@ -92,13 +92,14 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
-- **A card whose session ended, crashed, or never started now keeps its header.**
-  It was the last card state that drew none, so it was the one card you could not
+- **A card that says "Session didn't start" now keeps its header.** It was the
+  last card state that drew none, so it was the one card you could not
   double-click to maximize — the keyboard shortcut worked on it the whole time,
-  the mouse gesture had nothing to land on. The header carries the same things a
-  suspended card's does: the session's name, its colour and badge, and one word
-  for what happened (*crashed*, *done*, or *not started*). Maximizing it does not
-  restart anything (#606).
+  the mouse gesture had nothing to land on. (A session that ran and then ended or
+  crashed keeps the header it already had; this was only ever about the one that
+  never got going.) It carries the same things a suspended card's does: the
+  session's name, its colour and badge, and the words *not started*. Maximizing
+  it does not try to start it (#606).
 
 ### Internal
 

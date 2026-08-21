@@ -227,25 +227,12 @@ test.describe('pinning contract (E9-09)', () => {
     a = ws.a;
     const w = a.window;
 
-    // MAKE IT OVERFLOW, deterministically. Five rows do not fill a 600px-tall
-    // rail, and `minHeight: 600` (main/index.ts) is what stops the window being
-    // shrunk into one — so the minimum is lifted first. This is the OS window,
-    // not product code: nothing test-only is reachable inside the app.
-    await a.app.evaluate(({ BrowserWindow }) => {
-      const win = BrowserWindow.getAllWindows()[0];
-      win.setMinimumSize(600, 260);
-      win.setSize(1000, 260);
-    });
-    // ...and PROVE it overflowed, or everything below is a false green
-    await expect
-      .poll(
-        () => railScroll(w).evaluate((el) => el.scrollHeight - el.clientHeight),
-        { timeout: 15_000 }
-      )
-      .toBeGreaterThan(40);
-
-    // pin the LAST session, so "first" is a real move and the row we watch
-    // would otherwise be the one furthest from the top
+    // PIN FIRST, THEN SHRINK. The pin is taken from the row's context menu, and
+    // that menu is eight items tall - taking it in a 260px window would be
+    // testing #641's placement clamp rather than this.
+    //
+    // The LAST session, so "first" is a real move and the row we watch would
+    // otherwise be the one furthest from the top.
     const target = ws.titles[ws.titles.length - 1];
     await togglePin(w, target);
     await expect(row(w, target)).toHaveAttribute('data-pinned', 'true');
@@ -253,6 +240,23 @@ test.describe('pinning contract (E9-09)', () => {
     // it is the pinned row that was lifted, not some other one
     await expect(pinBlock(w).locator('[draggable="true"]')).toHaveCount(1);
     await expect(pinBlock(w)).toContainText(target);
+
+    // MAKE IT OVERFLOW, deterministically. Five rows do not fill a 600px-tall
+    // rail, and `minHeight: 600` (main/index.ts) is what stops the window being
+    // shrunk into one - so the minimum is lifted first. This is the OS window,
+    // not product code: nothing test-only is reachable inside the app.
+    await a.app.evaluate(({ BrowserWindow }) => {
+      const win = BrowserWindow.getAllWindows()[0];
+      win.setMinimumSize(600, 260);
+      win.setSize(1000, 260);
+    });
+    // ...and PROVE it overflowed by more than one row, or everything below is a
+    // false green: a rail that does not scroll cannot scroll a pin away.
+    await expect
+      .poll(() => railScroll(w).evaluate((el) => el.scrollHeight - el.clientHeight), {
+        timeout: 15_000,
+      })
+      .toBeGreaterThan(60);
 
     // scroll to the very end of the rail — the state the clause is about
     await railScroll(w).evaluate((el) => {
@@ -275,14 +279,23 @@ test.describe('pinning contract (E9-09)', () => {
 
     // DECISION 4: and the keyboard cannot be walked in behind it. The rail is
     // scrolled to the bottom, so focusing an EARLY row makes the browser scroll
-    // it to the top edge of the scrollport — which is where the block is parked.
+    // it to the top edge of the scrollport - which is where the block is parked.
     const covered = ws.titles.find((tt) => tt !== target)!;
+    const before = await railScroll(w).evaluate((el) => el.scrollTop);
     await row(w, covered).locator('[data-rail-open]').focus();
     const after = await railScroll(w).evaluate(() => {
+      const scroll = document.querySelector('.rail-scroll') as HTMLElement;
       const block = document.querySelector('[data-pinned-block]')!.getBoundingClientRect();
-      const focused = (document.activeElement as HTMLElement).getBoundingClientRect();
-      return { blockBottom: block.bottom, focusedTop: focused.top };
+      // the ROW, not the focused button: the button is inset by the row's
+      // padding and the guard aligns the row
+      const focused = (document.activeElement as HTMLElement)
+        .closest('.rail-row')!
+        .getBoundingClientRect();
+      return { blockBottom: block.bottom, focusedTop: focused.top, scrollTop: scroll.scrollTop };
     });
+    // the row really was going to be covered - i.e. this scrolled - so the
+    // assertion below cannot decay into a tautology when row heights change
+    expect(after.scrollTop).toBeLessThan(before);
     expect(after.focusedTop).toBeGreaterThanOrEqual(after.blockBottom - 1);
 
     // ...and unpinning puts the row back in the flow: the lift is derived from

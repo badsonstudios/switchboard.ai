@@ -135,11 +135,11 @@ If a session ends or crashes, the card stays put and shows **Session ended**
 with two buttons: **Restart** starts it again in the same folder, **Close**
 removes the card. Nothing vanishes on its own.
 
-The card keeps its **header** the whole time — the session's name, its colour
-and badge, and one word for what happened: *crashed*, *done*, or *not started*.
-That's not decoration: the header is what you double-click to
-[maximize](07-workspace.md#maximize) a session, so a dead card can be enlarged
-and put back exactly like a live one.
+Either way the card keeps its **header** — the session's name, its colour and
+badge. A card that never started shows the words *not started* there. That's not
+decoration: the header is what you double-click to
+[maximize](07-workspace.md#maximize) a session, so a card with nothing running in
+it can still be enlarged and put back exactly like a live one.
 
 A session that never got going gets its **own** panel, not this one: it reads
 **Session didn't start**, and the button says **Try again** rather than
@@ -219,11 +219,13 @@ A pinned session:
 - **doesn't scroll away.** Once you have more sessions than fit, the list
   scrolls — and a pinned session stays parked at the top of it while the others
   slide underneath. Pin two and they park as a pair, in the order they're in.
-  One caveat if you use groups: a pinned session sticks to the top *while its
-  group is on screen*. Scroll past the whole group card and its pinned sessions
-  go with it, because pinning promotes a session inside its group rather than
-  lifting it out of it. On a workspace with no groups — the usual one — there's
-  no caveat: it's on screen wherever you scroll to.
+  One caveat once the list has group cards in it — whether you made them or
+  switchboard did, since two sessions in one repo
+  [group themselves](07-workspace.md): a pinned session sticks to the top *while
+  its group card is on screen*. Scroll past the whole card and its pinned
+  sessions go with it, because pinning promotes a session inside its group rather
+  than lifting it out of it. With no groups at all there's no caveat: it's on
+  screen wherever you scroll to.
 - **is never folded away.** When a pile of idle sessions collapses into a
   single "4 idle sessions" row, the pinned one keeps its own row.
 - **is never minimized behind your back.** If you've turned on
