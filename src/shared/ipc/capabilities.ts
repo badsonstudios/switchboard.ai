@@ -193,6 +193,12 @@ export const CHANNEL_CAPABILITIES = {
   'audio:failed': 'settings.read',
   'pty:attach': 'pty.read',
   'pty:detach': 'pty.read',
+  // A READ of the scrollback with no stream attached to it (#517). Same
+  // capability as `pty:attach` and deliberately not a narrower one: it hands
+  // back the same bytes, so a caller holding it can read everything the CLI
+  // printed. What it cannot do is take the live feed away from the pane on
+  // screen, which is the reason it exists as its own channel.
+  'pty:snapshot': 'pty.read',
   'pty:input': 'pty.write',
   'pty:resize': 'pty.write',
   'sessions:allowAllSession': 'sessions.write',
@@ -205,6 +211,13 @@ export const CHANNEL_CAPABILITIES = {
   'sessions:interrupt': 'sessions.write',
   'sessions:dropLive': 'sessions.spawn',
   'sessions:isDirectory': 'fs.probe',
+  // What the app repaired about a card's conversation history this run (#539) —
+  // adopted or ceded. `sessions.read`: it says which card is in which
+  // conversation, which `sessions:cards` already tells this caller.
+  'sessions:historyRepairs': 'sessions.read',
+  // "I have read that" — the only way a history notice leaves. `sessions.write`
+  // and not `.read`: it edits persisted workspace state.
+  'sessions:dismissHistoryRepair': 'sessions.write',
   'sessions:knownCards': 'sessions.read',
   'sessions:list': 'sessions.read',
   'sessions:pendingPermissions': 'sessions.read',
@@ -276,6 +289,9 @@ export const CHANNEL_CAPABILITIES = {
   // a card gained or lost its live session — re-read `sessions:cards` (#170)
   'sessions:cardsChanged': 'sessions.read',
   'sessions:exited': 'sessions.read',
+  // the same fact as `sessions:historyRepairs`, for the ones that happen after a
+  // window has already asked
+  'sessions:historyRepair': 'sessions.read',
   'sessions:feedBlock': 'transcripts.read',
   'sessions:feedReset': 'transcripts.read',
   'sessions:permissionRequest': 'sessions.read',

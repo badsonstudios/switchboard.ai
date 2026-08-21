@@ -32,3 +32,31 @@ export interface PtyChunk {
   epoch: number;
   d: string;
 }
+
+/**
+ * What `pty:snapshot` resolves with — the ring buffer, READ (#517).
+ *
+ * `pty:attach` already hands out the same bytes, but it cannot be used for
+ * this: attaching MINTS AN EPOCH and REPLACES the session's one data feed
+ * (`feeds.get(id)?.()`), so a second consumer asking for a copy would silently
+ * cut the pane that is actually on screen. This channel subscribes to nothing,
+ * mints nothing, and mutates nothing — it is `snapshot()` and the geometry,
+ * which is exactly what find needs and nothing else.
+ *
+ * `null` means there is no PTY under that id — the honest "we could not look",
+ * as distinct from "we looked and found none".
+ *
+ * WHY THE GEOMETRY COMES WITH IT: the bytes are a stream the CLI wrote for a
+ * terminal of a PARTICULAR WIDTH, and a scrollback is only meaningful when it
+ * is replayed at that width. Re-render 120-column output at the xterm default
+ * of 80 and every long line wraps somewhere else, which moves match positions
+ * and can split a match across the fold. So the reader is told the shape to
+ * replay into rather than left to guess it.
+ */
+export interface PtySnapshot {
+  /** Scrollback as of this call, utf8. Same bytes `pty:attach` would replay. */
+  snapshot: string;
+  /** the PTY's current width/height, so a replay wraps where the CLI wrapped */
+  cols: number;
+  rows: number;
+}

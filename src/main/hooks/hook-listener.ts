@@ -92,9 +92,22 @@ export interface HookListenerOptions {
 export type { PermissionRequest } from '../../shared/ipc/permissions';
 
 /**
- * Hold policy (P2-E10-03, §5.16): hold ONLY calls the CLI itself would prompt
- * for at this autonomy — otherwise we'd nag full-auto sessions the CLI would
- * have let through. Unknown autonomy fails open (no hold).
+ * Hold policy (P2-E10-03, §5.16): hold the calls a person should see at this
+ * autonomy, and nothing more — otherwise we'd nag full-auto sessions the CLI
+ * would have let through. Unknown autonomy fails open (no hold).
+ *
+ * This used to claim it held "ONLY calls the CLI itself would prompt for at
+ * this autonomy". That was true when it was written and is not true now
+ * (#587): at `auto-edit` the CLI's `acceptEdits` waves through in-folder
+ * housekeeping commands — `mkdir`, `touch`, `mv`, `cp`, `rm`, `rmdir`, `sed`,
+ * and the PowerShell `Set-Content`/`Add-Content`/`Clear-Content`/`Remove-Item`
+ * family — and we hold every one of them, because SHELLISH is in the
+ * `auto-edit` row. So the real policy is: **a superset of the CLI's prompts,
+ * never a subset.** Erring toward more prompts is the safe direction and is
+ * deliberate — `docs/manual/04-approvals-and-autonomy.md` tells the user we are
+ * slightly stricter than a bare terminal. Erring the other way would mean
+ * silently approving something the CLI wanted a person for, which this table
+ * must never do.
  */
 // Tool-name taxonomy (SHELLISH/MUTATING/READ_TOOLS) is imported from
 // src/shared/tool-taxonomy.ts — shared with the renderer's block presentation

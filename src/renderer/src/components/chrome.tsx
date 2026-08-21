@@ -14,6 +14,7 @@ import { BuildIdentity, commitStamp } from '../../../shared/build-identity';
 import type { PresentationPolicy } from '../lib/presentation-policy';
 import type { LayoutMode } from '../lib/layout-mode';
 import { TRUST_INERT_REASON_KEY } from '../lib/trust-reach';
+import { autonomyTooltip } from '../lib/autonomy';
 import type { ServiceHealthStatus } from '../../../shared/service-health';
 import type { EventDto } from '../model/types';
 
@@ -166,7 +167,17 @@ export function TitleBar(props: {
       >
         {props.speakOn ? t('titlebar.speakOn') : t('titlebar.speakOff')}
       </Chip>
-      <Chip selected={false} onClick={props.onCycleAutonomy}>
+      {/* The autonomy chip (E6-01). Its TOOLTIP carries what the mode actually
+          does (#534) — the names alone never told anyone that full-auto is the
+          CLI's bypassPermissions and not a gentler cousin of it, and the copy
+          is shared with the composer's shield button and the card badge so
+          three controls cannot give three answers. */}
+      <Chip
+        selected={false}
+        onClick={props.onCycleAutonomy}
+        title={autonomyTooltip(t, props.autonomy, 'workspace')}
+        testId="titlebar-autonomy"
+      >
         {t(`autonomy.${props.autonomy}`)}
       </Chip>
       {/* The GLOBAL presentation policy (E9-06, §5.8). A chip and not a buried

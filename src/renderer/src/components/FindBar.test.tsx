@@ -449,17 +449,36 @@ describe('the a11y contract (§5.32, one surface later)', () => {
 // P2-E17-03 — one Ctrl+F, results GROUPED BY VIEW (§5.31's first decision)
 // ---------------------------------------------------------------------------
 
-/** Publish a fake terminal surface holding `matches` copies of a line. */
-function publishTerminal(rows: number[], total = rows.length): ReturnType<typeof vi.fn> {
+/**
+ * Publish a fake terminal surface holding `matches` copies of a line.
+ *
+ * `live` is #517's seam: `true` means the answer came from the pane ON SCREEN
+ * (highlighted, jumpable), `false` that it came from an off-screen replay of
+ * main's ring buffer (real counts for a tab that was never opened, nothing
+ * rendered to scroll). `search` resolves rather than returns, because on the
+ * second path it genuinely crosses to main.
+ */
+function publishTerminal(
+  rows: number[],
+  total = rows.length,
+  live = true
+): ReturnType<typeof vi.fn> {
   const reveal = vi.fn().mockReturnValue(true);
   publishFindSurface(findSurfaceKey('card-1', 'terminal'), {
     kind: 'terminal',
-    ready: () => true,
-    search: () => ({
-      matches: rows.map((row) => ({ row, col: 2, length: 6, line: `row ${row} NEEDLE`, offset: 6 })),
-      total,
-      truncated: total > rows.length,
-    }),
+    search: () =>
+      Promise.resolve({
+        matches: rows.map((row) => ({
+          row,
+          col: 2,
+          length: 6,
+          line: `row ${row} NEEDLE`,
+          offset: 6,
+        })),
+        total,
+        truncated: total > rows.length,
+        live,
+      }),
     reveal,
     clear: () => {},
   } as unknown as FindSurface);
@@ -565,54 +584,91 @@ describe('grouped results (P2-E17-03)', () => {
     expect(q(host, 'find-count')!.textContent).toBe('1 of 1');
   });
 
-  it('a terminal that has never been SHOWN is not a group at all — never a false 0', async () => {
-    // The blocker this guards: the Terminal panel is `keepMounted` and mounts
-    // with the card, but S-07 says a hidden pane is ingest-only — the xterm is
-    // fed only while its tab is showing. On a card whose Terminal has never
-    // been opened the buffer is EMPTY, so "0 in Terminal (scrollback only)"
-    // would state "not in the last 5,000 lines" about a buffer with no lines,
-    // for output printed thirty seconds ago. An absent group asks a question;
-    // a false zero answers one.
+  it('a terminal that has never been SHOWN is a group with a REAL count (#517)', async () => {
+    // The inversion of #516's blocker, and the point of #517.
+    //
+    // The Terminal panel is `keepMounted` and mounts with the card, but S-07
+    // says a hidden pane is ingest-only — the renderer's xterm is fed only
+    // while its tab is showing. #516 could only search that xterm, so on a card
+    // whose Terminal had never been opened it withheld the group rather than
+    // print "0 in Terminal (scrollback only)" about a buffer with no lines.
+    // The scrollback was in MAIN the whole time; the surface now reads it, and
+    // answers `live: false` to say the count is real but nothing is on screen
+    // to scroll to.
+    search.mockResolvedValue(searchResult([hit(4, 'a')]));
+    publishTerminal([12, 44], 2, false);
+    const host = await mount(bar());
+    await act(async () => setFindTerm('NEEDLE'));
+    await settle();
+
+    expect(q(host, 'find-groups')!.textContent).toContain(`2 in ${en.find.group.terminal}`);
+    // and the bar says why they cannot be stepped to, rather than offering a
+    // jump that would do nothing
+    expect(q(host, 'find-notice')!.textContent).toContain(en.find.notice.terminalNotShown);
+  });
+
+  it('…and those hits are readable, not jumpable', async () => {
+    search.mockResolvedValue(searchResult([]));
+    const reveal = publishTerminal([12], 1, false);
+    const host = await mount(bar());
+    await act(async () => setFindTerm('NEEDLE'));
+    await settle();
+    await act(async () => {
+      q<HTMLElement>(host, 'find-results-toggle')!.click();
+    });
+    const row = host.querySelector<HTMLElement>('[data-find-hit]')!;
+    // a plain element with the reason on it, never a button (`renderHit`)
+    expect(row.tagName).not.toBe('BUTTON');
+    expect(row.getAttribute('title')).toBe(en.find.cannotJumpTitle);
+    await act(async () => row.click());
+    expect(reveal).not.toHaveBeenCalled();
+  });
+
+  it('says "could not search" rather than 0 when the scrollback cannot be READ', async () => {
+    // `null` from the surface: the PTY is gone, or the read failed. "We could
+    // not look" is not "we looked and found none" — the failure this whole
+    // group is careful about, one layer further down.
     search.mockResolvedValue(searchResult([hit(4, 'a')]));
     publishFindSurface(findSurfaceKey('card-1', 'terminal'), {
       kind: 'terminal',
-      ready: () => false, // mounted, never attached
-      search: () => ({ matches: [], total: 0, truncated: false, totalIsFloor: false }),
+      search: () => Promise.resolve(null),
       reveal: () => true,
       clear: () => {},
     } as unknown as FindSurface);
     const host = await mount(bar());
     await act(async () => setFindTerm('NEEDLE'));
     await settle();
-
-    expect(q(host, 'find-groups')).toBeNull();
-    expect(host.textContent).not.toContain(en.find.group.terminal);
-    expect(q(host, 'find-count')!.textContent).toBe('1 of 1');
+    expect(q(host, 'find-notice')!.textContent).toContain(en.find.notice.failed);
+    // and the group shows an em dash where the digit goes, NOT a zero: this is
+    // the line the whole item is about, and a `0` here would say "not in the
+    // last 5,000 lines" about lines nobody managed to read
+    expect(q(host, 'find-groups')!.textContent).not.toContain(`0 in ${en.find.group.terminal}`);
+    expect(q(host, 'find-groups')!.textContent).toContain(`— in ${en.find.group.terminal}`);
   });
 
-  it('…and says so when that is the tab you are on', async () => {
-    publishFindSurface(findSurfaceKey('card-1', 'terminal'), {
-      kind: 'terminal',
-      ready: () => false,
-      search: () => ({ matches: [], total: 0, truncated: false, totalIsFloor: false }),
-      reveal: () => true,
-      clear: () => {},
-    } as unknown as FindSurface);
+  it('the bar is NOT greyed on a Terminal tab that was never opened (#517)', async () => {
+    // It used to be: `ready()` was false for a pane that had never attached,
+    // and the reason text said "open the Terminal tab". There is no such reason
+    // any more — the group is searchable from main's buffer — so the input is
+    // live and the user can type.
+    publishTerminal([7], 1, false);
     const host = await mount(bar('terminal', 'grid.viewTerminal'));
-    expect(q(host, 'find-unavailable')!.textContent).toBe(en.find.unavailable.terminalNotShown);
+    expect(q(host, 'find-unavailable')).toBeNull();
+    expect(q<HTMLInputElement>(host, 'find-input')!.disabled).toBe(false);
   });
 
   it('renders a floor as "N+" rather than presenting a ceiling as a count', async () => {
     search.mockResolvedValue(searchResult([hit(4, 'a')]));
     publishFindSurface(findSurfaceKey('card-1', 'terminal'), {
       kind: 'terminal',
-      ready: () => true,
-      search: () => ({
-        matches: [{ row: 1, col: 0, length: 6, line: 'NEEDLE here', offset: 0 }],
-        total: 1000,
-        truncated: true,
-        totalIsFloor: true,
-      }),
+      search: () =>
+        Promise.resolve({
+          matches: [{ row: 1, col: 0, length: 6, line: 'NEEDLE here', offset: 0 }],
+          total: 1000,
+          truncated: true,
+          totalIsFloor: true,
+          live: true,
+        }),
       reveal: () => true,
       clear: () => {},
     } as unknown as FindSurface);
@@ -641,8 +697,8 @@ describe('grouped results (P2-E17-03)', () => {
     const clearTerminal = vi.fn();
     publishFindSurface(findSurfaceKey('card-1', 'terminal'), {
       kind: 'terminal',
-      ready: () => true,
-      search: () => ({ matches: [], total: 0, truncated: false, totalIsFloor: false }),
+      search: () =>
+        Promise.resolve({ matches: [], total: 0, truncated: false, totalIsFloor: false, live: true }),
       reveal: () => true,
       clear: clearTerminal,
     } as unknown as FindSurface);
@@ -675,8 +731,7 @@ describe('grouped results (P2-E17-03)', () => {
     const clearTerminal = vi.fn();
     publishFindSurface(findSurfaceKey('card-1', 'terminal'), {
       kind: 'terminal',
-      ready: () => true,
-      search: () => ({ matches: [], total: 0, truncated: false }),
+      search: () => Promise.resolve({ matches: [], total: 0, truncated: false, live: true }),
       reveal: () => true,
       clear: clearTerminal,
     } as unknown as FindSurface);

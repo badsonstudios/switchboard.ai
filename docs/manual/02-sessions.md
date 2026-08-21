@@ -152,6 +152,44 @@ rather than urgent: it waits for a gap instead of cutting across what you were
 reading. A card that was already suspended when you reopened switchboard stays
 quiet — that's how you left it, not something that just happened.
 
+## Putting sessions in the order you want
+
+The Sessions list starts out in the order you opened things, which is rarely the
+order you *think* about them in. Drag a session up or down and it stays where
+you put it.
+
+- **With the mouse:** pick up a session's row and drag it over another row in
+  the same group. A line shows where it will land — above that row if you're in
+  the top half of it, below if you're in the bottom half. Let go.
+- **Without the mouse:** right-click the row (or press `Shift+F10` while it's
+  focused) and choose **Move up** or **Move down**, under *Order in this group*.
+  Or press **`Ctrl+Alt+↑`** / **`Ctrl+Alt+↓`** while you're in the session —
+  the same two commands are in the command palette as *Move session up/down in
+  its group*.
+
+The order is saved with your workspace, so it's still there next time you open
+switchboard. It's also what `Ctrl+1`…`Ctrl+9` counts against, so arranging the
+list is a way of choosing which session is `Ctrl+1`.
+
+A few things worth knowing:
+
+- **You're ordering one group at a time.** Dragging a session onto a *different*
+  group still means what it always meant — it joins that group. Where it lands
+  there is up to you: drag it again once it has arrived. The same goes for the
+  **Ungrouped** list, and for the automatic folder groups: each keeps its own
+  order.
+- **A new session goes to the bottom** of a group you have arranged. Nothing you
+  already put in order moves out of the way for it.
+- **Pinned sessions still come first.** This is the one rule your arrangement
+  doesn't beat: a [pinned](#pinning-a-session-you-always-want-to-find) session
+  stays at the top of its group. You can reorder freely among the pinned ones
+  and freely among the rest, but you can't drag an ordinary session above a
+  pinned one — it stops just underneath, and **Move up** goes grey at that
+  point. If you want it higher, unpin the one above it.
+- **Nothing reorders itself.** A session needing your attention gets loud — a
+  tinted row, a colored bar, a place in the `Ctrl+Space` queue — but it does not
+  jump the list. Where you put a session is where it stays.
+
 ## Pinning a session you always want to find
 
 Some sessions are the ones you keep coming back to all day. Pin one and
@@ -166,7 +204,9 @@ A pinned session:
 - **sorts to the top** of the list, so it's always in the same place. If the
   session belongs to a group, it sorts to the top *of that group* — pinning
   promotes it, it never pulls it out of the group you filed it under, and it
-  never reorders the sessions around it. On a workspace with no groups, which
+  never reorders the sessions around it — including an order you arranged
+  yourself, which it sits on top of rather than scrambling. On a workspace with
+  no groups, which
   is the usual one, that means the top of the list outright — and since the
   list is what `Ctrl+1`…`Ctrl+9` counts against, your pinned session becomes
   `Ctrl+1`.

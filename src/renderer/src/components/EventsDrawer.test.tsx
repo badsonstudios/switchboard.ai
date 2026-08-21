@@ -19,6 +19,7 @@ import { initI18nForTests } from '../i18n/test-i18n';
 import { EventsDrawer } from './EventsDrawer';
 import type { EventDto } from '../model/types';
 import type { RailSession } from './SessionsRail';
+import type { HistoryRepairNotice } from '../../../shared/history-repair';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -44,6 +45,7 @@ interface Options {
   reconnectOffer?: boolean;
   updateNotice?: { kind: 'installed' | 'available'; version: string } | null;
   incidents?: readonly { id: string; name: string; status: string }[];
+  historyRepairs?: readonly HistoryRepairNotice[];
 }
 
 const onOpen = vi.fn();
@@ -72,6 +74,8 @@ async function render(o: Options = {}): Promise<void> {
         onUpdateNow={() => {}}
         onDismissUpdateNotice={() => {}}
         incidents={o.incidents}
+        historyRepairs={o.historyRepairs}
+        onDismissHistoryRepair={() => {}}
       />
     );
   });
@@ -83,6 +87,8 @@ const tab = (): HTMLButtonElement => {
   return el;
 };
 const body = (): HTMLElement | null => host.querySelector<HTMLElement>('[data-testid="events-drawer"]');
+const closeBtn = (): HTMLButtonElement | null =>
+  host.querySelector<HTMLButtonElement>('[data-testid="events-close"]');
 
 async function click(el: Element): Promise<void> {
   await act(async () => {
@@ -151,13 +157,27 @@ describe('the tab carries the three signals', () => {
     expect(tab().getAttribute('data-hottest')).toBeNull();
   });
 
-  // The #425 coordination note, at the one moment it matters: all three notice
-  // tenants moved into a surface that is shut by default, so all three have to
-  // be able to say so from behind it.
+  // The #425 coordination note, at the one moment it matters: every notice
+  // tenant lives in a surface that is shut by default, so each has to be able to
+  // say so from behind it.
   for (const [what, opts] of [
     ['the update notice', { updateNotice: { kind: 'available' as const, version: '0.6.0' } }],
     ['the reconnect offer', { reconnectOffer: true }],
     ['an open incident', { incidents: [{ id: 'i', name: 'API', status: 'degraded' }] }],
+    [
+      'a history repair',
+      {
+        historyRepairs: [
+          {
+            id: 'r1',
+            kind: 'adopted' as const,
+            cardId: 'c',
+            cardTitle: 'Switchboard.ai',
+            nativeSessionId: 'conv',
+          },
+        ],
+      },
+    ],
   ] as const) {
     it(`raises the secondary marker for ${what}`, async () => {
       await render(opts);
@@ -237,20 +257,30 @@ describe('opening and closing', () => {
     expect(host.querySelectorAll('[data-event-kind]')).toHaveLength(1);
   });
 
-  it('all three notices render in the open drawer, together', async () => {
+  it('all four notices render in the open drawer, together', async () => {
     await render({
       open: true,
       updateNotice: { kind: 'available', version: '0.6.0' },
       reconnectOffer: true,
       incidents: [{ id: 'i', name: 'API', status: 'degraded' }],
+      historyRepairs: [
+        {
+          id: 'r1',
+          kind: 'adopted',
+          cardId: 'c',
+          cardTitle: 'Switchboard.ai',
+          nativeSessionId: 'conv',
+        },
+      ],
     });
     expect(host.querySelector('[data-events-notice="incident"]')).not.toBeNull();
     expect(host.querySelector('[data-events-notice="available"]')).not.toBeNull();
+    expect(host.querySelector('[data-events-notice="history-repair"]')).not.toBeNull();
     // the reconnect offer has no data attribute of its own; its live region is
     // the witness, and there are three of them only when all three are up.
-    // Scoped to the BODY: the drawer keeps a fourth live region of its own,
-    // always mounted, which is what announces a notice while it is shut.
-    expect(body()!.querySelectorAll('[role="status"]').length).toBe(3);
+    // Scoped to the BODY: the drawer keeps one live region of its own, always
+    // mounted, which is what announces a notice while it is shut.
+    expect(body()!.querySelectorAll('[role="status"]').length).toBe(4);
   });
 
   it('points aria-controls at the body only while there is one', async () => {
@@ -359,5 +389,93 @@ describe('the keyboard way out (§5.32)', () => {
     // live workspace must do (the FindBar precedent, and 2.1.2)
     await render({ open: true });
     expect(body()!.getAttribute('tabindex')).toBe('-1');
+  });
+});
+
+// ── the VISIBLE way out (#556) ───────────────────────────────────────────────
+//
+// Every route out already worked before this block existed: the tab, Escape,
+// `Mod+E`, the palette. The owner still hunted for one on a real drawer, and
+// the reason is in the shape rather than the wiring — the tab is on the edge,
+// turned on its side, and reads as a way IN. So what is tested here is that the
+// header's ✕ is a route and NOT a second mechanism: it calls the same
+// `onClose`, which is what makes "closed by button" and "closed by Escape" the
+// same state by construction instead of by two code paths kept in step by hand.
+describe('the visible way out (#556)', () => {
+  it('shows a close control in the header once the drawer is open', async () => {
+    await render({ open: true });
+    expect(closeBtn(), 'the open drawer offers no visible way to shut itself').not.toBeNull();
+  });
+
+  it('is a real button with a worded name, not a bare glyph', async () => {
+    // §5.32 rule 1: the control is a real `<button>`, so Enter, Space, focus and
+    // the announcement all come from the platform. And `✕` is decoration — a
+    // screen reader reading the glyph announces nothing, so the name is words.
+    await render({ open: true });
+    const b = closeBtn()!;
+    expect(b.tagName).toBe('BUTTON');
+    expect(b.getAttribute('type')).toBe('button');
+    const name = b.getAttribute('aria-label') ?? '';
+    expect(name).toMatch(/close/i);
+    expect(name.length, 'the accessible name is a glyph, which says nothing aloud').toBeGreaterThan(2);
+  });
+
+  it('is not there when the drawer is shut — the tab is the whole surface then', async () => {
+    await render({ open: false });
+    expect(closeBtn()).toBeNull();
+  });
+
+  it('clicking it asks App to close, exactly as every other route does', async () => {
+    await render({ open: true });
+    await click(closeBtn()!);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    // and it does NOT close itself behind App's back: `open` is App's state, and
+    // a drawer that hid itself locally would drift from the tab's aria-expanded
+    expect(body(), 'the drawer closed itself instead of asking').not.toBeNull();
+  });
+
+  it('is the first thing Tab reaches inside the drawer', async () => {
+    // opening moves focus to the body, so the first Tab lands on the way out —
+    // the same order the eye reads the header in, and the reason the button is
+    // in the header rather than appended after the rows.
+    await render({ open: true, events: [ev(1, 'needs-input')] });
+    const focusables = [...body()!.querySelectorAll<HTMLElement>('button, [href], [tabindex]:not([tabindex="-1"])')];
+    expect(focusables[0], 'something else is the first tab stop in the drawer').toBe(closeBtn());
+  });
+
+  it('lands in the same state as Escape — the done-when of the item', async () => {
+    // BOTH ROUTES, SAME ANCHOR, SAME RESULT. Opened from a card each time (the
+    // palette route, where the anchor is a thing that is not the tab), so what
+    // is compared is a real hand-back and not the tab fallback both would hit
+    // anyway.
+    const card = document.createElement('button');
+    document.body.appendChild(card);
+
+    const run = async (shut: () => Promise<void>): Promise<Element | null> => {
+      card.focus();
+      await render({ open: true });
+      expect(document.activeElement).toBe(body());
+      await shut();
+      // App answers the callback by flipping `open` — the same thing `Mod+E`
+      // and the palette do, and the only thing any of the five routes do
+      await render({ open: false });
+      await frames();
+      return document.activeElement;
+    };
+
+    const byEscape = await run(async () => {
+      await act(async () => {
+        body()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      });
+    });
+    const escapeCalls = onClose.mock.calls.length;
+
+    const byButton = await run(async () => {
+      await click(closeBtn()!);
+    });
+
+    expect(byEscape, 'Escape did not hand focus back to where the drawer was opened from').toBe(card);
+    expect(byButton, 'the button and Escape leave focus in different places').toBe(byEscape);
+    expect(onClose.mock.calls.length - escapeCalls, 'the button asked to close once').toBe(1);
   });
 });

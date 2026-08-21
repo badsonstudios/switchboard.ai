@@ -22,6 +22,12 @@ import { Rectangle } from 'electron';
 import { LogFields, Logger } from '../log/logger';
 import { SessionIdentity } from '../sessions/session-manager';
 import { sanitizeLineage } from '../sessions/lineage';
+import { UntangleChange, untangleDuplicateConversations } from '../sessions/untangle';
+import {
+  HistoryRepairNotice,
+  isSaneHistoryRepair,
+  MAX_HISTORY_REPAIR_NOTICES,
+} from '../../shared/history-repair';
 import { WindowState, mergeState, isOnAnyDisplay } from '../window-state';
 import { UpdatePrefs } from '../../shared/update';
 import { ServiceHealthPrefs } from '../../shared/service-health';
@@ -53,6 +59,16 @@ export interface PersistedSession {
    * `sessions/lineage.ts` — that module is the only thing that writes this.
    */
   nativeSessionLineage?: string[];
+  /**
+   * Conversations this card gave up because another card holds them (#539).
+   *
+   * Two cards pointing at one conversation is a state #484's repair sweep is
+   * fenced against creating but could not undo, so the load unties it: one card
+   * keeps the conversation and the others record it here — out of the resume
+   * walk, never deleted. See `sessions/untangle.ts` for the policy and
+   * `sessions/lineage.ts` for why this is not part of the chain.
+   */
+  cededNativeIds?: string[];
   suspendedAt: string;
   /** last-known token totals + model, so usage survives a resume/restart */
   usage?: { input: number; output: number; cacheRead: number; cacheCreate: number };
@@ -226,6 +242,23 @@ export interface WorkspaceState {
    * renderer involved, and the renderer rewrites the opaque `ui` blob wholesale.
    */
   suppressed: SuppressedEvent[];
+  /**
+   * History repairs the user has not acknowledged yet (#539) — a card the sweep
+   * reattached, or one that gave a duplicated conversation up.
+   *
+   * **Persisted, and that is the point.** Both repairs happen exactly once and
+   * then the state that produced them is gone, so nothing would ever re-announce
+   * them. Held in memory they would be lost the first time the user worked a
+   * session and quit without opening the events drawer — leaving the app having
+   * silently rewritten which conversation a card is in, which is the state the
+   * notice exists to make impossible. Bounded at
+   * `MAX_HISTORY_REPAIR_NOTICES`; a dismissal is what removes one.
+   *
+   * A top-level TYPED field for the `suppressed` reason: MAIN is the writer,
+   * with no renderer involved, and the renderer rewrites the opaque `ui` blob
+   * wholesale.
+   */
+  historyRepairs: HistoryRepairNotice[];
 }
 
 /** The schema version this build writes. Bump it and add a MIGRATIONS entry. */
@@ -289,6 +322,7 @@ const EMPTY: WorkspaceState = {
   health: { poll: true },
   push: { ...DEFAULT_PUSH_PREFS },
   suppressed: [],
+  historyRepairs: [],
 };
 
 /** Stable identity for a display arrangement (§7). */
@@ -307,6 +341,7 @@ function emptyState(): WorkspaceState {
     groups: [],
     rules: [],
     suppressed: [],
+    historyRepairs: [],
     notifications: { ...EMPTY.notifications },
     updates: { ...EMPTY.updates },
     health: { ...EMPTY.health },
@@ -318,6 +353,8 @@ export class WorkspaceStore {
   private state: WorkspaceState = emptyState();
   private saveTimer: NodeJS.Timeout | null = null;
   private readOnly = false;
+  /** what the last `load()` untied (#539) — empty on every ordinary launch */
+  private untangleChanges: UntangleChange[] = [];
   /**
    * The damaged workspace file this load could NOT set aside, kept so the first
    * save does not destroy the only copy of it (#352). Null on every normal run
@@ -346,6 +383,7 @@ export class WorkspaceStore {
 
   load(): WorkspaceState {
     this.readOnly = false;
+    this.untangleChanges = [];
     // Both of these describe the file THIS load found; a re-load starts from
     // neither of them.
     this.unsavedPostMortem = null;
@@ -425,20 +463,48 @@ export class WorkspaceStore {
       const groupIds = new Set(groups.map((g) => g.id));
       // a dangling groupId (group gone, e.g. hand-edited file) degrades to ungrouped
       const orphaned: string[] = [];
-      const sessions = keepSane(raw.sessions, isSaneSession, 'session', note).map((s) => {
+      const loaded = keepSane(raw.sessions, isSaneSession, 'session', note).map((s) => {
         // Normalized on the way IN, once, so nothing downstream has to defend
         // against a hand-edited chain (#484). Silent rather than `note`d: an
         // absent or ragged lineage is the NORMAL state of every card written
         // before the field existed, and warning about it would fire on every
-        // launch for months.
+        // launch for months. `cededNativeIds` (#539) is the same list of ids in
+        // a different role, so it gets the same sanitizer.
         const withLineage =
-          s.nativeSessionLineage === undefined
+          s.nativeSessionLineage === undefined && s.cededNativeIds === undefined
             ? s
-            : { ...s, nativeSessionLineage: sanitizeLineage(s.nativeSessionLineage) };
+            : {
+                ...s,
+                nativeSessionLineage: sanitizeLineage(s.nativeSessionLineage),
+                cededNativeIds: sanitizeLineage(s.cededNativeIds),
+              };
         if (!withLineage.groupId || groupIds.has(withLineage.groupId)) return withLineage;
         orphaned.push(withLineage.id);
         return { ...withLineage, groupId: undefined };
       });
+      // TWO CARDS, ONE CONVERSATION — untied here, once, at the only moment the
+      // whole card list is in one place (#539). The policy and every reason for
+      // it live in `sessions/untangle.ts`; this is just where it runs.
+      //
+      // Not behind a migration flag: it is idempotent and returns the SAME array
+      // when nothing collided, so on every ordinary launch it costs one pass and
+      // changes nothing. A one-shot flag would instead have to be right about a
+      // state that can recur (a hand-edited file, a restored backup).
+      //
+      // SKIPPED WHILE READ-ONLY, like every other repair on this path: a file
+      // from the future is not damaged, this build simply cannot read all of it,
+      // and rewriting its cards' conversation pointers would act on a reading we
+      // already know is partial.
+      const untangled = this.readOnly
+        ? { cards: loaded, changes: [] as UntangleChange[] }
+        : untangleDuplicateConversations(loaded);
+      const sessions = untangled.cards as typeof loaded;
+      this.untangleChanges = untangled.changes;
+      for (const c of untangled.changes.slice(0, MAX_LISTED_IDS))
+        note(
+          'two cards pointed at the same conversation — one of them has given it up and can be reattached to its own',
+          { cardId: c.cardId, gaveUp: c.nativeSessionId, keptBy: c.keptByCardId }
+        );
       if (orphaned.length > 0)
         note(
           'sessions in the workspace file named a group that is not in it — loading them ungrouped',
@@ -516,6 +582,17 @@ export class WorkspaceStore {
         health: health.value,
         push: push.value,
         suppressed,
+        // Same all-or-nothing sanitize as everything else here: a record this
+        // build cannot render is dropped rather than repaired, because a notice
+        // with `undefined` in the middle of its sentence is worse than no
+        // notice. Trimmed on the way IN as well as out — a hand-edited file
+        // could carry more than the cap.
+        historyRepairs: keepSane(
+          raw.historyRepairs,
+          isSaneHistoryRepair,
+          'history repair notice',
+          note
+        ).slice(0, MAX_HISTORY_REPAIR_NOTICES),
       };
     } catch (err) {
       // corrupt/missing: back the corpse aside (post-mortem material), start fresh
@@ -527,6 +604,7 @@ export class WorkspaceStore {
       // anywhere. Nothing is surfaced in the UI yet — that posture question is
       // #207's — so the log line is the whole diagnosis.
       repairNotes.length = 0; // they described a state this catch just binned
+      this.untangleChanges = []; // …and so did these (#539)
       if (fs.existsSync(this.file)) {
         const aside = this.setAsideCorruptFile(rawBytes);
         fileNotes.push({
@@ -546,6 +624,12 @@ export class WorkspaceStore {
     // Out here, not where each note was made: a throw INSIDE the try above
     // would have been read as a corrupt file. (`warn` itself cannot throw.)
     for (const n of [...fileNotes, ...repairNotes]) this.warn(n.msg, n.fields);
+    // A cede that only ever lived in memory would be undone by the next launch,
+    // and the notice the user just read would be a lie. Scheduled rather than
+    // written straight through, so it joins whatever else the first seconds of
+    // the run change — and `saveSoon` is a no-op while read-only, which is the
+    // same guard the untangle itself is behind.
+    if (this.untangleChanges.length > 0) this.saveSoon();
     return this.snapshot();
   }
 
@@ -1098,6 +1182,38 @@ export class WorkspaceStore {
   }
 
   /**
+   * The duplicate conversation pointers this load untied (#539) — read once by
+   * the app so it can say so on screen, since a repair the user cannot see is
+   * indistinguishable from the bug it repairs.
+   *
+   * A copy, and `load()` is the only writer: this is a fact about the file that
+   * was read, not a queue.
+   */
+  listUntangled(): UntangleChange[] {
+    return this.untangleChanges.map((c) => ({ ...c }));
+  }
+
+  /**
+   * The history repairs the user has not acknowledged yet (#539).
+   *
+   * A read-modify-write pair rather than add/remove methods: the dedupe, the cap
+   * and the derived id are ONE policy and it lives in `HistoryRepairLog`, which
+   * is the thing with tests about it. The store's job is that the list survives
+   * a quit.
+   */
+  listHistoryRepairs(): HistoryRepairNotice[] {
+    return this.state.historyRepairs.map((n) => ({ ...n }));
+  }
+
+  setHistoryRepairs(notices: HistoryRepairNotice[]): void {
+    this.state.historyRepairs = notices
+      .filter(isSaneHistoryRepair)
+      .slice(0, MAX_HISTORY_REPAIR_NOTICES)
+      .map((n) => ({ ...n })); // no shared refs with callers
+    this.saveSoon();
+  }
+
+  /**
    * Whether saving is currently failing, for a window that wants to say so
    * (#207). The push is `onSaveState`; this is the read a window makes when it
    * opens, because a window that starts up mid-failure has missed the change.
@@ -1395,13 +1511,15 @@ const MAX_HELD_POST_MORTEM_BYTES = 4 * 1024 * 1024;
 const MAX_LISTED_ERRORS = 3;
 
 /** What each list costs the user when entries in it cannot be read. */
-type SaneList = 'session' | 'group' | 'rule' | 'held notification';
+type SaneList = 'session' | 'group' | 'rule' | 'held notification' | 'history repair notice';
 
 const LOST: Record<SaneList, string> = {
   session: 'those cards do not come back',
   group: 'any sessions in them load ungrouped',
   rule: 'those notifications stop firing',
   'held notification': 'they will not appear in the missed-events digest',
+  'history repair notice':
+    'you will not be told which card had its conversation changed — the change itself stands',
 };
 
 /**

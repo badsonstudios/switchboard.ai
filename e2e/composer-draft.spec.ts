@@ -161,6 +161,119 @@ test.describe('the composer draft survives (#485)', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// #546: the ATTACHMENTS half of the same draft.
+//
+// #485 kept the words and stopped there, so a card whose whole prompt was a
+// pasted screenshot still lost the lot on a view-tab switch. The decision this
+// pins (`lib/composer-attachment-draft.ts`) is a SPLIT one, and each half needs
+// a different whole-app event to be visible at all:
+//
+//   * a REMOUNT keeps the chips, because the bytes are held in a module-level
+//     stash that outlives the component — this is the fix;
+//   * a RELAUNCH does not, because those bytes are deliberately never written
+//     to disk — and it SAYS SO, naming the files, which is the other half of
+//     "no longer silent".
+//
+// A unit test cannot see either one: `composer-attachment-draft.test.ts` would
+// stay green with the stash never threaded into the composer, and it cannot
+// cross a process boundary at all.
+const DIRECT = { SWITCHBOARD_FAKE_PROVIDER: 'stream' };
+
+/** a real 1x1 PNG — small, and a genuine image so the chip's canvas decodes */
+const PNG_1X1 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+test.describe('the composer draft keeps its attachments too (#546)', () => {
+  let a: LaunchedApp;
+
+  test.afterEach(async () => {
+    await a?.cleanup();
+  });
+
+  /**
+   * Paste a named PNG, from inside the page.
+   *
+   * A real `ClipboardEvent` on a real `DataTransfer` — Chromium can build both
+   * — which is as close to Ctrl+V as a test gets without touching the machine's
+   * actual clipboard, which belongs to whoever is using it. The name is given
+   * rather than left as `image.png`, because an anonymous PASTE is renamed
+   * (`pastedImageName`) and the relaunch assertion below is about a name the
+   * user would recognise.
+   */
+  const pasteImage = (w: Page, name: string): Promise<void> =>
+    w.evaluate(
+      ({ b64, name }) => {
+        const box = document.querySelector('textarea')!;
+        box.focus();
+        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+        const dt = new DataTransfer();
+        dt.items.add(new File([bytes], name, { type: 'image/png' }));
+        box.dispatchEvent(
+          new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })
+        );
+      },
+      { b64: PNG_1X1, name }
+    );
+
+  const chip = (w: Page, name: string): Locator => w.locator(`[data-composer-attachment="${name}"]`);
+
+  test('an image-only prompt survives the view tab going away and coming back', async () => {
+    // The exact report: nothing typed, one pasted screenshot, and the cheapest
+    // real remount in the app. FAILS against the unfixed build — the chip is
+    // simply not there when the Session tab comes back.
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder, env: DIRECT });
+    const w = a.window;
+    await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
+
+    await pasteImage(w, 'diagram.png');
+    await expect(chip(w, 'diagram.png')).toBeVisible({ timeout: 20_000 });
+    await expect(composer(w)).toHaveValue(''); // the picture IS the whole prompt
+    await composer(w).blur();
+
+    await showTerminal(w);
+    await expect(composer(w)).toHaveCount(0, { timeout: 20_000 }); // genuinely gone
+    await w.getByRole('tab', { name: 'Session' }).click();
+
+    await expect(chip(w, 'diagram.png')).toBeVisible({ timeout: 20_000 });
+    // and it is still sendable — the strip is not a picture of a chip
+    await expect(w.getByTitle('Send to the session')).toBeEnabled();
+  });
+
+  test('a relaunch drops them and says which ones, rather than losing them silently', async () => {
+    const folder = tempProjectFolder();
+    const first = await launchApp({ seedFolder: folder, env: DIRECT });
+    a = first;
+    const w = first.window;
+    await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
+
+    await typeDraft(w, DRAFT);
+    await pasteImage(w, 'diagram.png');
+    await expect(chip(w, 'diagram.png')).toBeVisible({ timeout: 20_000 });
+    // the blur is what flushes the pending write; without it the close below
+    // would be racing a 400ms timer
+    await composer(w).blur();
+
+    await first.close();
+    a = await launchApp({ home: first.home, env: DIRECT });
+    const w2 = a.window;
+    await expect(w2.locator('nav').getByText(path.basename(folder)).first()).toBeVisible({
+      timeout: 25_000,
+    });
+
+    // the WORDS came back, per #485...
+    await expect(composer(w2)).toHaveValue(DRAFT, { timeout: 20_000 });
+    // ...the picture did not, because its bytes were never written anywhere...
+    await expect(chip(w2, 'diagram.png')).toHaveCount(0);
+    // ...and the composer says so, by name. This is the whole difference
+    // between #546 fixed and #546 open.
+    await expect(w2.locator('[data-composer-attach-notice]')).toContainText('diagram.png', {
+      timeout: 20_000,
+    });
+  });
+});
+
 /** the mounted card's prompt box — exactly one, since cards stack as tabs */
 function composer(w: Page): Locator {
   return w.getByPlaceholder(/Prompt this session/);

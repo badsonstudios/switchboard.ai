@@ -13,10 +13,12 @@ import { LanguageChoice, loadLanguage, setLanguage } from './i18n';
 import { TitleBar, StatusBar } from './components/chrome';
 import { SessionsRail, RailGroup } from './components/SessionsRail';
 import { SessionGrid, GridController } from './components/SessionGrid';
+import type { HistoryRepairNotice } from '../../shared/history-repair';
 import { EventDto } from './components/EventsPanel';
 import { EventsDrawer } from './components/EventsDrawer';
 import { Usage, addUsage, estimateCostUsd, ZERO_USAGE } from './lib/usage';
 import { loadUiState, uiGet, uiSet } from './lib/ui-state';
+import { DEFAULT_AUTONOMY, nextAutonomy } from './lib/autonomy';
 import { initPresentation } from './lib/presentation-boot';
 import { boxOnAnyDisplay, RescuedPopout } from './lib/layout';
 import { rendererRegistry } from './extensibility/registry-instance';
@@ -142,7 +144,7 @@ export function App(): React.JSX.Element {
   const [speakOn, setSpeakOn] = useState(false);
   // gate the shell on the persisted UI state (E12-08): reads are sync after
   const [uiReady, setUiReady] = useState(false);
-  const [autonomy, setAutonomy] = useState<string>('ask');
+  const [autonomy, setAutonomy] = useState<string>(DEFAULT_AUTONOMY);
   // rail visibility (E9-01 'toggle rail' command) — persisted like the other
   // renderer prefs, read once the ui blob has loaded
   const [railHidden, setRailHidden] = useState(false);
@@ -262,6 +264,18 @@ export function App(): React.JSX.Element {
   // commit.
   const pinned = useSyncExternalStore(subscribeStore, () => sessionStore.getPins());
   const togglePin = React.useCallback((cardId: string) => sessionStore.togglePin(cardId), []);
+  // #559's manual rail order. From the store for the reasons the pin set is:
+  // the rail RENDERS from it, rail order is DERIVED from it, and the reorder
+  // commands read it synchronously from a keydown handler.
+  const manualOrder = useSyncExternalStore(subscribeStore, () => sessionStore.getManualOrder());
+  const reorderBucket = React.useCallback(
+    (bucket: string, ids: string[]) => sessionStore.setBucketOrder(bucket, ids),
+    []
+  );
+  const reorderSession = React.useCallback(
+    (cardId: string, dir: 'up' | 'down') => sessionStore.reorderSession(cardId, dir === 'up' ? -1 : 1),
+    []
+  );
   const collapsed = React.useMemo(
     () =>
       collapsedRows(
@@ -418,7 +432,7 @@ export function App(): React.JSX.Element {
       // mounts (uiReady gates it): an early write would persist an empty map
       // over the saved one (P2-E15-08)
       initPresentation();
-      setAutonomy(uiGet('autonomy', 'ask'));
+      setAutonomy(uiGet('autonomy', DEFAULT_AUTONOMY));
       setRailHidden(uiGet('railHidden', false));
       applyTabRows(loadTabRows()); // multi-row tab strip, default on (#84)
       setUiReady(true);
@@ -737,8 +751,7 @@ export function App(): React.JSX.Element {
   }, [updateStatus, installStatus]);
 
   const cycleAutonomy = (): void => {
-    const order = ['ask', 'plan', 'auto-edit', 'full-auto'];
-    const next = order[(order.indexOf(autonomy) + 1) % order.length];
+    const next = nextAutonomy(autonomy);
     uiSet('autonomy', next);
     setAutonomy(next);
   };
@@ -828,6 +841,33 @@ export function App(): React.JSX.Element {
       const stash = uiGet<RescuedPopout[]>('rescuedPopouts', []);
       if (stash.some((r) => boxOnAnyDisplay(r.box, areas))) setReconnectOffer(true);
     });
+    return () => off?.();
+  }, []);
+
+  // WHAT THE APP CHANGED ABOUT A CARD'S CONVERSATION HISTORY (#539) — a
+  // conversation the repair sweep adopted for an orphaned card, or one a card
+  // ceded because two cards pointed at it.
+  //
+  // ASKED FOR AND SUBSCRIBED TO, because the two producers straddle this
+  // window's life: a cede is decided during the workspace load, before any
+  // window exists, so it is already true at mount; an adoption happens when a
+  // card starts, which can be minutes later. MAIN holds the durable list — this
+  // is a view of it — and `dismissHistoryRepair` is what empties it, so a notice
+  // survives a quit the user never noticed it and a dismissal survives a
+  // relaunch.
+  const [historyRepairs, setHistoryRepairs] = useState<HistoryRepairNotice[]>([]);
+  useEffect(() => {
+    void bridge.sessions
+      ?.historyRepairs?.()
+      .then((list) => setHistoryRepairs(list ?? []))
+      // a refused channel is a missing notice, never an unhandled rejection —
+      // and never a reason to drop one a push has already delivered
+      .catch(() => undefined);
+    const off = bridge.sessions?.onHistoryRepair?.((notice) =>
+      // de-duplicated by id: a push that raced the initial read would otherwise
+      // put the same notice in the slot twice
+      setHistoryRepairs((prev) => (prev.some((n) => n.id === notice.id) ? prev : [...prev, notice]))
+    );
     return () => off?.();
   }, []);
 
@@ -1063,6 +1103,7 @@ export function App(): React.JSX.Element {
           closeCard: (cardId) => grid.current?.closeCard(cardId),
           closeAllCards: () => grid.current?.closeAllCards(),
           togglePin,
+          reorderSession,
           toggleCardView: (cardId, view) => grid.current?.toggleCardView(cardId, view),
           popOutCard: (cardId) => grid.current?.popOutCard(cardId),
           hideCard: (cardId) => grid.current?.hideCard(cardId),
@@ -1156,6 +1197,7 @@ export function App(): React.JSX.Element {
               // an unhandled rejection behind a dialog is a bad place to learn
               .catch(() => {});
           },
+          closeAllDocuments: () => grid.current?.closeAllDocuments(),
       }),
     [
       toggleRail,
@@ -1166,6 +1208,7 @@ export function App(): React.JSX.Element {
       setGlobalFocusPolicy,
       setSessionFocusPolicy,
       togglePin,
+      reorderSession,
       checkForUpdates,
       openPushSetup,
       openQuietHours,
@@ -1199,6 +1242,14 @@ export function App(): React.JSX.Element {
       // window has to say where it came from. Absent (this window, and the
       // palette) means "the active panel", which is the answer it always was.
       activeDocumentId: grid.current?.activeDocumentId(sourceWindow) ?? null,
+      // How many documents `Close all documents` would take (#543) — asked of
+      // the grid for the same reason `activeGroupId` is resolved here: the
+      // palette's enabled state and the keyboard's come from ONE read, so an
+      // entry can never be offered and then do nothing. Deliberately NOT
+      // window-scoped by `sourceWindow`: the command closes docked viewers in
+      // the main window's document area wherever it was invoked from, and the
+      // popped-out ones it spares are the same set from every window.
+      closableDocumentCount: grid.current?.closableDocumentCount() ?? 0,
       // resolved HERE, once, so the palette's enabled state and the keyboard's
       // both come from the same read (E9-06's group-level commands)
       activeGroupId: activeCardId
@@ -1648,6 +1699,8 @@ export function App(): React.JSX.Element {
             policies={policies}
             pinned={pinned}
             onTogglePin={togglePin}
+            manualOrder={manualOrder}
+            onReorder={reorderBucket}
             onSetSessionPolicy={setSessionPolicy}
             onCycleGroupPolicy={cycleGroupPolicy}
             focusPolicies={focusPolicies}
@@ -1710,6 +1763,13 @@ export function App(): React.JSX.Element {
           }}
           onDismissUpdateNotice={() => setUpdateNotice(null)}
           incidents={serviceHealth?.incidents}
+          historyRepairs={historyRepairs}
+          onDismissHistoryRepair={(id) => {
+            // main owns the list — it outlives this window, so the dismissal has
+            // to as well. The local drop is what makes the click feel immediate.
+            bridge.sessions?.dismissHistoryRepair?.(id);
+            setHistoryRepairs((prev) => prev.filter((n) => n.id !== id));
+          }}
         />
       </div>
       <StatusBar

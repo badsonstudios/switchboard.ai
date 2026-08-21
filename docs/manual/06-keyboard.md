@@ -107,6 +107,8 @@ back to the first.
 | `Ctrl+Shift+↑` | Show more of the focused session — one rung up |
 | `Ctrl+Shift+M` | Maximize the focused session, or put the layout back |
 | `Ctrl+Alt+P` | Pin or unpin the focused session |
+| `Ctrl+Alt+↑` | Move the focused session up in its group |
+| `Ctrl+Alt+↓` | Move the focused session down in its group |
 | `Ctrl+Shift+L` | Switch the whole workspace to the next layout: Grid → Focus → Queue |
 | `Ctrl+Shift+P` | Open the command palette |
 | `Ctrl+Space` | Go to the next session that needs you |
@@ -122,6 +124,16 @@ minimized behind your back, and is skipped by **Close all sessions** — see
 [Pinning a session](02-sessions.md#pinning-a-session-you-always-want-to-find).
 It does not force the session to stay expanded; you can still collapse, tab or
 hide it yourself.
+
+`Ctrl+Alt+↑` and `Ctrl+Alt+↓` move the session you're in up and down the
+Sessions list, inside its own group — the keyboard version of dragging the row.
+The order is saved with your workspace, and since the list is what `Ctrl+1`…
+`Ctrl+9` counts against, arranging it is how you choose which session is
+`Ctrl+1`. A pinned session still sits above the rest of its group, so the
+shortcut stops at the one above it rather than pushing past — see
+[Putting sessions in the order you want](02-sessions.md#putting-sessions-in-the-order-you-want).
+Note the modifier: `Ctrl+Shift+↑`/`↓` above resize the *card*, `Ctrl+Alt+↑`/`↓`
+move the *row*.
 
 ``Ctrl+` `` is a toggle: press it once to look at the Terminal, press it again
 to go straight back to the Session view. On a session in
@@ -312,14 +324,17 @@ The drawer is closed until you open it. **`Ctrl+E`** opens and closes it, and
 it's in the command palette as *"Show or hide the events drawer"* — so you never
 need the mouse to reach what's inside. Opening it puts your cursor in the
 drawer, and closing it puts your cursor back where it was — **`Esc`**,
-`Ctrl+E` again, and the palette entry all do that.
+`Ctrl+E` again, the palette entry, and the **✕** in the drawer's header all do
+that.
 
 It isn't a dialog, so `Tab` walks out of it into the rest of the window as
 normal — nothing is trapped.
 
-Inside, each row is a button: `Enter` opens that session, exactly as clicking
-the row does, and counts as having visited it so `Ctrl+Space` won't send you
-straight back. One more `Tab` reaches that row's **Dismiss** button.
+The **first `Tab`** from a freshly opened drawer lands on the **✕** that closes
+it, so the way out is the first thing you meet. After that, each row is a
+button: `Enter` opens that session, exactly as clicking the row does, and counts
+as having visited it so `Ctrl+Space` won't send you straight back. One more
+`Tab` reaches that row's **Dismiss** button.
 
 `Ctrl+Space` doesn't need the drawer open at all — it works whether the drawer
 is showing or not.

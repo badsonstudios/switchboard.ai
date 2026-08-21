@@ -73,26 +73,58 @@ export interface MonacoFindSurface extends FindSurface {
 }
 
 /**
- * What `TerminalPane` publishes — xterm's scrollback, behind the search addon
- * (P2-E17-03).
+ * What one terminal search answered, and where the answer came from (#517).
  *
- * `search` is SYNCHRONOUS, unlike the session's: the buffer is already in this
- * process, and the addon walks it in memory. The provider still returns a
- * promise, because the seam's `search` is async for the one registrant that
- * genuinely crosses to main.
+ * `live` is the difference between the two buffers a terminal pane can be
+ * searched through, and the bar has to know which it got:
+ *
+ *  • `true` — the xterm ON SCREEN. It is attached and fed, the matches are
+ *    highlighted in place, and `reveal` can scroll to them.
+ *  • `false` — an off-screen replay of MAIN'S RING BUFFER
+ *    (`lib/terminal-shadow.ts`), because this pane's tab is not showing and a
+ *    hidden pane is ingest-only (S-07). The count is real — it is the complete
+ *    scrollback, fresher than the pane's own — but there is nothing rendered to
+ *    scroll, so the hits are readable and not jumpable.
+ *
+ * The one thing this must never be is absent: reporting a count without saying
+ * which buffer produced it is how a jump affordance ends up pointing at nothing.
+ */
+export interface TerminalFindOutcome extends TerminalSearchOutcome {
+  live: boolean;
+}
+
+/**
+ * What `TerminalPane` publishes — the session's scrollback, behind the search
+ * addon (P2-E17-03, widened to main's ring buffer by #517).
+ *
+ * `search` is ASYNC as of #517, and the asynchrony is real rather than the
+ * seam's shape: when the pane is not on screen the answer comes from main over
+ * `pty:snapshot`. When it IS on screen the walk is still synchronous and in
+ * this process — the promise resolves in the same tick.
+ *
+ * THERE IS NO `ready()` ANY MORE. It used to mean "this xterm holds a current
+ * view of the PTY", and it was what withheld the group for a Terminal tab you
+ * had never opened — correct while the renderer's buffer was the only one we
+ * could search, and obsolete now that main's is. A card with a PTY always has a
+ * scrollback to search; the cases that remain are "there is no terminal at all"
+ * (no surface is published) and "we could not read it", which is a search-time
+ * answer (`null`) rather than an availability gate.
  */
 export interface TerminalFindSurface extends FindSurface {
   kind: 'terminal';
   /**
-   * Is there a live xterm with a buffer? A stream session renders a notice
-   * instead of a terminal and never publishes at all, so this is about the
-   * window between mount and `term.open()` — not about transport.
+   * Every match, or `null` when we could not look at all — no PTY behind this
+   * card any more, or the read failed.
+   *
+   * `null` is NOT an empty result and the provider must not flatten it into
+   * one: "0 in Terminal (scrollback only)" states that the last 5,000 lines do
+   * not contain the term, and saying that when we never managed to read them is
+   * exactly the confident-zero failure §5.31 exists to prevent.
    */
-  ready(): boolean;
-  search(query: TerminalSearchQuery): TerminalSearchOutcome;
-  /** scroll to and select a collected match */
+  search(query: TerminalSearchQuery): Promise<TerminalFindOutcome | null>;
+  /** scroll to and select a collected match — only ever true for a live hit */
   reveal(match: TerminalMatch): boolean;
-  /** drop the highlights and the selection */
+  /** drop the highlights and the selection, and let the off-screen replay go */
   clear(): void;
 }
 

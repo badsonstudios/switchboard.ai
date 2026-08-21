@@ -113,6 +113,13 @@ async function openChanges(w: Page, folder: string): Promise<void> {
   await expect(w.locator('.dv-active-tab')).toContainText('· diff', { timeout: 15_000 });
 }
 
+/** run a palette command by its visible title */
+async function palette(w: Page, title: string): Promise<void> {
+  await w.keyboard.press(`${MOD}+Shift+P`);
+  await w.getByPlaceholder('Type a command or a session name…').fill(title);
+  await w.keyboard.press('Enter');
+}
+
 /** The ↗ at the end of a Changes row: "never mind the diff, show me the file". */
 async function openInViewer(w: Page, file: string): Promise<void> {
   await w.getByRole('button', { name: `Open ${file} in the document viewer` }).click();
@@ -210,11 +217,14 @@ test.describe('a tab per document (#530)', () => {
     await expect(docTab(w, 'TWO.md')).toHaveCount(1);
 
     // The ✕ inside that tab. `IdentityTab` renders exactly one button, and it
-    // is NOT selected by title on purpose: every tab's ✕ carries the session
-    // card's `grid.closeTab` title, "Close (ends the session)", which is simply
-    // wrong on a document tab and closes no session at all. Selecting by role
-    // rather than by that string means this test survives the day the wording
-    // is fixed instead of being the thing that blocks it.
+    // now says what it will do: "Close document" (#543). It used to carry the
+    // session card's `grid.closeTab` title, "Close (ends the session)", which
+    // was simply wrong on a viewer — asserted here because #530 made this ✕ the
+    // ONLY way to close a document, which is what made the wording matter.
+    await expect(docTab(w, 'TWO.md').locator('button')).toHaveAttribute(
+      'title',
+      'Close document'
+    );
     await docTab(w, 'TWO.md').locator('button').click();
     await expect(docTab(w, 'TWO.md')).toHaveCount(0);
     await expect(docTab(w, 'ONE.md')).toHaveCount(1);
@@ -224,6 +234,41 @@ test.describe('a tab per document (#530)', () => {
     await openInViewer(w, 'TWO.md');
     await expect(docTab(w, 'TWO.md')).toHaveCount(1);
     await expect(docTab(w, 'ONE.md')).toHaveCount(1);
+  });
+
+  test('“Close all documents” clears the tab strip and leaves the session alone', async () => {
+    // #543: the answer to the accretion #530 opened. Thirty files read over a
+    // morning are thirty tabs, and until this there was no gesture but thirty
+    // ✕s. `lib/document-panels.test.ts` owns the RULE (which panels it takes,
+    // and that a popped-out viewer is spared) as pure state; what only a real
+    // window proves is that the palette entry reaches dockview at all and that
+    // it stops at the documents — the session card and its Changes tab are
+    // beside them in the same tab strip.
+    const dir = tempGitProject(['ONE.md', 'TWO.md', 'THREE.md']);
+    a = await launchApp({ seedFolder: dir });
+    const w = a.window;
+    await openChanges(w, dir);
+    await openInViewer(w, 'ONE.md');
+    await openInViewer(w, 'TWO.md');
+    await openInViewer(w, 'THREE.md');
+    await expect(tabs(w).filter({ hasText: '.md' })).toHaveCount(3);
+
+    await palette(w, 'Close all documents');
+
+    await expect(viewer(w)).toHaveCount(0);
+    await expect(docTab(w, 'ONE.md')).toHaveCount(0);
+    await expect(docTab(w, 'TWO.md')).toHaveCount(0);
+    await expect(docTab(w, 'THREE.md')).toHaveCount(0);
+    // the session is untouched — this is a DOCUMENT command, and the rail is
+    // where a lost session would show up first
+    await expect(railRows(w)).toHaveCount(1);
+    await expect(tabs(w).filter({ hasText: '· diff' })).toHaveCount(1);
+
+    // ...and the registry went with them: re-opening is a fresh tab, not a
+    // focus on a panel dockview no longer has
+    await openInViewer(w, 'ONE.md');
+    await expect(docTab(w, 'ONE.md')).toHaveCount(1);
+    await expect(viewer(w)).toBeVisible();
   });
 
   test('a viewer never opens as a tab inside a session’s group', async () => {
@@ -469,11 +514,19 @@ test.describe('a viewer is not a session (P2-E16-03, §5.30)', () => {
   });
 
   test('quitting with a viewer in its OWN window leaves no empty window behind', async () => {
-    // A popped-out viewer IS a popout group in the saved layout, and popout
-    // groups are restored before the `doc-` prune runs. Removing a popout
-    // group's last panel is what makes dockview forget the window — so the
-    // shell goes with the viewer — but "so it should" is the kind of claim the
-    // E8 specs exist because nobody checked.
+    // A popped-out viewer IS a popout group in the saved layout, so a restore
+    // that is not careful reopens its WINDOW and then throws the viewer away —
+    // leaving a real user an empty window belonging to nothing.
+    //
+    // #494 is why this reads the way it does. The restore used to reopen the
+    // window and rely on "removing a popout group's last panel makes dockview
+    // forget the window", which is true only once the child window has finished
+    // loading and the group's location has actually become `popout` — and the
+    // prune got there first often enough that this test failed 2 in 8 under
+    // machine load. The layout now drops that window before `fromJSON` ever
+    // sees it (`prunePopoutGroups`), so the count below starts at 0 rather than
+    // falling to it. The assertion is deliberately unchanged: it says what the
+    // user must not see, not how we arrange for them not to see it.
     skipPopoutOnLinux();
     const dir = tempGitProject(['ONE.md']);
     const first = await launchApp({ seedFolder: dir });

@@ -50,7 +50,7 @@ import { replayResumedHistory } from '../feed/history';
 import { HookListener } from '../hooks/hook-listener';
 import { IpcBroker } from '../ipc/broker';
 import { Channel } from '../../shared/ipc/capabilities';
-import type { PtyAttachment, PtyChunk } from '../../shared/ipc/pty';
+import type { PtyAttachment, PtyChunk, PtySnapshot } from '../../shared/ipc/pty';
 import type { PermissionRequest } from '../../shared/ipc/permissions';
 import type { ProviderCapabilities } from '../extensibility/contributions';
 import { TranscriptWatcher } from '../transcripts/watcher';
@@ -59,6 +59,7 @@ import type { TranscriptQuery, TranscriptSearchRequest } from '../../shared/tran
 import { LogFields, Logger } from '../log/logger';
 import { assignAccent, detectProjectType } from './identity';
 import { EventFeed } from '../events/feed';
+import { HistoryRepair } from './history-repair-log';
 import { planSessionStart } from './start-plan';
 import { recordNativeId, resumeCandidates } from './lineage';
 import { nextAutoLabel, typedLabel, visibleTaskLabel } from './auto-label';
@@ -128,6 +129,19 @@ export interface SessionIpcDeps {
    *  which is how the e2e suite starts a session on the Terminal now that
    *  Direct is the default (#381). */
   preferredTransport?: () => 'pty' | 'stream' | undefined;
+  /**
+   * A repair the user should SEE, not just find in the log (#539).
+   *
+   * Today's one producer here is an adopted resume — the repair sweep found this
+   * card's stored conversation missing and reattached it to another one in the
+   * folder. `start-plan.ts` calls that "the one resume outcome the user might
+   * disagree with"; until this existed, disagreeing meant reading
+   * `session start degraded` in a log file.
+   *
+   * Optional, and every failure is the caller's to swallow: a notice that cannot
+   * be delivered must never cost a session its start (P6).
+   */
+  onHistoryRepair?: (repair: HistoryRepair) => void;
 }
 
 /**
@@ -982,6 +996,11 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
             // the ancestors this card forked from, so a resume that never got a
             // turn can fall back to the conversation that is really there (#484)
             nativeSessionLineage: prior?.nativeSessionLineage,
+            // NOT `cededNativeIds` (#539), and its absence here is the decision
+            // rather than an oversight: a conversation this card gave up to a
+            // duplicate is neither a resume candidate nor a licence to go
+            // looking for a replacement. The long version is at the adoption
+            // branch in `start-plan.ts`.
           },
           // Only read when the chain came up empty and the provider offers to
           // look — every id every card points at, heads and ancestors alike, so
@@ -991,7 +1010,16 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           // Safe to read as one synchronous snapshot: nothing yields between the
           // plan and the `persist.upsert` below, so two orphaned cards in the
           // same folder cannot both be told about the same conversation.
-          claimedNativeIds: () => deps.persist.list().flatMap((s) => resumeCandidates(s)),
+          //
+          // CEDED IDS COUNT AS CLAIMED (#539). A card that gave a conversation
+          // up still holds the pointer, and the id is normally in the KEEPER's
+          // chain too — but close the keeper and it would become unclaimed to
+          // everyone, so an unrelated orphan in the same folder could adopt the
+          // conversation the ceding card is waiting to be given back.
+          claimedNativeIds: () =>
+            deps.persist
+              .list()
+              .flatMap((s) => [...resumeCandidates(s), ...(s.cededNativeIds ?? [])]),
           // a degraded capability is never silent — the card still starts. A
           // callback rather than reading plan.warnings: two of the decisions
           // are lazy and fire long after this line.
@@ -1221,6 +1249,27 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         // in the right conversation" and "came back in a plausible one" (#484)
         resumedVia: plan.resumedVia,
       });
+      // ADOPTION IS SAID ON SCREEN, not only here (#539). It is the one resume
+      // outcome the code itself expects the user to want to check, and a card
+      // that silently came back in a different conversation is indistinguishable
+      // from the bug the sweep repairs. Fail-open like everything else on this
+      // path: the session has already started, and a notice must not be able to
+      // take it back down.
+      if (plan.resumedVia === 'adopted' && plan.resumeSessionId) {
+        try {
+          deps.onHistoryRepair?.({
+            kind: 'adopted',
+            cardId: opts.cardId,
+            cardTitle: identity.title,
+            nativeSessionId: plan.resumeSessionId,
+          });
+        } catch (err) {
+          log.warn('could not announce an adopted conversation', {
+            cardId: opts.cardId,
+            error: String(err),
+          });
+        }
+      }
       // seed the card's display from the persisted record so nothing reads
       // empty while resuming
       return {
@@ -1559,6 +1608,35 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     // residue like `38;5;10m`. One documented gap: a snapshot holding no ESC
     // and no newline at all is left as it was.
     return { epoch, snapshot: s.scrollback.snapshot().toString('utf8') };
+  });
+
+  // A READ of the same ring buffer, for find (#517, §5.31).
+  //
+  // §5.31's Terminal group used to be answered by the RENDERER's xterm, and
+  // S-07 makes a hidden pane ingest-only: main keeps the buffer, the pane is
+  // fed only while its tab is showing. So on a card whose Terminal was never
+  // opened the only searchable copy in the window was EMPTY, and the group had
+  // to be withheld to avoid a confident zero about output printed a minute ago.
+  // This is the source of truth it withholds itself in favour of.
+  //
+  // IT IS NOT `pty:attach`, and must never become it: attach mints an epoch
+  // and REPLACES the session's single feed, so answering find through it would
+  // cut the stream to the pane the user is looking at. Read-only, no
+  // subscription, no epoch, no mutation of anything.
+  //
+  // It hands back RAW BYTES — escape sequences, carriage returns and all —
+  // because that is what we have. Deciding what those bytes MEAN is a terminal
+  // emulator's job, and the caller replays them into one (the CLI is a
+  // transport; interpreting its output here would be reimplementing it).
+  broker.handle('pty:snapshot', (_e, id: string): PtySnapshot | null => {
+    if (typeof id !== 'string') return refuse('pty:snapshot', 'session id must be a string');
+    const s = ptys.get(id);
+    // `null` for an unknown id, exactly as `pty:attach` answers it: "there is
+    // no terminal here to look at" is a different fact from "we looked and it
+    // was empty", and find renders the two differently.
+    if (!s) return null;
+    // the same bare decode `pty:attach` makes, for the same reason (#205/#211)
+    return { snapshot: s.scrollback.snapshot().toString('utf8'), cols: s.cols, rows: s.rows };
   });
 
   broker.on('pty:detach', (_e, id: string) => {

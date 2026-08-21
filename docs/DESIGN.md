@@ -258,6 +258,32 @@ contract differs in three ways, each deliberate:
   `canResume` is a boolean and cannot distinguish "not on disk" from "could not
   look" — so the contract puts the re-verification of `ownIds` on the adapter,
   which is the only party that can tell those apart.
+- **One conversation has exactly one card, and the host — not the adapter —
+  decides which** *(#539, 2026-08-19)*. `findOrphaned`'s `claimed` set stops the
+  repair CREATING a two-cards-one-conversation state; it cannot undo the pairs
+  that already exist, because neither card is orphaned and the capability is
+  never asked about them. So the workspace LOAD unties them, in the host, from
+  persisted data alone. "The same conversation" means the same id **in the same
+  folder**, because a transcript is `<root>/<slug of the folder>/<id>.jsonl` and
+  every lookup on this path is already folder-scoped — one id under two folders
+  is two files and no conflict. Given a real collision: a card holding the id as
+  its head beats one holding it as an ancestor, and failing that the elder card
+  (workspace order is creation order) keeps it. The loser does not lose the pointer — it moves to
+  `cededNativeIds`, which is deliberately NOT a resume candidate.
+  **And deliberately not a ticket to a repair either.** Widening the sweep's
+  precondition to "has this card ever held a conversation" is the tempting move
+  and it is wrong: the adoption rests on *my conversation is missing from disk*,
+  a ceded card's is present and demonstrably someone else's, and its `ownIds`
+  would be empty — so the adapter's own "are they really absent?" re-verification
+  goes vacuous at the same moment. It would take the newest unrelated transcript
+  in a busy folder. A fully-ceded card therefore starts fresh; the notice and a
+  documented hand-edit are the way back. A ceded id is also `claimed` by the card
+  that gave it up as well as by the keeper, so no third card can adopt it either.
+  Both repairs — adopted and ceded — reach a **dismissible notice persisted in
+  the workspace file** rather than only the log: a repair the user cannot see is
+  indistinguishable from the bug it repairs, and both are one-time by
+  construction, so a notice held only in memory behind a collapsed drawer is lost
+  the first time the user quits without opening it.
 - **`transcripts` LOCATES transcripts; it does not abstract reading them.** The
   sketch names a `TranscriptReader`. Our tolerant parser, tailer and block builder
   stay host-side and are shared by every provider writing that shape; the adapter
@@ -1809,8 +1835,8 @@ attention queue, or any bulk session operation.
   uses; a popped-out viewer is a **viewer window**.
 - **Every file opens its own tab** (owner decision, 2026-08-15 — #530). Opening
   a file always adds a viewer beside the ones already open; nothing is ever
-  replaced, and a document closes by its ✕ and nothing else. Opening a file
-  that is already open focuses its tab rather than opening a second copy.
+  replaced, and a document closes only when the **user** closes it. Opening a
+  file that is already open focuses its tab rather than opening a second copy.
   **This supersedes "one peek slot, pin to keep"** — the IntelliJ preview-tab
   rule promoted from §10 and shipped in P2-E16-03 (#460), where a second glance
   re-pointed the panel you were reading and a 📌 was how you kept it. That rule
@@ -1824,6 +1850,25 @@ attention queue, or any bulk session operation.
   vanishes because they glanced at something else is a thing taken away that
   they never asked to lose. The pin affordance is gone entirely; there is no
   setting behind it.
+- **Closing is a gesture, and there are two of them** (#543, following #530).
+  The tab's **✕** takes one document; **`Close all documents`** in the palette
+  takes the lot. The second exists because removing the peek slot removed the
+  only ceiling on tab count and put nothing in its place — "a mess the user can
+  see and close" is only an answer if closing is not thirty clicks. Deliberately
+  the cheapest possible answer: no LRU, no tab groups, no eviction policy, until
+  real use says this is not enough.
+  - **Popped-out viewers are exempt from the bulk close**, and the palette entry
+    names its own exemption the way `Close all sessions (keeps pinned ones)`
+    does. Having moved a document to another monitor is the nearest thing left
+    to the pin #530 deleted; taking that window away from a command typed in a
+    different window is the vanished-document failure arriving by another door,
+    and it is the cross-window surprise E8-04/#434 keep re-litigating. The
+    command is **disabled**, with a reason, when every open document is popped
+    out — never offered and inert.
+  - **No confirmation**, unlike the session bulk close. That confirm is not
+    about the count: closing a card ends a child process and forgets its record.
+    A viewer is a read-only lens on a file, and re-opening one is the same two
+    clicks that opened it.
 - **A viewer never displaces a session.** It opens into the document area or its
   own window — never as a tab inside a session's group. This is the E8-04 "new
   sessions land in whatever popout is active" defect in mirror image, and the
@@ -1843,8 +1888,14 @@ external editor does badly: reading `PROGRESS.md` as it is being written should
 not need a reload, and a silently stale render is worse than no render at all.
 
 **Markdown rendering, aimed at what AIs actually emit.** GFM — tables, task-list
-checkboxes rendered as disabled checkboxes (agents write plans as `- [ ]`),
-strikethrough, autolinks. Fenced code with a language label and a copy button
+checkboxes (agents write plans as `- [ ]`), strikethrough, autolinks.
+*(Amended by #612, 2026-08-20: this said "rendered as disabled checkboxes", and
+they are now rendered as `☐`/`☑` GLYPHS. `<input>` is in the sanitizer's
+`FORBID_TAGS` — a native control is focusable with no `tabindex`, so an
+`<input>` in content was a tab stop and a text box content could draw — and
+`marked`'s task-list checkbox was the one thing markdown itself emitted on that
+list. It was always `disabled`, i.e. decoration drawn with a control, so it is
+now drawn with decoration. The marker survives; the tag does not.)* Fenced code with a language label and a copy button
 (you copy the command it just gave you). YAML front matter as a collapsed
 metadata chip, not an `<hr>` and a line of garbage. Heading anchors plus a
 **document outline** — our own docs run past 1,700 lines. Relative links
@@ -2045,6 +2096,20 @@ a pointer where they left.)*
   > hundreds of expanders; the rail, the lamps and the Events panel each spend
   > one or two stops per session, which is bounded by how many sessions a human
   > runs and buys back the simplicity of ordinary buttons.
+  >
+  > **A correction to that budget, from #612 (2026-08-20):** "the feed is a
+  > single tab stop" is a statement about the app's own CHROME, and it is not
+  > true of RENDERED CONTENT. GFM emits `<a href>` for every link an agent
+  > writes and a link is focusable with no `tabindex`, so any reply containing
+  > links adds stops the app did not budget for — and no sanitizer setting can
+  > change that without ceasing to render links. #598 stripped every `tabindex`
+  > content can write and #612 removed the tags that are focusable WITHOUT one
+  > (`button`, `input`, `select`, `textarea`), so the property that actually
+  > holds, and the one to state, is narrower: **content cannot plant a
+  > control.** Every stop inside rendered content is a link or a disclosure the
+  > content genuinely contains, or one a decoration pass wrote. The document
+  > viewer is the exception that can promise more, because `decorateLinks`
+  > takes `href` off every link and writes the affordance back itself.
   >
   > **A fifth rule, added by #253 (2026-08-05):** *a drag is never the only way
   > to do something.* The sweep above made every CONTROL reachable and left one
