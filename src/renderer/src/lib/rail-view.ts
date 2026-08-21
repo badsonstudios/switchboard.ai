@@ -21,18 +21,20 @@
 // Kept free of React and of colors: the component turns `token` into
 // var(--status-<token>) / var(--status-<token>-ink), which is the only place
 // the theme is allowed to matter (§5.20).
+import type { CardStatus } from '../../../shared/sessions';
 
-/** The status vocabulary the rail can receive — SessionStatus plus the
- *  card-level 'suspended' (restored, not yet resumed). */
-export type RailStatusName =
-  | 'starting'
-  | 'working'
-  | 'needs-input'
-  | 'needs-permission'
-  | 'idle'
-  | 'done'
-  | 'crashed'
-  | 'suspended';
+/**
+ * The status vocabulary the rail can receive — `SessionStatus` plus the
+ * card-level 'suspended' (restored, not yet resumed).
+ *
+ * It was a second hand-written copy of those eight names until #618; it is
+ * `CardStatus` from `shared/sessions.ts` now, which is exactly what
+ * `sessions:cards` puts on the wire. The local NAME is kept because it says
+ * what this file uses the type FOR — `PRESENTATION` below is keyed by it, so a
+ * NINTH status added to the union stops compiling here until the rail decides
+ * how to paint it, which is the whole point of that record.
+ */
+export type RailStatusName = CardStatus;
 
 /**
  * The six-way ramp the design paints. 'starting' and 'suspended' fold in.

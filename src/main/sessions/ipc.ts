@@ -52,6 +52,8 @@ import { IpcBroker } from '../ipc/broker';
 import { Channel } from '../../shared/ipc/capabilities';
 import type { PtyAttachment, PtyChunk, PtySnapshot } from '../../shared/ipc/pty';
 import type { PermissionRequest } from '../../shared/ipc/permissions';
+import { isAutonomyMode, type AutonomyMode, type SessionCardWire } from '../../shared/sessions';
+import type { TransportKind } from '../../shared/transport';
 import type { ProviderCapabilities } from '../extensibility/contributions';
 import { TranscriptWatcher } from '../transcripts/watcher';
 import { searchTranscripts } from '../transcripts/search';
@@ -128,7 +130,7 @@ export interface SessionIpcDeps {
    *  because it is the only way to aim a WHOLE app instance at one transport —
    *  which is how the e2e suite starts a session on the Terminal now that
    *  Direct is the default (#381). */
-  preferredTransport?: () => 'pty' | 'stream' | undefined;
+  preferredTransport?: () => TransportKind | undefined;
   /**
    * A repair the user should SEE, not just find in the log (#539).
    *
@@ -850,7 +852,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         cardId: string;
         folder: string;
         title: string;
-        autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
+        autonomy?: AutonomyMode;
         groupId?: string;
       }
     ) => {
@@ -1360,7 +1362,15 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   // `await` is `autoKeyFor`, and it is evaluated AFTER `status` in the object
   // literal. Hoist any resolution above those reads and the renderer's ordering
   // guard silently degrades to a coin flip, with every test still green.
-  broker.handle('sessions:cards', async () => {
+  // The RETURN TYPE is the drift pin (#618). `SessionCardWire` is what the
+  // preload declares too, so a `status` widened back to `string` fails `tsc`
+  // here instead of at a renderer that compares against a value nobody sends.
+  //
+  // The pin on EXTRA fields is the annotation on the `map` callback below, not
+  // this one: an object literal returned from an unannotated callback loses its
+  // freshness before it meets this type, so excess-property checking never
+  // runs and a field added here and not to `SessionCardWire` would compile.
+  broker.handle('sessions:cards', async (): Promise<SessionCardWire[]> => {
     const live = manager.list();
     // The reverse of `cardOfLive`, and no longer a tie-break: a card holds ONE
     // binding since #187, because `sessions:create` reaps a dead session before
@@ -1376,7 +1386,11 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     const liveByCard = new Map<string, string>(); // cardId -> liveId
     for (const [liveId, cardId] of cardOfLive) liveByCard.set(cardId, liveId);
     return Promise.all(
-      deps.persist.list().map(async (card) => {
+      // ANNOTATED, and the annotation is load-bearing (#618) — see the note on
+      // the handler above. Without it, an extra field on this literal compiles
+      // and arrives in the renderer undeclared, which is the drift the shared
+      // type exists to stop.
+      deps.persist.list().map(async (card): Promise<SessionCardWire> => {
         const liveId = liveByCard.get(card.id);
         const rec = liveId ? live.find((r) => r.id === liveId) : undefined;
         return {
@@ -1494,9 +1508,14 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   // mode mid-flight, so it applies on the NEXT spawn/resume of this card
   broker.handle('sessions:setAutonomy', (_e, cardId: string, autonomy: string) => {
     if (typeof cardId !== 'string') return;
-    if (!['plan', 'ask', 'auto-edit', 'full-auto'].includes(autonomy)) return;
+    // §5.29: untrusted renderer input, so the parameter stays `string` and the
+    // vocabulary is checked at runtime. The check is the SHARED guard as of
+    // #618 — it was an inline `['plan', 'ask', …]` array, which is the one copy
+    // of the list whose going stale means silently refusing a mode the chips
+    // still offer.
+    if (!isAutonomyMode(autonomy)) return;
     const prior = deps.persist.list().find((s) => s.id === cardId);
-    if (prior) deps.persist.upsert({ ...prior, autonomy: autonomy as PersistedSession['autonomy'] });
+    if (prior) deps.persist.upsert({ ...prior, autonomy });
   });
 
   // Freeform task label for a card (E7-03), persisted across restarts — and
