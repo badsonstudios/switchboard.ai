@@ -11,7 +11,8 @@
 > nothing / genuine-[]-still-prunes with the guard-placement decision (#678).
 > Gates: unit 5902/5902, e2e 349+3sk (twice — second on the settled post-review
 > tree), 3 mutations caught, review 0 blockers, all findings fixed. Internal;
-> no manual page, no dogfood row. PR: (URL added at open, Dan merges).
+> no manual page, no dogfood row. **PR #703** (ready for review, Dan merges):
+> https://github.com/badsonstudios/switchboard.ai/pull/703
 > **Next up:** #690+#691 typed-plumbing bundle (per the staged queue below);
 > Dan's six-PR review train from the 2026-08-21 run is still open.
 
