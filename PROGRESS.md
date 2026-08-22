@@ -3,6 +3,19 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> **DONE 2026-08-22 (/next-item): #673+#677+#678 renderer-pin bundle** —
+> per-launch `identifierPrefix` on `createRoot` (`lib/root-identity.ts`,
+> finishes #654's id-forgery closure app-wide), `interpretPushAnswer` extracted
+> to `lib/push-answer.ts` with its refusal pin (#677), and
+> `SessionGrid.restore-refusal.test.tsx` pinning refused-knownCards-prunes-
+> nothing / genuine-[]-still-prunes with the guard-placement decision (#678).
+> Gates: unit 5902/5902, e2e 349+3sk (twice — second on the settled post-review
+> tree), 3 mutations caught, review 0 blockers, all findings fixed. Internal;
+> no manual page, no dogfood row. **PR #703** (ready for review, Dan merges):
+> https://github.com/badsonstudios/switchboard.ai/pull/703
+> **Next up:** #690+#691 typed-plumbing bundle (per the staged queue below);
+> Dan's six-PR review train from the 2026-08-21 run is still open.
+
 > # 🏁 RUN COMPLETE — 2026-08-21 (~07:45 → ~18:20), Fable orchestrating. Fresh session: read this block first.
 >
 > **Totals: 16 issues closed by merge across 9 internal PRs** (#665→#490,

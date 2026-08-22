@@ -6,6 +6,7 @@ import { initI18n } from './i18n';
 import { initRendererContributions } from './bootstrap';
 import { loadUiState } from './lib/ui-state';
 import { publishContextMenuLabels } from './lib/context-menu-labels';
+import { rootIdentifierPrefix } from './lib/root-identity';
 import './theme/tokens.css';
 
 // register the built-in contributions (and log what registered) BEFORE the
@@ -23,7 +24,13 @@ void loadUiState()
   // Right-click menus are built in main and labelled from here (#526). Before
   // the first render, so a right-click on the boot screen already has words.
   publishContextMenuLabels(i18next);
-  createRoot(document.getElementById('root')!).render(
+  // #673: every `useId`-derived id in the app gets a per-launch random
+  // namespace, so content rendered in the feed or the viewer cannot name a
+  // live control id (the capture rules are in `markdown.tsx`'s profile note;
+  // the generator's own comment says why crypto-random and why once).
+  createRoot(document.getElementById('root')!, {
+    identifierPrefix: rootIdentifierPrefix(),
+  }).render(
     <React.StrictMode>
       <App />
     </React.StrictMode>

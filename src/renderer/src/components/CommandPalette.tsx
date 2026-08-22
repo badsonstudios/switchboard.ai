@@ -46,8 +46,10 @@ export function CommandPalette(props: {
    * reader cannot see) reached through a NAME rather than an attribute. (The
    * feed and the viewer render AFTER this component and never could.)
    *
-   * `React.useId()` is not a secret — React 19 numbers client ids from a
+   * `React.useId()` alone is not a secret — React 19 numbers client ids from a
    * module-global counter — so what this removes is a STABLE, PUBLISHED name.
+   * Since #673 the root's per-launch `identifierPrefix` (`lib/root-identity.ts`)
+   * makes the composed id unguessable as well.
    */
   const paletteId = React.useId();
 
