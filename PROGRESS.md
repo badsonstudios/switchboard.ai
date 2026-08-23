@@ -9,7 +9,8 @@
 > (invalid → dropped + warned, spawn preserved) and refuses an empty `cardId`
 > with its own refusal reason (#691, incl. #333's comment). Gates: unit
 > 5891/5891, e2e 349+3sk, all mutations caught, review 0 blockers. Internal;
-> no manual page, no dogfood row. PR: (URL added at open, Dan merges).
+> no manual page, no dogfood row. **PR #706** (ready for review, Dan merges):
+> https://github.com/badsonstudios/switchboard.ai/pull/706
 >
 > **Two findings worth keeping from this run:**
 > 1. **#705 FILED — the e2e suite is only trustworthy on a QUIET desktop.**
