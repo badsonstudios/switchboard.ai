@@ -16,6 +16,7 @@ import { initI18nForTests } from '../i18n/test-i18n';
 import { sessionPanels } from '../extensibility/panels';
 import { PanelContext } from '../extensibility/contributions';
 import { loadUiState } from '../lib/ui-state';
+import type { TransportKind } from '../../../shared/transport';
 import {
   attachmentDraftKey,
   resetAttachmentDrafts,
@@ -62,7 +63,7 @@ function stubBridge(initialUi: Record<string, unknown> = {}): void {
 
 const feedPanel = sessionPanels.find((p) => p.id === 'feed')!;
 
-async function mount(transport: 'pty' | 'stream' = 'stream'): Promise<HTMLElement> {
+async function mount(transport: TransportKind = 'stream'): Promise<HTMLElement> {
   const host = document.createElement('div');
   document.body.appendChild(host);
   const root = createRoot(host);

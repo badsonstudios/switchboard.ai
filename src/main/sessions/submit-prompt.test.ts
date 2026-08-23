@@ -19,6 +19,7 @@ import {
   sanitizePromptAttachments,
 } from '../../shared/prompt-attachments';
 import { NdjsonDecoder, encodeFrame } from '../transport/ndjson';
+import type { TransportKind } from '../../shared/transport';
 import { FakeStreamProtocol } from '../providers/fake-stream-protocol';
 import { LogSink, createLogger } from '../log/logger';
 
@@ -46,7 +47,7 @@ class ByteTransport implements SessionTransport {
   remove(): void {}
 }
 
-function registryFor(transport: 'pty' | 'stream'): ContributionRegistry<MainContributions> {
+function registryFor(transport: TransportKind): ContributionRegistry<MainContributions> {
   const r = new ContributionRegistry<MainContributions>();
   r.register('provider-adapter', {
     manifest: { id: 'fake', displayName: 'Fake', version: '0', capabilities: ['sessions.spawn'] },

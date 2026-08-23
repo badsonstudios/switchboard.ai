@@ -114,6 +114,13 @@ on the floor, and say so in your PR.
   so the window could compare it against a state that cannot happen and quietly
   never match. Every one of them is now a single description both sides read, so
   a mismatch stops the build instead of shipping. No visible change (#618).
+- Two leftovers from that same sweep: the last ~18 places that hand-spelled the
+  "Terminal or Direct" pair now use the one shared name for it (so a future
+  transport can't silently miss one), and starting a session now checks the
+  autonomy value and the card id it was asked for the same way changing
+  autonomy already did — a malformed request can no longer seed a session with
+  a mode that doesn't exist or bind it to a card name nothing can ever match.
+  No visible change (#690, #691).
 
 
 ## 0.8.2 — 2026-08-21

@@ -24,6 +24,7 @@ import type { FeedBlockDto } from '../lib/feed';
 import type { ThemeDefinition, ThemeId } from '../theme/theme';
 import type { ServiceHealthStatus } from '../../../shared/service-health';
 import type { EventDto } from '../model/types';
+import type { TransportKind } from '../../../shared/transport';
 
 /**
  * A set of commands. Built lazily from deps rather than supplied as a list:
@@ -154,7 +155,7 @@ export interface PanelContext {
    * PTY, so a panel built around one has to say so rather than render an empty
    * black rectangle.
    */
-  transport?: 'pty' | 'stream';
+  transport?: TransportKind;
   status?: string;
   autonomy?: string;
   model?: string;
