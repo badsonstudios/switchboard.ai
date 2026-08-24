@@ -73,6 +73,21 @@ on the floor, and say so in your PR.
   Tabbing through the list can no longer land on a row hidden behind the pinned
   ones (#295).
 
+- **The conversation now shows when you sent a picture or a file with a
+  prompt.** Attach a screenshot, hit Enter, and the chips above the prompt box
+  clear themselves — that is by design, and until now it meant the evidence
+  vanished with them: scrolling back, your prompt read as bare words and
+  Claude's reply looked like an answer to a question you never asked. Worse, a
+  prompt that was *only* a picture (nothing typed — a perfectly good way to ask
+  "what is this?") left no trace in the session at all, so the reply arrived
+  under nothing. Your prompt now carries a small line saying what went with it —
+  *1 image attached*, *2 images and 1 file attached* — and a picture sent with
+  nothing typed gets its own entry in the conversation. The count is read off
+  the message that actually went to Claude, not off what the prompt box was
+  holding, so it cannot flatter itself: if it says two pictures, two pictures
+  were sent. It is only a count: no file names are shown, and switchboard.ai
+  still keeps no copy of the files themselves — that has not changed (#491).
+
 ### Fixed
 
 - **Bringing a session back from a window it had to itself now puts it back

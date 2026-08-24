@@ -537,17 +537,93 @@ function ThinkingRow({ b }: { b: FeedBlockDto }): React.JSX.Element {
 }
 
 /**
+ * Which of the three messages a given pair of counts calls for.
+ *
+ * Spelled out rather than built as `feedView.attached.${key}`, so that each key
+ * is findable by grepping for the string a translator or a key-extraction check
+ * would search for.
+ */
+const ATTACHED_KEY = {
+  images: 'feedView.attached.images',
+  documents: 'feedView.attached.documents',
+  both: 'feedView.attached.both',
+} as const;
+
+/**
+ * What rode with this prompt, on the prompt (#491).
+ *
+ * WHY IT IS A COUNT AND NOT A THUMBNAIL. The bytes are gone by the time this
+ * renders: WE keep no copy of an attachment after the send — deliberately, and
+ * the manual says so out loud — so the Feed has the message's own content
+ * blocks and nothing else. (The CLI's own JSONL transcript does hold the base64
+ * on disk; that is the CLI's file and not a store of ours to read pixels back
+ * out of.) A count is the most this surface can honestly show, and it is the
+ * fact the user scrolling back actually needs: whether the reply above was
+ * answering a picture they can no longer see.
+ *
+ * NO FILENAMES, and that is a choice rather than an omission. A `document`
+ * block carries a `title` straight off `File.name`, which is attacker-adjacent
+ * text (#499 is open on bidi characters in exactly that field). Digits and the
+ * app's own words cannot carry any of it. When #499 settles how a title is
+ * safely displayed, this is where a name would go.
+ *
+ * ALWAYS VISIBLE, above the header line: a long prompt collapses to one row,
+ * and a marker that collapsed with it would hide the very evidence this block
+ * exists to keep.
+ *
+ * NO `title=` ATTRIBUTE, on purpose. On a generic element a `title` becomes the
+ * computed accessible NAME, so a hint there would be announced INSTEAD of "1
+ * image attached" — the opposite of the point. The visible words are the whole
+ * message, and they are the whole message for everyone.
+ *
+ * KNOWN BOUNDARY: this is an element whose only child is a text node, which is
+ * the shape `lib/feed-marks.ts` is free to split — so a session find for
+ * "image" can paint a highlight on these words even though the engine, which
+ * searches the transcript rather than the DOM, never counted them. Cosmetic,
+ * and the same is already true of `feedView.expandHint` beside it.
+ */
+function AttachmentMarker({
+  attachments,
+}: {
+  attachments: NonNullable<FeedBlockDto['attachments']>;
+}): React.JSX.Element | null {
+  const { t } = useTranslation();
+  const { images, documents } = attachments;
+  if (images <= 0 && documents <= 0) return null;
+  // Three whole messages rather than two clauses glued together: "2 images" and
+  // "1 file" do not compose into a sentence the same way in every language, and
+  // a translator handed a separator to join cannot fix that.
+  const key = images > 0 && documents > 0 ? 'both' : images > 0 ? 'images' : 'documents';
+  return (
+    <div
+      data-feed-attachments={String(images + documents)}
+      style={{
+        fontSize: 9.5,
+        fontFamily: 'var(--font-ui)',
+        color: 'var(--muted)',
+        marginBlockEnd: 3,
+      }}
+    >
+      {t(ATTACHED_KEY[key], { images, documents })}
+    </div>
+  );
+}
+
+/**
  * The user's prompt in a tinted pill (Dan #2). Long payloads — skill
  * invocations dump the whole skill body as a user message — collapse to a
  * header line with click-to-expand, like tool blocks (Dan #7).
  */
-function UserPill({ text, seq }: { text: string; seq: number }): React.JSX.Element {
+function UserPill({ b }: { b: FeedBlockDto }): React.JSX.Element {
   const { t } = useTranslation();
+  const text = b.text ?? '';
   const [expanded, setExpanded] = React.useState(false);
   // find jumped here — a long prompt (a skill body dumped as a user message)
-  // unfolds (§5.31). `seq` is threaded in purely for this: the pill is the one
-  // renderer that took a string rather than the block. See lib/feed-reveal.
-  const revealed = useRevealed(seq);
+  // unfolds (§5.31). See lib/feed-reveal. (This used to take a bare `text` and
+  // a bare `seq`; #491 needs a third field off the block, and three loose
+  // arguments is the point where the block itself is the cheaper thing to
+  // pass — as every other renderer in this file already does.)
+  const revealed = useRevealed(b.seq);
   const open = expanded || revealed;
   const bodyId = React.useId();
   // a skill / slash-command invocation carries a command-name tag
@@ -567,6 +643,7 @@ function UserPill({ text, seq }: { text: string; seq: number }): React.JSX.Eleme
         overflowWrap: 'break-word',
       }}
     >
+      {b.attachments && <AttachmentMarker attachments={b.attachments} />}
       {/* The header line is the ONLY expand target now (#174). It used to be
           the whole pill, in both states — which meant an expanded prompt
           collapsed under the pointer the moment you tried to select a line out
@@ -600,7 +677,12 @@ function UserPill({ text, seq }: { text: string; seq: number }): React.JSX.Eleme
           )}
         </FeedExpander>
       )}
-      {(!expandable || open) && (
+      {/* `text !== ''` is the attachment-only turn (#491): a screenshot sent
+          with nothing typed is a real prompt and gets a real pill, but an
+          empty body under the marker would be a blank line pretending to be
+          words. Every other user block has non-empty text by construction —
+          `blocks.ts` only emits one for content that trims to something. */}
+      {(!expandable || open) && text !== '' && (
         <div id={expandable ? bodyId : undefined} style={{ whiteSpace: 'pre-wrap' }}>
           {text}
         </div>
@@ -711,7 +793,7 @@ export const feedBlockRenderers: FeedBlockRendererContribution[] = [
     manifest: manifest('feed-block-user', 'User prompt pill'),
     order: 60,
     matches: (b) => b.kind === 'user',
-    render: (b) => <UserPill text={b.text ?? ''} seq={b.seq} />,
+    render: (b) => <UserPill b={b} />,
   },
   {
     // matches everything — MUST sort last, or it shadows the whole list

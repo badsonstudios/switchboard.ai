@@ -216,6 +216,16 @@ Either way, a small chip appears above the box with the file's name and size —
 and, for a picture, a thumbnail of it. Type your question next to it and press
 Enter.
 
+**Afterwards, the conversation remembers.** The chips clear the moment you send
+— so the prompt in your session picks up a small line saying what rode with it:
+*1 image attached*, or *2 images and 1 file attached*. Scrolling back a week
+later, that line is what tells you Claude's reply was about a screenshot you can
+no longer see. A picture sent with **nothing typed** gets an entry of its own,
+rather than the reply appearing out of nowhere. The count comes from the message
+that actually went to Claude, so it is never a guess — but it is only a count:
+file names are not shown, and switchboard.ai keeps no copy of the files to show
+you (see below).
+
 #### What happens to each kind of file
 
 Claude reads different files in different ways, and switchboard.ai sends each

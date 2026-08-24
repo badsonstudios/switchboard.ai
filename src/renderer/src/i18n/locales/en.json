@@ -580,6 +580,11 @@
       "notSent": "That prompt wasn't sent, so nothing has been cleared. The session may have stopped, or it may not be in Direct mode.",
       "notRestored": "Not restored: {names}. Your typed prompt is kept when switchboard.ai restarts; attached files are not, because no copy of them is ever left on disk. Attach them again."
     },
+    "attached": {
+      "images": "{images, plural, one {# image} other {# images}} attached",
+      "documents": "{documents, plural, one {# file} other {# files}} attached",
+      "both": "{images, plural, one {# image} other {# images}} and {documents, plural, one {# file} other {# files}} attached"
+    },
     "modelHint": "Model last seen in this session's transcript",
     "send": "Send to the session",
     "sendIcon": "↑",
