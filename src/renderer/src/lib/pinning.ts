@@ -47,22 +47,27 @@
 // end to end: a pinned card that a mode collapses lands in the strip and keeps
 // its own row there, because the fold exemption is what protects position.
 //
-// ── WHAT IS NOT IMPLEMENTED: "NEVER SCROLLS OUT OF VIEW UNDER OVERFLOW" ─────
+// ── "NEVER SCROLLS OUT OF VIEW UNDER OVERFLOW" — SHIPPED, WITH ONE LIMIT ────
 //
-// §5.8 lists that alongside "sorts first", and this item does NOT deliver it.
-// Saying so here rather than leaving the clause unmentioned: the four
-// exemptions below are enumerated so carefully that silence about the fifth
-// clause would read as "handled", and the next person to touch pinning would
-// inherit a contract they believe is complete.
+// §5.8 lists that alongside "sorts first". #78 shipped the sort and said
+// plainly that this clause was the unfinished half; #295 finished it, and this
+// paragraph is that note being replaced rather than left to mislead.
 //
-// The rail IS a scroll container (`.rail-scroll`, `overflow-y: auto`), so this
-// is not blocked on missing UI — it is a deliberate deferral. Sorting first
-// already puts a pinned session at the top of its bucket, which is where you
-// scroll to; making the row itself `position: sticky` so it survives being
-// scrolled PAST is a visual change with real design questions this item is not
-// the place to answer (what several pinned rows in different groups do to each
-// other, how a sticky row reads against the group header it would overlap,
-// what happens at the rail's minimum width). Sort-first is the honest half.
+// It lives in the COMPONENT, not here, because it is geometry rather than a
+// rule about which cards a policy may take: `SessionsRail`'s `bucketRows` lifts
+// a bucket's pinned prefix into one `position: sticky` block, so scrolling
+// slides the unpinned rows underneath them. The four design decisions it makes
+// — sticky rows over a hoisted shelf, one block per bucket, a group header that
+// is NOT sticky, and a keyboard guard so nothing is focused under the block —
+// are written out there.
+//
+// THE ONE LIMIT, because a contract you believe is complete is the thing this
+// header exists to prevent: a sticky box cannot leave its containing block. On
+// a workspace with no groups the loose list IS the scroll content, so the
+// guarantee is unconditional. Inside a GROUP card it reads "while that card is
+// on screen" — scroll past the entire group and its pins go with it. Closing
+// that would mean hoisting pins out of the group the user filed them under,
+// which is the trade `lib/groups`' `railOrder` already refused.
 //
 // ── THE AUTO-EVICTION SEAM ──────────────────────────────────────────────────
 //
