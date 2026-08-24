@@ -9,9 +9,25 @@
 > deliberately NOT required on this repo — do not re-add them, do not reach
 > for `--admin`.** Every PR in this train conflicts on CHANGELOG.md (all add
 > under `0.8.3 — unreleased`) and PROGRESS.md (this file); resolution is
-> KEEP BOTH, chronological. Order: 703 ✅ → 706 → 674 → 684 → 686 → 701 →
-> 692 → 694. (#686 before #701: both touch SessionGrid. #694 has NO CI runs
-> at all — a push will trigger the first.)
+> KEEP BOTH, chronological. `docs/plans/dogfood-testing.md` is a third
+> conflict axis — most cars add a row to the same table.
+>
+> **ORDER CHANGED, and the reason matters — do NOT put #674 first.**
+> The 2026-08-21 note suggested `674 → 684 → 686 → 701 → 692 → 694`. But
+> **#674 RENAMES the i18n catalog** `src/renderer/src/i18n/locales/en.json`
+> → `src/shared/i18n/locales/en.json`, and **#686 and #692 both ADD KEYS to
+> the old path**. Merging #674 first would leave those two editing a file
+> that no longer exists — a rename/modify conflict at best, silently
+> stranded strings (green CI, missing UI text) at worst. Put #674 LAST and
+> git's rename detection carries every accumulated key across in one move.
+>
+> **Running order: 703 ✅ → 706 ✅ → 684 → 686 → 701 → 692 → 694 → 674.**
+> (#684 first of the rest: no catalog edit. #686 before #701: both touch
+> SessionGrid. #694 has NO CI runs at all — its push triggers the first.)
+>
+> **Process note (cost me a stray merge):** `git checkout X 2>&1 | tail -2`
+> returns TAIL's exit code, so `&&` does not short-circuit on a failed
+> checkout. Do not pipe a command whose exit code gates the next one.
 >
 > **DONE 2026-08-22 (/next-item): #690+#691 typed-plumbing bundle** — all 18
 > inline `'pty' | 'stream'` literals swept to `TransportKind` (#690), and
@@ -19,7 +35,7 @@
 > (invalid → dropped + warned, spawn preserved) and refuses an empty `cardId`
 > with its own refusal reason (#691, incl. #333's comment). Gates: unit
 > 5891/5891, e2e 349+3sk, all mutations caught, review 0 blockers. Internal;
-> no manual page, no dogfood row. **PR #706** (ready for review, Dan merges):
+> no manual page, no dogfood row. **PR #706 — MERGED 2026-08-23** (train car 2):
 > https://github.com/badsonstudios/switchboard.ai/pull/706
 >
 > **Two findings worth keeping from this run:**
