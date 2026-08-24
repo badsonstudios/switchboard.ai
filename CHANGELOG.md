@@ -92,6 +92,11 @@ on the floor, and say so in your PR.
   nothing else changes on screen. Alongside it, Push setup, Quiet hours and the
   command palette stopped giving their controls fixed, predictable internal
   names, so there is less for content to aim at even if a label got through.
+  That last half is now finished app-wide: every control name switchboard.ai
+  generates gets a fresh random namespace each time the app starts, so nothing
+  written into a reply or a document beforehand can name a control at all —
+  including the tab strips on session cards and in the questions panel, which
+  the earlier change had not reached.
 
 ### Internal
 
@@ -114,6 +119,13 @@ on the floor, and say so in your PR.
   so the window could compare it against a state that cannot happen and quietly
   never match. Every one of them is now a single description both sides read, so
   a mismatch stops the build instead of shipping. No visible change (#618).
+- Two fixes from the refused-call sweep above now have regression tests standing
+  behind them: the Push setup dialog's answer handling moved into its own small
+  module where a test can feed it a refusal, and a new test proves that a
+  refused card-list read during startup layout restore deletes nothing — the
+  one code path where mistaking "we could not ask" for "there are no cards"
+  would silently wipe every pin, saved layout and per-session setting in the
+  app. No visible change (#677, #678).
 - Two leftovers from that same sweep: the last ~18 places that hand-spelled the
   "Terminal or Direct" pair now use the one shared name for it (so a future
   transport can't silently miss one), and starting a session now checks the
