@@ -84,6 +84,7 @@ import { findBarState, subscribeFindBar } from '../lib/find-bar-state';
 import { FindBar } from './FindBar';
 import { sendSessionCommand } from '../lib/composer';
 import { DEFAULT_SESSION_TRANSPORT, type TransportKind } from '../../../shared/transport';
+import type { AutonomyMode, SessionStatus } from '../../../shared/sessions';
 import { srOnly } from './sr-only';
 import {
   dropRetired,
@@ -114,11 +115,11 @@ interface Live {
   id: string;
   accent?: string;
   badge?: string;
-  autonomy?: string;
+  autonomy?: AutonomyMode;
   /** the record's status at bind time — a card that ADOPTED a running session
    *  (reveal, P2-E15-08) must not claim 'starting': no further push is coming
    *  for an idle session, and the card would sit there lying about it */
-  status?: string;
+  status?: SessionStatus;
   /** which transport hosts it (P2-E18-08b) — the Terminal tab needs to know.
    *  Not optional: a live session always has one (#445), and an optional field
    *  here is an invitation to invent a default for it. */
@@ -370,7 +371,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // `null` = focus is outside the strip, so the roving stop sits on the
   // selection again.
   const [tabFocus, setTabFocus] = React.useState<string | null>(null);
-  const [status, setStatus] = React.useState<string>('starting');
+  const [status, setStatus] = React.useState<SessionStatus>('starting');
   const cardId = props.params?.cardId;
   // PRESENTATION STATE LIVES IN THE STORE (P2-E15-08, AR-P1-5), not here.
   //
@@ -893,8 +894,10 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       });
     };
     refresh();
-    const off = window.switchboard.sessions.onStatus((c) => {
-      const change = c as { sessionId: string; to: string };
+    // No cast since #618: `onStatus` hands over a typed `StatusChange`, so
+    // `to === 'done'` is checked against the union main can actually emit
+    // rather than against `string` (which would have compiled for any typo).
+    const off = window.switchboard.sessions.onStatus((change) => {
       if (change.sessionId === live.id && change.to === 'done') refresh();
     });
     return () => {
@@ -903,15 +906,19 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     };
   }, [live, visible, folder]);
 
-  // live status for the header pill (E8-05). Backend emits { sessionId, to }.
+  // live status for the header pill (E8-05). Backend emits a `StatusChange`.
   // Spawn starts at the RECORD's status — never assume "working" (Dan
   // 2026-07-22: resumed sessions showed the working banner doing nothing).
+  //
+  // The `c as { …; to?: string }` cast this used to open with was #618's second
+  // widening site, and the optional `to` in it was the tell: `to` is required
+  // and is a `SessionStatus`, so the `if (s.to)` guard it forced was dead code
+  // guarding against a shape main cannot send.
   React.useEffect(() => {
     if (!live) return;
     setStatus(live.status ?? 'starting');
-    return window.switchboard.sessions.onStatus((c) => {
-      const s = c as { sessionId: string; to?: string };
-      if (s.sessionId === live.id && s.to) setStatus(s.to);
+    return window.switchboard.sessions.onStatus((change) => {
+      if (change.sessionId === live.id) setStatus(change.to);
     });
   }, [live]);
 

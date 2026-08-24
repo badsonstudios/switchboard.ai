@@ -234,25 +234,83 @@ export class FakeStreamProtocol {
     this.emitInit(cwd);
 
     // `--replay-user-messages`: the CLI echoes our own turn back, so a send is
-    // ACKNOWLEDGED rather than assumed (the flag P2-E18-06 added to the
-    // recipe). The fake did not, and once the Feed reads the stream instead of
-    // the transcript (P2-E18-10) that omission means a stream session shows no
-    // user prompt at all — a fake missing something the real thing does is a
+    // OBSERVABLE rather than assumed (the flag P2-E18-06 added to the recipe).
+    // Read that word carefully — this used to say "acknowledged", and #666
+    // found that to be wrong: see "AN ECHO IS NOT PROOF THE TURN RAN" below.
+    // The fake did not echo at all, and once the Feed reads the stream instead
+    // of the transcript (P2-E18-10) that omission means a stream session shows
+    // no user prompt at all — a fake missing something the real thing does is a
     // fake that hides a bug.
     //
-    // `uuid` and `origin` ride the echo BACK when they came in (#490), the way
-    // the real CLI's replay builder does — `RCg`: `{type:"user",message:e.message,
-    // session_id:Vt(),parent_tool_use_id:null,uuid:e.uuid,…isReplay:!0,
-    // …e.origin&&{origin:e.origin}}`. Conditionally, so a hand-written test
-    // frame without them echoes without them, exactly as the real one would.
-    // A fake that dropped the id could not tell a builder that stopped minting
+    // THE WHOLE REPLAY BUILDER, quoted, because the next three paragraphs are
+    // each about one field of it. `claude` 2.1.233 on PATH (Dan's install — the
+    // extension is 2.1.226 and ships its own binary), found with
+    // `grep -a -o -E '.{250}RCg\(.{150}' claude.exe`:
+    //
+    //   function RCg(e,t){let n=PCg(e,t)?t?.fileAttachments:void 0;
+    //     return{type:"user",message:e.message,session_id:Vt(),
+    //       parent_tool_use_id:null,uuid:e.uuid,timestamp:e.timestamp,
+    //       isReplay:!0,isSynthetic:ROt(e),
+    //       ...n&&n.length>0&&{file_attachments:n},...e.origin&&{origin:e.origin}}}
+    //
+    // `uuid` and `origin` ride the echo BACK when they came in (#490) —
+    // CONDITIONALLY, mirroring the two spreads above, so a hand-written test
+    // frame without them echoes without them exactly as the real one would. A
+    // fake that dropped the id could not tell a builder that stopped minting
     // one from a wire that lost it.
+    //
+    // `isReplay` is UNCONDITIONAL, and the difference from those two is the
+    // point of #666: `isReplay:!0` is a literal in the builder, not a spread,
+    // and the CLI's own output schema makes it REQUIRED on this shape —
+    // `lu0=ve(()=>jkg().extend({uuid:Bu(),session_id:F(),isReplay:kt(!0),
+    // file_attachments:ht(no()).optional()}))`, where `kt` is `z.literal`. It
+    // is the flag that says "you sent this, I am handing it back", and a host
+    // is MEANT to key on it: the reference webview's own duplicate suppression
+    // is `else if(e.type==="user"&&"isReplay"in e&&e.isReplay){if("uuid"in e&&
+    // e.uuid&&t.some(r=>r.uuid===e.uuid));else{…insert…}}` (webview/index.js,
+    // 2.1.226 — one hit in the file). Without the flag an echo falls through
+    // that branch entirely and gets treated as a fresh turn. We omitted it, so
+    // against this fake no host could tell an echo from a new message.
+    //
+    // AN ECHO IS NOT PROOF THE TURN RAN. Worth pinning here because the flag
+    // makes it tempting to read one as an ack: when the CLI DROPS a message as
+    // a duplicate it still emits the echo, same shape, same `isReplay:!0` —
+    //
+    //   …w(`Skipping duplicate user message: ${yt.uuid}`),p.replayUserMessages){
+    //     w(`Sending acknowledgment for duplicate user message: ${yt.uuid}`);
+    //     let Do=CDt(yt);X.enqueue({type:"user",message:yt.message,session_id:Pt,
+    //       parent_tool_use_id:null,uuid:yt.uuid,timestamp:yt.timestamp,
+    //       isReplay:!0,...Do.length>0&&{file_attachments:Do}})}
+    //
+    // …after which it `continue`s, never reaching `Ta("new_user_message")`. So
+    // `isReplay` means "this text came from you", NOT "this text is running".
+    // Nothing in our code reads the echo as an ack today (`submitPrompt` marks
+    // `prompt-sent` locally), and this fake cannot reproduce the drop because
+    // it does not de-duplicate at all — a future "confirmed by the echo"
+    // feature needs a `result`, not this line. That is the reachable trap now
+    // that #490 puts a uuid on the wire and the dedup pass actually runs.
+    //
+    // NOT copied from the builder, and deliberately — omitting these two IS the
+    // faithful behaviour, not a shortcut:
+    //
+    //   `timestamp`. `RCg` reads `e.timestamp` straight off the parsed inbound
+    //   message and mints nothing, and the inbound schema neither requires it
+    //   nor defaults it — `timestamp:F().optional().describe("ISO timestamp
+    //   when the message was created on the originating process. …")` on the
+    //   base user shape `jkg`. We send no timestamp, so the real CLI would put
+    //   `undefined` there and `JSON.stringify` would drop the key.
+    //   (`userMessage()` could start sending one; nothing needs it yet.)
+    //
+    //   `isSynthetic`. `ROt(e)` is
+    //   `e.isMeta||e.isVisibleInTranscriptOnly||e.isCompactSummary||void 0` —
+    //   `undefined` for a typed prompt, so likewise dropped.
     this.emit({
       type: 'user',
       message,
       session_id: this.sessionId,
       parent_tool_use_id: null,
       ...(typeof msg.uuid === 'string' && { uuid: msg.uuid }),
+      isReplay: true,
       ...(msg.origin !== undefined && { origin: msg.origin }),
     });
 
@@ -641,7 +699,12 @@ export class FakeStreamProtocol {
     this.ev({ type: 'message_delta', delta: { stop_reason: 'tool_use' } });
     this.ev({ type: 'message_stop' });
 
-    // the tool's OUTPUT, replayed as the CLI replays it
+    // The tool's OUTPUT, as the CLI emits it: a `user` message, but NOT a
+    // replayed one. No `isReplay` here on purpose — the flag marks a turn the
+    // host itself sent being handed back (`RCg`, applied only to inbound
+    // messages; see `onUser`), and a tool result is the CLI's own output. A
+    // fake that marked this too would teach a host to drop its tool results as
+    // duplicates.
     const resultMessage = {
       role: 'user',
       content: [

@@ -7,6 +7,7 @@
 // blank pane. Telling them apart is P9 (trust through transparency) applied to
 // our own plumbing.
 import { BindingDiagnostics, BindingState } from '../../../shared/transcripts';
+import type { TransportKind } from '../../../shared/transport';
 
 export interface EmptyStateCopy {
   /** headline i18n key */
@@ -43,7 +44,7 @@ export interface EmptyStateCopy {
 export function emptyStateCopy(
   binding: BindingState,
   diag: BindingDiagnostics | null,
-  transport?: 'pty' | 'stream'
+  transport?: TransportKind
 ): EmptyStateCopy {
   switch (binding) {
     case 'searching':

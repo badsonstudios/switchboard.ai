@@ -16,6 +16,7 @@ import { ContributionRegistry } from '../../shared/extensibility/registry';
 import { MainContributions } from '../extensibility/contributions';
 import { Logger } from '../log/logger';
 import { writeSessionSettings } from '../providers/claude';
+import type { TransportKind } from '../../shared/transport';
 import {
   isSessionStateDirName,
   removeSessionStateDir,
@@ -303,7 +304,7 @@ describe('a live session owns its state dir; a dead one does not (#290)', () => 
      *  does whatever the test needs — the window between `settingsFor` and the
      *  spawn, where a directory and a token both already exist. */
     function registryThat(after: (o: { sessionId: string }) => Partial<{
-      transport: 'pty' | 'stream';
+      transport: TransportKind;
     }>): ContributionRegistry<MainContributions> {
       const r = new ContributionRegistry<MainContributions>();
       r.register('provider-adapter', {

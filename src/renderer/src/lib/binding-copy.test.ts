@@ -8,6 +8,7 @@ import { describe, it, expect } from 'vitest';
 import { emptyStateCopy } from './binding-copy';
 import en from '../i18n/locales/en.json';
 import type { BindingDiagnostics } from '../../../shared/transcripts';
+import type { TransportKind } from '../../../shared/transport';
 
 const diag = (over: Partial<BindingDiagnostics> = {}): BindingDiagnostics => ({
   conversationStarted: false,
@@ -73,7 +74,7 @@ describe('emptyStateCopy', () => {
 // worker from `binding.spec.ts`: two honest strings composing into a lie, the
 // same defect class as #261's handoff bar one surface over.
 describe('the fail-open line follows the transport (#447)', () => {
-  const fallback = (transport?: 'pty' | 'stream'): string | null =>
+  const fallback = (transport?: TransportKind): string | null =>
     emptyStateCopy('unbound', diag(), transport).fallback;
 
   it('only the problem state gets one at all', () => {

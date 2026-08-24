@@ -29,6 +29,7 @@ import { UrgencyStrip } from './UrgencyStrip';
 import { RailSession } from '../model/types';
 import { presentStatus, STATUS_TOKENS } from '../lib/rail-view';
 import { markLit, pruneLit, startBeat, URGENCY_LINGER_MS, type UrgencyMarks } from '../lib/urgency';
+import type { CardStatus } from '../../../shared/sessions';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -86,9 +87,18 @@ async function mountStrip(opts: {
   return host;
 }
 
-/** one session in whatever status is under test, and the lamp it produces */
+/**
+ * One session in whatever status is under test, and the lamp it produces.
+ *
+ * `status` is a plain `string` and the cast is deliberate: one test below hands
+ * this `'compacting'`, a status this app does not have, to pin that an unknown
+ * value still gets a lamp. `RailSession.status` is a `CardStatus` since #618 so
+ * that nothing in the app can produce one; the tolerant reader still must.
+ */
 async function mountLamp(status: string): Promise<HTMLElement> {
-  const host = await mountStrip({ sessions: [{ id: 'c1', title: 'switchboard', status }] });
+  const host = await mountStrip({
+    sessions: [{ id: 'c1', title: 'switchboard', status: status as CardStatus }],
+  });
   return host.querySelector<HTMLElement>('[data-urgency-lamp]')!;
 }
 

@@ -15,6 +15,8 @@
 //
 // Pure, so the rule is testable without React.
 
+import type { TransportKind } from '../../../shared/transport';
+
 export type HandoffTone = 'permission' | 'input';
 
 /**
@@ -77,7 +79,7 @@ export interface HandoffInputs {
    * E18-11's question — it cannot be answered until the choosers are measured.
    * Until then, silence beats sending someone to a place that does not exist.
    */
-  transport?: 'pty' | 'stream';
+  transport?: TransportKind;
 }
 
 /**

@@ -42,11 +42,26 @@ const DISMISS_GUTTER = 64;
  * 3.41-4.49:1 on nordic. The ring keeps the hue (an edge is held to 3:1, and
  * it clears that); the word takes the ink and lands at 5.25-12.36:1.
  *
- * `ready` has no ramp position and stays `--faint` in both — it is the only
- * kind that is not a status, and `--faint` is deliberately a hint rather than
- * text. Left alone rather than quietly promoted: see #246's hand-off, along
- * with this row's `opacity: 0.82`, which dims EVERY colour on a reviewed row
- * and is the reason those still miss 4.5:1 even with the ink.
+ * `ready` still has no ramp position — it is the only kind that is not a
+ * status, so it takes a NEUTRAL rather than being quietly promoted into the
+ * ramp. Which neutral changed in #268. It was `--faint`, which is deliberately
+ * a hairline hint rather than text: 2.50:1 on nordic and 2.68:1 on daylight,
+ * and 2.15:1 once the row's old `opacity: 0.82` was folded in — on the ONLY
+ * row that ever shows this word, because `reviewed` IS `kind === 'ready'`. A
+ * state nobody can read is not a quiet state.
+ *
+ * It is `inherit` now, and that is the point rather than a shrug: the word
+ * takes the ROW's ink, which `tokens.css` declares and `tokens.drift.test.ts`
+ * measures against the fill the row actually paints. A named token here would
+ * be a second value to keep in step with that pair by hand — and the last time
+ * this map held its own opinion about a colour it held it for months at 1.80:1
+ * (#246). Whichever way `reviewed` is defined the inherited value is a measured
+ * one — `--muted` on the de-emphasised fill (4.7-14.2:1), or `--text` on
+ * `--panel2` if a `ready` row could ever be a live one. Today it cannot:
+ * `reviewed` IS `kind === 'ready'`, and `lib/queue.ts` gives `ready` a negative
+ * priority so it is never the head either. `KIND_HUE.ready` is dead for the
+ * same reason — the outline it would feed only paints on the queue's head —
+ * and both are kept so the maps stay total over the kind union.
  */
 const KIND_HUE: Record<EventDto['kind'], string> = {
   done: 'var(--status-done)',
@@ -57,7 +72,7 @@ const KIND_HUE: Record<EventDto['kind'], string> = {
 };
 const KIND_INK: Record<EventDto['kind'], string> = {
   done: 'var(--status-done-ink)',
-  ready: 'var(--faint)',
+  ready: 'inherit',
   'needs-input': 'var(--status-needs-input-ink)',
   'needs-permission': 'var(--status-needs-permission-ink)',
   crashed: 'var(--status-crashed-ink)',
@@ -381,6 +396,7 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
           <div style={{ display: 'flex', gap: 6 }}>
             {props.updateNotice.kind === 'available' && (
               <button
+                className="events-btn"
                 onClick={props.onUpdateNow}
                 style={{
                   background: 'var(--btn-primary-bg)',
@@ -397,6 +413,7 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
               </button>
             )}
             <button
+              className="events-btn"
               onClick={props.onDismissUpdateNotice}
               style={{
                 background: 'transparent',
@@ -449,6 +466,7 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
                     : t('events.historyCeded', { card: r.cardTitle, kept: r.keptByTitle ?? '' })}
                 </span>
                 <button
+                  className="events-btn"
                   onClick={() => props.onDismissHistoryRepair?.(r.id)}
                   // Named per ROW, because a slot with three of these would
                   // otherwise be three buttons all called "Got it" (§5.32).
@@ -497,6 +515,7 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
             <button
+              className="events-btn"
               onClick={props.onRestoreLayout}
               style={{
                 background: 'var(--btn-primary-bg)',
@@ -512,6 +531,7 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
               {t('events.restore')}
             </button>
             <button
+              className="events-btn"
               onClick={props.onDismissOffer}
               style={{
                 background: 'transparent',
@@ -556,13 +576,17 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
             <div
               key={e.id}
               role="listitem"
+              className="event-row"
               data-event-kind={e.kind}
               data-next={isNext ? 'true' : undefined}
+              // the de-emphasis lives in tokens.css, keyed on this attribute
+              // (#268) — the fill AND the ink it writes are a measured pair,
+              // and an inline `opacity` was neither
+              data-reviewed={reviewed ? 'true' : undefined}
               title={reviewed ? t('events.reviewed') : undefined}
               onClick={open}
               style={{
                 position: 'relative',
-                background: 'var(--panel2)',
                 borderRadius: 'var(--radius-chip)',
                 padding: '6px 9px 6px 12px',
                 marginBlockEnd: 4,
@@ -572,9 +596,6 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
                 // make the whole list jump every time the head changes
                 outline: isNext ? `1px solid ${KIND_HUE[e.kind]}` : undefined,
                 outlineOffset: -1,
-                // the reviewed tail is a log, not a to-do — it recedes, but it
-                // still has to be readable (Dan 2026-07-26: 0.65 was too dim)
-                opacity: reviewed ? 0.82 : 1,
               }}
             >
               <span
@@ -621,7 +642,10 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
                   <span
                     style={{
                       fontWeight: 600,
-                      color: 'var(--text)',
+                      // the ROW's colour, so the reviewed step down the neutral
+                      // ladder is one declaration in tokens.css rather than a
+                      // ternary here (#268)
+                      color: 'inherit',
                       flex: 1,
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
@@ -638,6 +662,15 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
                 <span
                   style={{
                     display: 'block',
+                    // The task label — the text #268 was actually filed over
+                    // (4.55:1 on nordic at full strength, 3.61:1 once the old
+                    // group opacity was folded in). It stays an explicit token
+                    // rather than inheriting, because on a LIVE row it is the
+                    // step below the title and inheriting would flatten that.
+                    // The consequence to know: it is covered by the drift test
+                    // only because `.event-row[data-reviewed='true']` happens
+                    // to name this same token, so retuning that rule's `color`
+                    // means retuning this with it.
                     color: 'var(--muted)',
                     fontSize: 10,
                     overflow: 'hidden',

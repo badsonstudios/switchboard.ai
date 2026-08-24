@@ -11,6 +11,7 @@ import os from 'os';
 import path from 'path';
 import { ProviderAdapter, SpawnOptions, SpawnRecipe } from '../extensibility/contributions';
 import { SlashCommand } from '../../shared/slash-commands';
+import type { AutonomyMode } from '../../shared/sessions';
 // The transcript LOCATION is Claude's, so the check for "is this conversation
 // really there" belongs to this adapter; the tolerant reader it shares with
 // every other provider stays host-side (see ProviderCapabilities.transcripts).
@@ -231,10 +232,7 @@ export const RECENTLY_ACTIVE_MS = 5 * 60 * 1000;
  * "plan"]` plus a `manual -> default` alias) and the settings schema's
  * `permissions.defaultMode` description. Re-verify on a CLI major bump.
  */
-export const AUTONOMY_PERMISSION_MODE: Record<
-  'plan' | 'ask' | 'auto-edit' | 'full-auto',
-  string
-> = {
+export const AUTONOMY_PERMISSION_MODE: Record<AutonomyMode, string> = {
   plan: 'plan',
   ask: 'default',
   'auto-edit': 'acceptEdits',
