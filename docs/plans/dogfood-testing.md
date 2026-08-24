@@ -130,3 +130,5 @@ they enter this tracker when their train merges.
 | 2026-08-16 | "N need you" counters stay stale after dismissing events (Events header + group headers) | #621 |
 | 2026-08-16 | Streaming reply shows raw markdown until the turn ends; wants progressive rendering | #635 |
 | 2026-08-16 | Turn boundary above each user prompt too subtle; wants it unmissable | #640 |
+| 2026-08-22 | Background-task notifications render as NEW PROMPT with raw XML (BrainHarbor session) | #704 |
+| 2026-08-24 | Same-folder twin sessions: docked panels closed on prompt, dock switched to the twin (work laptop) | #708 |
