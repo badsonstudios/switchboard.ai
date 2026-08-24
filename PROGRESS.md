@@ -3,6 +3,43 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🚂 MERGE TRAIN IN PROGRESS — started 2026-08-23, Dan: "get these PRs done
+> right and get them merged." Eight open PRs → main, serially.
+> **Bar per the standing policy: green CI + no conflicts. Reviews are
+> deliberately NOT required on this repo — do not re-add them, do not reach
+> for `--admin`.** Every PR in this train conflicts on CHANGELOG.md (all add
+> under `0.8.3 — unreleased`) and PROGRESS.md (this file); resolution is
+> KEEP BOTH, chronological. Order: 703 ✅ → 706 → 674 → 684 → 686 → 701 →
+> 692 → 694. (#686 before #701: both touch SessionGrid. #694 has NO CI runs
+> at all — a push will trigger the first.)
+>
+> **DONE 2026-08-22 (/next-item): #690+#691 typed-plumbing bundle** — all 18
+> inline `'pty' | 'stream'` literals swept to `TransportKind` (#690), and
+> `sessions:create` now validates `autonomy` via the shared `isAutonomyMode`
+> (invalid → dropped + warned, spawn preserved) and refuses an empty `cardId`
+> with its own refusal reason (#691, incl. #333's comment). Gates: unit
+> 5891/5891, e2e 349+3sk, all mutations caught, review 0 blockers. Internal;
+> no manual page, no dogfood row. **PR #706** (ready for review, Dan merges):
+> https://github.com/badsonstudios/switchboard.ai/pull/706
+>
+> **Two findings worth keeping from this run:**
+> 1. **#705 FILED — the e2e suite is only trustworthy on a QUIET desktop.**
+>    Five blurApp-gated toast/voice specs (permission-toast:73, quiet-hours:132
+>    +247, rules:66, sounds:127) fail DETERMINISTICALLY while Dan is actively
+>    using the machine — Windows foreground lock keeps the test app from real
+>    foreground while `isFocused()` sticks true. Proven environmental: isolated
+>    repro + clean-MAIN repro + a GetForegroundWindow sampler showing Firefox
+>    holding foreground throughout. NOT the #661 flake class (those pass on
+>    re-run). Workaround that worked: `.claude/work_files/e2e-when-idle.ps1`
+>    waits for 3 min of input idle, then runs the suite (349+3sk, 11.7m).
+> 2. **Read e2e counts off the SUMMARY BLOCK, never a truncated tail.** Two
+>    runs were misread as green because `| tail -6` cut the failure list and
+>    the pipe swallowed playwright's exit code. `--list` says 352; a run
+>    reporting 344+3sk is 5 short and that arithmetic is the tell.
+>
+> **Next up (after the train):** #699+#700 transport-hygiene bundle, then
+> #687, #688 (doc-only), #680, #695, #702, #607, #619.
+
 > **DONE 2026-08-22 (/next-item): #673+#677+#678 renderer-pin bundle** —
 > per-launch `identifierPrefix` on `createRoot` (`lib/root-identity.ts`,
 > finishes #654's id-forgery closure app-wide), `interpretPushAnswer` extracted
@@ -11,10 +48,8 @@
 > nothing / genuine-[]-still-prunes with the guard-placement decision (#678).
 > Gates: unit 5902/5902, e2e 349+3sk (twice — second on the settled post-review
 > tree), 3 mutations caught, review 0 blockers, all findings fixed. Internal;
-> no manual page, no dogfood row. **PR #703** (ready for review, Dan merges):
+> no manual page, no dogfood row. **PR #703 — MERGED 2026-08-23** (train car 1):
 > https://github.com/badsonstudios/switchboard.ai/pull/703
-> **Next up:** #690+#691 typed-plumbing bundle (per the staged queue below);
-> Dan's six-PR review train from the 2026-08-21 run is still open.
 
 > # 🏁 RUN COMPLETE — 2026-08-21 (~07:45 → ~18:20), Fable orchestrating. Fresh session: read this block first.
 >

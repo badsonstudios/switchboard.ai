@@ -126,6 +126,13 @@ on the floor, and say so in your PR.
   one code path where mistaking "we could not ask" for "there are no cards"
   would silently wipe every pin, saved layout and per-session setting in the
   app. No visible change (#677, #678).
+- Two leftovers from that same sweep: the last ~18 places that hand-spelled the
+  "Terminal or Direct" pair now use the one shared name for it (so a future
+  transport can't silently miss one), and starting a session now checks the
+  autonomy value and the card id it was asked for the same way changing
+  autonomy already did — a malformed request can no longer seed a session with
+  a mode that doesn't exist or bind it to a card name nothing can ever match.
+  No visible change (#690, #691).
 
 
 ## 0.8.2 — 2026-08-21

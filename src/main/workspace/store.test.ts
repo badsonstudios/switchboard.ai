@@ -26,6 +26,7 @@ import { SOUND_IDS } from '../../shared/sounds';
 import { SUPPRESSED_CAP, SuppressedEvent } from '../../shared/suppressed';
 import { MAX_HISTORY_REPAIR_NOTICES } from '../../shared/history-repair';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
+import type { TransportKind } from '../../shared/transport';
 
 /**
  * vitest's asymmetric matchers are declared `any`. Same matcher, typed
@@ -2122,7 +2123,7 @@ describe('fingerprint stability', () => {
 // Lose the field on disk and "never chose" is what comes back — which follows
 // the default, i.e. silently migrates that card to Direct.
 describe('PersistedSession.transport survives quit -> relaunch (P2-E18-17)', () => {
-  const withTransport = (id: string, transport: 'pty' | 'stream'): PersistedSession => ({
+  const withTransport = (id: string, transport: TransportKind): PersistedSession => ({
     ...sess(id),
     transport,
   });

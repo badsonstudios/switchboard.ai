@@ -52,7 +52,7 @@ import { IpcBroker } from '../ipc/broker';
 import { Channel } from '../../shared/ipc/capabilities';
 import type { PtyAttachment, PtyChunk, PtySnapshot } from '../../shared/ipc/pty';
 import type { PermissionRequest } from '../../shared/ipc/permissions';
-import { isAutonomyMode, type AutonomyMode, type SessionCardWire } from '../../shared/sessions';
+import { isAutonomyMode, type SessionCardWire } from '../../shared/sessions';
 import type { TransportKind } from '../../shared/transport';
 import type { ProviderCapabilities } from '../extensibility/contributions';
 import { TranscriptWatcher } from '../transcripts/watcher';
@@ -874,7 +874,11 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         cardId: string;
         folder: string;
         title: string;
-        autonomy?: AutonomyMode;
+        // `string`, not `AutonomyMode` (#691): §5.29 untrusted renderer input,
+        // same reason `setAutonomy` below declares its parameter `string` — a
+        // wire type that claims the union is a promise the wire cannot keep,
+        // and the runtime check is what makes it true.
+        autonomy?: string;
         groupId?: string;
       }
     ) => {
@@ -885,6 +889,17 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
       // plugged in reaches here on the first look at that card.
       if (!opts || typeof opts.cardId !== 'string' || typeof opts.folder !== 'string') {
         return refuse('sessions:create', 'cardId and folder are required');
+      }
+      // NON-EMPTY, not merely a string (#691, from #333's audit): '' passes the
+      // typeof check above, binds in `cardOfLive`, and stamps every hold with a
+      // card id no card can ever match — the exact silent-park #698's probe
+      // exists to refuse, reopened one door over (the probe catches UNBOUND,
+      // not bound-to-nothing). Required field, so a refusal is the right
+      // answer, unlike the optional `autonomy` below — and its own refusal
+      // line, because "required" would be the wrong hint in the log for a
+      // field that was present and empty.
+      if (opts.cardId === '') {
+        return refuse('sessions:create', 'cardId must be non-empty', { folder: opts.folder });
       }
       let isDir = false;
       try {
@@ -1062,8 +1077,23 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
 
       // an existing card keeps its autonomy across resumes; a brand-new card
       // uses whatever the titlebar chip sent (so the chip only affects NEW
-      // sessions, never silently changes a running one)
-      const autonomy = prior?.autonomy ?? opts.autonomy;
+      // sessions, never silently changes a running one).
+      //
+      // VALIDATED like `setAutonomy` (#691, §5.29): the shared guard, so the
+      // vocabulary cannot drift. But reject the VALUE, not the spawn — this
+      // field is optional, and refusing the whole create over a malformed
+      // autonomy would turn a bad byte into a card that cannot start (the
+      // anti-fail-open direction #347's refusal comments warn about). Invalid
+      // reads as absent: the session starts on the manager's default, exactly
+      // as if the chip had never spoken, and the log says what was dropped.
+      const wireAutonomy = isAutonomyMode(opts.autonomy) ? opts.autonomy : undefined;
+      if (opts.autonomy !== undefined && wireAutonomy === undefined) {
+        log.warn('sessions:create sent an unknown autonomy; ignoring it', {
+          cardId: opts.cardId,
+          autonomy: String(opts.autonomy),
+        });
+      }
+      const autonomy = prior?.autonomy ?? wireAutonomy;
 
       // WHICH TRANSPORT THIS SPAWN ASKS FOR, most specific first:
       //
