@@ -754,16 +754,20 @@ Object.freeze(MARKED_OPTIONS);
  * — their `useId` conversion is prophylaxis against a reorder, not a live fix,
  * and calling it more than that is how this family loses an absolute.
  *
- * AND `useId` IS NOT A SECRET. React 19 builds a client id as
- * `"_" + prefix + "r_" + n.toString(32) + "_"` from a MODULE-GLOBAL counter that
- * starts at zero (`react-dom` 19.2.7, and `main.tsx` passes no
- * `identifierPrefix`), so the space a reply would have to cover is a few
- * hundred strings, not a secret. What `React.useId()` removes is a STABLE,
- * PUBLISHED name — `push-field-ntfy.topic` was the same string in every build
- * and every workspace, and it is written down in an issue — and replaces it
- * with one that moves whenever anything else in the tree calls `useId` first.
- * That is defence in depth. THE CLOSURE IS THE TAG, which needs no name at all.
- * Both halves are pinned by tests.
+ * AND `useId` ALONE IS NOT A SECRET. React 19 builds a client id as
+ * `"_" + prefix + "r_" + n.toString(32) + "_"` from a MODULE-GLOBAL counter
+ * that starts at zero (`react-dom` 19.2.7), so with an empty prefix — which is
+ * what `main.tsx` passed until 2026-08-22 — the space a reply would have to
+ * cover was a few hundred strings, not a secret. What `React.useId()` removes
+ * is a STABLE, PUBLISHED name — `push-field-ntfy.topic` was the same string in
+ * every build and every workspace, and it is written down in an issue.
+ * **#673 (2026-08-22) closed the counter half:** `main.tsx` now passes a
+ * per-launch crypto-random `identifierPrefix` (`lib/root-identity.ts`), so
+ * every `useId`-derived id in the app carries 64 random bits minted at launch
+ * and nothing written into a document or a reply beforehand can name one.
+ * That is defence in depth, earned rather than asserted this time. THE CLOSURE
+ * IS STILL THE TAG, which needs no name at all. All three halves are pinned by
+ * tests (`root-identity.test.tsx` for the prefix).
  *
  * THE PURE LAYOUT ATTRIBUTES ARE STILL LEFT, and are weaker than any of the
  * above: `border`, `cellpadding`, `cellspacing`, `valign`, `nowrap`, `noshade`,

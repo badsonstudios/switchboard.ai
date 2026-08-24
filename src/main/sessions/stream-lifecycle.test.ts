@@ -7,6 +7,7 @@ import { streamStatusEvent } from './stream-status';
 import { ContributionRegistry } from '../../shared/extensibility/registry';
 import { MainContributions } from '../extensibility/contributions';
 import { SessionTransport, TransportSpawnOptions } from '../transport/transport';
+import type { TransportKind } from '../../shared/transport';
 import { LogSink, createLogger } from '../log/logger';
 
 // ---- the mapper, pure -------------------------------------------------------
@@ -161,7 +162,7 @@ class SilentTransport implements SessionTransport {
   remove(): void {}
 }
 
-function registryFor(transport: 'pty' | 'stream'): ContributionRegistry<MainContributions> {
+function registryFor(transport: TransportKind): ContributionRegistry<MainContributions> {
   const r = new ContributionRegistry<MainContributions>();
   r.register('provider-adapter', {
     manifest: { id: 'fake', displayName: 'Fake', version: '0', capabilities: ['sessions.spawn'] },

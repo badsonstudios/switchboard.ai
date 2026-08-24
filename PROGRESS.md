@@ -3,7 +3,86 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🟢 ORCHESTRATION RUN ACTIVE — started 2026-08-21 (~morning), Fable orchestrating
+> # 🚂 MERGE TRAIN IN PROGRESS — started 2026-08-23, Dan: "get these PRs done
+> right and get them merged." Eight open PRs → main, serially.
+> **Bar per the standing policy: green CI + no conflicts. Reviews are
+> deliberately NOT required on this repo — do not re-add them, do not reach
+> for `--admin`.** Every PR in this train conflicts on CHANGELOG.md (all add
+> under `0.8.3 — unreleased`) and PROGRESS.md (this file); resolution is
+> KEEP BOTH, chronological. Order: 703 ✅ → 706 → 674 → 684 → 686 → 701 →
+> 692 → 694. (#686 before #701: both touch SessionGrid. #694 has NO CI runs
+> at all — a push will trigger the first.)
+>
+> **DONE 2026-08-22 (/next-item): #690+#691 typed-plumbing bundle** — all 18
+> inline `'pty' | 'stream'` literals swept to `TransportKind` (#690), and
+> `sessions:create` now validates `autonomy` via the shared `isAutonomyMode`
+> (invalid → dropped + warned, spawn preserved) and refuses an empty `cardId`
+> with its own refusal reason (#691, incl. #333's comment). Gates: unit
+> 5891/5891, e2e 349+3sk, all mutations caught, review 0 blockers. Internal;
+> no manual page, no dogfood row. **PR #706** (ready for review, Dan merges):
+> https://github.com/badsonstudios/switchboard.ai/pull/706
+>
+> **Two findings worth keeping from this run:**
+> 1. **#705 FILED — the e2e suite is only trustworthy on a QUIET desktop.**
+>    Five blurApp-gated toast/voice specs (permission-toast:73, quiet-hours:132
+>    +247, rules:66, sounds:127) fail DETERMINISTICALLY while Dan is actively
+>    using the machine — Windows foreground lock keeps the test app from real
+>    foreground while `isFocused()` sticks true. Proven environmental: isolated
+>    repro + clean-MAIN repro + a GetForegroundWindow sampler showing Firefox
+>    holding foreground throughout. NOT the #661 flake class (those pass on
+>    re-run). Workaround that worked: `.claude/work_files/e2e-when-idle.ps1`
+>    waits for 3 min of input idle, then runs the suite (349+3sk, 11.7m).
+> 2. **Read e2e counts off the SUMMARY BLOCK, never a truncated tail.** Two
+>    runs were misread as green because `| tail -6` cut the failure list and
+>    the pipe swallowed playwright's exit code. `--list` says 352; a run
+>    reporting 344+3sk is 5 short and that arithmetic is the tell.
+>
+> **Next up (after the train):** #699+#700 transport-hygiene bundle, then
+> #687, #688 (doc-only), #680, #695, #702, #607, #619.
+
+> **DONE 2026-08-22 (/next-item): #673+#677+#678 renderer-pin bundle** —
+> per-launch `identifierPrefix` on `createRoot` (`lib/root-identity.ts`,
+> finishes #654's id-forgery closure app-wide), `interpretPushAnswer` extracted
+> to `lib/push-answer.ts` with its refusal pin (#677), and
+> `SessionGrid.restore-refusal.test.tsx` pinning refused-knownCards-prunes-
+> nothing / genuine-[]-still-prunes with the guard-placement decision (#678).
+> Gates: unit 5902/5902, e2e 349+3sk (twice — second on the settled post-review
+> tree), 3 mutations caught, review 0 blockers, all findings fixed. Internal;
+> no manual page, no dogfood row. **PR #703 — MERGED 2026-08-23** (train car 1):
+> https://github.com/badsonstudios/switchboard.ai/pull/703
+
+> # 🏁 RUN COMPLETE — 2026-08-21 (~07:45 → ~18:20), Fable orchestrating. Fresh session: read this block first.
+>
+> **Totals: 16 issues closed by merge across 9 internal PRs** (#665→#490,
+> #669→#255-T2/T4+#663, #672→#654, #676→#650, #679→#666/#667/#668, #681→#544,
+> #689→#618, #696→#682/#683, #698→#333) — the #255 eslint campaign is COMPLETE
+> (src/ whole on recommendedTypeChecked, zero inline disables; umbrella #255
+> open pending only the #670 String(err) decision). **SIX user-facing PRs in
+> Dan's queue, all green-gated and ready-for-review: #674 (main i18n), #684
+> (events a11y track), #686 (rail/cards track), #692 (image marker), #694
+> (placeMenu/RTL), #701 (store/popout track).** Suggested TRAIN order:
+> #674 → #684 → #686 → #701 → #692 → #694 (686 before 701: both touch
+> SessionGrid; 684/686 both touch rail-adjacent css). CHANGELOG 0.8.3 —
+> unreleased section is OPEN and every PR adds under it — expect merge
+> conflicts there on the train; consolidate like train-664 did.
+> **17 issues filed from findings (#666–#702, the open ones):** #670 #671
+> #673 #675 #677 #678 #680 #685 #687 #688 #690 #691 #693 #695 #697 #699
+> #700 #702. Dogfood-tracker rows: NOT added (nothing user-facing merged);
+> ready-to-paste rows sit in each handoff (491.md, 642.md, 656-track.md...).
+> **Dan-gated:** #528/#529 sittings (new input commented on #528: needy rail
+> rows show no accent), #521 Files-tab scoping, #588 probe (live tokens),
+> #670 String(err) decision, #675 installer CLSID, #693 isMeta (one live
+> turn). **Next-run queue (small, mostly S):** #673+#677+#678 renderer-pin
+> bundle, #690+#691 typed-plumbing bundle, #699+#700 transport-hygiene
+> bundle, #687, #688 (doc-only), #680, #695, #702, #607, #619; older tail
+> #504 #506 #508 #518 #581 #582 #635 #631 #632 #633 #620 #420 #483; /pm:
+> #256 reconciliation still owed. Worktrees: all three clean on dead
+> branches, safe to reuse. Process lessons folded into /orchestrate live:
+> strict-base push batching, draft-merge + `;`-chain orphaning (recovery
+> recipe included), merge-base triple-dot reviews, `npm run e2e` naming,
+> reset--soft-vs-merge-base squash.
+>
+> ---- (run log below, newest first) ----
 >
 > **Single-writer rule: this file is written ONLY by the orchestrator.** Workers
 > report through `.claude/work_files/orchestrator/<issue#>.md` handoffs; those are
@@ -21,16 +100,81 @@
 > **Active workers (wave 2, dispatched ~10:15):**
 > | Issue | Worktree | Branch | Status |
 > |---|---|---|---|
-> | #650 value-channel refusals | sb-wt-1 | DONE — PR #676 (internal), CI running, needs base-bump after #672 |
-> | #544 shared directory watches | sb-wt-2 | DONE — PR #681 (internal) |
-> | #666+#667+#668 fake-fidelity bundle | sb-wt-3 | DONE — PR #679 (internal) |
+> | #333 stream routing | sb-wt-1 | DONE — PR #698 (INTERNAL) readied+bumped, merge on green |
 >
-> **Merge chain:** #672 MERGED 12:03 (103d697, #654 closed). #676 conflicted
-> on bump (both PRs opened the missing 0.8.3 unreleased CHANGELOG section);
-> orchestrator resolved in wt-1 (Changed + Internal consolidated, aed561b),
-> CI re-running — merge on green, then bump #679, then #681, serially.
-> After #676 merges: dispatch events track (wt-1), rail/cards track (wt-3),
-> #618 (wt-2). Next dispatches
+> **#333 outcome (PR #698):** AnswerSurfaceProbe — StreamPermissions asks
+> whether the session has a card BEFORE holding a can_use_tool; no card →
+> immediate structured decline with a DISTINCT fault (only #319's says
+> "window"; test asserts the vocabulary, not string inequality) + permission-
+> resolved so the badge tells the truth; 300s deadline stays as backstop. Not
+> a new surface — §5.12 argument written out (global Allow on an unlocatable
+> row is the forbidden hazard). Review caught: unbound state IS reachable
+> (tearDownLive removes transport a step before unbinding — buffered straggler
+> after Restart), and the first "distinct" message blamed the same fault as
+> #319's. Gates: 5874 unit, 349+3sk full e2e + 41 scoped, 6 mutations caught,
+> one VOID declared (stale-bundle guard). i18n-catalog instruction correctly
+> refused (string is read by the model, not chrome — #471's own line). Filed
+> #699 (hook path same hole), #700 (listener hygiene), comment on #691
+> (cardId:''). Handoff: orchestrator/333.md.
+> **#696 MERGED ~17:45** (#682/#683 closed) — 8 internal merges this run.
+>
+> **#642 DONE — PR #694 ready, in DAN'S QUEUE (5th).** Audit: 19 surfaces
+> enumerated, exactly ONE was the vulnerable class (already fixed by #641) —
+> honest null result. RTL: placeMenu takes direction, returns logical insets;
+> audit found the SAME physical-into-logical bug in the rail resize gripper
+> (rtl: rail snapped to max + dragged backwards) — fixed. Flip branch far-edge
+> hole closed. Mutation: RTL e2e fails 726px off against direction-blind
+> placement. Gates: 5861 unit, 350+3sk e2e. Filed #695 (card ⋯ menu clips on
+> 3-4 splits — needs rect-anchored variant). Handoff: orchestrator/642.md.
+> | #682+#683 watcher follow-ups | sb-wt-2 | DONE — PR #696 readied+bumped, merge on green |
+>
+> **#682-bundle outcome (PR #696):** wheel sliced K=4 via round-robin slot
+> FIELD (not cursor) — every file still checked exactly once per pollMs, zero
+> #412-test edits (the predicted phase-shift break never existed); PathStyle
+> injected folding all three keys, deliberately NOT exposed through FsIpcDeps.
+> All 14 new tests falsified against 8 broken builds — one vacuous test of its
+> own caught and rewritten. Gates: 5860 unit, 349+3sk e2e. Filed #697 (tuning
+> residues: K unmeasured/SMB, ReadScope fold convention, per-file stat cost).
+> Handoff: orchestrator/682-bundle.md.
+>
+> **#618 DONE — PR #689 (internal), readied + bumped, merge on green.** Shared-
+> typed: StatusChange, SessionCardWire+CardStatus, AutonomyMode (9 copies + 2
+> runtime lists → 1), NotificationPrefs (3 → 1, review found a 4th in
+> notifier.ts). Documented-loose with do-not-tidy pins: transport? (#445),
+> presentStatus string (fail-open for old blobs). eslint §5.23 guard now covers
+> src/{shared,preload} — preload could previously import src/main and undo the
+> seam. Review also caught the cards annotation missing excess-property
+> freshness. Gates: 5844 unit, 349+3sk e2e x2 (48-min lock wait, in-turn).
+> Filed #690 (TransportKind literal sweep), #691 (sessions:create autonomy
+> unvalidated, §5.29). Handoff: orchestrator/618.md.
+> | STORE/POPOUT track #656+#657+#502+#503 | sb-wt-3 | DONE — PR #701 ready, DAN'S QUEUE (6th) |
+>
+> **STORE/POPOUT outcome (PR #701):** popout hand-back re-placed AFTER the
+> card is safely in the grid (grid→grid move; last-panel-out is what kills
+> the DOM, #564); moveHome + moveCardToGroup got #501's husk rules via
+> clusterCardWithGroup. MEASURED: #656's defect does NOT reproduce on main —
+> dockview fires onDidGroupChange before doAddPanel registers the panel, so
+> E12-04 adoption finds nothing and the group survived BY ACCIDENT; fix makes
+> it deliberate, e2e labelled guard-not-repro. Worker caught two bugs in its
+> own fix (banked inherited slot; teleporting expired note). One raw-checkout
+> incident self-reported, recovered. Gates: 5885 unit, 353+3sk e2e (3 shards).
+> Filed #702 (E12-04 adoption liveness audit). Handoff: orchestrator/656-track.md.
+> **#698 MERGED ~18:15** (#333 closed) — internal chain fully clear.
+>
+> **#491 DONE — PR #692 ready, in DAN'S QUEUE (4th).** Marker derives from the
+> WIRE (envelope image/document parts), not composer state; absent key when no
+> attachments (byte-identical old blocks). Found+fixed the bug behind the bug:
+> attachment-only turns previously derived NO feed block at all (reply appeared
+> under thin air). Scope call to veto: counts documents too ("1 image and 2
+> files attached"). Review caught title= becoming the accessible name. Gates:
+> 5866 unit, 349+3sk e2e x2. Filed #693 (isMeta question — Dan-gated, one live
+> turn). Handoff: orchestrator/491.md.
+> **#618/PR #689 MERGED ~16:05** (#618 closed) — 7 internal merges this run.
+>
+> **Merge chain:** MERGED so far: #669, #665, #672 (12:03), #676 (12:34,
+> b2a7201, #650 closed — CHANGELOG conflict resolved by orchestrator, 0.8.3
+> section consolidated). Remaining: #679 bumped clean, merge on green → then
+> bump #681, merge on green. Wave-4 dispatched on post-#676 main. Next dispatches
 > AFTER #676 merges (renderer collision clears): events track (wt-1),
 > rail/cards track (wt-3), #618 (wt-2).
 > **#544 outcome:** WatchedDir owns one fs.watch per folder + one floor wheel

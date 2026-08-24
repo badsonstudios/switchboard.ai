@@ -61,6 +61,21 @@ on the floor, and say so in your PR.
 
 ## 0.8.3 — unreleased
 
+### Fixed
+
+- **A Direct-mode session no longer freezes for five minutes when
+  switchboard.ai has lost track of which card it belongs to.** A permission
+  request is shown on the card that owns the session. If a running session has
+  somehow lost its card — a bookkeeping failure inside switchboard.ai, not
+  anything you can do on purpose — the request has nowhere to appear, and it
+  used to sit there unanswered until a five-minute limit expired and told the
+  agent nobody had replied in time. Nobody was ever asked. It is now declined
+  the moment it arrives, and the agent is told that switchboard.ai lost track of
+  the session rather than that someone refused the request — deliberately
+  different wording from the other reasons a request can go unanswered, so the
+  cases can be told apart. The app log records it too. You should not see this
+  one; if you do, it is worth reporting.
+
 ### Changed
 
 - **Events you've already dealt with are quiet instead of faded.** A row in the
@@ -105,6 +120,11 @@ on the floor, and say so in your PR.
   nothing else changes on screen. Alongside it, Push setup, Quiet hours and the
   command palette stopped giving their controls fixed, predictable internal
   names, so there is less for content to aim at even if a label got through.
+  That last half is now finished app-wide: every control name switchboard.ai
+  generates gets a fresh random namespace each time the app starts, so nothing
+  written into a reply or a document beforehand can name a control at all —
+  including the tab strips on session cards and in the questions panel, which
+  the earlier change had not reached.
 
 ### Internal
 
@@ -117,6 +137,30 @@ on the floor, and say so in your PR.
   already knows how to draw, and the check is enforced by the unit suite so a
   new one cannot be written. No visible change today: this window holds every
   capability, so nothing here can be refused yet (#650).
+- The window's picture of a running session lost the last of its hand-copied
+  parts. #590 stopped the main process and the window keeping two separate
+  descriptions of a session RECORD; the same thing was still true of the message
+  that says a session changed state, of the saved session cards, of the four
+  autonomy modes and of the notification settings — each written out twice or
+  more, on two sides of a boundary nothing compared. The looseness had a shape:
+  a session's state was described as "any text at all" in three of those places,
+  so the window could compare it against a state that cannot happen and quietly
+  never match. Every one of them is now a single description both sides read, so
+  a mismatch stops the build instead of shipping. No visible change (#618).
+- Two fixes from the refused-call sweep above now have regression tests standing
+  behind them: the Push setup dialog's answer handling moved into its own small
+  module where a test can feed it a refusal, and a new test proves that a
+  refused card-list read during startup layout restore deletes nothing — the
+  one code path where mistaking "we could not ask" for "there are no cards"
+  would silently wipe every pin, saved layout and per-session setting in the
+  app. No visible change (#677, #678).
+- Two leftovers from that same sweep: the last ~18 places that hand-spelled the
+  "Terminal or Direct" pair now use the one shared name for it (so a future
+  transport can't silently miss one), and starting a session now checks the
+  autonomy value and the card id it was asked for the same way changing
+  autonomy already did — a malformed request can no longer seed a session with
+  a mode that doesn't exist or bind it to a card name nothing can ever match.
+  No visible change (#690, #691).
 
 
 ## 0.8.2 — 2026-08-21

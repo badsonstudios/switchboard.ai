@@ -40,6 +40,7 @@ import {
   INTERACTIVE_TOOLS,
   toolCategory,
 } from '../../shared/tool-taxonomy';
+import type { TransportKind } from '../../shared/transport';
 
 /** Hook events the listener subscribes to for status (S-06 set + PostToolUse). */
 const STATUS_EVENTS = [
@@ -70,7 +71,7 @@ export interface HookListenerOptions {
   /** Which transport hosts this session (P2-E18-07). A 'stream' session's
    *  permissions ride `can_use_tool`, so PreToolUse is never held for it.
    *  Absent = PTY, which is every pre-E18 caller. */
-  transportFor?: (sessionId: string) => 'pty' | 'stream' | undefined;
+  transportFor?: (sessionId: string) => TransportKind | undefined;
   /** How long `sweepOrphanTokens` may spend, in ms. Absent = the shared
    *  default (`DEFAULT_SWEEP_BUDGET_MS`). A test seam, and the only reason it
    *  is an option at all: the sweep is private and runs inside `start()`. */

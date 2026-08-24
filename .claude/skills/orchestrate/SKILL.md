@@ -173,7 +173,10 @@ The prompt must contain, concretely:
      `/review`'s standards (you are
      Opus; the review is yours) — fix Blockers/Should-fixes, ~3 rounds cap.
      **Mutation/revert experiments must stash or commit the working
-     state FIRST — never raw `git checkout --` over uncommitted work**
+     state FIRST — never raw `git checkout --` over uncommitted work;
+     and squash against the MERGE-BASE, never `git reset --soft
+     origin/main` (2026-08-21, #701: origin/main had moved and the soft
+     reset staged a revert of other workers' merges)**
      (run 14: #388's mutation harness restored with git checkout and
      ate the uncommitted source edits; recovered from context, no loss,
      but only by luck of a small diff).
