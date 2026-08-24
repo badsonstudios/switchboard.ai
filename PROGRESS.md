@@ -3,13 +3,18 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ✅ DONE — 2026-08-24: #699 + #700 transport-hygiene bundle → **PR #711**
+> # ✅ MERGED — 2026-08-24: #699 + #700 transport-hygiene bundle
 >
-> https://github.com/badsonstudios/switchboard.ai/pull/711 — awaiting Dan's
-> review + squash-merge. typecheck + lint green, **6069 unit tests / 235 files**
-> (+18 from main's 6051).
+> **PR #711 squash-merged to main as `ca36967`** (Dan said merge; all 4 CI
+> checks green — unit 3m31s/6m34s, e2e 9m16s/22m52s). Both issues auto-closed,
+> branch deleted. **6069 unit tests / 235 files** (+18).
+>
+> **NOT RELEASED.** main is now 2 commits past v0.8.3; the version bump is
+> manual. Entries are filed in `0.8.4 — unreleased` under `Internal`.
 >
 > **Next up:** #687, then #688 (doc-only), #680, #695, #702, #607, #619.
+> Also still owed: 11 dogfood rows in `docs/plans/dogfood-testing.md`, and
+> `/pm`'s #256 reconciliation.
 >
 > * **#699** — hook path stamped `cardId` with no `AnswerSurfaceProbe` gate (the
 >   hole #333/#698 closed for stream). `HookListener` now has the same probe and
