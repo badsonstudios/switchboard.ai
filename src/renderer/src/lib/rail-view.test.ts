@@ -4,6 +4,7 @@ import {
   statusVars,
   needCount,
   clampRailWidth,
+  railWidthAtPointer,
   RAIL_WIDTH_DEFAULT,
   RAIL_WIDTH_MIN,
   RAIL_WIDTH_MAX,
@@ -125,5 +126,44 @@ describe('clampRailWidth', () => {
     expect(clampRailWidth(286.6)).toBe(287);
     expect(clampRailWidth(NaN)).toBe(RAIL_WIDTH_DEFAULT);
     expect(clampRailWidth(Infinity)).toBe(RAIL_WIDTH_DEFAULT);
+  });
+});
+
+// The rail's edge is dragged with a PHYSICAL pointer coordinate but sets a
+// LOGICAL inline size, and the two disagree by the width of the window under
+// `dir="rtl"` — the same confusion that put the context menu off screen (#642).
+describe('railWidthAtPointer', () => {
+  const VW = 1008;
+
+  it('is the pointer’s distance from the left edge when the app reads left-to-right', () => {
+    expect(railWidthAtPointer(300, VW, 'ltr')).toBe(300);
+  });
+
+  it('is the distance from the RIGHT edge when the app reads right-to-left', () => {
+    // the rail is on the right under rtl, so a gripper at x=708 is a 300px rail
+    expect(railWidthAtPointer(VW - 300, VW, 'rtl')).toBe(300);
+  });
+
+  it('the bug it fixes: a physical x would have pinned the rail to its maximum', () => {
+    // the gripper of a default-width rail, under rtl, is at 1008 - 286 = 722
+    const gripper = VW - RAIL_WIDTH_DEFAULT;
+    expect(clampRailWidth(gripper)).toBe(RAIL_WIDTH_MAX); // what it used to do
+    expect(railWidthAtPointer(gripper, VW, 'rtl')).toBe(RAIL_WIDTH_DEFAULT);
+  });
+
+  it('and the drag runs the right way: further from the inline-start edge is wider', () => {
+    const a = railWidthAtPointer(VW - 250, VW, 'rtl');
+    const b = railWidthAtPointer(VW - 350, VW, 'rtl');
+    expect(b).toBeGreaterThan(a);
+  });
+
+  it('still clamps, in either direction', () => {
+    for (const direction of ['ltr', 'rtl'] as const) {
+      for (const x of [-9999, 0, 1, 500, VW, 9999]) {
+        const w = railWidthAtPointer(x, VW, direction);
+        expect(w).toBeGreaterThanOrEqual(RAIL_WIDTH_MIN);
+        expect(w).toBeLessThanOrEqual(RAIL_WIDTH_MAX);
+      }
+    }
   });
 });
