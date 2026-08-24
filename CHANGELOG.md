@@ -75,6 +75,29 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **Bringing a session back from a window it had to itself now puts it back
+  where it belongs.** Docking a session back with **⤡** when its window held
+  nothing else took a different route through the layout than docking one back
+  from a shared window, and only the shared route asked where that session had
+  actually come from. The two now agree: whichever way you dock a session back,
+  it returns to its own spot and keeps running.
+- **A session started inside a popped-out window no longer takes over somebody
+  else's half of the screen.** A window carries one "way back" — the slot the
+  session that opened it came from — and every session in that window used to
+  inherit it. So a session you started *inside* the window could arrive home in
+  a slot it had never occupied, pushing the layout around. It now lands where a
+  brand new session would: beside the sessions already there, never in place of
+  one. This holds however the window empties, including closing it from the
+  title bar or the taskbar (closing the window still suspends the session, as it
+  always has).
+- **Expanding a session out of the tab stack puts it back at a usable size.** If
+  the slot it remembered had since been left empty by a neighbour popping out,
+  the session came back about a pixel wide — present in the layout, invisible on
+  screen, reachable only from the sidebar. It now comes back at full size, and
+  never on top of a document you have open.
+- Dragging a session onto a group in the sidebar no longer moves its card
+  off-screen when a group-mate happens to be in a hidden pane.
+
 - **A Direct-mode session no longer freezes for five minutes when
   switchboard.ai has lost track of which card it belongs to.** A permission
   request is shown on the card that owns the session. If a running session has

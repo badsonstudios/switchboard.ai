@@ -40,6 +40,8 @@
 // this fix.
 import { test, expect, Page } from '@playwright/test';
 import path from 'path';
+
+const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 import {
   LaunchedApp,
   launchApp,
@@ -331,5 +333,212 @@ test.describe('docking back from a popout (#558)', () => {
     // the terminal, and this is the cheap sentinel inside the file that would
     // break it.
     await expect(w.getByRole('button', { name: 'Resume' })).toHaveCount(0);
+  });
+});
+
+// ── THE WINDOW-EMPTYING PATHS DOCKVIEW DRIVES (#656, #657) ──────────────────
+//
+// Everything above is the ⤡ WITH COMPANY, which moves the panel itself. These
+// are the returns dockview performs from inside its own teardown — the lone ⤡
+// and the OS close — where all we get to do is correct the placement
+// afterwards. Same wrong answer in both, because they are the same dockview
+// code path: `disposePopoutWindow` hands every survivor to the ONE reference
+// the window was opened with.
+//
+// THE SETUP IS THE PART THAT MATTERS. #558's tests dock the opener back first,
+// which leaves it standing in that slot, so the survivor lands beside it and
+// the bug is invisible. Here the opener's card is CLOSED instead: the reference
+// still points at its old half of the screen, that half is now empty, and the
+// card with no claim to it is the only one left holding the window.
+test.describe('a popout window emptied the other ways (#657)', () => {
+  let a: LaunchedApp | undefined;
+  test.afterEach(async () => {
+    const launched = a;
+    a = undefined;
+    await launched?.cleanup();
+  });
+
+  /**
+   * A window holding ONLY a popout-born card, whose reference names an empty
+   * slot. Returns the survivor's name and the popout page.
+   */
+  async function orphanedSurvivor(): Promise<{
+    g: Awaited<ReturnType<typeof twoGroups>>;
+    popout: Page;
+    nameC: string;
+  }> {
+    const g = await twoGroups();
+    a = g.a;
+    const w = a.window;
+    await w.locator('.dv-tab', { hasText: g.nameA }).first().click();
+    await popButton(w, g.nameA, 'Pop out into its own window').click();
+    const popout = await popoutWindow(a);
+    await expect(tabs(popout)).toHaveCount(1, { timeout: 15_000 });
+
+    // ...and a card BORN in that window (#531): no grid slot, ever
+    const folderC = tempProjectFolder();
+    const nameC = path.basename(folderC);
+    await answerFolderDialog(a, folderC);
+    await popout.getByTestId('card-new-session').click();
+    await expect(tabs(popout)).toHaveCount(2, { timeout: 25_000 });
+
+    // close the OPENER's card from the rail, which is one of the ways #657
+    // lists for a window to end up with somebody else's reference on it
+    w.once('dialog', (d) => void d.accept());
+    await w
+      .locator('nav')
+      .locator('[draggable="true"]', { hasText: g.nameA })
+      .first()
+      .getByTitle('Close session')
+      .click();
+    await expect(tabs(popout)).toHaveCount(1, { timeout: 25_000 });
+    await w.waitForTimeout(1_500);
+    return { g, popout, nameC };
+  }
+
+  /** the assertions both paths share: the survivor did not take the slot */
+  async function assertNotInTheOpenersSlot(w: Page, nameC: string, nameB: string): Promise<void> {
+    const after = await groups(w);
+    const mine = after.find((grp) => grp.cards.some((c) => c.includes(nameC)));
+    expect(mine, `${nameC} is not in the grid at all`).toBeDefined();
+    // beside the card that owns a slot, not instead of the card that lost one
+    expect(
+      mine!.cards.length,
+      'the popout-born card took the whole slot its opener left behind',
+    ).toBeGreaterThan(1);
+    expect(mine!.cards.some((c) => c.includes(nameB))).toBe(true);
+    // ...and the abandoned half went with it, rather than staying as a sliver
+    for (const grp of after) {
+      expect(grp.width, 'a dead sliver of a group is still in the layout').toBeGreaterThan(40);
+    }
+  }
+
+  test('the LONE ⤡ places the survivor, and keeps it alive', async () => {
+    skipPopoutOnLinux();
+    test.setTimeout(240_000);
+    const { g, popout, nameC } = await orphanedSurvivor();
+    const w = g.a.window;
+
+    await popout.getByTitle('Pop back into the main window').click();
+    await expect.poll(() => g.a.app.windows().length, { timeout: 25_000 }).toBe(1);
+    await w.waitForTimeout(2_000);
+
+    await assertNotInTheOpenersSlot(w, nameC, g.nameB);
+    // ⤡ MEANS "BRING THIS CARD HOME", so the session is still running. The
+    // correction is a grid→grid move made after the panel is safely back; the
+    // tempting version, moving the last panel out of the popout group, tears
+    // the card's own document down under it (#564).
+    await expect(w.getByRole('button', { name: 'Resume' })).toHaveCount(0);
+  });
+
+  test('the OS close places the survivor, and still suspends it', async () => {
+    skipPopoutOnLinux();
+    test.setTimeout(240_000);
+    const { g, popout, nameC } = await orphanedSurvivor();
+    const w = g.a.window;
+
+    // the window's own close, not our button — `window.close()` in the popout's
+    // realm is what a taskbar close does from dockview's point of view
+    await popout.evaluate(() => window.close());
+    await expect.poll(() => g.a.app.windows().length, { timeout: 25_000 }).toBe(1);
+    await w.waitForTimeout(2_000);
+
+    await assertNotInTheOpenersSlot(w, nameC, g.nameB);
+    // E8-04's other half, which the placement fix must not have cost: closing
+    // the WINDOW suspends the session. The card and its record stay; the
+    // session comes back when it is next asked for.
+    await w.locator('.dv-tab', { hasText: nameC }).first().click();
+    await expect(w.getByRole('button', { name: 'Resume' })).toBeVisible({ timeout: 25_000 });
+  });
+});
+
+// ── DOCKING BACK ALONE MUST NOT COST THE SESSION ITS GROUP (#656) ───────────
+//
+// One user gesture, ⤡, meant two different things for a session's PERSISTENT
+// group depending on whether its window had company: with company (#558) the
+// move is ours and is flagged, while alone dockview returned the card into its
+// own empty husk with nothing flagged at all. E12-04 would read that as the
+// user dropping the card among strangers, find no group-mate in an empty group,
+// and write `setSessionGroup(cardId, null)` — the group erased outright, with
+// nothing on screen to say so.
+//
+// #656 SAID THAT HAPPENS; IT DOES NOT, AND THIS TEST IS WHY IT IS STILL HERE.
+// Measured against unfixed `main` (2026-08-21): the adoption handler never runs
+// on this path at all, because dockview's `openPanel` calls
+// `updateParentGroup` — which fires `onDidGroupChange` — BEFORE `doAddPanel`
+// registers the panel in its new group (`dockviewGroupPanelModel.js`, "ensure
+// the group is updated before we fire any events"). So the handler's own
+// `containerApi.getPanel(id)` answers `undefined` and it returns. The group
+// survived by accident, one layer down, in code that has nothing to do with
+// popouts.
+//
+// So this is a GUARD, not a repro: it green on main and it must stay green. The
+// fix makes the same outcome deliberate — the lone ⤡ arms the same `setMoving`
+// the company branch does — and that matters the day the adoption handler is
+// repaired (see the hand-off's out-of-scope findings), because on that day this
+// path is exactly the one that would start erasing groups.
+test.describe('docking back alone keeps the persistent group (#656)', () => {
+  let a: LaunchedApp | undefined;
+  test.afterEach(async () => {
+    const launched = a;
+    a = undefined;
+    await launched?.cleanup();
+  });
+
+  test('a grouped session survives a lone pop-out round trip', async () => {
+    skipPopoutOnLinux();
+    test.setTimeout(240_000);
+    const folder = tempProjectFolder();
+    const app = await launchApp({ seedFolder: folder });
+    a = app;
+    const w = app.window;
+    await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
+
+    // a real persistent group with one session in it (the E12-03 door)
+    await w.getByTitle('Create a persistent group').click();
+    await expect(w.getByText('New group')).toBeVisible();
+    const dir = tempProjectFolder();
+    const member = path.basename(dir);
+    await answerFolderDialog(app, dir);
+    await w.getByTitle('New session in this group').click();
+    await expect(w.locator('nav').getByText(member).first()).toBeVisible({ timeout: 25_000 });
+
+    const groupOf = async (title: string): Promise<string | null> => {
+      const cards = (await w.evaluate(() => window.switchboard.sessions.cards())) as Array<{
+        title: string;
+        groupId?: string | null;
+      }>;
+      return cards.find((c) => c.title === title)?.groupId ?? null;
+    };
+    const before = await groupOf(member);
+    expect(before, 'the fixture must actually be in a group').toBeTruthy();
+
+    // THE MEMBER HAS TO BE ALONE IN ITS DOCK GROUP, which is what makes the
+    // slot it leaves a HUSK and the group it comes home to EMPTY — the exact
+    // shape E12-04 mis-read as "the user dropped this card among strangers".
+    // Hiding the neighbour is the cheapest way there; it keeps running.
+    await w.locator('.dv-tab', { hasText: path.basename(folder) }).first().click();
+    await w.keyboard.press(`${MOD}+Shift+P`);
+    await w.getByPlaceholder('Type a command or a session name…').fill('Hide session');
+    await w.keyboard.press('Enter');
+    await expect(tabs(w)).toHaveCount(1, { timeout: 15_000 });
+
+    // out into a window of its own, and straight back — the LONE branch, which
+    // is dockview's window-close return and not a move of ours
+    await w.locator('.dv-tab', { hasText: member }).first().click();
+    await popButton(w, member, 'Pop out into its own window').click();
+    const popout = await popoutWindow(app);
+    await expect(tabs(popout)).toHaveCount(1, { timeout: 15_000 });
+    await popout.getByTitle('Pop back into the main window').click();
+    await expect.poll(() => app.app.windows().length, { timeout: 25_000 }).toBe(1);
+    await w.waitForTimeout(2_000);
+
+    expect(await groupOf(member), 'the lone dock-back erased the session’s group').toBe(before);
+    // ...and it is a card again, alive, in its own slot rather than a sliver
+    await expect(w.locator('.dv-tab', { hasText: member })).toHaveCount(1);
+    await expect(w.getByRole('button', { name: 'Resume' })).toHaveCount(0);
+    for (const grp of await groups(w)) {
+      expect(grp.width, 'a dead sliver of a group is still in the layout').toBeGreaterThan(40);
+    }
   });
 });

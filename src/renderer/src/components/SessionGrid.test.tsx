@@ -19,14 +19,20 @@ import {
   applyLayout,
   captureSlots,
   applySubmitPolicy,
+  clusterCardWithGroup,
   cycleLayoutMode,
   endedCopy,
+  forgetDockBacks,
+  isDockviewReturn,
   layoutSweepPort,
+  noteCardCameHome,
   overlaySaid,
   popOutCardPanel,
   rescueStrandedPopouts,
+  revealCardPanel,
   setCardLadder,
   setLayoutMode,
+  settleDockedBackCards,
   stepCardLadder,
   toggleMaximizeCard,
 } from './SessionGrid';
@@ -616,8 +622,11 @@ const deadWindow = { closed: true } as unknown as Window;
 const liveWindow = { closed: false } as unknown as Window;
 
 /** the bridge calls a rescue makes: the card record it rebuilds from, and the
- *  suspend it asks main for */
-function stubBridge(cards: Array<{ cardId: string }>): { dropped: string[] } {
+ *  suspend it asks main for. `groupId` is #503's half — the same `cards()` read
+ *  answers the E12-02 clustering lookup. */
+function stubBridge(
+  cards: Array<{ cardId: string; groupId?: string | null }>
+): { dropped: string[] } {
   const dropped: string[] = [];
   (window as unknown as { switchboard: unknown }).switchboard = {
     sessions: {
@@ -952,5 +961,469 @@ describe('captureSlots — what counts as a card’s home (#558)', () => {
 
     expect(sessionStore.getPresentation('a').home?.groupId).toBe('g-real');
     expect(sessionStore.getPresentation('a').slot?.groupId).toBe('restoring');
+  });
+});
+
+// ── WHERE A CLOSING POPOUT'S CARDS END UP (#656, #657) ──────────────────────
+//
+// #558 fixed the ⤡ we drive ourselves. dockview drives the rest: it hands EVERY
+// member of a closing window back through ONE reference — the group the window
+// was torn from — so the card that did not tear it off is handed a slot it
+// never earned. `settleDockedBackCards` is the correction, and it runs AFTER
+// the panel is safely in the grid, because moving the last panel OUT of a
+// popout group is the move that kills the card's DOM (#564's lesson, twice
+// documented at the source).
+//
+// WHAT THESE TESTS CANNOT SEE, and it is the load-bearing half: the ORDER of
+// `onDidLocationChange` and `onDidRemovePopoutGroup`, which is what tells a
+// dockview return from a user drag. `noteCardCameHome` stands in for the first
+// here; the real thing is pinned in `popout-dock-back.spec.ts`.
+describe('settling a card a closing popout handed back (#656/#657)', () => {
+  /** the microtask the settle defers into */
+  const flush = (): Promise<void> => Promise.resolve();
+
+  afterEach(() => {
+    for (const id of ['a', 'b', 'c']) sessionStore.forgetPresentation(id);
+    // the settle drains its own note; this clears one a failing assertion
+    // stranded, so the next test cannot inherit it
+    settleDockedBackCards(fakeGrid().api);
+  });
+
+  it('leaves a card in the slot dockview gave it when that slot is its OWN', async () => {
+    // The ordinary lone round trip: the card that tore the window off comes
+    // home to the group it left, dockview's reference and its `home` agree, and
+    // the correction must cost that case nothing.
+    const grid = fakeGrid();
+    grid.addGroups({ id: 'g-left' }, { id: 'g-right' });
+    grid.addPanel('session-a', 'g-left');
+    grid.addPanel('session-b', 'g-right');
+    sessionStore.setPresentation('a', { home: { groupId: 'g-left', index: 0, location: 'grid' } });
+
+    noteCardCameHome('a');
+    settleDockedBackCards(grid.api);
+    await flush();
+
+    expect(grid.groupOf('session-a')).toBe('g-left');
+  });
+
+  it('leaves a card that arrived BESIDE somebody where it is', async () => {
+    // #558's rule for a card with no claim: a tab beside the card that owns
+    // that half rather than instead of it. Nothing to correct.
+    const grid = fakeGrid();
+    grid.addGroups({ id: 'g-left' }, { id: 'g-right' });
+    grid.addPanel('session-a', 'g-left');
+    grid.addPanel('session-c', 'g-left');
+    grid.addPanel('session-b', 'g-right');
+
+    noteCardCameHome('c');
+    settleDockedBackCards(grid.api);
+    await flush();
+
+    expect(grid.groupOf('session-c')).toBe('g-left');
+  });
+
+  it('moves a popout-born card OUT of the slot it inherited', async () => {
+    // #657 itself. C was created inside A's window (#531) and never had a grid
+    // slot; A has since left that group, so dockview handed C the whole of A's
+    // half of the screen. Note the husk is VISIBLE by now — dockview un-hides
+    // the reference group on the way in — which is exactly why the fallback has
+    // to be told to exclude it.
+    const grid = fakeGrid();
+    grid.addGroups({ id: 'g-left' }, { id: 'g-right' });
+    grid.addPanel('session-c', 'g-left');
+    grid.addPanel('session-b', 'g-right');
+
+    noteCardCameHome('c');
+    settleDockedBackCards(grid.api);
+    await flush();
+
+    expect(grid.groupOf('session-c')).toBe('g-right');
+  });
+
+  it('sends a card whose own home still exists back to it', async () => {
+    // Not the window's reference, the CARD's record — the same question ⤡ asks,
+    // asked one step later because dockview got there first.
+    const grid = fakeGrid();
+    grid.addGroups({ id: 'g-left' }, { id: 'g-right' }, { id: 'g-mine', hidden: true });
+    grid.addPanel('session-c', 'g-left');
+    grid.addPanel('session-b', 'g-right');
+    sessionStore.setPresentation('c', { home: { groupId: 'g-mine', index: 0, location: 'grid' } });
+
+    noteCardCameHome('c');
+    settleDockedBackCards(grid.api);
+    await flush();
+
+    expect(grid.groupOf('session-c')).toBe('g-mine');
+    // ...and the husk it landed in is on screen again, or the card would be in
+    // the DOM, in the right window, and ~1px wide (#434)
+    expect(grid.api.groups.find((g) => g.id === 'g-mine')?.api.isVisible).toBe(true);
+  });
+
+  it('judges the card by the home it had when it CAME home, not the one it has now', async () => {
+    // MEASURED, and the difference between this fix working and doing nothing:
+    // dockview's own return fires a layout change, `captureSlots` runs on it,
+    // sees the card sitting in a perfectly real grid group and banks THAT group
+    // as its home — so by the time the settle asks "is this slot yours?" the
+    // answer has become yes for the one card the question exists for. The note
+    // carries the record taken as the card crossed back.
+    const grid = fakeGrid();
+    grid.addGroups({ id: 'g-left' }, { id: 'g-right' });
+    grid.addPanel('session-c', 'g-left');
+    grid.addPanel('session-b', 'g-right');
+
+    noteCardCameHome('c'); // C had no home: it was born in the popout
+    // ...and now the layout change lands, granting it the slot it never earned
+    sessionStore.setPresentation('c', { home: { groupId: 'g-left', index: 0, location: 'grid' } });
+    settleDockedBackCards(grid.api);
+    await flush();
+
+    expect(grid.groupOf('session-c')).toBe('g-right');
+  });
+
+  it('never reads the move as a user drag', async () => {
+    // E12-04 adopts the destination's membership from a group change, and the
+    // destination here is frequently EMPTY — `pickAdoptedGroupId` would return
+    // null and erase the session's persistent group outright. That is #656's
+    // headline for the lone branch and it must not come back through this door.
+    const grid = fakeGrid();
+    grid.addGroups({ id: 'g-left' }, { id: 'g-right' });
+    grid.addPanel('session-c', 'g-left');
+    grid.addPanel('session-b', 'g-right');
+    const c = grid.api.getPanel('session-c')!;
+    let movingDuringMove = false;
+    const moveTo = c.api.moveTo.bind(c.api);
+    c.api.moveTo = (opts) => {
+      movingDuringMove = sessionStore.isMoving('c');
+      moveTo(opts);
+    };
+
+    noteCardCameHome('c');
+    settleDockedBackCards(grid.api);
+    await flush();
+
+    expect(movingDuringMove).toBe(true);
+    expect(sessionStore.isMoving('c')).toBe(false);
+  });
+
+  it('DROPS a note nothing came to read, rather than saving it for later', async () => {
+    // The note is only ever read by the `onDidRemovePopoutGroup` dockview fires
+    // later in the SAME synchronous operation. Every other popout->grid move
+    // leaves one nothing will drain — a tab dragged out of a window that
+    // survives, and the drag that empties one (where the removal fires while
+    // the panel is still in limbo, i.e. before the note exists). Kept, one of
+    // those would be drained by an unrelated window closing minutes later and
+    // would teleport a card the user had deliberately placed, on a record taken
+    // before they placed it.
+    const grid = fakeGrid();
+    grid.addGroups({ id: 'g-left' }, { id: 'g-right' });
+    grid.addPanel('session-c', 'g-left');
+    grid.addPanel('session-b', 'g-right');
+
+    noteCardCameHome('c');
+    await flush(); // the task the note lives in ends here
+    settleDockedBackCards(grid.api); // ...and some LATER window closes
+    await flush();
+
+    expect(grid.groupOf('session-c')).toBe('g-left');
+  });
+
+  it('does nothing during a quit or a layout restore', async () => {
+    // The layout being written on the way out is the one WITH the popout in it,
+    // and §5.25 promises that window comes back. A restore is the same layout
+    // being rebuilt.
+    const grid = fakeGrid();
+    grid.addGroups({ id: 'g-left' }, { id: 'g-right' });
+    grid.addPanel('session-c', 'g-left');
+    grid.addPanel('session-b', 'g-right');
+
+    sessionStore.setTearingDown(true);
+    noteCardCameHome('c');
+    settleDockedBackCards(grid.api);
+    await flush();
+    sessionStore.setTearingDown(false);
+
+    expect(grid.groupOf('session-c')).toBe('g-left');
+  });
+
+  it('is a no-op when nothing came home, and survives a card that has gone', async () => {
+    const grid = fakeGrid();
+    grid.addGroups({ id: 'g-left' });
+    grid.addPanel('session-b', 'g-left');
+
+    settleDockedBackCards(grid.api); // nothing noted at all
+    noteCardCameHome('ghost'); // ...and one whose panel is not there
+    settleDockedBackCards(grid.api);
+    await flush();
+
+    expect(grid.ids()).toEqual(['session-b']);
+  });
+
+  it('tells our own moves from dockview handing a card back', () => {
+    // The note must not be taken for a move that has already placed the card:
+    // hiding removes the panel outright, and the ⤡-with-company branch does its
+    // own `moveTo`. The lone ⤡ is the exception that needs saying — it arms
+    // `isMoving` too and IS one of dockview's returns.
+    // `finally`: both flags are module-singleton sets, so an assertion that
+    // throws mid-test would leave card `a` flagged for the rest of the file and
+    // fail something unrelated three tests later
+    try {
+      sessionStore.setHiding('a', true);
+      expect(isDockviewReturn('a')).toBe(false);
+      sessionStore.setHiding('a', false);
+
+      sessionStore.setMoving('a', true);
+      expect(isDockviewReturn('a')).toBe(false);
+      sessionStore.setMoving('a', false);
+
+      expect(isDockviewReturn('a')).toBe(true);
+
+      const grid = fakeGrid();
+      const win = { closed: false, close: () => {} } as unknown as Window;
+      grid.addGroups({ id: 'g-left' }, { id: 'pop', type: 'popout', win });
+      grid.addPanel('session-a', 'pop');
+      popOutCardPanel(grid.api, 'a'); // the lone dock-back: armed AND a return
+      expect(sessionStore.isMoving('a')).toBe(true);
+      expect(isDockviewReturn('a')).toBe(true);
+      forgetDockBacks();
+      expect(sessionStore.isMoving('a')).toBe(false);
+    } finally {
+      sessionStore.setHiding('a', false);
+      forgetDockBacks();
+      sessionStore.setMoving('a', false);
+    }
+  });
+
+  it('releases the lone dock-back’s flag on its own if the window never returns', () => {
+    // The arm has no `finally`: `w.close()` does not tear the window down
+    // synchronously, so the settle is the ordinary release and this is the
+    // release for a window that simply never comes back. A card left `isMoving`
+    // for ever would silently stop adopting a group on a real drag AND stop
+    // suspending when its window is closed — worse than the bug being fixed.
+    const warned = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.useFakeTimers();
+    try {
+      const grid = fakeGrid();
+      const win = { closed: false, close: () => {} } as unknown as Window;
+      grid.addGroups({ id: 'g-left' }, { id: 'pop', type: 'popout', win });
+      grid.addPanel('session-a', 'pop');
+
+      popOutCardPanel(grid.api, 'a');
+      expect(sessionStore.isMoving('a')).toBe(true);
+
+      vi.advanceTimersByTime(60_000); // nothing ever came home
+      expect(sessionStore.isMoving('a')).toBe(false);
+    } finally {
+      vi.useRealTimers();
+      warned.mockRestore();
+    }
+  });
+
+  it('releases the lone dock-back’s flag even when it has nothing to move', async () => {
+    // `popOutCardPanel`'s lone branch arms `setMoving` BEFORE `w.close()`,
+    // because the window does not tear down synchronously and there is no
+    // `finally` to release it in. The settle is that release — and it has to
+    // happen on the path that decides to move nothing as well.
+    const grid = fakeGrid();
+    const win = { closed: false, close: () => {} } as unknown as Window;
+    grid.addGroups({ id: 'g-left' }, { id: 'pop', type: 'popout', win });
+    grid.addPanel('session-a', 'pop');
+    sessionStore.setPresentation('a', { home: { groupId: 'g-left', index: 0, location: 'grid' } });
+
+    popOutCardPanel(grid.api, 'a'); // alone in its window: the close path
+    expect(sessionStore.isMoving('a')).toBe(true);
+
+    // dockview's own return, which the fake window cannot do for us
+    grid.api.getPanel('session-a')!.api.moveTo({
+      group: grid.api.groups.find((g) => g.id === 'g-left')!,
+    });
+    noteCardCameHome('a');
+    settleDockedBackCards(grid.api);
+    await flush();
+
+    expect(grid.groupOf('session-a')).toBe('g-left');
+    expect(sessionStore.isMoving('a')).toBe(false);
+  });
+});
+
+// ── THE LADDER'S OWN HUSK BLINDNESS (#502) ──────────────────────────────────
+//
+// `moveHome` puts a card stepping back up to `expanded` at its remembered slot.
+// It looked that slot up by location alone, which is blind to three things
+// #501 taught the `+ session` and reveal doors: a group that has become the
+// hidden dock-back husk, one that has become the document area, and one that is
+// now in another OS window. The e2e measures the geometry (`toBeVisible()`
+// passes at 1.33px); these pin the decision.
+describe('expanding a tabbed card — where it goes (#502)', () => {
+  afterEach(() => {
+    for (const id of ['a', 'b']) sessionStore.forgetPresentation(id);
+    delete (window as unknown as { switchboard?: unknown }).switchboard;
+  });
+
+  /** a tabbed card sharing the stack with another tabbed card */
+  function stacked(slotGroupId: string): ReturnType<typeof fakeGrid> {
+    const grid = fakeGrid();
+    grid.addGroups(
+      { id: 'stack' },
+      { id: slotGroupId, hidden: slotGroupId === 'g-husk' },
+      { id: 'g-other' }
+    );
+    grid.addPanel('session-a', 'stack');
+    grid.addPanel('session-b', 'stack');
+    sessionStore.setPresentation('a', {
+      ladder: 'tabbed',
+      slot: { groupId: slotGroupId, index: 0, location: 'grid' },
+    });
+    sessionStore.setPresentation('b', { ladder: 'tabbed' });
+    return grid;
+  }
+
+  it('revives the husk its slot has become, rather than landing 1px wide in it', async () => {
+    const grid = stacked('g-husk');
+
+    await revealCardPanel(grid.api, 'a', false);
+
+    expect(grid.groupOf('session-a')).toBe('g-husk');
+    expect(grid.api.groups.find((g) => g.id === 'g-husk')?.api.isVisible).toBe(true);
+    expect(sessionStore.getPresentation('a').ladder).toBe('expanded');
+  });
+
+  it('refuses a slot that has become the document area, and takes a fresh group', async () => {
+    // #462/#501's mirror rule: a session must not displace what you are
+    // reading, even when the group used to be its own.
+    const grid = stacked('g-doc');
+    grid.addPanel('doc-1', 'g-doc');
+
+    await revealCardPanel(grid.api, 'a', false);
+
+    expect(grid.groupOf('session-a')).not.toBe('g-doc');
+    expect(grid.groupOf('session-a')).not.toBe('stack');
+  });
+
+  it('refuses a slot that is now in another OS window', async () => {
+    // a rung change must never spawn or reach into an OS window — the same
+    // argument the fresh-group branch already made for a POPOUT slot record,
+    // which this had only ever applied when the group was gone
+    const grid = fakeGrid();
+    const win = { closed: false, close: () => {} } as unknown as Window;
+    grid.addGroups({ id: 'stack' }, { id: 'gone-out', type: 'popout', win });
+    grid.addPanel('session-a', 'stack');
+    grid.addPanel('session-b', 'stack');
+    sessionStore.setPresentation('a', {
+      ladder: 'tabbed',
+      slot: { groupId: 'gone-out', index: 0, location: 'grid' },
+    });
+    sessionStore.setPresentation('b', { ladder: 'tabbed' });
+
+    await revealCardPanel(grid.api, 'a', false);
+
+    expect(grid.groupOf('session-a')).not.toBe('gone-out');
+    expect(grid.groupOf('session-a')).not.toBe('stack');
+  });
+});
+
+// ── CLUSTERING A CARD WITH ITS GROUP-MATES (#503) ───────────────────────────
+//
+// The un-hardened twin of the lookup #501 fixed in `addSessionCardTo`: same
+// rule, one path over, without the `isVisible` guard — and with the ordering
+// argument that guard belongs to (`sessionCardHome` MUTATES, so it may only be
+// asked after the sibling lookup, or a minted group is left in the grid empty
+// for ever).
+describe('clusterCardWithGroup — the E12-02 sibling lookup (#503)', () => {
+  afterEach(() => {
+    sessionStore.forgetPresentation('a');
+    delete (window as unknown as { switchboard?: unknown }).switchboard;
+  });
+
+  it('joins a group-mate that is on screen', async () => {
+    const grid = fakeGrid();
+    grid.addGroups({ id: 'g-left' }, { id: 'g-right' });
+    grid.addPanel('session-a', 'g-left');
+    grid.addPanel('session-b', 'g-right');
+    stubBridge([
+      { cardId: 'a', groupId: 'team' },
+      { cardId: 'b', groupId: 'team' },
+    ]);
+
+    await clusterCardWithGroup(grid.api, 'a', 'team');
+
+    expect(grid.groupOf('session-a')).toBe('g-right');
+  });
+
+  it('refuses a group-mate sitting in an INVISIBLE grid group', async () => {
+    // The husk blindness, one path over. A hidden grid group is a dock-back
+    // shell or a leaf squeezed out by a maximize (E9-07); clustering is a
+    // reason to land beside a group-mate, never a reason to land off-screen.
+    const grid = fakeGrid();
+    grid.addGroups({ id: 'g-left' }, { id: 'g-hidden', hidden: true });
+    grid.addPanel('session-a', 'g-left');
+    grid.addPanel('session-b', 'g-hidden');
+    stubBridge([
+      { cardId: 'a', groupId: 'team' },
+      { cardId: 'b', groupId: 'team' },
+    ]);
+
+    await clusterCardWithGroup(grid.api, 'a', 'team');
+
+    expect(grid.groupOf('session-a')).toBe('g-left');
+  });
+
+  it('LEAKS NO GROUP when there is no group-mate to join', async () => {
+    // The regression this exists for: the shape #501 had to fix next door was
+    // `find(...) ?? addGroup()`, where a sibling win left the minted group in
+    // the grid, empty, for ever. This path has no fallback at all and must
+    // never grow one — the card stays exactly where the user left it.
+    const grid = fakeGrid();
+    grid.addGroups({ id: 'g-left' });
+    grid.addPanel('session-a', 'g-left');
+    const groupsBefore = grid.api.groups.length;
+    stubBridge([{ cardId: 'a', groupId: 'team' }]);
+
+    await clusterCardWithGroup(grid.api, 'a', 'team');
+
+    expect(grid.groupOf('session-a')).toBe('g-left');
+    expect(grid.api.groups.length).toBe(groupsBefore);
+  });
+
+  it('does nothing at all for an UNGROUPING, or with no panel', async () => {
+    const grid = fakeGrid();
+    grid.addGroups({ id: 'g-left' }, { id: 'g-right' });
+    grid.addPanel('session-a', 'g-left');
+    grid.addPanel('session-b', 'g-right');
+    stubBridge([
+      { cardId: 'a', groupId: 'team' },
+      { cardId: 'b', groupId: 'team' },
+    ]);
+
+    await clusterCardWithGroup(grid.api, 'a', null);
+    await clusterCardWithGroup(null, 'a', 'team');
+    await clusterCardWithGroup(grid.api, 'ghost', 'team');
+
+    expect(grid.groupOf('session-a')).toBe('g-left');
+    expect(grid.api.groups.length).toBe(2);
+  });
+
+  it('never reads its own move as a user drag', async () => {
+    // the rail drop has ALREADY written the membership; E12-04 adopting from
+    // the destination would let a group-mate's neighbours overwrite it
+    const grid = fakeGrid();
+    grid.addGroups({ id: 'g-left' }, { id: 'g-right' });
+    grid.addPanel('session-a', 'g-left');
+    grid.addPanel('session-b', 'g-right');
+    const a = grid.api.getPanel('session-a')!;
+    let movingDuringMove = false;
+    const moveTo = a.api.moveTo.bind(a.api);
+    a.api.moveTo = (opts) => {
+      movingDuringMove = sessionStore.isMoving('a');
+      moveTo(opts);
+    };
+    stubBridge([
+      { cardId: 'a', groupId: 'team' },
+      { cardId: 'b', groupId: 'team' },
+    ]);
+
+    await clusterCardWithGroup(grid.api, 'a', 'team');
+
+    expect(movingDuringMove).toBe(true);
+    expect(sessionStore.isMoving('a')).toBe(false);
   });
 });
