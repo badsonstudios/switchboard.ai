@@ -6,8 +6,14 @@
 // transitively pulled in React, react-i18next and a 700-line rail component to
 // borrow three type names.
 //
-// This module imports nothing. Components re-export from here so existing
-// imports keep working.
+// This module imports nothing but TYPES from `src/shared` — the IPC wire
+// shapes these rows are BUILT from (`App.tsx` maps `sessions:cards` straight
+// into `RailSession`). An `import type` is erased entirely, so the "state layer
+// must not depend on the view" property above is untouched; what it buys is
+// that a row cannot describe a card more loosely than the channel that fills
+// it. Components re-export from here so existing imports keep working.
+import type { CardStatus } from '../../../shared/sessions';
+import type { TransportKind } from '../../../shared/transport';
 
 /** A session as the rail and the grid see it. */
 export interface RailSession {
@@ -16,7 +22,22 @@ export interface RailSession {
   folder?: string;
   accent?: string;
   badge?: string;
-  status?: string;
+  /**
+   * The card's status, straight off `sessions:cards` — `SessionStatus` or the
+   * card-only 'suspended' (#618).
+   *
+   * It was `string` here, which is where the narrowing `sessions:cards` gained
+   * in #618 was being thrown away again: `App.tsx` maps `c.status` into this
+   * field, so every rail consumer downstream (`presentStatus`, `ladder.ts`,
+   * `urgency.ts`) was reading a widened value and casting it back.
+   *
+   * `presentStatus` (`lib/rail-view.ts`) still takes a tolerant `string` ON
+   * PURPOSE — it is the fail-open reader for a value that can also come from a
+   * persisted blob written by an older build, and it answers `PRESENTATION.idle`
+   * for anything it does not know. Narrow at the SOURCE, stay tolerant at the
+   * paint.
+   */
+  status?: CardStatus;
   /** persistent-group membership (E12); undefined = ungrouped */
   groupId?: string;
   /** repo/folder auto-group key (E12-05); same key = same emergent group */
@@ -34,7 +55,7 @@ export interface RailSession {
    * transport change waits for a restart; `lib/trust-reach.ts` says why the
    * chosen one is the answer its question wants.
    */
-  transport?: 'pty' | 'stream';
+  transport?: TransportKind;
 }
 
 /** A persistent group (E12). */

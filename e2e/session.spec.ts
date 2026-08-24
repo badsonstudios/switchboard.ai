@@ -178,6 +178,34 @@ test.describe('a session card', () => {
     await expect(announcer).toContainText("Session didn't start");
     await expect(announcer).toContainText(/renamed, deleted, or be on a drive/);
     await expect(announcer).toContainText(path.basename(gone));
+
+    // #606: AND IT HAS A HEADER. This arm used to draw the panel above and
+    // nothing else - the one card state in the app with no header at all, so
+    // the double-click gesture §5.8 gives every session header had nowhere to
+    // land on it, and the card read as a different kind of object from every
+    // other card on screen. The parity header is the suspended one's subset
+    // (#216): identity, one word, and no control that would act on a session
+    // that is not running.
+    const header = window.getByTestId('card-header');
+    await expect(header).toBeVisible();
+    await expect(header.getByTestId('card-header-name')).toHaveText(path.basename(gone));
+    await expect(header.locator('.status-pill')).toHaveText('not started');
+    // Try again and Close are the PANEL's, two centimetres below; a header copy
+    // of them would be a second way to do the same thing on the smallest
+    // surface the card has
+    await expect(header.locator('button')).toHaveCount(0);
+
+    // ...and the gesture the header exists for does not wake anything up. What
+    // it CANNOT do here is rearrange the workspace, and that is deliberate and
+    // older than this header: `lib/layout-mode`'s `heldMaximize` honours a
+    // maximize only for a card the session list still holds, and a card whose
+    // `sessions:create` was refused was never registered as one - it has no row
+    // in the list either. Reported rather than patched (see #606's PR); the
+    // promise being tested here is that the double-click has a target and is
+    // harmless, not that a session-less card can take over the grid.
+    await header.dblclick({ position: { x: 4, y: 4 } });
+    await expect(overlay.getByText("Session didn't start")).toBeVisible();
+    await expect(header).toBeVisible();
   });
 
   test('says a session ENDED, with the code the process really exited with (#366)', async () => {

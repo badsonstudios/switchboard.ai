@@ -15,8 +15,13 @@ import {
   TransportMap,
   UnknownTransportError,
 } from '../transport/transport';
-import { SessionEvent, SessionStatus, transition } from './state-machine';
-import type { SessionIdentity, SessionRecordWire } from '../../shared/sessions';
+import { SessionEvent, transition } from './state-machine';
+import type {
+  AutonomyMode,
+  SessionIdentity,
+  SessionRecordWire,
+  StatusChange,
+} from '../../shared/sessions';
 import {
   removeSessionStateDir,
   sweepOrphanSessionStateDirs,
@@ -34,8 +39,10 @@ export type NativeIdCause = 'clear';
 
 // Defined in `shared/sessions.ts` since #590 (the rail shows it, so it crosses
 // IPC); re-exported here because every main-side importer already says
-// `from './session-manager'` and renaming those is churn.
-export type { SessionIdentity };
+// `from './session-manager'` and renaming those is churn. `StatusChange`
+// followed in #618, for the same reason and by the same route — `sessions:status`
+// sends it verbatim.
+export type { SessionIdentity, StatusChange };
 
 /**
  * A live session, as the manager holds it.
@@ -58,7 +65,7 @@ export type { SessionIdentity };
  */
 export interface SessionRecord extends SessionRecordWire {
   /** autonomy mode this session was spawned at (drives the E10-03 hold policy) */
-  autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
+  autonomy?: AutonomyMode;
   /** set by kill()/restart(): the coming exit is intentional, not a crash */
   killRequested?: boolean;
 }
@@ -72,14 +79,6 @@ export interface SessionRecord extends SessionRecordWire {
  * renaming them is churn that would obscure the one real change in this item.
  */
 export type PtyLike = SessionTransport;
-
-export interface StatusChange {
-  sessionId: string;
-  from: SessionStatus;
-  to: SessionStatus;
-  cause: string;
-  at: string;
-}
 
 export interface SessionExit {
   sessionId: string;
@@ -176,7 +175,7 @@ export class SessionManager {
     identity: SessionIdentity,
     opts?: {
       resumeSessionId?: string;
-      autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
+      autonomy?: AutonomyMode;
       settings?: Record<string, unknown>;
       /** Which transport to ASK the adapter for (P2-E18-08a). The adapter
        *  answers in the recipe; a provider that cannot speak it returns a PTY

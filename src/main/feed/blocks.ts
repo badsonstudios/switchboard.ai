@@ -20,6 +20,30 @@ import { asDisplayString } from '../../shared/display-string';
 import { ToolCategory, toolCategory } from '../../shared/tool-taxonomy';
 
 /**
+ * What rode along with a prompt (#491, P2-E10-09/10).
+ *
+ * COUNTED OFF THE MESSAGE, never off composer state. The composer's chip strip
+ * clears itself on send, so by the time this block exists the only surviving
+ * record of what was attached is the message's own `content` array — which is
+ * also the only record that is TRUE: it is what went on the wire, on both
+ * transports (the CLI's `--replay-user-messages` echo, and the JSONL line the
+ * same turn is written to). A count taken from the composer would be a claim
+ * about our intent; this is a claim about the send.
+ *
+ * TWO NUMBERS, because the wire has two block types and they are not the same
+ * thing to a reader scrolling back: an `image` is something the model LOOKED
+ * at, a `document` is something it READ (a PDF, or a text file sent as its
+ * contents — see `shared/prompt-attachments.ts`). Collapsing them into one
+ * "3 attachments" would be honest about the number and vague about the turn.
+ */
+export interface FeedAttachments {
+  /** `image` content blocks — a pasted screenshot or a dropped picture */
+  images: number;
+  /** `document` content blocks — a PDF, or a text file sent as its contents */
+  documents: number;
+}
+
+/**
  * One rendered unit of the Feed (P2-E12-06, §5.10): derived from a transcript
  * line or a stream message, read-only by construction. `detail` is capped — the
  * Feed is a view, not an archive; the transcript stays the source of truth.
@@ -47,6 +71,14 @@ export interface FeedBlock {
   };
   /** TodoWrite checklist (E10-06) */
   todos?: Array<{ content: string; status: string }>;
+  /**
+   * user: the attachments this prompt carried, when it carried any (#491).
+   *
+   * ABSENT, not zeroed, for the overwhelmingly common plain-text prompt — so a
+   * block with nothing attached is byte-for-byte the block this file has always
+   * produced, and every pinned shape in the suite stays pinned.
+   */
+  attachments?: FeedAttachments;
   /** thinking: how long it lasted (set when the next block lands) */
   durationMs?: number;
   /** true when the line came from a subagent transcript */
@@ -110,7 +142,11 @@ export const TEXT_CAP = 20_000;
  * which is the whole of what block identity rests on. A search that re-derived
  * blocks its own way could not hand E17-02 a seq the Feed agrees with. Note
  * `srcId` is NOT capped by any of these: it is identity, not text, and an
- * identity-only pass that dropped it would be identity-only in name.
+ * identity-only pass that dropped it would be identity-only in name. Nor is
+ * `attachments` (#491), for the same reason and one more: it is a COUNT, so
+ * there is no length to trim — and it is what decides whether an
+ * attachment-only turn produces a block at all, which every pass has to agree
+ * on or the ordinals drift.
  */
 export interface DerivationCaps {
   /** user / assistant / thinking prose, and local-command output */
@@ -276,6 +312,40 @@ export function deriveIntents(
   return [];
 }
 
+/**
+ * How many attachments this user message carried (#491).
+ *
+ * TOP-LEVEL ITEMS ONLY, and that is the whole of what makes the count
+ * trustworthy. A top-level `image` or `document` in a USER message is a file
+ * the user attached — through our composer (`shared/prompt-attachments.ts` ->
+ * `userMessage`), or through the CLI's own paste path, which is where the three
+ * such lines in this repo's real transcript fixture came from long before the
+ * composer existed. All of those are the same fact and all are honest to count.
+ *
+ * What a top-level item can NEVER be is a tool's output. A `Read` of a `.png`
+ * comes back as an image NESTED inside the `tool_result` item's own `content`,
+ * which this loop does not open — so "Claude looked at a file" cannot be
+ * rendered as "the user attached one".
+ *
+ * `undefined` rather than `{ images: 0, documents: 0 }` when there is nothing:
+ * see `FeedBlock.attachments`.
+ *
+ * The element type is nullable because this module is "tolerant by
+ * construction" (see `deriveIntents`) — the array is untrusted output from
+ * another process and a hole in it is not a throw.
+ */
+function countAttachments(
+  items: readonly ({ type?: string } | null | undefined)[]
+): FeedAttachments | undefined {
+  let images = 0;
+  let documents = 0;
+  for (const c of items) {
+    if (c?.type === 'image') images++;
+    else if (c?.type === 'document') documents++;
+  }
+  return images > 0 || documents > 0 ? { images, documents } : undefined;
+}
+
 function userIntents(
   message: { content?: unknown },
   ts: string | undefined,
@@ -294,16 +364,28 @@ function userIntents(
     return out;
   }
   if (!Array.isArray(message.content)) return out;
-  for (const [index, c] of (
-    message.content as Array<{
-      type?: string;
-      text?: string;
-      tool_use_id?: string;
-      content?: unknown;
-    }>
-  ).entries()) {
+  const items = message.content as Array<{
+    type?: string;
+    text?: string;
+    tool_use_id?: string;
+    content?: unknown;
+  }>;
+  const attachments = countAttachments(items);
+  // The counts belong to the MESSAGE, so exactly ONE block wears them — the
+  // first prose block, which is the prompt the attachments were sent with.
+  // (`userMessage` puts attachments first and the typed text last, so in
+  // practice there is exactly one candidate; the flag is what keeps a message
+  // that somehow held two from claiming the same pictures twice.)
+  let marked = false;
+  for (const [index, c] of items.entries()) {
     if (c?.type === 'text' && c.text?.trim() && !isPlumbing(c.text)) {
-      out.push({ t: 'block', block: { kind: 'user', text: c.text.slice(0, caps.text), ts }, index });
+      const mark = attachments !== undefined && !marked ? { attachments } : {};
+      marked = true;
+      out.push({
+        t: 'block',
+        block: { kind: 'user', text: c.text.slice(0, caps.text), ts, ...mark },
+        index,
+      });
     } else if (c?.type === 'tool_result' && typeof c.tool_use_id === 'string') {
       out.push({
         t: 'tool-result',
@@ -311,6 +393,28 @@ function userIntents(
         out: toolResultText(c.content).slice(0, caps.detail),
       });
     }
+  }
+  // AN ATTACHMENT-ONLY TURN, and the reason this branch is not a nicety.
+  // "Look at this" typed into nothing but a pasted screenshot is a legitimate
+  // prompt — the composer's send button lights up for it on purpose — and
+  // `userMessage` sends no text block at all for it. Until #491 the loop above
+  // therefore produced NOTHING, so the Feed showed no trace whatsoever that a
+  // turn had been taken: the reply arrived under no prompt. The block stands
+  // for the attachments themselves, so it carries no text and no `index` —
+  // there is no single content item it sits at.
+  //
+  // THE ONE ASSUMPTION, stated rather than hidden: that the CLI writes such a
+  // turn to the JSONL as an ordinary `user` line, the way it writes every other
+  // one. If it instead marked it `isMeta` / `isVisibleInTranscriptOnly`, the
+  // transcript would derive one block fewer than the stream and session find's
+  // file ordinals would run one behind the Feed's `seq` for the rest of that
+  // session. UNMEASURED — the repo's real fixture happens to contain only the
+  // image+text shape — and deliberately not guessed at either way. It fails
+  // SAFE if the assumption is wrong: `search.ts` refuses an anchor whose shape
+  // disagrees rather than resolving it, so hits stay snippet-only instead of
+  // jumping somewhere wrong (`search.test.ts` pins the in-step case).
+  if (attachments !== undefined && !marked) {
+    out.push({ t: 'block', block: { kind: 'user', ts, attachments } });
   }
   return out;
 }

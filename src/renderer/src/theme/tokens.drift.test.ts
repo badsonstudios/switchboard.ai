@@ -206,7 +206,11 @@ const PAIRS: Array<[string, string, number]> = [
   ['--muted', '--panel2', 7],
   ['--faint', '--panel2', 4.5],
   ['--border', '--panel', 3],
-  ['--group-frame', '--bg', 3],
+  // `--group-frame` used to be here, against `--bg` only and for these two
+  // themes only. It moved to "the container frame reads against every surface
+  // it borders" below (#648), which is strictly stronger: all six surfaces the
+  // edge actually touches, in all four themes. Leaving a weaker copy here
+  // would be a second place to fix when the frame moves.
   ['--rail-divider', '--rail-card', 3],
   ['--rail-close', '--rail-card', 4.5],
   ['--rail-close-hover', '--rail-card', 4.5],
@@ -296,6 +300,11 @@ const FILLED_RULES: Array<[string, number]> = [
   // real text (9px), and the rule itself is `currentColor`, so this one number
   // covers both halves of the divider.
   ['.turn-divider', 4.5],
+  // The events drawer's row at rest (#268). Its de-emphasised twin is in
+  // MIXED_RULES below — the pair is on the list together so the "reviewed"
+  // step down the neutral ladder is always measured against the step it came
+  // from, rather than one of them drifting on its own.
+  ['.event-row', 4.5],
 ];
 
 /**
@@ -355,6 +364,27 @@ const TINTED_RULES: TintedRule[] = [
   },
 ];
 
+/**
+ * Rules whose background is a color-mix of two SURFACE tokens (#268).
+ *
+ * A third shape, and it is here because it is what an `opacity` becomes when
+ * you stop using one. TINTED_RULES measures a STATUS HUE washed over a
+ * surface, so its reader insists the two placeholders be one ramp position's
+ * hue and ink — a de-emphasis has neither, it is one surface pulled part of
+ * the way toward the surface behind it, and the ink on top is a neutral.
+ *
+ * The events drawer's reviewed row is the whole list so far, and it is the
+ * case worth writing the reader for: it used to be `opacity: 0.82` on the row,
+ * which is not a de-emphasis but a contrast cut applied to every colour at
+ * once, and NOTHING in this file could see it. A `color-mix` can be read, so
+ * the fill the user actually sees is now a number, and the ink written on it
+ * is measured against that number rather than against `--panel2`, which is a
+ * surface the reviewed row does not have.
+ */
+const MIXED_RULES: Array<[selector: string, min: number]> = [
+  [".event-row[data-reviewed='true']", 4.5],
+];
+
 /** the class a tinted/filled selector is applied by — `.a[data-b]:hover` → `a` */
 function classOf(selector: string): string {
   const m = /^\.([a-z0-9-]+)/.exec(selector);
@@ -410,6 +440,7 @@ describe('a filled rule is a rule something applies', () => {
   it.each([
     ...FILLED_RULES.map(([s]) => s),
     ...TINTED_RULES.map((r) => r.selector),
+    ...MIXED_RULES.map(([s]) => s),
   ])('%s is applied by a component', (selector) => {
     // the class name inside a className prop, quoted either way, among other
     // classes, and whether or not it is behind a condition: #222 made the
@@ -559,6 +590,94 @@ describe.each(builtinThemes.map((t) => [t.id, t] as const))(
   }
 );
 
+// --- Words on a DE-EMPHASISED fill, in EVERY shipped theme (#268) -----------
+//
+// The events drawer's reviewed row receded with `opacity: 0.82` on the whole
+// row. Group opacity is not a de-emphasis: it fades the text AND the fill
+// toward whatever is behind BOTH, so it takes ratio off every colour on the
+// row at once — the row's task label went from 4.55:1 to 3.61:1 on nordic —
+// and no reader in this file could see it, because an opacity is not a token
+// pair. Nor could it be rescued by a bigger number: `--muted` on `--panel2` is
+// 4.55:1 at FULL strength on nordic, so the first legal opacity is 0.996.
+//
+// A `color-mix` of the two surfaces says the same thing and can be read. The
+// fill below is byte-identical to what 0.82 composited (`#323846` on nordic),
+// so the row does not move; what changed is that the ink on it is a token
+// choice — one rung down the neutral ladder — instead of a faded `--text`.
+
+/** what a de-emphasised rule paints: a mix of two SURFACES, and the ink on it */
+function mixed(selector: string): { ink: string; top: string; pct: number; under: string } {
+  const rule = block(`${selector} {`);
+  const ink = refIn(rule, selector, 'color', String.raw`var\((--[a-z0-9-]+)\)`)[1];
+  const bg = refIn(
+    rule,
+    selector,
+    'background',
+    String.raw`color-mix\(in srgb,\s*var\((--[a-z0-9-]+)\)\s*([\d.]+)%,\s*var\((--[a-z0-9-]+)\)\)`
+  );
+  return { ink, top: bg[1], pct: Number(bg[2]) / 100, under: bg[3] };
+}
+
+describe('a de-emphasised rule recedes from the rule it refines (issue 268)', () => {
+  it.each(MIXED_RULES.map(([s]) => s))('%s mixes its OWN surface, not another', (selector) => {
+    // The variant has to be the BASE rule's fill pulled toward something else.
+    // Mixing a third surface in would make "reviewed" a different box rather
+    // than a quieter one, and every ratio below would still pass — it would
+    // just be measuring a row nobody recognises. The base rule is on
+    // FILLED_RULES, so `pair()` reads its background out of the file too and
+    // neither side is spelled here.
+    const [baseInk, base] = pair(`.${classOf(selector)}`);
+    const m = mixed(selector);
+    expect(m.top, `${selector} must recede from ${base}`).toBe(base);
+    expect(m.pct, `${selector}: a 100% mix is not a mix`).toBeLessThan(1);
+    expect(m.pct, `${selector}: the base surface has to be most of the fill`).toBeGreaterThan(0.5);
+    // ...and it has to be a DIFFERENT ink from the rule it refines. Without
+    // this the whole file passes with `color: var(--text)` here — i.e. with
+    // the de-emphasis gone entirely, which is not an AA failure (it is MORE
+    // contrast) and is therefore the one regression no floor can object to.
+    // The per-theme block below turns it into the stronger claim: less
+    // contrast than the base rule, in every theme.
+    expect(
+      m.ink,
+      `${selector} writes the same ink as the rule it is supposed to recede from`
+    ).not.toBe(baseInk);
+  });
+});
+
+describe.each(builtinThemes.map((t) => [t.id, t] as const))(
+  '%s: words on a de-emphasised fill',
+  (id, theme) => {
+    const tokens = resolved(theme);
+
+    it.each(MIXED_RULES)('%s clears %s:1', (selector, min) => {
+      const m = mixed(selector);
+      for (const token of [m.ink, m.top, m.under]) {
+        expect(tokens[token], `${id} ${token} must be #rrggbb to be measured`).toMatch(
+          /^#[0-9a-f]{6}$/i
+        );
+      }
+      const fill = mix(tokens[m.top], tokens[m.under], m.pct);
+      expect(
+        ratio(tokens[m.ink], fill),
+        `${id}: ${m.ink} on ${m.pct * 100}% ${m.top} over ${m.under} ` +
+          `(${tokens[m.ink]} on ${fill})`
+      ).toBeGreaterThanOrEqual(min);
+      // BOTH DIRECTIONS. The floor above says the quiet row is readable; this
+      // says it is still quiet. Measured against the rule it refines rather
+      // than against a number, so retuning either ink keeps the relationship
+      // honest and only an inversion fails. A "de-emphasis" that has drifted
+      // into being the LOUDER of the two clears every floor in this file, and
+      // it is the exact way a hand-tuned look dies.
+      const [baseInk, base] = pair(`.${classOf(selector)}`);
+      expect(
+        ratio(tokens[m.ink], fill),
+        `${id}: ${selector} is no quieter than ${base} — ${m.ink} on the mix vs ` +
+          `${baseInk} on ${base}`
+      ).toBeLessThan(ratio(tokens[baseInk], tokens[base]));
+    });
+  }
+);
+
 // --- Status ink as PLAIN text, in EVERY shipped theme (#221) ----------------
 //
 // The same defect without the tint: the grid wrote the raw hue as 9.5-11px text
@@ -591,6 +710,104 @@ describe.each(builtinThemes.map((t) => [t.id, t] as const))(
         ratio(tokens[ink], tokens[surface]),
         `${id}: ${ink} on ${surface} (${tokens[ink]} on ${tokens[surface]})`
       ).toBeGreaterThanOrEqual(4.5);
+    });
+  }
+);
+
+// --- The container frame, against every surface it borders (#648) -----------
+//
+// `--group-frame` is the app's ONE structural edge: the grid's session windows
+// and the rail's group cards share it, because both are "a container holding
+// sessions". It is a meaningful non-text object, so WCAG 1.4.11 asks 3:1 of it
+// — and until now the only assertion on it was one line in PAIRS, against
+// `--bg`, for the two contrast themes. That left the frame unaudited on the
+// two presets people actually use, and on five of the six surfaces it touches:
+// it was 2.55-2.91:1 against everything INSIDE the card on nordic, and 2.76:1
+// against the workspace it is drawn ON on daylight.
+//
+// A 1px line lives between two colours and has to be seen against both, so the
+// list is every surface either side of it: the workspace behind a card
+// (`--bg`, `--rail-canvas`), the body inside one (`--panel` = `--card-bg`,
+// `--rail-card`, and the auto-group's own tinted fill), the dockview tab strip
+// that runs along the top edge inside a session group (`--panel2`), and the
+// header strip along the top of an auto-group card (`--auto-head`). Those last
+// two are the same shape and both are easy to miss, because "the surface
+// inside the frame" sounds like one thing and is two: a card is a strip and a
+// body, and the frame touches both.
+//
+// TWO THINGS ARE NOT ON THE LIST, and the reasons differ:
+//
+//   - the ACTIVE group's frame, which `.dv-groupview.dv-active-group` repaints
+//     in `--link`. A different token making a different promise; folding it in
+//     would measure a border this one never draws.
+//   - a HAND-MADE group's header strip, which is `color-mix(<the group's
+//     colour> 7%, transparent)` over `--rail-card` (`SessionsRail.tsx`). The
+//     colour is a user's pick out of a palette the main process persists, so it
+//     is runtime data and there is nothing in these files to read. An exemption
+//     by necessity rather than by choice, written down because an unstated
+//     omission from a list like this is exactly how the frame stayed unaudited
+//     on five surfaces in the first place.
+
+const FRAME = '--group-frame';
+const FRAME_SURFACES = ['--bg', '--panel', '--panel2', '--rail-canvas', '--rail-card'];
+
+/** the derived surfaces the frame borders — layer-3 `color-mix` tokens */
+const FRAME_DERIVED = ['--auto-surface', '--auto-head'];
+
+/**
+ * A layer-3 surface whose value is a color-mix of two theme tokens, resolved
+ * for one theme — read out of the file rather than spelled here, so a retuned
+ * auto-group fill is measured at its new value instead of at this test's
+ * memory of the old one.
+ *
+ * `block()` is called INSIDE rather than at module scope, for `pair()`'s stated
+ * reason: a reordered layer-3 block would otherwise throw during COLLECTION and
+ * take every case in this file down with it, instead of failing the ones that
+ * read it.
+ */
+function derivedSurface(token: string, id: string, tokens: Record<string, string>): string {
+  const layer3 = declaredValues(block(':root {\n  --card-bg'));
+  const m =
+    /^color-mix\(in srgb,\s*var\((--[a-z0-9-]+)\)\s*([\d.]+)%,\s*var\((--[a-z0-9-]+)\)\)$/.exec(
+      layer3[token] ?? ''
+    );
+  expect(m, `${token} must be a color-mix of two tokens to be measured`).not.toBeNull();
+  // the same guard every sibling case has. Without it an undefined token throws
+  // inside mix(), and a non-hex one yields a colour of NaNs and a failure that
+  // says "expected NaN" rather than naming the value that is wrong.
+  for (const t of [m![1], m![3]]) {
+    expect(tokens[t], `${id} ${t} must be #rrggbb to be measured`).toMatch(/^#[0-9a-f]{6}$/i);
+  }
+  return mix(tokens[m![1]], tokens[m![3]], Number(m![2]) / 100);
+}
+
+describe.each(builtinThemes.map((t) => [t.id, t] as const))(
+  '%s: the container frame reads against every surface it borders',
+  (id, theme) => {
+    const tokens = resolved(theme);
+    const frame = (): string => {
+      expect(tokens[FRAME], `${id} ${FRAME} must be #rrggbb to be measured`).toMatch(
+        /^#[0-9a-f]{6}$/i
+      );
+      return tokens[FRAME];
+    };
+
+    it.each(FRAME_SURFACES)(`${FRAME} on %s clears 3:1`, (surface) => {
+      expect(tokens[surface], `${id} ${surface} must be #rrggbb to be measured`).toMatch(
+        /^#[0-9a-f]{6}$/i
+      );
+      expect(
+        ratio(frame(), tokens[surface]),
+        `${id}: ${FRAME} on ${surface} (${tokens[FRAME]} on ${tokens[surface]})`
+      ).toBeGreaterThanOrEqual(3);
+    });
+
+    it.each(FRAME_DERIVED)(`${FRAME} on %s clears 3:1`, (surface) => {
+      const fill = derivedSurface(surface, id, tokens);
+      expect(
+        ratio(frame(), fill),
+        `${id}: ${FRAME} on ${surface} (${tokens[FRAME]} on ${fill})`
+      ).toBeGreaterThanOrEqual(3);
     });
   }
 );

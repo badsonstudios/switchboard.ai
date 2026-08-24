@@ -2180,10 +2180,13 @@ a pointer where they left.)*
   > `UpdateDialog`'s release notes render immediately before `CommandPalette` —
   > so #654 took the literal ids out of the palette (a live fix) and out of
   > `PushSetupDialog` / `QuietHoursDialog` (prophylaxis against a reorder; both
-  > render ahead of the feed). `React.useId()` is **not a secret**: React 19
-  > numbers client ids from a module-global counter. What it removes is a
-  > *stable, published* name. The closure is the tag; the ids are defence in
-  > depth, and both are pinned by tests.
+  > render ahead of the feed). `React.useId()` alone is **not a secret**: React
+  > 19 numbers client ids from a module-global counter. What it removes is a
+  > *stable, published* name. **#673 (2026-08-22) added the missing half:** the
+  > app root now passes a per-launch crypto-random `identifierPrefix`, so every
+  > `useId`-derived id — including the tab buttons outside the scrims — is
+  > unguessable rather than merely unpublished. The closure is still the tag;
+  > the ids are defence in depth, and all of it is pinned by tests.
   >
   > **A fifth rule, added by #253 (2026-08-05):** *a drag is never the only way
   > to do something.* The sweep above made every CONTROL reachable and left one

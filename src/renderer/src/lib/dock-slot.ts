@@ -149,3 +149,40 @@ export function homeGroupId(
   if (!g || g.location !== 'grid' || g.hasDocument) return null;
   return g.id;
 }
+
+/**
+ * A card dockview has just handed back to the grid: does it keep where it landed?
+ *
+ * A popout window carries ONE dock-back reference — the group the window was
+ * torn from — and dockview returns EVERY member of a closing window through it
+ * (`disposePopoutWindow` -> `moveGroupWithoutDestroying({ from, to:
+ * referenceGroup })`). #558 fixed the one route we drive ourselves, the ⤡ with
+ * company; this is the question for the routes dockview drives: the window
+ * closed from the OS, the ⤡ that empties it, a card left holding a window its
+ * opener made.
+ *
+ * Two ways the landing is honest, and they are the whole rule:
+ *
+ *  * IT IS THE CARD'S OWN SLOT. The card that tore the window off comes back to
+ *    exactly the group it left, which is what the reference means for it. Say
+ *    so rather than moving it, so the ordinary round trip costs nothing.
+ *  * IT ARRIVED BESIDE SOMEBODY. A group that still holds other panels is not a
+ *    slot being claimed — the card is a tab in somebody else's group, which is
+ *    precisely where #558 says a card with no claim belongs ("a tab beside the
+ *    card that owns that half rather than instead of it").
+ *
+ * What is left is a card sitting ALONE in a group that is not its own: it has
+ * been handed a whole slot on the strength of a reference it never earned, and
+ * that is #657. The caller places it again — its own home, or the ordinary
+ * placement rules for a card that has none.
+ *
+ * `landingGroupSize` COUNTS THIS CARD. One means alone.
+ */
+export function keepsInheritedGroup(args: {
+  landingGroupId: string;
+  landingGroupSize: number;
+  /** `homeGroupId(home, groups)` — the card's own slot, when it still has one */
+  homeId: string | null;
+}): boolean {
+  return args.homeId === args.landingGroupId || args.landingGroupSize > 1;
+}

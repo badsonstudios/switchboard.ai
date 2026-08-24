@@ -11,7 +11,7 @@ import {
 } from 'electron';
 import path from 'path';
 import { windowOptionsFrom, WindowState } from './window-state';
-import { WorkspaceStore, displayFingerprint, NotificationPrefsState } from './workspace/store';
+import { WorkspaceStore, displayFingerprint } from './workspace/store';
 import os from 'os';
 import { LogSink, createLogger } from './log/logger';
 import { registerBuiltinContributions } from './bootstrap';
@@ -46,6 +46,7 @@ import {
   visibilityAcross,
 } from './events/rules';
 import type { QuietState } from '../shared/quiet-hours';
+import type { NotificationPrefs } from '../shared/notifications';
 import { RuleActionRegistry, RulesEngine } from './events/rules-engine';
 import {
   answerableFromToast,
@@ -1729,7 +1730,7 @@ app
       getWindow: () => currentWindow,
     });
     broker.handle('notifications:getPrefs', () => workspace.getNotificationPrefs());
-    broker.handle('notifications:setPrefs', (_e, p: Partial<NotificationPrefsState>) => {
+    broker.handle('notifications:setPrefs', (_e, p: Partial<NotificationPrefs>) => {
       workspace.setNotificationPrefs(p);
       return workspace.getNotificationPrefs();
     });

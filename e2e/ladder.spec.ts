@@ -18,6 +18,7 @@ import path from 'path';
 import {
   launchApp,
   LaunchedApp,
+  skipPopoutOnLinux,
   tempProjectFolder,
   hookPoster,
   gridLeafViews,
@@ -421,5 +422,106 @@ test.describe('presentation ladder (E9-05)', () => {
     await expect(strip(w)).toHaveCount(0);
     await row(w, hidden).click();
     await expect(tabs(w)).toHaveCount(4, { timeout: 25_000 });
+  });
+});
+
+// ── THE LADDER'S OWN HUSK BLINDNESS (#502) ──────────────────────────────────
+//
+// #501 closed two doors on the same bug — the new-session door and the reveal
+// door — and left this one open: `moveHome`, which puts a card stepping back
+// up to `expanded` at its remembered slot, looked that slot up by dockview
+// LOCATION alone. A group that has become the hidden dock-back husk a popout
+// leaves behind still reports `location: 'grid'`, so the card was moved into a
+// leaf that is on the right window, in the layout, and about a pixel wide.
+//
+// THIS TEST MEASURES, and that is the whole lesson of #434/#411/#501:
+// `toBeVisible()` passes at 1.33px. A card that has come back to nothing looks
+// exactly like a card that has come back.
+test.describe('the ladder and the pop-out husk (#502)', () => {
+  let a: LaunchedApp;
+  test.afterEach(async () => a?.cleanup());
+
+  /**
+   * THREE cards, TWO groups: the first two share the left half, the third has
+   * the right. Two cards in one group is what the repro needs — the card that
+   * gets tabbed away has to leave a group behind that SURVIVES, or dockview
+   * destroys it on the way out and there is no husk to land in later.
+   */
+  async function threeCardsTwoGroups(): Promise<{ app: LaunchedApp; names: string[] }> {
+    const seedFolder = tempProjectFolder();
+    const first = await launchApp({ seedFolder });
+    await expect(tabs(first.window)).toHaveCount(1, { timeout: 25_000 });
+    const second = await addSession(first);
+    const third = await addSession(first);
+    await expect(tabs(first.window)).toHaveCount(3);
+    await first.window.waitForTimeout(1200); // let the layout reach disk
+    await first.close();
+
+    const ws = readWorkspaceFile(first.home);
+    const layout = persistedLayout(ws);
+    const views = gridLeafViews(layout.grid.root.data[0]);
+    expect(views.length, 'need three panels to split').toBe(3);
+    const half = Math.floor(layout.grid.width / 2);
+    layout.grid.root.data = [
+      { type: 'leaf', data: { views: views.slice(0, 2), activeView: views[0], id: '1' }, size: half },
+      { type: 'leaf', data: { views: views.slice(2), activeView: views[2], id: '2' }, size: half },
+    ];
+    writeWorkspaceFile(first.home, ws);
+
+    const app = await launchApp({ home: first.home });
+    await expect(app.window.locator('.dv-groupview')).toHaveCount(2, { timeout: 25_000 });
+    await app.window.waitForTimeout(1_200);
+    return { app, names: [path.basename(seedFolder), second, third] };
+  }
+
+  /** the on-screen width of the group holding a named card, or -1 */
+  const widthOfGroupHolding = (w: Page, name: string): Promise<number> =>
+    w.evaluate((n) => {
+      const g = [...document.querySelectorAll('.dv-groupview')].find((el) =>
+        [...el.querySelectorAll('.dv-tab')].some((t) => (t.textContent ?? '').includes(n))
+      );
+      return g ? Math.round(g.getBoundingClientRect().width) : -1;
+    }, name);
+
+  test('expanding a tabbed card never lands it in a pop-out husk', async () => {
+    skipPopoutOnLinux();
+    test.setTimeout(240_000);
+    const f = await threeCardsTwoGroups();
+    a = f.app;
+    const w = a.window;
+    const [one, two, three] = f.names; // one+two share the left half, three the right
+
+    // THE STACK HAS TO EXIST FIRST. A card that finds no stack seeds one where
+    // it stands, so tabbing `one` on its own would never move it and its
+    // remembered slot would be the group it is already in.
+    await row(w, three).click();
+    await palette(w, 'Stack session with the tabbed sessions');
+    await row(w, one).click();
+    await palette(w, 'Stack session with the tabbed sessions');
+    await expect(groups(w)).toHaveCount(2, { timeout: 15_000 });
+
+    // ...and now the card that was left holding `one`'s old group goes out into
+    // a window of its own, which is what turns that group into the husk
+    await w.locator('.dv-tab', { hasText: two }).first().click();
+    await w
+      .locator('.dv-groupview')
+      .filter({ has: w.locator('.dv-tab', { hasText: two }) })
+      .getByTitle('Pop out into its own window')
+      .click();
+    await expect.poll(() => a.app.windows().length, { timeout: 25_000 }).toBe(2);
+    await w.waitForTimeout(1_500);
+
+    // step `one` back up: its remembered slot IS that husk
+    await row(w, one).click();
+    await palette(w, 'Expand session to its full card');
+    await w.waitForTimeout(1_500);
+
+    const width = await widthOfGroupHolding(w, one);
+    expect(width, `${one} came back into a pop-out husk`).toBeGreaterThan(100);
+    // and it really did leave the stack — a rung that moved nothing would pass
+    // a width check by staying where it was
+    const stackWidth = await widthOfGroupHolding(w, three);
+    expect(stackWidth).toBeGreaterThan(100);
+    expect(await w.locator('.dv-groupview').count()).toBeGreaterThan(1);
   });
 });
