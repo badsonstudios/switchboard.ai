@@ -58,6 +58,7 @@ import type {
 import { collapsedRows, revealTargets } from './lib/ladder';
 import { GuardedRefresh, latestWins } from './lib/latest-wins';
 import { groupChangeLanded } from './lib/groups';
+import { interpretPushAnswer } from './lib/push-answer';
 import { trustSettingReaches } from './lib/trust-reach';
 import {
   cycleGlobal,
@@ -789,24 +790,14 @@ export function App(): React.JSX.Element {
       if (!p) return setPushConfig(unavailablePushConfig());
       void p
         .then((answer) => {
-          // #650: the brand has no `config` and no `ok`, so an unlaundered
-          // refusal would put `undefined` into a `PushConfig | null` state (the
-          // empty-working-form again) AND report `problem: 'refused'` — a
-          // failed WRITE — for a call that never reached the store. Refused is
-          // the honest word for both halves, and it is what the `.catch` below
-          // already says; `unavailablePushConfig()` is what the caller above
-          // shows when it could not ask at all.
-          const r = answered(answer);
-          if (!r) {
-            setPushConfig(unavailablePushConfig());
-            setPushWrite({ key, problem: 'refused' });
-            return;
-          }
-          setPushConfig(r.config);
-          // What the dialog renders beside the field: main is the authority on
-          // whether the write happened, and a credential cannot be read back to
-          // check.
-          setPushWrite(r.ok ? null : { key, problem: r.problem ?? 'refused' });
+          // #650's laundering, #677's extraction: the promise arrives here as a
+          // parameter, which no scanner can trace and no App-level test can
+          // reach, so everything that INTERPRETS the answer — including the
+          // refusal branch — lives in `lib/push-answer.ts` under its own pin.
+          // This callback is only the pair of setters.
+          const out = interpretPushAnswer(key, answer);
+          setPushConfig(out.config);
+          setPushWrite(out.write);
         })
         .catch(() => setPushWrite({ key, problem: 'refused' }));
     },
