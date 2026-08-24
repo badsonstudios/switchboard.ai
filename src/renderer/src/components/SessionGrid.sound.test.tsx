@@ -13,7 +13,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterEach, vi } from 'vite
 import React, { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
-import en from '../i18n/locales/en.json';
+import en from '../../../shared/i18n/locales/en.json';
 import { sessionStore } from '../store/session-store';
 import { registerBuiltinContributions } from '../bootstrap';
 import { rendererRegistry } from '../extensibility/registry-instance';

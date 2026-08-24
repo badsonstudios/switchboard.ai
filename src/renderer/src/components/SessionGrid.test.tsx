@@ -37,7 +37,7 @@ import {
   toggleMaximizeCard,
 } from './SessionGrid';
 import type { DockviewApi } from 'dockview-react';
-import en from '../i18n/locales/en.json';
+import en from '../../../shared/i18n/locales/en.json';
 import { sessionStore } from '../store/session-store';
 import { DEFAULT_LAYOUT, withMaximized, withMode } from '../lib/layout-mode';
 import type { SweepRequest } from '../lib/layout-sweep';

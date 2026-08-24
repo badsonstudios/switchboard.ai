@@ -17,7 +17,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
-import en from '../i18n/locales/en.json';
+import en from '../../../shared/i18n/locales/en.json';
 import { TitleBar } from './chrome';
 import { UNKNOWN_BUILD_IDENTITY } from '../../../shared/build-identity';
 

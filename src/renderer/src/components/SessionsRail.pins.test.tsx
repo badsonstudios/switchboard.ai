@@ -30,7 +30,7 @@ import { DEFAULT_BOOK } from '../lib/presentation-policy';
 import { DEFAULT_FOCUS_BOOK } from '../lib/focus-policy';
 import { NO_ORDER } from '../lib/rail-order';
 import { initI18nForTests } from '../i18n/test-i18n';
-import en from '../i18n/locales/en.json';
+import en from '../../../shared/i18n/locales/en.json';
 import { uiDelete } from '../lib/ui-state';
 
 declare global {

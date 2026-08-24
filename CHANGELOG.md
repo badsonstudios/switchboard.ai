@@ -136,6 +136,18 @@ on the floor, and say so in your PR.
   going.) Nothing about it restarts the session — **Try again** is still the only
   thing that does (#606).
 
+- **Desktop pop-ups, and the messages sent to your phone, now follow the
+  language you picked.** They were English no matter what the rest of the app
+  was set to — including the **Allow** and **Deny** buttons on a permission
+  pop-up, which is the last place a mismatch belongs. The pop-up's **Allow** is
+  now literally the same word as the approval bar's, so the two cannot end up
+  worded differently, and changing the language takes effect on the very next
+  notification. The **spoken announcement** follows it too. What Claude Code
+  said or wants to run — a command, a path, a reason — is still shown exactly as
+  it came, in any language. (The window's menus are still English for now.)
+- **Windows: pop-ups are filed under switchboard's own name** in the Action
+  Center instead of appearing as *Electron*.
+
 ### Changed
 
 - **Events you've already dealt with are quiet instead of faded.** A row in the
@@ -244,7 +256,6 @@ on the floor, and say so in your PR.
   autonomy already did — a malformed request can no longer seed a session with
   a mode that doesn't exist or bind it to a card name nothing can ever match.
   No visible change (#690, #691).
-
 
 ## 0.8.2 — 2026-08-21
 

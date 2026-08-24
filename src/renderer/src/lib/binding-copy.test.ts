@@ -6,7 +6,7 @@
 // rather than through a rendered tree.
 import { describe, it, expect } from 'vitest';
 import { emptyStateCopy } from './binding-copy';
-import en from '../i18n/locales/en.json';
+import en from '../../../shared/i18n/locales/en.json';
 import type { BindingDiagnostics } from '../../../shared/transcripts';
 import type { TransportKind } from '../../../shared/transport';
 

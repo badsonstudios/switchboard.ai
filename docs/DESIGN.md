@@ -1408,6 +1408,57 @@ Day-one architecture; v1 ships English only.
 - Adding a language later = drop in one JSON locale file.
 - Boundary: we translate our chrome, not CLI output.
 
+**Shipped record — the MAIN process (#471, 2026-08-21).** The first bullet
+("no hardcoded user-facing strings — ever") was true of the renderer and false
+of main, which composes the OS toast's title and body, the Allow/Deny buttons on
+it, and — because push and the webhook forward the same two fields — the copy
+that reaches a phone. A permission decision was rendered in English regardless
+of locale. Three mechanisms were considered and one recorded:
+
+- **Rejected — route the text through the renderer**, the way the right-click
+  menu labels travel (#526). That works for four static labels published at
+  boot; it cannot work for a toast, whose text is composed per event from live
+  data and whose entire purpose is to fire when the window is blurred,
+  minimized or not yet mounted. It would make a notification depend on a
+  renderer that may be gone — fail-closed on the one path that must fail open.
+- **Rejected — accept English-only for main surfaces and document it.** §5.9's
+  promise is that answering from the notification is the same decision the user
+  would have made at the bar; "the same decision" cannot survive the two
+  surfaces speaking different languages.
+- **Adopted — one catalog, one configuration, two instances.** The catalog and
+  the pseudo-locale moved to `src/shared/i18n/`, which both bundles may import,
+  and `configureI18nBase` there is the single i18next configuration (#380's rule
+  now spans both processes; a caller may only ADD plugins — the renderer adds
+  `initReactI18next`, main adds nothing). **Locale needed no new IPC:** the
+  preference already lives in the workspace `ui` blob, which is *main's own
+  file*, so `main/i18n.ts` reads it through a thunk on every `t()` via
+  `getFixedT`. A mid-session switch is therefore instant, there is no second
+  copy of the preference to go stale, and nothing has to await — which matters
+  because `changeLanguage` is async and a toast fires on an OS callback.
+
+Two boundaries are now enforced by tests rather than by intent: the toast's
+buttons resolve `approval.allow` / `approval.deny`, the approval bar's *own*
+keys, so the surfaces cannot be worded differently in any language; and the
+detail half of "Allow Bash? npm run build" is never translated, which is this
+section's last bullet made literal. The repo still ships exactly one real locale
+— #471 fixed the mechanism, not the coverage.
+
+**Scope, stated so nobody has to grep for it.** All four NOTIFICATION channels
+are translated: the OS toast, push, the webhook, and the spoken announcement
+(`announcementFor` moved from `shared/sounds.ts` to `main/events/
+notification-text.ts` with the code, since composing a sentence needs a
+translator and a `src/shared` test may not import one from `src/main`). Main's
+remaining English is chrome rather than notification — the application menu
+(`app-menu.ts`) and the quit-with-busy-sessions dialog — both reachable only
+with the window in front of you, both out of #471's scope, both still open.
+
+Folded in from the same discovery: `app.setAppUserModelId` is called at boot
+with the installer's `appId`, so Windows files a toast under the app's identity
+rather than Electron's default (`src/shared/app-identity.ts`). That buys
+attribution and filing; *re-activating* an expired toast from the Action Center
+is documented as needing a ToastActivatorCLSID, which the NSIS shortcut does not
+write — recorded as a hand-test rather than claimed.
+
 ### 5.22 Logging & diagnostics
 
 Day-one architecture: structured JSON-lines logs, rotating files in the app data

@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import { trustSettingReaches, TRUST_INERT_REASON_KEY } from './trust-reach';
 import { DEFAULT_SESSION_TRANSPORT } from '../../../shared/transport';
-import en from '../i18n/locales/en.json';
+import en from '../../../shared/i18n/locales/en.json';
 
 describe('trustSettingReaches', () => {
   it('is false for an all-Direct workspace — nothing there is ever asked', () => {

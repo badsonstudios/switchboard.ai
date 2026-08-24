@@ -14,6 +14,22 @@ Everything lives as chips in the title bar. There's no settings window yet.
 | **system · nordic · daylight · high contrast · soft contrast** | Theme — see below |
 | **en · pseudo** | Language. `pseudo` is a development aid that stretches every label to test the layout — you probably want `en` |
 
+## Language
+
+One chip, two choices for now: **en** (English) and **pseudo**.
+
+`pseudo` is not a translation. It takes every English word and mangles it into
+accented look-alikes wrapped in `⟦ ⟧` — so anything that comes out plain is a
+piece of text somebody forgot to make translatable. It is there for whoever adds
+the second language, not for daily use.
+
+**The switch covers the desktop pop-ups too**, not just the window: the text on
+a notification, the **Allow** and **Deny** buttons on it, and the copy sent to
+your phone or a webhook all follow this chip, and they change on the very next
+notification with nothing to restart. What is *not* translated is anything that
+came from Claude Code or from you — a command, a file path, a session name. See
+[Notifications › Pop-ups follow the language you picked](09-notifications.md#pop-ups-follow-the-language-you-picked).
+
 ## Themes
 
 Four chips, and they are the whole picker:

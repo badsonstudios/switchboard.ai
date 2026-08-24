@@ -24,7 +24,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
-import en from '../i18n/locales/en.json';
+import en from '../../../shared/i18n/locales/en.json';
 import { createRendererRegistry } from '../bootstrap';
 import { listPanels } from './panels';
 import { TerminalPane } from '../components/TerminalPane';

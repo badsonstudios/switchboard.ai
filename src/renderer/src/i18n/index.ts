@@ -1,34 +1,42 @@
-// i18n foundation (§5.21): i18next + ICU message format. English is the only
-// real locale; "pseudo" is generated from en at init so untranslated strings
-// are impossible to miss during dev.
+// The renderer's half of i18n (§5.21): the shared configuration plus the React
+// binding and the stored preference.
+//
+// The catalog, the pseudo-locale and the i18next options moved to
+// `src/shared/i18n/` in #471 so the MAIN process could speak the same language
+// as the window — read that file for the decision and why the alternatives were
+// rejected. What is left here is what only the renderer has: `initReactI18next`,
+// and the preference the user actually clicks.
 import i18next, { type i18n as I18nInstance } from 'i18next';
 import { initReactI18next } from 'react-i18next';
-import ICU from 'i18next-icu';
-import en from './locales/en.json';
-import { pseudolocalizeResource } from './pseudo';
+import {
+  configureI18nBase,
+  LANGUAGE_UI_KEY,
+  normalizeLanguage,
+  type LanguageChoice,
+} from '../../../shared/i18n';
 import { uiGet, uiSet } from '../lib/ui-state';
 
-export type LanguageChoice = 'en' | 'pseudo';
+export type { LanguageChoice };
 
 // the workspace `ui` blob, not localStorage — same reason as the theme
 // (P2-E15-06): the packaged renderer's origin changes port every launch, so
-// anything stored against it is gone by the next one
-const STORAGE_KEY = 'language';
+// anything stored against it is gone by the next one.
+//
+// It is ALSO how main learns the language (#471): the blob is main's own file,
+// so writing the preference here is what tells the notification layer which
+// language to speak. No IPC channel exists for it and none is needed.
+const STORAGE_KEY = LANGUAGE_UI_KEY;
 
 export function loadLanguage(): LanguageChoice {
-  return uiGet<string>(STORAGE_KEY, 'en') === 'pseudo' ? 'pseudo' : 'en';
+  return normalizeLanguage(uiGet<unknown>(STORAGE_KEY, 'en'));
 }
 
 /**
- * The app's i18next configuration — the plugin chain and the options — in ONE
- * place, so that nothing can be configured *almost* like the app.
+ * Configure the renderer's i18next: the shared chain, plus React.
  *
- * `test-i18n.ts` calls this too, and that is the point (#380). A test harness
- * that built its own chain was free to drift from the real one, and #207 is
- * what that costs: the harness omitted `ICU`, where i18next still runs its own
- * `{{…}}` interpolator, so a banner key written `{{file}}` passed its component
- * test and would have shown the user the literal braces. With `ICU` installed
- * i18next hands the whole message to the plugin and never interpolates itself.
+ * `test-i18n.ts` calls this too, and that is the point (#380) — see
+ * `shared/i18n/index.ts` → `configureI18nBase` for what a drifting harness
+ * costs.
  *
  * @param instance the i18next instance to configure (the shared singleton in
  *   both callers today; a parameter so neither has to reach for the other's).
@@ -36,19 +44,7 @@ export function loadLanguage(): LanguageChoice {
  *   preference; tests pin `'en'` so a leftover preference cannot move them.
  */
 export async function configureI18n(instance: I18nInstance, lng: LanguageChoice): Promise<void> {
-  await instance
-    .use(ICU)
-    .use(initReactI18next)
-    .init({
-      lng,
-      fallbackLng: 'en',
-      resources: {
-        en: { translation: en },
-        pseudo: { translation: pseudolocalizeResource(en) as typeof en },
-      },
-      interpolation: { escapeValue: false }, // React escapes
-      returnEmptyString: false,
-    });
+  await configureI18nBase(instance, lng, [initReactI18next]);
 }
 
 export async function initI18n(): Promise<void> {
@@ -56,6 +52,11 @@ export async function initI18n(): Promise<void> {
 }
 
 export async function setLanguage(lang: LanguageChoice): Promise<void> {
+  // The `uiSet` goes FIRST, and it is not just ordering hygiene: it is what
+  // makes the main process switch too (#471). Main reads this key out of the
+  // workspace blob every time it composes a notification, so the toast that
+  // fires a second after this line is already in the new language — with no
+  // channel, no handshake and nothing to keep in sync.
   uiSet(STORAGE_KEY, lang);
   await i18next.changeLanguage(lang);
 }

@@ -22,7 +22,7 @@ import {
   stripItems,
 } from './ladder';
 import type { CollapsedRow, StripItem } from './ladder';
-import en from '../i18n/locales/en.json';
+import en from '../../../shared/i18n/locales/en.json';
 import type { CardStatus } from '../../../shared/sessions';
 import type { RailSession } from '../model/types';
 

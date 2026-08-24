@@ -18,6 +18,7 @@
 import type { Logger } from '../log/logger';
 import type { PermissionRequest } from '../../shared/ipc/permissions';
 import { ASK_USER_QUESTION_TOOL, parseAskUserQuestion } from '../../shared/ask-user-question';
+import type { Translate } from '../../shared/i18n';
 
 export type ToastDecision = 'allow' | 'deny';
 
@@ -31,11 +32,39 @@ export type ToastDecision = 'allow' | 'deny';
  */
 export const DECIDE_BUTTONS: readonly ToastDecision[] = ['allow', 'deny'];
 
-/** The label for each button. Main-process strings are English (see below). */
-export const DECIDE_BUTTON_LABELS: Readonly<Record<ToastDecision, string>> = {
-  allow: 'Allow',
-  deny: 'Deny',
+/**
+ * The catalog key for each button's label (#471).
+ *
+ * **The keys are the approval bar's own** — `approval.allow` / `approval.deny`,
+ * the very strings `BatchApprovalBar` renders. That is not thrift, it is the
+ * same promise `permissionSummary` keeps below: the toast is a fourth button on
+ * the bar's wire, so it must be a fourth button with the bar's WORDS. Sharing
+ * the key makes that structural — nobody can retitle one surface's Allow
+ * without retitling the other's.
+ */
+export const DECIDE_BUTTON_KEYS: Readonly<Record<ToastDecision, string>> = {
+  allow: 'approval.allow',
+  deny: 'approval.deny',
 };
+
+/**
+ * The buttons to attach to a notification, in the user's language and in the
+ * order `press()` decodes.
+ *
+ * Built from `DECIDE_BUTTONS` rather than written out, so the array that maps
+ * an OS-reported INDEX to a verdict is also the array that decides what each
+ * index is LABELLED. Writing the labels separately is how a reorder sends the
+ * opposite of what the user pressed.
+ *
+ * The return shape is `Electron.NotificationAction`-compatible by structure and
+ * not by import: this module stays electron-free (see the header) so that
+ * everything here is testable without a desktop.
+ */
+export function decideButtonActions(
+  t: Translate
+): Array<{ type: 'button'; text: string }> {
+  return DECIDE_BUTTONS.map((d) => ({ type: 'button' as const, text: t(DECIDE_BUTTON_KEYS[d]) }));
+}
 
 /**
  * Which platforms can actually show a button on a toast — **verified against
@@ -274,8 +303,13 @@ export function answerableFromToast(req: PermissionRequest): boolean {
  * Wording tracks the approval bar's own header ("Allow Edit?") so the two
  * surfaces are recognisably the same question — except for a QUESTION, which
  * has no buttons and therefore nothing to be recognisable with.
+ *
+ * TRANSLATED SINCE #471. `approval.title` is literally the bar's key, so the
+ * two headers cannot drift in ANY language. What is NOT translated is the
+ * `detail` — a shell command, a file path, the CLI's own `reason`. That is
+ * §5.21's last bullet doing its job: *we translate our chrome, not CLI output.*
  */
-export function permissionSummary(req: PermissionRequest): string {
+export function permissionSummary(req: PermissionRequest, t: Translate): string {
   // A question says what it is asking, never "Allow AskUserQuestion?" — the
   // toast has no buttons for it (see `answerableFromToast`), so its whole job
   // is to make the click worth making.
@@ -286,13 +320,14 @@ export function permissionSummary(req: PermissionRequest): string {
       const text = first.question.trim().replace(/\s+/g, ' ');
       const shown = text.length > MAX_DETAIL ? `${text.slice(0, MAX_DETAIL - 1)}…` : text;
       // Plural when there is more to answer than the line can show, so the
-      // click is not a surprise.
-      const more = questions.length > 1 ? ` (+${questions.length - 1} more)` : '';
-      return `A question for you: ${shown}${more}`;
+      // click is not a surprise. An ICU `plural` block rather than a ternary
+      // over two keys: "(+1 more)" is a count, and a language whose plural
+      // rules do not match English's must be free to say it differently.
+      return t('notification.question', { question: shown, more: questions.length - 1 });
     }
-    return 'Claude is asking you a question';
+    return t('notification.questionFallback');
   }
-  const tool = req.displayName || req.tool || 'a tool';
+  const tool = req.displayName || req.tool || t('notification.unknownTool');
   const input = req.input ?? {};
   let detail = '';
   for (const key of DETAIL_KEYS) {
@@ -308,5 +343,9 @@ export function permissionSummary(req: PermissionRequest): string {
     detail = req.reason.trim().replace(/\s+/g, ' ');
   }
   if (detail.length > MAX_DETAIL) detail = `${detail.slice(0, MAX_DETAIL - 1)}…`;
-  return detail ? `Allow ${tool}? ${detail}` : `Allow ${tool}?`;
+  // Two keys, not a concatenation: word order between the question and its
+  // subject is a translator's business, not ours.
+  return detail
+    ? t('notification.permissionDetail', { tool, detail })
+    : t('approval.title', { tool });
 }

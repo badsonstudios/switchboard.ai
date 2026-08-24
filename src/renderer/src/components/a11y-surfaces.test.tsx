@@ -21,7 +21,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
-import en from '../i18n/locales/en.json';
+import en from '../../../shared/i18n/locales/en.json';
 import { SessionsRail } from './SessionsRail';
 import { EventsPanel } from './EventsPanel';
 import { UrgencyStrip } from './UrgencyStrip';
