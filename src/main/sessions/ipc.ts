@@ -599,6 +599,21 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
 
   // held PreToolUse permissions (E10-03): stream requests to the renderer,
   // take decisions back. Card id rides along so the UI can find its panel.
+  //
+  // …and, since #699, the hook listener asks US the same question the stream
+  // router does BEFORE it parks anything: is there going to be a card id to
+  // stamp? The `cardId` on the line below is what every mounted card filters
+  // on, so a session with no binding produces a push nothing can match. On this
+  // channel that was never a wedge — the 300s release fails open to the CLI's
+  // own TUI prompt — but it was five minutes of a card claiming to hold a
+  // question that was visible to nobody. The probe lets the listener fail open
+  // at once instead.
+  //
+  // The SAME expression as the stream probe below, from the same map, and that
+  // is a requirement rather than a coincidence: two channels that disagreed
+  // about whether a session is reachable would mean one failing open while the
+  // other parked, on the same session, in the same instant.
+  hooks.setAnswerSurfaceProbe((liveSessionId) => cardOfLive.has(liveSessionId));
   hooks.onPermissionRequest((r) =>
     send('sessions:permissionRequest', { ...r, cardId: cardOfLive.get(r.sessionId) })
   );

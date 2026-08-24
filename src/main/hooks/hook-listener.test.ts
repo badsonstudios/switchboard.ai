@@ -623,6 +623,341 @@ describe('a hold needs somebody to ask: window liveness (P2-E15-09, AR-P1-7)', (
   });
 });
 
+describe('a hold needs somewhere to SHOW it: the answer-surface probe (#699)', () => {
+  // #333's hole, in the other channel. The push a hold produces is stamped
+  // `cardId: cardOfLive.get(...)` and every mounted card drops what is not its
+  // own, so an unbound session parked for the full 300s in front of nobody.
+  // Unlike the stream path there IS a fallback here — release with no opinion
+  // and the CLI's own TUI prompt takes it — so the fix is to reach it AT ONCE
+  // rather than after five minutes of a card claiming to hold a question.
+  let held: HookListener;
+  let heldPort: number;
+  let requests: PermissionRequest[];
+  let heldApplied: Array<{ sessionId: string; ev: SessionEvent }>;
+  /** what the probe answers; `null` = no probe wired at all */
+  let bound: boolean | null;
+  let probeThrows: boolean;
+  let probeCalls: number;
+  let windowLive: boolean;
+  /** every unroutable line this listener logged, by level */
+  let lines: { error: number; debug: number };
+  /** …and the window gate's, so the ORDER of the two can be asserted */
+  let noWindowLines: number;
+
+  beforeEach(async () => {
+    requests = [];
+    heldApplied = [];
+    bound = true;
+    probeThrows = false;
+    probeCalls = 0;
+    windowLive = true;
+    lines = { error: 0, debug: 0 };
+    noWindowLines = 0;
+    const realLog = createLogger(new LogSink({ dir }), 'hooks');
+    const count =
+      (level: 'error' | 'debug') =>
+      (msg: string, fields?: LogFields): void => {
+        if (msg.startsWith('no card owns this session')) lines[level]++;
+        if (msg.startsWith('no live window to ask')) noWindowLines++;
+        realLog[level](msg, fields);
+      };
+    held = new HookListener({
+      stateDir: tempDir('sb-surface-'),
+      log: {
+        ...realLog,
+        error: count('error'),
+        debug: count('debug'),
+        // the window gate logs its first line at `warn`; counted through the
+        // same helper so one assertion can compare the two gates
+        warn: count('debug'),
+      } satisfies Logger,
+      manager: {
+        apply: (sessionId, ev) => heldApplied.push({ sessionId, ev }),
+        setNativeSessionId: () => {},
+      },
+      autonomyFor: () => 'ask',
+      hasLiveWindow: () => windowLive,
+      // long on purpose, exactly as the window-liveness block sets it: a
+      // fail-open here must be IMMEDIATE, not a timeout wearing the same '{}'
+      holdTimeoutMs: 5_000,
+    });
+    heldPort = await held.start();
+    held.onPermissionRequest((r) => requests.push(r));
+  });
+
+  afterEach(() => held.stop());
+
+  /** wire the probe unless the test wants the unwired default */
+  function wire(): void {
+    if (bound === null) return;
+    held.setAnswerSurfaceProbe(() => {
+      probeCalls++;
+      if (probeThrows) throw new Error('cardOfLive torn down mid-check');
+      return bound as boolean;
+    });
+  }
+
+  function postHeld(body: string, token: string): Promise<{ status: number; body: string }> {
+    return new Promise((resolve, reject) => {
+      const req = http.request(
+        {
+          host: '127.0.0.1',
+          port: heldPort,
+          path: '/hook',
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-switchboard-token': token },
+        },
+        (res) => {
+          let out = '';
+          res.on('data', (d) => (out += d));
+          res.on('end', () => resolve({ status: res.statusCode ?? 0, body: out }));
+        }
+      );
+      req.on('error', reject);
+      req.end(body);
+    });
+  }
+
+  function heldToken(sessionId: string): string {
+    const { tokenPath } = held.registerSession(sessionId);
+    return fs.readFileSync(tokenPath, 'utf8');
+  }
+
+  const edit = JSON.stringify({
+    hook_event_name: 'PreToolUse',
+    tool_name: 'Edit',
+    tool_input: { file_path: 'C:/x.ts', old_string: 'a', new_string: 'b' },
+  });
+
+  /**
+   * Post an `edit` in TWO writes, running `betweenHalves` after the headers have
+   * been read and before the body ends — the real straggler window.
+   *
+   * `handle` takes the token off the headers and runs `maybeHold` on
+   * `req.on('end')`. Everything between is a window in which the session can be
+   * torn down, and a `Write` carrying file content is a body big enough to make
+   * it wide. Two writes with a turn of the loop in between reproduce it
+   * deterministically, without depending on how a megabyte happens to chunk.
+   */
+  function postHeldSlowBody(
+    token: string,
+    betweenHalves: () => void
+  ): Promise<{ status: number; body: string }> {
+    const half = Math.floor(edit.length / 2);
+    return new Promise((resolve, reject) => {
+      const req = http.request(
+        {
+          host: '127.0.0.1',
+          port: heldPort,
+          path: '/hook',
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-switchboard-token': token,
+            // explicit, so the server knows the body is not finished yet
+            'content-length': String(Buffer.byteLength(edit)),
+          },
+        },
+        (res) => {
+          let out = '';
+          res.on('data', (d) => (out += d));
+          res.on('end', () => resolve({ status: res.statusCode ?? 0, body: out }));
+        }
+      );
+      req.on('error', reject);
+      req.write(edit.slice(0, half));
+      // the headers are on the wire and the body is not: tear the session down
+      // here, exactly as a Restart would
+      setTimeout(() => {
+        betweenHalves();
+        req.end(edit.slice(half));
+      }, 20);
+    });
+  }
+
+  it('no card owns the session: the call fails open IMMEDIATELY instead of parking it', async () => {
+    bound = false;
+    wire();
+    const t = heldToken('s1');
+    const started = Date.now();
+    const res = await postHeld(edit, t);
+    expect(res.body).toBe('{}'); // no opinion — the CLI's own prompt takes over
+    expect(Date.now() - started).toBeLessThan(1_000); // not the 5s timeout
+    expect(requests).toHaveLength(0); // nobody was asked
+    expect(held.pendingRequests()).toHaveLength(0); // nothing parked
+    // and no needs-permission badge for a card that does not exist to wear it
+    expect(heldApplied.some((a) => a.ev.kind === 'permission-held')).toBe(false);
+    // …but the event is STILL ingested: failing open must not make the session
+    // go dark, which is the same rule the window gate keeps.
+    expect(heldApplied.length).toBeGreaterThan(0);
+  });
+
+  it('a card owns it: the same call still holds (the control — else the test above is vacuous)', async () => {
+    bound = true;
+    wire();
+    const t = heldToken('s1');
+    const pending = postHeld(edit, t);
+    await until('the call to park', () => requests.length === 1);
+    expect(requests).toHaveLength(1);
+    expect(heldApplied.some((a) => a.ev.kind === 'permission-held')).toBe(true);
+    held.decide(requests[0].requestId, 'allow');
+    await pending;
+  });
+
+  it('NO probe wired at all holds, exactly as it did before #699', async () => {
+    // hook-check.ts and every unit test that drives this listener standalone
+    // live here. An unwired default that declined would break all of them, and
+    // would be one refactor away from breaking the app.
+    bound = null;
+    wire();
+    const t = heldToken('s1');
+    const pending = postHeld(edit, t);
+    await until('the call to park', () => requests.length === 1);
+    expect(requests).toHaveLength(1);
+    held.decide(requests[0].requestId, 'allow');
+    await pending;
+  });
+
+  it('a probe that THROWS holds — this gate fails toward the user, not away from them', async () => {
+    // the OPPOSITE of the liveness guard's posture, and deliberately: holding
+    // when nobody can answer parks the CLI, but holding when we cannot tell
+    // whether a card owns the session costs a bounded wait with the 300s
+    // release underneath. Denying instead takes a decision the user could have
+    // made off their screen.
+    probeThrows = true;
+    wire();
+    const t = heldToken('s1');
+    const pending = postHeld(edit, t);
+    await until('the call to park despite the throw', () => requests.length === 1);
+    expect(requests).toHaveLength(1);
+    held.decide(requests[0].requestId, 'allow');
+    await pending;
+  });
+
+  it('an UNGATED call never consults the probe (the gate sits after the policy)', async () => {
+    bound = false;
+    wire();
+    const t = heldToken('s1');
+    const read = JSON.stringify({
+      hook_event_name: 'PreToolUse',
+      tool_name: 'Read', // not gated at ask, inside the cwd
+      tool_input: { file_path: 'C:/x.ts' },
+    });
+    expect((await postHeld(read, t)).body).toBe('{}');
+    expect(probeCalls).toBe(0);
+  });
+
+  it('allow-all is answered at the server even with no card — it never needed one', async () => {
+    // the probe sits AFTER allow-all, matching StreamPermissions.offer's order:
+    // a granted session gets its verdict, not a shrug
+    bound = false;
+    wire();
+    const t = heldToken('s1');
+    held.setAllowAll('s1');
+    const res = await postHeld(edit, t);
+    expect(verdictOf(res.body)).toMatchObject({ permissionDecision: 'allow' });
+    expect(requests).toHaveLength(0);
+    expect(probeCalls).toBe(0);
+  });
+
+  it('the unroutable report re-arms once the session is bound again', async () => {
+    // `unroutableWarned` is `noWindowWarned`'s twin and keeps its rule (#334):
+    // membership means "already reported the state we are IN", not "reported
+    // once, ever". Without the re-arm, an operator sees the first lost binding
+    // and never the second.
+    wire();
+    const t = heldToken('s1');
+
+    // Unbinding 1 — loud. `error`, not `warn`: an authenticated live session
+    // with no card is a binding this process lost.
+    bound = false;
+    expect((await postHeld(edit, t)).body).toBe('{}');
+    expect(lines).toEqual({ error: 1, debug: 0 });
+
+    // Still unbound — quiet. One line per gated call is a log nobody reads.
+    expect((await postHeld(edit, t)).body).toBe('{}');
+    expect(lines).toEqual({ error: 1, debug: 1 });
+
+    // Bound again: this call holds, and re-arms on its way past the gate.
+    bound = true;
+    const pending = postHeld(edit, t);
+    await until('the call to hold again', () => requests.length === 1);
+    held.decide(requests[0].requestId, 'allow');
+    await pending;
+    expect(lines).toEqual({ error: 1, debug: 1 });
+
+    // Unbinding 2 — loud AGAIN. Revert the `delete` in `maybeHold` and this is
+    // the assertion that goes red (error stays 1, debug becomes 2).
+    bound = false;
+    expect((await postHeld(edit, t)).body).toBe('{}');
+    expect(lines).toEqual({ error: 2, debug: 1 });
+  });
+
+  it('unregisterSession re-arms it too — a respawn under the same id reports again', async () => {
+    wire();
+    bound = false;
+    const t1 = heldToken('s1');
+    expect((await postHeld(edit, t1)).body).toBe('{}');
+    expect(lines).toEqual({ error: 1, debug: 0 });
+
+    held.unregisterSession('s1'); // the session ends here
+    const t2 = heldToken('s1'); // "respawn" under the same id
+    expect((await postHeld(edit, t2)).body).toBe('{}');
+    expect(lines).toEqual({ error: 2, debug: 0 });
+  });
+
+  it('the WINDOW gate wins when both are down — one event, one named cause', async () => {
+    // The order this gate's comment argues for, and until now nothing tested it:
+    // both conditions resolve the same way, so all the order decides is which
+    // fault gets reported. Swap the two blocks and this goes red — which is the
+    // point, because the stream router reports the window first too, and two
+    // channels naming different causes for one event is the drift being
+    // designed out.
+    windowLive = false;
+    bound = false;
+    wire();
+    const t = heldToken('s1');
+
+    expect((await postHeld(edit, t)).body).toBe('{}');
+
+    expect(noWindowLines).toBe(1); // the window said so…
+    expect(lines).toEqual({ error: 0, debug: 0 }); // …and the card gate never spoke
+    expect(probeCalls).toBe(0); // it was not even consulted
+  });
+
+  it('a session already torn down is a straggler: debug, and it must not leak a flag', async () => {
+    // THE CASE THAT ACTUALLY REACHES THIS GATE (#699 review). `handle` resolves
+    // the token from the HEADERS and runs the gate on `req.on('end')`, so a
+    // large PreToolUse body leaves many event-loop turns in between — and a
+    // Restart landing in that window unregisters the session mid-request.
+    //
+    // Reported at `error` it would cry invariant violation over an ordinary
+    // race. Worse, `unroutableWarned.add` would run AFTER `unregisterSession`
+    // had already cleared that session's entry, so nothing would ever remove it
+    // again: one leaked string per raced restart for the life of the process.
+    bound = false;
+    wire();
+    const t = heldToken('s1');
+    held.unregisterSession('s1'); // …but keep posting with the dead token
+
+    // A dead token 401s at the door, which is the ordinary shape of this race.
+    const rejected = await postHeld(edit, t);
+    expect(rejected.status).toBe(401);
+    expect(lines).toEqual({ error: 0, debug: 0 });
+
+    // Now the mid-body version: the token was live when the headers were read
+    // and is gone by the time the gate runs. `unregisterSession` between the two
+    // is what `handle` cannot see.
+    const t2 = heldToken('s2');
+    const inFlight = postHeldSlowBody(t2, () => held.unregisterSession('s2'));
+    expect((await inFlight).body).toBe('{}');
+    // debug, NOT error — and no flag left behind for a session that is over
+    expect(lines).toEqual({ error: 0, debug: 1 });
+    expect(requests).toHaveLength(0);
+    expect(held.pendingRequests()).toHaveLength(0);
+  });
+});
+
 describe('never ask a question whose answer the CLI discards (#127)', () => {
   // Measured 2026-08-01: Claude Code accepts our `permissionDecision:"allow"`
   // for the ordinary permission layer, then applies its `.claude/` safety check

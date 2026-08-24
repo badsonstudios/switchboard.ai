@@ -219,6 +219,15 @@ function harness(
   };
   /** the hook listener's held requests, keyed the way the real one holds them */
   const hookPending = [...(opts.hookPending ?? [])];
+  /**
+   * The answer-surface probe the IPC layer hands the HOOK listener (#699).
+   *
+   * Captured rather than no-op'd for the same reason `setAllowAll` is recorded:
+   * the claim under test is that both channels are handed the SAME question over
+   * the same map, and a fake that swallowed it could only prove the stream half
+   * — the half that was already there since #333.
+   */
+  let hookAnswerSurface: ((sessionId: string) => boolean) | undefined;
   /** every verdict the HOOK router was handed, whatever surface sent it (E14-04) */
   const hookDecisions: Array<{ requestId: string; decision: string; reason?: string }> = [];
   const spawnIds = [...(opts.spawnIds ?? [])];
@@ -318,6 +327,9 @@ function harness(
     hooks: {
       onPermissionRequest: () => {},
       onPermissionResolved: () => {},
+      setAnswerSurfaceProbe: (p: (sessionId: string) => boolean) => {
+        hookAnswerSurface = p;
+      },
       // the hook half of `sessions:pendingPermissions`. Empty unless a test
       // seeds `hookPending` (#271); until then what that channel replays is
       // entirely the stream router's (#202).
@@ -469,6 +481,9 @@ function harness(
     /** …and the two halves an ACTIONABLE toast needs (P2-E14-04) */
     pendingPermissionFor: ipc.pendingPermissionFor,
     decidePermission: ipc.decidePermission,
+    /** ask the hook listener's probe what the IPC layer would tell it (#699) */
+    hookAnswerSurface: (sessionId: string): boolean | undefined =>
+      hookAnswerSurface?.(sessionId),
     hookDecisions,
     call,
     created,
@@ -2457,6 +2472,58 @@ describe('a stream request for an unbound session is declined, not parked (#333)
     // check the assertions above pass for any deny from any branch.
     const answer = sent[0].msg as { response?: { response?: { message?: string } } };
     expect(String(answer.response?.response?.message)).toMatch(/lost track of which of its cards/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #699 — the HOOK listener is told the same thing, over the same map.
+//
+// `hooks.onPermissionRequest` stamps `cardId: cardOfLive.get(...)` exactly as
+// the stream push does, so an unbound session's held PreToolUse matched no card
+// either — it just failed open to the CLI's own TUI after 300s instead of
+// wedging, which is why #333 left it. These pin the WIRING; what the listener
+// then does with the answer is `hook-listener.test.ts`'s subject.
+describe('the hook listener gets the answer-surface probe too (#699)', () => {
+  const CARD = 'card-1';
+  let dir: string;
+  tempDirEach('sb-hookprobe-', (d) => (dir = d));
+  const { card, start } = cardHelpers(() => dir, CARD);
+
+  it('answers TRUE for a bound session and FALSE for one that was never bound', () => {
+    const h = harness(undefined, dir, { prior: card() });
+    start(h); // binds live-1 to card-1
+
+    expect(h.hookAnswerSurface('live-1')).toBe(true);
+    expect(h.hookAnswerSurface('ghost')).toBe(false);
+  });
+
+  it('follows the binding down on teardown — the map must not outlive the session', () => {
+    const h = harness(undefined, dir, { prior: card() });
+    start(h);
+    expect(h.hookAnswerSurface('live-1')).toBe(true);
+
+    h.call('sessions:closeCard', CARD); // tearDownLive → unbindLive
+
+    expect(h.hookAnswerSurface('live-1')).toBe(false);
+  });
+
+  it('reads the SAME map the stream probe does — the two channels cannot disagree', () => {
+    // The requirement, not a coincidence. Two probes over different state would
+    // mean one channel failing open while the other parked, on the same session
+    // in the same instant, and nothing in either file would say why.
+    const { perms } = streamPerms();
+    const h = harness(undefined, dir, { prior: card(), streamPermissions: perms });
+    start(h);
+
+    for (const id of ['live-1', 'ghost']) {
+      perms.offer(id, canUseTool(`req-${id}`));
+      // the stream router held it exactly when the hook probe says it could be
+      // shown — one binding, one answer, two channels
+      const streamHeld = perms.pendingRequests().some((r) => r.sessionId === id);
+      expect(streamHeld).toBe(h.hookAnswerSurface(id));
+    }
+
+    h.call('sessions:dropLive', CARD); // clear the hold and its timer
   });
 });
 

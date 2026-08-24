@@ -303,6 +303,17 @@ export class StreamPermissions {
    * question the user COULD have answered off their screen, permanently. A
    * bounded wrong wait beats an unbounded wrong verdict.
    *
+   * NO PER-SESSION DEDUPE on the warning below, unlike this router's two other
+   * repeating conditions (`noWindowWarned`, `unroutableWarned`), and that is a
+   * decision rather than an omission (#700). Those two fire on states the app
+   * reaches in normal operation, once per gated call, which is what makes a
+   * flag worth its state. This one cannot fire at all: the probe as wired is
+   * `Map.has`. A dedupe set here would be state maintained for an unreachable
+   * line — and adding it to only one of the two throw-guards would be worse
+   * still, since `windowLive`'s has none either and the pair are meant to read
+   * as one idea. If a probe that CAN throw ever lands, give both a flag, not
+   * this one alone.
+   *
    * The reviewer's correction, kept because it is the honest version: if the
    * probe throws then `cardOfLive` is broken, and the push listener's very next
    * act is `cardOfLive.get(...)` — which throws too, and `offer`'s per-listener

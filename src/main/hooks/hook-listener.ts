@@ -257,6 +257,17 @@ export class HookListener {
   // "warned about the outage we are IN", not "warned once, ever": `maybeHold`
   // re-arms it the moment a live window is seen again (#334).
   private readonly noWindowWarned = new Set<string>();
+  /**
+   * Sessions already reported as having no surface to ask on (#699).
+   *
+   * `noWindowWarned`'s twin — same meaning, same re-arm, same place — and
+   * deliberately a SECOND set rather than a shared one: a session can be
+   * unbound while the window is fine, and merging them would let one outage
+   * silence the other's first line, which is the whole failure #334 fixed.
+   */
+  private readonly unroutableWarned = new Set<string>();
+  /** see `setAnswerSurfaceProbe` — absent until `registerSessionIpc` wires it */
+  private answerSurface: ((sessionId: string) => boolean) | null = null;
   private reqCounter = 0;
 
   /** Is there a renderer that could answer a hold? A provider that THROWS
@@ -270,6 +281,77 @@ export class HookListener {
         error: String(err),
       });
       return false;
+    }
+  }
+
+  /**
+   * Teach this listener which live sessions have a surface that can SHOW a
+   * held request (#699).
+   *
+   * The canonical argument for what this question means, and why it is not the
+   * same question as `hasLiveWindow`, is `StreamPermissions`'
+   * `AnswerSurfaceProbe` docblock — read that one; this is the same probe, from
+   * the same map (`registerSessionIpc`'s `cardOfLive`), asked by the other
+   * channel. The signature is repeated rather than imported because
+   * `stream-permissions.ts` already imports `PermissionRequest` from this file,
+   * and a type-only import back would close a module cycle for one function
+   * type.
+   *
+   * A SETTER, not a constructor option, for the reason #333 gives: `cardOfLive`
+   * belongs to `registerSessionIpc` and does not exist when `main/index.ts`
+   * builds this listener. Unset, `answerable` returns true and this class
+   * behaves exactly as it did before #699 — which is what keeps `hook-check.ts`
+   * and every unit test that drives this listener standalone unchanged.
+   */
+  setAnswerSurfaceProbe(probe: (sessionId: string) => boolean): void {
+    this.answerSurface = probe;
+  }
+
+  /**
+   * Could a held request for this session be SHOWN to someone? (#699)
+   *
+   * Fails toward HOLDING — no probe, or a probe that throws, means yes — which
+   * is `StreamPermissions.answerable`'s posture, adopted here for the same
+   * reason: holding when we cannot tell costs a bounded park with a 300s
+   * fail-open under it, and refusing to hold when a card WOULD have shown it
+   * takes a decision off the user's screen that they could have made.
+   *
+   * Note the two channels weigh that trade against different alternatives and
+   * still land in the same place. The stream router's third gate DENIES, because
+   * a `control_request` has no fallback. Here the alternative is `release()` —
+   * no opinion, and the CLI's own TUI prompt takes the question — so being wrong
+   * costs the user a prompt in the terminal instead of one in the app, not a
+   * refused tool call. That is the cheaper mistake of the two, and it is why
+   * this gate is worth having at all rather than merely being safe.
+   */
+  /**
+   * Is this session still one of ours? (#699)
+   *
+   * Membership in `tokens` IS the registration — `unregisterSession` clears it
+   * first, before the token file and before the held requests — so this answers
+   * "could a NEW request from this session still authenticate", which is the
+   * question that separates a mid-body straggler from a live unbound session.
+   *
+   * A reverse scan of a map keyed the other way, and cheap enough to leave that
+   * way: it runs only on the gated branch of a request that already failed the
+   * card probe, over one entry per live session. `unregisterSession` does the
+   * same scan on a much commoner path.
+   */
+  private isRegistered(sessionId: string): boolean {
+    for (const sid of this.tokens.values()) if (sid === sessionId) return true;
+    return false;
+  }
+
+  private answerable(sessionId: string): boolean {
+    if (!this.answerSurface) return true;
+    try {
+      return this.answerSurface(sessionId) !== false;
+    } catch (err) {
+      this.opts.log.warn('answer-surface probe threw — holding the request anyway', {
+        sessionId,
+        error: String(err),
+      });
+      return true;
     }
   }
 
@@ -450,6 +532,7 @@ export class HookListener {
     }
     this.allowAllSessions.delete(sessionId); // "this session" ends here
     this.noWindowWarned.delete(sessionId); // a respawn warns again if still blind
+    this.unroutableWarned.delete(sessionId); // …and again if still unbound (#699)
     // The file follows the map entry (#282). It is dead the moment the token
     // leaves `this.tokens` — nothing can authenticate with it again — and this
     // is its LAST mention: a self-exited card the user never touches again gets
@@ -766,6 +849,84 @@ export class HookListener {
     // nothing. `unregisterSession` clears it too, but only when the session
     // itself ends; a session outlives many windows.
     this.noWindowWarned.delete(sessionId);
+
+    // There is a window, and this session is not in it (#699).
+    //
+    // The push this hold produces is stamped with the card that owns the live
+    // session (`registerSessionIpc`: `cardId: cardOfLive.get(r.sessionId)`) and
+    // every mounted card drops what is not its own, so a session with NO card
+    // parks a request that is offered to a room with nobody in it: held, badged
+    // `needs-permission`, and shown to no one until the 300s deadline released
+    // it on the user's behalf. #333 closed exactly this hole for the stream
+    // channel. This is the same hole in the other channel, left open on purpose
+    // at the time because it is much less severe — the release fails open to
+    // the CLI's own TUI prompt, so the session was never wedged, only slow.
+    //
+    // HOW A REQUEST ACTUALLY GETS HERE, because "we lost a binding" is NOT the
+    // answer and guessing it produced a log level and a leak that both had to be
+    // corrected (#699 review). On every teardown path the TOKEN dies before the
+    // BINDING — `tearDownLive` runs `hooks.unregisterSession` and unbinds dead
+    // last, and the self-exit path unregisters without ever unbinding — while
+    // `bindLive` is synchronous with `manager.create`, so there is no pre-bind
+    // window either. A request that ARRIVES for an unbound session therefore
+    // 401s at the door and never reaches this function at all.
+    //
+    // What reaches it is a straggler of our own making. `handle` resolves the
+    // token from the HEADERS and runs this on `req.on('end')`, so a PreToolUse
+    // with a large body — a `Write` carrying file content is exactly that — has
+    // many turns of the event loop between the two. A Restart or a Close Card
+    // landing in that window clears the token AND the binding while the request
+    // is still streaming in. Before this gate, that request was then HELD, after
+    // `unregisterSession` had already swept `pending` — so nothing was left that
+    // could release it but the 300s timer, and the push announcing it carried
+    // `cardId: undefined` and matched no card. That is the case this closes.
+    //
+    // Five minutes of a card claiming to hold a question nobody can see is
+    // still not an answer. Fail open NOW, to the same place the deadline would
+    // have failed open to five minutes later. Nothing is lost by being early —
+    // the verdict is byte-identical (`{}`), and the user gets a prompt they can
+    // actually reach while they are still looking at whatever caused it.
+    //
+    // Checked AFTER the window gate, matching `StreamPermissions.offer`'s
+    // 1-2-3-4 order exactly, and for that function's stated reason: both
+    // conditions resolve the same way, so all the order decides is which fault
+    // gets reported, and "no window was open" is the truer and more useful one
+    // when both hold — a missing card is then a consequence of the app going
+    // away, not a separate fault. Two channels disagreeing about this order
+    // would be two channels naming different causes for one event.
+    if (!this.answerable(sessionId)) {
+      const where = { sessionId, tool };
+      const line = 'no card owns this session — failing open to the TUI rather than parking it';
+      // HOW LOUD depends on whether this session still exists, and it is the
+      // same discriminator `StreamPermissions.offer` uses for the same split —
+      // there it is `send`'s delivered flag, here it is whether the token is
+      // still ours to honour (`unregisterSession` clears it as its first act).
+      //
+      // A session that has been unregistered is the mid-body straggler above:
+      // ordinary, nobody is blocked, and the fail-open is exactly right. `debug`,
+      // and — the part that matters — it must NOT touch `unroutableWarned`. That
+      // set is cleared by `unregisterSession`, which has already run by
+      // definition on this branch, so an insert here is one string leaked per
+      // raced restart for the life of the process with nothing left to remove it.
+      if (!this.isRegistered(sessionId)) {
+        this.opts.log.debug(`${line} (session already torn down)`, where);
+        return 'pass';
+      }
+      // Still registered, still authenticating, and no card: THAT is a binding
+      // this process lost, and it is the invariant violation worth an `error`
+      // where the window gate says `warn` — a closed window is something the
+      // user did. Loud once per unbinding, quiet after, re-armed on the way past
+      // (#334's rule), because a busy unbound session produces one per gated
+      // call. Not known to be reachable today; it is the half that would matter
+      // if it ever were.
+      const first = !this.unroutableWarned.has(sessionId);
+      this.unroutableWarned.add(sessionId);
+      if (first) this.opts.log.error(line, where);
+      else this.opts.log.debug(line, where);
+      return 'pass';
+    }
+    // Bound again — re-arm, exactly as the window gate above does.
+    this.unroutableWarned.delete(sessionId);
 
     const requestId = `perm-${++this.reqCounter}`;
     const timer = setTimeout(() => {
