@@ -3,7 +3,79 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ✅ MERGE TRAIN COMPLETE — 2026-08-23/24. **All 8 open PRs merged to main;
+> # 🚀 v0.8.3 RELEASED — 2026-08-24. Fresh session: read this block, then STOP
+> and ask Dan which bug ticket he wants; he said he has one and was clearing
+> context.
+>
+> **v0.8.3 carries the whole merge train** — all 8 PRs (#703 #706 #684 #686
+> #701 #692 #694 #674), 18 issues closed. Cut per CHANGELOG's own rules:
+> version bumped 0.8.2→0.8.3, lock refreshed, `0.8.3` dated, **`0.8.4 —
+> unreleased` opened** (file your entries THERE now), tagged `v0.8.3`.
+>
+> **WHY THIS MATTERED:** Dan saw an update land on his work PC and assumed it
+> was this work. It was NOT — that was v0.8.2 from 08-21, and main was 38
+> commits ahead of it. Merging to main ≠ releasing here; the bump is manual.
+> Do not let "it's merged" read as "he has it".
+>
+> ## Decisions Dan made 2026-08-24 — settled, do not re-litigate
+>
+> * **SESSION PINNING STAYS.** He said "I thought we decided to get rid of the
+>   pins" — that was a DIFFERENT pin. The one he killed (#530/#542) is the
+>   document viewer's 📌 preview-tab pin, gone entirely, DESIGN.md §(around
+>   1898) quotes him: *"Let's get rid of that pin altogether."* The SESSION pin
+>   in the rail (§5.8, #78/#287/#295) is a separate feature and is KEPT.
+> * **Why he thought it did nothing:** every session-pin effect is PREVENTIVE
+>   (survives bulk-close, never auto-folded, sorts first) so it is invisible
+>   until something tries to move the session — and the one visible payoff,
+>   "never scrolls out of view under overflow", was the unfinished half that
+>   #295 only just landed. He has never run a build that had it. It is in
+>   v0.8.3 now.
+> * **#491 wording SETTLED:** "1 image attached" / "2 files attached" stays.
+>   (Images = PNG/JPEG/GIF/WebP only; PDFs, SVGs and source files read as
+>   "file".) No change wanted.
+> * **STILL OPEN, needs Dan at a running build:** does a stuck pinned row read
+>   as floating above the list, or blur into the rows sliding under it? (The
+>   sticky block paints an opaque background and deliberately NO shadow or
+>   divider — that is the knob if it reads too subtle.) And: a pin inside a
+>   group card scrolls away with its group (sticky cannot escape its containing
+>   block); acceptable, or should pinning lift a session out of its group?
+>   Both fall out of the #295 dogfood row.
+> * **NOT filed:** #686 offered a ticket for the "Session didn't start" card
+>   having no rail row (which also blocks Ctrl+Shift+M on it). Dan never
+>   answered. Ask before filing.
+>
+> ## What is owed
+>
+> **11 dogfood rows** in `docs/plans/dogfood-testing.md`, now labelled
+> **v0.8.3**, are the UNTESTED queue — that file is the answer to "what should
+> I test?". Two of them (#491, #642) were written by the orchestrator because
+> their handoffs left the row to whoever merged; #642's is REGRESSION CHECK
+> ONLY.
+>
+> ## Open work
+>
+> **Next queued:** #699+#700 transport-hygiene bundle, then #687, #688
+> (doc-only), #680, #695, #702, #607, #619. **#705** (e2e needs an idle
+> desktop — Windows foreground lock keeps blurApp-gated specs failing while
+> Dan is at the machine) is open and is why a local full e2e must be run on a
+> quiet desktop. `/pm`: #256 reconciliation still owed.
+>
+> ## Merge-train lessons (cost real time; do not rediscover)
+>
+> 1. **A rename merges LAST.** #674 renamed the i18n catalog while #686/#692
+>    added keys to the old path. Verified by key-set diff: 683/683 carried, 0
+>    stranded. Wrong order = green CI, missing UI strings.
+> 2. **A clean merge is not a safe merge.** #674 still broke two of #686's test
+>    files (they imported the deleted path) with NO conflict reported, because
+>    #674 never touched them. After any rename, grep the tree for the old path.
+> 3. **Count CHANGELOG bullets PER SECTION.** Twice a resolution ran past a
+>    section boundary and filed a bullet in the wrong group (a feature under
+>    `Fixed`). Totals looked right both times.
+> 4. **`cmd | tail && next`** runs `next` even when `cmd` FAILS — a pipeline
+>    returns tail's exit code. Cost a stray merge onto the wrong branch.
+> 5. **Read e2e counts off the SUMMARY BLOCK, never a truncated tail.**
+>
+> ## (historical) MERGE TRAIN — 2026-08-23/24, shipped in v0.8.3. **All 8 open PRs merged to main;
 > the PR queue is EMPTY.** Dan: "get these PRs done right and get them merged."
 >
 > **Merged, in this order:** #703 (renderer pins) · #706 (typed plumbing) ·
