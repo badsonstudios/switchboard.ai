@@ -3,31 +3,65 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🚂 MERGE TRAIN IN PROGRESS — started 2026-08-23, Dan: "get these PRs done
-> right and get them merged." Eight open PRs → main, serially.
-> **Bar per the standing policy: green CI + no conflicts. Reviews are
-> deliberately NOT required on this repo — do not re-add them, do not reach
-> for `--admin`.** Every PR in this train conflicts on CHANGELOG.md (all add
-> under `0.8.3 — unreleased`) and PROGRESS.md (this file); resolution is
-> KEEP BOTH, chronological. `docs/plans/dogfood-testing.md` is a third
-> conflict axis — most cars add a row to the same table.
+> # ✅ MERGE TRAIN COMPLETE — 2026-08-23/24. **All 8 open PRs merged to main;
+> the PR queue is EMPTY.** Dan: "get these PRs done right and get them merged."
 >
-> **ORDER CHANGED, and the reason matters — do NOT put #674 first.**
-> The 2026-08-21 note suggested `674 → 684 → 686 → 701 → 692 → 694`. But
-> **#674 RENAMES the i18n catalog** `src/renderer/src/i18n/locales/en.json`
-> → `src/shared/i18n/locales/en.json`, and **#686 and #692 both ADD KEYS to
-> the old path**. Merging #674 first would leave those two editing a file
-> that no longer exists — a rename/modify conflict at best, silently
-> stranded strings (green CI, missing UI text) at worst. Put #674 LAST and
-> git's rename detection carries every accumulated key across in one move.
+> **Merged, in this order:** #703 (renderer pins) · #706 (typed plumbing) ·
+> #684 (events a11y) · #686 (rail & cards) · #701 (store & popout) ·
+> #692 (image marker) · #694 (placeMenu/RTL) · #674 (main-process i18n).
+> Every car: conflicts resolved locally → typecheck + lint + full unit suite
+> green LOCALLY → pushed → **all 4 CI checks green** → squash-merged. Nothing
+> merged on a red or absent check; `--admin` never used; reviews correctly not
+> re-added (standing policy: green CI is the bar).
+> Final main tree verified byte-identical to the tree that passed the last
+> gate (typecheck, lint, **6051 unit tests / 235 files**).
 >
-> **Running order: 703 ✅ → 706 ✅ → 684 → 686 → 701 → 692 → 694 → 674.**
-> (#684 first of the rest: no catalog edit. #686 before #701: both touch
-> SessionGrid. #694 has NO CI runs at all — its push triggers the first.)
+> ## The four things this train nearly got wrong — read before the next one
 >
-> **Process note (cost me a stray merge):** `git checkout X 2>&1 | tail -2`
-> returns TAIL's exit code, so `&&` does not short-circuit on a failed
-> checkout. Do not pipe a command whose exit code gates the next one.
+> 1. **ORDER: a rename must merge LAST, not first.** The 2026-08-21 note
+>    suggested #674 first. #674 RENAMES the i18n catalog
+>    (`renderer/src/i18n/locales/en.json` → `shared/i18n/locales/en.json`)
+>    while #686 and #692 ADD KEYS to the old path. #674-first = those two
+>    editing a deleted file: green CI, silently missing UI strings. Put it
+>    last and git's rename detection carries the keys across. **Verified by
+>    key-set diff, not by faith: 683/683 keys carried, ZERO stranded**, plus
+>    #674's own 15 notification keys = 698.
+> 2. **A clean merge is NOT a safe merge.** #674 broke two of #686's test
+>    files (`SessionGrid.ended-header.test.tsx`, `SessionsRail.pins.test.tsx`)
+>    which still imported the catalog at its deleted path. **Git reported no
+>    conflict** — #674 never touched those files, so there was nothing to
+>    conflict with. Typecheck + suite would have failed on main. After any
+>    rename lands, grep the tree for the OLD path.
+> 3. **Count CHANGELOG bullets PER SECTION, not in total.** Twice a
+>    resolution block ran past its section boundary and filed bullets in the
+>    wrong group — #491 (a feature) landed under `### Fixed`, and #674's two
+>    user-facing bullets under `### Internal`. Totals were right both times.
+>    These notes are what the in-app update dialog shows users.
+>    Final 0.8.3: **Added 2 / Fixed 8 / Changed 4 / Internal 6 = 20.**
+> 4. **`cmd 2>&1 | tail -n && next`** runs `next` even when `cmd` FAILS — a
+>    pipeline returns TAIL's exit code. It cost a stray merge onto the wrong
+>    branch (caught, local-only, reset). Never pipe a command whose exit code
+>    gates the next one.
+>
+> ## Owed to Dan — nothing here is decided
+>
+> **11 dogfood rows are queued in `docs/plans/dogfood-testing.md`** (#268
+> #577 #648 #295 #606 #656 #657 #502 #491 #642 #471). Two of them I wrote
+> myself — **#491 and #642 shipped with NO row**, their handoffs having left
+> it to "whoever merges the train". #642's is marked REGRESSION CHECK ONLY.
+> **Open questions the PR authors asked Dan, NOT answered by merging:**
+> #686 wants a taste verdict on whether a stuck pinned row reads as floating
+> or blurs into the rows under it, and whether a pin inside a group card
+> should scroll away with its group; it also offers to file a ticket about
+> the "Session didn't start" card having no rail row. #491 asks whether
+> calling a `.md` a "file" and a `.png` an "image" reads naturally.
+>
+> **Nothing is released.** main ≠ a release; the version bump is manual
+> (CHANGELOG's own rules). `0.8.3 — unreleased` now carries 20 entries.
+>
+> **Next up:** #699+#700 transport-hygiene bundle, then #687, #688
+> (doc-only), #680, #695, #702, #607, #619. Also open from this run: **#705**
+> (e2e needs an idle desktop — Windows foreground lock).
 >
 > **DONE 2026-08-22 (/next-item): #690+#691 typed-plumbing bundle** — all 18
 > inline `'pty' | 'stream'` literals swept to `TransportKind` (#690), and
