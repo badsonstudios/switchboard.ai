@@ -16,7 +16,14 @@ import type {
   UpdatePrefs,
   UpdateStatus,
 } from '../shared/update';
-import type { SessionRecordWire } from '../shared/sessions';
+import type {
+  AutonomyMode,
+  SessionCardWire,
+  SessionRecordWire,
+  StatusChange,
+} from '../shared/sessions';
+import type { TransportKind } from '../shared/transport';
+import type { NotificationPrefs } from '../shared/notifications';
 import type { WorkspaceSaveState } from '../shared/workspace';
 import type { HistoryRepairNotice } from '../shared/history-repair';
 import type { ServiceHealthPrefs, ServiceHealthStatus } from '../shared/service-health';
@@ -31,21 +38,14 @@ import type { QuietState } from '../shared/quiet-hours';
 import type { AudioChannelName, AudioPlayCue, AudioSpeakCue, CardSound } from '../shared/sounds';
 import { AUDIO_FAILED_CHANNEL, AUDIO_PLAY_CHANNEL, AUDIO_SPEAK_CHANNEL } from '../shared/sounds';
 
-/**
- * The notification prefs, as both directions of `notifications:*` see them.
- * Named rather than inlined three times since P2-E14-05a added two fields —
- * the inline copies had already drifted from main's `NotificationPrefsState`.
- */
-interface NotifPrefs {
-  enabled: boolean;
-  osToasts?: boolean;
-  /** per-session cues instead of the plain beep (P2-E14-05a) */
-  sounds?: boolean;
-  /** spoken announcements (P2-E14-05a) */
-  speak?: boolean;
-  quietStart?: string;
-  quietEnd?: string;
-}
+// The notification prefs (`notifications:*`, below) were a hand-written
+// `NotifPrefs` interface here until #618, and inlined three times before
+// P2-E14-05a named them. Naming them fixed the three inline copies against each
+// other and left the gap that mattered open: nothing compared this file's copy
+// to main's, and `notifications:getPrefs` returns
+// `workspace.getNotificationPrefs()` VERBATIM, so the two were one record
+// described twice. `NotificationPrefs` in `shared/notifications.ts` is now the
+// only declaration, and `main/workspace/store.ts` uses the same one.
 
 const versionArg = process.argv.find((a) => a.startsWith('--switchboard-version='));
 const seedArg = process.argv.find((a) => a.startsWith('--switchboard-seed-panels='));
@@ -258,14 +258,14 @@ const api = {
       cardId: string;
       folder: string;
       title: string;
-      autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
+      autonomy?: AutonomyMode;
       groupId?: string;
     }): Promise<
       | (SessionRecordDto & {
           cardId: string;
           priorUsage?: { input: number; output: number; cacheRead: number; cacheCreate: number };
           priorModel?: string;
-          autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto';
+          autonomy?: AutonomyMode;
           taskLabel?: string;
         })
       | null
@@ -274,33 +274,25 @@ const api = {
     /** composer autocomplete data (E10-07): builtins + project/user commands */
     slashCommands: (liveId: string): Promise<SlashCommand[]> =>
       ipcRenderer.invoke('sessions:slashCommands', liveId),
-    cards: (): Promise<
-      Array<{
-        cardId: string;
-        title: string;
-        folder: string;
-        accent?: string;
-        badge?: string;
-        status: string;
-        liveId?: string;
-        groupId?: string;
-        autoKey?: string;
-        taskLabel?: string;
-        /** the transport this card's NEXT session will run on (#397) — the
-         *  card's own choice, then the env override, then the default. NOT
-         *  what a running session is currently hosted on; the two differ while
-         *  a transport change waits for a restart.
-         *
-         *  Optional ON PURPOSE, and left that way by #590: absence means this
-         *  card has never chosen, which is what `lib/trust-reach.ts` resolves
-         *  through `DEFAULT_SESSION_TRANSPORT`. The live record's `transport`
-         *  (`SessionRecordDto`) is required for the opposite reason. Same word,
-         *  two contracts — this shape is a persisted CARD, not a running
-         *  session, so it stays hand-written here rather than joining
-         *  `shared/sessions.ts`. */
-        transport?: 'pty' | 'stream';
-      }>
-    > => ipcRenderer.invoke('sessions:cards'),
+    /**
+     * Every persisted CARD, with its live status joined on (E7-05).
+     *
+     * DERIVED, not mirrored (#618) — the same treatment `SessionRecordDto`
+     * got in #590, for the same reason and one shape over. This was written out
+     * inline here AND inline in the `sessions:cards` handler, and the copies
+     * had already parted: `status` said `string` where main answers a
+     * `SessionStatus` or the card-only `'suspended'`, so a renderer comparing
+     * against a status nothing can produce compiled fine and never fired. Main
+     * now ANNOTATES the handler with the same type, so a field added on one
+     * side alone fails `tsc` there.
+     *
+     * NOT `SessionRecordDto`. A card is what the user set up and survives a
+     * restart; a record is a process running right now. Their `transport`
+     * fields are different fields on purpose — the card's is optional because
+     * absence means "never chose" (#445) — and the note that says so lives with
+     * the two declarations in `shared/sessions.ts`.
+     */
+    cards: (): Promise<SessionCardWire[]> => ipcRenderer.invoke('sessions:cards'),
     knownCards: (): Promise<Array<{ cardId: string; identity: SessionRecordDto['identity'] }>> =>
       ipcRenderer.invoke('sessions:knownCards'),
     renameCard: (cardId: string, title: string): Promise<void> =>
@@ -309,7 +301,7 @@ const api = {
     dropLive: (cardId: string): Promise<void> => ipcRenderer.invoke('sessions:dropLive', cardId),
     setTaskLabel: (cardId: string, label: string): Promise<void> =>
       ipcRenderer.invoke('sessions:setTaskLabel', cardId, label),
-    setAutonomy: (cardId: string, autonomy: string): Promise<void> =>
+    setAutonomy: (cardId: string, autonomy: AutonomyMode): Promise<void> =>
       ipcRenderer.invoke('sessions:setAutonomy', cardId, autonomy),
     /**
      * Choose a card's transport (P2-E18-08b). Applies to the NEXT spawn, like
@@ -319,7 +311,7 @@ const api = {
      */
     setTransport: (
       cardId: string,
-      transport: 'pty' | 'stream'
+      transport: TransportKind
     ): Promise<{ ok: boolean; reason?: string; pending?: boolean }> =>
       ipcRenderer.invoke('sessions:setTransport', cardId, transport),
     /**
@@ -331,8 +323,22 @@ const api = {
      */
     rename: (id: string, title: string): Promise<SessionRecordDto | null> =>
       ipcRenderer.invoke('sessions:rename', id, title),
-    onStatus: (cb: (change: unknown) => void): (() => void) => {
-      const h = (_e: unknown, c: unknown) => cb(c);
+    /**
+     * A live session moved (#618) — `main/sessions/ipc.ts` sends the manager's
+     * `StatusChange` verbatim.
+     *
+     * TYPED, and this is the #590 defect one channel over: the callback took
+     * `change: unknown` and both readers in `SessionGrid` cast it back to
+     * `{ sessionId: string; to: string }`. `to` is a `SessionStatus`, so a
+     * `string` there let `change.to === 'complete'` — a status no state machine
+     * produces — compile and silently never fire. The union is now the
+     * declaration on both sides of the wire.
+     *
+     * The CARD id is not in here: `sessionId` is the LIVE id, and a card that
+     * wants the change looks it up (`SessionGrid` compares against `live.id`).
+     */
+    onStatus: (cb: (change: StatusChange) => void): (() => void) => {
+      const h = (_e: unknown, c: StatusChange) => cb(c);
       ipcRenderer.on('sessions:status', h);
       return () => ipcRenderer.removeListener('sessions:status', h);
     },
@@ -631,9 +637,9 @@ const api = {
       ipcRenderer.invoke('git:fileVersions', folder, file),
   },
   notifications: {
-    getPrefs: (): Promise<NotifPrefs> => ipcRenderer.invoke('notifications:getPrefs'),
+    getPrefs: (): Promise<NotificationPrefs> => ipcRenderer.invoke('notifications:getPrefs'),
     // merge-patch: send only the prefs you're changing (review P1 #13)
-    setPrefs: (p: Partial<NotifPrefs>): Promise<NotifPrefs> =>
+    setPrefs: (p: Partial<NotificationPrefs>): Promise<NotificationPrefs> =>
       ipcRenderer.invoke('notifications:setPrefs', p),
     /**
      * Is the quiet window open right now, and how much has it held

@@ -17,12 +17,13 @@ import http from 'http';
 import { HookListener, PermissionRequest } from './hook-listener';
 import { LogSink, createLogger } from '../log/logger';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
+import type { TransportKind } from '../../shared/transport';
 
 let dir: string;
 let listener: HookListener;
 let port: number;
 let held: PermissionRequest[];
-let transport: 'pty' | 'stream';
+let transport: TransportKind;
 
 const CWD = process.platform === 'win32' ? 'C:/proj' : '/proj';
 const TARGET = process.platform === 'win32' ? 'C:/proj/src/x.ts' : '/proj/src/x.ts';

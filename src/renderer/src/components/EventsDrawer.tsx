@@ -303,6 +303,11 @@ export function EventsDrawer(props: EventsDrawerProps): React.JSX.Element {
       <button
         ref={tab}
         type="button"
+        // the app's ONE focus ring (§5.32 rule 4, #577). Without the class this
+        // drew Chromium's default outline — on the one control that is on
+        // screen while the drawer is shut, and against `--panel`, a surface the
+        // UA knows nothing about.
+        className="events-tab"
         data-testid="events-tab"
         data-count={badge.count}
         data-hottest={badge.hottest ?? undefined}
@@ -397,6 +402,18 @@ export function EventsDrawer(props: EventsDrawerProps): React.JSX.Element {
         <div
           id={bodyId}
           ref={body}
+          // OPENING MOVES FOCUS HERE (see the note below), and this element
+          // used to answer that with `outline: 'none'` in its own style
+          // attribute — so the keyboard user the focus() exists for got no
+          // visible focus at all, which is §5.32 rule 4 failed in the quietest
+          // possible direction (#577). The suppression is still wanted and
+          // still there; it moved to `tokens.css`, where the `:focus-visible`
+          // rule can outrank it. A style attribute cannot be beaten by a
+          // pseudo-class — it wins on the cascade before specificity is
+          // consulted — so adding this class while the inline declaration
+          // stayed would have been a fix that changed nothing on screen.
+          // `[data-feed-region]` is the precedent and splits it the same way.
+          className="events-body"
           data-testid="events-drawer"
           tabIndex={-1}
           // NAMED, because opening MOVES FOCUS HERE. A bare `<div tabIndex=-1>`
@@ -431,7 +448,7 @@ export function EventsDrawer(props: EventsDrawerProps): React.JSX.Element {
             // a re-skin retunes this with everything else (and so no raw
             // colour is written here at all).
             boxShadow: 'var(--window-shadow)',
-            outline: 'none', // focusable for key handling, not as a control
+            // no `outline` here — see the className note above
           }}
         >
           {/* `onClose` is destructured out of `panel` above, so it is handed

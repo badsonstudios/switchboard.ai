@@ -8,10 +8,12 @@
 // sort, the bulk-close exemption), lib/groups.test.ts (sorts first),
 // lib/ladder.test.ts (never aggregates), lib/presentation-policy.test.ts (never
 // auto-collapses on submit), store/session-store.test.ts (derives + persists).
-// This file owns the three claims those cannot make, which are exactly the
-// item's done-when: a real pin taken with a real gesture STILL SORTS FIRST
-// AFTER RELAUNCH, a real pinned idle session DOES NOT AGGREGATE among real
-// idle ones, and a real bulk close LEAVES IT RUNNING.
+// This file owns the four claims those cannot make: a real pin taken with a
+// real gesture STILL SORTS FIRST AFTER RELAUNCH, a real pinned idle session
+// DOES NOT AGGREGATE among real idle ones, a real bulk close LEAVES IT RUNNING
+// — and (#295) a real OVERFLOWING rail, scrolled to its end, STILL SHOWS IT.
+// That last one is the clause #78 deferred, and it is geometry: it needs a
+// layout engine, a scrollbar and a window, so it exists nowhere but here.
 //
 // Statuses are driven through the REAL hook listener, exactly as
 // idle-collapse.spec.ts does: a spawned session is `starting`, which reads as
@@ -64,6 +66,12 @@ async function addSession(a: LaunchedApp): Promise<string> {
   await expect(row(a.window, name)).toBeVisible({ timeout: 25_000 });
   return name;
 }
+
+/** the rail's scroll container — the box #295's clause is about */
+const railScroll = (w: Page) => rail(w).locator('.rail-scroll');
+
+/** the sticky block a bucket's pinned rows are lifted into (#295) */
+const pinBlock = (w: Page) => rail(w).locator('[data-pinned-block]');
 
 /** how many live sessions the main process is running */
 async function liveCount(w: Page): Promise<number> {
@@ -206,5 +214,126 @@ test.describe('pinning contract (E9-09)', () => {
     await expect.poll(() => said).toContain('pinned');
     await expect(rows(w)).toHaveCount(1);
     expect(await liveCount(w)).toBe(1);
+  });
+
+  // #295 — "never scrolls out of view under overflow", the clause #78 shipped
+  // without and said so. Everything about it is geometry, so there is no unit
+  // test that can be wrong in an interesting way here: the rail has to really
+  // overflow, the scrollbar has to really move, and the row has to really still
+  // be on screen afterwards.
+  test('a pinned session stays on screen when the rail is scrolled past it', async () => {
+    test.slow(); // seven sessions, then a real scroll
+    const ws = await workspace(7);
+    a = ws.a;
+    const w = a.window;
+
+    // PIN FIRST, THEN SHRINK. The pin is taken from the row's context menu, and
+    // that menu is eight items tall - taking it in a 260px window would be
+    // testing #641's placement clamp rather than this.
+    //
+    // The LAST session, so "first" is a real move and the row we watch would
+    // otherwise be the one furthest from the top.
+    const target = ws.titles[ws.titles.length - 1];
+    await togglePin(w, target);
+    await expect(row(w, target)).toHaveAttribute('data-pinned', 'true');
+    await expect(pinBlock(w)).toHaveCount(1);
+    // it is the pinned row that was lifted, not some other one
+    await expect(pinBlock(w).locator('[draggable="true"]')).toHaveCount(1);
+    await expect(pinBlock(w)).toContainText(target);
+
+    // MAKE IT OVERFLOW, deterministically. Five rows do not fill a 600px-tall
+    // rail, and `minHeight: 600` (main/index.ts) is what stops the window being
+    // shrunk into one - so the minimum is lifted first. This is the OS window,
+    // not product code: nothing test-only is reachable inside the app.
+    //
+    // 560, and the sessions do the overflowing rather than the shrinking. The
+    // app's own chrome (title bar, the rail's header and footer, and whatever
+    // strips and banners happen to be up) takes 240-300px before the scroll
+    // region gets any, and it is NOT a constant between runs - a service-health
+    // or update banner appearing shifts the rail down and shortens it by ~64px
+    // mid-test. Squeeze the port below the pinned block's own height and sticky
+    // still behaves correctly, but "correctly" then means CLAMPED BY THE BOTTOM
+    // OF ITS CONTAINING BLOCK, which puts the block above the port and reads
+    // like the feature failing. So: a port with room to spare, an explicit
+    // floor asserted at the moment of measurement, and seven rows to overflow
+    // it with.
+    await a.app.evaluate(({ BrowserWindow }) => {
+      const win = BrowserWindow.getAllWindows()[0];
+      win.setMinimumSize(600, 520);
+      win.setSize(1000, 560);
+    });
+
+    // SCROLL THE RAIL TO ITS END, and assert the clause the way a person reads
+    // it rather than with a tape measure.
+    //
+    // The tape measure was the first attempt and it is a trap here: the rail's
+    // own top edge moves as the app's strips and banners settle, so comparing a
+    // sticky box against a port rectangle means comparing two numbers that are
+    // only both true for one frame. Everything below is either a SCROLL METRIC
+    // (scrollTop / scrollHeight - immune to where the rail happens to sit) or
+    // Playwright's own is-it-on-screen check, which asks the browser instead of
+    // arithmetic.
+    await expect
+      .poll(
+        () =>
+          railScroll(w).evaluate((el) => {
+            el.scrollTop = el.scrollHeight;
+            // overflowing by more than a row AND parked at the end - one
+            // number would let a rail that stopped overflowing pass
+            return el.scrollHeight - el.clientHeight > 60 && el.scrollTop > 60;
+          }),
+        { intervals: [400], timeout: 30_000 }
+      )
+      .toBe(true);
+
+    // THE CLAUSE: the pinned row is WHOLLY on screen with the list scrolled to
+    // its end. `ratio: 0.99` and not the default: the default passes on a
+    // single intersecting pixel, which is exactly the half-scrolled-away state
+    // this issue is about.
+    await expect(row(w, target)).toBeInViewport({ ratio: 0.99 });
+
+    // ...and it is STUCK, not merely lucky - which is the half `toBeInViewport`
+    // cannot tell you, because a rail that simply refused to scroll would pass
+    // it too. Measured as ONE RELATIVE NUMBER, both rects read in the same
+    // evaluate: how far the block sits below the top of its own container. In
+    // the flow that is the container's 5px padding and nothing else; stuck at
+    // the end of the list it is the whole scroll distance. Nothing here refers
+    // to where the rail is on screen, which is the trap this assertion started
+    // out in.
+    await expect(pinBlock(w)).toHaveCount(1);
+    const lift = await railScroll(w).evaluate((el) => {
+      const block = el.querySelector('[data-pinned-block]')!.getBoundingClientRect();
+      const body = el.querySelector('[data-rail-body]')!.getBoundingClientRect();
+      return { below: block.top - body.top, scrolled: el.scrollTop };
+    });
+    expect(lift.below).toBeGreaterThan(60);
+    // and it is the SCROLL it travelled, not some other offset
+    expect(Math.abs(lift.below - lift.scrolled)).toBeLessThan(20);
+
+    // DECISION 4: and the keyboard cannot be walked in behind it. The rail is
+    // scrolled to the bottom, so focusing an EARLY row makes the browser scroll
+    // it to the top edge of the scrollport - which is where the block is parked.
+    const covered = ws.titles.find((tt) => tt !== target)!;
+    const before = await railScroll(w).evaluate((el) => el.scrollTop);
+    await row(w, covered).locator('[data-rail-open]').focus();
+    const after = await railScroll(w).evaluate(() => {
+      const scroll = document.querySelector('.rail-scroll') as HTMLElement;
+      const block = document.querySelector('[data-pinned-block]')!.getBoundingClientRect();
+      // the ROW, not the focused button: the button is inset by the row's
+      // padding and the guard aligns the row
+      const focused = (document.activeElement as HTMLElement)
+        .closest('.rail-row')!
+        .getBoundingClientRect();
+      return { blockBottom: block.bottom, focusedTop: focused.top, scrollTop: scroll.scrollTop };
+    });
+    // the row really was going to be covered - i.e. this scrolled - so the
+    // assertion below cannot decay into a tautology when row heights change
+    expect(after.scrollTop).toBeLessThan(before);
+    expect(after.focusedTop).toBeGreaterThanOrEqual(after.blockBottom - 1);
+
+    // ...and unpinning puts the row back in the flow: the lift is derived from
+    // the pin, not from a block someone forgot to take down
+    await togglePin(w, target);
+    await expect(pinBlock(w)).toHaveCount(0);
   });
 });

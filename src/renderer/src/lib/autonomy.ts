@@ -40,27 +40,42 @@
 //     says so. (Which also means we ask about a `mkdir` the bare CLI would have
 //     waved through. Noisier, and the safe direction.)
 import type { TFunction } from 'i18next';
+import { AUTONOMY_MODES, isAutonomyMode, type AutonomyMode } from '../../../shared/sessions';
 
-export type Autonomy = 'ask' | 'plan' | 'auto-edit' | 'full-auto';
+/**
+ * The four profiles.
+ *
+ * DERIVED, not declared (#618). The same union was hand-written nine times —
+ * here, main's live record, the card's persisted record, the spawn option,
+ * `SessionManager.create`'s options, the `sessions:create` argument in main and
+ * again in the preload, the result the preload re-publishes, and
+ * `AUTONOMY_PERMISSION_MODE`'s keys — with two runtime copies of the list
+ * besides: `sessions:setAutonomy`'s inline validator array and `AUTONOMIES`
+ * just below. `shared/sessions.ts` declares all of it once. The local NAME
+ * stays because every renderer call site says `Autonomy`, and this file is
+ * still where the renderer's half of the feature lives.
+ */
+export type Autonomy = AutonomyMode;
 
 /**
  * The cycle order for the chips and the palette.
  *
  * Least to most autonomous, with `plan` second because it is the one mode that
  * grants LESS than the default rather than more — a user walking the cycle
- * meets "safe" and "safer" before anything starts running on its own.
+ * meets "safe" and "safer" before anything starts running on its own. That
+ * order is now recorded with the values in `shared/sessions.ts`, so the type
+ * cannot outgrow the list the chip walks.
  */
-export const AUTONOMIES: readonly Autonomy[] = ['ask', 'plan', 'auto-edit', 'full-auto'];
+export const AUTONOMIES: readonly Autonomy[] = AUTONOMY_MODES;
 
 /** What a session runs at when nobody has said otherwise. */
 export const DEFAULT_AUTONOMY: Autonomy = 'ask';
 
 /** Is this stored/IPC value one we still recognise? A workspace blob outlives
  *  the code that wrote it, so an unknown value must fall back rather than be
- *  rendered as a missing translation key. */
-export function isAutonomy(v: unknown): v is Autonomy {
-  return typeof v === 'string' && (AUTONOMIES as readonly string[]).includes(v);
-}
+ *  rendered as a missing translation key. The predicate is shared with main,
+ *  which needs the same answer about untrusted input (§5.29). */
+export const isAutonomy = isAutonomyMode;
 
 /** The next mode for a chip click — wrapping, and tolerant of a value we do
  *  not recognise (which starts the walk from the default). */

@@ -299,7 +299,8 @@
     "idle": "idle",
     "done": "done",
     "crashed": "crashed",
-    "suspended": "suspended"
+    "suspended": "suspended",
+    "notStarted": "not started"
   },
   "autonomy": {
     "plan": "🛡 plan",

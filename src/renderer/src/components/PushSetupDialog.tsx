@@ -88,9 +88,10 @@ export function PushSetupDialog(props: PushSetupDialogProps): React.JSX.Element 
    * that carries the full argument.
    *
    * `React.useId()` is what the rest of the renderer already uses (QuestionPanel,
-   * EventsPanel, FindBar). It is NOT a secret — React 19 numbers client ids from
-   * a module-global counter — so what it removes is a STABLE, PUBLISHED name,
-   * not the possibility of a collision. `data-push-field` stays as it is: it is
+   * EventsPanel, FindBar). Alone it is NOT a secret — React 19 numbers client
+   * ids from a module-global counter — so what it removes is a STABLE,
+   * PUBLISHED name, not the possibility of a collision; since #673 the root's
+   * per-launch `identifierPrefix` closes that half too. `data-push-field` stays as it is: it is
    * the test hook, it is not an `id`, and content cannot emit a `data-*`
    * attribute at all (`ALLOW_DATA_ATTR: false`).
    */

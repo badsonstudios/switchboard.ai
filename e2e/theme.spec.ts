@@ -62,9 +62,11 @@ interface Word {
  *    rewritten to make computable, so the harness had better not make it.
  *  • it folds in every `opacity`, INCLUDING the one on the element that
  *    supplies the background — group opacity does not preserve contrast, it
- *    fades the text and the fill toward whatever is behind BOTH of them (the
- *    events panel's reviewed rows are `--panel2` at 0.82, and that is where the
- *    difference shows).
+ *    fades the text and the fill toward whatever is behind BOTH of them. The
+ *    events panel's reviewed rows were the worked example (`--panel2` at 0.82)
+ *    until #268 replaced that opacity with a `color-mix` the token tests can
+ *    read; the arithmetic stays because the next one will not announce itself,
+ *    and because a `color-mix` fill is the OTHER thing this composites.
  *  • it reads the token NAME off an inline style where there is one, which is
  *    the only way to tell `--status-working` from `--accent-blue` — the same
  *    pixels, different meanings (see the sweep below).
