@@ -68,9 +68,11 @@ export function QuietHoursDialog(props: QuietHoursDialogProps): React.JSX.Elemen
    * "EARLIER" IS A REAL CONDITION: `App.tsx` renders this dialog before
    * `SessionGrid`, so feed and viewer content is always later and never
    * captured these ids. Prophylaxis against a reorder, not a live fix — and
-   * `React.useId()` is not a secret either (React numbers client ids from a
-   * global counter); what it removes is a STABLE, PUBLISHED name.
-   * `data-quiet-field` stays: it is the test hook, not an `id`.
+   * `React.useId()` alone is not a secret either (React numbers client ids
+   * from a global counter); what it removes is a STABLE, PUBLISHED name, and
+   * since #673 the root's per-launch `identifierPrefix` makes the composed id
+   * unguessable as well. `data-quiet-field` stays: it is the test hook, not an
+   * `id`.
    */
   const fieldId = React.useId();
 

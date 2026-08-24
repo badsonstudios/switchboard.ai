@@ -61,6 +61,18 @@ on the floor, and say so in your PR.
 
 ## 0.8.3 — unreleased
 
+### Added
+
+- **A pinned session no longer scrolls out of the Sessions list.** Once you have
+  more sessions than fit, the list scrolls — and until now a pinned session slid
+  away with everything else, which is the opposite of what pinning is for. It now
+  stays parked at the top while the rest scroll underneath it. Two pins park as a
+  pair, in their own order. If you use groups, a pinned session stays put while
+  its group card is on screen; scroll past the whole group and it goes with it,
+  because pinning promotes a session inside its group rather than lifting it out.
+  Tabbing through the list can no longer land on a row hidden behind the pinned
+  ones (#295).
+
 ### Fixed
 
 - **Bringing a session back from a window it had to itself now puts it back
@@ -86,7 +98,58 @@ on the floor, and say so in your PR.
 - Dragging a session onto a group in the sidebar no longer moves its card
   off-screen when a group-mate happens to be in a hidden pane.
 
+- **A Direct-mode session no longer freezes for five minutes when
+  switchboard.ai has lost track of which card it belongs to.** A permission
+  request is shown on the card that owns the session. If a running session has
+  somehow lost its card — a bookkeeping failure inside switchboard.ai, not
+  anything you can do on purpose — the request has nowhere to appear, and it
+  used to sit there unanswered until a five-minute limit expired and told the
+  agent nobody had replied in time. Nobody was ever asked. It is now declined
+  the moment it arrives, and the agent is told that switchboard.ai lost track of
+  the session rather than that someone refused the request — deliberately
+  different wording from the other reasons a request can go unanswered, so the
+  cases can be told apart. The app log records it too. You should not see this
+  one; if you do, it is worth reporting.
+
+- **A card that says "Session didn't start" now has a header like every other
+  card.** It was the last card state that drew none at all, so it was the one
+  card on screen with no name on it, nothing to double-click, and no clue which
+  session it belonged to once you had two of them up. It now carries what a
+  suspended card's header carries: the session's name, its colour and badge, and
+  the words *not started*. (A session that ran and then ended or crashed keeps
+  the header it already had; this was only ever about the one that never got
+  going.) Nothing about it restarts the session — **Try again** is still the only
+  thing that does (#606).
+
 ### Changed
+
+- **Events you've already dealt with are quiet instead of faded.** A row in the
+  Events drawer that you've seen (**Ready**) used to recede by having the whole
+  row turned down to 82% — which does not just soften it, it drains contrast
+  out of every word on the row at once, and the small task label under the
+  title was the text it hurt most. The row now recedes the way the rest of
+  switchboard.ai does it: the same slightly-settled background it always had,
+  with the title written in the app's secondary grey. Same box, same place in
+  the list, and the title, the task label and the **Ready** state word are all
+  back at their measured values on all four themes. That state word moved with
+  it — it was the palest grey the app has, on the one row where it is the only
+  thing telling you what the session is doing.
+- **Session frames and group cards have a stronger edge.** The border around a
+  session window in the grid, and around a group card in the sessions rail, is
+  the same colour in both places — and measured, it was too close to the
+  surfaces on either side of it to count as a visible boundary on the default
+  dark theme *or* on Daylight. It has been nudged a step in each (lighter on
+  the default dark theme, darker on Daylight; the two contrast themes were
+  already well clear and are untouched) so the edge reads against the workspace
+  behind a card, the card's own body, and the header strip along its top. Same
+  colour family, same one-edge-everywhere treatment; just visible now.
+- **The Events drawer's edge tab and its notice buttons draw switchboard.ai's
+  focus ring.** Tabbing to them used to produce the browser's own focus outline
+  instead — a different colour, chosen against a background it knows nothing
+  about — while the ✕ inside the drawer drew the app's. The drawer itself is
+  fixed the other way round: opening it with `Ctrl+E` moves your cursor into
+  it and it had been suppressing its focus outline entirely, so there was
+  nothing at all to say where you had landed. It draws the app's ring now too.
 
 - **A reply or a document can no longer put a name on one of switchboard.ai's
   own controls.** Raw HTML can contain a `<label>`, and a label is not just
@@ -102,8 +165,20 @@ on the floor, and say so in your PR.
   nothing else changes on screen. Alongside it, Push setup, Quiet hours and the
   command palette stopped giving their controls fixed, predictable internal
   names, so there is less for content to aim at even if a label got through.
+  That last half is now finished app-wide: every control name switchboard.ai
+  generates gets a fresh random namespace each time the app starts, so nothing
+  written into a reply or a document beforehand can name a control at all —
+  including the tab strips on session cards and in the questions panel, which
+  the earlier change had not reached.
 
 ### Internal
+
+- The identity chip's own documentation claimed to be "the one way a session's
+  identity renders", and the Sessions list has never used it — by design, not by
+  neglect: the approved rail design rules out a per-session icon and makes the
+  coloured left edge bar the identity mark there. The claim was withdrawn rather
+  than enforced, so the next reader does not go and "finish" an adoption the
+  design forbids. No visible change (#337).
 
 - A refused IPC call can no longer crash the part of the app that asked. The
   broker answers a capability-denied call with a marker object rather than an
@@ -124,6 +199,20 @@ on the floor, and say so in your PR.
   so the window could compare it against a state that cannot happen and quietly
   never match. Every one of them is now a single description both sides read, so
   a mismatch stops the build instead of shipping. No visible change (#618).
+- Two fixes from the refused-call sweep above now have regression tests standing
+  behind them: the Push setup dialog's answer handling moved into its own small
+  module where a test can feed it a refusal, and a new test proves that a
+  refused card-list read during startup layout restore deletes nothing — the
+  one code path where mistaking "we could not ask" for "there are no cards"
+  would silently wipe every pin, saved layout and per-session setting in the
+  app. No visible change (#677, #678).
+- Two leftovers from that same sweep: the last ~18 places that hand-spelled the
+  "Terminal or Direct" pair now use the one shared name for it (so a future
+  transport can't silently miss one), and starting a session now checks the
+  autonomy value and the card id it was asked for the same way changing
+  autonomy already did — a malformed request can no longer seed a session with
+  a mode that doesn't exist or bind it to a card name nothing can ever match.
+  No visible change (#690, #691).
 
 
 ## 0.8.2 — 2026-08-21

@@ -12,6 +12,7 @@ import fs from 'fs';
 import path from 'path';
 import { AUTONOMY_PERMISSION_MODE, claudeAdapter, resetCliPathCache } from './claude';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
+import type { TransportKind } from '../../shared/transport';
 
 let dir: string;
 let origPath: string | undefined;
@@ -38,7 +39,7 @@ afterEach(() => {
   cleanupTempDirs(); // one per test, gone at the end of it (#213)
 });
 
-function recipe(transport?: 'pty' | 'stream') {
+function recipe(transport?: TransportKind) {
   return claudeAdapter.buildSpawn({ cwd: dir, sessionId: 's1', stateDir: dir, transport });
 }
 

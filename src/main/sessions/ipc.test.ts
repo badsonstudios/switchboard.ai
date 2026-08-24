@@ -17,6 +17,7 @@ import { StreamFeed } from '../feed/stream-feed';
 import { Logger } from '../log/logger';
 import { SlashCommand } from '../../shared/slash-commands';
 import { readAiTitle } from '../providers/claude';
+import type { TransportKind } from '../../shared/transport';
 import { REPEAT_HEAVY, REVISED, titlesOf } from '../transcripts/fixtures/ai-title';
 import {
   conversationExists,
@@ -95,9 +96,9 @@ function harness(
     /** the Feed built from typed messages (P2-E18-10) — the real class, again */
     streamFeed?: StreamFeed;
     /** the transport the manager reports for a live session (P2-E18-10) */
-    transport?: 'pty' | 'stream';
+    transport?: TransportKind;
     /** the app-wide env override of which transport to ask for (#381) */
-    preferredTransport?: () => 'pty' | 'stream' | undefined;
+    preferredTransport?: () => TransportKind | undefined;
     /** exit codes per session id — a session listed here is DEAD but still has
      *  a record, which is exactly what a crash leaves behind (#187) */
     exitCodes?: Record<string, number>;
@@ -2388,6 +2389,78 @@ describe('a retired session takes its parked approvals with it (#202)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// #333 — the router is TOLD which sessions have a card, before it holds.
+//
+// The push two lines below the probe stamps `cardId: cardOfLive.get(...)`, and
+// every mounted card drops what is not its own. So a live session with no
+// binding produced a `sessions:permissionRequest` that matched nothing, a badge
+// reading `needs-permission` with no bar anywhere, and a CLI blocked until the
+// 300s deadline declined it for a user who was never offered it. The wiring
+// under test is one line — delete it and every test here goes red, because the
+// router falls back to holding.
+describe('a stream request for an unbound session is declined, not parked (#333)', () => {
+  const CARD = 'card-1';
+  let dir: string;
+  tempDirEach('sb-unrouted-', (d) => (dir = d));
+  const { card, start } = cardHelpers(() => dir, CARD);
+
+  it('holds a BOUND session normally — the probe must not deny everything', () => {
+    const { perms, sent } = streamPerms();
+    const h = harness(undefined, dir, { prior: card(), streamPermissions: perms });
+    start(h); // binds live-1 to card-1
+
+    perms.offer('live-1', canUseTool('req-1'));
+
+    expect(perms.pendingRequests()).toHaveLength(1);
+    expect(asked(h)).toEqual([
+      expect.objectContaining({ requestId: 'stream:live-1:req-1', cardId: CARD }),
+    ]);
+    expect(sent).toEqual([]); // nothing answered on the user's behalf
+
+    h.call('sessions:dropLive', CARD); // clear the hold and its timer
+  });
+
+  it('declines an UNBOUND session at once, with nothing pushed and nothing parked', () => {
+    const { perms, sent } = streamPerms();
+    const h = harness(undefined, dir, { prior: card(), streamPermissions: perms });
+    start(h); // only live-1 is bound; `ghost` never was
+
+    perms.offer('ghost', canUseTool('req-9'));
+
+    expect(perms.pendingRequests()).toEqual([]);
+    // The push that would have gone out with `cardId: undefined` — the one no
+    // card can match. It must not be sent at all.
+    expect(asked(h)).toEqual([]);
+    expect(sent).toHaveLength(1);
+    const answer = sent[0].msg as {
+      response?: { response?: { behavior?: string; message?: string } };
+    };
+    expect(answer.response?.response?.behavior).toBe('deny');
+    expect(String(answer.response?.response?.message)).toMatch(/lost track of which of its cards/i);
+  });
+
+  // The binding is what the probe reads, so a torn-down session must stop being
+  // routable the moment it is unbound — otherwise the gate is reading a map
+  // that outlives the thing it describes.
+  it('a session that was bound and is torn down is unroutable afterwards', () => {
+    const { perms, sent } = streamPerms();
+    const h = harness(undefined, dir, { prior: card(), streamPermissions: perms });
+    start(h);
+    h.call('sessions:closeCard', CARD); // tearDownLive → unbindLive
+
+    perms.offer('live-1', canUseTool('req-2'));
+
+    expect(perms.pendingRequests()).toEqual([]);
+    expect(asked(h)).toEqual([]);
+    expect(sent).toHaveLength(1);
+    // …and denied by THIS gate, not by the no-window one. Without the message
+    // check the assertions above pass for any deny from any branch.
+    const answer = sent[0].msg as { response?: { response?: { message?: string } } };
+    expect(String(answer.response?.response?.message)).toMatch(/lost track of which of its cards/i);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // #219 — a teardown step that throws must not take the rest of the teardown
 // with it.
 //
@@ -3160,6 +3233,72 @@ describe('a refused sessions call answers null and says why — it never throws 
       expect(() => h.call('sessions:create', arg)).not.toThrow();
       expect(h.call('sessions:create', arg)).toBeNull();
       expect(h.created).toEqual([]);
+    });
+
+    // #691, from #333's audit: '' passes `typeof`, binds in `cardOfLive`, and
+    // stamps every later hold with a card id no card can match — the
+    // silent-park #698 closed, reachable again through one empty string.
+    //
+    // A REAL folder, deliberately — its own test rather than an `it.each` row,
+    // because a row with a made-up folder passes through the folder-not-a-
+    // directory refusal whether or not the cardId check exists, and a pin that
+    // survives the mutation it was written for is not a pin (the first draft
+    // did exactly that; the mutation run caught it).
+    it('refuses an EMPTY cardId even with a real folder — nothing binds, nothing spawns', () => {
+      const h = harness(undefined, dir);
+
+      expect(h.call('sessions:create', { cardId: '', folder: dir, title: 'x' })).toBeNull();
+
+      expect(h.created).toEqual([]); // no session asked for
+      expect(h.upserted).toEqual([]); // no card written
+      // and the renderer was never told a card gained a live session
+      expect(h.pushed.filter((p) => p.channel === 'sessions:cardsChanged')).toEqual([]);
+      // its OWN reason — "required" would be the wrong hint for a field that
+      // was present and empty
+      expect(refusals(h)).toEqual(['sessions:create refused: cardId must be non-empty']);
+    });
+
+    // #691: the autonomy the renderer sends is UNTRUSTED (§5.29). `setAutonomy`
+    // has validated with the shared guard since #618; create now does too — but
+    // it rejects the VALUE, not the spawn. The field is optional, and a
+    // malformed byte must not turn into a card that cannot start; it reads as
+    // "the chip never spoke", plus a log line saying what was dropped.
+    it('drops an unknown autonomy, says so in the log, and still starts the session', () => {
+      const h = harness(undefined, dir);
+
+      const rec = h.call('sessions:create', {
+        cardId: 'card-1',
+        folder: dir,
+        title: 'x',
+        autonomy: 'yolo',
+      });
+
+      expect(rec).not.toBeNull(); // the spawn happened — no refusal for an optional field
+      expect(h.created).toHaveLength(1);
+      // ...and the garbage landed NOWHERE a later reader trusts: the persisted
+      // card carries no autonomy, exactly as if none had been sent. Every
+      // reader of `PersistedSession.autonomy` assumes the union; this is the
+      // line that keeps that assumption true. The length check first, so the
+      // `?.` cannot answer `undefined` for the wrong reason (an upsert that
+      // never happened) and pass vacuously.
+      expect(h.upserted).toHaveLength(1);
+      expect(h.upserted[0]?.autonomy).toBeUndefined();
+      expect(h.warn).toHaveBeenCalledWith('sessions:create sent an unknown autonomy; ignoring it', {
+        cardId: 'card-1',
+        autonomy: 'yolo',
+      });
+    });
+
+    it('a KNOWN autonomy still lands on the card — the guard filters, it does not eat', () => {
+      const h = harness(undefined, dir);
+
+      h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x', autonomy: 'plan' });
+
+      expect(h.upserted[0]?.autonomy).toBe('plan');
+      expect(h.warn).not.toHaveBeenCalledWith(
+        'sessions:create sent an unknown autonomy; ignoring it',
+        expect.anything()
+      );
     });
 
     // THE REACHABLE ONE. Nothing has to go wrong for a user to arrive here: a

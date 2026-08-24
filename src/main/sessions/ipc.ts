@@ -52,7 +52,7 @@ import { IpcBroker } from '../ipc/broker';
 import { Channel } from '../../shared/ipc/capabilities';
 import type { PtyAttachment, PtyChunk, PtySnapshot } from '../../shared/ipc/pty';
 import type { PermissionRequest } from '../../shared/ipc/permissions';
-import { isAutonomyMode, type AutonomyMode, type SessionCardWire } from '../../shared/sessions';
+import { isAutonomyMode, type SessionCardWire } from '../../shared/sessions';
 import type { TransportKind } from '../../shared/transport';
 import type { ProviderCapabilities } from '../extensibility/contributions';
 import { TranscriptWatcher } from '../transcripts/watcher';
@@ -275,6 +275,15 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   // has returned, so the rule above is what keeps the extra push harmless
   // rather than a torn read.
   const cardsChanged = (): void => send('sessions:cardsChanged', undefined);
+  //
+  // Since #333 this binding is also LOAD-BEARING FOR PERMISSIONS, which raises
+  // the stakes of the `await` warning three paragraphs up from a frame of
+  // flicker to a wrong verdict. `StreamPermissions` asks whether a session has a
+  // card before it holds a `can_use_tool`, and answers no by DECLINING the
+  // request outright — so an `await` introduced between `manager.create` and the
+  // `bindLive` call in `sessions:create` would not merely let the renderer read
+  // a card without its live half: it would open a window in which every gated
+  // tool call that session makes is refused. Keep that stretch synchronous.
   const bindLive = (liveId: string, cardId: string): void => {
     cardOfLive.set(liveId, cardId);
     cardsChanged();
@@ -597,6 +606,19 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   // The stream transport's identical half (P2-E18-07). Same events, same
   // shape, same bar: the user is answering the same question, and the renderer
   // must not have to know which channel carried it.
+  // …and the router asks US, before it holds anything, whether that stamp is
+  // going to exist (#333). The line below is the whole of the routing problem:
+  // `cardId` is what every mounted card filters on, so a session with no
+  // binding produces a push nothing can match — held, badged
+  // `needs-permission`, and shown to nobody until the 300s deadline declined it
+  // on the user's behalf. The probe lets the router decline it AT ONCE, with a
+  // reason that says which of the fail-open cases this was.
+  //
+  // Wired here rather than in `main/index.ts` because `cardOfLive` is this
+  // function's own state — see `setAnswerSurfaceProbe` for why a late-bound
+  // `let` in `index.ts` was the wrong shape. `has`, not `get(...) !== undefined`:
+  // the same map, asked the question it is actually being asked.
+  streamPermissions?.setAnswerSurfaceProbe((liveSessionId) => cardOfLive.has(liveSessionId));
   streamPermissions?.onPermissionRequest((r) =>
     send('sessions:permissionRequest', { ...r, cardId: cardOfLive.get(r.sessionId) })
   );
@@ -852,7 +874,11 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         cardId: string;
         folder: string;
         title: string;
-        autonomy?: AutonomyMode;
+        // `string`, not `AutonomyMode` (#691): §5.29 untrusted renderer input,
+        // same reason `setAutonomy` below declares its parameter `string` — a
+        // wire type that claims the union is a promise the wire cannot keep,
+        // and the runtime check is what makes it true.
+        autonomy?: string;
         groupId?: string;
       }
     ) => {
@@ -863,6 +889,17 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
       // plugged in reaches here on the first look at that card.
       if (!opts || typeof opts.cardId !== 'string' || typeof opts.folder !== 'string') {
         return refuse('sessions:create', 'cardId and folder are required');
+      }
+      // NON-EMPTY, not merely a string (#691, from #333's audit): '' passes the
+      // typeof check above, binds in `cardOfLive`, and stamps every hold with a
+      // card id no card can ever match — the exact silent-park #698's probe
+      // exists to refuse, reopened one door over (the probe catches UNBOUND,
+      // not bound-to-nothing). Required field, so a refusal is the right
+      // answer, unlike the optional `autonomy` below — and its own refusal
+      // line, because "required" would be the wrong hint in the log for a
+      // field that was present and empty.
+      if (opts.cardId === '') {
+        return refuse('sessions:create', 'cardId must be non-empty', { folder: opts.folder });
       }
       let isDir = false;
       try {
@@ -1040,8 +1077,23 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
 
       // an existing card keeps its autonomy across resumes; a brand-new card
       // uses whatever the titlebar chip sent (so the chip only affects NEW
-      // sessions, never silently changes a running one)
-      const autonomy = prior?.autonomy ?? opts.autonomy;
+      // sessions, never silently changes a running one).
+      //
+      // VALIDATED like `setAutonomy` (#691, §5.29): the shared guard, so the
+      // vocabulary cannot drift. But reject the VALUE, not the spawn — this
+      // field is optional, and refusing the whole create over a malformed
+      // autonomy would turn a bad byte into a card that cannot start (the
+      // anti-fail-open direction #347's refusal comments warn about). Invalid
+      // reads as absent: the session starts on the manager's default, exactly
+      // as if the chip had never spoken, and the log says what was dropped.
+      const wireAutonomy = isAutonomyMode(opts.autonomy) ? opts.autonomy : undefined;
+      if (opts.autonomy !== undefined && wireAutonomy === undefined) {
+        log.warn('sessions:create sent an unknown autonomy; ignoring it', {
+          cardId: opts.cardId,
+          autonomy: String(opts.autonomy),
+        });
+      }
+      const autonomy = prior?.autonomy ?? wireAutonomy;
 
       // WHICH TRANSPORT THIS SPAWN ASKS FOR, most specific first:
       //
