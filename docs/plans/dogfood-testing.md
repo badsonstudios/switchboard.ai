@@ -131,4 +131,4 @@ they enter this tracker when their train merges.
 | 2026-08-16 | Streaming reply shows raw markdown until the turn ends; wants progressive rendering | #635 |
 | 2026-08-16 | Turn boundary above each user prompt too subtle; wants it unmissable | #640 |
 | 2026-08-22 | Background-task notifications render as NEW PROMPT with raw XML (BrainHarbor session) | #704 |
-| 2026-08-24 | Same-folder twin sessions: docked panels closed on prompt, dock switched to the twin (work laptop) | #708 (2nd hit same day: PLUSNative, idle twin had NO pending questions — trigger theory narrowed) |
+| 2026-08-24 | Switching away from a WORKING session sometimes closes another session's dock panel (rail unaffected; owner can reproduce) | #708 (retitled after owner repro; was thought same-folder-twin-specific) |
