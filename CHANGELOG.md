@@ -61,6 +61,19 @@ on the floor, and say so in your PR.
 
 ## 0.8.4 — unreleased
 
+### Internal
+
+- **A permission request that has nowhere to appear is now handed straight to
+  the terminal.** If a session loses track of the card it belongs to — most
+  likely when you restart a session at the exact moment it asks to run
+  something — its approval prompt used to sit invisibly for five minutes before
+  giving up. It now falls back to Claude's own prompt immediately, so you are
+  asked once, in a place you can actually answer.
+- **Restarting or closing a session now silences it properly.** Output the CLI
+  had already written could keep being processed after the session was gone,
+  which left stale entries behind and produced approval requests for sessions
+  that no longer existed.
+
 ## 0.8.3 — 2026-08-24
 
 ### Added

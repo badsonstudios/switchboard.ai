@@ -468,6 +468,145 @@ describe('StreamService bookkeeping (P2-E18-03)', () => {
   // Both cases spawn; same ceiling and same reason as above (#512).
 }, 30_000);
 
+// #700. `remove()` deleted the session from the map and killed the child, and
+// stopped there: the stdout `data` handler and every `messageListeners`
+// subscriber stayed attached, so bytes already in the buffer when the user hit
+// Restart went on being decoded and fanned out against a retired session. That
+// is the documented source of the stragglers `StreamPermissions.offer` has a
+// branch for.
+describe('a retired session stops talking: detach (#700)', () => {
+  /** a child that writes one numbered message every 20ms, for ever */
+  const chatty = `let n = 0; setInterval(() => process.stdout.write(JSON.stringify({ type: 'tick', n: n++ }) + '\\n'), 20);`;
+
+  /** let the chatty child produce several more messages, if anything is listening */
+  const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 300));
+
+  it('detach() stops ingestion while the child is STILL WRITING', async () => {
+    // The child is deliberately left ALIVE. A test that killed it first would
+    // pass whether or not detach did anything — nothing was going to arrive
+    // either way — which is the vacuous shape this has to avoid.
+    const s = run(chatty, 'chatty');
+    const seen: unknown[] = [];
+    s.onMessage((m) => seen.push(m));
+    await until(() => seen.length >= 2);
+
+    s.detach();
+    const atDetach = seen.length;
+    const ringAtDetach = s.messages.size;
+    await settle(); // ~15 more ticks written by a child that is still running
+
+    expect(seen.length).toBe(atDetach); // no subscriber heard any of them
+    expect(s.messages.size).toBe(ringAtDetach); // and none reached the ring
+    expect(s.exitCode).toBeNull(); // the control: it really was still writing
+  });
+
+  it('remove() detaches too — the buffered straggler never reaches a subscriber', async () => {
+    // THE REAL SHAPE, and the reason this test cannot just reuse `chatty`:
+    // `remove` kills the child, so a slow writer stops producing either way and
+    // the assertion would pass with the fix reverted. (It did, on the first
+    // version of this test.) A straggler is not "a message written later" — it
+    // is a message written ALREADY, sitting in the pipe behind us, arriving a
+    // tick after the session was retired.
+    //
+    // So: a child that dumps ~1 MB and leaves. Node hands that up over many
+    // chunks and many ticks, so at the moment `remove` lands there are
+    // thousands of messages still behind us. Detached, not one more is
+    // decoded; attached, they all are.
+    const TOTAL = 20_000;
+    const burst = `for (let n = 0; n < ${TOTAL}; n++) process.stdout.write(JSON.stringify({ type: 'bulk', n }) + '\\n');`;
+    const s = run(burst, 'bulk');
+    const seen: unknown[] = [];
+    s.onMessage((m) => seen.push(m));
+    await until(() => seen.length >= 1);
+
+    svc.remove('bulk');
+    const atRemove = seen.length;
+    await settle();
+
+    expect(seen.length).toBe(atRemove); // nothing behind us was decoded
+    // …and the control: there really WAS a backlog. Without this the test
+    // passes on a child that happened to finish early, proving nothing.
+    expect(atRemove).toBeLessThan(TOTAL);
+  });
+
+  it('but the EXIT path survives it — this is a message detach, not a teardown', async () => {
+    // The one way this fix can do damage. `SessionManager.remove` relies on the
+    // exit landing after it has dropped the record ("the exit LISTENERS fire
+    // either way — they live in the onExit closure"), and that closure is what
+    // deletes the session's state directory and announces the death. Detach the
+    // exit wiring along with the data handlers and a closed card leaks its state
+    // dir and its corpse is never reported.
+    const s = run(chatty, 'chatty3');
+    const exits: number[] = [];
+    s.onExit((code) => exits.push(code));
+    await until(() => s.pid > 0);
+
+    svc.remove('chatty3');
+
+    await until(() => exits.length === 1);
+    expect(s.exitCode).not.toBeNull();
+  });
+
+  // MEASURED, and it is why there is no "already exited WITH a backlog" test
+  // here (#699 review, second pass). The obvious one — burst 20k lines, let the
+  // child exit, then `remove` — cannot be written: Node delivers every stdout
+  // chunk to our `data` handler BEFORE it emits `exit`, so by the time
+  // `exitCode` is set the backlog is always zero. Two attempts at that test
+  // passed with the fix reverted (the first also asserted on `messages.size`,
+  // which saturates at the ring's 2000 cap and could never have moved).
+  //
+  // So the unconditional `s?.detach()` in `remove` is DEFENCE, not a path with a
+  // reproduction: it costs nothing and it is correct if the ordering above ever
+  // changes. `remove`'s comment says so in those words rather than claiming a
+  // straggler it cannot produce. The two tests above cover the case that IS
+  // real — a live session with bytes behind it.
+
+  it('detach is idempotent, survives remove() on a corpse, and refuses new subscribers', async () => {
+    const s = run(chatty, 'idem');
+    await until(() => s.pid > 0);
+
+    expect(() => {
+      s.detach();
+      s.detach();
+    }).not.toThrow();
+
+    // …and a corpse takes it too: `remove` detaches unconditionally, so this
+    // reaches an already-detached, already-dead session and must be quiet.
+    const dead = run(`process.stdout.write('{"type":"bye"}\\n');`, 'corpse');
+    await until(() => dead.exitCode !== null);
+    expect(() => svc.remove('corpse')).not.toThrow();
+
+    // a listener added after the detach would be promised a stream that can
+    // never arrive; the unsubscriber it gets back still has to be callable
+    const late: unknown[] = [];
+    const off = s.onMessage((m) => late.push(m));
+    await settle();
+    expect(late).toEqual([]);
+    expect(off).toBeTypeOf('function');
+    expect(() => off()).not.toThrow();
+  });
+
+  it('stderr KEEPS its handler — killing a session must not delete the reason it died', async () => {
+    // The first version of `detach` muted stderr too, which froze `stderrTail`
+    // at the moment of the kill. That is precisely the window the #593 exit
+    // summary exists to capture: whatever the CLI complains about between the
+    // signal and its actual death.
+    const s = run(
+      `process.stderr.write('before\\n'); setInterval(() => process.stderr.write('after the detach\\n'), 20);`,
+      'noisy'
+    );
+    await until(() => s.stderrSnapshot.includes('before'));
+
+    s.detach(); // deliberately not remove(): the child must stay alive to write
+    await settle();
+
+    expect(s.stderrSnapshot).toContain('after the detach');
+    expect(diagnostics.some((d) => d.kind === 'stderr' && d.detail.includes('after the detach'))).toBe(
+      true
+    );
+  });
+}, 30_000);
+
 // #593: `stderrSnapshot` and `health` were the other two produced-and-dropped
 // shapes — maintained on every chunk, read by nothing in the app. They are
 // wired (not deleted) into ONE end-of-life summary on the diagnostics channel

@@ -86,6 +86,10 @@ export class StreamSession {
   exitCode: number | null = null;
   /** Last few KB of stderr, for a crash report nobody can otherwise explain. */
   private stderrTail = '';
+  /** the one stream handler `detach` takes back off (#700) — stderr keeps its
+   *  own, deliberately; see `detach` */
+  private readonly onStdout: (chunk: string) => void;
+  private detached = false;
 
   constructor(opts: StreamSpawnOptions) {
     this.id = opts.id;
@@ -117,8 +121,13 @@ export class StreamSession {
     // wedge or corrupt framing. So falling behind is survivable, but choosing
     // to stop reading applies real backpressure to the CLI mid-turn. We consume
     // unconditionally and let the ring do the bounding.
-    this.proc.stdout.on('data', (chunk: string) => this.ingest(chunk));
+    // Held as a named reference, not an inline arrow, for one reason: `detach`
+    // has to be able to take it off again (#700).
+    this.onStdout = (chunk: string) => this.ingest(chunk);
+    this.proc.stdout.on('data', this.onStdout);
 
+    // stderr stays an inline arrow because nothing ever removes it — a retired
+    // session goes on collecting the tail that explains how it died (#700).
     this.proc.stderr.setEncoding('utf8');
     this.proc.stderr.on('data', (chunk: string) => {
       this.stderrTail = (this.stderrTail + chunk).slice(-8192);
@@ -268,7 +277,15 @@ export class StreamSession {
     return this.stderrTail;
   }
 
+  /**
+   * Subscribe to parsed messages. Refused after `detach` (#700): this session
+   * has stopped reading, so accepting the listener and returning a working
+   * unsubscriber would promise a stream that can never arrive. Saying no with a
+   * no-op unsubscriber is the honest version, and it keeps the caller's teardown
+   * code unchanged.
+   */
   onMessage(l: (m: StreamMessage) => void): () => void {
+    if (this.detached) return () => {};
     this.messageListeners.add(l);
     return () => this.messageListeners.delete(l);
   }
@@ -294,6 +311,81 @@ export class StreamSession {
     } catch {
       /* already dead */
     }
+  }
+
+  /**
+   * Stop listening to a session that has been retired (#700).
+   *
+   * THE STRAGGLER, named. `StreamService.remove` deletes this session from its
+   * map and kills the child, and until now that was all it did — the stdout
+   * `data` handler and every `messageListeners` subscriber stayed attached. So
+   * bytes already sitting in the CLI's stdout buffer when the user hit Restart
+   * or closed the card went on being decoded, pushed into the ring and fanned
+   * out, a tick later, against a session nothing in the app still knows about.
+   * `StreamPermissions.offer` has a whole branch documenting one consequence:
+   * a `can_use_tool` arriving from a session already torn down, answered into a
+   * closed pipe. That branch stays — it is still reachable through other
+   * arrivals, and a decline into a dead pipe is the right thing to do with one
+   * — but the ordinary source of them is now closed at the tap instead of being
+   * tidied up downstream.
+   *
+   * It was never the only victim, and the worse one leaves a mess rather than a
+   * log line. `tearDownLive` calls `streamCommands.forgetSession` and
+   * `streamFeed.forgetSession` BEFORE `manager.remove`, so a straggling
+   * `system/init` landed after both — and `StreamCommandStore.offer` ends in a
+   * bare `bySession.set(sessionId, parsed)` with no liveness check, which
+   * re-created the entry that had just been dropped. One leaked command list per
+   * restarted session, for the life of the process, with nothing left that could
+   * reach it. Detaching at the tap fixes every consumer of the pump at once,
+   * which is why this is the right layer for it.
+   *
+   * A MESSAGE DETACH, AND ONLY THAT. Two things are deliberately left attached,
+   * and each of them is a way this function could do damage if it were not.
+   *
+   * 1. **The exit path.** `proc.on('exit')`, `proc.on('error')` and
+   *    `exitListeners` are untouched. `SessionManager.remove` says it in as many
+   *    words — "the exit LISTENERS fire either way — they live in the onExit
+   *    closure and never consult the map" — and that closure is what deletes the
+   *    session's state directory and reports the death. A `kill()` whose `exit`
+   *    nobody hears is a leaked state dir and a corpse nothing announces.
+   * 2. **stderr.** It was detached in this function's first version and that was
+   *    wrong (#699 review). stderr is not a message: it never reaches
+   *    `messageListeners` or the ring, it feeds the DIAGNOSTIC channel — the same
+   *    one the exit summary above goes out on. Muting it would freeze
+   *    `stderrTail` at the moment of detach, and the window between the signal
+   *    and the child's actual death is precisely the window `summarize` exists
+   *    to capture: "the message that explains a death is the LAST one". Killing a
+   *    session must not be what deletes the explanation of how it died.
+   *
+   * `resume()` on stdout is DEFENCE, not a fix, and the difference is worth
+   * stating because the first version of this comment claimed the opposite.
+   * Removing a `data` listener does not pause a Node readable — only `readable`
+   * is special-cased — so the stream is still flowing and this call is a no-op
+   * today (measured, Node 22). It is kept so that a future pause somewhere else
+   * cannot silently turn this detach into real backpressure on a child we have
+   * only signalled. `destroy()` would be the wrong tool: it can EPIPE a child
+   * that survives the signal, and draining to nowhere costs nothing.
+   *
+   * The decoder keeps whatever partial line it was holding; nothing will ask it
+   * for one again. It, the ring and this object die together when the child is
+   * reaped.
+   *
+   * Idempotent — `remove` can land on a session that already exited, and
+   * `removeListener` on a handler that is gone is a no-op anyway; the flag is
+   * there so the intent is legible rather than incidental.
+   *
+   * Safe to call RE-ENTRANTLY from inside `ingest`'s fan-out, which is a real
+   * path: a message listener is free to tear its session down (listener →
+   * `SessionManager.remove` → `StreamService.remove` → here), and that clears
+   * the Set being iterated. Set iteration tolerates it — the loop simply ends —
+   * and ending is the outcome we want anyway.
+   */
+  detach(): void {
+    if (this.detached) return;
+    this.detached = true;
+    this.proc.stdout.removeListener('data', this.onStdout);
+    this.proc.stdout.resume();
+    this.messageListeners.clear();
   }
 }
 
@@ -339,6 +431,23 @@ export class StreamService implements SessionTransport {
   remove(id: string): void {
     const s = this.sessions.get(id);
     if (s && s.exitCode === null) s.kill();
+    // AFTER the kill, and unconditionally. The live case is the one that
+    // matters and the one the tests reproduce: a session killed mid-flight with
+    // thousands of lines still behind us. The already-exited case is DEFENCE
+    // rather than a path with a reproduction — Node delivers every stdout chunk
+    // to our handler before it emits `exit`, so a corpse's backlog is measured
+    // at zero (#699 review) — but it costs nothing and stops being a guess the
+    // day that ordering changes. See `StreamSession.detach` for what this does
+    // and does not take down (#700).
+    //
+    // So `remove` now means KILL AND MUTE, and two things follow. `SessionManager
+    // .kill` routes here while KEEPING its record and handle, so it produces a
+    // session that reads as alive and whose message pipe is deliberately dead —
+    // true only for `hooks/hook-check.ts` today, which wants exactly that. And
+    // `PtyService.remove` does not do this: `SessionTransport.remove` promises a
+    // teardown, not a detach, and the PTY's pump has no equivalent fan-out to
+    // mute. A future transport should not read this as a required step.
+    s?.detach();
     this.sessions.delete(id);
   }
 

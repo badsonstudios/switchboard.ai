@@ -3,9 +3,47 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🚀 v0.8.3 RELEASED — 2026-08-24. Fresh session: read this block, then STOP
-> and ask Dan which bug ticket he wants; he said he has one and was clearing
-> context.
+> # ⏳ IN PROGRESS — 2026-08-24: #699 + #700 transport-hygiene bundle
+>
+> Dan chose it off the queue via `/next-item`. One branch, one PR, closes both.
+>
+> * **#699** — hook path stamps `cardId` with no `AnswerSurfaceProbe` gate (the
+>   hole #333/#698 closed for stream). Plan: give `HookListener` the same probe,
+>   fail open to the CLI's own TUI **at once** instead of parking 300s.
+> * **#700 item 1** — `StreamService.remove` never detaches listeners; buffered
+>   stdout keeps ingesting into a retired session (the straggler source).
+> * **#700 item 2 — ALREADY FIXED, do not re-fix.** `noWindowWarned` IS cleared
+>   in `HookListener.unregisterSession` and re-armed on the way past the window
+>   gate in `maybeHold`, landed in **67a8500 (#334/#341, 2026-08-07)** — two
+>   weeks BEFORE the 08-21 report that said "still true". The worker's note was
+>   stale. Verified by grep + `git log -S`. `hook-listener.test.ts` already pins
+>   the re-arm across two outages. Scope becomes: say so on the issue.
+>   (Symbols, not line numbers — the first draft of this block cited `:452` and
+>   `:768` and both had rotted before the commit landed.)
+>
+> Status: **Gate 1 passed 2026-08-24.** Implemented, reviewed (`code-reviewer`:
+> 0 blockers, 5 should-fix, 6 nits — all taken), suites green. Awaiting Gate 2.
+>
+> **Review caught two things worth remembering:**
+> 1. The #699 gate is NOT reached by "a binding we lost" — a fresh hook request
+>    for an unbound session 401s, because every teardown kills the token before
+>    the binding. It is reached by a MID-BODY race: `handle` reads the token off
+>    the headers and runs the gate on `req.on('end')`, so a Restart during a
+>    large `Write` body unregisters the session in between. Pre-fix that request
+>    was held *after* `unregisterSession` had swept `pending` — nothing but the
+>    300s timer could ever release it.
+> 2. Three of the detach tests were vacuous on the first pass and had to be
+>    rewritten: `messages.size` saturates at the ring's 2000 cap, and Node
+>    delivers every stdout chunk BEFORE emitting `exit`, so "already exited with
+>    a backlog" is not a reproducible state. Always neuter the fix and re-run.
+
+> # 🚀 v0.8.3 RELEASED — 2026-08-24.
+>
+> **The "STOP and ask Dan which bug ticket he wants" instruction that used to
+> head this block is GONE — do not act on it if you see it in history.** Dan,
+> 2026-08-24: *"there is no bug that I wanted to work on next. That was actually
+> a closed ticket."* (#708, closed by 0.8.2's #558 rework — main's tip 3b28a6f.)
+> A fresh session takes the queue below in order; it does not halt to ask.
 >
 > **v0.8.3 carries the whole merge train** — all 8 PRs (#703 #706 #684 #686
 > #701 #692 #694 #674), 18 issues closed. Cut per CHANGELOG's own rules:
