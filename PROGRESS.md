@@ -3,15 +3,22 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ⏳ IN PROGRESS — 2026-08-24: #699 + #700 transport-hygiene bundle
+> # ✅ DONE — 2026-08-24: #699 + #700 transport-hygiene bundle → **PR #711**
 >
-> Dan chose it off the queue via `/next-item`. One branch, one PR, closes both.
+> https://github.com/badsonstudios/switchboard.ai/pull/711 — awaiting Dan's
+> review + squash-merge. typecheck + lint green, **6069 unit tests / 235 files**
+> (+18 from main's 6051).
 >
-> * **#699** — hook path stamps `cardId` with no `AnswerSurfaceProbe` gate (the
->   hole #333/#698 closed for stream). Plan: give `HookListener` the same probe,
->   fail open to the CLI's own TUI **at once** instead of parking 300s.
-> * **#700 item 1** — `StreamService.remove` never detaches listeners; buffered
->   stdout keeps ingesting into a retired session (the straggler source).
+> **Next up:** #687, then #688 (doc-only), #680, #695, #702, #607, #619.
+>
+> * **#699** — hook path stamped `cardId` with no `AnswerSurfaceProbe` gate (the
+>   hole #333/#698 closed for stream). `HookListener` now has the same probe and
+>   fails open to the CLI's own TUI **at once** instead of parking 300s.
+> * **#700 item 1** — `StreamService.remove` never detached listeners; buffered
+>   stdout kept ingesting into a retired session. `StreamSession.detach()` now
+>   takes the stdout handler off and clears `messageListeners`. The exit path
+>   AND stderr stay attached — detaching stderr froze the #593 crash-report tail
+>   at kill time, which review caught.
 > * **#700 item 2 — ALREADY FIXED, do not re-fix.** `noWindowWarned` IS cleared
 >   in `HookListener.unregisterSession` and re-armed on the way past the window
 >   gate in `maybeHold`, landed in **67a8500 (#334/#341, 2026-08-07)** — two
