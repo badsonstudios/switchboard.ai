@@ -99,8 +99,12 @@ deal with them**:
 4. **Done.** — finished, and you haven't looked yet.
 
 Within each group, whoever has been waiting longest is higher up. Sessions
-you've already reviewed (**Ready**) sink to the bottom and fade back — they're
-history at that point, not work.
+you've already reviewed (**Ready**) sink to the bottom and go quiet — the row
+settles a shade into the background and its title is written in the softer grey
+the app uses for secondary text. They're history at that point, not work. Quiet,
+but still readable: the title, the session's task and the word **Ready** are all
+held to the same legibility floor as the rest of the app. (The timestamp in the
+corner is deliberately fainter than that, here and everywhere else.)
 
 The entry marked **next** is where **`Ctrl+Space`** will take you; press it
 again and the marker moves down to the following one. Clicking an entry counts

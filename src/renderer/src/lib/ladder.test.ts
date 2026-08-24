@@ -23,6 +23,8 @@ import {
 } from './ladder';
 import type { CollapsedRow, StripItem } from './ladder';
 import en from '../../../shared/i18n/locales/en.json';
+import type { CardStatus } from '../../../shared/sessions';
+import type { RailSession } from '../model/types';
 
 describe('the ladder itself', () => {
   it('runs from most screen to none', () => {
@@ -263,7 +265,7 @@ describe('collapsedRows', () => {
   // that strings are strings (and would trip the no-raw-color lint besides — a
   // session's accent is DATA the main process minted, never a themeable token).
   const ACCENT = 'accent-sentinel';
-  const sessions = [
+  const sessions: RailSession[] = [
     { id: 'a', title: 'alpha', status: 'idle', accent: ACCENT },
     { id: 'b', title: 'bravo', status: 'needs-permission' },
     { id: 'c', title: 'charlie', status: 'working' },
@@ -313,8 +315,16 @@ describe('collapsedRows', () => {
 
 describe('stripItems (idle aggregation)', () => {
   /** a collapsed row for a session in `status`, described the way the strip is */
+  // `status` stays a plain `string` here, and the cast is the point: one test
+  // below hands this `'no-such-status'` deliberately, to pin that an unknown
+  // value — a card written by an older build — is PAINTED rather than dropped.
+  // `RailSession.status` is a `CardStatus` since #618 precisely so nothing in
+  // the app can produce one of these; the tolerant reader still has to.
   const rowOf = (cardId: string, status: string): CollapsedRow => {
-    const [only] = collapsedRows([{ id: cardId, title: cardId, status }], () => 'collapsed');
+    const [only] = collapsedRows(
+      [{ id: cardId, title: cardId, status: status as CardStatus }],
+      () => 'collapsed'
+    );
     return only;
   };
   const idles = (n: number, from = 0): CollapsedRow[] =>
@@ -426,7 +436,7 @@ describe('stripItems (idle aggregation)', () => {
 
   /** the same row, but pinned — built through collapsedRows so the flag travels
    *  the real path rather than being pasted onto the object */
-  const pinnedRowOf = (cardId: string, status: string): CollapsedRow => {
+  const pinnedRowOf = (cardId: string, status: CardStatus): CollapsedRow => {
     const [only] = collapsedRows(
       [{ id: cardId, title: cardId, status }],
       () => 'collapsed',

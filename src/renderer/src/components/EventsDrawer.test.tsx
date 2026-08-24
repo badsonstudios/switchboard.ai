@@ -20,6 +20,8 @@ import { EventsDrawer } from './EventsDrawer';
 import type { EventDto } from '../model/types';
 import type { RailSession } from './SessionsRail';
 import type { HistoryRepairNotice } from '../../../shared/history-repair';
+import fs from 'fs';
+import path from 'path';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -477,5 +479,107 @@ describe('the visible way out (#556)', () => {
     expect(byEscape, 'Escape did not hand focus back to where the drawer was opened from').toBe(card);
     expect(byButton, 'the button and Escape leave focus in different places').toBe(byEscape);
     expect(onClose.mock.calls.length - escapeCalls, 'the button asked to close once').toBe(1);
+  });
+});
+
+// --- One ring, everywhere (§5.32 rule 4, #577) -------------------------------
+//
+// The tab was not on the `:focus-visible` list in tokens.css, so the ONE
+// control that is on screen while the drawer is shut — and the first thing a
+// Tab walk over the workspace reaches — drew Chromium's default outline, in a
+// colour chosen against the UA's guess at the background, while the ✕ two
+// inches away drew the app's. Four more stragglers were on the same surface:
+// the drawer's scroll container (which opening FOCUSES) and the notice
+// buttons above the rows.
+//
+// Asserted as a WALK rather than as a list of class names, because a list here
+// is the same list going stale somewhere else: the sixth notice button would
+// be added without a class and nothing would say so. What is read from
+// tokens.css is which classes the app's ring rule actually names — by the
+// DECLARATION, not by the selector — so a class that is on the list but whose
+// rule was changed to something else stops counting.
+describe('every focusable surface in the drawer draws the app ring', () => {
+  /**
+   * The classes the app's one focus-ring rule names, read out of the file.
+   *
+   * By the DECLARATION, not by the selector: a class listed on a rule that has
+   * been changed to something else is not on the ring any more, and a list
+   * gathered from `:focus-visible` alone would still count it. `RING` is the
+   * one hardcoded string in here and it is the guard's anchor — the `size > 5`
+   * case below is what catches it going stale.
+   *
+   * Only a selector that is the WHOLE compound counts: `.x .events-btn` is a
+   * scoped rule that says nothing about `.events-btn` anywhere else, so the
+   * list is split on commas and each part matched end to end.
+   */
+  const ringClasses = (): Set<string> => {
+    const css = fs
+      .readFileSync(path.join(__dirname, '..', 'theme', 'tokens.css'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, ''); // a comment holding a brace would fool the split below
+    const out = new Set<string>();
+    for (const rule of css.matchAll(/([^{}]*)\{([^{}]*)\}/g)) {
+      if (!rule[2].includes(RING)) continue;
+      for (const part of rule[1].split(',')) {
+        const m = /^\.([a-z0-9-]+):focus-visible$/.exec(part.trim());
+        if (m) out.add(m[1]);
+      }
+    }
+    return out;
+  };
+  const RING = 'outline: 2px solid var(--status-working-ink)';
+
+  it('reads a ring rule out of tokens.css at all', () => {
+    // the guard's guard: a renamed token or a reformatted rule would empty the
+    // set and every assertion below would pass by having nothing to check
+    expect(ringClasses().size).toBeGreaterThan(5);
+  });
+
+  it('names the tab, shut — the one control on screen at that point', async () => {
+    await render({ open: false });
+    expect([...tab().classList].some((c) => ringClasses().has(c))).toBe(true);
+  });
+
+  it('names every focusable the open drawer puts on screen', async () => {
+    // every tenant at once: the rows, both offer cards, the update notice and
+    // a history repair — the notice buttons sit ABOVE the rows, so a keyboard
+    // walk meets them first and a straggler there is the first thing seen
+    await render({
+      open: true,
+      events: [ev(1, 'needs-input'), ev(2, 'ready')],
+      reconnectOffer: true,
+      updateNotice: { kind: 'available', version: '9.9.9' },
+      historyRepairs: [
+        { id: 'h1', kind: 'adopted', cardId: 'c1', cardTitle: 'alpha', nativeSessionId: 'conv' },
+      ],
+    });
+    const ring = ringClasses();
+    // `[tabindex]` with no exclusion: the drawer body is -1 and is focused by
+    // OPENING, which is a keyboard-caused focus() and therefore paints a ring.
+    // The form controls are on the list because nothing in the drawer needs
+    // them today, which is exactly when adding them is free.
+    const focusables = [
+      ...host.querySelectorAll<HTMLElement>(
+        'button, a[href], input, select, textarea, [contenteditable], [tabindex]'
+      ),
+    ];
+    expect(focusables.length, 'nothing focusable was rendered — the walk proves nothing').toBeGreaterThan(8);
+    // TWO WAYS TO HAVE NO RING, and the second one shipped: the drawer body
+    // carried `outline: 'none'` in its own style attribute, which beats any
+    // author rule on the cascade before specificity is consulted. Adding the
+    // class to it changed nothing on screen, and a membership check alone said
+    // it was fixed — the assertion passing while the thing it names is broken.
+    const naked = focusables.filter(
+      (el) => ![...el.classList].some((c) => ring.has(c)) || el.style.outline !== ''
+    );
+    expect(
+      naked.map(
+        (el) =>
+          `${el.tagName.toLowerCase()}[${el.className || 'no class'}]` +
+          `${el.style.outline ? ` inline outline:${el.style.outline}` : ''}: ` +
+          `${el.textContent?.slice(0, 30)}`
+      ),
+      'these draw no app ring — either no class the ring rule names, or an ' +
+        'inline outline that outranks it'
+    ).toEqual([]);
   });
 });

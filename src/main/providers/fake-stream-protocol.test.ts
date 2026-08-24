@@ -12,6 +12,7 @@ import {
   extractImages,
 } from './fake-stream-protocol';
 import { FAKE_SESSION_ID, fakeSessionId } from './fake-stream-ids';
+import { userMessage } from '../../shared/stream-protocol';
 
 let out: Record<string, unknown>[];
 let writes: Array<{ path: string; content: string }>;
@@ -802,6 +803,118 @@ describe('images on the inbound envelope (P2-E10-09)', () => {
     expect(echo?.message.content).toEqual([{ type: 'text', text: 'hello' }]);
     expect(types().filter((t) => t === 'assistant').length).toBeGreaterThan(0);
     expect(JSON.stringify(out)).not.toContain('IMAGE-SEEN');
+  });
+});
+
+// The real CLI's replay builder carries the sender's own id and origin back out
+// (`RCg`: `…uuid:e.uuid,…isReplay:!0,…e.origin&&{origin:e.origin}`). The fake
+// does the same, conditionally, so it stays a strict reader of #490's contract
+// rather than a kind one.
+describe('uuid and origin on the echo (#490)', () => {
+  const userEcho = () => out.find((m) => m.type === 'user');
+
+  it('echoes the uuid and origin the turn arrived with', () => {
+    proto.handle({ ...userMsg('hello'), uuid: 'u-1', origin: { kind: 'human' } });
+    const echo = userEcho();
+    expect(echo?.uuid).toBe('u-1');
+    expect(echo?.origin).toEqual({ kind: 'human' });
+  });
+
+  // A frame without them echoes without them — exactly what the real CLI's
+  // conditional spread does. Inventing an id here would hide a builder that
+  // stopped minting one.
+  it('adds neither field when the turn carried neither', () => {
+    proto.handle(userMsg('hello'));
+    const echo = userEcho();
+    expect(echo).toBeDefined();
+    expect(Object.keys(echo ?? {})).not.toContain('uuid');
+    expect(Object.keys(echo ?? {})).not.toContain('origin');
+  });
+
+  // The id identifies a delivery; a non-string is not one, and guessing at it
+  // is how a fake starts disagreeing with the thing it stands in for.
+  it('ignores a uuid that is not a string', () => {
+    proto.handle({ ...userMsg('hello'), uuid: 42 });
+    expect(Object.keys(userEcho() ?? {})).not.toContain('uuid');
+  });
+
+  // The whole envelope our own builder produces makes the round trip.
+  it('round-trips what shared/stream-protocol actually builds', () => {
+    const sent = userMessage('hello');
+    proto.handle(sent as unknown as Record<string, unknown>);
+    const echo = userEcho();
+    expect(echo?.uuid).toBe(sent.uuid);
+    expect(echo?.origin).toEqual({ kind: 'human' });
+  });
+});
+
+// #666. `isReplay:!0` is a LITERAL in the real replay builder, not one of its
+// conditional spreads, and the CLI's own output schema requires it
+// (`lu0=…extend({uuid:Bu(),session_id:F(),isReplay:kt(!0),…})`). It is what a
+// host keys duplicate-suppression on — the reference webview enters its replay
+// branch on `e.type==="user"&&"isReplay"in e&&e.isReplay` and only then
+// compares uuids. Without the flag our echo is indistinguishable from a fresh
+// user message, which is the gap this closes.
+describe('isReplay on the echo (#666)', () => {
+  const userEcho = () => out.find((m) => m.type === 'user');
+
+  it('marks the echo as a replay', () => {
+    proto.handle({ ...userMsg('hello'), uuid: 'u-1', origin: { kind: 'human' } });
+    expect(userEcho()?.isReplay).toBe(true);
+  });
+
+  // UNCONDITIONAL, unlike uuid and origin above: the real builder spreads those
+  // two and hard-codes this one. A fake that only marked the echoes that
+  // arrived with a uuid would invent a rule the CLI does not have.
+  it('marks it even when the turn carried no uuid and no origin', () => {
+    proto.handle(userMsg('hello'));
+    expect(userEcho()?.isReplay).toBe(true);
+  });
+
+  it('marks the echo of an attachment-only turn too', () => {
+    proto.handle({
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AA==' } }],
+      },
+      parent_tool_use_id: null,
+      session_id: '',
+    });
+    // the attachment half asserted FIRST — without it, an `extractImages` that
+    // returned nothing would leave an empty echo that still passes the flag
+    // check, and the test would be pinning something other than its own name
+    const echo = userEcho();
+    expect((echo?.message as { content: unknown[] } | undefined)?.content).toHaveLength(1);
+    expect(echo?.isReplay).toBe(true);
+  });
+
+  // The other `user` message a turn produces is the CLI's OWN output, not our
+  // turn coming back. Marking it would tell a host to suppress its own tool
+  // results.
+  it('does NOT mark the tool_result user message', () => {
+    proto.handle(userMsg('!tools'));
+    const toolResults = out.filter((m) => {
+      const content = (m.message as { content?: Array<{ type?: string }> } | undefined)?.content;
+      return m.type === 'user' && content?.[0]?.type === 'tool_result';
+    });
+    expect(toolResults).toHaveLength(1);
+    expect(Object.keys(toolResults[0])).not.toContain('isReplay');
+  });
+
+  // AN ECHO IS NOT AN ACK — pinned as documentation, because the flag makes it
+  // tempting to read one as proof the turn ran. The real CLI emits this exact
+  // shape for a message it DROPPED as a duplicate ("Sending acknowledgment for
+  // duplicate user message") and then `continue`s past `new_user_message`. The
+  // fake does not de-duplicate, so it cannot reproduce the drop; what it can
+  // show is that the echo arrives BEFORE any `result`, i.e. it is never the
+  // thing that says a turn completed.
+  it('emits the echo before the result — the echo is not the completion signal', () => {
+    proto.handle(userMsg('hello'));
+    const echoAt = out.findIndex((m) => m.type === 'user');
+    const resultAt = out.findIndex((m) => m.type === 'result');
+    expect(echoAt).toBeGreaterThanOrEqual(0);
+    expect(resultAt).toBeGreaterThan(echoAt);
   });
 });
 

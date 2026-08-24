@@ -19,6 +19,7 @@ import {
   sanitizePromptAttachments,
 } from '../../shared/prompt-attachments';
 import { NdjsonDecoder, encodeFrame } from '../transport/ndjson';
+import type { TransportKind } from '../../shared/transport';
 import { FakeStreamProtocol } from '../providers/fake-stream-protocol';
 import { LogSink, createLogger } from '../log/logger';
 
@@ -46,7 +47,7 @@ class ByteTransport implements SessionTransport {
   remove(): void {}
 }
 
-function registryFor(transport: 'pty' | 'stream'): ContributionRegistry<MainContributions> {
+function registryFor(transport: TransportKind): ContributionRegistry<MainContributions> {
   const r = new ContributionRegistry<MainContributions>();
   r.register('provider-adapter', {
     manifest: { id: 'fake', displayName: 'Fake', version: '0', capabilities: ['sessions.spawn'] },
@@ -75,13 +76,24 @@ function streamManager(): SessionManager {
   );
 }
 
+/** RFC-4122 v4, the shape `crypto.randomUUID()` produces. */
+const V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+/**
+ * `expect.stringMatching(V4)`, typed as a string so it can stand in for the
+ * per-delivery uuid inside an envelope literal (#490) without an `any`.
+ */
+const aV4Id = (): string => expect.stringMatching(V4) as string;
+
 describe('userMessage — the envelope S-10 wrote to the real CLI (P2-E18-06)', () => {
   it('is the SDK shape, with an EMPTY session_id', () => {
     expect(userMessage('hi')).toEqual({
       type: 'user',
+      uuid: aV4Id(),
       message: { role: 'user', content: [{ type: 'text', text: 'hi' }] },
       parent_tool_use_id: null,
       session_id: '',
+      origin: { kind: 'human' },
     });
   });
 
@@ -94,6 +106,67 @@ describe('userMessage — the envelope S-10 wrote to the real CLI (P2-E18-06)', 
   it('passes the text through completely untouched', () => {
     const nasty = '/slash `backtick` "quote" \\backslash\nsecond line\n';
     expect(userMessage(nasty).message.content).toEqual([{ type: 'text', text: nasty }]);
+  });
+});
+
+// THE CONTRACT, PINNED (#490). Both fields were read out of `claude` 2.1.233 on
+// PATH — the compiled binary embeds its own zod schemas and dedup pass. The
+// reasoning is in `shared/stream-protocol.ts`; these tests exist so that a
+// future edit that drops either field fails here rather than silently in a
+// session six months from now.
+describe('userMessage — uuid and origin (#490)', () => {
+  // The CLI's entire de-duplication pass is `if(yt.uuid){…}`. No uuid, no
+  // at-most-once: a resent frame runs the prompt a second time.
+  it('carries a uuid the CLI can dedup on', () => {
+    expect(userMessage('hi').uuid).toMatch(V4);
+  });
+
+  // Per DELIVERY, not per prompt. A content-derived id would make the CLI
+  // swallow a deliberate second "run the tests".
+  it('mints a fresh uuid every call, even for identical text', () => {
+    const ids = new Set(Array.from({ length: 50 }, () => userMessage('run the tests').uuid));
+    expect(ids.size).toBe(50);
+  });
+
+  it('mints one per turn regardless of what rides along', () => {
+    const png = { kind: 'image' as const, mediaType: 'image/png' as const, data: 'AAAA' };
+    expect(userMessage('look', [png]).uuid).not.toBe(userMessage('look', [png]).uuid);
+  });
+
+  // `oxc`'s first arm. The other arms describe server-classified provenance
+  // (peer, channel, task-notification) that a desktop host may not assert.
+  it('states human origin rather than leaving the CLI to presume it', () => {
+    expect(userMessage('hi').origin).toEqual({ kind: 'human' });
+    expect(userMessage('', [{ kind: 'text', title: 'a.txt', text: 'x' }]).origin).toEqual({
+      kind: 'human',
+    });
+  });
+
+  // Both fields are top-level siblings of `message`, NOT inside it — the
+  // extension's own literal is `{type:"user",uuid:…,session_id:"",
+  // parent_tool_use_id:null,...n&&{origin:n},message:{role:"user",content:a}}`.
+  // Nesting either would put it somewhere nothing reads.
+  it('puts both at the top level, not inside message', () => {
+    const m = userMessage('hi');
+    expect(Object.keys(m).sort()).toEqual([
+      'message',
+      'origin',
+      'parent_tool_use_id',
+      'session_id',
+      'type',
+      'uuid',
+    ]);
+    expect(Object.keys(m.message).sort()).toEqual(['content', 'role']);
+  });
+
+  // The fields have to survive framing to be worth anything.
+  it('survives the NDJSON round trip', () => {
+    const sent = userMessage('hi');
+    const d = new NdjsonDecoder<{ uuid: string; origin: { kind: string } }>();
+    const out = d.push(encodeFrame(sent));
+    expect(out).toHaveLength(1);
+    expect(out[0].ok && out[0].value.uuid).toBe(sent.uuid);
+    expect(out[0].ok && out[0].value.origin).toEqual({ kind: 'human' });
   });
 });
 
@@ -145,8 +218,10 @@ describe('userMessage with images — the extension’s own block shape', () => 
 
   // The regression that would be invisible: every existing caller passes no
   // images at all and must keep producing byte-identical envelopes.
+  // `uuid` is per-DELIVERY, so the two envelopes differ there by design (#490)
+  // — everything else about them must still be identical.
   it('is unchanged for a plain text prompt', () => {
-    expect(userMessage('hi', [])).toEqual(userMessage('hi'));
+    expect(userMessage('hi', [])).toEqual({ ...userMessage('hi'), uuid: aV4Id() });
     expect(userMessage('hi').message.content).toEqual([{ type: 'text', text: 'hi' }]);
   });
 
@@ -450,7 +525,9 @@ describe('SessionManager.submitPrompt (P2-E18-06)', () => {
     const rec = mgr.create(identity);
 
     expect(mgr.submitPrompt(rec.id, 'hello')).toBe(true);
-    expect(stream.sent).toEqual([userMessage('hello')]);
+    // `uuid` is minted per delivery (#490), so it cannot be compared against a
+    // second call — every other field can, and the id is checked for shape.
+    expect(stream.sent).toEqual([{ ...userMessage('hello'), uuid: aV4Id() }]);
   });
 
   // No round trip: we know the turn began because we began it. The PTY path

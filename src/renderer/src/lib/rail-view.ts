@@ -21,18 +21,22 @@
 // Kept free of React and of colors: the component turns `token` into
 // var(--status-<token>) / var(--status-<token>-ink), which is the only place
 // the theme is allowed to matter (§5.20).
+import type { CardStatus } from '../../../shared/sessions';
 
-/** The status vocabulary the rail can receive — SessionStatus plus the
- *  card-level 'suspended' (restored, not yet resumed). */
-export type RailStatusName =
-  | 'starting'
-  | 'working'
-  | 'needs-input'
-  | 'needs-permission'
-  | 'idle'
-  | 'done'
-  | 'crashed'
-  | 'suspended';
+import type { WritingDirection } from './writing-direction';
+
+/**
+ * The status vocabulary the rail can receive — `SessionStatus` plus the
+ * card-level 'suspended' (restored, not yet resumed).
+ *
+ * It was a second hand-written copy of those eight names until #618; it is
+ * `CardStatus` from `shared/sessions.ts` now, which is exactly what
+ * `sessions:cards` puts on the wire. The local NAME is kept because it says
+ * what this file uses the type FOR — `PRESENTATION` below is keyed by it, so a
+ * NINTH status added to the union stops compiling here until the rail decides
+ * how to paint it, which is the whole point of that record.
+ */
+export type RailStatusName = CardStatus;
 
 /**
  * The six-way ramp the design paints. 'starting' and 'suspended' fold in.
@@ -171,4 +175,29 @@ export const RAIL_WIDTH_MAX = 520;
 export function clampRailWidth(px: number): number {
   if (!Number.isFinite(px)) return RAIL_WIDTH_DEFAULT;
   return Math.min(RAIL_WIDTH_MAX, Math.max(RAIL_WIDTH_MIN, Math.round(px)));
+}
+
+/**
+ * The width the rail should take while its edge is being dragged (#642).
+ *
+ * The rail's width is an INLINE size — a distance from the inline-start edge of
+ * the window, which is the LEFT one in English and the RIGHT one under
+ * `dir="rtl"`, where a flex row puts the rail on the other side. A pointer's
+ * `clientX` is physical and always measures from the left. Passing one for the
+ * other was the same confusion that put the context menu off screen, with a
+ * nastier symptom: the first `pointermove` clamps to the maximum and the rail
+ * then drags BACKWARDS for the rest of the gesture.
+ *
+ * Pure and unit-tested for the same reason `placeMenu` is: the mirror is one
+ * subtraction, and the failure is invisible to anyone reading in English.
+ *
+ * @param clientX physical pointer x, i.e. `PointerEvent.clientX`
+ * @param viewportWidth the window's client width, in the same CSS px
+ */
+export function railWidthAtPointer(
+  clientX: number,
+  viewportWidth: number,
+  direction: WritingDirection
+): number {
+  return clampRailWidth(direction === 'rtl' ? viewportWidth - clientX : clientX);
 }

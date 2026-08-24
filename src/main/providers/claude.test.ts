@@ -14,6 +14,7 @@ import {
 } from './claude';
 import { LATE, REPEAT_HEAVY, REVISED } from '../transcripts/fixtures/ai-title';
 import { slugForCwd } from '../transcripts/paths';
+import type { AutonomyMode } from '../../shared/sessions';
 
 let tmp: string;
 let origPath: string | undefined;
@@ -99,7 +100,7 @@ describe('claudeAdapter.buildSpawn', () => {
 
   it('maps autonomy profiles to permission modes (E6-01)', () => {
     withCliOnPath();
-    const argsFor = (autonomy?: 'plan' | 'ask' | 'auto-edit' | 'full-auto') =>
+    const argsFor = (autonomy?: AutonomyMode) =>
       claudeAdapter.buildSpawn({ cwd: tmp, sessionId: 's', stateDir: path.join(tmp, 'st'), autonomy }).args;
     expect(argsFor('plan')).toEqual(['--permission-mode', 'plan']);
     expect(argsFor('auto-edit')).toEqual(['--permission-mode', 'acceptEdits']);

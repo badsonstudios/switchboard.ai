@@ -8,6 +8,7 @@ import React, {
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import type { WorkspaceSaveState } from '../../../shared/workspace';
+import { answered } from '../../../shared/ipc/refusal';
 import { mountBannerHost, unmountBannerHost } from '../lib/popout-banner-host';
 import { getPopoutWindows, subscribePopoutChange } from '../lib/popout-windows';
 
@@ -135,7 +136,11 @@ export function WorkspaceNoticeBanner(): React.JSX.Element {
     }
     void Promise.resolve(window.switchboard?.workspace?.saveState?.())
       .then((s) => {
-        if (!pushed.current) apply(s);
+        // #650: `apply` reads `.failing` off its argument, so a refusal already
+        // lands on "no notice" — but by accident, off an absent field. Say it:
+        // `undefined` is what this function's own signature means by "nothing
+        // to report", and it is the fail-open the comment above promises.
+        if (!pushed.current) apply(answered(s));
       })
       .catch(() => {
         /* as above */

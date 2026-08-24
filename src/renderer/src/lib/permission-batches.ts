@@ -211,7 +211,9 @@ export function sameBatch(a: PermissionBatch | null, b: PermissionBatch | null):
   // `cardId` as well as the id: a request pushed before main had bound the card
   // arrives with none, and the `pendingPermissions` replay carries the binding.
   // Comparing ids alone would call that the same batch and leave the row
-  // reading "an unnamed session" for the rest of the run.
+  // reading "an unnamed session" for the rest of the run. Defensive rather than
+  // descriptive since #333 — main declines an unbound session's request instead
+  // of pushing it — see `sessionStore.addPendingPermissions` for the same note.
   return a.members.every(
     (m, i) => m.requestId === b.members[i].requestId && m.cardId === b.members[i].cardId
   );

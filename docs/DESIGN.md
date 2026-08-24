@@ -2193,6 +2193,52 @@ a pointer where they left.)*
   > note therefore stands as written — this is a property of chrome, and rendered
   > content adds stops the app did not budget for.
   >
+  > **#654 (2026-08-21) closes the one channel that pointed the OTHER WAY.**
+  > Everything above is about what content can put *in itself*. `<label for>` is
+  > not that: it names a control by id **anywhere in the document**, and it then
+  > forwards a click to it — focusing a text box, toggling a checkbox, firing a
+  > button's handler — *and* joins its accessible name. Both verified in
+  > Chromium 149, on fixtures: a field named "ntfy topic" was announced as
+  > "Paste your API key here to continue — ntfy topic", and a fixture button
+  > named "Delete session" was renamed outright. That is §5.29's ARIA argument
+  > (#509) arriving on a TAG after the attribute half was closed, and the naming
+  > half passes through both a `position:fixed` scrim and `aria-modal="true"`.
+  > `label` joins `FORBID_TAGS`; measured first, as always — 7,737 transcripts
+  > and 1,188 real `.md` files, `<label` 7 occurrences, every one in a code
+  > span, bare in prose **zero**. It costs the reader nothing: `KEEP_CONTENT`
+  > keeps the words and `<label>` has no UA styling but `cursor: default`.
+  >
+  > **The bounds, recorded because this family has struck three absolutes.**
+  > Label order follows TREE order, and `App.tsx` renders the dialogs and the
+  > palette BEFORE `SessionGrid`, so against the feed and the viewer content's
+  > words are appended rather than prepended — the same lie, the other way
+  > round, not "content wins". And the CLICK half was never bounded by the
+  > dialogs' scrims the way the first draft of this note said: `SessionGrid`'s
+  > view tabs and `QuestionPanel`'s question tabs are id-bearing `<button
+  > role="tab">` outside every scrim, the second set inside the feed itself.
+  > What bounded the click half was only that their ids are `useId`-derived
+  > rather than published. **A tag list depends on neither**, which is the whole
+  > reason this is settled at the profile rather than by auditing ids.
+  >
+  > **The half a tag list cannot reach.** `id` survives the profile (the viewer
+  > mints heading anchors through it, from the document's own slugs), so content
+  > can still PLANT one of the app's names — but an IDREF resolves to the FIRST
+  > element in tree order, so a forgery captures only when it is EARLIER.
+  > Verified in Chromium 149 with the forgery first: a planted `<span>` took a
+  > dialog's own `<label for>` away from its own field, and a combobox's
+  > `aria-activedescendant` resolved to a planted `<div>` with no `role` on it.
+  > In this app's DOM that condition holds for exactly one pairing —
+  > `UpdateDialog`'s release notes render immediately before `CommandPalette` —
+  > so #654 took the literal ids out of the palette (a live fix) and out of
+  > `PushSetupDialog` / `QuietHoursDialog` (prophylaxis against a reorder; both
+  > render ahead of the feed). `React.useId()` alone is **not a secret**: React
+  > 19 numbers client ids from a module-global counter. What it removes is a
+  > *stable, published* name. **#673 (2026-08-22) added the missing half:** the
+  > app root now passes a per-launch crypto-random `identifierPrefix`, so every
+  > `useId`-derived id — including the tab buttons outside the scrims — is
+  > unguessable rather than merely unpublished. The closure is still the tag;
+  > the ids are defence in depth, and all of it is pinned by tests.
+  >
   > **A fifth rule, added by #253 (2026-08-05):** *a drag is never the only way
   > to do something.* The sweep above made every CONTROL reachable and left one
   > INTERACTION that wasn't — a session's group could only be changed by

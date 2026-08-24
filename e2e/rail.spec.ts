@@ -207,8 +207,13 @@ test.describe('sessions rail', () => {
       .poll(async () => w.evaluate(() => window.innerHeight), { timeout: 10_000 })
       .toBeLessThan(600);
 
+    // The click goes to the coordinate that was MEASURED, not to wherever
+    // Playwright re-resolves the row's centre a moment later: `pointerY` is the
+    // precondition below, and a rail that reflows between the two (a status
+    // change, a need count landing) would make it a lie.
     const rowBox = (await row(w, title).boundingBox())!;
-    await row(w, title).click({ button: 'right' });
+    const pointerY = rowBox.y + rowBox.height / 2;
+    await w.mouse.click(rowBox.x + rowBox.width / 2, pointerY, { button: 'right' });
     const menu = w.getByRole('menu');
     await expect(menu).toBeVisible();
 
@@ -225,7 +230,6 @@ test.describe('sessions rail', () => {
     });
 
     // the precondition: at the pointer, this menu genuinely does not fit
-    const pointerY = rowBox.y + rowBox.height / 2;
     expect(
       pointerY + geom.menu.height,
       'the window is no longer tight enough for this test to mean anything'
@@ -239,6 +243,83 @@ test.describe('sessions rail', () => {
     // and it is OPERABLE, not merely on screen. A short timeout on purpose: the
     // failure this guards against is a 30s click retry, and a regression should
     // say so in seconds.
+    await w.locator('[data-focus-item="none"]').click({ timeout: 10_000 });
+    await expect(menu).toHaveCount(0);
+    await row(w, title).click({ button: 'right' });
+    await expect(w.locator('[data-focus-item="none"]')).toHaveAttribute('aria-checked', 'true');
+  });
+
+  test('the right-click menu opens AT the pointer when the app reads right-to-left (#642)', async () => {
+    // `insetInlineStart` counts from the RIGHT edge under `dir="rtl"`, and the
+    // rail was feeding it a `clientX`, which counts from the left in every
+    // writing mode. The two disagree by the whole width of the window: a menu
+    // asked for at the pointer opened a window-width away from it, and at the
+    // rail's own x that put it clean off the screen.
+    //
+    // §5.21 is why this is a shipping defect and not a hypothetical: "RTL
+    // insurance now, not later" — the layout is written in logical properties
+    // precisely so that the day a right-to-left locale is dropped in, it works.
+    // A `dir` on the root is that day, simulated.
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    const title = path.basename(folder);
+    await expect(row(w, title)).toBeVisible({ timeout: 25_000 });
+
+    await w.evaluate(() => document.documentElement.setAttribute('dir', 'rtl'));
+    // the whole app is laid out from the right now, rail included
+    await expect
+      .poll(async () =>
+        w.evaluate(() => getComputedStyle(document.querySelector('nav')!).direction)
+      )
+      .toBe('rtl');
+
+    // clicked at the coordinate that was measured, for the same reason as above
+    const rowBox = (await row(w, title).boundingBox())!;
+    const pointerX = rowBox.x + rowBox.width / 2;
+    await w.mouse.click(pointerX, rowBox.y + rowBox.height / 2, { button: 'right' });
+    const menu = w.getByRole('menu');
+    await expect(menu).toBeVisible();
+
+    const geom = await w.evaluate(() => {
+      const el = document.querySelector('[role="menu"]') as HTMLElement;
+      const b = el.getBoundingClientRect();
+      return {
+        vw: window.innerWidth,
+        vh: window.innerHeight,
+        left: b.left,
+        right: b.right,
+        top: b.top,
+        bottom: b.bottom,
+        width: b.width,
+      };
+    });
+
+    // the precondition, stated so this cannot quietly stop testing anything:
+    // the old formula and the new one are further apart than the menu is wide,
+    // so "it happens to look right" is not available as an explanation
+    const wrongLeft = geom.vw - pointerX - geom.width;
+    expect(
+      Math.abs(wrongLeft - geom.left),
+      'physical and logical placement agree here, so this test proves nothing'
+    ).toBeGreaterThan(geom.width);
+
+    // on screen, all four edges
+    expect(geom.left).toBeGreaterThanOrEqual(0);
+    expect(geom.right).toBeLessThanOrEqual(geom.vw);
+    expect(geom.top).toBeGreaterThanOrEqual(0);
+    expect(geom.bottom).toBeLessThanOrEqual(geom.vh);
+
+    // ...and AT the pointer: one of its inline edges sits on the click. The
+    // right edge is the RTL-native answer (the menu grows in the reading
+    // direction, leftward); the left edge is the flip, when there is no room
+    // that way. Either is correct; a menu that touches neither is the bug.
+    expect(Math.min(Math.abs(geom.right - pointerX), Math.abs(geom.left - pointerX))).toBeLessThan(
+      2
+    );
+
+    // and it is OPERABLE where it landed, which is the whole point. Short
+    // timeout on purpose: an off-screen item fails by retrying for 30s.
     await w.locator('[data-focus-item="none"]').click({ timeout: 10_000 });
     await expect(menu).toHaveCount(0);
     await row(w, title).click({ button: 'right' });
@@ -405,13 +486,26 @@ test.describe('sessions rail', () => {
         return {
           // the grid's session window against its own surface
           vsCard: ratio(frame, tok('--panel')),
+          // the dockview tab strip, which runs along the top edge INSIDE the
+          // frame — the lightest surface the edge touches on nordic, and the
+          // one that binds the token's value (#648)
+          vsTabStrip: ratio(frame, tok('--panel2')),
           // the rail's group card, and the canvas the card sits on
           vsRailCard: ratio(frame, tok('--rail-card')),
           vsRailCanvas: ratio(frame, tok('--rail-canvas')),
+          // the workspace the grid's frames are drawn on
+          vsWorkspace: ratio(frame, tok('--bg')),
         };
       });
       for (const [where, r] of Object.entries(ratios)) {
-        expect(r, `${theme} frame ${where}`).toBeGreaterThan(1.55);
+        // 1.4.11's bar for a meaningful non-text object, not the "is it more
+        // prevalent than the first pass" floor of 1.55 this used to carry
+        // (#648). The computed half is tokens.drift.test.ts, which measures
+        // SEVEN pairs in all four themes — these five plus the two derived
+        // `color-mix` surfaces of an auto-group card, which add nothing here.
+        // This is the half that proves the running app resolves the token it
+        // was told to.
+        expect(r, `${theme} frame ${where}`).toBeGreaterThanOrEqual(3);
       }
     }
   });

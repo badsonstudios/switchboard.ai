@@ -615,6 +615,39 @@ describe('what it searches', () => {
     expect(r.hits.map((h) => h.kind).sort()).toEqual(['thinking', 'todos']);
   });
 
+  // #491 made an attachment-only turn ("look at this", nothing typed) derive a
+  // BLOCK where it used to derive none. That is a change to how many blocks a
+  // file produces, and this engine's whole jump-to-block claim rests on its
+  // count agreeing with the Feed's — so the agreement is pinned here rather
+  // than assumed from the two derivations being the same function.
+  it('counts an attachment-only prompt as a block, in step with the Feed', async () => {
+    const attachOnly = {
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } },
+        ],
+      },
+    };
+    const entries = [say('before'), attachOnly, say('after MARKER')];
+    const file = transcript('attachment-only.jsonl', entries);
+
+    const r = await search([{ sessionId: 's', file }], {
+      sessionIds: ['s'],
+      query: { term: 'MARKER' },
+    });
+    expect(r.groups[0].blocks).toBe(3);
+    expect(r.hits[0].blockIndex).toBe(3);
+
+    // ...and the Feed built from the same file agrees, which is the claim:
+    // `blockIndex` is a jump target only while these two count alike.
+    const feed = feedOf(entries.map((e) => JSON.stringify(e)));
+    expect(feed.map((b) => b.kind)).toEqual(['assistant', 'user', 'assistant']);
+    expect(feed[1].attachments).toEqual({ images: 1, documents: 0 });
+    expect(feed[2].seq).toBe(3);
+  });
+
   it('skips a malformed line without losing the blocks around it', async () => {
     const file = path.join(tmp, 'malformed.jsonl');
     fs.writeFileSync(

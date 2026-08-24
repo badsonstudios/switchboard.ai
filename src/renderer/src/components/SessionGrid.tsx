@@ -44,7 +44,14 @@ import {
   RescuedPopout,
   sanitizePopoutLayout,
 } from '../lib/layout';
-import { captureSlot, homeGroupId, openerRelative, placeAt } from '../lib/dock-slot';
+import type { SlotRef } from '../lib/dock-slot';
+import {
+  captureSlot,
+  homeGroupId,
+  keepsInheritedGroup,
+  openerRelative,
+  placeAt,
+} from '../lib/dock-slot';
 import { hasPanel, slotIsLive, stepDown, stepUp } from '../lib/ladder';
 import { autonomyTooltip, DEFAULT_AUTONOMY, isAutonomy, nextAutonomy } from '../lib/autonomy';
 import { submitTarget } from '../lib/presentation-policy';
@@ -55,7 +62,7 @@ import { sharedAnnouncer } from '../lib/announcer';
 import { CardSound, nextCardSound } from '../../../shared/sounds';
 // #440: a refused call RESOLVES a truthy object — read a bridge answer through
 // `answered()` (or `took()`), never as a bare truthiness test.
-import { answered } from '../../../shared/ipc/refusal';
+import { answered, isIpcRefusal } from '../../../shared/ipc/refusal';
 import {
   cycleMode,
   isEnforced,
@@ -84,6 +91,7 @@ import { findBarState, subscribeFindBar } from '../lib/find-bar-state';
 import { FindBar } from './FindBar';
 import { sendSessionCommand } from '../lib/composer';
 import { DEFAULT_SESSION_TRANSPORT, type TransportKind } from '../../../shared/transport';
+import type { AutonomyMode, SessionStatus } from '../../../shared/sessions';
 import { srOnly } from './sr-only';
 import {
   dropRetired,
@@ -114,11 +122,11 @@ interface Live {
   id: string;
   accent?: string;
   badge?: string;
-  autonomy?: string;
+  autonomy?: AutonomyMode;
   /** the record's status at bind time — a card that ADOPTED a running session
    *  (reveal, P2-E15-08) must not claim 'starting': no further push is coming
    *  for an idle session, and the card would sit there lying about it */
-  status?: string;
+  status?: SessionStatus;
   /** which transport hosts it (P2-E18-08b) — the Terminal tab needs to know.
    *  Not optional: a live session always has one (#445), and an optional field
    *  here is an invitation to invent a default for it. */
@@ -174,6 +182,44 @@ export function endedCopy(ended: CardEnded): {
     detailVars: { code: ended.code },
     action: 'grid.restart',
   };
+}
+
+/**
+ * The status pill an ENDED card's header wears (#606).
+ *
+ * Separate from `endedCopy` and not another field on it: that one is the
+ * OVERLAY's words, it is asserted with `toEqual`, and a pill is a different
+ * register — the overlay explains, the pill names the state in one word, the
+ * way every other header does.
+ *
+ * WHICH ARM ACTUALLY REACHES THIS, and it is narrower than the type suggests:
+ * a session that RAN and then died keeps `live` (`onExited` sets `ended` and
+ * deliberately does not clear the record — see the comment there), so a crashed
+ * card renders through the LIVE arm, which has always had a header and takes
+ * `status` for its pill. The headerless arm this exists for is the one where
+ * `live` is null and `ended` is not, and today that is `never-started` alone.
+ * The `exited` answers below are therefore the total function's honest ones
+ * rather than a claim about pixels: they are here so that routing the live
+ * header through this — the obvious next step if anyone wants ONE pill rule for
+ * dead cards - is a one-line change and not a decision to re-take.
+ *
+ * The word comes out of the SAME vocabulary the rail rows, the urgency lamps
+ * and the collapsed rows read (`presentStatus`), so a dead card cannot look
+ * like one state here and another one in the list beside it:
+ *
+ *   • a session that ran and CRASHED  → `crashed`, the ramp's alarm position;
+ *   • a session that closed cleanly   → `done`, which is what it is;
+ *   • a session that NEVER STARTED    → the neutral `idle` position, with its
+ *     own word. It is not "idle" — nothing is sitting there waiting — but the
+ *     ramp has no seventh colour and inventing one would paint a hue the
+ *     contrast tests never measured (#221). The colour says "nothing is
+ *     happening"; the word says which nothing.
+ */
+export function endedPill(ended: CardEnded): { status: string; labelKey: string } {
+  if (ended.kind === 'never-started') return { status: 'idle', labelKey: 'status.notStarted' };
+  return ended.crashed
+    ? { status: 'crashed', labelKey: 'status.crashed' }
+    : { status: 'done', labelKey: 'status.done' };
 }
 
 /**
@@ -332,7 +378,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // `null` = focus is outside the strip, so the roving stop sits on the
   // selection again.
   const [tabFocus, setTabFocus] = React.useState<string | null>(null);
-  const [status, setStatus] = React.useState<string>('starting');
+  const [status, setStatus] = React.useState<SessionStatus>('starting');
   const cardId = props.params?.cardId;
   // PRESENTATION STATE LIVES IN THE STORE (P2-E15-08, AR-P1-5), not here.
   //
@@ -402,8 +448,14 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const toggleTransport = (): void => {
     if (!cardId) return;
     const next = cardTransport === 'stream' ? 'pty' : 'stream';
-    void window.switchboard.sessions.setTransport(cardId, next).then((r) => {
-      if (!r.ok) return;
+    void window.switchboard.sessions.setTransport(cardId, next).then((answer) => {
+      // #650: `{ok:false, reason}` is this channel's own way of saying no, and
+      // a broker refusal is a THIRD thing that is neither - `r.ok` off the
+      // brand is `undefined`, so this read happens to bail, but only by luck.
+      // `answered` makes a refusal take the same path the handler's own no
+      // takes: the switch does not move, because nothing switched.
+      const r = answered(answer);
+      if (!r?.ok) return;
       setCardTransport(next);
       setTransportPending(!!r.pending);
     });
@@ -839,12 +891,20 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     let cancelled = false;
     const refresh = () => {
       void window.switchboard.git.status(folder).then((s) => {
-        if (!cancelled) setGit(s as GitStatusDto);
+        // `answered` BEFORE the cast (#650): `git:status` is declared
+        // `Promise<unknown>`, and the brand cast into `GitStatusDto` is read
+        // for `.files.length` by `GitContext` on the next render. Keeping the
+        // previous status (or `null`, which draws no context line at all) is
+        // the fail-open - a card must not lose its pane over a git read.
+        const next = answered(s) as GitStatusDto | undefined;
+        if (!cancelled && next) setGit(next);
       });
     };
     refresh();
-    const off = window.switchboard.sessions.onStatus((c) => {
-      const change = c as { sessionId: string; to: string };
+    // No cast since #618: `onStatus` hands over a typed `StatusChange`, so
+    // `to === 'done'` is checked against the union main can actually emit
+    // rather than against `string` (which would have compiled for any typo).
+    const off = window.switchboard.sessions.onStatus((change) => {
       if (change.sessionId === live.id && change.to === 'done') refresh();
     });
     return () => {
@@ -853,15 +913,19 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     };
   }, [live, visible, folder]);
 
-  // live status for the header pill (E8-05). Backend emits { sessionId, to }.
+  // live status for the header pill (E8-05). Backend emits a `StatusChange`.
   // Spawn starts at the RECORD's status — never assume "working" (Dan
   // 2026-07-22: resumed sessions showed the working banner doing nothing).
+  //
+  // The `c as { …; to?: string }` cast this used to open with was #618's second
+  // widening site, and the optional `to` in it was the tell: `to` is required
+  // and is a `SessionStatus`, so the `if (s.to)` guard it forced was dead code
+  // guarding against a shape main cannot send.
   React.useEffect(() => {
     if (!live) return;
     setStatus(live.status ?? 'starting');
-    return window.switchboard.sessions.onStatus((c) => {
-      const s = c as { sessionId: string; to?: string };
-      if (s.sessionId === live.id && s.to) setStatus(s.to);
+    return window.switchboard.sessions.onStatus((change) => {
+      if (change.sessionId === live.id) setStatus(change.to);
     });
   }, [live]);
 
@@ -891,7 +955,12 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     });
     // replay holds that arrived before this card subscribed (reload / mount
     // race) — a missed push must never park the CLI (review P0#3)
-    void window.switchboard.sessions.pendingPermissions().then((list) => list.forEach(enqueue));
+    // `answered` (#650): a refused replay would reach `.forEach` as the brand
+    // and throw inside a `.then` driven with `void`. Replaying nothing is the
+    // fail-open - the bar on each card still shows its own live request.
+    void window.switchboard.sessions
+      .pendingPermissions()
+      .then((list) => (answered(list) ?? []).forEach(enqueue));
     return () => {
       offReq();
       offRes();
@@ -1002,25 +1071,33 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       // early: dropLive keeps the persisted record, so the card still resumes
       // next launch. Harmless either way (E8-04 review).
       if (sessionStore.isTearingDown()) return;
+      const cameHome = wasPopout && now !== 'popout' && !!cardId;
+      // THE NOTE THE SETTLE READS (#656/#657), taken before the guards below
+      // because it is bookkeeping and not a decision, and because one of the
+      // gestures they exclude — the lone ⤡ — is exactly one of these. See the
+      // block comment on `settleDockedBackCards` for why this listener is the
+      // one place the answer is still true.
+      if (cameHome && isDockviewReturn(cardId)) noteCardCameHome(cardId);
       // hiding a popped-out card removes its panel, which closes the window —
       // that is US, not the user, and it must NOT suspend the session (E15-08)
       if (cardId && sessionStore.isHiding(cardId)) return;
-      // ...and neither is a LADDER move (P2-E9-05). Moving a popped-out card
-      // into the grid to expand or stack it takes its window down, which looks
-      // exactly like the user closing it — and would suspend a session for a
-      // rung change. Unreachable from the palette today (activeCardId ignores
-      // popouts), but E9-07's layout modes drive every card including those.
+      // ...and neither is a LADDER move (P2-E9-05), NOR EITHER ⤡ (E8-04,
+      // #656). Moving a popped-out card into the grid to expand or stack it
+      // takes its window down, which looks exactly like the user closing it —
+      // and would suspend a session for a rung change. Since #656 both halves
+      // of the dock-back button arm this flag as well, which is what replaced
+      // E8-04's separate `markDockingBack`: one gesture, one mechanism, and
+      // no flag left armed for a window that is going nowhere. Nothing marks
+      // that flag any more, so it has gone from the store with it.
       if (cardId && sessionStore.isMoving(cardId)) return;
-      if (wasPopout && now !== 'popout' && cardId) {
-        // takeDockingBack CONSUMES the flag: a button toggle keeps the session
-        // alive, a bare window close suspends it, and the two look identical
-        // to dockview (E8-04)
-        if (!sessionStore.takeDockingBack(cardId)) {
-          void window.switchboard.sessions.dropLive(cardId); // window closed: suspend
-          sessionStore.forgetCardLiveIds(cardId);
-          setLive(null);
-          sessionStore.setPresentation(cardId, { suspended: true });
-        }
+      if (cameHome) {
+        // Nothing of ours is moving this card and it is out of its window: the
+        // user closed it. Suspend, keeping the card and the record, so it
+        // resumes when it is next looked at (E8-04).
+        void window.switchboard.sessions.dropLive(cardId);
+        sessionStore.forgetCardLiveIds(cardId);
+        setLive(null);
+        sessionStore.setPresentation(cardId, { suspended: true });
       }
     });
     return () => d.dispose();
@@ -1068,6 +1145,8 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // never got going. `maxInlineSize` matches the suspended overlay: the
   // never-started line is a sentence, not a code.
   const overlayCopy = ended ? endedCopy(ended) : null;
+  // ...and the one word the header above it wears (#606)
+  const pill = ended ? endedPill(ended) : null;
   const endedOverlay = overlayCopy ? (
     // `card-overlay` (#358): the SEEN panel, as opposed to the card's live
     // region, which now holds the same words for the screen reader. A bare
@@ -1854,7 +1933,59 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       ) : ended ? (
         // spawn/resume failed before a terminal existed — still recoverable, and
         // this is the branch a never-started card lands on (#355)
-        <div style={{ ...overlayBackdrop, position: 'relative', flex: 1 }}>{endedOverlay}</div>
+        <div style={cardColumn}>
+          {/* THE ENDED CARD'S HEADER (#606) — the last card state that drew
+              none, and the same gap #216 closed for suspended.
+
+              WHICH CARD THIS IS, precisely: one whose session NEVER STARTED.
+              A session that ran and then died keeps its record (`onExited`
+              sets `ended` and leaves `live` alone, on purpose), so it renders
+              through the live arm above with the header it always had. This arm
+              is the `live === null && ended` one, and until now it drew the
+              overlay and nothing else — so §5.8's "double-click a session header
+              toggles maximize" had no target on it, while `Ctrl+Shift+M` and the
+              palette command worked on it the whole time. A gesture that works
+              from the keyboard and not from the mouse, on one card state out of
+              four, is exactly the kind of exception the manual ends up writing
+              down.
+
+              WHAT THE GESTURE CAN AND CANNOT DO HERE, so nobody reads more
+              into this than it gives: the double-click reaches
+              `toggleMaximizeCard` and the maximize is recorded, but the SWEEP
+              declines it, because `lib/layout-mode`'s `heldMaximize` honours a
+              maximize only for a card the session list still holds — and a card
+              whose `sessions:create` was refused was never registered as one.
+              It has no rail row either. That is older than this header and true
+              of `Ctrl+Shift+M` on the same card today; it is reported on #606's
+              PR rather than fixed here, because widening it is a lifecycle
+              change (does a refused card exist?) and not a header.
+
+              Deliberately the SAME subset as the suspended header, through the
+              same three module-scope pieces (`cheadStyle`, `cheadName`,
+              `maximizeOnDoubleClick`): identity, the state in a word, and the
+              maximize target — and no controls. Restart/Try again and Close are
+              the overlay's own buttons a couple of centimetres below, and a
+              header copy of them would be a second way to do the same thing on
+              the smallest surface the card has. */}
+          <div
+            data-testid="card-header"
+            title={t('layout.maximizeHint')}
+            onDoubleClick={maximizeOnDoubleClick}
+            style={cheadStyle(headerAccent)}
+          >
+            {headerBadge && (
+              <span data-testid="identity-badge" style={identityBadgeStyle(headerAccent)}>
+                {headerBadge}
+              </span>
+            )}
+            <span data-testid="card-header-name" style={cheadName}>
+              {headerTitle}
+            </span>
+            <span style={{ flex: 1, minInlineSize: 8 }} />
+            {pill && <StatusPill status={pill.status} label={t(pill.labelKey)} />}
+          </div>
+          <div style={{ ...overlayBackdrop, position: 'relative', flex: 1 }}>{endedOverlay}</div>
+        </div>
       ) : (
         <span style={{ margin: 'auto' }}>
           {t('grid.resuming', { title: headerTitle })}
@@ -1888,10 +2019,10 @@ function docTheme(): { theme: string; colorScheme: 'light' | 'dark' } {
 /**
  * The card header row (.chead) — accent border, identity, status.
  *
- * A function at module scope rather than two object literals inside the render
- * because a card has TWO headers to draw (#216): the live one, with its window
- * controls, and the suspended one, which is the same row minus every control
- * that would act on a session that is not running. §5.11's "one identity,
+ * A function at module scope rather than an object literal inside the render
+ * because a card has THREE headers to draw (#216, #606): the live one, with its
+ * window controls, and the suspended and ended ones, which are the same row
+ * minus every control that would act on a session that is not running. §5.11's "one identity,
  * rendered identically everywhere" is a promise about pixels, and the way that
  * promise rots is a second copy of the row drifting from the first.
  *
@@ -1912,8 +2043,8 @@ function cheadStyle(accent?: string): React.CSSProperties {
   };
 }
 
-/** The column a card's header and body share — both branches that draw a
- *  header (live, and #216's suspended one) are this box. */
+/** The column a card's header and body share — all three branches that draw a
+ *  header (live, #216's suspended one, #606's ended one) are this box. */
 const cardColumn: React.CSSProperties = {
   flex: 1,
   minInlineSize: 0,
@@ -2260,13 +2391,53 @@ function gridRefGroup(
  * tab beside the card. dockview does not expose which group a popout will
  * return to, so the honest question is the coarse one: while a viewer is out in
  * its own window, refuse every shell and pay for a fresh group instead.
+ *
+ * `exclude` is one group this card may NOT be sent to, and it has exactly one
+ * caller: the settle that re-places a card dockview has already dropped into a
+ * slot it never earned (#657). Without it the answer would be the group the
+ * card is standing in — dockview un-hides the dock-back husk on the way in
+ * (`disposePopoutWindow`), so by the time we look, the wrong slot is a visible
+ * grid group holding this very card, and "the first visible grid group" would
+ * hand it straight back.
  */
-function sessionCardHome(api: DockviewApi): DockviewApi['groups'][number] {
+function sessionCardHome(
+  api: DockviewApi,
+  exclude?: DockviewApi['groups'][number] | null
+): DockviewApi['groups'][number] {
   const viewerIsOut = viewerIsPoppedOut(api);
   return gridRefGroup(
     api,
-    (g) => !isDocumentArea(g) && !(viewerIsOut && g.panels.length === 0)
+    (g) => g !== exclude && !isDocumentArea(g) && !(viewerIsOut && g.panels.length === 0)
   );
+}
+
+/**
+ * The live grid group a remembered slot names, or `undefined` (#502).
+ *
+ * `homeGroupId` is the RULE and is pure — gone, popped out, or become the
+ * document area all mean "not a slot any more"; an invisible grid group does
+ * NOT, because that is the dock-back husk the card itself left behind and it
+ * still holds the geometry. This is only the dockview half: the id resolved
+ * back to a group.
+ *
+ * Shared by the two gestures that place a card from a record — ⤡ reading
+ * `home` (#558) and the ladder reading `slot` (#502) — so the husk and
+ * document-area rules cannot drift apart again. They were separate copies, and
+ * one of them was missing both.
+ */
+function slotGroup(
+  api: DockviewApi,
+  slot: SlotRef | null | undefined
+): DockviewApi['groups'][number] | undefined {
+  const id = homeGroupId(
+    slot,
+    api.groups.map((g) => ({
+      id: g.id,
+      location: g.api.location.type,
+      hasDocument: isDocumentArea(g),
+    }))
+  );
+  return id ? api.groups.find((g) => g.id === id) : undefined;
 }
 
 /** Is a document viewer out in its own OS window? Named once because two
@@ -2305,23 +2476,26 @@ function viewerIsPoppedOut(api: DockviewApi): boolean {
  * on its own slot says nothing about that, since the two can have shared a
  * group; so the coarse rule is applied here too and the card pays for a group
  * of its own until the viewer is home.
+ *
+ * `exclude` is passed straight to `sessionCardHome` and is documented there: it
+ * is the settle's way of saying "anywhere but the slot you were just dropped
+ * into" (#657). It deliberately does NOT disqualify the card's own `home` —
+ * a card whose home IS where it landed never reaches this function.
+ *
+ * `home` IS PASSED IN rather than read from the store, and that is not tidiness.
+ * One caller asks before the card has moved and one asks after, and after is too
+ * late to read the record: `captureSlots` runs on the layout change dockview's
+ * own return fires, sees the card sitting in a real grid group, and banks that
+ * group as its home — the very slot it did not earn. See `noteCardCameHome`.
  */
 function dockBackTarget(
   api: DockviewApi,
-  cardId: string
+  home: SlotRef | null,
+  exclude?: DockviewApi['groups'][number] | null
 ): { group: DockviewApi['groups'][number]; index: number; revived: boolean } {
-  const home = sessionStore.getPresentation(cardId).home;
-  const id = homeGroupId(
-    home,
-    api.groups.map((g) => ({
-      id: g.id,
-      location: g.api.location.type,
-      hasDocument: isDocumentArea(g),
-    }))
-  );
-  const group = id ? api.groups.find((g) => g.id === id) : undefined;
+  const group = slotGroup(api, home);
   if (!group || (group.panels.length === 0 && viewerIsPoppedOut(api))) {
-    return { group: sessionCardHome(api), index: -1, revived: false };
+    return { group: sessionCardHome(api, exclude), index: -1, revived: false };
   }
   const revived = !group.api.isVisible;
   if (revived) group.api.setVisible(true);
@@ -2381,7 +2555,10 @@ async function addSessionCardTo(
   // dockview group already holding another member, when one is in the grid.
   let sibling: DockviewApi['groups'][number] | undefined;
   if (groupId && !into) {
-    const cards = await window.switchboard.sessions.cards();
+    // #650: no card list means no siblings to cluster with, so the new card
+    // lands in the grid the ordinary way. `.filter` on the brand would throw
+    // and lose the card entirely, which is the opposite of fail-open.
+    const cards = answered(await window.switchboard.sessions.cards()) ?? [];
     const siblings = new Set(
       cards.filter((c) => c.groupId === groupId).map((c) => `session-${c.cardId}`)
     );
@@ -2416,6 +2593,66 @@ async function addSessionCardTo(
     // (dockviewComponent.js `addPanel`, the `center` branch vs the rest).
     position: { referenceGroup: refGroup },
   });
+}
+
+/**
+ * Move an existing card's PANEL next to its persistent-group siblings (E12-04),
+ * after a rail drop has already written the membership.
+ *
+ * Module-level, like `popOutCardPanel` and `setCardLadder`, and for the same
+ * reason the file gives them: every imperative verb here takes the api, so it
+ * can be driven from a command, from a panel dockview renders, and from a test
+ * — a closure inside the controller effect can be reached from none of those.
+ *
+ * IT IS `addSessionCardTo`'S SIBLING LOOKUP, ONE PATH OVER, and #503 is the
+ * story of the two copies disagreeing: #501 hardened that one and left this one
+ * as it was. They now say the same thing in the same words. Two rules, and the
+ * ORDER of them is the second half:
+ *
+ *  * a sibling's group must be VISIBLE as well as in the grid. Clustering is a
+ *    reason to land BESIDE a group-mate, never a reason to land somewhere
+ *    invisible — and a grid group can be invisible two ways `location` alone
+ *    cannot see: the dock-back husk a popout leaves behind (#434/#462), and
+ *    every other group while one is maximised (E9-07).
+ *  * NO `sessionCardHome` FALLBACK. `addSessionCardTo` asks for one only AFTER
+ *    this lookup fails, because it is not a pure question — it can un-hide a
+ *    group or MINT one, and a group minted before a sibling wins is left in the
+ *    grid, empty, for ever. Here there is nothing to fall back to at all: no
+ *    group-mate on screen means the panel stays exactly where the user left it,
+ *    which is the behaviour this has always had and the reason it cannot leak.
+ *
+ * `groupId` of `null` is UNGROUPING, and does nothing: taking a card out of a
+ * group is not a reason to move it off the screen it is on.
+ */
+export async function clusterCardWithGroup(
+  api: DockviewApi | null,
+  cardId: string,
+  groupId: string | null
+): Promise<void> {
+  if (!api || !groupId) return;
+  const panel = api.getPanel(`session-${cardId}`);
+  if (!panel) return;
+  // #650: no card list means no siblings, so the panel stays where it sits —
+  // which is what this whole function already does when it finds none.
+  const cards = answered(await window.switchboard.sessions.cards()) ?? [];
+  const siblings = new Set(
+    cards
+      .filter((c) => c.groupId === groupId && c.cardId !== cardId)
+      .map((c) => `session-${c.cardId}`)
+  );
+  const sibling = api.panels.find(
+    (p) => siblings.has(p.id) && p.group.api.location.type === 'grid' && p.group.api.isVisible
+  );
+  if (!sibling || sibling.group === panel.group) return;
+  // OUR move, not a user drag (see setMoving). The rail drop has ALREADY
+  // written the membership; letting E12-04 adopt from the destination would let
+  // a group-mate's neighbours overwrite the group the user just chose.
+  sessionStore.setMoving(cardId, true);
+  try {
+    panel.api.moveTo({ group: sibling.group });
+  } finally {
+    sessionStore.setMoving(cardId, false);
+  }
 }
 
 /**
@@ -2535,8 +2772,8 @@ function openDocumentPanel(
  *
  * That reasoning is about the VIEWER, not about the window. A user can drag a
  * session card into a viewer's window, and docking back from here then closes
- * the window under that card too — with no `markDockingBack`, so its session
- * suspends. Deliberate: it is bit-for-bit what pressing the window's own ✕
+ * the window under that card too — with nothing arming the card's own
+ * dock-back flag, so its session suspends. Deliberate: it is bit-for-bit what pressing the window's own ✕
  * does, and a viewer's control has no business deciding a session's fate.
  */
 export function popOutDocumentPanel(api: DockviewApi | null, panelId: string): void {
@@ -2728,8 +2965,249 @@ function dockviewTheme(colorScheme: 'light' | 'dark'): DockviewTheme {
   };
 }
 
-// live-id mapping, allow-all, dock-back and per-card presentation all live in
-// the store now (P2-E15-07, P2-E15-08) — see store/session-store.ts.
+// live-id mapping, allow-all and per-card presentation all live in the store
+// now (P2-E15-07, P2-E15-08) — see store/session-store.ts.
+
+// ── WHEN A POPOUT WINDOW EMPTIES, WHERE DOES ITS LAST CARD GO? (#656, #657) ──
+//
+// dockview returns EVERY member of a closing popout window through ONE
+// reference — `disposePopoutWindow` does `moveGroupWithoutDestroying({ from:
+// group, to: referenceGroup })`, and `referenceGroup` is the group the window
+// was torn from, recorded once when it opened. #558 gave the gesture we drive
+// ourselves (⤡ with company) a proper answer via `dockBackTarget`. These three
+// functions give the same answer to the returns DOCKVIEW drives, which #558
+// could not touch and #657 is: the window closed from the OS, the ⤡ that
+// empties it, a card left holding a window its opener made.
+//
+// THE CORRECTION IS A SECOND MOVE, AFTER THE PANEL IS SAFELY IN THE GRID, and
+// that is not a detail — it is the whole reason this shape exists rather than
+// the obvious one. Moving the LAST panel out of a popout group destroys the
+// group, which closes its OS window, which makes Chromium strip every listener
+// off the document it tears down — including React's, on the card DOM dockview
+// adopted into that window. The card comes home rendering perfectly and
+// answering nothing (#292 from the other side; it cost #564 an entire attempt).
+// A grid→grid move is not that move and is perfectly safe.
+//
+// WHAT TELLS A RETURN FROM A DRAG is the ORDER of two dockview events, read off
+// dockviewComponent.js rather than guessed:
+//
+//   * a window closing does `moveGroupWithoutDestroying` FIRST — which sets the
+//     panel's group, firing `onDidLocationChange` — and only then
+//     `doRemoveGroup(group)`, which removes the popout service entry and fires
+//     `onDidRemovePopoutGroup`;
+//   * a user dragging the last tab out does it the other way round:
+//     `_doMoveGroupOrPanel` removes the panel, sees the group empty, calls
+//     `doRemoveGroup` (→ `onDidRemovePopoutGroup`) while the panel is in LIMBO,
+//     and re-opens it at the user's drop target afterwards.
+//
+// So: the location handler notes a card that has already come home, and
+// `onDidRemovePopoutGroup` reads that note. A dragged card has not landed yet
+// when the note is read, so it is never in it — which is exactly right, because
+// a card the user dropped somewhere is not a card that needs placing.
+
+/**
+ * Cards whose `setMoving` the lone ⤡ armed, with the watchdog that releases it.
+ *
+ * The flag has to outlive the click: `w.close()` does not tear the window down
+ * synchronously (the unload is a later task), so there is no `finally` to
+ * release it in. The settle is the ordinary release; the watchdog is for the
+ * window that never comes back at all — a card left permanently `isMoving`
+ * would silently stop adopting a group on a real drag AND stop suspending when
+ * its window is closed, which is a worse bug than the one this fixes.
+ */
+const armedDockBacks = new Map<string, ReturnType<typeof setTimeout>>();
+/**
+ * Cards dockview has just moved out of a popout and into the grid, waiting for
+ * the `onDidRemovePopoutGroup` that confirms the window is gone — each with the
+ * `home` it had AT THAT MOMENT.
+ *
+ * The snapshot is the whole reason this is a map and not a set, and it was
+ * measured rather than reasoned: without it the fix silently did nothing.
+ * dockview's return fires a layout change, `captureSlots` runs on it, sees the
+ * card in a perfectly real grid group and banks that group as the card's home —
+ * so by the time the settle asks "is this slot yours?", the answer has become
+ * yes for the one card the question exists for. The record taken as the card
+ * crossed back is the honest one.
+ *
+ * Entries live for ONE TASK — see `noteCardCameHome` for why an unread note is
+ * a live hazard rather than a harmless leftover.
+ */
+const cameHomeFromPopout = new Map<string, SlotRef | null>();
+/** Long enough that a slow window teardown is never mistaken for a lost one,
+ *  short enough that a card is not stuck un-adoptable for a working day. */
+const DOCK_BACK_WATCHDOG_MS = 10_000;
+
+function armDockBack(cardId: string): void {
+  disarmDockBack(cardId);
+  sessionStore.setMoving(cardId, true);
+  armedDockBacks.set(
+    cardId,
+    setTimeout(() => {
+      armedDockBacks.delete(cardId);
+      sessionStore.setMoving(cardId, false);
+      console.warn('[popout] a card never came home from its dock-back; releasing it');
+    }, DOCK_BACK_WATCHDOG_MS)
+  );
+}
+
+function disarmDockBack(cardId: string): void {
+  const timer = armedDockBacks.get(cardId);
+  if (timer === undefined) return;
+  clearTimeout(timer);
+  armedDockBacks.delete(cardId);
+  sessionStore.setMoving(cardId, false);
+}
+
+/**
+ * Drop every dock-back arm and note — the grid they belong to is going away.
+ *
+ * A `setMoving` flag that outlives its dockview instance is a card that will
+ * never adopt a group on a drag and never suspend when its window is closed,
+ * and no gesture would ever clear it: the settle that normally does is driven
+ * by an event that instance will not fire again.
+ */
+export function forgetDockBacks(): void {
+  for (const cardId of [...armedDockBacks.keys()]) disarmDockBack(cardId);
+  cameHomeFromPopout.clear();
+}
+
+/**
+ * Is this popout→grid transition dockview handing the card back?
+ *
+ * The two moves we make ourselves are excluded, because both have already
+ * decided where the card goes: the ⤡-with-company branch `moveTo`s it, and
+ * hiding removes the panel outright (there is not even a panel left to place).
+ * The lone ⤡ arms `isMoving` as well and IS one of dockview's returns —
+ * `armedDockBacks` is how it says so.
+ *
+ * Exported with the rest of the mechanism: it is the RULE half of the
+ * discriminator, and the one part of it a unit test can ask directly.
+ */
+export function isDockviewReturn(cardId: string): boolean {
+  if (sessionStore.isHiding(cardId)) return false;
+  return armedDockBacks.has(cardId) || !sessionStore.isMoving(cardId);
+}
+
+/**
+ * The location handler's half of the note — see the block comment above.
+ *
+ * Exported with `settleDockedBackCards` because the PAIR is the mechanism and
+ * neither half means anything alone: the note is what makes a dockview return
+ * distinguishable from a user drag, and the settle is what reads it. The unit
+ * tests drive both against `fakeGrid`; the real event ORDER that fills the note
+ * is only observable in e2e, and `popout-dock-back.spec.ts` is where it is
+ * pinned.
+ */
+export function noteCardCameHome(cardId: string): void {
+  cameHomeFromPopout.set(cardId, sessionStore.getPresentation(cardId).home);
+  // ...AND IT EXPIRES IN THIS TASK, which is the other half of the
+  // discriminator and not a tidy-up. A note is only ever read by the
+  // `onDidRemovePopoutGroup` dockview fires LATER IN THE SAME SYNCHRONOUS
+  // OPERATION — `disposePopoutWindow` moves the panels home and then removes
+  // the group — so a microtask is comfortably after every honest reader.
+  //
+  // THREE OTHER popout→grid moves leave a note nothing will ever drain, and
+  // the list is exhaustive against `dockviewComponent.js` rather than plausible:
+  //
+  //  1. a tab dragged out of a window that SURVIVES — no group is removed, so
+  //     `onDidRemovePopoutGroup` never fires at all;
+  //  2. the drag that EMPTIES one — `_doMoveGroupOrPanel` removes the group
+  //     while the panel is still in limbo, so the settle runs before the note
+  //     exists;
+  //  3. a window whose reference group is gone (`disposePopoutWindow`'s
+  //     `else if (anchorPresent && ...)` branch, :1268): `doRemoveGroup` runs
+  //     at :1292 and the location only becomes `grid` at :1297, so again the
+  //     settle is first. This one is a REAL close that gets no placement, and
+  //     it is deliberately left alone: that branch re-docks the whole popout
+  //     group into the grid intact (`doAddGroup(group, [0])`), so nobody is
+  //     routed through a reference and there is no unearned slot to correct.
+  //     Covering it would need a second trigger; it wants its own ticket.
+  //
+  // Left in the map, any of the three would be drained by an unrelated window
+  // closing minutes later and would teleport a card the user had deliberately
+  // placed, on a `home` snapshot taken before they placed it.
+  queueMicrotask(() => cameHomeFromPopout.delete(cardId));
+}
+
+/**
+ * Place every card a just-closed popout window handed back (#656, #657).
+ *
+ * Deferred by a microtask for `rescueStrandedPopouts`' reason: dockview fires
+ * `onDidRemovePopoutGroup` from INSIDE its own teardown, and moving a panel
+ * there is moving furniture out from under it. A microtask lands after the
+ * whole synchronous disposal, when the layout has settled.
+ *
+ * Exported for the unit tests, which drive it against `fakeGrid` — the real
+ * ordering is e2e's, this is the placement.
+ */
+export function settleDockedBackCards(api: DockviewApi): void {
+  const cards = [...cameHomeFromPopout];
+  cameHomeFromPopout.clear();
+  if (cards.length === 0) return;
+  // A QUIT IS NOT A DOCK-BACK. The layout being written on the way out is the
+  // one WITH the popout in it, and §5.25 promises that window comes back; the
+  // same is true of a restore, which is that layout being rebuilt. Cards are
+  // still disarmed, because the flag must never outlive the gesture.
+  const settle = !sessionStore.isTearingDown() && !sessionStore.isRestoringLayout();
+  queueMicrotask(() => {
+    for (const [cardId, home] of cards) {
+      try {
+        if (settle) placeCardComingHome(api, cardId, home);
+      } catch (err) {
+        // fail-open, per card: one card we cannot place must not cost the
+        // others their placement, and none of this may throw into dockview
+        console.error('[popout] could not place a card coming home', err);
+      } finally {
+        disarmDockBack(cardId);
+      }
+    }
+  });
+}
+
+/**
+ * One card: keep where dockview put it, or move it to where it belongs.
+ *
+ * `home` is the record the card carried across, NOT the one in the store — see
+ * `cameHomeFromPopout` for the layout-change race that makes the difference
+ * between this fix working and this fix being a no-op.
+ */
+function placeCardComingHome(api: DockviewApi, cardId: string, home: SlotRef | null): void {
+  const panel = api.getPanel(`session-${cardId}`);
+  if (!panel) return; // hidden, closed, or it went down with its window
+  const landing = panel.group;
+  // It is in ANOTHER window — dragged on somewhere while we waited a
+  // microtask, or restored into a popout. Not ours to move.
+  if (landing.api.location.type !== 'grid') return;
+  const homeGroup = slotGroup(api, home);
+  if (
+    keepsInheritedGroup({
+      landingGroupId: landing.id,
+      landingGroupSize: landing.panels.length,
+      homeId: homeGroup?.id ?? null,
+    })
+  ) {
+    return;
+  }
+  // It is alone in a slot that is not its own: the reference it inherited. The
+  // landing group is EXCLUDED from the fallback — dockview un-hides the husk on
+  // the way in, so "the first visible grid group" is now the wrong slot itself.
+  const dest = dockBackTarget(api, home, landing);
+  if (dest.group === landing) return;
+  // OUR move, not a user drag (see setMoving) — and note the emptied landing
+  // group goes with it: dockview destroys a group whose last panel leaves,
+  // which is what clears the abandoned sliver off the screen.
+  sessionStore.setMoving(cardId, true);
+  try {
+    panel.api.moveTo({ group: dest.group, ...(dest.index >= 0 ? { index: dest.index } : {}) });
+  } catch (err) {
+    console.error('[popout] could not place a card coming home', err);
+    // ...and put the slot away again, exactly as the ⤡ branch does: an empty
+    // shell left visible is a blank pane the user has to look at.
+    if (dest.revived && dest.group.panels.length === 0) dest.group.api.setVisible(false);
+  } finally {
+    sessionStore.setMoving(cardId, false);
+  }
+}
 
 /**
  * Pop a card out to its own OS window, or dock it back in.
@@ -2750,7 +3228,7 @@ export function popOutCardPanel(api: DockviewApi | null, cardId: string): void {
     // Dock-back is normally a window close, and that was exact while a session
     // popout held exactly one card. It is not any more (#531): dockview hands
     // EVERY member of a closing popout back to the grid, and each one arrives
-    // at the location handler above with no `markDockingBack` of its own — so
+    // at the location handler above with no dock-back flag of its own — so
     // it is indistinguishable from the user closing the window, and gets
     // `dropLive`d and suspended. Docking one card back would tear down the live
     // session sitting next to it. #531 made that the ordinary shape rather than
@@ -2773,15 +3251,17 @@ export function popOutCardPanel(api: DockviewApi | null, cardId: string): void {
         return l.type === 'popout' && l.getWindow() === w;
       });
     if (company) {
-      const dest = dockBackTarget(api, cardId);
-      // `setMoving` and not `markDockingBack`, which it replaces. Both keep the
-      // session alive across the location change — the handler bails before the
-      // suspend either way — and this one ALSO stops E12-04 reading a dock-back
-      // as a user drag. That was harmless while the card landed in whatever
-      // group happened to be visible; now that it lands in its OWN slot, which
-      // is an EMPTY husk in the ordinary case, adoption would see no siblings
-      // and erase the session's persistent group outright (`pickAdoptedGroupId`
-      // returns null). Docking a card back is a placement, not a regrouping.
+      const dest = dockBackTarget(api, sessionStore.getPresentation(cardId).home);
+      // `setMoving`, which replaced E8-04's separate `markDockingBack` flag.
+      // Both kept the session alive across the location change — the handler
+      // bails before the suspend either way — and this one ALSO stops E12-04
+      // reading a dock-back as a user drag. That bites HERE and not on the
+      // window-close branch: this is a `moveTo`, i.e. `_doMoveGroupOrPanel`,
+      // where the adoption handler really does run. The card lands in its OWN
+      // slot, which is an EMPTY husk in the ordinary case, so adoption would
+      // see no siblings and erase the session's persistent group outright
+      // (`pickAdoptedGroupId` returns null). Docking a card back is a
+      // placement, not a regrouping.
       sessionStore.setMoving(cardId, true);
       try {
         panel.api.moveTo({ group: dest.group, ...(dest.index >= 0 ? { index: dest.index } : {}) });
@@ -2818,23 +3298,47 @@ export function popOutCardPanel(api: DockviewApi | null, cardId: string): void {
     //
     // dockview then hands the panel to the group the WINDOW was created from,
     // which for the card that tore that window off IS its own slot: the two
-    // placements agree on the case this branch actually serves. The card born
-    // in the window (#531) reaches here only after its opener has left, and in
-    // the ordinary way of leaving — docking back — the opener is standing in
-    // that slot by then, so the newcomer arrives as a tab beside it rather than
-    // instead of it. Empty it the other ways (close the opener's card, drag its
-    // tab into the grid) and the survivor still inherits a slot it never
-    // earned; correcting that means a second move AFTER the panel is safely
-    // home, which is a different shape from this one and wants its own ticket.
+    // placements agree on the case this branch actually serves. Where they
+    // disagree — the card born in the window (#531) left holding a reference it
+    // never earned, or a home that has moved on — `settleDockedBackCards`
+    // corrects it AFTER the panel is safely in the grid (#656/#657). That is
+    // the "second move" the previous version of this comment said needed its
+    // own ticket; the ticket is done, and the correction is a grid→grid move,
+    // which is the safe kind. Only the LAST-PANEL-OUT move is fatal.
     //
-    // only arm the "stay alive" flag when a window actually exists to close —
-    // else a stale flag would later mis-classify a genuine user close as a
-    // toggle and skip the suspend (E8-04 review).
-    if (w) sessionStore.markDockingBack(cardId);
+    // `setMoving`, and not the one-shot dock-back flag this branch used to
+    // arm — the same swap the company branch made, for the same two reasons.
+    // Both keep the session alive across the location change (the handler bails
+    // before the suspend either way); this one ALSO covers the settle's own
+    // corrective move below, which goes through `_doMoveGroupOrPanel` where
+    // E12-04's adoption really can fire and would rewrite the session's
+    // persistent group from whatever the destination's tabs happen to belong to.
+    //
+    // #656 SAID THE UNFLAGGED RETURN ALREADY ERASED THAT GROUP. Measured on
+    // unfixed main (2026-08-21): it does not, and the reason is one layer down.
+    // dockview's `openPanel` calls `updateParentGroup` — which fires
+    // `onDidGroupChange` — BEFORE `doAddPanel` registers the panel in its new
+    // group, so `adoptMembershipFromDockGroup`'s own `containerApi.getPanel(id)`
+    // answers `undefined` and it returns before it can decide anything. The
+    // group survived by accident, in code that knows nothing about popouts.
+    // Arming here makes the same outcome DELIBERATE, and it is what stops that
+    // accident becoming a bug the day the adoption handler is repaired. The
+    // guard is the e2e in `popout-dock-back.spec.ts`.
+    //
+    // The flag is released by the settle, or by its watchdog if the window
+    // never comes back at all.
+    //
+    // only arm it when a window actually exists to close, else the flag would
+    // be armed for a card that is going nowhere (E8-04's review made the same
+    // point about the flag this replaces).
+    if (w) armDockBack(cardId);
     w?.close();
     return;
   }
-  sessionStore.takeDockingBack(cardId); // drop any stale toggle flag
+  // Drop a dock-back arm this card is still carrying — a window that never
+  // came home (see `armedDockBacks`) must not leave the card un-adoptable now
+  // that it is being popped out again.
+  disarmDockBack(cardId);
   // same-origin popout.html; the terminal keeps running because its JS stays
   // in this window while its DOM is adopted into the new OS window (E8)
   const popoutUrl = new URL('popout.html', window.location.href).toString();
@@ -3478,11 +3982,22 @@ function moveHome(
   panel: IDockviewPanel,
   focus: boolean
 ): void {
-  const place = placeAt(
-    sessionStore.getPresentation(cardId).slot,
-    api.groups.map((g) => g.id)
-  );
-  const home = place.groupId ? api.groups.find((g) => g.id === place.groupId) : undefined;
+  const slot = sessionStore.getPresentation(cardId).slot;
+  // `slotGroup` and not the location-blind `find` this replaces (#502). It is
+  // the same husk blindness #501 closed on the `+ session` and reveal doors,
+  // one path over — and this was the third sighting of the pattern:
+  //
+  //  * a remembered group that has become a HUSK is still this card's slot, and
+  //    is reported here so the move can un-hide it. Landing in a hidden leaf
+  //    puts the card in the DOM, in the right window, and ~1px wide — which
+  //    `toBeVisible()` cannot see, hence the e2e measuring geometry;
+  //  * one that has become the DOCUMENT AREA is refused: a session never
+  //    displaces what you are reading (#462/#501), even when the group used to
+  //    be its own;
+  //  * one that is now a POPOUT is refused too, which the old code did not do
+  //    at all — a rung change would have moved the card into another OS window,
+  //    the exact surprise the fresh-group branch below already argues against.
+  const home = slotGroup(api, slot);
   // Is the card's remembered home the tab stack itself? It is for the card that
   // SEEDED the stack: the first card tabbed finds no stack to join, stays put,
   // and records the group it is standing in as home. Expanding it would then
@@ -3502,19 +4017,44 @@ function moveHome(
   sessionStore.setMoving(cardId, true);
   try {
     if (target && target !== panel.group) {
+      // The husk is un-hidden BEFORE the move, the same revival `gridRefGroup`
+      // and `dockBackTarget` do with the same shell and for the same reason:
+      // the group holds the geometry this card used to occupy, and it is a slot
+      // again the moment it is on screen.
+      const revived = !target.api.isVisible;
+      if (revived) target.api.setVisible(true);
       try {
         panel.api.moveTo({
           group: target,
-          ...(place.index >= 0 ? { index: place.index } : {}),
+          ...(slot && slot.index >= 0 ? { index: slot.index } : {}),
           skipSetActive: !focus,
         });
       } catch {
-        // fewer tabs than there were: the right group at the wrong index beats
-        // refusing to come back (the same call revealNow makes)
+        // FAIL-OPEN, and unlike `revealNow`'s identically-shaped catch this one
+        // really does lose the move: there the panel had already been ADDED to
+        // the target and only the reposition failed, so the card was in the
+        // right group either way. Here the `moveTo` IS the arrival — the card
+        // stays in the stack, still marked expanded, which is a rung that
+        // visibly did nothing rather than a card that has gone missing.
+        //
+        // So put the shell away again if we un-hid it and nothing arrived: the
+        // two other revival sites do exactly this, and an empty visible pane is
+        // a blank rectangle the user has to look at.
+        if (revived && target.panels.length === 0) target.api.setVisible(false);
       }
     } else if (!target) {
-      // Home is gone, was never recorded, or IS the stack. Give it a group of
-      // its own in the grid rather than leaving it where it is.
+      // Home is gone, unusable (see `slotGroup` above), was never recorded, or
+      // IS the stack. Give it a group of its own in the grid rather than
+      // leaving it where it is.
+      //
+      // `api.addGroup()` and deliberately NOT `sessionCardHome`, which is the
+      // fallback its two sibling paths use: a card stepping OUT of the tab
+      // stack is standing in a group that satisfies every one of that
+      // function's rules — visible, in the grid, not the document area — so it
+      // would frequently be handed the stack straight back, and "expanded"
+      // would be a rung that moved nothing. A fresh group is visible and is
+      // neither a husk nor the document area, so #501's contract holds either
+      // way; the difference is only that this branch needs somewhere NEW.
       //
       // A popout home is NOT re-opened here, unlike revealNow's placement: a
       // tabbed card is by definition sitting in the main window's stack, and
@@ -3539,7 +4079,8 @@ function moveHome(
 
 /** Create a card's panel at its remembered slot (or monitor). */
 async function revealNow(api: DockviewApi, cardId: string, focus = true): Promise<void> {
-  const card = (await window.switchboard.sessions.cards()).find((c) => c.cardId === cardId);
+  const cards = answered(await window.switchboard.sessions.cards()) ?? []; // #650
+  const card = cards.find((c) => c.cardId === cardId);
   if (!card) return; // the record is gone — there is nothing to reveal
   const place = placeAt(
     sessionStore.getPresentation(cardId).slot,
@@ -3605,7 +4146,10 @@ async function revealNow(api: DockviewApi, cardId: string, focus = true): Promis
     // restored layout gets (E8-02) — a monitor that has since been unplugged
     // must not swallow the card. No position = dockview opens it on top of the
     // main window, which is exactly the E8-02 rescue.
-    const areas = await window.switchboard.workAreas();
+    // #650: `.some` on the brand throws. No display list means we cannot
+    // prove the remembered rect is on a monitor, so take the rescue below -
+    // opening on top of the main window is visible, and off-screen is not.
+    const areas = answered(await window.switchboard.workAreas()) ?? [];
     const onScreen = boxOnAnyDisplay(place.popout, areas);
     void api.addPopoutGroup(panel, {
       popoutUrl: new URL('popout.html', window.location.href).toString(),
@@ -3628,7 +4172,7 @@ async function adoptMembershipFromDockGroup(
   const siblingIds = panel.group.panels
     .map((p) => /^session-(.+)$/.exec(p.id)?.[1])
     .filter((x): x is string => !!x);
-  const cards = await window.switchboard.sessions.cards();
+  const cards = answered(await window.switchboard.sessions.cards()) ?? []; // #650
   const mine = cards.find((c) => c.cardId === cardId);
   if (!mine) return; // brand-new card, no record yet — create() carries its groupId
   const target = pickAdoptedGroupId(cardId, siblingIds, cards);
@@ -3896,6 +4440,15 @@ export function SessionGrid(props: {
     };
   }, []);
 
+  // The remount half of `forgetDockBacks` (the quit half is a `beforeunload`
+  // listener in `onReady`). A dev HMR pass — or anything later that remounts
+  // the grid — leaves module-level arms behind, and an arm outlives its own
+  // release: the settle that would clear it is driven by an event the disposed
+  // dockview will never fire again.
+  React.useEffect(() => {
+    return () => forgetDockBacks();
+  }, []);
+
   React.useEffect(() => {
     if (!props.controller) return;
     props.controller.current = {
@@ -3908,23 +4461,7 @@ export function SessionGrid(props: {
         const api = apiRef.current;
         return !!api && focusedPopoutGroup(api) !== null;
       },
-      moveCardToGroup: (cardId, groupId) => {
-        const api = apiRef.current;
-        if (!api || !groupId) return; // ungrouping keeps the panel where it sits
-        const panel = api.getPanel(`session-${cardId}`);
-        if (!panel) return;
-        void window.switchboard.sessions.cards().then((cards) => {
-          const siblings = new Set(
-            cards
-              .filter((c) => c.groupId === groupId && c.cardId !== cardId)
-              .map((c) => `session-${c.cardId}`)
-          );
-          const sibling = api.panels.find(
-            (p) => siblings.has(p.id) && p.group.api.location.type === 'grid'
-          );
-          if (sibling && sibling.group !== panel.group) panel.api.moveTo({ group: sibling.group });
-        });
-      },
+      moveCardToGroup: (cardId, groupId) => void clusterCardWithGroup(apiRef.current, cardId, groupId),
       hideCard,
       revealCard: (cardId, focus) => void revealCard(cardId, focus ?? true),
       isCardOnScreen: (cardId) => {
@@ -4318,6 +4855,12 @@ export function SessionGrid(props: {
       });
       api.onDidRemovePopoutGroup?.((e: PopoutGroup) => {
         if (e.window) removePopoutWindow(e.window);
+        // ...and the cards that window handed back get placed where they
+        // BELONG rather than wherever its one dock-back reference pointed
+        // (#656/#657). This event is the discriminator as well as the trigger:
+        // the block comment on `settleDockedBackCards` has the two dockview
+        // orderings it reads.
+        settleDockedBackCards(api);
       });
       // ...and when one of those windows turns out to have died on its own
       // (#292), the card it was hosting comes home. The registry's own liveness
@@ -4346,6 +4889,12 @@ export function SessionGrid(props: {
       window.addEventListener('beforeunload', () => {
         sessionStore.setTearingDown(true);
       });
+      // ...and the dock-back bookkeeping goes with the grid that owns it: an
+      // armed card carries a `setMoving` flag AND a live 10s timer, neither of
+      // which should outlive the dockview instance that armed it. This listener
+      // is the QUIT half only — `beforeunload` never fires for a remount, which
+      // is why the component also drops them from an effect teardown.
+      window.addEventListener('beforeunload', () => forgetDockBacks());
       // closing a card (tab X or the overlay) forgets it — it will NOT come
       // back next launch. Quitting keeps the record so sessions DO come back,
       // so we skip this during teardown (belt-and-suspenders vs Dockview
@@ -4387,7 +4936,22 @@ export function SessionGrid(props: {
         // `answered` (#440): a refused `workspace:getLayout` is a truthy
         // object, and handing it to `fromJSON` would report itself as a corrupt
         // layout — the one failure mode this whole block is written to avoid.
-        const saved = answered(await window.switchboard.workspace.getLayout());
+        const layoutAnswer = await window.switchboard.workspace.getLayout();
+        const saved = answered(layoutAnswer);
+        // A REFUSAL IS COUNTED WITH "no layout", and that is the opposite of
+        // what the `#650` comments below do three times — so it needs saying.
+        // Those prunes delete USER DATA keyed by card (drafts, pins, the manual
+        // order), and "we could not ask" must never be allowed to look like
+        // "you have none". A slot is not that: it is a POINTER INTO A LAYOUT,
+        // by a group id this dockview mints from `1` on every fresh grid. If
+        // `fromJSON` did not run — refused, absent, or thrown — the ids are
+        // re-minted and a persisted `groupId: '2'` names a stranger's group.
+        // `homeGroupId`/`placeAt` can refuse an id that is GONE; neither can
+        // see one that is a coincidence. So all three of those outcomes forget,
+        // and the thing forgotten is a pointer to a workspace that is not on
+        // screen (#657).
+        const layoutRefused = isIpcRefusal(layoutAnswer);
+        if (layoutRefused) console.warn('[layout] the saved layout was refused; forgetting slots');
         if (saved) {
           // Resolved BEFORE the restore's try/catch, not inside it: an await in
           // there whose rejection is unrelated to the layout would abort the
@@ -4396,7 +4960,11 @@ export function SessionGrid(props: {
           // prune below treats as "prune no groups".
           const groupIds = await window.switchboard.groups
             .list()
-            .then((gs) => gs.map((g) => g.id))
+            // #650: `?? null` and NOT `?? []`. The comment above is the reason
+            // — `null` here means "we do not know", which prunes no groups,
+            // while an empty array would assert that no group exists and prune
+            // every one of them. A refusal is the first, never the second.
+            .then((gs) => answered(gs)?.map((g) => g.id) ?? null)
             .catch(() => null);
           try {
             // WHICH PANELS ARE NOT COMING BACK, decided once and used twice
@@ -4412,17 +4980,37 @@ export function SessionGrid(props: {
             //    relaunch" is named in E16's *Not in scope*, and a viewer
             //    restored blind would also re-read a file whose folder may no
             //    longer be in the read scope.
-            const known = new Set(
-              (await window.switchboard.sessions.knownCards()).map((c) => c.cardId)
-            );
+            // #650, and the same distinction as `groupIds` above: `.map` on
+            // the brand throws, but degrading to an EMPTY set would be worse
+            // than the throw — it says "no card has a record" and prunes every
+            // session panel out of the restored layout. `null` says "we could
+            // not ask", and prunes no session. Derived panels are dropped
+            // either way: that verdict never depended on the answer.
+            const cardRecords = answered(await window.switchboard.sessions.knownCards());
+            const known = cardRecords ? new Set(cardRecords.map((c) => c.cardId)) : null;
             const willBePruned = (panelId: string): boolean => {
               const s = /^session-(.+)$/.exec(panelId);
-              return isDerivedPanelId(panelId) || (!!s && !known.has(s[1]));
+              return isDerivedPanelId(panelId) || (!!s && known !== null && !known.has(s[1]));
             };
             // popouts persist in the layout, but their stored url has last
             // launch's (random) loopback port and their position may be on a
             // now-missing monitor — fix both before restoring (E8-02)
-            const workAreas = await window.switchboard.workAreas();
+            // #650: an empty list makes `sanitizePopoutLayout` skip the
+            // rescue entirely (it guards on `workAreas.length > 0`), so a
+            // refusal moves no window rather than moving all of them on the
+            // strength of a display list we never received.
+            //
+            // NOTE THE ASYMMETRY with `revealNow`, which degrades the same
+            // refusal to `[]` and thereby DOES rescue (an empty list makes
+            // `boxOnAnyDisplay` false, so the remembered rect is dropped and
+            // the window opens over the opener). Neither is a copy of the
+            // other's mistake: both fall onto the behaviour their own callee
+            // already had for an empty display list, and that behaviour differs
+            // because `sanitizePopoutLayout` guards on length and
+            // `boxOnAnyDisplay` does not. Restoring a whole saved layout is
+            // also the wrong moment to relocate every popout on a non-answer,
+            // where reopening one card's window is cheap to get wrong.
+            const workAreas = answered(await window.switchboard.workAreas()) ?? [];
             const rescuedNow: RescuedPopout[] = [];
             // ...and no popout window is restored holding a panel that verdict
             // condemns (#494): a window left with nothing is not opened at all,
@@ -4452,38 +5040,56 @@ export function SessionGrid(props: {
             if (rescuedNow.length > 0) {
               uiSet('rescuedPopouts', [...uiGet<RescuedPopout[]>('rescuedPopouts', []), ...rescuedNow]);
             }
-            // presentation records outlive their panels by design (that is the
-            // point of hiding), so the only thing that can retire one is the card
-            // itself being gone — otherwise the blob grows for ever
-            sessionStore.prunePresentation(known);
-            // the presentation POLICY overrides (E9-06) are keyed the same way and
-            // outlive their cards the same way, so they are retired at the same
-            // moment. A FAILED group list keeps every group override rather than
-            // pruning against an empty set: "the IPC rejected" and "you have no
-            // groups" are the same value otherwise, and one of them would silently
-            // delete settings the user made.
-            sessionStore.prunePolicies(known, groupIds ?? Object.keys(sessionStore.getPolicies().groups));
-            // and E9-07's maximize, which names a card and snapshots every other
-            // card's rung: a maximize held for a session that has since been
-            // closed would keep the workspace blown up around nothing.
-            sessionStore.pruneLayout(known);
-            // E9-10's per-session focus overrides are card-keyed and outlive
-            // their cards exactly as the presentation overrides above do.
-            sessionStore.pruneFocusPolicies(known);
-            // and E9-09's pins, keyed the same way and outliving their cards
-            // the same way.
-            sessionStore.prunePins(known);
-            // ...and #559's manual rail order, which names cards the same way
-            // and would otherwise keep ranking sessions that no longer exist.
-            sessionStore.pruneManualOrder(known);
-            // ...and #485's unsent prompts. The same rule, and the one with the
-            // biggest payload: a draft is whatever the user pasted.
-            pruneDrafts(known);
-            // and #546's half of the same draft — the NAMES of the files that
-            // were attached to it, plus the retained bytes those names refer
-            // to. Same key shape, same rule, so the two halves of one draft
-            // cannot end up with different lifetimes.
-            pruneAttachmentDrafts(known);
+            // #650: EVERY prune below deletes records whose card is not in
+            // `known`, so a refused `knownCards` read must prune nothing at
+            // all — the identical argument the group-override comment inside
+            // makes for a failed group list, and the reason `known` is `null`
+            // rather than an empty set.
+            //
+            // Named precisely, because the size of the claim is the argument:
+            // presentation, policies, layout, focus policies, pins and manual
+            // order all delete unconditionally, so an empty set wipes every one
+            // of them for every session. The two DRAFT prunes would survive —
+            // `staleDraftKeys` and `staleAttachmentDraftKeys` already return
+            // early on an empty set (`composer-draft.ts`,
+            // `composer-attachment-draft.ts`). That is the same hazard, spotted
+            // once for the two biggest payloads and never generalised; the
+            // guard here is the generalisation, and it is the only thing
+            // standing between a refused read and the other six.
+            if (known !== null) {
+              // presentation records outlive their panels by design (that is the
+              // point of hiding), so the only thing that can retire one is the card
+              // itself being gone — otherwise the blob grows for ever
+              sessionStore.prunePresentation(known);
+              // the presentation POLICY overrides (E9-06) are keyed the same way and
+              // outlive their cards the same way, so they are retired at the same
+              // moment. A FAILED group list keeps every group override rather than
+              // pruning against an empty set: "the IPC rejected" and "you have no
+              // groups" are the same value otherwise, and one of them would silently
+              // delete settings the user made.
+              sessionStore.prunePolicies(known, groupIds ?? Object.keys(sessionStore.getPolicies().groups));
+              // and E9-07's maximize, which names a card and snapshots every other
+              // card's rung: a maximize held for a session that has since been
+              // closed would keep the workspace blown up around nothing.
+              sessionStore.pruneLayout(known);
+              // E9-10's per-session focus overrides are card-keyed and outlive
+              // their cards exactly as the presentation overrides above do.
+              sessionStore.pruneFocusPolicies(known);
+              // and E9-09's pins, keyed the same way and outliving their cards
+              // the same way.
+              sessionStore.prunePins(known);
+              // ...and #559's manual rail order, which names cards the same way
+              // and would otherwise keep ranking sessions that no longer exist.
+              sessionStore.pruneManualOrder(known);
+              // ...and #485's unsent prompts. The same rule, and the one with the
+              // biggest payload: a draft is whatever the user pasted.
+              pruneDrafts(known);
+              // and #546's half of the same draft — the NAMES of the files that
+              // were attached to it, plus the retained bytes those names refer
+              // to. Same key shape, same rule, so the two halves of one draft
+              // cannot end up with different lifetimes.
+              pruneAttachmentDrafts(known);
+            }
             // The same verdict, on the grid this time. Only GRID panels reach
             // here, and that is now guaranteed rather than usual:
             // `prunePopoutGroups` (#494) already took every condemned id out of
@@ -4503,7 +5109,22 @@ export function SessionGrid(props: {
             // that throws part-way loses every popout with it. Say so; the
             // renderer console is forwarded into switchboard.log (#165).
             console.error(`[layout] restore failed: ${String(err)}`);
+            // ...and every remembered slot went with it (#657) — see below.
+            sessionStore.forgetSlots();
           }
+        } else {
+          // NO LAYOUT CAME BACK, so no remembered slot means anything any more
+          // (#657). A `slot` or a `home` names a dockview group by an id that
+          // is minted per grid — "1", "2", ... — and those ids only mean what
+          // they meant last launch because `fromJSON` restores them with the
+          // layout. Without it the grid mints from the beginning, and a
+          // persisted `groupId: '2'` names whichever group happens to get there
+          // first: a stranger's. `homeGroupId` and `placeAt` can both refuse an
+          // id that is GONE; neither can see one that is a coincidence, so the
+          // records are dropped at the moment they stopped meaning anything
+          // instead of being read later and half-trusted. Nothing visible is
+          // lost — with no layout there are no slots to go back to.
+          sessionStore.forgetSlots();
         }
         for (let i = api.panels.length; i < props.seedPanels; i++) {
           counter.current += 1;

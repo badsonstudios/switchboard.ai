@@ -62,6 +62,8 @@ import {
   SlashCommand,
   slashToken,
 } from '../../../shared/slash-commands';
+import { answered } from '../../../shared/ipc/refusal';
+import type { TransportKind } from '../../../shared/transport';
 
 export type { FeedBlockDto } from '../lib/feed';
 
@@ -170,7 +172,7 @@ function EmptyState({
   diag: BindingDiagnostics | null;
   /** which transport hosts the session (#447) — the fail-open line must not
    *  send a Direct user to a Terminal tab that has no terminal in it */
-  transport?: 'pty' | 'stream';
+  transport?: TransportKind;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const copy = emptyStateCopy(binding, diag, transport);
@@ -261,7 +263,7 @@ export function FeedView(props: {
   approvalBatched?: boolean;
   /** which transport hosts this session — the handoff bar must not point at a
    *  terminal that does not exist (P2 #153 follow-up) */
-  transport?: 'pty' | 'stream';
+  transport?: TransportKind;
   /**
    * `updatedInput` is the `AskUserQuestion` answer (#563) and rides the same
    * decision path everything else uses — a question is answered by allowing the
@@ -350,7 +352,13 @@ export function FeedView(props: {
   React.useEffect(() => {
     let cancelled = false;
     void window.switchboard.transcripts.blocks(props.sessionId).then((b) => {
-      if (!cancelled) setBlocks(b as FeedBlockDto[]);
+      // `answered` BEFORE the cast (#650). `transcripts:blocks` is declared
+      // `Promise<unknown[]>`, so this cast is the only thing between the wire
+      // and the block list the feed renders - and a refusal cast into
+      // `FeedBlockDto[]` reaches `blocks.map` on the very next render and takes
+      // the whole feed down. An empty feed is the fail-open: the session keeps
+      // running and the live `onBlock` stream still fills it from here on.
+      if (!cancelled) setBlocks((answered(b) ?? []) as FeedBlockDto[]);
     });
     const off = window.switchboard.transcripts.onBlock((p) => {
       if (p.sessionId !== props.sessionId) return;
@@ -1328,7 +1336,7 @@ function Composer({
   model?: string;
   status?: string;
   /** P2-E10-09: only a typed-message transport can carry a pasted image */
-  transport?: 'pty' | 'stream';
+  transport?: TransportKind;
   onCycleAutonomy?: () => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
@@ -1617,7 +1625,12 @@ function Composer({
     }
     let cancelled = false;
     void window.switchboard.sessions.slashCommands(sessionId).then((list) => {
-      if (!cancelled) setCommands(list);
+      // #650: the brand in `commands` is `.filter`ed by the popup on the next
+      // keystroke. `[]` and not `null`: both draw an empty popup, but they are
+      // different facts — `null` is "not fetched yet" (what the branch above
+      // sets when the popup closes) and `[]` is "asked, and there are none".
+      // A refused read did finish asking, so `[]` is the honest one.
+      if (!cancelled) setCommands(answered(list) ?? []);
     });
     return () => {
       cancelled = true;

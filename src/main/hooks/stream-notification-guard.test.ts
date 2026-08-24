@@ -28,13 +28,14 @@ import { HookListener } from './hook-listener';
 import { LogSink, createLogger } from '../log/logger';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import { SessionEvent, isPermissionNotification, transition } from '../sessions/state-machine';
+import type { TransportKind } from '../../shared/transport';
 
 let dir: string;
 let listener: HookListener;
 let port: number;
 let applied: Array<{ sessionId: string; ev: SessionEvent }>;
 let nativeIds: string[];
-let transport: 'pty' | 'stream' | undefined;
+let transport: TransportKind | undefined;
 
 beforeEach(async () => {
   dir = tempDir('sb-sng-');

@@ -641,6 +641,251 @@ describe('the no-window warning re-arms once a window comes back (#334)', () => 
   });
 });
 
+// #333 — a request nobody can be shown is declined AT ONCE.
+//
+// The hole #319 papered over: a `can_use_tool` whose live session has no card
+// binding is pushed with `cardId: undefined`, every mounted card drops it
+// (`intakePermission` returns early on `r.cardId !== cardId`), and the router
+// holds it anyway. Before #319 that parked the CLI for ever; after it, the 300s
+// deadline declined it — five minutes after the user could first have been told,
+// with a reason ("nobody answered in time") that blames a person who was never
+// asked.
+//
+// Every test here reverts to red on the obvious mutations: drop the gate and the
+// first four fail; make the throwing probe deny instead of hold and the fifth
+// fails; share one message with the other two fail-open paths and the
+// distinctness test fails.
+describe('a session with no card to show it is declined at once (#333)', () => {
+  /** the router under test, with #333's probe and #319's two knobs */
+  function router(
+    probe: ((sessionId: string) => boolean) | null,
+    opts: { hasLiveWindow?: () => boolean; holdTimeoutMs?: number } = {}
+  ): StreamPermissions {
+    const p = new StreamPermissions(
+      (sessionId, msg) => {
+        sent.push({ sessionId, msg: msg as Record<string, unknown> });
+        return true;
+      },
+      (sessionId, ev) => applied.push({ sessionId, ev }),
+      createLogger(new LogSink({ dir }), 'perm'),
+      opts
+    );
+    if (probe) p.setAnswerSurfaceProbe(probe);
+    p.onPermissionRequest((r) => requests.push(r));
+    p.onPermissionResolved((id) => resolved.push(id));
+    return p;
+  }
+
+  /** what the CLI was told, unwrapped from the control_response envelope */
+  function behaviourOf(i = 0): Record<string, unknown> {
+    const msg = sent[i].msg as { response?: { response?: Record<string, unknown> } };
+    return msg.response?.response ?? {};
+  }
+
+  it('denies immediately instead of holding for the deadline', () => {
+    const p = router(() => false);
+
+    p.offer('ghost', canUseTool());
+
+    expect(p.pendingRequests()).toEqual([]); // nothing parked, so no deadline
+    expect(requests).toEqual([]); // and nothing pushed at a card that cannot match
+    expect(sent).toHaveLength(1);
+    expect(behaviourOf().behavior).toBe('deny');
+  });
+
+  // The session is ALIVE and goes on working — `streamStatusEvent` applied
+  // `permission-held` one message ago, and nothing else will ever end it.
+  it('ends needs-permission, so the badge does not lie about a question', () => {
+    const p = router(() => false);
+
+    p.offer('ghost', canUseTool());
+
+    expect(applied).toEqual([{ sessionId: 'ghost', ev: { kind: 'permission-resolved' } }]);
+    expect(transition('needs-permission', applied[0].ev).status).toBe('working');
+  });
+
+  // The point of the issue: the model must not be told a person declined this,
+  // and must be able to tell WHICH fail-open it hit.
+  it('says something distinct from the other two fail-open denials', () => {
+    const noCard = router(() => false);
+    noCard.offer('ghost', canUseTool());
+    const noCardMessage = String(behaviourOf(0).message);
+
+    sent.length = 0;
+    const noWindow = router(() => true, { hasLiveWindow: () => false });
+    noWindow.offer('s1', canUseTool());
+    const noWindowMessage = String(behaviourOf(0).message);
+
+    expect(noCardMessage).toMatch(/lost track of which of its cards/i);
+    expect(noCardMessage).not.toBe(noWindowMessage);
+    // …and DISTINCT means it names a different fault, not merely a different
+    // string. `not.toBe` passes for any two spellings of the same excuse, which
+    // is what the first version of this message was: it also blamed the window.
+    // Only the #319 case may say "window" — see `unavailable`.
+    expect(noWindowMessage).toMatch(/window/i);
+    expect(noCardMessage).not.toMatch(/window/i);
+    // …while still carrying the three things every unavailable-denial owes the
+    // model, or it gets routed around with a second tool (`unavailable`).
+    expect(noCardMessage).toMatch(/not a sandbox restriction/i);
+    expect(noCardMessage).toMatch(/ask again/i);
+    expect(noCardMessage).not.toMatch(/in time/i); // nobody was asked, so nobody was slow
+  });
+
+  it('a session that DOES have a card is held exactly as before', () => {
+    const p = router((sessionId) => sessionId === 's1');
+
+    p.offer('s1', canUseTool());
+
+    expect(p.pendingRequests()).toHaveLength(1);
+    expect(requests).toHaveLength(1);
+    expect(sent).toEqual([]); // nothing answered on the user's behalf
+
+    p.forgetSession('s1', 'test over'); // clears the held timer
+  });
+
+  // The asymmetry with `windowLive`, which counts a throw as "no window".
+  // Denying on "I can't tell" would take a question the user could have
+  // answered off their screen; holding costs at most the pre-#333 behaviour.
+  it('a probe that THROWS holds the request rather than denying it', () => {
+    const p = router(() => {
+      throw new Error('the card map exploded');
+    });
+
+    expect(() => p.offer('s1', canUseTool())).not.toThrow();
+    expect(p.pendingRequests()).toHaveLength(1);
+    expect(sent).toEqual([]);
+
+    p.forgetSession('s1', 'test over');
+  });
+
+  // Every call site that predates #333 — and `registerSessionIpc` is the only
+  // one that ever sets it.
+  it('no probe at all means hold, exactly as before #333', () => {
+    const p = router(null);
+
+    p.offer('s1', canUseTool());
+
+    expect(p.pendingRequests()).toHaveLength(1);
+    p.forgetSession('s1', 'test over');
+  });
+
+  // Order matters: an allow-all verdict never needed a surface to appear on.
+  it('allow-all still answers at the server, card or no card', () => {
+    const p = router(() => false);
+    p.setAllowAll('ghost');
+
+    p.offer('ghost', canUseTool());
+
+    expect(behaviourOf().behavior).toBe('allow');
+    expect(applied).toEqual([]); // the allow-all branch applies nothing (#319)
+  });
+
+  // …and when both are true, the window is the honest report: the missing card
+  // is a consequence of the app going away, not a second fault.
+  it('a closed window is reported as a closed window, not as a missing card', () => {
+    const p = router(() => false, { hasLiveWindow: () => false });
+
+    p.offer('s1', canUseTool());
+
+    expect(String(behaviourOf().message)).toMatch(/No switchboard window was open/i);
+  });
+
+  it('reports once per unbinding, and again after the session is bound and lost', () => {
+    let bound = false;
+    const lines = { error: 0, debug: 0 };
+    const realLog = createLogger(new LogSink({ dir }), 'perm');
+    const count =
+      (level: 'error' | 'debug') =>
+      (msg: string, fields?: LogFields): void => {
+        if (msg.startsWith('no card owns this session')) lines[level]++;
+        realLog[level](msg, fields);
+      };
+    const log = { ...realLog, error: count('error'), debug: count('debug') } satisfies Logger;
+    const p = new StreamPermissions(
+      () => true,
+      () => {},
+      log
+    );
+    p.setAnswerSurfaceProbe(() => bound);
+
+    p.offer('s1', canUseTool('req-1'));
+    expect(lines).toEqual({ error: 1, debug: 0 });
+
+    // still unbound — quiet, or a busy session writes one line per gated call
+    p.offer('s1', canUseTool('req-2'));
+    expect(lines).toEqual({ error: 1, debug: 1 });
+
+    // bound again: this one holds, and re-arms on its way past the gate
+    bound = true;
+    p.offer('s1', canUseTool('req-3'));
+    expect(p.pendingRequests()).toHaveLength(1);
+    expect(lines).toEqual({ error: 1, debug: 1 });
+
+    // lost again — loud AGAIN. Revert the `delete` in `offer` and this goes red.
+    bound = false;
+    p.offer('s1', canUseTool('req-4'));
+    expect(lines).toEqual({ error: 2, debug: 1 });
+
+    p.forgetSession('s1', 'test over'); // clears the held req-3 timer
+  });
+
+  // A teardown STRAGGLER is not a fault, and must not be reported as one.
+  //
+  // `tearDownLive` runs `manager.remove` — which deletes the transport handle,
+  // so `send` starts returning false — a step BEFORE `unbindLive`. Bytes already
+  // in the CLI's stdout buffer when the user hit Restart are ingested a tick
+  // later, against a session that is retired AND unbound, and land in exactly
+  // this gate. Nobody is blocked and nothing is lost; logging `error` there
+  // would put a "report this" line in the log on an ordinary Restart.
+  it('a straggler arriving after the teardown is quiet, not an error', () => {
+    const lines = { error: 0, debug: 0 };
+    const realLog = createLogger(new LogSink({ dir }), 'perm');
+    const count =
+      (level: 'error' | 'debug') =>
+      (msg: string, fields?: LogFields): void => {
+        if (msg.startsWith('no card owns this session')) lines[level]++;
+        realLog[level](msg, fields);
+      };
+    const log = { ...realLog, error: count('error'), debug: count('debug') } satisfies Logger;
+    const p = new StreamPermissions(
+      // what `SessionManager.sendToTransport` returns once the handle is gone
+      () => false,
+      () => {},
+      log
+    );
+    p.setAnswerSurfaceProbe(() => false);
+
+    p.offer('retired', canUseTool('req-1'));
+
+    expect(lines).toEqual({ error: 0, debug: 1 });
+    expect(p.pendingRequests()).toEqual([]); // still declined, still not parked
+  });
+
+  // …and an undelivered one leaves nothing behind, so a long run of Restarts
+  // cannot grow the set. The live case is what the set is for.
+  it('a straggler does not consume the once-per-session report', () => {
+    const lines = { error: 0 };
+    const realLog = createLogger(new LogSink({ dir }), 'perm');
+    let alive = false;
+    const log = {
+      ...realLog,
+      error: (msg: string, fields?: LogFields): void => {
+        if (msg.startsWith('no card owns this session')) lines.error++;
+        realLog.error(msg, fields);
+      },
+    } satisfies Logger;
+    const p = new StreamPermissions(() => alive, () => {}, log);
+    p.setAnswerSurfaceProbe(() => false);
+
+    p.offer('s1', canUseTool('req-1')); // straggler: not delivered, not counted
+    expect(lines.error).toBe(0);
+
+    alive = true;
+    p.offer('s1', canUseTool('req-2')); // the real thing, and still the first
+    expect(lines.error).toBe(1);
+  });
+});
+
 // #319 — "Allow all (this session)" answered at the SERVER, for Direct too.
 //
 // It was renderer-only: `sessions:allowAllSession` told `HookListener` alone,

@@ -142,12 +142,46 @@ export function isIpcRefusal(value: unknown): value is IpcRefusal {
 // sweep that leaves behind nineteen bespoke `=== true`s is a sweep that gets
 // half-undone by the next person who copies the wrong neighbour.
 //
+// THE OTHER HALF, AND THE RULE THAT COVERS BOTH (#650). #440 swept the sites
+// that read a refusal as a YES. It left, and named, the sites that use one as
+// the ANSWER — forty-one of them across eight files, mostly
+// `.then((l) => setState(l))` — where a refusal does not lie, it THROWS:
+// `l.map is not a function`, inside a `.then` nobody catches. Two wore an `as`
+// cast over a channel declared `Promise<unknown[]>` (`as EventDto[]`,
+// `as FeedBlockDto[]`), which is the brand put into a typed store under a
+// promise it cannot keep.
+//
+// Loud beats silent, and neither is FAIL-OPEN — a hard constraint (PHILOSOPHY
+// §3, litmus #3): our breakage never blocks a session, and an unhandled
+// rejection on the session-list refresh, or a dead component tree, is our
+// breakage blocking one. So #650 did NOT add a third helper or a per-channel
+// envelope (that shape is ruled out three paragraphs up, and for the same
+// reason it was then). It generalised the rule these two already imply:
+//
+//     LAUNDER A BROKERED ANSWER BEFORE YOU USE IT, IN ANY WAY AT ALL —
+//     then fall back to whatever this site already does with "nothing
+//     came back".
+//
+// `answered` is that launderer for every value channel; what changes per site
+// is the fallback, and it is a real judgement rather than a default:
+//
+//     setEvents(answered(l) ?? [])                — an empty list
+//     const p = answered(raw); if (!p) return;    — leave the state alone
+//     answered(gs)?.map(…) ?? null                — `null` = "we do not know";
+//                                                   `[]` would say "there are
+//                                                   none", and `SessionGrid`'s
+//                                                   layout restore PRUNES
+//                                                   against that list — every
+//                                                   pin, policy, override,
+//                                                   layout and rail position
+//                                                   in the app.
+//
 // `scripts/refusal-truthiness.js` is what keeps it swept: it parses the
 // renderer, follows every brokered bridge result one hop, and fails the unit
-// run if one of them reaches a boolean position without going through one of
-// these. A value that has been through `took`, `answered` or `isIpcRefusal` is
-// laundered — the scanner stops following it, because it can no longer be a
-// refusal.
+// run if one of them is READ — as a boolean or as a value — without going
+// through one of these. A value that has been through `took`, `answered` or
+// `isIpcRefusal` is laundered; the scanner stops following it, because it can
+// no longer be a refusal.
 
 /**
  * Did main actually DO it?
@@ -180,6 +214,13 @@ export function took(result: unknown): boolean {
  * are already written to handle "nothing came back" (`if (!folder) return`,
  * `list ?? []`), and this is the one line that makes a refusal take that path
  * instead of sailing through as a truthy object and being used as the answer.
+ *
+ * Since #650 this is the WHOLE story for the value channels, at every site and
+ * not only at the ones whose next move is a truthiness test: call it before the
+ * answer is `.map`ped, read for a property, handed to a setter, spread, stored
+ * or cast. Cast ESPECIALLY — `answered(s) as GitStatusDto | undefined`, never
+ * `answered(s as GitStatusDto)`; the cast is what hides the brand, so it goes
+ * on the outside where it is describing a value that has been checked.
  *
  * `undefined` and not `null`: `null` is a real answer on several of these
  * channels (`groups:update`, `sessions:create`, `sounds:get`) and collapsing a

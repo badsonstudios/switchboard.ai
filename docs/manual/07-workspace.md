@@ -42,7 +42,8 @@ on an empty box, leaves the name alone. Right-click for
 [what this session does when you submit a prompt](#changing-it).
 
 A **pinned** session (📌) sorts to the top of the list — of its group, if it is
-in one — and is skipped by everything that acts on sessions in bulk. See
+in one — stays put at the top while the rest of the list scrolls underneath it,
+and is skipped by everything that acts on sessions in bulk. See
 [Pinning a session](02-sessions.md#pinning-a-session-you-always-want-to-find).
 
 Sessions that are suspended or not currently on screen still appear here — the
@@ -106,10 +107,12 @@ for a second monitor. The session keeps running throughout; nothing restarts.
 
 - Click **⤡** to dock it back into the main window. It goes back to the spot it
   came from — the space it left is held open while it is away — so a session you
-  pop out and put back does not shuffle your layout around.
+  pop out and put back does not shuffle your layout around. If you had put that
+  session in a **group**, it is still in that group when it comes back.
 - **Closing the pop-out window** instead *suspends* the session: the card
   returns to the main window with a **Resume** button, and the conversation is
-  kept.
+  kept. It still comes back to its own spot — closing the window changes whether
+  the session keeps running, not where its card ends up.
 - **Changes and file viewers always open in the main window**, even when the
   session they belong to is off in a pop-out. They're things you read next to
   your work, so they go where you asked from rather than stacking up as extra
@@ -127,7 +130,9 @@ for a second monitor. The session keeps running throughout; nothing restarts.
   the main window on its own — it isn't tied to the window it started in. It has
   never had a spot on the grid, so it comes home the way a *new* session does:
   beside the sessions already there, never on top of a document, and never into
-  the spot belonging to the session whose window it was started in.
+  the spot belonging to the session whose window it was started in — however the
+  window empties, including when you close it from the title bar or the taskbar,
+  and including when the session that opened it has already gone.
 - **A new session always opens somewhere you can see it.** Started from the main
   window, it opens there: at full size in the space a popped-out session left
   behind rather than in the sliver that space collapses to, and never on top of
@@ -184,6 +189,13 @@ card to be focused. Once a session is collapsed or hidden it isn't focused any
 more, so bring it back with a click (its row in the Collapsed strip, the
 Sessions list, or its lamp) and carry on from there. Nothing becomes
 unreachable: the palette can put any focused session on any rung by name.
+
+**Coming back up always lands somewhere you can see.** A session takes its old
+spot when that spot is still there, and a spot left empty by a neighbour popping
+out counts — it opens back up to full size rather than the sliver it collapses
+to while nobody is in it. If the spot has become something else in the meantime
+— a document you have open, or a pane that has moved into its own window — the
+session gets a fresh spot instead, next to the others.
 
 The **Collapsed** strip appears near the top of the window only when something
 is actually collapsed, and disappears again when nothing is. Each row shows the
@@ -323,6 +335,7 @@ colour and badge, and the word *suspended* — so there's something to
 double-click, and `Ctrl+Shift+M` does the same thing from the keyboard.
 Maximizing a suspended session doesn't wake it up: it stays suspended, with its
 **Resume** button, until you press that.
+
 
 ## Getting out of the way by itself
 

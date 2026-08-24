@@ -303,6 +303,37 @@ describe('every block type, from the stream', () => {
     expect(texts()).toEqual(['do the thing']);
   });
 
+  // #491: the echo is the ONLY record of what was attached by the time the Feed
+  // sees the turn — the composer's chips are already gone. An attachment-only
+  // turn is the case that produced no block at all before.
+  it('a replayed prompt carries the attachments it was sent with', () => {
+    const png = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } };
+    feed.offer(SID, {
+      type: 'user',
+      message: { role: 'user', content: [png, png, { type: 'text', text: 'what is this?' }] },
+      isReplay: true,
+      parent_tool_use_id: null,
+    });
+    expect(feed.blocks(SID)[0]).toMatchObject({
+      kind: 'user',
+      text: 'what is this?',
+      attachments: { images: 2, documents: 0 },
+    });
+
+    feed.offer(SID, {
+      type: 'user',
+      message: { role: 'user', content: [png] },
+      isReplay: true,
+      parent_tool_use_id: null,
+    });
+    expect(feed.blocks(SID)).toHaveLength(2);
+    expect(feed.blocks(SID)[1]).toMatchObject({
+      kind: 'user',
+      attachments: { images: 1, documents: 0 },
+    });
+    expect(feed.blocks(SID)[1].text).toBeUndefined();
+  });
+
   it('tool blocks, and their OUT when the tool_result comes back', () => {
     feed.offer(
       SID,

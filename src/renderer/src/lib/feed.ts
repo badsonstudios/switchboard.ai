@@ -18,6 +18,13 @@ export interface FeedBlockDto {
     out?: string;
   };
   todos?: Array<{ content: string; status: string }>;
+  /**
+   * user: what rode with this prompt (#491), counted off the message that was
+   * actually sent. Absent — never `{images: 0, documents: 0}` — for a prompt
+   * that carried nothing, which is what keeps the ordinary block unchanged.
+   * The main-side shape and the reasoning are `main/feed/blocks.ts`.
+   */
+  attachments?: { images: number; documents: number };
   durationMs?: number;
   sidechain: boolean;
   ts?: string;

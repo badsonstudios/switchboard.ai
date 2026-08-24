@@ -16,6 +16,7 @@ import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
 import en from '../../../shared/i18n/locales/en.json';
 import { EventsPanel } from './EventsPanel';
+import type { EventDto } from '../model/types';
 import type { HistoryRepairNotice } from '../../../shared/history-repair';
 
 declare global {
@@ -214,5 +215,107 @@ describe('the history-repair notice (#539)', () => {
     await show([]);
     expect(host.querySelector('[data-events-notice="history-repair"]')).toBeNull();
     expect(host.textContent).toContain(en.events.empty);
+  });
+});
+
+// --- The reviewed row's de-emphasis is a token pair, not an opacity (#268) ---
+//
+// `tokens.drift.test.ts` measures the pair the reviewed row paints — the fill
+// and the ink written on it — but it reads a stylesheet, and the defect it was
+// written for was an INLINE `opacity: 0.82` on the row div. That is invisible
+// to it: put the opacity back beside the class and every ratio over there
+// still passes, while every colour on the row loses about a point of contrast.
+//
+// So this is the half that has to live in the component: the row asks for the
+// de-emphasis by ATTRIBUTE, and asks for nothing else. Group opacity is the
+// mechanism this issue removed and the one an eye cannot audit, so it is named
+// rather than left to "no inline style at all" — a row is entitled to its
+// outline and its radius.
+describe('a reviewed row recedes by token, never by opacity', () => {
+  const evt = (id: number, kind: EventDto['kind']): EventDto => ({
+    id,
+    sessionId: 's1',
+    kind,
+    at: '2026-08-21T10:00:00.000Z',
+  });
+
+  async function rowsFor(events: EventDto[]): Promise<HTMLElement[]> {
+    await act(async () => {
+      root!.render(
+        <EventsPanel
+          sessions={[{ id: 's1', title: 'alpha', accent: 'var(--accent-blue)' }]}
+          events={events}
+          queueEvents={events}
+          visited={new Set<number>()}
+          onFocus={() => {}}
+          onVisit={() => {}}
+          queueBinding="Ctrl+Space"
+          {...handlers}
+        />
+      );
+    });
+    return [...host.querySelectorAll<HTMLElement>('[role="listitem"]')];
+  }
+
+  it('marks the reviewed row, and only the reviewed row', async () => {
+    const [needy, reviewed] = await rowsFor([evt(1, 'needs-input'), evt(2, 'ready')]);
+    expect(reviewed.getAttribute('data-reviewed')).toBe('true');
+    expect(needy.getAttribute('data-reviewed')).toBeNull();
+    // the attribute only does anything through the rule that reads it
+    for (const row of [needy, reviewed]) expect([...row.classList]).toContain('event-row');
+  });
+
+  it('sets no inline opacity on either kind of row', async () => {
+    for (const row of await rowsFor([evt(1, 'needs-input'), evt(2, 'ready')])) {
+      expect(
+        row.style.opacity,
+        'group opacity fades the text AND the fill toward what is behind both — ' +
+          'it takes contrast off every colour on the row at once, and no token test can see it'
+      ).toBe('');
+    }
+  });
+
+  it("writes the row's TITLE in the row's own ink", async () => {
+    // The title is the loudest thing on the row and is therefore what the
+    // de-emphasis is mostly made of: `--text` on a live row, one rung down the
+    // neutral ladder on a reviewed one. Spelling either token here would put
+    // the step in a component, where nothing measures it — and reverting this
+    // to a fixed `var(--text)` is not an AA failure (it is MORE contrast), it
+    // is the reviewed tail quietly ceasing to recede at all, which is the one
+    // regression a contrast test cannot have an opinion about.
+    for (const row of await rowsFor([evt(1, 'needs-input'), evt(2, 'ready')])) {
+      const title = [...row.querySelectorAll<HTMLElement>('span')].find(
+        (w) => w.textContent === 'alpha'
+      );
+      expect(title, 'the row stopped naming its session').toBeDefined();
+      expect(title!.style.color).toBe('inherit');
+    }
+  });
+
+  it("writes the reviewed row's state word in the row's own ink", async () => {
+    // The one word on a reviewed row that says what the row IS. It used to
+    // carry its own token (`--faint`, the app's hairline hint) and measured
+    // 2.15:1 with the old opacity folded in — a value no test in the token
+    // suite could reach, because the map that held it is a component's. It
+    // inherits now, so the colour on screen IS the pair
+    // `.event-row[data-reviewed='true']` declares and tokens.drift.test.ts
+    // measures. A token named here again would be a second opinion about it.
+    const [, reviewed] = await rowsFor([evt(1, 'needs-input'), evt(2, 'ready')]);
+    const words = [...reviewed.querySelectorAll<HTMLElement>('span')];
+    const state = words.find((w) => w.textContent?.startsWith(en.events.kind.ready));
+    expect(state, 'the reviewed row stopped saying what state it is in').toBeDefined();
+    expect(
+      state!.style.color,
+      'a colour of its own here is a colour the drift test cannot see'
+    ).toBe('inherit');
+  });
+
+  it('leaves the fill to the stylesheet, so the pair stays measurable', async () => {
+    // an inline background would beat the rule on specificity and the drift
+    // test would be measuring a colour nobody paints
+    for (const row of await rowsFor([evt(1, 'needs-input'), evt(2, 'ready')])) {
+      expect(row.style.background).toBe('');
+      expect(row.style.backgroundColor).toBe('');
+    }
   });
 });

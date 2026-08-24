@@ -6,12 +6,21 @@
 // transport implementation, and proving that is most of the point.
 import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
-import { SessionManager, type SessionRecord } from './session-manager';
+import { SessionManager, type SessionRecord, type StatusChange } from './session-manager';
 // TYPE-ONLY, and it must stay that way: `preload/index.ts` calls
 // `contextBridge.exposeInMainWorld` at import time and there is no
 // contextBridge in a vitest process. `import type` is erased entirely.
-import type { SessionRecordDto } from '../../preload/index';
-import type { SessionRecordWire, SessionStatus } from '../../shared/sessions';
+import type { SessionRecordDto, SwitchboardApi } from '../../preload/index';
+import {
+  AUTONOMY_MODES,
+  isAutonomyMode,
+  type AutonomyMode,
+  type CardStatus,
+  type SessionCardWire,
+  type SessionRecordWire,
+  type SessionStatus,
+} from '../../shared/sessions';
+import { AUTONOMY_PERMISSION_MODE } from '../providers/claude';
 import { ContributionRegistry } from '../../shared/extensibility/registry';
 import { MainContributions, SpawnRecipe } from '../extensibility/contributions';
 import {
@@ -386,6 +395,119 @@ describe('the live record and its DTO cannot drift (#445, #590)', () => {
     const accountedFor: Exact<keyof SessionRecord, keyof SessionRecordWire | MainOnlyRecordKeys> =
       true;
     expect(accountedFor).toBe(true);
+  });
+});
+
+// #618 — the same treatment for what #590 left behind.
+//
+// #611 gave the session RECORD one declaration. Four smaller copies survived it,
+// and the first was the identical defect one channel over: `sessions:status`
+// took `change: unknown` in the preload and both readers in `SessionGrid` cast
+// it back to `{ sessionId: string; to: string }`. A `to` of `string` is exactly
+// what `status: string` was — it compiles a comparison against a status no state
+// machine can produce, and that comparison then never fires, in silence, for
+// ever. Same pins, same reasoning as the block above.
+//
+// `SwitchboardApi` rather than a hand-named DTO type: `onStatus` and `cards`
+// declare their shapes inline in the bridge object, so the API type is where a
+// re-inlining would show up. Reading the parameter back off it is the same
+// comparison the block above makes against `SessionRecordDto`.
+type PreloadSessions = SwitchboardApi['sessions'];
+type PreloadStatusChange = Parameters<Parameters<PreloadSessions['onStatus']>[0]>[0];
+type PreloadCard = Awaited<ReturnType<PreloadSessions['cards']>>[number];
+
+describe('sessions:status is one declaration, not two (#618)', () => {
+  it("the preload's callback takes main's change, field for field", () => {
+    // `main/sessions/ipc.ts` does `send('sessions:status', change)` with the
+    // manager's own argument — so this is not "compatible", it is the same
+    // object. If it stops compiling, the fix is in whichever side re-declared
+    // it, never a cast at the reader.
+    const derived: Exact<PreloadStatusChange, StatusChange> = true;
+    expect(derived).toBe(true);
+  });
+
+  it("...so `to` is a status, not a string", () => {
+    // The defect proper. Tautological while both sides alias the shared type;
+    // it earns its keep the day someone re-inlines, which is precisely how
+    // `to: string` got there the first time.
+    const union: Exact<PreloadStatusChange['to'], SessionStatus> = true;
+    expect(union).toBe(true);
+  });
+
+  it('the manager emits exactly what the channel declares', () => {
+    // The other end of the same claim: a listener registered with the manager
+    // is handed this type, so widening `StatusChange` in main without touching
+    // the wire type is caught here rather than in a renderer.
+    const emitted: Exact<Parameters<Parameters<SessionManager['onStatusChange']>[0]>[0], StatusChange> =
+      true;
+    expect(emitted).toBe(true);
+  });
+});
+
+describe('sessions:cards is one declaration, not two (#618)', () => {
+  it("the preload's card is the shared card", () => {
+    // Main annotates the `sessions:cards` handler with `SessionCardWire`
+    // (`main/sessions/ipc.ts`), so this pins BOTH ends: a field added to the
+    // handler's object literal and not to the shared type fails there, and a
+    // re-inlined copy here fails on this line.
+    const derived: Exact<PreloadCard, SessionCardWire> = true;
+    expect(derived).toBe(true);
+  });
+
+  it("a card's status is the live union plus 'suspended', not `string`", () => {
+    // It said `string` here too. 'suspended' is not a state the machine can
+    // reach — `sessions:cards` answers `rec?.status ?? 'suspended'`, so it is
+    // the ABSENCE of a live record, named. That is why it is a separate union
+    // and not an eighth `SessionStatus`.
+    const union: Exact<PreloadCard['status'], CardStatus> = true;
+    expect(union).toBe(true);
+    const isSuper: Exact<CardStatus, SessionStatus | 'suspended'> = true;
+    expect(isSuper).toBe(true);
+  });
+
+  it("...and its `transport` stays OPTIONAL, unlike the record's (#445)", () => {
+    // The one field here that must NOT be made to match the record. Absence on
+    // a card means "this card has never chosen" and resolves through
+    // `DEFAULT_SESSION_TRANSPORT` at spawn; absence on a live record is
+    // impossible. Same word, two contracts — if a future tidy-up merges the two
+    // shapes, this is the line that should stop it.
+    const optional: Exact<PreloadCard['transport'], TransportKind | undefined> = true;
+    expect(optional).toBe(true);
+    const required: Exact<SessionRecordWire['transport'], TransportKind> = true;
+    expect(required).toBe(true);
+  });
+});
+
+describe('the autonomy vocabulary is declared once (#618)', () => {
+  it('the record, the card and the create argument all say the same four', () => {
+    // Nine hand-written copies of this union before #618, on both sides of the
+    // boundary and in the workspace file. These three are the ones that cross
+    // it.
+    const onRecord: Exact<SessionRecord['autonomy'], AutonomyMode | undefined> = true;
+    expect(onRecord).toBe(true);
+    const onCreate: Exact<Parameters<PreloadSessions['create']>[0]['autonomy'], AutonomyMode | undefined> =
+      true;
+    expect(onCreate).toBe(true);
+    const onSet: Exact<Parameters<PreloadSessions['setAutonomy']>[1], AutonomyMode> = true;
+    expect(onSet).toBe(true);
+  });
+
+  it('every mode has a CLI permission-mode, and nothing else does', () => {
+    // `AUTONOMY_PERMISSION_MODE` is keyed by the type, so a fifth profile fails
+    // `tsc` in `providers/claude.ts` until someone says what the CLI should be
+    // told. This is the runtime half: the LIST and the mapping agree, which a
+    // `Record<>` alone cannot promise.
+    expect(Object.keys(AUTONOMY_PERMISSION_MODE).sort()).toEqual([...AUTONOMY_MODES].sort());
+  });
+
+  it('the runtime guard accepts exactly the list, so main and the renderer agree', () => {
+    // `sessions:setAutonomy` validates untrusted input with this (§5.29) and
+    // the renderer falls back with it. It was a separate inline array in the
+    // handler — the copy whose going stale means silently refusing a mode the
+    // chips still offer.
+    for (const m of AUTONOMY_MODES) expect(isAutonomyMode(m)).toBe(true);
+    expect(isAutonomyMode('yolo')).toBe(false);
+    expect(isAutonomyMode(undefined)).toBe(false);
   });
 });
 
