@@ -81,9 +81,28 @@ export interface McpServerWire {
   scope: McpScope;
   transport: McpTransport;
   approval: McpApproval;
-  /** the executable (stdio) or the endpoint (http/sse) — never the secrets */
+  /**
+   * The executable (stdio) or the endpoint (http/sse).
+   *
+   * A URL is REDACTED on the way out (`redactUrl`): userinfo dropped, query
+   * values replaced by `…`. Remote MCP servers routinely carry the credential
+   * in the address — `https://user:token@host/mcp`, `?api_key=…` are both
+   * documented forms — so this is a secret-carrying field and was rendered
+   * verbatim until review said so.
+   */
   target: string;
-  /** stdio arguments, in order; empty for a remote server */
+  /**
+   * Stdio arguments, in order; empty for a remote server.
+   *
+   * **NOT REDACTED, and that is a known limit rather than a decision that it is
+   * safe.** `npx -y @some/mcp-server --api-key sk-live-…` is the documented
+   * install form for several published servers, and masking it means guessing
+   * which of an arbitrary program's flags are secrets — a guess that is wrong
+   * in both directions (it hides a `--port` and misses a `--pat`). Left visible
+   * on purpose, said out loud in `docs/manual/17-mcp-servers.md`, and revisited
+   * with PR 2's add form, which is where switchboard would first have a reason
+   * to know which flag is which.
+   */
   args: readonly string[];
   /**
    * The NAMES of the environment variables and headers this server carries —
@@ -96,10 +115,15 @@ export interface McpServerWire {
    * what a human needs to answer "is this configured?"; the values are what
    * only the CLI needs, and it reads them from disk itself.
    *
-   * There is no field on this shape that can carry a secret value. That is
+   * No field on this shape carries an `env` or `header` VALUE. That is
    * deliberate and is the enforcement: a reveal affordance would have to add
    * one, which is a decision someone has to make on purpose rather than a
    * default that leaked.
+   *
+   * THE CLAIM IS THAT NARROW ON PURPOSE. It used to read "no field on this
+   * shape can carry a secret value", which was false of two of them: `target`
+   * (a URL with userinfo or a query token) and `args` (`--api-key sk-live-…`).
+   * `target` is redacted now; `args` is a stated limit. See both fields.
    */
   envKeys: readonly string[];
   headerKeys: readonly string[];

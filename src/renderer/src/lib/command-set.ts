@@ -80,6 +80,9 @@ export interface CommandDeps {
   openPushSetup: () => void;
   /** set the quiet-hours window — when nothing person-facing fires (E14-05b) */
   openQuietHours: () => void;
+  /** the MCP servers the ACTIVE session can see (§5.17, #632) — also where a
+   *  typed `/mcp` lands, since its CLI picker has no terminal in Direct mode */
+  openMcpManager: () => void;
 }
 
 const CATEGORY_SESSION = 'commands.category.session';
@@ -239,6 +242,22 @@ export function buildCommands(deps: CommandDeps): Command[] {
       categoryKey: CATEGORY_ATTENTION,
       scope: 'app',
       run: () => deps.openQuietHours(),
+    },
+    {
+      // The MCP Manager (§5.17, #632). Under SESSION and not Attention: it
+      // answers "what can THIS session do", which is the Capability
+      // Inspector's question (§5.19) rather than "how does a session reach me".
+      //
+      // Palette-only and unbound, for the reason quiet hours is: the title
+      // bar's chip row is not growing, and a pane you open when something looks
+      // wrong does not earn a chord. `/mcp` typed in the composer is the other
+      // door and the one most people will find — that is #633's dead-end
+      // closed for the one command that had somewhere to land.
+      id: 'session.mcpServers',
+      titleKey: 'commands.mcpServers',
+      categoryKey: CATEGORY_SESSION,
+      scope: 'app',
+      run: () => deps.openMcpManager(),
     },
     ...jumps,
     {

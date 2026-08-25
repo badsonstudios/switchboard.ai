@@ -98,9 +98,57 @@
 >   degrades to `unknown`; a pending-approval server is `unknown` here on
 >   purpose, because approval is the config files' fact and they cannot time out.
 >
-> **STILL TO DO in PR 1:** `main/mcp/ipc.ts` + preload, the renderer modal, the
-> `/mcp` composer intercept, the palette entry, i18n keys, the manual page,
-> CHANGELOG.
+> **PR 1 IS CODE-COMPLETE AND REVIEWED.** 6158 tests / 240 files, lint and
+> typecheck clean. Awaiting Gate 2 (commit approval). Also built: `mcp/ipc.ts`
+> + preload + the `mcp.read` capability, `McpManagerDialog`, the `/mcp`
+> composer intercept (`lib/slash-intercept.ts` + a store signal), the palette
+> entry, i18n, `docs/manual/17-mcp-servers.md`, CHANGELOG, DESIGN roadmap.
+>
+> ## REVIEW FOUND A BLOCKER THAT WOULD HAVE SHIPPED SILENTLY
+>
+> `checkHealth` ran `execFile('claude', ['mcp','list'])`. **That cannot work on
+> Windows** — measured `ENOENT`: `child_process` without a shell does not apply
+> PATHEXT, and what PATH holds there is `claude.cmd`, which Node >=18.20 refuses
+> to spawn directly. Every row would have read "status unknown" for ever on
+> Dan's own machine, and because the file degrades so carefully NOTHING WOULD
+> HAVE LOOKED BROKEN. Fixed with `resolveCliPath()` + `launchSpec()` — the two
+> helpers this repo already had for exactly this. NOT `shell: true`: `cwd` is a
+> user repo path. Pinned on both platform branches with the injected-`platform`
+> trick (`launchSpec`'s #127 note: read the ambient platform and the Windows
+> branch passes vacuously on the Linux/macOS CI legs).
+>
+> **Nine more taken:** `execFile` can throw synchronously (EINVAL on a hostile
+> PATH entry) and the promise had no catch; the pane could strand on "Reading
+> your configuration…" for ever on any early return (and a test passed while it
+> did); the bridge call was unguarded against `App.tsx`'s own fail-open shim; no
+> focus restore on close (worst here of all six overlays, because `/mcp` means
+> focus was in the composer); no visible close button; the intercept fired on
+> **pty** sessions too, taking away a picker that WORKS there — P7, fixed with
+> `transport !== 'pty'`; a `/mcp` from a popout opened a dialog in a window the
+> user was not looking at (now raises); the §5.29 gate compared path SPELLINGS,
+> which `read-scope.ts` has scar tissue about (CI's 8.3 short names) — now
+> `path.resolve`d; and `__proto__` as a server name was dropped by
+> `Object.assign`.
+>
+> **The secret claim was too broad and is now narrowed.** `shared/mcp.ts` said
+> no field could carry a value; two could. `target` is REDACTED (URL userinfo
+> dropped, query values `…`) and pinned. **`args` is a STATED LIMIT** —
+> `npx some-server --api-key sk-live-…` is a documented install form, and
+> guessing which of an arbitrary program's flags are secrets is wrong in both
+> directions. Said out loud in the manual, revisit with PR 2's add form.
+>
+> ## Not taken — for PR 2 or a follow-up
+>
+> * Health is merged by NAME only, so two scopes defining one name get the same
+>   verdict though only one is the server the CLI loaded.
+> * `McpHealthWire` cannot tell "the check failed" from "the CLI has never heard
+>   of it" — both are an absent key. An `ok: boolean` would fix it; PR 2 wants it.
+> * `readInventory` (the impure edge) has no test; `buildInventory` is covered.
+> * One unparseable `~/.claude.json` prints "could not be read" twice, once per
+>   scope it backs.
+>
+> **HAND-VERIFY ON WINDOWS BEFORE TRUSTING THE STATUS COLUMN.** No automated
+> test can prove the launch works — that is exactly how the blocker got in.
 >
 > **Probe hygiene:** both probe servers removed, `claude mcp list` verified
 > empty. An empty scratch dir `C:\tmp\mcp-health-probe` resisted deletion (a

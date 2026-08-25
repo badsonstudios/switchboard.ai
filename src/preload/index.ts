@@ -10,6 +10,7 @@ import type {
 } from '../shared/transcripts';
 import type { PermissionRequestDto } from '../shared/ipc/permissions';
 import type { FileReadResult, FileWatchNotice } from '../shared/ipc/fs';
+import type { McpHealthWire, McpInventoryWire } from '../shared/mcp';
 import type {
   UpdateHandshake,
   UpdateInstallStatus,
@@ -497,6 +498,31 @@ const api = {
     remove: (id: string): Promise<void> => ipcRenderer.invoke('groups:delete', id),
     setSessionGroup: (cardId: string, groupId: string | null): Promise<void> =>
       ipcRenderer.invoke('groups:setSessionGroup', cardId, groupId),
+  },
+  /**
+   * The MCP Manager's read half (§5.17, #632).
+   *
+   * TWO CALLS, NOT ONE, and the split is the contract rather than an
+   * implementation detail: `list` is two local file reads and is what the pane
+   * draws from, while `health` SPAWNS THE CLI and connects to every configured
+   * server — seconds, when a remote endpoint is behind a VPN that is off. A
+   * caller that awaits both before rendering has built the hang this shape
+   * exists to prevent.
+   *
+   * Both echo the `folder` they were asked about, so an answer that arrives
+   * after the user switched sessions can be discarded rather than painted onto
+   * the wrong pane.
+   */
+  mcp: {
+    /** Every server this folder's session sees, across all three scopes.
+     *  Answers an empty inventory for a folder main declines to look at. */
+    list: (folder: string): Promise<McpInventoryWire> =>
+      ipcRenderer.invoke('mcp:list', folder),
+    /** Ask the CLI what it is actually connected to. SLOW — see above. Answers
+     *  an empty map for every failure, so an absent name means `unknown`
+     *  rather than a fault. */
+    health: (folder: string): Promise<McpHealthWire> =>
+      ipcRenderer.invoke('mcp:health', folder),
   },
   settings: {
     getAutoTrust: (): Promise<boolean> => ipcRenderer.invoke('settings:getAutoTrust'),

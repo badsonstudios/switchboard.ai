@@ -29,6 +29,8 @@ import { TranscriptWatcher } from './transcripts/watcher';
 import { HistoryRepairLog } from './sessions/history-repair-log';
 import { registerSessionIpc, SessionIpcHandle } from './sessions/ipc';
 import { registerGroupIpc } from './workspace/group-ipc';
+import { registerMcpIpc } from './mcp/ipc';
+import { samePath } from './mcp/config';
 import { registerFsIpc } from './fs/ipc';
 import { ReadScope } from './fs/read-scope';
 import { IpcBroker } from './ipc/broker';
@@ -1000,6 +1002,33 @@ app
     );
     // persistent groups (E12-01)
     registerGroupIpc(workspace, broker, createLogger(sink, 'workspace'));
+    // the MCP Manager's read half (§5.17, #632)
+    //
+    // `isSessionFolder` is the §5.29 gate, and it is the SAME pair of lists
+    // `ReadScope` is built from below — live sessions plus the persisted cards,
+    // so a suspended card's folder still answers. It is deliberately not
+    // `knownFolder` (live only): the manager is for looking at a workspace, and
+    // a card you have not resumed yet is exactly the one you want to check the
+    // servers of. The folder decides which `.mcp.json` is read AND which
+    // directory `claude mcp list` is spawned in, so it may never be an
+    // arbitrary caller-supplied path.
+    registerMcpIpc({
+      broker,
+      log: createLogger(sink, 'mcp'),
+      // COMPARED BY RESOLUTION, not by spelling. `read-scope.ts` carries the
+      // scar tissue for this: a spelling pre-check was written once and CI
+      // killed it, because GitHub's Windows runners hand out 8.3 short names
+      // (`C:\Users\RUNNER~1\…`) — "a path has many true spellings and exactly
+      // one resolution". Without the resolve, `mcp:list` refuses a folder
+      // `fs:read` serves happily, on the same machine, for the same session.
+      isSessionFolder: (folder) => {
+        const want = path.resolve(folder);
+        return [
+          ...manager.list().map((s) => s.identity.folder),
+          ...workspace.listSessions().map((s) => s.identity.folder),
+        ].some((f) => samePath(path.resolve(f), want));
+      },
+    });
     registerBuiltinContributions();
     log.app.info('contributions registered', { manifests: registry.manifests() });
 

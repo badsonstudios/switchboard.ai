@@ -34,6 +34,14 @@ export const CAPABILITIES = [
   'workspace.write',
   'groups.read',
   'groups.write',
+  'mcp.read', // enumerate the MCP servers a session can see, and ask the CLI
+  // whether it is connected to them (§5.17, #632). Its OWN
+  // capability rather than `environment.probe`, by the same
+  // argument that split `fs.probe` from `fs.read`: this reveals
+  // WHICH tools a session is wired to — server names, endpoints,
+  // and the NAMES of the credentials they carry — which is a
+  // meaningfully different power from "read the CLI's version".
+  // A Phase-4 consumer can hold one without the other.
   'app.window', // display geometry, popout movement
   'environment.probe', // runs the CLI to read its version, stats the user's
   // home config. Named for what it DOES, not where the
@@ -158,6 +166,14 @@ export const CHANNEL_CAPABILITIES = {
   'groups:palette': 'groups.read',
   'groups:setSessionGroup': 'groups.write',
   'groups:update': 'groups.write',
+  // The MCP Manager's read half (§5.17, #632). Two channels and one capability:
+  // both answer "what MCP servers does this folder's session have", one off the
+  // config files and one off the CLI. They are split because they have wildly
+  // different COSTS — the listing is two file reads, the health check connects
+  // to every server and can take seconds — not because they are different
+  // powers.
+  'mcp:list': 'mcp.read',
+  'mcp:health': 'mcp.read',
   'notifications:getPrefs': 'settings.read',
   // Whether the quiet window is open right now, and how many events it has held
   // (P2-E14-05b). Reads settings plus a count of the app's own held list —

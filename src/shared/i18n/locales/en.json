@@ -674,6 +674,7 @@
     "jumpAttention": "Go to the next session that needs you",
     "pushSetup": "Phone push & webhooks… — reach me when I'm away from the machine",
     "quietHours": "Quiet hours… — the times of day nothing may make a noise",
+    "mcpServers": "MCP servers…",
     "about": "About this build — version, commit, branch",
     "category": {
       "session": "Sessions",
@@ -842,5 +843,28 @@
     "smart": "Jump if it's on screen",
     "urgent": "Never jump, just the lamp",
     "none": "Never jump, skip the queue"
+  },
+  "mcp": {
+    "title": "MCP servers",
+    "forSession": "for {title}",
+    "noSession": "Open a session to see the MCP servers it can use.",
+    "loading": "Reading your configuration…",
+    "empty": "No MCP servers are configured for this session.",
+    "noCommand": "(no command recorded)",
+    "carries": "Carries: {keys}",
+    "scopeUnreadable": "This file could not be read — check it for a syntax error.",
+    "readOnlyNote": "This is a read-only view. Add and remove servers with the claude mcp command; changes show up here.",
+    "stateConnected": "connected",
+    "stateFailed": "not connecting",
+    "statePending": "waiting for your approval",
+    "stateDisabled": "turned off",
+    "stateUnknown": "status unknown",
+    "scope": {
+      "project": "This project (shared via .mcp.json)",
+      "local": "This project (just you)",
+      "user": "All your projects"
+    },
+    "close": "Close",
+    "closeIcon": "✕"
   }
 }

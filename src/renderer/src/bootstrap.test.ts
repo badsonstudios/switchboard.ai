@@ -45,6 +45,7 @@ function noopDeps(): CommandDeps {
     closeAllDocuments: () => {},
     openPushSetup: () => {},
     openQuietHours: () => {},
+    openMcpManager: () => {},
   };
 }
 

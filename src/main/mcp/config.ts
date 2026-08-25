@@ -101,8 +101,37 @@ function transportOf(raw: RawServer): McpTransport {
  */
 function targetOf(raw: RawServer): string {
   if (typeof raw.command === 'string' && raw.command) return raw.command;
-  if (typeof raw.url === 'string' && raw.url) return raw.url;
+  if (typeof raw.url === 'string' && raw.url) return redactUrl(raw.url);
   return '';
+}
+
+/**
+ * A remote endpoint with its credentials taken out.
+ *
+ * REMOTE MCP SERVERS ROUTINELY CARRY THE SECRET IN THE URL — `https://
+ * user:token@host/mcp` and `?api_key=…` are both documented forms — so
+ * `raw.url` is a secret-carrying field in exactly the way `env` and `headers`
+ * are, and the first version of this file rendered it verbatim onto the screen.
+ * Caught in review; the docstring on `McpServerWire` claimed no field could
+ * carry a value and was wrong about two of them.
+ *
+ * What survives is what identifies the server — scheme, host, port, path — and
+ * the NAMES of the query parameters, which is the same trade `envKeys` makes.
+ * A string that will not parse as a URL is not guessed at: it is reported as
+ * unparseable rather than half-redacted, because a partial redaction of an
+ * unknown format is how a secret survives in the tail.
+ */
+export function redactUrl(url: string): string {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return '(unreadable address)';
+  }
+  u.username = '';
+  u.password = '';
+  for (const key of [...u.searchParams.keys()]) u.searchParams.set(key, '…');
+  return u.toString();
 }
 
 /**
@@ -228,9 +257,14 @@ export function buildInventory(opts: {
 
   // local scope: every matching project entry's own map, merged (see
   // `projectEntries` — the duplicate-key case is real)
-  const localServers: Record<string, unknown> = {};
+  // SPREAD, NOT `Object.assign`: assign uses `[[Set]]`, so a server literally
+  // named `__proto__` would reassign this object's prototype instead of
+  // becoming a row — dropped rather than listed, in a file third parties write.
+  // Spread uses define semantics and is immune. (Not a pollution vector either
+  // way, since the target is a fresh literal; it is a server going missing.)
+  let localServers: Record<string, unknown> = {};
   for (const e of entries) {
-    if (isRecord(e.mcpServers)) Object.assign(localServers, e.mcpServers);
+    if (isRecord(e.mcpServers)) localServers = { ...localServers, ...e.mcpServers };
   }
 
   const servers = [

@@ -25,6 +25,8 @@
 //
 //     No MCP servers configured. Use `claude mcp add` to add a server.
 import { execFile } from 'child_process';
+import { resolveCliPath } from '../providers/claude';
+import { launchSpec } from '../transport/stream-service';
 import type { McpHealth } from '../../shared/mcp';
 
 /**
@@ -105,29 +107,67 @@ export function parseHealth(stdout: string): Record<string, McpHealth> {
   return states;
 }
 
-/** Run `claude mcp list` in a folder and read the health out of it. Answers an
- *  empty map for every failure — see the header. */
+/**
+ * Run `claude mcp list` in a folder and read the health out of it. Answers an
+ * empty map for every failure — see the header.
+ *
+ * HOW IT LAUNCHES THE CLI IS THE WHOLE OF THIS FUNCTION, and getting it wrong
+ * is invisible. The first version was `execFile('claude', …)`, which **cannot
+ * work on Windows** and was caught in review, not by a test:
+ *
+ *   * `child_process` without a shell does not apply PATHEXT, so a bare
+ *     `claude` never resolves — measured on this machine, `ENOENT`;
+ *   * and the thing PATH actually holds there is `claude.cmd`, which Node
+ *     ≥18.20 refuses to spawn directly (the CVE-2024-27980 fix).
+ *
+ * So on the maintainer's own platform every row would have read "status
+ * unknown" for ever, and — because this file degrades so carefully — nothing
+ * would have looked broken. The two existing solutions in this repo
+ * (`preflight.ts`, `transport/stream-service.ts`) are the ones to copy, and
+ * `launchSpec` is the shared one.
+ *
+ * NOT `shell: true`, which would "fix" it and open a hole: `cwd` is a user repo
+ * path and the arguments are user-configured. `launchSpec`'s own header rules
+ * it out for the same reason.
+ *
+ * `platform` is injected rather than read inside, because that is the only way
+ * the Windows branch is exercised on the Linux and macOS CI legs — the #127
+ * lesson `launchSpec` documents.
+ */
 export function checkHealth(
   folder: string,
-  opts: { bin?: string; timeoutMs?: number } = {}
+  opts: { bin?: string | null; timeoutMs?: number; platform?: NodeJS.Platform } = {}
 ): Promise<Record<string, McpHealth>> {
   return new Promise((resolve) => {
-    execFile(
-      opts.bin ?? 'claude',
-      ['mcp', 'list'],
-      {
-        cwd: folder,
-        encoding: 'utf8',
-        timeout: opts.timeoutMs ?? HEALTH_TIMEOUT_MS,
-        windowsHide: true,
-        maxBuffer: 4 * 1024 * 1024,
-      },
-      // STDOUT IS READ EVEN ON A NON-ZERO EXIT, and that is not sloppiness: the
-      // CLI prints the servers it did reach before whatever made it exit
-      // non-zero, and a partial answer is strictly better than none for a
-      // column that is allowed to say `unknown`. A spawn that produced nothing
-      // yields `{}`, which is the same thing said honestly.
-      (_err, stdout) => resolve(parseHealth(stdout ?? ''))
-    );
+    // RESOLVED, not assumed. `resolveCliPath` is the same lookup preflight and
+    // the transcript check use, so a machine where the CLI cannot be found
+    // answers "no health" here rather than reporting every server as broken.
+    const cli = opts.bin === undefined ? resolveCliPath() : opts.bin;
+    if (!cli) return resolve({});
+    const { file, argv } = launchSpec(cli, ['mcp', 'list'], opts.platform);
+    // `execFile` THROWS SYNCHRONOUSLY on a hostile PATH entry (EINVAL) — the
+    // same trap `update/token.ts` documents. Inside a promise executor that is
+    // a rejection, and this function's contract is that it never has one.
+    try {
+      execFile(
+        file,
+        argv,
+        {
+          cwd: folder,
+          encoding: 'utf8',
+          timeout: opts.timeoutMs ?? HEALTH_TIMEOUT_MS,
+          windowsHide: true,
+          maxBuffer: 4 * 1024 * 1024,
+        },
+        // STDOUT IS READ EVEN ON A NON-ZERO EXIT, and that is not sloppiness:
+        // the CLI prints the servers it did reach before whatever made it exit
+        // non-zero, and a partial answer is strictly better than none for a
+        // column that is allowed to say `unknown`. A spawn that produced
+        // nothing yields `{}`, which is the same thing said honestly.
+        (_err, stdout) => resolve(parseHealth(stdout ?? ''))
+      );
+    } catch {
+      resolve({});
+    }
   });
 }

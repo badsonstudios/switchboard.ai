@@ -193,6 +193,37 @@ describe('secrets never reach the wire shape (#632 plan call, §5.29)', () => {
     expect(s.envKeys).toEqual(['API_KEY', 'REGION']);
   });
 
+  it('redacts a credential carried in the URL itself', () => {
+    // REVIEW CAUGHT THIS. Remote MCP servers routinely put the secret in the
+    // address — both of these are documented forms — and the first version
+    // rendered `raw.url` verbatim onto the screen while the docstring claimed
+    // no field could carry a value.
+    const i = inv({
+      mcpJson: {
+        mcpServers: {
+          a: { type: 'http', url: 'https://someone:sk-live-SECRET@host.dev/mcp' },
+          b: { type: 'http', url: 'https://host.dev/mcp?api_key=sk-live-SECRET&team=acme' },
+        },
+      },
+    });
+    const blob = JSON.stringify(i);
+    expect(blob).not.toContain('sk-live-SECRET');
+    // ...while what IDENTIFIES the server survives, which is the whole trade
+    expect(byName(i, 'a').target).toContain('host.dev/mcp');
+    expect(byName(i, 'b').target).toContain('api_key');
+    // the VALUE of a benign parameter goes too: guessing which are secret is
+    // how one survives
+    expect(byName(i, 'b').target).not.toContain('acme');
+  });
+
+  it('refuses to half-redact an address it cannot parse', () => {
+    // A partial redaction of an unknown format is how a secret survives in the
+    // tail. Say we could not read it instead.
+    const i = inv({ mcpJson: { mcpServers: { a: { type: 'http', url: 'not a url ?k=sekrit' } } } });
+    expect(byName(i, 'a').target).toBe('(unreadable address)');
+    expect(JSON.stringify(i)).not.toContain('sekrit');
+  });
+
   it('and no field anywhere on the row contains the value', () => {
     // THE REAL ASSERTION, and the reason it is written this way rather than as
     // three `not.toBe`s: this passes only while the shape has no field that can
