@@ -3,6 +3,58 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔨 IN PROGRESS — 2026-08-25: #632 — MCP Manager popup (§5.17)
+>
+> **Dan changed course 2026-08-25**, mid-queue: skip #688/#680/#695/#702, go
+> straight to the MCP work. He asked for "the rest of the slash commands and
+> especially /mcp"; that is TWO tickets — **#633** (picker-style slash commands:
+> `/model`, `/permissions`, …) and **#632** (the MCP Manager). He chose **#632
+> first**, because #633's own done-when delegates `/mcp` to it.
+>
+> At Gate 1 (plan approval). Green-field: the only MCP code in `src/` today is
+> the `/mcp` entry in the builtin slash catalogue (`providers/claude.ts:126`).
+>
+> ## CLI PROBES RUN 2026-08-25 — two of them contradict the issue
+>
+> Run against the `claude` on PATH, per the standing rule. **Do not re-derive
+> these; do not trust the issue text over them.**
+>
+> 1. **`claude mcp list --json` DOES NOT EXIST.** The issue says to mutate and
+>    read via `claude mcp add / remove / list --json`. `mcp list` and `mcp get`
+>    take NO options at all (`-h` only) and emit human text with emoji. (Note
+>    `--json` DOES exist for `claude plugin` — DESIGN §5.18 — which is probably
+>    where the issue's assumption came from.) DESIGN §5.17 itself says "read the
+>    real config files", so the design was right and the ticket was wrong.
+> 2. **There is no enable/disable verb.** The full subcommand list is: `add`,
+>    `add-from-claude-desktop`, `add-json`, `get`, `list`, `login`, `logout`,
+>    `remove`, `reset-project-choices`, `serve`. The issue's done-when asks for
+>    "enable/disable … through the real CLI" and there is no such path — it is
+>    the `enabledMcpjsonServers` / `disabledMcpjsonServers` settings keys, which
+>    only a session or a settings write can move. **Needs a scope call.**
+>
+> ## Where the three scopes actually live (probed, verified by writing one)
+>
+> * **project** → `<cwd>/.mcp.json`, shape
+>   `{ mcpServers: { <name>: { type, command, args, env } } }`
+> * **local** → `~/.claude.json` → `projects[<path>].mcpServers`
+> * **user** → `~/.claude.json` → **top-level** `mcpServers`
+> * Approval state for `.mcp.json` servers → `enabledMcpjsonServers` /
+>   `disabledMcpjsonServers` on the project entry. Unapproved reads as
+>   `⏸ Pending approval (run \`claude\` to approve)` and is NOT connected to.
+>
+> **WINDOWS GOTCHA, found by accident and worth more than the rest:**
+> `~/.claude.json`'s `projects` map had TWO keys for this repo differing only in
+> drive-letter case — `c:/Projects/Switchboard.ai` and
+> `C:/Projects/Switchboard.ai` — each with its own `mcpServers`. Any scope
+> lookup must match paths case-insensitively on Windows or a session reads an
+> empty scope and reports no servers. Also: top-level `mcpServers` is `null`
+> when empty, not `{}`.
+>
+> **`-s local` resolves to the REPO, not the cwd.** Run from
+> `.claude/work_files/mcp-probe`, `claude mcp add -s local` wrote into the
+> project entry for `C:\Projects\Switchboard.ai`. The probe server was removed
+> and `~/.claude.json` verified clean; the scratch dir is deleted.
+>
 > # ⏳ PR OPEN — 2026-08-24: #687 — a refused-create card now has a rail row
 >
 > **PR #712 open, awaiting Dan's review + squash-merge.** Branch
