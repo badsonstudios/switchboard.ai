@@ -3,15 +3,16 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔨 IN PROGRESS — 2026-08-24: #687 — a refused-create card has no rail row
+> # ⏳ PR OPEN — 2026-08-24: #687 — a refused-create card now has a rail row
 >
-> **Started 2026-08-24. Gate 1 passed.** Branch
-> `feature/687-not-started-rail-row`. Implemented, reviewed, suites green —
-> **awaiting Gate 2 (commit approval)**. Milestone: Phase 2 - The Switchboard.
+> **PR #712 open, awaiting Dan's review + squash-merge.** Branch
+> `feature/687-not-started-rail-row` @ `d19a693`, based on main @ `4b8c09e`.
+> Both gates passed. Milestone: Phase 2 - The Switchboard.
 >
 > **6098 unit tests / 236 files** (+29 / +1 vs the 6069/235 baseline), lint and
 > typecheck clean. **Local e2e NOT run** — #705: the Windows foreground lock
 > fails blurApp-gated specs while Dan is at the machine, so CI is the gate.
+> USER-FACING → do not auto-merge.
 >
 > **The gap, traced end to end (facts, not guesses):**
 > * `addSessionCardTo` mints a `cardId` and adds a dockview panel. **Main knows
@@ -53,9 +54,9 @@
 > rename, drag-into-group) and one vacuous test. All taken; 1 blocker,
 > 7 should-fix, 6 nits — every one addressed or answered in a comment.
 >
-> **Next up after this:** #688 (doc-only), #680, #695, #702, #607, #619. Still
-> owed: 11 dogfood rows (12 now — #687's is filed ahead of its merge),
-> `/pm`'s #256 reconciliation.
+> **NEXT UP: #688 (doc-only)**, then #680, #695, #702, #607, #619. Still owed:
+> 12 dogfood rows (#687's is filed ahead of its merge, deliberately, so it
+> cannot be lost between the PR and the train), `/pm`'s #256 reconciliation.
 
 > # ✅ MERGED — 2026-08-24: #699 + #700 transport-hygiene bundle
 >
