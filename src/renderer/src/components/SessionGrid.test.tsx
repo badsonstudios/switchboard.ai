@@ -270,6 +270,80 @@ describe('layoutSweepPort.plan — computed over the store', () => {
   });
 });
 
+// ── the card main has never heard of (#687) ─────────────────────────────────
+//
+// THIS IS THE ISSUE'S DONE-WHEN, at the seam where it is decidable. #686
+// reported it and #606's spec wrote it into a comment: a card whose
+// `sessions:create` was refused was in no session list, `layoutCards()` is
+// built from the rail order, and `heldMaximize` honours a maximize only for a
+// card that list holds — so the double-click reached `toggleMaximizeCard`, the
+// store recorded the maximize, and the sweep then declined to do anything with
+// it. Equally true of Ctrl+Shift+M, which is why it was never a header bug.
+//
+// The store gives such a card a row now, so the rest follows: it is in rail
+// order, so it is in `layoutCards()`, so the maximize resolves.
+describe('layoutSweepPort.plan — a card whose start was refused (#687)', () => {
+  afterEach(() => {
+    // the store is a singleton across this file, and `setSessions([])` in the
+    // shared beforeEach does not reach the not-started half
+    for (const id of ['ghost', 'a']) sessionStore.clearCardNotStarted(id);
+  });
+
+  it('is in the plan at all — rail order, and therefore `layoutCards()`', () => {
+    seed([{ id: 'a' }]);
+    sessionStore.markCardNotStarted({ id: 'ghost', title: 'ghost', folder: 'C:/p/ghost' });
+    place('a', 'collapsed');
+    place('ghost', 'collapsed');
+    sessionStore.setLayout(withMode('grid'));
+    expect(layoutSweepPort.plan(sweep({ trigger: 'switch' })).map((m) => m.cardId)).toEqual([
+      'a',
+      'ghost',
+    ]);
+  });
+
+  it('MAXIMIZES: the workspace folds around it, which it would not do before', () => {
+    seed([{ id: 'a' }]);
+    sessionStore.markCardNotStarted({ id: 'ghost', title: 'ghost', folder: 'C:/p/ghost' });
+    place('a', 'expanded');
+    place('ghost', 'expanded');
+
+    toggleMaximizeCard(noGrid, 'ghost');
+
+    expect(sessionStore.getLayout().maximized).toBe('ghost');
+    // ...and, unlike before, the sweep agrees: the neighbour folds away
+    expect(layoutSweepPort.plan(sweep({ trigger: 'switch' }))).toEqual([
+      { cardId: 'a', rung: 'collapsed' },
+    ]);
+  });
+
+  it('and the pre-fix state, stated: an unlisted card is maximized by nobody', () => {
+    // The control that makes the test above mean something. Same gesture, same
+    // store, ONE difference — nothing told the store the card exists. The
+    // maximize is recorded and `heldMaximize` resolves it to null, so grid mode
+    // stops enforcing and there is no plan at all. That was the bug.
+    seed([{ id: 'a' }]);
+    place('a', 'expanded');
+    place('ghost', 'expanded');
+
+    toggleMaximizeCard(noGrid, 'ghost');
+
+    expect(sessionStore.getLayout().maximized).toBe('ghost');
+    expect(layoutSweepPort.plan(sweep({ trigger: 'react' }))).toEqual([]);
+  });
+
+  it('does not give a card main DOES know about a second turn in the plan', () => {
+    // the dedupe, seen from the layout end: two entries for one card would be
+    // two moves against one panel, and two Ctrl+1..9 positions
+    seed([{ id: 'a', status: 'suspended' }]);
+    sessionStore.markCardNotStarted({ id: 'a', title: 'a', folder: 'C:/p/a' });
+    place('a', 'collapsed');
+    sessionStore.setLayout(withMode('grid'));
+    expect(layoutSweepPort.plan(sweep({ trigger: 'switch' }))).toEqual([
+      { cardId: 'a', rung: 'expanded' },
+    ]);
+  });
+});
+
 describe('layoutSweepPort — the rest of the wiring', () => {
   it('aborts on teardown, and only on teardown', () => {
     expect(layoutSweepPort.aborted()).toBe(false);
@@ -1318,6 +1392,75 @@ describe('expanding a tabbed card — where it goes (#502)', () => {
 
     expect(grid.groupOf('session-a')).not.toBe('gone-out');
     expect(grid.groupOf('session-a')).not.toBe('stack');
+  });
+});
+
+// ── REVEALING A CARD MAIN HAS NO RECORD OF (#687) ───────────────────────────
+//
+// THE TRAP #687's OWN FIX OPENED, caught in review. `revealNow` rebuilds a
+// panel from main's card list, and a card whose `sessions:create` was refused is
+// not in it — so the reveal returned empty-handed. That was unreachable while
+// such a card had no rail row: it was not in `layoutCards()`, so no sweep could
+// collapse it and no surface could ask for it back.
+//
+// Giving it a row made it reachable in the most ordinary way there is:
+// maximizing ANY OTHER card collapses it (`removePanelKeepingSlot` — panel
+// gone), and then the rail row, Ctrl+1..9, the collapsed strip, the palette and
+// un-maximize all land here. Without the fallback the user gets a row they can
+// see, can click, and cannot open, with the overlay's Try again button locked
+// behind it — a worse card than the invisible one the issue started with.
+describe('revealing a card whose start was refused (#687)', () => {
+  let warned: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    warned = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    warned.mockRestore();
+    sessionStore.clearCardNotStarted('ghost');
+    sessionStore.forgetPresentation('ghost');
+    delete (window as unknown as { switchboard?: unknown }).switchboard;
+  });
+
+  it('rebuilds the panel from the store row when main has no record', async () => {
+    const grid = fakeGrid();
+    stubBridge([]); // main knows nothing about this card, which is the premise
+    sessionStore.markCardNotStarted({ id: 'ghost', title: 'ghost', folder: 'C:/p/ghost' });
+
+    await revealCardPanel(grid.api, 'ghost', false);
+    await settle();
+
+    expect(grid.ids()).toContain('session-ghost');
+    expect(sessionStore.getPresentation('ghost').ladder).toBe('expanded');
+  });
+
+  it('and the pre-fix behaviour, stated: an unknown card builds nothing', async () => {
+    // The control. Same call, same empty bridge, ONE difference — nothing told
+    // the store the card exists. Then there really is no card, and eating the
+    // click is right; what was wrong was doing it for a card that IS on screen.
+    const grid = fakeGrid();
+    stubBridge([]);
+
+    await revealCardPanel(grid.api, 'ghost', false);
+    await settle();
+
+    expect(grid.ids()).not.toContain('session-ghost');
+    // ...out loud, since it is the branch that eats a click
+    expect(warned).toHaveBeenCalledWith(expect.stringContaining('nothing to reveal for ghost'));
+  });
+
+  it('prefers main’s record when there is one', async () => {
+    // A card that failed once and started on the retry is marked AND listed
+    // (the store's dedupe hides our row). The rebuild must use main's fields,
+    // not the stale ones we minted before the start.
+    const grid = fakeGrid();
+    stubBridge([{ cardId: 'ghost' }]);
+    sessionStore.markCardNotStarted({ id: 'ghost', title: 'stale', folder: 'C:/p/stale' });
+
+    await revealCardPanel(grid.api, 'ghost', false);
+    await settle();
+
+    expect(grid.ids()).toContain('session-ghost');
+    expect(warned).not.toHaveBeenCalled();
   });
 });
 

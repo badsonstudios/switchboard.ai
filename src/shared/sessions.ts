@@ -61,7 +61,8 @@ import type { TransportKind } from './transport';
  * A card that has been restored but not resumed has no live record and so no
  * status from here at all: that is `CardStatus` below, this union plus
  * 'suspended'. The rail's `RailStatusName` was a hand-written copy of those
- * eight names until #618 and is `CardStatus` now.
+ * eight names until #618; it is `RailCardStatus` — `CardStatus` plus the one
+ * name the renderer mints for itself — as of #687.
  */
 export type SessionStatus =
   | 'starting'
@@ -156,10 +157,28 @@ export interface StatusChange {
  * why this union is here and not in `SessionStatus`: nothing in main may
  * TRANSITION to it.
  *
- * The rail's `RailStatusName` (`renderer/src/lib/rail-view.ts`) is this type as
- * of #618 — it was a second hand-written copy of the same eight names.
+ * The rail's `RailStatusName` (`renderer/src/lib/rail-view.ts`) is `RailCardStatus`
+ * below, which is this type plus the one status the renderer mints for itself.
  */
 export type CardStatus = SessionStatus | 'suspended';
+
+/**
+ * What the RAIL's status can be: `CardStatus` plus 'not-started' (#687).
+ *
+ * THE SPLIT IS THE POINT, so read the direction before adding to either half.
+ * `CardStatus` is what MAIN puts on the wire — `SessionCardWire.status` is
+ * typed with it, and it stays that way. 'not-started' can never travel that
+ * wire, because the whole defect #687 names is that main has never heard of the
+ * card: `sessions:create` refused it, so `persist.upsert` never ran, so
+ * `sessions:cards` (built from `persist.list()`) cannot list it. The renderer
+ * is the only side that knows such a card exists — it is holding its dockview
+ * panel — so the renderer is the side that names its status.
+ *
+ * Widening `CardStatus` itself would have been one word shorter and would have
+ * declared a status main is structurally incapable of sending, which is exactly
+ * the kind of contract-that-lies #618 spent an issue removing.
+ */
+export type RailCardStatus = CardStatus | 'not-started';
 
 /**
  * How much a session may do unprompted (§5.9) — the four autonomy profiles.

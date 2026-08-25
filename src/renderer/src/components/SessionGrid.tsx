@@ -755,9 +755,32 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     // throws — and the two refusals that ARE reachable (main declining, the
     // broker declining a capability) both mean nothing started. If a
     // post-spawn throw is ever introduced, that is the bug to fix, not this copy.
+    //
+    // AND THE REST OF THE APP HAS TO BE TOLD (#687). `setEnded` is component
+    // state: it draws this card's overlay and reaches nothing else. Main has no
+    // record of a card whose create it refused, so `sessions:cards` cannot list
+    // it, so until this line the card had no rail row at all — and because
+    // `layoutCards()` is built from the rail order, no maximize, no Ctrl+1..9,
+    // no collapsed-strip entry and no pin either. The store's not-started half
+    // is where a card main has never heard of becomes a session the workspace
+    // can see. The title comes from the panel rather than the params, so a
+    // rename that landed before the start failed is the one that shows.
     const startFailed = (why: unknown): void => {
       console.warn(`[sessions] session did not start for ${cardId} — see the app log`, why ?? '');
       setEnded({ kind: 'never-started' });
+      if (cardId) {
+        sessionStore.markCardNotStarted({
+          id: cardId,
+          // THE HEADER'S OWN FUNCTION, so the row and the card cannot disagree
+          // about what this session is called: `props.api.title ?? folder`
+          // would put a whole path in the rail where the header shows a
+          // basename, and would let `''` through as a title. The store slot is
+          // deliberately `undefined` — it is the row we are about to write.
+          title: cardHeaderTitle(undefined, props.api.title, folder),
+          folder,
+          ...(props.params?.groupId ? { groupId: props.params.groupId } : {}),
+        });
+      }
     };
     void window.switchboard.sessions
       .create({ cardId, folder, title: props.api.title ?? folder, autonomy, groupId: props.params?.groupId })
@@ -768,6 +791,10 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         // instead of the honest "never started".
         const record = answered(answer);
         if (!record) return startFailed(null);
+        // it started, so main owns this card's row from here — drop ours (#687).
+        // Unconditional: a retry that succeeds comes through this branch, and
+        // `clearCardNotStarted` is a no-op for a card that was never marked.
+        if (cardId) sessionStore.clearCardNotStarted(cardId);
         if (cardId) sessionStore.mapLiveToCard(record.id, cardId);
         setLive({
           id: record.id,
@@ -1124,6 +1151,17 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   const restartSelf = (): void => {
     // drop the dead live session (keep the card record), then re-arm the lazy
     // spawn so the card respawns/resumes
+    //
+    // IT DELIBERATELY DOES NOT CLEAR THE NOT-STARTED MARK (#687). Try again is
+    // one click from another refusal — a folder on a drive that is still not
+    // plugged in — and clearing here would take the row out of the rail and put
+    // it back a moment later, renumbering Ctrl+1..9 twice for nothing. So the
+    // row survives the attempt, saying the last thing we actually know. The two
+    // ends both close: the success branch of `sessions:create` clears the mark,
+    // and the store's own dedupe (`publishSessions`) stops publishing our row
+    // the moment main's list has the card — so a card that starts stops being
+    // ours whether or not anything cleared it. A second refusal re-marks with
+    // an identical row, which the store drops as a no-op.
     //
     // Both halves under ONE `if (cardId)` (#239). They used to disagree: main
     // was told unconditionally while the renderer only unbound `if (live)`,
@@ -4080,8 +4118,35 @@ function moveHome(
 /** Create a card's panel at its remembered slot (or monitor). */
 async function revealNow(api: DockviewApi, cardId: string, focus = true): Promise<void> {
   const cards = answered(await window.switchboard.sessions.cards()) ?? []; // #650
-  const card = cards.find((c) => c.cardId === cardId);
-  if (!card) return; // the record is gone — there is nothing to reveal
+  const known = cards.find((c) => c.cardId === cardId);
+  // ...AND THE CARD MAIN HAS NO RECORD OF (#687), which this rebuild has to be
+  // able to place or the issue's own fix becomes a trap. Reaching it is not
+  // exotic: giving such a card a rail row put it into `layoutCards()`, so
+  // maximizing ANY OTHER card now collapses it — `removePanelKeepingSlot`,
+  // panel gone — and every way back (the rail row, Ctrl+1..9, the collapsed
+  // strip, the palette, un-maximize) lands here. Returning empty-handed would
+  // leave a row you can see, can click, and cannot open, with the overlay's own
+  // Try again button unreachable behind it. That is a worse card than the
+  // invisible one this issue started with.
+  //
+  // The store's row carries exactly the three fields `CardParams` wants,
+  // because `markCardNotStarted` is fed from the panel's own params. A row with
+  // no folder cannot be rebuilt into a card that could ever spawn, so it is not
+  // a candidate — and cannot occur, since the spawn effect never runs without
+  // one.
+  const ghost = known
+    ? undefined
+    : sessionStore
+        .getState()
+        .sessions.find((s) => s.id === cardId && s.status === 'not-started' && !!s.folder);
+  const card = known ?? (ghost && { title: ghost.title, folder: ghost.folder!, groupId: ghost.groupId });
+  if (!card) {
+    // the record is gone — there is nothing to reveal. SAID OUT LOUD since
+    // #687: this is the branch that eats a click, and it used to do it in
+    // silence, which is why the trap above went unnoticed until review.
+    console.warn(`[layout] nothing to reveal for ${cardId} — no card record`);
+    return;
+  }
   const place = placeAt(
     sessionStore.getPresentation(cardId).slot,
     api.groups.map((g) => g.id)
@@ -4406,6 +4471,7 @@ export function SessionGrid(props: {
     sessionStore.forgetPresentation(cardId);
     sessionStore.forgetLayoutCard(cardId);
     sessionStore.forgetPin(cardId);
+    sessionStore.clearCardNotStarted(cardId); // #687 — see onDidRemovePanel's copy
     void window.switchboard.sessions.closeCard(cardId);
   }, []);
 
@@ -4922,6 +4988,14 @@ export function SessionGrid(props: {
         // ...and its pin (E9-09), which would otherwise keep protecting — and
         // sorting first — a card that no longer exists
         sessionStore.forgetPin(m[1]);
+        // ...and the not-started row, if this was a card main never heard of
+        // (#687). The store's half of `state.sessions` is the ONE per-card
+        // record `closeCard` below cannot retire for us: main has nothing to
+        // forget. Left behind, it is a rail row for a card with no panel —
+        // exactly the mismatch this issue was filed about, pointing the other
+        // way. This is the list the docblock on `retireCard` warns about
+        // keeping two copies of; the other copy is there.
+        sessionStore.clearCardNotStarted(m[1]);
         void window.switchboard.sessions.closeCard(m[1]);
       });
 

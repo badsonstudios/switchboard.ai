@@ -1395,3 +1395,140 @@ describe('SessionStore — the live-retired signal', () => {
     });
   });
 });
+
+// ── cards main has never heard of (#687) ──────────────────────────────────
+//
+// `state.sessions` is a JOIN since this issue: what `sessions:cards` reported,
+// plus the cards whose `sessions:create` was refused — which main cannot report
+// because it never wrote a record for them. The gap this closes was not one
+// missing rail row: `getRailOrder().flat` is what `SessionGrid`'s
+// `layoutCards()` is built from, so a card main had not heard of was invisible
+// to maximize, to Ctrl+1..9, to the collapsed strip and to pinning as well.
+describe('SessionStore — not-started cards (#687)', () => {
+  let store: SessionStore;
+  beforeEach(() => {
+    store = new SessionStore();
+  });
+
+  const notStarted = (id: string, over: Partial<RailSession> = {}) => ({
+    id,
+    title: id,
+    folder: `C:/proj/${id}`,
+    ...over,
+  });
+
+  it('gives a refused card a row, and puts it in rail order', () => {
+    store.setSessions([session('live')]);
+    expect(store.getRailOrder().flat.map((s) => s.id)).toEqual(['live']);
+
+    store.markCardNotStarted(notStarted('ghost'));
+
+    expect(store.getState().sessions.map((s) => s.id)).toEqual(['live', 'ghost']);
+    // RAIL ORDER is the assertion that matters — it is the list `layoutCards()`
+    // walks, so this is what makes maximize able to rearrange around the card.
+    expect(store.getRailOrder().flat.map((s) => s.id)).toEqual(['live', 'ghost']);
+    expect(store.getRailOrder().flat.find((s) => s.id === 'ghost')?.status).toBe('not-started');
+  });
+
+  it('does NOT double a card main already knows about', () => {
+    // The case that makes the dedupe load-bearing rather than defensive: a card
+    // persisted by an earlier successful start whose folder has since gone
+    // reaches `startFailed` on the next look at it — so it is marked here while
+    // ALSO being in main's list. Two rows would mean two Ctrl+1..9 positions
+    // and two entries in `layoutCards()` for one card.
+    store.setSessions([session('a', { status: 'suspended' })]);
+    store.markCardNotStarted(notStarted('a'));
+
+    expect(store.getState().sessions.map((s) => s.id)).toEqual(['a']);
+    // and MAIN's row is the survivor: it has the accent, the badge and the
+    // real status; ours has a title and a folder
+    expect(store.getState().sessions[0].status).toBe('suspended');
+    expect(store.getState().sessions[0].accent).toBe('var(--accent-test)');
+  });
+
+  it('stands the card down the moment main reports it — no clear needed', () => {
+    // the self-correcting half: a retry that succeeds shows up as a card in the
+    // next `sessions:cards` answer, and the dedupe does the rest
+    store.markCardNotStarted(notStarted('a'));
+    expect(store.getState().sessions.map((s) => s.id)).toEqual(['a']);
+    expect(store.getState().sessions[0].status).toBe('not-started');
+
+    store.setSessions([session('a', { status: 'working' })]);
+
+    expect(store.getState().sessions.map((s) => s.id)).toEqual(['a']);
+    expect(store.getState().sessions[0].status).toBe('working');
+  });
+
+  it('clears on close, and the row goes with it', () => {
+    store.setSessions([session('live')]);
+    store.markCardNotStarted(notStarted('ghost'));
+    expect(store.getRailOrder().flat.map((s) => s.id)).toEqual(['live', 'ghost']);
+
+    store.clearCardNotStarted('ghost');
+
+    expect(store.getRailOrder().flat.map((s) => s.id)).toEqual(['live']);
+  });
+
+  it('survives a refresh of main\'s list', () => {
+    // the regression the private raw list exists to stop: `setSessions` runs on
+    // every push from main, and a merge that wrote its own result back as the
+    // raw list would either lose the ghost or bake it in for good
+    store.markCardNotStarted(notStarted('ghost'));
+    store.setSessions([session('a')]);
+    store.setSessions([session('a'), session('b')]);
+
+    expect(store.getState().sessions.map((s) => s.id)).toEqual(['a', 'b', 'ghost']);
+  });
+
+  it('keeps a task-label push off the joined list', () => {
+    // `setTaskLabel` patches the RAW list; patching the joined one would write
+    // the ghost into main's half, where the next `setSessions` could not
+    // replace it and the dedupe could no longer see it
+    store.setSessions([session('a')]);
+    store.markCardNotStarted(notStarted('ghost'));
+    store.setTaskLabel('a', 'refactoring');
+
+    expect(store.getState().sessions.map((s) => s.id)).toEqual(['a', 'ghost']);
+    store.setSessions([session('a')]);
+    expect(store.getState().sessions.map((s) => s.id)).toEqual(['a', 'ghost']);
+    // THE LINE THAT MAKES THIS TEST REAL. Review caught that the two above pass
+    // against the mutation: with the ghost baked into the raw list, `known`
+    // holds it, `extra` comes out empty, and the published array has the same
+    // ids — and the `setSessions` after it wipes the bake-in before anything
+    // looks. The damage shows only here: a clear that deletes the map entry
+    // while the raw list goes on publishing the row.
+    store.clearCardNotStarted('ghost');
+    expect(store.getState().sessions.map((s) => s.id)).toEqual(['a']);
+  });
+
+  it('is idempotent by VALUE — a re-mark of the same row notifies nobody', () => {
+    // the lazy-spawn effect can re-run; republishing an identical row would
+    // hand `useSyncExternalStore` a fresh array every time
+    store.markCardNotStarted(notStarted('ghost'));
+    let ticks = 0;
+    store.subscribe(() => ticks++);
+
+    store.markCardNotStarted(notStarted('ghost'));
+    expect(ticks).toBe(0);
+    store.clearCardNotStarted('nobody');
+    expect(ticks).toBe(0);
+
+    // ...but a rename that landed before the start failed IS a change
+    store.markCardNotStarted(notStarted('ghost', { title: 'renamed' }));
+    expect(ticks).toBe(1);
+    expect(store.getState().sessions[0].title).toBe('renamed');
+  });
+
+  it('carries the card into its group, so the row lands in the right bucket', () => {
+    // a TOKEN and not `#rrggbb`: group colors are main-owned data, but the
+    // no-raw-hex lint rule does not know that and nothing here reads the color
+    const groups: RailGroup[] = [{ id: 'g1', name: 'Work', color: 'var(--status-working)' }];
+    store.setGroups(groups);
+    store.setSessions([session('a', { groupId: 'g1' })]);
+    store.markCardNotStarted(notStarted('ghost', { groupId: 'g1' }));
+
+    const order = store.getRailOrder();
+    expect(order.buckets.get('g1')).toEqual(['a', 'ghost']);
+    expect(order.bucketOf.get('ghost')).toBe('g1');
+  });
+});

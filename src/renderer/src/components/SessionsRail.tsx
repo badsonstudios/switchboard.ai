@@ -708,6 +708,27 @@ export function SessionsRail(props: {
     return planReorder(ids, dragged, insertIndex(ids, dragged, rowId, edge), props.pinned);
   };
 
+  /**
+   * May the card currently under the pointer change its group membership (#687)?
+   *
+   * The menu's Move-to-group set is absent for a not-started row because every
+   * entry would reach `store.setSessionGroup`'s `if (!s) return`. The DRAG is
+   * the same command with no label on it, and leaving it enabled would let the
+   * user watch a drop target light up and then do nothing — so it is refused
+   * the way an auto-group is, by declining to `preventDefault` so the cursor
+   * shows no-drop rather than by accepting and discarding.
+   *
+   * TRUE WHEN THE DRAGGED CARD IS UNKNOWN, which is the fail-open direction:
+   * `dataTransfer.getData` is unreadable during `dragover` by design, so this
+   * leans on the same two sources `planRowDrop` does, and a drag we cannot
+   * identify must not be refused on a guess.
+   */
+  const draggedCanRegroup = (): boolean => {
+    const dragged = dragCard.current ?? getDraggedCard();
+    if (!dragged) return true;
+    return props.sessions.find((s) => s.id === dragged)?.status !== 'not-started';
+  };
+
   /** which half of the row the pointer is in — above the middle means "land
    *  before this one", below it means "after" */
   const edgeAt = (el: HTMLElement, clientY: number): 'before' | 'after' => {
@@ -810,6 +831,14 @@ export function SessionsRail(props: {
         }}
         onClick={() => props.onFocus(s.id)}
         onDoubleClick={() => {
+          // THE SECOND DOOR TO THE SAME FIELD (#687). The menu's Rename is
+          // dimmed for a card main has never heard of, because
+          // `sessions:renameCard` is `if (prior) upsert(...)` and would write
+          // nothing while the next refresh painted the old name back. Gating one
+          // of the two entry points would just move the silent no-op behind a
+          // gesture with no label on it. Per ROW, not the menu's `notStartedRow`
+          // — that one is about whichever row the menu was opened on.
+          if (s.status === 'not-started') return;
           setEditing(s.id);
           setDraft(s.title);
         }}
@@ -1236,7 +1265,12 @@ export function SessionsRail(props: {
           // header or the padding, where a release means "join this group" and
           // not "land here". Two promises on screen at once is one too many.
           setDropAt(null);
-          if (!droppable) {
+          // `draggedCanRegroup` (#687) joins the auto-group rule here rather
+          // than in `droppable`, because it is a fact about the card being
+          // DRAGGED and `droppable` is computed at render, before any drag
+          // exists. Same refusal, same reason: a target that lights up and then
+          // does nothing is what wasted Dan's time the first time.
+          if (!droppable || !draggedCanRegroup()) {
             // Swallow it WITHOUT preventDefault: the browser only fires `drop`
             // where dragover was prevented, so this gives a real no-drop
             // cursor. stopPropagation matters just as much — the nav behind us
@@ -1613,12 +1647,41 @@ export function SessionsRail(props: {
   // The Ungrouped bucket only earns a header when there is something to
   // distinguish it FROM — on a fresh workspace it would be pure chrome.
   const hasOtherCards = props.groups.length > 0 || order.autoGroups.length > 0;
+  /**
+   * Is the row this menu was opened on a card main has never heard of (#687)?
+   *
+   * Read off the STATUS rather than asked of the store, which keeps this
+   * component a pure function of its props — and the two are the same question:
+   * `SessionStore.publishSessions` drops a not-started row the moment main's
+   * list has that card, so a 'not-started' status arriving here IS "main has no
+   * record". Nothing else can mint the value; it cannot travel `sessions:cards`
+   * (see `RailCardStatus`).
+   *
+   * It gates the two row actions whose main-side handlers are `if (prior)` /
+   * `if (!s) return` — Rename and Move to group. Everything else in this menu
+   * is renderer state and works: Pin, Close, the reorder pair, and both policy
+   * submenus. The row's other two doors to the same two commands are gated at
+   * their own handlers: the double-click rename, and the drag
+   * (`draggedCanRegroup`).
+   *
+   * `menu.session` IS THE SNAPSHOT taken when the menu opened, so a card that
+   * starts while the menu stands open keeps the gating until it is reopened.
+   * Deliberate and not worth a live read: the whole menu is that snapshot —
+   * `from` a few lines down is the one value that re-reads `props.sessions`,
+   * because a membership tick pointing at the wrong group is wrong ON SCREEN,
+   * where this is at worst one dimmed item on a card that just came alive.
+   */
+  const notStartedRow = menu?.session.status === 'not-started';
 
   return (
     <nav
       ref={navRef}
       onDragOver={(e) => {
         if (!e.dataTransfer.types.includes(DND_TYPE) && !getDraggedCard()) return;
+        // the ungroup target, and therefore the same command as the group
+        // cards' (#687) — `setSessionGroup(card, null)` is still a write main
+        // declines for a card it has no record of
+        if (!draggedCanRegroup()) return;
         e.preventDefault();
         // the same staleness the group card clears, for the headerless case:
         // with no groups at all the loose rows sit straight in the rail, so
@@ -1890,7 +1953,7 @@ export function SessionsRail(props: {
               `props.pinned`, exactly as a cross-group move is. */}
           {(
             [
-              ['rail.menuDiff', () => props.onDiff(menu.session), true],
+              ['rail.menuDiff', () => props.onDiff(menu.session), true, true],
               [
                 'rail.menuRename',
                 () => {
@@ -1898,6 +1961,13 @@ export function SessionsRail(props: {
                   setDraft(menu.session.title);
                 },
                 false,
+                // #687: renaming a card main has never heard of reaches
+                // `sessions:renameCard`, whose body is `if (prior) upsert(...)`
+                // — it writes nothing, answers nothing, and the next
+                // `sessions:cards` refresh paints the old name back. An offer
+                // that silently does nothing is worse than no offer, which is
+                // the same rule the reorder items below already follow.
+                !notStartedRow,
               ],
               [
                 props.pinned.has(menu.session.id) ? 'rail.menuUnpin' : 'rail.menuPin',
@@ -1909,20 +1979,33 @@ export function SessionsRail(props: {
                   props.onTogglePin(menu.session.id);
                 },
                 false,
+                // ...and pinning a not-started card DOES work, which is why it
+                // is not in the clause above: the pin set is renderer state,
+                // persisted in the ui blob and keyed by card id. Same for
+                // Close, and for both policy submenus further down.
+                true,
               ],
-              ['rail.menuClose', () => props.onClose(menu.session.id), false],
+              ['rail.menuClose', () => props.onClose(menu.session.id), false, true],
             ] as const
-          ).map(([key, run, restoreFocus]) => (
+          ).map(([key, run, restoreFocus, can]) => (
             <button
               key={key}
               type="button"
               role="menuitem"
+              // `aria-disabled` and not `disabled`, for the reason spelled out
+              // at the reorder items: the arrow walk focuses `[role^="menuitem"]`
+              // and `focus()` on a disabled button does nothing, so a hard
+              // disable would break the ring at this item.
+              aria-disabled={!can}
               className="rail-menu-item"
               onClick={() => {
+                if (!can) return; // aria-disabled is a claim; this is the fact
                 closeMenu(restoreFocus);
                 run();
               }}
-              style={menuItemStyle}
+              // the same 0.45 the reorder items dim to, so one menu has one
+              // way of looking unavailable
+              style={{ ...menuItemStyle, opacity: can ? 1 : 0.45 }}
             >
               {t(key)}
             </button>
@@ -2014,8 +2097,18 @@ export function SessionsRail(props: {
               that does nothing — and refusing to advertise that is exactly why
               the drop handler declines them. A session sitting in an auto-group
               shows as "Ungrouped" here, which is the truth this list is about:
-              it is in no group you made. */}
-          {props.groups.length > 0 && (
+              it is in no group you made.
+
+              AND ABSENT ENTIRELY FOR A NOT-STARTED ROW (#687), by that same
+              rule rather than a new one. Membership is main's to write —
+              `groups:setSessionGroup` ends in `store.setSessionGroup`, whose
+              first line is `if (!s) return` for a card with no persisted
+              record — so every entry in this set would be a command that does
+              nothing, which is word for word why auto-groups are not here
+              either. A WHOLE SET that can do nothing goes; a single item that
+              is merely unavailable right now stays and dims, which is why
+              Rename above is `aria-disabled` instead. */}
+          {props.groups.length > 0 && !notStartedRow && (
             <div role="group" aria-label={t('rail.menuMove')}>
               <div aria-hidden style={menuSectionStyle}>
                 {t('rail.menuMove')}

@@ -3,6 +3,60 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔨 IN PROGRESS — 2026-08-24: #687 — a refused-create card has no rail row
+>
+> **Started 2026-08-24. Gate 1 passed.** Branch
+> `feature/687-not-started-rail-row`. Implemented, reviewed, suites green —
+> **awaiting Gate 2 (commit approval)**. Milestone: Phase 2 - The Switchboard.
+>
+> **6098 unit tests / 236 files** (+29 / +1 vs the 6069/235 baseline), lint and
+> typecheck clean. **Local e2e NOT run** — #705: the Windows foreground lock
+> fails blurApp-gated specs while Dan is at the machine, so CI is the gate.
+>
+> **The gap, traced end to end (facts, not guesses):**
+> * `addSessionCardTo` mints a `cardId` and adds a dockview panel. **Main knows
+>   nothing about the card at that point.**
+> * The card's lazy-spawn effect calls `sessions:create`. `persist.upsert`
+>   (`main/sessions/ipc.ts`, the block at "SPREAD `prior` FIRST") runs **only
+>   after `manager.create` succeeds**. Every refusal path returns before it.
+> * `sessions:cards` is built from `deps.persist.list()`, so the card is absent
+>   → `sessionStore.setSessions` never sees it → `getRailOrder().flat` omits it
+>   → `layoutCards()` omits it → `heldMaximize` declines, and Ctrl+1..9, the
+>   collapsed strip, pin and bulk-close cannot reach it either.
+> * **NOT "impossible by construction"** — the #686 worker reproduced it in a
+>   real window. So the issue's second branch is off the table.
+> * It is **current-session-only**: a panel with no persisted record is pruned
+>   at boot (`knownCards` sweep in `onReady`), so it does not survive relaunch.
+> * A *persisted* card whose folder went missing is NOT affected — `prior`
+>   exists, so it keeps its row. Any fix must dedupe against that.
+>
+> **What shipped:** a renderer-side degraded row, NOT a main-side early
+> `persist.upsert` — the latter would make never-started cards survive relaunch
+> (reversing the deliberate `knownCards` boot prune) and would edit the stretch
+> of `sessions:create` documented three times as needing to stay synchronous.
+> `SessionStore` now publishes `state.sessions` as a JOIN of main's list and a
+> private not-started map, deduped against main; new renderer-only status
+> `'not-started'` (`RailCardStatus`, kept OFF the wire type on purpose).
+>
+> **THE REVIEW BLOCKER, worth remembering:** giving the card a rail row put it
+> into `layoutCards()` — which made it COLLAPSIBLE for the first time (maximize
+> any other card and `removePanelKeepingSlot` takes its panel). Every way back
+> (rail row, Ctrl+1..9, collapsed strip, palette, un-maximize) lands in
+> `revealNow`, which rebuilds from MAIN's card list and returned empty-handed
+> for a card main has never heard of — silently. The fix would have traded
+> "invisible card" for "visible card you can click and never open, with Try
+> again locked behind it". `revealNow` now falls back to the store row and logs
+> the remaining early return. **The general lesson: making a thing visible to
+> the layout engine makes every layout verb reachable on it.**
+>
+> Review also caught two second doors to the gated actions (double-click
+> rename, drag-into-group) and one vacuous test. All taken; 1 blocker,
+> 7 should-fix, 6 nits — every one addressed or answered in a comment.
+>
+> **Next up after this:** #688 (doc-only), #680, #695, #702, #607, #619. Still
+> owed: 11 dogfood rows (12 now — #687's is filed ahead of its merge),
+> `/pm`'s #256 reconciliation.
+
 > # ✅ MERGED — 2026-08-24: #699 + #700 transport-hygiene bundle
 >
 > **PR #711 squash-merged to main as `ca36967`** (Dan said merge; all 4 CI

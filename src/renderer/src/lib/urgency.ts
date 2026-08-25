@@ -74,8 +74,15 @@ export interface UrgencyLamp {
   needsYou: boolean;
   /** the delayed urgency reset — the session the last jump landed on */
   lit: boolean;
-  /** restored-but-not-resumed: it folds to the idle hue, but it is not idle,
-   *  and the tooltip has to say which one it is */
+  /**
+   * Idle-hued, but NOT RUNNING — the fainter ring `tokens.css` draws for it
+   * says which. Named for the state that first needed it (restored, not yet
+   * resumed); since #687 a card whose start was refused is the second, and it
+   * has the better claim of the two: it never ran at all. The name is kept
+   * rather than widened to `notRunning` because it is also the `data-suspended`
+   * attribute the stylesheet keys off; the meaning is this sentence, not the
+   * word.
+   */
   suspended: boolean;
   /** i18n key for the state text (the ASK when it needs you, else the state) */
   labelKey: string;
@@ -114,7 +121,7 @@ export function buildLamps(
       token: p.token,
       needsYou: p.needsYou,
       lit: isLit(lit, s.id, now),
-      suspended: s.status === 'suspended',
+      suspended: s.status === 'suspended' || s.status === 'not-started',
       labelKey: p.labelKey,
     };
   });
