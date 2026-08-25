@@ -3,6 +3,22 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ⏳ TWO PRs OPEN — nothing is merged. Dan's move.
+>
+> * **PR #712 — #687** (a refused-create card gets a rail row). **All 4 checks
+>   GREEN.** Ready to squash-merge.
+> * **PR #713 — #632 PR 1/2** (MCP Manager, read-only pane). CI running at
+>   hand-off. **USER-FACING — do not auto-merge.**
+> * **#714 filed** — the mutation half of #632 (add/remove/approval/reconnect),
+>   so #632 does not sit half-closed. PR #713 deliberately does NOT close #632.
+>
+> **Merge-order note:** both branches touch `session-store.ts` and `en.json`,
+> in different regions. Whichever lands second wants a look. #712 first is the
+> smaller diff.
+>
+> **NOT RELEASED either way** — main is past v0.8.3 and the bump is manual.
+> Entries for both are filed under `0.8.4 — unreleased`.
+
 > # 🔨 IN PROGRESS — 2026-08-25: #632 — MCP Manager (§5.17), PR 1 of 2
 >
 > **Gate 1 PASSED.** Branch `feature/632-mcp-manager`, off main @ `4b8c09e`.
@@ -98,8 +114,9 @@
 >   degrades to `unknown`; a pending-approval server is `unknown` here on
 >   purpose, because approval is the config files' fact and they cannot time out.
 >
-> **PR 1 IS CODE-COMPLETE AND REVIEWED.** 6158 tests / 240 files, lint and
-> typecheck clean. Awaiting Gate 2 (commit approval). Also built: `mcp/ipc.ts`
+> **PR 1 SHIPPED AS PR #713** (`e9521b7`, branch `feature/632-mcp-manager` off
+> main @ `4b8c09e`). Both gates passed. 6158 tests / 240 files, lint and
+> typecheck clean. Also built: `mcp/ipc.ts`
 > + preload + the `mcp.read` capability, `McpManagerDialog`, the `/mcp`
 > composer intercept (`lib/slash-intercept.ts` + a store signal), the palette
 > entry, i18n, `docs/manual/17-mcp-servers.md`, CHANGELOG, DESIGN roadmap.
