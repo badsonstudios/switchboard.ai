@@ -12,8 +12,19 @@
 >   docs-only conflict resolution (CHANGELOG, this file, the dogfood tracker —
 >   all three additive; `session-store.ts` and `en.json` auto-merged).
 > * **#714 is OPEN and not started** — the mutation half of #632
->   (add / remove / approval hand-off / reconnect). #713 deliberately did NOT
->   close #632.
+>   (add / remove / approval hand-off / reconnect). **#714 is the tracker for
+>   the rest of the MCP Manager**; #632 is closed and is NOT a live item.
+>
+> **#632 CLOSED BY ACCIDENT, left closed on purpose.** PR #713's body carried
+> the sentence *"Does not close #632"* — GitHub's closing-keyword parser matches
+> `close #632` and does not understand negation, so the sentence written to
+> PREVENT the auto-close is what caused it. Its `COMPLETED` state overstates
+> what shipped (the mutation half is not built). Left closed rather than
+> reopened because #714 already covers exactly the remaining scope, and two
+> overlapping open tickets for one feature is worse than one inaccurate closed
+> one. Explained on the issue itself.
+> **Never write a bare `#nnn` after any form of "close"/"fix"/"resolve" in a PR
+> body — negation does not save you.**
 >
 > **NOT RELEASED.** main is well past v0.8.3 and the bump is manual. Both
 > entries sit under `0.8.4 — unreleased` (`Added` for #632, `Fixed` for #687).
