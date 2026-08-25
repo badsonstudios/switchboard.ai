@@ -3,6 +3,110 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔨 IN PROGRESS — 2026-08-25: #632 — MCP Manager (§5.17), PR 1 of 2
+>
+> **Gate 1 PASSED.** Branch `feature/632-mcp-manager`, off main @ `4b8c09e`.
+> Green-field: the only MCP code in `src/` before this was the `/mcp` entry in
+> the builtin slash catalogue (`providers/claude.ts:126`).
+>
+> **Dan changed course mid-queue 2026-08-25**, skipping #688/#680/#695/#702. He
+> asked for "the rest of the slash commands and especially /mcp" — that is TWO
+> tickets, **#633** (picker commands: `/model`, `/permissions`, …) and **#632**
+> (this). He chose #632 first because #633's own done-when delegates `/mcp` to
+> it.
+>
+> **ALSO OPEN: PR #712 (#687), all 4 checks GREEN, awaiting Dan's merge.** Its
+> branch carries a PROGRESS block of its own; this one is written off main and
+> does not duplicate it.
+>
+> ## THREE CLI PROBES — two of them contradict the issue text
+>
+> Run against the `claude` on PATH, per the standing rule. **Do not re-derive
+> these and do not trust the issue over them.**
+>
+> 1. **`claude mcp list --json` DOES NOT EXIST.** The issue says to read via it.
+>    `mcp list` and `mcp get` take no options beyond `-h` and emit human text
+>    with emoji. (`--json` DOES exist on `claude plugin` — DESIGN §5.18 — which
+>    is probably the source of the assumption.) DESIGN §5.17 said "read the real
+>    config files" all along: the design was right, the ticket had drifted.
+> 2. **There is no enable/disable verb.** Full subcommand set: `add`,
+>    `add-from-claude-desktop`, `add-json`, `get`, `list`, `login`, `logout`,
+>    `remove`, `reset-project-choices`, `serve`. The done-when asks for
+>    "enable/disable … through the real CLI"; no such path exists.
+> 3. **The real `mcp list` output**, captured by registering a working server
+>    (`claude mcp serve`), breaking a second, and reading all three states:
+>
+>    ```
+>    Checking MCP server health…
+>
+>    selftest: claude mcp serve - ✔ Connected
+>    broken: no-such-binary-xyz --flag - ✘ Failed to connect — CONNECTION_CLOSED: Connection closed
+>    probe-a: node fake-server.js - ⏸ Pending approval (run `claude` to approve)
+>    ```
+>
+>    **"Failed to connect" CONTAINS "connect"** — the word tests must run
+>    failure-first or every broken server reads as healthy, the worst answer
+>    this pane could give. Pinned in `health.test.ts`.
+>
+> ## Where the three scopes actually live (probed by writing one)
+>
+> * **project** → `<cwd>/.mcp.json` — `{ mcpServers: { <name>: {type, command,
+>   args, env} } }`. The only scope with an approval step.
+> * **local** → `~/.claude.json` → `projects[<path>].mcpServers`. The default.
+> * **user** → `~/.claude.json` → **top-level** `mcpServers` (`null`, not `{}`,
+>   when empty).
+> * Approval → `enabledMcpjsonServers` / `disabledMcpjsonServers` on the project
+>   entry; absent from both = the CLI's `⏸ Pending approval`.
+>
+> **WINDOWS GOTCHA, found by accident and worth more than the rest:**
+> `~/.claude.json`'s `projects` map held TWO keys for this repo differing only
+> in drive-letter case (`c:/Projects/…` and `C:/Projects/…`), each with its own
+> `mcpServers`. A `===` lookup finds whichever the CLI wrote last and renders
+> the other scope as empty — on screen, "you have no local servers" rather than
+> the ambiguity it is. `samePath` folds case **on Windows only**; folding on
+> Linux would merge two real projects' servers into one list, which is worse and
+> silent. Both directions pinned.
+>
+> **`-s local` resolves to the REPO, not the cwd** — run from a subdirectory it
+> wrote into the repo-root entry.
+>
+> ## Scope agreed at Gate 1 — this is PR 1 of 2
+>
+> Dan picked the **in-app modal** (not an OS window). He left the other two
+> questions unanswered, so these were called, stated for veto, and approved:
+>
+> * **PR 1 = READ-ONLY pane** — list + three scopes + status + `/mcp` routing.
+>   **PR 2** = add / remove / approval hand-off / reconnect, to be filed as its
+>   own issue so #632 does not sit half-closed.
+> * **Enable/disable: show state, hand off the change.** No CLI verb exists
+>   (probe 2); the alternative was writing `enabledMcpjsonServers` ourselves —
+>   config the CLI owns, on a shape it can change under us. Declined on P7.
+> * **Secrets: masked, names only.** `McpServerWire` carries `envKeys` /
+>   `headerKeys` and **has no field that can hold a value** — a reveal
+>   affordance would have to add one, making it a deliberate decision rather
+>   than a default that leaked. Pinned by stringifying the whole inventory and
+>   asserting the secret is not in the blob.
+>
+> ## Built so far — main side COMPLETE, 35 tests green
+>
+> * `src/shared/mcp.ts` — wire shapes, one declaration for both sides (#618).
+> * `src/main/mcp/config.ts` — the scope readers. Pure core (`buildInventory`)
+>   over two parsed blobs, fixture-tested with no disk and no CLI;
+>   `readInventory` is the thin impure edge and fails open PER SCOPE (a broken
+>   `.mcp.json` must not blank the user scope).
+> * `src/main/mcp/health.ts` — the `mcp list` parser. Every failure mode
+>   degrades to `unknown`; a pending-approval server is `unknown` here on
+>   purpose, because approval is the config files' fact and they cannot time out.
+>
+> **STILL TO DO in PR 1:** `main/mcp/ipc.ts` + preload, the renderer modal, the
+> `/mcp` composer intercept, the palette entry, i18n keys, the manual page,
+> CHANGELOG.
+>
+> **Probe hygiene:** both probe servers removed, `claude mcp list` verified
+> empty. An empty scratch dir `C:\tmp\mcp-health-probe` resisted deletion (a
+> lingering handle) and a stray `projects` entry for it sits in
+> `~/.claude.json` — both inert, worth sweeping if anyone is in there.
+
 > # ✅ MERGED — 2026-08-24: #699 + #700 transport-hygiene bundle
 >
 > **PR #711 squash-merged to main as `ca36967`** (Dan said merge; all 4 CI
