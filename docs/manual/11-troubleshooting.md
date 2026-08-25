@@ -109,6 +109,16 @@ exit code, and nothing was lost. Check the folder:
   it: a start that was refused writes one line naming the card and the exact
   folder it tried.
 
+The card is also **in the Sessions list**, like every other session, with the
+status *not started*. That matters more than it sounds: it means you can find
+it, click it to bring it back to the front, close it from the list, pin it, and
+give it a number for `Ctrl+1`…`Ctrl+9` — and that maximizing another session
+arranges the workspace around it properly instead of ignoring it. Two things in
+its right-click menu are **greyed out or missing**: you can't **Rename** it and
+you can't move it into a group, because switchboard has nothing to remember
+those against until the session actually starts. Click **Try again**
+successfully and both come straight back.
+
 Any other reason a session can't start writes a line to the log too, so if the
 folder is definitely there, that line is what to report.
 

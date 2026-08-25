@@ -20,6 +20,10 @@
 //     Try again and Close are the overlay's two buttons below it;
 //   • and nothing here re-arms the spawn the card was refused.
 //
+// Since #687 it also pins the OTHER half of that state: the card telling the
+// store it exists, so the rest of the app can see a session main has no record
+// of. See the last describe.
+//
 // The route to the state is the one a user reaches (#347/#355): `sessions:create`
 // answers `null` for a start it refused, and the spawn effect paints
 // `never-started`.
@@ -227,11 +231,20 @@ describe('an ended card still has a header (#606)', () => {
 
 // The gesture the header exists for, at the level this component owns it: the
 // double-click reaches `toggleMaximizeCard` and the STORE records it. Whether
-// the workspace then rearranges is `lib/layout-mode`'s call, and for THIS card
-// it declines - `heldMaximize` honours a maximize only for a card the session
-// list holds, and a card whose start was refused was never registered as one.
-// That is older than this header (`Ctrl+Shift+M` has the same limit on the same
-// card) and is reported on #606's PR rather than papered over here.
+// the workspace then rearranges is `lib/layout-mode`'s call.
+//
+// IT USED TO DECLINE, and this comment used to say so as a known limit:
+// `heldMaximize` honours a maximize only for a card the session list holds, and
+// a card whose start was refused was never registered as one — so the gesture
+// was recorded and swept up by nobody (`Ctrl+Shift+M` had the identical limit,
+// which is why it was never a header bug). #686 reported it, #687 closed it:
+// the store gives such a card a row, so it is in rail order, so it is in
+// `layoutCards()`. The sweep half of that is pinned in `SessionGrid.test.tsx`
+// under "a card whose start was refused (#687)", control included.
+//
+// This file's cards are seeded INTO the session list by its own `beforeEach`,
+// so what these two tests assert is unchanged and still exactly what this
+// component owns: the double-click reaches the store.
 describe('the maximize gesture (§5.8), which is why the header is here', () => {
   it('double-clicking the header maximizes this card', async () => {
     await mountCard();
@@ -289,5 +302,55 @@ describe('endedPill', () => {
       expect(typeof text).toBe('string');
       expect((text as string).length).toBeGreaterThan(0);
     }
+  });
+});
+
+// ── the card tells the store it exists (#687) ───────────────────────────────
+//
+// The half `setEnded` cannot do. That is component state: it draws this card's
+// overlay and reaches nothing else, so until this landed the card was on screen
+// and in no session list — no rail row, and therefore no maximize, no
+// Ctrl+1..9, no collapsed-strip entry and no pin.
+//
+// The seed here is deliberately WITHOUT `c1`, which is the honest state: main
+// refused the create, so `sessions:cards` — built from `persist.list()` — has
+// nothing to report about it. The rest of this file seeds it in, because there
+// the card's identity is what is under test.
+describe('a refused card puts itself in the rail (#687)', () => {
+  beforeEach(() => {
+    sessionStore.setSessions([{ id: 'c2', title: 'other', status: 'idle' }]);
+    sessionStore.clearCardNotStarted('c1');
+  });
+  afterEach(() => sessionStore.clearCardNotStarted('c1'));
+
+  it('gets a row, in rail order, saying it never started', async () => {
+    await mountCard();
+    const row = sessionStore.getRailOrder().flat.find((s) => s.id === 'c1');
+    expect(row).toBeDefined();
+    expect(row!.status).toBe('not-started');
+    // the panel's own title and folder, so the row is not a blank placeholder
+    expect(row!.title).toBe('acme');
+    expect(row!.folder).toBe('C:\\Projects\\acme');
+  });
+
+  it('does not take a row from a card that STARTED', async () => {
+    // the same mount, one difference: main answers. Nothing may be marked, or
+    // every healthy card would carry a phantom row behind main's real one.
+    const bridge = (window as unknown as { switchboard: { sessions: Record<string, unknown> } })
+      .switchboard.sessions;
+    bridge.create = () =>
+      Promise.resolve({
+        id: 'live-1',
+        identity: { title: 'acme', folder: 'C:\\Projects\\acme', accentColor: 'var(--accent-teal)' },
+        status: 'idle',
+        autonomy: 'ask',
+        transport: 'stream',
+        exitCode: null,
+        createdAt: '2026-08-24T00:00:00.000Z',
+      });
+
+    await mountCard();
+
+    expect(sessionStore.getRailOrder().flat.find((s) => s.id === 'c1')).toBeUndefined();
   });
 });

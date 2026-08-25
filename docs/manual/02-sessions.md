@@ -113,6 +113,7 @@ Every session shows one of these:
 | **done** | Finished its turn |
 | **crashed** | Ended unexpectedly |
 | **suspended** | Kept, but not currently running |
+| **not started** | Nothing ever ran in this card — see below |
 
 ## Leaving and coming back
 

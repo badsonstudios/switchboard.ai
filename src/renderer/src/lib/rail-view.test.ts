@@ -14,7 +14,11 @@ import {
 describe('presentStatus', () => {
   it('marks exactly the four human-blocking states as needing you', () => {
     const needy = ['needs-input', 'needs-permission', 'done', 'crashed'];
-    const calm = ['starting', 'working', 'idle', 'suspended'];
+    // 'not-started' (#687) is in the CALM list deliberately: the card is
+    // already drawing its own overlay with Try again and Close, and a session
+    // that never started has made no demand — putting it in the attention queue
+    // and the "N need you" count would be us inventing one.
+    const calm = ['starting', 'working', 'idle', 'suspended', 'not-started'];
     for (const s of needy) expect(presentStatus(s).needsYou, s).toBe(true);
     for (const s of calm) expect(presentStatus(s).needsYou, s).toBe(false);
   });
@@ -27,19 +31,41 @@ describe('presentStatus', () => {
   });
 
   it('gives a glyph to every non-spinning state and none to the spinning ones', () => {
-    for (const s of ['needs-input', 'needs-permission', 'done', 'crashed', 'idle', 'suspended']) {
+    for (const s of [
+      'needs-input',
+      'needs-permission',
+      'done',
+      'crashed',
+      'idle',
+      'suspended',
+      'not-started',
+    ]) {
       expect(presentStatus(s).glyphKey, s).toBeTruthy();
     }
     expect(presentStatus('working').glyphKey).toBeUndefined();
     expect(presentStatus('starting').glyphKey).toBeUndefined();
   });
 
-  it('folds starting into working and suspended into idle', () => {
+  it('folds starting into working, and suspended and not-started into idle', () => {
     expect(presentStatus('starting').token).toBe('working');
     expect(presentStatus('suspended').token).toBe('idle');
+    expect(presentStatus('not-started').token).toBe('idle');
     // ...but they keep their own sub-label — "starting" is not "working"
     expect(presentStatus('starting').labelKey).not.toBe(presentStatus('working').labelKey);
     expect(presentStatus('suspended').labelKey).not.toBe(presentStatus('idle').labelKey);
+    // and #687's is not "suspended" either, which is the whole point of having
+    // it: "suspended" says the session ran and can be resumed, and this one
+    // never ran at all
+    expect(presentStatus('not-started').labelKey).not.toBe(presentStatus('suspended').labelKey);
+    expect(presentStatus('not-started').labelKey).toBe('railStatus.notStarted');
+  });
+
+  it('does not answer not-started through the fail-open path (#687)', () => {
+    // The trap this closes: 'not-started' folds to the idle ramp, so a
+    // MISSING table entry would look identical at every call site that reads
+    // `token` — `presentStatus` answers `PRESENTATION.idle` for anything it
+    // does not know. The label is the only thing that tells the two apart.
+    expect(presentStatus('not-started').labelKey).not.toBe(presentStatus('nonsense').labelKey);
   });
 
   it('fails open: an unknown or missing status reads as idle, never as an alarm', () => {

@@ -61,6 +61,19 @@ on the floor, and say so in your PR.
 
 ## 0.8.4 — unreleased
 
+### Fixed
+
+- **A session that didn't start is now in the Sessions list, like everything
+  else.** A card whose session never got going — usually because its folder was
+  renamed, deleted, or is on a drive that isn't plugged in — was on screen but
+  missing from the list entirely. That meant no way to click it back to the
+  front, no `Ctrl+1`…`Ctrl+9` number, no pin, no place to close it from, and
+  maximizing another session ignored it instead of arranging around it. It now
+  shows with the status *not started*. Two things in its right-click menu are
+  unavailable until it actually starts — **Rename** and moving it into a group —
+  because there's nothing to remember them against yet; clicking **Try again**
+  successfully brings both back.
+
 ### Internal
 
 - **A permission request that has nowhere to appear is now handed straight to
