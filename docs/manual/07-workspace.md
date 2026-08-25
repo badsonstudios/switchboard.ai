@@ -47,7 +47,9 @@ and is skipped by everything that acts on sessions in bulk. See
 [Pinning a session](02-sessions.md#pinning-a-session-you-always-want-to-find).
 
 Sessions that are suspended or not currently on screen still appear here — the
-list is the complete inventory.
+list is the complete inventory. That includes a card whose session
+[didn't start](11-troubleshooting.md#sessions): it shows as *not started*, and
+**Rename** and **Move to group** are the only two things it can't do.
 
 **Resize it** by dragging the right edge of the list. The width is remembered.
 To hide it entirely, press `Ctrl+B`.

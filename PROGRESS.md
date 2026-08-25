@@ -3,21 +3,27 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ⏳ TWO PRs OPEN — nothing is merged. Dan's move.
+> # ✅ BOTH MERGED — 2026-08-25. Queue is clear; next item not started.
 >
-> * **PR #712 — #687** (a refused-create card gets a rail row). **All 4 checks
->   GREEN.** Ready to squash-merge.
-> * **PR #713 — #632 PR 1/2** (MCP Manager, read-only pane). CI running at
->   hand-off. **USER-FACING — do not auto-merge.**
-> * **#714 filed** — the mutation half of #632 (add/remove/approval/reconnect),
->   so #632 does not sit half-closed. PR #713 deliberately does NOT close #632.
+> * **#687** — a session that never started now has a rail row. PR **#712**
+>   squash-merged to main, all 4 checks green. Branch deleted.
+> * **#632 PR 1/2** — the MCP Manager's read-only pane, and `/mcp` finally
+>   opens something. PR **#713**, 4 checks green, merged after #712 with a
+>   docs-only conflict resolution (CHANGELOG, this file, the dogfood tracker —
+>   all three additive; `session-store.ts` and `en.json` auto-merged).
+> * **#714 is OPEN and not started** — the mutation half of #632
+>   (add / remove / approval hand-off / reconnect). #713 deliberately did NOT
+>   close #632.
 >
-> **Merge-order note:** both branches touch `session-store.ts` and `en.json`,
-> in different regions. Whichever lands second wants a look. #712 first is the
-> smaller diff.
+> **NOT RELEASED.** main is well past v0.8.3 and the bump is manual. Both
+> entries sit under `0.8.4 — unreleased` (`Added` for #632, `Fixed` for #687).
+> Merging is not shipping — do not let "it's merged" read as "he has it".
 >
-> **NOT RELEASED either way** — main is past v0.8.3 and the bump is manual.
-> Entries for both are filed under `0.8.4 — unreleased`.
+> **TWO DOGFOOD ROWS ARE OWED A HUMAN**, both filed ahead of their merges so
+> they could not be lost in the train. The one that matters most is #632's
+> item 2: **add a real MCP server and confirm the status column actually says
+> "connected"**, because no automated test can prove the CLI launch works on
+> real hardware — which is exactly how that blocker got in.
 
 > # 🔨 IN PROGRESS — 2026-08-25: #632 — MCP Manager (§5.17), PR 1 of 2
 >
@@ -171,6 +177,111 @@
 > empty. An empty scratch dir `C:\tmp\mcp-health-probe` resisted deletion (a
 > lingering handle) and a stray `projects` entry for it sits in
 > `~/.claude.json` — both inert, worth sweeping if anyone is in there.
+>
+> **Dan changed course 2026-08-25**, mid-queue: skip #688/#680/#695/#702, go
+> straight to the MCP work. He asked for "the rest of the slash commands and
+> especially /mcp"; that is TWO tickets — **#633** (picker-style slash commands:
+> `/model`, `/permissions`, …) and **#632** (the MCP Manager). He chose **#632
+> first**, because #633's own done-when delegates `/mcp` to it.
+>
+> At Gate 1 (plan approval). Green-field: the only MCP code in `src/` today is
+> the `/mcp` entry in the builtin slash catalogue (`providers/claude.ts:126`).
+>
+> ## CLI PROBES RUN 2026-08-25 — two of them contradict the issue
+>
+> Run against the `claude` on PATH, per the standing rule. **Do not re-derive
+> these; do not trust the issue text over them.**
+>
+> 1. **`claude mcp list --json` DOES NOT EXIST.** The issue says to mutate and
+>    read via `claude mcp add / remove / list --json`. `mcp list` and `mcp get`
+>    take NO options at all (`-h` only) and emit human text with emoji. (Note
+>    `--json` DOES exist for `claude plugin` — DESIGN §5.18 — which is probably
+>    where the issue's assumption came from.) DESIGN §5.17 itself says "read the
+>    real config files", so the design was right and the ticket was wrong.
+> 2. **There is no enable/disable verb.** The full subcommand list is: `add`,
+>    `add-from-claude-desktop`, `add-json`, `get`, `list`, `login`, `logout`,
+>    `remove`, `reset-project-choices`, `serve`. The issue's done-when asks for
+>    "enable/disable … through the real CLI" and there is no such path — it is
+>    the `enabledMcpjsonServers` / `disabledMcpjsonServers` settings keys, which
+>    only a session or a settings write can move. **Needs a scope call.**
+>
+> ## Where the three scopes actually live (probed, verified by writing one)
+>
+> * **project** → `<cwd>/.mcp.json`, shape
+>   `{ mcpServers: { <name>: { type, command, args, env } } }`
+> * **local** → `~/.claude.json` → `projects[<path>].mcpServers`
+> * **user** → `~/.claude.json` → **top-level** `mcpServers`
+> * Approval state for `.mcp.json` servers → `enabledMcpjsonServers` /
+>   `disabledMcpjsonServers` on the project entry. Unapproved reads as
+>   `⏸ Pending approval (run \`claude\` to approve)` and is NOT connected to.
+>
+> **WINDOWS GOTCHA, found by accident and worth more than the rest:**
+> `~/.claude.json`'s `projects` map had TWO keys for this repo differing only in
+> drive-letter case — `c:/Projects/Switchboard.ai` and
+> `C:/Projects/Switchboard.ai` — each with its own `mcpServers`. Any scope
+> lookup must match paths case-insensitively on Windows or a session reads an
+> empty scope and reports no servers. Also: top-level `mcpServers` is `null`
+> when empty, not `{}`.
+>
+> **`-s local` resolves to the REPO, not the cwd.** Run from
+> `.claude/work_files/mcp-probe`, `claude mcp add -s local` wrote into the
+> project entry for `C:\Projects\Switchboard.ai`. The probe server was removed
+> and `~/.claude.json` verified clean; the scratch dir is deleted.
+>
+> # ⏳ PR OPEN — 2026-08-24: #687 — a refused-create card now has a rail row
+>
+> **PR #712 open, awaiting Dan's review + squash-merge.** Branch
+> `feature/687-not-started-rail-row` @ `d19a693`, based on main @ `4b8c09e`.
+> Both gates passed. Milestone: Phase 2 - The Switchboard.
+>
+> **6098 unit tests / 236 files** (+29 / +1 vs the 6069/235 baseline), lint and
+> typecheck clean. **Local e2e NOT run** — #705: the Windows foreground lock
+> fails blurApp-gated specs while Dan is at the machine, so CI is the gate.
+> USER-FACING → do not auto-merge.
+>
+> **The gap, traced end to end (facts, not guesses):**
+> * `addSessionCardTo` mints a `cardId` and adds a dockview panel. **Main knows
+>   nothing about the card at that point.**
+> * The card's lazy-spawn effect calls `sessions:create`. `persist.upsert`
+>   (`main/sessions/ipc.ts`, the block at "SPREAD `prior` FIRST") runs **only
+>   after `manager.create` succeeds**. Every refusal path returns before it.
+> * `sessions:cards` is built from `deps.persist.list()`, so the card is absent
+>   → `sessionStore.setSessions` never sees it → `getRailOrder().flat` omits it
+>   → `layoutCards()` omits it → `heldMaximize` declines, and Ctrl+1..9, the
+>   collapsed strip, pin and bulk-close cannot reach it either.
+> * **NOT "impossible by construction"** — the #686 worker reproduced it in a
+>   real window. So the issue's second branch is off the table.
+> * It is **current-session-only**: a panel with no persisted record is pruned
+>   at boot (`knownCards` sweep in `onReady`), so it does not survive relaunch.
+> * A *persisted* card whose folder went missing is NOT affected — `prior`
+>   exists, so it keeps its row. Any fix must dedupe against that.
+>
+> **What shipped:** a renderer-side degraded row, NOT a main-side early
+> `persist.upsert` — the latter would make never-started cards survive relaunch
+> (reversing the deliberate `knownCards` boot prune) and would edit the stretch
+> of `sessions:create` documented three times as needing to stay synchronous.
+> `SessionStore` now publishes `state.sessions` as a JOIN of main's list and a
+> private not-started map, deduped against main; new renderer-only status
+> `'not-started'` (`RailCardStatus`, kept OFF the wire type on purpose).
+>
+> **THE REVIEW BLOCKER, worth remembering:** giving the card a rail row put it
+> into `layoutCards()` — which made it COLLAPSIBLE for the first time (maximize
+> any other card and `removePanelKeepingSlot` takes its panel). Every way back
+> (rail row, Ctrl+1..9, collapsed strip, palette, un-maximize) lands in
+> `revealNow`, which rebuilds from MAIN's card list and returned empty-handed
+> for a card main has never heard of — silently. The fix would have traded
+> "invisible card" for "visible card you can click and never open, with Try
+> again locked behind it". `revealNow` now falls back to the store row and logs
+> the remaining early return. **The general lesson: making a thing visible to
+> the layout engine makes every layout verb reachable on it.**
+>
+> Review also caught two second doors to the gated actions (double-click
+> rename, drag-into-group) and one vacuous test. All taken; 1 blocker,
+> 7 should-fix, 6 nits — every one addressed or answered in a comment.
+>
+> **NEXT UP: #688 (doc-only)**, then #680, #695, #702, #607, #619. Still owed:
+> 12 dogfood rows (#687's is filed ahead of its merge, deliberately, so it
+> cannot be lost between the PR and the train), `/pm`'s #256 reconciliation.
 
 > # ✅ MERGED — 2026-08-24: #699 + #700 transport-hygiene bundle
 >

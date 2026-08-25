@@ -12,7 +12,7 @@
 // must not depend on the view" property above is untouched; what it buys is
 // that a row cannot describe a card more loosely than the channel that fills
 // it. Components re-export from here so existing imports keep working.
-import type { CardStatus } from '../../../shared/sessions';
+import type { RailCardStatus } from '../../../shared/sessions';
 import type { TransportKind } from '../../../shared/transport';
 
 /** A session as the rail and the grid see it. */
@@ -24,7 +24,11 @@ export interface RailSession {
   badge?: string;
   /**
    * The card's status, straight off `sessions:cards` — `SessionStatus` or the
-   * card-only 'suspended' (#618).
+   * card-only 'suspended' (#618) — plus the one value that does NOT come off
+   * that channel: 'not-started' (#687), which the store mints for a card whose
+   * `sessions:create` was refused. Main has never heard of such a card, so it
+   * can never report one; see `RailCardStatus` for why that is a separate type
+   * from the wire's `CardStatus` rather than one wider union.
    *
    * It was `string` here, which is where the narrowing `sessions:cards` gained
    * in #618 was being thrown away again: `App.tsx` maps `c.status` into this
@@ -37,7 +41,7 @@ export interface RailSession {
    * for anything it does not know. Narrow at the SOURCE, stay tolerant at the
    * paint.
    */
-  status?: CardStatus;
+  status?: RailCardStatus;
   /** persistent-group membership (E12); undefined = ungrouped */
   groupId?: string;
   /** repo/folder auto-group key (E12-05); same key = same emergent group */

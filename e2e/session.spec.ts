@@ -166,8 +166,25 @@ test.describe('a session card', () => {
     // scoped: the announcement must not say it either.
     await expect(window.getByText('Session ended')).toHaveCount(0);
     await expect(window.getByText(/Exited unexpectedly/)).toHaveCount(0);
-    // the card is still recoverable rather than a dead end
-    await expect(window.getByRole('button', { name: 'Close' })).toBeVisible();
+    // the card is still recoverable rather than a dead end.
+    //
+    // SCOPED TO THE OVERLAY since #687, and the reason is the feature: the card
+    // now has a rail row, and that row's `✕` is titled "Close session" — which
+    // an unscoped `{ name: 'Close' }` matches by substring, so this line hit a
+    // strict-mode violation on two buttons the moment the row appeared. The
+    // `getByText` four lines up was scoped for the same class of reason. It is
+    // the OVERLAY's Close this assertion has always meant: the question is
+    // whether the dead-end card offers a way out of itself.
+    await expect(overlay.getByRole('button', { name: 'Close' })).toBeVisible();
+
+    // ...AND THE ROW ITSELF (#687), which is the other half of "not a dead
+    // end" and the only place a running app proves it. A card whose
+    // `sessions:create` was refused has no record in main, so it was in no
+    // session list at all — invisible to the rail, to Ctrl+1..9, to pinning,
+    // and to the maximize sweep, which is built from rail order. The unit
+    // suites pin the store join and the layout plan; this is the one assertion
+    // made against a real window.
+    await expect(window.locator('[data-rail-open]')).toHaveCount(1);
 
     // #358: and the panel is not silent. The same words are in the card's live
     // region, which is what a screen-reader user who is not sitting on this

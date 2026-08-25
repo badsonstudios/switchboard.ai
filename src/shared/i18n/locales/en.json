@@ -136,6 +136,7 @@
     "working": "working",
     "idle": "idle",
     "suspended": "suspended",
+    "notStarted": "not started",
     "askInput": "Asked you a question",
     "askPermission": "Wants permission to run",
     "askDone": "Finished — review changes",

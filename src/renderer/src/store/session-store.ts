@@ -191,6 +191,19 @@ const EMPTY: SessionState = {
  *  so a fresh `new Set()` per read would re-render every subscriber forever. */
 const NO_BATCHED_IDS: ReadonlySet<string> = new Set();
 
+/**
+ * Do two not-started rows (#687) say the same thing?
+ *
+ * Only the four fields `markCardNotStarted` fills are compared, because they
+ * are the only four such a row HAS — it is built from the card's own panel
+ * params, not from a wire record, so there is no accent, badge, live id or
+ * transport to differ in. `status` is a constant on that path and is not worth
+ * a comparison that can only ever be true.
+ */
+function sameNotStartedRow(a: RailSession, b: RailSession): boolean {
+  return a.id === b.id && a.title === b.title && a.folder === b.folder && a.groupId === b.groupId;
+}
+
 export class SessionStore {
   private state: SessionState = EMPTY;
   private listeners = new Set<() => void>();
@@ -471,12 +484,127 @@ export class SessionStore {
   setActiveCard(activeCard: string | null): void {
     this.set({ activeCard });
   }
+  /** What `sessions:cards` last reported — main's half of `state.sessions`. */
   setSessions(sessions: RailSession[]): void {
-    this.set({ sessions });
+    this.rawSessions = sessions;
+    this.publishSessions();
   }
   setGroups(groups: RailGroup[]): void {
     this.set({ groups });
   }
+
+  // ── cards main has never heard of (#687) ──────────────────────────────────
+  //
+  // `state.sessions` is a JOIN, and this is the half that does not come off the
+  // wire. A card is minted in the renderer — `addSessionCardTo` generates the
+  // id and adds the dockview panel — and main only learns of it when
+  // `sessions:create` gets as far as `persist.upsert`, which sits AFTER the
+  // spawn. Every refusal returns before it: bad input, an empty card id, a
+  // folder that is not a directory, and a spawn that threw. So the card is on
+  // screen, drawing #355's "Session didn't start" overlay, and `sessions:cards`
+  // — built from `persist.list()` — cannot list it.
+  //
+  // That absence was not one missing row. `getRailOrder().flat` feeds
+  // `layoutCards()`, so the card was invisible to `heldMaximize` (maximize and
+  // Ctrl+Shift+M declined to rearrange around it), to Ctrl+1..9, to the
+  // collapsed strip, to pinning and to close-all — while `docs/manual`
+  // called the Sessions list "the complete inventory".
+  //
+  // WHY THE RENDERER AND NOT MAIN. The one-line alternative was to move
+  // `persist.upsert` above the spawn so every card gets a record. It was
+  // rejected for three reasons: a never-started card would then survive a
+  // relaunch (today the `knownCards` sweep in `SessionGrid`'s `onReady` prunes
+  // a restored panel with no record, deliberately); it edits the stretch of
+  // `sessions:create` whose comments say three times that nothing may yield
+  // inside it; and it breaks main's invariant that a persisted record means a
+  // session really ran.
+  private rawSessions: readonly RailSession[] = [];
+  private notStarted: ReadonlyMap<string, RailSession> = new Map();
+
+  /**
+   * Main's list plus the cards only this window knows about.
+   *
+   * THE FILTER IS THE LOAD-BEARING LINE, and it is not defensive coding. A
+   * card that was persisted by an EARLIER successful start and whose folder has
+   * since gone reaches `startFailed` on the next look at it — `sessions:create`
+   * refuses "folder is not a directory" — so it is marked here while ALSO being
+   * in main's list, where it reads 'suspended'. Without the filter that card
+   * gets two rows in the rail, two entries in `layoutCards()`, and two Ctrl+1..9
+   * positions. Main wins: it has the accent, the badge, the group and the real
+   * status, and this half has a title and a folder.
+   *
+   * IT IS ALSO WHAT MAKES `status === 'not-started'` MEAN SOMETHING DOWNSTREAM.
+   * A row leaves here carrying that status only when main has no record of the
+   * card, so `SessionsRail` can read the status off its props and know it is
+   * looking at a card whose main-side actions would silently do nothing —
+   * without asking the store, and without a second copy of this rule.
+   * Self-correcting for the same reason: a retry that succeeds puts the card in
+   * main's list, and this filter stops publishing our row from the next
+   * `sessions:cards` refresh, whether or not anything cleared the mark.
+   *
+   * WHAT THE MINTED ROW DOES NOT CARRY, deliberately: an accent, a badge and an
+   * `autoKey`. The first two are main's to assign at spawn — there is no
+   * session to assign them for — and the rail already falls back to the neutral
+   * edge for a row without one. The `autoKey` is the interesting absence: main
+   * resolves it from the folder's git root (`sessions:cards` awaits `repoRoot`
+   * per card), so a not-started card sits in Ungrouped rather than in the
+   * emergent per-repo group its folder belongs to. Left that way on purpose —
+   * the renderer has no route to a git root, and inventing a second answer to
+   * "which repo is this" is how two surfaces start disagreeing about grouping.
+   * An explicit `groupId` IS carried, because the card was told one.
+   */
+  private publishSessions(): void {
+    if (this.notStarted.size === 0) {
+      // the overwhelmingly common case — no copy, and `sessions` keeps the
+      // identity `setSessions` handed us
+      this.set({ sessions: this.rawSessions });
+      return;
+    }
+    const known = new Set(this.rawSessions.map((s) => s.id));
+    const extra = [...this.notStarted.values()].filter((s) => !known.has(s.id));
+    this.set({ sessions: extra.length === 0 ? this.rawSessions : [...this.rawSessions, ...extra] });
+  }
+
+  /**
+   * This card's `sessions:create` was refused — give it a row anyway (#687).
+   *
+   * Idempotent by VALUE, not merely by key: the lazy-spawn effect can re-run,
+   * and re-publishing an identical row would hand `useSyncExternalStore` a new
+   * array every time.
+   */
+  markCardNotStarted(card: { id: string; title: string; folder?: string; groupId?: string }): void {
+    const prior = this.notStarted.get(card.id);
+    const row: RailSession = { ...card, status: 'not-started' };
+    if (prior && sameNotStartedRow(prior, row)) return;
+    // ...and nor is a mark the dedupe would swallow whole: main already lists
+    // this card, so publishing would rebuild the rail order and notify every
+    // subscriber for a list that cannot change. The MARK still has to be
+    // recorded — `setSessions` can drop the card later — which is why this
+    // returns after the write rather than before it, and why it is a second
+    // early-out rather than a clause on the one above.
+    const swallowed = this.rawSessions.some((s) => s.id === card.id);
+    const next = new Map(this.notStarted);
+    next.set(card.id, row);
+    this.notStarted = next;
+    if (!swallowed) this.publishSessions();
+  }
+
+  /**
+   * It started, or it is gone — either way this row is no longer ours to draw.
+   *
+   * Called from the successful `sessions:create` branch, from both card-close
+   * paths (`onDidRemovePanel` and `retireCard`'s panel-less branch), and it is
+   * safe to call for a card that was never marked, which is why none of them
+   * tests first.
+   */
+  clearCardNotStarted(cardId: string): void {
+    if (!this.notStarted.has(cardId)) return;
+    const next = new Map(this.notStarted);
+    next.delete(cardId);
+    this.notStarted = next;
+    this.publishSessions();
+  }
+
   /**
    * One card's task label, from main's push (P2-E7-06).
    *
@@ -486,13 +614,20 @@ export class SessionStore {
    * this window has not listed yet is answered by the list itself when it
    * arrives, and inventing a row from one field would put a session with no
    * title, folder or status in the rail.
+   *
+   * PATCHES THE RAW LIST, not `state.sessions` (#687). The published list is a
+   * join now, and writing the joined array back as the raw one would bake every
+   * not-started row into main's half — where the next `setSessions` could no
+   * longer replace it and the dedupe above could no longer see it. A label only
+   * ever arrives for a card main knows, so the miss is not a case to handle.
    */
   setTaskLabel(cardId: string, taskLabel: string | undefined): void {
-    const i = this.state.sessions.findIndex((s) => s.id === cardId);
-    if (i < 0 || this.state.sessions[i].taskLabel === taskLabel) return;
-    const sessions = [...this.state.sessions];
+    const i = this.rawSessions.findIndex((s) => s.id === cardId);
+    if (i < 0 || this.rawSessions[i].taskLabel === taskLabel) return;
+    const sessions = [...this.rawSessions];
     sessions[i] = { ...sessions[i], taskLabel };
-    this.set({ sessions });
+    this.rawSessions = sessions;
+    this.publishSessions();
   }
   /** Replace the event list (a push from main, or the initial list). */
   setEvents(events: EventDto[]): void {

@@ -21,22 +21,24 @@
 // Kept free of React and of colors: the component turns `token` into
 // var(--status-<token>) / var(--status-<token>-ink), which is the only place
 // the theme is allowed to matter (§5.20).
-import type { CardStatus } from '../../../shared/sessions';
+import type { RailCardStatus } from '../../../shared/sessions';
 
 import type { WritingDirection } from './writing-direction';
 
 /**
- * The status vocabulary the rail can receive — `SessionStatus` plus the
- * card-level 'suspended' (restored, not yet resumed).
+ * The status vocabulary the rail can receive — `SessionStatus`, the card-level
+ * 'suspended' (restored, not yet resumed), and 'not-started' (#687).
  *
  * It was a second hand-written copy of those eight names until #618; it is
- * `CardStatus` from `shared/sessions.ts` now, which is exactly what
- * `sessions:cards` puts on the wire. The local NAME is kept because it says
- * what this file uses the type FOR — `PRESENTATION` below is keyed by it, so a
- * NINTH status added to the union stops compiling here until the rail decides
- * how to paint it, which is the whole point of that record.
+ * `RailCardStatus` from `shared/sessions.ts` now. That is `CardStatus` — what
+ * `sessions:cards` puts on the wire — plus the one name the RENDERER mints,
+ * because the card it describes is one main has never been told about. The
+ * local NAME is kept because it says what this file uses the type FOR:
+ * `PRESENTATION` below is keyed by it, so a TENTH status added to the union
+ * stops compiling here until the rail decides how to paint it, which is the
+ * whole point of that record — and is how this change found every consumer.
  */
-export type RailStatusName = CardStatus;
+export type RailStatusName = RailCardStatus;
 
 /**
  * The six-way ramp the design paints. 'starting' and 'suspended' fold in.
@@ -117,6 +119,27 @@ const PRESENTATION: Record<RailStatusName, StatusPresentation> = {
     spinner: false,
     glyphKey: 'railStatus.glyphIdle',
     labelKey: 'railStatus.suspended',
+  },
+  // #687: the card is on screen and nothing ever ran in it — `sessions:create`
+  // was refused, so main has no record of it and this row exists only because
+  // the store minted it.
+  //
+  // THE IDLE RAMP, AND `needsYou: false`, ARE BOTH DELIBERATE. The card itself
+  // is already shouting: it draws the "Session didn't start" overlay with Try
+  // again and Close, and #606 gave it a header whose pill says the same word
+  // (`endedPill` answers `{ token: 'idle', labelKey: 'status.notStarted' }` —
+  // this entry is its rail-side twin, on purpose, so the two surfaces cannot
+  // describe one card differently). Making the row shout too would put it in
+  // the attention queue and the "N need you" count, and a session that never
+  // started has made no demand — §4's rule that our own blind spots must not
+  // invent an attention request cuts the same way for a card we know is dead
+  // on arrival. The user closes it or retries it when they get to it.
+  'not-started': {
+    token: 'idle',
+    needsYou: false,
+    spinner: false,
+    glyphKey: 'railStatus.glyphIdle',
+    labelKey: 'railStatus.notStarted',
   },
 };
 
