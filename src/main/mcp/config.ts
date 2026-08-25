@@ -153,11 +153,18 @@ export function redactUrl(url: string): string {
  * dropped. Case is NOT folded elsewhere, because two paths differing in case
  * really are two directories on Linux and macOS, and folding there would merge
  * two projects' servers into one list.
+ *
+ * `platform` IS A PARAMETER, and that is not a testing convenience — it is the
+ * #127 lesson `launchSpec` documents, which this file learned the hard way:
+ * with the platform read from the ambient process, the drive-letter tests below
+ * passed on the maintainer's Windows machine and went RED on the Linux CI leg,
+ * because the behaviour they assert only exists on one of them. Injected, both
+ * branches are exercised on every runner.
  */
-export function samePath(a: string, b: string): boolean {
+export function samePath(a: string, b: string, platform: NodeJS.Platform = process.platform): boolean {
   const norm = (p: string): string => {
     const slashed = p.replace(/\\/g, '/').replace(/\/+$/, '');
-    return process.platform === 'win32' ? slashed.toLowerCase() : slashed;
+    return platform === 'win32' ? slashed.toLowerCase() : slashed;
   };
   return norm(a) === norm(b);
 }
@@ -171,11 +178,15 @@ export function samePath(a: string, b: string): boolean {
  * answer that cannot be wrong on screen: picking one entry hides real servers,
  * and listing both twice claims the user has two.
  */
-function projectEntries(claude: ClaudeJson, folder: string): ProjectEntry[] {
+function projectEntries(
+  claude: ClaudeJson,
+  folder: string,
+  platform: NodeJS.Platform
+): ProjectEntry[] {
   const projects = claude.projects;
   if (!isRecord(projects)) return [];
   return Object.entries(projects)
-    .filter(([key]) => samePath(key, folder))
+    .filter(([key]) => samePath(key, folder, platform))
     .map(([, value]) => (isRecord(value) ? (value as ProjectEntry) : {}));
 }
 
@@ -250,10 +261,12 @@ export function buildInventory(opts: {
   claudeJson: unknown;
   mcpJson: unknown;
   unreadable?: readonly McpScope[];
+  /** injected for the reason `samePath` gives — both branches on every runner */
+  platform?: NodeJS.Platform;
 }): McpInventoryWire {
   const claude = (isRecord(opts.claudeJson) ? opts.claudeJson : {}) as ClaudeJson;
   const project = (isRecord(opts.mcpJson) ? opts.mcpJson : {}) as McpJson;
-  const entries = projectEntries(claude, opts.folder);
+  const entries = projectEntries(claude, opts.folder, opts.platform ?? process.platform);
 
   // local scope: every matching project entry's own map, merged (see
   // `projectEntries` — the duplicate-key case is real)

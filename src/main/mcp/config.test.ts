@@ -5,7 +5,7 @@
 // are what `claude mcp add` actually wrote on this machine on 2026-08-25, and
 // the drive-letter case in `projects` is what a real `~/.claude.json` actually
 // held. Re-probe before changing any of them; do not reason from the issue.
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { buildInventory, samePath } from './config';
 
 /** exactly what `claude mcp add -s project probe-a -- node fake-server.js`
@@ -18,11 +18,24 @@ const PROJECT_JSON = {
 
 const FOLDER = 'C:/Projects/acme';
 
-const inv = (opts: { claudeJson?: unknown; mcpJson?: unknown; folder?: string } = {}) =>
+const inv = (
+  opts: {
+    claudeJson?: unknown;
+    mcpJson?: unknown;
+    folder?: string;
+    platform?: NodeJS.Platform;
+  } = {}
+) =>
   buildInventory({
     folder: opts.folder ?? FOLDER,
     claudeJson: opts.claudeJson ?? {},
     mcpJson: opts.mcpJson ?? {},
+    // WIN32 BY DEFAULT in this file, because the fixtures are Windows paths
+    // read off a real Windows machine. Injected rather than ambient: read from
+    // `process.platform`, the drive-letter block below passed on Windows and
+    // went red on the Linux CI leg — the #127 trap, walked into while quoting
+    // it. Ambient behaviour is covered by the `samePath` block, both ways.
+    platform: opts.platform ?? 'win32',
   });
 
 const names = (i: ReturnType<typeof inv>) => i.servers.map((s) => s.name);
@@ -114,22 +127,32 @@ describe('the Windows drive-letter collision (#632 probe)', () => {
 });
 
 describe('samePath — case folding is per-platform, and that is the point', () => {
-  const platform = (p: string): void => {
-    vi.spyOn(process, 'platform', 'get').mockReturnValue(p as NodeJS.Platform);
-  };
-  afterEach(() => vi.restoreAllMocks());
-
+  // NO MOCKING: the platform is a parameter, so both branches run on every
+  // runner. That is the whole point of injecting it (`launchSpec`, #127) — a
+  // spied `process.platform` would still leave one branch unexercised anywhere
+  // the spy did not run.
   it('folds case on Windows, where two spellings are one directory', () => {
-    platform('win32');
-    expect(samePath('c:/Projects/acme', 'C:/Projects/ACME')).toBe(true);
+    expect(samePath('c:/Projects/acme', 'C:/Projects/ACME', 'win32')).toBe(true);
   });
 
   it('does NOT fold case elsewhere, where they are two directories', () => {
     // Folding on Linux would merge two real projects' servers into one list —
     // a worse bug than the one the folding fixes, and silent.
-    platform('linux');
-    expect(samePath('/home/dan/acme', '/home/dan/ACME')).toBe(false);
-    expect(samePath('/home/dan/acme', '/home/dan/acme/')).toBe(true);
+    expect(samePath('/home/dan/acme', '/home/dan/ACME', 'linux')).toBe(false);
+    expect(samePath('/home/dan/acme', '/home/dan/acme/', 'linux')).toBe(true);
+  });
+
+  it('and the collision merge really is Windows-only', () => {
+    // the other half of the same rule, asserted through `buildInventory`: two
+    // case-differing keys are ONE folder on Windows and TWO on Linux
+    const both = {
+      projects: {
+        'c:/p/acme': { mcpServers: { lower: { command: 'x' } } },
+        'C:/p/acme': { mcpServers: { upper: { command: 'y' } } },
+      },
+    };
+    const linux = inv({ claudeJson: both, folder: 'C:/p/acme', platform: 'linux' });
+    expect(names(linux)).toEqual(['upper']);
   });
 });
 
