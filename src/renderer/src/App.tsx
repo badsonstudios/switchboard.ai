@@ -47,6 +47,7 @@ import { DEFAULT_SOUND } from '../../shared/sounds';
 import { answered, took } from '../../shared/ipc/refusal';
 import { PushSetupDialog } from './components/PushSetupDialog';
 import { QuietHoursDialog } from './components/QuietHoursDialog';
+import { McpManagerDialog } from './components/McpManagerDialog';
 import type { QuietState } from '../../shared/quiet-hours';
 import { unavailablePushConfig } from '../../shared/push';
 import type {
@@ -245,6 +246,26 @@ export function App(): React.JSX.Element {
   // else on screen reads the window, so it is fetched when the dialog opens
   // rather than held at mount.
   const [quietOpen, setQuietOpen] = useState(false);
+  // The MCP Manager (§5.17, #632). Read-only in PR 1.
+  const [mcpOpen, setMcpOpen] = useState(false);
+  // ...and the other door to it: `/mcp` typed in a composer (#632). The signal
+  // comes off the store rather than a prop, because the composer is rendered by
+  // dockview three levels down — see `subscribeMcpOpen`.
+  React.useEffect(() => {
+    // block body per the house rule: an expression body would return the
+    // unsubscribe by accident rather than on purpose, and the two read
+    // identically right up until someone adds a second statement
+    return sessionStore.subscribeMcpOpen(() => {
+      // RAISE THIS WINDOW FIRST. Popped-out sessions share this React tree, so
+      // a `/mcp` typed in one arrives here fine — but the dialog renders into
+      // the MAIN window's DOM, so from the popout the observable result would
+      // be "my draft vanished and nothing happened". The popout key bridge
+      // makes the same move for the same reason (see `find.open`'s note).
+      // Harmless when this window is already frontmost.
+      window.focus();
+      setMcpOpen(true);
+    });
+  }, []);
   const [quietState, setQuietState] = useState<QuietState | null>(null);
   // Attention events (E9-03). This subscription used to live inside
   // EventsPanel; it moved up here because the queue is the SINGLE ordering
@@ -1165,7 +1186,8 @@ export function App(): React.JSX.Element {
   const modalOpenRef = React.useRef(false);
   useEffect(() => {
     railHiddenRef.current = railHidden;
-    modalOpenRef.current = paletteOpen || aboutOpen || updateOpen || pushOpen || quietOpen;
+    modalOpenRef.current =
+      paletteOpen || aboutOpen || updateOpen || pushOpen || quietOpen || mcpOpen;
   });
 
   // Set when a command deliberately raised a DIFFERENT OS window (jumping to a
@@ -1311,6 +1333,9 @@ export function App(): React.JSX.Element {
           openAbout: () => setAboutOpen(true),
           openPushSetup,
           openQuietHours,
+          // §5.17's manager (#632). An inline thunk over a `useState` setter,
+          // which is stable — so it needs no entry in the dependency list below.
+          openMcpManager: () => setMcpOpen(true),
           checkForUpdates,
           // §5.30's `Open file…`. Picking a file in the native dialog is also
           // what GRANTS it: main widens the `fs.read` scope with the chosen
@@ -1361,6 +1386,16 @@ export function App(): React.JSX.Element {
   );
   // chips advertise their own binding, derived from the registry so a tooltip
   // can never drift from the key that actually works
+  // Whose MCP servers the manager shows (#632): the session you are IN.
+  //
+  // Off the STORE's rail list rather than `grid.activeSessionFolder()`, which
+  // answers for the focused PANEL — the manager is opened from the palette and
+  // from the composer, and both of those can run while a Changes tab holds
+  // focus. `null` when nothing is active is a real state the dialog draws its
+  // own line for, not an empty list pretending to be "no servers".
+  const activeSession = sessions.find((s) => s.id === activeCard) ?? null;
+  const activeSessionFolder = activeSession?.folder ?? null;
+  const activeSessionTitle = activeSession?.title;
   const railBindingLabel = formatBinding(bindingFor(commands, 'view.rail'), platform);
   const paletteBindingLabel = formatBinding(bindingFor(commands, 'palette.open'), platform);
   const queueBindingLabel = formatBinding(bindingFor(commands, 'attention.next'), platform);
@@ -1713,7 +1748,7 @@ export function App(): React.JSX.Element {
         }}
         // a second dialog is above this one: two stacked `aria-modal` regions
         // is a thing screen readers disagree about, so only the top one claims it
-        dialogAbove={updateOpen || pushOpen || quietOpen}
+        dialogAbove={updateOpen || pushOpen || quietOpen || mcpOpen}
         onOpenPushSetup={openPushSetup}
         onOpenQuietHours={openQuietHours}
       />
@@ -1729,6 +1764,12 @@ export function App(): React.JSX.Element {
           applyPushAnswer(key, bridge.push?.setSecret?.(key, value))
         }
         onTest={testPush}
+      />
+      <McpManagerDialog
+        open={mcpOpen}
+        onClose={() => setMcpOpen(false)}
+        folder={activeSessionFolder}
+        {...(activeSessionTitle ? { sessionTitle: activeSessionTitle } : {})}
       />
       <QuietHoursDialog
         open={quietOpen}

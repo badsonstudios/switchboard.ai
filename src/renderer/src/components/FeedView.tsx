@@ -34,6 +34,8 @@ import {
   stashAttachments,
 } from '../lib/composer-attachment-draft';
 import { interruptSession, submitPrompt } from '../lib/composer';
+import { interceptSlash } from '../lib/slash-intercept';
+import { sessionStore } from '../store/session-store';
 import { ComposerAttachments } from './ComposerAttachments';
 import {
   Attachment,
@@ -1775,6 +1777,35 @@ function Composer({
 
   const submit = (): void => {
     const text = draft.replace(/\r\n/g, '\n').trimEnd();
+    // `/mcp` IS OURS TO ANSWER (§5.17, #632). Its CLI form opens an interactive
+    // picker in the TUI, and a Direct-mode session has no terminal for that
+    // picker to appear in — so sending it is a dead end that eats the command
+    // and leaves the session sitting there. Open the manager instead.
+    //
+    // FIRST, because the guards below are both wrong for it: the empty-text
+    // guard does not apply (`/mcp` is not empty) and the attachment branch
+    // would have already sent it. The draft is cleared because the command WAS
+    // handled — leaving it in the box invites a second press, and the user's
+    // line did not fail.
+    //
+    // Only `/mcp`, and only bare: `lib/slash-intercept` is deliberately strict,
+    // because swallowing a command addressed to the CLI is worse than the dead
+    // end it replaces.
+    //
+    // ...AND ONLY ON A TRANSPORT WITH NO TERMINAL. A `pty` session HAS one, so
+    // the CLI's own picker works there — and it can do things this pane
+    // deliberately cannot, including approving a project server, which has no
+    // CLI verb at all. Intercepting it everywhere would take an interaction the
+    // CLI kept for itself in the one mode where it was reachable, which is the
+    // half of P7 the §6 amendment did NOT relax. Same test `canAttach` uses a
+    // few lines down, for the same reason: the transport decides.
+    if (transport !== 'pty' && interceptSlash(text).kind === 'open-mcp') {
+      sessionStore.notifyMcpOpenRequested();
+      clearComposerDraft();
+      box.current?.focus();
+      return;
+    }
+
     // An attachment with nothing typed IS a prompt (§5.10's composer is an
     // input route, and "look at this" is a thing people send), so the guard is
     // on BOTH being empty rather than on the text alone.

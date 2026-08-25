@@ -554,6 +554,7 @@ because every hit was one of these deliberate seams.
 | `settings.read` / `.write` | preferences, notification prefs, preflight |
 | `workspace.read` / `.write` | layout and ui blob |
 | `groups.read` / `.write` | session groups |
+| `mcp.read` | enumerate the MCP servers a session can see, across all three scopes, and ask the CLI whether it is connected to them (§5.17, #632). Its own capability rather than `environment.probe`, by the `fs.probe` / `fs.read` argument: this reveals **which tools a session is wired to** — server names, endpoints, and the **names** (never the values) of the credentials they carry |
 | `app.window` | display geometry, popout movement, and the right-click menu's labels (#526) — note the labels are one **app-wide** setting, applied to every window, last writer wins |
 | `environment.probe` | runs the CLI to read its version; stats the user's home config |
 | `fs.probe` | existence/type of an arbitrary caller-supplied path |

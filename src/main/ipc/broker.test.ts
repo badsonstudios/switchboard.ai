@@ -109,6 +109,7 @@ describe('the IPC capability map (the done-when: no channel is untagged)', () =>
       'src/main/events/rules-ipc.ts',
       'src/main/events/push-ipc.ts',
       'src/main/events/sound-ipc.ts',
+      'src/main/mcp/ipc.ts',
       // `audio:play` / `audio:speak` are OUTBOUND and both ends have to agree
       // on the name, so the two literals live in shared as constants and
       // `events/audio-sink.ts` sends them. Listing the file that NAMES them is

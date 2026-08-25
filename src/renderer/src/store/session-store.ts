@@ -1309,6 +1309,40 @@ export class SessionStore {
     }
   }
 
+  // ── "open the MCP manager" (§5.17, #632) ────────────────────────────────
+  //
+  // A SIGNAL AND NOT A PROP, for the reason this store exists at all (see the
+  // file header): the request comes from the composer, which dockview renders
+  // inside a session panel, and the dialog is App state. Threading a callback
+  // down through `SessionGrid` -> `SessionCardPanel` -> `FeedView` for one menu
+  // item would put a piece of App's UI state on the props of three components
+  // that have no other reason to know about it — and one of them is rendered by
+  // dockview, which is what made the old refs-and-CustomEvents pile necessary
+  // in the first place.
+  //
+  // Modelled on `membershipListeners` directly above, including its
+  // fail-isolated fan-out: a throwing subscriber costs itself, not the caller.
+  // Carries NO payload — which session's servers to show is a question App
+  // already answers from the active card, and passing a second answer here
+  // would be a second authority on "the session you are in".
+  private mcpOpenListeners = new Set<() => void>();
+
+  subscribeMcpOpen(listener: () => void): () => void {
+    this.mcpOpenListeners.add(listener);
+    return () => this.mcpOpenListeners.delete(listener);
+  }
+
+  /** Something typed `/mcp` — App should open the manager (§5.17). */
+  notifyMcpOpenRequested(): void {
+    for (const l of this.mcpOpenListeners) {
+      try {
+        l();
+      } catch (err) {
+        console.error('[store] mcp-open subscriber threw', err);
+      }
+    }
+  }
+
   // ── the user submitted a prompt (P2-E9-06) ──────────────────────────────
   //
   // §5.8's auto-minimize needs an event with two ends that cannot see each

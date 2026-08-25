@@ -61,6 +61,26 @@ on the floor, and say so in your PR.
 
 ## 0.8.4 — unreleased
 
+### Added
+
+- **`/mcp` now opens something.** Type it in a session's prompt box — or pick
+  **MCP servers…** from the command palette — and you get a panel listing every
+  MCP server that session can see: the ones shared with the project, the ones
+  that are just yours for this project, and the ones you have everywhere. Each
+  shows the command or address it uses and whether Claude Code is actually
+  connected to it. Until now `/mcp` opened an interactive picker inside the
+  command line, and a Direct-mode session has no terminal for that picker to
+  appear in — so typing it did nothing at all.
+
+  A couple of things worth knowing. Servers a project shares with you sit at
+  *waiting for your approval* until you approve them in the `claude` command
+  line — Claude Code won't run a program on your machine just because you
+  cloned a repo. And if a server carries an API key or an authorization header,
+  the panel names it but never shows the value.
+
+  This first version is **read-only**: add and remove servers with
+  `claude mcp add` / `claude mcp remove`, and they show up here.
+
 ### Fixed
 
 - **A session that didn't start is now in the Sessions list, like everything

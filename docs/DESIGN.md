@@ -2571,8 +2571,19 @@ mode + session archive v1; fleet snapshots + layout DSL.)*
 - Generic adapter (host any CLI)
 - API-key auth mode per session (env injection + OS credential store; real-dollar
   cost display on usage chips)
-- MCP Manager pane + session controls strip (§5.17; MCP Manager may pull into
-  Phase 3 if daily pain warrants)
+- ~~MCP Manager pane~~ **PULLED FORWARD into Phase 2 (owner, 2026-08-16:
+  "that's a tool we're going to need fairly quickly here"), invoking this
+  item's own escape hatch. Shipped read-only as #632; add/remove/approval is
+  its follow-up.** Session controls strip (§5.17) stays here, and is #633.
+
+  Two contract corrections found while building it, recorded because §5.17
+  describes this surface and one of them contradicts a sibling section:
+  **`claude mcp` has no `--json` output** (`list` and `get` take no options at
+  all — the `--json` in §5.18 is `claude plugin`'s and does not generalise),
+  and **it has no enable/disable verb** — a project server's approval lives in
+  the `enabledMcpjsonServers` / `disabledMcpjsonServers` settings keys with no
+  CLI path to them. §5.17's "read the real config files; mutate via the real
+  CLI" was already the right instruction; the first correction is why.
 - Plugin & Marketplace Manager, cross-session (§5.18) — company-marketplace
   workflow is a primary use case
 - Session templates ("spawn reviewer session pointed at this diff")
