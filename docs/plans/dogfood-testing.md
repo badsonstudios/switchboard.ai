@@ -138,3 +138,4 @@ so the row cannot be lost between the PR and the train.
 | 2026-08-24 | Switching away from a WORKING session sometimes closes another session's dock panel (rail unaffected; owner can reproduce) | #708 — FIXED in v0.8.2 (#558 dock-back rework), owner-verified same day |
 | 2026-08-26 | Composer typing lags — keystrokes buffer then appear in bursts (severe on laptop, mild on desktop) | #716 |
 | 2026-08-26 | Turn boundary (#640 fix) still not easily spotted — wants round 2 | #717 |
+| 2026-08-26 | Busy spinner in the sessions rail too quiet; wants marquee-style working treatment (6 options filed) | #718 |
