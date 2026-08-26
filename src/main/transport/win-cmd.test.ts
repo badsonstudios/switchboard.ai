@@ -165,7 +165,18 @@ describe('execSpec', () => {
   it('names cmd.exe by ABSOLUTE PATH, not through PATH', () => {
     // PATH is per-user writable, so `file: 'cmd.exe'` would let the very
     // attacker this module disables AutoRun against choose the interpreter.
+    //
+    // A WINDOWS path with WINDOWS separators, on every runner. This assertion
+    // went red on the Linux leg and green locally, because `path.join` binds to
+    // the ambient platform and produced `C:\Windows/System32/cmd.exe` — the
+    // #127 shape exactly, in the file that documents it. `path.win32.join` is
+    // the fix, and this test is what caught it.
     expect(execSpec(WIN_CMD, [], 'win32').file).toMatch(/^[A-Za-z]:\\.*System32\\cmd\.exe$/i);
+  });
+
+  it('builds the same Windows path whatever platform the process is on', () => {
+    // belt to the braces above: no `/` anywhere in it, on any runner
+    expect(execSpec(WIN_CMD, [], 'win32').file).not.toContain('/');
   });
 
   it('/d is present, so a registry AutoRun cannot run before our command', () => {

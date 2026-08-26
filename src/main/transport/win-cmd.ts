@@ -165,11 +165,19 @@ export function escapeForCmd(s: string): string {
  * user project is a planted-binary footgun.
  */
 function cmdExePath(): string {
-  // `path.join`, not concatenation: a `SystemRoot` with a stray separator would
-  // otherwise produce a doubled one. And it is worth remembering that
-  // `windowsVerbatimArguments: true` makes libuv join `[file, ...argv]` on bare
+  // `path.WIN32.join`, and the plain `path.join` here was a CI failure — the
+  // #127 lesson arriving through the door this file spent so long propping
+  // open. `path` binds to the AMBIENT platform, so on the Linux leg it joined
+  // with `/` and produced `C:\Windows/System32/cmd.exe`. The whole point of
+  // `execSpec` taking `platform` is that the win32 branch is exercised
+  // everywhere; a helper inside it that reads the real platform undoes that,
+  // and it passes locally on Windows precisely when it is wrong.
+  //
+  // Joined rather than concatenated because a `SystemRoot` with a stray
+  // trailing separator would otherwise double it — and with
+  // `windowsVerbatimArguments: true` libuv joins `[file, ...argv]` on bare
   // spaces, so `file` is not somewhere to be sloppy.
-  return path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'cmd.exe');
+  return path.win32.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'cmd.exe');
 }
 
 /**
