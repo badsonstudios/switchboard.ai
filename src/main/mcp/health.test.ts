@@ -156,9 +156,16 @@ describe('the launch spec, on both platforms (#632)', () => {
 
   it('runs a .cmd through cmd.exe on Windows', async () => {
     const out = await checkHealth('C:/p/acme', { bin: WIN_CLI, platform: 'win32' });
-    expect(spawned[0].file).toBe('cmd.exe');
-    expect(spawned[0].argv).toEqual(['/c', WIN_CLI, 'mcp', 'list']);
-    expect(out).toEqual({ srv: 'connected' });
+    expect(spawned[0].file).toMatch(/cmd.exe$/i);
+    // `/d /s /c` and ONE self-built, escaped argument since #714 — the old
+    // `['/c', cli, 'mcp', 'list']` let libuv build the line, which is safe for
+    // these two constants and is a live injection hole for the argv the write
+    // channels carry. One launch helper for all four, so the safe one is not
+    // the odd one out somebody later copies. See `transport/win-cmd.ts`.
+    expect(spawned[0].argv.slice(0, 4)).toEqual(['/d', '/v:off', '/s', '/c']);
+    expect(spawned[0].argv[4]).toContain('mcp');
+    expect(spawned[0].argv[4]).toContain('list');
+    expect(out).toEqual({ ok: true, states: { srv: 'connected' } });
   });
 
   it('runs the binary directly everywhere else', async () => {
@@ -175,7 +182,7 @@ describe('the launch spec, on both platforms (#632)', () => {
   });
 
   it('answers nothing, and spawns nothing, when the CLI cannot be found', async () => {
-    expect(await checkHealth('/p/acme', { bin: null })).toEqual({});
+    expect(await checkHealth('/p/acme', { bin: null })).toEqual({ ok: false, states: {} });
     expect(spawned).toHaveLength(0);
   });
 
@@ -186,6 +193,56 @@ describe('the launch spec, on both platforms (#632)', () => {
     execFileImpl = () => {
       throw new Error('EINVAL');
     };
-    await expect(checkHealth('/p/acme', { bin: '/usr/bin/claude' })).resolves.toEqual({});
+    await expect(checkHealth('/p/acme', { bin: '/usr/bin/claude' })).resolves.toEqual({
+      ok: false,
+      states: {},
+    });
+  });
+});
+
+// ── `ok`: did the check RUN? (#714, deferred from #632's review) ─────────────
+//
+// The map alone cannot say which of two things happened, because both are an
+// absent key: "the CLI ran and has never heard of that server" and "the CLI
+// could not be found / timed out / said nothing we understood". The pane drew
+// `status unknown` on every row for both, which is honest about each server and
+// silent about the far more useful fact that nothing was checked at all.
+//
+// `ok` FOLLOWS THE OUTPUT, NOT THE EXIT CODE — see `checkHealth`.
+describe('ok — whether the check ran at all (#714)', () => {
+  beforeEach(() => {
+    execFileImpl = null;
+  });
+  afterEach(() => {
+    execFileImpl = null;
+  });
+
+  const run = (stdout: string, err: unknown = null): Promise<{ ok: boolean }> => {
+    execFileImpl = (_f, _a, _o, cb) => cb(err, stdout);
+    return checkHealth('/p/acme', { bin: '/usr/bin/claude', platform: 'linux' });
+  };
+
+  it('is true for a listing with servers in it', async () => {
+    expect((await run(REAL)).ok).toBe(true);
+  });
+
+  it('is TRUE for an empty inventory — "no servers" is a complete answer', async () => {
+    // The opposite reading is the tempting one and it is wrong: reporting a
+    // correct "you have none" as a failed check is a lie in the other direction.
+    const out = await run('No MCP servers configured. Use `claude mcp add` to add a server.');
+    expect(out).toEqual({ ok: true, states: {} });
+  });
+
+  it('is true when the CLI exited non-zero but still printed the rows it reached', async () => {
+    // a partial answer is strictly better than none for a column allowed to
+    // say `unknown` — so the rows survive, and so does `ok`
+    const out = (await run(REAL, new Error('exit 1'))) as { ok: boolean; states: object };
+    expect(out.ok).toBe(true);
+    expect(out.states).toEqual({ selftest: 'connected', broken: 'failed', 'probe-a': 'unknown' });
+  });
+
+  it('is false when the spawn produced nothing — the case that was invisible', async () => {
+    expect(await run('')).toEqual({ ok: false, states: {} });
+    expect(await run('   \n  ')).toEqual({ ok: false, states: {} });
   });
 });

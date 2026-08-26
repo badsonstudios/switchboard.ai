@@ -26,7 +26,7 @@
 //     No MCP servers configured. Use `claude mcp add` to add a server.
 import { execFile } from 'child_process';
 import { resolveCliPath } from '../providers/claude';
-import { launchSpec } from '../transport/stream-service';
+import { execSpec } from '../transport/win-cmd';
 import type { McpHealth } from '../../shared/mcp';
 
 /**
@@ -108,8 +108,27 @@ export function parseHealth(stdout: string): Record<string, McpHealth> {
 }
 
 /**
- * Run `claude mcp list` in a folder and read the health out of it. Answers an
- * empty map for every failure — see the header.
+ * The result of one health check — the states, and whether the check RAN.
+ *
+ * `ok` exists because an absent name used to mean two different things and the
+ * pane could not tell them apart (#632's review, deferred to #714): "the CLI
+ * ran and has never heard of that server" and "the CLI could not be found, or
+ * timed out, or printed something we could not read". Both rendered as `status
+ * unknown` on every row, which is honest about each server and completely
+ * silent about the much more useful fact that nothing was checked at all.
+ *
+ * `ok: false` means the spawn produced no usable output. The pane says that
+ * ONCE, at the bottom, instead of stamping every row with a verdict it did not
+ * earn.
+ */
+export interface HealthResult {
+  ok: boolean;
+  states: Record<string, McpHealth>;
+}
+
+/**
+ * Run `claude mcp list` in a folder and read the health out of it. Answers
+ * `{ ok: false, states: {} }` for every failure — see the header.
  *
  * HOW IT LAUNCHES THE CLI IS THE WHOLE OF THIS FUNCTION, and getting it wrong
  * is invisible. The first version was `execFile('claude', …)`, which **cannot
@@ -137,37 +156,55 @@ export function parseHealth(stdout: string): Record<string, McpHealth> {
 export function checkHealth(
   folder: string,
   opts: { bin?: string | null; timeoutMs?: number; platform?: NodeJS.Platform } = {}
-): Promise<Record<string, McpHealth>> {
+): Promise<HealthResult> {
   return new Promise((resolve) => {
     // RESOLVED, not assumed. `resolveCliPath` is the same lookup preflight and
     // the transcript check use, so a machine where the CLI cannot be found
     // answers "no health" here rather than reporting every server as broken.
     const cli = opts.bin === undefined ? resolveCliPath() : opts.bin;
-    if (!cli) return resolve({});
-    const { file, argv } = launchSpec(cli, ['mcp', 'list'], opts.platform);
+    if (!cli) return resolve({ ok: false, states: {} });
+    // `execSpec`, not `launchSpec` (#714). The argv here is two constants and
+    // is therefore safe either way — but this family now has three other
+    // invocations that carry renderer input, and one launch helper for all four
+    // is what keeps the safe one from being the odd one out that someone later
+    // copies. See `transport/win-cmd.ts` for the measured hole.
     // `execFile` THROWS SYNCHRONOUSLY on a hostile PATH entry (EINVAL) — the
-    // same trap `update/token.ts` documents. Inside a promise executor that is
-    // a rejection, and this function's contract is that it never has one.
+    // same trap `update/token.ts` documents — and `execSpec` throws for an
+    // argument it cannot deliver faithfully. Both are inside the try, because
+    // inside a promise executor a throw is a rejection and this function's
+    // contract is that it never has one.
     try {
+      const spec = execSpec(cli, ['mcp', 'list'], opts.platform);
       execFile(
-        file,
-        argv,
+        spec.file,
+        spec.argv,
         {
           cwd: folder,
           encoding: 'utf8',
           timeout: opts.timeoutMs ?? HEALTH_TIMEOUT_MS,
           windowsHide: true,
+          windowsVerbatimArguments: spec.windowsVerbatimArguments,
           maxBuffer: 4 * 1024 * 1024,
         },
         // STDOUT IS READ EVEN ON A NON-ZERO EXIT, and that is not sloppiness:
         // the CLI prints the servers it did reach before whatever made it exit
         // non-zero, and a partial answer is strictly better than none for a
-        // column that is allowed to say `unknown`. A spawn that produced
-        // nothing yields `{}`, which is the same thing said honestly.
-        (_err, stdout) => resolve(parseHealth(stdout ?? ''))
+        // column that is allowed to say `unknown`.
+        //
+        // `ok` FOLLOWS THE OUTPUT, NOT THE EXIT CODE. Empty stdout means we
+        // learned nothing — spawn failure, timeout, a CLI that died before
+        // printing — and that is the case the pane needs to distinguish. A
+        // non-empty stdout means the check ran, even if it exited non-zero and
+        // even if it listed nothing: "No MCP servers configured." is a complete,
+        // correct answer, and reporting it as a failed check would be a lie in
+        // the other direction.
+        (_err, stdout) => {
+          const text = stdout ?? '';
+          resolve({ ok: text.trim().length > 0, states: parseHealth(text) });
+        }
       );
     } catch {
-      resolve({});
+      resolve({ ok: false, states: {} });
     }
   });
 }

@@ -58,6 +58,16 @@ export interface StreamDiagnostic {
  * re-parses them through a command interpreter. This is a transport concern,
  * not an adapter one — adapters name the program, transports know how to launch
  * it, and leaking cmd.exe into every adapter is how that stops being true.
+ *
+ * ── APP-AUTHORED ARGV ONLY. FOR ANYTHING A USER TYPED, USE `win-cmd.ts` ──────
+ *
+ * This function lets libuv build the command line, and libuv quotes ONLY an
+ * argument containing a space, a tab or a quote — so `&`, `|`, `>`, `%` and `^`
+ * reach cmd.exe live. That is fine here, where every argument is one this app
+ * wrote (`--session-id`, a resolved path). It is a command-injection hole the
+ * moment an argument comes from the renderer, which is what #714 measured and
+ * what `transport/win-cmd.ts`'s `execSpec` exists for. If you are about to copy
+ * this function for a new invocation, ask which of the two you have.
  */
 export function launchSpec(
   command: string,

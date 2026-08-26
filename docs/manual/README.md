@@ -37,7 +37,7 @@ no page is an unfinished work item.
 | [14 — Is it me or is it them?](14-provider-status.md) | The status dot, provider incidents, and the "several sessions just hit errors" strip | draft |
 | [15 — Reading files in the app](15-document-viewer.md) | Opening a file, rendered Markdown, source view, find, what won't be shown | draft |
 | [16 — Finding something](16-find.md) | `Ctrl+F` over a session: the find bar, the results list, what it searches that you can't see | draft |
-| [17 — MCP servers](17-mcp-servers.md) | `/mcp`: what tools a session is wired to, which scope each comes from, and why one is waiting on you | draft |
+| [17 — MCP servers](17-mcp-servers.md) | `/mcp`: what tools a session is wired to, which scope each comes from, adding and removing them, and why one is waiting on you | current |
 
 Backfilled 2026-07-24 from the shipped app (Phase 1 + Phase 2 epics E7, E8,
 E10, E12) — written against the actual UI strings and behavior, not from

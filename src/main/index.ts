@@ -1028,6 +1028,28 @@ app
           ...workspace.listSessions().map((s) => s.identity.folder),
         ].some((f) => samePath(path.resolve(f), want));
       },
+      // ── the write half's two extra seams (#714) ──────────────────────────
+      //
+      // THE LIVE RECORD'S TRANSPORT, not the card's. `SessionCardWire.transport`
+      // is the transport the card's NEXT spawn will use, and #445 is the scar
+      // from reading one for the other: the two legitimately disagree while a
+      // transport change waits for a restart. Reconnect has to know what is
+      // hosting the session RIGHT NOW, because on `stream` there is no terminal
+      // for the CLI's `/mcp` picker to appear in and the honest answer is to
+      // send nothing at all.
+      //
+      // The folder is returned so `mcp:reconnect` can check it against the one
+      // that passed the gate — otherwise the gate covers a folder while the
+      // action reaches any live session in the app.
+      liveSession: (liveId) => {
+        const rec = manager.list().find((s) => s.id === liveId);
+        return rec ? { folder: rec.identity.folder, transport: rec.transport } : null;
+      },
+      // The same `ptys.get(id)?.write(data)` `pty:input` uses — one door into a
+      // terminal, not two. `PtySession.write` is already a no-op on a dead PTY
+      // (S-01: writes to a closed pty raise async socket errors), so a session
+      // that exited between the click and the write costs nothing.
+      typeIntoPty: (liveId, data) => ptys.get(liveId)?.write(data),
     });
     registerBuiltinContributions();
     log.app.info('contributions registered', { manifests: registry.manifests() });

@@ -1770,6 +1770,12 @@ export function App(): React.JSX.Element {
         onClose={() => setMcpOpen(false)}
         folder={activeSessionFolder}
         {...(activeSessionTitle ? { sessionTitle: activeSessionTitle } : {})}
+        // The LIVE session under the active card, for Reconnect (#714), and
+        // `null` is a real state rather than a missing value: a suspended card
+        // has servers to list and nothing to type into. Main is what decides
+        // whether typing means anything on that session's transport — this only
+        // says which session it is.
+        liveId={activeSession?.liveId ?? null}
       />
       <QuietHoursDialog
         open={quietOpen}

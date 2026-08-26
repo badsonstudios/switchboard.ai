@@ -1266,12 +1266,46 @@ Slash commands (`/mcp`, `/model`, `/compact`, …) work natively in the Terminal
 tab — it's the real CLI. On top, GUI sugar that never forks CLI behavior:
 
 - **MCP Manager pane**: all configured MCP servers with scope (project `.mcp.json`
-  / user settings / Session Bus auto-attached), health status, enable/disable,
-  add/remove. Implementation: read the real config files; mutate via the real CLI
-  (`claude mcp add/remove/list`); a "reconnect" action injects `/mcp` into that
-  session's input route (live reconnect is in-session CLI behavior — we type,
-  not fake).
+  / user settings / Session Bus auto-attached), health status, add/remove.
+  Implementation: read the real config files; mutate via the real CLI
+  (`claude mcp add/remove`).
   Per-session view (what THIS session sees) and global view (all scopes).
+
+  **Three corrections from building it (#632, #714), because §5.17 as written
+  was wrong about all three:**
+
+  - **`claude mcp list --json` does not exist.** `mcp list` and `mcp get` take
+    no options beyond `-h` and print human text with emoji in it. The listing is
+    read from the config files (which this section always said) and the health
+    column is parsed leniently out of `mcp list`, degrading to `unknown`.
+  - **There is no enable/disable verb.** The full subcommand set is `add`,
+    `add-from-claude-desktop`, `add-json`, `get`, `list`, `login`, `logout`,
+    `remove`, `reset-project-choices`, `serve` (probed 2026-08-25, re-probed
+    2026-08-26). Approval lives in `enabledMcpjsonServers` /
+    `disabledMcpjsonServers`, which only a session or a settings write moves.
+    So the pane **shows** approval state and **hands the change off**: Reconnect
+    opens the CLI's own picker, and *Reset approvals* runs the one real verb,
+    `reset-project-choices` — which is project-wide and resets approved and
+    rejected together. Writing those keys ourselves was declined on P7: it is
+    config the CLI owns, on a shape it can change under us.
+  - **"Reconnect injects `/mcp` into that session's input route" is true on ONE
+    transport.** On **pty** it is exactly right: the CLI's picker opens in a
+    terminal the user is looking at, and we type rather than fake. On **stream**
+    there is no terminal for the picker to appear in, so typing `/mcp` sends a
+    command, opens a picker nobody can see, and leaves the session sitting there
+    — the dead end #633 is about. So on stream we **send nothing** and say
+    "restart the session to pick up the change". Main decides this from the LIVE
+    record's transport, not the renderer: `lib/composer.ts`'s
+    `sendSessionCommand` is deliberately transport-blind, which is correct for
+    `/compact` (both routes deliver the same thing) and wrong here (one route
+    delivers nothing).
+
+  **Mutations go through a hardened launcher.** On Windows the CLI is a `.cmd`
+  shim, so its arguments are parsed twice — by `cmd.exe` and again by the CLI —
+  and `child_process` quoting is not sufficient for either
+  (`main/transport/win-cmd.ts` carries the measurements). A double quote cannot
+  be delivered faithfully AND safely through that path, so it is refused rather
+  than escaped.
 - **Session controls strip**: buttons/palette entries for common slash commands
   (`/model` picker, `/compact`, `/clear`, `/mcp`) that inject the real command
   into the session's input route. GUI is sugar; the CLI stays the source of

@@ -78,8 +78,30 @@ on the floor, and say so in your PR.
   cloned a repo. And if a server carries an API key or an authorization header,
   the panel names it but never shows the value.
 
-  This first version is **read-only**: add and remove servers with
-  `claude mcp add` / `claude mcp remove`, and they show up here.
+- **You can now add and remove MCP servers from that panel.** **Add server…**
+  gives you a form — name, which projects it's available in, a program or a web
+  address, arguments one per line, and a separate box for environment variables.
+  Each row has a **Remove** button that asks once and then removes the server
+  from the group it's actually in, which matters when the same name appears
+  twice. Everything runs Claude Code's own `claude mcp` commands; switchboard
+  never edits your configuration files itself, and when Claude Code turns
+  something down you get its exact words rather than a vaguer version of them.
+
+  **Put API keys in Environment variables, not Arguments** — the form says so
+  where you're typing. Values you put there go to Claude Code and never come
+  back, so the panel can only ever show their names. Anything in Arguments is
+  visible in the list.
+
+  Two more buttons at the bottom. **Reconnect** makes a running session notice
+  the change: a Terminal-mode session gets `/mcp` typed into it and Claude
+  Code's own picker opens, which is also how you approve a server a project
+  shares with you. A Direct-mode session has no terminal for that picker, so
+  nothing is sent and it tells you to restart instead. **Reset approvals** makes
+  the project ask about all of its shared servers again.
+
+  There's still no on/off switch for a single server, because Claude Code has no
+  command for one — and switchboard won't write into the file that holds the
+  answer just to fake a toggle.
 
 ### Fixed
 
@@ -95,6 +117,17 @@ on the floor, and say so in your PR.
   successfully brings both back.
 
 ### Internal
+
+- **Hardened how switchboard launches the `claude` command on Windows.** The
+  command is reached through a small script there, which means anything passed
+  to it is interpreted twice before Claude Code sees it. Text you typed into the
+  new MCP form — a server's name, its command, an API key — goes onto that
+  command line, and the previous handling let certain punctuation be read as
+  instructions rather than as text. It is now built so that cannot happen, and a
+  double quote is refused outright rather than delivered as something other than
+  what you typed. Found in review with a working demonstration before release;
+  nothing that shipped was affected, because until now every argument on that
+  command line was one the app wrote itself.
 
 - **A permission request that has nowhere to appear is now handed straight to
   the terminal.** If a session loses track of the card it belongs to — most
