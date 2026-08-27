@@ -73,10 +73,10 @@ on the floor, and say so in your PR.
   appear in — so typing it did nothing at all.
 
   A couple of things worth knowing. Servers a project shares with you sit at
-  *waiting for your approval* until you approve them in the `claude` command
-  line — Claude Code won't run a program on your machine just because you
-  cloned a repo. And if a server carries an API key or an authorization header,
-  the panel names it but never shows the value.
+  *waiting for your approval* until you approve them — Claude Code won't run a
+  program on your machine just because you cloned a repo. And if a server
+  carries an API key or an authorization header, the panel names it but never
+  shows the value.
 
 - **You can now add and remove MCP servers from that panel.** **Add server…**
   gives you a form — name, which projects it's available in, a program or a web
