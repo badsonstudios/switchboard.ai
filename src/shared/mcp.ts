@@ -132,6 +132,26 @@ export interface McpServerWire {
   source: string;
 }
 
+/**
+ * One CONFIG FILE that would not parse, and the scopes it takes down with it.
+ *
+ * KEYED BY FILE, NOT BY SCOPE, and that is the fix for a real complaint from
+ * #632's review: `~/.claude.json` backs BOTH the local and the user scope, so a
+ * single trailing comma in it used to produce two identical "this file could
+ * not be read" lines in two different sections — which reads as two problems
+ * and sends the user looking for a second broken file that does not exist.
+ *
+ * One entry per file says it once, names the file, and still names every scope
+ * that went with it.
+ */
+export interface McpUnreadableWire {
+  /** the file that would not parse — what the user has to go and fix */
+  source: string;
+  /** every scope it backs: `.mcp.json` is `project`; `~/.claude.json` is both
+   *  `local` and `user` */
+  scopes: readonly McpScope[];
+}
+
 /** What `mcp:list` answers: every server a given folder's session would see. */
 export interface McpInventoryWire {
   /** the folder the scopes were resolved against — echoed back so a stale
@@ -139,14 +159,14 @@ export interface McpInventoryWire {
   folder: string;
   servers: readonly McpServerWire[];
   /**
-   * Scopes that could not be read, by name, with the reason in the log.
+   * Files that could not be read, with the reason in the log.
    *
    * NOT an error, and never a reason to show nothing: a malformed `.mcp.json`
    * in one repo must not blank the user- and local-scope servers that are
-   * perfectly readable (P6). The pane says "project scope could not be read"
-   * beside the servers it DID find, which is both halves of the truth.
+   * perfectly readable (P6). The pane says which file it could not read beside
+   * the servers it DID find, which is both halves of the truth.
    */
-  unreadable: readonly McpScope[];
+  unreadable: readonly McpUnreadableWire[];
 }
 
 /** What `mcp:health` answers — a name→state map, merged onto the inventory the
@@ -154,4 +174,136 @@ export interface McpInventoryWire {
 export interface McpHealthWire {
   folder: string;
   states: Readonly<Record<string, McpHealth>>;
+  /**
+   * Did the check itself run? (#714, carried over from #632's review.)
+   *
+   * WITHOUT THIS THE MAP CANNOT SAY WHICH OF TWO THINGS HAPPENED, because both
+   * are an absent key: "the CLI ran and has never heard of that server" and
+   * "the CLI could not be found / timed out / printed nothing we understood".
+   * The pane rendered `status unknown` for both, which is honest about the
+   * server and silent about the far more useful fact that NOTHING was checked.
+   *
+   * `false` means the spawn produced no usable output at all, and the pane says
+   * so once at the bottom of the list instead of stamping every row with a
+   * verdict it did not earn. `true` with an absent key still means `unknown`
+   * for that one server — which is now a real answer rather than an ambiguity.
+   */
+  ok: boolean;
 }
+
+/** One `KEY=value` / `Header: value` pair as the add form collects it.
+ *
+ *  A LIST OF PAIRS, NOT A RECORD, and deliberately: a record loses the order
+ *  the user typed them in, silently drops a duplicate key (a form can produce
+ *  one, and swallowing it is how a user ends up with a credential they think
+ *  they set), and has the `__proto__` problem `config.ts` already documents. */
+export interface McpKeyValue {
+  key: string;
+  value: string;
+}
+
+/**
+ * What the add form asks for — the shape `claude mcp add` is built from.
+ *
+ * THE VALUES IN `env` AND `headers` ARE SECRETS BY CONSTRUCTION, and this is
+ * the one shape in the family that carries them. They travel renderer → main
+ * → the CLI's own config file and NEVER come back: `McpServerWire` has
+ * `envKeys`/`headerKeys` and no field that can hold a value, which is what
+ * makes the round trip one-way by type rather than by discipline.
+ *
+ * That one-way trip is also what makes `args` tractable at last (#632 left it
+ * as a stated limit). The old advice — "keep keys in environment variables" —
+ * was true and useless, because switchboard had nowhere to type one. Now it
+ * does, so the form can say *put it here instead* at the moment the user is
+ * deciding, rather than the manual apologising afterwards for a key on screen.
+ */
+export interface McpAddRequest {
+  name: string;
+  scope: McpScope;
+  /** `unknown` is a READ-side tolerance (see `McpTransport`) and is not
+   *  something we can ask the CLI to create, so the write side is narrower. */
+  transport: 'stdio' | 'http' | 'sse';
+  /** the executable for `stdio`, the endpoint URL for `http`/`sse` */
+  target: string;
+  /** arguments for the child process — `stdio` only, passed after the CLI's
+   *  own `--` so a leading `-` is the child's flag and not the CLI's */
+  args?: readonly string[];
+  /** `stdio` only */
+  env?: readonly McpKeyValue[];
+  /** `http`/`sse` only */
+  headers?: readonly McpKeyValue[];
+}
+
+/** Which part of a request we refused, so the form can point at the right box
+ *  rather than showing one banner for six different mistakes. */
+export interface McpFieldError {
+  field: 'name' | 'scope' | 'transport' | 'target' | 'args' | 'env' | 'headers';
+  /**
+   * `double-quote` is the one that needs explaining, and it is a real platform
+   * limit rather than fussiness. On Windows the CLI is a `.cmd` shim, so its
+   * arguments are parsed twice — once by `cmd.exe` and once by the CLI — and
+   * the two disagree about how an embedded quote is spelled. `\"` is what the
+   * CLI wants and is a command-injection hole in cmd.exe (measured); `""` is
+   * inert in cmd.exe and arrives at the CLI merged with the following argument
+   * (also measured). No spelling satisfies both, so the argument is refused
+   * rather than delivered as something other than what was typed.
+   * `main/transport/win-cmd.ts` carries the measurements.
+   */
+  code:
+    | 'required'
+    | 'format'
+    | 'control-character'
+    | 'double-quote'
+    | 'looks-like-a-flag'
+    | 'too-long';
+  /** the offending key/index, when there is a list to point into */
+  at?: string;
+}
+
+/**
+ * What every mutation channel answers.
+ *
+ * RESOLVES, NEVER REJECTS — the house shape of the whole family (see
+ * `main/mcp/ipc.ts`'s header). A dialog whose button throws behind it is a
+ * button that does nothing and says nothing.
+ *
+ * The failures are split by WHOSE fault they are, because the sentence the user
+ * needs is different in each case: `invalid` is theirs and is fixable in the
+ * form, `no-cli` is the install, `cli-failed` is the CLI's own opinion (and
+ * `detail` carries its exact words — "MCP server x already exists in
+ * .mcp.json" is a better message than anything we would write), `refused` is
+ * ours and means the request never left main.
+ */
+export type McpMutationResult =
+  | { ok: true }
+  | { ok: false; reason: 'invalid'; error: McpFieldError }
+  | { ok: false; reason: 'refused' }
+  | { ok: false; reason: 'no-cli' }
+  | { ok: false; reason: 'timeout' }
+  | { ok: false; reason: 'cli-failed'; detail: string };
+
+/**
+ * What "reconnect" did — and the reason it is a RESULT rather than a `void`.
+ *
+ * §5.17 says reconnect "injects `/mcp` into that session's input route — we
+ * type, not fake". That sentence is true on ONE transport. On the Terminal
+ * transport the CLI's picker opens in a terminal the user is looking at, which
+ * is the whole idea. On the Direct transport there is no terminal, so typing
+ * `/mcp` sends the command, opens a picker nobody can see, and leaves the
+ * session sitting there — the exact dead end #632's `/mcp` intercept exists to
+ * remove. Doing it anyway would reinstate the bug through a different button.
+ *
+ * So Direct sends NOTHING and says so. That is not a degradation to apologise
+ * for; it is the honest answer, and it is why main decides this rather than the
+ * renderer: `lib/composer.ts`'s `sendSessionCommand` is deliberately blind to
+ * transports, which is right for `/compact` and wrong for exactly this.
+ */
+export type McpReconnectResult =
+  /** `/mcp` was typed into a live terminal — the picker is on screen */
+  | { outcome: 'typed' }
+  /** Direct transport: nothing was sent, and the pane says to restart instead */
+  | { outcome: 'restart-required' }
+  /** the card has no live session to type into */
+  | { outcome: 'no-session' }
+  /** the folder gate said no, or the id was not a string */
+  | { outcome: 'refused' };

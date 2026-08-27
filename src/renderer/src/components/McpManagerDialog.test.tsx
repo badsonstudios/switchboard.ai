@@ -15,9 +15,15 @@
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import { createRoot, Root } from 'react-dom/client';
 import { act } from 'react';
-import { McpManagerDialog, rowStatus } from './McpManagerDialog';
+import { McpManagerDialog, failureMessage, rowStatus } from './McpManagerDialog';
 import { initI18nForTests } from '../i18n/test-i18n';
-import type { McpHealthWire, McpInventoryWire, McpServerWire } from '../../../shared/mcp';
+import type {
+  McpHealthWire,
+  McpInventoryWire,
+  McpMutationResult,
+  McpReconnectResult,
+  McpServerWire,
+} from '../../../shared/mcp';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -44,29 +50,97 @@ let healthAnswer: (folder: string) => McpHealthWire;
 /** resolves the health call by hand, so "before it lands" is a real state */
 let releaseHealth: (() => void) | null = null;
 
+/** every write call the pane made, in order — the assertion for "what did that
+ *  button actually run" */
+let calls: Array<{ channel: string; args: unknown[] }>;
+/** what each write channel answers, per test */
+let addAnswer: McpMutationResult;
+let removeAnswer: McpMutationResult;
+let resetAnswer: McpMutationResult;
+let reconnectAnswer: McpReconnectResult;
+
 function installBridge(): void {
+  const record =
+    <T,>(channel: string, answer: () => T) =>
+    (...args: unknown[]): Promise<T> => {
+      calls.push({ channel, args });
+      return Promise.resolve(answer());
+    };
   (window as unknown as { switchboard: unknown }).switchboard = {
     mcp: {
-      list: (folder: string) => Promise.resolve(listAnswer(folder)),
-      health: (folder: string) =>
-        new Promise((resolve) => {
+      list: (folder: string) => {
+        calls.push({ channel: 'list', args: [folder] });
+        return Promise.resolve(listAnswer(folder));
+      },
+      health: (folder: string) => {
+        calls.push({ channel: 'health', args: [folder] });
+        return new Promise((resolve) => {
           const fire = (): void => resolve(healthAnswer(folder));
           if (releaseHealth === null) fire();
           else releaseHealth = fire;
-        }),
+        });
+      },
+      add: record('add', () => addAnswer),
+      remove: record('remove', () => removeAnswer),
+      resetApprovals: record('resetApprovals', () => resetAnswer),
+      reconnect: record('reconnect', () => reconnectAnswer),
     },
   };
 }
 
-async function mount(folder: string | null = 'C:/p/acme'): Promise<void> {
+async function mount(
+  folder: string | null = 'C:/p/acme',
+  liveId: string | null = 'L1'
+): Promise<void> {
   await act(async () => {
-    root.render(<McpManagerDialog open onClose={() => {}} folder={folder} />);
+    root.render(
+      <McpManagerDialog open onClose={() => {}} folder={folder} liveId={liveId} />
+    );
   });
   // the list await
   await act(async () => {
     await Promise.resolve();
   });
 }
+
+/** click, then let the mutation's promise chain and the re-list settle */
+async function click(el: Element | null): Promise<void> {
+  expect(el, 'element to click').not.toBeNull();
+  await act(async () => {
+    (el as HTMLElement).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
+  await act(async () => {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+}
+
+/** the first button whose visible text is exactly this */
+const button = (label: string): HTMLButtonElement | null =>
+  Array.from(host.querySelectorAll('button')).find((b) => b.textContent?.trim() === label) ?? null;
+
+const setInput = async (selector: string, value: string): Promise<void> => {
+  const el = host.querySelector<HTMLInputElement | HTMLTextAreaElement>(selector);
+  expect(el, selector).not.toBeNull();
+  await act(async () => {
+    const proto =
+      el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    // React installs its own value setter on the element; going through the
+    // prototype's is what makes `input` carry the new value to onChange.
+    Object.getOwnPropertyDescriptor(proto, 'value')!.set!.call(el, value);
+    el!.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+};
+
+const select = async (selector: string, value: string): Promise<void> => {
+  const el = host.querySelector<HTMLSelectElement>(selector);
+  expect(el, selector).not.toBeNull();
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(el, value);
+    el!.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+};
 
 const rows = (): HTMLElement[] => Array.from(host.querySelectorAll<HTMLElement>('[data-mcp-server]'));
 const rowFor = (name: string): HTMLElement =>
@@ -80,8 +154,13 @@ beforeAll(async () => {
 
 beforeEach(() => {
   releaseHealth = null;
+  calls = [];
+  addAnswer = { ok: true };
+  removeAnswer = { ok: true };
+  resetAnswer = { ok: true };
+  reconnectAnswer = { outcome: 'typed' };
   listAnswer = (folder) => ({ folder, servers: [], unreadable: [] });
-  healthAnswer = (folder) => ({ folder, states: {} });
+  healthAnswer = (folder) => ({ folder, states: {}, ok: true });
   installBridge();
   document.body.innerHTML = '';
   host = document.createElement('div');
@@ -130,7 +209,7 @@ describe('the two-call shape', () => {
       servers: [server({ name: 'sentry', transport: 'http', target: 'https://mcp.sentry.dev' })],
       unreadable: [],
     });
-    healthAnswer = (folder) => ({ folder, states: { sentry: 'connected' } });
+    healthAnswer = (folder) => ({ folder, states: { sentry: 'connected' }, ok: true });
 
     await mount();
 
@@ -190,7 +269,7 @@ describe('what it says when there is nothing to say', () => {
   });
 });
 
-describe('a scope that could not be read (P6)', () => {
+describe('a file that could not be read (P6)', () => {
   it('is reported BESIDE the servers that read fine', async () => {
     // A `.mcp.json` with a trailing comma in it must not blank the user-scope
     // servers that are perfectly readable — and a silently empty section would
@@ -198,12 +277,38 @@ describe('a scope that could not be read (P6)', () => {
     listAnswer = (folder) => ({
       folder,
       servers: [server({ name: 'mine', scope: 'user' })],
-      unreadable: ['project'],
+      unreadable: [{ source: 'C:/p/acme/.mcp.json', scopes: ['project'] }],
     });
     await mount();
     expect(rows().map((r) => r.dataset.mcpServer)).toEqual(['mine']);
-    expect(host.querySelector('[data-mcp-section="project"]')).not.toBeNull();
-    expect(text()).toContain('could not be read');
+    expect(text()).toContain('Could not read');
+    expect(text()).toContain('C:/p/acme/.mcp.json');
+  });
+
+  it('says it ONCE for a file that backs two scopes, and names both (#714)', async () => {
+    // `~/.claude.json` is the local scope AND the user scope, so the old
+    // per-scope rendering put two identical complaints on screen for one broken
+    // file — which reads as two problems and sends you hunting for the second.
+    listAnswer = (folder) => ({
+      folder,
+      servers: [],
+      unreadable: [{ source: 'C:/Users/x/.claude.json', scopes: ['local', 'user'] }],
+    });
+    await mount();
+    expect(host.querySelectorAll('[data-mcp-unreadable]')).toHaveLength(1);
+    // ...and both scopes are still named, so nothing is hidden by saying it once
+    expect(text()).toContain('This project (just you)');
+    expect(text()).toContain('All your projects');
+  });
+
+  it('does not claim the session has no servers when a file simply would not parse', async () => {
+    listAnswer = (folder) => ({
+      folder,
+      servers: [],
+      unreadable: [{ source: 'C:/p/acme/.mcp.json', scopes: ['project'] }],
+    });
+    await mount();
+    expect(text()).not.toContain('No MCP servers are configured');
   });
 });
 
@@ -228,6 +333,376 @@ describe('secrets', () => {
     expect(text()).toContain('API_KEY');
     expect(text()).toContain('Authorization');
     expect(text()).toContain('https://mcp.sentry.dev');
+  });
+});
+
+// ── The write half (#714) ───────────────────────────────────────────────────
+
+describe('failureMessage', () => {
+  // the key itself, plus `at` when there is one — so the assertions below are
+  // about WHICH string was chosen, not about how English words it
+  const t = (key: string, vars?: Record<string, unknown>): string => {
+    const at = typeof vars?.at === 'string' ? vars.at : '';
+    return at ? `${key}:${at}` : key;
+  };
+
+  it('passes the CLI’s own words through untouched', () => {
+    // "MCP server sentry already exists in .mcp.json" names the exact file and
+    // is a better sentence than anything we would write.
+    expect(
+      failureMessage({ ok: false, reason: 'cli-failed', detail: 'already exists in .mcp.json' }, t)
+    ).toBe('already exists in .mcp.json');
+  });
+
+  it('has a sentence of its own for the failures the CLI never got to explain', () => {
+    expect(failureMessage({ ok: false, reason: 'no-cli' }, t)).toBe('mcp.error.noCli');
+    expect(failureMessage({ ok: false, reason: 'timeout' }, t)).toBe('mcp.error.timeout');
+    expect(failureMessage({ ok: false, reason: 'refused' }, t)).toBe('mcp.error.refused');
+  });
+
+  it('points a validation failure at its own field’s wording', () => {
+    expect(
+      failureMessage(
+        { ok: false, reason: 'invalid', error: { field: 'env', code: 'format', at: 'A B' } },
+        t
+      )
+    ).toBe('mcp.form.error.format:A B');
+  });
+});
+
+describe('adding a server', () => {
+  const openForm = async (): Promise<void> => {
+    await mount();
+    await click(button('Add server…'));
+  };
+
+  it('builds the request from the form and re-lists afterwards', async () => {
+    await openForm();
+    await setInput('[data-mcp-field="name"]', 'sentry');
+    await setInput('[data-mcp-field="target"]', 'npx');
+    // ONE ARGUMENT PER LINE, so `--dir "C:\\Program Files\\x"` needs no quoting
+    // rules and no shell parser (`parseArgLines`).
+    await setInput('[data-mcp-field="args"]', '-y\n@some/mcp-server');
+    await click(button('Add server'));
+
+    expect(calls.filter((c) => c.channel === 'add')).toHaveLength(1);
+    const added = calls.filter((c) => c.channel === 'add')[0];
+    expect(added.args[0]).toBe('C:/p/acme');
+    expect(added.args[1]).toEqual({
+      name: 'sentry',
+      scope: 'local',
+      transport: 'stdio',
+      target: 'npx',
+      args: ['-y', '@some/mcp-server'],
+      env: [],
+    });
+    // the form closed, and the pane re-read the config rather than guessing
+    expect(host.querySelector('[data-testid="mcp-add-form"]')).toBeNull();
+    expect(text()).toContain('Added sentry');
+  });
+
+  it('REFUSES BEFORE THE ROUND TRIP what main would refuse anyway', async () => {
+    // Same `validateAdd` on both sides (`shared/mcp-args.ts`). A form that
+    // accepted what main rejects reads on screen as a button that does nothing.
+    await openForm();
+    await setInput('[data-mcp-field="name"]', '--help');
+    await setInput('[data-mcp-field="target"]', 'npx');
+    await click(button('Add server'));
+    expect(calls.filter((c) => c.channel === 'add')).toHaveLength(0);
+    expect(host.querySelector('[data-mcp-form-error="name"]')).not.toBeNull();
+  });
+
+  it('does not scold you for a name you have not finished typing', async () => {
+    await openForm();
+    await setInput('[data-mcp-field="name"]', 'se');
+    expect(host.querySelector('[data-mcp-form-error]')).toBeNull();
+  });
+
+  it('sends headers for a remote server and env for a local one, never both', async () => {
+    await openForm();
+    await setInput('[data-mcp-field="name"]', 'sentry');
+    await select('[data-mcp-field="transport"]', 'http');
+    await setInput('[data-mcp-field="target"]', 'https://mcp.sentry.dev/mcp');
+    await click(button('Add a header'));
+    await setInput('[data-mcp-pair-key="0"]', 'Authorization');
+    await setInput('[data-mcp-pair-value="0"]', 'Bearer tok');
+    await click(button('Add server'));
+
+    expect(calls.filter((c) => c.channel === 'add')[0].args[1]).toEqual({
+      name: 'sentry',
+      scope: 'local',
+      transport: 'http',
+      target: 'https://mcp.sentry.dev/mcp',
+      headers: [{ key: 'Authorization', value: 'Bearer tok' }],
+    });
+  });
+
+  it('clears the pairs when the kind changes, so headers cannot ship as env vars', async () => {
+    await openForm();
+    await click(button('Add a variable'));
+    await setInput('[data-mcp-pair-key="0"]', 'API_KEY');
+    await select('[data-mcp-field="transport"]', 'http');
+    expect(host.querySelector('[data-mcp-pair-key="0"]')).toBeNull();
+  });
+
+  it('types a credential into a PASSWORD field — the screen-share case', async () => {
+    await openForm();
+    await click(button('Add a variable'));
+    expect(
+      host.querySelector<HTMLInputElement>('[data-mcp-pair-value="0"]')?.type
+    ).toBe('password');
+  });
+
+  it('tells the user where a key belongs, at the moment they are deciding', async () => {
+    // #632 left `args` unredacted as a stated limit, because guessing which of
+    // an arbitrary program's flags are secrets is wrong in both directions. The
+    // fix is not detection — it is giving the key a home and saying so here.
+    await openForm();
+    expect(text()).toContain('Do not put an API key here');
+  });
+
+  it('shows the CLI’s own refusal and keeps the form open to fix it', async () => {
+    addAnswer = {
+      ok: false,
+      reason: 'cli-failed',
+      detail: 'MCP server sentry already exists in .mcp.json',
+    };
+    await openForm();
+    await setInput('[data-mcp-field="name"]', 'sentry');
+    await setInput('[data-mcp-field="target"]', 'npx');
+    await click(button('Add server'));
+    expect(text()).toContain('already exists in .mcp.json');
+    expect(host.querySelector('[data-testid="mcp-add-form"]')).not.toBeNull();
+  });
+});
+
+describe('removing a server', () => {
+  const withServer = async (over: Partial<McpServerWire> = {}): Promise<void> => {
+    listAnswer = (folder) => ({
+      folder,
+      servers: [server({ name: 'sentry', scope: 'local', ...over })],
+      unreadable: [],
+    });
+    await mount();
+  };
+
+  it('asks first, then passes the ROW’S OWN SCOPE', async () => {
+    // The CLI's scopeless remove deletes from "whichever scope has it", and
+    // this pane deliberately lists one name twice when two scopes define it —
+    // so "whichever" would be the wrong row about half the time.
+    await withServer({ scope: 'project' });
+    await click(button('Remove'));
+    expect(calls.filter((c) => c.channel === 'remove')).toHaveLength(0);
+    await click(button('Remove it'));
+    expect(calls.filter((c) => c.channel === 'remove')[0].args).toEqual([
+      'C:/p/acme',
+      'sentry',
+      'project',
+    ]);
+    expect(text()).toContain('Removed sentry');
+  });
+
+  it('can be backed out of', async () => {
+    await withServer();
+    await click(button('Remove'));
+    await click(button('Cancel'));
+    expect(calls.filter((c) => c.channel === 'remove')).toHaveLength(0);
+    expect(button('Remove')).not.toBeNull();
+  });
+
+  it('re-lists even when the removal FAILED, so the list and the error agree', async () => {
+    removeAnswer = { ok: false, reason: 'cli-failed', detail: 'No MCP server named "sentry"' };
+    await withServer();
+    const before = calls.filter((c) => c.channel === 'list').length;
+    await click(button('Remove'));
+    await click(button('Remove it'));
+    expect(text()).toContain('No MCP server named');
+    // the config is re-read: a stale list beside "there is no such server" is
+    // the pane telling the user two contradictory things
+    expect(calls.filter((c) => c.channel === 'list').length).toBeGreaterThan(before);
+  });
+});
+
+describe('reconnect — the pane does not decide what it means', () => {
+  it('reports that /mcp was typed into a terminal session', async () => {
+    await mount();
+    await click(button('Reconnect'));
+    expect(calls.filter((c) => c.channel === 'reconnect')[0].args).toEqual(['C:/p/acme', 'L1']);
+    expect(text()).toContain('Typed /mcp into the session');
+  });
+
+  it('SAYS RESTART for a Direct session rather than pretending it worked', async () => {
+    // Main sends nothing at all on the stream transport — `/mcp` there opens a
+    // picker with no terminal to draw it in, which is the dead end this dialog
+    // exists to remove. The renderer's job is to report that honestly.
+    reconnectAnswer = { outcome: 'restart-required' };
+    await mount();
+    await click(button('Reconnect'));
+    expect(text()).toContain('restart it to pick up changes');
+  });
+
+  it('says so when the card has no live session', async () => {
+    reconnectAnswer = { outcome: 'no-session' };
+    await mount();
+    await click(button('Reconnect'));
+    expect(text()).toContain('not running');
+  });
+
+  it('does not call main at all when there is no live id to send', async () => {
+    await mount('C:/p/acme', null);
+    await click(button('Reconnect'));
+    expect(calls.filter((c) => c.channel === 'reconnect')).toHaveLength(0);
+    expect(text()).toContain('not running');
+  });
+
+  it('points a pending project server at it, since there is no approve verb', async () => {
+    listAnswer = (folder) => ({
+      folder,
+      servers: [server({ name: 'shared', scope: 'project', approval: 'pending' })],
+      unreadable: [],
+    });
+    await mount();
+    expect(text()).toContain('use Reconnect below');
+  });
+});
+
+describe('resetting project approvals', () => {
+  const withProject = async (approval: McpServerWire['approval'] = 'pending'): Promise<void> => {
+    listAnswer = (folder) => ({
+      folder,
+      servers: [server({ name: 'shared', scope: 'project', approval })],
+      unreadable: [],
+    });
+    await mount();
+  };
+
+  it('is not offered when nothing is project-scoped — nothing to reset', async () => {
+    // a reset button with nothing to reset invites a pointless question about
+    // a blunt, project-wide verb
+    await mount();
+    expect(button('Reset approvals')).toBeNull();
+  });
+
+  it('is offered when there is a project-scope server', async () => {
+    await withProject();
+    expect(button('Reset approvals')).not.toBeNull();
+  });
+
+  it('warns what it does before doing it — it is project-wide and blunt', async () => {
+    await withProject();
+    await click(button('Reset approvals'));
+    expect(text()).toContain('ask about every shared server again');
+    expect(calls.filter((c) => c.channel === 'resetApprovals')).toHaveLength(0);
+    await click(button('Reset them'));
+    expect(calls.filter((c) => c.channel === 'resetApprovals')[0].args).toEqual(['C:/p/acme']);
+    expect(text()).toContain('Approvals reset');
+  });
+});
+
+describe('when the health check never ran (#714)', () => {
+  it('says so ONCE instead of stamping every row "status unknown"', async () => {
+    // An absent name used to mean two different things at once: "the CLI has
+    // never heard of that server" and "the CLI never answered". `ok` splits them.
+    healthAnswer = (folder) => ({ folder, states: {}, ok: false });
+    listAnswer = (folder) => ({
+      folder,
+      servers: [server({ name: 'a' }), server({ name: 'b' })],
+      unreadable: [],
+    });
+    await mount();
+    expect(host.querySelectorAll('[data-mcp-health-unavailable]')).toHaveLength(1);
+  });
+
+  it('stays quiet when there are no rows it would have had an opinion about', async () => {
+    healthAnswer = (folder) => ({ folder, states: {}, ok: false });
+    await mount();
+    expect(host.querySelector('[data-mcp-health-unavailable]')).toBeNull();
+  });
+
+  it('says so when the health channel is REFUSED, not just when ok is false', async () => {
+    // A refusal yields `undefined` through `answered`, so the effect returns
+    // early. If `healthRan` is not cleared, every row reads "status unknown"
+    // and nothing explains why — the exact ambiguity `ok` was added to remove,
+    // reintroduced through a different door.
+    (
+      window as unknown as { switchboard: { mcp: Record<string, unknown> } }
+    ).switchboard.mcp.health = () => Promise.resolve(undefined);
+    listAnswer = (folder) => ({ folder, servers: [server({ name: 'a' })], unreadable: [] });
+    await mount();
+    expect(host.querySelector('[data-mcp-health-unavailable]')).not.toBeNull();
+  });
+
+  it('does not re-run the expensive check after every mutation', async () => {
+    // The listing is two file reads; the health check spawns the CLI and
+    // connects to every server, with a 20s ceiling. Three removals must not be
+    // three of those.
+    listAnswer = (folder) => ({ folder, servers: [server({ name: 'a' })], unreadable: [] });
+    await mount();
+    const healthCalls = calls.filter((c) => c.channel === 'health').length;
+    await click(button('Remove'));
+    await click(button('Remove it'));
+    expect(calls.filter((c) => c.channel === 'list').length).toBeGreaterThan(1);
+    expect(calls.filter((c) => c.channel === 'health')).toHaveLength(healthCalls);
+  });
+});
+
+describe('a mutation that outlives its sitting says nothing', () => {
+  // `runMcp`'s timeout is ten seconds and the dialog is closable throughout, so
+  // a Remove started on one session can resolve after the user has closed it
+  // and reopened it on ANOTHER. Without an epoch guard its `setNotice` paints
+  // "Removed sentry." over a project that has no sentry. Reproduced in review.
+  const openOn = async (folder: string): Promise<void> => {
+    await act(async () => {
+      root.render(<McpManagerDialog open onClose={() => {}} folder={folder} liveId="L1" />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+  };
+
+  it('does not paint a notice for the folder the user has left', async () => {
+    let settle: (() => void) | null = null;
+    (window as unknown as { switchboard: { mcp: Record<string, unknown> } }).switchboard.mcp.remove =
+      () =>
+        new Promise((resolve) => {
+          settle = () => resolve({ ok: true });
+        });
+    listAnswer = (folder) => ({ folder, servers: [server({ name: 'sentry' })], unreadable: [] });
+
+    await openOn('C:/proj-A');
+    // start the removal, but do NOT let it settle
+    await click(button('Remove'));
+    await click(button('Remove it'));
+
+    // the user closes and reopens on a different session
+    await act(async () => {
+      root.render(<McpManagerDialog open={false} onClose={() => {}} folder="C:/proj-A" />);
+    });
+    await openOn('C:/proj-B');
+
+    // ...and only now does the first call come back
+    await act(async () => {
+      settle?.();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(text()).not.toContain('Removed sentry');
+    expect(host.querySelector('[data-mcp-notice]')).toBeNull();
+  });
+});
+
+describe('a refused or missing write channel is not silence', () => {
+  it('says something rather than leaving an unchanged list looking like success', async () => {
+    // `answered` degrades a refused channel to `undefined`, which without the
+    // explicit check reads exactly like `{ ok: true }` and leaves the user
+    // staring at a list that did not change.
+    (window as unknown as { switchboard: { mcp: Record<string, unknown> } }).switchboard.mcp.remove =
+      () => Promise.resolve(undefined);
+    listAnswer = (folder) => ({ folder, servers: [server({ name: 'sentry' })], unreadable: [] });
+    await mount();
+    await click(button('Remove'));
+    await click(button('Remove it'));
+    expect(text()).toContain('could not run that');
   });
 });
 

@@ -10,7 +10,14 @@ import type {
 } from '../shared/transcripts';
 import type { PermissionRequestDto } from '../shared/ipc/permissions';
 import type { FileReadResult, FileWatchNotice } from '../shared/ipc/fs';
-import type { McpHealthWire, McpInventoryWire } from '../shared/mcp';
+import type {
+  McpAddRequest,
+  McpHealthWire,
+  McpInventoryWire,
+  McpMutationResult,
+  McpReconnectResult,
+  McpScope,
+} from '../shared/mcp';
 import type {
   UpdateHandshake,
   UpdateInstallStatus,
@@ -519,10 +526,46 @@ const api = {
     list: (folder: string): Promise<McpInventoryWire> =>
       ipcRenderer.invoke('mcp:list', folder),
     /** Ask the CLI what it is actually connected to. SLOW — see above. Answers
-     *  an empty map for every failure, so an absent name means `unknown`
-     *  rather than a fault. */
+     *  an empty map for every failure, with `ok: false` to say the check did
+     *  not run — which is a different fact from "that server is unknown". */
     health: (folder: string): Promise<McpHealthWire> =>
       ipcRenderer.invoke('mcp:health', folder),
+    /**
+     * The write half (§5.17, #714) — `mcp.write`, never implied by `mcp.read`.
+     *
+     * ALL THREE MUTATIONS GO THROUGH THE REAL CLI and none of them edits a
+     * config file directly: §5.17 is "read the real config files; mutate via
+     * the real CLI", and the CLI owns the schema, the merge rules and the
+     * approval lists. They RESOLVE a verdict rather than rejecting — every
+     * caller is a button in a modal, and an exception there is a button that
+     * does nothing and says nothing.
+     */
+    add: (folder: string, request: McpAddRequest): Promise<McpMutationResult> =>
+      ipcRenderer.invoke('mcp:add', folder, request),
+    /** The scope comes off the ROW, never inferred: the CLI's scopeless remove
+     *  deletes from "whichever scope has it", and the pane deliberately lists
+     *  one name twice when two scopes define it. */
+    remove: (folder: string, name: string, scope: McpScope): Promise<McpMutationResult> =>
+      ipcRenderer.invoke('mcp:remove', folder, name, scope),
+    /** `claude mcp reset-project-choices` — PROJECT-WIDE and blunt. It resets
+     *  every approved AND rejected `.mcp.json` server at once; there is no
+     *  per-server verb (probed twice, 2026-08-25 and 2026-08-26). */
+    resetApprovals: (folder: string): Promise<McpMutationResult> =>
+      ipcRenderer.invoke('mcp:resetApprovals', folder),
+    /**
+     * Type `/mcp` into a live session — and MAIN decides whether that means
+     * anything, which is the entire reason this is not a `sessions.submitPrompt`
+     * call in the renderer.
+     *
+     * On the Terminal transport the CLI's picker opens in a terminal the user
+     * is looking at. On Direct there is no terminal, so the same keystrokes
+     * open a picker nobody can see and the session sits there — the dead end
+     * #632's `/mcp` intercept exists to remove. Main answers
+     * `restart-required` and sends NOTHING, rather than reinstating that bug
+     * behind a different button.
+     */
+    reconnect: (folder: string, liveId: string): Promise<McpReconnectResult> =>
+      ipcRenderer.invoke('mcp:reconnect', folder, liveId),
   },
   settings: {
     getAutoTrust: (): Promise<boolean> => ipcRenderer.invoke('settings:getAutoTrust'),

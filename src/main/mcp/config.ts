@@ -24,6 +24,7 @@ import type {
   McpScope,
   McpServerWire,
   McpTransport,
+  McpUnreadableWire,
 } from '../../shared/mcp';
 
 /**
@@ -260,7 +261,7 @@ export function buildInventory(opts: {
   folder: string;
   claudeJson: unknown;
   mcpJson: unknown;
-  unreadable?: readonly McpScope[];
+  unreadable?: readonly McpUnreadableWire[];
   /** injected for the reason `samePath` gives — both branches on every runner */
   platform?: NodeJS.Platform;
 }): McpInventoryWire {
@@ -322,22 +323,27 @@ function readJson(file: string): { ok: true; value: unknown } | { ok: false; mis
  * well — so an unparseable file contributes an entry in `unreadable` and
  * nothing else, and the pane reports both halves. Only a parse FAILURE counts:
  * a file that is simply absent is not a problem to report.
+ *
+ * ONE ENTRY PER FILE, not per scope (#714, from #632's review). `~/.claude.json`
+ * backs both the local and the user scope, so a single trailing comma in it used
+ * to report "this file could not be read" TWICE, in two sections — which reads
+ * as two broken files and sends the user hunting for the second one.
  */
 export function readInventory(
   folder: string,
   log?: { warn: (msg: string, fields?: Record<string, unknown>) => void }
 ): McpInventoryWire {
-  const unreadable: McpScope[] = [];
+  const unreadable: McpUnreadableWire[] = [];
 
   const home = readJson(claudeJsonPath());
   if (!home.ok && !home.missing) {
-    unreadable.push('local', 'user'); // one file backs both scopes
+    unreadable.push({ source: claudeJsonPath(), scopes: ['local', 'user'] });
     log?.warn('~/.claude.json could not be parsed', { file: claudeJsonPath() });
   }
 
   const project = readJson(mcpJsonPath(folder));
   if (!project.ok && !project.missing) {
-    unreadable.push('project');
+    unreadable.push({ source: mcpJsonPath(folder), scopes: ['project'] });
     log?.warn('.mcp.json could not be parsed', { file: mcpJsonPath(folder) });
   }
 

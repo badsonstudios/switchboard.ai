@@ -3,6 +3,212 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔨 IN PROGRESS — 2026-08-26: #714 — MCP Manager PR 2 (the mutation half)
+>
+> Branch `feature/714-mcp-manager-mutations`, off main @ `4a0a698`.
+> **Both gates passed; code complete; review round 2 in flight.**
+> **6380 tests / 244 files**, lint and typecheck clean.
+> Tracker: **#714** (#632 is closed and is NOT a live item — see the merged
+> banner below for why).
+>
+> ## 🚨 THE HEADLINE: A COMMAND-INJECTION HOLE, FOUND AND FIXED TWICE
+>
+> **Round 1 — found by probing before writing any code.** `launchSpec()` turns a
+> Windows `claude.cmd` into `cmd.exe /c claude.cmd <args…>`, and **libuv only
+> quotes an argument containing a space, a tab or a quote** — so `&`, `|`, `>`,
+> `%`, `^` reach `cmd.exe` **unquoted and live**:
+>
+> ```
+> "foo&calc"            -> ["mcp","add","foo"]   # `calc` ran
+> "x>C:/tmp/PWNED.txt"  -> ""                    # the file was created
+> "%PATH%"              -> the whole expanded PATH
+> ```
+>
+> `checkHealth` (PR 1) is safe only because its argv is the two constants
+> `['mcp','list']`. **#714 is the item that first puts renderer strings on that
+> command line.** Fix: build the line ourselves — `cmd.exe /d /s /c "<line>"`,
+> `windowsVerbatimArguments: true`, each arg quoted then caret-escaped for
+> `()%!^"<>&|`. New module `src/main/transport/win-cmd.ts` (`execSpec`), used by
+> all four invocations including `checkHealth`.
+>
+> **ROUND 2 — THAT FIX WAS STILL EXPLOITABLE, and /review caught it with a
+> working demonstration against the real `claude.cmd`.** The reason is the
+> second parse: `claude.cmd` is `"…claude.exe" %*`, so cmd re-substitutes the
+> argument text and **parses it again after our carets have been consumed**.
+> Quoting is the only protection left at that point, and `\"` — the MSVCRT
+> spelling of an embedded quote — is a REAL closing quote to cmd, which knows
+> nothing of the backslash convention. One user-supplied `"` flips cmd's quote
+> state and the tail becomes syntax:
+>
+> ```
+> ['mcp','list','a"&echo INJECTED']
+>   -> No MCP servers configured. …
+>      INJECTED                      # ran as its own command
+> ```
+>
+> **DO NOT re-derive this by reasoning — the string-level test passed while the
+> code was exploitable.** Only the end-to-end run through a `%*` shim sees it,
+> and `win-cmd.test.ts` now does exactly that, asserting *nothing else ran*
+> rather than merely *argv matched* (in the `|` case argv never arrives at all).
+> Verified red-then-green by reverting the quote rule.
+>
+> ### Why a double quote is now REFUSED rather than escaped
+>
+> Both spellings were measured and **neither is acceptable**:
+>
+> * `\"` — what `claude.exe` wants; **injection** in cmd.exe (above).
+> * `""` — inert in cmd.exe (0 of 11 breakout payloads execute, 0 of 23 fidelity
+>   cases mangled through a `node` `%*` shim) — but the real `claude.exe` reads
+>   it differently from `node.exe`: `-- node 'q"uote' 'plain'` arrives as ONE
+>   argument, `q"uote plain`. **Corruption**: the config written is not the
+>   config asked for. Isolated to `claude.exe` — an npm-shaped shim in front of
+>   `node` round-trips the identical bytes perfectly, and the same command from
+>   bash (direct argv, no cmd.exe) is also fine.
+>
+> No spelling satisfies both, so `execSpec` **throws** for a `"` (and for a
+> control character, which a caret cannot escape — `a\nb` silently truncates to
+> `a`), and `shared/mcp-args.ts` refuses it up front with a sentence the user
+> can act on. Refused on **every** platform on purpose: a config valid on Linux
+> and impossible on Windows is a worse trade than one rule everywhere. Costs
+> nothing real — a shell strips quotes before argv anyway.
+>
+> Also hardened: `cmd.exe` by **absolute path** (`%SystemRoot%`), because
+> resolving the interpreter through per-user-writable PATH while disabling
+> AutoRun is incoherent; and `/v:off`, because `^!` does **not** protect against
+> delayed expansion (`/v:on` + `!SB_SECRET!` -> `LEAKED`, measured) and a
+> registry value makes `/v:on` machine-wide.
+>
+> ## CLI SUBCOMMAND PROBES (re-run 2026-08-26 against the CLI on PATH)
+>
+> **THE `--` SPLIT WORKS. PowerShell 5.1 EATS A BARE `--`** before the native
+> command sees it, which makes the documented stdio form look broken (`error:
+> unknown option '-y'`) when it is fine. Probe this from bash. Cost half an hour.
+>
+> **`-e` AND `-H` ARE VARIADIC**, so positionals must come FIRST or the server
+> name is consumed as a second environment variable — `error: Invalid
+> environment variable format: my-server`. The unit tests happily pinned the
+> broken command line as correct; **only the live CLI run found it**, which is
+> why an end-to-end probe against the real binary is part of this item and not
+> an extra. Correct order: `-s <scope> -t <transport> <name> [-e …] -- <cmd>
+> <args…>` and `… <name> <url> [-H …]`.
+>
+> * `claude mcp add [-s local|user|project] [-t stdio|sse|http] [-e KEY=VAL…]
+>   [-H "K: V"…] <name> <commandOrUrl> [args…]` — and the documented stdio form
+>   is `claude mcp add <name> -e K=V -- <cmd> <args…>`.
+> * `claude mcp remove <name> [-s <scope>]` — without `-s` it removes from
+>   whichever scope has it, so the row's own scope is always passed.
+> * `claude mcp reset-project-choices` — **takes no arguments and no `-s`**. It
+>   resets *all* approved AND rejected `.mcp.json` servers for the project at
+>   once. It is not a per-server toggle and it does not approve anything.
+> * Still no enable/disable verb (PR 1's probe 2 stands).
+>
+> ## Calls made for Gate 1 (stated for veto, not assumed)
+>
+> * **Approve = hand off, plus the one real verb.** A pending project server
+>   gets "Approve in a session", which is the same route as Reconnect; the pane
+>   also gets a project-wide **Reset approvals** button (`reset-project-choices`,
+>   behind a confirm, because it is blunt and irreversible-ish).
+> * **Reconnect is main's decision, not the renderer's.** `mcp:reconnect(liveId)`
+>   reads the LIVE record's transport: `pty` → type `/mcp` into it (§5.17's "we
+>   type, not fake"); `stream` → **send nothing** and say so, because `/mcp` on
+>   the stream transport opens a picker with no terminal to draw in — the exact
+>   dead end #632's intercept exists to remove. Doing this in the renderer via
+>   `sendSessionCommand` would reinstate it. DESIGN §5.17 gets the sentence.
+> * **`args` secrecy becomes tractable by giving the key a home**, not by
+>   pattern-matching: the add form has dedicated Environment-variable and Header
+>   fields whose values never come back over the wire, and says so where the
+>   user types the command.
+> * **Taken from PR 1's deferred list:** `ok: boolean` on `McpHealthWire`, a
+>   `readInventory` test, and the double "could not be read" line (fixed by
+>   keying `unreadable` on the FILE — `~/.claude.json` backs two scopes).
+>   **Deferred again:** health merged by NAME across scopes — the fix needs its
+>   own precedence probe and its own UI vocabulary ("shadowed"), and would
+>   double this item. **Still owed a follow-up issue.**
+>
+> ## What shipped
+>
+> * `src/main/transport/win-cmd.ts` (+test) — the hardened launcher. **Read its
+>   header before touching any `claude mcp` invocation.** `stream-service.ts`'s
+>   `launchSpec` is now its unsafe twin (app-authored argv only) and says so.
+> * `src/shared/mcp-args.ts` (+test) — validation + argv builders, in `shared/`
+>   so the form and main cannot disagree about what is valid (#618's rule).
+>   **Main revalidates everything** — the form's check is a courtesy (§5.29).
+> * `src/main/mcp/cli.ts` (+test) — the only file that makes the CLI change
+>   something. Resolves a verdict, never rejects; passes the CLI's own words
+>   through (`ipc.ts` redacts submitted secrets out of them first).
+> * `mcp/ipc.ts` — six channels now, all folder-gated; `mcp:reconnect` compares
+>   folders by RESOLUTION, not spelling (`read-scope.ts`'s 8.3-short-name scar).
+> * `McpAddForm.tsx`, `McpManagerDialog.tsx`, `mcp.write` capability, preload,
+>   i18n, manual page (now **current**, no longer says "read-only"), CHANGELOG
+>   (Added + Internal), DESIGN §5.17 rewritten with all three corrections,
+>   dogfood row filed ahead of the merge.
+>
+> ## Review round 1 — one blocker, nine should-fixes, all taken
+>
+> Beyond the injection: `validateAdd` could THROW on a hostile payload shape
+> (`args: {}`) and a throw rejects the channel, which the family's contract
+> forbids · `execSpec`'s throw escaped the promise executor in `cli.ts` and
+> `health.ts` (moved inside the try) · `healthRan` was never reset, so a refused
+> health call silently regressed to the exact ambiguity `ok` was added to remove
+> · the CLI's verbatim error text can quote the offending argument, so a
+> submitted `-e KEY=secret` could land in a dialog (`redactSecrets`) · the
+> transient-state reset ran only on close, so a mutation resolving after close
+> greeted you with a stale notice on reopen · every mutation re-ran the 20-second
+> health probe · a pair row with a value and no key was silently dropped, which
+> is a credential going nowhere.
+>
+> ## Review round 2 — the launcher cleared, one NEW blocker of my own making
+>
+> The reviewer fuzzed the real `execSpec` against a `%*` shim: **564 cases**
+> (every printable ASCII in five positions, plus Unicode quote/percent/caret
+> lookalikes checking for best-fit mapping), adjacency, empties, 1k–40k lengths.
+> **0 mangled, 0 second commands, 0 files created.** The launcher is sound and
+> `execSpec` is the only route onto a cmd.exe line.
+>
+> **The blocker was in the redaction code I added in round 1.** `validateAdd`
+> checks `env` only on the stdio branch and `headers` only on the remote one, so
+> THE OTHER FIELD IS NEVER VALIDATED — and `[...(request.headers ?? [])]` on a
+> number throws `TypeError: not iterable`, which `broker.handle` deliberately
+> does not catch, so the channel REJECTS. Exactly the hazard round 1's
+> `Array.isArray` guards were added for, reintroduced one field over. Fixed in
+> `secretsIn()`, and pinned by a matrix that fires nine junk values at every
+> argument of all six channels.
+>
+> **Two more real secret leaks, both in `detail`:**
+>
+> * `err.message` is Node's `Command failed: <the whole command line>` — our
+>   ESCAPED line, `-e API_KEY=…` and all. Escaped is the sting: redaction is
+>   exact-substring, so a secret containing any of `()%!^<>&|` arrives as
+>   `p@ss^&word-123` and survived verbatim. Now the exit code, which cannot
+>   carry an argument.
+> * Truncation ran BEFORE redaction (`cli.ts` sliced to 600, `ipc.ts` redacted
+>   after), so a secret straddling the boundary left its prefix behind. Both
+>   steps now live in `detailFrom`, in the right order, and `runMcp` takes a
+>   `secrets` option so they cannot be reordered by accident.
+>
+> Also taken: a mutation outliving its sitting painted "Removed sentry." on
+> whatever session was open ten seconds later (epoch ref; verified red without
+> it) · the remove path's quote refusal is now **Windows-only**, because
+> "refuse everywhere" is an argument about what we WRITE and refusing to delete
+> a server we just listed is the state-you-cannot-get-out-of `validateRemoveName`
+> exists to prevent · `cmdExePath` uses `path.join` · the name field gets the
+> quote's specific message instead of a generic "not a valid value" · the
+> previous folder's `unreadable` banner no longer flashes over the next one.
+>
+> **HAND-VERIFY ON WINDOWS.** The live end-to-end run — add stdio + http with
+> `&%^!()` and URL userinfo, byte-exact in `.mcp.json`, secrets stripped on
+> read-back, duplicate rejection redacted, a quote refused rather than
+> delivered, health, reset, remove ×2 — passed against the real CLI on this
+> machine at 16:31. That was a throwaway test file, deleted before the PR. **No
+> automated test proves the real binary works; that is exactly how PR 1's
+> blocker got in.**
+>
+> ## Known nit, deliberately NOT fixed here
+>
+> `redactUrl` (PR 1) replaces query values with `…` and then `URL.toString()`
+> percent-encodes it, so the pane shows `?a=%E2%80%A6&b=%E2%80%A6`. Ugly, not
+> wrong, and PR 1's code — left alone to keep this diff to its own scope.
+
 > # ✅ BOTH MERGED — 2026-08-25. Queue is clear; next item not started.
 >
 > * **#687** — a session that never started now has a rail row. PR **#712**

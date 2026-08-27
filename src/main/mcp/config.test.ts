@@ -5,8 +5,11 @@
 // are what `claude mcp add` actually wrote on this machine on 2026-08-25, and
 // the drive-letter case in `projects` is what a real `~/.claude.json` actually
 // held. Re-probe before changing any of them; do not reason from the issue.
-import { describe, it, expect } from 'vitest';
-import { buildInventory, samePath } from './config';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { buildInventory, readInventory, samePath } from './config';
 
 /** exactly what `claude mcp add -s project probe-a -- node fake-server.js`
  *  wrote into `.mcp.json` (probed) */
@@ -297,5 +300,117 @@ describe('tolerant of what users and newer CLIs put in these files', () => {
     expect(i.servers).toEqual([]);
     expect(i.unreadable).toEqual([]);
     expect(i.folder).toBe(FOLDER);
+  });
+});
+
+// ── The impure edge (#714, from #632's review) ──────────────────────────────
+//
+// `buildInventory` above is covered exhaustively on fixtures. `readInventory`
+// was not covered at all — and it is the function that OWNS the fail-open
+// `unreadable` logic the pane's whole P6 story rests on. Every claim in that
+// story ("a broken `.mcp.json` must not blank your user servers") lived only in
+// a docstring.
+//
+// Real files in a real temp directory, not a mocked `fs`: the thing under test
+// is how this behaves against the disk, and a mock of `readFileSync` would be a
+// mock of our own assumptions about it. `~/.claude.json` is redirected by
+// pointing `os.homedir()` at the temp dir — the seam `claudeJsonPath(home)`
+// already exists for, though `readInventory` calls it with no argument, so the
+// spy is on `os` itself.
+describe('readInventory — the impure edge', () => {
+  let dir: string;
+  let home: string;
+  let folder: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-mcp-'));
+    home = path.join(dir, 'home');
+    folder = path.join(dir, 'repo');
+    fs.mkdirSync(home);
+    fs.mkdirSync(folder);
+    vi.spyOn(os, 'homedir').mockReturnValue(home);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const writeHome = (text: string): void =>
+    fs.writeFileSync(path.join(home, '.claude.json'), text, 'utf8');
+  const writeProject = (text: string): void =>
+    fs.writeFileSync(path.join(folder, '.mcp.json'), text, 'utf8');
+
+  it('reads all three scopes off real files', () => {
+    writeHome(
+      JSON.stringify({
+        mcpServers: { everywhere: { command: 'u' } },
+        projects: { [folder]: { mcpServers: { mine: { command: 'l' } } } },
+      })
+    );
+    writeProject(JSON.stringify({ mcpServers: { shared: { command: 'p' } } }));
+    const i = readInventory(folder);
+    expect(i.servers.map((s) => `${s.scope}:${s.name}`)).toEqual([
+      'project:shared',
+      'local:mine',
+      'user:everywhere',
+    ]);
+    expect(i.unreadable).toEqual([]);
+  });
+
+  it('MISSING IS NOT BROKEN — most repos have no .mcp.json and that is fine', () => {
+    writeHome(JSON.stringify({ mcpServers: { everywhere: { command: 'u' } } }));
+    const i = readInventory(folder);
+    expect(i.unreadable).toEqual([]);
+    expect(i.servers.map((s) => s.name)).toEqual(['everywhere']);
+  });
+
+  it('a broken .mcp.json does NOT blank the scopes that read fine (P6)', () => {
+    // THE CLAIM THE WHOLE PANE RESTS ON. A trailing comma in a file someone
+    // else checked in must cost the user the project section and nothing more.
+    writeHome(JSON.stringify({ mcpServers: { everywhere: { command: 'u' } } }));
+    writeProject('{ "mcpServers": { "a": {}, } }');
+    const i = readInventory(folder);
+    expect(i.servers.map((s) => s.name)).toEqual(['everywhere']);
+    expect(i.unreadable).toEqual([
+      { source: path.join(folder, '.mcp.json'), scopes: ['project'] },
+    ]);
+  });
+
+  it('one broken ~/.claude.json is reported ONCE, naming both scopes it backs', () => {
+    // #632's review: two identical "could not be read" lines in two sections
+    // read as two broken files, and sent the user hunting for the second one.
+    writeHome('{ oh no');
+    writeProject(JSON.stringify({ mcpServers: { shared: { command: 'p' } } }));
+    const i = readInventory(folder);
+    expect(i.unreadable).toHaveLength(1);
+    expect(i.unreadable[0]).toEqual({
+      source: path.join(home, '.claude.json'),
+      scopes: ['local', 'user'],
+    });
+    // ...and the project scope still lists, which is the other half of P6
+    expect(i.servers.map((s) => s.name)).toEqual(['shared']);
+  });
+
+  it('reports both files when both are broken, still one entry each', () => {
+    writeHome('nope');
+    writeProject('also nope');
+    const i = readInventory(folder);
+    expect(i.unreadable.map((u) => u.scopes)).toEqual([['local', 'user'], ['project']]);
+    expect(i.servers).toEqual([]);
+  });
+
+  it('warns with the file path, and does not throw without a logger', () => {
+    writeProject('{');
+    const warnings: Array<{ msg: string; fields?: Record<string, unknown> }> = [];
+    readInventory(folder, { warn: (msg, fields) => warnings.push({ msg, fields }) });
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].fields).toEqual({ file: path.join(folder, '.mcp.json') });
+    expect(() => readInventory(folder)).not.toThrow();
+  });
+
+  it('answers an empty inventory when neither file exists at all', () => {
+    const i = readInventory(folder);
+    expect(i).toEqual({ folder, servers: [], unreadable: [] });
   });
 });

@@ -853,8 +853,9 @@
     "empty": "No MCP servers are configured for this session.",
     "noCommand": "(no command recorded)",
     "carries": "Carries: {keys}",
-    "scopeUnreadable": "This file could not be read — check it for a syntax error.",
-    "readOnlyNote": "This is a read-only view. Add and remove servers with the claude mcp command; changes show up here.",
+    "scopeUnreadable": "Could not read {file} — check it for a syntax error. This affects: {scopes}.",
+    "healthUnavailable": "Could not check whether Claude Code is connected, so the states above are not current.",
+    "cliNote": "Adding and removing run Claude Code's own commands. Turning a server on or off has no command, so use Reconnect and answer in the session.",
     "stateConnected": "connected",
     "stateFailed": "not connecting",
     "statePending": "waiting for your approval",
@@ -866,6 +867,71 @@
       "user": "All your projects"
     },
     "close": "Close",
-    "closeIcon": "✕"
+    "closeIcon": "✕",
+    "addServer": "Add server…",
+    "remove": "Remove",
+    "removeTitle": "Remove {name}",
+    "removeConfirm": "Remove it",
+    "removeConfirmTitle": "This deletes the server from its configuration file",
+    "removing": "Removing…",
+    "removed": "Removed {name}.",
+    "added": "Added {name}.",
+    "approveHint": "To approve it, use Reconnect below and answer in the session.",
+    "resetApprovals": "Reset approvals",
+    "resetConfirmPrompt": "This makes the session ask about every shared server again.",
+    "resetConfirm": "Reset them",
+    "resetting": "Resetting…",
+    "approvalsReset": "Approvals reset. The session will ask about shared servers again.",
+    "reconnecting": "Reconnecting…",
+    "error": {
+      "noCli": "Could not find the claude command. Check that Claude Code is installed and on your PATH.",
+      "timeout": "Claude Code did not respond. Nothing was changed.",
+      "refused": "switchboard could not run that. Nothing was changed."
+    },
+    "reconnect": {
+      "action": "Reconnect",
+      "typed": "Typed /mcp into the session — answer it in the terminal.",
+      "restart-required": "This session runs in Direct mode, which has no terminal for Claude Code's picker. It loads MCP servers when it starts, so restart it to pick up changes.",
+      "no-session": "This session is not running. Start it to reconnect.",
+      "refused": "switchboard could not reach that session."
+    },
+    "form": {
+      "title": "Add an MCP server",
+      "name": "Name",
+      "namePlaceholder": "sentry",
+      "scope": "Available in",
+      "transport": "Kind",
+      "kinds": {
+        "stdio": "A program on this machine",
+        "http": "A web address (HTTP)",
+        "sse": "A web address (SSE)"
+      },
+      "command": "Command",
+      "commandPlaceholder": "npx",
+      "url": "Web address",
+      "urlPlaceholder": "https://mcp.example.com/mcp",
+      "args": "Arguments — one per line",
+      "argsPlaceholder": "-y\n@some/mcp-server",
+      "argsSecretNote": "Do not put an API key here: arguments are shown in this list. Use Environment variables below — those are never shown. Double quotes are not accepted anywhere in this form.",
+      "env": "Environment variables",
+      "envNamePlaceholder": "API_KEY",
+      "addEnv": "Add a variable",
+      "headers": "Headers",
+      "headerNamePlaceholder": "Authorization",
+      "addHeader": "Add a header",
+      "valuePlaceholder": "value",
+      "removePair": "Remove this one",
+      "add": "Add server",
+      "adding": "Adding…",
+      "cancel": "Cancel",
+      "error": {
+        "required": "This is needed.",
+        "format": "That is not a valid value. {at}",
+        "control-character": "Remove the line break or control character. {at}",
+        "double-quote": "Double quotes are not supported. On Windows, Claude Code is launched through a script that cannot receive one reliably, so switchboard refuses rather than saving something different from what you typed.",
+        "looks-like-a-flag": "This cannot start with a dash — Claude Code would read it as one of its own options.",
+        "too-long": "That is too long."
+      }
+    }
   }
 }

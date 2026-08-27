@@ -42,6 +42,15 @@ export const CAPABILITIES = [
   // and the NAMES of the credentials they carry — which is a
   // meaningfully different power from "read the CLI's version".
   // A Phase-4 consumer can hold one without the other.
+  'mcp.write', // ADD OR REMOVE an MCP server, reset a project's approvals, and
+  // type `/mcp` into a live session (§5.17, #714). Split from
+  // `mcp.read` for the reason the whole vocabulary is split, and
+  // this is the sharpest instance of it: reading tells you which
+  // tools a session has, while writing DEFINES A PROGRAM THE CLI
+  // WILL LAUNCH — and at `project` scope that definition lands in
+  // a file which is checked in, so it runs on a teammate's machine
+  // when they next clone. Nearer `update.install` than
+  // `settings.write`, and never implied by holding `mcp.read`.
   'app.window', // display geometry, popout movement
   'environment.probe', // runs the CLI to read its version, stats the user's
   // home config. Named for what it DOES, not where the
@@ -174,6 +183,15 @@ export const CHANNEL_CAPABILITIES = {
   // powers.
   'mcp:list': 'mcp.read',
   'mcp:health': 'mcp.read',
+  // The write half (#714). All four hold `mcp.write`, INCLUDING `mcp:reconnect`
+  // — which does not touch the config at all, but does put keystrokes into a
+  // live session, and grouping it with the reads would have let a listing-only
+  // consumer type into a terminal. What it may type is not open-ended: main
+  // sends the literal `/mcp` and a carriage return, never caller-supplied text.
+  'mcp:add': 'mcp.write',
+  'mcp:remove': 'mcp.write',
+  'mcp:resetApprovals': 'mcp.write',
+  'mcp:reconnect': 'mcp.write',
   'notifications:getPrefs': 'settings.read',
   // Whether the quiet window is open right now, and how many events it has held
   // (P2-E14-05b). Reads settings plus a count of the app's own held list —
