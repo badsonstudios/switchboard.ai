@@ -14,14 +14,25 @@
 //
 // ── WHAT IT STILL DOES NOT DO, AND WHY ───────────────────────────────────────
 //
-// ENABLE / DISABLE A SERVER. There is no CLI verb. The full subcommand set is
-// `add`, `add-from-claude-desktop`, `add-json`, `get`, `list`, `login`,
+// ENABLE / DISABLE A SERVER. No `claude mcp` SUBCOMMAND does it — the full set
+// is `add`, `add-from-claude-desktop`, `add-json`, `get`, `list`, `login`,
 // `logout`, `remove`, `reset-project-choices`, `serve` (probed 2026-08-25,
 // re-probed 2026-08-26). Approval lives in two lists — `enabledMcpjsonServers`
 // and `disabledMcpjsonServers` — that only a session or a settings write moves,
 // and writing them ourselves means owning a shape the CLI can change under us.
 // Declined on P7. What is offered instead is honest: RECONNECT hands the
-// question to the CLI's own picker, and RESET APPROVALS runs the one real verb.
+// question to the CLI's own picker, and RESET APPROVALS runs the one real
+// subcommand.
+//
+// THIS COMMENT USED TO SAY "there is no CLI verb", FULL STOP, AND THAT WAS
+// WRONG (#721, 2026-08-27). It was a claim about the whole CLI inferred from a
+// probe of `claude mcp --help`. The stream-json control protocol has
+// `mcp_toggle {serverName, enabled}`, `mcp_reconnect` and `mcp_status`, all
+// present in the PATH CLI and used by Anthropic's own VS Code extension. We
+// parse control requests INBOUND (stream permissions) and have never sent one
+// OUTBOUND, which is the actual reason this pane hands off instead of toggling.
+// Nothing here is broken — but do not repeat the "no verb exists" reasoning on
+// another surface without checking the control protocol first.
 //
 // SHOW A SECRET. `McpServerWire` carries `envKeys` and `headerKeys` — the NAMES
 // — and has no field that can hold a value, so there is nothing here to reveal

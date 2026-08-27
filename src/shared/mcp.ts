@@ -293,10 +293,18 @@ export type McpMutationResult =
  * session sitting there — the exact dead end #632's `/mcp` intercept exists to
  * remove. Doing it anyway would reinstate the bug through a different button.
  *
- * So Direct sends NOTHING and says so. That is not a degradation to apologise
- * for; it is the honest answer, and it is why main decides this rather than the
- * renderer: `lib/composer.ts`'s `sendSessionCommand` is deliberately blind to
- * transports, which is right for `/compact` and wrong for exactly this.
+ * So Direct sends NOTHING and says so. That is the honest answer, and it is why
+ * main decides this rather than the renderer: `lib/composer.ts`'s
+ * `sendSessionCommand` is deliberately blind to transports, which is right for
+ * `/compact` and wrong for exactly this.
+ *
+ * HONEST IS NOT THE SAME AS OPTIMAL, and this docstring originally read as
+ * though it were (#721, 2026-08-27). The stream transport is not mute here:
+ * the control protocol has `mcp_reconnect {serverName}`, which does the real
+ * thing with no terminal and no restart. `restart-required` is what we built
+ * because we have never sent an outbound control request — not what the CLI
+ * imposes. When that channel exists, this outcome should shrink to the cases
+ * that genuinely have no session.
  */
 export type McpReconnectResult =
   /** `/mcp` was typed into a live terminal — the picker is on screen */

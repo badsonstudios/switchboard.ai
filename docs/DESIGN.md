@@ -1278,16 +1278,24 @@ tab — it's the real CLI. On top, GUI sugar that never forks CLI behavior:
     no options beyond `-h` and print human text with emoji in it. The listing is
     read from the config files (which this section always said) and the health
     column is parsed leniently out of `mcp list`, degrading to `unknown`.
-  - **There is no enable/disable verb.** The full subcommand set is `add`,
-    `add-from-claude-desktop`, `add-json`, `get`, `list`, `login`, `logout`,
-    `remove`, `reset-project-choices`, `serve` (probed 2026-08-25, re-probed
-    2026-08-26). Approval lives in `enabledMcpjsonServers` /
-    `disabledMcpjsonServers`, which only a session or a settings write moves.
-    So the pane **shows** approval state and **hands the change off**: Reconnect
-    opens the CLI's own picker, and *Reset approvals* runs the one real verb,
-    `reset-project-choices` — which is project-wide and resets approved and
-    rejected together. Writing those keys ourselves was declined on P7: it is
-    config the CLI owns, on a shape it can change under us.
+  - **No `claude mcp` SUBCOMMAND enables or disables a server.** The full
+    subcommand set is `add`, `add-from-claude-desktop`, `add-json`, `get`,
+    `list`, `login`, `logout`, `remove`, `reset-project-choices`, `serve`
+    (probed 2026-08-25, re-probed 2026-08-26). Approval lives in
+    `enabledMcpjsonServers` / `disabledMcpjsonServers`, which only a session or
+    a settings write moves. So the pane **shows** approval state and **hands the
+    change off**: Reconnect opens the CLI's own picker, and *Reset approvals*
+    runs the one real subcommand, `reset-project-choices` — project-wide,
+    resetting approved and rejected together. Writing those keys ourselves was
+    declined on P7: it is config the CLI owns, on a shape it can change under us.
+
+    **THE SCOPE OF THAT CLAIM WAS WRONG, and #714 shipped it too broadly.** It
+    said "there is no enable/disable verb" full stop. There is one — just not a
+    subcommand. The stream-json **control protocol** carries `mcp_toggle`
+    (`{serverName, enabled}`), `mcp_reconnect` and `mcp_status`, all present in
+    the PATH CLI 2.1.245 and used by Anthropic's own VS Code extension. What we
+    never built is the ability to SEND a control request (we only parse them
+    inbound, for permissions). See #721; the correction is on #714 and #633.
   - **"Reconnect injects `/mcp` into that session's input route" is true on ONE
     transport.** On **pty** it is exactly right: the CLI's picker opens in a
     terminal the user is looking at, and we type rather than fake. On **stream**
@@ -1299,6 +1307,13 @@ tab — it's the real CLI. On top, GUI sugar that never forks CLI behavior:
     `sendSessionCommand` is deliberately transport-blind, which is correct for
     `/compact` (both routes deliver the same thing) and wrong here (one route
     delivers nothing).
+
+    **"Restart instead" is HONEST, not OPTIMAL, and the difference matters.**
+    The stream transport is not actually mute here: `mcp_reconnect` is a control
+    request that does this properly, with no terminal and no restart. Read the
+    paragraph above as "what we built and why it is defensible", not as "what
+    the CLI permits" — and if you are about to repeat the reasoning for another
+    surface, check the control protocol first (#721).
 
   **Mutations go through a hardened launcher.** On Windows the CLI is a `.cmd`
   shim, so its arguments are parsed twice — by `cmd.exe` and again by the CLI —
@@ -2614,10 +2629,18 @@ mode + session archive v1; fleet snapshots + layout DSL.)*
   describes this surface and one of them contradicts a sibling section:
   **`claude mcp` has no `--json` output** (`list` and `get` take no options at
   all — the `--json` in §5.18 is `claude plugin`'s and does not generalise),
-  and **it has no enable/disable verb** — a project server's approval lives in
-  the `enabledMcpjsonServers` / `disabledMcpjsonServers` settings keys with no
-  CLI path to them. §5.17's "read the real config files; mutate via the real
-  CLI" was already the right instruction; the first correction is why.
+  and **no `claude mcp` subcommand enables or disables a server** — a project
+  server's approval lives in the `enabledMcpjsonServers` /
+  `disabledMcpjsonServers` settings keys with no SUBCOMMAND path to them.
+  §5.17's "read the real config files; mutate via the real CLI" was already the
+  right instruction; the first correction is why.
+
+  **Corrected 2026-08-27 (#721):** the second one used to read "it has no
+  enable/disable verb", which was a claim about the whole CLI drawn from a probe
+  of one surface. The stream-json control protocol has `mcp_toggle`,
+  `mcp_reconnect` and `mcp_status`. Both #632 and #714 shipped believing
+  otherwise; nothing they built is wrong, but the reasoning behind
+  "hand it off instead" is narrower than it was written to be.
 - Plugin & Marketplace Manager, cross-session (§5.18) — company-marketplace
   workflow is a primary use case
 - Session templates ("spawn reviewer session pointed at this diff")

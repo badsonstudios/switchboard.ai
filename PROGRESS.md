@@ -3,13 +3,53 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔨 IN PROGRESS — 2026-08-26: #714 — MCP Manager PR 2 (the mutation half)
+> # 🚢 RELEASED — 2026-08-27: **v0.8.4**, and a correction that outlives it
 >
-> Branch `feature/714-mcp-manager-mutations`, off main @ `4a0a698`.
-> **Both gates passed; code complete; review round 2 in flight.**
-> **6380 tests / 244 files**, lint and typecheck clean.
-> Tracker: **#714** (#632 is closed and is NOT a live item — see the merged
-> banner below for why).
+> **#714 MERGED** (PR #720, squashed to main as `5d1fa72`, all 4 checks green,
+> branch deleted; the issue auto-closed). **v0.8.4 tagged and published**,
+> carrying #632, #714 and #687. **6389 tests / 244 files**, lint, typecheck and
+> build clean.
+>
+> **Dan is the only installer and asked for the release WITHOUT a hand-test**
+> (2026-08-27) — recorded because the dogfood tracker's #714 item 1 is the one
+> check no machine can make. Not an oversight; his call, stated.
+>
+> ## ⚠️ READ THIS BEFORE CONCLUDING THE CLI "CANNOT" DO SOMETHING
+>
+> Dan asked why the picker slash commands dead-end in Direct mode when the VS
+> Code extension handles them fine. **They do not dead-end. We never learned to
+> ask.** The extension never types `/model` — it sends a `control_request` on
+> the same stream-json channel:
+>
+> ```js
+> setModel(m)          -> request({subtype:"set_model", model:m})
+> toggleMcpServer(n,e) -> request({subtype:"mcp_toggle", serverName:n, enabled:e})
+> reconnectMcpServer(n)-> request({subtype:"mcp_reconnect", serverName:n})
+> getContextUsage()    -> request({subtype:"get_context_usage"})
+> supportedModels()    -> (await this.initialization).models
+> ```
+>
+> Verified against the **PATH CLI 2.1.245**, not the extension's bundled 2.1.226
+> (`set_model` ×37, `set_permission_mode` ×44, `mcp_toggle` ×19, `mcp_reconnect`
+> ×33, `mcp_status` ×12, `get_context_usage` ×15). We parse `control_request`
+> **inbound** for stream permissions and have **never sent one outbound** —
+> that is the entire gap. **#721 filed** for the channel; it unblocks #633
+> (`/model`), #715 (context %) and a better MCP toggle/reconnect in one go.
+>
+> **THIS INVALIDATES THE SCOPE OF TWO CLAIMS #632 AND #714 SHIPPED.** Both said
+> "there is no enable/disable verb" and "reconnect on stream is a dead end".
+> Those are true of `claude mcp` SUBCOMMANDS and false of the control protocol.
+> Nothing built is broken and the P7 refusal to hand-write
+> `enabledMcpjsonServers` still stands — but the reasoning was drawn from a
+> `--help` probe and stated as a fact about the whole CLI. **The subcommand
+> surface and the protocol surface are different surfaces.** Corrected in
+> DESIGN §5.17 (both places), `McpManagerDialog.tsx`'s header,
+> `shared/mcp.ts`'s `McpReconnectResult`, and a new
+> `reference-implementations.md` §1.2.1 — plus comments on #633, #714 and #715
+> so the tickets carry it too.
+>
+> **Nothing in that list has been EXERCISED, only located.** They are symbols in
+> a binary. #721's first ask is a probe, deliberately.
 >
 > ## 🚨 THE HEADLINE: A COMMAND-INJECTION HOLE, FOUND AND FIXED TWICE
 >

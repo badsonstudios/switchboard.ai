@@ -105,6 +105,39 @@ it when:
   They kept a terminal escape hatch (`claudeCode.useTerminal`, default `false`)
   — that is evidence, not proof, but it is better than a guess.
 
+#### 1.2.1 The outbound control protocol — the one that keeps being missed
+
+**Read this before concluding that the CLI "cannot" do something.** Twice now
+(#632, #714) a design decision was made on the strength of a `--help` probe,
+and twice the capability existed on the control channel instead. The subcommand
+surface and the protocol surface are DIFFERENT SURFACES; `--help` describes one
+of them.
+
+The SDK's outbound requests all take the same shape —
+`await this.request({subtype:"…", …})` — and are answered with
+`{type:"control_response", response:{request_id, …}}`, correlated by
+`request_id`. One grep lists them all:
+
+```bash
+grep -o -E 'subtype:"[a-z_]+"' extension.js | sort -u
+```
+
+Observed in `anthropic.claude-code-2.1.226` and confirmed present in the PATH
+CLI 2.1.245: `set_model`, `set_permission_mode`, `set_thinking_level`,
+`set_max_thinking_tokens`, `set_cwd`, `mcp_toggle`, `mcp_reconnect`,
+`mcp_status`, `mcp_set_servers`, `mcp_authenticate`, `get_context_usage`,
+`get_settings`, `get_usage`, `rewind_files`, `reload_plugins`, `reload_skills`,
+`interrupt`, `stop_task`, `background_tasks`, `initialize`, and more.
+
+Two things worth knowing beyond the list:
+
+- **`initialize`'s RESPONSE carries data, not just an ack.** `supportedModels()`
+  is `(await this.initialization).models`; `supportedAgents()` is `.agents`. A
+  model picker needs no discovery mechanism of its own.
+- **Locating a subtype is not verifying it.** These are symbols in a binary.
+  Nothing above has been exercised, and the standing rule still applies: probe
+  the PATH CLI before building. #721 is the ticket that does that.
+
 ### 1.3 The settings schema is the standout
 
 `claude-code-settings.schema.json` is the full, authoritative schema for
