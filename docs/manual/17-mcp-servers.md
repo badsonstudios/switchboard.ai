@@ -14,9 +14,11 @@ Two ways, and they do the same thing:
 - **Type `/mcp`** in a session's prompt box and press Enter.
 - Open the command palette (`Ctrl+Shift+P`) and pick **MCP servers…**
 
-Either way you get a list of every server **the session you're in** can see. If
-no session is active, it says so rather than showing you an empty list — an
-empty list would look like "you have none", which is a different thing.
+Either way you get a list of the servers **the session you're in** has
+configured — see [What this list doesn't show](#what-this-list-doesnt-show)
+below for the ones that don't come from your files. If no session is active, it
+says so rather than showing you an empty list — an empty list would look like
+"you have none", which is a different thing.
 
 ## What you're looking at
 
@@ -34,6 +36,32 @@ server isn't behaving the way the file you were reading says it should.
 
 Each row shows the server's name, the command or web address it uses, and its
 current state.
+
+## What this list doesn't show
+
+This pane reads your **configuration files**, and Claude Code can connect to
+servers that aren't in any file. Two kinds, and on a well-used machine they can
+easily outnumber the ones you see here:
+
+- **Connectors from your claude.ai account** — the ones you turn on in your
+  claude.ai account settings, under Connectors: Atlassian, Microsoft 365,
+  Stripe and the rest. They come with your signed-in account, not from your
+  disk.
+- **Servers that plugins bring with them** — installed as part of a plugin
+  rather than added by hand.
+
+Your sessions can still **use** those servers normally. They just can't be
+listed or managed from here yet, because there's no file for this pane to read
+them out of.
+
+To see everything a session actually has, run `/mcp` in a terminal — Claude
+Code's own picker, and the complete list. Note that this needs a real terminal:
+a session in Direct mode doesn't have one, so use its **Terminal** tab only if
+it's running in Terminal mode, or run `claude` yourself in the project folder.
+
+So if this pane looks short next to `/mcp`, nothing is broken and nothing has
+been lost — you're looking at the servers you configured, not at every server
+your session can reach.
 
 ## The states
 
