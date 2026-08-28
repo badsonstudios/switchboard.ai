@@ -25,6 +25,30 @@ export type OutMessage = Record<string, unknown>;
  * false` would leave the panel's checkbox half — and the comma-joined answer
  * string that only multi-select can produce — with no end-to-end proof at all.
  */
+/**
+ * What this fake's `list_models` offers, and the only ids its `set_model`
+ * accepts (#721).
+ *
+ * Shapes copied from the REAL `list_models` payload (CLI 2.1.245, see
+ * `docs/reference-implementations.md` §1.2.2) so a consumer that reads
+ * `displayName`/`description` is exercised rather than merely compiled.
+ *
+ * `claude-fake-1` is here on purpose: it is the model `system:init` reports
+ * before anything is switched, and a list that omitted it would be a list you
+ * could switch away from and never back to.
+ */
+export const FAKE_MODELS = [
+  { value: 'claude-fake-1', resolvedModel: 'claude-fake-1', displayName: 'Fake (default)' },
+  {
+    value: 'default',
+    resolvedModel: 'claude-opus-5[1m]',
+    displayName: 'Default (recommended)',
+    description: 'Opus 5 with 1M context · Best for everyday, complex tasks',
+  },
+  { value: 'sonnet', resolvedModel: 'claude-sonnet-5', displayName: 'Sonnet' },
+  { value: 'haiku', resolvedModel: 'claude-haiku-4-5-20251001', displayName: 'Haiku' },
+] as const;
+
 export const FAKE_QUESTION_ONE = {
   question: 'Which colour do you prefer?',
   header: 'Colour',
@@ -90,6 +114,16 @@ export class FakeStreamProtocol {
     { toolName: string; input: Record<string, unknown>; hang?: boolean }
   >();
   private requestSeq = 0;
+  /**
+   * What `system:init.model` reports (#721).
+   *
+   * A FIELD rather than a literal so `set_model` can be proved BY EFFECT, the
+   * way it was proved against the real CLI: the acknowledgement is not the
+   * evidence, the next turn's `system:init.model` is. A fake that acked the
+   * switch and went on reporting the old model would let a consumer that never
+   * actually applies anything pass its tests.
+   */
+  private model = 'claude-fake-1';
 
   constructor(
     private readonly host: FakeStreamHost,
@@ -731,12 +765,96 @@ export class FakeStreamProtocol {
    */
   private onControlRequest(msg: Record<string, unknown>): void {
     const req = msg.request as { subtype?: unknown } | undefined;
-    if (req?.subtype !== 'interrupt') return;
+    const requestId = asDisplayString(msg.request_id);
+    // Nothing can be correlated without one, so there is nothing useful to
+    // answer. Hoisted above every branch rather than repeated in one of them.
+    if (!requestId) return;
+    // ── The control channel's verbs (#721) ───────────────────────────────────
+    //
+    // MODELLED ON MEASURED ENVELOPES, and the fake is faithful about the two
+    // details that matter, because a fake that got either wrong would let a
+    // broken correlator pass:
+    //
+    //  * `request_id` is NESTED inside `response`, never at the top level —
+    //    the opposite of the inbound `can_use_tool` this file also emits;
+    //  * a refusal is `{subtype:"error", error:"<sentence written for a human>"}`.
+    //
+    // The model LIST is the real one, trimmed to the fields we model. What the
+    // fake deliberately does NOT do is pretend the switch had an effect: the
+    // real proof is that `system:init.model` changes on the next turn, and only
+    // the real CLI can produce that. See `docs/reference-implementations.md`
+    // §1.2.2 for the captures.
+    if (req?.subtype === 'list_models') {
+      this.emit({
+        type: 'control_response',
+        response: {
+          subtype: 'success',
+          request_id: requestId,
+          response: { models: FAKE_MODELS },
+        },
+      });
+      return;
+    }
+    if (req?.subtype === 'set_model') {
+      const model = (req as { model?: unknown }).model;
+      // DERIVED from what this fake actually lists, never a parallel array. A
+      // hand-kept accept-list drifts from the list on screen, and then the fake
+      // accepts a model it never offered (or refuses one it did) — which is a
+      // fake teaching a consumer the wrong lesson.
+      const known: readonly string[] = FAKE_MODELS.map((m) => m.value);
+      if (typeof model !== 'string') {
+        // the CLI's own words for this case, verbatim
+        this.emit({
+          type: 'control_response',
+          response: {
+            subtype: 'error',
+            request_id: requestId,
+            error: 'set_model: model must be a string',
+          },
+        });
+        return;
+      }
+      if (!known.includes(model)) {
+        this.emit({
+          type: 'control_response',
+          response: {
+            subtype: 'error',
+            request_id: requestId,
+            error: `Model "${model}" is not a recognized model id. Run /model to see available models.`,
+          },
+        });
+        return;
+      }
+      this.model = model;
+      // NO `response` KEY. The real `set_model` success carries none, and a
+      // fake that helpfully added `{}` would hide a reader that assumes one.
+      this.emit({
+        type: 'control_response',
+        response: { subtype: 'success', request_id: requestId },
+      });
+      return;
+    }
+    // An unknown verb fails CLEAN and leaves the session alive — measured
+    // ("Unsupported control request subtype: …"), and the fail-open (P6)
+    // guarantee a consumer is allowed to rely on. Previously anything that was
+    // not `interrupt` was silently dropped, which looks to a caller exactly
+    // like a CLI that has stopped answering.
+    if (req?.subtype !== 'interrupt') {
+      this.emit({
+        type: 'control_response',
+        response: {
+          subtype: 'error',
+          request_id: requestId,
+          error: `Unsupported control request subtype: ${asDisplayString(req?.subtype)}`,
+        },
+      });
+      return;
+    }
     this.emit({
       type: 'control_response',
       response: {
         subtype: 'success',
-        request_id: asDisplayString(msg.request_id),
+        request_id: requestId,
         response: { still_queued: [] },
       },
     });
@@ -840,7 +958,7 @@ export class FakeStreamProtocol {
       session_id: this.sessionId,
       tools: ['Read', 'Write', 'Edit', 'Bash'],
       mcp_servers: [],
-      model: 'claude-fake-1',
+      model: this.model,
       permissionMode: 'default',
       slash_commands: ['clear', 'compact', 'cost', 'fake-only'],
       apiKeySource: 'none',

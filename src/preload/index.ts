@@ -31,6 +31,7 @@ import type {
   StatusChange,
 } from '../shared/sessions';
 import type { TransportKind } from '../shared/transport';
+import type { ControlVerdict } from '../shared/control';
 import type { NotificationPrefs } from '../shared/notifications';
 import type { WorkspaceSaveState } from '../shared/workspace';
 import type { HistoryRepairNotice } from '../shared/history-repair';
@@ -449,6 +450,30 @@ const api = {
      */
     interrupt: (sessionId: string): Promise<boolean> =>
       ipcRenderer.invoke('sessions:interrupt', sessionId),
+    /**
+     * The models this session will accept (#721).
+     *
+     * A VERDICT, not a list, and the difference is the point: a PTY session
+     * answers `not-stream`, a closed one `session-gone`, a silent one
+     * `timed-out`, and a CLI that refuses says so in its own words. The models
+     * themselves are `response.models` on a success — read them with
+     * `readModels` rather than by hand.
+     *
+     * Nothing in the answer marks which model is CURRENT; the CLI has no field
+     * for it. `system:init.model` is the only source and it arrives once per
+     * turn.
+     */
+    listModels: (sessionId: string): Promise<ControlVerdict> =>
+      ipcRenderer.invoke('sessions:listModels', sessionId),
+    /**
+     * Switch this session's model, mid-session, no restart (#721).
+     *
+     * An empty or non-string `model` is refused before it reaches the CLI — it
+     * answers `success` for a missing one and changes nothing, so an unchecked
+     * call reports a change that never happened.
+     */
+    setModel: (sessionId: string, model: string): Promise<ControlVerdict> =>
+      ipcRenderer.invoke('sessions:setModel', sessionId, model),
     /** future gated calls for this LIVE session answer 'allow' in main (P2 #19) */
     allowAllSession: (liveId: string): Promise<void> =>
       ipcRenderer.invoke('sessions:allowAllSession', liveId),

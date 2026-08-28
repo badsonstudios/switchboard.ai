@@ -28,7 +28,15 @@ import {
   SweepResult,
 } from './session-state';
 import { streamStatusEvent } from './stream-status';
-import { interruptRequest, userMessage, type PromptAttachment } from '../../shared/stream-protocol';
+import {
+  interruptRequest,
+  listModelsRequest,
+  setModelRequest,
+  userMessage,
+  type PromptAttachment,
+} from '../../shared/stream-protocol';
+import { ControlChannel } from '../transport/control-channel';
+import type { ControlVerdict } from '../../shared/control';
 
 /**
  * Why a session's native id CHANGED. 'clear' = the CLI ran /clear and minted
@@ -122,6 +130,81 @@ export class SessionManager {
     extraTransports?: TransportMap
   ) {
     this.transports = { pty: ptys, ...extraTransports };
+    // The outbound control channel (#721). Built HERE rather than in
+    // `main/index.ts` because its port is exactly two methods this class
+    // already owns — `sendToTransport` (which answers false for a PTY, and is
+    // therefore the transport gate) and `onStreamMessage` (the app-wide typed
+    // fan-out). Wiring it outside would mean handing both out to a third party
+    // just to hand the result back.
+    this.control = new ControlChannel({
+      send: (id, msg) => this.sendToTransport(id, msg),
+      onMessage: (l) => this.onStreamMessage(l),
+    });
+  }
+
+  /**
+   * Ask the CLI something over the stream-json control channel (#721).
+   *
+   * Exposed so `sessions/ipc.ts` can reach it and so teardown can call
+   * `forgetSession`. Consumers should prefer the named verbs below.
+   */
+  readonly control: ControlChannel;
+
+  /**
+   * The models this session will accept (#721, #633).
+   *
+   * `list_models` rather than `initialize`: the same array, without the ~28 KB
+   * of commands, agents and account data around it.
+   *
+   * NOTE WHAT THIS CANNOT TELL YOU: nothing in the payload marks the CURRENT
+   * model, and `initialize` has no field for it either (both measured). The
+   * running model appears only on `system:init.model`, once per TURN — so a
+   * picker must treat "which one is selected" as a separate and possibly
+   * unknown question rather than reading it off this list.
+   */
+  async listModels(id: string): Promise<ControlVerdict> {
+    const gone = this.controlPrecheck(id);
+    return gone ?? this.control.request(id, listModelsRequest);
+  }
+
+  /**
+   * `session-gone` for a session this manager no longer holds — or `null` to
+   * carry on.
+   *
+   * WITHOUT THIS, A DEAD SESSION READS AS A TERMINAL ONE. `sendToTransport`
+   * answers `false` for both a PTY and a missing handle, and the channel turns
+   * a false into `not-stream` — whose documented meaning is "this session has
+   * no control channel, hand the user to the CLI's own picker in their
+   * terminal". A stale live id (the restart path drops the handle in `remove`
+   * while a renderer may still hold the old one) would therefore tell the user
+   * to go and use a terminal that has nothing to do with their problem.
+   *
+   * The two states are genuinely different and only this class can tell them
+   * apart, which is why the check is here rather than in the channel.
+   */
+  private controlPrecheck(id: string): ControlVerdict | null {
+    if (this.handles.has(id)) return null;
+    return { ok: false, reason: 'session-gone', message: 'the session has stopped' };
+  }
+
+  /**
+   * Switch this session's model, mid-session, with no restart (#721, #633).
+   *
+   * Verified BY EFFECT rather than by its acknowledgement: after `set_model`,
+   * the next turn's `system:init.model`, the assistant message's
+   * `message.model` and `result.modelUsage` all three reported the new model.
+   *
+   * An empty or non-string `model` is refused before the wire — see
+   * `setModelRequest`, and the measurement that forced it.
+   */
+  async setModel(id: string, model: unknown): Promise<ControlVerdict> {
+    const gone = this.controlPrecheck(id);
+    if (gone) return gone;
+    const verdict = await this.control.request(id, (requestId) =>
+      setModelRequest(requestId, model)
+    );
+    if (verdict.ok) this.log.info('model changed', { sessionId: id });
+    return verdict;
   }
 
   /**
