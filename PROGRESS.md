@@ -3,10 +3,13 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ✅ READY FOR REVIEW — 2026-08-28: **#723** — "fewer MCP servers"
+> # ✅ DONE — 2026-08-28: **#723** — "fewer MCP servers" → **PR #725**, awaiting merge
 >
-> Branch `feature/723-mcp-configured-only`. **6392 tests / 244 files**, lint,
-> typecheck, build all clean. Awaiting Gate 2.
+> Branch `feature/723-mcp-configured-only`, committed `9d532a5` and pushed.
+> **6392 tests / 244 files**, lint, typecheck, build all clean.
+>
+> **NEXT UP: #721** — the outbound control_request channel (its own block below,
+> and it is the real fix for this item).
 >
 > **Dan chose the HONESTY FIX** over building the real one now: the pane stops
 > implying its list is complete, and sourcing the inventory from `mcp_status`
