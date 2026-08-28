@@ -1296,6 +1296,23 @@ tab — it's the real CLI. On top, GUI sugar that never forks CLI behavior:
     the PATH CLI 2.1.245 and used by Anthropic's own VS Code extension. What we
     never built is the ability to SEND a control request (we only parse them
     inbound, for permissions). See #721; the correction is on #714 and #633.
+  - **The picker commands do NOT dead-end after all — we had never learned to
+    ask (#721).** §5.17 treated `/model`, `/permissions` and friends as
+    unreachable in Direct mode because they open a TUI picker and a Direct
+    session has no terminal. True of the *typed* command; false of the CLI. The
+    stream-json **control protocol** carries `list_models`, `set_model`,
+    `mcp_toggle`, `mcp_reconnect`, `mcp_status` and `get_context_usage`, and we
+    had only ever parsed control requests INBOUND. `main/transport/
+    control-channel.ts` is the outbound half, and `/model` is the first surface
+    on it. Measured shapes: `docs/reference-implementations.md` §1.2.2.
+
+    Two constraints that fell out of measuring rather than designing:
+    **nothing the CLI returns marks the CURRENT model** — not `list_models`,
+    not `initialize` — so the only source is `system:init.model`, once per TURN,
+    and a picker on a session that has run no turn must say "not known yet"
+    rather than tick a default; and **`set_model` with no `model` field answers
+    `success` while changing nothing**, so arguments are validated before the
+    wire rather than after.
   - **"Reconnect injects `/mcp` into that session's input route" is true on ONE
     transport.** On **pty** it is exactly right: the CLI's picker opens in a
     terminal the user is looking at, and we type rather than fake. On **stream**

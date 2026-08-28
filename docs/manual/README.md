@@ -38,6 +38,7 @@ no page is an unfinished work item.
 | [15 — Reading files in the app](15-document-viewer.md) | Opening a file, rendered Markdown, source view, find, what won't be shown | draft |
 | [16 — Finding something](16-find.md) | `Ctrl+F` over a session: the find bar, the results list, what it searches that you can't see | draft |
 | [17 — MCP servers](17-mcp-servers.md) | `/mcp`: what tools a session is wired to, which scope each comes from, adding and removing them, and why one is waiting on you | current |
+| [18 — Choosing a model](18-model.md) | `/model`: switching a session between Opus, Sonnet and Haiku mid-conversation, and why the tick is sometimes missing | draft |
 
 Backfilled 2026-07-24 from the shipped app (Phase 1 + Phase 2 epics E7, E8,
 E10, E12) — written against the actual UI strings and behavior, not from

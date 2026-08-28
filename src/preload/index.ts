@@ -474,6 +474,17 @@ const api = {
      */
     setModel: (sessionId: string, model: string): Promise<ControlVerdict> =>
       ipcRenderer.invoke('sessions:setModel', sessionId, model),
+    /**
+     * Which model this session is running — or `null` for "it has not said
+     * yet" (#721).
+     *
+     * NULL IS A REAL ANSWER and must not be rendered as a default. The model
+     * appears only on `system:init`, which arrives once per TURN, so a session
+     * that has run no turn has genuinely never reported one. That is the
+     * common case for a picker: a fresh card.
+     */
+    currentModel: (sessionId: string): Promise<string | null> =>
+      ipcRenderer.invoke('sessions:currentModel', sessionId),
     /** future gated calls for this LIVE session answer 'allow' in main (P2 #19) */
     allowAllSession: (liveId: string): Promise<void> =>
       ipcRenderer.invoke('sessions:allowAllSession', liveId),

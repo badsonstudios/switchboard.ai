@@ -46,6 +46,7 @@ import type { ControlVerdict } from '../../shared/control';
 import { PtyService } from '../pty/pty-service';
 import { StreamPermissions } from './stream-permissions';
 import { StreamCommands } from './stream-commands';
+import { StreamModel } from './stream-model';
 import { StreamFeed } from '../feed/stream-feed';
 import { replayResumedHistory } from '../feed/history';
 import { HookListener } from '../hooks/hook-listener';
@@ -80,6 +81,9 @@ export interface SessionIpcDeps {
   /** The CLI's own slash-command list, off the stream (P2-E18-09). Absent for
    *  a PTY-only wiring, in which case the curated list is all there is. */
   streamCommands?: StreamCommands;
+  /** which model each live session is running (#721) — `system:init`'s only
+   *  unique cargo, and what the model picker ticks */
+  streamModel?: StreamModel;
   /** The Feed, built from a stream session's typed messages (P2-E18-10).
    *  Absent for a PTY-only wiring, where the transcript is the only source. */
   streamFeed?: StreamFeed;
@@ -173,7 +177,7 @@ export interface SessionIpcHandle {
 }
 
 export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
-  const { manager, ptys, hooks, transcripts, log, broker, streamPermissions, streamCommands } =
+  const { manager, ptys, hooks, transcripts, log, broker, streamPermissions, streamCommands, streamModel } =
     deps;
   // per-session live-feed unsubscribers (attached panes only)
   const feeds = new Map<string, () => void>();
@@ -485,6 +489,15 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     tearDownStep(liveId, 'streamCommands.forgetSession', () =>
       streamCommands?.forgetSession(liveId)
     );
+    // …and its model (#721). ONE PATH ONLY, unlike `control.forgetSession`
+    // four lines down, and that asymmetry is deliberate rather than an
+    // oversight: #271's gap was about things that leave someone WAITING — a
+    // parked permission, an unanswered control request. This holds a string.
+    // A self-exited session keeps its record by design (#187) and the reap runs
+    // this path anyway, so nothing leaks; the only reachable consequence is a
+    // corpse answering `currentModel` with its last model, which nothing
+    // renders because `listModels` says `session-gone` first.
+    tearDownStep(liveId, 'streamModel.forgetSession', () => streamModel?.forgetSession(liveId));
     // …and its own Feed blocks (P2-E18-10)
     tearDownStep(liveId, 'streamFeed.forgetSession', () => deps.streamFeed?.forgetSession(liveId));
     // …and anything the control channel had in flight (#721). Without this a
@@ -771,11 +784,32 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     }
     return manager.listModels(sessionId);
   });
-  broker.handle('sessions:setModel', (_e, sessionId: string, model: unknown) => {
+  broker.handle('sessions:setModel', async (_e, sessionId: string, model: unknown) => {
     if (typeof sessionId !== 'string') {
       return { ok: false, reason: 'invalid', message: 'no session' } satisfies ControlVerdict;
     }
-    return manager.setModel(sessionId, model);
+    const verdict = await manager.setModel(sessionId, model);
+    // OPTIMISTIC, and only on a success the CLI actually gave us. The next
+    // `system:init` carries the authoritative value, but that is a whole TURN
+    // away — and a picker whose tick only moved when the user next sent a
+    // prompt reads as a control that did nothing. `set_model` was verified by
+    // effect against the real CLI, so this anticipates a value measured to be
+    // coming rather than inventing one.
+    if (verdict.ok && typeof model === 'string') streamModel?.noteSet(sessionId, model.trim());
+    return verdict;
+  });
+  /**
+   * Which model this session is running, or `null` for "it has not said yet".
+   *
+   * NULL IS A REAL ANSWER. `system:init` is the only message that carries the
+   * model and it arrives once per TURN, so a session that has run no turn has
+   * genuinely never reported one — which is the model picker's most common
+   * case, a fresh card. The renderer must render that as "not known yet", never
+   * as a default: see `stream-model.ts`.
+   */
+  broker.handle('sessions:currentModel', (_e, sessionId: string) => {
+    if (typeof sessionId !== 'string') return null;
+    return streamModel?.modelFor(sessionId) ?? null;
   });
   // "Allow all (this session)": answered at the SERVER from now on — no
   // hold, no needs-permission event, no beep (review P2 #19, Dan round 4).

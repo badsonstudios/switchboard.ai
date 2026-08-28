@@ -1,4 +1,4 @@
-// Which typed slash commands switchboard answers itself (#632).
+// Which typed slash commands switchboard answers itself (#632, #721).
 //
 // THE RULE UNDER TEST IS THE STRICTNESS, not the match. Recognising `/mcp` is
 // one line; the reason this has a test file is everything it must NOT
@@ -27,6 +27,28 @@ describe('/mcp opens the manager', () => {
   });
 });
 
+// The second command to get a surface (#721). It could only be intercepted once
+// there was an outbound control channel to ask the CLI what models exist and to
+// tell it which to run — before that, this would have been a dead end with a
+// dialog in front of it.
+describe('/model opens the picker', () => {
+  it('matches the bare command', () => {
+    expect(kind('/model')).toBe('open-model');
+  });
+
+  it('tolerates trailing whitespace and is case-insensitive', () => {
+    expect(kind('/model ')).toBe('open-model');
+    expect(kind('/MODEL')).toBe('open-model');
+  });
+
+  it('does not shadow /mcp, and /mcp does not shadow it', () => {
+    // Cheap, but the two routes now live in one table and a greedy pattern in
+    // either would be invisible until someone typed the other command.
+    expect(kind('/mcp')).toBe('open-mcp');
+    expect(kind('/model')).toBe('open-model');
+  });
+});
+
 describe('everything else reaches the session untouched', () => {
   const SENDS = [
     // AN ARGUMENT MEANS THE CLI'S PARSER SHOULD SEE IT. `/mcp list` is not the
@@ -37,10 +59,12 @@ describe('everything else reaches the session untouched', () => {
     // somebody's project command that merely starts the same way
     '/mcp-status',
     '/mcprestart',
-    // the other picker commands — #633's, and deliberately NOT ours yet: an
-    // intercept with no surface behind it swallows the command as well as
+    // an argument belongs to the CLI here too
+    '/model sonnet',
+    '/model-x',
+    // the REMAINING picker commands — still #633's, and deliberately NOT ours:
+    // an intercept with no surface behind it swallows the command as well as
     // failing to answer it
-    '/model',
     '/permissions',
     '/agents',
     '/resume',
@@ -50,6 +74,10 @@ describe('everything else reaches the session untouched', () => {
     'run /mcp for me',
     // NOT a command to the CLI either, so not one to us
     ' /mcp',
+    ' /model',
+    // a newline means there is a second line: a prompt, not a command. The
+    // patterns are anchored WITHOUT the `m` flag precisely so this sends.
+    '/model\nwhich one should I use?',
     '',
     '/',
   ];

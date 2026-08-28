@@ -3,6 +3,73 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ READY — 2026-08-28: **#721 PR 2 of 2** — the `/model` picker
+>
+> Branch `feature/721-model-picker`, stacked on `feature/721-control-channel`
+> (PR #726). **6478 tests / 249 files**, lint, typecheck, build clean. This is
+> the consumer that CLOSES #721.
+>
+> **What shipped:** `main/sessions/stream-model.ts` (the per-session
+> `system:init.model` store), `sessions:currentModel` + capability + preload,
+> `/model` added to `slash-intercept`'s new `ROUTES` table, `ModelPickerDialog`,
+> the store signal + FeedView routing + App wiring, manual page 18, CHANGELOG,
+> DESIGN's **fourth** §5.17 correction, dogfood row. 39 tests.
+>
+> ## 🚨 /review CAUGHT TWO BLOCKERS, AND THE FIRST WAS ON DAN'S DEFAULT SETUP
+>
+> **1. TWO ROWS TICKED AT ONCE.** `isCurrent` was a per-row predicate matching
+> `value` OR `resolvedModel`, and the captured payload has a collision:
+>
+> ```
+> "default"   -> "claude-opus-5[1m]"
+> "opus[1m]"  -> "claude-opus-5[1m]"      <- same resolved id
+> ```
+>
+> So **anyone who had never switched models saw two ticks** and two
+> `aria-checked` radios in one radiogroup. Now `currentIndex(models, current)`
+> resolves ONE row — exact `value` wins, else the first `resolvedModel` match.
+> **The test fixture carried 3 of the 5 entries and had dropped both opus rows,
+> so it could not express the collision.** Fixture widened to all five.
+>
+> **2. THE HEADER NAMED THE WRONG SESSION.** The dialog took `liveId` from the
+> command but `sessionTitle` from `activeSession` — the focused card in the MAIN
+> window. Type `/model` in a popped-out session and it changes that session's
+> model under a different session's name, in the header and the confirmation.
+> Now looked up by live id. The popout case is already in the #632 dogfood row,
+> so it would have been hit on the first hand-test.
+>
+> ## THE MEASUREMENT THAT SHAPED THE WHOLE SURFACE
+>
+> **Nothing the CLI returns marks the current model** — not `list_models`, not
+> `initialize`. Only `system:init.model`, **once per TURN**. So a session that
+> has run no turn genuinely has not said, and the picker draws THREE states:
+> ticked · "not known yet" · "running <id>, which isn't in this list" (that
+> third one was a review catch — it previously rendered like the fresh-card case
+> minus the sentence that makes it honest).
+>
+> ## OTHER FIXES FROM THAT REVIEW
+>
+> * `t` was in the sitting effect's deps — a language change mid-switch would
+>   have bumped the epoch and silently discarded a `set_model` the CLI had
+>   already applied.
+> * `busy` is UI state and resets per sitting, so click → Escape → reopen →
+>   click put a SECOND `set_model` on the wire. Now an `inFlight` ref, which
+>   survives the sitting the way the request does.
+> * `live` and `epoch` were two guards for one fact; `live` removed.
+> * Two house-rule guard tests failed and were RIGHT both times: the ✓ used an
+>   accent for a WORD (`tokens.drift`), and the dialog was undeclared in
+>   `always-visible-notices`' `NOT_A_NOTICE`.
+> * A bug I found reading my own code back: the transient-reset effect and the
+>   load effect had identical deps and both touched `epoch`; the reset ran
+>   second and invalidated the load's claimed epoch, so **the list never
+>   rendered**. Merged into one effect.
+>
+> ## MERGE ORDER
+>
+> PR #726 (the channel) first, then this. Both branches also touch PROGRESS.md,
+> as does #725 (the MCP honesty fix) — expect small conflicts there and nowhere
+> else.
+
 > # 🔨 IN PROGRESS — 2026-08-28: **#721 PR 1 of 2** — the channel itself
 >
 > Branch `feature/721-control-channel`, cut from main. **6432 tests / 247 files**,

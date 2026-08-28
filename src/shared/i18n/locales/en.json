@@ -845,6 +845,26 @@
     "urgent": "Never jump, just the lamp",
     "none": "Never jump, skip the queue"
   },
+  "model": {
+    "title": "Model",
+    "forSession": "for {title}",
+    "noSession": "Open a session to choose its model.",
+    "loading": "Asking Claude Code which models it has…",
+    "empty": "Claude Code didn't offer any models.",
+    "unavailable": "Couldn't read the model list.",
+    "unknownCurrent": "Claude Code only reports which model it's running once a session has replied at least once, so nothing is ticked yet. Pick one to set it, or send a prompt and reopen this.",
+    "unlistedCurrent": "This session is running {name}, which isn't one of the choices above. Picking one below will switch it.",
+    "currentMark": "✓",
+    "switching": "switching…",
+    "changed": "Now using {name}.",
+    "notStream": "This session runs in Terminal mode, so switchboard can't change its model. Type /model in its Terminal tab instead — Claude Code's own picker works there.",
+    "sessionGone": "That session has stopped, so there's nothing to change.",
+    "timedOut": "Claude Code didn't answer. The session may be busy starting up — try again in a moment.",
+    "failed": "Couldn't change the model. The session is untouched.",
+    "cliNote": "This asks Claude Code to switch models for this session only, straight away — no restart. It doesn't change your default for new sessions.",
+    "close": "Close",
+    "closeIcon": "✕"
+  },
   "mcp": {
     "title": "MCP servers",
     "forSession": "for {title}",
