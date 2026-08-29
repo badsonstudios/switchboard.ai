@@ -3,7 +3,67 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ✅ READY — 2026-08-28: **#721 PR 2 of 2** — the `/model` picker
+> # 🚢 RELEASED — 2026-08-28: **v0.8.5** — `/model`, the control channel, and an honest MCP list
+>
+> **All three PRs merged and the tag is pushed.** #725 (`45101bd`), #726
+> (`b073883`), #728 (`cffc078`), release commit `5b0fcdb`, tag `v0.8.5`.
+> `0.8.6 — unreleased` is open. **6481 tests / 249 files.**
+>
+> **UNTESTED BY HAND.** Two dogfood rows are waiting: `/model` and the MCP
+> panel's new footer. The one no machine can make is item 1 of the `/model` row
+> — only the real CLI proves `set_model` had an EFFECT rather than being
+> acknowledged.
+>
+> ## WHAT THE ITEM ACTUALLY WAS, IN ONE LINE EACH
+>
+> * **#723** was **not** the bug it was filed as. The screenshots compared our
+>   own MCP dialog against the CLI's `/mcp` picker, not session vs session. No
+>   spawn-fidelity problem exists. The pane reads three config files and
+>   connectors/plugins live in none — 13 of 16 on the reporting machine.
+> * **#721** shipped the outbound control channel and `/model` on it. The
+>   channel is what #633, #715 and #714's reconnect follow-up were all waiting
+>   for; each can now cite `main/transport/control-channel.ts` instead of
+>   inventing a transport.
+>
+> ## THE THREE THINGS THAT WOULD COST THE NEXT PERSON A DAY
+>
+> 1. **`request_id` is NESTED** at `msg.response.request_id`, absent at the top
+>    level. Inbound `can_use_tool` carries it at the TOP level. A correlator
+>    that copies the inbound reader matches nothing, for ever, and looks exactly
+>    like a CLI that never answers.
+> 2. **`set_model` with no `model` field answers `success` and changes
+>    nothing.** Validate before the wire.
+> 3. **Nothing marks the CURRENT model** — not `list_models`, not `initialize`.
+>    Only `system:init.model`, once per TURN. `main/sessions/stream-model.ts`.
+>
+> ## AND ONE ABOUT PROCESS
+>
+> **I put a wrong finding in `reference-implementations.md` and review caught
+> it.** "Send `initialize` first or it hangs" was a bug in my own probe — it
+> only sent its verb from inside a `system:init` handler, and that arrives once
+> per turn, so on a session with no turn it sent nothing at all. **A silent CLI
+> is worth suspecting your own probe over.** §1.2.2 records the wrong version
+> too, on purpose.
+>
+> Review also caught a **double tick** on Dan's default setup (`default` and
+> `opus[1m]` share a `resolvedModel`) and the picker **naming the wrong
+> session** in a popout. Both were live; the test fixture carried 3 of 5 models
+> and could not express the first.
+>
+> ## KNOWN FLAKE
+>
+> `win-cmd.test.ts`'s real-`cmd.exe` case times out at 5s under full-suite load
+> and passes isolated in 1.5s — seen 3× locally today, **never once on CI**
+> across 16 checks. Same shape as #651.
+>
+> ## NEXT UP
+>
+> No item started. #633 has shrunk to the `/mcp` route, the per-command
+> disposition table and the manual. #715 (context %) is now a `get_context_usage`
+> call away. **#724** was filed today: `trust.ts` writes a case-variant project
+> key, so auto-trust can silently never apply.
+
+> # ✅ MERGED — 2026-08-28: **#721 PR 2 of 2** — the `/model` picker → PR #728
 >
 > Branch `feature/721-model-picker`, stacked on `feature/721-control-channel`
 > (PR #726). **6478 tests / 249 files**, lint, typecheck, build clean. This is
