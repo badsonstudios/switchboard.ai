@@ -5,7 +5,27 @@
 
 > # 🔨 IN PROGRESS — 2026-08-29: **#729 PR 2 of 2** — the toggle/reconnect verbs
 >
-> Just started. Probing before the plan gate, per the standing rule.
+> **PR #732 is OPEN** — https://github.com/badsonstudios/switchboard.ai/pull/732
+> Branch `feature/729-mcp-toggle-reconnect` (`7e6ca30`). **6588 tests / 251
+> files**, typecheck and lint clean. `Closes #729`. Awaiting Dan's review.
+>
+> ## WHEN THIS MERGES, CUT v0.8.6 — that is the whole reason it was held
+>
+> Dan is waiting on this to test the MCP work on the work laptop. **Merging is
+> not enough** (see the mistake below): after the merge, bump `package.json`,
+> date the CHANGELOG's `0.8.6` section, open the next `— unreleased`, tag
+> `v0.8.6` and push the tag.
+>
+> ## THE BLOCKER REVIEW CAUGHT — worth remembering as a shape
+>
+> **Two independent off-switches that share a word.** `disabledMcpjsonServers`
+> is APPROVAL; `disabledMcpServers` is the new TOGGLE; both render "turned off".
+> The draft read the label from one and the button from the other, so a declined
+> server offered *Turn off* and never *Turn on* — press, press, press, and it
+> never comes back. `runtimeStatus` now decides label and switch together.
+>
+> **And `mcp_reconnect` UNDOES a toggle** (measured), so Reconnect-all had to
+> learn to skip disabled rows or one press would silently re-enable everything.
 >
 > ## ⛔ v0.8.6 IS DELIBERATELY HELD FOR THIS
 >
