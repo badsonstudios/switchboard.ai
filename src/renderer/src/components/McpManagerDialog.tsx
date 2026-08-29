@@ -53,9 +53,22 @@
 // is the same config surface, not an escape hatch from it. The runtime list is
 // reachable exactly once, over the control protocol: `mcp_status` returns
 // `{name, status, serverInfo, config, scope, tools[]}` per server, measured
-// against a session spawned with our own flag list. That is #721's channel, and
-// it is what should replace the file read here. Until then the footer says so
-// out loud rather than letting a short list read as a complete one.
+// against a session spawned with our own flag list.
+//
+// DONE (#729). The pane now asks `mcp_status` whenever the card has a live
+// stream session, and draws the config list only when it cannot — a suspended
+// card or a Terminal-transport session, neither of which has a control channel.
+// So the subset case still exists; it is just no longer the only case, and the
+// footer now names WHICH of the three reasons applies instead of stating the
+// limit unconditionally.
+//
+// ⚠️ THE RUNTIME ANSWER SETTLES. A freshly spawned session reports every server
+// as `pending`, with no `serverInfo` and no `tools`, for several seconds before
+// it reports `connected` (measured 2026-08-29 —
+// `spike/probes/721/probe-mcp-settle.mjs`: pending at 0.9s, connected at 5.0s).
+// §1.2.2's captured example is the WARM answer. Asking once on open is
+// therefore a design that shows a healthy session as a wall of grey, which is
+// why there is a bounded re-poll below.
 //
 // SHOW A SECRET. `McpServerWire` carries `envKeys` and `headerKeys` — the NAMES
 // — and has no field that can hold a value, so there is nothing here to reveal
@@ -70,8 +83,11 @@ import type {
   McpHealth,
   McpInventoryWire,
   McpMutationResult,
+  McpRuntimeScope,
+  McpRuntimeServer,
   McpScope,
   McpServerWire,
+  McpStatusWire,
 } from '../../../shared/mcp';
 
 export interface McpManagerDialogProps {
@@ -123,6 +139,86 @@ export function rowStatus(
   if (health === 'failed') return { labelKey: 'mcp.stateFailed', token: 'failed' };
   return { labelKey: 'mcp.stateUnknown', token: 'unknown' };
 }
+
+/**
+ * The status word for one RUNTIME row (#729).
+ *
+ * SIMPLER THAN `rowStatus` BECAUSE THERE IS NOTHING TO RECONCILE. That function
+ * has to arbitrate between an approval state read from one file and a health
+ * verdict scraped from a CLI's prose; this one is handed a single word by the
+ * session that owns the connection. The precedence problem does not exist here,
+ * which is most of the argument for sourcing the list this way.
+ *
+ * `pending` GETS ITS OWN TOKEN and reuses the needs-input hue — it is a server
+ * mid-handshake, which is a "wait" rather than a "wrong", and it is on screen
+ * for about five seconds of every fresh session. Painting it in the failure hue
+ * would make a healthy session look broken on open.
+ *
+ * Exported and pure so the mapping is unit-tested rather than asserted through a
+ * rendered tree, same as `rowStatus`.
+ */
+export function runtimeStatus(server: McpRuntimeServer): {
+  labelKey: string;
+  token: 'connected' | 'failed' | 'pending' | 'disabled' | 'unknown';
+} {
+  // APPROVAL STILL BEATS CONNECTION STATE, exactly as `rowStatus` argues: an
+  // unapproved `.mcp.json` server is one the CLI has deliberately not connected
+  // to, and reporting "not connecting" for it is true and useless — the symptom
+  // instead of the cause. The state comes from the config entry `merge.ts`
+  // folded in, because `mcp_status` has no field for it. Review caught the
+  // version without this: it silently dropped "waiting for your approval" from
+  // the path most sessions are on.
+  if (server.approval === 'pending') return { labelKey: 'mcp.statePending', token: 'pending' };
+  if (server.approval === 'disabled') return { labelKey: 'mcp.stateDisabled', token: 'disabled' };
+  switch (server.status) {
+    case 'connected':
+      return { labelKey: 'mcp.stateConnected', token: 'connected' };
+    case 'pending':
+      return { labelKey: 'mcp.stateConnecting', token: 'pending' };
+    case 'failed':
+      return { labelKey: 'mcp.stateFailed', token: 'failed' };
+    case 'needs-auth':
+      return { labelKey: 'mcp.stateNeedsAuth', token: 'pending' };
+    default:
+      return { labelKey: 'mcp.stateUnknown', token: 'unknown' };
+  }
+}
+
+/** How many tool names a row spells out before it stops counting. */
+const TOOL_PREVIEW = 5;
+
+/**
+ * The first few tool names, with a count for the rest.
+ *
+ * Exported and pure because the bound is the point: a server with 40 tools must
+ * not turn its row into a paragraph, and asserting that through a rendered tree
+ * would test the CSS rather than the rule.
+ */
+export function toolPreview(tools: readonly string[], limit = TOOL_PREVIEW): string {
+  if (tools.length <= limit) return tools.join(', ');
+  return `${tools.slice(0, limit).join(', ')} +${tools.length - limit}`;
+}
+
+/**
+ * The order runtime scopes are listed in — most specific first, the same
+ * principle `SCOPE_ORDER` uses, extended over the five scopes the config files
+ * cannot express.
+ *
+ * `unknown` LAST AND STILL PRESENT. A scope a newer CLI grew is a server the
+ * session really has, and dropping it from the render would reintroduce exactly
+ * the invisibility #723 was filed about — one layer further in.
+ */
+const RUNTIME_SCOPE_ORDER: readonly McpRuntimeScope[] = [
+  'project',
+  'local',
+  'user',
+  'enterprise',
+  'managed',
+  'dynamic',
+  'skills',
+  'builtin',
+  'unknown',
+];
 
 /**
  * The message for a mutation that did not work — the CLI's own words wherever
@@ -182,6 +278,20 @@ const TOKEN_INK: Record<ReturnType<typeof rowStatus>['token'], string> = {
   unknown: 'var(--faint)',
 };
 
+/**
+ * How often to re-ask `mcp_status` while a server is still connecting, and how
+ * many times.
+ *
+ * BOTH NUMBERS COME FROM THE MEASUREMENT, not from taste: the observed
+ * `pending` → `connected` transition was between 2.0s and 5.0s on a freshly
+ * spawned session. A 2s period sees it within one tick of settling; eight asks
+ * gives ~16s, comfortably past the measured window without turning a genuinely
+ * stuck server into an endless poll. Running out is not a failure — the row
+ * keeps saying `pending`, which by then is the truth.
+ */
+const STATUS_POLL_MS = 2000;
+const STATUS_POLL_LIMIT = 8;
+
 /** What the pane is doing right now, so two buttons cannot run at once and the
  *  one you pressed is the one that says "working". */
 type Busy = null | { kind: 'add' | 'reset' | 'reconnect' } | { kind: 'remove'; key: string };
@@ -195,6 +305,40 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
   const { t } = useTranslation();
   const dialog = React.useRef<HTMLDivElement | null>(null);
   const [inventory, setInventory] = React.useState<McpInventoryWire | null>(null);
+  /**
+   * The servers the SESSION really has (#729), or `null` when we could not ask.
+   *
+   * WHEN THIS IS NON-NULL IT IS THE LIST. The config inventory stays loaded
+   * underneath it — it is what makes rows removable, and it is the fallback the
+   * moment the session goes away — but it is not what gets drawn.
+   */
+  const [runtime, setRuntime] = React.useState<readonly McpRuntimeServer[] | null>(null);
+  /** config-file servers this session has not loaded — see `notLoaded` in
+   *  `main/mcp/merge.ts`. `mcp_status` is frozen at spawn, so this is where a
+   *  server you added a moment ago actually appears. */
+  const [notLoaded, setNotLoaded] = React.useState<readonly McpServerWire[]>([]);
+  /**
+   * Why the runtime list is what it is — and `null` means WE HAVE NOT ASKED YET.
+   *
+   * ── IT CARRIES ITS OWN KEY, AND THAT IS NOT DECORATION ─────────────────────
+   *
+   * The health check below spawns a CLI process that connects to every server
+   * and is allowed twenty seconds, and it must not fire in the gap between the
+   * dialog opening and `mcp_status` answering — on a live session that answer is
+   * milliseconds away, so the spawn is pure waste.
+   *
+   * A bare reason could not express that. React runs both effects in the SAME
+   * passive-effect flush, so on a folder switch the health effect's closure
+   * still held the PREVIOUS render's reason: switching from a suspended card
+   * (`no-session`) to a folder with a live session spawned the CLI anyway, on a
+   * result that was then thrown away. Pairing the reason with the folder+session
+   * it describes makes the stale read unrepresentable rather than merely
+   * unlikely. Found in review.
+   */
+  const [status, setStatus] = React.useState<{
+    key: string;
+    reason: McpStatusWire['reason'];
+  } | null>(null);
   const [health, setHealth] = React.useState<Readonly<Record<string, McpHealth>>>({});
   const [healthRan, setHealthRan] = React.useState(true);
   const [loading, setLoading] = React.useState(false);
@@ -241,6 +385,19 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
    * between effects. Cleared on close, so reopening always re-probes.
    */
   const probedFolder = React.useRef<string | null>(null);
+  /**
+   * The folder whose HEALTH we have spawned a CLI for.
+   *
+   * SEPARATE FROM `probedFolder` since #729, because the two questions came
+   * apart. The listing now loads unconditionally while the health check waits to
+   * find out whether `mcp_status` made it unnecessary — so one ref gating both
+   * would either re-spawn the CLI on every re-list or block a health check that
+   * had never actually run.
+   */
+  const healthProbed = React.useRef<string | null>(null);
+  /** the folder+session the runtime answer on screen belongs to — see the status
+   *  effect for why the reset lives there and not in a `[folder]` effect */
+  const statusKey = React.useRef<string | null>(null);
   /**
    * Which "sitting" of the dialog we are in — bumped on every open/close and
    * every folder change.
@@ -307,10 +464,147 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
       setLoading(false);
       if (!inv || inv.folder !== folder) return;
       setInventory(inv);
-      // The expensive half runs on the FIRST load of a folder only — see
-      // `generation`. Three removals in a row must not mean three CLI spawns
-      // that each connect to every configured server.
-      if (!probe) return;
+    })();
+    return () => {
+      live = false;
+    };
+  }, [open, folder, generation]);
+
+  /**
+   * The real inventory, over the session's control channel (#729).
+   *
+   * ── IT ASKS AGAIN WHILE ANYTHING IS `pending` ──────────────────────────────
+   *
+   * Because the answer SETTLES. Measured on a freshly spawned session
+   * (`spike/probes/721/probe-mcp-settle.mjs`): `pending` with no tool list at
+   * 0.9s, `connected` with `serverInfo` and three tools at 5.0s. Asking once, on
+   * open, is therefore a design that shows the user a worse answer than the one
+   * available two seconds later — every server greyed and toolless, on a session
+   * that is perfectly healthy.
+   *
+   * BOUNDED, AND IT STOPS ON ITS OWN. A server that is genuinely stuck
+   * connecting stays `pending` for ever, and a poll with no cap would sit there
+   * re-asking until the user closed the dialog. `pending` is a state this pane
+   * DRAWS (see `runtimeStatus`), so giving up on it costs nothing but the
+   * refresh — the row keeps saying `pending`, which by then is the truth rather
+   * than a stale first look.
+   *
+   * A warm session — which is nearly every session, since cards live for hours —
+   * answers `connected` on the first ask and never enters this loop at all.
+   */
+  React.useEffect(() => {
+    if (!open || !folder) return;
+    const liveId = props.liveId;
+    // THE PREVIOUS SESSION'S SERVERS GO FIRST, and this effect does it rather
+    // than a `[folder]` effect beside it. React runs effects in declaration
+    // order, so a separate reset declared LATER clears what this one has just
+    // set — which is invisible for the async answer and fatal for the
+    // synchronous `no-session` branch below. Caught by its own test.
+    //
+    // KEYED, so it does not fire on a `generation` bump: a re-list after a
+    // removal must not blank sixteen rows and re-fetch them, which is the same
+    // flash the list effect's `probe` flag exists to prevent.
+    const key = `${folder}|${liveId ?? ''}`;
+    if (statusKey.current !== key) {
+      statusKey.current = key;
+      setRuntime(null);
+      setNotLoaded([]);
+      setStatus(null);
+    }
+    if (!liveId) {
+      // A suspended card. Not an error and not a gap: the config files are the
+      // only source it has, and `no-session` is what makes the pane SAY so
+      // rather than drawing a subset as though it were everything.
+      setRuntime(null);
+      setNotLoaded([]);
+      setStatus({ key, reason: 'no-session' });
+      return;
+    }
+    let live = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // PER EFFECT RUN, not per sitting: a `generation` bump after a removal
+    // re-enters here and refreshes the budget. Deliberate — a mutation is a
+    // reason to look again, and the bound exists to stop an idle poll running
+    // for ever, not to ration deliberate refreshes.
+    let asked = 0;
+    const tick = async (): Promise<void> => {
+      // GUARDED, because `mutate` is and this was not. A bridge that throws
+      // would otherwise leave `status` at `null` FOR EVER — which since the
+      // restructure also permanently blocks the health fallback, so the pane
+      // would sit with no runtime list and no status column and no explanation.
+      let res: McpStatusWire | undefined;
+      try {
+        res = answered(await window.switchboard?.mcp?.status?.(folder, liveId));
+      } catch {
+        res = undefined;
+      }
+      if (!live) return;
+      asked += 1;
+      // The SESSION echo, for the same reason the list effect checks the folder:
+      // an answer for the card the user has already left must not paint the one
+      // they are looking at now.
+      if (!res || res.sessionId !== liveId) {
+        setStatus({ key, reason: 'unavailable' });
+        return;
+      }
+      setStatus({ key, reason: res.reason });
+      // A FAILURE LEAVES THE LIST ALONE — no `else`, on purpose. A single
+      // timed-out poll (the channel gets ten seconds) would otherwise swap
+      // sixteen rows the user is reading for the three-row config subset, put
+      // the #723 footer back, and arm the health spawn, all for a blip. Nothing
+      // was learned about the servers, so nothing about them changes; the
+      // reason above still updates, so the pane can say it is out of touch.
+      if (res.reason === 'ok') {
+        setRuntime(res.servers);
+        setNotLoaded(res.notLoaded);
+      }
+      if (res.reason !== 'ok' || asked >= STATUS_POLL_LIMIT) return;
+      if (!res.servers.some((s) => s.status === 'pending')) return;
+      timer = setTimeout(() => void tick(), STATUS_POLL_MS);
+    };
+    void tick();
+    return () => {
+      live = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, [open, folder, props.liveId, generation]);
+
+  /**
+   * The health check — now the FALLBACK rather than the first move (#729).
+   *
+   * IT ONLY RUNS WHEN `mcp_status` COULD NOT. That is the whole saving: this
+   * spawns a CLI, connects to every configured server and is allowed twenty
+   * seconds to do it, and for a live Direct session the control channel has
+   * already answered the same question in milliseconds — with a status per
+   * server that did not have to be scraped out of prose and matched on glyphs.
+   *
+   * IT DID NOT GO AWAY, and #729's summary line saying `mcp_status` retires it
+   * is true only for a live session. A SUSPENDED CARD has no control channel and
+   * this is its only status source; deleting it would have cost those cards a
+   * column they have today, which is a regression traded for a tidiness win.
+   *
+   * WAITS FOR A REAL REASON, AND FOR ONE ABOUT THIS FOLDER. A null `status` is
+   * a call still in flight, and firing a twenty-second process spawn into that
+   * gap is exactly the cost this restructuring exists to avoid. The KEY check
+   * beside it is what makes that hold across a folder switch: both effects run
+   * in one flush, so without it this one reads the previous render's reason and
+   * spawns on a folder whose session was about to answer. See `status`.
+   */
+  React.useEffect(() => {
+    if (!open || !folder) return;
+    const key = `${folder}|${props.liveId ?? ''}`;
+    if (!status || status.key !== key || status.reason === 'ok') return;
+    // ⚠️ UNDER StrictMode IN DEV THIS RUNS ONCE, NOT TWICE, and the once it
+    // skips is the real one: the ref is set BEFORE the await, so the
+    // mount→cleanup→mount cycle finds it already claimed and returns early.
+    // Inherited from `probedFolder`, not introduced here — but the health check
+    // is now reachable ONLY through this effect, so under `npm run dev` a
+    // suspended card's status column can look permanently broken when it is
+    // fine in a packaged build. Worth knowing before hand-testing that case.
+    if (healthProbed.current === key) return;
+    healthProbed.current = key;
+    let live = true;
+    void (async () => {
       const h = answered(await window.switchboard?.mcp?.health?.(folder));
       if (!live) return;
       // A REFUSED OR ABSENT ANSWER IS `ok: false`, not silence. Without this the
@@ -329,7 +623,7 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
     return () => {
       live = false;
     };
-  }, [open, folder, generation]);
+  }, [open, folder, props.liveId, status, generation]);
 
   React.useEffect(() => {
     if (!props.open) return;
@@ -355,7 +649,19 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
     setBusy(null);
     // ...and reopening re-probes health, because the answer is minutes old at
     // best and the whole reason it is a separate call is that it goes stale.
-    if (!props.open) probedFolder.current = null;
+    if (!props.open) {
+      probedFolder.current = null;
+      healthProbed.current = null;
+      statusKey.current = null; // so reopening re-asks rather than trusting the last sitting
+      // AND THE RUNTIME ANSWER GOES TOO. It is the stalest of the three: a
+      // session can gain a connector, lose a plugin or be restarted between two
+      // sittings, and reopening onto the previous list would show servers this
+      // session may no longer have. `null` means "not asked", which is what is
+      // actually true at that moment.
+      setRuntime(null);
+      setNotLoaded([]);
+      setStatus(null);
+    }
   }, [props.open]);
 
   // A folder switch is a new sitting too: a mutation aimed at the session the
@@ -442,6 +748,34 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
       // from "whichever scope has it", and this pane deliberately lists one
       // name twice when two scopes define it.
       window.switchboard?.mcp?.remove?.(folder, s.name, s.scope)
+    );
+    if (problem === STALE) return;
+    setNotice(
+      problem ? { bad: true, text: problem } : { bad: false, text: t('mcp.removed', { name: s.name }) }
+    );
+  };
+
+  /**
+   * Remove a RUNTIME row (#729).
+   *
+   * `removeScope`, NOT `s.scope`, AND THE TYPE IS WHAT ENFORCES IT. The runtime
+   * scope vocabulary has eight values and `claude mcp remove -s` accepts three;
+   * a row the CLI resolved as `dynamic` may be backed by a `user`-scope
+   * definition, and `remove -s dynamic` is not a call that means anything. Main
+   * carries the write-side scope across on the wire precisely so the renderer
+   * never has to narrow one vocabulary into the other.
+   *
+   * ITS ABSENCE IS A BUG, NOT A CASE. `readOnly` false without a `removeScope`
+   * cannot happen — `enrichRuntime` sets both from the same match — so this
+   * returns rather than guessing at `local`, which would delete from a scope
+   * nobody named.
+   */
+  const doRemoveRuntime = async (s: McpRuntimeServer): Promise<void> => {
+    if (!folder || s.readOnly || !s.removeScope) return;
+    setConfirmRemove(null);
+    const scope = s.removeScope;
+    const problem = await mutate({ kind: 'remove', key: `${s.scope}:${s.name}` }, () =>
+      window.switchboard?.mcp?.remove?.(folder, s.name, scope)
     );
     if (problem === STALE) return;
     setNotice(
@@ -596,6 +930,158 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
     );
   };
 
+  /**
+   * One row of the RUNTIME list (#729).
+   *
+   * Deliberately a sibling of `row` rather than a generalisation of it. The two
+   * describe different things — a config row has an approval state, arguments
+   * and a source file; a runtime row has a live status, a version and a tool
+   * list — and the shape that covered both would be a union with six optional
+   * fields whose combinations nothing enforces. They share the styling, which is
+   * the part that actually has to match.
+   */
+  const runtimeRow = (s: McpRuntimeServer): React.JSX.Element => {
+    const state = runtimeStatus(s);
+    const key = `${s.scope}:${s.name}`;
+    const removing = busy?.kind === 'remove' && busy.key === key;
+    return (
+      <div
+        key={key}
+        data-mcp-server={s.name}
+        data-mcp-scope={s.scope}
+        data-mcp-state={state.token}
+        data-mcp-readonly={s.readOnly ? '' : undefined}
+        style={{
+          display: 'flex',
+          alignItems: 'baseline',
+          gap: 8,
+          padding: '7px 14px',
+          borderBlockStart: '1px solid var(--border)',
+        }}
+      >
+        <span
+          aria-hidden
+          style={{
+            inlineSize: 7,
+            blockSize: 7,
+            borderRadius: '50%',
+            background: TOKEN_HUE[state.token],
+            flexShrink: 0,
+            alignSelf: 'center',
+          }}
+        />
+        <div style={{ minInlineSize: 0, flex: 1 }}>
+          <div style={{ fontSize: 12, fontWeight: 600 }}>
+            {s.name}
+            {/* The server's own version, once it has connected. Absent for the
+                whole pending window — see `McpRuntimeStatus`. */}
+            {s.version && (
+              <span style={{ fontWeight: 400, color: 'var(--faint)', marginInlineStart: 6 }}>
+                {s.version}
+              </span>
+            )}
+          </div>
+          <div
+            style={{
+              fontSize: 10.5,
+              color: 'var(--muted)',
+              fontFamily: 'var(--font-mono)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {s.target || t('mcp.noCommand')}
+          </div>
+          {/* THE FACT NO CONFIG FILE HOLDS, and the reason this list is worth a
+              round trip: "which of my sixteen servers is actually giving me
+              tools" was unanswerable from the files.
+
+              BOUNDED, because the count is not small. The GitHub MCP server
+              exposes 40+ tools, and joining them all into an unclipped div
+              turns one row into a paragraph — on exactly the sixteen-server
+              machine this item exists for. The full list is in the `title`. */}
+          {s.tools.length > 0 && (
+            <div
+              title={s.tools.join(', ')}
+              style={{
+                fontSize: 10,
+                color: 'var(--faint)',
+                marginBlockStart: 2,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {t('mcp.tools', { count: s.tools.length, names: toolPreview(s.tools) })}
+            </div>
+          )}
+          {(s.envKeys.length > 0 || s.headerKeys.length > 0) && (
+            <div style={{ fontSize: 10, color: 'var(--faint)', marginBlockStart: 2 }}>
+              {t('mcp.carries', { keys: [...s.envKeys, ...s.headerKeys].join(', ') })}
+            </div>
+          )}
+        </div>
+        <span style={{ fontSize: 10.5, color: TOKEN_INK[state.token], flexShrink: 0 }}>
+          {t(state.labelKey)}
+        </span>
+        {/* VISIBLY READ-ONLY, NOT A DISABLED BUTTON (#729's own criterion). You
+            cannot `claude mcp remove` a claude.ai connector or a plugin's
+            server — they are in no file, so there is nothing for the subcommand
+            to edit. A greyed-out Remove would say "not right now"; a word says
+            "not ever, and here is why". */}
+        {s.readOnly ? (
+          <span
+            style={{ fontSize: 10, color: 'var(--faint)', flexShrink: 0 }}
+            title={t('mcp.readOnlyWhy')}
+          >
+            {t('mcp.readOnly')}
+          </span>
+        ) : confirmRemove === key ? (
+          <span style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+            <Btn
+              onClick={() => void doRemoveRuntime(s)}
+              disabled={busy !== null}
+              title={t('mcp.removeConfirmTitle')}
+            >
+              {t('mcp.removeConfirm')}
+            </Btn>
+            <Btn onClick={() => setConfirmRemove(null)}>{t('mcp.form.cancel')}</Btn>
+          </span>
+        ) : (
+          <Btn
+            onClick={() => setConfirmRemove(key)}
+            disabled={busy !== null}
+            title={t('mcp.removeTitle', { name: s.name })}
+          >
+            {removing ? t('mcp.removing') : t('mcp.remove')}
+          </Btn>
+        )}
+      </div>
+    );
+  };
+
+  const runtimeSection = (scope: McpRuntimeScope): React.JSX.Element | null => {
+    const mine = (runtime ?? []).filter((s) => s.scope === scope);
+    if (mine.length === 0) return null;
+    return (
+      <div key={scope} data-mcp-section={scope}>
+        <div
+          style={{
+            padding: '8px 14px 3px',
+            fontSize: 10,
+            textTransform: 'uppercase',
+            letterSpacing: 0.6,
+            color: 'var(--faint)',
+          }}
+        >
+          {t(`mcp.scope.${scope}`)}
+        </div>
+        {mine.map(runtimeRow)}
+      </div>
+    );
+  };
+
   const section = (scope: McpScope): React.JSX.Element | null => {
     const mine = servers.filter((s) => s.scope === scope);
     if (mine.length === 0) return null;
@@ -618,7 +1104,17 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
   };
 
   const unreadable = inventory?.unreadable ?? [];
-  const nothingToShow = servers.length === 0 && unreadable.length === 0;
+  /**
+   * Is there genuinely nothing to draw?
+   *
+   * COUNTS THE RUNTIME LIST WHEN THERE IS ONE, because that is what is on
+   * screen. Reading `servers.length` alone would print "no servers configured"
+   * underneath sixteen rendered rows on exactly the machine this item exists
+   * for — every one of whose servers is a connector that no config file holds.
+   */
+  const nothingToShow = runtime
+    ? runtime.length === 0 && notLoaded.length === 0
+    : servers.length === 0 && unreadable.length === 0;
 
   return (
     <div
@@ -741,19 +1237,61 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
           </p>
         ) : (
           <>
+            {/* TWO SENTENCES, BECAUSE THE SOURCE DIFFERS. `mcp.empty` says "not
+                configured in this session's FILES" — true on the config path,
+                and a smaller version of the #723 mistake on the runtime one,
+                where files are exactly what we did not read and no footer is
+                rendered to correct it. Review caught it. */}
             {nothingToShow && (
               <p style={{ margin: 0, padding: '14px', fontSize: 11.5, color: 'var(--muted)' }}>
-                {t('mcp.empty')}
+                {t(runtime ? 'mcp.emptyRuntime' : 'mcp.empty')}
               </p>
             )}
-            {SCOPE_ORDER.map(section)}
+            {/* THE RUNTIME LIST WINS WHENEVER WE HAVE ONE (#729). It is a
+                superset by construction for what the session LOADED — the
+                session knows about connectors, plugin servers and builtins that
+                appear in no file — so drawing the whole config list beside it
+                would show the same servers twice and call the duplicates a
+                collision. */}
+            {runtime ? RUNTIME_SCOPE_ORDER.map(runtimeSection) : SCOPE_ORDER.map(section)}
+            {/* ...EXCEPT THE ONES IT HAS NOT LOADED, which is not a corner case
+                but the Add button. `mcp_status` is frozen at session start
+                (measured), so a server added a moment ago is in the files and
+                not in the session — and without this group the pane would say
+                "Added github." over a list that did not change, and answer
+                Remove by leaving the row on screen. Ordinary config rendering,
+                because that is what these rows are. */}
+            {runtime && notLoaded.length > 0 && (
+              <div data-mcp-section="not-loaded">
+                <div
+                  style={{
+                    padding: '8px 14px 3px',
+                    fontSize: 10,
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.6,
+                    color: 'var(--faint)',
+                  }}
+                >
+                  {t('mcp.scope.notLoaded')}
+                </div>
+                <div style={{ padding: '0 14px 4px', fontSize: 10, color: 'var(--faint)' }}>
+                  {t('mcp.notLoadedHint')}
+                </div>
+                {notLoaded.map(row)}
+              </div>
+            )}
           </>
         )}
 
         {/* The health check never ran — said ONCE rather than as a verdict on
             every row (#714). Only worth saying when there are rows it would
             have had an opinion about. */}
-        {!healthRan && servers.length > 0 && !loading && (
+        {/* `!runtime` because this is a fact about the CONFIG path only: when
+            the session answered, status came with the list and there was no
+            separate check to fail. `healthRan` would be true anyway (nothing
+            ever set it false), but relying on that couples this block to the
+            initial value of a flag two effects away. */}
+        {!healthRan && !runtime && servers.length > 0 && !loading && (
           <div
             data-mcp-health-unavailable
             style={{
@@ -856,11 +1394,21 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
             few lines up the same dialog), and Direct is the default for every
             new session — so "use the Terminal tab", which is what this said
             first, was false for most sessions and contradicted the notice
-            rendered directly above it. Retire the whole block when #721 lets the
-            pane source its inventory from `mcp_status`. */}
-        {props.folder && !loading && (
+            rendered directly above it.
+
+            RETIRED CONDITIONALLY (#729), which was the instruction this comment
+            used to carry: "retire the whole block when #721 lets the pane source
+            its inventory from `mcp_status`". It does now — but only for a
+            session that HAS a control channel. A suspended card and a Terminal
+            session still get the config list, and for them every word of this is
+            still true, so deleting it outright would have swapped an honest
+            caveat for a silent subset on exactly the cards least able to notice.
+            The `reason` beneath it names WHICH of the three cases this is, which
+            is the part #723 could not say at all. */}
+        {props.folder && !loading && !runtime && (
           <div
             data-mcp-configured-only
+            data-mcp-status-reason={status?.reason ?? undefined}
             style={{
               padding: '10px 14px',
               borderBlockStart: '1px solid var(--border)',
@@ -868,14 +1416,18 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
               color: 'var(--faint)',
             }}
           >
-            {t('mcp.configuredOnly')}
+            {t('mcp.configuredOnly')}{' '}
+            {status && status.reason !== 'ok' && t(`mcp.whyConfiguredOnly.${status.reason}`)}
           </div>
         )}
 
-        {/* THE HONEST LIMIT. Add and remove go through the real CLI; turning a
-            server on and off does not exist as a subcommand, so this pane hands
-            that question back to the CLI's own picker rather than inventing an
-            answer. */}
+        {/* THE HONEST LIMIT — and it is a SMALLER limit than it was (#729).
+            This used to say that turning a server on and off "does not exist as
+            a subcommand", which was true of `claude mcp --help` and false of the
+            CLI: `mcp_toggle` and `mcp_reconnect` are both real on the control
+            protocol, measured 2026-08-29. That sentence is not repeated here.
+            What remains true is that add and remove go through the real CLI, and
+            that a row this pane cannot mutate is one no config file declares. */}
         <div
           style={{
             padding: '10px 14px',

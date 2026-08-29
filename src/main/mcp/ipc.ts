@@ -4,9 +4,17 @@
 // through the CLI, and one types into a session:
 //
 //   mcp:list            the servers, off the config files. Cheap — two file reads.
+//   mcp:status          the servers the SESSION really has, over the control
+//                       channel (#729). The only source that can see claude.ai
+//                       connectors and plugin servers, and the only one that
+//                       needs a live session.
 //   mcp:health          whether the CLI is connected to them. Expensive — it
 //                       connects to every server, so it is a SEPARATE call the
-//                       pane makes after it has already drawn.
+//                       pane makes after it has already drawn. STILL HERE, and
+//                       #729's summary line saying `mcp_status` retires it is
+//                       true only for a live session: a SUSPENDED card has no
+//                       control channel, and this is its only status source.
+//                       Deleting it would cost those cards a column they have.
 //   mcp:add             `claude mcp add …`
 //   mcp:remove          `claude mcp remove <name> -s <scope>`
 //   mcp:resetApprovals  `claude mcp reset-project-choices` — PROJECT-WIDE
@@ -33,6 +41,8 @@ import { IpcBroker } from '../ipc/broker';
 import { Logger } from '../log/logger';
 import { readInventory, samePath } from './config';
 import { checkHealth } from './health';
+import { readMcpStatus } from './status';
+import { enrichRuntime, notLoaded } from './merge';
 import { runMcp } from './cli';
 import {
   RESET_APPROVALS_ARGS,
@@ -49,7 +59,9 @@ import type {
   McpMutationResult,
   McpReconnectResult,
   McpScope,
+  McpStatusWire,
 } from '../../shared/mcp';
+import type { ControlVerdict } from '../../shared/control';
 
 /** What main needs to know about a live session to reconnect it. */
 export interface McpLiveSession {
@@ -86,6 +98,15 @@ export interface McpIpcDeps {
   liveSession?: (liveId: string) => McpLiveSession | null;
   /** Write raw bytes to a live PTY. Absent when there is no PTY host. */
   typeIntoPty?: (liveId: string, data: string) => void;
+  /**
+   * Ask a live session for its real MCP inventory (#729).
+   *
+   * `SessionManager.mcpStatus`, narrowed to a function so this module stays
+   * testable without a process tree — the same trade `ControlPort` makes. Its
+   * absence is a read-only wiring, and `mcp:status` answers `unavailable`
+   * rather than assuming a channel exists.
+   */
+  mcpStatus?: (liveId: string) => Promise<ControlVerdict>;
 }
 
 /**
@@ -190,6 +211,79 @@ export function registerMcpIpc(deps: McpIpcDeps): void {
     const result = await checkHealth(folder);
     return { folder, states: result.states, ok: result.ok };
   });
+
+  /**
+   * The REAL inventory, over the session's control channel (#729).
+   *
+   * TWO GATES, NOT ONE, and the second is the one that matters. The folder gate
+   * is the house rule; the session-belongs-to-the-folder check is what stops a
+   * caller pairing a folder it is allowed to name with the id of any live
+   * session in the app and reading ITS servers back. `mcp:reconnect` carries the
+   * same check for the same reason, and this channel returns data rather than
+   * typing a keystroke, so skipping it here would be the more useful hole.
+   *
+   * EVERY FAILURE IS A NAMED REASON, never an empty list on its own. An empty
+   * `servers` means four different things — the session has none, it is a PTY
+   * with no control channel, there is no live session, or the CLI did not answer
+   * — and #723 exists because "no servers configured" was rendered for a case
+   * that actually meant "we cannot see them".
+   */
+  broker.handle(
+    'mcp:status',
+    async (_e, folder: unknown, liveId: unknown): Promise<McpStatusWire> => {
+      const id = typeof liveId === 'string' ? liveId : '';
+      // A REFUSAL IS `unavailable`, NOT `no-session`, and the difference is a
+      // sentence the user reads. `no-session` renders as "start this session to
+      // see everything it really has" — advice about a session that is running
+      // perfectly well, which is exactly the conflation the `reason` field
+      // exists to prevent. `mcp:health` makes the same call by collapsing every
+      // refusal into `ok: false`.
+      const empty = (reason: McpStatusWire['reason']): McpStatusWire => ({
+        sessionId: id,
+        servers: [],
+        notLoaded: [],
+        reason,
+      });
+      if (!allowed('mcp:status', folder)) return empty('unavailable');
+      if (!id) return empty('no-session');
+      const session = deps.liveSession?.(id) ?? null;
+      if (!session) return empty('no-session');
+      if (!samePath(path.resolve(session.folder), path.resolve(folder))) {
+        log.warn('mcp:status refused: session does not belong to that folder', { folder });
+        return empty('unavailable');
+      }
+      if (!deps.mcpStatus) return empty('unavailable');
+      const verdict = await deps.mcpStatus(id);
+      if (!verdict.ok) {
+        // `not-stream` IS ITS OWN ANSWER and not an error. It means the session
+        // is on the PTY transport, which has no control channel at all — a
+        // permanent property of that session, not a failure of this call, and
+        // the pane says something different for it (fall back to the files)
+        // than for a CLI that went quiet.
+        if (verdict.reason === 'not-stream') return empty('not-stream');
+        log.warn('mcp:status did not answer', { liveId: id, reason: verdict.reason });
+        return empty(verdict.reason === 'session-gone' ? 'no-session' : 'unavailable');
+      }
+      // THE CONFIG READ HAPPENS HERE, NOT IN THE RENDERER, and that is what
+      // makes the join testable. Four facts only the files know — is this row
+      // removable, with which scope, what env/header keys it carries and its
+      // approval state — are folded in before the wire, so the pane draws a row
+      // rather than computing one. Two local file reads on a call that has
+      // already paid for a process round trip.
+      const configured = readInventory(folder, log).servers;
+      const servers = enrichRuntime(readMcpStatus(verdict.response), configured);
+      return {
+        sessionId: id,
+        servers,
+        // ...and the servers the session has NOT loaded, which is what makes
+        // the Add button mean anything: `mcp_status` is frozen at spawn, so a
+        // server added a moment ago appears here and nowhere else until the
+        // session reconnects. See `notLoaded`.
+        notLoaded: notLoaded(servers, configured),
+        reason: 'ok',
+      };
+    }
+  );
 
   // ── The write half (#714) ──────────────────────────────────────────────────
   //

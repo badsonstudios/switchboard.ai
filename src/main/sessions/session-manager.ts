@@ -31,6 +31,7 @@ import { streamStatusEvent } from './stream-status';
 import {
   interruptRequest,
   listModelsRequest,
+  mcpStatusRequest,
   setModelRequest,
   userMessage,
   type PromptAttachment,
@@ -165,6 +166,24 @@ export class SessionManager {
   async listModels(id: string): Promise<ControlVerdict> {
     const gone = this.controlPrecheck(id);
     return gone ?? this.control.request(id, listModelsRequest);
+  }
+
+  /**
+   * The MCP servers this session really has (#729).
+   *
+   * THE ONLY SOURCE. `main/mcp/config.ts` reaches three of the CLI's eight
+   * runtime scopes, and account connectors and plugin-supplied servers live in
+   * no file at all — 3 shown against 16 on the machine that reported #723.
+   *
+   * The answer SETTLES rather than arriving complete: a freshly spawned session
+   * reports `pending` with no tool list for ~5 seconds before it reports
+   * `connected` (measured, `spike/probes/721/probe-mcp-settle.mjs`). This method
+   * is a single round trip and does not hide that — the caller asks again. See
+   * `mcpStatusRequest`.
+   */
+  async mcpStatus(id: string): Promise<ControlVerdict> {
+    const gone = this.controlPrecheck(id);
+    return gone ?? this.control.request(id, mcpStatusRequest);
   }
 
   /**

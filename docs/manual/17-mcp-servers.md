@@ -22,26 +22,44 @@ says so rather than showing you an empty list — an empty list would look like
 
 ## What you're looking at
 
-Servers are grouped by **where they're configured**, most specific first:
+Servers are grouped by **where they come from**, most specific first:
 
 | Group | What it means |
 |---|---|
 | **This project (shared via `.mcp.json`)** | Configured in the project folder itself and checked into the repo, so everyone who clones it gets the same servers |
 | **This project (just you)** | Yours, for this one project. This is what you get by default when you add a server without saying otherwise |
 | **All your projects** | Yours everywhere |
+| **Set by your organisation** / **Managed for you** | Configured centrally, not by you |
+| **Added at startup** | Brought in by a plugin, by the editor bridge, or by a command-line option when the session started |
+| **From a skill** | Comes with a skill you're using |
+| **Built into Claude Code** | Ships with Claude Code itself |
+| **In your files, not loaded by this session** | See below — usually something you just added |
 
-The same name can appear in two groups. That's not a display bug — it's a real
-situation worth knowing about, and hiding it would leave you wondering why a
-server isn't behaving the way the file you were reading says it should.
+On a session that isn't running, the same name can appear in two groups. That's
+not a display bug — it's a real situation worth knowing about, and hiding it
+would leave you wondering why a server isn't behaving the way the file you were
+reading says it should. A running session resolves one winner per name, so you
+won't see it there.
 
-Each row shows the server's name, the command or web address it uses, and its
-current state.
+### "In your files, not loaded by this session"
 
-## What this list doesn't show
+**Claude Code reads its MCP servers once, when the session starts.** So if you
+add a server — here or from the command line — a session that's already running
+won't have it, and it appears in this group instead of with the others. Same if
+you remove one: it leaves this list, but the running session is still using it.
 
-This pane reads your **configuration files**, and Claude Code can connect to
-servers that aren't in any file. Two kinds, and on a well-used machine they can
-easily outnumber the ones you see here:
+That's what **Reconnect** is for. Use it, or restart the session, and these rows
+join the others.
+
+Each row shows the server's name, its version once it's connected, the command
+or web address it uses, its current state, and **how many tools it's giving
+you** — which is usually the fastest way to spot a server that's connected but
+not actually doing anything.
+
+## Where the list comes from
+
+**switchboard asks the running session directly.** That means you see everything
+it really has, including the two kinds of server that live in no file at all:
 
 - **Connectors from your claude.ai account** — the ones you turn on in your
   claude.ai account settings, under Connectors: Atlassian, Microsoft 365,
@@ -50,28 +68,39 @@ easily outnumber the ones you see here:
 - **Servers that plugins bring with them** — installed as part of a plugin
   rather than added by hand.
 
-Your sessions can still **use** those servers normally. They just can't be
-listed or managed from here yet, because there's no file for this pane to read
-them out of.
+Some of those rows are marked **read-only**. That's not a permission problem:
+they aren't written down in any configuration file, so Claude Code's own
+commands have nothing to edit. You can see them here; you change them where they
+came from — your claude.ai account settings, or the plugin that installed them.
 
-To see everything a session actually has, run `/mcp` in a terminal — Claude
-Code's own picker, and the complete list. Note that this needs a real terminal:
-a session in Direct mode doesn't have one, so use its **Terminal** tab only if
-it's running in Terminal mode, or run `claude` yourself in the project folder.
+**When the panel can't ask, it says so.** Three cases, and the panel names which
+one you're in:
 
-So if this pane looks short next to `/mcp`, nothing is broken and nothing has
-been lost — you're looking at the servers you configured, not at every server
-your session can reach.
+- **The session isn't running.** Start it and the full list appears.
+- **The session is in Terminal mode.** Terminal-mode sessions can't be asked
+  this question. Switch it to Direct mode, or run `/mcp` in its Terminal tab.
+- **The session didn't answer.** Rare; try closing and reopening the panel.
+
+In all three the panel falls back to reading your configuration files, which is
+a shorter list — so if it looks short and says one of those things, nothing is
+broken. You're seeing what's on disk rather than what the session has.
 
 ## The states
 
 | State | What it means |
 |---|---|
 | **connected** | Claude Code is talking to it right now |
+| **connecting…** | Still shaking hands. Normal for a few seconds after a session starts |
 | **not connecting** | It tried and couldn't — a wrong command, a server that isn't running, a network it can't reach |
+| **needs sign-in** | It's waiting for you to authorise it |
 | **waiting for your approval** | See below |
 | **turned off** | Approved once, then switched off for this project |
 | **status unknown** | We haven't heard back yet, or couldn't tell |
+
+**Seeing everything say "connecting…" right after you start a session is
+expected.** Servers connect a few seconds after the session comes up, and the
+panel re-checks on its own until they settle — you don't need to close and
+reopen it.
 
 **"waiting for your approval" only happens to shared project servers.** When a
 repo carries its own `.mcp.json`, Claude Code won't connect to it just because
@@ -79,10 +108,11 @@ you cloned the repo — someone else wrote that file, and it can start a program
 on your machine. It waits for you to say yes. See **Approving a shared server**
 below.
 
-The status column takes a moment to fill in. That's deliberate: checking means
-actually connecting to every server, which can take a few seconds if one of
-them is behind a VPN that's off. The list appears immediately and the states
-land when they land — so a slow server never stops you reading the page.
+On a session that isn't running, the status column takes longer to fill in, and
+that's deliberate: with no session to ask, switchboard has to connect to every
+server itself, which can take a few seconds if one of them is behind a VPN
+that's off. The list appears immediately and the states land when they land — so
+a slow server never stops you reading the page.
 
 ## What it shows about credentials
 
@@ -135,15 +165,21 @@ type at a command prompt isn't part of the value anyway.
 
 ## Removing a server
 
-Each row has a **Remove** button. It asks once — **Remove it** or **Cancel** —
-and then deletes the server from the group it's actually in, which matters when
-the same name appears in two groups. This runs `claude mcp remove`; it doesn't
-edit any files directly.
+Rows that came from a configuration file have a **Remove** button. It asks once
+— **Remove it** or **Cancel** — and then deletes the server from the group it's
+actually in, which matters when the same name appears in two groups. This runs
+`claude mcp remove`; it doesn't edit any files directly.
+
+Rows marked **read-only** have no Remove button, because there's no file to
+remove them from. Those come from your claude.ai account, from a plugin, or from
+Claude Code itself, and that's where you change them.
 
 ## Making a session pick up your changes
 
 Adding or removing a server changes the configuration. A session that's already
-running loaded its servers when it started, so it won't notice on its own.
+running loaded its servers when it started, so it won't notice on its own —
+that's why a server you just added shows up under **In your files, not loaded by
+this session** rather than beside the rest.
 
 Click **Reconnect** at the bottom of the panel.
 
@@ -157,9 +193,8 @@ Click **Reconnect** at the bottom of the panel.
 
 ## Approving a shared server
 
-There's no "turn it on" button, and that's deliberate: Claude Code has no
-command for it, and switchboard won't edit the file that holds the answer.
-Instead, click **Reconnect** and answer Claude Code's own picker in the session.
+There's no "turn it on" button here yet. Click **Reconnect** and answer Claude
+Code's own picker in the session.
 
 If you want to be asked about *all* the project's shared servers again — because
 you said no to one by mistake, or the repo's `.mcp.json` has changed — click
@@ -176,7 +211,13 @@ working while you fix it.
 **"Could not check whether Claude Code is connected."** The list is still
 correct — it comes from the configuration files — but the states beside each
 server are stale or missing, because the check itself didn't run. Usually that
-means the `claude` command isn't where switchboard expected it.
+means the `claude` command isn't where switchboard expected it. You'll only see
+this on a session that isn't running; a running session reports its own states.
+
+**The list is shorter than `/mcp` shows.** Read the note at the bottom of the
+panel: it says which of the three reasons applies — the session isn't running,
+it's in Terminal mode, or it didn't answer. Starting the session, or switching
+it to Direct mode, gets you the full list.
 
 **A server says "not connecting".** The command is the first thing to check: the
 row shows exactly what Claude Code is trying to run. A typo, a program that
