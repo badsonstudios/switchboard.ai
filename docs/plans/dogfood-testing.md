@@ -150,3 +150,4 @@ so the row cannot be lost between the PR and the train.
 | 2026-08-26 | Turn boundary (#640 fix) still not easily spotted — wants round 2 | #717 |
 | 2026-08-26 | Busy spinner in the sessions rail too quiet; wants marquee-style working treatment (6 options filed) | #718 |
 | 2026-08-26 | switchboard pegged laptop CPU → forced reboot; 26h uptime, log dead mid-session, 4.6x busier minimized; forensic report + 5 watcher bugs | #719 |
+| 2026-08-29 | Stacked session cannot be dragged into a full-height column — only above/below offered, no root-edge split | #731 |
