@@ -135,8 +135,98 @@ Two things worth knowing beyond the list:
   is `(await this.initialization).models`; `supportedAgents()` is `.agents`. A
   model picker needs no discovery mechanism of its own.
 - **Locating a subtype is not verifying it.** These are symbols in a binary.
-  Nothing above has been exercised, and the standing rule still applies: probe
-  the PATH CLI before building. #721 is the ticket that does that.
+  The list above was never exercised — §1.2.2 is what happened when it was.
+
+#### 1.2.2 The control protocol, MEASURED (#721, 2026-08-28, PATH CLI 2.1.245)
+
+**This section outranks §1.2.1.** That one is a map drawn from grepping a
+binary; this one is what the CLI actually did when driven. The harnesses are
+committed at **`spike/probes/721/`** (with a README mapping each probe to the
+question it answers), spawned with the exact stream flag list from
+`providers/claude.ts`.
+
+##### The envelope, and the trap in it
+
+```jsonc
+// out
+{"type":"control_request","request_id":"sb-1","request":{"subtype":"set_model","model":"haiku"}}
+// back — success
+{"type":"control_response","response":{"subtype":"success","request_id":"sb-1","response":{…}}}
+// back — refusal
+{"type":"control_response","response":{"subtype":"error","request_id":"sb-4","error":"<sentence>"}}
+```
+
+⚠️ **`request_id` IS NESTED AT `msg.response.request_id`, AND IS ABSENT AT THE
+TOP LEVEL** — measured, `topLevelRequestId=undefined` on every reply. The
+INBOUND `can_use_tool` requests we already parse carry theirs at the TOP level
+(`stream-permissions.ts` reads `msg.request_id`), so **the two directions
+differ**. A correlator written by copying the inbound reader matches nothing,
+for ever, and looks exactly like a CLI that never answers.
+
+Also: **`response` is absent entirely on a payload-free success.** `set_model`
+answers `{subtype:"success", request_id}` with no `response` key — not `{}`.
+
+##### Verb by verb
+
+| verb | measured result |
+|---|---|
+| `initialize` | Works, repeatable, ~28 KB. Keys: `commands` (60, **with `description` and `argumentHint`**), `agents`, `models`, `output_style`, `available_output_styles`, `account`, `pid`, `current_permission_mode`, `fast_mode_state`, `session_state`, `analytics_disabled`, `remote_control_*`. |
+| `list_models` | **In no grep list on either ticket.** Returns `{models:[…]}` alone — the right call for a picker. 5 entries, each `{value, resolvedModel, displayName, description, supportsEffort, supportedEffortLevels, …}`. |
+| `set_model` | Genuinely switches the model mid-session, no restart — verified BY EFFECT (below), not by its ack. |
+| `get_context_usage` | Works. `{categories[], …}` with a `percentage` — #715 is served directly. |
+| `mcp_status` | Works. `{mcpServers:[{name, status, serverInfo, config, scope, tools[]}]}` — structured, and strictly richer than parsing `claude mcp list`. This is #723's real fix. |
+| `set_permission_mode`, `get_settings`, `get_usage` | All work. |
+| `supported_models`, `get_models`, `status` | **Do not exist** — `Unsupported control request subtype: …` |
+
+##### Four findings that change how you write a consumer
+
+1. **Control requests work on a cold session — you do NOT need `initialize`
+   first.** Measured separately (`spike/probes/721/probe721c.mjs`) because the first version of
+   this finding said the opposite and was wrong: `list_models` sent as the very
+   first thing to a freshly spawned session, with no `initialize` and no turn,
+   answered with all 5 models in ~680 ms (process startup, not the verb).
+
+   The claim it replaces — "send `initialize` first or it hangs" — came from a
+   probe that **hung on its own logic**: it only sent its verb from inside a
+   `system:init` handler, and `system:init` is emitted **once per TURN**, so on
+   a session that had run no turn it never sent anything at all. The CLI was
+   never refusing. **A silent CLI is worth suspecting your own probe over**, and
+   this one cost a wrong line in this document before it was caught in review.
+
+   The turn-scoped `system:init` is still true and still matters — see finding
+   3 — it just is not a precondition for the control channel.
+2. **`set_model` WITH NO `model` FIELD RETURNS `success` AND DOES NOTHING.** A
+   non-string is properly refused (`set_model: model must be a string`) and an
+   unknown id is refused with a sentence — but the ABSENT case is a silent
+   no-op dressed as a working feature. **Validate before sending; the CLI will
+   not catch a dropped field for you.**
+3. **Nothing tells you the CURRENT model.** `list_models` marks none of its
+   entries, and `initialize` has no current-model key (both dumped and
+   checked). The only source is `system:init.model`, which arrives **once per
+   turn** — so before a session's first turn its model is genuinely unknown,
+   and a picker must say so rather than defaulting to `default`.
+4. **The channel is NOT blocked by a turn in flight.** Round trips measured at
+   **0–2 ms while the model was mid-reply**. A consumer needs no busy state and
+   must not serialise behind a turn.
+
+##### How `set_model` was verified
+
+By effect, not by acknowledgement: `set_model(haiku)` → the next turn's
+`system:init.model`, the assistant message's `message.model` and
+`result.modelUsage` **all three** reported `claude-haiku-4-5-20251001`; then
+`set_model(sonnet)` → all three reported `claude-sonnet-5`, mid-session, no
+restart.
+
+##### Fail-open is real
+
+An unknown subtype comes back as an ordinary error response
+(`Unsupported control request subtype: no_such_verb_xyz`) and **the session
+lives**. That is the P6 answer for a future CLI that renames a verb — measured,
+not hoped. Refusals are written for a human, so pass the CLI's own sentence
+through rather than rewording it.
+
+The implementation of all this is `main/transport/control-channel.ts`; the
+builders and readers are in `shared/stream-protocol.ts`.
 
 ### 1.3 The settings schema is the standout
 

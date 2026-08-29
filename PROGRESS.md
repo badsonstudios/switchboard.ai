@@ -3,7 +3,86 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ✅ DONE — 2026-08-28: **#723** — "fewer MCP servers" → **PR #725**, awaiting merge
+> # 🔨 IN PROGRESS — 2026-08-28: **#721 PR 1 of 2** — the channel itself
+>
+> Branch `feature/721-control-channel`, cut from main. **6432 tests / 247 files**,
+> lint, typecheck, build clean. **Dan chose the two-PR split**: PR 1 is the
+> channel + protocol + plumbing + fake + docs; **PR 2 is the `/model` picker UI**
+> and is what closes the issue.
+>
+> Note for whoever merges: **#723's branch (PR #725) carries an older #721
+> block** in this file — probe notes from the 2026-08-27 session. Everything in
+> it is superseded by this block, which was measured independently.
+>
+> **Shipped in PR 1:** `main/transport/control-channel.ts` (the correlator),
+> builders/readers in `shared/stream-protocol.ts`, `shared/control.ts` (verdict
+> types — they cross IPC), `SessionManager.listModels/setModel`, two IPC channels
+> + capabilities + preload, `forgetSession` on BOTH teardown paths, fake-provider
+> `list_models`/`set_model`, 29 tests, and **`reference-implementations.md`
+> §1.2.2** — the measured protocol, which is done-when #1.
+>
+> ## ⚠️ I PUT A WRONG FINDING IN THE REFERENCE DOC AND REVIEW CAUGHT IT
+>
+> I wrote, in an earlier PROGRESS block and on the issue: *"the session emits no
+> `system:init` until you send something, so send `initialize` first or
+> `mcp_status` hangs."* **That is not a CLI behaviour. It was a bug in my own
+> probe** — it only sent its verb from inside a `system:init` handler, and
+> `system:init` arrives **once per turn**, so on a session that had run no turn
+> it never sent anything at all.
+>
+> Re-measured (`spike/probes/721/probe721c.mjs`): **`list_models` sent as the
+> very first thing to a cold session — no `initialize`, no turn — answers with
+> all 5 models in ~680 ms.** This mattered: the picker's primary case is a fresh
+> card where the user has typed nothing, and the false version would have had
+> PR 2 build a handshake it does not need. Corrected in §1.2.2 (which now records
+> the wrong version too) and in a follow-up comment on #721.
+>
+> **THE REUSABLE LESSON: a silent CLI is worth suspecting your own probe over.**
+>
+> ## THE MEASUREMENTS PR 2 DEPENDS ON
+>
+> * **`request_id` is NESTED** at `msg.response.request_id`, **absent at the top
+>   level** — measured `undefined` on every reply. Inbound `can_use_tool` carries
+>   it at the TOP level, so the directions differ and a correlator copying the
+>   inbound reader matches nothing for ever.
+> * **`set_model` with NO `model` field answers `success` and does nothing.** We
+>   validate before the wire; the CLI will not catch a dropped field.
+> * **A payload-free success has NO `response` key** — not `{}`.
+> * **NOTHING marks the current model.** Not `list_models`, not `initialize`
+>   (keys dumped and checked). Only `system:init.model`, once per turn — so on a
+>   fresh card the running model is genuinely unknown and **PR 2's picker must
+>   say so rather than defaulting to `default`**.
+> * Round trips are **0–2 ms even mid-turn**; no busy state, never serialise.
+> * `list_models` entries carry `displayName` + `description` — picker-ready —
+>   and also `supportsEffort`/`supportedEffortLevels`, deliberately NOT modelled.
+>
+> ## WHAT /review CAUGHT (no blockers, 6 should-fixes, all fixed)
+>
+> 1. **A dead session answered `not-stream`** — whose documented meaning is
+>    "you're on a terminal, go use the CLI's picker". Advice for a different
+>    problem. Now `SessionManager.controlPrecheck` answers `session-gone`; only
+>    the manager can tell the two apart, which is why the check is there and not
+>    in the channel.
+> 2. **The self-exit path leaked in-flight requests.** `forgetSession` was on
+>    `tearDownLive` only, and a crashed CLI reaches no teardown — the exact gap
+>    #271 found for held permissions. Now on `onSessionExit` too.
+> 3. `request()` could reject via a throwing builder or transport, breaking its
+>    "never rejects" contract. Both guarded.
+> 4. + 5. The manager↔channel seam and the fake's verbs were untested —
+>    `control-seam.test.ts` now drives both end to end (swap `sendToTransport`
+>    for `submitPrompt` in the constructor and it fails, which was the point).
+> 6. The doc cited probes in git-ignored `.claude/work_files/`. Moved to
+>    **`spike/probes/721/`**, committed, with a README.
+>
+> **A bug my own test caught first:** `forgetSession`/`dispose` deleted the
+> pending entry before calling `settle`, which made `settle` a no-op (it looks
+> the entry up to prove it has not already settled) and hung the caller for ever.
+>
+> ## KNOWN FLAKE, NOT MINE
+>
+> `win-cmd.test.ts`'s real-`cmd.exe` case timed out at 5 s in one full run and
+> passed isolated in 1.5 s, then passed in the next full run. Same shape as #651.
+> # ✅ MERGED — 2026-08-28: **#723** — "fewer MCP servers" → PR #725 squashed to main
 >
 > Branch `feature/723-mcp-configured-only`, committed `9d532a5` and pushed.
 > **6392 tests / 244 files**, lint, typecheck, build all clean.
@@ -119,7 +198,7 @@
 > normalises separators. The exposure is the **write** path
 > (`capabilities.trust.ensureTrusted`), which is what should be filed.
 
-> # 🔨 IN PROGRESS — 2026-08-27: **#721** — the outbound control_request channel
+> # 📎 SUPERSEDED — 2026-08-27 planning note for **#721** (kept for the probe detail; the block at the top of this file is the measured version and WINS where they disagree)
 >
 > **Dan asked for #633 (`/model`); it is BLOCKED by #721 and he chose the split:
 > do #721 now with `/model` as its proving consumer.** #633 then shrinks to the

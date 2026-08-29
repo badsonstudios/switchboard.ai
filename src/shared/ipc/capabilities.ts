@@ -243,6 +243,18 @@ export const CHANNEL_CAPABILITIES = {
   'sessions:submitPrompt': 'sessions.write',
   'sessions:setTransport': 'sessions.write',
   'sessions:interrupt': 'sessions.write',
+  // The control channel (#721). `listModels` READS — it asks the CLI what it
+  // would accept and changes nothing — while `setModel` changes what the
+  // session is running mid-flight, which is a write by any reading.
+  //
+  // WORTH NOTING WHAT IS NEW HERE: every other `sessions.read` channel (`cards`,
+  // `list`, `pendingPermissions`, `slashCommands`) reads app-side state, and
+  // this is the first that writes bytes into a live child's stdin to get its
+  // answer. It is still a read of the SESSION — nothing about it changes — and
+  // `mcp:health` set the precedent by running the CLI under `mcp.read`. But a
+  // future reviewer weighing a third one should weigh that, not just the verb.
+  'sessions:listModels': 'sessions.read',
+  'sessions:setModel': 'sessions.write',
   'sessions:dropLive': 'sessions.spawn',
   'sessions:isDirectory': 'fs.probe',
   // What the app repaired about a card's conversation history this run (#539) —

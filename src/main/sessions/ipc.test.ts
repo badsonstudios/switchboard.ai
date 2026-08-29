@@ -254,6 +254,10 @@ function harness(
    * per-call assertion would still pass (#187 review).
    */
   const trace: string[] = [];
+  /** sessions the control channel was told to give up on (#721) */
+  const controlForgot = vi.fn();
+  /** every control verb the handlers delegated, in order (#721) */
+  const controlCalls: unknown[][] = [];
 
   const deps = {
     manager: {
@@ -263,6 +267,27 @@ function harness(
       onStatusChange: () => {},
       onSessionExit: (l: (e: { sessionId: string; code: number; crashed: boolean }) => void) => {
         exitListeners.push(l);
+      },
+      // The outbound control channel (#721). The REAL manager builds this in
+      // its constructor and it is never absent, so the stub carries one too —
+      // omitting it made `control.forgetSession` throw in teardown, which
+      // `tearDownStep` then caught and logged, turning "clean teardown says
+      // nothing" into a warning about our own missing mock.
+      // Deliberately NOT written into `trace`: that array is asserted as an
+      // exact ordered list by several tests, and a new entry in it would fail
+      // them for a reason that has nothing to do with what they test. The
+      // wiring gets its own pin instead — "gives up in-flight control requests".
+      control: { forgetSession: controlForgot },
+      // The two control-channel verbs (#721). The manager's own behaviour is
+      // covered in `control-seam.test.ts` against a real one; these record the
+      // call so the HANDLERS' argument checks can be pinned.
+      listModels: (id: string) => {
+        controlCalls.push(['listModels', id]);
+        return Promise.resolve({ ok: true, response: { models: [{ value: 'haiku' }] } });
+      },
+      setModel: (id: string, model: unknown) => {
+        controlCalls.push(['setModel', id, model]);
+        return Promise.resolve({ ok: true, response: {} });
       },
       // Driven by the same set `get` answers from, so a test cannot be told two
       // different things about which sessions exist (#170 needs `list` — it is
@@ -485,6 +510,10 @@ function harness(
     hookAnswerSurface: (sessionId: string): boolean | undefined =>
       hookAnswerSurface?.(sessionId),
     hookDecisions,
+    /** sessions the control channel was told to give up on (#721) */
+    controlForgot,
+    /** every control verb the handlers delegated, in order (#721) */
+    controlCalls,
     call,
     created,
     upserted,
@@ -1417,6 +1446,73 @@ describe('registerSessionIpc — slash commands (P2-E18-09)', () => {
     await h.call('sessions:dropLive', 'card-1');
 
     expect(streamCommands.commandsFor('live-1')).toBeNull();
+  });
+
+  // The same leak, one channel over (#721). Without this step a surface
+  // awaiting `list_models` from the session the user just closed waits the full
+  // 10-second timeout before finding out, and paints "the session did not
+  // answer" long after the card went. Pinned here for the reason the comment
+  // above gives: deleting the call left every suite green.
+  it('gives up in-flight control requests when the live session is dropped', async () => {
+    const h = harness(undefined, dir, { liveIds: ['live-1'], known: curated });
+    await h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 't' });
+    expect(h.controlForgot).not.toHaveBeenCalled();
+
+    await h.call('sessions:dropLive', 'card-1');
+
+    expect(h.controlForgot).toHaveBeenCalledWith('live-1');
+  });
+
+  // The control channel's two handlers (#721). They are the first `sessions:*`
+  // channels to answer an OBJECT rather than a boolean, because the surface has
+  // four outcomes to draw and collapsing them loses the reason — which is what
+  // left #714's reconnect saying "restart the session" for want of one.
+  describe('the control-channel handlers (#721)', () => {
+    it('delegates to the manager and hands the verdict straight back', async () => {
+      const h = harness(undefined, dir, { liveIds: ['live-1'], known: curated });
+
+      expect(await h.call('sessions:listModels', 'live-1')).toEqual({
+        ok: true,
+        response: { models: [{ value: 'haiku' }] },
+      });
+      expect(await h.call('sessions:setModel', 'live-1', 'haiku')).toEqual({
+        ok: true,
+        response: {},
+      });
+      expect(h.controlCalls).toEqual([
+        ['listModels', 'live-1'],
+        ['setModel', 'live-1', 'haiku'],
+      ]);
+    });
+
+    it('refuses a non-string session id with a VERDICT, never a boolean or a throw', async () => {
+      // The renderer is typed, not trusted. The shape matters as much as the
+      // refusal: a `false` here would be read as `verdict.ok === undefined` by
+      // a caller expecting the object, which fails closed but says nothing.
+      const h = harness(undefined, dir, { liveIds: ['live-1'], known: curated });
+
+      for (const bad of [42, null, undefined, { id: 'live-1' }]) {
+        expect(await h.call('sessions:listModels', bad)).toEqual({
+          ok: false,
+          reason: 'invalid',
+          message: 'no session',
+        });
+        expect(await h.call('sessions:setModel', bad, 'haiku')).toMatchObject({
+          ok: false,
+          reason: 'invalid',
+        });
+      }
+      expect(h.controlCalls).toEqual([]); // nothing reached the manager
+    });
+
+    it('passes a bad model straight through — the manager owns that refusal', async () => {
+      // Deliberately NOT re-validated here. One validator, in
+      // `setModelRequest`, where the measurement that forced it lives; a second
+      // copy at the IPC edge is how two rules drift apart.
+      const h = harness(undefined, dir, { liveIds: ['live-1'], known: curated });
+      await h.call('sessions:setModel', 'live-1', '');
+      expect(h.controlCalls).toEqual([['setModel', 'live-1', '']]);
+    });
   });
 
   it('an unknown live id returns nothing rather than a stray list', async () => {

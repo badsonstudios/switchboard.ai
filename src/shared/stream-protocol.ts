@@ -294,6 +294,171 @@ export function interruptRequest(requestId: string): StreamInterruptRequest {
   return { type: 'control_request', request_id: requestId, request: { subtype: 'interrupt' } };
 }
 
+// ── THE OUTBOUND CONTROL CHANNEL (#721) ──────────────────────────────────────
+//
+// `interrupt` above is the one control request this app has ever sent, and it is
+// fire-and-forget: nothing reads the reply. Everything below is the half that
+// was missing — a request whose ANSWER we wait for and act on.
+//
+// EVERY SHAPE HERE WAS MEASURED against the CLI on PATH (2.1.245) on
+// 2026-08-28, not read out of the extension bundle. The probes are in
+// `.claude/work_files/723/probe721*.mjs` and the write-up is
+// `docs/reference-implementations.md` §1.2.2. Where the #721/#633 issue bodies
+// disagree with this file, this file wins — they were drawn from grepping a
+// binary for symbol names, which proves a verb EXISTS and nothing about what it
+// answers.
+
+/** Any control request we send. `subtype` names the verb; the rest is its payload. */
+export interface StreamControlRequest {
+  type: 'control_request';
+  request_id: string;
+  request: { subtype: string } & Record<string, unknown>;
+}
+
+export function controlRequest(
+  requestId: string,
+  request: { subtype: string } & Record<string, unknown>
+): StreamControlRequest {
+  return { type: 'control_request', request_id: requestId, request };
+}
+
+/**
+ * One model the CLI will accept, as `list_models` describes it.
+ *
+ * Every field but `value` is optional on purpose: `value` is the only one we
+ * SEND back, and a CLI that renames a display field must degrade the picker's
+ * labels rather than empty it. Measured payload — 5 entries, 3 shown:
+ *
+ *     {value:"default",  resolvedModel:"claude-opus-5[1m]", displayName:"Default (recommended)",
+ *      description:"Opus 5 with 1M context · Best for everyday, complex tasks", …}
+ *     {value:"sonnet",   resolvedModel:"claude-sonnet-5",   displayName:"Sonnet", …}
+ *     {value:"haiku",    resolvedModel:"claude-haiku-4-5-20251001", displayName:"Haiku"}
+ *     // …plus "opus[1m]" and "claude-fable-5[1m]", same shape
+ *
+ * `supportsEffort` / `supportedEffortLevels` / `supportsFastMode` also ride
+ * along and are deliberately NOT modelled — nothing consumes them yet, and a
+ * type that claims them invites a surface that half-supports them.
+ *
+ * NOTHING IN THE PAYLOAD MARKS THE CURRENT MODEL. Neither does `initialize`
+ * (its keys were dumped; there is no current-model field). The only place the
+ * running model appears is `system:init.model`, which arrives ONCE PER TURN —
+ * so before a session's first turn its model is genuinely unknown, and a
+ * picker must say so rather than guess at `default`.
+ */
+export interface CliModel {
+  value: string;
+  resolvedModel?: string;
+  displayName?: string;
+  description?: string;
+}
+
+/** `list_models` — the lean call. `initialize` carries the same array inside ~28 KB. */
+export function listModelsRequest(requestId: string): StreamControlRequest {
+  return controlRequest(requestId, { subtype: 'list_models' });
+}
+
+/**
+ * `set_model` — and the one measurement that dictates how it is called.
+ *
+ * **`set_model` WITH NO `model` FIELD ANSWERS `success` AND CHANGES NOTHING.**
+ * A non-string is properly refused (`set_model: model must be a string`) and an
+ * unknown id is properly refused with a sentence — but the ABSENT case is a
+ * silent no-op dressed as a working feature. So a dropped or empty field has to
+ * be caught HERE; the CLI will not do it for us.
+ *
+ * Returns `null` for anything we refuse to send, which the caller turns into an
+ * `invalid` verdict without touching the wire.
+ */
+export function setModelRequest(requestId: string, model: unknown): StreamControlRequest | null {
+  if (typeof model !== 'string') return null;
+  const trimmed = model.trim();
+  if (!trimmed) return null;
+  return controlRequest(requestId, { subtype: 'set_model', model: trimmed });
+}
+
+/**
+ * A `control_response` off the wire, or `null` if it is not one.
+ *
+ * ⚠️ **`request_id` IS NESTED AT `msg.response.request_id`, AND IS NOT PRESENT
+ * AT THE TOP LEVEL.** Measured: every reply came back with
+ * `topLevelRequestId=undefined`. The INBOUND `can_use_tool` requests we already
+ * parse carry theirs at the TOP level (`stream-permissions.ts` reads
+ * `msg.request_id`), so the two directions genuinely differ — a correlator
+ * written by copying the inbound reader matches nothing, for ever, and looks
+ * exactly like a CLI that never answers.
+ *
+ * Two subtypes, both measured:
+ *
+ *     {"type":"control_response","response":{"subtype":"success","request_id":"sb-1","response":{…}}}
+ *     {"type":"control_response","response":{"subtype":"error","request_id":"sb-4",
+ *      "error":"Model \"x\" is not a recognized model id. Run /model to see available models."}}
+ *
+ * `response` IS ABSENT ON A PAYLOAD-FREE SUCCESS — `set_model` answers
+ * `{subtype:"success", request_id}` with no `response` key at all, so a reader
+ * that assumes an object there gets `undefined`, not `{}`. Normalised to `{}`
+ * here so callers never have to know.
+ *
+ * The error text is written for a human and is passed through verbatim rather
+ * than re-worded: it is the CLI's own explanation, and ours would be a guess at
+ * what it meant. `mcp/cli.ts` made the same call for the same reason.
+ */
+export interface ParsedControlResponse {
+  requestId: string;
+  ok: boolean;
+  /** `{}` when the CLI answered success with no payload. */
+  response: Record<string, unknown>;
+  /** the CLI's own sentence, on an error. */
+  error: string;
+}
+
+export function readControlResponse(msg: unknown): ParsedControlResponse | null {
+  if (!msg || typeof msg !== 'object') return null;
+  const m = msg as Record<string, unknown>;
+  if (m.type !== 'control_response') return null;
+  const r = m.response;
+  if (!r || typeof r !== 'object') return null;
+  const body = r as Record<string, unknown>;
+  // NESTED. See the docblock — reading `m.request_id` here is the bug.
+  const requestId = body.request_id;
+  if (typeof requestId !== 'string' || !requestId) return null;
+  // Anything that is not literally `error` is treated as success, so a CLI that
+  // grows a third subtype degrades to "it answered" rather than to a refusal we
+  // invented. An `error` we cannot read the sentence off still fails closed.
+  const ok = body.subtype !== 'error';
+  const payload = body.response;
+  return {
+    requestId,
+    ok,
+    response: payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {},
+    error: typeof body.error === 'string' ? body.error : '',
+  };
+}
+
+/**
+ * The models out of a `list_models` (or `initialize`) payload.
+ *
+ * Lenient by construction: a malformed entry is dropped rather than failing the
+ * whole list, and an entry with no usable `value` is worthless to us because
+ * `value` is the only thing `set_model` accepts.
+ */
+export function readModels(response: Record<string, unknown>): CliModel[] {
+  const raw = response.models;
+  if (!Array.isArray(raw)) return [];
+  const out: CliModel[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue;
+    const e = entry as Record<string, unknown>;
+    if (typeof e.value !== 'string' || !e.value) continue;
+    out.push({
+      value: e.value,
+      ...(typeof e.resolvedModel === 'string' ? { resolvedModel: e.resolvedModel } : {}),
+      ...(typeof e.displayName === 'string' ? { displayName: e.displayName } : {}),
+      ...(typeof e.description === 'string' ? { description: e.description } : {}),
+    });
+  }
+  return out;
+}
+
 /** A reply to a `can_use_tool` control request (P2-E18-07 sends these). */
 export interface StreamControlResponse {
   type: 'control_response';

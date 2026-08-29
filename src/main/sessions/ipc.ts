@@ -42,6 +42,7 @@
 import { BrowserWindow, dialog } from 'electron';
 import fs from 'fs';
 import { SessionManager, SessionRecord } from './session-manager';
+import type { ControlVerdict } from '../../shared/control';
 import { PtyService } from '../pty/pty-service';
 import { StreamPermissions } from './stream-permissions';
 import { StreamCommands } from './stream-commands';
@@ -486,6 +487,13 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     );
     // …and its own Feed blocks (P2-E18-10)
     tearDownStep(liveId, 'streamFeed.forgetSession', () => deps.streamFeed?.forgetSession(liveId));
+    // …and anything the control channel had in flight (#721). Without this a
+    // surface awaiting `list_models` from the session the user just closed
+    // waits the full 10s timeout before finding out, and paints "the session
+    // did not answer" long after the card went. The timeout stays the backstop
+    // for a session that merely goes quiet; this is the fast path for one we
+    // know is gone.
+    tearDownStep(liveId, 'control.forgetSession', () => manager.control.forgetSession(liveId));
     // marks the kill intentional BEFORE tearing the process down, mirroring
     // kill(): otherwise onExit could see killRequested=false and report a
     // spurious `crashed` for an ordinary suspend/restart (review nit).
@@ -548,6 +556,15 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   // which is the entire defect #200 exists to remove.
   manager.onSessionExit((e) => {
     releaseHeldPermissions(e.sessionId, 'session exited');
+    // ...and the same release for the control channel (#721). A SELF-exit — a
+    // CLI that crashed or was killed from outside — reaches no `tearDownLive`
+    // at all, which is exactly the gap #271 found for held permissions and the
+    // reason `releaseHeldPermissions` is on this line above. Without it, a
+    // surface awaiting `list_models` from a session we WATCHED DIE still waits
+    // the full 10-second timeout and then reports "the session did not answer".
+    tearDownStep(e.sessionId, 'control.forgetSession', () =>
+      manager.control.forgetSession(e.sessionId)
+    );
     tearDownStep(e.sessionId, 'transcripts.noteSessionExited', () =>
       transcripts.noteSessionExited(e.sessionId)
     );
@@ -734,6 +751,31 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   broker.handle('sessions:interrupt', (_e, sessionId: string) => {
     if (typeof sessionId !== 'string') return false;
     return manager.interrupt(sessionId);
+  });
+  // ── The control channel's two verbs (#721) ─────────────────────────────────
+  //
+  // Both answer a VERDICT rather than a boolean, and that is the difference
+  // from `interrupt` directly above. Interrupt is fire-and-forget, so "did the
+  // transport take it" is the whole answer. These wait for the CLI, so the
+  // surface has four distinguishable outcomes to render — it worked, the CLI
+  // refused it and said why, this session has no control channel (a PTY), or
+  // nobody answered — and collapsing those to a boolean is what left #714's
+  // reconnect saying "restart the session" for want of a reason to show.
+  //
+  // Nothing here is trusted from the renderer: `sessionId` is type-checked, and
+  // the model id is validated inside `setModelRequest` before it can reach the
+  // wire (a missing one is a measured silent no-op at the CLI).
+  broker.handle('sessions:listModels', (_e, sessionId: string) => {
+    if (typeof sessionId !== 'string') {
+      return { ok: false, reason: 'invalid', message: 'no session' } satisfies ControlVerdict;
+    }
+    return manager.listModels(sessionId);
+  });
+  broker.handle('sessions:setModel', (_e, sessionId: string, model: unknown) => {
+    if (typeof sessionId !== 'string') {
+      return { ok: false, reason: 'invalid', message: 'no session' } satisfies ControlVerdict;
+    }
+    return manager.setModel(sessionId, model);
   });
   // "Allow all (this session)": answered at the SERVER from now on — no
   // hold, no needs-permission event, no beep (review P2 #19, Dan round 4).
