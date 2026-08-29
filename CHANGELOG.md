@@ -61,6 +61,22 @@ on the floor, and say so in your PR.
 
 ## 0.8.5 — unreleased
 
+### Added
+
+- **Type `/model` in a session to change its model.** A picker opens listing
+  everything Claude Code will accept — Opus, Sonnet, Haiku and the rest, with
+  Claude Code's own descriptions — and clicking one switches that session
+  straight away, mid-conversation, with no restart and nothing lost. It changes
+  that session only, not what new sessions start on. Before this, typing
+  `/model` in a Direct session did nothing at all: it opens a picker inside
+  Claude Code's terminal, and a Direct session has no terminal for it to appear
+  in. Sessions running in Terminal mode are unchanged — Claude Code's own picker
+  still works there and can do a little more.
+
+  Sometimes nothing is ticked. That's honest rather than broken: Claude Code
+  only reports which model it's running as part of replying, so a session that
+  hasn't answered yet hasn't said. Pick one, or send a prompt and reopen.
+
 ### Changed
 
 - The MCP servers pane now says what it covers. It lists the servers in your
@@ -69,6 +85,14 @@ on the floor, and say so in your PR.
   with them. Those work in your sessions but can't be shown here yet, so the
   pane now says so and points you at Claude Code's own `/mcp` picker for the
   full list. Previously a short list looked like a complete one.
+
+### Internal
+
+- switchboard can now ask Claude Code a question over its own control channel
+  and wait for the answer — the missing half of the connection it has always
+  used to *receive* permission prompts. The model picker is the first thing
+  built on it; the MCP panel's Reconnect and the per-session context percentage
+  are next.
 
 ## 0.8.4 — 2026-08-27
 

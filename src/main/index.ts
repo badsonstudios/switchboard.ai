@@ -22,6 +22,7 @@ import { createDiagnosticLogger } from './transport/diagnostics';
 import { parsePreferredTransport, TRANSPORT_ENV_VAR } from './transport/preferred-transport';
 import { StreamPermissions } from './sessions/stream-permissions';
 import { StreamCommands } from './sessions/stream-commands';
+import { StreamModel } from './sessions/stream-model';
 import { StreamFeed } from './feed/stream-feed';
 import { SessionManager } from './sessions/session-manager';
 import { HookListener } from './hooks/hook-listener';
@@ -1146,6 +1147,12 @@ app
     // and with no symptom but a stale popup.
     const streamCommands = new StreamCommands(createLogger(sink, 'sessions'));
     manager.onStreamMessage((sessionId, msg) => streamCommands.offer(sessionId, msg));
+    // Which model each session is actually running (#721). Same shape as the
+    // command store above and for the same reason: `system:init` is the only
+    // message that carries it, it arrives once per TURN, and nothing can ask
+    // for it.
+    const streamModel = new StreamModel(createLogger(sink, 'sessions'));
+    manager.onStreamMessage((sessionId, msg) => streamModel.offer(sessionId, msg));
     // The Feed, off the same stream (P2-E18-10). A THIRD subscription, for the
     // reason spelled out above: one listener per consumer, one blast radius
     // each. This one carries the most traffic by far — S-11 counted 719
@@ -1852,6 +1859,7 @@ app
       ptys,
       streamPermissions,
       streamCommands,
+      streamModel,
       streamFeed,
       hooks,
       transcripts,

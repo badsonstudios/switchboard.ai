@@ -1343,6 +1343,30 @@ export class SessionStore {
     }
   }
 
+  // ── `/model` typed in a composer (#721/#633) ────────────────────────────
+  //
+  // Its own signal rather than a parameter on the one above, because the two
+  // carry different payloads: the MCP manager is opened for the ACTIVE card and
+  // needs nothing, while the picker acts on the session the command was typed
+  // in — which, with popouts and split grids, is not reliably the focused one.
+  private modelOpenListeners = new Set<(liveId: string) => void>();
+
+  subscribeModelOpen(listener: (liveId: string) => void): () => void {
+    this.modelOpenListeners.add(listener);
+    return () => this.modelOpenListeners.delete(listener);
+  }
+
+  /** Something typed `/model` in this LIVE session — App should open the picker. */
+  notifyModelOpenRequested(liveId: string): void {
+    for (const l of this.modelOpenListeners) {
+      try {
+        l(liveId);
+      } catch (err) {
+        console.error('[store] model-open subscriber threw', err);
+      }
+    }
+  }
+
   // ── the user submitted a prompt (P2-E9-06) ──────────────────────────────
   //
   // §5.8's auto-minimize needs an event with two ends that cannot see each

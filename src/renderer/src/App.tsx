@@ -48,6 +48,7 @@ import { answered, took } from '../../shared/ipc/refusal';
 import { PushSetupDialog } from './components/PushSetupDialog';
 import { QuietHoursDialog } from './components/QuietHoursDialog';
 import { McpManagerDialog } from './components/McpManagerDialog';
+import { ModelPickerDialog } from './components/ModelPickerDialog';
 import type { QuietState } from '../../shared/quiet-hours';
 import { unavailablePushConfig } from '../../shared/push';
 import type {
@@ -264,6 +265,22 @@ export function App(): React.JSX.Element {
       // Harmless when this window is already frontmost.
       window.focus();
       setMcpOpen(true);
+    });
+  }, []);
+  // The model picker (#721) — `/model` typed in a composer.
+  //
+  // It carries the LIVE ID, unlike `/mcp`: the picker acts on the session the
+  // command was typed in, and with popouts and split grids that is not reliably
+  // the focused card.
+  const [modelFor, setModelFor] = useState<string | null>(null);
+  React.useEffect(() => {
+    return sessionStore.subscribeModelOpen((liveId) => {
+      // Raise this window first, for `subscribeMcpOpen`'s reason: a popout
+      // shares this React tree but the dialog renders into the MAIN window's
+      // DOM, so from a popout the observable result would be "my draft vanished
+      // and nothing happened".
+      window.focus();
+      setModelFor(liveId);
     });
   }, []);
   const [quietState, setQuietState] = useState<QuietState | null>(null);
@@ -1187,7 +1204,7 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     railHiddenRef.current = railHidden;
     modalOpenRef.current =
-      paletteOpen || aboutOpen || updateOpen || pushOpen || quietOpen || mcpOpen;
+      paletteOpen || aboutOpen || updateOpen || pushOpen || quietOpen || mcpOpen || modelFor !== null;
   });
 
   // Set when a command deliberately raised a DIFFERENT OS window (jumping to a
@@ -1396,6 +1413,19 @@ export function App(): React.JSX.Element {
   const activeSession = sessions.find((s) => s.id === activeCard) ?? null;
   const activeSessionFolder = activeSession?.folder ?? null;
   const activeSessionTitle = activeSession?.title;
+  /**
+   * The title of the session the MODEL PICKER is acting on (#721).
+   *
+   * Looked up by LIVE ID, not from `activeSession`, and the difference is
+   * visible the first time anyone tests this: `/model` typed in a POPPED-OUT
+   * session raises the main window and opens the dialog for that session's live
+   * id — while `activeCard` still names whatever is focused in the main window.
+   * Using the active title there would have the dialog change one session's
+   * model under another session's name, in the header AND in the confirmation.
+   */
+  const modelSessionTitle = modelFor
+    ? (sessions.find((s) => s.liveId === modelFor)?.title ?? undefined)
+    : undefined;
   const railBindingLabel = formatBinding(bindingFor(commands, 'view.rail'), platform);
   const paletteBindingLabel = formatBinding(bindingFor(commands, 'palette.open'), platform);
   const queueBindingLabel = formatBinding(bindingFor(commands, 'attention.next'), platform);
@@ -1748,7 +1778,7 @@ export function App(): React.JSX.Element {
         }}
         // a second dialog is above this one: two stacked `aria-modal` regions
         // is a thing screen readers disagree about, so only the top one claims it
-        dialogAbove={updateOpen || pushOpen || quietOpen || mcpOpen}
+        dialogAbove={updateOpen || pushOpen || quietOpen || mcpOpen || modelFor !== null}
         onOpenPushSetup={openPushSetup}
         onOpenQuietHours={openQuietHours}
       />
@@ -1776,6 +1806,15 @@ export function App(): React.JSX.Element {
         // whether typing means anything on that session's transport — this only
         // says which session it is.
         liveId={activeSession?.liveId ?? null}
+      />
+      <ModelPickerDialog
+        open={modelFor !== null}
+        onClose={() => setModelFor(null)}
+        // The session `/model` was typed in — NOT the active card. `open` is
+        // derived from the same state so the two can never disagree about which
+        // session the dialog on screen belongs to.
+        liveId={modelFor}
+        {...(modelSessionTitle ? { sessionTitle: modelSessionTitle } : {})}
       />
       <QuietHoursDialog
         open={quietOpen}

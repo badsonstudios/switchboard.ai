@@ -254,6 +254,8 @@ export const CHANNEL_CAPABILITIES = {
   // `mcp:health` set the precedent by running the CLI under `mcp.read`. But a
   // future reviewer weighing a third one should weigh that, not just the verb.
   'sessions:listModels': 'sessions.read',
+  // Pure app-side state: what the last `system:init` reported (#721).
+  'sessions:currentModel': 'sessions.read',
   'sessions:setModel': 'sessions.write',
   'sessions:dropLive': 'sessions.spawn',
   'sessions:isDirectory': 'fs.probe',

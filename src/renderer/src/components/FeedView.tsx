@@ -1788,9 +1788,10 @@ function Composer({
     // handled — leaving it in the box invites a second press, and the user's
     // line did not fail.
     //
-    // Only `/mcp`, and only bare: `lib/slash-intercept` is deliberately strict,
-    // because swallowing a command addressed to the CLI is worse than the dead
-    // end it replaces.
+    // `/model` is the second one (#721), now that there is a control channel to
+    // ask the CLI what it has. `lib/slash-intercept`'s `ROUTES` is the list, and
+    // it is deliberately strict — bare commands only, because swallowing a
+    // command addressed to the CLI is worse than the dead end it replaces.
     //
     // ...AND ONLY ON A TRANSPORT WITH NO TERMINAL. A `pty` session HAS one, so
     // the CLI's own picker works there — and it can do things this pane
@@ -1799,8 +1800,22 @@ function Composer({
     // CLI kept for itself in the one mode where it was reachable, which is the
     // half of P7 the §6 amendment did NOT relax. Same test `canAttach` uses a
     // few lines down, for the same reason: the transport decides.
-    if (transport !== 'pty' && interceptSlash(text).kind === 'open-mcp') {
+    const intercept = transport !== 'pty' ? interceptSlash(text) : { kind: 'send' as const };
+    if (intercept.kind === 'open-mcp') {
       sessionStore.notifyMcpOpenRequested();
+      clearComposerDraft();
+      box.current?.focus();
+      return;
+    }
+    // `/model` (#721). Carries the LIVE ID, unlike `/mcp` — the picker acts on
+    // the session the command was typed in, and with popouts and split grids
+    // that is not reliably the focused card.
+    if (intercept.kind === 'open-model') {
+      // RETURNS EITHER WAY. Falling through on a missing id would send `/model`
+      // to the CLI — straight back into the dead end this replaces — so the
+      // failure direction is "nothing happens", not "the old bug happens".
+      // Unreachable today: `sessionId` is a required non-empty prop.
+      if (sessionId) sessionStore.notifyModelOpenRequested(sessionId);
       clearComposerDraft();
       box.current?.focus();
       return;
