@@ -24,6 +24,18 @@
 // ...and, with nothing registered:
 //
 //     No MCP servers configured. Use `claude mcp add` to add a server.
+//
+// AND IT ONLY EVER SPEAKS ABOUT ROWS THE CONFIG FILES ALREADY HOLD (#723). The
+// pane keys this map by name onto `config.ts`'s inventory, so a server the CLI
+// reports and no file declares contributes nothing and renders nowhere. That is
+// deliberate — `parseHealthLine` leans on it, refusing to invent rows from prose
+// it cannot parse — but it is also why the pane cannot show claude.ai connectors
+// or plugin-contributed servers even in principle.
+//
+// So if you arrived here hunting "why can't I see my connector": the answer is
+// not in this file and cannot be fixed in it. `claude mcp list` calls itself
+// "List CONFIGURED MCP servers" and has no more to give. The runtime inventory
+// has one source, the `mcp_status` control request (#721).
 import { execFile } from 'child_process';
 import { resolveCliPath } from '../providers/claude';
 import { execSpec } from '../transport/win-cmd';
