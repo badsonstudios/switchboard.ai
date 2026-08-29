@@ -56,12 +56,36 @@
 > and passes isolated in 1.5s — seen 3× locally today, **never once on CI**
 > across 16 checks. Same shape as #651.
 >
-> ## NEXT UP
+> ## NEXT UP — nothing started; the queue, in the order I would take it
 >
-> No item started. #633 has shrunk to the `/mcp` route, the per-command
-> disposition table and the manual. #715 (context %) is now a `get_context_usage`
-> call away. **#724** was filed today: `trust.ts` writes a case-variant project
-> key, so auto-trust can silently never apply.
+> **⚠️ #729 EXISTS BECAUSE THE FOLLOW-UP WORK HAD NO TICKET.** The real MCP fix
+> was recorded as an acceptance criterion in a COMMENT on #721 — and #721, #723
+> and #714 all closed on merge, so it would have evaporated. Check for this
+> shape when an item closes: work parked in a comment on the thing that closes.
+>
+> 1. **#729 — MCP over the control channel.** The biggest user-visible win left,
+>    and now buildable: `mcp_status` returns the session's REAL server list
+>    (3 shown vs 16 actual on the reporting machine), plus the `mcp_toggle` /
+>    `mcp_reconnect` verbs #632 and #714 concluded did not exist. Those two are
+>    LOCATED, NOT VERIFIED — probe first (`spike/probes/721/`).
+>    Closing it retires #723's footer.
+> 2. **#715 — context %.** `get_context_usage` works and serves `percentage`
+>    directly. Small now.
+> 3. **#704 — task-notification turns render as NEW PROMPT with raw XML.**
+>    Self-contained, no CLI contract to probe, and #640 made the divider louder
+>    so misclassified turns now shout. Dan hit this again dogfooding 2026-08-28.
+> 4. **#633** — shrunk to the `/mcp` route, the per-command disposition table
+>    and the manual.
+> 5. **#724** — `trust.ts` writes a case-variant project key, so auto-trust can
+>    silently never apply. 5 real collisions measured in Dan's `~/.claude.json`.
+>
+> ## ⏳ WAITING ON DAN — do not assume these passed
+>
+> **v0.8.5 is hand-tested on the DESKTOP only.** Dan tested the MCP surface on
+> his PC 2026-08-28; the **work laptop is the machine with the 16 servers** and
+> he cannot get to it until **Monday 2026-08-31**. The dogfood row's item 1 for
+> `/model` — does `set_model` have an EFFECT, not just an ack — is also still
+> unverified by hand on any machine.
 
 > # ✅ MERGED — 2026-08-28: **#721 PR 2 of 2** — the `/model` picker → PR #728
 >
