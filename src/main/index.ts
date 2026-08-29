@@ -1055,6 +1055,11 @@ app
       // answer (#729). `manager.mcpStatus` already refuses a session it does not
       // hold, so this is a straight pass-through rather than another guard.
       mcpStatus: (liveId) => manager.mcpStatus(liveId),
+      // The two verbs #632 and #714 concluded did not exist (#729 PR 2).
+      // `name`/`enabled` stay untyped through to `mcpToggleRequest`, which is
+      // the single place they are validated — see `McpIpcDeps.mcpToggle`.
+      mcpToggle: (liveId, name, enabled) => manager.mcpToggle(liveId, name, enabled),
+      mcpReconnect: (liveId, name) => manager.mcpReconnect(liveId, name),
     });
     registerBuiltinContributions();
     log.app.info('contributions registered', { manifests: registry.manifests() });

@@ -94,7 +94,7 @@ broken. You're seeing what's on disk rather than what the session has.
 | **not connecting** | It tried and couldn't — a wrong command, a server that isn't running, a network it can't reach |
 | **needs sign-in** | It's waiting for you to authorise it |
 | **waiting for your approval** | See below |
-| **turned off** | Approved once, then switched off for this project |
+| **turned off** | Switched off for this project — by you with **Turn off**, or by declining a shared server |
 | **status unknown** | We haven't heard back yet, or couldn't tell |
 
 **Seeing everything say "connecting…" right after you start a session is
@@ -172,7 +172,26 @@ actually in, which matters when the same name appears in two groups. This runs
 
 Rows marked **read-only** have no Remove button, because there's no file to
 remove them from. Those come from your claude.ai account, from a plugin, or from
-Claude Code itself, and that's where you change them.
+Claude Code itself, and that's where you change them. They can still be turned
+off and reconnected — see below.
+
+## Turning a server off
+
+Most rows have a **Turn off** button, and a row you've turned off has
+**Turn on** instead of Reconnect.
+
+**This sticks.** Turning a server off keeps it off for that project — in this
+session and in every new one — until you turn it back on. It isn't a "just for
+now" switch, which is why the panel says so when you use it.
+
+Use it when a server is noisy, slow, or getting in the way of a particular
+piece of work, and you'd rather not delete its configuration to be rid of it.
+
+**Shared project servers don't have this button**, and that's on purpose.
+A server from a repo's `.mcp.json` is governed by whether you *approved* it,
+which is a different question with a different answer — see **Approving a
+shared server** below. Two switches that both said "turned off" would be a
+good way to get a server stuck off with no way back.
 
 ## Making a session pick up your changes
 
@@ -181,20 +200,31 @@ running loaded its servers when it started, so it won't notice on its own —
 that's why a server you just added shows up under **In your files, not loaded by
 this session** rather than beside the rest.
 
-Click **Reconnect** at the bottom of the panel.
+You have three ways, and none of them needs a restart any more:
 
-- **A Terminal-mode session** gets `/mcp` typed into it, exactly as if you'd
-  typed it yourself, and Claude Code's own picker opens in the terminal. Answer
-  it there.
-- **A Direct-mode session** has no terminal for that picker to appear in, so
-  switchboard doesn't send anything and tells you so. Restart the session to
-  pick up the change.
-- **A session that isn't running** has nothing to reconnect; start it first.
+- **Load one server** — the row under *In your files, not loaded by this
+  session* has a **Load it now** button. That's the quickest fix after adding
+  something.
+- **Reconnect one server** — rows have **Reconnect**. Use it when a server says
+  *not connecting* and you've fixed whatever was wrong.
+- **Reconnect all** — the button at the bottom does every server at once, and
+  tells you if any didn't come back. **It skips servers you've turned off**, so
+  it can't quietly switch them back on behind you.
+
+**A Terminal-mode session works differently.** It can't be asked directly, so
+the bottom button still says **Reconnect** and types `/mcp` into the terminal —
+Claude Code's own picker opens there and you answer it yourself.
+
+**A session that isn't running** has nothing to reconnect; start it first.
 
 ## Approving a shared server
 
-There's no "turn it on" button here yet. Click **Reconnect** and answer Claude
-Code's own picker in the session.
+**Approving is not the same as turning on**, even though they sound alike.
+*Turn off* is your switch for a server you already trust. *Approval* is the
+question Claude Code asks before it will run a server a repo brought with it —
+someone else wrote that file. So **Turn on** won't approve a shared server:
+click **Reconnect** on its row and answer Claude Code's own picker in the
+session.
 
 If you want to be asked about *all* the project's shared servers again — because
 you said no to one by mistake, or the repo's `.mcp.json` has changed — click

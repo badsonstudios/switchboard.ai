@@ -80,6 +80,18 @@ on the floor, and say so in your PR.
   switchboard connecting to every server itself; a running session reports its
   own connection states straight away.
 
+### Added
+
+- **Turn an MCP server off and on** from the panel — including servers that
+  came from your claude.ai account or a plugin. Turning one off keeps it off
+  for that project, in this session and new ones, until you turn it back on.
+- **Reconnect a single server**, or **Reconnect all**, without restarting the
+  session. A server you just added has a **Load it now** button that pulls it
+  into the running session.
+- Direct-mode sessions are no longer told to restart to pick up MCP changes —
+  that was never a limit of Claude Code, only of what switchboard knew how to
+  ask for.
+
 ## 0.8.5 — 2026-08-28
 
 ### Added

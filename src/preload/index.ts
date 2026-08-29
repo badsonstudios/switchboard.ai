@@ -630,6 +630,42 @@ const api = {
      */
     reconnect: (folder: string, liveId: string): Promise<McpReconnectResult> =>
       ipcRenderer.invoke('mcp:reconnect', folder, liveId),
+    /**
+     * Turn one MCP server on or off (#729 PR 2) — the verb #632 and #714 both
+     * concluded did not exist. It does; it is just not a `claude mcp`
+     * subcommand, it is a control request.
+     *
+     * ⚠️ **IT PERSISTS.** This writes `disabledMcpServers` into
+     * `~/.claude.json` for the folder — measured, not assumed — so it is not a
+     * "just for this session" switch and a surface must not imply that. It also
+     * survives a restart, which is the whole reason it is worth having.
+     *
+     * `enabled` IS VALIDATED AS A STRICT BOOLEAN before the wire, because the
+     * CLI reads an ABSENT `enabled` as "disable" and answers success. Sending a
+     * dropped field would turn a server off and report that it worked.
+     */
+    toggle: (
+      folder: string,
+      liveId: string,
+      name: string,
+      enabled: boolean
+    ): Promise<ControlVerdict> =>
+      ipcRenderer.invoke('mcp:toggle', folder, liveId, name, enabled),
+    /**
+     * Re-resolve ONE server — no terminal, no restart (#729 PR 2).
+     *
+     * TWO JOBS, both measured: it reconnects a server that dropped, AND it
+     * pulls in one the session never loaded. `mcp_status` is frozen at spawn,
+     * so a server added with `claude mcp add` mid-session is invisible to the
+     * running session until this runs. That is what lets the pane offer a
+     * button where #714 could only say "restart the session".
+     *
+     * NOT the same channel as `reconnect` above, which types `/mcp` into a PTY.
+     * That one is for a Terminal session with no control channel; this one is
+     * for everything else.
+     */
+    reconnectServer: (folder: string, liveId: string, name: string): Promise<ControlVerdict> =>
+      ipcRenderer.invoke('mcp:reconnectServer', folder, liveId, name),
   },
   settings: {
     getAutoTrust: (): Promise<boolean> => ipcRenderer.invoke('settings:getAutoTrust'),

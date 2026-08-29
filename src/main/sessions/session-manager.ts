@@ -31,7 +31,9 @@ import { streamStatusEvent } from './stream-status';
 import {
   interruptRequest,
   listModelsRequest,
+  mcpReconnectRequest,
   mcpStatusRequest,
+  mcpToggleRequest,
   setModelRequest,
   userMessage,
   type PromptAttachment,
@@ -184,6 +186,50 @@ export class SessionManager {
   async mcpStatus(id: string): Promise<ControlVerdict> {
     const gone = this.controlPrecheck(id);
     return gone ?? this.control.request(id, mcpStatusRequest);
+  }
+
+  /**
+   * Turn one MCP server on or off (#729 PR 2).
+   *
+   * ⚠️ **THE ARGUMENTS ARE VALIDATED BEFORE THE WIRE, and that is not
+   * defensive habit.** Measured: `mcp_toggle` with a valid `serverName` and NO
+   * `enabled` field answers `success` and **disables the server**. An absent
+   * field reads as falsy at the CLI, so a dropped `enabled` anywhere upstream
+   * turns off a user's server and reports that it worked. `mcpToggleRequest`
+   * refuses a non-boolean rather than coercing one — see its docblock.
+   *
+   * IT PERSISTS to `~/.claude.json` (`projects[<folder>].disabledMcpServers`),
+   * so this is not a session-scoped switch and callers must not describe it as
+   * one.
+   */
+  async mcpToggle(id: string, serverName: unknown, enabled: unknown): Promise<ControlVerdict> {
+    const gone = this.controlPrecheck(id);
+    if (gone) return gone;
+    const verdict = await this.control.request(id, (requestId) =>
+      mcpToggleRequest(requestId, serverName, enabled)
+    );
+    if (verdict.ok) this.log.info('mcp server toggled', { sessionId: id, enabled });
+    return verdict;
+  }
+
+  /**
+   * Re-resolve one MCP server for this session (#729 PR 2).
+   *
+   * DOES TWO JOBS, because measurement says it does: it reconnects a server that
+   * dropped, AND it pulls in one the session never loaded — `mcp_status` is
+   * frozen at spawn, so a server added with `claude mcp add` mid-session is
+   * invisible until this runs. That second job is what lets the pane offer a
+   * button instead of "restart the session" (#714's outcome, now avoidable
+   * wherever there is a live stream session).
+   */
+  async mcpReconnect(id: string, serverName: unknown): Promise<ControlVerdict> {
+    const gone = this.controlPrecheck(id);
+    if (gone) return gone;
+    const verdict = await this.control.request(id, (requestId) =>
+      mcpReconnectRequest(requestId, serverName)
+    );
+    if (verdict.ok) this.log.info('mcp server reconnected', { sessionId: id });
+    return verdict;
   }
 
   /**

@@ -20,6 +20,11 @@
 //   mcp:resetApprovals  `claude mcp reset-project-choices` — PROJECT-WIDE
 //   mcp:reconnect       type `/mcp` into a live session, on the one transport
 //                       where that means anything
+//   mcp:toggle          `mcp_toggle` over the control channel (#729) — the verb
+//                       #632 and #714 concluded did not exist, measured
+//   mcp:reconnectServer `mcp_reconnect` — reconnects ONE server with no
+//                       terminal and no restart, and pulls in one the session
+//                       never loaded
 //
 // HOW THIS SEAM SAYS NO: by resolving, never by throwing — the house shape
 // `group-ipc.ts`'s header argues for at length. `mcp:list` answers an inventory
@@ -107,6 +112,17 @@ export interface McpIpcDeps {
    * rather than assuming a channel exists.
    */
   mcpStatus?: (liveId: string) => Promise<ControlVerdict>;
+  /**
+   * Turn one server on or off (#729 PR 2).
+   *
+   * `name` and `enabled` stay `unknown` all the way to `mcpToggleRequest`,
+   * which is the ONLY thing that validates them. Narrowing here would create a
+   * second, weaker gate for the same measured hazard — the CLI reads an absent
+   * `enabled` as "disable" and answers success.
+   */
+  mcpToggle?: (liveId: string, name: unknown, enabled: unknown) => Promise<ControlVerdict>;
+  /** Re-resolve one server — including one the session never loaded (#729). */
+  mcpReconnect?: (liveId: string, name: unknown) => Promise<ControlVerdict>;
 }
 
 /**
@@ -360,6 +376,70 @@ export function registerMcpIpc(deps: McpIpcDeps): void {
     else log.warn('mcp:resetApprovals failed', { folder, reason: result.reason });
     return result;
   });
+
+  // ── The control-channel write half (#729 PR 2) ─────────────────────────────
+  //
+  // BOTH GO THROUGH THE SAME TWO GATES as `mcp:status`: the folder, and then
+  // the session-belongs-to-that-folder check. These are mutations, so skipping
+  // the second would let a caller pair a folder it may name with any live
+  // session in the app and turn ITS servers off.
+  //
+  // Neither validates its payload here — `mcpToggleRequest` and
+  // `mcpReconnectRequest` do, before the wire, and that is deliberate rather
+  // than lazy: the CLI's `mcp_toggle` treats an ABSENT `enabled` as "disable"
+  // and answers success, so the check has to live where the message is built or
+  // it can be bypassed by a second caller.
+
+  /**
+   * A shared gate for the two control-channel mutations.
+   *
+   * Returns the live id to act on, or a verdict explaining why not — so each
+   * channel below is its one line of actual work.
+   */
+  const gateSession = (
+    channel: string,
+    folder: unknown,
+    liveId: unknown
+  ): { id: string } | ControlVerdict => {
+    if (!allowed(channel, folder)) {
+      return { ok: false, reason: 'invalid', message: 'that folder is not available' };
+    }
+    if (typeof liveId !== 'string' || !liveId) {
+      log.warn(`${channel} refused: liveId must be a non-empty string`);
+      return { ok: false, reason: 'invalid', message: 'no session' };
+    }
+    const session = deps.liveSession?.(liveId) ?? null;
+    if (!session) return { ok: false, reason: 'session-gone', message: 'the session has stopped' };
+    if (!samePath(path.resolve(session.folder), path.resolve(folder))) {
+      log.warn(`${channel} refused: session does not belong to that folder`, { folder });
+      return { ok: false, reason: 'invalid', message: 'that session is not in this folder' };
+    }
+    return { id: liveId };
+  };
+
+  broker.handle(
+    'mcp:toggle',
+    async (_e, folder: unknown, liveId: unknown, name: unknown, enabled: unknown) => {
+      const gate = gateSession('mcp:toggle', folder, liveId);
+      if (!('id' in gate)) return gate;
+      if (!deps.mcpToggle) {
+        return { ok: false, reason: 'not-stream', message: 'this session has no control channel' };
+      }
+      return deps.mcpToggle(gate.id, name, enabled);
+    }
+  );
+
+  broker.handle(
+    'mcp:reconnectServer',
+    async (_e, folder: unknown, liveId: unknown, name: unknown) => {
+      const gate = gateSession('mcp:reconnectServer', folder, liveId);
+      if (!('id' in gate)) return gate;
+      if (!deps.mcpReconnect) {
+        return { ok: false, reason: 'not-stream', message: 'this session has no control channel' };
+      }
+      return deps.mcpReconnect(gate.id, name);
+    }
+  );
 
   /**
    * Reconnect — and the transport decision is MAIN'S, on purpose.

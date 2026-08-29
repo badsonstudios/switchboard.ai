@@ -247,7 +247,20 @@ export type McpRuntimeScope =
  * `unknown` is ours, not the CLI's: a status string we do not recognise. Fail
  * open (§4) — we do not know is never rendered as a fault in the user's setup.
  */
-export type McpRuntimeStatus = 'connected' | 'pending' | 'failed' | 'needs-auth' | 'unknown';
+export type McpRuntimeStatus =
+  | 'connected'
+  | 'pending'
+  | 'failed'
+  | 'needs-auth'
+  /**
+   * Switched off with `mcp_toggle` — and this is a MEASURED value, not a
+   * speculative one (#729 PR 2, 2026-08-29): after a toggle, `mcp_status`
+   * reported the server as `"disabled"`. It was folded into `unknown` in PR 1,
+   * which would have made a server the user had just turned off read as "we do
+   * not know" — and left the toggle looking like it had failed.
+   */
+  | 'disabled'
+  | 'unknown';
 
 /** One server the SESSION has, as `mcp_status` reports it. */
 export interface McpRuntimeServer {

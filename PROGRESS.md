@@ -3,14 +3,47 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔨 IN PROGRESS — 2026-08-29: **#729 PR 1 of 2** — the MCP inventory over the control channel
+> # 🔨 IN PROGRESS — 2026-08-29: **#729 PR 2 of 2** — the toggle/reconnect verbs
 >
-> **PR #730 is OPEN** — https://github.com/badsonstudios/switchboard.ai/pull/730
-> Branch `feature/729-mcp-status-inventory` (`b0e2663`), off `main` at `adc28bc`.
-> **6563 tests / 251 files**, typecheck and lint clean. Awaiting Dan's review.
+> Just started. Probing before the plan gate, per the standing rule.
 >
-> **#729 stays OPEN when this merges** — the PR says `Refs`, not `Closes`, because
-> the toggle/reconnect half is still to come.
+> ## ⛔ v0.8.6 IS DELIBERATELY HELD FOR THIS
+>
+> **Dan's call, 2026-08-29:** merge PR 1 but do NOT cut a release, so v0.8.6
+> carries both halves of #729 together. **So this item is the release blocker** —
+> nothing reaches his machines until it lands.
+>
+> ## THE MISTAKE THAT PRECEDED IT — worth not repeating
+>
+> Dan tested `/mcp` on the work laptop against **v0.8.5** and saw the same three
+> servers. Correct behaviour: v0.8.5 carries #723, which is the FOOTER EXPLAINING
+> the short list, not the fix. **I had told him to test on Monday without ever
+> checking that a build containing the code existed.** It did not — the PR was
+> open and the code was not on `main`. Second time the merged-≠-released trap has
+> bitten in this repo. `docs/plans/dogfood-testing.md` now marks unmerged rows
+> ⛔ NOT TESTABLE YET with the order of operations.
+>
+> ## THE PROBE PLAN — no consent needed, and that is the point
+>
+> Dan has skipped the "may I toggle your real DeepWiki server" question three
+> times. **It is now moot:** every open question can be answered against a
+> THROWAWAY server we add and remove ourselves, the shape
+> `probe-mcp-add-live.mjs` already used. Three questions:
+>
+> 1. `mcp_toggle` with a valid server and **no `enabled` field** — the `set_model`
+>    silent-no-op shape. Unreachable with a fake name; the lookup runs first.
+> 2. Does a toggle **PERSIST** to `~/.claude.json`, or die with the session?
+>    Decides what the UI tells the user it just did.
+> 3. **Does `mcp_reconnect` pick up a server the session NEVER LOADED?** If yes,
+>    PR 1's "in your files, not loaded by this session" group gets a working
+>    per-row Reconnect. If no, its only honest advice is "restart the session".
+
+> # ✅ MERGED — 2026-08-29: **#729 PR 1 of 2** — the MCP inventory over the control channel
+>
+> **PR #730 merged** (`ed70ef6`), CI green on all four legs. #729 stays OPEN — the
+> PR said `Refs`, not `Closes`. **6563 tests / 251 files.**
+>
+> **NOT RELEASED.** See the hold above.
 >
 > **Split into two PRs** (Dan's call, same shape as #721). PR 1 = the read half,
 > here. **PR 2 = `mcp_toggle` / `mcp_reconnect`, not started.**

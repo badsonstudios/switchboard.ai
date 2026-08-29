@@ -74,6 +74,12 @@ function statusOf(raw: unknown): McpRuntimeStatus {
       return 'pending';
     case 'failed':
       return 'failed';
+    // MEASURED (#729 PR 2): this is what the CLI reports after `mcp_toggle`
+    // turns a server off. PR 1 folded it into `unknown`, which would have made
+    // a server the user had just switched off read as "status unknown" — and
+    // the toggle look broken.
+    case 'disabled':
+      return 'disabled';
     case 'needs-auth':
     case 'needs_auth':
       return 'needs-auth';

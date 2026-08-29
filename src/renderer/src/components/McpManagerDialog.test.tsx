@@ -21,6 +21,7 @@ import {
   rowStatus,
   runtimeStatus,
   toolPreview,
+  controlFailure,
 } from './McpManagerDialog';
 import { initI18nForTests } from '../i18n/test-i18n';
 import type {
@@ -32,6 +33,7 @@ import type {
   McpServerWire,
   McpStatusWire,
 } from '../../../shared/mcp';
+import type { ControlVerdict } from '../../../shared/control';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -79,6 +81,12 @@ let addAnswer: McpMutationResult;
 let removeAnswer: McpMutationResult;
 let resetAnswer: McpMutationResult;
 let reconnectAnswer: McpReconnectResult;
+/** what `mcp:toggle` answers (#729 PR 2) — a ControlVerdict, not a mutation
+ *  result: the control channel has its own failure vocabulary */
+let toggleAnswer: ControlVerdict;
+/** a FUNCTION, so a test can answer differently per call — which is what the
+ *  "how many failed" assertion on the global Reconnect needs */
+let reconnectServerAnswer: () => ControlVerdict;
 
 function installBridge(): void {
   const record =
@@ -111,6 +119,8 @@ function installBridge(): void {
             },
           }
         : {}),
+      toggle: record('toggle', () => toggleAnswer),
+      reconnectServer: record('reconnectServer', () => reconnectServerAnswer()),
       add: record('add', () => addAnswer),
       remove: record('remove', () => removeAnswer),
       resetApprovals: record('resetApprovals', () => resetAnswer),
@@ -190,6 +200,8 @@ beforeEach(() => {
   removeAnswer = { ok: true };
   resetAnswer = { ok: true };
   reconnectAnswer = { outcome: 'typed' };
+  toggleAnswer = { ok: true, response: {} };
+  reconnectServerAnswer = () => ({ ok: true, response: {} });
   listAnswer = (folder) => ({ folder, servers: [], unreadable: [] });
   healthAnswer = (folder) => ({ folder, states: {}, ok: true });
   statusAnswer = null;
@@ -885,8 +897,19 @@ describe('a row we cannot mutate says so, rather than offering a button that fai
     useStatus(ok([runtimeServer({ name: 'Slack', scope: 'dynamic', readOnly: true })]));
     await mount();
     expect(rowFor('Slack').dataset.mcpReadonly).toBe('');
-    expect(rowFor('Slack').querySelector('button')).toBeNull();
     expect(text()).toContain('read-only');
+    // NO **REMOVE** BUTTON — the assertion is deliberately about that one label
+    // rather than about buttons in general, and it got more specific in PR 2.
+    // `readOnly` means "no config file declares this, so `claude mcp remove`
+    // has nothing to edit". It does NOT mean the row is inert: `mcp_toggle` and
+    // `mcp_reconnect` work by NAME, not through a file, so a connector still
+    // gets Turn off and Reconnect. A blanket "no buttons" assertion would have
+    // locked in the wrong idea.
+    const labels = Array.from(rowFor('Slack').querySelectorAll('button')).map((b) =>
+      b.textContent?.trim()
+    );
+    expect(labels).not.toContain('Remove');
+    expect(labels).toContain('Turn off');
   });
 
   it('offers Remove for a row a config file vouches for', async () => {
@@ -1193,6 +1216,293 @@ describe('the empty case says the right thing for its source', () => {
   it('still blames the files on the config path, where that is true', async () => {
     await mount('C:/p/acme', null);
     expect(text()).toContain("session's files");
+  });
+});
+
+describe('turning a server off and on (#729 PR 2)', () => {
+  it('sends `enabled: false` as a LITERAL, never a dropped field', async () => {
+    // ⚠️ THE MEASURED HAZARD. `mcp_toggle` with a valid serverName and NO
+    // `enabled` answers success and DISABLES the server — worse than the
+    // `set_model` no-op, because it acts. Anywhere a `boolean | undefined`
+    // could reach the wire is a place a server gets silently switched off.
+    useStatus(ok([runtimeServer({ name: 'DeepWiki', status: 'connected' })]));
+    await mount();
+    await click(button('Turn off'));
+    const call = calls.find((c) => c.channel === 'toggle');
+    expect(call?.args).toEqual(['C:/p/acme', 'L1', 'DeepWiki', false]);
+    expect(typeof call?.args[3]).toBe('boolean');
+  });
+
+  it('offers "Turn on" for a row the CLI reports as disabled, and sends true', async () => {
+    useStatus(ok([runtimeServer({ name: 'DeepWiki', status: 'disabled' })]));
+    await mount();
+    expect(rowFor('DeepWiki').dataset.mcpState).toBe('disabled');
+    await click(button('Turn on'));
+    expect(calls.find((c) => c.channel === 'toggle')?.args[3]).toBe(true);
+  });
+
+  it('does NOT say "for this session" — the toggle persists', async () => {
+    // Measured: it writes `disabledMcpServers` to ~/.claude.json and survives a
+    // restart. Saying otherwise would be a lie the user discovers tomorrow.
+    useStatus(ok([runtimeServer({ name: 'DeepWiki' })]));
+    await mount();
+    await click(button('Turn off'));
+    expect(text()).toContain('stays off for this project');
+    expect(text()).not.toContain('for this session');
+  });
+
+  it('shows the CLI\u2019s own sentence when it refuses', async () => {
+    useStatus(ok([runtimeServer({ name: 'DeepWiki' })]));
+    toggleAnswer = { ok: false, reason: 'refused', message: 'Server not found: DeepWiki' };
+    await mount();
+    await click(button('Turn off'));
+    expect(text()).toContain('Server not found: DeepWiki');
+  });
+
+  it('offers the control on a READ-ONLY row too', async () => {
+    // `readOnly` is about Remove — whether a config file declares it. Toggling
+    // works by NAME, so there is no reason it should not reach a connector.
+    // UNMEASURED for real connectors (none on the dev machine), so the button
+    // is offered and a refusal is rendered rather than the row being inert.
+    useStatus(ok([runtimeServer({ name: 'Slack', scope: 'dynamic', readOnly: true })]));
+    await mount();
+    expect(button('Turn off')).not.toBeNull();
+  });
+});
+
+describe('the two off-switches must not be confused (found in review)', () => {
+  // THERE ARE TWO INDEPENDENT LOCKS AND THEY SHARE THE WORD "turned off":
+  // `disabledMcpjsonServers` is APPROVAL (undone by Reset approvals or the
+  // CLI's picker) and `disabledMcpServers` is this PR's toggle (undone by Turn
+  // on). A draft read the label from one and the button from the other.
+  it('offers NO toggle on a row that approval turned off — the infinite loop', async () => {
+    // The dead end: label said "turned off" (from approval), button said "Turn
+    // off" (from status), so Turn on never appeared. Pressing it added a second
+    // unrelated lock; pressing again cleared only that one and the approval
+    // label reasserted itself — round and round, server never coming back.
+    useStatus(
+      ok([runtimeServer({ name: 'shared', scope: 'project', approval: 'disabled' })])
+    );
+    await mount();
+    const labels = Array.from(rowFor('shared').querySelectorAll('button')).map((b) =>
+      b.textContent?.trim()
+    );
+    expect(labels).not.toContain('Turn off');
+    expect(labels).not.toContain('Turn on');
+  });
+
+  it('offers NO toggle on a row still waiting for approval', async () => {
+    // Reachable today. Pressing Turn off here writes a persistent entry that
+    // Reset approvals will NOT undo, while the row keeps saying "waiting for
+    // your approval" — a second lock closing with no feedback at all.
+    useStatus(ok([runtimeServer({ name: 'shared', scope: 'project', approval: 'pending' })]));
+    await mount();
+    const labels = Array.from(rowFor('shared').querySelectorAll('button')).map((b) =>
+      b.textContent?.trim()
+    );
+    expect(labels).not.toContain('Turn off');
+    expect(text()).toContain('waiting for your approval');
+  });
+
+  it('DOES offer it once approval has nothing to say', async () => {
+    // The control must not disappear for ordinary rows — that would be the
+    // over-correction.
+    useStatus(ok([runtimeServer({ name: 'ok', approval: 'n/a', status: 'connected' })]));
+    await mount();
+    expect(button('Turn off')).not.toBeNull();
+  });
+
+  it('runtimeStatus decides the label and the switch together', () => {
+    // The invariant: one function, so they cannot drift apart again.
+    expect(runtimeStatus(runtimeServer({ name: 'x', approval: 'disabled' })).toggle).toBe('none');
+    expect(runtimeStatus(runtimeServer({ name: 'x', approval: 'pending' })).toggle).toBe('none');
+    expect(runtimeStatus(runtimeServer({ name: 'x', status: 'disabled' })).toggle).toBe('on');
+    expect(runtimeStatus(runtimeServer({ name: 'x', status: 'connected' })).toggle).toBe('off');
+    expect(runtimeStatus(runtimeServer({ name: 'x', status: 'failed' })).toggle).toBe('off');
+  });
+});
+
+describe('reconnecting one server — no terminal, no restart (#729 PR 2)', () => {
+  it('reconnects a single runtime row by name', async () => {
+    useStatus(ok([runtimeServer({ name: 'DeepWiki', status: 'failed' })]));
+    await mount();
+    await click(button('Reconnect'));
+    expect(calls.find((c) => c.channel === 'reconnectServer')?.args).toEqual([
+      'C:/p/acme',
+      'L1',
+      'DeepWiki',
+    ]);
+  });
+
+  it('gives the NOT-LOADED group a working button instead of advice', async () => {
+    // THE Q3 FINDING. `mcp_status` is frozen at spawn, so PR 1 could only tell
+    // the user to restart. `mcp_reconnect` was then measured to pull in a
+    // server the session had never loaded — so the row that says "not loaded"
+    // can now fix itself.
+    useStatus(ok([], [server({ name: 'justAdded', scope: 'local' })]));
+    await mount();
+    await click(button('Load it now'));
+    expect(calls.find((c) => c.channel === 'reconnectServer')?.args).toEqual([
+      'C:/p/acme',
+      'L1',
+      'justAdded',
+    ]);
+  });
+
+  it('re-asks for the list afterwards, so the row moves out of not-loaded', async () => {
+    useStatus(ok([], [server({ name: 'justAdded' })]));
+    await mount();
+    const before = statusCalls.length;
+    await click(button('Load it now'));
+    expect(statusCalls.length).toBeGreaterThan(before);
+  });
+});
+
+describe('the global Reconnect stops saying "restart the session" (#729 PR 2)', () => {
+  it('reconnects every server it knows about when there is a control channel', async () => {
+    // #714 answered `restart-required` for a Direct session because nothing
+    // could reach into it. That is no longer true, so the button must not say
+    // it — and the old channel must not even be called.
+    useStatus(
+      ok(
+        [runtimeServer({ name: 'a' }), runtimeServer({ name: 'b' })],
+        [server({ name: 'c', scope: 'local' })]
+      )
+    );
+    await mount();
+    await click(button('Reconnect all'));
+    const names = calls.filter((c) => c.channel === 'reconnectServer').map((c) => c.args[2]);
+    expect(names).toEqual(['a', 'b', 'c']);
+    expect(calls.map((c) => c.channel)).not.toContain('reconnect');
+  });
+
+  it('still uses the OLD channel when there is no control channel', async () => {
+    // A Terminal session or a suspended card: `mcp:reconnect` types `/mcp` into
+    // a PTY, which is the only thing that works there.
+    listAnswer = (folder) => ({ folder, servers: [server({ name: 'sentry' })], unreadable: [] });
+    await mount(); // no status channel at all
+    await click(button('Reconnect'));
+    expect(calls.map((c) => c.channel)).toContain('reconnect');
+    expect(calls.map((c) => c.channel)).not.toContain('reconnectServer');
+  });
+
+  it('SKIPS servers the user turned off — reconnect would silently re-enable them', async () => {
+    // MEASURED (`probe-toggle-reconnect-interaction.mjs`): `mcp_reconnect`
+    // against a disabled server takes it from `disabled` back to `connected`.
+    // So an unfiltered Reconnect all undoes every toggle in the pane in one
+    // press — the exact inverse of the persistence this PR exists to honour.
+    useStatus(
+      ok([
+        runtimeServer({ name: 'on', status: 'connected' }),
+        runtimeServer({ name: 'off', status: 'disabled' }),
+        runtimeServer({ name: 'declined', scope: 'project', approval: 'disabled' }),
+      ])
+    );
+    await mount();
+    await click(button('Reconnect all'));
+    const names = calls.filter((c) => c.channel === 'reconnectServer').map((c) => c.args[2]);
+    expect(names).toEqual(['on']);
+  });
+
+  it('does not offer per-row Reconnect on a disabled row either', async () => {
+    // Same measurement, row scale: the way back on is Turn on, which says what
+    // it does, not Reconnect, which would do it as a side effect.
+    useStatus(ok([runtimeServer({ name: 'off', status: 'disabled' })]));
+    await mount();
+    const labels = Array.from(rowFor('off').querySelectorAll('button')).map((b) =>
+      b.textContent?.trim()
+    );
+    expect(labels).not.toContain('Reconnect');
+    expect(labels).toContain('Turn on');
+  });
+
+  it('reconnects one name once, even when two scopes declare it', async () => {
+    // `config.ts` deliberately does not dedupe across scopes, so the same name
+    // is two rows — but it is one server to reconnect, and counting it twice
+    // would inflate the total the notice reports.
+    useStatus(
+      ok([
+        runtimeServer({ name: 'dup', scope: 'project' }),
+        runtimeServer({ name: 'dup', scope: 'user' }),
+      ])
+    );
+    await mount();
+    await click(button('Reconnect all'));
+    expect(calls.filter((c) => c.channel === 'reconnectServer')).toHaveLength(1);
+  });
+
+  it('reports how many failed rather than claiming success', async () => {
+    let n = 0;
+    statusAnswer = (_f, liveId) => ({
+      sessionId: liveId,
+      servers: [runtimeServer({ name: 'a' }), runtimeServer({ name: 'b' })],
+      notLoaded: [],
+      reason: 'ok',
+    });
+    reconnectServerAnswer = () =>
+      ++n === 1 ? { ok: true, response: {} } : { ok: false, reason: 'refused', message: 'nope' };
+    installBridge();
+    await mount();
+    await click(button('Reconnect all'));
+    // THE COUNT IS THE SUCCESSES, not the total. Review caught it reporting the
+    // total: "Reconnected 2 servers, but 1 didn't come back" argues with
+    // itself, and the all-failed case read "Reconnected 3, but 3 didn't".
+    expect(text()).toContain('Reconnected 1 server');
+    expect(text()).toContain("1 didn't come back");
+    expect(text()).not.toContain('Reconnected 2 servers');
+  });
+
+  it('says "none of them" rather than "Reconnected 0 servers" when all fail', async () => {
+    statusAnswer = (_f, liveId) => ({
+      sessionId: liveId,
+      servers: [runtimeServer({ name: 'a' })],
+      notLoaded: [],
+      reason: 'ok',
+    });
+    reconnectServerAnswer = () => ({ ok: false, reason: 'timed-out', message: 'x' });
+    installBridge();
+    await mount();
+    await click(button('Reconnect all'));
+    expect(text()).toContain('none of them');
+  });
+
+  it('clears the spinner when the folder changes mid-loop', async () => {
+    // Every in-flight action bails on an epoch mismatch WITHOUT clearing
+    // `busy` — correct, but only the open/close effect was clearing it. A
+    // folder switch mid-reconnect therefore froze every button in the pane
+    // until close-and-reopen, and Reconnect all makes that window N × 10s.
+    useStatus(ok([runtimeServer({ name: 'a' }), runtimeServer({ name: 'b' })]));
+    await mount();
+    await act(async () => {
+      root.render(<McpManagerDialog open onClose={() => {}} folder="C:/p/other" liveId="L1" />);
+    });
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    // nothing is disabled — the pane is usable again
+    const disabled = Array.from(host.querySelectorAll('button')).filter((b) => b.disabled);
+    expect(disabled).toHaveLength(0);
+  });
+});
+
+describe('controlFailure — the control channel speaks a different vocabulary', () => {
+  const t = (k: string): string => k;
+  it("passes the CLI's own sentence through on a refusal", () => {
+    expect(controlFailure({ ok: false, reason: 'refused', message: 'Server not found: x' }, t)).toBe(
+      'Server not found: x'
+    );
+  });
+
+  it.each([
+    ['not-stream', 'mcp.control.notStream'],
+    ['session-gone', 'mcp.reconnect.no-session'],
+    ['timed-out', 'mcp.control.timedOut'],
+    ['invalid', 'mcp.error.refused'],
+  ])('maps %s to its own sentence', (reason, key) => {
+    // NOT `failureMessage`'s vocabulary. "Claude Code isn't installed" and
+    // "this session can't be asked" are different problems and read differently.
+    expect(controlFailure({ ok: false, reason, message: '' } as never, t)).toBe(key);
   });
 });
 
