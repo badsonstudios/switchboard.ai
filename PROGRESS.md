@@ -5,9 +5,12 @@
 
 > # 🔨 IN PROGRESS — 2026-08-29: **#729 PR 1 of 2** — the MCP inventory over the control channel
 >
-> Branch `feature/729-mcp-status-inventory`, off `main` at `adc28bc`. **Not yet
-> committed** — code, tests and docs are done and green; awaiting the commit gate.
-> **6563 tests / 251 files**, typecheck and lint clean.
+> **PR #730 is OPEN** — https://github.com/badsonstudios/switchboard.ai/pull/730
+> Branch `feature/729-mcp-status-inventory` (`b0e2663`), off `main` at `adc28bc`.
+> **6563 tests / 251 files**, typecheck and lint clean. Awaiting Dan's review.
+>
+> **#729 stays OPEN when this merges** — the PR says `Refs`, not `Closes`, because
+> the toggle/reconnect half is still to come.
 >
 > **Split into two PRs** (Dan's call, same shape as #721). PR 1 = the read half,
 > here. **PR 2 = `mcp_toggle` / `mcp_reconnect`, not started.**
@@ -62,6 +65,15 @@
 > the work laptop — the machine with the 16 servers. The desktop has one
 > (DeepWiki), so it verifies mechanism, not coverage. Dan is not at that machine
 > until **Monday 2026-08-31**.
+>
+> ## NEXT UP — in the order I would take it
+>
+> 1. **#729 PR 2** — `mcp_toggle` / `mcp_reconnect`. Both verbs are measured and
+>    the channel exists; start by asking Dan the consent question above.
+> 2. **#715 — context %.** `get_context_usage` serves `percentage` directly.
+> 3. **#704 — task-notification turns render as NEW PROMPT with raw XML.**
+> 4. **#633** — the `/mcp` route, the per-command disposition table, the manual.
+> 5. **#724** — `trust.ts` writes a case-variant project key.
 
 > # 🚢 RELEASED — 2026-08-28: **v0.8.5** — `/model`, the control channel, and an honest MCP list
 >
