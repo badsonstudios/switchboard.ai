@@ -3,6 +3,66 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔨 IN PROGRESS — 2026-08-29: **#729 PR 1 of 2** — the MCP inventory over the control channel
+>
+> Branch `feature/729-mcp-status-inventory`, off `main` at `adc28bc`. **Not yet
+> committed** — code, tests and docs are done and green; awaiting the commit gate.
+> **6563 tests / 251 files**, typecheck and lint clean.
+>
+> **Split into two PRs** (Dan's call, same shape as #721). PR 1 = the read half,
+> here. **PR 2 = `mcp_toggle` / `mcp_reconnect`, not started.**
+>
+> ## THREE MEASUREMENTS, AND EACH ONE CHANGED THE DESIGN
+>
+> 1. **`mcp_toggle` AND `mcp_reconnect` EXIST.** #632 and #714 both concluded
+>    there is no enable/disable verb; that was a claim about `claude mcp --help`
+>    stated as a fact about the whole CLI. Probed **without mutating anything**
+>    by naming a server that does not exist — an absent VERB answers
+>    `Unsupported control request subtype`, an absent ARGUMENT answers `Server
+>    not found`. PR 2's foundation.
+> 2. **`mcp_status` SETTLES.** `pending` with no `serverInfo` and no `tools` at
+>    0.9 s, `connected` with both at 5.0 s. §1.2.2's capture was the WARM answer.
+>    So `pending` is a state the UI must DRAW, and the pane re-polls (2 s, ≤8).
+> 3. **`mcp_status` IS FROZEN AT SPAWN.** A server added mid-session NEVER
+>    appears in that session's answer; one removed never disappears. **Probed
+>    only because review demanded it** before accepting a finding — and it was
+>    right: the runtime-only pane would have answered Add with an unchanged list
+>    and Remove by leaving the row on screen. Hence `merge.ts`'s `notLoaded`.
+>
+> ## WHAT REVIEW CAUGHT (2 blockers, 6 should-fixes — all fixed)
+>
+> The two that would have cost real damage:
+>
+> * **The Add/Remove regression above** — shipped against #714, invisible to
+>   every test until the probe.
+> * **`merge.ts`'s name-only fallback could delete the wrong file.** `enterprise`
+>   and `managed` ARE file-backed and outrank user scope, so an org policy
+>   defining `github` over the user's own produced one row whose Remove button
+>   was wired to the user's copy. The fallback is gone; the exact match already
+>   covered every removable row.
+>
+> Also fixed: a stale-closure race that spawned the 20 s health CLI on a folder
+> switch, a transient poll failure discarding a good list, approval state
+> silently dropped from the runtime path, an unbounded 40-tool row, and two
+> refusal paths reporting `no-session` (which reads as "start this session" to
+> someone whose session is running).
+>
+> ## STILL UNMEASURED — for PR 2
+>
+> **`mcp_toggle` with a valid server and NO `enabled` field** — the `set_model`
+> silent-no-op shape. The server lookup runs first, so a fake name cannot reach
+> it: answering needs a real server and therefore a real mutation. Same for
+> whether a toggle PERSISTS to disk. **Dan has not answered the consent question
+> yet** — asked at the plan gate, ask again at the start of PR 2. Builders will
+> validate `enabled` before the wire regardless.
+>
+> ## ⚠️ THE ACCEPTANCE CRITERION NEEDS THE LAPTOP
+>
+> "The pane lists every server the session actually has" can only be PROVEN on
+> the work laptop — the machine with the 16 servers. The desktop has one
+> (DeepWiki), so it verifies mechanism, not coverage. Dan is not at that machine
+> until **Monday 2026-08-31**.
+
 > # 🚢 RELEASED — 2026-08-28: **v0.8.5** — `/model`, the control channel, and an honest MCP list
 >
 > **All three PRs merged and the tag is pushed.** #725 (`45101bd`), #726

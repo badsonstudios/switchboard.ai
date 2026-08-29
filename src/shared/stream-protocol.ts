@@ -302,7 +302,9 @@ export function interruptRequest(requestId: string): StreamInterruptRequest {
 //
 // EVERY SHAPE HERE WAS MEASURED against the CLI on PATH (2.1.245) on
 // 2026-08-28, not read out of the extension bundle. The probes are in
-// `.claude/work_files/723/probe721*.mjs` and the write-up is
+// `spike/probes/721/` (they were drafted in a git-ignored scratch directory and
+// committed there afterwards — a citation into `work_files` dies with the
+// worktree, which is what this line used to be) and the write-up is
 // `docs/reference-implementations.md` §1.2.2. Where the #721/#633 issue bodies
 // disagree with this file, this file wins — they were drawn from grepping a
 // binary for symbol names, which proves a verb EXISTS and nothing about what it
@@ -374,6 +376,34 @@ export function setModelRequest(requestId: string, model: unknown): StreamContro
   const trimmed = model.trim();
   if (!trimmed) return null;
   return controlRequest(requestId, { subtype: 'set_model', model: trimmed });
+}
+
+/**
+ * `mcp_status` — the session's REAL MCP inventory (#729).
+ *
+ * THE ONLY SOURCE FOR IT. The config files reach three of the CLI's eight
+ * runtime scopes, and the two blocs that dominate a real machine — claude.ai
+ * account connectors and plugin-supplied servers — live in no file at all.
+ * `claude mcp list` is not a way out either; its own description is "List
+ * **configured** MCP servers".
+ *
+ * No arguments, and nothing to validate: unlike `set_model` there is no field
+ * to drop, so this cannot have the silent-no-op shape and never returns `null`.
+ *
+ * ⚠️ **THE ANSWER SETTLES — it is not a one-shot** (measured 2026-08-29,
+ * `spike/probes/721/probe-mcp-settle.mjs`). On a freshly spawned session:
+ *
+ *     [896ms]  {name:"DeepWiki", status:"pending",   scope:"local"}   // no serverInfo, no tools
+ *     [5012ms] {name:"DeepWiki", status:"connected", scope:"local",
+ *               serverInfo:{name:"DeepWiki",version:"2.14.3"}, tools:[…3]}
+ *
+ * So a surface that asks once, immediately, gets a strictly poorer answer than
+ * one that waits — and `pending` is a state it has to be able to DRAW rather
+ * than a transient to code around. §1.2.2's captured example is the warm answer;
+ * this is the cold one, and both are real.
+ */
+export function mcpStatusRequest(requestId: string): StreamControlRequest {
+  return controlRequest(requestId, { subtype: 'mcp_status' });
 }
 
 /**

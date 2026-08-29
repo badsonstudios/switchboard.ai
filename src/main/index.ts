@@ -1051,6 +1051,10 @@ app
       // (S-01: writes to a closed pty raise async socket errors), so a session
       // that exited between the click and the write costs nothing.
       typeIntoPty: (liveId, data) => ptys.get(liveId)?.write(data),
+      // The control channel, for the one question the config files cannot
+      // answer (#729). `manager.mcpStatus` already refuses a session it does not
+      // hold, so this is a straight pass-through rather than another guard.
+      mcpStatus: (liveId) => manager.mcpStatus(liveId),
     });
     registerBuiltinContributions();
     log.app.info('contributions registered', { manifests: registry.manifests() });

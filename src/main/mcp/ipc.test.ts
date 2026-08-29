@@ -19,7 +19,9 @@ import { IpcBroker } from '../ipc/broker';
 import { LogFields, Logger } from '../log/logger';
 import * as health from './health';
 import * as cli from './cli';
-import type { McpAddRequest } from '../../shared/mcp';
+import * as config from './config';
+import type { McpAddRequest, McpStatusWire } from '../../shared/mcp';
+import type { ControlVerdict } from '../../shared/control';
 
 type Handler = (e: unknown, ...args: unknown[]) => unknown;
 
@@ -27,6 +29,9 @@ interface HarnessOpts {
   sessions?: Record<string, McpLiveSession>;
   /** omitted entirely for the "no PTY host wired" case */
   withPty?: boolean;
+  /** the control-channel verdict `mcp:status` gets back, or omitted for the
+   *  read-only wiring where no channel was handed in at all (#729) */
+  status?: (liveId: string) => Promise<ControlVerdict>;
 }
 
 function harness(folders: string[], opts: HarnessOpts = {}) {
@@ -55,6 +60,7 @@ function harness(folders: string[], opts: HarnessOpts = {}) {
     ...(opts.withPty === false
       ? {}
       : { typeIntoPty: (liveId: string, data: string) => typed.push({ liveId, data }) }),
+    ...(opts.status ? { mcpStatus: opts.status } : {}),
   });
   return {
     warnings,
@@ -76,7 +82,7 @@ const GOOD_ADD: McpAddRequest = {
 afterEach(() => vi.restoreAllMocks());
 
 describe('registration', () => {
-  it('registers the two read channels and the four write ones', () => {
+  it('registers the three read channels and the four write ones', () => {
     // A channel appearing here should be a deliberate edit to this list — the
     // point of the assertion is that a new door into main is never accidental.
     expect(harness([]).channels).toEqual([
@@ -86,7 +92,188 @@ describe('registration', () => {
       'mcp:reconnect',
       'mcp:remove',
       'mcp:resetApprovals',
+      'mcp:status',
     ]);
+  });
+});
+
+describe('mcp:status — the real inventory, over the control channel (#729)', () => {
+  const OK: ControlVerdict = {
+    ok: true,
+    response: {
+      mcpServers: [
+        { name: 'DeepWiki', status: 'connected', scope: 'local', config: { type: 'http', url: 'https://mcp.deepwiki.com/mcp' } },
+        { name: 'Slack', status: 'connected', scope: 'dynamic' },
+      ],
+    },
+  };
+  const live = { sessions: { s1: { folder: '/ok', transport: 'stream' } } };
+
+  /**
+   * An empty mutability floor — no config file declares anything.
+   *
+   * STUBBED RATHER THAN LEFT TO THE DISK, and not just for determinism: the
+   * real `readInventory` reads the developer's own `~/.claude.json`, so an
+   * unstubbed test would pass or fail depending on whose machine ran it.
+   */
+  const noConfig = (): void => {
+    vi.spyOn(config, 'readInventory').mockReturnValue({
+      folder: '/ok',
+      servers: [],
+      unreadable: [],
+    });
+  };
+
+  it('answers the servers the session reports', async () => {
+    noConfig();
+    const h = harness(['/ok'], { ...live, status: async () => OK });
+    const res = (await h.call('mcp:status', '/ok', 's1')) as McpStatusWire;
+    expect(res.reason).toBe('ok');
+    expect(res.servers.map((s) => s.name)).toEqual(['DeepWiki', 'Slack']);
+    // Nothing in a file vouches for either, so both are read-only — which is
+    // the connector case, and 13 of the 16 rows on the reporting machine.
+    expect(res.servers.every((s) => s.readOnly)).toBe(true);
+  });
+
+  it('folds the config file in, so a declared server becomes removable', async () => {
+    vi.spyOn(config, 'readInventory').mockReturnValue({
+      folder: '/ok',
+      servers: [
+        {
+          name: 'DeepWiki',
+          scope: 'local',
+          transport: 'http',
+          approval: 'n/a',
+          target: 'https://mcp.deepwiki.com/mcp',
+          args: [],
+          envKeys: ['DW_TOKEN'],
+          headerKeys: [],
+          source: 'claude.json',
+        },
+      ],
+      unreadable: [],
+    });
+    const h = harness(['/ok'], { ...live, status: async () => OK });
+    const res = (await h.call('mcp:status', '/ok', 's1')) as McpStatusWire;
+    const [deepwiki, slack] = res.servers;
+    expect(deepwiki.readOnly).toBe(false);
+    expect(deepwiki.removeScope).toBe('local');
+    expect(deepwiki.envKeys).toEqual(['DW_TOKEN']);
+    // ...and the connector beside it is untouched by that
+    expect(slack.readOnly).toBe(true);
+  });
+
+  // ── EVERY EMPTY LIST CARRIES A REASON ──────────────────────────────────────
+  //
+  // This is the whole shape of the wire type. #723 exists because "no servers
+  // configured" was rendered for a case that actually meant "we cannot see
+  // them", and an empty list with no reason would reintroduce that one layer in.
+
+  it('says `not-stream` for a PTY session rather than reporting no servers', async () => {
+    const h = harness(['/ok'], {
+      ...live,
+      status: async () => ({ ok: false, reason: 'not-stream', message: 'no channel' }),
+    });
+    const res = (await h.call('mcp:status', '/ok', 's1')) as McpStatusWire;
+    expect(res).toMatchObject({ reason: 'not-stream', servers: [] });
+    // NOT LOGGED AS A FAILURE, because it is not one — it is a permanent
+    // property of that transport, and the pane says something different for it.
+    expect(h.warnings).toHaveLength(0);
+  });
+
+  it.each([
+    ['a session that has stopped', 'session-gone', 'no-session'],
+    ['a CLI that never answered', 'timed-out', 'unavailable'],
+    ['a refusal', 'refused', 'unavailable'],
+  ])('maps %s to `%s` -> `%s`', async (_label, reason, expected) => {
+    const h = harness(['/ok'], {
+      ...live,
+      status: async () => ({ ok: false, reason, message: 'x' }) as ControlVerdict,
+    });
+    const res = (await h.call('mcp:status', '/ok', 's1')) as McpStatusWire;
+    expect(res.reason).toBe(expected);
+    expect(res.servers).toEqual([]);
+  });
+
+  it('says `unavailable` when no control channel was wired in at all', async () => {
+    // The read-only wiring — #632's tests, and any host that registers the seam
+    // without a session manager. Must not pretend the session has no servers.
+    const h = harness(['/ok'], live);
+    const res = (await h.call('mcp:status', '/ok', 's1')) as McpStatusWire;
+    expect(res).toMatchObject({ reason: 'unavailable', servers: [] });
+  });
+
+  it('says `no-session` for a card with nothing running', async () => {
+    const h = harness(['/ok'], { status: async () => OK });
+    const res = (await h.call('mcp:status', '/ok', 'gone')) as McpStatusWire;
+    expect(res).toMatchObject({ reason: 'no-session', servers: [] });
+  });
+
+  // ── THE SECOND GATE, WHICH IS THE ONE THAT MATTERS ─────────────────────────
+
+  it('REFUSES a session that does not belong to the gated folder', async () => {
+    // Without this the gate checks one thing and the action reads another: a
+    // caller pairs a folder it is allowed to name with the id of any live
+    // session in the app, and gets ITS servers back. `mcp:reconnect` carries the
+    // same check; this channel returns data, so the hole would be more useful.
+    const called = vi.fn(async () => OK);
+    const h = harness(['/ok'], {
+      sessions: { s1: { folder: '/somewhere-else', transport: 'stream' } },
+      status: called,
+    });
+    const res = (await h.call('mcp:status', '/ok', 's1')) as McpStatusWire;
+    // `unavailable`, NOT `no-session` — the renderer turns the latter into
+    // "start this session to see everything it really has", which is advice
+    // about a session that is running perfectly well. A refusal is ours, not a
+    // fact about the user's setup.
+    expect(res.reason).toBe('unavailable');
+    expect(called).not.toHaveBeenCalled();
+    expect(h.warnings[0].msg).toContain('does not belong');
+  });
+
+  it.each([
+    ['a folder no session has', '/etc', 's1', 'unavailable'],
+    ['a non-string folder', 42, 's1', 'unavailable'],
+    ['an empty liveId', '/ok', '', 'no-session'],
+    ['a non-string liveId', '/ok', {}, 'no-session'],
+  ])('refuses %s without touching the channel', async (_label, folder, id, reason) => {
+    const called = vi.fn(async () => OK);
+    const h = harness(['/ok'], { ...live, status: called });
+    const res = (await h.call('mcp:status', folder, id)) as McpStatusWire;
+    expect(res.servers).toEqual([]);
+    // A GATE REFUSAL IS `unavailable`; a genuinely absent session is
+    // `no-session`. Collapsing the two would tell a user with a running session
+    // to start it.
+    expect(res.reason).toBe(reason);
+    expect(called).not.toHaveBeenCalled();
+  });
+
+  it('lists config servers the session has NOT loaded, so Add is not a dead button', async () => {
+    // MEASURED: `mcp_status` is frozen at session start
+    // (`spike/probes/721/probe-mcp-add-live.mjs`). A server added a moment ago
+    // is in the files and not in the session, and without this the pane would
+    // say "Added github." over a list that did not change.
+    vi.spyOn(config, 'readInventory').mockReturnValue({
+      folder: '/ok',
+      servers: [
+        {
+          name: 'justAdded',
+          scope: 'local',
+          transport: 'stdio',
+          approval: 'n/a',
+          target: 'npx',
+          args: [],
+          envKeys: [],
+          headerKeys: [],
+          source: 'claude.json',
+        },
+      ],
+      unreadable: [],
+    });
+    const h = harness(['/ok'], { ...live, status: async () => OK });
+    const res = (await h.call('mcp:status', '/ok', 's1')) as McpStatusWire;
+    expect(res.servers.map((s) => s.name)).toEqual(['DeepWiki', 'Slack']);
+    expect(res.notLoaded.map((s) => s.name)).toEqual(['justAdded']);
   });
 });
 

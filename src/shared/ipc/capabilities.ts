@@ -182,6 +182,7 @@ export const CHANNEL_CAPABILITIES = {
   // to every server and can take seconds — not because they are different
   // powers.
   'mcp:list': 'mcp.read',
+  'mcp:status': 'mcp.read',
   'mcp:health': 'mcp.read',
   // The write half (#714). All four hold `mcp.write`, INCLUDING `mcp:reconnect`
   // — which does not touch the config at all, but does put keystrokes into a

@@ -228,6 +228,81 @@ through rather than rewording it.
 The implementation of all this is `main/transport/control-channel.ts`; the
 builders and readers are in `shared/stream-protocol.ts`.
 
+##### The three MCP verbs, MEASURED (#729, 2026-08-29, PATH CLI 2.1.245)
+
+**`mcp_toggle` AND `mcp_reconnect` BOTH EXIST.** #632 and #714 each concluded
+there is no verb for enabling and disabling a server, and shipped a hand-off to
+the CLI's picker on that basis. That was **a claim about `claude mcp --help`
+stated as a fact about the whole CLI**, and it is wrong.
+
+Probed without mutating anything, by naming a server that does not exist — the
+CLI distinguishes an unknown VERB from an unknown ARGUMENT, so existence is
+provable without a side effect (`spike/probes/721/probe-mcp-verbs.mjs`):
+
+```
+mcp_toggle    {serverName:"__does_not_exist__", enabled:false}
+  -> error "Server not found: __does_not_exist__"
+mcp_reconnect {serverName:"__does_not_exist__"}
+  -> error "Server not found: __does_not_exist__"
+__definitely_not_a_verb__                                        <- the control
+  -> error "Unsupported control request subtype: __definitely_not_a_verb__"
+```
+
+The control line is what makes this conclusive rather than suggestive: a verb
+the CLI does not have answers with a *different sentence entirely*. Also
+measured: `mcp_toggle` with **no `serverName`** answers `Server not found:
+undefined` — refused, not the `set_model` silent no-op.
+
+⚠️ **STILL UNMEASURED:** `mcp_toggle` with a valid `serverName` and **no
+`enabled` field** — the `set_model` trap shape. The server lookup happens first,
+so a fake name cannot reach it; answering this needs a real server and therefore
+a real mutation. Whether a toggle PERSISTS to disk or dies with the session is
+unmeasured for the same reason. Validate `enabled` before the wire regardless.
+
+##### ⚠️ `mcp_status` SETTLES — the §1.2.2 capture above is the WARM answer
+
+Measured by polling one session (`spike/probes/721/probe-mcp-settle.mjs`):
+
+```
+[  896ms] {name:"DeepWiki", status:"pending",   scope:"local"}    // no serverInfo, no tools
+[ 2014ms] (unchanged)
+[ 5012ms] {name:"DeepWiki", status:"connected", scope:"local",
+           serverInfo:{name:"DeepWiki",version:"2.14.3"},
+           tools:[{name:"ask_question"},{name:"read_wiki_contents"},{name:"read_wiki_structure"}]}
+[10015ms] (unchanged)
+```
+
+So a consumer that asks **once, on open, gets a strictly poorer answer** than one
+that waits — every server greyed and toolless on a session that is perfectly
+healthy. `pending` is a state the surface must be able to DRAW, not a transient
+to code around, and `serverInfo`/`tools` are **absent rather than empty** for the
+whole window. `main/mcp/status.ts` is written to that; the pane re-polls at 2 s
+while any row is `pending`, bounded at eight asks.
+
+`system:init.mcp_servers` carries an inventory too, but it arrives **once per
+turn** (the same constraint as `system:init.model`), so it is useless to a pane
+opened on a session that has not run one.
+
+##### ⚠️ AND `mcp_status` IS FROZEN AT SPAWN — it does NOT re-resolve
+
+Measured (`spike/probes/721/probe-mcp-add-live.mjs`): with a session running,
+`claude mcp add sbprobe -s local` wrote the config (the CLI confirmed
+`File modified: …\.claude.json`) and **the new server never appeared** in that
+session's `mcp_status`, across polls at 6 s, 10 s and 16 s. Removing it again
+likewise changed nothing. The CLI resolves its MCP set **once, at spawn** —
+which is why `mcp_reconnect` and the whole Reconnect affordance exist.
+
+**This is a UI constraint, not a footnote.** A pane sourced only from
+`mcp_status` answers Add with a list that does not change, and answers Remove by
+leaving the row on screen — where, its config entry now gone, it silently turns
+read-only. Both read as bugs. So the config files stay in the picture for a live
+session too: `main/mcp/merge.ts`'s `notLoaded` is the set difference, drawn under
+its own heading.
+
+The consumers are `main/mcp/status.ts` (parse), `main/mcp/merge.ts` (the join to
+the config files, which is what decides whether a row can be removed) and the
+`mcp:status` channel in `main/mcp/ipc.ts`.
+
 ### 1.3 The settings schema is the standout
 
 `claude-code-settings.schema.json` is the full, authoritative schema for

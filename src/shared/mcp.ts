@@ -199,6 +199,165 @@ export interface McpHealthWire {
   ok: boolean;
 }
 
+// ── The RUNTIME inventory (#729) ─────────────────────────────────────────────
+//
+// Everything above this line describes what the CONFIG FILES hold. Everything
+// below describes what the SESSION actually has, which is a strictly larger set
+// and comes from one place: the `mcp_status` control request.
+
+/**
+ * Where a server comes from, in the CLI's **runtime** vocabulary.
+ *
+ * NOT `McpScope`, AND THE DIFFERENCE IS LOAD-BEARING. `McpScope` is the write
+ * side: three values, spelled the way `claude mcp add -s` spells them, so a
+ * scope can be handed straight back to `add`/`remove` with no translation. This
+ * is the read side, and the CLI resolves eight — `local`, `user`, `project`,
+ * `enterprise`, `managed`, `builtin`, `dynamic`, `skills` — plus a separate
+ * claude.ai connector class that is in no file at all.
+ *
+ * WIDENING `McpScope` TO COVER THESE WOULD BE THE BUG. It would type-check a
+ * call that hands `builtin` to `claude mcp remove -s builtin`, which is not a
+ * scope that subcommand accepts and not a server we are allowed to delete. The
+ * two vocabularies are kept apart so the compiler enforces what is mutable —
+ * see `McpRuntimeServer.readOnly`.
+ *
+ * `unknown` is the tolerance, same direction as `McpTransport`: a scope a newer
+ * CLI grows is carried through rather than dropping the server from the list. A
+ * server we cannot label is still a server the session has.
+ */
+export type McpRuntimeScope =
+  | McpScope
+  | 'enterprise'
+  | 'managed'
+  | 'builtin'
+  | 'dynamic'
+  | 'skills'
+  | 'unknown';
+
+/**
+ * Is the session talking to this server right now — the CLI's own word.
+ *
+ * `pending` IS NOT A LOADING SPINNER, it is an answer, and it is the one this
+ * type exists to make drawable. Measured on a freshly spawned session
+ * (`spike/probes/721/probe-mcp-settle.mjs`): `pending` at 0.9s, `connected` at
+ * 5.0s, with `serverInfo` and `tools` absent for the whole pending window. A
+ * surface that treats it as "not loaded yet" and hides the row will blink every
+ * server out of existence for five seconds on every fresh session.
+ *
+ * `unknown` is ours, not the CLI's: a status string we do not recognise. Fail
+ * open (§4) — we do not know is never rendered as a fault in the user's setup.
+ */
+export type McpRuntimeStatus = 'connected' | 'pending' | 'failed' | 'needs-auth' | 'unknown';
+
+/** One server the SESSION has, as `mcp_status` reports it. */
+export interface McpRuntimeServer {
+  name: string;
+  scope: McpRuntimeScope;
+  status: McpRuntimeStatus;
+  /** the endpoint or command, REDACTED by the same `redactUrl` the config path
+   *  uses — a runtime row carries a credential in its address just as readily */
+  target: string;
+  /** the server's self-reported name and version, once it has connected.
+   *  Absent for the whole `pending` window — see `McpRuntimeStatus`. */
+  version?: string;
+  /**
+   * The tool names this server exposes, once connected.
+   *
+   * NAMES ONLY, and empty until the handshake completes. This is the fact no
+   * config file can hold and the reason `mcp_status` is worth the round trip:
+   * "which of my sixteen servers is actually giving me tools" is the question
+   * the pane could never answer.
+   */
+  tools: readonly string[];
+  /**
+   * Can we change this server, or only show it?
+   *
+   * TRUE MEANS THE ROW MUST NOT OFFER REMOVE. You cannot `claude mcp remove` a
+   * claude.ai connector or a plugin's server — they are in no file, so there is
+   * nothing for the subcommand to edit. It is set by MATCHING against the config
+   * inventory rather than by guessing from the scope: a scope we have never
+   * heard of is not mutable, and a `local` row that no file actually declares is
+   * not either.
+   *
+   * VISIBLY read-only, not an inert button (#729's own acceptance criterion) —
+   * a button that fails is worse than no button.
+   */
+  readOnly: boolean;
+  /**
+   * The scope to hand `claude mcp remove -s`, present exactly when `readOnly`
+   * is false.
+   *
+   * THE CONFIG ENTRY'S SCOPE, NEVER `scope` ABOVE. The two vocabularies do not
+   * agree — a row the CLI resolved as `dynamic` may be backed by a `user`-scope
+   * definition, and `remove -s dynamic` is not a call that means anything.
+   * Carrying the write-side scope explicitly is what stops the renderer
+   * inventing one by narrowing a type it should not narrow.
+   */
+  removeScope?: McpScope;
+  /**
+   * The env/header KEY NAMES, from the config entry that backs this row.
+   *
+   * FLOWS THE OTHER WAY. `mcp_status` has no field for either, and "is my API
+   * key configured?" is answerable only from the file — so a runtime row that no
+   * file declares has empty lists here and that is the truth, not a gap. Values
+   * never travel; see `McpServerWire.envKeys` for the whole argument.
+   */
+  envKeys: readonly string[];
+  headerKeys: readonly string[];
+  /**
+   * The approval state, for a row a `.mcp.json` declares — absent otherwise.
+   *
+   * ALSO FROM THE FILE ONLY. It is not a field `mcp_status` reports and not a
+   * field in any config either: it is derived from two LISTS on the project
+   * entry. Carrying it across is what keeps "waiting for your approval" — and
+   * the rule that approval BEATS connection state, because an unapproved server
+   * reported as "not connected" describes the symptom instead of the cause —
+   * alive on the runtime path.
+   */
+  approval?: McpApproval;
+}
+
+/**
+ * What `mcp:status` answers: the servers the session really has.
+ *
+ * ECHOES THE SESSION ID for the same reason `McpInventoryWire` echoes the
+ * folder — a slow answer for the session the user has already left must not
+ * paint the one they are looking at now.
+ */
+export interface McpStatusWire {
+  sessionId: string;
+  servers: readonly McpRuntimeServer[];
+  /**
+   * Config-file servers this session has NOT loaded.
+   *
+   * ⚠️ **`mcp_status` IS FROZEN AT SESSION START** — measured
+   * (`spike/probes/721/probe-mcp-add-live.mjs`): a server added with `claude mcp
+   * add` while a session ran never appeared in its `mcp_status`, and one removed
+   * never disappeared. The CLI resolves its MCP set once, at spawn.
+   *
+   * WITHOUT THIS FIELD THE ADD BUTTON IS BROKEN. `mcp:add` would succeed, the
+   * pane would re-ask, the same rows would come back, and the user would read
+   * "Added github." over a list that did not change. Remove is worse: the row
+   * stays, and — its config entry now gone — silently turns read-only.
+   *
+   * These are drawn under their own heading with the ordinary config rendering,
+   * which is where Reconnect earns its place.
+   */
+  notLoaded: readonly McpServerWire[];
+  /**
+   * Why there are no servers, when there are none.
+   *
+   * THE WHOLE POINT OF THE SHAPE. An empty list means four different things and
+   * the pane has to say which: the session answered and genuinely has none
+   * (`ok`), this session has no control channel at all (`not-stream` — a PTY),
+   * there is no live session behind the card (`no-session`), or the CLI did not
+   * answer (`unavailable`). #723 shipped because "no servers configured" was
+   * rendered for a case that meant "we cannot see them", and this field is what
+   * stops that recurring on the new path.
+   */
+  reason: 'ok' | 'no-session' | 'not-stream' | 'unavailable';
+}
+
 /** One `KEY=value` / `Header: value` pair as the add form collects it.
  *
  *  A LIST OF PAIRS, NOT A RECORD, and deliberately: a record loses the order

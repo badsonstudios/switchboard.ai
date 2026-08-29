@@ -61,6 +61,25 @@ on the floor, and say so in your PR.
 
 ## 0.8.6 — unreleased
 
+### Changed
+
+- **The MCP panel now shows every server your session really has**, not just the
+  ones written in a configuration file. Connectors from your claude.ai account
+  and servers that plugins bring with them appear for the first time — on a
+  well-used machine that can be most of the list. Each row also shows the
+  server's version and how many tools it's giving you.
+- Servers that don't come from a configuration file are marked **read-only**
+  instead of offering a Remove button that couldn't have worked.
+- A server you add while a session is running now appears under **In your files,
+  not loaded by this session**, with a line telling you to Reconnect — rather
+  than seeming to vanish, since Claude Code only reads its servers at startup.
+- When the panel *can't* ask the session — it isn't running, it's in Terminal
+  mode, or it didn't answer — it now says **which** of those is the case,
+  instead of stating a general caveat every time.
+- Opening the panel on a session that isn't running no longer waits on
+  switchboard connecting to every server itself; a running session reports its
+  own connection states straight away.
+
 ## 0.8.5 — 2026-08-28
 
 ### Added

@@ -14,6 +14,7 @@ import type {
   McpAddRequest,
   McpHealthWire,
   McpInventoryWire,
+  McpStatusWire,
   McpMutationResult,
   McpReconnectResult,
   McpScope,
@@ -563,9 +564,34 @@ const api = {
      *  a folder main declines to look at. */
     list: (folder: string): Promise<McpInventoryWire> =>
       ipcRenderer.invoke('mcp:list', folder),
+    /**
+     * Every server the SESSION really has, over its control channel (#729).
+     *
+     * THE ONE THAT CAN SEE EVERYTHING. `list` reads three config files and
+     * therefore reaches three of the CLI's eight runtime scopes; this asks the
+     * session, which knows about claude.ai connectors and plugin-supplied
+     * servers too — the two blocs that dominate a real machine and appear in no
+     * file. 3 shown against 16 actual is what #723 measured on the config path.
+     *
+     * NEEDS A LIVE STREAM SESSION, and says so rather than implying it: a
+     * suspended card and a Terminal-transport session both answer with a
+     * `reason` and an empty list, so the pane can fall back to `list` and
+     * explain why instead of drawing "no servers".
+     *
+     * ASK AGAIN WHILE ANYTHING IS `pending`. The answer settles — a fresh
+     * session reports `pending` with no tool list for a few seconds before it
+     * reports `connected` (measured). This is one round trip, not a
+     * subscription.
+     */
+    status: (folder: string, liveId: string): Promise<McpStatusWire> =>
+      ipcRenderer.invoke('mcp:status', folder, liveId),
     /** Ask the CLI what it is actually connected to. SLOW — see above. Answers
      *  an empty map for every failure, with `ok: false` to say the check did
-     *  not run — which is a different fact from "that server is unknown". */
+     *  not run — which is a different fact from "that server is unknown".
+     *
+     *  STILL THE RIGHT CALL FOR A CARD WITH NO LIVE SESSION, which is why
+     *  `status` did not replace it: it spawns its own CLI and therefore works
+     *  where the control channel does not exist at all. */
     health: (folder: string): Promise<McpHealthWire> =>
       ipcRenderer.invoke('mcp:health', folder),
     /**

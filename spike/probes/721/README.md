@@ -19,6 +19,9 @@ node spike/probes/721/probe721.mjs  "C:/Projects/Switchboard.ai"
 | `probe721b.mjs` | Where does the CURRENT model live? Dumps `initialize`'s keys and every `list_models` entry. Answer: **nowhere** — see finding 3. |
 | `probe721c.mjs` | Does `list_models` work on a **cold** session — no `initialize`, no turn? Answer: **yes**, and this one exists because the first version of finding 1 said otherwise and was wrong. |
 | `probe-mcp-status.mjs` | `mcp_status` (#723) — the runtime MCP inventory, which the config files cannot reach. |
+| `probe-mcp-verbs.mjs` | **Do `mcp_toggle` and `mcp_reconnect` exist?** (#729) Both do — #632 and #714 were wrong. Every call names a server that does NOT exist, so existence is proven with no side effect; a control call to a verb that really is absent is what makes the difference legible. |
+| `probe-mcp-settle.mjs` | **Does `mcp_status` change its answer over time?** (#729) Yes: `pending` with no tools at 0.9 s, `connected` with `serverInfo` and 3 tools at 5.0 s. §1.2.2's original capture was the warm answer; this is the cold one. |
+| `probe-mcp-add-live.mjs` | **Does `mcp_status` notice a server added AFTER the session started?** (#729) **No** — the CLI resolves its MCP set once, at spawn. The only probe here that mutates: it adds `sbprobe`, polls, removes it, and re-runs the remove at the end so the entry cannot survive a crash. Decided a UI question — see `merge.ts`'s `notLoaded`. |
 
 ## The two traps these cost us
 

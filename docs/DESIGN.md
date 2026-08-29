@@ -1296,6 +1296,13 @@ tab — it's the real CLI. On top, GUI sugar that never forks CLI behavior:
     the PATH CLI 2.1.245 and used by Anthropic's own VS Code extension. What we
     never built is the ability to SEND a control request (we only parse them
     inbound, for permissions). See #721; the correction is on #714 and #633.
+
+    **AND THEY ARE NOW MEASURED, NOT JUST LOCATED (#729, 2026-08-29).** Both
+    verbs answer `Server not found: <name>` for a server that does not exist,
+    where a verb the CLI genuinely lacks answers `Unsupported control request
+    subtype: <name>` — so existence was proved with no mutation at all. Details
+    and the remaining unmeasured case (`mcp_toggle` with no `enabled` field, the
+    `set_model` trap shape) in `docs/reference-implementations.md` §1.2.2.
   - **The picker commands do NOT dead-end after all — we had never learned to
     ask (#721).** §5.17 treated `/model`, `/permissions` and friends as
     unreachable in Direct mode because they open a TUI picker and a Direct
@@ -1342,6 +1349,42 @@ tab — it's the real CLI. On top, GUI sugar that never forks CLI behavior:
     (measured against a session spawned with our own flag list, 2026-08-28).
     That is #721's channel, and sourcing the pane from it is the real fix; #723
     shipped only the honest disclosure in the meantime.
+
+    **DONE (#729), and the sentence above is now the description of a FALLBACK.**
+    A live stream session is asked `mcp_status` and the pane draws that; the
+    config files are read alongside it, no longer as the inventory but as the
+    **mutability floor** — a row a file declares can be removed and carries its
+    env/header key names, and a row no file declares is rendered visibly
+    read-only, because `claude mcp remove` has nothing to edit for a connector.
+    The config-only list survives for the two cases with no control channel: a
+    suspended card and a Terminal-transport session. Both now say WHICH of those
+    they are, which is the part #723's blanket footer could not.
+
+    **The runtime scope vocabulary is a READ-side type, deliberately separate
+    from the write-side `McpScope`.** Widening the three-value scope to cover
+    all eight would type-check `claude mcp remove -s builtin`, which is neither
+    a scope that subcommand accepts nor a server we may delete. `shared/mcp.ts`
+    keeps `McpRuntimeScope` and `McpScope` apart so the compiler enforces what
+    is mutable.
+
+    ⚠️ **AND IT IS FROZEN AT SPAWN.** A server added with `claude mcp add`
+    while a session ran never appeared in that session's `mcp_status`, and one
+    removed never disappeared (measured 2026-08-29). The CLI resolves its MCP
+    set once, at startup — which is what Reconnect has always been for. So the
+    config files are still read for a LIVE session: the set difference is drawn
+    as its own group ("in your files, not loaded by this session"), because a
+    runtime-only pane answers Add with a list that does not change and answers
+    Remove by leaving the row on screen. That regression was caught in review of
+    #729 PR 1, not in the field.
+
+    ⚠️ **`mcp_status` SETTLES; the 2026-08-28 capture above is the WARM answer.**
+    A freshly spawned session reports every server `pending` with `serverInfo`
+    and `tools` **absent** for several seconds — measured at 0.9 s pending,
+    5.0 s connected (2026-08-29). So `pending` is a state a surface must DRAW,
+    a one-shot read on open shows a healthy session as a wall of grey, and the
+    pane re-polls while any row is pending. `system:init.mcp_servers` carries an
+    inventory too but arrives once per TURN, so it cannot serve a pane opened on
+    a session that has run none.
 
     **"Restart instead" is HONEST, not OPTIMAL, and the difference matters.**
     The stream transport is not actually mute here: `mcp_reconnect` is a control
