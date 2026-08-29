@@ -152,7 +152,15 @@ export interface McpUnreadableWire {
   scopes: readonly McpScope[];
 }
 
-/** What `mcp:list` answers: every server a given folder's session would see. */
+/**
+ * What `mcp:list` answers: every server a given folder's session has CONFIGURED.
+ *
+ * NOT every server that session can use (#723). This is resolved from three
+ * config files, and the CLI's runtime inventory is strictly larger — claude.ai
+ * account connectors and plugin-contributed servers appear in no file at all,
+ * so nothing on this wire can carry them. The runtime list has one source, the
+ * `mcp_status` control request (#721).
+ */
 export interface McpInventoryWire {
   /** the folder the scopes were resolved against — echoed back so a stale
    *  answer arriving after the user switched sessions can be discarded */

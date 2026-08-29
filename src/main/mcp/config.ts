@@ -15,6 +15,24 @@
 //
 // The CLI still owns every WRITE (`main/mcp/cli.ts`) and the one fact no file
 // holds — whether a server is actually connected (`main/mcp/health.ts`).
+//
+// ── WHAT THESE FILES CANNOT TELL YOU (#723, 2026-08-28) ──────────────────────
+//
+// The inventory below is a strict SUBSET of what the CLI resolves at run time,
+// and the gap is large enough to read as a bug: a machine with account
+// connectors and plugins showed 3 servers here against 16 in the CLI's own
+// `/mcp` picker. The CLI's scope vocabulary in 2.1.245 is `local` · `user` ·
+// `project` · `enterprise` · `managed` · `builtin` · `dynamic` · `skills`, plus
+// a separate claude.ai connector class. We read three files, so we reach three.
+// Connectors and plugin-contributed servers live in NO file at all.
+//
+// AND `claude mcp list` IS NOT THE WAY OUT. Its own description, read out of
+// the PATH binary, is "List CONFIGURED MCP servers" — the same surface this
+// file already reads, so shelling out for the inventory buys nothing but a text
+// parser. The runtime list has exactly one source: the `mcp_status` control
+// request, which answers `{name, status, serverInfo, config, scope, tools[]}`
+// per server — structured, and strictly richer than anything here. That is
+// #721's channel and the intended replacement for this read.
 import fs from 'fs';
 import os from 'os';
 import path from 'path';

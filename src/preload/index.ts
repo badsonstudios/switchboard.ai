@@ -557,8 +557,10 @@ const api = {
    * the wrong pane.
    */
   mcp: {
-    /** Every server this folder's session sees, across all three scopes.
-     *  Answers an empty inventory for a folder main declines to look at. */
+    /** Every server this folder's session has CONFIGURED, across all three
+     *  scopes — NOT every server it can use: connectors and plugin servers are
+     *  in no file and never appear here (#723). Answers an empty inventory for
+     *  a folder main declines to look at. */
     list: (folder: string): Promise<McpInventoryWire> =>
       ipcRenderer.invoke('mcp:list', folder),
     /** Ask the CLI what it is actually connected to. SLOW — see above. Answers

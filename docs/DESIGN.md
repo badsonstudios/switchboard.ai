@@ -1271,8 +1271,8 @@ tab — it's the real CLI. On top, GUI sugar that never forks CLI behavior:
   (`claude mcp add/remove`).
   Per-session view (what THIS session sees) and global view (all scopes).
 
-  **Three corrections from building it (#632, #714), because §5.17 as written
-  was wrong about all three:**
+  **Four corrections from building it (#632, #714, #723), because §5.17 as
+  written was wrong about all four:**
 
   - **`claude mcp list --json` does not exist.** `mcp list` and `mcp get` take
     no options beyond `-h` and print human text with emoji in it. The listing is
@@ -1324,6 +1324,24 @@ tab — it's the real CLI. On top, GUI sugar that never forks CLI behavior:
     `sendSessionCommand` is deliberately transport-blind, which is correct for
     `/compact` (both routes deliver the same thing) and wrong here (one route
     delivers nothing).
+  - **"Per-session view (what THIS session sees)" over-promises, and the gap is
+    large (#723).** The config files are a STRICT SUBSET of the CLI's runtime
+    inventory. Its scope vocabulary in 2.1.245 is `local` · `user` · `project` ·
+    `enterprise` · `managed` · `builtin` · `dynamic` · `skills`, plus a separate
+    claude.ai connector class (`dynamic` covers `--mcp-config`, plugins, the IDE
+    bridge and chrome). We read three files, so we reach three of those — and
+    the two blocs that dominate a real machine, **account connectors and
+    plugin-contributed servers, live in no file at all**. A machine with both
+    showed **3 servers in our pane against 16 in the CLI's own `/mcp` picker**,
+    which is what got it reported as a bug.
+
+    And `claude mcp list` is not the way out: its own description is "List
+    **configured** MCP servers", the same surface we already read. The runtime
+    list has exactly one source — the `mcp_status` control request, which
+    answers `{name, status, serverInfo, config, scope, tools[]}` per server
+    (measured against a session spawned with our own flag list, 2026-08-28).
+    That is #721's channel, and sourcing the pane from it is the real fix; #723
+    shipped only the honest disclosure in the meantime.
 
     **"Restart instead" is HONEST, not OPTIMAL, and the difference matters.**
     The stream transport is not actually mute here: `mcp_reconnect` is a control

@@ -1,9 +1,13 @@
 // The MCP Manager (§5.17, #632 read, #714 write).
 //
-// WHAT IT ANSWERS: "what MCP servers does this session actually have, is the
-// CLI talking to them, and can I change that from here?" Before #632 the first
-// two had no answer inside switchboard at all — `/mcp` opens a picker in the
-// CLI's TUI, and a Direct session has no terminal for it to appear in (#633).
+// WHAT IT ANSWERS: "what MCP servers has this session CONFIGURED, is the
+// CLI talking to them, and can I change that from here?" The emphasis is load-
+// bearing and was added late: this line said "actually have" until #723 proved
+// that is a different and much larger set. See the #723 block below.
+//
+// Before #632 the first two had no answer inside switchboard at all — `/mcp`
+// opens a picker in the CLI's TUI, and a Direct session has no terminal for it
+// to appear in (#633).
 // Before #714 the third was "no": the pane was read-only and pointed at the
 // command line.
 //
@@ -33,6 +37,25 @@
 // OUTBOUND, which is the actual reason this pane hands off instead of toggling.
 // Nothing here is broken — but do not repeat the "no verb exists" reasoning on
 // another surface without checking the control protocol first.
+//
+// SHOW EVERY SERVER THE SESSION ACTUALLY HAS (#723). This pane lists what the
+// CONFIG FILES hold, and that is a strict subset of what the CLI resolves at
+// run time. Its scope vocabulary in 2.1.245 is `local` · `user` · `project` ·
+// `enterprise` · `managed` · `builtin` · `dynamic` · `skills`, plus a separate
+// claude.ai connector class; `dynamic` covers `--mcp-config`, plugins, the IDE
+// bridge and chrome. `main/mcp/config.ts` reads three files and can therefore
+// reach three of those. The two blocs that dominate a real machine — account
+// connectors and plugin-contributed servers — live in NO file, so they are
+// missing BY CONSTRUCTION rather than by a bug in the merge.
+//
+// DO NOT "FIX" THIS BY SHELLING HARDER. `claude mcp list` describes itself as
+// "List CONFIGURED MCP servers" (read out of the PATH binary, 2026-08-28) — it
+// is the same config surface, not an escape hatch from it. The runtime list is
+// reachable exactly once, over the control protocol: `mcp_status` returns
+// `{name, status, serverInfo, config, scope, tools[]}` per server, measured
+// against a session spawned with our own flag list. That is #721's channel, and
+// it is what should replace the file read here. Until then the footer says so
+// out loud rather than letting a short list read as a complete one.
 //
 // SHOW A SECRET. `McpServerWire` carries `envKeys` and `headerKeys` — the NAMES
 // — and has no field that can hold a value, so there is nothing here to reveal
@@ -734,7 +757,7 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
           <div
             data-mcp-health-unavailable
             style={{
-              padding: '6px 14px',
+              padding: '10px 14px',
               fontSize: 10.5,
               color: 'var(--faint)',
               borderBlockStart: '1px solid var(--border)',
@@ -809,10 +832,49 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
           </div>
         )}
 
-        {/* THE HONEST LIMIT, said in the UI rather than left for the user to
-            discover. Add and remove go through the real CLI; turning a server
-            on and off does not exist as a verb at all, so this pane hands that
-            question back to the CLI's own picker rather than inventing an
+        {/* THE STANDING CAVEATS, said in the UI rather than left for the user
+            to discover — and kept together at the bottom, BELOW the action bar,
+            because they are permanent properties of this pane. The blocks above
+            (`data-mcp-health-unavailable`, `data-mcp-notice`) are about this run
+            and this click, so they stay next to the rows and buttons they
+            describe. */}
+
+        {/* WHAT THIS LIST IS NOT (#723). The pane reads three config files, so
+            it can only ever show three of the CLI's eight scopes — and the two
+            biggest blocs on a real machine, claude.ai connectors and
+            plugin-contributed servers, live in NO file and are therefore
+            invisible by construction, not by accident.
+
+            Said whenever there is a session, INCLUDING the empty case, which is
+            where the silence misleads most: "no servers are configured" read as
+            "you have no servers" while the CLI's own picker showed eleven
+            connectors is the report that opened #723. P4/P6 — our blind spot
+            must never render as a fact about the user's setup.
+
+            THE ESCAPE HATCH IS PHRASED FOR BOTH TRANSPORTS ON PURPOSE. A Direct
+            session HAS NO TERMINAL (`mcp.reconnect.restart-required` says so a
+            few lines up the same dialog), and Direct is the default for every
+            new session — so "use the Terminal tab", which is what this said
+            first, was false for most sessions and contradicted the notice
+            rendered directly above it. Retire the whole block when #721 lets the
+            pane source its inventory from `mcp_status`. */}
+        {props.folder && !loading && (
+          <div
+            data-mcp-configured-only
+            style={{
+              padding: '10px 14px',
+              borderBlockStart: '1px solid var(--border)',
+              fontSize: 10.5,
+              color: 'var(--faint)',
+            }}
+          >
+            {t('mcp.configuredOnly')}
+          </div>
+        )}
+
+        {/* THE HONEST LIMIT. Add and remove go through the real CLI; turning a
+            server on and off does not exist as a subcommand, so this pane hands
+            that question back to the CLI's own picker rather than inventing an
             answer. */}
         <div
           style={{
