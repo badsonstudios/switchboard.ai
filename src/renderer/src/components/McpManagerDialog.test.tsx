@@ -599,6 +599,40 @@ describe('resetting project approvals', () => {
   });
 });
 
+describe('what this list is NOT (#723)', () => {
+  // The report that opened #723 was a screenshot of this pane showing 3 servers
+  // beside the CLI's own picker showing 16. Nothing was broken: connectors and
+  // plugin servers live in no config file, so the file read cannot reach them.
+  // The bug was that a short list read as a complete one. These pin the saying.
+  it('says the list is only the config files, with servers on screen', async () => {
+    listAnswer = (folder) => ({
+      folder,
+      servers: [server({ name: 'a' })],
+      unreadable: [],
+    });
+    await mount();
+    expect(rows()).toHaveLength(1); // the list it qualifies really rendered
+    expect(host.querySelectorAll('[data-mcp-configured-only]')).toHaveLength(1);
+    expect(text()).toContain('/mcp');
+  });
+
+  it('says it in the EMPTY case too — the one where silence misleads most', async () => {
+    // "No MCP servers are configured" beside a CLI picker listing eleven
+    // account connectors is the exact reading that produced the bug report, so
+    // the qualifier has to survive the branch that has no rows to qualify.
+    await mount();
+    expect(rows()).toHaveLength(0);
+    // the pairing is the point: the empty line AND the qualifier, together
+    expect(text()).toContain('No MCP servers are configured');
+    expect(host.querySelector('[data-mcp-configured-only]')).not.toBeNull();
+  });
+
+  it('stays quiet when there is no session — nothing is being claimed yet', async () => {
+    await mount(null);
+    expect(host.querySelector('[data-mcp-configured-only]')).toBeNull();
+  });
+});
+
 describe('when the health check never ran (#714)', () => {
   it('says so ONCE instead of stamping every row "status unknown"', async () => {
     // An absent name used to mean two different things at once: "the CLI has

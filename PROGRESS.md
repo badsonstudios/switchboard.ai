@@ -82,6 +82,195 @@
 >
 > `win-cmd.test.ts`'s real-`cmd.exe` case timed out at 5 s in one full run and
 > passed isolated in 1.5 s, then passed in the next full run. Same shape as #651.
+> # ✅ MERGED — 2026-08-28: **#723** — "fewer MCP servers" → PR #725 squashed to main
+>
+> Branch `feature/723-mcp-configured-only`, committed `9d532a5` and pushed.
+> **6392 tests / 244 files**, lint, typecheck, build all clean.
+>
+> **NEXT UP: #721** — the outbound control_request channel (its own block below,
+> and it is the real fix for this item).
+>
+> **Dan chose the HONESTY FIX** over building the real one now: the pane stops
+> implying its list is complete, and sourcing the inventory from `mcp_status`
+> rides on **#721**. A one-shot probe-session workaround was considered and
+> **explicitly rejected** — do not re-propose it.
+>
+> **Shipped:** a `data-mcp-configured-only` footer block + `mcp.configuredOnly`
+> string; reworded `mcp.empty` and `mcp.noSession`; the measured findings
+> written into `McpManagerDialog.tsx`, `mcp/config.ts`, `mcp/health.ts`,
+> `shared/mcp.ts` and `preload/index.ts`; a **fourth** correction in DESIGN
+> §5.17; a manual section; a CHANGELOG entry; 3 tests (all mutation-checked
+> red-then-green). **#724 filed** for the trust write path. #723 retitled.
+>
+> ## ⚠️ /review CAUGHT A BLOCKER IN THE FIRST DRAFT — THE FIX WAS ITSELF FALSE
+>
+> The note originally ended *"run /mcp in this session's **Terminal tab**"*.
+> **Direct mode is the default for every new session and HAS NO TERMINAL** —
+> `mcp.reconnect.restart-required` says so in this very dialog, and `/mcp` typed
+> in the composer is intercepted (`slash-intercept.ts`) into *this same pane*.
+> So on most sessions the honesty fix pointed at a dead end and contradicted the
+> notice rendered directly beside it. Now phrased for both transports. The same
+> sentence had already been copied into the manual and the CHANGELOG — **three
+> copies**; check for those when rewording a user-facing string.
+>
+> Also fixed from that review: the file-header claim "what MCP servers does this
+> session **actually have**" (the exact over-claim #723 is about, left standing
+> 34 lines above the new correction), the same over-claim in `shared/mcp.ts` and
+> `preload/index.ts`, and a manual sentence promising "every server the session
+> can see" 21 lines above the section retracting it.
+>
+> ## THE TITLE IS WRONG. IT IS NOT A SPAWN BUG.
+>
+> The two screenshots on the issue are **not** the comparison the title claims:
+>
+> * **Shot 1 is switchboard's own MCP Manager dialog** (#632/#714) — header
+>   "MCP servers for PLUSNative", 3 rows, `Add server…` / `Reconnect` buttons.
+>   It is NOT a spawned session's `/mcp`.
+> * **Shot 2 is Claude Code's `/mcp` picker inside VS Code** — 16 rows in three
+>   groups: 2 config servers, `claude.ai (11)`, `dynamic (2)` (`plugin:atlassian`,
+>   `plugin:azure-devops`).
+>
+> So the real comparison is **our dialog vs the CLI's picker**, not session vs
+> session. Nothing measured today suggests a spawned session sees less.
+>
+> ## THE CAUSE, PROVEN FROM OUR OWN CODE
+>
+> `main/mcp/config.ts` is a pure function of **three config files** — `~/.claude.json`
+> (`mcpServers` + `projects[folder].mcpServers`) and the repo's `.mcp.json`.
+> `main/mcp/health.ts` then merges `claude mcp list` state onto those rows **by
+> name**. A server with no config row is therefore **dropped by construction** —
+> it cannot appear, whatever the CLI reports.
+>
+> Account connectors and plugin servers live in **no config file**. They are
+> unreachable by design, not by accident. Shelling harder does not help:
+> `claude mcp list`'s own `--help` string is **"List *configured* MCP servers"**
+> (read out of the 2.1.245 binary today) — it is the same config surface we
+> already read.
+>
+> ### The CLI's runtime taxonomy is strictly larger than three files
+>
+> Grepped out of the PATH binary 2.1.245: `local` · `user` · `project` ·
+> `enterprise` · `managed` · `builtin` · **`dynamic`** · `skills`, plus a
+> separate claude.ai connector class. `dynamic` covers `--mcp-config`, plugins,
+> the IDE bridge and chrome. We can show exactly three of those.
+>
+> ## THE RUNTIME LIST IS REACHABLE — AND MEASURED TODAY
+>
+> `mcp_status` over the control channel, against a stream-json session spawned
+> with **our exact flag list** (`providers/claude.ts:345`), CLI 2.1.245:
+>
+> ```jsonc
+> {"mcpServers":[{"name":"DeepWiki","status":"connected",
+>   "serverInfo":{"name":"DeepWiki","version":"2.14.3"},
+>   "config":{"type":"http","url":"https://mcp.deepwiki.com/mcp"},
+>   "scope":"local","tools":[{"name":"ask_question"},…]}]}
+> ```
+>
+> Richer than anything we parse today: **scope, status, serverInfo, config and
+> the tool list, structured** — no text parsing, no glyph guessing. That is the
+> right source for the dialog, and it is **#721's channel**.
+>
+> **A required `initialize` first.** The session emits NO `system:init` until
+> something is sent; `mcp_status` alone times out. Probe:
+> `.claude/work_files/723/probe2.mjs`.
+>
+> **This desktop cannot reproduce the 16.** No plugins installed
+> (`~/.claude/plugins/installed_plugins.json` is `{}`), one connector ever seen
+> (`claudeAiMcpEverConnected: ["claude.ai Claude Code Remote"]`), user-scope
+> `mcpServers` **empty**, 47 projects — one server total (DeepWiki, project
+> scope). The shots are from Dan's other machine.
+>
+> ## ⚠️ THE ISSUE BODY'S "VERIFIED ENVIRONMENT INVENTORY" IS NOT VERIFIED
+>
+> It claims 16 servers, 3 at user scope, 165 projects, and that `claude mcp list`
+> prints all 16. **None of that matches this machine** and the last claim
+> contradicts the CLI's own help text. Treat that section as a hypothesis.
+>
+> ## THE ONE THING IN THE TICKET THAT IS REAL: KEY COLLISIONS
+>
+> The "probably a separate issue" note checks out — **5 collisions in
+> `~/.claude.json` on this machine**, including our own repo:
+> `c:/Projects/Switchboard.ai` **and** `C:/Projects/Switchboard.ai` as two
+> independent entries (also `C:/users/dheinz` vs `C:/Users/dheinz`, Moodathon,
+> ClaudeMon, BrainHarbor). 15 was wrong; the phenomenon was not.
+>
+> **Our READ side is already safe** — `config.ts:168` folds case on win32 and
+> normalises separators. The exposure is the **write** path
+> (`capabilities.trust.ensureTrusted`), which is what should be filed.
+
+> # 📎 SUPERSEDED — 2026-08-27 planning note for **#721** (kept for the probe detail; the block at the top of this file is the measured version and WINS where they disagree)
+>
+> **Dan asked for #633 (`/model`); it is BLOCKED by #721 and he chose the split:
+> do #721 now with `/model` as its proving consumer.** #633 then shrinks to the
+> `/mcp` route, the per-command disposition table and the manual. Not started;
+> no branch yet — Gate 1 not reached at the time of writing.
+>
+> ## ✅ THE PROBE IS DONE. THE PROTOCOL IS REAL. DO NOT RE-DERIVE THIS.
+>
+> Driven against the **PATH CLI 2.1.245** (not the extension's bundled 2.1.226),
+> three throwaway scripts in `.claude/work_files/probe-*.mjs`, spawned with the
+> exact stream flag list from `providers/claude.ts:345`. Everything below is
+> MEASURED. The `#633`/`#721` issue bodies are a map drawn from grepping a
+> binary; where they disagree with this block, **this block wins**.
+>
+> ### The envelope — and the one thing the issue text gets wrong
+>
+> ```jsonc
+> // out
+> {"type":"control_request","request_id":"sb-1","request":{"subtype":"set_model","model":"sonnet"}}
+> // back — success
+> {"type":"control_response","response":{"subtype":"success","request_id":"sb-1","response":{…}}}
+> // back — refusal
+> {"type":"control_response","response":{"subtype":"error","request_id":"sb-1","error":"<sentence>"}}
+> ```
+>
+> **`request_id` is NESTED at `msg.response.request_id`, NOT top-level.** The
+> inbound `can_use_tool` requests we already parse carry it at the TOP level
+> (`stream-permissions.ts:366` reads `msg.request_id`), so the two directions
+> differ and a correlator that copies the inbound reader is broken. `response`
+> is doubly nested for payload-bearing verbs (`msg.response.response`).
+>
+> ### What was measured, verb by verb
+>
+> | verb | result |
+> |---|---|
+> | `initialize` | **works, and carries everything.** Inner keys: `commands` (60, WITH `description`+`argumentHint`), `agents` (10), `models` (5), `output_style`, `available_output_styles`, `account`, `pid`, `current_permission_mode`, `fast_mode_state`, `session_state`. ~28 KB. Repeatable, not once-only. |
+> | **`list_models`** | **EXISTS — and is in no grep list on either ticket.** Returns just `{models:[…]}`. This is the right call for a picker: same data, without the 28 KB. |
+> | `set_model` | **genuinely changes the model, not an ack** — see below. |
+> | `get_context_usage` | works. `{totalTokens, maxTokens, percentage, categories[], gridRows[]}` — **#715 is free**, `percentage` is served directly. |
+> | `set_permission_mode` | works, echoes `{mode:"plan"}`. |
+> | `mcp_status` | works, `{mcpServers:[]}`. |
+> | `get_settings` / `get_usage` | both work. `get_usage` carries `subscription_type`, `five_hour`/`seven_day` rate-limit utilization — relevant to the usage-tracking feature, noted not claimed. |
+> | `supported_models`, `get_models`, `status` | **do not exist** — `Unsupported control request subtype: …` |
+>
+> ### `set_model` was verified by EFFECT, not by its ack
+>
+> The standing worry on the ticket ("nothing is a promise that each verb behaves
+> as its name suggests") is discharged for this one verb only. `set_model(haiku)`
+> → next turn's `system:init.model`, the `assistant` message's `message.model`
+> and `result.modelUsage` **all three** said `claude-haiku-4-5-20251001`; then
+> `set_model(sonnet)` → all three said `claude-sonnet-5`, mid-session, no restart.
+> `system:init` carries `model` every turn, so **the session tells us what it is
+> actually running for free** — the picker never has to guess its own current
+> value.
+>
+> ### Three findings that change the design
+>
+> 1. **`set_model` WITH NO `model` FIELD RETURNS `success`.** It silently does
+>    nothing. A non-string is properly refused (`set_model: model must be a
+>    string`), but the absent case is a success that changed nothing — so a
+>    dropped field looks like a working feature. **We validate before sending;
+>    the CLI will not catch it for us.**
+> 2. **The control channel is NOT blocked by a turn in flight.** `list_models`
+>    and `set_model` both answered in **0–2 ms** while the model was mid-reply.
+>    The picker does not need a busy state and must not serialise behind a turn.
+> 3. **An unknown subtype fails clean.** `Unsupported control request subtype: …`
+>    as an ordinary error response; the session lives. That is the fail-open
+>    (P6) answer for a future CLI that renames a verb — measured, not hoped.
+>
+> Bad-model refusals come back as a sentence written for a human — `Model "x" is
+> not a recognized model id. Run /model to see available models.` — so the
+> surface can pass the CLI's own words through, the way `mcp/cli.ts` does.
 
 > # 🚢 RELEASED — 2026-08-27: **v0.8.4**, and a correction that outlives it
 >

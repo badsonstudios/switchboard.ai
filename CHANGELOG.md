@@ -61,6 +61,15 @@ on the floor, and say so in your PR.
 
 ## 0.8.5 — unreleased
 
+### Changed
+
+- The MCP servers pane now says what it covers. It lists the servers in your
+  configuration files, and Claude Code also connects servers that live in no
+  file — connectors from your claude.ai account, and servers that plugins bring
+  with them. Those work in your sessions but can't be shown here yet, so the
+  pane now says so and points you at Claude Code's own `/mcp` picker for the
+  full list. Previously a short list looked like a complete one.
+
 ## 0.8.4 — 2026-08-27
 
 ### Added
