@@ -184,24 +184,38 @@ export const CHANNEL_CAPABILITIES = {
   'mcp:list': 'mcp.read',
   'mcp:status': 'mcp.read',
   'mcp:health': 'mcp.read',
-  // The write half (#714, extended #729). All SIX hold `mcp.write`, INCLUDING
-  // `mcp:reconnect` — which does not touch the config at all, but does put
-  // keystrokes into a live session, and grouping it with the reads would have
-  // let a listing-only consumer type into a terminal. What it may type is not
-  // open-ended: main sends the literal `/mcp` and a carriage return, never
+  // The write half (#714, extended #729 and #734). All EIGHT hold `mcp.write`,
+  // INCLUDING `mcp:reconnect` — which does not touch the config at all, but does
+  // put keystrokes into a live session, and grouping it with the reads would
+  // have let a listing-only consumer type into a terminal. What it may type is
+  // not open-ended: main sends the literal `/mcp` and a carriage return, never
   // caller-supplied text.
   //
-  // `mcp:toggle` IS THE MOST DANGEROUS OF THE SIX and reads like the least.
-  // It writes `disabledMcpServers` in `~/.claude.json` — measured, it PERSISTS
-  // past the session — and the CLI treats an absent `enabled` as "disable"
-  // while answering success. A read capability would have been an easy mistake:
-  // it looks like a view control and it silently turns off a user's tooling.
+  // `mcp:toggle` IS THE MOST DANGEROUS OF THE FILE-AND-SESSION ONES and reads
+  // like the least. It writes `disabledMcpServers` in `~/.claude.json` —
+  // measured, it PERSISTS past the session — and the CLI treats an absent
+  // `enabled` as "disable" while answering success. A read capability would have
+  // been an easy mistake: it looks like a view control and it silently turns off
+  // a user's tooling.
+  //
+  // ⚠️ `mcp:authenticate` AND `mcp:clearAuth` ACT ON AN ACCOUNT, NOT ON A
+  // CONFIG FILE (#734) — one starts an OAuth flow, which on a real connector
+  // may put a browser in front of the user, and the other discards credentials
+  // the CLI is holding. **`mcp.write` DOES NOT EXPRESS THAT, and saying so is
+  // the honest version of this comment.** Anything granted `mcp.write` in order
+  // to add a server also gets to start a sign-in and to throw one away; these
+  // are the first account-acting channels in the app and the capability
+  // vocabulary predates them. A separate `mcp.auth` is the fix if a consumer
+  // ever needs one without the other — worth doing before this file gains a
+  // third such verb, not because anything today is mis-scoped.
   'mcp:add': 'mcp.write',
   'mcp:remove': 'mcp.write',
   'mcp:resetApprovals': 'mcp.write',
   'mcp:reconnect': 'mcp.write',
   'mcp:toggle': 'mcp.write',
   'mcp:reconnectServer': 'mcp.write',
+  'mcp:authenticate': 'mcp.write',
+  'mcp:clearAuth': 'mcp.write',
   'notifications:getPrefs': 'settings.read',
   // Whether the quiet window is open right now, and how many events it has held
   // (P2-E14-05b). Reads settings plus a count of the app's own held list —

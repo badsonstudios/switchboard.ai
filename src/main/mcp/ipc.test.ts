@@ -32,12 +32,17 @@ interface HarnessOpts {
   /** the control-channel verdict `mcp:status` gets back, or omitted for the
    *  read-only wiring where no channel was handed in at all (#729) */
   status?: (liveId: string) => Promise<ControlVerdict>;
+  /** wire the two auth verbs (#734), or omit for the no-control-channel case */
+  auth?: boolean;
 }
 
 function harness(folders: string[], opts: HarnessOpts = {}) {
   const handlers = new Map<string, Handler>();
   const warnings: Array<{ msg: string; fields?: LogFields }> = [];
   const typed: Array<{ liveId: string; data: string }> = [];
+  /** what actually reached the session layer — the assertion that the gate let
+   *  something THROUGH, which a refusal test on its own cannot make (#734) */
+  const authed: Array<{ verb: string; liveId: string; name: unknown }> = [];
   const broker = {
     handle: (channel: string, fn: Handler) => {
       if (handlers.has(channel)) throw new Error(`${channel} registered twice`);
@@ -61,10 +66,23 @@ function harness(folders: string[], opts: HarnessOpts = {}) {
       ? {}
       : { typeIntoPty: (liveId: string, data: string) => typed.push({ liveId, data }) }),
     ...(opts.status ? { mcpStatus: opts.status } : {}),
+    ...(opts.auth
+      ? {
+          mcpAuthenticate: async (liveId: string, name: unknown) => {
+            authed.push({ verb: 'authenticate', liveId, name });
+            return { ok: true, response: {} };
+          },
+          mcpClearAuth: async (liveId: string, name: unknown) => {
+            authed.push({ verb: 'clearAuth', liveId, name });
+            return { ok: true, response: {} };
+          },
+        }
+      : {}),
   });
   return {
     warnings,
     typed,
+    authed,
     call: (channel: string, ...args: unknown[]) => handlers.get(channel)!(null, ...args),
     channels: [...handlers.keys()].sort(),
   };
@@ -82,11 +100,13 @@ const GOOD_ADD: McpAddRequest = {
 afterEach(() => vi.restoreAllMocks());
 
 describe('registration', () => {
-  it('registers the three read channels and the six write ones', () => {
+  it('registers the three read channels and the eight write ones', () => {
     // A channel appearing here should be a deliberate edit to this list — the
     // point of the assertion is that a new door into main is never accidental.
     expect(harness([]).channels).toEqual([
       'mcp:add',
+      'mcp:authenticate',
+      'mcp:clearAuth',
       'mcp:health',
       'mcp:list',
       'mcp:reconnect',
@@ -647,5 +667,87 @@ describe('mcp:reconnect — main decides, not the renderer', () => {
     expect(h.call('mcp:reconnect', '/ok', '')).toEqual({ outcome: 'refused' });
     expect(h.call('mcp:reconnect', '/ok', 42)).toEqual({ outcome: 'refused' });
     expect(h.typed).toEqual([]);
+  });
+});
+
+/**
+ * The two auth channels (#734).
+ *
+ * BOTH GATES MATTER MORE HERE THAN ANYWHERE ELSE IN THIS FILE, because these
+ * verbs act on an ACCOUNT rather than on a config file: one starts an OAuth
+ * flow, the other discards credentials the CLI is holding. The folder gate is
+ * the house rule; the session-belongs-to-that-folder check is what stops a
+ * caller pairing a folder it may name with any live session in the app.
+ */
+describe('mcp:authenticate / mcp:clearAuth — signing in and out (#734)', () => {
+  const live = { sessions: { s1: { folder: '/ok', transport: 'stream' } } };
+
+  it.each([['mcp:authenticate'], ['mcp:clearAuth']])('%s reaches the session when gated', async (channel) => {
+    const h = harness(['/ok'], { ...live, auth: true });
+    const res = await h.call(channel, '/ok', 's1', 'Slack');
+    expect(res).toMatchObject({ ok: true });
+    expect(h.authed).toEqual([
+      { verb: channel === 'mcp:authenticate' ? 'authenticate' : 'clearAuth', liveId: 's1', name: 'Slack' },
+    ]);
+  });
+
+  it.each([['mcp:authenticate'], ['mcp:clearAuth']])('%s refuses a folder we do not answer for', async (channel) => {
+    const h = harness(['/ok'], { ...live, auth: true });
+    const res = await h.call(channel, '/somewhere-else', 's1', 'Slack');
+    expect(res).toMatchObject({ ok: false, reason: 'invalid' });
+    expect(h.authed).toEqual([]);
+  });
+
+  it.each([['mcp:authenticate'], ['mcp:clearAuth']])(
+    '%s refuses a session that is not in that folder',
+    async (channel) => {
+      // THE HOLE THIS CLOSES: a caller naming a folder it is allowed to name,
+      // paired with the id of a live session somewhere else. Without the second
+      // check the gate checks one thing and the action affects another — and
+      // the action here is somebody's sign-in.
+      const h = harness(['/ok', '/other'], {
+        sessions: { s1: { folder: '/other', transport: 'stream' } },
+        auth: true,
+      });
+      const res = await h.call(channel, '/ok', 's1', 'Slack');
+      expect(res).toMatchObject({ ok: false, reason: 'invalid' });
+      expect(h.authed).toEqual([]);
+    }
+  );
+
+  it.each([['mcp:authenticate'], ['mcp:clearAuth']])('%s reports a session that has stopped', async (channel) => {
+    const h = harness(['/ok'], { auth: true });
+    expect(await h.call(channel, '/ok', 'gone', 'Slack')).toMatchObject({
+      ok: false,
+      reason: 'session-gone',
+    });
+  });
+
+  it.each([['mcp:authenticate'], ['mcp:clearAuth']])(
+    '%s says `not-stream` when no control channel was wired',
+    async (channel) => {
+      // The read-only wiring. `not-stream` rather than a generic refusal,
+      // because the renderer says something different for it: "this session
+      // runs in Terminal mode", not "that failed".
+      const h = harness(['/ok'], live);
+      expect(await h.call(channel, '/ok', 's1', 'Slack')).toMatchObject({
+        ok: false,
+        reason: 'not-stream',
+      });
+    }
+  );
+
+  it.each([
+    ['mcp:authenticate', 'authenticate'],
+    ['mcp:clearAuth', 'clearAuth'],
+  ])('%s passes a bad name STRAIGHT THROUGH to the one place that validates it', async (channel, verb) => {
+    // NOT narrowed here, deliberately — the request builders are the only
+    // validators, and a second weaker gate in this file could only ever drift
+    // into disagreeing with them. The same division `mcp:toggle` documents, and
+    // the reason that one is written this way is the measured hazard where a
+    // dropped field turns a server off and reports success.
+    const h = harness(['/ok'], { ...live, auth: true });
+    await h.call(channel, '/ok', 's1', 42);
+    expect(h.authed).toEqual([{ verb, liveId: 's1', name: 42 }]);
   });
 });

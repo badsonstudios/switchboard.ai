@@ -106,6 +106,14 @@ on the floor, and say so in your PR.
 - Direct-mode sessions are no longer told to restart to pick up MCP changes —
   that was never a limit of Claude Code, only of what switchboard knew how to
   ask for.
+- **Sign in to an MCP server that needs it, and sign out again.** A row that
+  says *needs sign-in* now has a **Sign in** button behind that label instead of
+  just the words; **Sign out** makes Claude Code forget a sign-in, which is the
+  way to start over if one gets stuck. Servers that run as a program on your own
+  machine don't normally offer either, because Claude Code doesn't allow it for
+  those. The panel never claims you're signed in — it says the request went
+  through, keeps watching the row for about a minute, and lets the row's own
+  state answer.
 
 ## 0.8.5 — 2026-08-28
 

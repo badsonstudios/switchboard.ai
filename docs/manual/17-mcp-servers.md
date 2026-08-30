@@ -92,7 +92,7 @@ broken. You're seeing what's on disk rather than what the session has.
 | **connected** | Claude Code is talking to it right now |
 | **connecting…** | Still shaking hands. Normal for a few seconds after a session starts |
 | **not connecting** | It tried and couldn't — a wrong command, a server that isn't running, a network it can't reach |
-| **needs sign-in** | It's waiting for you to authorise it |
+| **needs sign-in** | It's waiting for you to authorise it — see **Signing in to a server** |
 | **waiting for your approval** | See below |
 | **turned off** | Switched off for this project — by you with **Turn off**, or by declining a shared server |
 | **status unknown** | We haven't heard back yet, or couldn't tell |
@@ -172,8 +172,38 @@ actually in, which matters when the same name appears in two groups. This runs
 
 Rows marked **read-only** have no Remove button, because there's no file to
 remove them from. Those come from your claude.ai account, from a plugin, or from
-Claude Code itself, and that's where you change them. They can still be turned
-off and reconnected — see below.
+Claude Code itself, and that's where you change them. They can still be signed
+in to, turned off and reconnected — see below.
+
+## Signing in to a server
+
+Some servers need you to sign in before they'll do anything — the connectors
+from your claude.ai account are the usual case, and a row that's waiting says
+**needs sign-in**.
+
+Those rows have a **Sign in** button. Clicking it asks Claude Code to start the
+sign-in; if a browser window opens, finish there. The panel doesn't claim you're
+signed in — it tells you the request went through, and the row's own state
+changes when it really works. Give it a moment and the status column will catch
+up.
+
+**Sign out** does the opposite: it makes Claude Code forget your sign-in for
+that server. Use it if a sign-in got stuck halfway and you want to start again,
+or if you're handing the machine to someone else. The server will need signing
+in again before it works.
+
+Servers that run as a program on your own machine normally don't have either
+button: signing in only applies to servers reached over the web, and Claude Code
+refuses it for the local kind. Where switchboard can't tell which kind a server
+is — some servers don't say — the buttons are offered anyway, and Claude Code's
+own refusal is shown if it turns out not to apply. That's on purpose: hiding a
+control we're unsure about would hide it from the connectors that need it most.
+
+**Worth knowing:** this part is new and has been built against how Claude Code
+*refuses* these requests, which we could test, rather than how it completes them,
+which we couldn't — there was no account connector on the machine it was written
+on. If a sign-in behaves oddly, that's worth reporting rather than working
+around.
 
 ## Turning a server off
 

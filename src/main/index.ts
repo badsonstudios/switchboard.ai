@@ -1060,6 +1060,11 @@ app
       // the single place they are validated — see `McpIpcDeps.mcpToggle`.
       mcpToggle: (liveId, name, enabled) => manager.mcpToggle(liveId, name, enabled),
       mcpReconnect: (liveId, name) => manager.mcpReconnect(liveId, name),
+      // Sign in and out of a remote server (#734) — the pair #729's probes
+      // missed because they invented verb names instead of reading the list
+      // that was already recorded.
+      mcpAuthenticate: (liveId, name) => manager.mcpAuthenticate(liveId, name),
+      mcpClearAuth: (liveId, name) => manager.mcpClearAuth(liveId, name),
     });
     registerBuiltinContributions();
     log.app.info('contributions registered', { manifests: registry.manifests() });

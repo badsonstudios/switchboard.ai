@@ -11,6 +11,7 @@ const runtime = (
   scope,
   status: 'connected',
   target: 'npx',
+  transport: 'stdio',
   tools: [],
   readOnly: true,
   envKeys: [],

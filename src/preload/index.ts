@@ -666,6 +666,23 @@ const api = {
      */
     reconnectServer: (folder: string, liveId: string, name: string): Promise<ControlVerdict> =>
       ipcRenderer.invoke('mcp:reconnectServer', folder, liveId, name),
+    /**
+     * Start a remote server's OAuth sign-in (#734).
+     *
+     * ⚠️ **`ok: true` IS NOT "SIGNED IN".** Only the refusal shapes are
+     * measured — there is no claude.ai connector on the machine this was built
+     * on, so the success payload has never been seen. Treat a success as "the
+     * CLI accepted the request" and nothing further; the dialog's wording does.
+     *
+     * Refused by TYPE for a stdio server, which is why the row only offers it
+     * when the transport is not definitely stdio.
+     */
+    authenticate: (folder: string, liveId: string, name: string): Promise<ControlVerdict> =>
+      ipcRenderer.invoke('mcp:authenticate', folder, liveId, name),
+    /** Forget a remote server's stored credentials — the way back out of a
+     *  sign-in that did not finish (#734). Also refused by type for stdio. */
+    clearAuth: (folder: string, liveId: string, name: string): Promise<ControlVerdict> =>
+      ipcRenderer.invoke('mcp:clearAuth', folder, liveId, name),
   },
   settings: {
     getAutoTrust: (): Promise<boolean> => ipcRenderer.invoke('settings:getAutoTrust'),

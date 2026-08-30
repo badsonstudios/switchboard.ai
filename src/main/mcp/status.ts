@@ -26,7 +26,12 @@
 // missing. Every field but `name` is therefore optional here, and their absence
 // is never read as a fault.
 import { redactUrl } from './config';
-import type { McpRuntimeScope, McpRuntimeServer, McpRuntimeStatus } from '../../shared/mcp';
+import type {
+  McpRuntimeScope,
+  McpRuntimeServer,
+  McpRuntimeStatus,
+  McpTransport,
+} from '../../shared/mcp';
 
 /**
  * The runtime scopes the CLI resolved in 2.1.245, spelled as it spells them.
@@ -86,6 +91,43 @@ function statusOf(raw: unknown): McpRuntimeStatus {
     default:
       return 'unknown';
   }
+}
+
+/**
+ * How the session reaches this server — the field that decides whether the row
+ * may offer sign-in (#734).
+ *
+ * ⚠️ **THIS IS NOT `config.ts`'s `transportOf`, AND THE DIFFERENCE IS THE BUG
+ * THAT GOT THE FIELD DELETED.** That one reads a MISSING `type` as `stdio`,
+ * correctly: it is parsing a config file the CLI wrote, and `claude mcp add
+ * <name> -- <cmd>` with no `--transport` writes a stdio server, so `stdio` is
+ * the documented default of the thing being read.
+ *
+ * Nothing of that argument survives the trip over here. `mcp_status` reports
+ * servers that are in NO file — claude.ai account connectors, plugin servers,
+ * builtins — and for those there is no `config` object at all. An absent
+ * `config` is therefore not a default that can be filled in; it is an absence,
+ * and asserting `stdio` for it labels every connector on the machine as the one
+ * transport that CANNOT authenticate (measured: `Server type "stdio" does not
+ * support OAuth authentication`). #729 PR 2 shipped that assertion, review
+ * caught it, and the whole field was removed rather than fixed. This is the fix.
+ *
+ * The `url`-without-`type` case answers `unknown` for the same reason rather
+ * than guessing `http`: http and sse are both spelled with a URL, we cannot tell
+ * which, and `unknown` already means "may authenticate" for our purposes. A
+ * guess would buy nothing and could be wrong.
+ */
+function transportOf(config: Record<string, unknown> | null): McpTransport {
+  // THE CONNECTOR CASE, and the first line on purpose.
+  if (!config) return 'unknown';
+  const t = config.type;
+  if (t === 'stdio' || t === 'http' || t === 'sse') return t;
+  // A transport a newer CLI grew — carried through, same tolerance as `scopeOf`.
+  if (typeof t === 'string' && t) return 'unknown';
+  // No `type` at all. A `command` is stdio by construction — there is nothing
+  // else a command can be — but a bare `url` is http or sse and we cannot tell.
+  if (typeof config.command === 'string' && config.command) return 'stdio';
+  return 'unknown';
 }
 
 /**
@@ -151,6 +193,7 @@ export function readMcpStatus(response: Record<string, unknown>): McpRuntimeServ
       scope: scopeOf(e.scope),
       status: statusOf(e.status),
       target: targetOf(config),
+      transport: transportOf(config),
       ...(version ? { version } : {}),
       tools: toolsOf(e.tools),
       readOnly: true,

@@ -3,10 +3,39 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔜 NEXT: **#734** — MCP connector sign-in. Then #633's docs. Then cut v0.8.6.
+> # 🔨 IN PROGRESS: **#734** — MCP connector sign-in. Then #633's docs. Then v0.8.6.
 >
-> **Owner's order, 2026-08-30:** MCP auth first, release after. Nothing is
-> started; `main` is at `be9d6ef` and clean.
+> **Started 2026-08-30.** Branch `feature/734-mcp-auth`, off `main` at `1f61096`.
+> Implemented, reviewed, all gates green — **6634 tests / 251 files**, lint and
+> both typechecks clean. Awaiting Dan's commit approval, then the PR.
+>
+> **#735 IS MERGED** (`1f61096`) — the control-verb audit is on `main`, which is
+> what satisfies #734's "record the unmeasured OAuth path in §1.2.2" criterion.
+> It was merged first on purpose: it touches the same two doc files #734 does.
+>
+> ## WHAT REVIEW CAUGHT, AND IT WAS THE SAME MISTAKE ONE LAYER OVER
+>
+> This whole item is about never claiming an outcome we cannot see — and the
+> first draft **promised a self-updating list it could not deliver**. The success
+> sentence said "this list updates when it does", but the status poll only
+> re-schedules while a row reports `pending`, and a sign-in leaves the row on
+> `needs-auth` while the user walks to a browser. So it asked ONCE, before they
+> had clicked anything, and never again. Worse than the unmeasurable claim it was
+> so careful to avoid, because this one was measurable and false. Fixed with a
+> bounded 60s watch window (`AUTH_WATCH_MS`), mutation-checked.
+>
+> Also caught: **Sign out on every connected remote row** — we cannot tell an
+> OAuth connector from a server using an `Authorization` header, so on the
+> 16-server laptop that was a break-this button on nearly every row, with a
+> repair path nobody has seen work. Now offered only where sign-in is.
+>
+> ## THE HAZARD NOBODY CAN CLOSE FROM HERE
+>
+> **`CONTROL_TIMEOUT_MS` is 10s and an OAuth flow is a human in a browser.** If
+> the CLI blocks until the flow finishes, every real sign-in times out while
+> working perfectly. UNMEASURED. Not treated as failure: there is a verb-specific
+> sentence for it and the watch keeps running. The dogfood row asks Dan to
+> distinguish this outcome from a genuine dead end — it is outcome (b).
 >
 > ## ⛔ v0.8.6 IS STILL NOT CUT — and Dan is waiting on it
 >

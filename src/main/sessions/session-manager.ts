@@ -31,6 +31,8 @@ import { streamStatusEvent } from './stream-status';
 import {
   interruptRequest,
   listModelsRequest,
+  mcpAuthenticateRequest,
+  mcpClearAuthRequest,
   mcpReconnectRequest,
   mcpStatusRequest,
   mcpToggleRequest,
@@ -229,6 +231,52 @@ export class SessionManager {
       mcpReconnectRequest(requestId, serverName)
     );
     if (verdict.ok) this.log.info('mcp server reconnected', { sessionId: id });
+    return verdict;
+  }
+
+  /**
+   * Start the OAuth flow for one MCP server (#734).
+   *
+   * ⚠️ **`ok: true` HERE DOES NOT MEAN "SIGNED IN".** Only the refusals are
+   * measured — there is no claude.ai connector on the dev machine, so what the
+   * CLI answers when a flow really starts is unknown. This method reports the
+   * verdict and nothing more; the sentence the user reads is deliberately
+   * non-committal (`mcp.signInStarted`). See `mcpAuthenticateRequest`.
+   *
+   * REMOTE-ONLY, by the CLI's own rule: a stdio server is refused by TYPE. The
+   * renderer does not offer the control on a stdio row, and this method still
+   * passes the refusal through if something else calls it.
+   */
+  async mcpAuthenticate(id: string, serverName: unknown): Promise<ControlVerdict> {
+    const gone = this.controlPrecheck(id);
+    if (gone) return gone;
+    const verdict = await this.control.request(id, (requestId) =>
+      mcpAuthenticateRequest(requestId, serverName)
+    );
+    // NO SERVER NAME IN THIS LINE beyond the session id — an OAuth flow is the
+    // one place a name and a timestamp together start to describe an account,
+    // and the app log is a file users attach to bug reports. Nothing is logged
+    // on failure: the CLI's own sentence travels in the verdict, which is what
+    // the pane renders.
+    if (verdict.ok) this.log.info('mcp sign-in requested', { sessionId: id });
+    return verdict;
+  }
+
+  /**
+   * Forget the stored credentials for one MCP server (#734).
+   *
+   * THE ESCAPE HATCH FOR AN UNVERIFIABLE FLOW. `mcpAuthenticate`'s success path
+   * cannot be exercised on this machine, so the first real attempt happens on a
+   * user's laptop — and a sign-in that half-completes needs a way back that does
+   * not involve editing the CLI's own credential store by hand.
+   */
+  async mcpClearAuth(id: string, serverName: unknown): Promise<ControlVerdict> {
+    const gone = this.controlPrecheck(id);
+    if (gone) return gone;
+    const verdict = await this.control.request(id, (requestId) =>
+      mcpClearAuthRequest(requestId, serverName)
+    );
+    if (verdict.ok) this.log.info('mcp sign-out requested', { sessionId: id });
     return verdict;
   }
 
