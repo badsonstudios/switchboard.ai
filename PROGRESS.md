@@ -50,10 +50,22 @@
 > and the CLI's real entry stays untrusted for ever. The bug surviving its own
 > fix. Every confirmed entry is trusted instead.
 >
-> ## 🔨 IN PROGRESS — **#716**, composer typing lag. Built + green 2026-08-30; in review.
+> ## 🟡 AWAITING MERGE — **#716**, composer typing lag. **PR #739**, opened 2026-08-30.
 >
-> Branch `feature/716-composer-typing-lag`. **BOTH halves shipped** — the second
-> one is not optional, see "why Part A alone was not enough" below.
+> Branch `feature/716-composer-typing-lag` (`aff5011`), pushed, CI running.
+> Dan reviews and squash-merges. **BOTH halves shipped** — the second one is not
+> optional, see "why Part A alone was not enough" below.
+>
+> **Will be UNRELEASED on merge.** It lands in the `0.8.7 — unreleased` CHANGELOG
+> section alongside #724. Do not ask Dan to hand-test the typing fix against
+> v0.8.6 — it is not in it. The dogfood tracker row says the same.
+>
+> ## 🔜 NEXT after this: **#719** (CPU pegging).
+>
+> Read #719's forensic report against this item's findings before planning it —
+> the two were suspected of being the same disease and that turned out to be
+> **false**: #716 was a forced synchronous layout on the input path, not a
+> runaway watcher. What transfers is the method, not the cause. Then #731/#733.
 >
 > ### Measured against the ticket's own acceptance bar
 > 4× CPU throttle, 810-char draft already in the box, 400-turn conversation:
