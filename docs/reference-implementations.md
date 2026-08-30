@@ -302,6 +302,71 @@ So "you added a server, pull it in" and "reconnect the one that dropped" are the
 same verb, and #714's `restart-required` is avoidable wherever a live stream
 session exists.
 
+##### The FULL subtype set, existence-tested (#633 audit, 2026-08-30)
+
+Every verb in the SDK's grepped list, asked of the PATH CLI 2.1.245 with a
+negative control to keep the discriminator honest
+(`spike/probes/721/probe-command-verbs.mjs`). **All but one exist:**
+
+`apply_flag_settings` · `background_tasks` · `cancel_async_message` ·
+`channel_enable` · `generate_session_title` · `get_context_usage` ·
+`get_settings` · `get_usage` · `mcp_authenticate` · `mcp_clear_auth` ·
+`mcp_oauth_callback_url` · `mcp_set_servers` · `mcp_status` · `mcp_toggle` ·
+`mcp_reconnect` · `message_rated` · `read_file` · `reload_plugins` ·
+`reload_skills` · `remote_control` · `rewind_files` · `seed_read_state` ·
+`set_cwd` · `set_max_thinking_tokens` · `set_mcp_permission_mode_override` ·
+`set_model` · `set_permission_mode` · `side_question` · `stop_task` ·
+`submit_feedback` · `ultrareview_launch` · `list_models` · `initialize`
+
+**`status` is the only one that does NOT exist** on this build, matching what
+§1.2.2 already recorded.
+
+⚠️ **A PROCESS WARNING, PAID FOR.** The #729 probes GUESSED verb names
+(`list_agents`, `get_hooks`, `resume_session`, …) — none of which exist — while
+the real list had been sitting in **#633's own comment** since 2026-08-16. That
+is how `mcp_authenticate` went unnoticed through two PRs and a release cycle
+(now #734). **Read the recorded list before inventing names.**
+
+⚠️ **AND A HAZARD REPEATED.** Existence was tested by sending each verb with NO
+arguments. Most refuse with a validation complaint, which is the safe answer —
+but `remote_control`, `seed_read_state` and `set_max_thinking_tokens` all
+answered **success with a `null` payload**, which is the `set_model` shape and
+means they may have ACTED. Nothing persisted (`~/.claude.json` diffed clean
+against a snapshot; the 39 changes were all CLI-managed caches, and each probe
+spawns a throwaway session), but that was checked afterwards rather than
+designed for. **If you existence-test a `set_*`/action verb, expect it to fire.**
+
+##### The picker commands #633 was written about are mostly GONE
+
+`initialize.commands` on 2.1.245 lists 69 entries. Of the seven #633 asks to
+triage, **five are not commands at all**: `/permissions`, `/hooks`, `/resume`,
+`/rewind`, `/output-style`, `/status`. `/agents` exists and its own description
+begins **"(removed)"**. What survives is `/config` ("Set a setting by key" —
+takes an argument, so it passes through), `/context` (#715) and `/usage`.
+
+`initialize` also carries `current_permission_mode`, `output_style`,
+`available_output_styles` and the full `agents` array — so several of those
+surfaces are READABLE even where no dedicated verb exists.
+
+##### MCP connector sign-in (#734, 2026-08-30)
+
+```
+mcp_authenticate {}                       -> "Server not found: undefined"        (refused, not a silent act)
+mcp_authenticate {serverName:<stdio>}     -> 'Server type "stdio" does not support OAuth authentication'
+mcp_clear_auth   {serverName:<stdio>}     -> 'Cannot clear auth for server type "stdio"'
+mcp_oauth_callback_url {serverName:<srv>} -> "No active OAuth flow for server: <name>"
+```
+
+So **auth is remote-only** — the control belongs on http/sse rows, not every
+row. Unlike `mcp_toggle`, the missing-argument case is properly refused; do not
+generalise that, validate anyway.
+
+⚠️ **THE OAUTH SUCCESS PATH IS UNMEASURED AND UNMEASURABLE HERE.** No claude.ai
+connector exists on the dev machine, so what `mcp_authenticate` returns when it
+really starts a flow — whether a browser opens, what `mcp_oauth_callback_url` is
+for, how a row leaves `needs-auth` — is unknown. **Do not infer it from the
+refusals above.** Treat an unrecognised answer as "we do not know".
+
 ⚠️ **STILL UNMEASURED:** whether `mcp_toggle` works on a **claude.ai connector**
 or a plugin-supplied server. This machine has neither. The pane offers the
 control on those rows anyway and renders the CLI's own refusal if it says no —

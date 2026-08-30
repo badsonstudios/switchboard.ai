@@ -3,6 +3,88 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔜 NEXT: **#734** — MCP connector sign-in. Then #633's docs. Then cut v0.8.6.
+>
+> **Owner's order, 2026-08-30:** MCP auth first, release after. Nothing is
+> started; `main` is at `be9d6ef` and clean.
+>
+> ## ⛔ v0.8.6 IS STILL NOT CUT — and Dan is waiting on it
+>
+> `package.json` says `0.8.5`; latest release is v0.8.5. **#729 is merged but on
+> nobody's machine.** He lost a trip to the work laptop on 2026-08-29 testing
+> `/mcp` against v0.8.5 — which carries #723's FOOTER EXPLAINING the short server
+> list, so the absent feature looked like a broken one. **Never say "go test
+> this" without naming the build that carries it.**
+>
+> ## THE AUDIT THAT CHANGED THE PLAN (2026-08-30)
+>
+> Dan asked "are we done with MCP and the commands?". Both of my first answers
+> were wrong; probing fixed them. Findings are in
+> `docs/reference-implementations.md` §1.2.2.
+>
+> **MCP was NOT done → #734.** `mcp_authenticate`, `mcp_clear_auth` and
+> `mcp_oauth_callback_url` all exist and we use none. #729 PR 2 shipped a
+> `needs-auth` row state **with no button behind it**, so a connector wanting
+> sign-in says so and offers nothing. Invisible here (no connectors), live on the
+> work laptop.
+>
+> **#633 is mostly STALE.** Five of the seven picker commands it triages do not
+> exist in CLI 2.1.245 (`/permissions`, `/hooks`, `/resume`, `/rewind`,
+> `/output-style`, `/status`) and `/agents` is labelled "(removed)" by the CLI.
+> What is left is small: record those dispositions, and **fix
+> `docs/manual/05-slash-commands.md:67`, which still calls `/model` and `/mcp` a
+> known gap that needs Terminal mode** — the opposite of what two releases
+> shipped. That paragraph must not go out in v0.8.6.
+>
+> ## TWO PROCESS FAILURES WORTH NOT REPEATING
+>
+> 1. **The real verb list was in #633's comment all along** (grepped from the
+>    SDK, 2026-08-16). #729's probes invented names instead — `list_agents`,
+>    `get_hooks`, `resume_session`, none of which exist — which is how
+>    `mcp_authenticate` survived two PRs and a release cycle unnoticed. **Read
+>    the recorded list before inventing names.**
+> 2. **Existence-testing `set_*` verbs with no arguments made three of them
+>    SUCCEED** (`remote_control`, `seed_read_state`, `set_max_thinking_tokens`) —
+>    they may have acted. Nothing persisted (config diffed clean against a
+>    snapshot; each probe spawns a throwaway session) but that was verified
+>    AFTER, not designed for. Exactly the `mcp_toggle` hazard documented a day
+>    earlier.
+>
+> ## #734 — WHAT IS KNOWN, AND THE HONEST LIMIT
+>
+> Measured (`spike/probes/721/probe-mcp-auth.mjs`, throwaway server, nothing real
+> touched): auth is **remote-only** — a stdio server is refused by TYPE
+> (`Server type "stdio" does not support OAuth authentication`). The
+> missing-argument case IS properly refused, unlike `mcp_toggle`.
+>
+> ⚠️ **THE OAUTH SUCCESS PATH IS UNMEASURABLE ON THIS MACHINE.** No connectors
+> here. What a real `mcp_authenticate` returns, whether a browser opens, how a
+> row leaves `needs-auth` — all unknown. Build against the refusals, FAIL OPEN on
+> anything unrecognised, and say in the dogfood row that the laptop is the first
+> real test. **Dan was told this and chose to build it anyway** — that is a
+> decision, not an oversight.
+>
+> **A dependency:** #729 PR 2 REMOVED `transport` from `McpRuntimeServer` (review
+> called it computed-but-unrendered, and wrong — it claimed `stdio` when `config`
+> was absent, which is the connector case). #734 needs it back, with absent
+> `config` reported as `unknown`.
+>
+> ## THE RELEASE, once #734 and #633 land
+>
+> Bump `package.json` to `0.8.6`, `npm install --package-lock-only`, date the
+> `## 0.8.6 — unreleased` section (entries already written), open
+> `## 0.8.7 — unreleased`, commit all three together, tag `v0.8.6`, push the tag.
+> **Ask before cutting** — a release is outward-facing.
+>
+> ## VERSIONING — settled 2026-08-30, do not re-litigate
+>
+> **Three parts; the patch runs to triple digits.** `0.8.9` → `0.8.10` → …
+> → `0.8.100`. A patch part is an integer, not a digit; nothing rolls over, and
+> `0.9`/`1.0` are deliberate decisions. A four-part scheme (`0.8.5.1`) was asked
+> about and **declined** — if it returns, the blocker is
+> `scripts/release-notes.js`'s `SEMVER` regex (exactly three parts), NOT the
+> update checker, which already handles four.
+
 > # ✅ #729 IS DONE AND CLOSED — 2026-08-30. **BUT IT IS NOT RELEASED.**
 >
 > Both halves merged: **#730** (`ed70ef6`) and **#732** (`ce04bf4`). Issue #729
