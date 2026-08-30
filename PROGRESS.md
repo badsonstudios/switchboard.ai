@@ -21,10 +21,13 @@
 >   that had to land BEFORE this tag or the release would have shipped a manual
 >   telling users the opposite of what it contains.
 >
-> ## 🔨 IN REVIEW: **#724** — auto-trust wrote a key the CLI never read
+> ## ✅ MERGED — **#724**, auto-trust wrote a key the CLI never read (`f4ff920`)
 >
-> Branch `feature/724-project-key`, off `main` at `9099c48`. **6657 tests / 252
-> files**, lint and both typechecks clean. Ships in v0.8.7, NOT v0.8.6.
+> PR #738, merged 2026-08-30, issue closed. **6657 tests / 252 files.**
+>
+> ⚠️ **NOT RELEASED.** It is on `main` and in the `0.8.7 — unreleased`
+> CHANGELOG section; the latest release is **v0.8.6**, which does NOT contain it.
+> Do not ask Dan to hand-test the auto-trust row until v0.8.7 is cut.
 >
 > **The fix:** one module (`main/project-key.ts`) now owns how `~/.claude.json`'s
 > `projects` map is keyed. `samePath` moved there out of `mcp/config.ts` — it was
@@ -47,9 +50,10 @@
 > and the CLI's real entry stays untrusted for ever. The bug surviving its own
 > fix. Every confirmed entry is trusted instead.
 >
-> ## 🔜 NEXT after that: the queue is open.
+> ## 🔜 NEXT: nothing is picked up. The queue is open.
 >
-> `main` is clean and green. Open issues worth a look, roughly by cost of not
+> `main` is at `f4ff920`, clean and green, and nothing is mid-flight — no open
+> PRs, no half-done branch, no blocker. Open issues worth a look, roughly by cost of not
 > doing them: **#716** (composer typing lag, severe on the laptop), **#719** (the
 > CPU pegging forensic report), **#731** / **#733** (drop-target and
 > question-panel bugs Dan hand-found).
