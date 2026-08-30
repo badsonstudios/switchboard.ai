@@ -153,3 +153,4 @@ so the row cannot be lost between the PR and the train.
 | 2026-08-26 | Busy spinner in the sessions rail too quiet; wants marquee-style working treatment (6 options filed) | #718 |
 | 2026-08-26 | switchboard pegged laptop CPU → forced reboot; 26h uptime, log dead mid-session, 4.6x busier minimized; forensic report + 5 watcher bugs | #719 |
 | 2026-08-29 | Stacked session cannot be dragged into a full-height column — only above/below offered, no root-edge split | #731 |
+| 2026-08-30 | Multi-question panel: wants radio answers to auto-advance to the next tab (checkboxes stay); the #567 skip strikethrough on tab text read as a rendering glitch | #733 |
