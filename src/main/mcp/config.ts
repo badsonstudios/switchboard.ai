@@ -36,6 +36,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { samePath } from '../project-key';
 import type {
   McpApproval,
   McpInventoryWire,
@@ -153,40 +154,21 @@ export function redactUrl(url: string): string {
   return u.toString();
 }
 
-/**
- * PATH EQUALITY FOR A `projects` KEY, and it is not `===`.
- *
- * Found the hard way (#632 probe, 2026-08-25): a real `~/.claude.json` on this
- * machine held TWO entries for one repo, differing only in the case of the
- * drive letter —
- *
- *     'c:/Projects/Switchboard.ai'   ← one set of mcpServers
- *     'C:/Projects/Switchboard.ai'   ← another
- *
- * — because different tools resolved the same folder differently over the
- * repo's life. A `===` lookup finds whichever the CLI happened to write last
- * and reports the other scope as empty, which reads on screen as "you have no
- * local servers" rather than as the ambiguity it is.
- *
- * So: separators normalised, case folded ON WINDOWS ONLY, trailing slash
- * dropped. Case is NOT folded elsewhere, because two paths differing in case
- * really are two directories on Linux and macOS, and folding there would merge
- * two projects' servers into one list.
- *
- * `platform` IS A PARAMETER, and that is not a testing convenience — it is the
- * #127 lesson `launchSpec` documents, which this file learned the hard way:
- * with the platform read from the ambient process, the drive-letter tests below
- * passed on the maintainer's Windows machine and went RED on the Linux CI leg,
- * because the behaviour they assert only exists on one of them. Injected, both
- * branches are exercised on every runner.
- */
-export function samePath(a: string, b: string, platform: NodeJS.Platform = process.platform): boolean {
-  const norm = (p: string): string => {
-    const slashed = p.replace(/\\/g, '/').replace(/\/+$/, '');
-    return platform === 'win32' ? slashed.toLowerCase() : slashed;
-  };
-  return norm(a) === norm(b);
-}
+// `samePath` LIVED HERE and now lives in `main/project-key.ts` (#724).
+//
+// It was never an MCP concern — `main/index.ts` imported it to gate session
+// folders, and `sessions/trust.ts` needed it and did not have it, which is the
+// whole of that bug: two readers of `~/.claude.json`'s `projects` map with two
+// different keying rules. Re-exported so this module's own callers keep one
+// import, and so the drive-letter finding below stays findable from here.
+//
+// The finding, kept because it is the reason the function is not `===`: a real
+// `~/.claude.json` held TWO entries for this repo differing only in the case of
+// the drive letter (`c:/Projects/Switchboard.ai` and `C:/Projects/…`), each with
+// its own `mcpServers`. A `===` lookup finds whichever the CLI wrote last and
+// reports the other scope as empty — which reads on screen as "you have no local
+// servers" rather than as the ambiguity it is.
+export { samePath };
 
 /**
  * Every `projects` entry whose key names this folder — plural, deliberately.

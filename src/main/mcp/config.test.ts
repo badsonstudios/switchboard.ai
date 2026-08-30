@@ -129,33 +129,15 @@ describe('the Windows drive-letter collision (#632 probe)', () => {
   });
 });
 
-describe('samePath — case folding is per-platform, and that is the point', () => {
-  // NO MOCKING: the platform is a parameter, so both branches run on every
-  // runner. That is the whole point of injecting it (`launchSpec`, #127) — a
-  // spied `process.platform` would still leave one branch unexercised anywhere
-  // the spy did not run.
-  it('folds case on Windows, where two spellings are one directory', () => {
+describe('samePath is re-exported here, and tested at its new home', () => {
+  // MOVED to `main/project-key.ts` (#724) — it was never an MCP concern, and
+  // leaving it here is what let `sessions/trust.ts` grow a second, different
+  // keying rule for the same file. The behaviour cases (win32 folds, POSIX does
+  // not, the UNC hazard) live beside the function now; this is a smoke test that
+  // the re-export still works, so this module's callers keep one import.
+  it('still resolves through this module', () => {
     expect(samePath('c:/Projects/acme', 'C:/Projects/ACME', 'win32')).toBe(true);
-  });
-
-  it('does NOT fold case elsewhere, where they are two directories', () => {
-    // Folding on Linux would merge two real projects' servers into one list —
-    // a worse bug than the one the folding fixes, and silent.
     expect(samePath('/home/dan/acme', '/home/dan/ACME', 'linux')).toBe(false);
-    expect(samePath('/home/dan/acme', '/home/dan/acme/', 'linux')).toBe(true);
-  });
-
-  it('and the collision merge really is Windows-only', () => {
-    // the other half of the same rule, asserted through `buildInventory`: two
-    // case-differing keys are ONE folder on Windows and TWO on Linux
-    const both = {
-      projects: {
-        'c:/p/acme': { mcpServers: { lower: { command: 'x' } } },
-        'C:/p/acme': { mcpServers: { upper: { command: 'y' } } },
-      },
-    };
-    const linux = inv({ claudeJson: both, folder: 'C:/p/acme', platform: 'linux' });
-    expect(names(linux)).toEqual(['upper']);
   });
 });
 
