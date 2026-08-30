@@ -184,15 +184,24 @@ export const CHANNEL_CAPABILITIES = {
   'mcp:list': 'mcp.read',
   'mcp:status': 'mcp.read',
   'mcp:health': 'mcp.read',
-  // The write half (#714). All four hold `mcp.write`, INCLUDING `mcp:reconnect`
-  // — which does not touch the config at all, but does put keystrokes into a
-  // live session, and grouping it with the reads would have let a listing-only
-  // consumer type into a terminal. What it may type is not open-ended: main
-  // sends the literal `/mcp` and a carriage return, never caller-supplied text.
+  // The write half (#714, extended #729). All SIX hold `mcp.write`, INCLUDING
+  // `mcp:reconnect` — which does not touch the config at all, but does put
+  // keystrokes into a live session, and grouping it with the reads would have
+  // let a listing-only consumer type into a terminal. What it may type is not
+  // open-ended: main sends the literal `/mcp` and a carriage return, never
+  // caller-supplied text.
+  //
+  // `mcp:toggle` IS THE MOST DANGEROUS OF THE SIX and reads like the least.
+  // It writes `disabledMcpServers` in `~/.claude.json` — measured, it PERSISTS
+  // past the session — and the CLI treats an absent `enabled` as "disable"
+  // while answering success. A read capability would have been an easy mistake:
+  // it looks like a view control and it silently turns off a user's tooling.
   'mcp:add': 'mcp.write',
   'mcp:remove': 'mcp.write',
   'mcp:resetApprovals': 'mcp.write',
   'mcp:reconnect': 'mcp.write',
+  'mcp:toggle': 'mcp.write',
+  'mcp:reconnectServer': 'mcp.write',
   'notifications:getPrefs': 'settings.read',
   // Whether the quiet window is open right now, and how many events it has held
   // (P2-E14-05b). Reads settings plus a count of the app's own held list —

@@ -407,6 +407,75 @@ export function mcpStatusRequest(requestId: string): StreamControlRequest {
 }
 
 /**
+ * `mcp_toggle` — turn one server on or off (#729 PR 2).
+ *
+ * ⚠️ **THE ABSENT `enabled` FIELD IS A LOADED GUN, and it is worse than the
+ * `set_model` trap this file already documents.** Measured 2026-08-29
+ * (`spike/probes/721/probe-mcp-toggle.mjs`), against a real server:
+ *
+ *     -> {subtype:"mcp_toggle", serverName:"sbprobe"}      // no `enabled`
+ *     <- {subtype:"success"}                               // …and null payload
+ *     -> {subtype:"mcp_status"}
+ *     <- sbprobe: "disabled"                               // IT TURNED IT OFF
+ *
+ * `set_model` with a missing field did NOTHING and said success — bad, but
+ * inert. This one **performs a destructive action** and says success: an absent
+ * field reads as falsy, and the user's MCP server goes off. A dropped or
+ * mistyped `enabled` anywhere upstream would disable a server and report that
+ * it worked.
+ *
+ * So `enabled` is checked for a STRICT boolean, not for truthiness. `0`, `''`,
+ * `null` and `undefined` are all refused rather than helpfully coerced —
+ * coercion is exactly the CLI behaviour that makes this dangerous, and
+ * repeating it here would launder the bug rather than catch it.
+ *
+ * ALSO NOTE IT PERSISTS. The toggle writes `projects[<folder>].disabledMcpServers`
+ * in `~/.claude.json` (a different key from `disabledMcpjsonServers`, which is
+ * the approval mechanism). Toggle off adds the name; toggle on removes it. It
+ * is NOT session-scoped, so a surface must not tell the user otherwise.
+ */
+export function mcpToggleRequest(
+  requestId: string,
+  serverName: unknown,
+  enabled: unknown
+): StreamControlRequest | null {
+  if (typeof serverName !== 'string') return null;
+  const name = serverName.trim();
+  if (!name) return null;
+  // STRICT. See the docblock — this is the check that stops a dropped field
+  // from silently disabling somebody's server.
+  if (typeof enabled !== 'boolean') return null;
+  return controlRequest(requestId, { subtype: 'mcp_toggle', serverName: name, enabled });
+}
+
+/**
+ * `mcp_reconnect` — re-resolve one server, with no terminal and no restart
+ * (#729 PR 2).
+ *
+ * **IT ALSO PICKS UP A SERVER THE SESSION NEVER LOADED**, which is the finding
+ * that makes it worth more than a retry button. `mcp_status` is frozen at spawn
+ * (measured in PR 1), so a server added with `claude mcp add` mid-session is
+ * invisible to the running session. Measured 2026-08-29:
+ *
+ *     mcp_status                       -> DeepWiki, sbprobe        // sbprobe2 added, absent
+ *     mcp_reconnect {name:"sbprobe2"}  -> success
+ *     mcp_status                       -> DeepWiki, sbprobe, sbprobe2(connected)
+ *
+ * So this is the verb behind "you added a server, pull it in" as well as
+ * "reconnect the one that dropped" — and it retires #714's `restart-required`
+ * for every case that has a live stream session.
+ */
+export function mcpReconnectRequest(
+  requestId: string,
+  serverName: unknown
+): StreamControlRequest | null {
+  if (typeof serverName !== 'string') return null;
+  const name = serverName.trim();
+  if (!name) return null;
+  return controlRequest(requestId, { subtype: 'mcp_reconnect', serverName: name });
+}
+
+/**
  * A `control_response` off the wire, or `null` if it is not one.
  *
  * ⚠️ **`request_id` IS NESTED AT `msg.response.request_id`, AND IS NOT PRESENT

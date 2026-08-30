@@ -253,11 +253,61 @@ the CLI does not have answers with a *different sentence entirely*. Also
 measured: `mcp_toggle` with **no `serverName`** answers `Server not found:
 undefined` — refused, not the `set_model` silent no-op.
 
-⚠️ **STILL UNMEASURED:** `mcp_toggle` with a valid `serverName` and **no
-`enabled` field** — the `set_model` trap shape. The server lookup happens first,
-so a fake name cannot reach it; answering this needs a real server and therefore
-a real mutation. Whether a toggle PERSISTS to disk or dies with the session is
-unmeasured for the same reason. Validate `enabled` before the wire regardless.
+##### Both verbs, MEASURED against a real server (#729 PR 2, 2026-08-29)
+
+Probed with a **throwaway server the harness adds and removes itself**
+(`spike/probes/721/probe-mcp-toggle.mjs`) — so no real server was touched and
+`~/.claude.json` was verified clean afterwards. That trick is what made the
+remaining questions answerable at all: the CLI's server lookup runs first, so a
+fake name can never reach the interesting behaviour.
+
+**1. ⚠️ `mcp_toggle` WITH NO `enabled` FIELD DISABLES THE SERVER AND ANSWERS
+SUCCESS.** This is the `set_model` trap made worse — that one was a silent
+*no-op*; this one performs a destructive action:
+
+```
+-> {"subtype":"mcp_toggle","serverName":"sbprobe"}     // no `enabled`
+<- {"subtype":"success"}                                // payload is null
+-> {"subtype":"mcp_status"}
+<- sbprobe: "disabled"                                  // it turned it OFF
+```
+
+An absent field reads as falsy. So a dropped or mistyped `enabled` anywhere
+upstream turns off a user's MCP server and reports that it worked. Validate for
+a **strict boolean** — not truthiness, since coercion is the very behaviour that
+makes this dangerous. `mcpToggleRequest` refuses anything else.
+
+**2. THE TOGGLE PERSISTS.** It writes `projects[<folder>].disabledMcpServers` in
+`~/.claude.json` — a key **distinct from `disabledMcpjsonServers`**, which is the
+`.mcp.json` approval mechanism. Toggle off adds the name; toggle on removes it,
+leaving `[]`. So it is **not session-scoped**: it survives a restart and applies
+to every future session in that folder, and a surface must not say "for this
+session".
+
+**3. `mcp_status` REPORTS `status:"disabled"`** for a toggled-off server — a
+fourth status word beyond the three §1.2.2 had. A reader that folds it into
+`unknown` makes a server the user just switched off read as "status unknown",
+and the toggle look broken.
+
+**4. `mcp_reconnect` PULLS IN A SERVER THE SESSION NEVER LOADED.** The finding
+that makes it more than a retry button, given `mcp_status` is frozen at spawn:
+
+```
+mcp_status                        -> DeepWiki, sbprobe          // sbprobe2 added mid-session, absent
+mcp_reconnect {name:"sbprobe2"}   -> success
+mcp_status                        -> DeepWiki, sbprobe, sbprobe2(connected)
+```
+
+So "you added a server, pull it in" and "reconnect the one that dropped" are the
+same verb, and #714's `restart-required` is avoidable wherever a live stream
+session exists.
+
+⚠️ **STILL UNMEASURED:** whether `mcp_toggle` works on a **claude.ai connector**
+or a plugin-supplied server. This machine has neither. The pane offers the
+control on those rows anyway and renders the CLI's own refusal if it says no —
+fail-open. Do not narrow that to "config-backed rows only" without measuring it
+first; the toggle works by NAME, not through a file, so there is no reason to
+assume it cannot.
 
 ##### ⚠️ `mcp_status` SETTLES — the §1.2.2 capture above is the WARM answer
 

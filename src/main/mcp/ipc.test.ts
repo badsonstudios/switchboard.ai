@@ -82,7 +82,7 @@ const GOOD_ADD: McpAddRequest = {
 afterEach(() => vi.restoreAllMocks());
 
 describe('registration', () => {
-  it('registers the three read channels and the four write ones', () => {
+  it('registers the three read channels and the six write ones', () => {
     // A channel appearing here should be a deliberate edit to this list — the
     // point of the assertion is that a new door into main is never accidental.
     expect(harness([]).channels).toEqual([
@@ -90,9 +90,11 @@ describe('registration', () => {
       'mcp:health',
       'mcp:list',
       'mcp:reconnect',
+      'mcp:reconnectServer',
       'mcp:remove',
       'mcp:resetApprovals',
       'mcp:status',
+      'mcp:toggle',
     ]);
   });
 });

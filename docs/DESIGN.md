@@ -1300,9 +1300,27 @@ tab — it's the real CLI. On top, GUI sugar that never forks CLI behavior:
     **AND THEY ARE NOW MEASURED, NOT JUST LOCATED (#729, 2026-08-29).** Both
     verbs answer `Server not found: <name>` for a server that does not exist,
     where a verb the CLI genuinely lacks answers `Unsupported control request
-    subtype: <name>` — so existence was proved with no mutation at all. Details
-    and the remaining unmeasured case (`mcp_toggle` with no `enabled` field, the
-    `set_model` trap shape) in `docs/reference-implementations.md` §1.2.2.
+    subtype: <name>` — so existence was proved with no mutation at all.
+
+    **SHIPPED in #729 PR 2**, after a second probe against a throwaway server.
+    Three measurements shape the implementation, all in
+    `docs/reference-implementations.md` §1.2.2:
+
+    - ⚠️ **`mcp_toggle` WITH NO `enabled` FIELD DISABLES THE SERVER and answers
+      `success`.** The `set_model` trap, made worse — that one was inert, this
+      one acts. `enabled` is validated as a STRICT boolean before the wire;
+      coercion is exactly the CLI behaviour that makes it dangerous.
+    - **The toggle PERSISTS**, to `projects[<folder>].disabledMcpServers` — a
+      different key from the `disabledMcpjsonServers` approval mechanism. It is
+      not session-scoped and the UI must not say it is.
+    - **`mcp_reconnect` pulls in a server the session NEVER LOADED**, so it
+      serves "you added a server" as well as "reconnect the one that dropped".
+
+    So the paragraph above — "no `claude mcp` SUBCOMMAND enables or disables a
+    server" — is still literally true and no longer the whole story: there is no
+    subcommand, but there is a verb, and the pane now uses it. Approval remains
+    separate: `enabledMcpjsonServers` is a different mechanism and `mcp_toggle`
+    has NOT been measured against an unapproved server.
   - **The picker commands do NOT dead-end after all — we had never learned to
     ask (#721).** §5.17 treated `/model`, `/permissions` and friends as
     unreachable in Direct mode because they open a TUI picker and a Direct

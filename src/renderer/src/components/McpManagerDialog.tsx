@@ -85,10 +85,12 @@ import type {
   McpMutationResult,
   McpRuntimeScope,
   McpRuntimeServer,
+  McpRuntimeStatus,
   McpScope,
   McpServerWire,
   McpStatusWire,
 } from '../../../shared/mcp';
+import type { ControlVerdict } from '../../../shared/control';
 
 export interface McpManagerDialogProps {
   open: boolean;
@@ -160,6 +162,28 @@ export function rowStatus(
 export function runtimeStatus(server: McpRuntimeServer): {
   labelKey: string;
   token: 'connected' | 'failed' | 'pending' | 'disabled' | 'unknown';
+  /**
+   * Which switch the row should offer — and it is decided HERE, beside the
+   * label, because the two must never disagree.
+   *
+   * ⚠️ **THERE ARE TWO INDEPENDENT OFF-SWITCHES AND THEY SHARE A WORD.**
+   * `disabledMcpjsonServers` is APPROVAL — you declined a server a repo brought
+   * with it, and the way back is Reset approvals or the CLI's picker.
+   * `disabledMcpServers` is THIS PR'S TOGGLE, and the way back is Turn on. Both
+   * render as "turned off".
+   *
+   * A draft read the label from `approval` and the button from `status`, so a
+   * row that was off BY APPROVAL showed "turned off" beside a **Turn off**
+   * button and never offered Turn on. Pressing it added a second, unrelated
+   * lock; pressing again cleared only that one, whereupon the approval label
+   * reasserted itself and the button flipped back to Turn off — **an infinite
+   * loop with the server never coming back.** Exactly the "state it cannot get
+   * you out of" `mcp:remove` refuses to create. Found in review.
+   *
+   * So: `none` whenever APPROVAL decided the row. The toggle is not that
+   * mechanism and must not pretend to be.
+   */
+  toggle: 'off' | 'on' | 'none';
 } {
   // APPROVAL STILL BEATS CONNECTION STATE, exactly as `rowStatus` argues: an
   // unapproved `.mcp.json` server is one the CLI has deliberately not connected
@@ -168,15 +192,37 @@ export function runtimeStatus(server: McpRuntimeServer): {
   // folded in, because `mcp_status` has no field for it. Review caught the
   // version without this: it silently dropped "waiting for your approval" from
   // the path most sessions are on.
-  if (server.approval === 'pending') return { labelKey: 'mcp.statePending', token: 'pending' };
-  if (server.approval === 'disabled') return { labelKey: 'mcp.stateDisabled', token: 'disabled' };
-  switch (server.status) {
+  if (server.approval === 'pending') {
+    return { labelKey: 'mcp.statePending', token: 'pending', toggle: 'none' };
+  }
+  if (server.approval === 'disabled') {
+    return { labelKey: 'mcp.stateDisabled', token: 'disabled', toggle: 'none' };
+  }
+  if (server.status === 'disabled') {
+    return { labelKey: 'mcp.stateDisabled', token: 'disabled', toggle: 'on' };
+  }
+  return { ...connectionWord(server.status), toggle: 'off' };
+}
+
+/** The status word once approval has had its say — split out so `runtimeStatus`
+ *  reads as the precedence rule it is. */
+function connectionWord(status: McpRuntimeStatus): {
+  labelKey: string;
+  token: 'connected' | 'failed' | 'pending' | 'disabled' | 'unknown';
+} {
+  switch (status) {
     case 'connected':
       return { labelKey: 'mcp.stateConnected', token: 'connected' };
     case 'pending':
       return { labelKey: 'mcp.stateConnecting', token: 'pending' };
     case 'failed':
       return { labelKey: 'mcp.stateFailed', token: 'failed' };
+    // What the CLI reports after `mcp_toggle` turns one off — measured. The
+    // muted token, not a status hue: "you switched this off" is a state the
+    // user chose, and painting it red would report their own decision as a
+    // fault.
+    case 'disabled':
+      return { labelKey: 'mcp.stateDisabled', token: 'disabled' };
     case 'needs-auth':
       return { labelKey: 'mcp.stateNeedsAuth', token: 'pending' };
     default:
@@ -249,6 +295,50 @@ export function failureMessage(
 }
 
 /**
+ * A control-channel refusal, in the user's words.
+ *
+ * THE SIBLING OF `failureMessage`, NOT A REPLACEMENT: that one translates the
+ * CLI-subprocess vocabulary (`no-cli`, `cli-failed`, a field error), this one
+ * the control channel's (`not-stream`, `timed-out`, `session-gone`). The two
+ * vocabularies describe genuinely different failures and the sentences differ —
+ * "Claude Code isn't installed" and "this session can't be asked" are not the
+ * same problem.
+ *
+ * `refused` PASSES THE CLI'S OWN SENTENCE THROUGH, on the same reasoning
+ * `mcp/cli.ts` and `control-channel.ts` both record: it is the CLI's
+ * explanation of its own refusal, and ours would be a guess at what it meant.
+ *
+ * Exported and pure, so the mapping is unit-tested rather than asserted through
+ * a rendered tree.
+ */
+export function controlFailure(
+  verdict: Extract<ControlVerdict, { ok: false }>,
+  t: (key: string, vars?: Record<string, unknown>) => string
+): string {
+  switch (verdict.reason) {
+    case 'refused':
+      return verdict.message || t('mcp.error.refused');
+    case 'not-stream':
+      return t('mcp.control.notStream');
+    case 'session-gone':
+      return t('mcp.reconnect.no-session');
+    case 'timed-out':
+      return t('mcp.control.timedOut');
+    case 'invalid':
+      // SHARES THE SENTENCE, DELIBERATELY — but not by falling through, because
+      // `invalid` is the one verdict that means OUR OWN guard fired rather than
+      // the CLI refusing. It is what a dropped `enabled` looks like from here
+      // (see `mcpToggleRequest`), so it is the single most useful thing to
+      // recognise in a bug report about a server that turned itself off. The
+      // user-facing wording is the same because "we could not run that, nothing
+      // changed" is true and specific enough; the breadcrumb is for us.
+      return t('mcp.error.refused');
+    default:
+      return t('mcp.error.refused');
+  }
+}
+
+/**
  * The status ramp, reusing the app's existing status hues rather than minting a
  * palette only this pane knows about (§5.20 — the theme is the authority).
  *
@@ -294,7 +384,15 @@ const STATUS_POLL_LIMIT = 8;
 
 /** What the pane is doing right now, so two buttons cannot run at once and the
  *  one you pressed is the one that says "working". */
-type Busy = null | { kind: 'add' | 'reset' | 'reconnect' } | { kind: 'remove'; key: string };
+type Busy =
+  | null
+  | { kind: 'add' | 'reset' }
+  /** Reconnect-all carries its progress, because it is the one action that
+   *  makes N round trips and can legitimately take minutes. */
+  | { kind: 'reconnect'; done?: number; total?: number }
+  /** the three per-row actions, keyed so the row you pressed is the one that
+   *  says "working" — `remove` since #714, the other two since #729 PR 2 */
+  | { kind: 'remove' | 'toggle' | 'reconnectServer'; key: string };
 
 /** "this answer belongs to a sitting of the dialog that is over" — distinct
  *  from `null` (it worked) and from a string (it failed and here is why),
@@ -668,6 +766,16 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
   // user just left must not report against the one they are looking at now.
   React.useEffect(() => {
     epoch.current += 1;
+    // ...AND THE SPINNER STOPS. Every in-flight action bails on an epoch
+    // mismatch WITHOUT clearing `busy` — correct, because the sitting that owns
+    // the screen should own the spinner — but only the open/close effect above
+    // was actually clearing it. A folder switch mid-action therefore stranded
+    // `busy` forever, and every button in the pane is `disabled={busy !== null}`.
+    //
+    // Reconnect-all makes that a minutes-long window rather than a
+    // milliseconds-long one: N servers × a 10s control timeout, with the dialog
+    // closable and the active session changeable throughout. Found in review.
+    setBusy(null);
   }, [folder]);
 
   if (!props.open) return null;
@@ -694,7 +802,7 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
    * ourselves.
    */
   const mutate = async (
-    what: Busy,
+    what: NonNullable<Busy>,
     call: () => Promise<McpMutationResult | undefined> | undefined
   ): Promise<string | null | typeof STALE> => {
     const mine = epoch.current;
@@ -783,6 +891,102 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
     );
   };
 
+  /**
+   * Run one control-channel mutation and re-ask for the list.
+   *
+   * SEPARATE FROM `mutate`, and not a duplicate of it: that one speaks
+   * `McpMutationResult` (the CLI-subprocess vocabulary — `no-cli`,
+   * `cli-failed`, a field error), these speak `ControlVerdict` (the
+   * control-channel vocabulary — `not-stream`, `timed-out`, `session-gone`).
+   * Collapsing them would mean one function with two result types and a
+   * discriminator, which is more code than the shared five lines are worth.
+   */
+  const controlMutate = async (
+    what: NonNullable<Busy>,
+    call: () => Promise<ControlVerdict | undefined> | undefined
+  ): Promise<string | null | typeof STALE> => {
+    const mine = epoch.current;
+    setBusy(what);
+    setNotice(null);
+    try {
+      const verdict = answered(await call());
+      if (mine !== epoch.current) return STALE;
+      // ALWAYS RE-ASKS, even on failure — the same argument `mutate` makes.
+      // A toggle that half-worked must not leave the pane showing the state we
+      // hoped for; `mcp_status` is the only thing that knows.
+      setGeneration((g) => g + 1);
+      if (verdict?.ok) return null;
+      // The CLI's own sentence wherever there is one. `answered` degrades a
+      // refused channel to `undefined`, which without this line looks exactly
+      // like success.
+      return verdict ? controlFailure(verdict, t) : t('mcp.error.refused');
+    } catch {
+      if (mine !== epoch.current) return STALE;
+      setGeneration((g) => g + 1);
+      return t('mcp.error.refused');
+    } finally {
+      if (mine === epoch.current) setBusy(null);
+    }
+  };
+
+  /**
+   * Turn one server on or off.
+   *
+   * ⚠️ `enabled` IS PASSED EXPLICITLY, never derived by negating something
+   * optional. The CLI reads an ABSENT `enabled` as "disable" and answers
+   * success (measured), so anywhere a `boolean | undefined` could reach the
+   * wire is a place a server gets silently switched off. The caller computes it
+   * from the row's own status and passes a literal.
+   */
+  const doToggle = async (s: McpRuntimeServer, enabled: boolean): Promise<void> => {
+    if (!folder || !props.liveId) {
+      setNotice({ bad: true, text: t('mcp.reconnect.no-session') });
+      return;
+    }
+    const liveId = props.liveId;
+    const problem = await controlMutate({ kind: 'toggle', key: `${s.scope}:${s.name}` }, () =>
+      window.switchboard?.mcp?.toggle?.(folder, liveId, s.name, enabled)
+    );
+    if (problem === STALE) return;
+    setNotice(
+      problem
+        ? { bad: true, text: problem }
+        : {
+            bad: false,
+            // NOT "for this session". Measured: the toggle writes
+            // `disabledMcpServers` into `~/.claude.json` and survives a
+            // restart, so saying otherwise would be a lie the user only finds
+            // out about tomorrow.
+            text: t(enabled ? 'mcp.toggledOn' : 'mcp.toggledOff', { name: s.name }),
+          }
+    );
+  };
+
+  /**
+   * Reconnect ONE server over the control channel.
+   *
+   * Takes a bare name rather than a row, because it serves two different
+   * lists: a runtime row that dropped, and a `notLoaded` row the session has
+   * never seen. Measured to work for both — the second is the finding that
+   * lets this replace "restart the session".
+   */
+  const doReconnectServer = async (name: string, key: string): Promise<void> => {
+    if (!folder || !props.liveId) {
+      setNotice({ bad: true, text: t('mcp.reconnect.no-session') });
+      return;
+    }
+    const liveId = props.liveId;
+    const problem = await controlMutate({ kind: 'reconnectServer', key }, () =>
+      window.switchboard?.mcp?.reconnectServer?.(folder, liveId, name)
+    );
+    if (problem === STALE) return;
+    setNotice(
+      problem
+        ? { bad: true, text: problem }
+        : { bad: false, text: t('mcp.reconnectedServer', { name }) }
+    );
+  };
+
   const doReset = async (): Promise<void> => {
     if (!folder) return;
     setConfirmReset(false);
@@ -806,6 +1010,87 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
    * which is deliberately blind to transports.
    */
   const doReconnect = async (): Promise<void> => {
+    // ── THE CONTROL-CHANNEL PATH FIRST (#729 PR 2) ────────────────────────────
+    //
+    // `runtime` being non-null means this session answered `mcp_status`, which
+    // means it has a control channel, which means `restart-required` — the
+    // answer #714 had to give — is no longer the truth for it. Reconnect every
+    // server we know about instead: the runtime rows (a dropped one comes back)
+    // and the not-loaded ones (measured to be pulled IN by the same verb).
+    //
+    // SEQUENTIAL, NOT `Promise.all`. Round trips are milliseconds, and each one
+    // makes the CLI stand up a server process; firing sixteen at once to save
+    // ~20ms would be a burst of subprocess spawns for no gain the user can see.
+    if (runtime && folder && props.liveId) {
+      const liveId = props.liveId;
+      // ── WHAT IS *NOT* IN THIS LIST ────────────────────────────────────────
+      //
+      // SERVERS THE USER TURNED OFF, and that is measured rather than cautious:
+      // `mcp_reconnect` against a disabled server RE-ENABLES it
+      // (`probe-toggle-reconnect-interaction.mjs`, disabled → reconnect →
+      // connected). Without this filter, one press of Reconnect all silently
+      // undoes every toggle in the pane — the exact inverse of the persistence
+      // this PR was built to honour. Approval-disabled rows go too: their lock
+      // is a different one and this verb is not its key.
+      //
+      // DEDUPLICATED, because `config.ts` deliberately does not: one name in two
+      // scopes is two rows, and reconnecting it twice would double the round
+      // trips and the total the notice reports.
+      const names = [
+        ...new Set(
+          [...runtime, ...notLoaded]
+            .filter((s) => !('status' in s && s.status === 'disabled'))
+            .filter((s) => s.approval !== 'disabled')
+            .map((s) => s.name)
+        ),
+      ];
+      if (names.length === 0) {
+        setNotice({ bad: false, text: t('mcp.reconnectedNone') });
+        return;
+      }
+      const mine = epoch.current;
+      setNotice(null);
+      let failed = 0;
+      let done = 0;
+      for (const name of names) {
+        // PROGRESS IN THE LABEL. Sixteen servers with two dead endpoints is
+        // over two minutes of a frozen dialog behind a static "Reconnecting…",
+        // and this pane refuses that trade everywhere else (the list draws
+        // before the status column; the settle poll is bounded). Cheap to say
+        // "3 of 16" and it turns a hang into a wait.
+        setBusy({ kind: 'reconnect', done, total: names.length });
+        try {
+          const verdict = answered(
+            await window.switchboard?.mcp?.reconnectServer?.(folder, liveId, name)
+          );
+          if (!verdict?.ok) failed += 1;
+        } catch {
+          failed += 1;
+        }
+        done += 1;
+        // ABANDON THE REST if the dialog moved on — sixteen round trips is long
+        // enough for the user to have closed it or switched session. `busy` is
+        // cleared by the open/close and folder effects, so bailing here cannot
+        // strand the buttons.
+        if (mine !== epoch.current) return;
+      }
+      setGeneration((g) => g + 1);
+      setBusy(null);
+      // THE COUNT IS THE MESSAGE, so it has to be the RIGHT count: `count` is
+      // the number that CAME BACK, not the total. Review caught it reporting
+      // the total — "Reconnected 16 servers, but 4 didn't come back" is a
+      // sentence that argues with itself, and the all-failed case read
+      // "Reconnected 3 servers, but 3 didn't come back".
+      setNotice(
+        failed === 0
+          ? { bad: false, text: t('mcp.reconnectedAll', { count: names.length }) }
+          : {
+              bad: true,
+              text: t('mcp.reconnectedSome', { failed, count: names.length - failed }),
+            }
+      );
+      return;
+    }
     if (!folder || !props.liveId) {
       // the SAME sentence main answers for a card whose session is not running
       // — there is one fact here and it should not have two wordings
@@ -1025,6 +1310,58 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
         <span style={{ fontSize: 10.5, color: TOKEN_INK[state.token], flexShrink: 0 }}>
           {t(state.labelKey)}
         </span>
+        {/* ── The two control-channel actions (#729 PR 2) ──────────────────────
+            OFFERED ON EVERY RUNTIME ROW, INCLUDING READ-ONLY ONES, and that is
+            deliberate rather than an oversight. `readOnly` is about REMOVE —
+            whether a config file declares the server, so `claude mcp remove`
+            has something to edit. Toggling is a different mechanism: it writes
+            `disabledMcpServers` BY NAME, so there is no reason it should not
+            reach a connector.
+
+            UNMEASURED FOR CONNECTORS, though, because this machine has none to
+            test with. So the button is offered and the CLI's own refusal is
+            rendered if it says no — fail-open, and honest either way. Do not
+            "fix" this by hiding the control until someone has actually seen it
+            refuse. */}
+        {/* `state.toggle`, NEVER `s.status` — see `runtimeStatus`. A row whose
+            word was decided by APPROVAL gets no switch at all, because approval
+            is a different lock with a different key and offering this one built
+            a loop the user could not escape. */}
+        {state.toggle !== 'none' && (
+          <Btn
+            onClick={() => void doToggle(s, state.toggle === 'on')}
+            disabled={busy !== null}
+            title={t(state.toggle === 'on' ? 'mcp.turnOnTitle' : 'mcp.turnOffTitle', {
+              name: s.name,
+            })}
+          >
+            {busy?.kind === 'toggle' && busy.key === key
+              ? t('mcp.toggling')
+              : t(state.toggle === 'on' ? 'mcp.turnOn' : 'mcp.turnOff')}
+          </Btn>
+        )}
+        {/* NO TERMINAL, NO RESTART — the thing #714 could not do. A Direct
+            session used to be told to restart because there was nowhere for the
+            CLI's picker to appear; `mcp_reconnect` does the real work over the
+            control channel.
+
+            NOT ON A ROW THE USER TURNED OFF, and that is measured rather than
+            tidy: `mcp_reconnect` against a disabled server RE-ENABLES it
+            (`probe-toggle-reconnect-interaction.mjs` — disabled → reconnect →
+            connected). A Reconnect button there would silently undo the
+            decision this PR works hard to persist. The way back on is Turn on,
+            which says what it does. */}
+        {s.status !== 'disabled' && (
+          <Btn
+            onClick={() => void doReconnectServer(s.name, key)}
+            disabled={busy !== null}
+            title={t('mcp.reconnectServerTitle', { name: s.name })}
+          >
+            {busy?.kind === 'reconnectServer' && busy.key === key
+              ? t('mcp.reconnecting')
+              : t('mcp.reconnect.action')}
+          </Btn>
+        )}
         {/* VISIBLY READ-ONLY, NOT A DISABLED BUTTON (#729's own criterion). You
             cannot `claude mcp remove` a claude.ai connector or a plugin's
             server — they are in no file, so there is nothing for the subcommand
@@ -1277,7 +1614,28 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
                 <div style={{ padding: '0 14px 4px', fontSize: 10, color: 'var(--faint)' }}>
                   {t('mcp.notLoadedHint')}
                 </div>
-                {notLoaded.map(row)}
+                {/* WITH A BUTTON, not just advice (#729 PR 2). PR 1 could only
+                    tell the user to restart, because nothing here could reach
+                    into a running session. `mcp_reconnect` was then measured to
+                    pull in a server the session had NEVER LOADED — so the row
+                    that says "not loaded" can now fix itself. */}
+                {notLoaded.map((s) => (
+                  <div key={`notloaded:${s.scope}:${s.name}`}>
+                    {row(s)}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '0 14px 6px' }}>
+                      <Btn
+                        onClick={() => void doReconnectServer(s.name, `notloaded:${s.scope}:${s.name}`)}
+                        disabled={busy !== null}
+                        title={t('mcp.loadNowTitle', { name: s.name })}
+                      >
+                        {busy?.kind === 'reconnectServer' &&
+                        busy.key === `notloaded:${s.scope}:${s.name}`
+                          ? t('mcp.reconnecting')
+                          : t('mcp.loadNow')}
+                      </Btn>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </>
@@ -1345,8 +1703,20 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
             <Btn onClick={() => setFormOpen(true)} disabled={busy !== null}>
               {t('mcp.addServer')}
             </Btn>
+            {/* "RECONNECT ALL" WHEN THE ROWS HAVE THEIR OWN BUTTON, and this
+                is a real ambiguity rather than a naming preference: PR 2 gave
+                every runtime row a Reconnect, so an action-bar button with the
+                same word is two different scopes under one label. A test
+                reaching for the global one clicked a row's instead — which is
+                exactly the mistake a user makes with a mouse. On the config
+                path there are no per-row buttons and no ambiguity, so the
+                original word stands. */}
             <Btn onClick={() => void doReconnect()} disabled={busy !== null}>
-              {busy?.kind === 'reconnect' ? t('mcp.reconnecting') : t('mcp.reconnect.action')}
+              {busy?.kind === 'reconnect'
+                ? busy.total
+                  ? t('mcp.reconnectingProgress', { done: busy.done ?? 0, total: busy.total })
+                  : t('mcp.reconnecting')
+                : t(runtime ? 'mcp.reconnectAll' : 'mcp.reconnect.action')}
             </Btn>
             {/* Only when there is a project-scope server, because that is the
                 only scope with anything to approve — and a reset button with
