@@ -3,130 +3,79 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔜 NEXT: **#633's docs fix**, then cut v0.8.6. **#734 is in review.**
+> # 🚢 RELEASED — 2026-08-30: **v0.8.6** — the MCP release. #729 both halves, #734, #633.
 >
-> ## ✅ #734 — PR #736 IS OPEN, awaiting Dan's review
+> **Tagged and pushed.** `package.json` is `0.8.6`; CHANGELOG's `0.8.6` section is
+> dated and `0.8.7 — unreleased` is open above it. This is the build Dan has been
+> waiting on since 2026-08-29 — **tell him to install it before testing anything
+> MCP**, and see the dogfood tracker for what to try in what order.
 >
-> **2026-08-30.** Branch `feature/734-mcp-auth` (`928d2a1`), off `main` at
-> `1f61096`. **6634 tests / 251 files**, lint and both typechecks clean.
-> <https://github.com/badsonstudios/switchboard.ai/pull/736> — `Closes #734`.
+> ## WHAT IT CARRIES
 >
-> **#735 IS MERGED** (`1f61096`) — the control-verb audit is on `main`, which is
-> what satisfies #734's "record the unmeasured OAuth path in §1.2.2" criterion.
-> It was merged first on purpose: it touches the same two doc files #734 does.
+> * **#729 (both halves)** — the MCP pane sourced from `mcp_status` instead of
+>   three config files, so connectors and plugin servers appear at last (3 vs 16
+>   on the work laptop); plus `mcp_toggle` / `mcp_reconnect`, Load-it-now, and
+>   Reconnect all.
+> * **#734** (`620428a`, PR #736) — sign in to a connector and sign out again.
+> * **#633** (`c971b9d`, PR #737) — the picker triage, and the manual corrections
+>   that had to land BEFORE this tag or the release would have shipped a manual
+>   telling users the opposite of what it contains.
 >
-> ## AFTER #736 MERGES, IN ORDER
+> ## 🔜 NEXT: nothing is picked up. The queue is open.
 >
-> 1. **#633's docs fix** — `docs/manual/05-slash-commands.md:67` still calls
->    `/model` and `/mcp` a known gap needing Terminal mode, the opposite of what
->    two releases shipped. **That paragraph must not go out in v0.8.6.**
-> 2. **Cut v0.8.6** — and it now carries #734 as well as both halves of #729.
->    **Ask before cutting.**
+> `main` is clean and green. Open issues worth a look, roughly by cost of not
+> doing them: **#724** (auto-trust writes a case-variant project key — trust
+> silently never applies, and it bit #729's own probe), **#716** (composer typing
+> lag, severe on the laptop), **#719** (the CPU pegging forensic report),
+> **#731** / **#733** (drop-target and question-panel bugs Dan hand-found).
 >
-> ## TWO FOLLOW-UPS FROM #734's REVIEW — NOT TICKETED YET
+> ## ⚠️ THE ONE THING IN v0.8.6 THAT NOBODY HAS EVER SEEN WORK
 >
-> * **`config.ts:107` reads a missing `type` as `stdio` even with a `url`
->   present.** A hand-written `.mcp.json` carrying just a URL therefore reads as
->   stdio in the config list and as remote on the runtime row — the same server,
->   two answers. Not wrong enough to block #734 (that path defaults correctly for
->   CLI-written entries), but it is a real divergence with a user-visible edge.
-> * **`win-cmd.test.ts` flakes under full-suite load on this machine, ~1 in 4 —
->   and it does so on CLEAN `main` too** (measured: 4 clean-main runs, 1 failure;
->   passes 47/47 in isolation every time). A real `cmd.exe` spawn against a 5s
->   timeout. Pre-existing, not #734's. Worth a ticket before it gets blamed on
->   something innocent.
+> **#734's OAuth success path.** Only the CLI's REFUSALS are measured — there is
+> no claude.ai connector on the dev machine, so what `mcp_authenticate` does when
+> a flow really starts has never been observed. Built fail-open: nothing reads
+> `ok: true` as "signed in", the buttons only appear on rows already not working,
+> and the pane watches the row for 60s rather than claiming an outcome.
 >
-> ## WHAT REVIEW CAUGHT, AND IT WAS THE SAME MISTAKE ONE LAYER OVER
+> **A hazard that cannot be closed from here:** `CONTROL_TIMEOUT_MS` is 10s and an
+> OAuth flow is a human in a browser. If the CLI blocks for the flow, every real
+> sign-in TIMES OUT while working perfectly. It gets its own non-alarming
+> sentence and the watch keeps running — but if Dan reports "it said Claude Code
+> hasn't answered", that is this, and it is expected rather than broken.
 >
-> This whole item is about never claiming an outcome we cannot see — and the
-> first draft **promised a self-updating list it could not deliver**. The success
-> sentence said "this list updates when it does", but the status poll only
-> re-schedules while a row reports `pending`, and a sign-in leaves the row on
-> `needs-auth` while the user walks to a browser. So it asked ONCE, before they
-> had clicked anything, and never again. Worse than the unmeasurable claim it was
-> so careful to avoid, because this one was measurable and false. Fixed with a
-> bounded 60s watch window (`AUTH_WATCH_MS`), mutation-checked.
+> ## TWO FOLLOW-UPS FROM #734's REVIEW — STILL UNTICKETED
 >
-> Also caught: **Sign out on every connected remote row** — we cannot tell an
-> OAuth connector from a server using an `Authorization` header, so on the
-> 16-server laptop that was a break-this button on nearly every row, with a
-> repair path nobody has seen work. Now offered only where sign-in is.
+> * **`main/mcp/config.ts:107` reads a missing `type` as `stdio` even when a
+>   `url` is present.** A hand-written `.mcp.json` carrying only a URL therefore
+>   reads as stdio in the config list and as remote on the runtime row — same
+>   server, two answers. `main/mcp/status.ts`'s reader is the correct one.
+> * **`win-cmd.test.ts` flakes under full-suite load, ~1 in 4, ON CLEAN `main`
+>   TOO** (measured: 4 clean-main runs, 1 failure; 47/47 in isolation every time).
+>   A real `cmd.exe` spawn against a 5s timeout. Ticket it before it gets blamed
+>   on an innocent change.
 >
-> ## THE HAZARD NOBODY CAN CLOSE FROM HERE
+> ## KNOWN DRIFT LEFT ON PURPOSE (#633)
 >
-> **`CONTROL_TIMEOUT_MS` is 10s and an OAuth flow is a human in a browser.** If
-> the CLI blocks until the flow finishes, every real sign-in times out while
-> working perfectly. UNMEASURED. Not treated as failure: there is a verb-specific
-> sentence for it and the watch keeps running. The dogfood row asks Dan to
-> distinguish this outcome from a genuine dead end — it is outcome (b).
+> `main/providers/claude.ts`'s static builtin catalogue still offers six commands
+> the CLI deleted (`hooks`, `output-style`, `permissions`, `resume`, `rewind`,
+> `status`) in **Terminal-mode** autocomplete. #633 scoped catalogue drift out by
+> name and Direct mode replaces that list wholesale. Six-line deletion; the
+> measurement is recorded at the call site so it needs no second probe.
 >
-> ## ⛔ v0.8.6 IS STILL NOT CUT — and Dan is waiting on it
+> ## PROCESS LESSONS THAT COST REAL TIME — inherit these, do not rediscover them
 >
-> `package.json` says `0.8.5`; latest release is v0.8.5. **#729 is merged but on
-> nobody's machine.** He lost a trip to the work laptop on 2026-08-29 testing
-> `/mcp` against v0.8.5 — which carries #723's FOOTER EXPLAINING the short server
-> list, so the absent feature looked like a broken one. **Never say "go test
-> this" without naming the build that carries it.**
->
-> ## THE AUDIT THAT CHANGED THE PLAN (2026-08-30)
->
-> Dan asked "are we done with MCP and the commands?". Both of my first answers
-> were wrong; probing fixed them. Findings are in
-> `docs/reference-implementations.md` §1.2.2.
->
-> **MCP was NOT done → #734.** `mcp_authenticate`, `mcp_clear_auth` and
-> `mcp_oauth_callback_url` all exist and we use none. #729 PR 2 shipped a
-> `needs-auth` row state **with no button behind it**, so a connector wanting
-> sign-in says so and offers nothing. Invisible here (no connectors), live on the
-> work laptop.
->
-> **#633 is mostly STALE.** Five of the seven picker commands it triages do not
-> exist in CLI 2.1.245 (`/permissions`, `/hooks`, `/resume`, `/rewind`,
-> `/output-style`, `/status`) and `/agents` is labelled "(removed)" by the CLI.
-> What is left is small: record those dispositions, and **fix
-> `docs/manual/05-slash-commands.md:67`, which still calls `/model` and `/mcp` a
-> known gap that needs Terminal mode** — the opposite of what two releases
-> shipped. That paragraph must not go out in v0.8.6.
->
-> ## TWO PROCESS FAILURES WORTH NOT REPEATING
->
-> 1. **The real verb list was in #633's comment all along** (grepped from the
->    SDK, 2026-08-16). #729's probes invented names instead — `list_agents`,
->    `get_hooks`, `resume_session`, none of which exist — which is how
->    `mcp_authenticate` survived two PRs and a release cycle unnoticed. **Read
->    the recorded list before inventing names.**
-> 2. **Existence-testing `set_*` verbs with no arguments made three of them
->    SUCCEED** (`remote_control`, `seed_read_state`, `set_max_thinking_tokens`) —
->    they may have acted. Nothing persisted (config diffed clean against a
->    snapshot; each probe spawns a throwaway session) but that was verified
->    AFTER, not designed for. Exactly the `mcp_toggle` hazard documented a day
->    earlier.
->
-> ## #734 — WHAT IS KNOWN, AND THE HONEST LIMIT
->
-> Measured (`spike/probes/721/probe-mcp-auth.mjs`, throwaway server, nothing real
-> touched): auth is **remote-only** — a stdio server is refused by TYPE
-> (`Server type "stdio" does not support OAuth authentication`). The
-> missing-argument case IS properly refused, unlike `mcp_toggle`.
->
-> ⚠️ **THE OAUTH SUCCESS PATH IS UNMEASURABLE ON THIS MACHINE.** No connectors
-> here. What a real `mcp_authenticate` returns, whether a browser opens, how a
-> row leaves `needs-auth` — all unknown. Build against the refusals, FAIL OPEN on
-> anything unrecognised, and say in the dogfood row that the laptop is the first
-> real test. **Dan was told this and chose to build it anyway** — that is a
-> decision, not an oversight.
->
-> **A dependency:** #729 PR 2 REMOVED `transport` from `McpRuntimeServer` (review
-> called it computed-but-unrendered, and wrong — it claimed `stdio` when `config`
-> was absent, which is the connector case). #734 needs it back, with absent
-> `config` reported as `unknown`.
->
-> ## THE RELEASE, once #734 and #633 land
->
-> Bump `package.json` to `0.8.6`, `npm install --package-lock-only`, date the
-> `## 0.8.6 — unreleased` section (entries already written), open
-> `## 0.8.7 — unreleased`, commit all three together, tag `v0.8.6`, push the tag.
-> **Ask before cutting** — a release is outward-facing.
+> 1. **Read the recorded list before inventing names.** #729's probes guessed
+>    verb names (`list_agents`, `get_hooks`, `resume_session` — none exist) while
+>    the real list sat in #633's comment from 2026-08-16. That is how
+>    `mcp_authenticate` survived two PRs and a release.
+> 2. **Existence-testing a `set_*` verb WILL fire it.** Probing with no arguments
+>    made `remote_control`, `seed_read_state` and `set_max_thinking_tokens` answer
+>    success — they may have acted. Nothing persisted, but that was checked
+>    afterwards rather than designed for.
+> 3. **Never say "go test this" without naming the build that carries it.**
+> 4. **Hedging an unmeasurable claim is not enough if you then make a measurable
+>    false one.** #734's review caught the success message promising a
+>    self-updating list while the poll stopped after one ask.
 >
 > ## VERSIONING — settled 2026-08-30, do not re-litigate
 >
@@ -136,7 +85,6 @@
 > about and **declined** — if it returns, the blocker is
 > `scripts/release-notes.js`'s `SEMVER` regex (exactly three parts), NOT the
 > update checker, which already handles four.
-
 > # ✅ #633 IS CLOSED OUT — PR **#737**, 2026-08-30. Docs only.
 >
 > **Deliberately placed here rather than in the NEXT block at the top of this
@@ -170,19 +118,17 @@
 > Recorded at the catalogue and in §5.17; it is a six-line deletion whenever that
 > trade stops holding.
 
-> # ✅ #729 IS DONE AND CLOSED — 2026-08-30. **BUT IT IS NOT RELEASED.**
+> # ✅ #729 IS DONE AND CLOSED — 2026-08-30. **RELEASED in v0.8.6.**
 >
 > Both halves merged: **#730** (`ed70ef6`) and **#732** (`ce04bf4`). Issue #729
 > closed automatically. `main` is at `ce04bf4`. **6588 tests / 251 files.**
 >
-> ## ⛔ NOTHING OF THIS IS ON ANY OF DAN'S MACHINES
+> ## ✅ SHIPPED IN v0.8.6 (2026-08-30) — the hold is over
 >
-> **Latest release is still v0.8.5** (`gh release list`), and `package.json`
-> still says `0.8.5`. v0.8.6 was deliberately held so it would carry BOTH halves
-> of #729 — that condition is now met, so **the release is the next action**,
-> and it is unstarted.
+> v0.8.6 was deliberately held so it would carry BOTH halves of #729. It does,
+> plus #734 and #633. **Install v0.8.6 before testing any of it.**
 >
-> **DO NOT TELL DAN TO TEST THIS UNTIL v0.8.6 EXISTS.** He tested `/mcp` on the
+> The reason that sentence keeps appearing: He tested `/mcp` on the
 > work laptop on 2026-08-29 against v0.8.5, saw the same three servers, and was
 > right to be annoyed: v0.8.5 carries #723's FOOTER EXPLAINING the short list,
 > not the fix. That decoy makes the released build look like the feature is
