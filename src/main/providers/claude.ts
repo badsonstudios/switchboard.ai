@@ -104,6 +104,21 @@ function validateHooksShape(hooks: unknown): void {
  * note). A stale entry is harmless — the CLI itself rejects or ignores it —
  * so keeping this list fresh is a maintenance chore, not a correctness risk.
  * Verified against claude 2.1.x.
+ *
+ * ⚠️ **SIX ENTRIES BELOW NO LONGER EXIST, MEASURED (#633 close-out,
+ * 2026-08-30).** `initialize.commands` on PATH CLI 2.1.245 lists 69 commands,
+ * and `hooks`, `output-style`, `permissions`, `resume`, `rewind` and `status`
+ * are not among them; `agents` is there but its own description begins
+ * `(removed)`. So the "harmless" claim above is true of CORRECTNESS and not of
+ * the SUGGESTION — autocomplete offers six things the CLI will not do.
+ *
+ * LEFT IN ON PURPOSE, twice over: #633 scoped catalogue drift out by name
+ * ("mitigated by Direct mode's live list"), and this list is only ever shown in
+ * TERMINAL mode — Direct mode, the default and the mode that is staying,
+ * replaces it wholesale with the CLI's own live list. Deleting the six is a
+ * six-line change if that trade ever stops holding; the measurement is here so
+ * whoever makes it does not have to re-run the probe. Disposition table:
+ * DESIGN.md §5.17.
  */
 const CLAUDE_BUILTIN_COMMANDS: SlashCommand[] = [
   { name: 'add-dir', description: 'Add a new working directory' },

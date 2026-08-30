@@ -1423,6 +1423,40 @@ tab — it's the real CLI. On top, GUI sugar that never forks CLI behavior:
   truth (PHILOSOPHY P7). *(Slash commands work as plain user text on the
   stream-json transport too — verified S-10 probe C — so this surface is
   transport-independent.)*
+
+  **THE PICKER TRIAGE #633 ASKED FOR — settled 2026-08-30, and mostly by
+  discovering the question was stale.** #633 listed seven picker commands that
+  "dead-end in Direct mode" and asked for a disposition per command. Existence-
+  tested against `initialize.commands` on PATH CLI 2.1.245 (69 entries;
+  `spike/probes/721/probe-command-verbs.mjs`, findings in
+  `docs/reference-implementations.md` §1.2.2):
+
+  | Command | Disposition |
+  |---|---|
+  | `/model` | **GUI.** Picker over `list_models` / `set_model` (#721) |
+  | `/mcp` | **GUI.** Routes to the MCP Manager (#632, #714, #723, #729, #734) |
+  | `/permissions` `/hooks` `/resume` `/rewind` `/output-style` `/status` | **MOOT — not commands on 2.1.245 at all.** There is no dead end to fix and nothing to hand off |
+  | `/agents` | **MOOT.** It exists, and its own description begins `(removed)` |
+  | `/config` | **PASSES THROUGH.** "Set a setting by key" — takes an argument, opens no picker |
+  | `/context` `/usage` | **SHIPPED** already (#715) — the CLI answers them itself and the Session view renders it |
+
+  So the ticket's premise — a large class of unreachable interactive commands —
+  was true of an older CLI and is now true of exactly none. **Five of the seven
+  were fixed by the CLI deleting them, not by us**, which is worth stating
+  plainly rather than claiming as a win.
+
+  `initialize` also carries `current_permission_mode`, `output_style`,
+  `available_output_styles` and the full `agents` array, so several of those
+  surfaces are **readable** even where no dedicated control verb exists. That is
+  a starting point if any of them ever earns a pane — not a plan to build one.
+
+  ⚠️ **KNOWN DRIFT, DELIBERATELY LEFT.** `main/providers/claude.ts`'s static
+  builtin catalogue still lists all six of the deleted commands, so Terminal-mode
+  autocomplete offers things the CLI no longer has. #633 scoped catalogue drift
+  out explicitly ("mitigated by Direct mode's live list"), and Direct mode — the
+  default, and the mode that is staying — replaces that list wholesale with the
+  CLI's own. Recorded here so the next person finds the measurement rather than
+  re-running it.
 - Non-Claude adapters map the same surface to their CLI's equivalents where they
   exist; the pane degrades gracefully to "not supported by this provider."
 

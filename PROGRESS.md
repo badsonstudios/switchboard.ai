@@ -137,6 +137,39 @@
 > `scripts/release-notes.js`'s `SEMVER` regex (exactly three parts), NOT the
 > update checker, which already handles four.
 
+> # ✅ #633 IS CLOSED OUT — PR **#737**, 2026-08-30. Docs only.
+>
+> **Deliberately placed here rather than in the NEXT block at the top of this
+> file**, so this diff cannot collide with #736's (#734), which rewrites that
+> block. The two PRs were branched off `main` at `1f61096` independently and
+> merge in either order without touching each other.
+>
+> ## THE TICKET HAD MOSTLY EXPIRED — that is the finding
+>
+> Of the seven picker commands #633 asked to triage, **five are not commands at
+> all** on CLI 2.1.245 (`/permissions`, `/hooks`, `/resume`, `/rewind`,
+> `/output-style`, `/status`) and `/agents` is self-described `(removed)`.
+> `/model` and `/mcp` shipped their own panels in #721 and #632/#729. So the
+> ticket's premise — a class of unreachable interactive commands — is now true of
+> exactly none, and **the CLI deleting them did most of that work, not us.**
+> Disposition table in DESIGN.md §5.17; measurement in
+> `docs/reference-implementations.md` §1.2.2.
+>
+> What actually needed fixing was the manual, which had gone from stale to wrong:
+> `05-slash-commands.md` and `12-direct-mode.md` still told users to switch a
+> session to Terminal mode to use `/model` and `/mcp` and called it a known gap,
+> and the Direct mode page still listed `/resume` and `/rewind` pickers under
+> *What you give up*. **Those paragraphs must not go out in v0.8.6** — which is
+> why this item came before the release.
+>
+> ## KNOWN DRIFT LEFT ON PURPOSE
+>
+> `main/providers/claude.ts`'s static builtin catalogue still offers all six
+> deleted commands in **Terminal-mode** autocomplete. #633 scoped catalogue drift
+> out by name, and Direct mode replaces that list wholesale with the CLI's own.
+> Recorded at the catalogue and in §5.17; it is a six-line deletion whenever that
+> trade stops holding.
+
 > # ✅ #729 IS DONE AND CLOSED — 2026-08-30. **BUT IT IS NOT RELEASED.**
 >
 > Both halves merged: **#730** (`ed70ef6`) and **#732** (`ce04bf4`). Issue #729
