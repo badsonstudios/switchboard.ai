@@ -3,15 +3,38 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔨 IN PROGRESS: **#734** — MCP connector sign-in. Then #633's docs. Then v0.8.6.
+> # 🔜 NEXT: **#633's docs fix**, then cut v0.8.6. **#734 is in review.**
 >
-> **Started 2026-08-30.** Branch `feature/734-mcp-auth`, off `main` at `1f61096`.
-> Implemented, reviewed, all gates green — **6634 tests / 251 files**, lint and
-> both typechecks clean. Awaiting Dan's commit approval, then the PR.
+> ## ✅ #734 — PR #736 IS OPEN, awaiting Dan's review
+>
+> **2026-08-30.** Branch `feature/734-mcp-auth` (`928d2a1`), off `main` at
+> `1f61096`. **6634 tests / 251 files**, lint and both typechecks clean.
+> <https://github.com/badsonstudios/switchboard.ai/pull/736> — `Closes #734`.
 >
 > **#735 IS MERGED** (`1f61096`) — the control-verb audit is on `main`, which is
 > what satisfies #734's "record the unmeasured OAuth path in §1.2.2" criterion.
 > It was merged first on purpose: it touches the same two doc files #734 does.
+>
+> ## AFTER #736 MERGES, IN ORDER
+>
+> 1. **#633's docs fix** — `docs/manual/05-slash-commands.md:67` still calls
+>    `/model` and `/mcp` a known gap needing Terminal mode, the opposite of what
+>    two releases shipped. **That paragraph must not go out in v0.8.6.**
+> 2. **Cut v0.8.6** — and it now carries #734 as well as both halves of #729.
+>    **Ask before cutting.**
+>
+> ## TWO FOLLOW-UPS FROM #734's REVIEW — NOT TICKETED YET
+>
+> * **`config.ts:107` reads a missing `type` as `stdio` even with a `url`
+>   present.** A hand-written `.mcp.json` carrying just a URL therefore reads as
+>   stdio in the config list and as remote on the runtime row — the same server,
+>   two answers. Not wrong enough to block #734 (that path defaults correctly for
+>   CLI-written entries), but it is a real divergence with a user-visible edge.
+> * **`win-cmd.test.ts` flakes under full-suite load on this machine, ~1 in 4 —
+>   and it does so on CLEAN `main` too** (measured: 4 clean-main runs, 1 failure;
+>   passes 47/47 in isolation every time). A real `cmd.exe` spawn against a 5s
+>   timeout. Pre-existing, not #734's. Worth a ticket before it gets blamed on
+>   something innocent.
 >
 > ## WHAT REVIEW CAUGHT, AND IT WAS THE SAME MISTAKE ONE LAYER OVER
 >
