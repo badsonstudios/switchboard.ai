@@ -3,60 +3,77 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔨 IN PROGRESS — 2026-08-29: **#729 PR 2 of 2** — the toggle/reconnect verbs
+> # ✅ #729 IS DONE AND CLOSED — 2026-08-30. **BUT IT IS NOT RELEASED.**
 >
-> **PR #732 is OPEN** — https://github.com/badsonstudios/switchboard.ai/pull/732
-> Branch `feature/729-mcp-toggle-reconnect` (`7e6ca30`). **6588 tests / 251
-> files**, typecheck and lint clean. `Closes #729`. Awaiting Dan's review.
+> Both halves merged: **#730** (`ed70ef6`) and **#732** (`ce04bf4`). Issue #729
+> closed automatically. `main` is at `ce04bf4`. **6588 tests / 251 files.**
 >
-> ## WHEN THIS MERGES, CUT v0.8.6 — that is the whole reason it was held
+> ## ⛔ NOTHING OF THIS IS ON ANY OF DAN'S MACHINES
 >
-> Dan is waiting on this to test the MCP work on the work laptop. **Merging is
-> not enough** (see the mistake below): after the merge, bump `package.json`,
-> date the CHANGELOG's `0.8.6` section, open the next `— unreleased`, tag
-> `v0.8.6` and push the tag.
+> **Latest release is still v0.8.5** (`gh release list`), and `package.json`
+> still says `0.8.5`. v0.8.6 was deliberately held so it would carry BOTH halves
+> of #729 — that condition is now met, so **the release is the next action**,
+> and it is unstarted.
 >
-> ## THE BLOCKER REVIEW CAUGHT — worth remembering as a shape
+> **DO NOT TELL DAN TO TEST THIS UNTIL v0.8.6 EXISTS.** He tested `/mcp` on the
+> work laptop on 2026-08-29 against v0.8.5, saw the same three servers, and was
+> right to be annoyed: v0.8.5 carries #723's FOOTER EXPLAINING the short list,
+> not the fix. That decoy makes the released build look like the feature is
+> engaging and failing. See `merged-is-not-released` in memory.
+>
+> ## VERSIONING — settled 2026-08-30, do not re-litigate
+>
+> **Three parts. The patch runs to triple digits.** `0.8.9` → `0.8.10` → …
+> → `0.8.100`. A patch part is an integer, not a digit; nothing rolls over.
+> `0.9` and `1.0` are deliberate decisions, never a consequence of counting.
+> Full rationale in `CHANGELOG.md`'s "how the version moves".
+>
+> A **four-part** scheme (`0.8.5.1` → `0.8.5.100` → `0.8.6`) was asked about and
+> **declined**. Findings if it ever comes back: the update checker already
+> handles four parts (`main/update/version.ts:10` says so explicitly); npm and
+> electron-builder accepted it in a test; the blocker is
+> `scripts/release-notes.js`'s `SEMVER` regex, which matches exactly three parts,
+> so a four-part CHANGELOG heading fails the release gate as "no notes".
+>
+> ## THE NEXT ACTION, IN ORDER
+>
+> 1. **Cut v0.8.6.** Bump `package.json` to `0.8.6`, `npm install
+>    --package-lock-only`, date the `## 0.8.6 — unreleased` section (its entries
+>    are already written — both #729 halves), open `## 0.8.7 — unreleased` above
+>    it, commit all three together, tag `v0.8.6`, push the tag. The workflow does
+>    the rest. **Dan has not explicitly approved cutting it — ask first.**
+> 2. Then the queue below.
+>
+> ## ⚠️ THREE THINGS ONLY DAN CAN VERIFY, once v0.8.6 is on the laptop
+>
+> 1. **The 3-vs-16 fix itself.** Only the work laptop has 16 servers; this dev
+>    machine has one (DeepWiki). Mechanism is proven, coverage is not.
+> 2. **Does a toggle survive a session restart?** It writes
+>    `disabledMcpServers` — measured — but persistence across restarts on his
+>    disk is his check.
+> 3. **Does Turn off work on a real claude.ai connector?** UNMEASURED — no
+>    connectors on this machine. The control is offered and the CLI's refusal is
+>    rendered if it says no. The docs deliberately promise neither outcome.
+>
+> ## WHAT #729 PR 2's REVIEW CAUGHT — a shape worth remembering
 >
 > **Two independent off-switches that share a word.** `disabledMcpjsonServers`
-> is APPROVAL; `disabledMcpServers` is the new TOGGLE; both render "turned off".
-> The draft read the label from one and the button from the other, so a declined
-> server offered *Turn off* and never *Turn on* — press, press, press, and it
-> never comes back. `runtimeStatus` now decides label and switch together.
+> is APPROVAL; `disabledMcpServers` is the TOGGLE; both render "turned off". The
+> draft read the label from one and the button from the other, so a declined
+> server offered *Turn off* and never *Turn on* — an infinite loop with the
+> server never coming back. `runtimeStatus` now decides label and switch
+> together. Also: **`mcp_reconnect` UNDOES a toggle** (measured), so Reconnect-all
+> skips disabled rows.
 >
-> **And `mcp_reconnect` UNDOES a toggle** (measured), so Reconnect-all had to
-> learn to skip disabled rows or one press would silently re-enable everything.
+> ## AND TWICE I WAS WRONG ABOUT MY OWN PROBE
 >
-> ## ⛔ v0.8.6 IS DELIBERATELY HELD FOR THIS
->
-> **Dan's call, 2026-08-29:** merge PR 1 but do NOT cut a release, so v0.8.6
-> carries both halves of #729 together. **So this item is the release blocker** —
-> nothing reaches his machines until it lands.
->
-> ## THE MISTAKE THAT PRECEDED IT — worth not repeating
->
-> Dan tested `/mcp` on the work laptop against **v0.8.5** and saw the same three
-> servers. Correct behaviour: v0.8.5 carries #723, which is the FOOTER EXPLAINING
-> the short list, not the fix. **I had told him to test on Monday without ever
-> checking that a build containing the code existed.** It did not — the PR was
-> open and the code was not on `main`. Second time the merged-≠-released trap has
-> bitten in this repo. `docs/plans/dogfood-testing.md` now marks unmerged rows
-> ⛔ NOT TESTABLE YET with the order of operations.
->
-> ## THE PROBE PLAN — no consent needed, and that is the point
->
-> Dan has skipped the "may I toggle your real DeepWiki server" question three
-> times. **It is now moot:** every open question can be answered against a
-> THROWAWAY server we add and remove ourselves, the shape
-> `probe-mcp-add-live.mjs` already used. Three questions:
->
-> 1. `mcp_toggle` with a valid server and **no `enabled` field** — the `set_model`
->    silent-no-op shape. Unreachable with a fake name; the lookup runs first.
-> 2. Does a toggle **PERSIST** to `~/.claude.json`, or die with the session?
->    Decides what the UI tells the user it just did.
-> 3. **Does `mcp_reconnect` pick up a server the session NEVER LOADED?** If yes,
->    PR 1's "in your files, not loaded by this session" group gets a working
->    per-row Reconnect. If no, its only honest advice is "restart the session".
+> Once on #721 ("send `initialize` first"), and again here: the interaction
+> probe's `disabledMcpServers` readout lowercases project keys, and
+> `~/.claude.json` holds BOTH `c:/Projects/Switchboard.ai` and
+> `C:/Projects/Switchboard.ai` — **that is #724, biting the probe**. It reported
+> `null` throughout, including right after a toggle that demonstrably worked.
+> The file carries the warning. **A quiet answer is worth suspecting your own
+> probe over.**
 
 > # ✅ MERGED — 2026-08-29: **#729 PR 1 of 2** — the MCP inventory over the control channel
 >
@@ -119,14 +136,25 @@
 > (DeepWiki), so it verifies mechanism, not coverage. Dan is not at that machine
 > until **Monday 2026-08-31**.
 >
-> ## NEXT UP — in the order I would take it
+> ## THE QUEUE — after v0.8.6 is cut
 >
-> 1. **#729 PR 2** — `mcp_toggle` / `mcp_reconnect`. Both verbs are measured and
->    the channel exists; start by asking Dan the consent question above.
-> 2. **#715 — context %.** `get_context_usage` serves `percentage` directly.
-> 3. **#704 — task-notification turns render as NEW PROMPT with raw XML.**
+> 1. **#715 — context %.** `get_context_usage` serves `percentage` directly and
+>    the control channel exists. Small.
+> 2. **#704 — task-notification turns render as NEW PROMPT with raw XML.**
+>    Self-contained, no CLI contract to probe. Dan hit it dogfooding 2026-08-28.
+> 3. **#724** — `trust.ts` writes a case-variant project key, so auto-trust can
+>    silently never apply. **Now seen three times for real**: twice in Dan's live
+>    `~/.claude.json` (`c:/Projects/Switchboard.ai` beside
+>    `C:/Projects/Switchboard.ai`) and once inside our own #729 probe, which read
+>    the wrong entry because of it. No longer theoretical.
 > 4. **#633** — the `/mcp` route, the per-command disposition table, the manual.
-> 5. **#724** — `trust.ts` writes a case-variant project key.
+>
+> Two laptop-affecting bugs Dan has actually suffered, both bigger than the
+> above and neither started: **#716** (composer keystrokes buffer, severe on the
+> laptop) and **#719** (switchboard pegged the CPU until a forced reboot — 26h
+> uptime, 4.6x harder while MINIMIZED; full forensic report and five concrete
+> watcher bugs already in the ticket). #719 is the nastiest open bug in the
+> tracker.
 
 > # 🚢 RELEASED — 2026-08-28: **v0.8.5** — `/model`, the control channel, and an honest MCP list
 >

@@ -39,7 +39,22 @@ on the floor, and say so in your PR.
    moves slowly on purpose. A MINOR bump is reserved for a deliberate
    milestone batch the owner names as one, and **1.0 is the release where
    all (or the substantial majority) of the planned feature set is in** —
-   nothing before it earns a major. If the
+   nothing before it earns a major.
+
+   **THE PATCH NUMBER RUNS TO TRIPLE DIGITS, AND NOTHING ROLLS OVER (owner,
+   2026-08-30).** `0.8.9` is followed by `0.8.10`, not by `0.9.0` — a patch
+   part is an integer, not a digit, and semver has no cap on it. So `0.8.10`,
+   `0.8.42`, `0.8.100` are all ordinary releases and `0.8` alone has room for
+   a hundred of them. **`0.9` and `1.0` are decisions somebody makes on
+   purpose; they never arrive by counting.** Written down because the question
+   was asked, and because the alternative considered — a fourth version part
+   (`0.8.5.1`) — would have needed `scripts/release-notes.js`'s `SEMVER`
+   regex widened (it matches exactly three parts, so a four-part changelog
+   heading fails the release gate as "no notes for this version"). The update
+   checker already handles four parts (`main/update/version.ts`); the release
+   gate is the thing that does not. No four-part scheme was adopted.
+
+   If the
    open unreleased section's placeholder version is not the number you landed
    on, rename its heading to match. Then refresh the lock —
    `npm install --package-lock-only` — so `package-lock.json`'s root and
