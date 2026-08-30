@@ -17,6 +17,7 @@ import { createRoot, Root } from 'react-dom/client';
 import { act } from 'react';
 import {
   McpManagerDialog,
+  authControls,
   failureMessage,
   rowStatus,
   runtimeStatus,
@@ -87,6 +88,11 @@ let toggleAnswer: ControlVerdict;
 /** a FUNCTION, so a test can answer differently per call — which is what the
  *  "how many failed" assertion on the global Reconnect needs */
 let reconnectServerAnswer: () => ControlVerdict;
+/** what the two auth verbs answer (#734). Both are `ControlVerdict`s, and the
+ *  SUCCESS shape is deliberately `{}` — the real payload has never been seen,
+ *  because no claude.ai connector exists on the machine this was built on. */
+let authAnswer: ControlVerdict;
+let clearAuthAnswer: ControlVerdict;
 
 function installBridge(): void {
   const record =
@@ -121,6 +127,8 @@ function installBridge(): void {
         : {}),
       toggle: record('toggle', () => toggleAnswer),
       reconnectServer: record('reconnectServer', () => reconnectServerAnswer()),
+      authenticate: record('authenticate', () => authAnswer),
+      clearAuth: record('clearAuth', () => clearAuthAnswer),
       add: record('add', () => addAnswer),
       remove: record('remove', () => removeAnswer),
       resetApprovals: record('resetApprovals', () => resetAnswer),
@@ -201,6 +209,8 @@ beforeEach(() => {
   resetAnswer = { ok: true };
   reconnectAnswer = { outcome: 'typed' };
   toggleAnswer = { ok: true, response: {} };
+  authAnswer = { ok: true, response: {} };
+  clearAuthAnswer = { ok: true, response: {} };
   reconnectServerAnswer = () => ({ ok: true, response: {} });
   listAnswer = (folder) => ({ folder, servers: [], unreadable: [] });
   healthAnswer = (folder) => ({ folder, states: {}, ok: true });
@@ -821,6 +831,10 @@ const runtimeServer = (over: Partial<McpRuntimeServer> & { name: string }): McpR
   scope: 'local',
   status: 'connected',
   target: 'npx',
+  // stdio by default, so the existing rows keep their existing buttons: #734's
+  // sign-in controls are REMOTE-ONLY, and a default of anything else would add
+  // two buttons to every row every other test in this file asserts against.
+  transport: 'stdio',
   tools: [],
   readOnly: true,
   envKeys: [],
@@ -1270,6 +1284,201 @@ describe('turning a server off and on (#729 PR 2)', () => {
   });
 });
 
+describe('signing in and out of a connector (#734)', () => {
+  it('a row that needs signing in finally offers a way to do it', async () => {
+    // THE BUG THIS TICKET IS. #729 PR 2 shipped this exact row state — the
+    // label said "needs sign-in" and there was no button behind it. Invisible
+    // on the dev machine, which has no connectors; live on one that does.
+    useStatus(
+      ok([
+        runtimeServer({
+          name: 'Slack',
+          scope: 'dynamic',
+          status: 'needs-auth',
+          transport: 'unknown',
+          readOnly: true,
+        }),
+      ])
+    );
+    await mount();
+    expect(text()).toContain('needs sign-in');
+    await click(button('Sign in'));
+    expect(calls.find((c) => c.channel === 'authenticate')?.args).toEqual([
+      'C:/p/acme',
+      'L1',
+      'Slack',
+    ]);
+  });
+
+  it('does NOT claim the user is signed in — the success payload is unmeasured', async () => {
+    // ⚠️ THE FAIL-OPEN RULE, AND THE MOST IMPORTANT ASSERTION IN THIS BLOCK.
+    // `mcp_authenticate`'s success answer has never been observed: there is no
+    // claude.ai connector on the build machine, so only its refusals are
+    // measured. Rendering `ok: true` as "Signed in." would be the app inventing
+    // an outcome it cannot see — §4 rules that out, and the row's own status is
+    // what gets to say whether it worked.
+    useStatus(ok([runtimeServer({ name: 'Slack', status: 'needs-auth', transport: 'unknown' })]));
+    await mount();
+    await click(button('Sign in'));
+    expect(text()).not.toContain('Signed in');
+    expect(text()).toContain('If a browser window opens');
+  });
+
+  it('offers sign-out, and claims only that it ASKED', async () => {
+    // `mcp_clear_auth`'s success payload has never been observed either — only
+    // its stdio refusal is measured. An earlier draft said "Claude Code has
+    // forgotten your sign-in", which is the same unearned certainty the sign-in
+    // sentence is so careful to avoid. Found in review: the asymmetry was never
+    // argued, it was just missed.
+    useStatus(ok([runtimeServer({ name: 'Slack', status: 'needs-auth', transport: 'http' })]));
+    await mount();
+    await click(button('Sign out'));
+    expect(calls.find((c) => c.channel === 'clearAuth')?.args).toEqual([
+      'C:/p/acme',
+      'L1',
+      'Slack',
+    ]);
+    expect(text()).toContain('has been asked to forget');
+    expect(text()).not.toContain('has forgotten your sign-in for');
+  });
+
+  it('says something reassuring, not alarming, when the request times out', async () => {
+    // ⚠️ THE MOST LIKELY FIRST-CONTACT FAILURE, and it is not a failure. The
+    // control channel allows ten seconds; a sign-in is a human walking to a
+    // browser. If the CLI blocks for the length of that flow — plausible,
+    // unmeasured — every real sign-in times out while working perfectly, and
+    // the generic sentence ("may be busy or stuck") reports it as breakage.
+    useStatus(ok([runtimeServer({ name: 'Slack', status: 'needs-auth', transport: 'http' })]));
+    authAnswer = { ok: false, reason: 'timed-out', message: '' };
+    await mount();
+    await click(button('Sign in'));
+    expect(text()).not.toContain('busy or stuck');
+    expect(text()).toContain('finish signing in there');
+  });
+
+  // NOT TESTED HERE: the in-flight "Working…" label and the sibling-button lock.
+  // Both come from `busy`, which is `controlMutate`'s shared machinery already
+  // exercised by the toggle and reconnect paths — and this file has no way to
+  // hold a control-channel call open (only `mcp:health` has a release hook in
+  // the bridge). A version of that test was written and withdrawn: it had to
+  // monkey-patch the installed bridge, which corrupted it for every test that
+  // ran afterwards. Harness surgery for an already-covered shared path is a
+  // worse trade than the gap.
+
+  it('shows the CLI\u2019s own sentence when it refuses', async () => {
+    // The refusals ARE measured, and they are the shapes a real user is most
+    // likely to see first. The CLI's wording beats ours.
+    useStatus(ok([runtimeServer({ name: 'local-thing', status: 'failed', transport: 'http' })]));
+    authAnswer = {
+      ok: false,
+      reason: 'refused',
+      message: 'Server type "stdio" does not support OAuth authentication',
+    };
+    await mount();
+    await click(button('Sign in'));
+    expect(text()).toContain('does not support OAuth authentication');
+  });
+
+  it('KEEPS WATCHING after a sign-in, on a row that is not `pending`', async () => {
+    // ⚠️ THE REGRESSION TEST FOR A PROMISE THE APP COULD NOT KEEP. Found in
+    // review: the success sentence said "this list updates", but `tick`
+    // re-schedules only while some row reports `pending`. A sign-in leaves the
+    // row on `needs-auth` and sends the user to a BROWSER — so under that rule
+    // the pane asked exactly once, before they had clicked anything, and never
+    // again. Unlike the unmeasurable claims this feature is careful about, that
+    // was a false claim about OUR OWN behaviour, and it was measurable.
+    vi.useFakeTimers();
+    try {
+      useStatus(ok([runtimeServer({ name: 'Slack', status: 'needs-auth', transport: 'http' })]));
+      await mount();
+      const before = statusCalls.length;
+      await click(button('Sign in'));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
+      // Polling every 2s for 30s of a 60s window — the exact count is the
+      // machinery's business, but "more than the one ask the old rule allowed"
+      // is the whole fix.
+      expect(statusCalls.length).toBeGreaterThan(before + 5);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stops watching once the window closes, rather than polling for ever', async () => {
+    // BOUNDED, because a flow the user abandoned must not leave the pane asking
+    // for the rest of the session. The honest fallback is reopening the panel,
+    // and the success sentence says so.
+    vi.useFakeTimers();
+    try {
+      useStatus(ok([runtimeServer({ name: 'Slack', status: 'needs-auth', transport: 'http' })]));
+      await mount();
+      await click(button('Sign in'));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(90_000);
+      });
+      const settled = statusCalls.length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(120_000);
+      });
+      expect(statusCalls).toHaveLength(settled);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does NOT start watching when the CLI refused the sign-in', async () => {
+    // Nothing was started, so there is nothing to watch for. A refusal that left
+    // the window open would spend a minute of round trips re-asking about a
+    // request the CLI declined. (A TIMEOUT is different — see its own test.)
+    vi.useFakeTimers();
+    try {
+      useStatus(ok([runtimeServer({ name: 'Slack', status: 'needs-auth', transport: 'http' })]));
+      authAnswer = { ok: false, reason: 'refused', message: 'Server not found: Slack' };
+      await mount();
+      await click(button('Sign in'));
+      const after = statusCalls.length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+      expect(statusCalls).toHaveLength(after);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('offers NEITHER control on a stdio row', async () => {
+    // Refused by TYPE, measured. The rest of this file's rows default to stdio,
+    // so this is also the assertion that #734 added no buttons anywhere else.
+    useStatus(ok([runtimeServer({ name: 'DeepWiki', status: 'needs-auth', transport: 'stdio' })]));
+    await mount();
+    const labels = Array.from(rowFor('DeepWiki').querySelectorAll('button')).map((b) =>
+      b.textContent?.trim()
+    );
+    expect(labels).not.toContain('Sign in');
+    expect(labels).not.toContain('Sign out');
+  });
+
+  it('offers sign-in on a READ-ONLY connector row', async () => {
+    // `readOnly` is about Remove — whether a config file declares the server.
+    // A connector is read-only BY DEFINITION and is exactly what needs signing
+    // in, so the two must not be coupled.
+    useStatus(
+      ok([
+        runtimeServer({
+          name: 'Slack',
+          scope: 'dynamic',
+          status: 'needs-auth',
+          transport: 'unknown',
+          readOnly: true,
+        }),
+      ])
+    );
+    await mount();
+    expect(button('Sign in')).not.toBeNull();
+  });
+});
+
 describe('the two off-switches must not be confused (found in review)', () => {
   // THERE ARE TWO INDEPENDENT LOCKS AND THEY SHARE THE WORD "turned off":
   // `disabledMcpjsonServers` is APPROVAL (undone by Reset approvals or the
@@ -1519,4 +1728,87 @@ describe('runtimeStatus — the word for one row', () => {
     // seconds of every fresh session.
     expect(runtimeStatus(runtimeServer({ name: 'x', status: status as never })).token).toBe(token);
   });
+});
+
+/**
+ * Who may sign in, and who may sign out (#734).
+ *
+ * The table IS the feature. #729 PR 2 shipped a `needs-auth` label with nothing
+ * behind it, and the rule that fixes it has two deliberate widenings past the
+ * obvious one — both asserted here so a later tidy-up cannot quietly undo them.
+ */
+describe('authControls — the sign-in rule', () => {
+  const at = (over: Partial<McpRuntimeServer>): ReturnType<typeof authControls> =>
+    authControls(runtimeServer({ name: 'x', ...over }));
+
+  it.each([['needs-auth' as const], ['connected' as const], ['failed' as const]])(
+    'offers nothing on a stdio row (%s)',
+    (status) => {
+      // REFUSED BY TYPE, measured: `Server type "stdio" does not support OAuth
+      // authentication`, and `Cannot clear auth for server type "stdio"`. A
+      // button that cannot work is worse than no button.
+      expect(at({ status, transport: 'stdio' })).toEqual({ signIn: false, signOut: false });
+    }
+  );
+
+  it('offers BOTH on a row that says it needs signing in', () => {
+    // Sign out as well as in, because the success path of `mcp_authenticate` has
+    // never been observed — no connector exists on the build machine. If a
+    // sign-in half-completes on a real one, sign-out-then-in is the only
+    // recovery that does not involve the CLI's credential store by hand.
+    expect(at({ status: 'needs-auth', transport: 'http' })).toEqual({
+      signIn: true,
+      signOut: true,
+    });
+  });
+
+  it.each([['failed' as const], ['unknown' as const]])(
+    'offers both on a remote %s row, not only on `needs-auth`',
+    (status) => {
+      // THE WIDENING THAT MATTERS. `needs-auth` is mapped SPECULATIVELY in
+      // `status.ts` — no connector has ever produced that word for us — so
+      // gating this ticket's only fix on it risks shipping a button nothing can
+      // reach, which is indistinguishable from the bug being fixed.
+      expect(at({ status, transport: 'unknown' })).toEqual({ signIn: true, signOut: true });
+    }
+  );
+
+  it('offers NOTHING on a connected remote row — the button that broke things', () => {
+    // FOUND IN REVIEW. An earlier draft gave every connected non-stdio row a
+    // Sign out button, on the reasoning that it must be "signed in and working".
+    // It cannot know that: an http server authenticated by an Authorization
+    // header is connected and holds no OAuth credential, and a builtin reports
+    // no `config` at all so it reads as `unknown`. On the sixteen-server machine
+    // this feature exists for, that was a Sign out button on nearly every row —
+    // each one able to break a working server, with a repair path (sign-in) that
+    // nobody has ever seen succeed.
+    expect(at({ status: 'connected', transport: 'http' })).toEqual({
+      signIn: false,
+      signOut: false,
+    });
+    expect(at({ status: 'connected', transport: 'unknown' })).toEqual({
+      signIn: false,
+      signOut: false,
+    });
+  });
+
+  it.each([['pending' as const], ['disabled' as const]])('offers nothing on a %s row', (status) => {
+    // `pending` is mid-handshake — five seconds of every fresh session, not a
+    // problem to act on. `disabled` is the user's own switch, and the way back
+    // is Turn on; a second control there is how `runtimeStatus` describes
+    // building a loop nobody can escape.
+    expect(at({ status, transport: 'http' })).toEqual({ signIn: false, signOut: false });
+  });
+
+  it.each([['pending' as const], ['disabled' as const]])(
+    'offers nothing when APPROVAL decided the row (%s)',
+    (approval) => {
+      // Approval is a different lock and this is not its key — the same
+      // precedence the toggle already respects.
+      expect(at({ status: 'needs-auth', transport: 'http', approval })).toEqual({
+        signIn: false,
+        signOut: false,
+      });
+    }
+  );
 });

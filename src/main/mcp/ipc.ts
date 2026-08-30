@@ -1,7 +1,8 @@
 // The MCP Manager's IPC seam (§5.17, #632 read, #714 write).
 //
-// Six channels. Two answer questions about a folder, three change something
-// through the CLI, and one types into a session:
+// Eleven channels. Three answer questions about a folder, three change something
+// through the CLI, one types into a session, and four go over the session's
+// control channel:
 //
 //   mcp:list            the servers, off the config files. Cheap — two file reads.
 //   mcp:status          the servers the SESSION really has, over the control
@@ -25,6 +26,8 @@
 //   mcp:reconnectServer `mcp_reconnect` — reconnects ONE server with no
 //                       terminal and no restart, and pulls in one the session
 //                       never loaded
+//   mcp:authenticate    `mcp_authenticate` — start a remote server's OAuth flow
+//   mcp:clearAuth       `mcp_clear_auth` — forget its stored credentials
 //
 // HOW THIS SEAM SAYS NO: by resolving, never by throwing — the house shape
 // `group-ipc.ts`'s header argues for at length. `mcp:list` answers an inventory
@@ -35,7 +38,7 @@
 // one of them is driven from a modal the user opened deliberately: an exception
 // behind a dialog is a dialog that does nothing.
 //
-// THE FOLDER GATE RUNS ON ALL SIX (§5.29). It mattered on the read channels
+// THE FOLDER GATE RUNS ON ALL OF THEM (§5.29). It mattered on the read channels
 // because the folder decides which `.mcp.json` is read and where a child
 // process is spawned. It matters MORE on the write channels, where the same
 // folder decides which repo's checked-in `.mcp.json` gets a new server written
@@ -123,6 +126,16 @@ export interface McpIpcDeps {
   mcpToggle?: (liveId: string, name: unknown, enabled: unknown) => Promise<ControlVerdict>;
   /** Re-resolve one server — including one the session never loaded (#729). */
   mcpReconnect?: (liveId: string, name: unknown) => Promise<ControlVerdict>;
+  /**
+   * Start the OAuth flow for one server (#734).
+   *
+   * `name` stays `unknown` for the same reason the toggle's arguments do:
+   * `mcpAuthenticateRequest` is the only thing that validates it, so a second
+   * weaker gate here could only ever disagree with the real one.
+   */
+  mcpAuthenticate?: (liveId: string, name: unknown) => Promise<ControlVerdict>;
+  /** Forget one server's stored credentials — the way out of a wedged flow. */
+  mcpClearAuth?: (liveId: string, name: unknown) => Promise<ControlVerdict>;
 }
 
 /**
@@ -440,6 +453,39 @@ export function registerMcpIpc(deps: McpIpcDeps): void {
       return deps.mcpReconnect(gate.id, name);
     }
   );
+
+  // ── Sign in and out of a remote server (#734) ───────────────────────────────
+  //
+  // THE SAME TWO GATES, and here the second one earns its keep more plainly
+  // than anywhere else in the file: these verbs act on somebody's ACCOUNT. An
+  // ungated `mcp:authenticate` would let a caller pair a folder it may name with
+  // any live session in the app and start an OAuth flow in it; an ungated
+  // `mcp:clearAuth` would let it sign that session out of a connector the user
+  // is actively using.
+  //
+  // Neither validates the name here — the request builders do, before the wire,
+  // which is the same division `mcp:toggle` documents above.
+
+  broker.handle(
+    'mcp:authenticate',
+    async (_e, folder: unknown, liveId: unknown, name: unknown) => {
+      const gate = gateSession('mcp:authenticate', folder, liveId);
+      if (!('id' in gate)) return gate;
+      if (!deps.mcpAuthenticate) {
+        return { ok: false, reason: 'not-stream', message: 'this session has no control channel' };
+      }
+      return deps.mcpAuthenticate(gate.id, name);
+    }
+  );
+
+  broker.handle('mcp:clearAuth', async (_e, folder: unknown, liveId: unknown, name: unknown) => {
+    const gate = gateSession('mcp:clearAuth', folder, liveId);
+    if (!('id' in gate)) return gate;
+    if (!deps.mcpClearAuth) {
+      return { ok: false, reason: 'not-stream', message: 'this session has no control channel' };
+    }
+    return deps.mcpClearAuth(gate.id, name);
+  });
 
   /**
    * Reconnect — and the transport decision is MAIN'S, on purpose.

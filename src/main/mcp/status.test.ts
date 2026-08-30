@@ -148,3 +148,61 @@ describe('readOnly starts TRUE', () => {
     expect(readMcpStatus(WARM)[0].envKeys).toEqual([]);
   });
 });
+
+/**
+ * The transport, and the one case the whole field exists for (#734).
+ *
+ * `transport` was on this shape in #729 PR 1, was deleted in PR 2 as
+ * computed-but-unrendered, and review's second objection was correct: it
+ * asserted `stdio` whenever `mcp_status` reported no `config`, which is exactly
+ * the claude.ai connector case. It is back because a row cannot decide whether
+ * to offer sign-in without it — `mcp_authenticate` is refused BY TYPE for stdio
+ * — and the first test below is the bug that got it removed.
+ */
+describe('transport', () => {
+  const one = (entry: Record<string, unknown>): string =>
+    readMcpStatus({ mcpServers: [{ name: 'x', status: 'connected', ...entry }] })[0].transport;
+
+  it('answers `unknown` for a row with no `config` — NOT `stdio`', () => {
+    // THE REGRESSION TEST FOR #729 PR 2's DELETED FIELD. A connector is in no
+    // file, so `mcp_status` sends no `config` for it. Calling that `stdio`
+    // labels every connector on the machine as the one transport that cannot
+    // authenticate, which would hide sign-in on precisely the rows that need it.
+    expect(one({})).toBe('unknown');
+  });
+
+  it.each([
+    ['http', 'http'],
+    ['sse', 'sse'],
+    ['stdio', 'stdio'],
+  ])('carries a `type` of %s through', (type, expected) => {
+    expect(one({ config: { type, url: 'https://example.test/mcp' } })).toBe(expected);
+  });
+
+  it('answers `unknown` for a transport a newer CLI grew', () => {
+    // Same tolerance as `scopeOf`: a word we do not know is still a server the
+    // session has, and `unknown` may legitimately be offered sign-in.
+    expect(one({ config: { type: 'websocket', url: 'wss://example.test' } })).toBe('unknown');
+  });
+
+  it('reads a `command` with no `type` as stdio', () => {
+    // There is nothing else a command can be.
+    expect(one({ config: { command: 'npx', args: ['-y', 'server'] } })).toBe('stdio');
+  });
+
+  it('answers `unknown` for a bare `url` with no `type`', () => {
+    // http and sse are both spelled with a URL and we cannot tell which. A guess
+    // would buy nothing — `unknown` already means "may authenticate" — and could
+    // be wrong.
+    expect(one({ config: { url: 'https://example.test/mcp' } })).toBe('unknown');
+  });
+
+  it('answers `unknown` for an empty `config` object', () => {
+    expect(one({ config: {} })).toBe('unknown');
+  });
+
+  it('reads the real capture as http', () => {
+    expect(readMcpStatus(WARM)[0].transport).toBe('http');
+    expect(readMcpStatus(COLD)[0].transport).toBe('http');
+  });
+});

@@ -9,6 +9,8 @@ import { describe, it, expect } from 'vitest';
 import {
   controlRequest,
   listModelsRequest,
+  mcpAuthenticateRequest,
+  mcpClearAuthRequest,
   readControlResponse,
   readModels,
   setModelRequest,
@@ -47,6 +49,39 @@ describe('what we send', () => {
     expect(setModelRequest('sb-4', '   ')).toBeNull();
     expect(setModelRequest('sb-4', 42)).toBeNull();
     expect(setModelRequest('sb-4', { model: 'haiku' })).toBeNull();
+  });
+
+  // ── The two auth verbs (#734) ───────────────────────────────────────────────
+  //
+  // Named from `docs/reference-implementations.md` §1.2.2's RECORDED verb list,
+  // not from a guess. The distinction matters here more than anywhere: #729's
+  // probes invented subtype names (`list_agents`, `get_hooks`, `resume_session`
+  // — none of which exist) while the real list had been sitting in #633's
+  // comment since 2026-08-16, which is how these three verbs went unnoticed
+  // through two PRs and a release.
+
+  it.each([
+    ['mcp_authenticate', mcpAuthenticateRequest],
+    ['mcp_clear_auth', mcpClearAuthRequest],
+  ])('%s sends a trimmed server name', (subtype, build) => {
+    expect(build('sb-5', '  Slack ')?.request).toEqual({ subtype, serverName: 'Slack' });
+  });
+
+  it.each([
+    ['mcp_authenticate', mcpAuthenticateRequest],
+    ['mcp_clear_auth', mcpClearAuthRequest],
+  ])('%s refuses a name that is not a usable string', (_subtype, build) => {
+    // The CLI does refuse the missing-argument case for these two — measured,
+    // `mcp_authenticate {}` answers "Server not found: undefined". That is a
+    // fact about THESE verbs and not a pattern to lean on: `mcp_toggle` with no
+    // `enabled` answers success and turns the server OFF. Validating before the
+    // wire costs nothing and does not have to be re-derived per verb.
+    expect(build('sb-6', undefined)).toBeNull();
+    expect(build('sb-6', null)).toBeNull();
+    expect(build('sb-6', '')).toBeNull();
+    expect(build('sb-6', '   ')).toBeNull();
+    expect(build('sb-6', 42)).toBeNull();
+    expect(build('sb-6', { serverName: 'Slack' })).toBeNull();
   });
 });
 

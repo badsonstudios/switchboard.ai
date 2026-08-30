@@ -476,6 +476,81 @@ export function mcpReconnectRequest(
 }
 
 /**
+ * `mcp_authenticate` — start the OAuth flow for one remote server (#734).
+ *
+ * ⚠️ **ONLY THE REFUSALS ARE MEASURED. THE SUCCESS PATH IS NOT, AND CANNOT BE
+ * FROM THIS MACHINE.** Measured 2026-08-30
+ * (`spike/probes/721/probe-mcp-auth.mjs`, throwaway server):
+ *
+ *     {}                             -> error "Server not found: undefined"
+ *     {serverName:"__nope__"}        -> error "Server not found: __nope__"
+ *     {serverName:<a stdio server>}  -> error 'Server type "stdio" does not
+ *                                              support OAuth authentication'
+ *
+ * There is no claude.ai connector on the dev machine, so what this answers when
+ * it really starts a flow — whether a browser opens, what the payload carries,
+ * how the row leaves `needs-auth` — is **unknown**. Callers must not read
+ * `ok: true` as "signed in"; the renderer says "if a browser opens, finish
+ * there" for exactly this reason. Do not infer the success shape from the
+ * refusal shapes.
+ *
+ * ⚠️ **AND THE TEN-SECOND CHANNEL TIMEOUT MAY NOT SURVIVE CONTACT WITH A REAL
+ * FLOW.** `CONTROL_TIMEOUT_MS` is 10s (`main/transport/control-channel.ts`) and
+ * every other verb here answers in milliseconds — but if the CLI's
+ * implementation blocks until the browser round trip finishes, a genuine
+ * sign-in times out every time while working perfectly. UNMEASURED, like the
+ * rest of the success path. It is not treated as a failure downstream: the pane
+ * has a verb-specific sentence for `timed-out` on this channel, and keeps
+ * watching the row rather than concluding anything. Raising the global timeout
+ * was declined — it protects every other control request, and one verb's
+ * unknown is not a reason to make the whole channel slower to give up.
+ *
+ * NOTE THE MISSING-ARGUMENT CASE IS PROPERLY REFUSED here, unlike `mcp_toggle`,
+ * which reads an absent `enabled` as "disable" and answers success. That is a
+ * fact about this verb, **not a pattern to rely on**: the name is still
+ * validated before the wire, because the next verb may be the other kind and
+ * discovering which is what the toggle hazard cost us.
+ *
+ * `mcp_oauth_callback_url` EXISTS AND IS DELIBERATELY NOT BUILT. It answers "No
+ * active OAuth flow for server: <name>" outside a flow, and we have never seen
+ * a live one — so we have no measured idea what it is for. Inventing a use for
+ * an unmeasured verb is precisely the habit that let this whole feature go
+ * missing for two PRs and a release.
+ */
+export function mcpAuthenticateRequest(
+  requestId: string,
+  serverName: unknown
+): StreamControlRequest | null {
+  if (typeof serverName !== 'string') return null;
+  const name = serverName.trim();
+  if (!name) return null;
+  return controlRequest(requestId, { subtype: 'mcp_authenticate', serverName: name });
+}
+
+/**
+ * `mcp_clear_auth` — forget the stored credentials for one remote server (#734).
+ *
+ * The way back out of a wedged sign-in, and that is most of why it ships in the
+ * same change rather than later: the success path of `mcp_authenticate` is
+ * unverifiable here, so the first person to run it for real needs a way to undo
+ * a half-finished flow. Shipping the door without the handle would have made a
+ * stuck connector unrecoverable from inside switchboard.
+ *
+ * Measured 2026-08-30, same probe: `{serverName:<a stdio server>}` answers
+ * `Cannot clear auth for server type "stdio"` — refused by TYPE, the same way
+ * `mcp_authenticate` is, which is why one `transport` check gates both controls.
+ */
+export function mcpClearAuthRequest(
+  requestId: string,
+  serverName: unknown
+): StreamControlRequest | null {
+  if (typeof serverName !== 'string') return null;
+  const name = serverName.trim();
+  if (!name) return null;
+  return controlRequest(requestId, { subtype: 'mcp_clear_auth', serverName: name });
+}
+
+/**
  * A `control_response` off the wire, or `null` if it is not one.
  *
  * ⚠️ **`request_id` IS NESTED AT `msg.response.request_id`, AND IS NOT PRESENT

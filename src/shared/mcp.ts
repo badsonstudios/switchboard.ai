@@ -270,6 +270,31 @@ export interface McpRuntimeServer {
   /** the endpoint or command, REDACTED by the same `redactUrl` the config path
    *  uses — a runtime row carries a credential in its address just as readily */
   target: string;
+  /**
+   * How the session reaches this server — and the field decides whether the row
+   * offers SIGN IN (#734).
+   *
+   * ⚠️ **AN ABSENT `config` IS `unknown`, NEVER `stdio`.** This field was here
+   * in #729 PR 1, was removed in PR 2 as computed-but-unrendered, and review was
+   * right about the second half of its objection: it asserted `stdio` whenever
+   * `mcp_status` reported no `config` — which is EXACTLY the claude.ai connector
+   * case, the one class of server this field now exists to identify. It comes
+   * back with a renderer behind it and that bug fixed.
+   *
+   * NOT READ THE SAME WAY AS `McpServerWire.transport`, deliberately. That one
+   * reads a missing `type` as `stdio` and is right to: it is parsing a file the
+   * CLI wrote, where stdio is the documented default of `claude mcp add`. Here
+   * there is no such guarantee — an absent `config` is not a default, it is an
+   * absence, and the honest word for it is the one `McpTransport` already
+   * carries. See `status.ts`'s `transportOf`, which says the same thing from the
+   * other side.
+   *
+   * WHY IT MATTERS: `mcp_authenticate` is refused BY TYPE for a stdio server
+   * (`Server type "stdio" does not support OAuth authentication`, measured
+   * 2026-08-30), so offering sign-in on a stdio row is offering a button that
+   * cannot work. Every other value may legitimately want it.
+   */
+  transport: McpTransport;
   /** the server's self-reported name and version, once it has connected.
    *  Absent for the whole `pending` window — see `McpRuntimeStatus`. */
   version?: string;

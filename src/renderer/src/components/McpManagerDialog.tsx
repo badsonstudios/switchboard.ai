@@ -204,6 +204,95 @@ export function runtimeStatus(server: McpRuntimeServer): {
   return { ...connectionWord(server.status), toggle: 'off' };
 }
 
+/**
+ * Which sign-in controls a runtime row may offer (#734).
+ *
+ * THE GAP THIS CLOSES: #729 PR 2 shipped a `needs-auth` row state with nothing
+ * behind it, so a connector that wants signing in said so and offered no way to
+ * do it. Invisible on the dev machine, which has no connectors; live on a
+ * machine that does.
+ *
+ * ── WHY `transport` IS THE GATE ──────────────────────────────────────────────
+ *
+ * Measured 2026-08-30 (`spike/probes/721/probe-mcp-auth.mjs`): both verbs refuse
+ * a stdio server BY TYPE — `Server type "stdio" does not support OAuth
+ * authentication` and `Cannot clear auth for server type "stdio"`. So sign-in on
+ * a stdio row is a button that cannot work, and hiding it there is the whole of
+ * the transport check. Everything else — `http`, `sse` and `unknown` — may
+ * legitimately want it. `unknown` IS INCLUDED ON PURPOSE: it is what an absent
+ * `config` reports, which is exactly the connector case this exists for.
+ *
+ * ── WHY SIGN IN IS OFFERED WIDER THAN `needs-auth` ───────────────────────────
+ *
+ * Because **`needs-auth` is itself an unverified guess.** `status.ts` maps it
+ * speculatively and says so: no connector on the build machine ever produced
+ * that word, so we do not actually know the CLI spells it that way. Gating the
+ * only fix for this ticket on a string we have never seen would ship a feature
+ * that is invisible in precisely the situation it was written for — the same
+ * class of miss as the one that produced the ticket. `failed` and `unknown` are
+ * where a connector wanting authorisation would otherwise land, so they get the
+ * button too. The cost of being wrong is one extra button on a broken row; the
+ * cost of being right and silent is another release with nothing behind the
+ * label.
+ *
+ * ── SIGN OUT IS A RECOVERY CONTROL, NOT A GENERAL ONE ────────────────────────
+ *
+ * It appears only where signing in is also on offer, and that narrowness is the
+ * point. **We cannot tell an OAuth-backed server from a header-backed one.** A
+ * plain `http` server authenticated by `-H "Authorization: Bearer …"` is
+ * `connected` and holds no OAuth credential at all; so is a builtin, which
+ * reports no `config` and therefore reads as `unknown`. An earlier draft offered
+ * Sign out on every connected remote row, which on the sixteen-server machine
+ * this feature exists for meant a Sign out button on nearly all of them — most
+ * having nothing to sign out of. Found in review.
+ *
+ * What it IS for: the success path of `mcp_authenticate` **cannot be exercised
+ * on the machine this was written on**, so the first real attempt happens on a
+ * user's laptop. If it half-completes, sign-out-then-in is the only recovery
+ * that does not involve the CLI's credential store by hand — and there is
+ * nobody upstream of the user to discover that for them.
+ *
+ * ── WHO GETS NOTHING, AND WHY ────────────────────────────────────────────────
+ *
+ * `connected` is a server that WORKS. Whatever is or is not stored for it, the
+ * user has no problem to solve, and a control whose only effect is to break a
+ * working row — with a repair path we have never seen succeed — is not one to
+ * offer unasked. `pending` is mid-handshake, a five-second window on every fresh
+ * session. `disabled` is a server the user switched off; the way back is Turn
+ * on, and offering a second unrelated control there is how `runtimeStatus`
+ * describes building a loop nobody can escape. And a row whose word came from
+ * APPROVAL is behind a different lock entirely — the same precedence the toggle
+ * already respects, for the same reason.
+ *
+ * Exported and pure so the table is unit-tested rather than asserted through a
+ * rendered tree, same as `runtimeStatus` and `rowStatus`.
+ */
+export function authControls(server: McpRuntimeServer): { signIn: boolean; signOut: boolean } {
+  const none = { signIn: false, signOut: false };
+  // REFUSED BY TYPE — measured. Not a policy of ours to soften.
+  if (server.transport === 'stdio') return none;
+  // Approval is a different lock and this is not its key. Same rule, same
+  // reasoning, as `runtimeStatus`'s `toggle: 'none'`.
+  if (server.approval === 'pending' || server.approval === 'disabled') return none;
+  switch (server.status) {
+    // The row this ticket is about. Sign out rides along as the recovery path
+    // for a flow that half-completes — see the docblock.
+    case 'needs-auth':
+      return { signIn: true, signOut: true };
+    // The two words a connector wanting authorisation lands on if the CLI does
+    // not spell it `needs-auth`. Sign out here too: a stale or rejected
+    // credential is one honest reading of a remote server that will not connect,
+    // and clearing it is the only thing this pane can do about that.
+    case 'failed':
+    case 'unknown':
+      return { signIn: true, signOut: true };
+    // `connected` (it works — leave it alone), `pending` (mid-handshake) and
+    // `disabled` (the user's own switch).
+    default:
+      return none;
+  }
+}
+
 /** The status word once approval has had its say — split out so `runtimeStatus`
  *  reads as the precedence rule it is. */
 function connectionWord(status: McpRuntimeStatus): {
@@ -313,7 +402,21 @@ export function failureMessage(
  */
 export function controlFailure(
   verdict: Extract<ControlVerdict, { ok: false }>,
-  t: (key: string, vars?: Record<string, unknown>) => string
+  t: (key: string, vars?: Record<string, unknown>) => string,
+  /**
+   * A verb-specific sentence for `timed-out` — and #734 is why the seam exists.
+   *
+   * ⚠️ **THE CONTROL CHANNEL ALLOWS TEN SECONDS (`control-channel.ts`) AND A
+   * SIGN-IN IS A HUMAN WALKING TO A BROWSER.** If the CLI's `mcp_authenticate`
+   * blocks until the flow completes — plausible, and completely UNMEASURED,
+   * because no connector exists on the machine this was built on — then every
+   * real sign-in times out, and the default sentence tells the user their
+   * session "may be busy or stuck". That is alarming, wrong, and looks exactly
+   * like the feature being broken, for a flow that is proceeding normally.
+   *
+   * Every other verb here answers in milliseconds, so they keep the default.
+   */
+  timedOutKey?: string
 ): string {
   switch (verdict.reason) {
     case 'refused':
@@ -323,7 +426,7 @@ export function controlFailure(
     case 'session-gone':
       return t('mcp.reconnect.no-session');
     case 'timed-out':
-      return t('mcp.control.timedOut');
+      return t(timedOutKey ?? 'mcp.control.timedOut');
     case 'invalid':
       // SHARES THE SENTENCE, DELIBERATELY — but not by falling through, because
       // `invalid` is the one verdict that means OUR OWN guard fired rather than
@@ -382,6 +485,31 @@ const TOKEN_INK: Record<ReturnType<typeof rowStatus>['token'], string> = {
 const STATUS_POLL_MS = 2000;
 const STATUS_POLL_LIMIT = 8;
 
+/**
+ * How long the pane keeps watching after a sign-in was requested (#734).
+ *
+ * ⚠️ **THE ORDINARY POLL CANNOT COVER THIS, AND SAYING IT DID WAS A LIE ABOUT
+ * OUR OWN BEHAVIOUR.** `tick` re-schedules only while some row reports
+ * `pending`, for at most `STATUS_POLL_LIMIT` asks — a bound tuned to the
+ * measured 5-second handshake. A sign-in leaves the row on `needs-auth` (or
+ * `failed`, or `unknown`) and hands the user to a BROWSER, so under that rule
+ * the list asks exactly once, before they have clicked anything, and then never
+ * again. The success sentence promised the list would update; it could not.
+ *
+ * A HUMAN OAUTH ROUND TRIP IS THE UNIT HERE, not a handshake: switch to the
+ * browser, choose an account, read a consent screen, come back. A minute is
+ * generous for that and cheap to spend — each ask is a control round trip
+ * measured in milliseconds, not the twenty-second CLI spawn `checkHealth` costs.
+ * It is BOUNDED rather than open-ended because a flow the user abandoned must
+ * not leave a panel polling for the rest of the session, and because the honest
+ * fallback — reopen the panel — is one click.
+ *
+ * The window is deliberately stated in the sentence the user reads, so the
+ * promise and the code agree. If that number changes, change the string.
+ */
+const AUTH_WATCH_MS = 60_000;
+const AUTH_POLL_LIMIT = Math.ceil(AUTH_WATCH_MS / STATUS_POLL_MS);
+
 /** What the pane is doing right now, so two buttons cannot run at once and the
  *  one you pressed is the one that says "working". */
 type Busy =
@@ -390,9 +518,13 @@ type Busy =
   /** Reconnect-all carries its progress, because it is the one action that
    *  makes N round trips and can legitimately take minutes. */
   | { kind: 'reconnect'; done?: number; total?: number }
-  /** the three per-row actions, keyed so the row you pressed is the one that
-   *  says "working" — `remove` since #714, the other two since #729 PR 2 */
-  | { kind: 'remove' | 'toggle' | 'reconnectServer'; key: string };
+  /** the per-row actions, keyed so the row you pressed is the one that says
+   *  "working" — `remove` since #714, toggle/reconnect since #729 PR 2, the two
+   *  auth controls since #734 */
+  | {
+      kind: 'remove' | 'toggle' | 'reconnectServer' | 'authenticate' | 'clearAuth';
+      key: string;
+    };
 
 /** "this answer belongs to a sitting of the dialog that is over" — distinct
  *  from `null` (it worked) and from a string (it failed and here is why),
@@ -510,6 +642,16 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
    * flag and folder echo.
    */
   const epoch = React.useRef(0);
+  /**
+   * When the post-sign-in watch window closes (#734) — a timestamp, or 0.
+   *
+   * A REF RATHER THAN STATE, deliberately: the status effect reads it, and
+   * making it state would put it in that effect's dependency list, so setting it
+   * would restart the very poll it exists to extend. The `generation` bump
+   * `controlMutate` already does is what re-enters the effect; this only changes
+   * how long the loop it starts is allowed to run. See `AUTH_WATCH_MS`.
+   */
+  const authWatchUntil = React.useRef(0);
 
   // THE LISTING AND THE HEALTH CHECK ARE TWO AWAITS, NOT ONE, and this is the
   // whole reason they are separate channels. The listing is two local file
@@ -656,8 +798,15 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
         setRuntime(res.servers);
         setNotLoaded(res.notLoaded);
       }
-      if (res.reason !== 'ok' || asked >= STATUS_POLL_LIMIT) return;
-      if (!res.servers.some((s) => s.status === 'pending')) return;
+      // WATCHING FOR A SIGN-IN IS ITS OWN REASON TO KEEP ASKING (#734), and it
+      // has to be, because the row a sign-in was requested for is NOT `pending`
+      // — it sits on `needs-auth` while the user is off in a browser. Under the
+      // handshake rule alone this loop stops after one ask, which made the
+      // success sentence's promise that "this list updates" false. See
+      // `AUTH_WATCH_MS`.
+      const watching = Date.now() < authWatchUntil.current;
+      if (res.reason !== 'ok' || asked >= (watching ? AUTH_POLL_LIMIT : STATUS_POLL_LIMIT)) return;
+      if (!watching && !res.servers.some((s) => s.status === 'pending')) return;
       timer = setTimeout(() => void tick(), STATUS_POLL_MS);
     };
     void tick();
@@ -745,6 +894,10 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
     setConfirmRemove(null);
     setConfirmReset(false);
     setBusy(null);
+    // ...and the sign-in watch is a sitting's business too (#734). A window left
+    // open across a close would have the next sitting polling every two seconds
+    // for the remainder, about a request the user has walked away from.
+    authWatchUntil.current = 0;
     // ...and reopening re-probes health, because the answer is minutes old at
     // best and the whole reason it is a separate call is that it goes stale.
     if (!props.open) {
@@ -776,6 +929,8 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
     // milliseconds-long one: N servers × a 10s control timeout, with the dialog
     // closable and the active session changeable throughout. Found in review.
     setBusy(null);
+    // The sign-in watch belonged to the folder we just left (#734).
+    authWatchUntil.current = 0;
   }, [folder]);
 
   if (!props.open) return null;
@@ -903,7 +1058,9 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
    */
   const controlMutate = async (
     what: NonNullable<Busy>,
-    call: () => Promise<ControlVerdict | undefined> | undefined
+    call: () => Promise<ControlVerdict | undefined> | undefined,
+    /** a verb-specific `timed-out` sentence — see `controlFailure` (#734) */
+    timedOutKey?: string
   ): Promise<string | null | typeof STALE> => {
     const mine = epoch.current;
     setBusy(what);
@@ -919,7 +1076,7 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
       // The CLI's own sentence wherever there is one. `answered` degrades a
       // refused channel to `undefined`, which without this line looks exactly
       // like success.
-      return verdict ? controlFailure(verdict, t) : t('mcp.error.refused');
+      return verdict ? controlFailure(verdict, t, timedOutKey) : t('mcp.error.refused');
     } catch {
       if (mine !== epoch.current) return STALE;
       setGeneration((g) => g + 1);
@@ -984,6 +1141,89 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
       problem
         ? { bad: true, text: problem }
         : { bad: false, text: t('mcp.reconnectedServer', { name }) }
+    );
+  };
+
+  /**
+   * Start a server's OAuth sign-in (#734).
+   *
+   * ⚠️ **SUCCESS IS NOT REPORTED AS "SIGNED IN", AND THAT IS THE WHOLE CARE IN
+   * THIS FUNCTION.** The success payload of `mcp_authenticate` has never been
+   * observed — there is no claude.ai connector on the machine this was built on,
+   * so only its refusals are measured. Saying "Signed in." on an `ok: true` we
+   * do not understand would be the app inventing an outcome, which is the one
+   * thing §4 rules out. The sentence says the request was accepted and tells the
+   * user where to look, which is true whatever the CLI actually did.
+   *
+   * The status watch afterwards is what turns a real sign-in into a visible one:
+   * if the row leaves `needs-auth`, the list says so on its own rather than
+   * because we claimed it. **The window is opened BEFORE the call**, not after
+   * it — `controlMutate` bumps `generation`, which re-enters the status effect,
+   * and a ref set after the await would race that re-entry. Starting the clock a
+   * few milliseconds early costs nothing against a sixty-second window.
+   */
+  const doAuthenticate = async (s: McpRuntimeServer): Promise<void> => {
+    if (!folder || !props.liveId) {
+      setNotice({ bad: true, text: t('mcp.reconnect.no-session') });
+      return;
+    }
+    const liveId = props.liveId;
+    authWatchUntil.current = Date.now() + AUTH_WATCH_MS;
+    const problem = await controlMutate(
+      { kind: 'authenticate', key: `${s.scope}:${s.name}` },
+      () => window.switchboard?.mcp?.authenticate?.(folder, liveId, s.name),
+      // The ten-second channel timeout against a human in a browser — see
+      // `controlFailure`. A generic "busy or stuck" here would report a flow
+      // that is going fine as a fault.
+      'mcp.signInTimedOut'
+    );
+    if (problem === STALE) return;
+    // A REFUSAL CLOSES THE WINDOW AGAIN — nothing was started, so there is
+    // nothing to watch for, and leaving it open would spend a minute of round
+    // trips re-asking about a request the CLI declined.
+    //
+    // ⚠️ **A TIMEOUT IS NOT A REFUSAL, AND IS THE CASE WATCHING EXISTS FOR.**
+    // If the CLI blocks for the length of the browser flow, ten seconds elapse
+    // and we hear nothing — while the sign-in is proceeding perfectly well.
+    // Closing the watch there would abandon the one outcome we most want to
+    // catch. Recognised by the sentence because `controlMutate` hands back
+    // prose rather than the verdict; the alternative was widening its return
+    // type for one caller.
+    const timedOut = problem === t('mcp.signInTimedOut');
+    if (problem && !timedOut) authWatchUntil.current = 0;
+    setNotice(
+      problem
+        ? { bad: true, text: problem }
+        : { bad: false, text: t('mcp.signInStarted', { name: s.name }) }
+    );
+  };
+
+  /**
+   * Forget a server's stored credentials.
+   *
+   * THE ESCAPE HATCH FOR A ROW THAT IS ALREADY NOT WORKING. `authControls`
+   * keeps it off `connected` rows entirely, which is what makes a single
+   * unconfirmed click safe enough: every row that offers it is one the user
+   * already cannot use. That matters more here than it would elsewhere, because
+   * the way BACK is `mcp_authenticate`, whose success path is precisely what
+   * nobody has been able to verify — so an accidental sign-out of a working
+   * connector could be unrecoverable from inside this pane. Review caught that
+   * argument being made backwards.
+   */
+  const doClearAuth = async (s: McpRuntimeServer): Promise<void> => {
+    if (!folder || !props.liveId) {
+      setNotice({ bad: true, text: t('mcp.reconnect.no-session') });
+      return;
+    }
+    const liveId = props.liveId;
+    const problem = await controlMutate({ kind: 'clearAuth', key: `${s.scope}:${s.name}` }, () =>
+      window.switchboard?.mcp?.clearAuth?.(folder, liveId, s.name)
+    );
+    if (problem === STALE) return;
+    setNotice(
+      problem
+        ? { bad: true, text: problem }
+        : { bad: false, text: t('mcp.signedOut', { name: s.name }) }
     );
   };
 
@@ -1227,6 +1467,7 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
    */
   const runtimeRow = (s: McpRuntimeServer): React.JSX.Element => {
     const state = runtimeStatus(s);
+    const auth = authControls(s);
     const key = `${s.scope}:${s.name}`;
     const removing = busy?.kind === 'remove' && busy.key === key;
     return (
@@ -1310,6 +1551,38 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
         <span style={{ fontSize: 10.5, color: TOKEN_INK[state.token], flexShrink: 0 }}>
           {t(state.labelKey)}
         </span>
+        {/* ── Sign in / Sign out (#734) ────────────────────────────────────────
+            FIRST OF THE ROW ACTIONS, because on a row that says "needs sign-in"
+            it is the only one that addresses what the row is complaining about.
+            #729 PR 2 shipped that label with nothing behind it.
+
+            REMOTE ROWS ONLY — both verbs are refused BY TYPE for stdio
+            (measured), so the control is absent rather than present-and-failing.
+            `authControls` owns the whole rule; see its docblock for why sign-in
+            reaches wider than the `needs-auth` word alone, and why sign-out
+            reaches no further. */}
+        {auth.signIn && (
+          <Btn
+            onClick={() => void doAuthenticate(s)}
+            disabled={busy !== null}
+            title={t('mcp.signInTitle', { name: s.name })}
+          >
+            {busy?.kind === 'authenticate' && busy.key === key
+              ? t('mcp.signingIn')
+              : t('mcp.signIn')}
+          </Btn>
+        )}
+        {auth.signOut && (
+          <Btn
+            onClick={() => void doClearAuth(s)}
+            disabled={busy !== null}
+            title={t('mcp.signOutTitle', { name: s.name })}
+          >
+            {busy?.kind === 'clearAuth' && busy.key === key
+              ? t('mcp.signingOut')
+              : t('mcp.signOut')}
+          </Btn>
+        )}
         {/* ── The two control-channel actions (#729 PR 2) ──────────────────────
             OFFERED ON EVERY RUNTIME ROW, INCLUDING READ-ONLY ONES, and that is
             deliberate rather than an oversight. `readOnly` is about REMOVE —
@@ -1322,8 +1595,9 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
             test with. So the button is offered and the CLI's own refusal is
             rendered if it says no — fail-open, and honest either way. Do not
             "fix" this by hiding the control until someone has actually seen it
-            refuse. */}
-        {/* `state.toggle`, NEVER `s.status` — see `runtimeStatus`. A row whose
+            refuse.
+
+            `state.toggle`, NEVER `s.status` — see `runtimeStatus`. A row whose
             word was decided by APPROVAL gets no switch at all, because approval
             is a different lock with a different key and offering this one built
             a loop the user could not escape. */}
