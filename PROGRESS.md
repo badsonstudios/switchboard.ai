@@ -21,13 +21,38 @@
 >   that had to land BEFORE this tag or the release would have shipped a manual
 >   telling users the opposite of what it contains.
 >
-> ## 🔜 NEXT: nothing is picked up. The queue is open.
+> ## 🔨 IN REVIEW: **#724** — auto-trust wrote a key the CLI never read
+>
+> Branch `feature/724-project-key`, off `main` at `9099c48`. **6657 tests / 252
+> files**, lint and both typechecks clean. Ships in v0.8.7, NOT v0.8.6.
+>
+> **The fix:** one module (`main/project-key.ts`) now owns how `~/.claude.json`'s
+> `projects` map is keyed. `samePath` moved there out of `mcp/config.ts` — it was
+> never an MCP concern, and leaving it there is what let `sessions/trust.ts` grow
+> a second, weaker keying rule for the same file. That divergence WAS the bug.
+>
+> ⚠️ **REVIEW CAUGHT A BLOCKER I INTRODUCED, and it was measured rather than
+> argued.** The first draft trusted every key that matched by spelling, arguing
+> that win32 case-folding means two spellings are one directory. **False.** A
+> UNC path is a win32 path over a possibly case-SENSITIVE backend — probed on
+> this machine, `//wsl.localhost/.../sbcase-Foo` and `.../sbcase-foo` are two
+> real directories — and Dan's live config already carries a `//wsl.localhost/...`
+> key. That would have handed `hasTrustDialogAccepted`, the flag that lets a
+> folder's hooks run, to a directory he never opened. Candidates are now
+> confirmed **by resolution**, which is the rule `main/index.ts` already states.
+>
+> **Also rejected: #724's own suggested tie-break.** "Prefer the entry carrying
+> `hasTrustDialogAccepted`" defeats the feature in exactly the case the ticket is
+> about — when OUR phantom is the flagged one, it short-circuits on the phantom
+> and the CLI's real entry stays untrusted for ever. The bug surviving its own
+> fix. Every confirmed entry is trusted instead.
+>
+> ## 🔜 NEXT after that: the queue is open.
 >
 > `main` is clean and green. Open issues worth a look, roughly by cost of not
-> doing them: **#724** (auto-trust writes a case-variant project key — trust
-> silently never applies, and it bit #729's own probe), **#716** (composer typing
-> lag, severe on the laptop), **#719** (the CPU pegging forensic report),
-> **#731** / **#733** (drop-target and question-panel bugs Dan hand-found).
+> doing them: **#716** (composer typing lag, severe on the laptop), **#719** (the
+> CPU pegging forensic report), **#731** / **#733** (drop-target and
+> question-panel bugs Dan hand-found).
 >
 > ## ⚠️ THE ONE THING IN v0.8.6 THAT NOBODY HAS EVER SEEN WORK
 >

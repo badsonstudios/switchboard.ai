@@ -76,6 +76,17 @@ on the floor, and say so in your PR.
 
 ## 0.8.7 — unreleased
 
+### Fixed
+
+- **Auto-trust sometimes did nothing at all, quietly.** Claude Code keeps its
+  per-folder settings under the folder's path, and on Windows the same folder
+  can be written two ways (`c:\Projects\Foo` and `C:\Projects\Foo`). switchboard
+  recorded your trust under its own spelling rather than the one Claude Code was
+  reading, so the trust question you'd opted out of appeared anyway — and once
+  that happened, it kept happening. It now writes where Claude Code actually
+  reads. If a folder already has two entries in your configuration (something
+  other tools created, not switchboard), both are trusted and the log says so.
+
 ## 0.8.6 — 2026-08-30
 
 ### Changed
