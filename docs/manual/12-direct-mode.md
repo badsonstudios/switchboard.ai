@@ -82,9 +82,15 @@ way as the autonomy setting: chosen now, applied at the next start.)
 show, and the tab says so. That means you lose:
 
 - **Ctrl-R history search** and **vim mode**
-- The interactive pickers for **`/resume`**, **`/rewind`** and reviewing a pull
-  request from the command line
 - Anything else that only exists as a full-screen terminal interface
+
+This list used to be longer. It named the pickers for `/resume` and `/rewind`,
+and slash commands generally were called a known gap — none of which is true any
+more: **`/model` and `/mcp` have their own panels** and work in Direct mode, and
+`/resume`, `/rewind`, `/permissions`, `/hooks`, `/output-style` and `/status`
+turn out not to be commands at all in current Claude Code, so there is nothing
+to give up. (Whatever Claude Code offers by keyboard inside its own terminal is
+a separate question, and still terminal-only.)
 
 **And the folder-trust question is never asked.** A Terminal-mode session shows
 you Claude Code's trust prompt for a new folder and waits. A Direct-mode session
@@ -129,10 +135,9 @@ those are still being worked out, **not** that Direct mode is an experiment that
 might be withdrawn: it's the mode that's staying.
 
 Terminal mode remains the safe fallback, and it's still the right choice for a
-session where you actually rely on the terminal — Ctrl-R history, vim mode, or a
-command that opens its own picker. Put those sessions back on it. Everywhere
-else, stay on Direct and tell us what breaks: that feedback is the gate on
-removing Terminal mode.
+session where you actually rely on the terminal — Ctrl-R history or vim mode.
+Put those sessions back on it. Everywhere else, stay on Direct and tell us what
+breaks: that feedback is the gate on removing Terminal mode.
 
 ## Fixed: `/usage`, `/cost` and `/context` now show their output
 

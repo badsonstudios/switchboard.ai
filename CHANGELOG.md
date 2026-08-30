@@ -107,6 +107,15 @@ on the floor, and say so in your PR.
   that was never a limit of Claude Code, only of what switchboard knew how to
   ask for.
 
+### Fixed
+
+- **The manual no longer calls `/model` and `/mcp` a known gap.** Both have had
+  their own panels for two releases, but the slash-commands and Direct mode
+  pages still told you to put a session into Terminal mode to use them. The
+  Direct mode page also listed the `/resume` and `/rewind` pickers among the
+  things you give up — neither is a command in current Claude Code, so there
+  was nothing to give up.
+
 ## 0.8.5 — 2026-08-28
 
 ### Added

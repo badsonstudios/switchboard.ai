@@ -3,10 +3,43 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔜 NEXT: **#734** — MCP connector sign-in. Then #633's docs. Then cut v0.8.6.
+> # 🔜 NEXT: **cut v0.8.6.** Both blockers are in review.
 >
-> **Owner's order, 2026-08-30:** MCP auth first, release after. Nothing is
-> started; `main` is at `be9d6ef` and clean.
+> ## TWO PRs OPEN, 2026-08-30 — neither merged
+>
+> * **#736 — #734, MCP connector sign-in.** `feature/734-mcp-auth`.
+>   6634 tests / 251 files, lint and both typechecks clean.
+> * **#737 — #633 close-out, docs only.** `feature/633-picker-dispositions`.
+>   This branch.
+>
+> ⚠️ **BOTH EDIT THIS FILE AND THIS BLOCK.** They were branched off `main` at
+> `1f61096` independently, so whichever merges second conflicts here. The
+> resolution is to keep both bullets; nothing else in the two diffs overlaps.
+>
+> ## #633 IS A CLOSE-OUT, NOT A BUILD — and that is the finding
+>
+> Of the seven picker commands #633 asked to triage, **five are not commands at
+> all** on CLI 2.1.245 (`/permissions`, `/hooks`, `/resume`, `/rewind`,
+> `/output-style`, `/status`) and `/agents` is self-described `(removed)`.
+> `/model` and `/mcp` shipped their own panels in #721 and #632/#729. So the
+> ticket's premise — a class of unreachable interactive commands — is now true of
+> exactly none, and **the CLI deleting them did most of that work, not us.**
+> Disposition table in DESIGN.md §5.17; measurement in
+> `docs/reference-implementations.md` §1.2.2.
+>
+> What actually needed fixing was the manual, which had gone from stale to wrong:
+> two pages still told users to switch a session to Terminal mode to use `/model`
+> and `/mcp`, and the Direct mode page still listed `/resume` and `/rewind`
+> pickers under *What you give up*. **Those paragraphs must not go out in
+> v0.8.6** — that is why this item came before the release.
+>
+> ## KNOWN DRIFT LEFT ON PURPOSE
+>
+> `main/providers/claude.ts`'s static builtin catalogue still offers all six
+> deleted commands in **Terminal-mode** autocomplete. #633 scoped catalogue drift
+> out by name, and Direct mode replaces that list wholesale with the CLI's own.
+> Recorded at the catalogue and in §5.17; it is a six-line deletion whenever that
+> trade stops holding.
 >
 > ## ⛔ v0.8.6 IS STILL NOT CUT — and Dan is waiting on it
 >

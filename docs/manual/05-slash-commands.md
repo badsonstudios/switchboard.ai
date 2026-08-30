@@ -64,12 +64,18 @@ thing you'd do by hand, and they work the same in either mode.
 
 ## Good to know
 
-- Commands that open their own picker (`/model`, `/mcp` and friends) finish in
-  the **Terminal** tab. switchboard sends the command; you make the choice
-  there. A session in [Direct mode](12-direct-mode.md) — how new sessions start
-  — has no terminal, so those pickers have nowhere to appear: put the session
-  on Terminal mode from its **⋯** menu when you need one. This is a known gap,
-  listed under *What you give up* on the Direct mode page.
+- **`/model` and `/mcp` open switchboard's own panels**, in either mode. Type
+  either one and you get a picker you can finish in — the model list comes from
+  Claude Code itself, and `/mcp` opens the [MCP servers](17-mcp-servers.md)
+  panel. Neither needs the Terminal tab any more.
+
+  In **Terminal** mode `/model` is the exception: Claude Code's own picker works
+  there and is the better one, so switchboard stays out of the way and tells you
+  to type it in the terminal.
+- **Everything else is passed straight through.** A command switchboard has no
+  panel for is sent to Claude Code exactly as you typed it, and Claude Code
+  answers it however it normally would. Commands it answers itself — `/usage`,
+  `/cost`, `/context` — show their output in the Session view.
 - The ⋯ menu is greyed out while a session is still starting, or once it has
   ended — with a note saying which.
 - `/clear` gives no visible reply from Claude Code itself. That's expected; the
