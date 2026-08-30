@@ -50,13 +50,120 @@
 > and the CLI's real entry stays untrusted for ever. The bug surviving its own
 > fix. Every confirmed entry is trusted instead.
 >
-> ## 🔜 NEXT: nothing is picked up. The queue is open.
+> ## 🔨 IN PROGRESS — **#716**, composer typing lag. Built + green 2026-08-30; in review.
 >
-> `main` is at `f4ff920`, clean and green, and nothing is mid-flight — no open
-> PRs, no half-done branch, no blocker. Open issues worth a look, roughly by cost of not
-> doing them: **#716** (composer typing lag, severe on the laptop), **#719** (the
-> CPU pegging forensic report), **#731** / **#733** (drop-target and
-> question-panel bugs Dan hand-found).
+> Branch `feature/716-composer-typing-lag`. **BOTH halves shipped** — the second
+> one is not optional, see "why Part A alone was not enough" below.
+>
+> ### Measured against the ticket's own acceptance bar
+> 4× CPU throttle, 810-char draft already in the box, 400-turn conversation:
+>
+> | | before | after |
+> |---|---|---|
+> | median keystroke latency | 152 ms | **56 ms** |
+> | long tasks (per 43 keystrokes) | **43** | **0** |
+> | wall clock, 43 keystrokes | 5825 ms | 2190 ms |
+>
+> Unthrottled at 400 turns, end to end: median 80 → 40 ms (the EMPTY-feed
+> baseline — typing no longer scales with conversation length), long tasks
+> 58 → 0, worst long task 1095 ms → none.
+>
+> **All three of the ticket's conditions are measured, including the one that is
+> easy to skip.** Long draft ✅ (810 chars, box at its cap) · 4× throttle ✅ ·
+> **actively streaming card** ✅ — typing into a Direct card mid-`!bulk`, where
+> blocks are updated in place as tokens arrive: median 32 ms (identical to the
+> same card idle), 2 long tasks per 43 keystrokes. Honest caveat: that run's feed
+> was 1,287 DOM nodes, lighter than the 7,879 of the transcript-path runs, so it
+> is evidence about STREAMING rather than about streaming-plus-huge.
+>
+> ### ⚠️ WHY PART A ALONE WAS NOT ENOUGH — the trap this item nearly fell into
+> Unthrottled, the composer fix looked like a complete win: long tasks 58 → 0.
+> **Under 4× throttle it was still 152 ms/key with every single keystroke a long
+> task.** The dev desktop was hiding the other half, which is the exact failure
+> mode the ticket warns about. Do not accept an unthrottled measurement as
+> evidence on this class of bug.
+>
+> ### ⚠️ AND `contain` DOES NOT WORK — measured, so nobody re-tries it
+> "Add containment to the feed" is the obvious guess and it is wrong. Under
+> throttle: `contain: layout` on the scroller 160 ms, on the content div 160 ms,
+> on each block 160 ms, `contain: layout style paint` on each block **176 ms
+> (worse)**. Only `content-visibility: auto` moved it (72 ms, 0 long tasks).
+> Containment isolates a subtree from changes made INSIDE it; this invalidation
+> arrives from OUTSIDE, so every child re-lays-out either way. Only SKIPPING
+> helps. The table is recorded in `tokens.css` at `.feed-block`.
+>
+> ### What changed
+> * `.composer-box` (tokens.css) — `field-sizing: content` grows the box in CSS.
+>   `composerSize` → `composerBounds`: JS now computes only `min/max-block-size`,
+>   re-measured on panel resize and on attachment-strip changes, **never on
+>   `draft`**. The reset-then-read, the `scrollTop` save/restore and the
+>   `overflowY` toggling are gone; the "typing on line 20 scrolls you to line 1"
+>   hazard is now impossible by construction rather than guarded against.
+> * `.feed-block` (tokens.css) — a wrapper per turn carrying
+>   `content-visibility: auto`, so blocks scrolled out of view are not laid out.
+>
+> ### Coverage note — read this before trusting the unit tests
+> Four jsdom tests in `FeedView.composer.test.tsx` **were deleted, not ported**.
+> They asserted the height JS wrote, against a stubbed layout engine; CSS does
+> the growing now and jsdom cannot render it, so there is no height there to
+> assert. That coverage lives in a real engine — `e2e/feed.spec.ts:828`, "the
+> composer grows with WRAPPED text, caps at twelve lines, and shrinks back",
+> **unchanged by this item and passing**, which is the evidence Part A preserved
+> behaviour. What replaced them in jsdom is the structural #716 guard: typing
+> must read no layout (`scrollHeight` read count, `getComputedStyle` calls) and
+> must write no inline `block-size`. Deliberately not a timing budget — this repo
+> already has one of those flaking.
+>
+> ### Test status
+> 6657/6658 unit (the failure is the KNOWN `win-cmd.test.ts` flake — 47/47 in
+> isolation, reproduces on clean `main`, `src/main/transport/`, unrelated).
+> feed + tail-pin + restore-position + stream-feed: 29/29. find family: 10/10.
+> Full e2e running. Typecheck and lint clean.
+>
+> ---
+>
+> **Root cause is measured, not guessed, and it is TWO independent costs.** The
+> probe: launch the app, seed a transcript of N turns, then time — interleaved,
+> median of 7 rounds — the exact read/write pattern a keystroke performs. Two
+> controls validate the instrument: a layout read with nothing dirty is
+> **0.000 ms**, and a value write never read back is **0.005 ms**. So every
+> number below is real layout, not measurement overhead.
+>
+> Per keystroke, at 400 turns / 7,879 DOM nodes (dev desktop, unthrottled):
+>
+> | | ms/keystroke |
+> |---|---|
+> | today | **35.1** |
+> | composer fix only (CSS `field-sizing: content`) | 17.3 |
+> | feed fix only (`content-visibility: auto` on blocks) | 4.9 |
+> | both | **2.5** |
+>
+> At **0 turns everything is ~0.2 ms**. The whole bug is priced by conversation
+> length, which is why it is severe on a laptop with long sessions and mild on a
+> desktop — and why "it's fine on the dev box" was never evidence.
+>
+> 1. **The composer forces a full document reflow on every keystroke.**
+>    `Composer`'s `grow()` (FeedView.tsx) sets `blockSize = '0px'`, reads
+>    `scrollHeight`, writes the height back and reads `scrollTop` — twice-forced
+>    synchronous layout, in a `useLayoutEffect` keyed on `draft`. Cost:
+>    **0.27 ms empty → 10.2 ms at 100 turns → 36.5 ms at 400.** Removable in
+>    full: `field-sizing: content` measured **identical to having no auto-grow
+>    at all** (17.68 vs 17.43 ms), i.e. CSS does this job for free.
+> 2. **The feed amplifies ANY layout invalidation in the panel.** With auto-grow
+>    removed entirely, merely changing the textarea's value still costs 17.4 ms
+>    at 400 turns — the feed is neither virtualised nor contained, so 7,879
+>    nodes re-lay-out. `contain: layout` on the scroller does **nothing**
+>    (35.4 vs 36.5) because the scroller itself resizes; `content-visibility:
+>    auto` on the blocks is what works.
+>
+> **Ruled out by measurement, so do not re-investigate:** draft persistence
+> (`uiSetSoon` is properly debounced at 400 ms, and the write itself is
+> 0.005 ms), per-keystroke IPC (the slash-command fetch is keyed to popup
+> OPENING, not to edits), and state living too high (the draft is already local
+> to `Composer` — the ticket's suspicion #1 is wrong).
+>
+> Next in the queue after this: **#719** (CPU pegging — plausibly the same
+> disease, worth reading its forensic report alongside), then **#731** / **#733**.
 >
 > ## ⚠️ THE ONE THING IN v0.8.6 THAT NOBODY HAS EVER SEEN WORK
 >

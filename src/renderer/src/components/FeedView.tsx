@@ -53,8 +53,9 @@ import {
 import {
   COMPOSER_FONT_SIZE,
   COMPOSER_LINE_RATIO,
-  composerSize,
+  composerBounds,
   resolveLineHeight,
+  type ComposerBounds,
 } from '../lib/composer-size';
 import { argumentSummary } from '../lib/permission-batches';
 import {
@@ -900,7 +901,13 @@ export function FeedView(props: {
               here — see lib/feed-reveal for why it is a context and not props */}
           <FeedRevealProvider value={reveal}>
             {visibleBlocks.map((b, i) => (
-              <React.Fragment key={b.seq}>
+              // `feed-block` (#716) is what stops a long conversation making
+              // every keystroke expensive. The wrapper exists ONLY to carry
+              // `content-visibility: auto`, which is why the divider is inside
+              // it: a turn's rule and its block share one skip unit, so nothing
+              // can be skipped away from the thing it labels. tokens.css has the
+              // measurements and the reason plain `contain` does not work.
+              <div className="feed-block" key={b.seq}>
                 {/* A new prompt starts a new turn — rule it off (Dan #11), and
                     since #640 rule it off so the eye LANDS on it: scanning a
                     long session, the turn boundaries have to be findable
@@ -918,7 +925,7 @@ export function FeedView(props: {
                   </div>
                 )}
                 <Block b={b} />
-              </React.Fragment>
+              </div>
             ))}
           </FeedRevealProvider>
           <div ref={bottom} />
@@ -1294,13 +1301,18 @@ const MIN_FEED_PX = 60;
  * enough. Undefined when there is no layout to measure (a hidden panel), which
  * leaves the line cap in sole charge rather than guessing a small number.
  *
- * Called with the box already collapsed for measurement, so the difference
- * between the composer and the box's own ROW is its chrome (padding, the gap,
- * the options row) at its true size. The row, not the box: the send button
- * holds that row 30px tall however small the box gets, and measuring against
- * the collapsed box counted those 30px as chrome — the feed kept an extra
- * half-line it was never owed and the box stopped that much early (caught by
- * the e2e's floor assertion, 2026-08-11).
+ * The chrome is `own.offsetHeight - row.offsetHeight` — the composer minus the
+ * box's own ROW, i.e. padding, the gap and the options row. The row, not the
+ * box: the send button holds that row 30px tall however small the box gets, and
+ * measuring against the box counted those 30px as chrome — the feed kept an
+ * extra half-line it was never owed and the box stopped that much early (caught
+ * by the e2e's floor assertion, 2026-08-11).
+ *
+ * That subtraction is why this NO LONGER needs the box collapsed first, which
+ * it did until #716. The row is `max(box, buttons)`, so a taller box adds the
+ * same pixels to `own` and to `row` and cancels — the answer is the chrome
+ * either way. Being independent of the box's current height is exactly what
+ * lets the bounds be measured on a resize instead of on every keystroke.
  */
 function roomForBox(own: HTMLElement | null, el: HTMLElement): number | undefined {
   const panel = own?.parentElement;
@@ -1682,61 +1694,64 @@ function Composer({
 
   // Auto-grow (P2-E10-08, §5.10): the box is as tall as what the browser
   // ACTUALLY RENDERED — soft wrapping included — capped at COMPOSER_MAX_LINES
-  // and scrolling inside itself past that. The arithmetic is in
-  // `composer-size.ts`; this end only measures.
+  // and scrolling inside itself past that.
   //
-  // Reset-then-read is the whole trick: an element never reports a scrollHeight
-  // smaller than the height we last gave it, so last frame's height has to be
-  // released before the new content can be read. That is also what lets the box
-  // SHRINK again as text is deleted.
+  // THE GROWING IS CSS's (`field-sizing: content`, `.composer-box` in
+  // tokens.css). It used to be a layout effect keyed on `draft` that released
+  // the height, read `scrollHeight` back, wrote a fitted height and restored
+  // `scrollTop` — on every keystroke. A write→read pair forces a SYNCHRONOUS
+  // layout and a forced layout is DOCUMENT-wide, so the cost of typing one
+  // character was the size of the conversation scrolled above the box: measured
+  // at 0.27ms on an empty feed and 36.5ms at 400 turns. That is #716, and the
+  // reason it was severe on a laptop and mild on the dev desktop is simply that
+  // the same layout costs more on a slower machine.
   //
-  // Not debounced, deliberately: it is one forced layout on one small textarea
-  // per keystroke — the same cost React already pays to re-render a controlled
-  // input — and a debounce would leave the box visibly lagging the caret.
-  const grow = React.useCallback((): void => {
+  // What is left here is where the box must STOP — which typing cannot change.
+  // So it is measured when the panel resizes and when the attachment strip
+  // changes height, and NEVER from `draft`. That is the whole fix: the
+  // keystroke path now touches no layout at all.
+  const [bounds, setBounds] = React.useState<ComposerBounds | null>(null);
+  const remeasure = React.useCallback((): void => {
     const el = box.current;
     const view = el?.ownerDocument.defaultView;
     if (!el || !view) return;
-    // Past the cap the box is scrolled, and the caret is usually at the bottom
-    // of it. Releasing the height makes the content fit, which clamps the
-    // element's own scrollTop to 0 — so the reset goes to ZERO rather than
-    // `auto` (max scroll only grows, nothing to clamp) and the offset is
-    // written back anyway, for engines that clamp regardless. Without this,
-    // every keystroke on line 20 scrolls the user back to line 1.
-    const top = el.scrollTop;
-    el.style.blockSize = '0px';
-    el.style.overflowY = 'hidden'; // a scrollbar appearing mid-measure re-wraps the text
     const cs = view.getComputedStyle(el);
-    const size = composerSize({
-      scrollHeight: el.scrollHeight,
+    const next = composerBounds({
       lineHeight: resolveLineHeight(cs.lineHeight, cs.fontSize),
       padding: blockEdge(cs, 'padding'),
       border: blockEdge(cs, 'border'),
       borderBox: cs.getPropertyValue('box-sizing') === 'border-box',
       available: roomForBox(root.current, el),
     });
-    // ceil, not the raw float: 12 × 17.4 is 208.79999999999998, and a height a
-    // fraction short of the text clips the last line it was measured to show
-    el.style.blockSize = `${Math.ceil(size.blockSize)}px`;
-    el.style.overflowY = size.overflowY;
-    el.scrollTop = top;
+    // Returning `prev` unchanged when nothing moved is the LOOP GUARD, and it
+    // is load-bearing: writing `max-block-size` can resize the box, which
+    // resizes the composer's root, which is what the observer below watches.
+    // Equal bounds must therefore end the chain rather than re-render.
+    setBounds((prev) =>
+      prev && prev.minBlockSize === next.minBlockSize && prev.maxBlockSize === next.maxBlockSize
+        ? prev
+        : next
+    );
   }, []);
-  // A LAYOUT effect: the height is written in the same commit as the new text,
-  // so the box never paints a frame at the old size.
-  // `attachments` is in here for the same reason `draft` is: the strip lives
-  // inside the composer's own root, so attaching or removing an image changes
-  // how much room `roomForBox` finds for the textarea. Without it a paste made
-  // with a twelve-line draft on screen leaves the box at a height its panel no
-  // longer has, which is #406's overhang arriving through a new door.
-  React.useLayoutEffect(grow, [draft, attachments, grow]);
-  // A NARROWER box wraps the same text into more lines, and a SHORTER panel has
-  // less to spare — dragging a splitter or resizing the window re-renders
-  // nothing, so without this a long draft keeps a height its panel no longer
-  // has and overhangs its own options row.
+  // A LAYOUT effect, so the bounds are in place in the same commit that first
+  // paints the box — and re-run when the strip changes, for the reason
+  // `attachments` was in the old measurement's deps: the strip lives inside the
+  // composer's own root, so attaching or removing an image changes how much
+  // room `roomForBox` finds. Without it a paste made with a twelve-line draft
+  // on screen leaves the box at a height its panel no longer has, which is
+  // #406's overhang arriving through a new door. `attachNotice` is a line of
+  // text in that same strip and moves it the same way.
   //
-  // Neither trigger can loop: our writes are block-axis-only (so the box's
-  // width never moves) and they redistribute space INSIDE the panel without
-  // changing the panel's own height.
+  // `draft` is deliberately NOT a dependency. That is the fix, not an omission.
+  React.useLayoutEffect(remeasure, [attachments, attachNotice, remeasure]);
+  // A SHORTER panel has less to spare — dragging a splitter or resizing the
+  // window re-renders nothing, so without this a long draft keeps a cap its
+  // panel no longer has and overhangs its own options row.
+  //
+  // The box's own width is still watched even though rewrapping is now CSS's
+  // problem: a width change is the cheapest signal that the panel's chrome has
+  // been re-laid-out, and the guard below means an unchanged panel costs
+  // nothing. Neither trigger can loop — see the dedupe in `remeasure`.
   React.useEffect(() => {
     const el = box.current;
     const panel = root.current?.parentElement;
@@ -1745,19 +1760,19 @@ function Composer({
     let lastRoom = panel?.clientHeight ?? 0;
     const ro = new ResizeObserver(() => {
       const width = el.getBoundingClientRect().width;
-      // a collapsed panel measures 0 and would re-measure the draft as one
-      // empty line; it comes back at full size, and that tick does the work
+      // a collapsed panel measures 0 and would cap the box at nothing; it comes
+      // back at full size, and that tick does the work
       if (width === 0) return;
       const room = panel?.clientHeight ?? 0;
       if (width === lastWidth && room === lastRoom) return;
       lastWidth = width;
       lastRoom = room;
-      grow();
+      remeasure();
     });
     ro.observe(el);
     if (panel) ro.observe(panel);
     return () => ro.disconnect();
-  }, [grow]);
+  }, [remeasure]);
 
   /** something to send: words, a picture, or both (E10-09) */
   const sendable = draft.trim().length > 0 || attachments.length > 0;
@@ -2047,14 +2062,16 @@ function Composer({
           }
         }}
         placeholder={t('feedView.composerPlaceholder')}
-        // ONE row, always: the height is measured and written by `grow()`
-        // below. `rows` counts hard newlines and cannot see soft wrapping —
-        // that was the whole of #406. It stays at 1 so the very first paint,
-        // before any layout effect runs, is the small box the design wants.
+        // `field-sizing: content` and the unconditional `overflow-y` live here
+        // rather than in the style prop below (#716). A CSS class, because React
+        // will not emit a style property it does not recognise, and
+        // `field-sizing` is newer than its inventory.
+        className="composer-box"
+        // ONE row, always. `rows` counts hard newlines and cannot see soft
+        // wrapping — that was the whole of #406 — and under `field-sizing` it
+        // does not size the box at all. It stays at 1 as the honest starting
+        // value for the very first paint.
         rows={1}
-        // `blockSize` and `overflowY` are deliberately ABSENT and written
-        // imperatively by `grow()`: React only diffs the keys it is given, so
-        // adding either one here would have every render fight the measurement.
         style={{
           flex: 1,
           resize: 'none',
@@ -2067,6 +2084,16 @@ function Composer({
           fontFamily: 'var(--font-ui)',
           lineHeight: COMPOSER_LINE_RATIO,
           outline: 'none',
+          // Where CSS's growing stops. Absent until the first measurement, so
+          // the first paint is `rows={1}` and never a guessed pixel count.
+          // `maxBlockSize` stays absent when no limit is knowable (no
+          // resolvable line-height AND no measurable panel) — an unbounded box
+          // is recoverable, a wrongly-short one hides what you typed.
+          minBlockSize: bounds ? `${bounds.minBlockSize}px` : undefined,
+          maxBlockSize:
+            bounds && Number.isFinite(bounds.maxBlockSize)
+              ? `${bounds.maxBlockSize}px`
+              : undefined,
         }}
       />
       {status === 'working' && (

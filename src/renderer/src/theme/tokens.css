@@ -400,6 +400,67 @@ body {
   text-transform: uppercase;
 }
 
+/* The composer's textarea grows with its content (P2-E10-08, §5.10) — in CSS,
+ * which is #716's fix and not a tidy.
+ *
+ * `field-sizing: content` makes the box as tall as what the browser ACTUALLY
+ * RENDERED, soft wrapping included, with no JS on the keystroke path. It
+ * replaces a layout effect that released the height, read `scrollHeight` back
+ * and wrote a fitted height on EVERY character — two forced synchronous
+ * layouts, and a forced layout is document-wide, so it was priced by the length
+ * of the conversation above the box (0.27ms empty, 36.5ms at 400 turns).
+ * Measured against removing auto-grow altogether, this costs the same.
+ *
+ * Where it STOPS is still JS's job: `min-block-size` and `max-block-size` come
+ * from `composerBounds` and are rewritten only when the panel resizes or the
+ * attachment strip changes — never from typing.
+ *
+ * `overflow-y: auto` can be unconditional now. It used to be toggled to
+ * `hidden` between measurements because a scrollbar appearing mid-measure
+ * re-wraps the text and corrupts the reading. There is no measurement left to
+ * corrupt.
+ *
+ * Electron only, so this is a capability we ship rather than one we hope for:
+ * `field-sizing` is Chromium 123+ and Electron 43 carries far newer. Verified
+ * in the running app (`CSS.supports('field-sizing', 'content')`) rather than
+ * assumed from the version. There is deliberately no JS fallback — a second
+ * sizing path that nothing exercises is how the first one rots. */
+.composer-box {
+  field-sizing: content;
+  overflow-y: auto;
+}
+
+/* One turn's worth of conversation — its rule and its block (#716).
+ *
+ * `content-visibility: auto` lets the engine SKIP the layout of a block that is
+ * scrolled out of view. That is the second half of the typing fix, and it is
+ * not interchangeable with `contain`: measured under a 4x CPU throttle at 400
+ * turns, with a long draft in the box, every containment variant was worthless
+ * and only this one worked —
+ *
+ *     none (composer fix only)        median 160ms/key, 43 long tasks of 43
+ *     content div `contain: layout`   median 160ms/key, 45
+ *     each block `contain: layout`    median 160ms/key, 45
+ *     each block `contain: l/s/p`     median 176ms/key, 46
+ *     each block content-visibility   median  72ms/key,  0
+ *
+ * The reason is worth keeping, because "add containment" is the obvious guess
+ * and it is wrong: containment isolates a subtree from changes made INSIDE it,
+ * and the invalidation here arrives from OUTSIDE — the panel re-lays-out, so
+ * every child must too, contained or not. Skipping is the only thing that
+ * helps, because a skipped subtree is not laid out at all.
+ *
+ * `auto` on `contain-intrinsic-size` is load-bearing: it makes the engine
+ * REMEMBER each block's last rendered height instead of holding the 80px guess
+ * for ever, so the scrollbar settles as the conversation is read rather than
+ * jumping. 80px is only the never-yet-rendered fallback — roughly a short
+ * assistant paragraph, i.e. wrong in both directions by design rather than
+ * biased one way. */
+.feed-block {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 80px;
+}
+
 /* Feed view markdown blocks (P2-E12-06, §5.10) — vars only, theme-safe */
 .feed-md {
   color: var(--text);

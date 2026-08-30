@@ -5,13 +5,30 @@
 // pasted paragraph that renders as eight lines stayed a one-row slot with the
 // rest hidden, and the nominal 6-row cap was only reachable by pressing
 // Shift+Enter six times. The box has to be sized by what the browser ACTUALLY
-// RENDERED, which is what `scrollHeight` reports.
+// RENDERED — soft wrapping included.
+//
+// WHO DOES THE GROWING, AND WHY IT MOVED (#716). It used to be this module plus
+// a JS measurement on every keystroke: release the box's height, read back
+// `scrollHeight`, write the fitted height, restore `scrollTop`. That works, and
+// it is what `scrollHeight` is for — but a write→read pair forces a SYNCHRONOUS
+// layout, and a forced layout is DOCUMENT-wide. Its cost is therefore the size
+// of the conversation scrolled above the box: measured on the dev desktop at
+// 0.27ms per keystroke on an empty feed and **36.5ms at 400 turns** (7,879
+// nodes), which is the "keystrokes buffer and appear in bursts" Dan reported,
+// and why a laptop feels it and a desktop barely does.
+//
+// The growing is now CSS's job — `field-sizing: content` on the textarea
+// (`.composer-box`, tokens.css) — which was measured to cost exactly what
+// having no auto-grow at all costs. What is left for JS is the part CSS cannot
+// express: WHERE THE BOX MUST STOP. That is this module.
 //
 // The arithmetic lives here, away from the DOM, for two reasons: it is the part
-// that can be wrong (box-sizing, the cap, the floor, when a scrollbar is owed),
-// and a rule pinned in a pure test cannot silently regress to newline counting.
-// The component's job is only to MEASURE — reset the height, read scrollHeight,
-// hand the numbers over.
+// that can be wrong (box-sizing, the cap, the floor, which limit wins), and a
+// rule pinned in a pure test cannot silently regress to newline counting.
+//
+// The bounds cannot change from TYPING — only from the panel resizing or the
+// attachment strip changing height — which is the whole reason the keystroke
+// path is now free of layout entirely.
 
 /** Owner call, 2026-08-11 (#406): grow to twelve rendered lines, then scroll. */
 export const COMPOSER_MAX_LINES = 12;
@@ -21,17 +38,21 @@ export const COMPOSER_MAX_LINES = 12;
 export const COMPOSER_FONT_SIZE = 12;
 export const COMPOSER_LINE_RATIO = 1.45;
 
-/** What the DOM reports about a textarea whose height has been released. */
+/**
+ * What the DOM reports about the textarea and the room around it.
+ *
+ * Note what is NOT here any more: `scrollHeight`. Reading it is what forced the
+ * per-keystroke layout (#716) — and now that CSS grows the box, nothing needs
+ * to know how tall the content currently is, only how tall it may become.
+ */
 export interface ComposerMetrics {
-  /** `scrollHeight` measured with the height reset — rendered content + block padding */
-  scrollHeight: number;
-  /** one rendered line, in px */
+  /** one rendered line, in px — the floor, and the unit the cap counts in */
   lineHeight: number;
-  /** block-start + block-end padding, in px (`scrollHeight` includes it) */
+  /** block-start + block-end padding, in px */
   padding: number;
-  /** block-start + block-end border, in px (`scrollHeight` does NOT include it) */
+  /** block-start + block-end border, in px */
   border: number;
-  /** `box-sizing: border-box` — i.e. the height we set must swallow padding + border */
+  /** `box-sizing: border-box` — i.e. the bounds we write must swallow padding + border */
   borderBox: boolean;
   /**
    * The tallest the box may be (border-box px) given what its panel can spare,
@@ -48,35 +69,48 @@ export interface ComposerMetrics {
   available?: number;
 }
 
-export interface ComposerSize {
-  /** the height to write back, in px */
-  blockSize: number;
-  /** `auto` only past the cap: an always-auto textarea flickers a scrollbar mid-measure */
-  overflowY: 'hidden' | 'auto';
+/** The two numbers CSS grows the box BETWEEN. Both are border-box px. */
+export interface ComposerBounds {
+  /** `min-block-size` — one rendered line */
+  minBlockSize: number;
+  /**
+   * `max-block-size`, or `Infinity` when neither limit is knowable (no
+   * resolvable line-height AND no measurable panel). The caller writes no
+   * `max-block-size` at all for that, rather than inventing a number: an
+   * unbounded box is recoverable, a wrongly-short one hides what you typed.
+   */
+  maxBlockSize: number;
 }
 
 /**
- * The height the box should take for the content it just rendered — at least
- * one line, at most `maxLines`, with an inner scrollbar past that.
+ * Where the box must stop growing — at least one line, at most `maxLines`, and
+ * never taller than the room its panel can spare.
+ *
+ * ROUNDING GOES A DIFFERENT WAY FOR EACH LIMIT, deliberately. The line cap is
+ * rounded UP because sub-pixel line-heights (12px × 1.45 = 17.4, ×12 =
+ * 208.79999999999998) leave a cap a hair short of the text it was measured to
+ * show, which clips the last line. The room limit is rounded DOWN for the
+ * mirror-image reason: a cap a hair over the room available is the box
+ * overhanging its own options row (#406). The old code ceil'd one number for
+ * both jobs, which was only ever safe because the room limit had slack.
  */
-export function composerSize(m: ComposerMetrics, maxLines = COMPOSER_MAX_LINES): ComposerSize {
-  // rendered content only: scrollHeight carries the padding with it
-  const content = Math.max(0, m.scrollHeight - m.padding);
+export function composerBounds(m: ComposerMetrics, maxLines = COMPOSER_MAX_LINES): ComposerBounds {
   // A line-height we could not resolve means we cannot count lines, so the line
   // cap simply does not apply — the room the panel has is a real limit either
   // way, and a floor of zero is the browser's own minimum.
-  const floor = m.lineHeight > 0 ? m.lineHeight : 0;
-  const byLines = m.lineHeight > 0 ? m.lineHeight * maxLines : Infinity;
+  const floor = m.lineHeight > 0 ? Math.ceil(m.lineHeight) : 0;
+  const byLines = m.lineHeight > 0 ? Math.ceil(m.lineHeight * maxLines) : Infinity;
   const byRoom =
-    m.available === undefined ? Infinity : Math.max(0, m.available - m.padding - m.border);
+    m.available === undefined
+      ? Infinity
+      : Math.floor(Math.max(0, m.available - m.padding - m.border));
   // one line always beats both limits: a box too small to show the line being
   // typed is not a composer
-  const max = Math.max(Math.min(byLines, byRoom), floor);
-  const fitted = Math.min(Math.max(content, floor), max);
-  // half a pixel of slack: sub-pixel line-heights (12px × 1.45 = 17.4) make
-  // `content` land a hair over the cap on the exact line that fills it, and a
-  // scrollbar for nothing is worse than a rounding error
-  return { blockSize: box(fitted, m), overflowY: content > max + 0.5 ? 'auto' : 'hidden' };
+  const cap = Math.max(Math.min(byLines, byRoom), floor);
+  return {
+    minBlockSize: box(floor, m),
+    maxBlockSize: Number.isFinite(cap) ? box(cap, m) : Infinity,
+  };
 }
 
 /** content height -> the number `height` wants, in this box model */

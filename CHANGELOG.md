@@ -78,6 +78,18 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **Typing in the prompt box lagged in long conversations.** Keystrokes buffered
+  and then appeared in bursts, and it got worse the longer the session had been
+  running — badly enough on a slower laptop to be hard to write in. Every
+  character was making the app re-measure the entire conversation above the box.
+  It no longer does: the box now grows as you type without measuring anything,
+  and the app skips laying out the parts of the conversation you have scrolled
+  past. On a 400-message session on a deliberately slowed machine, the delay
+  between pressing a key and seeing it went from about 150ms to under 60ms, and
+  the stalls that caused the bursting are gone entirely. Nothing about the box
+  changes for you — it still grows as you type, still stops at twelve lines,
+  still gives the conversation its room back when you delete.
+
 - **Auto-trust sometimes did nothing at all, quietly.** Claude Code keeps its
   per-folder settings under the folder's path, and on Windows the same folder
   can be written two ways (`c:\Projects\Foo` and `C:\Projects\Foo`). switchboard
