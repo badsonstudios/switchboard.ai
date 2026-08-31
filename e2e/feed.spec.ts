@@ -17,6 +17,7 @@ import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 import {
+  hookPoster,
   launchApp,
   LaunchedApp,
   showTerminal,
@@ -928,6 +929,24 @@ test.describe('[pty] Feed view (E12-06)', () => {
       .poll(async () => (await measure()).height, { timeout: 10_000 })
       .toBeLessThan(tall.height); // re-fitted without a keystroke
 
+    // ...and re-fitted CORRECTLY, not merely smaller (#716 review). `<
+    // tall.height` passes with a cap a hundred pixels too generous, and this is
+    // the ONE place the bounds are computed while the box is already tall —
+    // which is the case the old code made unreachable by collapsing the box to
+    // 0 before measuring, and the new code reaches on purpose. If `roomForBox`'s
+    // chrome subtraction is wrong under a squeezed panel, it is wrong HERE and
+    // nowhere else, so assert what "correct" means: the conversation keeps its
+    // floor and the options row stays on screen.
+    const refitted = await measure();
+    const reachedTwelve = refitted.height - empty.height >= 10.5 * empty.line;
+    if (!reachedTwelve) {
+      const feedBox = (await feed.boundingBox())!;
+      expect(feedBox.height).toBeLessThan(MIN_FEED + 8);
+      expect(feedBox.height).toBeGreaterThan(MIN_FEED - 8);
+    }
+    await expect(chip).toBeInViewport();
+    await expect(box).toBeInViewport();
+
     await box.fill('');
     const oneLine = await measure();
     expect(oneLine.height).toBe(empty.height); // deleting it all puts the one-line box back
@@ -936,6 +955,66 @@ test.describe('[pty] Feed view (E12-06)', () => {
     // and it still shrinks back at this size
     await box.fill('');
     expect((await measure()).height).toBe(empty.height);
+  });
+
+  // #716 review. The composer's cap is what the panel can SPARE, and until #716
+  // that was recomputed on every keystroke — so anything docking into this
+  // column was noticed by the next character the user typed. It is now measured
+  // only when something says the room changed, which makes this the one case
+  // the fix could plausibly have broken: a bar that arrives on its own, with no
+  // keystroke behind it and no change to the box's width or the panel's height.
+  //
+  // A permission handoff is the honest way to produce one — it is the same bar
+  // `approval.spec.ts` docks, it arrives from the CLI rather than from the test
+  // touching the composer, and it is the app's core loop rather than a corner.
+  test('a bar docking on its own gives the composer its room back (#716)', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    const title = folder.split(/[\\/]/).pop()!;
+    await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
+
+    /** MIN_FEED_PX in FeedView.tsx — the conversation's floor */
+    const MIN_FEED = 60;
+    // Short, so the room the conversation can spare is the limit that BINDS.
+    // At a dev machine's height the twelve-line cap wins and a docked bar costs
+    // the box nothing — which is a real configuration, and the wrong one to
+    // measure a room bug in.
+    await a.app.evaluate(({ BrowserWindow }) => {
+      const win = BrowserWindow.getAllWindows()[0];
+      win.unmaximize();
+      win.setContentSize(win.getContentSize()[0], 460);
+    });
+
+    const box = w.getByPlaceholder(/Prompt this session/);
+    const chip = w.getByTestId('composer-autonomy');
+    const feed = w.locator('[data-feed-region]').first();
+    const boxHeight = (): Promise<number> =>
+      box.evaluate((el) => (el as HTMLTextAreaElement).clientHeight);
+
+    // fill it until the panel, not the line cap, is what stops it
+    await box.fill('lorem ipsum dolor sit amet '.repeat(120));
+    await expect.poll(boxHeight, { timeout: 10_000 }).toBeGreaterThan(0);
+    const tall = await boxHeight();
+    expect((await feed.boundingBox())!.height).toBeLessThan(MIN_FEED + 8);
+
+    // A bar arrives. Nothing is typed, the window does not move, the box keeps
+    // its width — so nothing the composer watches for itself has changed.
+    const post = await hookPoster(a);
+    await post(title, {
+      hook_event_name: 'Notification',
+      notification_type: 'permission_prompt',
+      message: 'Claude needs your permission to use Write',
+    });
+    await expect(w.locator('[data-handoff="permission"]')).toBeVisible({ timeout: 15_000 });
+
+    // THE ASSERTION: the box gave the height back. Without it the cap is stale,
+    // the box keeps a size the column no longer has, and the feed — the only
+    // flexible item here — is squeezed under its floor to pay for it.
+    await expect.poll(boxHeight, { timeout: 10_000 }).toBeLessThan(tall);
+    expect((await feed.boundingBox())!.height).toBeGreaterThan(MIN_FEED - 8);
+    await expect(chip).toBeInViewport();
+    await expect(box).toBeInViewport();
   });
 
   // P2-E10-11 (#477). The one thing only the real app can settle: a click on the

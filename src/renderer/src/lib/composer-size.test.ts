@@ -1,17 +1,28 @@
 // P2-E10-08 (#406): the composer's height is a MEASUREMENT, not a newline count.
+// #716: and the part JS still measures is where it STOPS, not how tall it is.
+//
+// WHAT MOVED, and why these tests read differently to the ones they replace.
+// `composerSize` took a `scrollHeight` and returned the height to write back —
+// which meant reading the DOM on every keystroke, and a read-after-write forces
+// a document-wide layout (36.5ms per character at 400 turns). CSS
+// (`field-sizing: content`) now does the growing, so the only question left for
+// arithmetic is the pair of BOUNDS it grows between. There is no `scrollHeight`
+// input any more and no `overflowY` output — `.composer-box` is unconditionally
+// `overflow-y: auto`, which it could not be while a scrollbar appearing
+// mid-measure would have re-wrapped the text being measured.
 //
 // The numbers below are the composer's real ones: 12px text on a 1.45 ratio
 // (17.4px per rendered line) with 7px of padding on each block edge.
 import { describe, it, expect } from 'vitest';
-import { composerSize, COMPOSER_MAX_LINES, resolveLineHeight } from './composer-size';
+import { composerBounds, COMPOSER_MAX_LINES, resolveLineHeight } from './composer-size';
 
 const LINE = 17.4;
 const PAD = 14;
 const BORDER = 2;
+/** the twelve-line cap as the module rounds it — up, so the last line cannot clip */
+const CAP = Math.ceil(COMPOSER_MAX_LINES * LINE); // 209
 
-/** what the DOM reports for `n` RENDERED lines — hard or soft, it cannot tell */
-const metrics = (lines: number, over: Partial<Parameters<typeof composerSize>[0]> = {}) => ({
-  scrollHeight: lines * LINE + PAD,
+const metrics = (over: Partial<Parameters<typeof composerBounds>[0]> = {}) => ({
   lineHeight: LINE,
   padding: PAD,
   border: BORDER,
@@ -19,55 +30,40 @@ const metrics = (lines: number, over: Partial<Parameters<typeof composerSize>[0]
   ...over,
 });
 
-describe('composerSize', () => {
-  it('is one line tall for one line', () => {
-    expect(composerSize(metrics(1)).blockSize).toBeCloseTo(LINE, 5);
+describe('composerBounds', () => {
+  it('floors at one rendered line', () => {
+    expect(composerBounds(metrics()).minBlockSize).toBe(Math.ceil(LINE));
   });
 
-  it('grows with RENDERED lines — the wrap the browser did, not the newlines typed', () => {
-    // the #406 case: one pasted paragraph, no '\n' in it at all, wrapping to 8
-    expect(composerSize(metrics(8)).blockSize).toBeCloseTo(8 * LINE, 5);
-    expect(composerSize(metrics(8)).overflowY).toBe('hidden'); // all of it visible
+  it('caps at twelve rendered lines', () => {
+    expect(composerBounds(metrics()).maxBlockSize).toBe(CAP);
   });
 
-  it('caps at twelve lines and scrolls inside itself past that', () => {
-    const capped = composerSize(metrics(COMPOSER_MAX_LINES));
-    expect(capped.blockSize).toBeCloseTo(COMPOSER_MAX_LINES * LINE, 5);
-    expect(capped.overflowY).toBe('hidden'); // exactly full is not overflowing
-
-    const past = composerSize(metrics(30));
-    expect(past.blockSize).toBeCloseTo(COMPOSER_MAX_LINES * LINE, 5);
-    expect(past.overflowY).toBe('auto');
-  });
-
-  it('shrinks back to one line when the text is deleted', () => {
-    expect(composerSize(metrics(9)).blockSize).toBeGreaterThan(composerSize(metrics(1)).blockSize);
-    // an empty box still reports one line of content; a browser mid-relayout
-    // can report less, and the floor is what keeps that from collapsing the box
-    expect(composerSize(metrics(0)).blockSize).toBeCloseTo(LINE, 5);
+  it('rounds the line cap UP, so the line that exactly fills the box cannot clip', () => {
+    // 12 × 17.4 = 208.79999999999998. A cap of 208 is a box a fraction shorter
+    // than the twelve lines it is supposed to show, and the twelfth line loses
+    // its descenders. This is the `Math.ceil` the old code applied to the height
+    // it wrote back, kept in the place that now decides the same thing.
+    expect(composerBounds(metrics()).maxBlockSize).toBe(209);
+    expect(COMPOSER_MAX_LINES * LINE).toBeLessThan(209);
   });
 
   it('adds padding and border back under border-box', () => {
-    const size = composerSize(metrics(4, { borderBox: true }));
-    expect(size.blockSize).toBeCloseTo(4 * LINE + PAD + BORDER, 5);
+    const b = composerBounds(metrics({ borderBox: true }));
+    expect(b.maxBlockSize).toBe(CAP + PAD + BORDER);
+    expect(b.minBlockSize).toBe(Math.ceil(LINE) + PAD + BORDER);
   });
 
-  it('does not fire a scrollbar for a sub-pixel rounding error at the cap', () => {
-    // 12 × 17.4 = 208.8: an engine that rounds each line up reports a few
-    // tenths more than the cap for the line that exactly fills the box
-    const size = composerSize(metrics(COMPOSER_MAX_LINES, { scrollHeight: 12 * LINE + PAD + 0.4 }));
-    expect(size.overflowY).toBe('hidden');
+  it('is unbounded above when nothing at all is knowable', () => {
+    // no line height means no line COUNT, and no panel means no room — there is
+    // no honest number to cap at, so the caller writes no `max-block-size`
+    expect(composerBounds(metrics({ lineHeight: 0 })).maxBlockSize).toBe(Infinity);
+    expect(composerBounds(metrics({ lineHeight: 0 })).minBlockSize).toBe(0);
   });
 
-  it('fits the content when the line height is unknowable', () => {
-    // no line height means no line COUNT, so the cap cannot be applied — but
-    // the room the panel has is still a real limit
-    const size = composerSize(metrics(40, { lineHeight: 0 }));
-    expect(size.blockSize).toBeCloseTo(40 * LINE, 5);
-    expect(size.overflowY).toBe('hidden');
-    const boxed = composerSize(metrics(40, { lineHeight: 0, available: 100 + PAD + BORDER }));
-    expect(boxed.blockSize).toBeCloseTo(100, 5);
-    expect(boxed.overflowY).toBe('auto');
+  it('still applies the room limit when the line height is unknowable', () => {
+    const b = composerBounds(metrics({ lineHeight: 0, available: 100 + PAD + BORDER }));
+    expect(b.maxBlockSize).toBe(100);
   });
 
   describe('the room the panel can spare', () => {
@@ -76,27 +72,34 @@ describe('composerSize', () => {
     // push the options row off the bottom rather than push the feed up.
     it('stops short of the cap when the panel cannot spare twelve lines', () => {
       const room = 5 * LINE + PAD + BORDER;
-      const size = composerSize(metrics(30, { available: room }));
-      expect(size.blockSize).toBeCloseTo(5 * LINE, 5);
-      expect(size.overflowY).toBe('auto'); // the rest is still reachable
+      expect(composerBounds(metrics({ available: room })).maxBlockSize).toBe(
+        Math.floor(5 * LINE)
+      );
+    });
+
+    it('rounds the room limit DOWN — the mirror of the line cap', () => {
+      // A cap a hair OVER the room available is the box overhanging its own
+      // options row (#406). The two limits therefore round opposite ways, and
+      // that is why one shared `Math.ceil` could not serve both.
+      const room = 100.9 + PAD + BORDER;
+      expect(composerBounds(metrics({ available: room })).maxBlockSize).toBe(100);
     });
 
     it('is ignored when the panel has more room than the cap', () => {
-      const size = composerSize(metrics(30, { available: 1000 }));
-      expect(size.blockSize).toBeCloseTo(COMPOSER_MAX_LINES * LINE, 5);
+      expect(composerBounds(metrics({ available: 1000 })).maxBlockSize).toBe(CAP);
     });
 
     it('never squeezes the box below the line being typed', () => {
       // a panel with nothing to give still owes the user the line they are on;
       // overlapping the options row for one line beats a box you cannot read
-      const size = composerSize(metrics(4, { available: 0 }));
-      expect(size.blockSize).toBeCloseTo(LINE, 5);
-      expect(size.overflowY).toBe('auto');
+      const b = composerBounds(metrics({ available: 0 }));
+      expect(b.maxBlockSize).toBe(Math.ceil(LINE));
+      expect(b.minBlockSize).toBe(Math.ceil(LINE));
     });
   });
 
   it('takes a caller-supplied cap', () => {
-    expect(composerSize(metrics(30), 3).blockSize).toBeCloseTo(3 * LINE, 5);
+    expect(composerBounds(metrics(), 3).maxBlockSize).toBe(Math.ceil(3 * LINE));
   });
 });
 

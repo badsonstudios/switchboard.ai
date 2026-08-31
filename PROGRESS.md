@@ -50,13 +50,163 @@
 > and the CLI's real entry stays untrusted for ever. The bug surviving its own
 > fix. Every confirmed entry is trusted instead.
 >
-> ## 🔜 NEXT: nothing is picked up. The queue is open.
+> ## 🟡 AWAITING MERGE — **#716**, composer typing lag. **PR #739**, opened 2026-08-30.
 >
-> `main` is at `f4ff920`, clean and green, and nothing is mid-flight — no open
-> PRs, no half-done branch, no blocker. Open issues worth a look, roughly by cost of not
-> doing them: **#716** (composer typing lag, severe on the laptop), **#719** (the
-> CPU pegging forensic report), **#731** / **#733** (drop-target and
-> question-panel bugs Dan hand-found).
+> Branch `feature/716-composer-typing-lag`. **HALF the fix ships. #716 does NOT
+> close on merge** — see the acceptance-bar note below and decide deliberately.
+>
+> **Will be UNRELEASED on merge.** It lands in the `0.8.7 — unreleased` CHANGELOG
+> section alongside #724. Do not ask Dan to hand-test it against v0.8.6.
+>
+> ### ⚠️ PART B WAS BUILT, SENT TO CI, AND REVERTED — the important entry here
+>
+> The feed half (`content-visibility: auto` on each block) cleared the acceptance
+> bar on this machine, passed the full 356-test e2e suite locally, and **failed
+> on Linux CI**: `feed.spec.ts` "switching away and back keeps your reading
+> position" — Dan's own 2026-07-26 bug — restored a scrollTop of 2189 where 1640
+> was saved, deterministically, on both attempts.
+>
+> Chasing it found something far worse than the test failure. `content-visibility`
+> makes an unrendered block contribute `contain-intrinsic-size` — a GUESS — and
+> the feed is mostly one-line blocks about 32px tall against an 80px guess.
+> **Measured: scrollHeight reads +85% at 60 blocks and +127% at 400.** The
+> scrollbar would be more than twice as long as the conversation. An earlier
+> diagnostic of mine missed this because it measured after the feed had settled;
+> the honest measurement is taken right after load.
+>
+> This app has a **pixel-exact scroll-restore contract** (#442/#555) and an
+> estimate cannot satisfy it. Any future attempt must make the intrinsic size
+> REAL — measure each block once, pin its own height, re-measure when a tool row
+> expands or verbosity changes — which is a small virtualiser and its own item.
+> The whole measurement is recorded in `tokens.css` where `.feed-block` used to
+> be, so the next person does not walk into it.
+>
+> ### ⚠️ THE ACCEPTANCE BAR IS NOT MET, and that is a decision for Dan
+> The ticket asks for no visible batching under 4× CPU throttle. **What ships
+> gets there unthrottled but not under throttle:**
+>
+> | 400 turns, 810-char draft | before | ships | (reverted Part B) |
+> |---|---|---|---|
+> | median keystroke latency, **4× throttle** | 152 ms | **152 ms** | 56 ms |
+> | long tasks per 43 keys, **4× throttle** | 43 | **43** | 0 |
+> | median latency, unthrottled | 80 ms | **40 ms** | — |
+> | long tasks per 59 keys, unthrottled | 58 (worst 1095 ms) | **0** | — |
+>
+> So: a real and large win on ordinary hardware — typing unthrottled no longer
+> scales with conversation length at all, it now costs what an EMPTY feed costs —
+> and **no measured improvement on a slow machine with a long session**, which is
+> exactly the laptop case Dan filed. Options are: close #716 on the composer half
+> and open the feed item (#740 — filed), or hold #716 open until the feed item lands.
+>
+> ### ⚠️ AND `contain` DOES NOT WORK — measured, so nobody re-tries it
+> "Add containment to the feed" is the obvious guess and it is wrong. Under
+> throttle: `contain: layout` on the scroller 160 ms, on the content div 160 ms,
+> on each block 160 ms, `contain: layout style paint` on each block **176 ms
+> (worse)**. Containment isolates a subtree from changes made INSIDE it; this
+> invalidation arrives from OUTSIDE, so every child re-lays-out either way.
+>
+> ### What actually ships
+> * `.composer-box` (tokens.css) — `field-sizing: content` grows the box in CSS.
+>   `composerSize` → `composerBounds`: JS now computes only `min/max-block-size`,
+>   re-measured on panel resize, on attachment-strip changes and on
+>   `dockedChrome`, **never on `draft`**. The reset-then-read, the `scrollTop`
+>   save/restore and the `overflowY` toggling are gone; the "typing on line 20
+>   scrolls you to line 1" hazard is now impossible by construction.
+>
+> ### ⚠️ THE REVIEW ROUND FOUND A REGRESSION I HAD SHIPPED — the lesson to keep
+>
+> Removing the per-keystroke measurement quietly removed a **self-heal** nobody
+> had written down. The cap is the room the panel can spare, and things dock into
+> that column WHILE YOU TYPE — approval bar, question panel, working banner,
+> jump-to-latest strip. None changes the box's width or the panel's height, so
+> the ResizeObserver never fires. The cap went stale, CSS grew the box past the
+> room available, and the feed absorbed it below `MIN_FEED_PX` — which this
+> arithmetic enforces and nothing else does. Before #716 the next character fixed
+> it. Fix: a `dockedChrome` stamp passed into `Composer`, in the effect deps.
+>
+> **Then mutation-checking found two of my own tests could not fail:**
+> * the ResizeObserver-guard test passed against a **deleted** guard — jsdom
+>   measures everything as 0, so the observer bails on `width === 0` before ever
+>   reaching the guard. It needed a stubbed width to mean anything.
+> * **nothing asserted `field-sizing` is in the stylesheet at all.** The class
+>   name was pinned on the element, but jsdom never loads `tokens.css`, so
+>   deleting the rule left every test green with auto-grow gone. Now read from
+>   the file, the way `tokens.drift.test.ts` does.
+>
+> **Standing lesson: mutate the source and watch the test go red, or the test is
+> decoration.** All three now fail against their own mutation. The stale-cap fix
+> itself passed every unit test until `feed.spec.ts` got a case that docks a real
+> permission handoff over a filled composer at a short window.
+>
+> ## 🔜 NEXT after this: **#740** (the feed half), then **#719** (CPU pegging).
+>
+> Read #719's forensic report against this item's findings before planning it —
+> the two were suspected of being the same disease and that turned out to be
+> **false**: #716 was a forced synchronous layout on the input path, not a
+> runaway watcher. What transfers is the method, not the cause. Then #731/#733.
+>
+> ### Coverage note — read this before trusting the unit tests
+> Four jsdom tests in `FeedView.composer.test.tsx` **were deleted, not ported**.
+> They asserted the height JS wrote, against a stubbed layout engine; CSS does
+> the growing now and jsdom cannot render it, so there is no height there to
+> assert. That coverage lives in a real engine — `e2e/feed.spec.ts:828`, "the
+> composer grows with WRAPPED text, caps at twelve lines, and shrinks back",
+> **unchanged by this item and passing**, which is the evidence Part A preserved
+> behaviour. What replaced them in jsdom is the structural #716 guard: typing
+> must read no layout (`scrollHeight` read count, `getComputedStyle` calls) and
+> must write no inline `block-size`. Deliberately not a timing budget — this repo
+> already has one of those flaking.
+>
+> ### Test status
+> 6657/6658 unit (the failure is the KNOWN `win-cmd.test.ts` flake — 47/47 in
+> isolation, reproduces on clean `main`, `src/main/transport/`, unrelated).
+> feed + tail-pin + restore-position + stream-feed: 29/29. find family: 10/10.
+> Full e2e running. Typecheck and lint clean.
+>
+> ---
+>
+> **Root cause is measured, not guessed, and it is TWO independent costs.** The
+> probe: launch the app, seed a transcript of N turns, then time — interleaved,
+> median of 7 rounds — the exact read/write pattern a keystroke performs. Two
+> controls validate the instrument: a layout read with nothing dirty is
+> **0.000 ms**, and a value write never read back is **0.005 ms**. So every
+> number below is real layout, not measurement overhead.
+>
+> Per keystroke, at 400 turns / 7,879 DOM nodes (dev desktop, unthrottled):
+>
+> | | ms/keystroke |
+> |---|---|
+> | today | **35.1** |
+> | composer fix only (CSS `field-sizing: content`) | 17.3 |
+> | feed fix only (`content-visibility: auto` on blocks) | 4.9 |
+> | both | **2.5** |
+>
+> At **0 turns everything is ~0.2 ms**. The whole bug is priced by conversation
+> length, which is why it is severe on a laptop with long sessions and mild on a
+> desktop — and why "it's fine on the dev box" was never evidence.
+>
+> 1. **The composer forces a full document reflow on every keystroke.**
+>    `Composer`'s `grow()` (FeedView.tsx) sets `blockSize = '0px'`, reads
+>    `scrollHeight`, writes the height back and reads `scrollTop` — twice-forced
+>    synchronous layout, in a `useLayoutEffect` keyed on `draft`. Cost:
+>    **0.27 ms empty → 10.2 ms at 100 turns → 36.5 ms at 400.** Removable in
+>    full: `field-sizing: content` measured **identical to having no auto-grow
+>    at all** (17.68 vs 17.43 ms), i.e. CSS does this job for free.
+> 2. **The feed amplifies ANY layout invalidation in the panel.** With auto-grow
+>    removed entirely, merely changing the textarea's value still costs 17.4 ms
+>    at 400 turns — the feed is neither virtualised nor contained, so 7,879
+>    nodes re-lay-out. `contain: layout` on the scroller does **nothing**
+>    (35.4 vs 36.5) because the scroller itself resizes; `content-visibility:
+>    auto` on the blocks is what works.
+>
+> **Ruled out by measurement, so do not re-investigate:** draft persistence
+> (`uiSetSoon` is properly debounced at 400 ms, and the write itself is
+> 0.005 ms), per-keystroke IPC (the slash-command fetch is keyed to popup
+> OPENING, not to edits), and state living too high (the draft is already local
+> to `Composer` — the ticket's suspicion #1 is wrong).
+>
+> Next in the queue after this: **#719** (CPU pegging — plausibly the same
+> disease, worth reading its forensic report alongside), then **#731** / **#733**.
 >
 > ## ⚠️ THE ONE THING IN v0.8.6 THAT NOBODY HAS EVER SEEN WORK
 >

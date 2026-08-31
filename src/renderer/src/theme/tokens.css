@@ -400,6 +400,70 @@ body {
   text-transform: uppercase;
 }
 
+/* The composer's textarea grows with its content (P2-E10-08, §5.10) — in CSS,
+ * which is #716's fix and not a tidy.
+ *
+ * `field-sizing: content` makes the box as tall as what the browser ACTUALLY
+ * RENDERED, soft wrapping included, with no JS on the keystroke path. It
+ * replaces a layout effect that released the height, read `scrollHeight` back
+ * and wrote a fitted height on EVERY character — two forced synchronous
+ * layouts, and a forced layout is document-wide, so it was priced by the length
+ * of the conversation above the box (0.27ms empty, 36.5ms at 400 turns).
+ * Measured against removing auto-grow altogether, this costs the same.
+ *
+ * Where it STOPS is still JS's job: `min-block-size` and `max-block-size` come
+ * from `composerBounds` and are rewritten only when the panel resizes or the
+ * attachment strip changes — never from typing.
+ *
+ * `overflow-y: auto` can be unconditional now. It used to be toggled to
+ * `hidden` between measurements because a scrollbar appearing mid-measure
+ * re-wraps the text and corrupts the reading. There is no measurement left to
+ * corrupt.
+ *
+ * Electron only, so this is a capability we ship rather than one we hope for:
+ * `field-sizing` is Chromium 123+ and Electron 43 carries far newer. Verified
+ * in the running app (`CSS.supports('field-sizing', 'content')`) rather than
+ * assumed from the version. There is deliberately no JS fallback — a second
+ * sizing path that nothing exercises is how the first one rots. */
+.composer-box {
+  field-sizing: content;
+  overflow-y: auto;
+}
+
+/* THE FEED IS DELIBERATELY NOT SKIPPED, AND THAT COST US A CI RED — read this
+ * before reaching for `content-visibility` on the conversation (#716).
+ *
+ * Typing is expensive in a long session because ANY layout invalidation in the
+ * panel re-lays-out the whole feed. `.composer-box` above removes the composer's
+ * own contribution; what remains is the feed's, and the obvious fixes were all
+ * measured. Under a 4x CPU throttle, 400 turns, long draft in the box:
+ *
+ *     composer fix only              median 160ms/key, 43 long tasks of 43
+ *     content div `contain: layout`  median 160ms/key, 45
+ *     each block `contain: layout`   median 160ms/key, 45
+ *     each block `contain: l/s/p`    median 176ms/key, 46   <- WORSE
+ *     each block content-visibility  median  72ms/key,  0
+ *
+ * So containment is worthless here in every form, and the reason is worth
+ * keeping: containment isolates a subtree from changes made INSIDE it, and this
+ * invalidation arrives from OUTSIDE. Only skipping helps.
+ *
+ * AND SKIPPING WAS TRIED, SHIPPED TO CI, AND REVERTED. `content-visibility:
+ * auto` with `contain-intrinsic-size: auto 80px` makes an unrendered block
+ * contribute a GUESS, and the feed is mostly one-line blocks about 32px tall.
+ * Measured at 1008x655: at 60 blocks scrollHeight reads 3564 against a true
+ * 1932 (+85%), and at 400 blocks 29084 against a true 12812 (+127%). The
+ * scrollbar ends up more than twice as long as the
+ * conversation, and `feed.spec.ts` — "switching away and back keeps your
+ * reading position", Dan's own 2026-07-26 bug — failed on Linux CI with a
+ * restored scrollTop of 2189 where 1640 was saved.
+ *
+ * This app has a PIXEL-EXACT scroll-restore contract (#442/#555) and an
+ * estimate cannot satisfy it. Any future attempt has to make the intrinsic size
+ * REAL — measure each block once and pin its own height, and re-measure when a
+ * tool row expands or verbosity changes — which is a small virtualiser and its
+ * own piece of work, not a CSS line. */
+
 /* Feed view markdown blocks (P2-E12-06, §5.10) — vars only, theme-safe */
 .feed-md {
   color: var(--text);
