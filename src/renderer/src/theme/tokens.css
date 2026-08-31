@@ -430,36 +430,39 @@ body {
   overflow-y: auto;
 }
 
-/* One turn's worth of conversation — its rule and its block (#716).
+/* THE FEED IS DELIBERATELY NOT SKIPPED, AND THAT COST US A CI RED — read this
+ * before reaching for `content-visibility` on the conversation (#716).
  *
- * `content-visibility: auto` lets the engine SKIP the layout of a block that is
- * scrolled out of view. That is the second half of the typing fix, and it is
- * not interchangeable with `contain`: measured under a 4x CPU throttle at 400
- * turns, with a long draft in the box, every containment variant was worthless
- * and only this one worked —
+ * Typing is expensive in a long session because ANY layout invalidation in the
+ * panel re-lays-out the whole feed. `.composer-box` above removes the composer's
+ * own contribution; what remains is the feed's, and the obvious fixes were all
+ * measured. Under a 4x CPU throttle, 400 turns, long draft in the box:
  *
- *     none (composer fix only)        median 160ms/key, 43 long tasks of 43
- *     content div `contain: layout`   median 160ms/key, 45
- *     each block `contain: layout`    median 160ms/key, 45
- *     each block `contain: l/s/p`     median 176ms/key, 46
- *     each block content-visibility   median  72ms/key,  0
+ *     composer fix only              median 160ms/key, 43 long tasks of 43
+ *     content div `contain: layout`  median 160ms/key, 45
+ *     each block `contain: layout`   median 160ms/key, 45
+ *     each block `contain: l/s/p`    median 176ms/key, 46   <- WORSE
+ *     each block content-visibility  median  72ms/key,  0
  *
- * The reason is worth keeping, because "add containment" is the obvious guess
- * and it is wrong: containment isolates a subtree from changes made INSIDE it,
- * and the invalidation here arrives from OUTSIDE — the panel re-lays-out, so
- * every child must too, contained or not. Skipping is the only thing that
- * helps, because a skipped subtree is not laid out at all.
+ * So containment is worthless here in every form, and the reason is worth
+ * keeping: containment isolates a subtree from changes made INSIDE it, and this
+ * invalidation arrives from OUTSIDE. Only skipping helps.
  *
- * `auto` on `contain-intrinsic-size` is load-bearing: it makes the engine
- * REMEMBER each block's last rendered height instead of holding the 80px guess
- * for ever, so the scrollbar settles as the conversation is read rather than
- * jumping. 80px is only the never-yet-rendered fallback — roughly a short
- * assistant paragraph, i.e. wrong in both directions by design rather than
- * biased one way. */
-.feed-block {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 80px;
-}
+ * AND SKIPPING WAS TRIED, SHIPPED TO CI, AND REVERTED. `content-visibility:
+ * auto` with `contain-intrinsic-size: auto 80px` makes an unrendered block
+ * contribute a GUESS, and the feed is mostly one-line blocks about 32px tall.
+ * Measured at 1008x655: at 60 blocks scrollHeight reads 3564 against a true
+ * 1932 (+85%), and at 400 blocks 29084 against a true 12812 (+127%). The
+ * scrollbar ends up more than twice as long as the
+ * conversation, and `feed.spec.ts` — "switching away and back keeps your
+ * reading position", Dan's own 2026-07-26 bug — failed on Linux CI with a
+ * restored scrollTop of 2189 where 1640 was saved.
+ *
+ * This app has a PIXEL-EXACT scroll-restore contract (#442/#555) and an
+ * estimate cannot satisfy it. Any future attempt has to make the intrinsic size
+ * REAL — measure each block once and pin its own height, and re-measure when a
+ * tool row expands or verbosity changes — which is a small virtualiser and its
+ * own piece of work, not a CSS line. */
 
 /* Feed view markdown blocks (P2-E12-06, §5.10) — vars only, theme-safe */
 .feed-md {

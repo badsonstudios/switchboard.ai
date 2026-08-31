@@ -901,13 +901,7 @@ export function FeedView(props: {
               here — see lib/feed-reveal for why it is a context and not props */}
           <FeedRevealProvider value={reveal}>
             {visibleBlocks.map((b, i) => (
-              // `feed-block` (#716) is what stops a long conversation making
-              // every keystroke expensive. The wrapper exists ONLY to carry
-              // `content-visibility: auto`, which is why the divider is inside
-              // it: a turn's rule and its block share one skip unit, so nothing
-              // can be skipped away from the thing it labels. tokens.css has the
-              // measurements and the reason plain `contain` does not work.
-              <div className="feed-block" key={b.seq}>
+              <React.Fragment key={b.seq}>
                 {/* A new prompt starts a new turn — rule it off (Dan #11), and
                     since #640 rule it off so the eye LANDS on it: scanning a
                     long session, the turn boundaries have to be findable
@@ -925,7 +919,7 @@ export function FeedView(props: {
                   </div>
                 )}
                 <Block b={b} />
-              </div>
+              </React.Fragment>
             ))}
           </FeedRevealProvider>
           <div ref={bottom} />

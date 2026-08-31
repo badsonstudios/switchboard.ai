@@ -52,67 +52,73 @@
 >
 > ## 🟡 AWAITING MERGE — **#716**, composer typing lag. **PR #739**, opened 2026-08-30.
 >
-> Branch `feature/716-composer-typing-lag` (`aff5011`), pushed, CI running.
-> Dan reviews and squash-merges. **BOTH halves shipped** — the second one is not
-> optional, see "why Part A alone was not enough" below.
+> Branch `feature/716-composer-typing-lag`. **HALF the fix ships. #716 does NOT
+> close on merge** — see the acceptance-bar note below and decide deliberately.
 >
 > **Will be UNRELEASED on merge.** It lands in the `0.8.7 — unreleased` CHANGELOG
-> section alongside #724. Do not ask Dan to hand-test the typing fix against
-> v0.8.6 — it is not in it. The dogfood tracker row says the same.
+> section alongside #724. Do not ask Dan to hand-test it against v0.8.6.
 >
-> ## 🔜 NEXT after this: **#719** (CPU pegging).
+> ### ⚠️ PART B WAS BUILT, SENT TO CI, AND REVERTED — the important entry here
 >
-> Read #719's forensic report against this item's findings before planning it —
-> the two were suspected of being the same disease and that turned out to be
-> **false**: #716 was a forced synchronous layout on the input path, not a
-> runaway watcher. What transfers is the method, not the cause. Then #731/#733.
+> The feed half (`content-visibility: auto` on each block) cleared the acceptance
+> bar on this machine, passed the full 356-test e2e suite locally, and **failed
+> on Linux CI**: `feed.spec.ts` "switching away and back keeps your reading
+> position" — Dan's own 2026-07-26 bug — restored a scrollTop of 2189 where 1640
+> was saved, deterministically, on both attempts.
 >
-> ### Measured against the ticket's own acceptance bar
-> 4× CPU throttle, 810-char draft already in the box, 400-turn conversation:
+> Chasing it found something far worse than the test failure. `content-visibility`
+> makes an unrendered block contribute `contain-intrinsic-size` — a GUESS — and
+> the feed is mostly one-line blocks about 32px tall against an 80px guess.
+> **Measured: scrollHeight reads +85% at 60 blocks and +127% at 400.** The
+> scrollbar would be more than twice as long as the conversation. An earlier
+> diagnostic of mine missed this because it measured after the feed had settled;
+> the honest measurement is taken right after load.
 >
-> | | before | after |
-> |---|---|---|
-> | median keystroke latency | 152 ms | **56 ms** |
-> | long tasks (per 43 keystrokes) | **43** | **0** |
-> | wall clock, 43 keystrokes | 5825 ms | 2190 ms |
+> This app has a **pixel-exact scroll-restore contract** (#442/#555) and an
+> estimate cannot satisfy it. Any future attempt must make the intrinsic size
+> REAL — measure each block once, pin its own height, re-measure when a tool row
+> expands or verbosity changes — which is a small virtualiser and its own item.
+> The whole measurement is recorded in `tokens.css` where `.feed-block` used to
+> be, so the next person does not walk into it.
 >
-> Unthrottled at 400 turns, end to end: median 80 → 40 ms (the EMPTY-feed
-> baseline — typing no longer scales with conversation length), long tasks
-> 58 → 0, worst long task 1095 ms → none.
+> ### ⚠️ THE ACCEPTANCE BAR IS NOT MET, and that is a decision for Dan
+> The ticket asks for no visible batching under 4× CPU throttle. **What ships
+> gets there unthrottled but not under throttle:**
 >
-> **All three of the ticket's conditions are measured, including the one that is
-> easy to skip.** Long draft ✅ (810 chars, box at its cap) · 4× throttle ✅ ·
-> **actively streaming card** ✅ — typing into a Direct card mid-`!bulk`, where
-> blocks are updated in place as tokens arrive: median 32 ms (identical to the
-> same card idle), 2 long tasks per 43 keystrokes. Honest caveat: that run's feed
-> was 1,287 DOM nodes, lighter than the 7,879 of the transcript-path runs, so it
-> is evidence about STREAMING rather than about streaming-plus-huge.
+> | 400 turns, 810-char draft | before | ships | (reverted Part B) |
+> |---|---|---|---|
+> | median keystroke latency, **4× throttle** | 152 ms | **152 ms** | 56 ms |
+> | long tasks per 43 keys, **4× throttle** | 43 | **43** | 0 |
+> | median latency, unthrottled | 80 ms | **40 ms** | — |
+> | long tasks per 59 keys, unthrottled | 58 (worst 1095 ms) | **0** | — |
 >
-> ### ⚠️ WHY PART A ALONE WAS NOT ENOUGH — the trap this item nearly fell into
-> Unthrottled, the composer fix looked like a complete win: long tasks 58 → 0.
-> **Under 4× throttle it was still 152 ms/key with every single keystroke a long
-> task.** The dev desktop was hiding the other half, which is the exact failure
-> mode the ticket warns about. Do not accept an unthrottled measurement as
-> evidence on this class of bug.
+> So: a real and large win on ordinary hardware — typing unthrottled no longer
+> scales with conversation length at all, it now costs what an EMPTY feed costs —
+> and **no measured improvement on a slow machine with a long session**, which is
+> exactly the laptop case Dan filed. Options are: close #716 on the composer half
+> and open the feed item (#740 — filed), or hold #716 open until the feed item lands.
 >
 > ### ⚠️ AND `contain` DOES NOT WORK — measured, so nobody re-tries it
 > "Add containment to the feed" is the obvious guess and it is wrong. Under
 > throttle: `contain: layout` on the scroller 160 ms, on the content div 160 ms,
 > on each block 160 ms, `contain: layout style paint` on each block **176 ms
-> (worse)**. Only `content-visibility: auto` moved it (72 ms, 0 long tasks).
-> Containment isolates a subtree from changes made INSIDE it; this invalidation
-> arrives from OUTSIDE, so every child re-lays-out either way. Only SKIPPING
-> helps. The table is recorded in `tokens.css` at `.feed-block`.
+> (worse)**. Containment isolates a subtree from changes made INSIDE it; this
+> invalidation arrives from OUTSIDE, so every child re-lays-out either way.
 >
-> ### What changed
+> ### What actually ships
 > * `.composer-box` (tokens.css) — `field-sizing: content` grows the box in CSS.
 >   `composerSize` → `composerBounds`: JS now computes only `min/max-block-size`,
 >   re-measured on panel resize and on attachment-strip changes, **never on
 >   `draft`**. The reset-then-read, the `scrollTop` save/restore and the
 >   `overflowY` toggling are gone; the "typing on line 20 scrolls you to line 1"
 >   hazard is now impossible by construction rather than guarded against.
-> * `.feed-block` (tokens.css) — a wrapper per turn carrying
->   `content-visibility: auto`, so blocks scrolled out of view are not laid out.
+>
+> ## 🔜 NEXT after this: **#740** (the feed half), then **#719** (CPU pegging).
+>
+> Read #719's forensic report against this item's findings before planning it —
+> the two were suspected of being the same disease and that turned out to be
+> **false**: #716 was a forced synchronous layout on the input path, not a
+> runaway watcher. What transfers is the method, not the cause. Then #731/#733.
 >
 > ### Coverage note — read this before trusting the unit tests
 > Four jsdom tests in `FeedView.composer.test.tsx` **were deleted, not ported**.
