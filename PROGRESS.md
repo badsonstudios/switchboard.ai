@@ -50,13 +50,21 @@
 > and the CLI's real entry stays untrusted for ever. The bug surviving its own
 > fix. Every confirmed entry is trusted instead.
 >
-> ## 🟡 AWAITING MERGE — **#716**, composer typing lag. **PR #739**, opened 2026-08-30.
+> ## ✅ MERGED — **#716** composer half, PR **#739** (`e2d0aea`), 2026-08-31.
 >
-> Branch `feature/716-composer-typing-lag`. **HALF the fix ships. #716 does NOT
-> close on merge** — see the acceptance-bar note below and decide deliberately.
+> Branch deleted, CI green on all four jobs, no open PRs. **6660 tests / 252
+> files.**
 >
-> **Will be UNRELEASED on merge.** It lands in the `0.8.7 — unreleased` CHANGELOG
-> section alongside #724. Do not ask Dan to hand-test it against v0.8.6.
+> ⚠️ **#716 IS STILL OPEN, DELIBERATELY. Do not close it.** The acceptance bar is
+> not met — see the table below. It was auto-closed by the squash (the branch's
+> FIRST commit message still said `Closes #716`, written before the feed half was
+> reverted; the PR body said `Refs`) and has been **reopened** with the reason on
+> the issue. If it closes itself again, that is the same mechanism, not a
+> decision.
+>
+> ⚠️ **NOT RELEASED.** It sits in the `0.8.7 — unreleased` CHANGELOG section
+> alongside #724. The latest release is **v0.8.6**, which does NOT contain it.
+> Do not ask Dan to hand-test this against an installed build until v0.8.7 is cut.
 >
 > ### ⚠️ PART B WAS BUILT, SENT TO CI, AND REVERTED — the important entry here
 >
@@ -138,12 +146,22 @@
 > itself passed every unit test until `feed.spec.ts` got a case that docks a real
 > permission handoff over a filled composer at a short window.
 >
-> ## 🔜 NEXT after this: **#740** (the feed half), then **#719** (CPU pegging).
+> ## 🔜 NEXT: nothing is picked up. `main` is clean and the queue is open.
 >
-> Read #719's forensic report against this item's findings before planning it —
-> the two were suspected of being the same disease and that turned out to be
-> **false**: #716 was a forced synchronous layout on the input path, not a
-> runaway watcher. What transfers is the method, not the cause. Then #731/#733.
+> `main` is at `e2d0aea`, CI green, no open PRs, nothing mid-flight.
+>
+> **#740** (the feed half) is the direct continuation and the thing that would
+> actually finish #716 — it is fully specced from #716's measurements, including
+> everything already ruled out. **#719** (CPU pegging) is the other big one; read
+> its forensic report against #716's findings before planning it, because the
+> "same disease" theory turned out **false** — #716 was a forced synchronous
+> layout on the input path, not a runaway watcher. The method transfers, the
+> cause does not. Then **#731** / **#733** (drop-target and question-panel bugs
+> Dan hand-found).
+>
+> **Dan's judgement is the gate on ordering here:** if the laptop still stutters,
+> #740 is the daily-pain item and should go first. If the composer half was
+> enough, #719 is the bigger fish.
 >
 > ### Coverage note — read this before trusting the unit tests
 > Four jsdom tests in `FeedView.composer.test.tsx` **were deleted, not ported**.
