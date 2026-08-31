@@ -6,7 +6,7 @@
 // the defect this file exists for: a paste handler that is never attached, a
 // chip that is never rendered, or a submit that drops the attachments on the
 // floor — the same reason `FeedView.composer.test.tsx` renders the real panel
-// instead of testing `composerSize` in isolation.
+// instead of testing `composerBounds` in isolation.
 //
 // So this mounts the actual contribution and drives it through real events.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';

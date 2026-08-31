@@ -1,8 +1,8 @@
-// Feed view v1 (P2-E12-06, §5.10): the rendered, READ-ONLY view of a session,
+﻿// Feed view v1 (P2-E12-06, Â§5.10): the rendered, READ-ONLY view of a session,
 // built from transcript-derived blocks. Assistant prose renders as sanitized
 // markdown; tool calls are one-line collapsed rows (click to expand); thinking
 // is folded; sidechain (subagent) blocks indent behind a dashed border.
-// Guardrail (§5.10 Non-Goals): no input surface of any kind lives here.
+// Guardrail (Â§5.10 Non-Goals): no input surface of any kind lives here.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { blockVisible, FeedBlockDto, showsTimelineDot, upsertBlock, Verbosity } from '../lib/feed';
@@ -71,7 +71,7 @@ import type { TransportKind } from '../../../shared/transport';
 export type { FeedBlockDto } from '../lib/feed';
 
 function Block({ b }: { b: FeedBlockDto }): React.JSX.Element {
-  // Resolved, not switched (§5.23): this used to be a seven-branch ternary
+  // Resolved, not switched (Â§5.23): this used to be a seven-branch ternary
   // naming every renderer. A new block shape is now a contribution plus a
   // bootstrap line, and this file is not touched.
   //
@@ -88,7 +88,7 @@ function Block({ b }: { b: FeedBlockDto }): React.JSX.Element {
   return (
     <div
       data-feed-block={b.kind}
-      // how a jump finds this block's element — see `FeedFindSurface.jumpTo`
+      // how a jump finds this block's element â€” see `FeedFindSurface.jumpTo`
       {...{ [FEED_SEQ_ATTR]: String(b.seq) }}
       style={{
         display: 'flex',
@@ -113,7 +113,7 @@ function Block({ b }: { b: FeedBlockDto }): React.JSX.Element {
       {/* Timeline dot gutter (E10-06, extension reference). The GUTTER is
           unconditional and the DOT is not (#91): assistant prose gets the same
           6px of reserved column so the left edge stays flush with the boxed
-          blocks above it, but no marker — see `showsTimelineDot`. */}
+          blocks above it, but no marker â€” see `showsTimelineDot`. */}
       <span
         {...(dot ? { 'data-feed-dot': b.kind } : {})}
         aria-hidden
@@ -134,7 +134,7 @@ function Block({ b }: { b: FeedBlockDto }): React.JSX.Element {
           throws while BUILDING its node; it cannot catch the node THROWING
           WHEN REACT RENDERS IT, because React is the caller. Nothing else sits
           between a feed block and the renderer root, so without this a single
-          malformed transcript block — untrusted input from another process —
+          malformed transcript block â€” untrusted input from another process â€”
           blanks the whole window and takes every session's terminal with it
           (P6, fail-open). The boundary renders a gap instead, says which
           contribution failed, and retries it on the next update until it has
@@ -142,7 +142,7 @@ function Block({ b }: { b: FeedBlockDto }): React.JSX.Element {
 
           RETRY REACHES THE FEED: every built-in renderer's `render(b)` returns
           a fresh element, `resolveFeedBlock` runs in this component's render
-          body, and `Block` is not memoised — so a new `children` identity
+          body, and `Block` is not memoised â€” so a new `children` identity
           arrives on every feed re-render, which is what the boundary keys its
           retry on. The bound is what keeps that from spinning: a block that
           always throws costs three attempts, not one per streamed chunk.
@@ -160,8 +160,8 @@ function Block({ b }: { b: FeedBlockDto }): React.JSX.Element {
 }
 
 /**
- * What an empty Session view says (P2-E15-10, §5.26). It used to say one thing
- * — "No activity yet" — whether the session had never been prompted, was still
+ * What an empty Session view says (P2-E15-10, Â§5.26). It used to say one thing
+ * â€” "No activity yet" â€” whether the session had never been prompted, was still
  * being located, or had failed to bind at all. That is the primary working
  * surface staying silent about its own plumbing (AR-P1-8), so it now names
  * which of the three it is, and only the last one looks like a problem.
@@ -173,7 +173,7 @@ function EmptyState({
 }: {
   binding: BindingState;
   diag: BindingDiagnostics | null;
-  /** which transport hosts the session (#447) — the fail-open line must not
+  /** which transport hosts the session (#447) â€” the fail-open line must not
    *  send a Direct user to a Terminal tab that has no terminal in it */
   transport?: TransportKind;
 }): React.JSX.Element {
@@ -199,7 +199,7 @@ function EmptyState({
           // `-ink`, not the plain hue: tokens.css says in as many words that
           // the --status-* colours are tuned for DOTS AND RINGS and that text
           // needs its own per-theme value. This is 11px bold body copy, and
-          // the raw hue measures ~3.2:1 on daylight — below the 4.5:1 the
+          // the raw hue measures ~3.2:1 on daylight â€” below the 4.5:1 the
           // token drift test enforces for exactly this token.
           color: copy.problem ? 'var(--status-crashed-ink)' : 'var(--muted)',
           fontWeight: copy.problem ? 700 : 400,
@@ -211,7 +211,7 @@ function EmptyState({
       <div style={{ wordBreak: 'break-word' }}>{t(copy.detail, { path })}</div>
       {/* fail-open, said out loud: our binding failing never stops the CLI, and
           a user staring at an error needs to know where the session still is.
-          WHICH sentence that is depends on the transport — see `binding-copy` */}
+          WHICH sentence that is depends on the transport â€” see `binding-copy` */}
       {copy.fallback && <div style={{ marginBlockStart: 6 }}>{t(copy.fallback)}</div>}
     </div>
   );
@@ -227,31 +227,31 @@ export function FeedView(props: {
    * one of them leaves a screen-reader user with N identical entries in the
    * landmark list and no way to tell which session they are about to read.
    *
-   * Absent — or empty, which a workspace written before #294 can still hold —
+   * Absent â€” or empty, which a workspace written before #294 can still hold â€”
    * falls back to the bare name. An honest generic beats a landmark called
    * "undefined", and beats announcing a title that is not there.
    */
   title?: string;
   visible: boolean;
-  /** bumped when dockview reattached this panel's DOM (#555) — see
+  /** bumped when dockview reattached this panel's DOM (#555) â€” see
    *  `PanelContext.dockEpoch`, and the effect that reads it below */
   dockEpoch?: number;
-  /** current session status — drives the working banner and the handoff bar */
+  /** current session status â€” drives the working banner and the handoff bar */
   status?: string;
   /** an approval was answered moments ago and the status has not caught up
-   *  (P2 #125) — suppresses the handoff bar so clicking Allow never flashes
+   *  (P2 #125) â€” suppresses the handoff bar so clicking Allow never flashes
    *  "switchboard can't answer this" where the button just was */
   recentlyDecided?: boolean;
-  /** transcript binding state (P2-E15-10) — decides what an EMPTY feed says */
+  /** transcript binding state (P2-E15-10) â€” decides what an EMPTY feed says */
   binding?: BindingState;
   bindingDiag?: BindingDiagnostics | null;
-  /** the Feed never accepts input; this jumps to the Terminal tab (§5.10) */
+  /** the Feed never accepts input; this jumps to the Terminal tab (Â§5.10) */
   onJumpToTerminal?: () => void;
   /** composer options row data (E10-05) */
   autonomy?: string;
   model?: string;
   onCycleAutonomy?: () => void;
-  /** held permission (E10-04) — the bar renders just above the composer */
+  /** held permission (E10-04) â€” the bar renders just above the composer */
   approval?: {
     requestId: string;
     tool: string;
@@ -261,15 +261,15 @@ export function FeedView(props: {
   } | null;
   /** more holds waiting behind this one (review P0#4) */
   approvalQueued?: number;
-  /** a held request of this session's is on §5.8's grouped prompt instead
-   *  (P2-E9-11) — the question IS answerable, just not from here */
+  /** a held request of this session's is on Â§5.8's grouped prompt instead
+   *  (P2-E9-11) â€” the question IS answerable, just not from here */
   approvalBatched?: boolean;
-  /** which transport hosts this session — the handoff bar must not point at a
+  /** which transport hosts this session â€” the handoff bar must not point at a
    *  terminal that does not exist (P2 #153 follow-up) */
   transport?: TransportKind;
   /**
    * `updatedInput` is the `AskUserQuestion` answer (#563) and rides the same
-   * decision path everything else uses — a question is answered by allowing the
+   * decision path everything else uses â€” a question is answered by allowing the
    * tool call with the answers written into its input, which is the CLI's own
    * design and not a side channel we invented.
    */
@@ -278,7 +278,7 @@ export function FeedView(props: {
   const { t } = useTranslation();
   const [blocks, setBlocks] = React.useState<FeedBlockDto[]>([]);
   // /clear executes SILENTLY (empty local-command stdout, no assistant reply
-  // — verified vs claude 2.1.218), so without an explicit marker a cleared
+  // â€” verified vs claude 2.1.218), so without an explicit marker a cleared
   // conversation reads as "nothing happened" (Dan 2026-07-24)
   const [cleared, setCleared] = React.useState(false);
   const [verbosity, setVerbosity] = React.useState<Verbosity>(() => {
@@ -294,7 +294,7 @@ export function FeedView(props: {
   const scroller = React.useRef<HTMLDivElement | null>(null);
   // a session stuck in 'starting' usually means the CLI is showing a startup
   // TUI dialog only the Terminal can render (e.g. 2.1.x's resume-from-summary
-  // picker — Dan round 4: it was invisible from the Session tab and his
+  // picker â€” Dan round 4: it was invisible from the Session tab and his
   // composer Enter blindly confirmed it). Hooks aren't up yet, so 'starting'
   // that outlives a normal boot is the only signal we get.
   const [startingLong, setStartingLong] = React.useState(false);
@@ -311,14 +311,14 @@ export function FeedView(props: {
   // Memoised on the request ID, not on the input object, and the memo is
   // load-bearing rather than an optimisation: `parseAskUserQuestion` returns a
   // FRESH ARRAY every call, and the panel re-seeds its selections whenever that
-  // array's identity changes — so parsing inline would wipe a half-answered
+  // array's identity changes â€” so parsing inline would wipe a half-answered
   // panel on every unrelated re-render of this component.
   //
   // Keying on the id is sound because a held request is immutable: the id is
   // `stream:<sessionId>:<native>`, unique per request, and its input never
   // changes between arriving and being answered. (`approvalInput` is
   // deliberately not in the deps; eslint's exhaustive-deps plugin isn't
-  // installed in this repo, so there is nothing to silence — see App.tsx:473.)
+  // installed in this repo, so there is nothing to silence â€” see App.tsx:473.)
   const approvalId = props.approval?.requestId;
   const approvalTool = props.approval?.tool;
   const approvalInput = props.approval?.input;
@@ -327,7 +327,7 @@ export function FeedView(props: {
       approvalTool === ASK_USER_QUESTION_TOOL ? parseAskUserQuestion(approvalInput ?? {}) : null,
     [approvalId, approvalTool]
   );
-  // The CLI is waiting on something we are not allowed to answer for it — a
+  // The CLI is waiting on something we are not allowed to answer for it â€” a
   // decision it kept (P7), or one our hook path never saw. Rendered as a BAR
   // above the composer (#125), not the 10px header chip it used to be.
   const handoff = terminalHandoff({
@@ -336,16 +336,16 @@ export function FeedView(props: {
     // one expression: if these two ever disagree, the user gets neither
     // surface and is stranded with no affordance at all.
     //
-    // …OR the grouped prompt is showing it (P2-E9-11). The question the handoff
+    // â€¦OR the grouped prompt is showing it (P2-E9-11). The question the handoff
     // bar answers is "does the user have somewhere to answer this?", not "is
     // the bar below me drawing it": a batched request has a surface, it is just
     // one card up in the shell. Without this clause a session whose only held
     // request had been grouped would read "switchboard can't answer it, go to
-    // the Terminal" while its Allow button sat a few pixels away — #125's
+    // the Terminal" while its Allow button sat a few pixels away â€” #125's
     // defect, one surface over.
     hasApproval: !!(props.approval && props.onDecide) || !!props.approvalBatched,
     // `startingLong` is cleared by an effect, so the first render that sees a
-    // new status still has the old flag — without this, one frame can paint
+    // new status still has the old flag â€” without this, one frame can paint
     // the working banner and a "still starting" handoff together.
     startingLong: props.status === 'starting' && startingLong,
     recentlyDecided: !!props.recentlyDecided,
@@ -368,7 +368,7 @@ export function FeedView(props: {
       // upsert: the watcher re-emits a block when its OUT / duration lands
       setBlocks((prev) => upsertBlock(prev, p.block as FeedBlockDto));
     });
-    // a corrected mis-bind (or /clear) restarts the stream from seq 1 — drop
+    // a corrected mis-bind (or /clear) restarts the stream from seq 1 â€” drop
     // the stolen blocks or the shorter correct transcript leaves the old tail
     const offReset = window.switchboard.transcripts.onReset((p) => {
       if (p.sessionId !== props.sessionId) return;
@@ -386,31 +386,31 @@ export function FeedView(props: {
   }, [props.sessionId]);
 
   // Stay glued to the tail: on backlog load, on every streamed block, and
-  // when the card becomes visible again — unless the user scrolled up.
+  // when the card becomes visible again â€” unless the user scrolled up.
   // Direct scrollTop after a layout frame; scrollIntoView proved flaky for
   // restored sessions with big replayed histories (Dan 2026-07-23: opening
   // a restored card landed at the TOP).
   const autoPin = React.useRef(false); // our own scrolls must not unpin
   const content = React.useRef<HTMLDivElement | null>(null);
   // Where the user was reading. Dockview HIDES a background panel, and a hidden
-  // element's scrollTop is reset to 0 by the browser — so coming back to a
+  // element's scrollTop is reset to 0 by the browser â€” so coming back to a
   // session you had scrolled up in used to dump you at the very top, with
   // nothing to put you back (the tail-pin only ever knew how to reach the
   // BOTTOM). Dan, 2026-07-26: clicking an Events row scrolled the session to
-  // the top. Probed: read at 7014 → switch away → return at 0, and it stayed
+  // the top. Probed: read at 7014 â†’ switch away â†’ return at 0, and it stayed
   // there because an unpinned view was never restored.
   const lastTop = React.useRef(0);
   // set while a re-shown panel still owes the user their position back
   const owesRestore = React.useRef(false);
-  // the scroller had zero height last time we looked — i.e. it was hidden
+  // the scroller had zero height last time we looked â€” i.e. it was hidden
   const wasCollapsed = React.useRef(false);
   // When the user last actually TOUCHED the scroller. `pinned` used to be
   // derived from a raw measurement, which cannot tell "the user scrolled up"
   // apart from "something above the fold got taller". Dan, 2026-07-26: after
   // allowing a permission the feed sat short of the bottom with output cut
-  // off. Probed — the approval bar docks BELOW the scroller, so it shrinks the
+  // off. Probed â€” the approval bar docks BELOW the scroller, so it shrinks the
   // viewport by ~95px, and any scroll event sampled in that window reads as
-  // "95px from the bottom → they must have scrolled up" and unpins the tail
+  // "95px from the bottom â†’ they must have scrolled up" and unpins the tail
   // for good. Real Claude output reflows constantly (markdown, code, tool
   // results), so it only takes one unlucky sample. Only a real gesture may
   // change the pin now.
@@ -425,17 +425,17 @@ export function FeedView(props: {
    * `pinned` is a ref, so React cannot see it and nothing on screen ever said
    * whether the view was following the conversation or had been left behind.
    * MEASURED at the CI runner's geometry (1010x657 window, 288px feed, a
-   * 2,313px conversation): entering the #174 keyboard walk unpins the tail —
+   * 2,313px conversation): entering the #174 keyboard walk unpins the tail â€”
    * `onFeedKeyDown` marks a gesture and the focus scroll is then read as the
-   * user's own, which is the rule working as designed — and after that the
+   * user's own, which is the rule working as designed â€” and after that the
    * ONLY ways back are a scroll gesture that lands within 40px of the bottom
    * (mouse wheel, or End/PageDown with focus on the region itself). Inside the
    * walk there is no key that returns to the tail at all: `End` moves to the
    * last EXPANDER, which in a conversation whose tail is prose is nowhere near
    * the last block (measured: scrollTop stayed 0 of 2,201).
    *
-   * None of that is wrong — unpinning on a jump is deliberate, and `jumpTo`
-   * does it explicitly — but it left a state with no visible exit. This mirror
+   * None of that is wrong â€” unpinning on a jump is deliberate, and `jumpTo`
+   * does it explicitly â€” but it left a state with no visible exit. This mirror
    * of the ref is what lets one appear.
    */
   const [offTail, setOffTail] = React.useState(false);
@@ -444,7 +444,7 @@ export function FeedView(props: {
     if (!el) return;
     // Only when there is somewhere to go back TO. A conversation that fits its
     // pane IS at its tail, so a chip there would be a control that does
-    // nothing — and 40px is the same slack the pin rule itself uses, so the
+    // nothing â€” and 40px is the same slack the pin rule itself uses, so the
     // two can never disagree about whether the feed overflows.
     setOffTail(!pinned.current && el.scrollHeight > el.clientHeight + 40);
   }, []);
@@ -456,7 +456,7 @@ export function FeedView(props: {
     requestAnimationFrame(() => (autoPin.current = false));
   }, []);
   /**
-   * What the chip does: take the wheel back. Deliberately NOT `markGesture()` —
+   * What the chip does: take the wheel back. Deliberately NOT `markGesture()` â€”
    * a gesture window opened here would let the next layout scroll re-derive the
    * pin from raw distance, which is the very trap that strands the view.
    */
@@ -467,8 +467,8 @@ export function FeedView(props: {
     pin();
     setOffTail(false);
     // The control REMOVES ITSELF on success, so something has to catch the
-    // focus it was holding — otherwise a keyboard user lands on `<body>` and
-    // their next Tab starts from the top of the window (§5.32). The
+    // focus it was holding â€” otherwise a keyboard user lands on `<body>` and
+    // their next Tab starts from the top of the window (Â§5.32). The
     // conversation is where they came from and where the news is.
     // `preventScroll`, because focusing the scroller must not undo the scroll
     // this function just performed.
@@ -491,7 +491,7 @@ export function FeedView(props: {
     const id = requestAnimationFrame(pin);
     return () => cancelAnimationFrame(id);
   }, [blocks, props.visible, pin]);
-  // becoming visible again is when the position was lost — claim the debt and
+  // becoming visible again is when the position was lost â€” claim the debt and
   // pay it as soon as there's layout to pay it with
   React.useEffect(() => {
     if (!props.visible) return;
@@ -501,7 +501,7 @@ export function FeedView(props: {
   }, [props.visible, restore]);
   /**
    * Put the view back where this session belongs, from whatever just happened
-   * to it — the ONE rule, so the resize path and the dock-move path below
+   * to it â€” the ONE rule, so the resize path and the dock-move path below
    * cannot drift into two different answers about the same scroller (#555).
    */
   const reconcile = React.useCallback((): void => {
@@ -510,7 +510,7 @@ export function FeedView(props: {
     // COLLAPSE is the real signal that a position is about to be lost, not
     // props.visible: dockview hides a background panel by collapsing an
     // ANCESTOR, so our visible prop never changes and React never learns the
-    // panel went away — but the scroller's own height drops to 0 and comes
+    // panel went away â€” but the scroller's own height drops to 0 and comes
     // back, which the resize observer does see.
     if (s.clientHeight === 0) {
       wasCollapsed.current = true;
@@ -526,7 +526,7 @@ export function FeedView(props: {
     else if (owesRestore.current) restore();
     // Backstop for the case above that we CAN'T observe: dockview detaches a
     // background panel outright, and a detached element neither keeps its
-    // scrollTop nor reports a zero-height frame — it simply reappears at full
+    // scrollTop nor reports a zero-height frame â€” it simply reappears at full
     // height, already back at 0. A remembered position with the scroller
     // sitting at 0 means it was destroyed, not chosen: a user who genuinely
     // scrolls to the top records lastTop 0 through the scroll handler, so
@@ -540,9 +540,9 @@ export function FeedView(props: {
     syncOffTail();
   }, [pin, restore, syncOffTail]);
   // Self-healing pin (Dan round 5: cards you SWITCH to sat at the top after
-  // app start): a one-shot pin can land while the panel has no layout yet —
+  // app start): a one-shot pin can land while the panel has no layout yet â€”
   // dockview shows background panels a frame later, restore relayouts, and
-  // markdown reflows — so scrollHeight was 0 and the write was a no-op with
+  // markdown reflows â€” so scrollHeight was 0 and the write was a no-op with
   // nothing left to retry it. Observing the scroller AND its content re-pins
   // on ANY size change while the view is tail-pinned, and settles an
   // outstanding restore the same way.
@@ -562,7 +562,7 @@ export function FeedView(props: {
    * activating a group re-runs `openPanel`, which detaches this subtree and
    * appends it again, and a move between groups relocates it wholesale. The
    * browser drops the scrollTop of every scroll container on the way through.
-   * React never re-renders — the same elements come back — and NOTHING here
+   * React never re-renders â€” the same elements come back â€” and NOTHING here
    * hears about it: no scroll event fires, and the panel returns at exactly the
    * size it left, so the resize observer above never delivers and takes its own
    * detach backstop with it.
@@ -571,7 +571,7 @@ export function FeedView(props: {
    * 1491 -> 0, a `MutationObserver` on the document saw DETACHED/REATTACHED,
    * an `IntersectionObserver` on this element fired once at startup and never
    * again, and the resize observer never fired at all. `pinned` stayed true, so
-   * `offTail` stayed false and #442's way back never appeared either — the
+   * `offTail` stayed false and #442's way back never appeared either â€” the
    * conversation simply sat at its first message with nothing admitting it.
    *
    * So the card tells us, because the card is what dockview talks to. Twice, a
@@ -587,9 +587,9 @@ export function FeedView(props: {
     return () => cancelAnimationFrame(id);
   }, [props.dockEpoch, reconcile]);
 
-  // Keyboard path into the conversation (#174, §5.32 "keyboard-complete").
+  // Keyboard path into the conversation (#174, Â§5.32 "keyboard-complete").
   //
-  // The scroller is ONE tab stop — a labelled region — and the arrow keys move
+  // The scroller is ONE tab stop â€” a labelled region â€” and the arrow keys move
   // between the operable controls inside it: the expanders (`FeedExpander`) and,
   // since #477, the copy buttons on code. `FEED_STOP_SELECTOR` is that list, and
   // it lives in `feed-keys.ts` next to the keys so a renderer adding a control
@@ -614,7 +614,7 @@ export function FeedView(props: {
     else els[action.index]?.focus();
   }, [markGesture]);
 
-  // ── Session find (P2-E17-02, §5.31) ─────────────────────────────────────
+  // â”€â”€ Session find (P2-E17-02, Â§5.31) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   //
   // What the feed owes the find bar: take me to block `seq`, expanding
   // whatever the view was hiding. The SEARCH itself is main's (E17-01) and the
@@ -624,7 +624,7 @@ export function FeedView(props: {
   // context every block renderer reads: the term changes on every keystroke and
   // putting it there would re-render the whole conversation to repaint marks
   // the DOM pass writes anyway. Held as state rather than a ref because the
-  // layout effect below has to re-run when it changes — a new term over the
+  // layout effect below has to re-run when it changes â€” a new term over the
   // same landed block is the common case while typing.
   const [markQuery, setMarkQuery] = React.useState<FindQuery | null>(null);
   // read by `jumpTo`, which is called from the bar OUTSIDE React's commit and
@@ -633,13 +633,13 @@ export function FeedView(props: {
   blocksRef.current = blocks;
   const jumpTo = React.useCallback(
     (seq: number, query?: FindQuery): boolean => {
-      // The block is not in the view buffer — evicted, or not drained yet.
+      // The block is not in the view buffer â€” evicted, or not drained yet.
       // Refusing is the point: the caller renders the hit as snippet-only
       // rather than scrolling somewhere arbitrary and calling it the match.
       if (!blocksRef.current.some((b) => b.seq === seq)) return false;
       // same question, same object: React bails out of an identical state, so
       // stepping between hits of ONE search does not re-run the marking pass
-      // for the term half — only for the block it moved to
+      // for the term half â€” only for the block it moved to
       setMarkQuery((prev) => (sameFindQuery(prev, query ?? null) ? prev : (query ?? null)));
       setReveal((prev) => {
         const next = new Set(prev.revealed);
@@ -648,12 +648,12 @@ export function FeedView(props: {
       });
       // The tail-pin would fight us: an unattributed scroll more than 40px
       // from the bottom is read as "layout moved it" and yanked back (see
-      // onScroll). Both halves are needed — the gesture claims the scroll as
+      // onScroll). Both halves are needed â€” the gesture claims the scroll as
       // the user's, and unpinning stops the next streamed block dragging them
       // away from the hit they just asked for.
       markGesture();
       pinned.current = false;
-      // The SCROLL is not done here — see the layout effect below.
+      // The SCROLL is not done here â€” see the layout effect below.
       return true;
     },
     [markGesture],
@@ -665,9 +665,9 @@ export function FeedView(props: {
    * difference is not cosmetic: a verbosity-hidden block does not EXIST in the
    * DOM until the reveal commits, and an expanded one is taller than the one
    * we would have measured. `jumpTo` is called from two places with different
-   * scheduling — a keypress (React flushes synchronously) and the continuation
+   * scheduling â€” a keypress (React flushes synchronously) and the continuation
    * of an awaited search (normal priority, which React may split across
-   * frames) — so a one-frame guess is right in one of them and a silent no-op
+   * frames) â€” so a one-frame guess is right in one of them and a silent no-op
    * in the other, having already unpinned the tail. A layout effect runs after
    * commit in both, by construction, which is also what makes it testable.
    */
@@ -697,8 +697,8 @@ export function FeedView(props: {
     // The step case first: same question, marks already on the page, and the
     // only thing to do is move the current one. A full pass is a tree walk over
     // every rendered block, and Enter is a key somebody holds down.
-    // `moveCurrentMark` returns null when the landed block has no marks yet —
-    // it was hidden when the last pass ran — and that is the full pass's cue.
+    // `moveCurrentMark` returns null when the landed block has no marks yet â€”
+    // it was hidden when the last pass ran â€” and that is the full pass's cue.
     const current =
       (sameFindQuery(painted.current, markQuery) && moveCurrentMark(root, el)) ||
       markFeedMatches(root, markQuery, el);
@@ -711,7 +711,7 @@ export function FeedView(props: {
     // put the match on screen. A tool output can be four screens tall, and a
     // jump that lands on the top of it while the word is below the fold is the
     // bug this item was filed over, one step less bad. Measured after the first
-    // write, so it is the position the user will actually see — and moved by
+    // write, so it is the position the user will actually see â€” and moved by
     // the MINIMUM that brings the mark in, so the block's ring stays on screen
     // with it wherever that is possible.
     if (current) {
@@ -741,10 +741,10 @@ export function FeedView(props: {
     clearReveal();
   }, [props.sessionId, clearReveal]);
 
-  // `revealed` OVERRIDES the verbosity filter (§5.31: find searches what the
+  // `revealed` OVERRIDES the verbosity filter (Â§5.31: find searches what the
   // view is hiding, and jumping expands it). Without this clause, jumping to a
   // hit in a thinking block while the preset is `normal` would scroll to a
-  // block that is not in the list — the honest-looking version of doing
+  // block that is not in the list â€” the honest-looking version of doing
   // nothing at all.
   const visibleBlocks = blocks.filter((b) => reveal.revealed.has(b.seq) || blockVisible(b, verbosity));
   return (
@@ -799,7 +799,7 @@ export function FeedView(props: {
       </div>
       <div
         ref={scroller}
-        // The conversation as a landmark with a name (#174) — and as the single
+        // The conversation as a landmark with a name (#174) â€” and as the single
         // tab stop that gets a keyboard user into it. It is deliberately NOT
         // `role="log"`: an aria-live conversation would read every streamed
         // token aloud over whatever the user was doing.
@@ -830,16 +830,16 @@ export function FeedView(props: {
           // the tail and overwrite the position we're trying to give back
           if (!el || el.clientHeight === 0) return;
           if (autoPin.current) {
-            // Normally our own pin — not user intent, so ignore it. But
+            // Normally our own pin â€” not user intent, so ignore it. But
             // `autoPin` stays set until the next animation frame, and a
             // LAYOUT scroll landing in that same frame used to be swallowed
             // with it: the view was left stranded mid-history with output
             // below the fold and no further event to correct it (#112,
-            // measured — the stranded run saw exactly one scroll, with
+            // measured â€” the stranded run saw exactly one scroll, with
             // autoPin already true).
             //
             // Our pin always lands ON the tail, so a scroll arriving here
-            // that is nowhere near the tail is somebody else's. Correct it —
+            // that is nowhere near the tail is somebody else's. Correct it â€”
             // but only with no recent gesture behind it, so a user scrolling
             // up while a pin is in flight is never yanked back.
             const away = el.scrollHeight - el.scrollTop - el.clientHeight;
@@ -851,7 +851,7 @@ export function FeedView(props: {
           }
           // Nobody touched anything: this scroll came from LAYOUT (the approval
           // bar docking, the working banner, content reflowing). It must never
-          // change what the user wants — and if they were following the tail,
+          // change what the user wants â€” and if they were following the tail,
           // put them back on it rather than leaving output below the fold.
           if (Date.now() - lastGesture.current > GESTURE_MS) {
             if (pinned.current) pin();
@@ -898,15 +898,15 @@ export function FeedView(props: {
             />
           )}
           {/* the find bar's reveal set reaches the collapsible renderers from
-              here — see lib/feed-reveal for why it is a context and not props */}
+              here â€” see lib/feed-reveal for why it is a context and not props */}
           <FeedRevealProvider value={reveal}>
             {visibleBlocks.map((b, i) => (
               <React.Fragment key={b.seq}>
-                {/* A new prompt starts a new turn — rule it off (Dan #11), and
+                {/* A new prompt starts a new turn â€” rule it off (Dan #11), and
                     since #640 rule it off so the eye LANDS on it: scanning a
                     long session, the turn boundaries have to be findable
                     without reading. Everything it looks like is `.turn-divider`
-                    in tokens.css, deliberately — the ink it writes on the
+                    in tokens.css, deliberately â€” the ink it writes on the
                     feed's surface is a contrast promise in four themes, and the
                     drift test can only measure a promise the stylesheet holds.
                     `aria-hidden`: this is a landmark for the EYE. The prompt
@@ -926,12 +926,12 @@ export function FeedView(props: {
         </div>
       </div>
       {/* The way back to the tail (#442), and it is here for two reasons: it is
-          where the eye already is — the bottom of the conversation, right above
-          the composer — and it is the ONE place that makes the keyboard path a
+          where the eye already is â€” the bottom of the conversation, right above
+          the composer â€” and it is the ONE place that makes the keyboard path a
           single step. The conversation is one tab stop and the composer is the
           next; a control between them is reached with one Tab from the feed and
           one Shift+Tab from the composer. In the header strip it would have sat
-          behind three verbosity chips (§5.32).
+          behind three verbosity chips (Â§5.32).
           Only while there is somewhere to go: unpinned AND overflowing. */}
       {offTail && (
         <div
@@ -962,7 +962,7 @@ export function FeedView(props: {
           </button>
         </div>
       )}
-      {/* the working banner — LOUD by request (Dan, twice): full-width tinted
+      {/* the working banner â€” LOUD by request (Dan, twice): full-width tinted
           bar, bold LEFT-aligned label, staggered pulse dots to its right
           (Dan round 4: text left, dots right of the text, no ellipsis) */}
       {!props.approval && props.status === 'working' && (
@@ -998,7 +998,7 @@ export function FeedView(props: {
         </div>
       )}
       {/* A QUESTION takes the dock instead of the approval bar (#563). Same
-          place, same weight, different controls — because it is the same user
+          place, same weight, different controls â€” because it is the same user
           question ("what does this session want from me?") answered with a list
           instead of a verdict. `askQuestions` is null for every other tool AND
           for an AskUserQuestion payload we could not parse, and then this falls
@@ -1028,7 +1028,7 @@ export function FeedView(props: {
         // The saved draft is seeded ONCE, on mount (#485), so a Composer whose
         // card id changed under it would carry the old card's words onto the
         // new one at the first keystroke. Nothing calls `updateParameters` with
-        // a new `cardId` today — but `sessionId` DOES churn on resume, the two
+        // a new `cardId` today â€” but `sessionId` DOES churn on resume, the two
         // sit next to each other, and the next reader will not know which is
         // which. `key` makes the hazard structurally impossible for one word.
         key={props.cardId}
@@ -1040,16 +1040,30 @@ export function FeedView(props: {
         status={props.status}
         transport={props.transport}
         onCycleAutonomy={props.onCycleAutonomy}
+        // Everything ELSE docked in this column, as one value (#716 review).
+        // The composer's height cap is what the panel can spare, which is its
+        // own height less the feed's floor less every sibling docked around the
+        // conversation â€” and those siblings arrive WHILE YOU ARE TYPING: an
+        // approval bar, a question panel, the working banner, the jump-to-latest
+        // strip. None of them changes the composer's width or the panel's own
+        // height, so neither the ResizeObserver nor any other trigger notices.
+        //
+        // Until #716 this was free: the cap was recomputed on every keystroke,
+        // so the next character healed it. It is not free any more, and that is
+        // the one thing the fix genuinely took away â€” so the signal is passed
+        // in explicitly rather than re-derived. A string, not an object: it is
+        // an effect dependency, and a fresh object would re-measure every render.
+        dockedChrome={`${offTail}|${props.approval ? (askQuestions ? 'q' : 'a') : ''}|${handoff ? 'h' : ''}|${props.status ?? ''}`}
       />
     </div>
   );
 }
 
 /**
- * The CLI is waiting on a decision we may not answer for it (#125, P7 §6).
+ * The CLI is waiting on a decision we may not answer for it (#125, P7 Â§6).
  *
- * Shaped like `ApprovalBar` on purpose — same dock, same weight, same tinted
- * left-to-right band — because the two answer the same user question ("what is
+ * Shaped like `ApprovalBar` on purpose â€” same dock, same weight, same tinted
+ * left-to-right band â€” because the two answer the same user question ("what is
  * this session waiting for?") and only differ in who gets to answer it. The
  * previous version was a 10px chip in the header strip, which was invisible
  * next to a bar the user had been trained by every prior permission to look
@@ -1083,8 +1097,8 @@ function TerminalHandoffBar({
       }}
     >
       {/* `--text`, NOT the status hue or its `-ink` variant. tokens.css says the
-          --status-* hues are tuned for dots and rings, and on nordic — the
-          default theme — ink IS the hue, so ink on this hue-tinted background
+          --status-* hues are tuned for dots and rings, and on nordic â€” the
+          default theme â€” ink IS the hue, so ink on this hue-tinted background
           measures 3.89:1: worse than the 10px chip this replaced, which used
           --text. Colour carries the tone in the border and the tint; the words
           stay at 8:1. (The working banner below does the same thing.) */}
@@ -1114,7 +1128,7 @@ function TerminalHandoffBar({
 }
 
 /**
- * Inline approval bar (E10-04) — docked just above the composer (Dan's
+ * Inline approval bar (E10-04) â€” docked just above the composer (Dan's
  * 2026-07-22 feedback: it lives where the eyes already are, not at the top).
  */
 function ApprovalBar({
@@ -1187,14 +1201,14 @@ function ApprovalBar({
           }}
         >
           {/* shared with the grouped prompt (P2-E9-11): the two are placements
-              of ONE question (§5.16), and a user who reads the summary on one
+              of ONE question (Â§5.16), and a user who reads the summary on one
               and a different one on the other has been shown two things and
               told they are the same */}
           {argumentSummary(approval.input)}
         </span>
       </div>
       {/* The CLI's OWN prose for why it is asking (P2-E18-07, stream transport
-          only — a hook payload carries nothing like it). Renderable text we did
+          only â€” a hook payload carries nothing like it). Renderable text we did
           not have to write, which is P7 working in our favour.
           `--text`, NOT a hue token: this background is already tinted with
           `--status-needs-permission`, and on nordic the ink IS the hue, which
@@ -1243,7 +1257,7 @@ function ApprovalBar({
         </button>
         {/* NOT for a question (#563). This bar only ever sees an
             `AskUserQuestion` when its payload failed to parse and the panel
-            stood down — a rare fallback, but one where "Allow all (this
+            stood down â€” a rare fallback, but one where "Allow all (this
             session)" reads as "answer all its questions for me", which is not
             what it does and not something anything can do. It is already inert
             for questions on both allow-all paths; hiding it means the button
@@ -1262,7 +1276,7 @@ function ApprovalBar({
 }
 
 /**
- * An element's block-axis padding or border, in px — the parts of its height
+ * An element's block-axis padding or border, in px â€” the parts of its height
  * that are not rendered text.
  *
  * Logical longhands first (this codebase writes logical properties), physical
@@ -1279,7 +1293,7 @@ function blockEdge(cs: CSSStyleDeclaration, part: 'padding' | 'border'): number 
   const logical =
     px(cs.getPropertyValue(`${part}-block-start${w}`)) +
     px(cs.getPropertyValue(`${part}-block-end${w}`));
-  // `> 0`, not `!== ''`: jsdom ANSWERS the logical longhands, with "0" — an
+  // `> 0`, not `!== ''`: jsdom ANSWERS the logical longhands, with "0" â€” an
   // empty-string check would take that zero for a measurement and size a
   // different box in tests than in the app.
   if (logical > 0) return logical;
@@ -1291,20 +1305,20 @@ const MIN_FEED_PX = 60;
 
 /**
  * The tallest the composer's textarea may grow to without pushing anything off
- * the panel — see `ComposerMetrics.available` for why a line cap alone is not
+ * the panel â€” see `ComposerMetrics.available` for why a line cap alone is not
  * enough. Undefined when there is no layout to measure (a hidden panel), which
  * leaves the line cap in sole charge rather than guessing a small number.
  *
- * The chrome is `own.offsetHeight - row.offsetHeight` — the composer minus the
+ * The chrome is `own.offsetHeight - row.offsetHeight` â€” the composer minus the
  * box's own ROW, i.e. padding, the gap and the options row. The row, not the
  * box: the send button holds that row 30px tall however small the box gets, and
- * measuring against the box counted those 30px as chrome — the feed kept an
+ * measuring against the box counted those 30px as chrome â€” the feed kept an
  * extra half-line it was never owed and the box stopped that much early (caught
  * by the e2e's floor assertion, 2026-08-11).
  *
  * That subtraction is why this NO LONGER needs the box collapsed first, which
  * it did until #716. The row is `max(box, buttons)`, so a taller box adds the
- * same pixels to `own` and to `row` and cancels — the answer is the chrome
+ * same pixels to `own` and to `row` and cancels â€” the answer is the chrome
  * either way. Being independent of the box's current height is exactly what
  * lets the bounds be measured on a resize instead of on every keystroke.
  */
@@ -1314,8 +1328,8 @@ function roomForBox(own: HTMLElement | null, el: HTMLElement): number | undefine
   if (!own || !panel || panel.clientHeight === 0) return undefined;
   let taken = MIN_FEED_PX + (own.offsetHeight - row.offsetHeight);
   for (const sib of Array.from(panel.children)) {
-    // everything docked around the conversation — the verbosity strip, the
-    // working banner, an approval bar — keeps the height it asked for; only the
+    // everything docked around the conversation â€” the verbosity strip, the
+    // working banner, an approval bar â€” keeps the height it asked for; only the
     // scroller (`flex: 1`) is the one that yields
     if (sib === own || sib.hasAttribute('data-feed-region')) continue;
     taken += (sib as HTMLElement).offsetHeight;
@@ -1324,7 +1338,7 @@ function roomForBox(own: HTMLElement | null, el: HTMLElement): number | undefine
 }
 
 /**
- * Prompt composer (P2-E10-02, §5.10): an INPUT ROUTE to the real CLI — the
+ * Prompt composer (P2-E10-02, Â§5.10): an INPUT ROUTE to the real CLI â€” the
  * text is written to the session's PTY exactly as if typed in the terminal
  * (multiline goes as a bracketed paste so the TUI treats it as one prompt).
  */
@@ -1336,9 +1350,10 @@ function Composer({
   status,
   transport,
   onCycleAutonomy,
+  dockedChrome,
 }: {
   sessionId: string;
-  /** durable key for this card's saved draft (#485) — the live id churns */
+  /** durable key for this card's saved draft (#485) â€” the live id churns */
   cardId?: string;
   autonomy?: string;
   model?: string;
@@ -1346,6 +1361,14 @@ function Composer({
   /** P2-E10-09: only a typed-message transport can carry a pasted image */
   transport?: TransportKind;
   onCycleAutonomy?: () => void;
+  /**
+   * An opaque stamp of what else is docked in this panel (#716 review).
+   *
+   * Only its IDENTITY matters: when it changes, something around the
+   * conversation appeared or went away, and the room this box may grow into
+   * changed with it. See the call site for why nothing else can detect that.
+   */
+  dockedChrome?: string;
 }): React.JSX.Element {
   const { t } = useTranslation();
   // The draft OUTLIVES this component (#485). It is seeded from the workspace
@@ -1362,15 +1385,15 @@ function Composer({
     [cardId]
   );
   const box = React.useRef<HTMLTextAreaElement | null>(null);
-  /** the composer's own root — the auto-grow measures the panel through it */
+  /** the composer's own root â€” the auto-grow measures the panel through it */
   const root = React.useRef<HTMLDivElement | null>(null);
 
-  // Pasted images (P2-E10-09, §5.10). The clipboard RULES are in
+  // Pasted images (P2-E10-09, Â§5.10). The clipboard RULES are in
   // `lib/composer-attachments.ts`; this end only reacts to a paste event and
   // holds what came out of it.
   //
   // The chips OUTLIVE this component too (#546), by the same argument the text
-  // above rests on — an image-only prompt is a whole prompt, and losing it to a
+  // above rests on â€” an image-only prompt is a whole prompt, and losing it to a
   // view-tab switch is losing the lot. They are seeded from a module-level
   // stash rather than from the workspace blob, because their payload must not
   // reach disk; `composer-attachment-draft.ts` has the decision and its why.
@@ -1383,7 +1406,7 @@ function Composer({
   // The one case where the composer has something to say before the user has
   // done anything: a previous run's chips are recorded but their bytes are not
   // here, because they were never written to disk. Saying so is the whole point
-  // — the failure #546 names is that an image-only prompt vanished SILENTLY.
+  // â€” the failure #546 names is that an image-only prompt vanished SILENTLY.
   //
   // IN AN EFFECT, NOT IN THE `useState` INITIALIZER, and that is an
   // accessibility requirement rather than a preference: the notice lives in an
@@ -1416,15 +1439,15 @@ function Composer({
   // composer is otherwise deliberately transport-ignorant (`lib/composer.ts`),
   // and this is the one thing it genuinely cannot discover by trying: the
   // try-then-fall-back shape exists because both routes deliver the same
-  // thing, which stops being true here. Undefined — a session whose transport
-  // we have not been told — is treated as capable, because the send path
+  // thing, which stops being true here. Undefined â€” a session whose transport
+  // we have not been told â€” is treated as capable, because the send path
   // reports a refusal honestly and guessing "no" would break the default.
   const canAttach = transport !== 'pty';
 
   /**
    * Ctrl+V.
    *
-   * A clipboard with NO files is not our business at all — we never call
+   * A clipboard with NO files is not our business at all â€” we never call
    * `preventDefault`, never touch the draft, and the browser pastes text
    * exactly as it always did. That is the "plain text is completely
    * unaffected" clause, and it is the first branch on purpose.
@@ -1439,7 +1462,7 @@ function Composer({
    *
    * The reference's paste handler and drop handler both end in a single
    * `onAddFiles(FileList)`, and so do ours: everything after "here are some
-   * files" — the classification, the cap, the message — must not be able to
+   * files" â€” the classification, the cap, the message â€” must not be able to
    * differ between the two routes, because a user who is told a `.md` is
    * unsupported when pasted and fine when dropped has found a bug rather than a
    * feature.
@@ -1467,7 +1490,7 @@ function Composer({
     preRejected: AttachmentRejection | null = null
   ): void => {
     // A FOLDER is reported before the transport is: "files can only be sent in
-    // Direct mode — use the Terminal tab instead" is nonsense advice about a
+    // Direct mode â€” use the Terminal tab instead" is nonsense advice about a
     // folder, which cannot be attached by any session in any mode.
     if (preRejected === 'directory' && files.length === 0) {
       setAttachNotice(attachMessage('directory'));
@@ -1480,7 +1503,7 @@ function Composer({
     if (files.length === 0) {
       // A transfer that yielded NOTHING still has to say something. Some drag
       // sources (Outlook, archive tools, virtual-file providers) advertise
-      // `Files` and then hand over items whose `getAsFile()` is null — and
+      // `Files` and then hand over items whose `getAsFile()` is null â€” and
       // "nothing appeared and nothing was said" is the #163 failure. Note this
       // branch never clears an existing notice with `null`: a route that did
       // nothing has no business erasing the explanation of the last one.
@@ -1493,8 +1516,8 @@ function Composer({
         // The cap is re-applied inside the functional update, not just from the
         // `attachments.length` read above: two transfers in flight at once both
         // measured the same "before", and the state is the only thing that
-        // knows what actually landed. An overflow here is silent — the notice
-        // was computed against a stale count — which is acceptable only because
+        // knows what actually landed. An overflow here is silent â€” the notice
+        // was computed against a stale count â€” which is acceptable only because
         // reaching it needs two transfers racing into the same full draft.
         if (outcome.attachments.length > 0)
           setAttachments((prev) => [...prev, ...outcome.attachments].slice(0, MAX_ATTACHMENTS));
@@ -1505,7 +1528,7 @@ function Composer({
         // as being unable to: a `File`-like from an exotic drag source with no
         // `name` or `type` would throw inside the classifier. A documented
         // invariant is not an enforced one, and "our breakage never blocks a
-        // session" is a hard constraint (PHILOSOPHY §3).
+        // session" is a hard constraint (PHILOSOPHY Â§3).
         setAttachNotice(attachMessage('unreadable'));
       }
     })();
@@ -1513,7 +1536,7 @@ function Composer({
 
   const onPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>): void => {
     const files = filesFrom(e.clipboardData);
-    if (files.length === 0) return; // plain text — untouched, as if we did not exist
+    if (files.length === 0) return; // plain text â€” untouched, as if we did not exist
     // Nothing to insert, so suppress the default paste (which would otherwise
     // drop a file NAME into the box on some platforms). BEFORE the transport
     // check, deliberately: a Terminal-mode session cannot take the picture, but
@@ -1531,7 +1554,7 @@ function Composer({
    * the cursor moves from the composer's padding onto the textarea inside it. A
    * counter is the standard fix and the only one that survives a nested layout.
    *
-   * THE COMPOSER SWALLOWS THE DROP — `stopPropagation`, exactly as the
+   * THE COMPOSER SWALLOWS THE DROP â€” `stopPropagation`, exactly as the
    * reference's handler does. That matters here in a way it does not there,
    * because `App.tsx` has a WINDOW-level drop listener that turns a dropped
    * FOLDER into a new session (E3-04). Without the stop, dropping a `.md` on
@@ -1552,8 +1575,8 @@ function Composer({
    * Every `dragenter` is supposed to be matched by a `dragleave` or a `drop`,
    * and if that ever fails to hold the overlay stays up over a composer the
    * user is trying to type into. `dragend` fires on the source when a drag
-   * finishes ANY way — cancelled with Esc, dropped on another window, abandoned
-   * — and a window-level `drop` catches the case where the pointer left us and
+   * finishes ANY way â€” cancelled with Esc, dropped on another window, abandoned
+   * â€” and a window-level `drop` catches the case where the pointer left us and
    * landed somewhere else. Both simply zero the counter, so a stuck overlay
    * cannot outlive the drag that caused it.
    */
@@ -1582,12 +1605,12 @@ function Composer({
   };
 
   /**
-   * NOT guarded on `hasFiles`, deliberately — unlike its enter twin.
+   * NOT guarded on `hasFiles`, deliberately â€” unlike its enter twin.
    *
    * The counter only balances if enter and leave agree about every event, and
    * they read the same `dataTransfer.types` at two different moments in a drag.
    * A source that advertises `Files` on the way in and not on the way out would
-   * increment and never decrement. `Math.max(0, …)` already floors it and only
+   * increment and never decrement. `Math.max(0, â€¦)` already floors it and only
    * one drag can be in flight, so an unconditional decrement is strictly safer
    * than a symmetric guard.
    */
@@ -1611,8 +1634,8 @@ function Composer({
     setAttachNotice(null);
   };
 
-  // Slash-command autocomplete (E10-07, §5.10): typing '/' as the FIRST
-  // character pops the list — CLI builtins + the project's/user's own
+  // Slash-command autocomplete (E10-07, Â§5.10): typing '/' as the FIRST
+  // character pops the list â€” CLI builtins + the project's/user's own
   // commands and skills. Selecting only INSERTS text; submission stays a
   // plain PTY write and the real CLI executes the command.
   const [caret, setCaret] = React.useState(0);
@@ -1635,7 +1658,7 @@ function Composer({
     void window.switchboard.sessions.slashCommands(sessionId).then((list) => {
       // #650: the brand in `commands` is `.filter`ed by the popup on the next
       // keystroke. `[]` and not `null`: both draw an empty popup, but they are
-      // different facts — `null` is "not fetched yet" (what the branch above
+      // different facts â€” `null` is "not fetched yet" (what the branch above
       // sets when the popup closes) and `[]` is "asked, and there are none".
       // A refused read did finish asking, so `[]` is the honest one.
       if (!cancelled) setCommands(answered(list) ?? []);
@@ -1657,13 +1680,13 @@ function Composer({
   // Placing the caret after an insert has to wait for React to COMMIT the new
   // draft: the textarea is controlled, so its DOM value is written during the
   // commit and a caret moved before that is simply overwritten. A layout effect
-  // is exactly that moment — the same commit, after the DOM mutation.
+  // is exactly that moment â€” the same commit, after the DOM mutation.
   //
   // This used to be a requestAnimationFrame, which is a whole frame LATER and is
   // throttled hard when the window is occluded or the machine is loaded (CI).
   // A late caret write lands after the user has moved on: it collapses a
   // selection they just made and re-anchors typing into the middle of the old
-  // draft. Measured while chasing #145 — delivering that stale write by hand,
+  // draft. Measured while chasing #145 â€” delivering that stale write by hand,
   // between a select-all and the typing, left the box reading "/compact /he"
   // with an empty popup, which is exactly what CI reported. Whether CI's own
   // failure arrived by this route is NOT proven; that it can is enough.
@@ -1686,21 +1709,21 @@ function Composer({
     setPendingCaret({ pos: name.length + 2 }); // after "/name "
   };
 
-  // Auto-grow (P2-E10-08, §5.10): the box is as tall as what the browser
-  // ACTUALLY RENDERED — soft wrapping included — capped at COMPOSER_MAX_LINES
+  // Auto-grow (P2-E10-08, Â§5.10): the box is as tall as what the browser
+  // ACTUALLY RENDERED â€” soft wrapping included â€” capped at COMPOSER_MAX_LINES
   // and scrolling inside itself past that.
   //
   // THE GROWING IS CSS's (`field-sizing: content`, `.composer-box` in
   // tokens.css). It used to be a layout effect keyed on `draft` that released
   // the height, read `scrollHeight` back, wrote a fitted height and restored
-  // `scrollTop` — on every keystroke. A write→read pair forces a SYNCHRONOUS
+  // `scrollTop` â€” on every keystroke. A writeâ†’read pair forces a SYNCHRONOUS
   // layout and a forced layout is DOCUMENT-wide, so the cost of typing one
   // character was the size of the conversation scrolled above the box: measured
   // at 0.27ms on an empty feed and 36.5ms at 400 turns. That is #716, and the
   // reason it was severe on a laptop and mild on the dev desktop is simply that
   // the same layout costs more on a slower machine.
   //
-  // What is left here is where the box must STOP — which typing cannot change.
+  // What is left here is where the box must STOP â€” which typing cannot change.
   // So it is measured when the panel resizes and when the attachment strip
   // changes height, and NEVER from `draft`. That is the whole fix: the
   // keystroke path now touches no layout at all.
@@ -1717,10 +1740,14 @@ function Composer({
       borderBox: cs.getPropertyValue('box-sizing') === 'border-box',
       available: roomForBox(root.current, el),
     });
-    // Returning `prev` unchanged when nothing moved is the LOOP GUARD, and it
-    // is load-bearing: writing `max-block-size` can resize the box, which
-    // resizes the composer's root, which is what the observer below watches.
-    // Equal bounds must therefore end the chain rather than re-render.
+    // Returning `prev` when nothing moved keeps an unchanged measurement from
+    // re-rendering. It is NOT what stops the writeâ†’observeâ†’measure cycle â€”
+    // that is the observer's own early-return below, which swallows a tick
+    // where only the box's HEIGHT moved, and height is all our write can move.
+    // Worth being exact about, because the dedupe catches fixed points and not
+    // 2-cycles: if the bounds could ever alternate Aâ†’Bâ†’A, `prev === next` would
+    // be false every time and this would spin. They cannot today, because
+    // nothing `remeasure` reads depends on what it writes (see `roomForBox`).
     setBounds((prev) =>
       prev && prev.minBlockSize === next.minBlockSize && prev.maxBlockSize === next.maxBlockSize
         ? prev
@@ -1728,7 +1755,7 @@ function Composer({
     );
   }, []);
   // A LAYOUT effect, so the bounds are in place in the same commit that first
-  // paints the box — and re-run when the strip changes, for the reason
+  // paints the box â€” and re-run when the strip changes, for the reason
   // `attachments` was in the old measurement's deps: the strip lives inside the
   // composer's own root, so attaching or removing an image changes how much
   // room `roomForBox` finds. Without it a paste made with a twelve-line draft
@@ -1736,16 +1763,21 @@ function Composer({
   // #406's overhang arriving through a new door. `attachNotice` is a line of
   // text in that same strip and moves it the same way.
   //
+  // `dockedChrome` is the same argument one level UP â€” an approval bar or the
+  // working banner docking mid-prompt changes the room just as surely, and
+  // nothing else can see it happen. The old code got that for free by
+  // re-measuring on every keystroke; this is the explicit replacement.
+  //
   // `draft` is deliberately NOT a dependency. That is the fix, not an omission.
-  React.useLayoutEffect(remeasure, [attachments, attachNotice, remeasure]);
-  // A SHORTER panel has less to spare — dragging a splitter or resizing the
+  React.useLayoutEffect(remeasure, [attachments, attachNotice, dockedChrome, remeasure]);
+  // A SHORTER panel has less to spare â€” dragging a splitter or resizing the
   // window re-renders nothing, so without this a long draft keeps a cap its
   // panel no longer has and overhangs its own options row.
   //
   // The box's own width is still watched even though rewrapping is now CSS's
   // problem: a width change is the cheapest signal that the panel's chrome has
   // been re-laid-out, and the guard below means an unchanged panel costs
-  // nothing. Neither trigger can loop — see the dedupe in `remeasure`.
+  // nothing. Neither trigger can loop â€” see the dedupe in `remeasure`.
   React.useEffect(() => {
     const el = box.current;
     const panel = root.current?.parentElement;
@@ -1772,7 +1804,7 @@ function Composer({
   const sendable = draft.trim().length > 0 || attachments.length > 0;
 
   /**
-   * The prompt went — empty the box AND forget the saved copy, at once.
+   * The prompt went â€” empty the box AND forget the saved copy, at once.
    *
    * Not `setDraft('')`: that would leave the deletion on `uiSetSoon`'s timer,
    * and a quit or a remount inside that window would restore a prompt the user
@@ -1786,28 +1818,28 @@ function Composer({
 
   const submit = (): void => {
     const text = draft.replace(/\r\n/g, '\n').trimEnd();
-    // `/mcp` IS OURS TO ANSWER (§5.17, #632). Its CLI form opens an interactive
+    // `/mcp` IS OURS TO ANSWER (Â§5.17, #632). Its CLI form opens an interactive
     // picker in the TUI, and a Direct-mode session has no terminal for that
-    // picker to appear in — so sending it is a dead end that eats the command
+    // picker to appear in â€” so sending it is a dead end that eats the command
     // and leaves the session sitting there. Open the manager instead.
     //
     // FIRST, because the guards below are both wrong for it: the empty-text
     // guard does not apply (`/mcp` is not empty) and the attachment branch
     // would have already sent it. The draft is cleared because the command WAS
-    // handled — leaving it in the box invites a second press, and the user's
+    // handled â€” leaving it in the box invites a second press, and the user's
     // line did not fail.
     //
     // `/model` is the second one (#721), now that there is a control channel to
     // ask the CLI what it has. `lib/slash-intercept`'s `ROUTES` is the list, and
-    // it is deliberately strict — bare commands only, because swallowing a
+    // it is deliberately strict â€” bare commands only, because swallowing a
     // command addressed to the CLI is worse than the dead end it replaces.
     //
     // ...AND ONLY ON A TRANSPORT WITH NO TERMINAL. A `pty` session HAS one, so
-    // the CLI's own picker works there — and it can do things this pane
+    // the CLI's own picker works there â€” and it can do things this pane
     // deliberately cannot, including approving a project server, which has no
     // CLI verb at all. Intercepting it everywhere would take an interaction the
     // CLI kept for itself in the one mode where it was reachable, which is the
-    // half of P7 the §6 amendment did NOT relax. Same test `canAttach` uses a
+    // half of P7 the Â§6 amendment did NOT relax. Same test `canAttach` uses a
     // few lines down, for the same reason: the transport decides.
     const intercept = transport !== 'pty' ? interceptSlash(text) : { kind: 'send' as const };
     if (intercept.kind === 'open-mcp') {
@@ -1816,12 +1848,12 @@ function Composer({
       box.current?.focus();
       return;
     }
-    // `/model` (#721). Carries the LIVE ID, unlike `/mcp` — the picker acts on
+    // `/model` (#721). Carries the LIVE ID, unlike `/mcp` â€” the picker acts on
     // the session the command was typed in, and with popouts and split grids
     // that is not reliably the focused card.
     if (intercept.kind === 'open-model') {
       // RETURNS EITHER WAY. Falling through on a missing id would send `/model`
-      // to the CLI — straight back into the dead end this replaces — so the
+      // to the CLI â€” straight back into the dead end this replaces â€” so the
       // failure direction is "nothing happens", not "the old bug happens".
       // Unreachable today: `sessionId` is a required non-empty prop.
       if (sessionId) sessionStore.notifyModelOpenRequested(sessionId);
@@ -1830,7 +1862,7 @@ function Composer({
       return;
     }
 
-    // An attachment with nothing typed IS a prompt (§5.10's composer is an
+    // An attachment with nothing typed IS a prompt (Â§5.10's composer is an
     // input route, and "look at this" is a thing people send), so the guard is
     // on BOTH being empty rather than on the text alone.
     if (!text && attachments.length === 0) return;
@@ -1838,8 +1870,8 @@ function Composer({
     if (attachments.length === 0) {
       // The path this composer has always had, byte for byte: transport-
       // agnostic (P2-E18-08a), main answers whether it took it, and this falls
-      // back to the PTY dance if not. A text prompt cannot be refused — one of
-      // the two routes always accepts it — so the box clears immediately and
+      // back to the PTY dance if not. A text prompt cannot be refused â€” one of
+      // the two routes always accepts it â€” so the box clears immediately and
       // the send stays as snappy as it was.
       void submitPrompt(sessionId, text);
       clearComposerDraft();
@@ -1853,7 +1885,7 @@ function Composer({
     // bitmap or a document block), so the draft is cleared only once we know it
     // went.
     // The exact set being sent, captured now. Reading a dropped file takes real
-    // time — a 4 MB log is not a clipboard bitmap — so a transfer can land
+    // time â€” a 4 MB log is not a clipboard bitmap â€” so a transfer can land
     // BETWEEN this submit and its acknowledgement. Clearing the strip wholesale
     // would eat that new attachment; removing only what we sent leaves it for
     // the next prompt, which is where the user put it.
@@ -1897,7 +1929,7 @@ function Composer({
       {/* The drop hint. `pointer-events:none` is load-bearing: an overlay that
           takes the pointer would sit between the cursor and the composer and
           fire `dragleave` the instant it appeared, which flickers the state and
-          then swallows the drop. Purely additive — it is absolutely positioned
+          then swallows the drop. Purely additive â€” it is absolutely positioned
           over the composer, so it costs the height clamp nothing and a session
           nobody is dragging onto is byte-for-byte the composer that shipped. */}
       {dragging && (
@@ -2007,16 +2039,16 @@ function Composer({
         // Leaving the box is the moment waiting stops being an economy (#485):
         // clicking anywhere else in the app, or alt-tabbing away, sends the
         // draft immediately instead of letting it ride the debounce. It does
-        // NOT cover the window's ✕ — that is OS chrome and fires no DOM blur —
+        // NOT cover the window's âœ• â€” that is OS chrome and fires no DOM blur â€”
         // so the residual hole is "type and quit within 400ms without leaving
         // the box", which is the tolerance `composer-draft.ts` argues for.
         onBlur={uiFlush}
         onKeyDown={(e) => {
-          // confirming an IME candidate (CJK input) also fires Enter — never
+          // confirming an IME candidate (CJK input) also fires Enter â€” never
           // submit a half-composed draft (keyCode 229 covers WebKit quirks)
           if (e.nativeEvent.isComposing || e.keyCode === 229) return;
           // fetch still in flight for a wanted popup: swallow Enter/Tab so a
-          // fast "/⏎" can't submit a bare slash before the list arrives
+          // fast "/âŽ" can't submit a bare slash before the list arrives
           if (popupWanted && commands === null && (e.key === 'Enter' || e.key === 'Tab')) {
             e.preventDefault();
             return;
@@ -2033,7 +2065,7 @@ function Composer({
               // NOTHING LEFT TO COMPLETE -> Enter RUNS it (#163 hand-test).
               // Typing `/usage` in full and pressing Enter used to "complete"
               // it to `/usage ` and send nothing, which is indistinguishable
-              // from the app ignoring you — and is why Dan found every slash
+              // from the app ignoring you â€” and is why Dan found every slash
               // command dead in Direct mode. Tab still completes, so the
               // trailing space is still one keystroke away when a command
               // takes arguments.
@@ -2056,13 +2088,16 @@ function Composer({
           }
         }}
         placeholder={t('feedView.composerPlaceholder')}
-        // `field-sizing: content` and the unconditional `overflow-y` live here
-        // rather than in the style prop below (#716). A CSS class, because React
-        // will not emit a style property it does not recognise, and
-        // `field-sizing` is newer than its inventory.
+        // `field-sizing: content` and the unconditional `overflow-y` live in
+        // the stylesheet rather than in the style prop below (#716). Not because
+        // React would refuse to emit them â€” it assigns straight onto
+        // `CSSStyleDeclaration`, so the inline route would work â€” but because
+        // this is a fixed property of what a composer IS, and putting it in the
+        // per-render style object would re-declare it on every keystroke and
+        // split the reasoning across two files.
         className="composer-box"
         // ONE row, always. `rows` counts hard newlines and cannot see soft
-        // wrapping — that was the whole of #406 — and under `field-sizing` it
+        // wrapping â€” that was the whole of #406 â€” and under `field-sizing` it
         // does not size the box at all. It stays at 1 as the honest starting
         // value for the very first paint.
         rows={1}
@@ -2081,7 +2116,7 @@ function Composer({
           // Where CSS's growing stops. Absent until the first measurement, so
           // the first paint is `rows={1}` and never a guessed pixel count.
           // `maxBlockSize` stays absent when no limit is knowable (no
-          // resolvable line-height AND no measurable panel) — an unbounded box
+          // resolvable line-height AND no measurable panel) â€” an unbounded box
           // is recoverable, a wrongly-short one hides what you typed.
           minBlockSize: bounds ? `${bounds.minBlockSize}px` : undefined,
           maxBlockSize:
@@ -2098,7 +2133,7 @@ function Composer({
             // the same tinted-fill shape as the status pill (#221): the glyph
             // is TEXT on a 14% wash of its own hue, which measured 2.84:1 on
             // daylight and 3.37:1 on nordic. The ink clears 5.21:1 everywhere.
-            // The border keeps the hue — an edge is not a word (#246).
+            // The border keeps the hue â€” an edge is not a word (#246).
             background: 'color-mix(in srgb, var(--status-crashed) 14%, var(--panel))',
             color: 'var(--status-crashed-ink)',
             border: '1px solid var(--status-crashed)',
@@ -2136,7 +2171,7 @@ function Composer({
       {/* options row (E10-05): the extension-style affordances under the box */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         {/* This session's autonomy (E10-05). The tooltip is the shared one
-            (#534) — it says what the MODE does, then what THIS control does
+            (#534) â€” it says what the MODE does, then what THIS control does
             with it, which is the question a chip that applies on next resume
             has to answer. `data-testid` so the e2e that cycles it is not
             pinned to the copy. */}

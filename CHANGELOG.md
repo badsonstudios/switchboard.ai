@@ -82,12 +82,13 @@ on the floor, and say so in your PR.
   and then appeared in bursts, and it got worse the longer the session had been
   running. Every character was making the app re-measure the entire conversation
   above the box; the box now grows as you type without measuring anything. On a
-  400-message session, the delay between pressing a key and seeing it halved,
-  and the stalls that caused the bursting are gone. Nothing about the box changes
-  for you — it still grows as you type, still stops at twelve lines, still gives
-  the conversation its room back when you delete. **On a slow machine a long
-  conversation can still feel heavy to type in**; the rest of that is a separate
-  piece of work on how the conversation itself is drawn.
+  400-message session the delay between pressing a key and seeing it halved, and
+  typing there now costs what typing in a brand-new session costs. Nothing about
+  the box changes for you — it still grows as you type, still stops at twelve
+  lines, still gives the conversation its room back when you delete.
+  **On a slower machine a long conversation can still stutter as you type**:
+  measured there, this change on its own does not help yet. The rest of it is a
+  separate piece of work on how the conversation itself is drawn.
 
 - **Auto-trust sometimes did nothing at all, quietly.** Claude Code keeps its
   per-folder settings under the folder's path, and on Windows the same folder

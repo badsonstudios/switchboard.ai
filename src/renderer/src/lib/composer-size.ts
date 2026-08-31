@@ -74,10 +74,14 @@ export interface ComposerBounds {
   /** `min-block-size` — one rendered line */
   minBlockSize: number;
   /**
-   * `max-block-size`, or `Infinity` when neither limit is knowable (no
-   * resolvable line-height AND no measurable panel). The caller writes no
-   * `max-block-size` at all for that, rather than inventing a number: an
-   * unbounded box is recoverable, a wrongly-short one hides what you typed.
+   * `max-block-size`, or `Infinity` when neither limit is knowable.
+   *
+   * DEFENCE, NOT A LIVE PATH: it needs a line-height of 0 AND no measurable
+   * panel, and `resolveLineHeight` never returns 0 — every branch falls through
+   * to `font * COMPOSER_LINE_RATIO`. So the app cannot reach it today; a caller
+   * passing hand-built metrics can. The caller writes no `max-block-size` at
+   * all rather than inventing a number, because an unbounded box is recoverable
+   * and a wrongly-short one hides what you typed.
    */
   maxBlockSize: number;
 }
