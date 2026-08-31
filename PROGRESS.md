@@ -108,10 +108,35 @@
 > ### What actually ships
 > * `.composer-box` (tokens.css) — `field-sizing: content` grows the box in CSS.
 >   `composerSize` → `composerBounds`: JS now computes only `min/max-block-size`,
->   re-measured on panel resize and on attachment-strip changes, **never on
->   `draft`**. The reset-then-read, the `scrollTop` save/restore and the
->   `overflowY` toggling are gone; the "typing on line 20 scrolls you to line 1"
->   hazard is now impossible by construction rather than guarded against.
+>   re-measured on panel resize, on attachment-strip changes and on
+>   `dockedChrome`, **never on `draft`**. The reset-then-read, the `scrollTop`
+>   save/restore and the `overflowY` toggling are gone; the "typing on line 20
+>   scrolls you to line 1" hazard is now impossible by construction.
+>
+> ### ⚠️ THE REVIEW ROUND FOUND A REGRESSION I HAD SHIPPED — the lesson to keep
+>
+> Removing the per-keystroke measurement quietly removed a **self-heal** nobody
+> had written down. The cap is the room the panel can spare, and things dock into
+> that column WHILE YOU TYPE — approval bar, question panel, working banner,
+> jump-to-latest strip. None changes the box's width or the panel's height, so
+> the ResizeObserver never fires. The cap went stale, CSS grew the box past the
+> room available, and the feed absorbed it below `MIN_FEED_PX` — which this
+> arithmetic enforces and nothing else does. Before #716 the next character fixed
+> it. Fix: a `dockedChrome` stamp passed into `Composer`, in the effect deps.
+>
+> **Then mutation-checking found two of my own tests could not fail:**
+> * the ResizeObserver-guard test passed against a **deleted** guard — jsdom
+>   measures everything as 0, so the observer bails on `width === 0` before ever
+>   reaching the guard. It needed a stubbed width to mean anything.
+> * **nothing asserted `field-sizing` is in the stylesheet at all.** The class
+>   name was pinned on the element, but jsdom never loads `tokens.css`, so
+>   deleting the rule left every test green with auto-grow gone. Now read from
+>   the file, the way `tokens.drift.test.ts` does.
+>
+> **Standing lesson: mutate the source and watch the test go red, or the test is
+> decoration.** All three now fail against their own mutation. The stale-cap fix
+> itself passed every unit test until `feed.spec.ts` got a case that docks a real
+> permission handoff over a filled composer at a short window.
 >
 > ## 🔜 NEXT after this: **#740** (the feed half), then **#719** (CPU pegging).
 >
