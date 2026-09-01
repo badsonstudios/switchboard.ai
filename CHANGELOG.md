@@ -90,6 +90,19 @@ on the floor, and say so in your PR.
   measured there, this change on its own does not help yet. The rest of it is a
   separate piece of work on how the conversation itself is drawn.
 
+- **switchboard used more and more of your processor the longer it stayed
+  open.** Two separate causes, both in the part of the app that watches for new
+  conversation files. It checked the folder four times a second for as long as
+  any session anywhere was writing — which during a reply is constantly, so in
+  practice it never stopped — and each of those checks re-read the opening of
+  every conversation that had appeared since you launched the app, however many
+  times it had already read them. Neither cost was visible, and both grew with
+  how long the app had been running: after a day up, on a machine with several
+  sessions, that is a lot of disk and processor spent learning nothing. It now
+  checks on a backing-off schedule that actually backs off, and remembers what
+  it read until the file changes. Sessions still appear as quickly as before;
+  a new conversation file still gets noticed the moment it lands.
+
 - **Auto-trust sometimes did nothing at all, quietly.** Claude Code keeps its
   per-folder settings under the folder's path, and on Windows the same folder
   can be written two ways (`c:\Projects\Foo` and `C:\Projects\Foo`). switchboard

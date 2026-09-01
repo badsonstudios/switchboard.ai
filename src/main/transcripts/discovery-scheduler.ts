@@ -120,9 +120,6 @@ interface RootState {
   /** OUR OWN state changed (a session started, bound, reset, learned its native
    *  id). Immediate: no filesystem event describes these, and they are rare. */
   dirty: boolean;
-  /** the filesystem said something about a path we have ALREADY seen — almost
-   *  always an append. Subject to a floor; see `shouldSweep`. */
-  fsDirty: boolean;
   /** every path this root's watch has ever named. A path we have not seen is a
    *  file APPEARING, which is the only thing discovery cares about. */
   seenNames: Set<string>;
@@ -224,7 +221,6 @@ export class DiscoverySchedule {
     if (!st) {
       st = {
         dirty: true,
-        fsDirty: false,
         seenNames: new Set(),
         lastSweepAt: 0,
         backoffIdx: 0,
@@ -353,26 +349,41 @@ export class DiscoverySchedule {
     // Our own state changing is immediate: rare, and binding correctness
     // depends on siblings re-sweeping on the very next tick.
     if (st.dirty) return true;
-    // A filesystem event may never sweep faster than the ladder's fastest rung.
+    // AN APPEND IS NOT EVIDENCE FOR DISCOVERY, and #719 is where that finally
+    // became true rather than intended.
     //
-    // This floor is what makes "the watch is an ACCELERATOR" true rather than
-    // aspirational. The `rename`-only filter was supposed to keep appends from
-    // dirtying the root — and on Windows and Linux it does — but macOS CI
-    // proved it does NOT there: FSEvents reported an append as a second event,
-    // so on macOS every write during a turn would mark the root dirty and we
-    // would have rebuilt the 100ms firehose on one platform while believing we
-    // had not. An accelerator that can outrun the thing it accelerates is not
-    // an accelerator. The filter is still worth keeping — it makes Windows and
-    // Linux quiet rather than merely bounded — but the GUARANTEE lives here,
-    // where no platform's event semantics can reach it.
+    // There used to be a second branch here: a root whose watch had named an
+    // ALREADY-SEEN path was `fsDirty`, and swept once it cleared a floor of
+    // `slowRung(st) ?? backoff[0]`. The floor was written to make "the watch is
+    // an ACCELERATOR" true rather than aspirational — macOS FSEvents reports an
+    // append as `rename`, so the event-type filter in `defaultWatchFactory`
+    // cannot hold appends back there, and without a floor a busy turn would have
+    // rebuilt the 100ms firehose on one platform while Windows and Linux looked
+    // fine.
     //
-    // The floor is the SLOW rung on a given-up root (#129). A known path is,
-    // by this module's own reckoning, the CLI appending to a transcript it
-    // already owns — the tail drain's business, not ours. Leaving the floor at
-    // the fastest rung would have let one busy session anywhere under the root
-    // hold every given-up card at 250ms sweeps on any platform that reports
-    // appends (macOS does), which is this item's defect with extra steps.
-    if (st.fsDirty && now - st.lastSweepAt >= (this.slowRung(st) ?? this.backoff[0])) return true;
+    // The floor worked. The branch never did anything. Every event that set
+    // `fsDirty` ALSO reset `backoffIdx` to 0 one line earlier, so the floor
+    // (`backoff[0]`) and `intervalFor` were the same number, and on a given-up
+    // root both were `GIVEN_UP_MS`. The branch could not reach a conclusion the
+    // check below would not have reached anyway — in either direction, on any
+    // platform, for the whole life of the module.
+    //
+    // What was doing the damage was that reset. With it gone (see
+    // `onWatchEvent`), this branch would have become live for the first time and
+    // pinned every still-looking root to `backoff[0]` — 250ms, four sweeps a
+    // second, for as long as anything under the projects root was being written,
+    // which during a turn is continuously. It would have undone the fix it
+    // shipped beside. So it is gone, and appends now change nothing here at all:
+    // they are the tail drain's business, and the drain is never gated.
+    //
+    // The cost, stated plainly because it is real and it is the only thing this
+    // change makes slower: a transcript that EXISTS but is not yet claimable —
+    // created, with the head line carrying `cwd`/`sessionId` not yet written —
+    // used to be re-examined ~250ms after the append that completed it, and now
+    // waits out the current rung, up to `BACKOFF_MS`'s 2s cap. That is inside
+    // the S-04 ~4s budget, it is still fail-open, and a NEW path is still
+    // immediate. But it is strictly slower in that one case and nobody should
+    // meet it as a surprise.
     // A wall clock that steps BACKWARDS (NTP correction, VM resume, the user
     // changing the clock) would otherwise make this subtraction negative and
     // stall discovery until real time caught up — for an hour-sized jump, an
@@ -405,7 +416,6 @@ export class DiscoverySchedule {
     const st = this.roots.get(this.key(root));
     if (!st) return true;
     st.dirty = false;
-    st.fsDirty = false;
     st.lastSweepAt = now;
     st.sweeps++;
     if (st.backoffIdx < this.backoff.length - 1) st.backoffIdx++;
@@ -525,13 +535,25 @@ export class DiscoverySchedule {
    * to a transcript it already owns — the tail drain's business, not ours — so
    * it only gets a floored sweep. That keeps "a transcript appears, we bind on
    * the next tick" true on every platform, while an append storm during a busy
-   * turn cannot sweep faster than the ladder's fastest rung on any of them.
+   * turn cannot sweep faster than the ladder's SLOWEST rung on any of them.
+   *
+   * #719 — THE LADDER RESET USED TO LIVE HERE, UNCONDITIONALLY, and it was the
+   * rate half of the transcript watcher's CPU burn. `st.backoffIdx = 0` ran on
+   * EVERY event, including the already-seen ones this method then decides are
+   * mere appends. The comment above used to say an append storm "cannot sweep
+   * faster than the ladder's fastest rung", which was true and beside the point:
+   * the ladder could never CLIMB while anything under the projects root was
+   * being written, so every root sat AT its fastest rung for as long as any
+   * session anywhere was mid-turn — and the CLI appends constantly during one.
+   *
+   * The reset now belongs to `goFast()` alone, which is reached by exactly the
+   * two events that are evidence for DISCOVERY: a path we have never seen, and
+   * an event the platform declined to name. An append is neither.
    */
   private onWatchEvent(root: string, filename?: string | null): void {
     const st = this.roots.get(this.key(root));
     if (!st) return;
     st.events++;
-    st.backoffIdx = 0;
 
     const name = filename == null ? null : String(filename);
     if (name === null) {
@@ -540,10 +562,11 @@ export class DiscoverySchedule {
       this.goFast(st);
       return;
     }
-    if (st.seenNames.has(name)) {
-      st.fsDirty = true;
-      return;
-    }
+    // A path we have seen before is an append, and an append is the tail
+    // drain's business (#719). Counted in `events` — the diagnostic and the
+    // tests both read it — and otherwise ignored: it does not dirty the root,
+    // it does not reset the ladder, and it does not shorten the interval.
+    if (st.seenNames.has(name)) return;
     // Unbounded growth would be a slow leak on a long-lived root; the set is
     // only a novelty filter, so forgetting everything costs one extra
     // immediate sweep per path, not correctness.

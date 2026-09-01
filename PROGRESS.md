@@ -3,6 +3,107 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔧 AWAITING PR — 2026-08-31: **#719 bugs 1 + 3** — transcript-watcher CPU burn
+>
+> Branch `feature/719-watcher-cpu`. **Gate 1 approved; implementation and tests
+> complete and green. Gate 2 (commit/PR) pending.** #719 stays OPEN on merge —
+> bugs 2/4/5 are split out, not fixed.
+>
+> **What shipped:** three code deletions and one memo.
+> * `discovery-scheduler.ts` — `onWatchEvent` no longer resets `backoffIdx` on
+>   every event, so the ladder climbs THROUGH an append storm. Measured: a
+>   10-second turn costs **6 sweeps instead of 40**.
+> * `discovery-scheduler.ts` — `fsDirty` **deleted entirely**. See the finding
+>   below; it was dead state that Fix A would have made live and harmful.
+> * `watcher.ts` — `readHead` memoized per path, validated on `(size, mtimeMs)`.
+>   Measured: **64 quarter-megabyte re-reads → 0** across a half-second window.
+>
+> **⚠️ FINDING THAT CHANGED THE PLAN, worth not re-deriving:** `shouldSweep`'s
+> `fsDirty` branch **never once changed an answer**, for the whole life of the
+> module. Every event that set `fsDirty` also reset `backoffIdx` to 0 one line
+> earlier, so its floor (`backoff[0]`) and `intervalFor` were the same number; on
+> a given-up root both were `GIVEN_UP_MS`. The approved plan was to re-floor it at
+> the top rung — that would have left dead state behind. Removing the reset would
+> have made it live for the first time and pinned every still-looking root to
+> 250 ms, undoing the fix shipping beside it. So it is gone.
+>
+> **The one thing this makes slower, disclosed and accepted at Gate 1:** a
+> transcript that exists but is not yet claimable (created, head line carrying
+> `cwd`/`sessionId` not yet written) used to be re-examined ~250 ms after the
+> append that completed it, and now waits out the current rung — up to the 2 s
+> cap. Inside the S-04 ~4 s budget, still fail-open, and a NEW path is still
+> immediate. With a live watch it costs nothing: appearance fires an event.
+>
+> **Tests: 6663 / 252 files green** (6660 on `main` — 3 new). **Every new test
+> mutation-verified RED first**, with the defect's own numbers:
+> * re-add `backoffIdx = 0` → ladder pins at the fastest rung, **40 sweeps/10 s**.
+> * disable the memo → **64 reads** where there should be 0.
+> * key the memo by path alone → the session **never binds** (the worse bug the
+>   `(size, mtimeMs)` key exists to prevent).
+> * `win-cmd.test.ts` red once under full-suite load, green isolated and on a
+>   clean re-run — the known flake set (#651/#647/#637), not this change.
+>
+> **Split out, filed, NOT implemented:** #742 (bug 2 — sync full-file drain, and
+> it carries the correction that the report's "shrinking-by-copy" O(n²) claim is
+> false; the loop is linear, so nobody optimises the wrong thing), #743 (bug 4 —
+> `seenNames.clear()`, latent), #744 (bug 5 — 236 MB Electron cache, unverified
+> from source).
+>
+> **Honest limit:** this is measured reduction in work done, not proof it fixes
+> the freeze. The audit never found the spinning line. If bugs 1+3 were not it,
+> the app is cheaper and the incident recurs — and the log-liveness watchdog
+> (still unfiled) is the next move.
+>
+> **Scope, decided with Dan this session:** #719 is a forensic report naming five
+> bugs. This item is ONLY **bug 1** (`known` snapshot never updated) and **bug 3**
+> (the discovery ladder can never climb). They COMPOUND — 3 sets the sweep rate,
+> 1 sets the per-sweep cost — so fixing either alone is unmeasurable. Bugs 2, 4
+> and 5 get split-out tickets filed as part of this item, NOT implemented.
+>
+> **Verified against `main` (0094834) before planning, so nobody re-derives it:**
+> * Bug 1 REAL — `watcher.ts:501` `seed()` is `if (this.known.has(root)) return;`.
+>   One snapshot per root for process life. `watcher.ts:1353` skips files IN
+>   `known`; anything created after launch falls through to `claim()` →
+>   `readHead()` = `Buffer.alloc(262_144)` + read + `toString` + `split('\n')`,
+>   per unbound session, per sweep, for ever. Only bug whose cost grows with
+>   uptime — matches the 26h profile.
+> * Bug 3 REAL and **worse than the ticket says**. Two mechanisms, not one:
+>   `discovery-scheduler.ts:534` resets `backoffIdx = 0` on EVERY event including
+>   already-seen paths, so the ladder can never climb while anything appends;
+>   AND `:375` floors the `fsDirty` path at `backoff[0]` = **250 ms**, so an
+>   appending tree sweeps 4×/sec regardless of the ladder. The in-code comment at
+>   `:526-528` is true but misses that the ladder is also stuck AT its fastest rung.
+> * Bug 2 DEFERRED, **and the ticket's stated reason is wrong** — record on the
+>   split-out: `tail.buf.slice(nl+1)` yields a V8 SlicedString (O(1)) and
+>   `indexOf('\n')` scans one line, not the remainder. The loop is LINEAR. The real
+>   cost is the one-shot alloc + read + decode + parse + absorb of a whole file in
+>   one tick — a bind-time main-thread stall, not a sustained burn. Replay-from-0
+>   is DELIBERATE (`watcher.ts:1349-1352`, Dan's 2026-07-22 resumed-card find).
+> * Bug 4 present (`:550`) but near-dead at current scale (~1,232 entries vs a
+>   5,000 cap). Latent, not a culprit.
+> * Bug 5 not verifiable from source — runtime Electron cache hygiene.
+> * **#697 does NOT conflict** — it is the *file* watcher (`read-scope.ts`, poll
+>   slices), a different subsystem.
+> * **No test exists today that goes red for either bug.** That is how bug 3's
+>   in-code comment stayed confidently wrong.
+>
+> ## Also this session — the laptop trip, 2026-08-31
+>
+> * ✅ **#729 PR-1 PASSES on the work laptop** — the MCP panel shows every server.
+>   The 3-vs-16 defect the whole MCP arc was filed for is confirmed fixed on the
+>   machine that had it. Dogfood tracker updated.
+> * ⛔ **Untested on that trip:** Turn off / Reconnect / Load it now (#729 PR-2)
+>   and Sign in / Sign out (#734). Both stay UNTESTED; PR-2 is the top laptop ask.
+> * ⚠️ **Composer typing still sluggish on the laptop — but he was on v0.8.6,
+>   which does NOT contain #716's fix.** That is a BASELINE confirmation, not a
+>   verdict. **It does not decide #740.** Do not let anyone read it as "the fix
+>   didn't work"; the fix was not present. Recorded on #716 and #740.
+> * **Cutting v0.8.7 is now the blocker on two dogfood rows** (#716, #724) and on
+>   answering #740's central question at all.
+> * **#741 filed** — off-by-default keystroke-latency diagnostic Dan can run on
+>   the laptop and attach. Every perf number on #716/#740 so far came from a 4×
+>   CPU throttle on the dev desktop; #741 replaces that proxy with real hardware.
+
 > # 🚢 RELEASED — 2026-08-30: **v0.8.6** — the MCP release. #729 both halves, #734, #633.
 >
 > **Tagged and pushed.** `package.json` is `0.8.6`; CHANGELOG's `0.8.6` section is
