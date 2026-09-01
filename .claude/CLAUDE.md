@@ -164,7 +164,9 @@ All tokens and keys live in **`.claude/.env`** (none are required yet).
 - **Repo:** `https://github.com/badsonstudios/switchboard.ai` (private).
 - **Branches:** `main` is always-working; one `feature/s-<nn>-<slug>` (spike) or
   `feature/<issue#>-<slug>` branch per work item; PR references the issue
-  (`Closes #<n>`); Dan reviews + squash-merges. Commit/push only at Gate 2.
+  (`Closes #<n>`); **Claude squash-merges once CI is green** — the gate is green
+  CI, not a human click (corrected 2026-09-01). Reviews are deliberately NOT
+  required on `main`; red CI does not merge. Commit/push only at Gate 2.
 - Details: `skills/startup/references/git-workflow.md`.
 
 ## Working / Temporary Files

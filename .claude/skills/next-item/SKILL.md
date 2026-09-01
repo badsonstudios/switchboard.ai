@@ -178,8 +178,17 @@ approval to commit and open the PR.**
 1. Run **`/commit-push-pr`** — PR title `<item-id>: <title>`, body includes
    `Closes #<issue>` **and Step 9's plain-English summary + test list** (that's
    what makes the PR reviewable weeks later, and on GitHub he can tick the
-   boxes as he goes). Dan reviews and squash-merges — that's the oversight
-   point; never self-merge.
+   boxes as he goes). **Then MERGE IT YOURSELF once CI is green** —
+   `gh pr merge <n> --squash --delete-branch`, then `git checkout main &&
+   git pull`.
+
+   **The gate is green CI, not a human.** This step used to read "Dan reviews
+   and squash-merges — never self-merge", which was stale and actively wrong:
+   it left PRs sitting for a human click that Dan does not make and does not
+   want to make (corrected by him 2026-09-01, "you've always been merging it").
+   Reviews are deliberately NOT required on `main` — that is a decision, not an
+   oversight, so do not re-add one and do not reach for `--admin` to get around
+   a check that is genuinely failing. **If CI is red, it does not merge.**
 2. **Close out the tracking (never skip):**
    - Update `PROGRESS.md`: item **done** with date + one-line outcome + PR
      link; set **Next up** to the following open issue; clear stale notes.

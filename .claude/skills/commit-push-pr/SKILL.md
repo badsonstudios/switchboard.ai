@@ -73,9 +73,15 @@ git push -u origin <branch>
 gh pr create --base main --title "<item-id>: <title>" --body "Closes #<issue>. <summary>"
 ```
 
-Report the PR URL. **Dan reviews and squash-merges — that's the oversight
-point; never self-merge.** After merge: `git checkout main && git pull` before
-the next item.
+Report the PR URL, then **merge it yourself once CI is green** —
+`gh pr merge <n> --squash --delete-branch`. After merge: `git checkout main &&
+git pull` before the next item.
+
+**The gate is green CI, not a human click.** This said "Dan reviews and
+squash-merges — never self-merge" until 2026-09-01, which was stale and left
+finished work parked waiting on a human who does not merge. Reviews are
+deliberately not required on `main`; that is a decision, not an oversight.
+**Red CI does not merge**, and `--admin` is never the way past a failing check.
 
 ## Notes
 
