@@ -1651,6 +1651,113 @@ describe('discovery still works with no filesystem watch at all (P2-E15-11 fail-
     });
   }
 
+  /** Counts `readHead`'s reads for a specific set of files. An UNBOUND session
+   *  holds no tails, so nothing else opens a transcript on its behalf — which
+   *  makes this a direct measurement of #719's bug 1 rather than a proxy. */
+  function countOpens(files: string[]): { calls: () => number; restore: () => void } {
+    const want = new Set(files.map((f) => path.resolve(f)));
+    const real = fs.openSync;
+    let n = 0;
+    const spy = ((p: fs.PathLike, ...rest: unknown[]) => {
+      if (want.has(path.resolve(String(p)))) n++;
+      return (real as (...a: unknown[]) => number)(p, ...rest);
+    }) as typeof fs.openSync;
+    fs.openSync = spy;
+    return {
+      calls: () => n,
+      restore: () => {
+        fs.openSync = real;
+      },
+    };
+  }
+
+  it('files created after launch are not re-read on every sweep (#719)', async () => {
+    // Bug 1 of the #719 forensic report — the one whose cost GROWS WITH UPTIME,
+    // which is the shape of the incident it came from: 26 hours up, CPU
+    // climbing, the app burning 4.6x harder minimized than it normally does
+    // visible.
+    //
+    // `known` is seeded ONCE per root and deliberately never updated, because it
+    // means "existed before we started, therefore never adoptable" and a file
+    // APPEARING is the one thing discovery exists to catch. The consequence
+    // nobody costed: every transcript created after launch stays a candidate for
+    // the life of the process, and each was re-`readHead()`d on every widened
+    // sweep — a 262,144-byte alloc, a 256 KB read, a 256 KB decode and a full
+    // `split('\n')` to look at twenty-five lines. Per unbound session. Per sweep.
+    const w = blindWatcher({ widenAfterMs: 30 });
+    try {
+      w.watch('s1', { cwd }); // seeds `known` for this root
+      // Past `widenAfterMs`, so discovery is walking the WHOLE root rather than
+      // this session's slug dirs — the expensive branch, and the only one that
+      // reaches the decoys below. Not waiting for `unbound`: that verdict is
+      // 45s away by default and is not what this measures.
+      await sleep(80);
+
+      // Written AFTER the seed and under a different project, so they are
+      // candidates for ever and claimable never — the exact population bug 1
+      // re-reads. A wrong `cwd` is disqualifying in `claim()`, so no amount of
+      // sweeping can retire them.
+      const otherCwd = 'C:/tmp/tw-other';
+      const other = path.join(root, slugForCwd(otherCwd));
+      fs.mkdirSync(other, { recursive: true });
+      const decoys: string[] = [];
+      for (let i = 0; i < 8; i++) {
+        const f = path.join(other, `native-other-${i}.jsonl`);
+        writeLines(f, [JSON.stringify({ type: 'assistant', sessionId: `other-${i}`, cwd: otherCwd })]);
+        decoys.push(f);
+      }
+      await sleep(150); // widen opens, and the first pass reads each one once
+
+      const spy = countOpens(decoys);
+      try {
+        await sleep(500); // ~10 sweeps on the 50ms watch-failed rung
+      } finally {
+        spy.restore();
+      }
+
+      // Zero with the memo: nothing about these files changed, so nothing needs
+      // re-reading. Without it, eight files across ~10 sweeps is ~80 quarter-
+      // megabyte reads in half a second — and it never stops, which is the part
+      // that matters. The bound is deliberately loose: the claim is that the
+      // cost is not PER SWEEP, not that any particular number of sweeps ran.
+      expect(spy.calls()).toBeLessThan(decoys.length);
+
+      // ...and the session is still correctly unbound, which is the fence: a
+      // memo that made `claim()` stop looking would pass the assertion above by
+      // breaking discovery.
+      expect(w.snapshot('s1')!.bound).toBe(false);
+    } finally {
+      w.stop();
+    }
+  });
+
+  it('a file that GAINS its head line becomes claimable — the memo invalidates (#719)', async () => {
+    // The failure mode a (size, mtimeMs)-keyed cache could introduce, and the
+    // reason it is keyed that way rather than by path alone. A transcript can be
+    // created empty and gain the line carrying `cwd`/`sessionId` a moment later;
+    // if the first (useless) head were memoized for ever, the session would
+    // never bind. That is a worse bug than the one being fixed.
+    const w = blindWatcher({ widenAfterMs: 30 });
+    try {
+      w.watch('s1', { cwd });
+      await sleep(80); // past `widenAfterMs`
+
+      // Exists, and says nothing that could identify it.
+      const f = path.join(projectDir(), 'native-late.jsonl');
+      fs.writeFileSync(f, '');
+      await sleep(150); // read, found empty, memoized
+      expect(w.snapshot('s1')!.bound).toBe(false);
+
+      // Now the CLI writes the head line. Size and mtime both move, so the memo
+      // must miss and the file must be re-read.
+      writeLines(f, [entry({ sessionId: 'native-late' })]);
+      await waitFor(() => w.snapshot('s1')!.bound === true, 3_000);
+      expect(w.snapshot('s1')!.binding).toBe('bound');
+    } finally {
+      w.stop();
+    }
+  });
+
   it('binds a transcript that appears, on the backoff alone', async () => {
     const w = blindWatcher();
     try {

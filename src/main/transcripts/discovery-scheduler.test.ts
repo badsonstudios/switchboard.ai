@@ -575,28 +575,79 @@ describe('DiscoverySchedule — the REAL fs.watch (no injected factory)', () => 
     // to vitest's 5 s default on a loaded runner.
   }, 20_000);
 
-  it('an append STORM on a known path never sweeps faster than the fastest rung', () => {
+  it('an append STORM on a known path lets the ladder CLIMB (#719)', () => {
     // The guarantee that does not depend on any platform's event semantics.
     // macOS reports appends as `rename`, so the event-type filter does not hold
     // them back there; without this, a busy turn would have restored the 100ms
     // firehose on macOS while Windows and Linux looked fine.
+    //
+    // This test USED to assert only that the storm could not sweep faster than
+    // the FASTEST rung, and it passed while the module burned CPU for 26 hours
+    // straight (#719). Bounded is not the same as rare: every append reset
+    // `backoffIdx` to 0, so the ladder sat at its fastest rung for as long as
+    // anything under the projects root was being written — continuously, during
+    // any turn. What is asserted now is that the ladder CLIMBS THROUGH the
+    // storm, which is the property that was actually wanted all along.
     const { state, factory } = fakeWatch();
     const s = new DiscoverySchedule({ log: log(), watchFactory: factory, backoffMs: [100, 200, 400] });
     s.register(ROOT);
 
     state.fire('native-abc.jsonl'); // seen once — this is the create
     s.noteSwept(ROOT, 1000);
+    expect(s.stats(ROOT)!.backoffMs).toBe(200);
 
     for (let i = 0; i < 50; i++) state.fire('native-abc.jsonl'); // the turn appending
-    expect(s.stats(ROOT)!.events).toBe(51);
-    expect(s.shouldSweep(ROOT, 1000)).toBe(false); // same instant
-    expect(s.shouldSweep(ROOT, 1099)).toBe(false); // still inside the floor
-    expect(s.shouldSweep(ROOT, 1100)).toBe(true); // one rung later, exactly once
+    expect(s.stats(ROOT)!.backoffMs).toBe(200); // NOT dragged back to 100
+    expect(s.shouldSweep(ROOT, 1199)).toBe(false);
+    expect(s.shouldSweep(ROOT, 1200)).toBe(true);
+    s.noteSwept(ROOT, 1200);
+
+    for (let i = 0; i < 50; i++) state.fire('native-abc.jsonl'); // ...and still appending
+    expect(s.stats(ROOT)!.backoffMs).toBe(400); // climbed to the cap DURING the storm
+    expect(s.shouldSweep(ROOT, 1599)).toBe(false);
+    expect(s.shouldSweep(ROOT, 1600)).toBe(true);
+    expect(s.stats(ROOT)!.events).toBe(101);
 
     // ...and a DIFFERENT path appearing during the storm is still immediate,
-    // because that is the one thing discovery exists to notice.
-    s.noteSwept(ROOT, 1100);
+    // because that is the one thing discovery exists to notice. This assertion
+    // passed before #719 and must keep passing: it is the fail-open fence, not
+    // the fix, and it is the one that would catch this change going too far.
+    s.noteSwept(ROOT, 1600);
     state.fire('native-xyz.jsonl');
-    expect(s.shouldSweep(ROOT, 1101)).toBe(true);
+    expect(s.shouldSweep(ROOT, 1601)).toBe(true);
+  });
+
+  it('a busy turn costs a bounded NUMBER of sweeps, not four a second (#719)', () => {
+    // The assertion closest to the incident report: 26h uptime, CPU climbing,
+    // the app burning 4.6x harder MINIMIZED than it normally does visible. The
+    // other tests pin the rung; this one counts the work, because "which rung"
+    // is a mechanism and "how many sweeps" is the cost.
+    const { state, factory } = fakeWatch();
+    const s = new DiscoverySchedule({
+      log: log(),
+      watchFactory: factory,
+      backoffMs: [250, 500, 1000, 2000], // the real ladder
+    });
+    s.register(ROOT);
+    state.fire('native-abc.jsonl'); // the create
+    s.noteSwept(ROOT, 0);
+
+    // Ten seconds of one turn: the CLI appending to a transcript every 50ms.
+    let sweeps = 0;
+    for (let now = 0; now <= 10_000; now += 50) {
+      state.fire('native-abc.jsonl');
+      if (s.shouldSweep(ROOT, now)) {
+        sweeps++;
+        s.noteSwept(ROOT, now);
+      }
+    }
+
+    // Ladder: 500, 1000, then the 2s cap — six sweeps across ten seconds.
+    // Before #719 it was one every 250ms, forty of them, each a full recursive
+    // walk of ~2,100 syscalls per unbound session. The bound is deliberately
+    // loose: this asserts an ORDER OF MAGNITUDE, not an arithmetic identity, so
+    // it does not become a tripwire the next time the ladder is retuned.
+    expect(sweeps).toBeLessThanOrEqual(8);
+    expect(s.stats(ROOT)!.backoffMs).toBe(2000);
   });
 });

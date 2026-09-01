@@ -107,6 +107,21 @@ function newTail(): Tail {
   return { offset: 0, buf: '', dec: new StringDecoder('utf8') };
 }
 
+/** What `claim()` needs out of the first lines of a transcript. Named because
+ *  #719 gave it a cache, and a cache of an inline object type is unreadable. */
+interface TranscriptHead {
+  cwd?: string;
+  sessionId?: string;
+}
+
+/** Cap on the `readHead` memo. It can only grow with distinct files under the
+ *  watched roots, so on a real tree (~1,200 transcripts) it never binds — this
+ *  is the same "a novelty filter is not correctness" idiom the discovery
+ *  scheduler uses for `seenNames`: forgetting everything costs one re-read per
+ *  path, never a wrong answer. It exists so a pathological tree cannot turn a
+ *  fix for unbounded work into unbounded memory. */
+const HEAD_CACHE_MAX = 4096;
+
 interface WatchedSession {
   sessionId: string;
   cwd: string;
@@ -429,6 +444,37 @@ export class TranscriptWatcher {
   // after the seed, and nothing here distinguishes it. Pre-existing, and the
   // cwd-evidence rules in `claim()` are what stand between us and it.
   private readonly known = new Map<string, Set<string>>();
+  /**
+   * Memo for `readHead`, and the COST half of #719's transcript-watcher burn.
+   *
+   * `known` is seeded once per root and never updated — deliberately, because it
+   * means "existed before we started, therefore never adoptable", and a file
+   * that appears DURING the run is the one thing discovery exists to catch. So
+   * every transcript created after launch stays a candidate for the life of the
+   * process, and each one was re-`readHead()`d on every widened sweep: a
+   * 262,144-byte `Buffer.alloc`, a 256 KB read, a 256 KB `toString` and a full
+   * `split('\n')` to look at twenty-five lines. Per unbound session. Per sweep.
+   * The forensic report measured 34 such files after 26 hours — ~7.8 MB re-read
+   * per sweep per unbound session, and at the rate the ladder was pinned to
+   * (see discovery-scheduler.ts, the other half of this fix) that is the shape
+   * of a process that burns harder the longer it stays up.
+   *
+   * A memo rather than a bigger `known`: adding these paths to `known` would
+   * mark them un-adoptable and break discovery outright. That is the trap in the
+   * obvious reading of the bug, and it is why this is a second map.
+   *
+   * Keyed by absolute path and validated against `(size, mtimeMs)`, so it is
+   * file-intrinsic and safe to share across sessions — every session asking
+   * about one file wants the same answer, because the answer is a property of
+   * the file. A transcript that GAINS its head line (created empty, cwd written
+   * a moment later) changes both size and mtime, so it re-reads and becomes
+   * claimable; that case is pinned by a test.
+   *
+   * Failures are never memoized. A read that returns null is transient — a
+   * locked file, a racing writer — and caching it would turn one unlucky moment
+   * into a permanent refusal to bind.
+   */
+  private readonly headCache = new Map<string, { size: number; mtimeMs: number; head: TranscriptHead }>();
   private readonly listeners = new Set<(s: TranscriptSnapshot) => void>();
   private readonly blockListeners = new Set<(sessionId: string, b: FeedBlock) => void>();
   private readonly resetListeners = new Set<(sessionId: string, cause?: 'clear') => void>();
@@ -1086,6 +1132,12 @@ export class TranscriptWatcher {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
     this.discovery.stop();
+    // #719's memo is process-lifetime state; a watcher that has stopped has no
+    // claim on it. Not cleared on `unwatch`, deliberately — an entry is a fact
+    // about a FILE, not about a session, and the session closing tells us
+    // nothing about the file that the (size, mtimeMs) key does not already
+    // check. Growth is bounded by HEAD_CACHE_MAX.
+    this.headCache.clear();
   }
 
   // --- internals -------------------------------------------------------------
@@ -1509,12 +1561,30 @@ export class TranscriptWatcher {
 
   /** First cwd + sessionId found in the head of the file — summary/meta
    *  records on line 1 carry neither, so scan a handful of lines. */
-  private readHead(full: string): { cwd?: string; sessionId?: string } | null {
+  private readHead(full: string): TranscriptHead | null {
+    // #719: the memo. One `statSync` decides whether the 256 KB round trip below
+    // has to happen at all, and on a swept tick for an unbound session it
+    // almost never does — the head of a JSONL transcript is written once and
+    // then only appended past. `stat` is a syscall this path already pays
+    // several of; the read, the decode and the split are what cost.
+    //
+    // A `stat` that throws falls through to the uncached read rather than
+    // returning null. Fail-open is a hard constraint here: bookkeeping we added
+    // for speed must never be the reason a session cannot bind.
+    let key: { size: number; mtimeMs: number } | null = null;
+    try {
+      const st = fs.statSync(full);
+      key = { size: st.size, mtimeMs: st.mtimeMs };
+      const hit = this.headCache.get(full);
+      if (hit && hit.size === key.size && hit.mtimeMs === key.mtimeMs) return hit.head;
+    } catch {
+      key = null;
+    }
     const buf = Buffer.alloc(262_144); // snapshot-sized first lines are real
     const n = readRange(full, buf, 0);
     if (n === null) return null;
     const text = buf.toString('utf8', 0, n);
-    const out: { cwd?: string; sessionId?: string } = {};
+    const out: TranscriptHead = {};
     for (const line of text.split('\n').slice(0, 25)) {
       if (!line.trim()) continue;
       try {
@@ -1526,6 +1596,16 @@ export class TranscriptWatcher {
         /* oversized/partial line or junk — keep scanning; an empty result
            still lets a filename id-match bind (claim() decides) */
       }
+    }
+    // Only memoized when the `stat` above succeeded: without a (size, mtimeMs)
+    // to validate against there is nothing that could ever invalidate the entry,
+    // and a permanently stale head is exactly how a session fails to bind for
+    // ever. An empty `out` IS a real answer and is cached like any other — the
+    // file was read and carried no cwd and no sessionId, which is a verdict
+    // `claim()` acts on rather than a failure.
+    if (key) {
+      if (this.headCache.size >= HEAD_CACHE_MAX) this.headCache.clear();
+      this.headCache.set(full, { size: key.size, mtimeMs: key.mtimeMs, head: out });
     }
     return out;
   }
