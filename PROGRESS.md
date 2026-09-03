@@ -3,13 +3,35 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🚧 IN PROGRESS — 2026-09-03: **#742** — binding a transcript stalls the main process
+> # ✅ MERGED — 2026-09-03: **#742** — binding a transcript no longer stalls the app
 >
-> Picked up 2026-09-03 (bug 2 of #719's five; bugs 1+3 shipped in v0.8.7).
-> **At Gate 2 (commit approval).** Branch `feature/742-chunked-transcript-catchup`,
-> implemented, reviewed, **6674 / 6675 tests green** (the 1 is `win-cmd.test.ts`,
-> the known load flake — green isolated at 47/47). 12 new tests, all
-> mutation-verified RED first against 10 distinct mutations.
+> **PR #749, squashed to `958ac42`, all four CI jobs green** (unit win 6m47s,
+> unit ubuntu 3m56s, e2e ubuntu 10m2s, e2e win 24m46s). Issue closed. Bug 2 of
+> #719's five; bugs 1+3 shipped in v0.8.7.
+>
+> ⚠️ **NOT RELEASED.** It is on `main` in the `0.8.8 — unreleased` CHANGELOG
+> section; the latest release is **v0.8.7**, which does NOT contain it. Do not
+> ask Dan to hand-test the long-history row until 0.8.8 is cut.
+>
+> ⚠️ **#719 STAYS OPEN.** #743 and #744 are still unfixed, and this is a STALL
+> fix, not a fix for the CPU creep — that was bugs 1+3.
+>
+> **Process note worth keeping:** the first merge attempt was refused —
+> `main` had moved (three docs-only commits, #746/#747/#748) while CI ran.
+> Rebased rather than reaching for `--admin`; the only overlap was
+> `dogfood-testing.md`, git merged both sets of rows, and that was VERIFIED
+> rather than assumed before the force-push. CI then re-ran in full on the new
+> SHA. Note `gh pr checks --watch` exits non-zero with "no checks reported" if
+> it is started before GitHub registers the workflow on a freshly-pushed SHA —
+> that is a race, not a failure.
+>
+> **Next up:** nothing claimed. Live bug candidates are **#740** (feed half of
+> #716 — but Dan reported typing "seems okay" on 2026-09-03, so the urgency
+> dropped and it is not confirmed either way), **#705** (blurApp e2e specs fail
+> while Dan uses the desktop), **#731** (drag a stacked session out), **#743**
+> (latent, near-dead at current scale), **#744** (Electron cache, unverified
+> from source). Newly filed from the 2026-09-03 dogfood pass: **#746**, **#747**,
+> **#748**.
 >
 > **Measured before planning, so nobody re-derives it.** Real corpus on this
 > machine: **8,623 transcripts, 759 MB, largest 33.22 MB / 11,295 lines.**
