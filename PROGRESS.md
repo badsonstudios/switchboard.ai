@@ -3,6 +3,91 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🚧 IN PROGRESS — 2026-09-03: **#742** — binding a transcript stalls the main process
+>
+> Picked up 2026-09-03 (bug 2 of #719's five; bugs 1+3 shipped in v0.8.7).
+> **At Gate 2 (commit approval).** Branch `feature/742-chunked-transcript-catchup`,
+> implemented, reviewed, **6674 / 6675 tests green** (the 1 is `win-cmd.test.ts`,
+> the known load flake — green isolated at 47/47). 12 new tests, all
+> mutation-verified RED first against 10 distinct mutations.
+>
+> **Measured before planning, so nobody re-derives it.** Real corpus on this
+> machine: **8,623 transcripts, 759 MB, largest 33.22 MB / 11,295 lines.**
+> Replaying that one file costs **269.5 ms in a single synchronous tick** —
+> alloc+read 14.7, decode 117.7, split+parse 137.1. The poll interval is
+> **100 ms** (`watcher.ts:1147`), so one bind blows through ~2.7 ticks of the
+> thread that pumps every PTY, the IPC and the hook responses. That 269.5 ms is
+> a **floor**: it excludes `absorb()` entirely.
+>
+> **Confirmed mechanism:** `newTail()` is `{ offset: 0 }` (`watcher.ts:106`) →
+> on claim the file gets a fresh tail (`:1408`) → the next tick drains it
+> ungated (`:1453`) → `drain` allocates `st.size - 0` (`:1642`) and parses the
+> whole file in one loop.
+>
+> **Checked and DISMISSED, do not re-investigate:** `absorb()` calls
+> `pickupSubagentMeta()` (a `readdirSync` + `readFileSync`) on every Agent/Task
+> `tool_use`, which looked like a replay amplifier. It is not — the 33 MB file
+> has **2** such blocks against 1,801 `tool_use` blocks total. Out of scope.
+>
+> **The ticket's own explanation is wrong and the ticket says so** (the split-out
+> carried the correction): the `slice`/`indexOf` loop is LINEAR, not O(n²).
+> Anyone "fixing the quadratic" optimises nothing.
+>
+> **Two things the fix must not break:**
+> * **Replay-from-0 is deliberate** — Dan's 2026-07-22 resumed-card find. Move
+>   the cost off the tick; do not skip the replay.
+> * **`noteSessionExited` (`:815`) drains synchronously and then quiesces
+>   immediately.** If catch-up defers, a dying session stops polling with unread
+>   bytes and loses the last words of the crashed turn — the precise thing that
+>   call site exists to prevent.
+>
+> **House pattern followed:** `search.ts` already solves this on the same
+> thread — 256 KB chunks, injectable `onChunk` yield seam defaulting to
+> `setImmediate`, ~4 ms slices, and the same rationale comment.
+>
+> ## WHAT SHIPPED
+> `drain()` takes a byte budget (`CATCHUP_CHUNK` = 256 KB) and chains the
+> remainder through an injectable yield seam. Steady state is untouched **by
+> construction** — a backlog under the budget takes the identical synchronous
+> path. `Tail` already held a partial line (`buf`) and a partial character
+> (`dec`), so it was always a chunk-resumable state machine; nothing new had to
+> be invented for the boundary.
+>
+> ## ⚠️ REVIEW FOUND SIX THINGS, FIVE FIXED — worth not re-deriving
+> The first cut was correct on the happy path and wrong in ways that only show
+> up after hours of uptime. All five fixes have their own mutation-verified test:
+> * **A slice that read NOTHING rescheduled itself** — `readRange` returns `0`
+>   (not `null`) when a stat over-reports, so the chain spun at one iteration
+>   per event-loop turn with no backoff and no exit. That is the #719 burn
+>   shape, faster. Guarded on `n > 0`.
+> * **`tail.catchingUp` could latch for ever**, and while it stands the poll
+>   tick refuses the tail — i.e. a transcript that silently stops updating for
+>   the rest of the run. It is now a **lease** (`STUCK_CATCHUP_MS` = 500), the
+>   tick takes it back with a `warn`, and a throwing yield seam un-latches it.
+> * **`stop()` did not stop anything** — continuations are queued outside the
+>   poll timer and each chains the next, so a stopped watcher kept reading files
+>   and emitting into a renderer that may be gone (and, in tests, into a temp
+>   dir being deleted). Added a `stopped` latch, checked first.
+> * **The snapshot emit fired ~130× per replay instead of once.** Each one deep-
+>   copies `filesTouched`/`toolsSeen`, structured-clones to the renderer, AND
+>   makes the one production listener re-serialise every persisted session. Held
+>   until the chain ends (`Tail.dirty`). The Feed is unaffected — its blocks go
+>   out per line inside `absorb`, so the conversation still fills progressively.
+> * **`quiesce()` could silently DISCARD a backlog** — it clears the tails, and a
+>   subagent transcript adopted during the post-exit settle window starts at
+>   offset 0 and slices like any other. Silent data loss is the wrong failure
+>   direction; it now drains unbounded before clearing.
+>
+> ## ⚠️ KNOWN LIMIT, DELIBERATE — do not "fix" it without reading this
+> A session that dies **while its initial replay is in flight** still pays the
+> full stall: `noteSessionExited` drains unbounded because `maybeQuiesce` can
+> stop polling it for ever, so a deferred slice there is a slice never read.
+> Capping that path buys a shorter freeze by **discarding transcript the user
+> cannot get back**. Not a regression — it is what every bind did before this
+> item. If it ever shows up in practice the fix is to make `maybeQuiesce` refuse
+> while a tail has backlog (bounded by the existing post-exit ceiling), NOT to
+> truncate the read.
+
 > # 🚢 RELEASED — 2026-09-01: **v0.8.7** — the release that unblocks hand-testing
 >
 > **Tagged and pushed** (`cadc778`, tag `v0.8.7`). `package.json` is `0.8.7`,

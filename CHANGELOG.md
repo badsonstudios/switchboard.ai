@@ -76,6 +76,20 @@ on the floor, and say so in your PR.
 
 ## 0.8.8 — unreleased
 
+### Fixed
+
+- **Opening a session with a long history briefly froze the whole app.** When
+  switchboard picked up a conversation that already had a lot in it, it read and
+  parsed the entire file in one go, on the thread that also runs your terminals,
+  answers permission prompts and keeps the window responsive — so everything
+  stopped for as long as that took. On the biggest conversation on this machine
+  (33 MB, around 11,000 messages) that was about a quarter of a second of the
+  app being completely unresponsive, and it happened once for every such session
+  you opened. It now reads the history in small pieces and lets everything else
+  run in between, so opening one of these is no longer something you can feel.
+  Nothing about what you see changes: the conversation still comes back in full,
+  from the beginning, exactly as before.
+
 ## 0.8.7 — 2026-09-01
 
 ### Fixed

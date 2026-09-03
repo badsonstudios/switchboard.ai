@@ -101,10 +101,49 @@ interface Tail {
   offset: number;
   buf: string;
   dec: StringDecoder;
+  /**
+   * A chunked catch-up is in flight for this tail (#742).
+   *
+   * `drain` absorbs at most `CATCHUP_CHUNK` bytes per slice and schedules the
+   * next one itself, so between slices the poll tick must NOT re-enter this
+   * tail: a second reader would take the same `tail.offset`, and both would
+   * advance it. This flag is the whole re-entrancy guard.
+   *
+   * It is a LEASE, not a lock — see `STUCK_CATCHUP_MS`. A flag that could latch
+   * for ever would mean a transcript that silently stops updating for the rest
+   * of the run, which is a worse failure than the stall it was set to avoid.
+   */
+  catchingUp: boolean;
+  /** when `catchingUp` was set, so the poll tick can take a stuck tail back */
+  catchUpSince: number;
+  /**
+   * Lines were absorbed but the snapshot emit is being held until the catch-up
+   * chain finishes (#742).
+   *
+   * Per-line Feed blocks still go out immediately (`reemit`, inside `absorb`),
+   * so the conversation still fills in progressively. What is held is the
+   * SNAPSHOT emit, which is expensive out of proportion to a slice: it deep-
+   * copies `filesTouched`/`toolsSeen`/`subagents`, structured-clones the result
+   * to the renderer, and the one production listener re-serialises every
+   * persisted session beside it. Firing that ~130 times for one 33 MB replay
+   * is work this item would otherwise have ADDED while removing a stall.
+   *
+   * On the tail, not on the call, because a chain's last slice can absorb no
+   * lines at all (a trailing partial line) — the emit has to be owed by the
+   * whole chain, not by whichever slice happens to end it.
+   */
+  dirty: boolean;
 }
 
 function newTail(): Tail {
-  return { offset: 0, buf: '', dec: new StringDecoder('utf8') };
+  return {
+    offset: 0,
+    buf: '',
+    dec: new StringDecoder('utf8'),
+    catchingUp: false,
+    catchUpSince: 0,
+    dirty: false,
+  };
 }
 
 /** What `claim()` needs out of the first lines of a transcript. Named because
@@ -121,6 +160,50 @@ interface TranscriptHead {
  *  path, never a wrong answer. It exists so a pathological tree cannot turn a
  *  fix for unbounded work into unbounded memory. */
 const HEAD_CACHE_MAX = 4096;
+
+/**
+ * Bytes of BACKLOG one `drain` slice may absorb before yielding (#742).
+ *
+ * `newTail()` starts at offset 0 — deliberately, because replaying our own
+ * resumed conversation from the top is what gives the Feed and the Session view
+ * their history back (Dan's 2026-07-22 resumed-card find). The cost of that
+ * replay was the bug: the first drain allocated `st.size`, decoded it, and
+ * `JSON.parse`d every line inside ONE 100ms poll tick. Measured on the largest
+ * real transcript on the dev machine (33.22 MB / 11,295 lines): **269.5 ms of
+ * unbroken main-thread work** — 14.7 read, 117.7 decode, 137.1 split+parse —
+ * and that is a FLOOR, because it excludes `absorb()` entirely. This is the
+ * thread that pumps every PTY, the IPC and the hook responses.
+ *
+ * 256 KB is `search.ts`'s `DEFAULT_CHUNK`, and the reasoning transfers exactly:
+ * at the 7.7 ms/MB measured above a slice costs ~1.9 ms, inside the ~4 ms
+ * budget that module already defends. Deliberately NOT a time budget — a byte
+ * budget is what makes the slice boundary reproducible in a test.
+ *
+ * Only the BACKLOG is bounded. A steady-state tail append is far below this, so
+ * the latency-critical path takes the same synchronous route it always did.
+ */
+const CATCHUP_CHUNK = 256 * 1024;
+
+/**
+ * How long the poll tick will respect a `tail.catchingUp` lease before taking
+ * the tail back (#742).
+ *
+ * The tick skipping a tail mid-catch-up is correct, but it is an abdication:
+ * while the flag stands, the ONLY thing that will ever advance that tail is the
+ * queued continuation. If that continuation never runs — an injected seam that
+ * swallows its callback, anything that stops `setImmediate` from firing — the
+ * session's transcript silently stops updating for the rest of the process's
+ * life, with nothing logged. That is the failure this file exists to prevent,
+ * arrived at from the other side.
+ *
+ * So the flag is a lease with a floor under it: five poll intervals, after
+ * which the tick says so and drains anyway. Costs nothing on the happy path
+ * (the lease is released within one event-loop turn), and turns "stalled for
+ * ever, silently" into "half a second late, once, with a log line". A stale
+ * continuation firing afterwards is harmless — it reads from whatever
+ * `tail.offset` is by then, which is the same contract every other drain has.
+ */
+const STUCK_CATCHUP_MS = 500;
 
 interface WatchedSession {
   sessionId: string;
@@ -360,6 +443,20 @@ export interface TranscriptWatcherOptions {
   /** Discovery scheduling knobs (P2-E15-11) — injectable so tests can drive
    *  filesystem events and simulate an unusable watch. */
   discovery?: Omit<DiscoveryScheduleOptions, 'log'>;
+  /** bytes of backlog one `drain` slice absorbs before yielding (#742) */
+  catchUpChunkBytes?: number;
+  /**
+   * What "give the event loop a turn between catch-up slices" means (#742).
+   *
+   * Injectable for the same reason `search.ts` injects `onChunk`: it is the
+   * seam the done-when is checked through. A test drives the slices by hand
+   * (and can land a poll tick BETWEEN two of them, which is the re-entrancy
+   * case); the default `setImmediate` is what the main thread is protected by.
+   *
+   * MUST be asynchronous. A seam that calls `fn` inline turns the chain into
+   * recursion one frame deep per slice, and defeats the point of the item.
+   */
+  scheduleYield?: (fn: () => void) => void;
 }
 
 /**
@@ -492,6 +589,9 @@ export class TranscriptWatcher {
   // tick still runs — the TAIL DRAIN is latency-critical and stays on it — but
   // the directory walking behind it is now event-driven with a timed floor.
   private readonly discovery: DiscoverySchedule;
+  /** `stop()` was called and `ensurePolling()` has not restarted us. Read by
+   *  queued catch-up continuations, which outlive the poll timer (#742). */
+  private stopped = false;
 
   constructor(private readonly opts: TranscriptWatcherOptions) {
     this.discovery = new DiscoverySchedule({ log: opts.log, ...(opts.discovery ?? {}) });
@@ -812,7 +912,24 @@ export class TranscriptWatcher {
     // be unread — the last words of the crashed turn. On the settle path the
     // next tick would get them anyway; this is what makes a zero-length settle
     // window (and the case where the ceiling has already passed) still correct.
-    for (const [full, tail] of w.tails) this.drain(w, full, tail);
+    //
+    // UNBOUNDED, unlike every other drain (#742). `maybeQuiesce` on the next
+    // line can stop this session being polled for ever, so a slice deferred
+    // here is a slice never read — and the bytes at stake are precisely the
+    // ones this call site exists to rescue. The stall #742 removes is a
+    // BINDING-time cost paid on a live session; this is a one-off on a session
+    // that has already died, and losing its last words is the worse trade.
+    //
+    // ⚠️ Stated plainly because it is the one case #742 does NOT fix: a session
+    // that dies WHILE its initial replay is still in flight drains the whole
+    // remaining backlog here, synchronously — i.e. the original stall, in full,
+    // on that narrow window. Deliberate. The alternative is a finite cap, and a
+    // cap on this path buys a shorter freeze by discarding transcript the user
+    // can never get back. Not a regression either way: this is what every bind
+    // did before the item. If it ever shows up in practice, the fix is to make
+    // `maybeQuiesce` refuse while a tail has backlog (bounded by the existing
+    // post-exit ceiling), not to truncate the read.
+    for (const [full, tail] of w.tails) this.drain(w, full, tail, Infinity);
     this.maybeQuiesce(w, Date.now());
   }
 
@@ -847,6 +964,16 @@ export class TranscriptWatcher {
   private quiesce(w: WatchedSession, why: string): void {
     if (w.quiesced) return;
     w.quiesced = true;
+    // Everything still unread, taken NOW and unbounded (#742). Clearing the
+    // tails below is the point of no return: a catch-up chain in flight has its
+    // remainder dropped by the tail-identity guard in `scheduleCatchUp`, and
+    // nothing polls this session again. `noteSessionExited` already drains the
+    // tails it can see, but a subagent transcript adopted DURING the post-exit
+    // settle window starts at offset 0 like any other and slices — so without
+    // this, a settle window that closes mid-chain loses the rest of that file
+    // for good. Silent data loss is the wrong failure direction here; a one-off
+    // stall on an already-dead session is the right one.
+    for (const [full, tail] of w.tails) this.drain(w, full, tail, Infinity);
     // Nothing writes these files again and nothing reads the tails again, so
     // the partial-line buffer and the per-tail decoder are released now rather
     // than held for the lifetime of the card.
@@ -1129,6 +1256,13 @@ export class TranscriptWatcher {
   }
 
   stop(): void {
+    // Latched BEFORE anything else, because clearing the interval is no longer
+    // enough to stop this watcher doing work (#742): catch-up continuations are
+    // queued on `setImmediate`, outside the timer entirely, and each one chains
+    // the next. Without this a stopped watcher keeps statting, opening, reading
+    // and emitting — into a renderer that may be gone, or a temp directory a
+    // test teardown is in the middle of deleting.
+    this.stopped = true;
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
     this.discovery.stop();
@@ -1143,6 +1277,9 @@ export class TranscriptWatcher {
   // --- internals -------------------------------------------------------------
 
   private ensurePolling(): void {
+    // A watcher that is polling again is not stopped — `stop()` is documented
+    // as idempotent rather than terminal, and the tests restart watchers.
+    this.stopped = false;
     if (this.timer) return;
     this.timer = setInterval(() => this.poll(), this.opts.pollMs ?? 100);
     this.timer.unref?.();
@@ -1450,7 +1587,27 @@ export class TranscriptWatcher {
       // known offset on a file we already hold — not a directory walk. This
       // item moves discovery off the hot thread, not the thing the hot thread
       // exists for.
-      for (const [full, tail] of w.tails) this.drain(w, full, tail);
+      //
+      // The ONE exception is a tail with a catch-up slice already queued
+      // (#742): it is being drained faster than this tick could, by a
+      // continuation that owns `tail.offset` until it runs. Entering here would
+      // not make it earlier, it would make it wrong.
+      for (const [full, tail] of w.tails) {
+        if (tail.catchingUp) {
+          if (now - tail.catchUpSince < STUCK_CATCHUP_MS) continue;
+          // The lease expired: a continuation was queued and never ran. Say so
+          // — a tail that stopped updating with no explanation is one of the
+          // hardest things in this file to diagnose after the fact — and take
+          // it back rather than leaving the session mute for ever.
+          this.opts.log.warn('catch-up continuation never ran; the poll tick is taking over', {
+            sessionId: w.sessionId,
+            file: full,
+            heldMs: now - tail.catchUpSince,
+          });
+          tail.catchingUp = false;
+        }
+        this.drain(w, full, tail);
+      }
       // ...and if the process behind all of that is dead, ask whether this was
       // the last tick worth spending on it (#200). After the drain, so a tick
       // that read the final bytes still delivers them.
@@ -1610,7 +1767,25 @@ export class TranscriptWatcher {
     return out;
   }
 
-  private drain(w: WatchedSession, full: string, tail: Tail): void {
+  /**
+   * Absorb whatever the writer has added since `tail.offset`.
+   *
+   * `budget` bounds ONE slice (#742). Omitted, it is `CATCHUP_CHUNK` and a
+   * backlog larger than that is finished by continuations this method schedules
+   * itself — see `scheduleCatchUp`. `Infinity` means "finish it here, now", and
+   * has exactly one caller: `noteSessionExited`, where deferring would lose the
+   * last words of a crashed turn (the reason that call site drains at all).
+   *
+   * Steady state is unaffected: an ordinary tail append is orders of magnitude
+   * below the budget, so it takes the same single synchronous pass it always
+   * did. Only the initial replay is sliced.
+   */
+  private drain(w: WatchedSession, full: string, tail: Tail, budget?: number): void {
+    // A misconfigured budget must not become a non-progressing loop: 0, NaN and
+    // negatives all collapse to a real slice size rather than to `alloc(0)`,
+    // which would read nothing, absorb nothing, and reschedule for ever.
+    const asked = budget ?? this.opts.catchUpChunkBytes ?? CATCHUP_CHUNK;
+    const cap = asked === Infinity ? Infinity : Math.max(1, Math.floor(asked) || CATCHUP_CHUNK);
     let st: fs.Stats;
     try {
       st = fs.statSync(full);
@@ -1639,7 +1814,10 @@ export class TranscriptWatcher {
       return;
     }
     if (st.size === tail.offset) return;
-    const chunk = Buffer.alloc(st.size - tail.offset);
+    // At most one slice's worth (#742). `Math.min` against the real remainder
+    // is what keeps the ordinary append case allocating exactly what it needs
+    // rather than a fixed 256 KB buffer per tail per tick.
+    const chunk = Buffer.alloc(Math.min(st.size - tail.offset, cap));
     const n = readRange(full, chunk, tail.offset);
     if (n === null) return;
     // Advance by what was actually READ, not by the size `stat` reported. They
@@ -1680,9 +1858,82 @@ export class TranscriptWatcher {
       );
       this.absorb(w, full, e);
     }
-    if (touched) {
+    if (touched) tail.dirty = true;
+    // Backlog left over? Come back for it without waiting out a poll interval
+    // (#742). `st.size` is this slice's stat and may already be stale, which is
+    // the safe direction: it only ever UNDER-reports, and anything written
+    // since is picked up by the next tick regardless.
+    //
+    // `n > 0` is load-bearing, not a tidiness check. `readRange` returns 0 —
+    // not `null` — when the read comes back empty, which a stat that
+    // over-reported can produce (a preallocated or sparse file, metadata lag on
+    // a network or virtualised filesystem, a truncate racing the stat in the
+    // one direction the shrink branch above cannot see). Without it, a slice
+    // that read nothing satisfies `tail.offset < st.size`, reschedules itself,
+    // reads nothing again — a spin at one iteration per event-loop turn, on the
+    // main thread, with no backoff and no exit. That is the #719 burn shape
+    // this item is meant to be the opposite of. A slice with no progress has
+    // nothing to continue from; the 100ms tick owns that retry.
+    //
+    // Never on the `Infinity` path either — that caller asked for the whole
+    // thing synchronously and is about to stop polling this session for ever,
+    // so a continuation would be queued against a tail nobody will read again.
+    const willContinue = cap !== Infinity && n > 0 && tail.offset < st.size;
+    // Held until the chain finishes — see `Tail.dirty`. The Feed is unaffected
+    // (its blocks went out per line, inside `absorb`); what is deferred is the
+    // snapshot, whose cost is wildly out of proportion to one slice.
+    if (tail.dirty && !willContinue) {
+      tail.dirty = false;
       w.snap.lastActivityAt = new Date().toISOString();
       this.emit(w);
+    }
+    if (willContinue) this.scheduleCatchUp(w, full, tail);
+  }
+
+  /**
+   * Queue the next catch-up slice for `tail` (#742).
+   *
+   * The re-entrancy guard is `tail.catchingUp`, checked by the poll loop: while
+   * a slice is queued the tick skips this tail entirely. Without it the tick
+   * and the continuation would both read from the same `tail.offset` and both
+   * advance it, duplicating one slice and skipping the next.
+   */
+  private scheduleCatchUp(w: WatchedSession, full: string, tail: Tail): void {
+    if (tail.catchingUp) return;
+    tail.catchingUp = true;
+    tail.catchUpSince = Date.now();
+    const run = (): void => {
+      // Released FIRST, so nothing below — including a throw out of `drain` —
+      // can leave the lease latched. The worst case is then a tail the next
+      // poll tick picks up as normal, which is the fail-open answer.
+      tail.catchingUp = false;
+      // Anything could have happened while this slice sat in the queue. Each
+      // of these means the bytes stopped being interesting, which is the same
+      // rule that makes a dropped tail safe to abandon mid-character (see the
+      // `Tail` doc — there is deliberately no `dec.end()`):
+      //  - the watcher was stopped: it must do no further I/O, no `emit` (the
+      //    listener persists and talks to a renderer that may be gone), and no
+      //    further chaining. Checked first because it outranks the rest.
+      //  - the session was unwatched, or rebound to a different WatchedSession;
+      //  - the tail was replaced (a rebind, a `/clear`);
+      //  - the session quiesced, i.e. it has stopped being polled at all.
+      if (this.stopped) return;
+      if (this.sessions.get(w.sessionId) !== w) return;
+      if (w.tails.get(full) !== tail) return;
+      if (w.quiesced) return;
+      this.drain(w, full, tail);
+    };
+    const yieldTo = this.opts.scheduleYield ?? ((fn: () => void) => void setImmediate(fn));
+    try {
+      yieldTo(run);
+    } catch (err) {
+      // The seam threw, so NOTHING is queued and `run` will never release the
+      // lease. Un-latch here or this tail is never drained again by anyone.
+      tail.catchingUp = false;
+      this.opts.log.error('catch-up could not be scheduled', {
+        sessionId: w.sessionId,
+        error: String(err),
+      });
     }
   }
 

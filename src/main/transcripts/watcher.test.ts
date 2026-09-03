@@ -2621,3 +2621,399 @@ describe('the conversation title off the transcript (P2-E7-06)', () => {
     expect(watcher.snapshot('s1')!.title).toBeUndefined();
   });
 });
+
+describe('binding an existing transcript is sliced, not swallowed whole (#742)', () => {
+  // `newTail()` starts at offset 0 — deliberately, so a resumed conversation
+  // replays and the Feed gets its history back (Dan's 2026-07-22 find). The
+  // COST of that replay was the bug: the first drain allocated the whole file,
+  // decoded it and `JSON.parse`d every line inside ONE 100ms poll tick. On the
+  // largest real transcript on the dev machine (33.22 MB / 11,295 lines) that
+  // measured 269.5 ms of unbroken main-thread work, and that figure EXCLUDES
+  // `absorb()`. This is the thread that pumps every PTY, the IPC and the hook
+  // responses.
+  //
+  // Every test here drives the slices through the injected `scheduleYield`
+  // rather than sleeping, so a boundary is a fact rather than a race.
+
+  /** A line of ~`bytes`, carrying a path unique to `n`. `filesTouched` collects
+   *  those paths and de-duplicates, so `lines` and `filesTouched.length` read
+   *  together are the whole correctness claim: a SKIPPED slice shortens
+   *  `filesTouched`, a REPLAYED one lengthens `lines` past the count written. */
+  const fat = (n: number, bytes = 1024) =>
+    entry({
+      message: {
+        content: [
+          {
+            type: 'tool_use',
+            name: 'Write',
+            input: { file_path: `C:/tmp/tw-project/f${String(n).padStart(4, '0')}.txt`, blob: 'x'.repeat(bytes) },
+          },
+        ],
+      },
+    });
+
+  /** An EXISTING transcript — written before anything watches, which is the
+   *  case #742 is about. Returns the file and its size on disk. */
+  function existing(dir: string, count: number, bytes = 1024): { file: string; size: number } {
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, 'native-1.jsonl');
+    writeLines(
+      file,
+      Array.from({ length: count }, (_, i) => fat(i, bytes))
+    );
+    return { file, size: fs.statSync(file).size };
+  }
+
+  /** A watcher whose catch-up slices are held in a queue instead of running,
+   *  so a test can single-step them — and observe the state in between. */
+  function stepped(
+    chunkBytes: number,
+    extra: Partial<ConstructorParameters<typeof TranscriptWatcher>[0]> = {}
+  ): {
+    w: TranscriptWatcher;
+    pump: () => number;
+    pending: () => number;
+  } {
+    const queue: Array<() => void> = [];
+    const w = makeWatcher({
+      projectsRoot: root,
+      log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
+      pollMs: 25,
+      catchUpChunkBytes: chunkBytes,
+      scheduleYield: (fn) => void queue.push(fn),
+      ...extra,
+    });
+    // Drains the queue to empty, including continuations queued BY the
+    // continuations — i.e. runs the catch-up to completion. Returns how many
+    // slices that took.
+    const pump = (): number => {
+      let ran = 0;
+      while (queue.length) {
+        const batch = queue.splice(0);
+        for (const fn of batch) {
+          fn();
+          ran++;
+        }
+      }
+      return ran;
+    };
+    return { w, pump, pending: () => queue.length };
+  }
+
+  it('absorbs the backlog in bounded slices instead of one whole-file read', async () => {
+    const { size } = existing(projectDir(), 200);
+    const chunk = 8 * 1024;
+    // Enough slices that "it did it all at once" and "it sliced" cannot be
+    // confused for one another by a lucky boundary.
+    expect(Math.ceil(size / chunk)).toBeGreaterThan(20);
+
+    const { w, pump } = stepped(chunk);
+    // Named, because a transcript that existed BEFORE the watch is only
+    // claimed as the session's OWN resumed conversation — which is precisely
+    // the case #742 is about, and the one replay-from-0 exists for.
+    w.watch('s1', { cwd, nativeSessionId: 'native-1' });
+    await waitFor(() => (w.snapshot('s1')?.lines ?? 0) > 0);
+
+    // THE ASSERTION THE BUG FAILS: after the first slice the file is bound and
+    // being read, but only part of it has been absorbed. Before this change
+    // `lines` was 200 here, on the very first tick.
+    const afterFirst = w.snapshot('s1')!.lines;
+    expect(afterFirst).toBeGreaterThan(0);
+    expect(afterFirst).toBeLessThan(200);
+
+    const slices = pump();
+    expect(slices).toBeGreaterThan(20);
+
+    // ...and the replay is still COMPLETE and unduplicated once it finishes.
+    const snap = w.snapshot('s1')!;
+    expect(snap.lines).toBe(200);
+    expect(snap.filesTouched).toHaveLength(200);
+    expect(snap.malformed).toBe(0);
+  });
+
+  it('gives the event loop a turn between slices', async () => {
+    // The point of the whole item. Same shape as search.test.ts's loop check:
+    // a 1ms interval can only advance if control leaves the drain. Runs on the
+    // REAL `setImmediate` default, because that is the thing being claimed.
+    const { size } = existing(projectDir(), 400);
+    const chunk = 4 * 1024;
+    expect(Math.ceil(size / chunk)).toBeGreaterThan(50);
+
+    // Sampled from INSIDE the chain, at the moment each slice runs. Comparing a
+    // counter across two `waitFor`s would instead have depended on the chain
+    // outlasting a 25ms poll step — true here, but only because the 1ms
+    // interval the test installs is itself throttling the loop, which makes the
+    // instrument part of the claim. This measures the thing directly: if two
+    // slices observe different tick counts, the timer phase ran between them.
+    //
+    // The seam still delegates to the production `setImmediate`, so what is
+    // being timed is the real mechanism, not a test double's schedule.
+    let ticks = 0;
+    const observed = new Set<number>();
+    const w = makeWatcher({
+      projectsRoot: root,
+      log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
+      pollMs: 25,
+      catchUpChunkBytes: chunk,
+      scheduleYield: (fn) =>
+        void setImmediate(() => {
+          observed.add(ticks);
+          fn();
+        }),
+    });
+
+    const timer = setInterval(() => ticks++, 1);
+    try {
+      w.watch('s1', { cwd, nativeSessionId: 'native-1' });
+      await waitFor(() => w.snapshot('s1')!.lines === 400);
+      // Unbounded, the whole 400-line replay lands inside ONE tick: there is no
+      // second slice to observe, and no tick could advance between them anyway.
+      expect(observed.size).toBeGreaterThan(1);
+    } finally {
+      clearInterval(timer);
+    }
+    expect(w.snapshot('s1')!.filesTouched).toHaveLength(400);
+  });
+
+  it('replays a large transcript to exactly the same snapshot as an unsliced read', async () => {
+    // The replay-from-0 guarantee. Slicing is only allowed to change WHEN the
+    // lines arrive, never which ones or what they add up to.
+    const { size } = existing(projectDir(), 150);
+
+    const sliced = stepped(4 * 1024);
+    sliced.w.watch('s1', { cwd, nativeSessionId: 'native-1' });
+    await waitFor(() => (sliced.w.snapshot('s1')?.lines ?? 0) > 0);
+    sliced.pump();
+    await waitFor(() => sliced.w.snapshot('s1')!.lines === 150);
+
+    // The same bytes, read by a watcher whose budget cannot bind. A separate
+    // TranscriptWatcher, so the two claims do not contend for one file.
+    const whole = stepped(size * 10);
+    whole.w.watch('s2', { cwd, nativeSessionId: 'native-1' });
+    await waitFor(() => whole.w.snapshot('s2')!.lines === 150);
+
+    const a = sliced.w.snapshot('s1')!;
+    const b = whole.w.snapshot('s2')!;
+    expect(a.lines).toBe(b.lines);
+    expect(a.malformed).toBe(b.malformed);
+    expect(a.filesTouched).toEqual(b.filesTouched);
+    expect(a.toolsSeen).toEqual(b.toolsSeen);
+    expect(a.usage).toEqual(b.usage);
+    expect(a.nativeSessionId).toBe(b.nativeSessionId);
+  });
+
+  it('carries a multi-byte character across a SLICE boundary', async () => {
+    // #194's guarantee, which slicing exercises far more often than a tick
+    // boundary ever did: the boundary is now chosen by us, not by the writer's
+    // flush, and it lands mid-character on cue.
+    fs.mkdirSync(projectDir(), { recursive: true });
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    const line = entry({
+      message: {
+        content: [{ type: 'tool_use', name: 'Write', input: { file_path: 'C:/tmp/tw-project/café-日本語-😀.txt' } }],
+      },
+    });
+    const head = Buffer.from(entry() + '\n', 'utf8');
+    const bytes = Buffer.from(line + '\n', 'utf8');
+    fs.writeFileSync(file, Buffer.concat([head, bytes]));
+
+    // A budget that puts the slice boundary on a CONTINUATION byte (10xxxxxx),
+    // i.e. provably inside a character — the split the old per-chunk decode
+    // turned into U+FFFD on both sides.
+    const inside = [...bytes.keys()].find((i) => (bytes[i] & 0xc0) === 0x80);
+    expect(inside).toBeDefined();
+    const chunk = head.length + inside!;
+
+    const { w, pump } = stepped(chunk);
+    // Named, because a transcript that existed BEFORE the watch is only
+    // claimed as the session's OWN resumed conversation — which is precisely
+    // the case #742 is about, and the one replay-from-0 exists for.
+    w.watch('s1', { cwd, nativeSessionId: 'native-1' });
+    await waitFor(() => (w.snapshot('s1')?.lines ?? 0) > 0);
+    pump();
+    await waitFor(() => w.snapshot('s1')!.lines === 2);
+
+    expect(w.snapshot('s1')!.filesTouched).toEqual(['C:/tmp/tw-project/café-日本語-😀.txt']);
+    expect(w.snapshot('s1')!.malformed).toBe(0);
+  });
+
+  it('parses a JSON line split across a slice boundary exactly once', async () => {
+    // The other half of the boundary contract: `tail.buf` holds the partial
+    // LINE the way `tail.dec` holds the partial CHARACTER. Clearing either per
+    // slice would show up here as a malformed count, or as a missing line.
+    const { size } = existing(projectDir(), 40);
+    // A budget that is not a multiple of anything, so boundaries fall inside
+    // lines rather than tidily between them.
+    const { w, pump } = stepped(Math.floor(size / 7) + 37);
+    // Named, because a transcript that existed BEFORE the watch is only
+    // claimed as the session's OWN resumed conversation — which is precisely
+    // the case #742 is about, and the one replay-from-0 exists for.
+    w.watch('s1', { cwd, nativeSessionId: 'native-1' });
+    await waitFor(() => (w.snapshot('s1')?.lines ?? 0) > 0);
+    pump();
+    await waitFor(() => w.snapshot('s1')!.lines === 40);
+
+    const snap = w.snapshot('s1')!;
+    expect(snap.malformed).toBe(0);
+    expect(snap.filesTouched).toHaveLength(40);
+  });
+
+  it('a poll tick landing mid-catch-up neither duplicates nor skips a slice', async () => {
+    // The re-entrancy case `tail.catchingUp` exists for. Without the guard the
+    // tick and the queued continuation both read from the same `tail.offset`
+    // and both advance it: one slice ingested twice, the next never read.
+    const { w, pump, pending } = stepped(6 * 1024);
+    existing(projectDir(), 120);
+    // Named, because a transcript that existed BEFORE the watch is only
+    // claimed as the session's OWN resumed conversation — which is precisely
+    // the case #742 is about, and the one replay-from-0 exists for.
+    w.watch('s1', { cwd, nativeSessionId: 'native-1' });
+    await waitFor(() => (w.snapshot('s1')?.lines ?? 0) > 0);
+
+    // A continuation is queued and deliberately NOT run, while real poll ticks
+    // (25ms) keep firing over the top of it.
+    expect(pending()).toBeGreaterThan(0);
+    const held = w.snapshot('s1')!.lines;
+    await sleep(120);
+    expect(w.snapshot('s1')!.lines).toBe(held);
+
+    pump();
+    await waitFor(() => w.snapshot('s1')!.lines === 120);
+    expect(w.snapshot('s1')!.filesTouched).toHaveLength(120);
+  });
+
+  it('a session that dies mid-catch-up still gets its last words', async () => {
+    // `noteSessionExited` drains and then `maybeQuiesce` can stop polling this
+    // session for ever, so its drain is the one that must NOT defer — a slice
+    // queued there is a slice never read, and the bytes at stake are exactly
+    // the ones that call site exists to rescue.
+    const { w, pump, pending } = stepped(4 * 1024);
+    existing(projectDir(), 100);
+    // Named, because a transcript that existed BEFORE the watch is only
+    // claimed as the session's OWN resumed conversation — which is precisely
+    // the case #742 is about, and the one replay-from-0 exists for.
+    w.watch('s1', { cwd, nativeSessionId: 'native-1' });
+    await waitFor(() => (w.snapshot('s1')?.lines ?? 0) > 0);
+    expect(w.snapshot('s1')!.lines).toBeLessThan(100);
+
+    w.noteSessionExited('s1');
+
+    // Everything, synchronously, WITHOUT the queue being pumped.
+    expect(w.snapshot('s1')!.lines).toBe(100);
+    expect(w.snapshot('s1')!.filesTouched).toHaveLength(100);
+    // The slice queued by the INITIAL drain is still sitting there; running it
+    // must produce no further slice, which is how we know the exit drain
+    // consumed the backlog rather than merely getting ahead of it.
+    pump();
+    expect(pending()).toBe(0);
+    expect(w.snapshot('s1')!.lines).toBe(100);
+  });
+
+  it('drops a catch-up cleanly when the session is unwatched mid-chain', async () => {
+    const { w, pump } = stepped(4 * 1024);
+    existing(projectDir(), 100);
+    w.watch('s1', { cwd, nativeSessionId: 'native-1' });
+    await waitFor(() => (w.snapshot('s1')?.lines ?? 0) > 0);
+
+    w.unwatch('s1');
+
+    // Counted at the DISK, not at the snapshot. `emit` already no-ops for an
+    // unknown id, so a continuation that ran anyway would leave no other trace
+    // — the test would pass while the guard did nothing. `pump` is synchronous,
+    // so no poll tick can fire inside the window and zero is really zero.
+    const mut = fs as unknown as { statSync: typeof fs.statSync };
+    const realStat = mut.statSync;
+    let touched = 0;
+    mut.statSync = ((p: fs.PathLike, o?: unknown) => {
+      if (String(p).startsWith(root)) touched++;
+      return (realStat as (p: fs.PathLike, o?: unknown) => unknown)(p, o);
+    }) as typeof fs.statSync;
+    try {
+      // It must also not throw out of the yield callback: there is no caller
+      // left to catch it, so it would land as an unhandled exception.
+      expect(() => pump()).not.toThrow();
+    } finally {
+      // The spy replaces a global; a leak would corrupt every later test.
+      mut.statSync = realStat;
+    }
+    expect(touched).toBe(0);
+    expect(w.snapshot('s1')).toBeUndefined();
+  });
+
+  it('a stopped watcher runs no more slices', async () => {
+    // `stop()` clears the poll timer, but catch-up slices are queued OUTSIDE
+    // it and each one chains the next. Without the `stopped` latch a stopped
+    // watcher keeps reading files and emitting snapshots — into a renderer
+    // that may be gone, or a temp directory a teardown is deleting.
+    const { w, pump } = stepped(4 * 1024);
+    existing(projectDir(), 100);
+    w.watch('s1', { cwd, nativeSessionId: 'native-1' });
+    await waitFor(() => (w.snapshot('s1')?.lines ?? 0) > 0);
+    const atStop = w.snapshot('s1')!.lines;
+    expect(atStop).toBeLessThan(100);
+
+    w.stop();
+    pump();
+    expect(w.snapshot('s1')!.lines).toBe(atStop);
+  });
+
+  it('a misconfigured slice size still makes progress', async () => {
+    // A budget of 0 would `Buffer.alloc(0)`, read nothing and absorb nothing —
+    // a slice that can never finish the file. Clamped instead, because the one
+    // thing a chunking scheme must never do is stop making progress.
+    const { w, pump } = stepped(0);
+    existing(projectDir(), 30);
+    w.watch('s1', { cwd, nativeSessionId: 'native-1' });
+    await waitFor(() => w.snapshot('s1')!.lines > 0);
+    pump();
+    await waitFor(() => w.snapshot('s1')!.lines === 30);
+    expect(w.snapshot('s1')!.filesTouched).toHaveLength(30);
+  });
+
+  it('a settle window closing mid-catch-up does not lose the rest of the file', async () => {
+    // `quiesce` clears the tails, and a chain in flight has its remainder
+    // dropped by the tail-identity guard. `noteSessionExited` drains what it
+    // can SEE, but bytes that arrive after it — which is the entire reason the
+    // settle window exists — are picked up by ordinary sliced poll drains, and
+    // those can still be mid-chain when the window closes.
+    const { w } = stepped(4 * 1024, { postExitSettleMs: 100 });
+    const { file } = existing(projectDir(), 20);
+    w.watch('s1', { cwd, nativeSessionId: 'native-1' });
+    await waitFor(() => w.snapshot('s1')!.lines > 0);
+
+    // Deliberately never pumped from here on: every continuation this test
+    // queues stays queued, so the tail is provably mid-chain throughout.
+    w.noteSessionExited('s1');
+    writeLines(
+      file,
+      Array.from({ length: 80 }, (_, i) => fat(1000 + i))
+    );
+
+    // Nothing else can rescue this: once quiesced the session is skipped by the
+    // poll loop entirely, so the stuck-lease takeover never runs either.
+    await waitFor(() => w.snapshot('s1')!.lines === 100, 1000);
+    expect(w.snapshot('s1')!.filesTouched).toHaveLength(100);
+  });
+
+  it('re-syncs when the file is truncated between two slices', async () => {
+    // The shrink path is a stated hard constraint of this change and slicing
+    // gives it a boundary it never had: the file can now be rewritten BETWEEN
+    // two reads of the same replay. The tail must resume from the new end with
+    // clean state rather than prepending the bytes of a file that is gone.
+    const { file } = existing(projectDir(), 100);
+    const { w, pump } = stepped(4 * 1024);
+    w.watch('s1', { cwd, nativeSessionId: 'native-1' });
+    await waitFor(() => (w.snapshot('s1')?.lines ?? 0) > 0);
+    expect(w.snapshot('s1')!.lines).toBeLessThan(100);
+
+    fs.writeFileSync(file, '');
+    pump();
+    // A truncate mid-chain costs the rest of that replay — the bytes are gone —
+    // but the tail must stay USABLE, which is the thing that used to stall for
+    // ever, and must report nothing malformed from the seam it just crossed.
+    expect(w.snapshot('s1')!.malformed).toBe(0);
+
+    writeLines(file, [fat(9001)]);
+    await waitFor(() => w.snapshot('s1')!.filesTouched.includes('C:/tmp/tw-project/f9001.txt'));
+  });
+});
