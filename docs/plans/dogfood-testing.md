@@ -188,3 +188,4 @@ deleted; they revive if PTY-transport sessions come back into use.
 | 2026-08-30 | Multi-question panel: wants radio answers to auto-advance to the next tab (checkboxes stay); the #567 skip strikethrough on tab text read as a rendering glitch | #733 |
 | 2026-09-03 | Switching models never updates the footer model text (tracks the transcript cost field, not the switch); dialog wants select-then-OK with Cancel reverting | #746 |
 | 2026-09-03 | Wants the footer model name clickable — one-click quick-switch popup menu, no OK step | #747 |
+| 2026-09-03 | /clear (menu or typed) sometimes leaves old session text on screen; a second /clear wipes it — intermittent | #748 |
