@@ -522,6 +522,208 @@ describe('the conversation being replaced', () => {
   });
 });
 
+// ── `conversation_reset`: the FIRST /clear wipes (#748) ─────────────────────
+//
+// The bug: the wipe used to be inferred from a `system:init` whose id differs
+// from the last one seen, and **nothing announces an id until the first TURN**
+// (measured, probe 2 — zero inits before any prompt). So on a session that has
+// not replied yet, `/clear` landed on `conversationId === undefined`, which set
+// the id and returned, wiping nothing. The second `/clear` finally had
+// something to differ from. That is the whole of the owner's report.
+//
+// The shapes below are the real ones, from the probes on the issue — including
+// the two-message sequence and its measured ORDER (reset first, init 12-20ms
+// later), because the interaction between them is where the double-wipe would
+// hide.
+const RESET = (
+  gone: string,
+  next = 'a78738c8-2e7e-46e8-a4af-4049f97c8af6'
+): Record<string, unknown> => ({
+  type: 'conversation_reset',
+  session_id: gone,
+  // Carried by the real message, and DELIBERATELY IGNORED — see the test that
+  // names it. Present in the fixture so a change that starts reading it fails
+  // here rather than in front of the owner.
+  new_conversation_id: next,
+  uuid: 'c8145caf-4819-49c2-947c-2f7dce4da437',
+});
+const NEW_CONV = 'b21fb84e-f286-4363-8dc5-b5f72c741128';
+
+describe('`/clear` wipes the FIRST time (#748)', () => {
+  it('wipes a session that has never seen an init — THE BUG', () => {
+    // No init has arrived, so `conversationId` is undefined. This is the card
+    // you just opened and cleared, and it is where the old code did nothing at
+    // all. The reset's `session_id` names a conversation this feed has never
+    // heard of, which is exactly the state that must not be a precondition.
+    feed.offer(SID, assistant([{ type: 'text', text: 'left over' }]));
+    expect(feed.blocks(SID)).toHaveLength(1);
+
+    feed.offer(SID, RESET('4d6adc68-394d-40ab-8250-ed44a4520a29'));
+
+    expect(feed.blocks(SID)).toHaveLength(0);
+    expect(resets).toEqual(['clear']);
+  });
+
+  it('wipes a RESUMED card, which failed every single time', () => {
+    // `hydrate()` deliberately never sets `conversationId` — seeding it would
+    // make a forked `--resume` id look like a clear and wipe the history it
+    // just replayed. Sound, and it left a card full of replayed history
+    // guaranteed to swallow its first `/clear`.
+    feed.hydrate(SID, [
+      { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'history' }] } },
+    ]);
+    expect(feed.blocks(SID)).toHaveLength(1);
+
+    feed.offer(SID, RESET('some-resumed-conversation'));
+
+    expect(feed.blocks(SID)).toHaveLength(0);
+    expect(resets).toEqual(['clear']);
+  });
+
+  it('the measured sequence wipes exactly ONCE, reset then init', () => {
+    // The real thing, in the real order: reset carrying the OLD id, then an
+    // init 20ms later carrying a NEW one. Two triggers, two ids, one divider —
+    // the ticket's idempotency requirement, which stopped being precautionary
+    // the moment both signals started arriving.
+    feed.offer(SID, { type: 'system', subtype: 'init', session_id: CONV });
+    feed.offer(SID, assistant([{ type: 'text', text: 'before' }]));
+
+    feed.offer(SID, RESET(CONV));
+    feed.offer(SID, { type: 'system', subtype: 'init', session_id: NEW_CONV });
+
+    expect(feed.blocks(SID)).toHaveLength(0);
+    expect(resets).toEqual(['clear']);
+
+    // …and the session carries on in the new conversation, from seq 1
+    feed.offer(SID, assistant([{ type: 'text', text: 'after' }]));
+    expect(feed.blocks(SID).map((b) => b.seq)).toEqual([1]);
+    // a later turn's init for the SAME new conversation still wipes nothing
+    feed.offer(SID, { type: 'system', subtype: 'init', session_id: NEW_CONV });
+    expect(feed.blocks(SID)).toHaveLength(1);
+    expect(resets).toEqual(['clear']);
+  });
+
+  it('ignores `new_conversation_id`, which is not the id that follows', () => {
+    // MEASURED: the reset carries `new_conversation_id`, and it matches NEITHER
+    // the old conversation NOR the one the next init announces — three distinct
+    // ids in one exchange. Adopting it (the obvious way to stop a double wipe)
+    // would have guaranteed one, because the init would then differ from it.
+    feed.offer(SID, { type: 'system', subtype: 'init', session_id: CONV });
+    feed.offer(SID, assistant([{ type: 'text', text: 'before' }]));
+
+    feed.offer(SID, RESET(CONV, 'a78738c8-2e7e-46e8-a4af-4049f97c8af6'));
+    feed.offer(SID, { type: 'system', subtype: 'init', session_id: NEW_CONV });
+    feed.offer(SID, assistant([{ type: 'text', text: 'after' }]));
+
+    // one wipe, and the block that arrived AFTER it survived
+    expect(resets).toEqual(['clear']);
+    expect(texts()).toEqual(['after']);
+  });
+
+  it('ignores a reset naming a conversation the INIT path already discarded', () => {
+    // The backstop fired first (an ordering we have never measured, so it is
+    // guarded rather than assumed). The reset that follows names the
+    // conversation the init already threw away, and must not wipe the fresh one
+    // the user is now in.
+    feed.offer(SID, { type: 'system', subtype: 'init', session_id: CONV });
+    feed.offer(SID, { type: 'system', subtype: 'init', session_id: NEW_CONV });
+    expect(resets).toEqual(['clear']);
+    feed.offer(SID, assistant([{ type: 'text', text: 'in the new one' }]));
+
+    feed.offer(SID, RESET(CONV)); // the OLD conversation, already gone
+
+    expect(texts()).toEqual(['in the new one']);
+    expect(resets).toEqual(['clear']);
+  });
+
+  it('ignores the SAME reset delivered twice, even with no init between', () => {
+    // The case the first version of this guard got wrong. It suppressed on
+    // "we hold a different id", which on a turn-less session is `undefined` —
+    // so a duplicate sailed through and wiped twice, in exactly the sessions
+    // this item exists for.
+    feed.offer(SID, assistant([{ type: 'text', text: 'a' }]));
+    feed.offer(SID, RESET('conv-1'));
+    feed.offer(SID, RESET('conv-1'));
+    expect(resets).toEqual(['clear']);
+  });
+
+  it('an init arriving FIRST does not swallow the reset behind it', () => {
+    // The other direction the first guard got wrong, and the worse one: with
+    // "we hold a different id", `init(B)` on a turn-less session set B, and the
+    // reset naming A was then dropped as stale — ZERO wipes, which is #748
+    // restored in the one ordering the guard was written to cover.
+    feed.offer(SID, assistant([{ type: 'text', text: 'stale' }]));
+    feed.offer(SID, { type: 'system', subtype: 'init', session_id: NEW_CONV });
+    feed.offer(SID, RESET(CONV));
+    expect(feed.blocks(SID)).toHaveLength(0);
+    expect(resets).toEqual(['clear']);
+  });
+
+  it('two REAL clears in a row both wipe', () => {
+    // The owner's own workaround, and the thing the duplicate guard must not
+    // break: different conversations discarded, so both are real.
+    feed.offer(SID, assistant([{ type: 'text', text: 'a' }]));
+    feed.offer(SID, RESET('conv-1'));
+    feed.offer(SID, { type: 'system', subtype: 'init', session_id: 'conv-2' });
+    feed.offer(SID, assistant([{ type: 'text', text: 'b' }]));
+    feed.offer(SID, RESET('conv-2'));
+    expect(feed.blocks(SID)).toHaveLength(0);
+    expect(resets).toEqual(['clear', 'clear']);
+  });
+
+  it('wipes mid-reply, and the message that lands after it starts a fresh block', () => {
+    // "Clear Session while Claude is typing" is an ordinary gesture. The
+    // half-built block has to go with everything else, and the `assistant`
+    // message that was already in flight must not reconcile against a block
+    // that no longer exists — it belongs to the conversation just discarded.
+    feed.offer(SID, { type: 'system', subtype: 'init', session_id: CONV });
+    feed.offer(SID, ev({ type: 'content_block_start', index: 0, content_block: { type: 'text' } }));
+    feed.offer(SID, textDelta('half a th'));
+    expect(feed.blocks(SID)).toHaveLength(1);
+
+    feed.offer(SID, RESET(CONV));
+    expect(feed.blocks(SID)).toHaveLength(0);
+
+    // the in-flight message lands AFTER the wipe
+    feed.offer(SID, assistant([{ type: 'text', text: 'half a thought' }]));
+    expect(feed.blocks(SID).map((b) => b.seq)).toEqual([1]);
+    expect(texts()).toEqual(['half a thought']);
+    expect(resets).toEqual(['clear']);
+  });
+
+  it('`/compact` resets NOTHING — measured: same id, and no reset message', () => {
+    // The risk this fix had to clear before it could be written. Compaction
+    // also replaces a conversation's contents, so a wipe keyed on the wrong
+    // signal would fire on every compact. Measured (probe 3): status, then an
+    // init carrying the SAME session_id, then compact_boundary — and zero
+    // `conversation_reset`.
+    feed.offer(SID, { type: 'system', subtype: 'init', session_id: CONV });
+    feed.offer(SID, assistant([{ type: 'text', text: 'survives compaction' }]));
+
+    feed.offer(SID, { type: 'system', subtype: 'status', session_id: CONV });
+    feed.offer(SID, { type: 'system', subtype: 'status', session_id: CONV, compact_result: {} });
+    feed.offer(SID, { type: 'system', subtype: 'init', session_id: CONV });
+    feed.offer(SID, { type: 'system', subtype: 'compact_boundary', session_id: CONV });
+
+    expect(texts()).toEqual(['survives compaction']);
+    expect(resets).toEqual([]);
+  });
+
+  it('a reset with no session_id at all still wipes', () => {
+    // The field is not ours to depend on. It only ever NARROWS the wipe (the
+    // already-left guard above); a message without it is still the CLI saying
+    // the conversation is gone, and failing closed here would resurrect the
+    // silent no-op this item exists to remove.
+    feed.offer(SID, { type: 'system', subtype: 'init', session_id: CONV });
+    feed.offer(SID, assistant([{ type: 'text', text: 'before' }]));
+
+    feed.offer(SID, { type: 'conversation_reset' });
+
+    expect(feed.blocks(SID)).toHaveLength(0);
+    expect(resets).toEqual(['clear']);
+  });
+});
+
 describe('what the Feed deliberately ignores', () => {
   it('sidechain traffic — rendering it is E18-13, behind the S-11 probes', () => {
     feed.offer(SID, { ...assistant([{ type: 'text', text: 'subagent says' }]), parent_tool_use_id: 'toolu_9' });
@@ -685,7 +887,13 @@ describe('replaying a resumed conversation (#395)', () => {
     expect(resets).toEqual([]);
   });
 
-  it('/clear on a resumed session still resets — replayed history included', () => {
+  it('the init BACKSTOP still resets a resumed session — replayed history included', () => {
+    // Note what this needs: TWO inits, i.e. the resumed card must have run a
+    // turn before an id change can be detected. That is the backstop's shape
+    // and it is why it could never be the primary trigger — a `/clear` before
+    // that first turn had nothing to differ from and silently did nothing
+    // (#748). The `conversation_reset` suite above owns that case; this one
+    // pins that the older path still works underneath it.
     feed.hydrate(SID, history);
     feed.offer(SID, { type: 'system', subtype: 'init', session_id: CONV });
     feed.offer(SID, { type: 'system', subtype: 'init', session_id: 'after-the-clear' });
