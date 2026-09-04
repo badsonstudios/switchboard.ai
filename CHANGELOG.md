@@ -76,6 +76,24 @@ on the floor, and say so in your PR.
 
 ## 0.8.8 — unreleased
 
+### Added
+
+- **The model name at the bottom of a session is now a button — click it to
+  switch models in one go.** A short menu opens listing the models Claude Code
+  will accept, with a ✓ on the one you're on; click one and it switches
+  immediately, with no OK to press afterwards. `Esc`, `Tab`, clicking away or
+  clicking the button again all just close it. This is the quick path — the
+  fuller picker you get by typing `/model` still asks you to confirm, which is
+  what makes it safe to browse; this one is for when you already know what you
+  want. On a session that hasn't replied yet the button reads **model?** and
+  still opens, so you can choose before spending a turn on the wrong model.
+
+  On a session running in **Terminal mode** the name stays plain text rather
+  than becoming a button: switchboard can't change that session's model, and
+  offering a menu that could only refuse would be worse than not offering one.
+  Hover it and it points you at `/model` in the Terminal tab, which can. The
+  same applies to a session that has stopped.
+
 ### Changed
 
 - **The model picker now asks you to confirm.** Clicking a model selects it;

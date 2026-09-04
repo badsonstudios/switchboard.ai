@@ -3,6 +3,61 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🚧 IN PROGRESS — 2026-09-04: **#747** — the footer model chip becomes a one-click switcher
+>
+> Branch `feature/747-footer-model-menu`. **Built, reviewed, review findings
+> fixed, awaiting commit approval.** 6735/6736 green (the 1 is `win-cmd.test.ts`,
+> the known load flake — passes in isolation). 32 new tests, **all 25 mutations
+> caught**; the harness is `.claude/work_files/mutate-747.mjs`.
+>
+> **The design question the ticket does not raise, and my answer:** the chip's
+> value comes from `model ?? usage?.model` (`SessionGrid.tsx:1343`), so a
+> **Terminal-mode session can SHOW a model it cannot be switched to** —
+> `set_model` rides the control channel, which is stream-only. Decision: the chip
+> is a **button only when the session is switchable** (stream transport + a live
+> id); in Terminal mode it stays the plain span it is today, with a tooltip that
+> says to use `/model` in the Terminal tab. Offering a menu we know refuses is a
+> worse lie than not offering one.
+>
+> **Second decision:** the chip appears even when the model is unknown, as a
+> `model?` affordance, but only on a switchable session — the fresh card with no
+> turn yet is exactly when you want to set the model before spending one.
+>
+> ## THE TWO BLOCKERS REVIEW CAUGHT — do not re-introduce either
+>
+> * **The chip was a way to tear the menu down mid-switch.** `closeModelMenu`
+>   knew nothing about the menu's `busy`, so the menu's own "no door closes while
+>   a `set_model` is on the wire" rule guarded only two of the THREE doors.
+>   Reachable by keyboard: the click disables every row → Chromium blurs to
+>   `<body>` → Tab reaches the chip (the scrim blocks the pointer, not the
+>   keyboard) → Enter. The refusal would then land in a torn-down tree and the
+>   session would sit on the old model believing otherwise — the exact failure
+>   the hold-open rule exists to prevent. Fixed with `onBusyChange` lifting the
+>   flag into the composer, which disables the chip.
+> * **The menu outlived its session.** It rendered outside the `canSwitchModel`
+>   branch and nothing cleared it on a session change, so an ended session left a
+>   menu floating with `liveId=""`, and a RESTARTED one broke the premise this
+>   component's whole "no epoch guard needed" argument rests on. Fixed with the
+>   `canSwitchModel &&` gate, `key={sessionId}`, and an effect that clears.
+>
+> **Two guards here are belt-and-braces and are LABELLED as such** — `pick`'s
+> `if (busy)` and `closeModelMenu`'s `if (modelBusyRef.current)`. Both are
+> unreachable while `disabled` is on the rows/chip, verified by mutation rather
+> than assumed. Do not delete them as dead code; do not claim a test covers them.
+>
+> **One mutation is EQUIVALENT, not a gap:** ref-vs-state in `closeModelMenu`.
+> The menu's callback closes over a render older than the busy flag, so both read
+> `false` there. The ref is kept because that invariant is about closure age, not
+> about what the code says. It is left out of the harness rather than left green.
+>
+> **A process note worth keeping: `Get-Content` + `Set-Content` in Windows
+> PowerShell 5.1 CORRUPTED a UTF-8 source file** — 33 mojibake sequences plus a
+> BOM, in test NAMES, which review caught. Never round-trip a source file through
+> those cmdlets. Use the Edit tool, or `[System.IO.File]::ReadAllText` /
+> `WriteAllText` with `UTF8Encoding($false)`. Also: killing the mutation harness
+> mid-run (a `Select-Object -First` terminating the pipeline) leaves a mutation
+> ON DISK — check `git diff` after any interrupted run.
+
 > # 🔬 MEASURED, NOT STARTED — 2026-09-03: **#748** — the ticket's root cause is WRONG
 >
 > Ran the probe #748 step 1 demands, against the real CLI 2.1.245 on Windows

@@ -586,7 +586,11 @@
       "documents": "{documents, plural, one {# file} other {# files}} attached",
       "both": "{images, plural, one {# image} other {# images}} and {documents, plural, one {# file} other {# files}} attached"
     },
-    "modelHint": "Model last seen in this session's transcript",
+    "modelHint": "The model this session is running — click to switch it",
+    "modelHintUnknown": "Claude Code hasn't said which model this session is running yet — click to choose one",
+    "modelHintTerminal": "The model last seen in this session's transcript. This session runs in Terminal mode, so switchboard can't switch it — type /model in its Terminal tab.",
+    "modelHintInactive": "The model last seen in this session's transcript",
+    "modelUnknown": "model?",
     "send": "Send to the session",
     "sendIcon": "↑",
     "stop": "Stop Claude — interrupts the current turn",
@@ -867,7 +871,9 @@
     "ok": "OK",
     "cancel": "Cancel",
     "staged": "Not switched yet — press OK.",
-    "stagedFrom": "Still running {name} — not switched yet, press OK."
+    "stagedFrom": "Still running {name} — not switched yet, press OK.",
+    "menuLabel": "Switch this session's model",
+    "menuUnknown": "Claude Code hasn't said which model this session is running yet, so nothing is ticked. Picking one sets it."
   },
   "mcp": {
     "title": "MCP servers",

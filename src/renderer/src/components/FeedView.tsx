@@ -37,6 +37,7 @@ import { interruptSession, submitPrompt } from '../lib/composer';
 import { interceptSlash } from '../lib/slash-intercept';
 import { sessionStore } from '../store/session-store';
 import { ComposerAttachments } from './ComposerAttachments';
+import { ModelQuickMenu } from './ModelQuickMenu';
 import {
   Attachment,
   AttachmentRejection,
@@ -1403,6 +1404,104 @@ function Composer({
   /** one line of explanation for a paste that produced nothing, or null */
   const [attachNotice, setAttachNotice] = React.useState<string | null>(null);
 
+  // ── The model chip's quick-switch menu (#747) ──────────────────────────────
+  //
+  // WHERE the menu was asked for, or null for "shut" — the chip's own box, in
+  // physical client coordinates, taken at click time rather than kept in a ref
+  // a layout change could stale. `ModelQuickMenu` decides which EDGE of it to
+  // grow from, because that answer depends on the writing direction and on the
+  // room below, neither of which is knowable here.
+  const [modelMenuAt, setModelMenuAt] = React.useState<DOMRect | null>(null);
+  const modelChip = React.useRef<HTMLButtonElement | null>(null);
+  /**
+   * A `set_model` from the menu is on the wire.
+   *
+   * Held HERE and not only in the menu, because the chip is the third door out
+   * of it — Escape and click-away are the menu's own and it shuts both while a
+   * switch is outstanding, but clicking the chip again unmounts the menu from
+   * out here. Without this the keyboard route (the click disables every row,
+   * Chromium blurs to `<body>`, Tab reaches the chip, Enter) would tear the menu
+   * down mid-switch and the CLI's refusal would land in a torn-down tree — the
+   * one failure the menu's hold-open rule exists to prevent.
+   *
+   * BOTH a ref and state, and the pair is #746's `held` arrangement inverted.
+   *
+   * The STATE is how the chip's `disabled` learns about it: a control that is
+   * dead must also LOOK dead, which is the exact lie `held` fixed on the
+   * dialog's OK button.
+   *
+   * The REF is the authority for the guard, and the difference is **not
+   * observable today** — said plainly because a mutation of it stays green.
+   * `closeModelMenu` is called from the menu's own `set_model` callback, a
+   * closure built one render before the switch started, so a state read there
+   * sees `false` and the close works. That is an invariant about closure age
+   * rather than about what the code says, and it is the kind that survives
+   * until someone memoises a callback. The ref says what is meant.
+   */
+  const modelBusyRef = React.useRef(false);
+  const [modelBusy, setModelBusy] = React.useState(false);
+  const noteModelBusy = (busy: boolean): void => {
+    modelBusyRef.current = busy;
+    setModelBusy(busy);
+  };
+  /**
+   * Can we actually switch this session's model?
+   *
+   * `set_model` rides the CONTROL CHANNEL, which is stream-only — so a
+   * Terminal-mode session cannot be switched by us even though it can SHOW a
+   * model: the chip renders `model ?? usage?.model` (#746), and that fallback is
+   * the transcript's, which a PTY session fills perfectly well. Offering a menu
+   * whose every row is a known refusal would be a worse lie than not offering
+   * one, so in Terminal mode the chip stays the plain text it has always been
+   * and its tooltip says where the switcher actually lives.
+   *
+   * An empty `sessionId` fails this too: a card whose session has ended keeps
+   * rendering its footer, and there is nothing to send a `set_model` to.
+   */
+  const canSwitchModel = transport === 'stream' && sessionId !== '';
+  const closeModelMenu = (): void => {
+    // The REF, not the state — see `modelBusyRef`. Belt to the chip's
+    // `disabled` braces, which is what actually stops the click getting here;
+    // verified rather than assumed, by removing this line and watching the
+    // suite stay green.
+    if (modelBusyRef.current) return;
+    setModelMenuAt(null);
+    // …on the NEXT frame: the menu still holds focus until React has committed
+    // the unmount, and focusing before that hands it straight back.
+    //
+    // The chip's OWN window's rAF, not the global one. A popped-out card's DOM
+    // is adopted into another window while this code keeps running in the
+    // opener's realm, so the global `requestAnimationFrame` belongs to the MAIN
+    // window — which Chromium throttles hard while it is occluded behind the
+    // popout the user is actually looking at (the hazard this file already
+    // documents for the scroll restore). The chip would simply never get focus
+    // back.
+    const view = modelChip.current?.ownerDocument.defaultView;
+    const back = modelChip.current;
+    if (view) view.requestAnimationFrame(() => back?.focus());
+  };
+
+  // A session that ENDS or RESTARTS under an open menu takes the menu with it.
+  //
+  // Two different failures, one guard. If the session ends, `canSwitchModel`
+  // goes false: the chip reverts to plain text while the menu stays up, aimed
+  // at a session id that is now empty. If the session RESTARTS, `sessionId`
+  // changes under a menu that would otherwise keep its mount — and the whole
+  // reason this component needs no epoch counter is that a sitting ends with
+  // its component. Clearing here, plus the `key` on the mount below, keeps that
+  // premise true instead of merely stated.
+  // Cleared for EITHER change, not only for `canSwitchModel` going false: an
+  // open menu belongs to the session it was opened on, and a resumed card gets
+  // a brand-new live id with the old menu still floating over it. On mount both
+  // are already null, so this costs nothing on the common path.
+  React.useEffect(() => {
+    setModelMenuAt(null);
+    noteModelBusy(false);
+    // `noteModelBusy` is re-created every render and is deliberately not a
+    // dependency: this must run when the SESSION changes, not whenever the
+    // composer re-renders, and it only ever writes.
+  }, [canSwitchModel, sessionId]);
+
   // The one case where the composer has something to say before the user has
   // done anything: a previous run's chips are recorded but their bytes are not
   // here, because they were never written to disk. Saying so is the whole point
@@ -2195,10 +2294,46 @@ function Composer({
         >
           {t(`autonomy.${autonomy ?? 'ask'}`)}
         </button>
-        {model && (
-          <span
-            title={t('feedView.modelHint')}
+        {/* WHICH MODEL, and — since #747 — the switcher for it.
+
+            Three shapes, and which one you get is a fact about the session
+            rather than a style choice:
+
+            • switchable, model known → a BUTTON that opens the quick menu. It
+              takes the autonomy chip's treatment (border, padding, pointer)
+              because it is now the same kind of thing sitting right next to it,
+              and a control that looks like a label does not get clicked.
+            • switchable, model NOT known → the same button reading "model?".
+              The CLI only reports the running model once a session has replied,
+              and a fresh card is exactly when you want to choose before
+              spending a turn on the wrong one — so the affordance is there
+              before the answer is.
+            • not switchable → the plain span it always was. See
+              `canSwitchModel`. */}
+        {canSwitchModel ? (
+          <button
+            ref={modelChip}
+            type="button"
+            data-testid="composer-model"
+            title={model ? t('feedView.modelHint') : t('feedView.modelHintUnknown')}
+            aria-haspopup="menu"
+            aria-expanded={modelMenuAt !== null}
+            // Dead, and visibly so, while the menu has a switch on the wire —
+            // see `modelBusy`. This is the door the menu cannot shut for itself.
+            disabled={modelBusy}
+            onClick={(e) => {
+              // A second click on the chip CLOSES, the way every menu button
+              // does — without this the menu would reopen at the same place and
+              // read as a dead click.
+              if (modelMenuAt) return closeModelMenu();
+              setModelMenuAt(e.currentTarget.getBoundingClientRect());
+            }}
             style={{
+              background: 'transparent',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-chip)',
+              padding: '1px 8px',
+              cursor: modelBusy ? 'default' : 'pointer',
               fontFamily: 'var(--font-mono)',
               fontSize: 9.5,
               color: 'var(--faint)',
@@ -2208,8 +2343,56 @@ function Composer({
               minInlineSize: 0,
             }}
           >
-            {model}
-          </span>
+            {model ?? t('feedView.modelUnknown')}
+          </button>
+        ) : (
+          model && (
+            <span
+              data-testid="composer-model"
+              // WHY it is not clickable, and only claimed when it is true. The
+              // Terminal sentence names a tab that exists only in Terminal mode
+              // — telling an ENDED Direct session to "type /model in its
+              // Terminal tab" would point at a tab it has never had. Anything
+              // that is not `pty` (a stopped session, a transport we have not
+              // resolved yet) gets the plain statement of fact instead.
+              title={
+                transport === 'pty'
+                  ? t('feedView.modelHintTerminal')
+                  : t('feedView.modelHintInactive')
+              }
+              style={{
+                fontFamily: 'var(--font-mono)',
+                fontSize: 9.5,
+                color: 'var(--faint)',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                minInlineSize: 0,
+              }}
+            >
+              {model}
+            </span>
+          )
+        )}
+        {/* `canSwitchModel` again, and it is not redundant with the chip above:
+            the session can END while the menu is open, at which point the chip
+            reverts to plain text and this would otherwise be left floating over
+            a card, aimed at a session id that no longer resolves.
+            `key={sessionId}` is the other half — a resumed card gets a new live
+            id, and this component's "no epoch guard needed" argument rests on a
+            sitting ending with its component. */}
+        {canSwitchModel && modelMenuAt && (
+          <ModelQuickMenu
+            key={sessionId}
+            liveId={sessionId}
+            // WHAT THE CHIP SAYS, not a second question to main. The menu grew
+            // out of this text and must never tick something else; `undefined`
+            // (nothing known yet) is `null` here, which ticks nothing.
+            current={model ?? null}
+            anchor={modelMenuAt}
+            onClose={closeModelMenu}
+            onBusyChange={noteModelBusy}
+          />
         )}
         <span style={{ flex: 1 }} />
         {status === 'working' && (
