@@ -3,6 +3,93 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🚧 IN PROGRESS — 2026-09-03: **#746** — model footer is stale + picker needs OK/Cancel
+>
+> Picked up 2026-09-03, branch `feature/746-model-footer-and-commit-semantics`.
+> **At Gate 2.** Two parts, one surface. **#747 depends on part 1** — the footer
+> must track `StreamModel` before a footer click-menu can move its own text.
+> **6696 / 6697 green** (the 1 is `win-cmd.test.ts`, the known load flake).
+> 19 new tests, mutation-verified against 10 mutations.
+>
+> **Ticket diagnosis verified against `main` — it is right, and both call sites
+> are where it says.** Two sources of truth for "which model":
+> * `StreamModel` (`stream-model.ts`) — the PICKER's answer: `system:init.model`
+>   per turn + the optimistic `noteSet` on a successful `set_model`. **Exposed
+>   as a PULL only** (`sessions:currentModel`, `ipc.ts:812`). Nothing pushes it.
+> * The FOOTER reads `model` off the **usage snapshot**: `sessions:usage` →
+>   `App.tsx:570` / `SessionGrid.tsx:883` → the prop set at `SessionGrid.tsx:1285`
+>   → rendered `FeedView.tsx:2198`. That is `watcher.ts`'s last-seen
+>   `message.model` on an assistant line, kept for cost. It cannot move until the
+>   next assistant reply lands — so switching model never moves it.
+>
+> **⚠️ NOT a straight swap, and this decides the shape:** the transcript model
+> must KEEP feeding cost. `estimateCostUsd` (`UsageStrip.tsx:12`, `App.tsx:595`)
+> asks what actually ran and was billed — a transcript question, not a picker
+> question. The footer TEXT moves; the cost input stays.
+>
+> **⚠️ Gap the ticket does not mention:** a push that fires only on CHANGE cannot
+> serve a card that mounts mid-session — the model was last announced turns ago
+> and will not be re-announced until the next turn. Needs the same pull-on-mount
+> that `transcripts:binding` (`ipc.ts:927`) already exists for.
+>
+> **⚠️ `inFlight` STAYS.** The ticket says the double-guard simplifies under
+> staging. The `busy` half does; `inFlight` does not — its race (Escape while a
+> request is on the wire, reopen, act again) is still reachable with OK as the
+> trigger. Removing it would re-introduce a bug found the hard way.
+>
+> ## WHAT SHIPPED
+> * `StreamModel` gains an `onChange` seam that fires **only on a real change**;
+>   `ipc.ts` broadcasts `sessions:model`; preload gains `onModel`; the card
+>   subscribes AND pulls `currentModel` on mount. Pull never overwrites a push
+>   that already landed (`prev ??`) — the pull is the slower of the two and
+>   carries the pre-change answer.
+> * `ModelPickerDialog`: click stages, **OK** commits, Cancel/Escape/click-away
+>   discard. `data-current` still means "what the session RUNS"; `data-selected`
+>   is the new "what you clicked", because those became two different facts.
+>
+> **Two things found on the way, worth not re-deriving:**
+> * **The ipc test harness never passed a `streamModel` at all**, so
+>   `sessions:currentModel`, the optimistic `noteSet` AND the teardown's
+>   `forgetSession` were no-opping through every test in that file. Wired in.
+> * **`scripts/refusal-truthiness.test.js` caught a real defect I introduced** —
+>   the new `currentModel` call read the bridge answer without `answered()`. A
+>   capability refusal's `.ok` is `undefined`, so it fails closed SILENTLY. That
+>   guard is load-bearing; do not work around it.
+>
+> ## ⚠️ REVIEW FOUND A BLOCKER I SHIPPED PAST — read before touching this again
+> **Reading `StreamModel` ALONE blanked the footer for a whole transport.** The
+> store is fed only from `manager.onStreamMessage` (`main/index.ts:1169`), so a
+> **Terminal-mode session never produces a model at all**, and neither does a
+> stream session before its first `system:init` — which includes every resumed
+> card at the moment it appears (`priorModel` seeds `usage` for exactly that
+> reason). `FeedView` renders the chip under `{model && …}`, so it would simply
+> have vanished. That is a WORSE lie than the staleness this item set out to
+> fix: "stale for one turn" became "absent for ever, if you are not in Direct
+> mode". Fixed as `model ?? usage?.model` — the picker's answer wins whenever it
+> exists (`noteSet` runs synchronously inside the `sessions:setModel` handler,
+> so a switch has always pushed before any snapshot could answer), and the
+> transcript is the honest fallback. **Do not "simplify" that `??` away.**
+>
+> **Four more taken from the same review:**
+> * `apply()` had no `.catch`. A rejected invoke left `inFlight` latched and the
+>   component **never unmounts** (it renders `null` when shut), so every later
+>   OK would have been swallowed in silence for the life of the window.
+> * `inFlight` is a ref, so the button could not see it: OK looked alive across
+>   sittings while eating the click. Mirrored into state (`held`).
+> * Staging moved the ✓, the fill AND `aria-checked` onto the clicked row —
+>   correct for a radio — but left the RUNNING model with no representation at
+>   all. Added a "running now" marker and `role="status"` on the staged line.
+> * **A test that passed for the wrong reason**, twice over: the old "does not
+>   paint over a session you have left" never issued a `set_model`. Rewritten —
+>   and note the trap it hides, because it caught me a second time: `close()`
+>   closes over the render's OWN `onClose`, so a late verdict calls the FIRST
+>   sitting's spy. An assertion aimed at the second sitting's spy passes for
+>   ever while the dialog closes underneath the user.
+>
+> **The trade to watch:** the dialog is now one more click on a path Dan may use
+> often. That is deliberate and requested, and **#747 is the express lane that
+> pays for it** — worth doing next rather than later.
+
 > # ✅ MERGED — 2026-09-03: **#742** — binding a transcript no longer stalls the app
 >
 > **PR #749, squashed to `958ac42`, all four CI jobs green** (unit win 6m47s,

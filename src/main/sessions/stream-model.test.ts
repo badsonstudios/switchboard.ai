@@ -100,6 +100,85 @@ describe('the optimistic write', () => {
   });
 });
 
+describe('announcing a change (#746)', () => {
+  /** every (session, model) a subscriber was told about, in order */
+  function watch(s: StreamModel): { seen: string[]; off: () => void } {
+    const seen: string[] = [];
+    const off = s.onChange((sessionId, model) => void seen.push(`${sessionId}=${model}`));
+    return { seen, off };
+  }
+
+  it('tells a subscriber when an init moves the model', () => {
+    // The footer's whole reason to exist: it has to be right without anyone
+    // asking. Pull-only was enough for the picker, which asks when it opens.
+    const s = new StreamModel();
+    const w = watch(s);
+    s.offer('L1', init('claude-opus-5'));
+    expect(w.seen).toEqual(['L1=claude-opus-5']);
+  });
+
+  it('tells a subscriber about the optimistic write too', () => {
+    // This is the one the user is actually watching for — it is what makes the
+    // footer move on the switch instead of a turn later.
+    const s = new StreamModel();
+    const w = watch(s);
+    s.noteSet('L1', 'haiku');
+    expect(w.seen).toEqual(['L1=haiku']);
+  });
+
+  it('SAYS NOTHING when the model has not changed', () => {
+    // Load-bearing, not tidiness. `system:init` arrives once per TURN and
+    // carries the same model on almost all of them, so an unconditional
+    // announcement is one IPC message per turn per session reporting that
+    // nothing happened — and a repaint on the other end to match.
+    const s = new StreamModel();
+    const w = watch(s);
+    s.offer('L1', init('claude-opus-5'));
+    s.offer('L1', init('claude-opus-5'));
+    s.offer('L1', init('claude-opus-5'));
+    expect(w.seen).toEqual(['L1=claude-opus-5']);
+  });
+
+  it('does not announce an init the store REFUSED', () => {
+    // An unusable init keeps the last known model (see "the two absences"), so
+    // there is no change and there must be no announcement of one.
+    const s = new StreamModel();
+    s.offer('L1', init('claude-opus-5'));
+    const w = watch(s);
+    s.offer('L1', init(42));
+    s.noteSet('L1', '   ');
+    expect(w.seen).toEqual([]);
+  });
+
+  it('fires once, not twice, when the init CONFIRMS what we optimistically set', () => {
+    // `noteSet('haiku')` then the CLI's `init('claude-haiku-...')` is a real
+    // change (alias -> resolved id) and is announced. But an init that agrees
+    // verbatim is not.
+    const s = new StreamModel();
+    const w = watch(s);
+    s.noteSet('L1', 'claude-haiku-4-5-20251001');
+    s.offer('L1', init('claude-haiku-4-5-20251001'));
+    expect(w.seen).toEqual(['L1=claude-haiku-4-5-20251001']);
+  });
+
+  it('unsubscribes, and one listener throwing costs neither the write nor the others', () => {
+    const s = new StreamModel();
+    const seen: string[] = [];
+    s.onChange(() => {
+      throw new Error('listener exploded');
+    });
+    s.onChange((_id, m) => void seen.push(m));
+    const off = s.onChange(() => void seen.push('third'));
+    s.offer('L1', init('claude-opus-5'));
+    expect(s.modelFor('L1')).toBe('claude-opus-5'); // the write survived
+    expect(seen).toEqual(['claude-opus-5', 'third']); // and so did the later listeners
+
+    off();
+    s.offer('L1', init('claude-sonnet-5'));
+    expect(seen).toEqual(['claude-opus-5', 'third', 'claude-sonnet-5']);
+  });
+});
+
 describe('forgetSession', () => {
   it('drops the session’s model and nobody else’s', () => {
     const s = new StreamModel();

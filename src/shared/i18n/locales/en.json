@@ -856,14 +856,18 @@
     "unlistedCurrent": "This session is running {name}, which isn't one of the choices above. Picking one below will switch it.",
     "currentMark": "✓",
     "switching": "switching…",
-    "changed": "Now using {name}.",
+    "runningNow": "running now",
     "notStream": "This session runs in Terminal mode, so switchboard can't change its model. Type /model in its Terminal tab instead — Claude Code's own picker works there.",
     "sessionGone": "That session has stopped, so there's nothing to change.",
     "timedOut": "Claude Code didn't answer. The session may be busy starting up — try again in a moment.",
     "failed": "Couldn't change the model. The session is untouched.",
     "cliNote": "This asks Claude Code to switch models for this session only, straight away — no restart. It doesn't change your default for new sessions.",
     "close": "Close",
-    "closeIcon": "✕"
+    "closeIcon": "✕",
+    "ok": "OK",
+    "cancel": "Cancel",
+    "staged": "Not switched yet — press OK.",
+    "stagedFrom": "Still running {name} — not switched yet, press OK."
   },
   "mcp": {
     "title": "MCP servers",

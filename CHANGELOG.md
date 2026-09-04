@@ -76,7 +76,26 @@ on the floor, and say so in your PR.
 
 ## 0.8.8 — unreleased
 
+### Changed
+
+- **The model picker now asks you to confirm.** Clicking a model selects it;
+  pressing **OK** switches. Nothing reaches Claude Code until you press OK, so
+  **Cancel** — or `Esc`, or clicking outside — genuinely leaves the session as
+  it was, rather than needing you to switch back. Before this, clicking a row
+  applied it on the spot and the only way out of the picker was the ✕ in the
+  corner, which made it hard to tell whether you had chosen something or merely
+  looked. If Claude Code refuses the change the picker now stays open, showing
+  what it said, with your choice still selected.
+
 ### Fixed
+
+- **Switching a session's model didn't change the model name shown at the bottom
+  of the session.** It kept showing the old one until the session next replied
+  to you, so a switch you had just made looked like it had done nothing. The two
+  places were reading different things: the picker's tick knew straight away,
+  while the line along the bottom was reading a figure kept for cost estimates,
+  which only moves when a reply arrives. That line now follows the same answer
+  the picker does, and changes the moment the switch takes.
 
 - **Opening a session with a long history briefly froze the whole app.** When
   switchboard picked up a conversation that already had a lot in it, it read and

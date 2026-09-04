@@ -886,6 +886,51 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     });
   }, [live]);
 
+  // WHICH MODEL this session is running (#746) — the picker's answer, not the
+  // transcript's.
+  //
+  // Deliberately NOT `usage.model`, which is what the footer used to read: that
+  // is the last-seen `message.model` on an assistant transcript line, kept for
+  // cost estimation, and it cannot move until the session next REPLIES. So
+  // switching model left the footer on the old name for a whole turn, which
+  // reads as a switch that did not take. The cost figure still uses the
+  // transcript's field — see where `usage` is passed to `UsageStrip` — because
+  // "what was actually billed" is a transcript question.
+  //
+  // PUSH PLUS PULL, and both are needed. The push only fires on a CHANGE, so a
+  // card that mounts mid-session missed the announcement turns ago; the pull is
+  // what makes an already-running session show its model at all. Same pairing,
+  // and the same reason, as the binding effect directly below.
+  const [model, setModel] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    if (!live) {
+      setModel(null);
+      return;
+    }
+    // Cleared FIRST: a restarted or resumed card gets a brand-new live id, and
+    // carrying the previous session's model across would be the same staleness
+    // this item exists to remove, just from a different direction.
+    setModel(null);
+    let alive = true;
+    void window.switchboard.sessions.currentModel(live.id).then((raw) => {
+      // `answered` launders a capability REFUSAL, whose `.ok` is `undefined`
+      // and therefore falsy — an unlaundered read fails closed silently rather
+      // than loudly. The house rule, enforced by `refusal-truthiness`.
+      const m = answered(raw);
+      // A push that landed while the pull was in flight is NEWER than the pull
+      // — never let the older answer overwrite it.
+      if (alive) setModel((prev) => prev ?? (typeof m === 'string' ? m : null));
+    });
+    const off = window.switchboard.sessions.onModel((m) => {
+      if (m.sessionId !== live.id) return;
+      setModel(m.model);
+    });
+    return () => {
+      alive = false;
+      off();
+    };
+  }, [live]);
+
   // Binding state for a card that MOUNTS after the fact: a session that failed
   // to bind ten minutes ago will never push another snapshot, and without this
   // pull its pane would claim "no conversation yet" for the rest of the run.
@@ -1282,7 +1327,20 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     status,
     transport: live?.transport,
     autonomy: cardAutonomy,
-    model: usage?.model,
+    // The picker's answer FIRST, the transcript's as the fallback (#746).
+    //
+    // Not `model` alone, and the difference is a whole transport: `StreamModel`
+    // is fed only from `onStreamMessage` (`main/index.ts`), so a **Terminal-mode
+    // session never produces one at all** — and neither does a stream session
+    // before its first `system:init`, which includes every resumed card at the
+    // moment it appears (`priorModel` seeds `usage` for exactly that reason).
+    // Reading `model` alone would have replaced "stale for one turn" with
+    // "blank for ever, for anyone not in Direct mode", which is the worse lie.
+    //
+    // The order is what keeps the fix: `noteSet` runs synchronously inside the
+    // `sessions:setModel` handler, so a switch has already pushed before any
+    // usage snapshot could answer, and the stale value can never win.
+    model: model ?? usage?.model,
     binding: binding?.binding,
     bindingDiag: binding?.bindingDiag ?? null,
     recentlyDecided,

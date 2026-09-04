@@ -84,6 +84,9 @@ function installBridge(): void {
       pendingPermissions: () => Promise.resolve([]),
       onExited: () => off,
       onUsage: () => off,
+      // which model the footer shows (#746) — push plus pull-on-mount
+      currentModel: () => Promise.resolve(null),
+      onModel: () => off,
       onStatus: () => off,
       onTaskLabel: () => off,
       onPermissionRequest: () => off,

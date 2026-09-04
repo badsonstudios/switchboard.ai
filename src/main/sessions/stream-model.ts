@@ -35,9 +35,50 @@ import { Logger } from '../log/logger';
 
 export class StreamModel {
   private readonly bySession = new Map<string, string>();
+  private readonly listeners = new Set<(sessionId: string, model: string) => void>();
 
   /** Optional so a test can construct one bare; the app always passes it. */
   constructor(private readonly log?: Logger) {}
+
+  /**
+   * Told when a session's model CHANGES (#746). Returns its own unsubscribe.
+   *
+   * This store used to be pull-only (`sessions:currentModel`), which was enough
+   * for the picker — it asks when it opens. It is not enough for the session
+   * footer, which has to be right without anyone asking, and was therefore
+   * reading a different field entirely: the transcript's `message.model`, kept
+   * for cost estimation, which cannot move until the next assistant reply
+   * lands. Two sources of truth for one question, and the user-visible one was
+   * the stale one.
+   */
+  onChange(fn: (sessionId: string, model: string) => void): () => void {
+    this.listeners.add(fn);
+    return () => void this.listeners.delete(fn);
+  }
+
+  /**
+   * Record a value and announce it — but ONLY when it actually moved.
+   *
+   * The unchanged check is load-bearing, not tidiness. `offer` runs on every
+   * turn's `system:init`, and the model is the same on almost all of them, so
+   * an unconditional announcement would be one IPC message per turn per session
+   * carrying news that nothing happened. It also makes `noteSet` followed by
+   * the init that confirms it emit once rather than twice, which is what keeps
+   * a subscriber from seeing a redundant repaint on every single turn.
+   */
+  private set(sessionId: string, model: string): void {
+    if (this.bySession.get(sessionId) === model) return;
+    this.bySession.set(sessionId, model);
+    for (const fn of this.listeners) {
+      try {
+        fn(sessionId, model);
+      } catch (err) {
+        // A listener that throws is not allowed to cost the store its write or
+        // its other listeners — the write already happened above.
+        this.log?.error('stream model listener threw', { sessionId, error: String(err) });
+      }
+    }
+  }
 
   /**
    * Feed one stream message. Ignores everything that is not a `system:init`
@@ -59,7 +100,7 @@ export class StreamModel {
       });
       return;
     }
-    this.bySession.set(sessionId, model);
+    this.set(sessionId, model);
   }
 
   /**
@@ -72,7 +113,7 @@ export class StreamModel {
    */
   noteSet(sessionId: string, model: string): void {
     if (!model.trim()) return;
-    this.bySession.set(sessionId, model);
+    this.set(sessionId, model);
   }
 
   /**
@@ -88,7 +129,17 @@ export class StreamModel {
     return this.bySession.get(sessionId) ?? null;
   }
 
-  /** The session is gone; so is its model. */
+  /**
+   * The session is gone; so is its model.
+   *
+   * SILENT, unlike `set` — no `onChange`. Not an oversight: a subscriber's
+   * interest is "what is this session running", and the answer for a session
+   * that no longer exists is nothing at all, not a value to repaint. The
+   * asymmetry has one visible consequence — forgetting a session and then
+   * offering the SAME model announces it again, correctly, because the store's
+   * public answer really did pass through `null` in between. Unreachable in
+   * practice: live ids are never reused.
+   */
   forgetSession(sessionId: string): void {
     this.bySession.delete(sessionId);
   }

@@ -17,9 +17,21 @@ the list".
 
 ## Switching
 
-Click a model. That's it — the change takes effect immediately, for **this
-session only**, and the conversation carries on where it was. There's no
-restart and nothing to save.
+Click a model to select it, then press **OK**.
+
+Clicking on its own doesn't change anything — it just marks your choice. Nothing
+is sent to Claude Code until you press OK, which means **Cancel** (or `Esc`, or
+clicking outside the picker) leaves the session exactly as it was. There's no
+"undo" to hunt for, because nothing happened.
+
+Once you press OK the change takes effect immediately, for **this session
+only**, the picker closes, and the conversation carries on where it was. There's
+no restart and nothing else to save. You'll see the new model name straight away
+in the small grey text along the bottom of the session.
+
+If Claude Code refuses the change, the picker stays open and shows you what it
+said, with your choice still selected — so you can try again, pick something
+else, or cancel.
 
 It does **not** change what new sessions start on. That's a Claude Code setting,
 and switchboard doesn't touch it.
@@ -33,8 +45,8 @@ replying to you, so a session that hasn't answered anything yet genuinely hasn't
 told anyone. switchboard would rather say "not known yet" than tick a likely
 guess and be wrong about the one thing you opened this to find out.
 
-Two ways to clear it up: pick a model (then it's ticked, because you chose it),
-or send any prompt and reopen the picker.
+Two ways to clear it up: switch to a model (then it's ticked, because you chose
+it), or send any prompt and reopen the picker.
 
 ## In Terminal mode
 
