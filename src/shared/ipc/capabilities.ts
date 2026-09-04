@@ -378,6 +378,10 @@ export const CHANNEL_CAPABILITIES = {
   // carries the new value, because its two readers have nothing to re-read
   'sessions:taskLabel': 'sessions.read',
   'sessions:usage': 'sessions.read',
+  // which model a session is running, the moment it moves (#746) — the footer's
+  // source, and the same capability as the pull it complements
+  // (`sessions:currentModel`)
+  'sessions:model': 'sessions.read',
   // how far the download/verify/install has got (E19-04). Same capability as
   // starting one: a window that may not install may not watch one either.
   'update:installStatus': 'update.install',

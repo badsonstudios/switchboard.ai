@@ -88,9 +88,9 @@ function installBridge(): void {
   };
 }
 
-async function mount(liveId: string | null = 'L1'): Promise<void> {
+async function mount(liveId: string | null = 'L1', onClose: () => void = () => {}): Promise<void> {
   await act(async () => {
-    root.render(<ModelPickerDialog open onClose={() => {}} liveId={liveId} />);
+    root.render(<ModelPickerDialog open onClose={onClose} liveId={liveId} />);
   });
   await act(async () => {
     await Promise.resolve();
@@ -112,6 +112,10 @@ async function click(el: Element | null): Promise<void> {
 const rows = (): HTMLElement[] => Array.from(host.querySelectorAll<HTMLElement>('[data-model]'));
 const rowFor = (v: string): HTMLElement => host.querySelector<HTMLElement>(`[data-model="${v}"]`)!;
 const text = (): string => host.textContent ?? '';
+const okBtn = (): HTMLButtonElement => host.querySelector<HTMLButtonElement>('[data-model-ok]')!;
+const cancelBtn = (): HTMLButtonElement =>
+  host.querySelector<HTMLButtonElement>('[data-model-cancel]')!;
+const sets = (): typeof calls => calls.filter((c) => c.channel === 'setModel');
 
 beforeAll(async () => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
@@ -312,65 +316,143 @@ describe('the list', () => {
   });
 });
 
-describe('choosing one', () => {
-  it('sends the model’s VALUE, not its display name', async () => {
+describe('choosing one — select, then OK (#746)', () => {
+  // The dialog used to apply on the row click and offer only a ✕ to leave by,
+  // so there was no way to express "I picked this" separately from "this is
+  // what it is", and no way to change your mind. Clicking now STAGES; OK is
+  // the only thing that reaches the CLI; Cancel/Escape/click-away discard —
+  // and reverting is free precisely because nothing was ever sent.
+
+  it('a row click stages the choice and sends NOTHING', async () => {
+    currentAnswer = 'claude-sonnet-5';
+    await mount();
+    await click(rowFor('haiku'));
+    // THE CLAIM. Before this item the same click was already on the wire.
+    expect(sets()).toHaveLength(0);
+    // The radiogroup follows the click…
+    expect(rowFor('haiku').dataset.selected).toBe('yes');
+    expect(rowFor('sonnet').dataset.selected).toBeUndefined();
+    // …while what the session is RUNNING has not moved, because it has not.
+    expect(rowFor('sonnet').dataset.current).toBe('yes');
+    expect(rowFor('haiku').dataset.current).toBeUndefined();
+    // and it says so rather than leaving the difference to be inferred
+    expect(host.querySelector('[data-model-staged]')).not.toBeNull();
+  });
+
+  it('OK sends the model’s VALUE, not its display name', async () => {
     // `set_model` takes the id. Sending "Haiku" would be refused by the CLI —
     // correctly, and confusingly.
     await mount();
     await click(rowFor('haiku'));
-    expect(calls.filter((c) => c.channel === 'setModel')[0].args).toEqual(['L1', 'haiku']);
+    await click(okBtn());
+    expect(sets()).toHaveLength(1);
+    expect(sets()[0].args).toEqual(['L1', 'haiku']);
   });
 
-  it('ticks it immediately rather than waiting a whole turn', async () => {
-    // The authoritative value arrives on the next `system:init`, which is a
-    // turn away. A tick that only moved on the user's next prompt would read
-    // as a control that did nothing.
-    await mount();
-    expect(rowFor('haiku').dataset.current).toBeUndefined();
+  it('OK closes on success — the close is the confirmation', async () => {
+    const onClose = vi.fn();
+    await mount('L1', onClose);
     await click(rowFor('haiku'));
-    expect(rowFor('haiku').dataset.current).toBe('yes');
-    expect(text()).toContain('Haiku');
+    expect(onClose).not.toHaveBeenCalled();
+    await click(okBtn());
+    expect(onClose).toHaveBeenCalled();
   });
 
-  it('keeps the old tick and explains when the CLI refuses', async () => {
+  it('Cancel discards the selection and sends nothing', async () => {
+    const onClose = vi.fn();
+    await mount('L1', onClose);
+    await click(rowFor('haiku'));
+    await click(cancelBtn());
+    expect(sets()).toHaveLength(0);
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('Escape and click-away are the same door as Cancel', async () => {
+    // Three ways out, one behaviour — the dialog-shape convention this pane
+    // inherits. A Cancel that sent nothing while Escape sent something would
+    // be the worst possible version of commit semantics.
+    const onClose = vi.fn();
+    await mount('L1', onClose);
+    await click(rowFor('haiku'));
+    await act(async () => {
+      host
+        .querySelector('[data-testid="model-picker"]')!
+        .dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    });
+    expect(sets()).toHaveLength(0);
+    expect(onClose).toHaveBeenCalled();
+
+    onClose.mockClear();
+    await mount('L1', onClose);
+    await click(rowFor('haiku'));
+    await act(async () => {
+      // the scrim, not the dialog — `onMouseDown` on the backdrop
+      (host.firstElementChild as HTMLElement).dispatchEvent(
+        new MouseEvent('mousedown', { bubbles: true })
+      );
+    });
+    expect(sets()).toHaveLength(0);
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('a refusal keeps the dialog open, in the CLI’s words, session untouched', async () => {
+    const onClose = vi.fn();
     currentAnswer = 'claude-sonnet-5';
     setAnswer = {
       ok: false,
       reason: 'refused',
       message: 'Model "haiku" is not a recognized model id. Run /model to see available models.',
     };
-    await mount();
+    await mount('L1', onClose);
     await click(rowFor('haiku'));
+    await click(okBtn());
+    expect(text()).toContain('is not a recognized model id');
+    // It stays open, so try-again / pick-another / Cancel are all still in
+    // front of the user rather than behind a reopen.
+    expect(onClose).not.toHaveBeenCalled();
     expect(rowFor('sonnet').dataset.current).toBe('yes'); // unchanged
     expect(rowFor('haiku').dataset.current).toBeUndefined();
-    expect(text()).toContain('is not a recognized model id');
+    // and the selection survives, so OK is one press away
+    expect(rowFor('haiku').dataset.selected).toBe('yes');
   });
 
-  it('never fires twice for one click while a switch is in flight', async () => {
-    // Every row goes disabled for the duration, so an impatient second press
-    // cannot queue a second `set_model` behind the first — the CLI would apply
-    // both and the last one to land would win, which is not the one clicked
-    // last if they resolve out of order.
+  it('OK is dead until the selection would actually change something', async () => {
+    // A no-op `set_model` would make "I pressed OK and nothing happened"
+    // ambiguous between "it worked" and "it did not".
+    currentAnswer = 'claude-sonnet-5';
+    await mount();
+    expect(okBtn().disabled).toBe(true); // nothing chosen yet
+    await click(rowFor('sonnet')); // …the one it is already running
+    expect(okBtn().disabled).toBe(true);
+    await click(rowFor('haiku'));
+    expect(okBtn().disabled).toBe(false);
+  });
+
+  it('never fires twice while a switch is in flight', async () => {
+    // Staging narrows this window — one button rather than five rows — but it
+    // does not close it: OK can be pressed, Escape pressed before it lands,
+    // the dialog reopened, and OK pressed again. The CLI would apply both and
+    // the last to land wins, which is not necessarily the one chosen last.
     releaseSet = () => {};
     await mount();
+    await click(rowFor('haiku'));
     await act(async () => {
-      rowFor('haiku').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      okBtn().dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
     const land = releaseSet;
     expect(rows().every((r) => (r as HTMLButtonElement).disabled)).toBe(true);
+    expect(okBtn().disabled).toBe(true);
     expect(text()).toContain('switching');
 
-    // a second press lands on a disabled control and writes nothing
     await act(async () => {
-      rowFor('sonnet').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      okBtn().dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
-    expect(calls.filter((c) => c.channel === 'setModel')).toHaveLength(1);
+    expect(sets()).toHaveLength(1);
 
     await act(async () => {
       land();
       await Promise.resolve();
     });
-    expect(rows().some((r) => (r as HTMLButtonElement).disabled)).toBe(false);
   });
 });
 
@@ -403,15 +485,123 @@ describe('an answer for the session you have left never paints', () => {
     expect(rows().map((r) => r.dataset.model)).toEqual(['only-l2']);
   });
 
-  it('does not paint a switch confirmation over a session the user has left', async () => {
-    await mount('L1');
+  it('a verdict for the session you have left cannot close the one you are on', async () => {
+    // The epoch guard in `apply` used to protect only a NOTICE. Under commit
+    // semantics it also guards `setCurrent` and `close()` — so if it regressed,
+    // a late verdict for L1 would shut a dialog the user has since reopened for
+    // L2 and yank focus to a stale element. The old version of this test
+    // mounted, set `open={false}` and asserted no notice: with the component
+    // returning `null` when shut, and the success notice gone, it could no
+    // longer fail for the reason it named.
+    releaseSet = () => {};
     const onClose = vi.fn();
+    await mount('L1', onClose);
+    await click(rowFor('haiku'));
     await act(async () => {
-      root.render(<ModelPickerDialog open={false} onClose={onClose} liveId={null} />);
+      okBtn().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    const landL1 = releaseSet; // L1's set_model, still outstanding
+    expect(onClose).not.toHaveBeenCalled();
+
+    // …the user leaves, and opens the picker on a different session
+    releaseSet = null;
+    const onCloseL2 = vi.fn();
+    await act(async () => {
+      root.render(<ModelPickerDialog open onClose={onCloseL2} liveId="L2" />);
     });
     await act(async () => {
       await Promise.resolve();
+      await Promise.resolve();
     });
+    await click(rowFor('sonnet'));
+
+    // now L1's answer finally lands
+    await act(async () => {
+      landL1();
+      await Promise.resolve();
+    });
+
+    // Asserted on L1's OWN spy, not L2's, and that distinction is the test:
+    // `close()` is created during the L1 render and closes over the `onClose`
+    // it had then, so a late verdict escaping the guard calls THAT one — and
+    // an assertion aimed at `onCloseL2` would sit there passing for ever while
+    // the dialog closed underneath the user.
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onCloseL2).not.toHaveBeenCalled();
+    // …and `setCurrent` must not have run either: the tick belongs to L2 now.
+    expect(rowFor('haiku').dataset.current).toBeUndefined();
+    expect(rowFor('sonnet').dataset.selected).toBe('yes');
     expect(host.querySelector('[data-model-notice]')).toBeNull();
+  });
+});
+
+describe('the tick, the plan, and the two-rows-one-resolvedModel trap (#746)', () => {
+  it('names what is STILL RUNNING once the tick has moved to a plan', async () => {
+    // Staging moves the ✓, the fill and `aria-checked` onto the clicked row —
+    // right, because a radio expresses selection. But that left the running
+    // model with no representation at all, visual or assistive: while running
+    // Sonnet and staging Haiku, Sonnet was indistinguishable from a model you
+    // had never touched.
+    currentAnswer = 'claude-sonnet-5';
+    await mount();
+    // nothing is staged, so the running row IS the ticked row and says nothing
+    expect(host.querySelector('[data-model-running]')).toBeNull();
+
+    await click(rowFor('haiku'));
+    const running = host.querySelector<HTMLElement>('[data-model-running]');
+    expect(running).not.toBeNull();
+    expect(rowFor('sonnet').contains(running)).toBe(true); // on the RUNNING row
+    // …and the sentence names it, for a reader who never lands on the row
+    expect(text()).toContain('Still running');
+  });
+
+  it('OK is VISIBLY dead while a previous sitting’s switch is still outstanding', async () => {
+    // The guard that stops a second `set_model` is a ref, which render cannot
+    // see. So the button looked enabled and silently ate the click — the worst
+    // version of a guard: it works, and the user cannot tell.
+    releaseSet = () => {};
+    await mount();
+    await click(rowFor('haiku'));
+    await act(async () => {
+      okBtn().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    const land = releaseSet;
+
+    // leave and come back — a new sitting, with the request still on the wire
+    await act(async () => {
+      root.render(<ModelPickerDialog open={false} onClose={() => {}} liveId="L1" />);
+    });
+    await mount();
+    await click(rowFor('sonnet')); // a real selection, so `dirty` is not what disables it
+    expect(okBtn().disabled).toBe(true);
+    expect(sets()).toHaveLength(1);
+
+    // …and it comes back to life once the outstanding one lands
+    await act(async () => {
+      land();
+      await Promise.resolve();
+    });
+    await click(rowFor('sonnet'));
+    expect(okBtn().disabled).toBe(false);
+  });
+
+  it('OK stays live for a row that only SHARES a resolvedModel with the current one', async () => {
+    // `default` and `opus[1m]` both resolve to `claude-opus-5[1m]` in the real
+    // payload. A session on that resolved id ticks `default` (the fallback
+    // branch of `currentIndex`), so staging `opus[1m]` is a different ROW.
+    //
+    // Deliberately ENABLED. Pinning the alias is a real intent — it stops the
+    // session tracking whatever `default` becomes later — even though the CLI
+    // is on that model already. The alternative reading, that OK should go dead
+    // because "nothing changes", would make the alias unpickable.
+    currentAnswer = 'claude-opus-5[1m]';
+    await mount();
+    expect(rowFor('default').dataset.current).toBe('yes');
+    expect(rowFor('opus[1m]').dataset.current).toBeUndefined();
+
+    await click(rowFor('opus[1m]'));
+    expect(okBtn().disabled).toBe(false);
+    await click(okBtn());
+    expect(sets()[0].args).toEqual(['L1', 'opus[1m]']);
   });
 });

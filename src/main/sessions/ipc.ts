@@ -583,6 +583,17 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     );
     send('sessions:exited', e);
   });
+  // Which model a session is running, pushed the moment it moves (#746).
+  //
+  // The footer used to read this off the usage snapshot's `model`, which is the
+  // transcript's last-seen `message.model` — a COST input, and one that cannot
+  // change until the next assistant reply lands. So switching model left the
+  // footer showing the old one until the session next replied, and a control
+  // whose effect is invisible reads as a control that did nothing.
+  //
+  // `StreamModel` only emits on a real change (see its `set`), so this is not a
+  // per-turn firehose despite `system:init` arriving every turn.
+  streamModel?.onChange((sessionId, model) => send('sessions:model', { sessionId, model }));
   transcripts.onUpdate((snap) => {
     send('sessions:usage', snap);
     // A snapshot that has ingested nothing has nothing to SAY about usage, and

@@ -14,6 +14,7 @@ import { SessionIdentity } from './session-manager';
 import { StreamCommands } from './stream-commands';
 import { StreamPermissions } from './stream-permissions';
 import { StreamFeed } from '../feed/stream-feed';
+import { StreamModel } from './stream-model';
 import { Logger } from '../log/logger';
 import { SlashCommand } from '../../shared/slash-commands';
 import { readAiTitle } from '../providers/claude';
@@ -95,6 +96,17 @@ function harness(
     streamPermissions?: StreamPermissions;
     /** the Feed built from typed messages (P2-E18-10) — the real class, again */
     streamFeed?: StreamFeed;
+    /**
+     * Which model each live session runs (#721), and since #746 the source the
+     * session FOOTER is pushed from. The real class — it was absent from this
+     * harness entirely until #746, which meant `sessions:currentModel`, the
+     * optimistic `noteSet` and the teardown's `forgetSession` were all
+     * no-opping their way through every test in this file.
+     */
+    streamModel?: StreamModel;
+    /** make the control channel REFUSE a `set_model`, so the no-news-on-refusal
+     *  half of #746's push is assertable rather than assumed */
+    setModelVerdict?: unknown;
     /** the transport the manager reports for a live session (P2-E18-10) */
     transport?: TransportKind;
     /** the app-wide env override of which transport to ask for (#381) */
@@ -287,7 +299,7 @@ function harness(
       },
       setModel: (id: string, model: unknown) => {
         controlCalls.push(['setModel', id, model]);
-        return Promise.resolve({ ok: true, response: {} });
+        return Promise.resolve(opts.setModelVerdict ?? { ok: true, response: {} });
       },
       // Driven by the same set `get` answers from, so a test cannot be told two
       // different things about which sessions exist (#170 needs `list` — it is
@@ -494,6 +506,7 @@ function harness(
     streamCommands: opts.streamCommands,
     streamPermissions: opts.streamPermissions,
     streamFeed: opts.streamFeed,
+    streamModel: opts.streamModel,
     preferredTransport: opts.preferredTransport,
     /** #539 — the repairs the app announces on screen rather than only logging */
     onHistoryRepair: (r: unknown) => historyRepairs.push(r),
@@ -1483,6 +1496,64 @@ describe('registerSessionIpc — slash commands (P2-E18-09)', () => {
         ['listModels', 'live-1'],
         ['setModel', 'live-1', 'haiku'],
       ]);
+    });
+
+    it('pushes the new model the moment a switch succeeds (#746)', async () => {
+      // The footer used to read the model off the usage snapshot, i.e. the
+      // transcript's `message.model` — a cost field that cannot move until the
+      // session next REPLIES. So switching left the footer on the old name for
+      // a whole turn, and a control whose effect is invisible reads as a
+      // control that did nothing. This is the push that fixes it.
+      const streamModel = new StreamModel();
+      const h = harness(undefined, dir, { liveIds: ['live-1'], known: curated, streamModel });
+
+      expect(await h.call('sessions:setModel', 'live-1', 'haiku')).toMatchObject({ ok: true });
+      expect(h.pushed.filter((p) => p.channel === 'sessions:model')).toEqual([
+        { channel: 'sessions:model', payload: { sessionId: 'live-1', model: 'haiku' } },
+      ]);
+      // …and the pull the same surface uses on mount agrees with it
+      expect(await h.call('sessions:currentModel', 'live-1')).toBe('haiku');
+    });
+
+    it('pushes what the CLI says each turn, but says nothing when it has not moved', async () => {
+      // `system:init` arrives once per TURN, carrying the same model on almost
+      // all of them. Announcing every one would be an IPC message and a
+      // renderer repaint per turn per session reporting that nothing happened.
+      const streamModel = new StreamModel();
+      const h = harness(undefined, dir, { liveIds: ['live-1'], known: curated, streamModel });
+      const models = (): unknown[] =>
+        h.pushed.filter((p) => p.channel === 'sessions:model').map((p) => p.payload);
+
+      const init = (model: string): Record<string, unknown> => ({
+        type: 'system',
+        subtype: 'init',
+        model,
+      });
+      streamModel.offer('live-1', init('claude-opus-5'));
+      streamModel.offer('live-1', init('claude-opus-5'));
+      streamModel.offer('live-1', init('claude-sonnet-5'));
+
+      expect(models()).toEqual([
+        { sessionId: 'live-1', model: 'claude-opus-5' },
+        { sessionId: 'live-1', model: 'claude-sonnet-5' },
+      ]);
+    });
+
+    it('pushes NOTHING when the CLI refuses the switch', async () => {
+      // The session is untouched, so there is no news. A push here would move
+      // the footer to a model the session is not running — the same class of
+      // lie this item exists to remove, from the other direction.
+      const streamModel = new StreamModel();
+      const h = harness(undefined, dir, {
+        liveIds: ['live-1'],
+        known: curated,
+        streamModel,
+        setModelVerdict: { ok: false, reason: 'refused', message: 'nope' },
+      });
+
+      expect(await h.call('sessions:setModel', 'live-1', 'haiku')).toMatchObject({ ok: false });
+      expect(h.pushed.filter((p) => p.channel === 'sessions:model')).toEqual([]);
+      expect(await h.call('sessions:currentModel', 'live-1')).toBeNull();
     });
 
     it('refuses a non-string session id with a VERDICT, never a boolean or a throw', async () => {

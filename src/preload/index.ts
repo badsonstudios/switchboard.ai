@@ -400,6 +400,18 @@ const api = {
       ipcRenderer.on('sessions:taskLabel', h);
       return () => ipcRenderer.removeListener('sessions:taskLabel', h);
     },
+    /**
+     * A session's model changed (#746).
+     *
+     * Complements `currentModel`, which is the pull a surface needs when it
+     * MOUNTS: this only fires on a change, and a card opened mid-session missed
+     * the announcement turns ago.
+     */
+    onModel: (cb: (e: { sessionId: string; model: string }) => void): (() => void) => {
+      const h = (_e: unknown, m: { sessionId: string; model: string }) => cb(m);
+      ipcRenderer.on('sessions:model', h);
+      return () => ipcRenderer.removeListener('sessions:model', h);
+    },
     onUsage: (cb: (snap: unknown) => void): (() => void) => {
       const h = (_e: unknown, s: unknown) => cb(s);
       ipcRenderer.on('sessions:usage', h);
