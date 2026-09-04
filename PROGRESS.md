@@ -3,13 +3,57 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🚧 IN PROGRESS — 2026-09-03: **#746** — model footer is stale + picker needs OK/Cancel
+> # 🔬 MEASURED, NOT STARTED — 2026-09-03: **#748** — the ticket's root cause is WRONG
 >
-> Picked up 2026-09-03, branch `feature/746-model-footer-and-commit-semantics`.
-> **At Gate 2.** Two parts, one surface. **#747 depends on part 1** — the footer
-> must track `StreamModel` before a footer click-menu can move its own text.
+> Ran the probe #748 step 1 demands, against the real CLI 2.1.245 on Windows
+> with the app's own stream flags. Scripts: `.claude/work_files/clear-probe.js`
+> and `clear-probe2.js`. **Full findings on the issue** (comment 5534413837).
+> No branch, no code — this is evidence for whoever implements it.
+>
+> **REFUTED — the ticket's theory.** `/clear` does NOT withhold the init: it
+> emits `system:init` with the new id **20 ms later, every time.**
+>
+> **THE ACTUAL CAUSE — there is nothing to differ FROM.** Spawned a session,
+> said nothing for 8 s, counted inits: **ZERO.** Nothing announces a
+> conversation id at spawn; the first arrives with the first TURN. And the wipe
+> condition (`stream-feed.ts:204`) is
+> `if (s.conversationId === undefined || s.conversationId === id) { set; return; }`
+> — so on a session that has not completed a turn, `/clear` lands on `undefined`,
+> quietly SETS the id and resets nothing. The second `/clear` finally has an id
+> to differ from and wipes. That is the reported "second time works", and it is
+> why it is intermittent: it depends on whether that session has replied yet.
+>
+> **Resumed cards fail EVERY time, and by design.** `hydrate()`
+> (`stream-feed.ts:122-126`) deliberately leaves `conversationId` unset, and its
+> comment gives the good reason — seeding it would make a forked `--resume` id
+> look like a `/clear` and wipe the history it just replayed. **That reasoning
+> should stay.** The consequence is a card with a screenful of history and no id.
+>
+> **THE SIGNAL WE THROW AWAY:** the CLI emits **`conversation_reset`** 12 ms
+> BEFORE the init, carrying the OLD id. `stream-feed.ts:182` enumerates the
+> non-content types it ignores on purpose; `conversation_reset` is not among
+> them, so it falls through `default` and is silently dropped — in a switch
+> whose stated purpose is that a new message type is somebody's DECISION rather
+> than a silent no-op. Fix direction: key the reset on it, keep the init
+> comparison as belt-and-braces, and make both-firing wipe exactly once.
+>
+> **Caveats, stated not buried:** one machine, one build, `--permission-mode
+> default`, no `--resume` in the probe. The resumed-card path is read from
+> `hydrate()`'s contract, not measured end to end.
+
+> # ✅ MERGED — 2026-09-03: **#746** — footer follows the picker, and the picker asks first
+>
+> **PR #750, squashed to `28ef273`, all four CI jobs green** (unit ubuntu 3m14s,
+> unit win 13m54s, e2e ubuntu 11m7s, e2e win 24m2s). Issue closed.
 > **6696 / 6697 green** (the 1 is `win-cmd.test.ts`, the known load flake).
 > 19 new tests, mutation-verified against 10 mutations.
+>
+> ⚠️ **NOT RELEASED** — in the `0.8.8 — unreleased` section; latest release is
+> v0.8.7. Two dogfood rows filed UNTESTED.
+>
+> **#747 IS NOW UNBLOCKED** and is the natural next item: it depends on the
+> footer tracking `StreamModel`, which this shipped, and it is the express lane
+> that pays for the extra click part 2 added.
 >
 > **Ticket diagnosis verified against `main` — it is right, and both call sites
 > are where it says.** Two sources of truth for "which model":
