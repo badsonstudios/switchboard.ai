@@ -670,6 +670,10 @@ mark[data-feed-match-current] {
 .rail-dot:focus-visible,
 .rail-x:focus-visible,
 .rail-menu-item:focus-visible,
+/* the footer model chip's quick-switch menu (#747) — the same rows in the same
+ * shape as the rail's menu, so they get the same ring rather than Chromium's
+ * guess at one */
+.model-menu-item:focus-visible,
 .rail-add-group:focus-visible,
 .urgency-lamp:focus-visible,
 .collapsed-row:focus-visible,
@@ -1085,9 +1089,13 @@ mark[data-feed-match-current] {
   background: transparent;
 }
 /* the keyboard gets the same highlight the mouse does — an outline alone, on a
- * row of identical rows, is a weaker "you are here" than the fill (#197) */
+ * row of identical rows, is a weaker "you are here" than the fill (#197).
+ * `.model-menu-item` is the footer chip's menu (#747): same rows, same rule —
+ * one menu idiom, not two that drift. */
 .rail-menu-item:hover,
-.rail-menu-item:focus-visible {
+.rail-menu-item:focus-visible,
+.model-menu-item:hover:enabled,
+.model-menu-item:focus-visible {
   background: var(--rail-row-hover);
 }
 /* A group's color is DATA (user-picked from the stored palette). The design

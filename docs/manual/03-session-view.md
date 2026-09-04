@@ -167,7 +167,8 @@ The box at the bottom sends straight to the real Claude Code session:
   [Slash commands](05-slash-commands.md).
 
 Under the box is a row showing this session's **autonomy mode** (click to
-cycle) and the **model** it last used.
+cycle) and the **model** it's running — click that to switch it, or see
+[Choosing a model](18-model.md).
 
 **A prompt you haven't sent yet is kept.** Start writing, then switch that card
 to the Terminal tab and back, pop it out into its own window, dock it back, or
