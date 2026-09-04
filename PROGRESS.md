@@ -3,12 +3,37 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🚧 IN PROGRESS — 2026-09-04: **#747** — the footer model chip becomes a one-click switcher
+> # ✅ MERGED — 2026-09-04: **#747** — the footer model chip is a one-click switcher
 >
-> Branch `feature/747-footer-model-menu`. **Built, reviewed, review findings
-> fixed, awaiting commit approval.** 6735/6736 green (the 1 is `win-cmd.test.ts`,
-> the known load flake — passes in isolation). 32 new tests, **all 25 mutations
-> caught**; the harness is `.claude/work_files/mutate-747.mjs`.
+> **PR #751, squashed to `f272716`, all four CI jobs green** (unit ubuntu 3m53s,
+> unit win 6m42s, e2e ubuntu 10m25s, e2e win 22m39s). Issue closed.
+> **6735 / 6736 green** (the 1 is `win-cmd.test.ts`, the known load flake —
+> passes in isolation, verified). 32 new tests, **all 25 mutations caught**;
+> the harness is `.claude/work_files/mutate-747.mjs` (git-ignored, so it did
+> not ship — recreate it from that PR's diff if you need to re-run it).
+>
+> ⚠️ **NOT RELEASED** — in the `0.8.8 — unreleased` section; latest release is
+> v0.8.7. **Four** dogfood rows now wait on that cut (#742, #746 ×2, #747), plus
+> #724's, which IS released. **Do not offer to cut a release — owner's call,
+> standing since 2026-09-03.**
+>
+> **Next up:** nothing claimed. **#748** is the strongest candidate: its root
+> cause is MEASURED (see the block below), the ticket's own theory is refuted,
+> and the fix direction is written down — that is the cheapest item on the
+> board. Otherwise the live bug candidates are unchanged: **#740**, **#705**,
+> **#731**, **#743**, **#744**. **#716 stays open pending the owner's verdict**
+> — he said "things seem okay" on v0.8.7, which is better-not-fixed; do not
+> close it and do not re-litigate it.
+>
+> ## WHAT SHIPPED
+> * The footer chip becomes a `<button>` opening `ModelQuickMenu` — the CLI's
+>   own `list_models`, one click sends `set_model`, no OK. Escape / click-away /
+>   Tab / a second click on the chip all close it.
+> * `currentIndex`, `rowSubtitle`, `modelLabel`, `failureText` **extracted** to
+>   `lib/model-choices.ts` (the ticket asked for extract-don't-copy), and the
+>   captured five-entry payload to `lib/fixtures/cli-models.ts`, shared by three
+>   suites. **Do not trim that fixture** — dropping `opus[1m]` removes the
+>   collision `currentIndex` exists to handle.
 >
 > **The design question the ticket does not raise, and my answer:** the chip's
 > value comes from `model ?? usage?.model` (`SessionGrid.tsx:1343`), so a
@@ -106,9 +131,10 @@
 > ⚠️ **NOT RELEASED** — in the `0.8.8 — unreleased` section; latest release is
 > v0.8.7. Two dogfood rows filed UNTESTED.
 >
-> **#747 IS NOW UNBLOCKED** and is the natural next item: it depends on the
-> footer tracking `StreamModel`, which this shipped, and it is the express lane
-> that pays for the extra click part 2 added.
+> **#747 was unblocked by this and has since SHIPPED** (2026-09-04, `f272716`) —
+> see the block at the top of this file. It depended on the footer tracking
+> `StreamModel`, which this delivered, and it is the express lane that pays for
+> the extra click part 2 added.
 >
 > **Ticket diagnosis verified against `main` — it is right, and both call sites
 > are where it says.** Two sources of truth for "which model":
@@ -211,13 +237,14 @@
 > it is started before GitHub registers the workflow on a freshly-pushed SHA —
 > that is a race, not a failure.
 >
-> **Next up:** nothing claimed. Live bug candidates are **#740** (feed half of
-> #716 — but Dan reported typing "seems okay" on 2026-09-03, so the urgency
+> **Next up (as of THIS entry, 2026-09-03 — superseded by the block at the top
+> of the file):** nothing claimed. Live bug candidates were **#740** (feed half
+> of #716 — but Dan reported typing "seems okay" on 2026-09-03, so the urgency
 > dropped and it is not confirmed either way), **#705** (blurApp e2e specs fail
 > while Dan uses the desktop), **#731** (drag a stacked session out), **#743**
 > (latent, near-dead at current scale), **#744** (Electron cache, unverified
 > from source). Newly filed from the 2026-09-03 dogfood pass: **#746**, **#747**,
-> **#748**.
+> **#748** — of which #746 and #747 have since shipped.
 >
 > **Measured before planning, so nobody re-derives it.** Real corpus on this
 > machine: **8,623 transcripts, 759 MB, largest 33.22 MB / 11,295 lines.**
