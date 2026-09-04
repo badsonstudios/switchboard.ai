@@ -3,12 +3,34 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🚧 IN PROGRESS — 2026-09-04: **#748** — `/clear` leaves the old text until a second `/clear`
+> # ✅ MERGED — 2026-09-04: **#748** — `/clear` wipes the first time, not the second
 >
-> Branch `feature/748-clear-wipes-first-time`. **Built, reviewed, review findings
-> fixed, awaiting commit approval.** 6746/6747 green (the 1 is `win-cmd.test.ts`,
-> the known load flake — 47/47 in isolation, verified). 14 new tests, **all 14
-> mutations caught**; harness `.claude/work_files/mutate-748.mjs`.
+> **PR #754, squashed to `62e3028`, all four CI jobs green** (unit ubuntu 3m48s,
+> unit win 7m43s, e2e ubuntu 10m7s, e2e win 23m42s). Issue closed.
+> 6746/6747 green (the 1 is `win-cmd.test.ts`, the known load flake — 47/47 in
+> isolation, verified). 14 new tests, **all 14 mutations caught**; harness
+> `.claude/work_files/mutate-748.mjs` (git-ignored — recreate from the PR diff).
+>
+> ⚠️ **NOT RELEASED** — `0.8.8 — unreleased`; latest release is v0.8.7. **FIVE**
+> dogfood rows now wait on that cut (#742, #746 ×2, #747, #748). **Do not offer
+> to cut a release — owner's call, standing since 2026-09-03.**
+>
+> **Next up:** nothing claimed. Open bug candidates, unchanged: **#740** (feed
+> half of #716 — Dan said typing "seems okay" on v0.8.7, so it is not confirmed
+> either way), **#705**, **#731**, **#743** (latent), **#744** (unverified from
+> source). Newly filed from this item: **#752** and **#753** — of the two, #752
+> is the one with teeth, because it is the missing coverage that let #748 reach
+> the user. **#716 stays open pending the owner's verdict; do not close it and
+> do not re-litigate it.**
+>
+> ## WHAT SHIPPED
+> `offer()` cases `conversation_reset` instead of dropping it through `default`.
+> The handler wipes **unconditionally** — no "have we seen an id" precondition,
+> which was the entire defect — routes through one shared `wipe()` so two
+> signals 12 ms apart cannot become two dividers, and **blanks** `conversationId`
+> so the following init takes its existing `undefined` branch. The init
+> comparison stays as the backstop, so a CLI that stops emitting the message
+> degrades to the old behaviour rather than to no wipe at all.
 >
 > ## ⚠️ THE REVIEW BLOCKER, AND WHY IT DID NOT SINK THE FIX
 >
@@ -100,13 +122,8 @@
 > #724's, which IS released. **Do not offer to cut a release — owner's call,
 > standing since 2026-09-03.**
 >
-> **Next up:** nothing claimed. **#748** is the strongest candidate: its root
-> cause is MEASURED (see the block below), the ticket's own theory is refuted,
-> and the fix direction is written down — that is the cheapest item on the
-> board. Otherwise the live bug candidates are unchanged: **#740**, **#705**,
-> **#731**, **#743**, **#744**. **#716 stays open pending the owner's verdict**
-> — he said "things seem okay" on v0.8.7, which is better-not-fixed; do not
-> close it and do not re-litigate it.
+> **Next up (as of THIS entry — superseded by the #748 block above, which
+> shipped later the same day):** #748 was the strongest candidate and was taken.
 >
 > ## WHAT SHIPPED
 > * The footer chip becomes a `<button>` opening `ModelQuickMenu` — the CLI's
@@ -166,7 +183,11 @@
 > mid-run (a `Select-Object -First` terminating the pipeline) leaves a mutation
 > ON DISK — check `git diff` after any interrupted run.
 
-> # 🔬 MEASURED, NOT STARTED — 2026-09-03: **#748** — the ticket's root cause is WRONG
+> # 🔬 EVIDENCE — 2026-09-03: **#748** — the ticket's root cause is WRONG
+>
+> *(SHIPPED 2026-09-04 as `62e3028` — see the #748 block at the top of this file.
+> Kept because it is the measurement the fix was built from, and because the
+> refutation is worth not re-deriving.)*
 >
 > Ran the probe #748 step 1 demands, against the real CLI 2.1.245 on Windows
 > with the app's own stream flags. Scripts: `.claude/work_files/clear-probe.js`
