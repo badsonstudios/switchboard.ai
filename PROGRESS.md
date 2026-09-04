@@ -3,6 +3,89 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🚧 IN PROGRESS — 2026-09-04: **#748** — `/clear` leaves the old text until a second `/clear`
+>
+> Branch `feature/748-clear-wipes-first-time`. **Built, reviewed, review findings
+> fixed, awaiting commit approval.** 6746/6747 green (the 1 is `win-cmd.test.ts`,
+> the known load flake — 47/47 in isolation, verified). 14 new tests, **all 14
+> mutations caught**; harness `.claude/work_files/mutate-748.mjs`.
+>
+> ## ⚠️ THE REVIEW BLOCKER, AND WHY IT DID NOT SINK THE FIX
+>
+> **`conversation_reset` is NOT `/clear`-only.** Review read the CLI's own zod
+> schema out of the PATH binary — verified independently before acting on it:
+>
+> > *"Emitted by /clear, plan-mode exit, and fresh-session flows. The surface
+> > should mount a fresh transcript under new_conversation_id and reset any
+> > cached session title."*
+>
+> Two of the three emitters were unmeasured, and one of them could have been
+> catastrophic: a reset on a `--resume` spawn would wipe the history `hydrate()`
+> had just replayed. **Both measured (probe 5), both clean:**
+> * **`--resume` spawn, nothing sent, 12 s: ZERO frames.** Resumed cards safe.
+> * **Plan-mode exit** (drove it properly — plan mode, then approved the real
+>   `ExitPlanMode` `can_use_tool` over the control channel): **ZERO frames, and
+>   the `session_id` does not rotate.** No mid-work wipe.
+>
+> **Do not re-derive this.** "fresh-session flows" is the CLI's phrase for
+> something we have not identified — plausibly an SDK entry point this app never
+> drives. If a wipe ever appears from nowhere, look there first.
+>
+> ## THE GUARD WAS WRONG AND REVIEW CAUGHT IT
+>
+> The first version suppressed duplicates on *"we hold a different id"*. That
+> fails **both** ways, in the very sessions this item is about: on a turn-less
+> session the id is `undefined`, so a duplicate reset sailed through and wiped
+> twice; and had an init ever arrived FIRST, the reset behind it would have been
+> dropped as stale — **zero wipes, i.e. #748 restored** in the one ordering the
+> guard existed for. Now a separate `discarded` field answers *"have I already
+> thrown THIS conversation away"*, which is a different question from *"which
+> conversation am I in"*. Mutation M3b pins it: putting the old shape back is red.
+>
+> Also corrected: the `new_conversation_id` "DECOY" comment over-claimed from one
+> observation against a documented contract. Behaviour unchanged (blank, don't
+> adopt — right under both readings); the comment now records both.
+>
+> ## TWO FOLLOW-UPS FILED RATHER THAN BOLTED ON
+> * **#752** — the fake stream provider models no `/clear` at all, so its id
+>   never rotates and **this path has zero e2e coverage**. That is how the bug
+>   reached the owner. Deliberately not fixed here: rotating the fake's id
+>   changes the transcript filename, which is the #404/#484 machinery.
+> * **#753** — `session-manager.ts:504` tags the watcher's rebind with the SAME
+>   `prior !== undefined` blind spot. Harmless on a fresh session; on a **resumed**
+>   card it logs a false mis-bind warn and leaves the give-up clock armed.
+>
+> Starting point below: the MEASURED findings, not the ticket body — the ticket's
+> own root cause is refuted.
+>
+> ## TWO MORE MEASUREMENTS, TAKEN BEFORE PLANNING (probes 3 and 4)
+> Scripts: `.claude/work_files/clear-probe3.js` / `clear-probe4.js`, same flag
+> list as before, real CLI 2.1.245 on Windows.
+>
+> **1. `/compact` is SAFE — it emits NO `conversation_reset` and keeps its
+> `session_id`.** This was the risk that could have made the fix a worse bug
+> than the one it fixes: keying the wipe on `conversation_reset` would have
+> wiped the feed on every compaction. Measured: compact emits
+> `system:status` → `system:init` (**same id**) → `system:compact_boundary`,
+> and no reset. The existing init comparison correctly ignores it, and so does
+> the new path.
+>
+> **2. `conversation_reset` IS emitted on a session that has NEVER RUN A TURN**
+> — 16 ms after `/clear`, with zero inits before it. That is exactly the broken
+> case, so the fix reaches it. Without this the whole approach would have been
+> worthless for the bug it targets.
+>
+> **3. ⚠️ THE TRAP: `conversation_reset` carries `new_conversation_id`, and it
+> is NOT the id the next `system:init` announces.** Measured, one run, three
+> distinct ids:
+> `reset.session_id = 4d6adc68` (old) · `reset.new_conversation_id = a78738c8`
+> · `init.session_id = b21fb84e`. **Adopting `new_conversation_id` would
+> therefore guarantee a SECOND wipe 14 ms later** — the ticket's own idempotency
+> requirement, failed. The reset must blank `conversationId` instead and let the
+> init's existing `undefined` branch set it. The earlier finding on the issue
+> said the message "carries the OLD id"; it carries both, and the new one is a
+> decoy.
+>
 > # ✅ MERGED — 2026-09-04: **#747** — the footer model chip is a one-click switcher
 >
 > **PR #751, squashed to `f272716`, all four CI jobs green** (unit ubuntu 3m53s,

@@ -107,6 +107,20 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **Clearing a session sometimes left the old conversation on screen until you
+  cleared it a second time.** It looked random; it wasn't. switchboard worked
+  out that a conversation had been cleared by noticing the conversation's
+  identity change — and Claude Code doesn't tell anyone that identity until the
+  session has replied to you at least once. So clearing a session you'd just
+  opened, or one you'd just come back to, compared the new identity against
+  nothing at all and quietly did nothing. Your second **Clear conversation**
+  finally had something to compare against, which is why it worked. A session
+  you'd been talking to for a while cleared correctly first time, which is what
+  made it look intermittent. switchboard now listens for the message Claude Code
+  sends the moment it throws a conversation away, so the first clear is the one
+  that works — including on a session you've just resumed, which previously
+  failed every single time.
+
 - **Switching a session's model didn't change the model name shown at the bottom
   of the session.** It kept showing the old one until the session next replied
   to you, so a switch you had just made looked like it had done nothing. The two

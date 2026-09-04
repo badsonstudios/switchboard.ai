@@ -81,6 +81,21 @@ interface StreamedSession {
   assembling: Map<number, FeedBlock>;
   /** the conversation id the CLI last claimed, so a NEW one can reset the view */
   conversationId?: string;
+  /**
+   * The conversation we have already thrown away, so we cannot throw it away
+   * twice (#748).
+   *
+   * A SEPARATE FIELD from `conversationId`, and the review that asked for it
+   * showed why the obvious alternative is wrong. Suppressing on "we know a
+   * different id" fails in both directions, and in the case this item exists
+   * for: on a turn-less session `conversationId` is `undefined`, so a duplicate
+   * reset passes and wipes twice; and if an init ever arrived FIRST, the
+   * following reset would name an id we no longer hold and be dropped —
+   * zero wipes, which is #748 restored in the one ordering the guard was
+   * written for. "Have I already discarded THIS conversation" is the question,
+   * and it is a different question from "which conversation am I in".
+   */
+  discarded?: string;
 }
 
 export class StreamFeed {
@@ -178,12 +193,113 @@ export class StreamFeed {
         return this.finalize(sessionId);
       case 'system':
         return this.onSystem(sessionId, msg);
+      case 'conversation_reset':
+        // The CLI saying, in as many words, that it threw the conversation
+        // away. #748: this used to fall through the `default` below and be
+        // dropped — in a switch whose stated purpose is that a new message
+        // type is a DECISION rather than a silent no-op. It was a silent
+        // no-op, and it cost a user-visible bug.
+        return this.onConversationReset(sessionId, msg);
       default:
-        // rate_limit_event, transcript_mirror, control_request, keep_alive:
-        // not content. Defaulted explicitly so a NEW message type is somebody's
-        // decision rather than a silent no-op.
+        // rate_limit_event, transcript_mirror, control_request, keep_alive,
+        // and `system`'s own non-init subtypes (`status`, `compact_boundary` —
+        // both measured, #748 probe 3): not content. Defaulted explicitly so a
+        // NEW message type is somebody's decision rather than a silent no-op.
         return;
     }
+  }
+
+  /**
+   * `conversation_reset` — the CLI saying the conversation was thrown away
+   * (#748). **This is the primary trigger**; the init comparison below is the
+   * belt-and-braces.
+   *
+   * ── WHY THIS EXISTS, AND WHY THE INIT COMPARISON COULD NOT DO THE JOB ──────
+   *
+   * The comparison infers a clear from an id CHANGING, and it cannot fire until
+   * it has an id to change FROM. Measured (#748 probe 2): **nothing announces a
+   * conversation id at spawn — zero inits until the first TURN.** So on a
+   * session that has not replied yet, `/clear` lands on
+   * `conversationId === undefined`, which sets the id and returns. Nothing is
+   * wiped. The user's SECOND `/clear` finally has something to differ from, and
+   * that is the whole of the reported "the second time I do it, it clears".
+   *
+   * Resumed cards fail EVERY time for the same reason from the other end:
+   * `hydrate()` deliberately never sets `conversationId` (its comment has the
+   * good reason — seeding it would make a forked `--resume` id look like a
+   * clear and wipe the history it just replayed), so a card showing a screenful
+   * of replayed history is guaranteed to swallow its first `/clear`.
+   *
+   * This message needs none of that. It is unconditional, it is what the CLI
+   * MEANS rather than something inferred, and it arrives first — measured at
+   * 12-16 ms BEFORE the init, including on a session that has never run a turn
+   * (probe 4, which is the case that matters).
+   *
+   * ── WHAT ELSE EMITS THIS, because it is NOT `/clear`-only ─────────────────
+   *
+   * The CLI's own zod schema, read out of the PATH binary (2.1.245) per the
+   * standing rule, describes the frame as:
+   *
+   *     "Emitted by /clear, plan-mode exit, and fresh-session flows. The
+   *      surface should mount a fresh transcript under new_conversation_id and
+   *      reset any cached session title."
+   *
+   * Wiping the Feed IS mounting a fresh transcript, so following that contract
+   * is right for every emitter. But we draw "Conversation cleared" when we do
+   * it, so the other two clauses were measured rather than assumed (probe 5):
+   *
+   * * **A `--resume` spawn, saying nothing for 12 s: ZERO frames.** This was
+   *   the dangerous one — `hydrate()` has just replayed a screenful of history
+   *   that its own comment explains must never be wiped, and a reset at spawn
+   *   would delete exactly that. It does not happen.
+   * * **Plan-mode exit (`ExitPlanMode` approved over the control channel):
+   *   ZERO frames, and the `session_id` does not rotate.** So no mid-work wipe,
+   *   and nothing for the init backstop to fire on either.
+   *
+   * Caveat worth keeping: one build, one machine, and "fresh-session flows" is
+   * the CLI's phrase for something we have not identified — plausibly an SDK
+   * entry point this app never drives. If a wipe ever appears out of nowhere,
+   * this is the first place to look.
+   *
+   * ⚠️ **NOTHING EXERCISES THIS END TO END** — the fake stream provider models
+   * no `/clear` at all, so its conversation id never rotates and neither this
+   * path nor the backstop can be reached by an e2e. That gap is #752, and it is
+   * how a bug in this exact path reached the user in the first place. The
+   * coverage below it is unit-level, against message shapes captured from the
+   * real CLI.
+   *
+   * ── `new_conversation_id`: NOT ADOPTED, and correct either way ─────────────
+   *
+   * The frame carries `session_id` (the conversation being discarded) and
+   * `new_conversation_id`. Adopting the latter is the obvious way to stop the
+   * init 14 ms later from wiping a second time.
+   *
+   * TWO READINGS DISAGREE, so this does not depend on either. The CLI's own
+   * description says to mount under `new_conversation_id` — but one measured
+   * exchange (probe 4) had it match neither side:
+   *
+   *     reset.session_id          4d6adc68…   the old conversation
+   *     reset.new_conversation_id a78738c8…
+   *     init.session_id           b21fb84e…   what actually followed
+   *
+   * That is a single observation against a documented contract, which is the
+   * shape of a measurement with a confound in it — so it is recorded, not
+   * relied on. Blanking is chosen because it is right under BOTH readings: if
+   * the ids agree, the init matches `undefined` and sets it; if they do not,
+   * the init still matches `undefined` and sets it. Adopting would be right
+   * under only one of them.
+   */
+  private onConversationReset(sessionId: string, msg: Record<string, unknown>): void {
+    const gone = typeof msg.session_id === 'string' ? msg.session_id : undefined;
+    const s = this.ensure(sessionId);
+    // ALREADY THROWN THIS ONE AWAY. The question is about the conversation the
+    // frame NAMES, not about which one we think we are in — see `discarded`,
+    // which is the whole reason that is a separate field.
+    if (gone !== undefined && s.discarded === gone) return;
+    s.discarded = gone;
+    // BLANKED, not adopted — see the header. The next init sets it.
+    s.conversationId = undefined;
+    this.wipe(sessionId, s, 'the CLI reset the conversation');
   }
 
   /**
@@ -195,6 +311,17 @@ export class StreamFeed {
    * REPLACED: `/clear` mints a fresh id, and the extension bundle keys its own
    * "wipe the view" on exactly this comparison. Guarded on having seen a
    * previous id, so a session's first init never resets anything.
+   *
+   * **Since #748 this is the BACKSTOP, not the primary trigger.** It is kept
+   * rather than replaced so a CLI that stops emitting `conversation_reset` —
+   * an older build, a future one — degrades to the behaviour we had, which is
+   * wrong only for the first clear, instead of to no wipe at all.
+   *
+   * In the normal case it now fires against `conversationId === undefined`,
+   * because the reset 12 ms earlier blanked it: this sets the id and returns,
+   * and the wipe happens exactly once. `/compact` also lands here, and is
+   * inert for the reason it always was — measured (#748 probe 3), it emits an
+   * init carrying the SAME session_id, and no `conversation_reset` at all.
    */
   private onSystem(sessionId: string, msg: Record<string, unknown>): void {
     if (msg.subtype !== 'init') return;
@@ -205,10 +332,27 @@ export class StreamFeed {
       s.conversationId = id;
       return;
     }
+    // Recorded for the same reason the reset path records it: if a
+    // `conversation_reset` naming this conversation arrives afterwards — the
+    // ordering we have never measured — it must not wipe the fresh one on top.
+    s.discarded = s.conversationId;
     s.conversationId = id;
+    this.wipe(sessionId, s, 'the CLI started a new conversation');
+  }
+
+  /**
+   * Throw the view away and tell everyone once.
+   *
+   * ONE PATH FOR BOTH TRIGGERS, which is what makes the ticket's idempotency
+   * requirement structural: the "conversation cleared" divider (E10-07) is
+   * drawn by these listeners, so two routes to the wipe must not become two
+   * routes to two dividers. Callers own the `conversationId` bookkeeping that
+   * decides whether a wipe happens at all; this only performs it.
+   */
+  private wipe(sessionId: string, s: StreamedSession, why: string): void {
     s.buffer.reset();
     s.assembling.clear();
-    this.log?.info('stream feed reset: the CLI started a new conversation', { sessionId });
+    this.log?.info('stream feed reset', { sessionId, why });
     for (const l of this.resetListeners) {
       try {
         l(sessionId, 'clear');
