@@ -357,23 +357,33 @@ test.describe('Clear conversation on a Direct session', () => {
     await expect(w.getByText(CLEARED)).toBeVisible({ timeout: 15_000 });
     await expect(w.getByText('FAKE-REPLY: SFEED_CLEAR_BEFORE')).toHaveCount(0);
 
-    // THE IDEMPOTENCY GUARD IS THIS ROUND TRIP, not a count of markers.
+    // ⚠️ NOTHING HERE TESTS IDEMPOTENCY, AND NOTHING HERE CAN. Said out loud
+    // because two attempts to test it from this file were both worthless, and
+    // the second looked convincing:
     //
-    // Since #748 two signals arrive ~12ms apart — `conversation_reset` and the
-    // `system:init` behind it — and both route to one reset. Counting markers
-    // cannot catch a second wipe: `FeedView`'s `cleared` is a BOOLEAN behind a
-    // single conditional, so N resets draw one marker and an assertion of
-    // `toHaveCount(1)` passes no matter how many fired. What a second, later
-    // wipe would actually do is eat content that arrived after the first —
-    // which is exactly what this turn is.
+    //  1. `expect(CLEARED).toHaveCount(1)` cannot fail. `FeedView`'s `cleared`
+    //     is a BOOLEAN behind one conditional, so N resets draw one marker.
+    //  2. "a turn sent AFTER the clear survives" cannot fail either — VERIFIED
+    //     by mutation, not reasoned: adopting `new_conversation_id` in
+    //     `stream-feed.ts` (the decoy, which makes the init wipe a second time)
+    //     leaves this test GREEN. Both wipes land in the same tick, before this
+    //     turn is ever sent, so there is nothing left for the second one to eat.
+    //     The fake emits the whole sequence synchronously — `onClear` says so —
+    //     so no e2e driven by it can observe a break that spans ticks.
+    //
+    // Idempotency is pinned where it is observable: `stream-feed.test.ts` →
+    // "the measured sequence wipes exactly ONCE", which counts LISTENER CALLS
+    // rather than DOM nodes, and is mutation-verified against both the decoy
+    // and the keep-the-old-id variant.
+    //
+    // What this round trip does prove is worth having on its own: the session
+    // keeps working after a clear, in the new conversation, and the old content
+    // does not come back with it.
     await box.click();
     await box.fill('SFEED_CLEAR_AFTER');
     await box.press('Enter');
     await expect(w.getByText('FAKE-REPLY: SFEED_CLEAR_AFTER')).toBeVisible({ timeout: 30_000 });
     await expect(w.getByText('FAKE-REPLY: SFEED_CLEAR_BEFORE')).toHaveCount(0);
-    // still there a beat later — a late second reset would have taken it
-    await w.waitForTimeout(500);
-    await expect(w.getByText('FAKE-REPLY: SFEED_CLEAR_AFTER')).toHaveCount(1);
   });
 
   test('wipes a RESUMED card on the FIRST clear — the #748 bug itself', async () => {

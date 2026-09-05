@@ -32,8 +32,12 @@
 > * **An assertion that could not fail:** `expect(CLEARED).toHaveCount(1)` as an
 >   idempotency check. `FeedView`'s `cleared` is a **boolean** behind one
 >   conditional, so N resets draw one marker and the count always passes.
->   Replaced with the real symptom — a turn sent AFTER the clear must survive,
->   because a late second wipe would eat it.
+>   **My replacement was ALSO worthless and looked convincing** — "a turn sent
+>   after the clear survives" stays green with the decoy bug in, verified by
+>   mutation rather than argued: both wipes land in the same tick, before that
+>   turn exists. **No e2e driven by this fake can test idempotency at all**
+>   (`onClear` is synchronous); it is pinned in `stream-feed.test.ts`, which
+>   counts LISTENER CALLS rather than DOM nodes. The spec now says so.
 > * **The `/clear` match was wrong in both directions:** `text.trim() ===
 >   '/clear'` is case-SENSITIVE (the CLI's matching is not — `slash-intercept.ts`
 >   documents that as its reason for `/i`) and DOES accept a leading space
