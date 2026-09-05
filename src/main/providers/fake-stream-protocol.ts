@@ -106,6 +106,22 @@ export interface FakeStreamHost {
    * (every unit test) simply records the call.
    */
   fireHook?(payload: Record<string, unknown>): void;
+  /**
+   * Claim ANOTHER conversation id, for the one thing that mints one mid-session
+   * (#752): `/clear`.
+   *
+   * Injected rather than derived, for the reason `fake-stream-ids.ts` exists at
+   * all: the counter is the FILESYSTEM, shared across the separate child
+   * processes that every fake session is, so an id invented in here could
+   * collide with the one another spawn is about to claim — which is #603's bug
+   * at one remove, and it takes the same shape (two cards, one conversation,
+   * every native-id consumer in main confused).
+   *
+   * Optional like its two neighbours: a unit test's host has no home directory
+   * to count in, and the fallback below is deterministic on purpose so those
+   * tests can still name the id they expect.
+   */
+  nextSessionId?(): string;
 }
 
 export class FakeStreamProtocol {
@@ -190,11 +206,21 @@ export class FakeStreamProtocol {
    * What DOES rotate the id is a `/clear`, a fresh spawn, and a resume the app
    * declined — all three of which reach the main process as an ordinary
    * `system:init` announcing a new id, which is what `recordNativeId` handles.
+   *
+   * MUTABLE SINCE #752, and only for the first of those three. This class wrote
+   * the sentence above and then never implemented it: the id was `readonly`, so
+   * a fake `/clear` could not rotate anything, so the Feed's wipe — which is
+   * keyed on exactly that rotation — had no end-to-end coverage on the Direct
+   * transport at all. #748 was a bug in that uncovered path and it reached the
+   * user. Nothing else may reassign this; see `onClear`.
    */
-  private readonly sessionId: string;
+  private sessionId: string;
 
   /** the resume marker goes out once, on the first turn, not per turn */
   private resumeNoted = false;
+
+  /** how many `/clear`s this session has served — see `derivedId` (#752) */
+  private clears = 0;
 
   /** how many API messages this session has produced — see `newMessageId` */
   private messages = 0;
@@ -233,6 +259,26 @@ export class FakeStreamProtocol {
     const images = extractImages(msg.message);
     const documents = extractDocuments(msg.message);
     const cwd = this.host.cwd();
+
+    // `/clear` IS NOT A TURN, and that is why it is intercepted up here rather
+    // than alongside the `!` handlers below (#752).
+    //
+    // Everything from `transcribe` down treats this as a prompt: it writes a
+    // JSONL line and emits the `--replay-user-messages` echo. **The real CLI
+    // emits NO echo for `/clear`** — measured twice for #748, with the flag on
+    // — so a branch placed with its siblings would already have sent one, and
+    // the fake would be teaching consumers that a local command comes back like
+    // a prompt. It does not.
+    //
+    // BARE ONLY, and matched by the SAME rule `slash-intercept.ts` uses on the
+    // way out — `/^\/clear\s*$/i`, copied deliberately rather than approximated.
+    // `text.trim() === '/clear'` was the first cut and it differed from that
+    // rule in both directions: stricter on case (`/CLEAR` is a command to the
+    // CLI, whose matching is case-insensitive — the reason that file gives for
+    // its own `i`) and looser on a leading space (` /clear`, which the CLI does
+    // not treat as a command and neither does the intercept). A fake stricter
+    // than reality hides the mirror image of the bug this file exists to catch.
+    if (/^\/clear\s*$/i.test(text)) return this.onClear(cwd);
     // The attachments go back out on the echo exactly as they came in
     // (P2-E10-09/10). A fake that quietly dropped them would be a fake that
     // cannot tell a working attachment path from a broken one — which is the
@@ -969,6 +1015,94 @@ export class FakeStreamProtocol {
       plugins: [],
       uuid: this.sessionId,
     });
+  }
+
+  /**
+   * `/clear` — throw the conversation away and mint a new one (#752).
+   *
+   * THE MEASURED SEQUENCE, reproduced in order, from #748's probes against the
+   * real CLI 2.1.245 (full timelines on that issue):
+   *
+   *     SENT /clear
+   *     +16ms  conversation_reset   session_id = the OLD conversation
+   *                                 new_conversation_id = a third id
+   *     +36ms  system:init          session_id = the NEW conversation
+   *     +36ms  result subtype=success
+   *
+   * Three things here are deliberately faithful to a measurement rather than to
+   * what a tidy fake would do, because this file's whole argument is that a
+   * fake kinder than the real thing hides the bug it exists to catch:
+   *
+   * 1. **NO USER ECHO** — see `onUser`. `--replay-user-messages` is on and the
+   *    CLI still sends none for this command.
+   * 2. **`new_conversation_id` IS NOT THE ID THE INIT ANNOUNCES.** Measured:
+   *    one exchange carried three distinct ids. `stream-feed.ts` calls that
+   *    field a decoy and deliberately ignores it; a fake that made the two
+   *    agree would let a consumer adopt it and pass, then double-wipe against
+   *    the real CLI. So the fake mints a throwaway for that field.
+   * 3. **NO TRANSCRIPT LINE.** Unmeasured, and said out loud rather than
+   *    implied: the real CLI's JSONL behaviour for `/clear` was not captured.
+   *    Writing one into the OLD file would append to a conversation just
+   *    discarded, and into the NEW one would record a prompt the user never
+   *    sent to it. Neither is obviously right, so the fake does the thing with
+   *    no consequences and this comment marks the gap.
+   *
+   * The `result` is what returns the session to `idle`; without it the card sits
+   * in `working` for ever, which is `!hang`'s job and not this one.
+   *
+   * TWO THINGS THIS DOES NOT DO, both unmeasured against the real CLI and both
+   * unreachable from any test here — written down rather than left to be
+   * discovered: a `/clear` while a `can_use_tool` is outstanding leaves that
+   * request dangling in `pending` (the ⋯ menu IS live in `needs-permission`,
+   * since `controlsLocked` covers only starting/dead), and a resumed session
+   * cleared before its first turn still emits `RESUMED-FROM:<pre-clear id>` on
+   * the next one, into the fresh conversation.
+   *
+   * THE TIMING IS COLLAPSED. The gaps quoted above are real; all three messages
+   * go out in one synchronous tick here, because this class is synchronous by
+   * design. Order is what #748 turns on and order is preserved — but it means
+   * no test driven by this fake can observe an idempotency break that spans
+   * ticks, and that is a limit of the fake rather than evidence of its absence.
+   */
+  private onClear(cwd: string): void {
+    const gone = this.sessionId;
+    this.clears += 1;
+    this.emit({
+      type: 'conversation_reset',
+      session_id: gone,
+      // The decoy — see (2) above. `nextSessionId` is deliberately NOT spent on
+      // it: nothing may adopt this value, and claiming a real id would make the
+      // filesystem counter lie about how many conversations exist.
+      new_conversation_id: this.derivedId('d'),
+      uuid: this.derivedId('e'),
+    });
+    // ROTATED, which is the whole point of the item: until now the fake's id
+    // never moved, so the Feed's wipe — keyed on exactly this rotation — could
+    // not be reached by any e2e on the Direct transport.
+    //
+    // `!== gone` is not paranoia. `claimFakeSessionId` FAILS OPEN to
+    // `fakeSessionId(0)`, which on the common single-card path is this session's
+    // own id — so an unusable filesystem would "rotate" to the id we already
+    // had, emitting a reset and an init naming one conversation. The real CLI
+    // cannot produce that, and a fake that can is a fake teaching a consumer to
+    // tolerate it.
+    const claimed = this.host.nextSessionId?.();
+    this.sessionId = claimed !== undefined && claimed !== gone ? claimed : this.derivedId('c');
+    this.emitInit(cwd);
+    this.emitResult();
+  }
+
+  /**
+   * A uuid-SHAPED id derived from this session's, for the values a `/clear`
+   * needs that must not come from the shared counter.
+   *
+   * `claimFakeSessionId` puts a zero-padded DECIMAL in the last group, so a
+   * group opening with a hex letter cannot collide with any id it hands out —
+   * which is the property that lets this exist at all. Deterministic, so a spec
+   * can still name what it expects.
+   */
+  private derivedId(tag: 'c' | 'd' | 'e'): string {
+    return `${this.sessionId.slice(0, 24)}${tag}${String(this.clears).padStart(11, '0')}`;
   }
 
   /** Mirror a turn into the JSONL transcript, the way the real CLI does. */

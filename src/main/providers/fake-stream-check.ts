@@ -261,6 +261,57 @@ async function main(): Promise<number> {
     seen.filter((m) => tag(m) === 'system:init').length === 1
   );
 
+  // ---- `/clear` rotates the conversation, over real pipes (#752) ------------
+  //
+  // THE ONE PART OF #752 THE UNIT SUITE CANNOT REACH. The protocol's own tests
+  // prove it stamps the NEW id on the transcript line; what they cannot prove
+  // is that the compiled CLI then WRITES that line to `<new id>.jsonl` rather
+  // than to the file it opened at spawn. Getting that wrong is invisible on
+  // screen — the Feed is stream-built — and shows up one relaunch later as a
+  // card whose history is gone, which is the orphan #484 exists to prevent,
+  // manufactured by our own fake.
+  //
+  // IT IS THE ONLY THING THAT CATCHES IT: keying `appendTranscript` on the
+  // spawn's id rather than the line's own survived every unit mutation, because
+  // the unit suite drives the protocol object and never the compiled child.
+  const idBeforeClear = asDisplayString(
+    seen.filter((m) => tag(m) === 'system:init').at(-1)?.session_id
+  );
+  const initsBeforeClear = seen.filter((m) => tag(m) === 'system:init').length;
+  s.send(userMessage('/clear'));
+  await waitFor(
+    () => seen.filter((m) => tag(m) === 'system:init').length > initsBeforeClear,
+    10_000,
+    'the init that follows a /clear'
+  );
+  const resets = seen.filter((m) => m.type === 'conversation_reset');
+  const idAfterClear = asDisplayString(
+    seen.filter((m) => tag(m) === 'system:init').at(-1)?.session_id
+  );
+  check('/clear emits conversation_reset naming the OLD conversation', resets.length === 1);
+  check('…and the reset names the conversation being discarded', asDisplayString(resets[0]?.session_id) === idBeforeClear);
+  check('…and the init that follows announces a DIFFERENT one', idAfterClear !== '' && idAfterClear !== idBeforeClear);
+
+  // The turn AFTER the clear must land in the new conversation's file. Written
+  // by the compiled child, read back off the real filesystem — the whole point
+  // of this section.
+  s.send(userMessage('after the clear'));
+  const projects = path.join(work, '.claude', 'projects');
+  const transcriptFor = (id: string): string | undefined => {
+    for (const slug of fs.existsSync(projects) ? fs.readdirSync(projects) : []) {
+      const f = path.join(projects, slug, `${id}.jsonl`);
+      if (fs.existsSync(f)) return f;
+    }
+    return undefined;
+  };
+  await waitFor(() => transcriptFor(idAfterClear) !== undefined, 15_000, 'the new conversation to be written');
+  const fresh = transcriptFor(idAfterClear);
+  check('the turn after a /clear is written to the NEW transcript', fresh !== undefined);
+  check(
+    '…and it holds that turn, not the one from before the clear',
+    fresh !== undefined && fs.readFileSync(fresh, 'utf8').includes('after the clear')
+  );
+
   // ---- exit ------------------------------------------------------------------
   let exited = false;
   s.onExit(() => (exited = true));

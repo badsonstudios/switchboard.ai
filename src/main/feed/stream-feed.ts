@@ -261,12 +261,19 @@ export class StreamFeed {
    * entry point this app never drives. If a wipe ever appears out of nowhere,
    * this is the first place to look.
    *
-   * ⚠️ **NOTHING EXERCISES THIS END TO END** — the fake stream provider models
-   * no `/clear` at all, so its conversation id never rotates and neither this
-   * path nor the backstop can be reached by an e2e. That gap is #752, and it is
-   * how a bug in this exact path reached the user in the first place. The
-   * coverage below it is unit-level, against message shapes captured from the
-   * real CLI.
+   * DRIVEN END TO END SINCE #752, which taught the fake `/clear` so its
+   * conversation id actually rotates: `e2e/stream-feed.spec.ts` → "Clear
+   * conversation on a Direct session". Worth knowing which test covers which
+   * branch, because they are not interchangeable — on a stream session the
+   * transcript watcher's own reset is gated off (`sessions/ipc.ts`, `isStream`),
+   * so this file is the ONLY source of the cleared marker there:
+   *
+   * * the RESUMED-card test can only be satisfied by `onConversationReset` —
+   *   no turn has run, so the backstop has no id to compare against. It is
+   *   verified RED against the pre-#748 code;
+   * * the ordinary test runs a turn first, so it goes through the backstop
+   *   below and passed before #748 as well. It guards the ⋯ → send route and
+   *   that the session keeps working in the new conversation.
    *
    * ── `new_conversation_id`: NOT ADOPTED, and correct either way ─────────────
    *

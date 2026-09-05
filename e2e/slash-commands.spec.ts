@@ -248,8 +248,15 @@ test.describe('composer slash commands (E10-07)', () => {
   });
 
   // `[pty]`: the wipe rides the transcript watcher's rebind on a new native id,
-  // and a stream session's feed is not built from the transcript at all — it
-  // resets off `system:init` in `feed/stream-feed.ts`, which no e2e drives.
+  // and a stream session's feed is not built from the transcript at all.
+  //
+  // THE DIRECT HALF NOW HAS ITS OWN COVER — `stream-feed.spec.ts` → "Clear
+  // conversation on a Direct session". This comment used to end "…it resets off
+  // `system:init`, which no e2e drives", and both halves of that went stale in
+  // one day: #748 made `conversation_reset` the primary trigger (the init is
+  // the backstop), and #752 taught the fake `/clear` so the path could be
+  // driven at all. The gap this sentence described is exactly where #748's bug
+  // lived, which is why it is now named rather than merely admitted.
   test('[pty] a /clear-minted session id wipes the Feed and shows the cleared marker', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });

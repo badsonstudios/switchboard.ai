@@ -115,13 +115,30 @@ const proto = new FakeStreamProtocol(
       try {
         const dir = path.join(claudeProjectsRoot(), slugForCwd(process.cwd()));
         fs.mkdirSync(dir, { recursive: true });
-        fs.appendFileSync(path.join(dir, `${sessionId}.jsonl`), JSON.stringify(line) + '\n');
+        // THE LINE'S OWN id, not the spawn's (#752). A `/clear` rotates the
+        // conversation mid-session, and keying this on the spawn id would
+        // append the fresh conversation into the discarded one's file — the
+        // orphan #484 exists to prevent, manufactured by our own fake.
+        //
+        // INFERRED, not measured, and the distinction matters because
+        // `fake-stream-protocol.ts`'s own `/clear` docblock is careful that the
+        // real CLI's JSONL behaviour for that command was never captured. What
+        // IS measured is the invariant the inference rests on: one conversation
+        // is one file, keyed by its id (`sessions/lineage.ts`, over a
+        // 6,747-transcript corpus), and the app finds a conversation by
+        // `<id>.jsonl`. A new conversation therefore belongs in a new file.
+        const file = asDisplayString(line.sessionId) || sessionId;
+        fs.appendFileSync(path.join(dir, `${file}.jsonl`), JSON.stringify(line) + '\n');
       } catch {
         // fail open: a fake that cannot write its transcript is still a usable
         // fake for everything else
       }
     },
     fireHook,
+    // One more id from the SAME cross-process counter, for a `/clear` (#752).
+    // Deriving one inside the protocol could collide with the id another spawn
+    // is about to claim, which is #603's bug at one remove.
+    nextSessionId: () => claimFakeSessionId(idsDir),
   },
   (m) => process.stdout.write(JSON.stringify(m) + '\n'),
   { resumedFrom, sessionId }
