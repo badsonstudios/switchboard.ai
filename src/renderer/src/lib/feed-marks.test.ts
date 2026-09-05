@@ -247,12 +247,18 @@ describe('the React-ownership rule', () => {
     expect(marked()).toEqual(['ENOENT']);
   });
 
-  it('leaves a STILL-ARRIVING reply alone, class or no class', () => {
-    // `<Markdown>`'s streaming branch is real JSX in a `.feed-md` container:
-    // `{text}` beside a caret span, with React writing that text node on every
-    // token and removing it when the branch flips to HTML. Splitting it freezes
-    // the reply and then throws. Rendered markdown always wraps its text in a
-    // block element, so "parent is the container itself" is the tell.
+  it('leaves JSX text in a markdown container alone — the boundary, not a live case', () => {
+    // BUILT BY HAND, and that is the point. `<Markdown>` used to have a
+    // streaming branch that produced this exact shape — `{text}` beside a caret
+    // span, React writing that text node on every token — and splitting it
+    // froze the reply and then threw. #635 deleted the branch: a streaming
+    // block is `dangerouslySetInnerHTML` now and the caret is a CSS `::after`,
+    // so nothing in the app emits this any more.
+    //
+    // The rule survives it and so does this test, because the rule is what
+    // makes re-introducing JSX text into a markdown container safe rather than
+    // silently fatal. Read it as a boundary being held, NOT as evidence that
+    // the streaming path still needs holding.
     const b = block(1, '');
     const streaming = document.createElement('div');
     streaming.className = 'feed-md';

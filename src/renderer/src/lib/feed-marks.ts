@@ -38,16 +38,28 @@
 //   • anything BELOW `.feed-md` — rendered markdown, set with
 //     `dangerouslySetInnerHTML`, which React does not own child-wise at all.
 //
-// "Below", not "inside", and the difference is a crash. `<Markdown>` has a
-// SECOND branch: while text is still arriving it renders the raw string plus a
-// caret — `<div class="feed-md">{text}<span>▌</span></div>` — which is real JSX
-// with a tracked text node, in a container wearing the same class. Splitting
-// that one detaches the node React writes every token to (the reply would
-// freeze mid-sentence) and then removes when the stream completes and the
-// branch flips to HTML (`removeChild` on a detached node — a thrown exception
-// in a live conversation). Rendered markdown always wraps its text in a block
-// element, so a text node whose parent IS the container is never markdown's;
-// requiring a parent BELOW the container is what tells the two branches apart.
+// "Below", not "inside", and the difference USED TO BE a crash. `<Markdown>`
+// had a SECOND branch: while text was still arriving it rendered the raw string
+// plus a caret — `<div class="feed-md">{text}<span>▌</span></div>` — which is
+// real JSX with a tracked text node, in a container wearing the same class.
+// Splitting that one detached the node React wrote every token to (the reply
+// froze mid-sentence) and then removed when the stream completed and the branch
+// flipped to HTML (`removeChild` on a detached node — a thrown exception in a
+// live conversation).
+//
+// #635 DELETED THAT BRANCH. A streaming block is now the same
+// `dangerouslySetInnerHTML` as a finished one, updated about once a frame, and
+// the caret is a CSS `::after` rather than an element — so there is no
+// React-owned text node in a `.feed-md` container any more, and no glyph in the
+// DOM for a search to count either.
+//
+// THE RULE STAYS, and it is now a boundary rather than live coverage — said
+// plainly so the next reader does not mistake a passing test for a hazard that
+// still exists. Rendered markdown always wraps its text in a block element, so
+// "the parent IS the container" describes nothing markdown emits; what it costs
+// is one `closest` call, and what it buys is that re-introducing JSX text into a
+// markdown container cannot silently re-open the crash. The test that pins it
+// builds the old shape BY HAND for exactly that reason.
 //
 // What that leaves unmarked is text composed of SEVERAL React children in one
 // element — an expander's `{icon} {label}` line, for instance. A missing mark
@@ -238,7 +250,8 @@ function acceptsMark(node: Text): boolean {
   if (parent.childNodes.length === 1) return true;
   const md = parent.closest('.feed-md');
   // `md !== parent`: a text node sitting DIRECTLY in the markdown container
-  // alongside a sibling is the streaming branch's tracked string, not rendered
-  // markdown — see the header.
+  // alongside a sibling is JSX, not rendered markdown — see the header. #635
+  // removed the branch that produced one, so this now describes a shape nothing
+  // emits; it is kept as the boundary, not as live coverage.
   return !!md && md !== parent;
 }
