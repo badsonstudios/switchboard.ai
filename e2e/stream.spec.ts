@@ -370,6 +370,63 @@ test.describe('the Feed is built from typed messages (P2-E18-10)', () => {
     await expectTurnStillRunning(w);
   });
 
+  test('that text is MARKDOWN while it streams, not raw source (#635)', async () => {
+    // The owner's report: "it just shows the raw markdown as it scrolls up, and
+    // then once it's done, it renders it."
+    //
+    // `!partial-md` has the same contract as `!partial` — deltas, then silence,
+    // no `assistant` message and no transcript line — so the only possible
+    // source for anything on screen is the partial deltas. What this adds is
+    // that the deltas carry MARKDOWN, split mid-construct, and every assertion
+    // below is scoped INSIDE the block that is still streaming. A finished
+    // block cannot satisfy it, and neither can the transcript.
+    //
+    // THE MUTATION THAT MUST RED THIS is restoring `<Markdown>`'s old streaming
+    // branch (plain text plus a caret): the container still carries
+    // `data-feed-streaming`, so the first assertion passes — and there is no
+    // `h2`, no `strong` and no `pre` inside it, so the next three do not.
+    const folder = tempProjectFolder();
+    a = await launchApp({
+      seedFolder: folder,
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+    });
+    const w = a.window;
+    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
+      timeout: 25_000,
+    });
+
+    const box = w.getByPlaceholder(/Prompt this session/);
+    await box.click();
+    await box.fill('!partial-md');
+    await box.press('Enter');
+
+    // The block that is STILL FILLING IN. The attribute is written by
+    // `<Markdown>` only while `streaming` is true, so scoping to it is what
+    // makes the three assertions below statements about a partial document.
+    const live = w.locator('.feed-md[data-feed-streaming]');
+    await expect(live).toBeVisible({ timeout: 30_000 });
+    // A heading whose text arrived across two deltas.
+    await expect(live.locator('h2')).toHaveText(/STREAMED-HEADING/);
+    // A fence, rendered while the reply is still going.
+    await expect(live.locator('pre code')).toContainText('const halfWritten = 1;');
+
+    // THE ONE THAT PINS THE FILL-IN. The stream ends on `and **NEVER-` +
+    // `CLOSED` and then goes silent, so this emphasis is NEVER closed by the
+    // content — it can only be emphasis because `completePartialMarkdown`
+    // closed it. Without this delta the whole test survived neutering the
+    // fill-in to `return text`, because Playwright's retries mean the assertion
+    // runs against the FINAL streamed document, in which everything else has
+    // already completed itself. Caught in review; do not remove it.
+    await expect(live.locator('strong')).toHaveCount(2);
+    await expect(live.locator('strong').last()).toHaveText(/NEVER-CLOSED/);
+
+    // No Copy button on a fence that is still being written: a click would put
+    // half a command on the clipboard (`decorateFeedMarkdown`'s `streaming`).
+    await expect(live.locator('.feed-code-head')).toHaveCount(0);
+
+    await expectTurnStillRunning(w);
+  });
+
   // #156, measured in `spike/findings/s-11-local-slash-commands.md`. `/usage`
   // displayed NOTHING in the Session view: the CLI emits it on the stream as an
   // ordinary assistant turn, but records it in the JSONL as

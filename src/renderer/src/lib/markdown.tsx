@@ -21,7 +21,23 @@ import type { Tokens } from 'marked';
 import DOMPurify from 'dompurify';
 import type { Config as SanitizeConfig } from 'dompurify';
 
-/** The "still typing" cue. A glyph, not copy — nothing here to translate. */
+/**
+ * The "still typing" cue. A glyph, not copy — nothing here to translate.
+ *
+ * SINCE #635 THE PIXELS COME FROM CSS, not from this constant: the caret is a
+ * `::after` on the streaming container's last child (`tokens.css`), so that it
+ * trails the final word inline instead of landing on its own line under a block
+ * element, and so that it costs no DOM work on a block that re-renders every
+ * frame. This stays as the glyph of record and `markdown.test.tsx` asserts the
+ * stylesheet still uses this exact character — one character living in two
+ * files is a drift waiting to happen, and the test is what makes it not one.
+ *
+ * The COLOUR rule is unchanged and its reasoning is worth keeping (#246): the
+ * caret is the only thing on screen saying the answer is still arriving, so it
+ * is information rather than decoration. It takes `--status-working-ink` and no
+ * opacity — the raw hue at 0.8 opacity measured 2.08:1 on daylight, and an
+ * opacity on top of an ink is a second contrast cut that nothing measures.
+ */
 export const STREAMING_CARET = '▌';
 
 /**
@@ -887,19 +903,430 @@ export function renderMarkdown(text: string): string {
 }
 
 /**
+ * How many repair rounds `completePartialMarkdown` will run (#635).
+ *
+ * Repairs compose — `**bold and `code` needs a backtick AND a `**`, and each
+ * round can only see the construct the lexer stopped on. Three is the reference
+ * implementation's number (see below) and it is a fixpoint bound, not a budget:
+ * the loop exits the moment a round finds nothing, which is the common case
+ * after one.
+ */
+const PARTIAL_ROUNDS = 3;
+
+/**
+ * The placeholder URL for a half-typed link, and it is a DELIBERATE DIVERGENCE
+ * from the reference implementation, which uses `https://microsoft.com` (#635).
+ *
+ * `[docs](htt` has to become SOMETHING for the line to render as a link instead
+ * of as literal brackets, and whatever we choose is briefly a real `<a href>` in
+ * a real conversation. An invented external origin is a URL the session never
+ * said, sitting in the feed under the user's cursor for one frame — and
+ * `markdown-links.ts` would answer a click on it by asking the OS to open it.
+ * `#` is the one href that cannot navigate anywhere: it is same-document by
+ * definition, it survives the sanitizer, and it is replaced the instant the real
+ * URL finishes arriving.
+ */
+const PARTIAL_LINK_HREF = '#';
+
+/**
+ * The trailing inline construct a paragraph is in the middle of writing, as the
+ * text that would close it — or `undefined` if it is not mid-construct.
+ *
+ * Walks the paragraph's inline tokens from the END backwards, because that is
+ * where the stream is: an earlier `**` that already closed is not our business,
+ * and only a `text` token can hold an unclosed marker (an emphasis that PARSED
+ * is by definition complete). The last LINE of the token is what is examined
+ * rather than the whole of it, so a `_` three paragraphs up cannot claim a
+ * repair that belongs to the word being typed now.
+ *
+ * THE ORDER OF THE TESTS IS NO LONGER LOAD-BEARING, and this comment used to
+ * say it was. With the reference implementation's loose tests it genuinely was
+ * — `/\*\w/` matched the second asterisk of `**wor`, so asking it before `**`
+ * closed a two-character marker with one character and the emphasis never
+ * resolved. The anchored versions below cannot: `\*\w` requires a word
+ * character immediately after a SINGLE asterisk, which `**wor` does not have.
+ * The order is kept anyway — it costs nothing, it matches the reference, and it
+ * is the correct order if any of these is ever loosened again.
+ */
+function trailingInlineFix(token: Tokens.Paragraph | Tokens.Text): string | undefined {
+  const inline = token.tokens;
+  if (!inline) return undefined;
+  for (let i = inline.length - 1; i >= 0; i--) {
+    const t = inline[i];
+    // Only raw text can be mid-construct — see the header.
+    if (t.type !== 'text') continue;
+    const lines = t.raw.split('\n');
+    const line = lines[lines.length - 1];
+    // EVERY ONE OF THESE REQUIRES THE CONSTRUCT TO LOOK OPEN, and the first
+    // version of this function did not — it asked `line.includes('`')` and
+    // `line.includes('**')` and `/\*\w/`, which fire on ordinary prose. Review
+    // caught it and it was reproduced before being fixed; these were the actual
+    // outputs, and the `](#)` one cascades because `PARTIAL_ROUNDS` runs the
+    // mis-fire three times:
+    //
+    //   'see the note [1] below'      → 'see the note [1] below](#)))'
+    //   'in Python 2 ** 8 is 256'     → 'in Python 2 ** 8 is 256******'
+    //   'glob **/*.ts matches'        → '<strong>/*.ts matches</strong>'
+    //   'the cost is 4*5 dollars'     → 'the cost is 4<em>5 dollars</em>'
+    //
+    // An agent writing `[1]`, `[options]`, `2 ** 8` or `**/*.ts` is not an
+    // exotic input, and the junk stayed on screen for the rest of the
+    // paragraph. `markdown.test.tsx` now runs a table of ordinary prose through
+    // this and asserts it comes back UNCHANGED — the guard that was missing,
+    // because every case in the original table was a constructed partial.
+    //
+    // What stays deliberately ambiguous: a backtick or `_` run into a word
+    // (`a `backtick`, `_private`) really is indistinguishable from the start of
+    // a code span or emphasis, and closing it is the better guess while text is
+    // arriving.
+    if (/`[^`\s]/.test(line)) return '`';
+    if (/\*\*\w/.test(line)) return '**';
+    if (/(^|[\s([{])\*\w[^*]*$/.test(line)) return '*';
+    if (/(^|[\s([{])__\w[^_]*$/.test(line)) return '__';
+    if (/(^|[\s([{])_\w[^_]*$/.test(line)) return '_';
+    // A link, in its three half-written shapes. `[text](url` and `[text](` are
+    // one case; the destination having started a TITLE (`[t](u "ti`) is the
+    // second, and needs the quote closed before the paren; a bare `[text` has
+    // no destination at all yet and needs the whole tail.
+    // `[^)]*$` is what stops the cascade: once a round has appended `](#)`, the
+    // line ENDS in `)` and this no longer matches, so round two does not append
+    // another one. The original `\(\w*` matched a destination that was already
+    // closed, three times over.
+    const openDest = /(^|\s)\[[^\]]*\]\([^)]*$/.test(line);
+    const danglingDest = /^[^[]*\]\([^)]*$/.test(line);
+    if (
+      openDest ||
+      (danglingDest && inline.slice(0, i).some((p) => p.type === 'text' && /\[[^\]]*$/.test(p.raw)))
+    ) {
+      const after = inline.slice(i + 1);
+      const titleInNext =
+        after[0]?.type === 'link' && after[1]?.type === 'text' && /^ *"[^"]*$/.test(after[1].raw);
+      return titleInNext || /^[^"]* +"[^"]*$/.test(line) ? '")' : ')';
+    }
+    // An OPEN bracket — no `]` anywhere after it. `\[\w*` matched a closed
+    // `[1]` because `\w*` is happy with zero characters.
+    if (/(^|\s)\[[^\]]*$/.test(line)) return `](${PARTIAL_LINK_HREF})`;
+  }
+  return undefined;
+}
+
+/**
+ * A GFM table that has a header row and no separator row yet, repaired.
+ *
+ * This is the ONE repair that is not a suffix, and that is why it is shaped
+ * differently from every other one here: a table needs its `| --- |` line to be
+ * a table at all, and that line goes BETWEEN the header and whatever has been
+ * typed of the first body row. So the tail is rewritten rather than appended to,
+ * and a half-typed body row is DROPPED — it reappears one delta later as a real
+ * row, which is a cell arriving late rather than a table flickering in and out
+ * of being a paragraph.
+ *
+ * Returns the replacement for `raw`, or `undefined` if this is not a table
+ * being born — the guards matter more than the repair, because `|` is an
+ * ordinary character in prose and a false positive would rewrite a sentence.
+ */
+function tableFix(raw: string): string | undefined {
+  const lines = raw.split('\n');
+  let columns: number | undefined;
+  let partialRow = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (columns === undefined) {
+      // The header: count its cells. Anything before a `|` line is not ours.
+      if (!/^\s*\|/.test(line)) return undefined;
+      // COUNT THE SEPARATORS, NOT THE FILLED CELLS. Matching `\|[^|]+` needs at
+      // least one character per cell, so `| a || b |` counted 2 columns instead
+      // of 3 and the generated separator row did not match the header — the
+      // table silently stayed a paragraph (review). Splitting counts the empty
+      // one: a row with a leading and a trailing pipe yields two empty edge
+      // pieces, so the cells are everything between them.
+      const pieces = line.split('|');
+      columns = pieces.length - (/\|\s*$/.test(line) ? 2 : 1);
+    } else if (/^\s*\|/.test(line)) {
+      // A second `|` line that is NOT the last one means the text moved on past
+      // this table without ever separating it — not a table being born.
+      if (i !== lines.length - 1) return undefined;
+      partialRow = true;
+    } else {
+      return undefined;
+    }
+  }
+  if (columns === undefined || columns < 1) return undefined;
+  const head = partialRow ? lines.slice(0, -1).join('\n') : raw;
+  return `${head}${/\|\s*$/.test(head) ? '' : '|'}\n|${' --- |'.repeat(columns)}`;
+}
+
+/**
+ * Markdown that is still being written, completed just enough to parse as what
+ * it is becoming (#635).
+ *
+ * TEXT IN, TEXT OUT, and that is the whole security design rather than a
+ * stylistic choice. The alternative — and it is what the reference
+ * implementation does — is to patch `marked`'s TOKEN list and hand it to
+ * `marked.parser()`, which is a second entry point into the library and
+ * therefore a second thing that has to be kept in step with `MARKED_OPTIONS`
+ * and with the sanitizer. Returning a STRING means the partial render is
+ * `renderMarkdown()` — the same `marked.parse` → `DOMPurify.sanitize` call, in
+ * the same order, with the same frozen configuration — and the surface's
+ * `decorate` pass still runs after it. The #410/#465 guard ordering holds by
+ * CONSTRUCTION here, not by a reviewer noticing. There is exactly one pipeline,
+ * which is the thesis this file exists to defend.
+ *
+ * WHAT IT COSTS is precision: re-lexing the completed string is a little
+ * cruder than patching tokens in place, and it costs one extra lex per round.
+ * Measured against the corpus (see the component below) the whole pipeline is
+ * 0.07 ms on a median block, so the trade is paid in microseconds.
+ *
+ * WHAT DOES NOT NEED REPAIRING, measured against the shipped `marked` 18.0.7
+ * with `MARKED_OPTIONS` rather than assumed — this list is the reason the
+ * function is as small as it is:
+ *
+ *  - AN UNCLOSED CODE FENCE. ```` ```js\nconst a = 1; ```` renders a correct
+ *    `<pre><code class="language-js">`: the fence tokenizer terminates at end of
+ *    input. The received wisdom is that an open fence "swallows everything after
+ *    it", and while streaming there IS nothing after it — the open fence is the
+ *    end of the document by definition. Auto-closing fences was the first thing
+ *    #635 proposed and it would have been code that did nothing.
+ *  - A PARTIAL HEADING (`## Head`), A PARTIAL LIST (`- one\n- tw`), and a table
+ *    that already HAS its separator row. All three are block constructs that
+ *    parse from their opening marker, so they are already what they will be.
+ *
+ * What is left is the inline set — emphasis, code spans and links, which need a
+ * CLOSING marker to exist at all — and the table before its separator arrives.
+ * That is the same set the reference implementation covers, arrived at from the
+ * other direction.
+ *
+ * WHERE IT LOOKS, said precisely because the sentence above overclaimed until
+ * review checked it: the inline repair reaches a trailing PARAGRAPH and the
+ * last item of a trailing TIGHT LIST, and nothing else. A heading, a blockquote
+ * or a loose list item that is mid-emphasis still shows its raw `**` until it
+ * closes — `'## Head with **bol'`, `'> quoted **bol'` and
+ * `'- a\n\n  para **bol'` are all deliberate no-ops. That is a scope decision
+ * rather than an oversight: in those constructs a stray marker is one short
+ * line rather than a whole paragraph, and every extra case is another chance to
+ * repair prose that did not need it — which `trailingInlineFix` already shipped
+ * a bug of exactly that kind.
+ */
+export function completePartialMarkdown(text: string): string {
+  let out = text;
+  for (let round = 0; round < PARTIAL_ROUNDS; round++) {
+    const repaired = repairOnce(out);
+    if (repaired === undefined) break;
+    out = repaired;
+  }
+  return out;
+}
+
+/**
+ * One repair round: the completed text, or `undefined` if nothing is open.
+ *
+ * NEWLINES ARE NORMALISED FIRST, and that is a correctness fix rather than
+ * tidiness (found in review). `marked` collapses `\r\n` and `\r` to `\n` before
+ * it lexes, so `token.raw` sums to the NORMALISED length while `text.slice()`
+ * would index the ORIGINAL — every CRLF before a token shifts `offset` one to
+ * the left, and the table repair then slices from the wrong place. On a
+ * Windows-first app whose streamed text carries quoted files and tool output,
+ * CRLF is not a hypothetical. Lex and slice the same string and the drift
+ * cannot exist.
+ *
+ * It does not cost the no-op property that the end-of-turn flip depends on: a
+ * round with nothing to repair still returns `undefined`, so a document with no
+ * open construct is returned byte-for-byte as it arrived, CRLF included.
+ */
+function repairOnce(original: string): string | undefined {
+  const text = original.includes('\r') ? original.replace(/\r\n|\r/g, '\n') : original;
+  // `lexer` rather than `parse` so the repair can see WHICH construct the text
+  // ended inside. It is the same library under the same options; nothing here
+  // renders, and the repaired string goes back through `renderMarkdown`.
+  //
+  // A SHALLOW COPY, AND IT IS NOT OPTIONAL — this is the one place in the file
+  // where `Object.freeze(MARKED_OPTIONS)` bites. The freeze comment above says
+  // it is safe "because `marked` copies options into a fresh object per parse
+  // rather than writing to ours", and that is true of `marked.parse` and FALSE
+  // of `marked.lexer`: `new Lexer(options)` assigns `options.tokenizer` onto the
+  // object it was handed, so passing the frozen constant throws
+  // `Cannot add property tokenizer, object is not extensible` on the first
+  // streamed token. Found by the suite, not by reading. Spread rather than a
+  // hand-written subset so the lexer keeps taking its settings FROM the one
+  // constant — `gfm` decides whether a table is a table, and a second copy of
+  // that answer is the drift this whole file exists to prevent.
+  const tokens = marked.lexer(text, { ...MARKED_OPTIONS });
+  let offset = 0;
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    const last = i === tokens.length - 1;
+    // A table being born: `marked` reads a header row with no separator as an
+    // ordinary paragraph, so this is the shape to look for. Checked on EVERY
+    // token rather than only the last because the header and the first body row
+    // can arrive as one paragraph with prose already after them.
+    if (token.type === 'paragraph' && /(\n|^)\|/.test(token.raw)) {
+      const fixed = tableFix(text.slice(offset));
+      return fixed === undefined ? undefined : text.slice(0, offset) + fixed;
+    }
+    // Everything else is a SUFFIX on the end of the document, and it is only
+    // ever the last token that can be mid-write. A list's incomplete inline
+    // lives in its final item, which is also the end of the text, so appending
+    // reaches it without reconstructing the list.
+    if (last && (token.type === 'paragraph' || token.type === 'list')) {
+      const paragraph =
+        token.type === 'paragraph'
+          ? (token as Tokens.Paragraph)
+          : lastParagraphOfList(token as Tokens.List);
+      const suffix = paragraph === undefined ? undefined : trailingInlineFix(paragraph);
+      return suffix === undefined ? undefined : text + suffix;
+    }
+    offset += token.raw.length;
+  }
+  return undefined;
+}
+
+/**
+ * The final list item's trailing text, if it is a plain one.
+ *
+ * `inRawBlock` is the reference implementation's own guard and it is kept: an
+ * item whose tokens came out of raw HTML is not prose being typed, and
+ * appending a `**` to it would be writing into markup the sanitizer is about to
+ * judge.
+ */
+function lastParagraphOfList(list: Tokens.List): Tokens.Text | undefined {
+  const item = list.items[list.items.length - 1];
+  if (!item || 'inRawBlock' in item) return undefined;
+  const tail = item.tokens?.[item.tokens.length - 1];
+  return tail?.type === 'text' ? (tail as Tokens.Text) : undefined;
+}
+
+/**
+ * The attribute that says "this block is still filling in".
+ *
+ * It is a `data-` attribute rather than a class, and that is the forgery
+ * argument rather than a preference (#635). The caret is drawn from CSS off
+ * this attribute, so anything wearing it gets one — and a reply that could
+ * write it onto itself would be painting a "still typing" cue onto a turn that
+ * finished, in every surface at once. `SANITIZE_CONFIG` sets
+ * `ALLOW_DATA_ATTR: false`, so no `data-*` survives from CONTENT anywhere, with
+ * or without a decoration pass; React writes this one onto the container, which
+ * is markup content never reaches. A `class` would have needed the feed's
+ * take-back pass to be safe, and `UpdateDialog` renders `.feed-md` with no
+ * decoration pass at all.
+ */
+export const STREAMING_ATTR = 'data-feed-streaming';
+
+/**
+ * How long a coalescing window is, as a promise rather than a number: ONE
+ * ANIMATION FRAME. `requestAnimationFrame` is the unit because the thing being
+ * saved is a paint, and deltas arrive on the CLI's schedule rather than the
+ * compositor's — a burst of forty tokens inside one tick has to become one
+ * render, not forty.
+ */
+function useCoalesced(text: string, streaming: boolean | undefined): string {
+  const [shown, setShown] = React.useState(text);
+  const latest = React.useRef(text);
+  const frame = React.useRef(0);
+  React.useEffect(() => {
+    // Written HERE rather than during render (review). Assigning a ref while
+    // rendering is a render-phase side effect: under a concurrent render that
+    // React then discards, `latest` would hold text that was never committed,
+    // and the owed frame would commit it. In an effect it can only ever hold
+    // committed text. It is above the early return because a block that stops
+    // streaming still has to leave the ref truthful for anything already owed.
+    latest.current = text;
+    if (!streaming) return;
+    // A frame is already owed: it will read `latest` when it fires, so every
+    // delta between now and then costs nothing at all. This is the line that
+    // makes the render count depend on WALL CLOCK rather than on token count.
+    if (frame.current) return;
+    frame.current = requestAnimationFrame(() => {
+      frame.current = 0;
+      setShown(latest.current);
+    });
+  }, [text, streaming]);
+  React.useEffect(() => {
+    return () => {
+      if (!frame.current) return;
+      cancelAnimationFrame(frame.current);
+      // CLEARING THE REF IS THE WHOLE POINT, and cancelling without it is a
+      // freeze rather than a leak. `main.tsx` wraps the app in `StrictMode`, so
+      // in development React mounts, runs THIS cleanup, and mounts again — and
+      // a stale non-zero id here makes the already-owed-frame guard above
+      // return early on every delta for the rest of the session. The block
+      // shows its first chunk and stops. Only the rAF callback resets this, and
+      // that callback has just been cancelled.
+      //
+      // Found in review, reproduced before fixing, and pinned by a StrictMode
+      // test with REAL `requestAnimationFrame` — the coalescing test stubs
+      // `cancelAnimationFrame` to a no-op and fires callbacks by hand, which is
+      // exactly what hid this, and the built app does not double-invoke so no
+      // e2e sees it either.
+      frame.current = 0;
+    };
+  }, []);
+  // The FINISHED text is never coalesced. The last delta and the authoritative
+  // end-of-turn message can land in the same tick, and a block that ended a
+  // frame behind the truth would be the old end-of-turn flip with a shorter
+  // fuse. It is also what lets a test assert that the final render is identical
+  // to the last progressive one.
+  return streaming ? shown : text;
+}
+
+/**
  * Render markdown to sanitized HTML.
  *
- * While text is STILL ARRIVING (P2-E18-10) it renders as plain text with a
- * caret on the end, and only becomes markdown once it is complete.
+ * ── WHILE TEXT IS STILL ARRIVING (#635) ─────────────────────────────────────
  *
- * Two reasons, and both matter:
+ * It renders as markdown, through this same function, updated about once per
+ * animation frame. It used to render as PLAIN TEXT with a caret until the turn
+ * ended (P2-E18-10) — the owner's report was that "it just shows the raw
+ * markdown as it scrolls up, and then once it's done, it renders it".
  *
- *  - Half a document is not a document. A code fence, list or table that is
- *    mid-write parses as something else entirely, so a streamed reply would
- *    reflow and re-style itself on almost every token.
- *  - Cost. `useMemo` is keyed on the text, so parsing per token means parsing
- *    the WHOLE reply once per token — quadratic in the length of the answer, on
- *    the renderer thread, times every session streaming at once.
+ * That branch had two stated reasons. Neither survived being measured, and both
+ * are written down here rather than deleted, because the next person to worry
+ * about this will worry about exactly them:
+ *
+ *  - "HALF A DOCUMENT IS NOT A DOCUMENT" — that a mid-write fence, list or
+ *    table parses as something else, so the reply reflows on almost every
+ *    token. TRUE OF LESS THAN IT SOUNDS. Probed against the shipped `marked`
+ *    18.0.7 with `MARKED_OPTIONS`: an unclosed fence, a partial heading, a
+ *    partial list and a table that has its separator row all parse as what they
+ *    are becoming. What genuinely renders as literal junk is the INLINE set —
+ *    emphasis, code spans, links — plus a table before its separator row, and
+ *    `completePartialMarkdown` above closes exactly those. What is left is
+ *    restyle-flicker as syntax completes, which is inherent and is the price of
+ *    the feature.
+ *  - COST — that parsing per token is quadratic in the length of the reply,
+ *    on the renderer thread, times every session streaming at once. TRUE, AND
+ *    BOUNDED, by two things that were already in place and one that is new.
+ *    `TEXT_CAP` (main/feed/blocks.ts) caps a block at 20,000 characters, so
+ *    "quadratic in the length of the answer" has a ceiling; `useCoalesced`
+ *    above caps renders at one per frame, so the cost depends on how long the
+ *    turn takes rather than on how many tokens it contains; and the corpus says
+ *    the ceiling is nowhere near the common case.
+ *
+ *    MEASURED IN CHROMIUM 149, on this machine's corpus (2026-09-05): 8,846
+ *    captured transcripts, 828 MB scanned, 19,589 assistant text blocks, 11.1 MB
+ *    of prose. Median block 100 characters, mean 568, p90 1,569, p99 8,774;
+ *    only 0.133% of blocks reach the 20,000 cap at all. The WHOLE pipeline —
+ *    parse, sanitize and the decoration pass's template round trip — costs
+ *    0.07 ms at the median, 0.35 ms at p90, 1.54 ms at p99 and 3.55 ms at the
+ *    cap. So a typical streaming block spends 0.4% of a frame, and the
+ *    pathological one spends a fifth of it.
+ *
+ *    DO NOT TAKE THIS MEASUREMENT IN JSDOM, and this is the part worth keeping:
+ *    the same 20,000-character pass measures 22 ms under jsdom, which would
+ *    have condemned the feature. jsdom is ~7× pessimistic on DOM work, and
+ *    DOMPurify plus the template round trip — not `marked` — are about 80% of
+ *    the real cost. The unit suite cannot price this code.
+ *
+ *    #635 also proposed capping the RE-PARSED WINDOW to the tail of a long
+ *    block if profiling showed pain. It does not: the numbers above are the
+ *    reason there is no window logic here, and re-parsing only a suffix would
+ *    mean a second notion of what a document is.
+ *
+ * The caret is drawn in CSS from `STREAMING_ATTR` (`tokens.css`), not as an
+ * element. It sits inline after the last thing rendered — which is where the
+ * text actually is — instead of on its own line below a block element, and it
+ * costs no DOM work per frame. `STREAMING_CARET` is still the glyph of record;
+ * `markdown.test.tsx` reads the stylesheet and asserts the two agree, because
+ * a constant and a CSS rule are two places for one character to live.
  *
  * `className` defaults to the feed's own styling (`.feed-md` in tokens.css),
  * which is where every markdown rule in this app already lives. A second
@@ -930,23 +1357,19 @@ export function Markdown({
   /** must be a stable module-level function — it is a `useMemo` dependency */
   decorate?: (html: string) => string;
 }): React.JSX.Element {
+  const source = useCoalesced(text, streaming);
   const html = React.useMemo(() => {
-    if (streaming) return '';
-    const sanitized = renderMarkdown(text);
+    // ONE pipeline, streaming or not: the only difference is that a partial
+    // document gets its open constructs closed FIRST, as text, before the same
+    // parse → sanitize → decorate chain every finished block goes through.
+    const sanitized = renderMarkdown(streaming ? completePartialMarkdown(source) : source);
     return decorate ? decorate(sanitized) : sanitized;
-  }, [text, streaming, decorate]);
-  if (streaming) {
-    return (
-      <div className={className} style={{ whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }}>
-        {text}
-        {/* -ink, and no opacity (#246, ported here when the move landed after
-            that fix): the caret is the only thing on screen saying the answer
-            is still arriving, so it is information, not decoration. The raw
-            hue at 0.8 opacity measured 2.08:1 on daylight, and the opacity is
-            a second contrast cut nothing measures — it goes, not gets tuned. */}
-        <span style={{ color: 'var(--status-working-ink)' }}>{STREAMING_CARET}</span>
-      </div>
-    );
-  }
-  return <div className={className} dangerouslySetInnerHTML={{ __html: html }} />;
+  }, [source, streaming, decorate]);
+  return (
+    <div
+      className={className}
+      {...(streaming ? { [STREAMING_ATTR]: '' } : {})}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
 }

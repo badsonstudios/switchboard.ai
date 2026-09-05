@@ -473,6 +473,39 @@ body {
 .feed-md p {
   margin: 0 0 6px;
 }
+/* The "still typing" caret (#635). Drawn here rather than as an element for two
+ * reasons: it lands INLINE after the last word — a `<span>` sibling of a `<p>`
+ * would sit on its own line below it — and a block that re-renders every frame
+ * while tokens arrive should not also be building and destroying a DOM node.
+ *
+ * `[data-feed-streaming]` is written by `<Markdown>` onto its own container.
+ * Content cannot forge it: `SANITIZE_CONFIG` sets `ALLOW_DATA_ATTR: false`, so
+ * no `data-*` survives from a reply in ANY surface, decoration pass or not —
+ * which matters because `UpdateDialog` renders `.feed-md` without one.
+ *
+ * The `:empty` rule is the first frame: a block whose text has not arrived yet
+ * has no last child to hang the caret on, and a bubble with nothing in it at
+ * all reads as a bug rather than as a session about to speak.
+ *
+ * "INLINE AFTER THE LAST WORD" IS TRUE OF A `<p>` AND NOT OF EVERYTHING, and
+ * the difference is accepted rather than papered over (review). When the last
+ * child is a `<pre>` — which a reply mid-code-fence very often ends on — the
+ * caret renders INSIDE the code box after the trailing newline, which is where
+ * the text is actually arriving and reads correctly. When it is a `<table>`,
+ * generated content on the table box is effectively ignored and no caret shows
+ * at all for as long as the reply ends on a table row. Neither is worth
+ * excluding by selector: the alternative is a caret that jumps out of the
+ * construct it belongs to, and the table case is a missing cue for a second,
+ * not a wrong one.
+ *
+ * The glyph is U+258C and it is ALSO `STREAMING_CARET` in `lib/markdown.tsx`;
+ * `markdown.test.tsx` reads this file and asserts the two have not drifted. */
+.feed-md[data-feed-streaming] > :last-child::after,
+.feed-md[data-feed-streaming]:empty::after {
+  content: '▌';
+  color: var(--status-working-ink);
+  margin-inline-start: 1px;
+}
 .feed-md pre {
   background: var(--panel);
   border: 1px solid var(--border);

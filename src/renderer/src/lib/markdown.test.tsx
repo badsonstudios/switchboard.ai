@@ -13,10 +13,10 @@
 //     talked into writing some. So the hostile input here is real markup with
 //     real payloads, not a smoke test. It lives INSIDE this fixture: nothing in
 //     this file touches a path outside the repo.
-import { describe, it, expect, afterEach, beforeAll, beforeEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeAll, beforeEach, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { act } from 'react';
+import { act, StrictMode } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { CSP_DEV, CSP_PROD } from '../../../shared/csp';
 import { initI18nForTests } from '../i18n/test-i18n';
@@ -29,10 +29,12 @@ import type { FeedCodeLabels } from './feed-code';
 import { classifyHref } from './document-link';
 import { UpdateDialog } from '../components/UpdateDialog';
 import {
+  completePartialMarkdown,
   Markdown,
   MARKED_OPTIONS,
   renderMarkdown,
   SANITIZE_CONFIG,
+  STREAMING_ATTR,
   STREAMING_CARET,
   TASK_GLYPH,
 } from './markdown';
@@ -152,6 +154,207 @@ describe('the sanitizer, on input we did not write (§5.29)', () => {
   });
 });
 
+describe('completePartialMarkdown — half-written syntax (#635)', () => {
+  // The function is text-in/text-out, so these assert on the RENDERED result
+  // rather than on the repaired string: what matters is that the reader sees
+  // the construct, not which characters were appended to get there.
+  const render = (partial: string): string => renderMarkdown(completePartialMarkdown(partial));
+
+  it('leaves a complete document exactly as it found it', () => {
+    // The property the end-of-turn flip depends on. If completing a finished
+    // document changed ONE byte, the final render could not equal the last
+    // progressive one — so this is the same claim as that test, one layer down.
+    for (const done of [
+      '## Title\n\nsome **bold** and `code`\n',
+      '| a | b |\n| - | - |\n| 1 | 2 |\n',
+      '- one\n- two\n',
+      '```js\nconst a = 1;\n```\n',
+      'a [link](https://example.invalid/x) in prose\n',
+      '',
+    ]) {
+      expect(completePartialMarkdown(done)).toBe(done);
+    }
+  });
+
+  it('leaves ORDINARY PROSE completely alone', () => {
+    // THE GUARD THAT WAS MISSING, and the reason a real bug shipped to review:
+    // every case in the table below this one is a CONSTRUCTED PARTIAL, so the
+    // suite only ever asked "does it close what is open" and never "does it
+    // leave alone what is not". The first version of `trailingInlineFix` asked
+    // `line.includes('**')` and `/(^|\s)\[\w*/`, and mangled all of these —
+    // `'see the note [1] below'` rendered as `see the note [1] below](#)))`,
+    // because `PARTIAL_ROUNDS` applied the mis-fire three times.
+    //
+    // These are the shapes a coding agent actually writes. Byte-identity is the
+    // assertion, not "it still renders", because junk that renders is still
+    // junk on the reader's screen.
+    for (const prose of [
+      'see the note [1] below',
+      'run npm i [pkg] to install',
+      'JSON: {"a": [1,2]} done',
+      'the regex is [a-z]+ and more',
+      'in Python 2 ** 8 is 256',
+      'glob **/*.ts matches every file',
+      'the cost is 4*5 dollars and more',
+      'a shell pipe: ls | grep x',
+      'array[0] and array[1] differ',
+      'multiply a * b then divide',
+      'snake_case_name and another_one',
+    ]) {
+      expect(completePartialMarkdown(prose)).toBe(prose);
+    }
+  });
+
+  it('closes emphasis, code spans and links mid-word', () => {
+    expect(render('hello **wor')).toContain('<strong>wor</strong>');
+    expect(render('hello __wor')).toContain('<strong>wor</strong>');
+    expect(render('hello *wor')).toContain('<em>wor</em>');
+    expect(render('hello _wor')).toContain('<em>wor</em>');
+    expect(render('run `npm i')).toContain('<code>npm i</code>');
+  });
+
+  it('two-character markers are closed with two characters, not one', () => {
+    // The property, which survives independently of the order the tests are
+    // written in — see `trailingInlineFix`, where the anchored regexes made the
+    // ordering trap unreachable and the comment claiming otherwise had to go.
+    // Kept because the PROPERTY is what matters: a `**` closed with one `*`
+    // leaves a stray asterisk on screen and no emphasis at all.
+    expect(render('hello **wor')).not.toContain('<em>');
+    expect(render('hello __wor')).not.toContain('<em>');
+    expect(render('hello **wor')).toContain('<strong>wor</strong>');
+  });
+
+  it('closes a link that has not reached its destination yet', () => {
+    // Three shapes, all of which render as literal brackets without this.
+    expect(render('see [docs')).toContain('<a');
+    expect(render('see [docs](htt')).toContain('<a');
+    expect(render('see [docs](https://x.invalid "Ti')).toContain('<a');
+  });
+
+  it('invents no external origin for a link with no destination yet', () => {
+    // The deliberate divergence from the reference implementation, which uses
+    // `https://microsoft.com` here. `[docs` has typed no destination at all, so
+    // ANY href is one the session never said; `#` is the one that cannot
+    // navigate. Only this shape gets a placeholder — see the test below.
+    const html = render('see [docs');
+    expect(html).toContain('href="#"');
+    expect(html).not.toMatch(/href="https?:/);
+  });
+
+  it('a destination still arriving stays a PREFIX of what was typed', () => {
+    // The other two link shapes are closed with a bare `)`, so the href is
+    // whatever has arrived so far — never a substitution. That is the property
+    // worth pinning, because the alternative (rewriting the destination to `#`
+    // until it completes) would make the href flicker for no gain.
+    expect(render('see [docs](htt')).toContain('href="htt"');
+    expect(render('see [docs](https://example.invalid/')).toContain(
+      'href="https://example.invalid/"'
+    );
+    // ACCEPTED RESIDUAL, named rather than glossed: a truncated destination can
+    // briefly be a DIFFERENT valid origin from the finished one
+    // (`https://a.com.evil.net/x` passes through `https://a.com`). It exists for
+    // about one frame, it is assistant output rather than attacker-chosen
+    // timing, and `markdown-links.ts` refuses anything that is not http(s) or
+    // mailto — so the inert shapes below are inert, and the live one needs a
+    // click inside a block that is repainting. Not worth a second notion of
+    // what a destination is.
+    // What the partial path must NOT do is smuggle a scheme past the sanitizer
+    // that the finished path would have refused. It cannot, because it IS the
+    // finished path — same `renderMarkdown`, same frozen config.
+    expect(render('see [docs](javascript:alert1')).not.toContain('javascript:');
+  });
+
+  it('gives a table its separator row so a header stops being a paragraph', () => {
+    // `| a | b |` alone lexes as an ordinary paragraph — the ONE construct
+    // whose repair is not a suffix.
+    expect(render('| a | b |')).toContain('<table>');
+    expect(render('| a | b |')).toContain('<th>a</th>');
+    // A half-typed body row is dropped rather than rendered as half a row.
+    const partial = render('| a | b |\n| 1');
+    expect(partial).toContain('<table>');
+    expect(partial).not.toContain('<td>1</td>');
+  });
+
+  it('finds a table that is NOT the first thing in the block', () => {
+    // THE OFFSET ARITHMETIC, which had no coverage at all until review said so:
+    // every other table case here has the table as token 0, so `offset` was
+    // always 0 and deleting `offset += token.raw.length` survived the entire
+    // suite. Here there is a paragraph in front of it.
+    expect(render('some prose first\n\n| a | b |')).toContain('<table>');
+    expect(render('some prose first\n\n| a | b |')).toContain('<th>a</th>');
+    // …and the prose in front of it is still prose, not swallowed by the slice.
+    expect(render('some prose first\n\n| a | b |')).toContain('some prose first');
+  });
+
+  it('handles CRLF, which marked normalises before it lexes', () => {
+    // `marked` collapses `\r\n` to `\n` before lexing, so `token.raw` lengths
+    // sum to the NORMALISED string. Slicing the original with those offsets
+    // drifts one character left per CRLF — `repairOnce` normalises first so the
+    // two can never disagree. Windows-first app; CRLF arrives via quoted files
+    // and tool output.
+    expect(render('some prose first\r\n\r\n| a | b |')).toContain('<table>');
+    // A document with nothing open is still returned EXACTLY as it arrived,
+    // CRLF and all — the no-op property the end-of-turn flip depends on.
+    expect(completePartialMarkdown('done\r\n\r\nfinished\r\n')).toBe('done\r\n\r\nfinished\r\n');
+  });
+
+  it('counts an EMPTY table cell as a column', () => {
+    // `| a || b |` is three columns. Counting `\|[^|]+` needed a character per
+    // cell and made it two, so the separator row did not match the header and
+    // the table quietly stayed a paragraph (review).
+    // `<th>` with the closing bracket: `/<th/` also matches `<thead>`.
+    expect(render('| a || b |')).toContain('<table>');
+    expect(render('| a || b |').match(/<th>/g)).toHaveLength(3);
+    expect(render('| a || b |')).toContain('<th></th>');
+  });
+
+  it('does not mistake ordinary prose containing a pipe for a table', () => {
+    // The guard matters more than the repair: `|` is an ordinary character.
+    expect(render('use a | b in a shell')).not.toContain('<table>');
+    expect(render('| a | b |\nand then prose\n\nmore prose')).not.toContain('<table>');
+  });
+
+  it('repairs compose — a code span inside an unclosed bold', () => {
+    // The reason there is a loop at all. One round closes the backtick; the
+    // next sees the `**` that is now the trailing construct.
+    const html = render('a **bold with `code');
+    expect(html).toContain('<strong>');
+    expect(html).toContain('<code>');
+  });
+
+  it('closes the construct in the last item of a list being written', () => {
+    const html = render('- one\n- two **bol');
+    expect(html).toContain('<li>two <strong>bol</strong></li>');
+  });
+
+  it('leaves alone what marked already handles — no repair, no change', () => {
+    // The measured list from `markdown.tsx`: these are the constructs the
+    // ticket assumed were broken and which are not. If a future round of this
+    // function starts "fixing" them it will be reflowing what already works.
+    for (const fine of ['```js\nconst a = 1;', '## Head', '- one\n- tw']) {
+      expect(completePartialMarkdown(fine)).toBe(fine);
+    }
+    expect(render('```js\nconst a = 1;')).toContain('<pre>');
+  });
+
+  it('does not close a marker that is inside a code fence', () => {
+    // The reason this uses the lexer instead of a regex over the raw text: a
+    // `**` inside a fence is CODE, and appending a closer to the document would
+    // be writing into the user's snippet.
+    expect(completePartialMarkdown('```\nlet a = b ** c;\n```\n')).toBe(
+      '```\nlet a = b ** c;\n```\n'
+    );
+  });
+
+  it('terminates on adversarial input instead of looping', () => {
+    // PARTIAL_ROUNDS is a fixpoint bound. A string that never settles must
+    // still return, and must not throw.
+    for (const nasty of ['*'.repeat(200), '['.repeat(200), '`'.repeat(200), '|'.repeat(200)]) {
+      expect(() => renderMarkdown(completePartialMarkdown(nasty))).not.toThrow();
+    }
+  });
+});
+
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
 }
@@ -170,6 +373,11 @@ describe('<Markdown>', () => {
     root = createRoot(host);
     act(() => root!.render(el));
     return host;
+  };
+
+  /** another delta into the SAME root — a new one would not be a re-render */
+  const rerender = (el: React.ReactElement): void => {
+    act(() => root!.render(el));
   };
 
   afterEach(() => {
@@ -191,19 +399,174 @@ describe('<Markdown>', () => {
     expect(el.querySelector('.feed-md')).toBeNull();
   });
 
-  it('while STREAMING it is plain text plus the caret — no markdown at all', () => {
-    // P2-E18-10: half a document is not a document, and re-parsing per token is
-    // quadratic in the length of the reply.
+  // ── STREAMING (#635) ──────────────────────────────────────────────────────
+  //
+  // These replace two tests that asserted the OPPOSITE — that a streaming block
+  // is plain text with a caret and "no markdown at all" (P2-E18-10). That was
+  // deliberate and it is now reversed on the strength of a measurement, so the
+  // tests that pinned it had to go rather than be worked around. See
+  // `markdown.tsx` for both of the reasons it was written that way and what
+  // each of them turned out to be worth.
+  //
+  // THE MUTATION THAT MUST RED THESE: restoring the old branch — an early
+  // `if (streaming) return '<plain text plus caret>'` in `Markdown`. Every
+  // assertion below is on RENDERED MARKUP produced from a PARTIAL string, which
+  // that branch cannot produce. Verified by doing it, not by reasoning about it.
+
+  it('renders markdown WHILE it streams — headings, emphasis and fences', () => {
+    const el = mount(<Markdown text={'## Half\n\nsome **bold** text\n\n```js\nconst a = 1;'} streaming />);
+    expect(el.querySelector('h2')?.textContent).toBe('Half');
+    expect(el.querySelector('strong')?.textContent).toBe('bold');
+    // The unclosed fence is the case the ticket wanted auto-closed. `marked`
+    // terminates it at end of input on its own, which is why no code here does.
+    expect(el.querySelector('pre code')?.textContent).toContain('const a = 1;');
+  });
+
+  it('closes the construct being typed, so a half-written line is not literal junk', () => {
+    // The whole point of the fill-in: `**not bold yet` used to render as those
+    // exact characters, and it is now the emphasis it is turning into.
     const el = mount(<Markdown text="**not bold yet" streaming />);
-    expect(el.querySelector('strong')).toBeNull();
-    expect(el.textContent).toContain('**not bold yet');
-    expect(el.textContent).toContain(STREAMING_CARET);
+    expect(el.querySelector('strong')?.textContent).toBe('not bold yet');
+    expect(el.textContent).not.toContain('**');
+  });
+
+  it('marks the container as streaming, which is what draws the caret', () => {
+    // The caret itself is a CSS `::after` (see the stylesheet test below), so
+    // there is no glyph in the DOM to assert on — the attribute IS the state.
+    const el = mount(<Markdown text="typing" streaming />);
+    expect(el.querySelector('.feed-md')?.hasAttribute('data-feed-streaming')).toBe(true);
+  });
+
+  it('drops the streaming attribute the moment the turn ends', () => {
+    const el = mount(<Markdown text="done" />);
+    expect(el.querySelector('.feed-md')?.hasAttribute('data-feed-streaming')).toBe(false);
   });
 
   it('a streamed chunk cannot inject markup either', () => {
+    // Unchanged in spirit, corrected in fact: the partial path now goes through
+    // the real sanitizer, which removes a `<script>` AND its contents
+    // (DOMPurify's default FORBID_CONTENTS). It used to be escaped to visible
+    // text by the plain-text branch, so the old assertion was that the literal
+    // `<script>` was READABLE. What matters either way is that nothing ran.
     const el = mount(<Markdown text="<script>globalThis.__pwned = 1;</script>" streaming />);
     expect(el.querySelector('script')).toBeNull();
-    expect(el.textContent).toContain('<script>');
+    expect((globalThis as Record<string, unknown>).__pwned).toBeUndefined();
+  });
+
+  it('coalesces to ONE pipeline pass per frame, however many deltas arrive', () => {
+    // THIS IS AN EVENT-COUNT PROPERTY AND IT IS ASSERTED AS ONE. "It renders
+    // markdown while streaming" is a claim about the DOM and is tested above;
+    // "it does not re-parse per token" is a claim about HOW OFTEN work happens,
+    // and asserting it through rendered output would be an assertion that
+    // cannot fail — the DOM looks identical whether the pipeline ran once or
+    // forty times. `decorate` is the counter because it runs inside the same
+    // `useMemo` as the parse and the sanitize: exactly one call per pass.
+    //
+    // TWO MUTATIONS, and they are caught by two different assertions:
+    //  · drop the coalescing (`source = text`)   → the pass count goes to 41
+    //  · drop the `frame.current` guard only     → the frame count goes to 40
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => frames.push(cb));
+    vi.stubGlobal('cancelAnimationFrame', () => {});
+    try {
+      const decorate = vi.fn((html: string) => html);
+      let text = 'a';
+      mount(<Markdown text={text} streaming decorate={decorate} />);
+      expect(decorate).toHaveBeenCalledTimes(1); // the mount itself
+
+      for (let i = 0; i < 40; i++) {
+        text += ' tok';
+        rerender(<Markdown text={text} streaming decorate={decorate} />);
+      }
+      // Forty deltas inside one frame cost NOTHING beyond the state write.
+      expect(decorate).toHaveBeenCalledTimes(1);
+      expect(frames).toHaveLength(1);
+
+      // The owed frame fires once and picks up the LATEST text, not the one it
+      // was scheduled for — so no delta is skipped and none is parsed twice.
+      act(() => frames.splice(0).forEach((cb) => cb(0)));
+      expect(decorate).toHaveBeenCalledTimes(2);
+      expect(host!.querySelector('.feed-md')?.textContent).toContain('tok tok');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('keeps painting under StrictMode — which is what `npm run dev` runs', async () => {
+    // `main.tsx` wraps the app in `<StrictMode>`, and React double-invokes
+    // effects in development: mount, CLEANUP, mount again. If that cleanup
+    // cancels the owed frame without clearing `frame.current`, the
+    // already-owed-frame guard sees a stale id for ever and NOTHING is painted
+    // again — the block shows its first chunk, freezes, and snaps to the whole
+    // answer at end of turn. Which is worse than the bug #635 set out to fix,
+    // in the one environment the owner develops in.
+    //
+    // REAL `requestAnimationFrame` here, deliberately: the coalescing test
+    // above stubs `cancelAnimationFrame` as a no-op and fires the callbacks by
+    // hand, so a cancelled frame still runs and still resets the ref. That stub
+    // is what hid this. The built app does not double-invoke, so no e2e sees it
+    // either — this test is the only thing standing between dev and a freeze.
+    host = document.createElement('div');
+    document.body.appendChild(host);
+    root = createRoot(host);
+    const streamed = (text: string): React.ReactElement => (
+      <StrictMode>
+        <Markdown text={text} streaming />
+      </StrictMode>
+    );
+    act(() => root!.render(streamed('one')));
+    act(() => root!.render(streamed('one two three')));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 60));
+    });
+    expect(host.textContent).toContain('one two three');
+  });
+
+  it('the turn ENDING does not wait for a frame — the flip is where it would hide', () => {
+    // THIS TEST EXISTS BECAUSE THE ONE BELOW DID NOT CATCH THE BUG IT NAMED.
+    // Mutating `useCoalesced`'s `return streaming ? shown : text` to `return
+    // shown` — which coalesces the finished text too, reintroducing the
+    // end-of-turn flip with a one-frame fuse — SURVIVED the "identical" test,
+    // because that test mounts a fresh component whose `useState` initialises
+    // to the complete text. A stale `shown` cannot show if `shown` was never
+    // behind.
+    //
+    // The flip only exists across a TRANSITION, so the test has to make one:
+    // stream, let deltas land with no frame in between, then end the turn.
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => frames.push(cb));
+    vi.stubGlobal('cancelAnimationFrame', () => {});
+    try {
+      mount(<Markdown text="## Ti" streaming />);
+      rerender(<Markdown text="## Title\n\n**bo" streaming />);
+      // No frame has fired, so the DOM is deliberately BEHIND the props here —
+      // that is the coalescing working, and it is the state the flip hides in.
+      expect(host!.querySelector('.feed-md')!.innerHTML).not.toContain('<strong>');
+
+      // The turn ends: authoritative text, `streaming` false, still no frame.
+      rerender(<Markdown text="## Title\n\nsome **bold** text" />);
+      const html = host!.querySelector('.feed-md')!.innerHTML;
+      expect(html).toContain('<strong>bold</strong>');
+      expect(html).toContain('Title');
+      expect(host!.querySelector('.feed-md')!.hasAttribute(STREAMING_ATTR)).toBe(false);
+      expect(frames).toHaveLength(1); // the one owed from the delta, never needed
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('a complete document renders the same bytes through either path', () => {
+    // The narrower half of the claim above, and named for what it actually
+    // checks: completing a document that has nothing open must be a NO-OP, so
+    // the partial path and the final path agree byte for byte. That is what
+    // makes the last progressive render and the finished one the same picture
+    // — but it says nothing about the transition, which is the test above.
+    const complete = '## Title\n\nsome **bold** and `code`\n\n- one\n- two\n';
+    const streamed = mount(<Markdown text={complete} streaming />);
+    const streamedHtml = streamed.querySelector('.feed-md')!.innerHTML;
+    act(() => root!.unmount());
+    const finished = mount(<Markdown text={complete} />);
+    expect(finished.querySelector('.feed-md')!.innerHTML).toBe(streamedHtml);
   });
 });
 
@@ -1997,5 +2360,26 @@ describe('there is exactly one markdown pipeline', () => {
     };
     walk(root);
     expect(offenders.sort()).toEqual(['renderer/src/lib/markdown.tsx']);
+  });
+
+  it('the streaming caret has not drifted between the constant and the CSS', () => {
+    // #635 moved the caret's PIXELS into a `::after` so it lands inline after
+    // the last word and costs no DOM work per frame — which put one character
+    // in two files. `STREAMING_CARET` is the glyph of record and the stylesheet
+    // has to agree with it; nothing at runtime would notice if it stopped,
+    // because a wrong glyph still renders as a glyph.
+    //
+    // The ATTRIBUTE is pinned for the stronger reason: it is the whole forgery
+    // argument. `data-*` is the one namespace `SANITIZE_CONFIG` strips from
+    // content in every surface (`ALLOW_DATA_ATTR: false`), so a rule keyed on a
+    // CLASS instead would let a reply paint itself a "still typing" caret in
+    // `UpdateDialog`, which renders `.feed-md` with no decoration pass at all.
+    const css = fs.readFileSync(
+      path.join(process.cwd(), 'src', 'renderer', 'src', 'theme', 'tokens.css'),
+      'utf8'
+    );
+    expect(css).toContain(`content: '${STREAMING_CARET}'`);
+    expect(css).toContain(`.feed-md[${STREAMING_ATTR}]`);
+    expect(STREAMING_ATTR.startsWith('data-')).toBe(true);
   });
 });

@@ -716,9 +716,14 @@ function UserPill({ b }: { b: FeedBlockDto }): React.JSX.Element {
  */
 function MarkdownBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
   const labels = useCodeLabels();
+  // `b.streaming` is a dependency because it changes what the pass DOES (the
+  // fence chrome waits for the turn to end — see `decorateFeedMarkdown`), and
+  // because `<Markdown>` memoises on this callback's identity: a stale one
+  // would leave a finished fence without its Copy button.
+  const streaming = b.streaming === true;
   const decorate = React.useCallback(
-    (html: string) => decorateFeedMarkdown(html, labels),
-    [labels]
+    (html: string) => decorateFeedMarkdown(html, labels, { streaming }),
+    [labels, streaming]
   );
   const onClick = React.useCallback(
     (e: React.MouseEvent<HTMLDivElement>): void => {

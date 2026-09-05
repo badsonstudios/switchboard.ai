@@ -34,16 +34,40 @@ import { decorateFeedCodeFences, type FeedCodeLabels } from './feed-code';
  *
  * `doc` is injectable for the same reason the viewer's is: a test may build the
  * tree in a document that is not the page.
+ *
+ * `streaming` SUPPRESSES THE FENCE CHROME, and it had to become an argument
+ * when #635 started rendering markdown while it arrives. Before that, a
+ * streaming block rendered as plain text and never reached this function at
+ * all, so "no Copy button on a fence that is still being written" was a free
+ * side effect of the branch that #635 deleted. It is a property worth keeping
+ * on purpose:
+ *
+ *  - `runCopy` reads `pre.textContent` AT CLICK TIME, so a click on a fence
+ *    that is half-written puts half a command on the clipboard, with nothing to
+ *    say it is half. `npm install --save-de` pasted into a shell is the same
+ *    class of harm as #410's forged wrapper — a clipboard the reader did not
+ *    inspect — arriving by timing rather than by forgery.
+ *  - The language label would flicker anyway. A fence opening ```` ```ty ````
+ *    reads "ty" one delta before it reads "typescript", and a header that
+ *    rewrites itself per frame is noisier than one that arrives once.
+ *
+ * WHAT IT COSTS is the one flip #635 does not remove: the fence header appears
+ * when the turn ends. That is deliberate and it is bounded — the CODE renders
+ * progressively like everything else, and it is only our chrome that waits.
  */
 export function decorateFeedMarkdown(
   html: string,
   labels: FeedCodeLabels,
-  doc: Document = document
+  // An OPTIONS BAG rather than two more positionals: `(html, labels, undefined,
+  // true)` was the alternative at the one call site that needs `streaming`, and
+  // a placeholder `undefined` in the middle of an argument list is how the next
+  // flag gets passed to the wrong parameter.
+  { doc = document, streaming = false }: { doc?: Document; streaming?: boolean } = {}
 ): string {
   const template = doc.createElement('template');
   template.innerHTML = html;
   // FIRST, before any decoration below writes one of ours.
   stripDecorationNamespace(template.content, FEED_DECORATION);
-  decorateFeedCodeFences(template.content, labels);
+  if (!streaming) decorateFeedCodeFences(template.content, labels);
   return template.innerHTML;
 }

@@ -511,6 +511,62 @@ export class FakeStreamProtocol {
       return;
     }
 
+    // `!partial` with MARKDOWN in it (#635), and it is a separate verb rather
+    // than a change to that one on purpose: `!partial`'s pieces are asserted
+    // verbatim by `e2e/stream-feed.spec.ts`, and a shared fixture that two
+    // items pull in opposite directions is how a suite starts lying.
+    //
+    // Same contract as `!partial` and for the same reason — deltas, then
+    // SILENCE. No `assistant` message, no `result`, so no transcript line
+    // either. That is what makes it proof: every other turn ends with an
+    // assembled message the transcript also records, so markup on screen would
+    // prove nothing about WHICH source produced it. Here the only possible
+    // source is the partial deltas, and the block is necessarily still
+    // streaming when the assertion runs.
+    //
+    // THE PIECES ARE CHOSEN SO THAT EVERY SPLIT IS MID-CONSTRUCT: the emphasis
+    // opens in one delta and closes in the next, and the fence is left open at
+    // the end for good. A run that renders this correctly has parsed a document
+    // that was never complete.
+    if (text === '!partial-md') {
+      this.emit({
+        type: 'stream_event',
+        event: { type: 'message_start', message: { role: 'assistant', content: [] } },
+        session_id: this.sessionId,
+        parent_tool_use_id: null,
+      });
+      this.emit({
+        type: 'stream_event',
+        event: { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
+        session_id: this.sessionId,
+        parent_tool_use_id: null,
+      });
+      //
+      // THE LAST PIECE LEAVES AN EMPHASIS OPEN FOR GOOD, and that is the one
+      // that pins `completePartialMarkdown` rather than merely the fact that
+      // markdown renders. Review found that without it every assertion in the
+      // e2e survived neutering the fill-in to `return text`: Playwright retries
+      // until the locator resolves, by which time all the deltas have landed
+      // and the document is COMPLETE — closed emphasis, finished heading, and a
+      // fence `marked` terminates by itself. A trailing `**NEVER-CLOSED` never
+      // completes, so it can only render as emphasis if something closed it.
+      for (const piece of [
+        '## STREAMED-',
+        'HEADING\n\nwith **BOL',
+        'D-WHILE-OPEN** text\n\n```js\nconst halfWritten = ',
+        '1;\n```\n\nand **NEVER-',
+        'CLOSED',
+      ]) {
+        this.emit({
+          type: 'stream_event',
+          event: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: piece } },
+          session_id: this.sessionId,
+          parent_tool_use_id: null,
+        });
+      }
+      return;
+    }
+
     // The CLI's command set changing mid-session — a plugin installed, a
     // command file added. Object-shaped, unlike `init`'s bare names: the shape
     // is read out of the shipped extension bundle, which stores `e.commands`

@@ -78,9 +78,25 @@ describe('fenced code in assistant prose', () => {
   });
 
   it('a reply still ARRIVING offers nothing — half a fence is not a fence', () => {
-    // Streaming renders as plain text (P2-E18-10), so there is no fence to
-    // decorate yet and no button to click on code that is still being written.
+    // This used to be free: streaming rendered as plain text (P2-E18-10), so
+    // nothing reached the decoration pass. #635 renders markdown as it arrives,
+    // so the fence IS a fence now and the suppression is deliberate —
+    // `decorateFeedMarkdown`'s `streaming` argument, which exists for this.
+    //
+    // The property is about the CLIPBOARD, not about the fence: `runCopy` reads
+    // `pre.textContent` at click time, so a button on a fence that is still
+    // filling copies half a command and says nothing about it.
     expect(copies(draw(block({ text: PROSE, streaming: true })))).toHaveLength(0);
+  });
+
+  it('and offers it the moment the turn ends', () => {
+    // The other half, which was never asserted because it could not fail while
+    // streaming rendered no markdown at all: the suppression is tied to
+    // `streaming` and lifts with it, rather than to anything about the fence.
+    const [copy] = copies(draw(block({ text: PROSE, streaming: false })));
+    expect(copy).toBeDefined();
+    act(() => copy.click());
+    expect(writeText).toHaveBeenCalledWith('npm run build\nnpm test\n');
   });
 });
 

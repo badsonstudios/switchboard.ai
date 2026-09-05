@@ -3,10 +3,115 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🚧 IN PROGRESS — 2026-09-05: **#752** — the fake models no `/clear`, so the Direct wipe has no e2e
+> # 🚧 IN PROGRESS — 2026-09-05: **#635** — streaming text shows raw markdown until the turn ends
 >
-> Branch `feature/752-fake-clear-e2e`. **Built, reviewed, review findings fixed,
-> awaiting commit approval.** 6760/6761 green (the 1 is `win-cmd.test.ts`, the
+> Branch `feature/635-streaming-markdown`, off `main` at `8b42287` (#752). **Built,
+> reviewed, review findings fixed, awaiting commit approval.** 6787/6787 green,
+> lint and typecheck clean. 43 e2e green including `feed-tail-pin` and
+> `feed-restore-position` (the scroll risk). **All 17 mutations caught** —
+> harness `.claude/work_files/mutate-635.mjs` (git-ignored; recreate from the PR
+> diff).
+>
+> ## WHAT SHIPPED
+> `<Markdown>`'s streaming branch is GONE. Both paths now go through the same
+> `renderMarkdown` (marked + DOMPurify) → `decorate` chain; the streaming one
+> just closes its open constructs first, as TEXT, via
+> `completePartialMarkdown()`. Text-in/text-out is the security design: there is
+> no second entry point into either library, so the #410/#465 guard ordering
+> holds by construction rather than by review. Renders are coalesced to one per
+> animation frame (`useCoalesced`). The caret is now a CSS `::after` keyed on
+> `data-feed-streaming` — a `data-` attribute because `ALLOW_DATA_ATTR: false`
+> makes it unforgeable in EVERY surface, including `UpdateDialog`, which renders
+> `.feed-md` with no decoration pass at all.
+>
+> ## THE TICKET'S TWO PREMISES WERE BOTH WRONG, MEASURED NOT ARGUED
+> * **"Auto-close open fences."** Unnecessary. Probed `marked` 18.0.7 with
+>   `MARKED_OPTIONS`: an unclosed fence terminates at EOF and renders a correct
+>   `<pre><code>` — while streaming there IS nothing after it to swallow.
+>   Partial headings, partial lists and tables that already have a separator row
+>   are fine too. Only the INLINE set and a header-only table needed repair.
+> * **"Cost is quadratic; cap the re-parsed window if profiling shows pain."**
+>   It does not. Corpus, 2026-09-05: 8,846 transcripts, 828 MB, 19,589 assistant
+>   text blocks. Median block **100 chars**, mean 568, p90 1,569, p99 8,774;
+>   only **0.133%** reach the 20,000 `TEXT_CAP`. Whole pipeline in Chromium 149:
+>   **0.07 ms** median, 0.35 ms p90, 3.55 ms at the cap. **There is no window
+>   logic and that is the finding.**
+>
+> ⚠️ **DO NOT MEASURE THIS IN JSDOM.** The same 20 k pass measures **22 ms**
+> there and would have condemned the feature — jsdom is ~7× pessimistic on DOM
+> work, and DOMPurify plus the template round trip, NOT `marked`, are ~80% of
+> the real cost. The unit suite cannot price this code.
+>
+> ## THREE REAL BUGS CAME OUT OF REVIEW — all reproduced before fixing
+> * **The StrictMode freeze, and it was the worst of the three.** The cleanup
+>   cancelled the owed rAF but left `frame.current` non-zero, so the
+>   already-owed guard returned early on every subsequent delta, for ever.
+>   `main.tsx` wraps the app in `StrictMode` and React double-invokes effects in
+>   development — so in `npm run dev` the block showed its first chunk, froze,
+>   and snapped to the full answer at end of turn. **Worse than the bug #635 set
+>   out to fix, in the owner's own environment.** Nothing caught it: the
+>   coalescing test stubs `cancelAnimationFrame` to a no-op and fires callbacks
+>   by hand, so the cancelled frame still ran and still reset the ref; and the
+>   built app does not double-invoke, so no e2e could see it. Now pinned by a
+>   StrictMode test with REAL rAF (M13).
+> * **`trailingInlineFix` mangled ordinary prose.** `line.includes('**')` and
+>   `/(^|\s)\[\w*/` fire on text that is not mid-construct, and `PARTIAL_ROUNDS`
+>   applied the mis-fire three times: `see the note [1] below` rendered as
+>   `see the note [1] below](#)))`, `2 ** 8` as `2 ** 8******`, `**/*.ts` as
+>   `<strong>/*.ts`. All shapes a coding agent writes constantly. The regexes now
+>   require a genuinely OPEN construct.
+>   **WHY IT SHIPPED TO REVIEW: every case in my table was a constructed
+>   partial.** The suite only ever asked "does it close what is open" and never
+>   "does it leave alone what is not". There is now a prose table asserting
+>   byte-identity (M15).
+> * **CRLF drifted the token offsets.** `marked` normalises `\r\n` → `\n` before
+>   lexing, so `token.raw` lengths sum to the normalised string while
+>   `text.slice()` indexed the original — one character left per CRLF.
+>   `repairOnce` now normalises first (M16). Windows-first app; CRLF arrives via
+>   quoted files and tool output.
+>
+> ## AND ONE TEST THAT COULD NOT FAIL — caught twice, by two different means
+> * **M12 survived the first mutation run.** "The finished render is identical
+>   to the last progressive one" mounted a FRESH component, whose `useState`
+>   initialises to the complete text — so a stale coalesced value could not
+>   show. The flip only exists across a TRANSITION, so the test now makes one
+>   (stream, let deltas land with no frame, then end the turn).
+> * **Review caught the e2e making the same mistake.** Playwright retries until
+>   the locator resolves, by which time every delta has landed and the document
+>   is COMPLETE — so neutering `completePartialMarkdown` to `return text` left
+>   all four assertions green. The fake now ends on `and **NEVER-CLOSED`, which
+>   never completes; **verified red against the neutered fill-in.**
+>
+> ## DELIBERATE, AND WORTH NOT RE-LITIGATING
+> * **No Copy button on a fence that is still being written.** This used to be a
+>   free side effect of the plain-text branch; it is now
+>   `decorateFeedMarkdown`'s `streaming` argument. `runCopy` reads
+>   `pre.textContent` AT CLICK TIME, so a button on a half-written fence copies
+>   half a command and says nothing about it. The code renders progressively;
+>   only our chrome waits.
+> * **The inline repair reaches a trailing paragraph and the last item of a
+>   trailing tight list — nothing else.** A heading, blockquote or loose list
+>   item mid-emphasis still shows its raw `**`. Scope decision: there the stray
+>   marker is one short line, and every extra case is another chance to repair
+>   prose that did not need it.
+> * **A half-typed link's href is a PREFIX of what was typed** (`](` closed with
+>   a bare `)`); only a link with NO destination yet gets a placeholder, and that
+>   placeholder is `#`, not the reference implementation's `microsoft.com`.
+>   Accepted residual, named in the test: a truncated destination can briefly be
+>   a different valid origin, for about one frame, and `markdown-links.ts`
+>   refuses anything that is not http(s)/mailto.
+>
+> **NOT RELEASED, and neither is anything before it.** #742, #746, #747, #748,
+> #752 and this are all on `main` and unreleased; latest release is **v0.8.7**.
+> **Do not offer to cut a release — owner's call, standing since 2026-09-03.**
+> #716 stays open pending his verdict.
+
+> # ✅ MERGED — 2026-09-05: **#752** — the fake models no `/clear`, so the Direct wipe has no e2e
+>
+> **PR #755, squashed to `8b42287`, all four CI jobs green.** Issue closed.
+> Needed a rebase onto `0d38131` first — `main` had moved and the branch was not
+> up to date with base, which costs a full CI cycle. 6760/6761 green (the 1 is
+> `win-cmd.test.ts`, the
 > known load flake — 47/47 isolated). 14 new unit tests + 2 e2e; **all 14
 > mutations caught** (13 by the unit suite, M11 by `check:fake-stream`, which is
 > the only thing that can reach the compiled child). Harness

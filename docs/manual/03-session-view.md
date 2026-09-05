@@ -56,6 +56,23 @@ mode the view waits for each finished message instead, so replies arrive in
 chunks a moment behind. The blocks themselves are identical either way — only
 how quickly they fill in differs.
 
+**A reply is formatted while it arrives, not after it finishes.** Headings,
+bold, bullet lists, tables and code blocks all appear as Claude writes them, so
+a long answer reads like an answer the whole way down instead of showing you
+raw `##` and `**` markers and then rearranging itself at the end.
+
+Two things about that are worth knowing, because both are deliberate:
+
+- **Some text briefly restyles itself as Claude types.** A word can appear
+  plain for an instant and then turn bold once the closing `**` arrives, and a
+  line that becomes a table header sits as ordinary text until the row beneath
+  it shows up. That settling is unavoidable — half a sentence genuinely is
+  ambiguous — and it stops as soon as the syntax is complete.
+- **Code blocks get their Copy button when the reply ends**, not while it is
+  still being written. The code itself appears as it arrives; only the button
+  waits. That's on purpose: copying a command that is still half-written would
+  put half a command on your clipboard with nothing to tell you so.
+
 ### Expanding a box
 
 **Click anywhere on a box to open or close it.** You don't have to hit the
