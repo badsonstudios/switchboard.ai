@@ -3,6 +3,62 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🚧 IN PROGRESS — 2026-09-05: **#752** — the fake models no `/clear`, so the Direct wipe has no e2e
+>
+> Branch `feature/752-fake-clear-e2e`. **Built, reviewed, review findings fixed,
+> awaiting commit approval.** 6760/6761 green (the 1 is `win-cmd.test.ts`, the
+> known load flake — 47/47 isolated). 14 new unit tests + 2 e2e; **all 14
+> mutations caught** (13 by the unit suite, M11 by `check:fake-stream`, which is
+> the only thing that can reach the compiled child). Harness
+> `.claude/work_files/mutate-752.mjs`.
+>
+> **THE REGRESSION TEST WAS VERIFIED RED** against the pre-#748 feed code
+> (`62e3028^`), failing at the `Conversation cleared` assertion. The ordinary
+> test passes there, correctly — see the attribution note below.
+>
+> ## WHICH TEST PROVES WHAT — do not collapse these
+> On a stream session the transcript watcher's reset is **gated off**
+> (`sessions/ipc.ts`, `if (isStream(sessionId)) return`), so `stream-feed.ts` is
+> the only source of the cleared marker on Direct. But it has two branches:
+> * **resumed-card test** → only `onConversationReset` can satisfy it (no turn
+>   has run, so the backstop has no id to compare). This is #748.
+> * **ordinary test** → runs a turn first, so it goes through the init backstop
+>   and passed before #748 too. A guard, not a regression test.
+>
+> Review claimed the ordinary test's marker came from the transcript watcher;
+> **that is wrong — the `isStream` gate suppresses it.** Checked before acting.
+>
+> ## REVIEW FINDINGS WORTH KEEPING
+> * **An assertion that could not fail:** `expect(CLEARED).toHaveCount(1)` as an
+>   idempotency check. `FeedView`'s `cleared` is a **boolean** behind one
+>   conditional, so N resets draw one marker and the count always passes.
+>   Replaced with the real symptom — a turn sent AFTER the clear must survive,
+>   because a late second wipe would eat it.
+> * **The `/clear` match was wrong in both directions:** `text.trim() ===
+>   '/clear'` is case-SENSITIVE (the CLI's matching is not — `slash-intercept.ts`
+>   documents that as its reason for `/i`) and DOES accept a leading space
+>   (which the CLI does not treat as a command). Now `/^\/clear\s*$/i`, copied
+>   from that file rather than approximated.
+> * **`claimFakeSessionId` fails open to `fakeSessionId(0)`** — which on a
+>   single-card run is the session's OWN id, so an unusable fs would "rotate" to
+>   the id it already had. Guarded.
+>
+> Picked up on `main` (clean) straight after #748, whose review filed this. **The
+> gap is the point: this is the door #748 walked through.** `e2e/slash-commands.
+> spec.ts:250-252` has said so in a comment for months — the `/clear` feed-reset
+> it covers is `[pty]` and rides the transcript watcher; the Direct path "resets
+> off `system:init` … which no e2e drives".
+>
+> **Why the fake cannot reach it today:** `fake-stream-protocol.ts` emits
+> `system:init` with a FIXED `this.sessionId` every turn, so the conversation id
+> **never rotates** — neither the old wipe path nor #748's new one can fire. The
+> word `clear` appears only in the advertised `slash_commands` list.
+>
+> **Measured shape to reproduce** (probes 3/4 on #748, real CLI 2.1.245):
+> `/clear` produces **no user echo at all** (despite `--replay-user-messages`),
+> then `conversation_reset` (old id + a `new_conversation_id`), then
+> `system:init` with a **third**, different id, then `result`.
+>
 > # ✅ MERGED — 2026-09-04: **#748** — `/clear` wipes the first time, not the second
 >
 > **PR #754, squashed to `62e3028`, all four CI jobs green** (unit ubuntu 3m48s,

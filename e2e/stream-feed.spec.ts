@@ -22,12 +22,18 @@
 // NO `SWITCHBOARD_TRANSPORT` ANYWHERE, deliberately: Direct is the default
 // since #381, and a spec about the default must not name it.
 import { test, expect, Page } from '@playwright/test';
+import path from 'path';
 import {
+  launchApp,
   launchDirectToolTurn,
   LaunchedApp,
+  readWorkspaceFile,
   registerTempDir,
   tabFromFeedToComposer,
 } from './fixtures/app';
+// The clear tests at the foot of this file launch their own apps rather than
+// sharing the `serial` one, so they use the shared folder/teardown helpers.
+import { tempProjectFolder, teardown } from './fixtures/stream-session';
 
 /** the feed scroller, found the way feed.spec.ts finds it */
 const scrollTop = (w: Page): Promise<number> =>
@@ -258,5 +264,168 @@ test.describe('the Feed renders a Direct turn (P2-E18-14)', () => {
     await box.press('Enter');
     await expect(w.getByText('SFEED_LATE_1', { exact: true })).toBeAttached({ timeout: 60_000 });
     expect(await scrollTop(w)).toBe(parked);
+  });
+});
+
+// ── Clearing the conversation on Direct (#748, #752) ─────────────────────────
+//
+// THE COVERAGE GAP THIS CLOSES, and it is the reason #748 reached the user.
+// `slash-commands.spec.ts` has a `/clear` test, but it is `[pty]`: that wipe
+// rides the transcript watcher's rebind on a new native id. A Direct session's
+// Feed is not built from the transcript at all — `feed/stream-feed.ts` builds
+// it from typed messages — and NOTHING drove that path end to end, because the
+// fake emitted `system:init` with a fixed id every turn and so never rotated
+// the conversation. #752 taught it `/clear`; these are what that buys.
+//
+// Both go through the REAL affordance — ⋯ → Clear conversation → the
+// confirmation — rather than typing the command, because a menu route that
+// silently stopped delivering is exactly the failure this has to be able to
+// catch (#381 was that bug once already).
+//
+// WHICH TEST PROVES WHAT, because they are not interchangeable. On a stream
+// session the transcript watcher's reset is gated off (`sessions/ipc.ts`,
+// `isStream`), so `feed/stream-feed.ts` is the ONLY source of the cleared
+// marker here — but it has two branches, and each test reaches a different one:
+//
+//   * the RESUMED test can only be satisfied by `onConversationReset`. No turn
+//     has run, so the init backstop has no id to compare against — which IS
+//     #748. Verified RED against the pre-#748 code: the replayed history stays
+//     on screen and no marker appears.
+//   * the ordinary test runs a turn first, so it goes through the backstop and
+//     passed before #748 too. It is a guard, not a regression test: the ⋯ → send
+//     route on Direct (#381's failure class), the id rotation, and that the
+//     session keeps working in the new conversation.
+//
+// A SEPARATE APP PER TEST, not this file's shared `serial` one: both mutate the
+// conversation, and the second pays for a relaunch.
+test.describe('Clear conversation on a Direct session', () => {
+  // OUT of the file-level serial (`mode: 'serial'` at the top). These two launch
+  // their own apps and share nothing with the group above, so inheriting its
+  // serial coupling would only mean a failure up there SKIPS them — a test that
+  // silently does not run, which is #107's lesson.
+  test.describe.configure({ mode: 'default' });
+
+  let a: LaunchedApp | undefined;
+  test.afterEach(async () => {
+    const launched = a;
+    a = undefined; // cleared BEFORE the close — see `teardown`
+    await teardown(launched);
+  });
+
+  /** ⋯ → Clear conversation → confirm, the way a user does it. */
+  const clearFromMenu = async (w: Page): Promise<void> => {
+    await w.getByTitle('Session menu').click();
+    const clear = w.getByRole('button', { name: 'Clear conversation' });
+    // A Direct session is `idle` the moment its transport is up
+    // (`transport-ready`), so this is live without waiting for a turn — which
+    // is what makes the resumed case below reachable at all.
+    await expect(clear).toBeEnabled({ timeout: 15_000 });
+    await clear.click();
+    await expect(w.getByText(/Clear this conversation\?/)).toBeVisible();
+    await w.getByRole('button', { name: 'Clear', exact: true }).click();
+  };
+
+  const CLEARED = 'Conversation cleared — context starts fresh';
+
+  /**
+   * It really IS Direct — the probe `launchDirectToolTurn` calls load-bearing.
+   * Without it a test here could quietly become a transcript test that happens
+   * to pass, and the two transports reach the cleared marker by different
+   * paths, so which one this is decides what the assertions mean.
+   */
+  const assertDirect = async (w: Page): Promise<void> => {
+    await w.getByRole('tab', { name: 'Terminal' }).first().click();
+    await expect(w.getByText('No terminal for this session')).toBeVisible({ timeout: 30_000 });
+    await w.getByRole('tab', { name: 'Session', exact: true }).first().click();
+  };
+
+  test('wipes the conversation, and the next turn survives', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    const w = a.window;
+    await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
+    await assertDirect(w);
+
+    const box = w.getByPlaceholder(/Prompt this session/);
+    await box.click();
+    await box.fill('SFEED_CLEAR_BEFORE');
+    await box.press('Enter');
+    await expect(w.getByText('FAKE-REPLY: SFEED_CLEAR_BEFORE')).toBeVisible({ timeout: 30_000 });
+
+    await clearFromMenu(w);
+
+    await expect(w.getByText(CLEARED)).toBeVisible({ timeout: 15_000 });
+    await expect(w.getByText('FAKE-REPLY: SFEED_CLEAR_BEFORE')).toHaveCount(0);
+
+    // THE IDEMPOTENCY GUARD IS THIS ROUND TRIP, not a count of markers.
+    //
+    // Since #748 two signals arrive ~12ms apart — `conversation_reset` and the
+    // `system:init` behind it — and both route to one reset. Counting markers
+    // cannot catch a second wipe: `FeedView`'s `cleared` is a BOOLEAN behind a
+    // single conditional, so N resets draw one marker and an assertion of
+    // `toHaveCount(1)` passes no matter how many fired. What a second, later
+    // wipe would actually do is eat content that arrived after the first —
+    // which is exactly what this turn is.
+    await box.click();
+    await box.fill('SFEED_CLEAR_AFTER');
+    await box.press('Enter');
+    await expect(w.getByText('FAKE-REPLY: SFEED_CLEAR_AFTER')).toBeVisible({ timeout: 30_000 });
+    await expect(w.getByText('FAKE-REPLY: SFEED_CLEAR_BEFORE')).toHaveCount(0);
+    // still there a beat later — a late second reset would have taken it
+    await w.waitForTimeout(500);
+    await expect(w.getByText('FAKE-REPLY: SFEED_CLEAR_AFTER')).toHaveCount(1);
+  });
+
+  test('wipes a RESUMED card on the FIRST clear — the #748 bug itself', async () => {
+    // THE REGRESSION TEST. A resumed card is the case that failed every single
+    // time: `hydrate()` deliberately never sets `conversationId` (seeding it
+    // would make a forked `--resume` id look like a clear and wipe the history
+    // it just replayed), so the old id-comparison had nothing to compare
+    // against and the first clear silently did nothing. The user's second
+    // clear was what worked — which is the whole of the report.
+    //
+    // VERIFIED RED against `main` before #748's fix: without it the replayed
+    // history is still on screen and no marker appears.
+    //
+    // 240s to match the other relaunch specs (`feed-restore-position`,
+    // `find-resumed`). It runs in ~4s locally; the budget exists so a slow CI
+    // run reports the FAILING ASSERTION rather than a bare "Test timeout" —
+    // this test's own step timeouts already sum to ~155s.
+    test.setTimeout(240_000);
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    const first = a;
+    const w = first.window;
+    await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
+    await assertDirect(w);
+
+    const box = w.getByPlaceholder(/Prompt this session/);
+    await box.click();
+    await box.fill('SFEED_RESUMED_HISTORY');
+    await box.press('Enter');
+    await expect(w.getByText('FAKE-REPLY: SFEED_RESUMED_HISTORY')).toBeVisible({ timeout: 30_000 });
+
+    // the id has to be durable before the relaunch can resume on it (#404)
+    await expect(() => {
+      const card = readWorkspaceFile(first.home).sessions?.[0];
+      expect(typeof card?.nativeSessionId).toBe('string');
+    }).toPass({ timeout: 15_000 });
+    await first.close();
+
+    // fresh process, same profile, NO seedFolder — seeding again would make a
+    // second card and land every assertion below on the wrong one
+    a = await launchApp({ home: first.home, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    const w2 = a.window;
+    await expect(w2.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
+    // the replayed history is on screen and NOBODY HAS TYPED ANYTHING — which
+    // is precisely the state in which the old code could not detect a clear
+    await expect(w2.getByText('FAKE-REPLY: SFEED_RESUMED_HISTORY')).toBeVisible({ timeout: 30_000 });
+
+    await clearFromMenu(w2);
+
+    await expect(w2.getByText(CLEARED)).toBeVisible({ timeout: 15_000 });
+    await expect(w2.getByText('FAKE-REPLY: SFEED_RESUMED_HISTORY')).toHaveCount(0);
+    await expect(w2.getByText('SFEED_RESUMED_HISTORY', { exact: true })).toHaveCount(0);
+    await expect(w2.getByText(CLEARED)).toHaveCount(1);
   });
 });

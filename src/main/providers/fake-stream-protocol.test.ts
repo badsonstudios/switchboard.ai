@@ -1160,3 +1160,164 @@ describe('the conversation id is per-session (#603)', () => {
     expect(a[0].session_id).not.toBe(b[0].session_id);
   });
 });
+
+// ── `/clear` rotates the conversation, like the real thing (#752) ────────────
+//
+// The fake advertised `clear` in its `slash_commands` list and then did nothing
+// with it: `system:init` carried a FIXED id every turn, so the conversation
+// never rotated, so the Feed's wipe — which is keyed on exactly that rotation —
+// could not be reached by any e2e on the Direct transport. #748 was a bug in
+// that uncovered path and it reached the user.
+//
+// Every shape asserted here is MEASURED, from #748's probes against the real
+// CLI 2.1.245 (timelines on that issue). Where a claim is a CHOICE rather than
+// an observation, the test says so.
+describe('`/clear` rotates the conversation (#752)', () => {
+  const clear = (): void => proto.handle(userMsg('/clear'));
+  const resets = (): Record<string, unknown>[] =>
+    out.filter((m) => m.type === 'conversation_reset');
+  const inits = (): Record<string, unknown>[] =>
+    out.filter((m) => m.type === 'system' && m.subtype === 'init');
+
+  it('emits reset, then init, then result — in the measured order', () => {
+    clear();
+    expect(types()).toEqual(['conversation_reset', 'system:init', 'result:success']);
+  });
+
+  it('the reset names the conversation being DISCARDED', () => {
+    clear();
+    expect(resets()[0].session_id).toBe(FAKE_SESSION_ID);
+  });
+
+  it('the init announces a DIFFERENT conversation — the rotation itself', () => {
+    clear();
+    expect(inits()[0].session_id).not.toBe(FAKE_SESSION_ID);
+  });
+
+  it('`new_conversation_id` matches NEITHER side, exactly as measured', () => {
+    // Three distinct ids in one exchange. `stream-feed.ts` calls this field a
+    // decoy and ignores it; a fake that made it agree with the init would let a
+    // consumer adopt it, pass here, and double-wipe against the real CLI.
+    clear();
+    const nc = resets()[0].new_conversation_id;
+    expect(typeof nc).toBe('string');
+    expect(nc).not.toBe(FAKE_SESSION_ID);
+    expect(nc).not.toBe(inits()[0].session_id);
+  });
+
+  it('sends NO user echo, though --replay-user-messages is on', () => {
+    // Measured twice. An ordinary turn DOES echo — the contrast is the
+    // assertion, because "no user message" would also pass if the fake had
+    // simply stopped echoing everything.
+    clear();
+    expect(out.filter((m) => m.type === 'user')).toEqual([]);
+
+    out.length = 0;
+    proto.handle(userMsg('an ordinary prompt'));
+    expect(out.filter((m) => m.type === 'user' && m.isReplay === true)).toHaveLength(1);
+  });
+
+  it('writes NO transcript line — a CHOICE, not a measurement', () => {
+    // The real CLI's JSONL behaviour for `/clear` was never captured. Writing
+    // into the OLD file would append to a conversation just discarded; into the
+    // NEW one it would record a prompt the user never sent there. Neither is
+    // obviously right, so the fake does the thing with no consequences.
+    const lines: Record<string, unknown>[] = [];
+    const p = new FakeStreamProtocol(
+      { ...host, appendTranscript: (l) => lines.push(l) },
+      (m) => out.push(m)
+    );
+    p.handle(userMsg('/clear'));
+    expect(lines).toEqual([]);
+  });
+
+  it('the NEXT turn belongs to the new conversation, in a new transcript file', () => {
+    // The consequence that matters to the app: it finds a conversation by
+    // `<id>.jsonl`, so the turn after a clear must not land in the old file.
+    const lines: Record<string, unknown>[] = [];
+    const p = new FakeStreamProtocol(
+      { ...host, appendTranscript: (l) => lines.push(l) },
+      (m) => out.push(m)
+    );
+    p.handle(userMsg('before'));
+    const first = out.find((m) => m.type === 'system')!.session_id;
+    out.length = 0;
+    p.handle(userMsg('/clear'));
+    const after = inits()[0].session_id;
+    lines.length = 0;
+    p.handle(userMsg('after'));
+
+    expect(after).not.toBe(first);
+    expect(lines.length).toBeGreaterThan(0);
+    expect(new Set(lines.map((l) => l.sessionId))).toEqual(new Set([after]));
+  });
+
+  it('takes its new id from the host, so two spawns cannot collide', () => {
+    // The counter is the FILESYSTEM, shared across the child processes every
+    // fake session is. An id invented inside the protocol is #603's bug at one
+    // remove: two cards, one conversation, every native-id consumer confused.
+    const p = new FakeStreamProtocol(
+      { ...host, nextSessionId: () => fakeSessionId(42) },
+      (m) => out.push(m)
+    );
+    p.handle(userMsg('/clear'));
+    expect(inits()[0].session_id).toBe(fakeSessionId(42));
+  });
+
+  it('falls back to an id no counter can hand out, when the host has none', () => {
+    // Unit hosts have no home directory to count in. The fallback must still be
+    // unable to collide: `claimFakeSessionId` puts a zero-padded DECIMAL in the
+    // last group, so a group opening with a hex letter is unreachable for it.
+    clear();
+    const id = String(inits()[0].session_id);
+    expect(id).toMatch(/^[0-9a-f]{8}-fake-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(id.slice(24, 25)).toBe('c');
+  });
+
+  it('clears twice without minting the same id twice', () => {
+    clear();
+    const first = inits()[0].session_id;
+    out.length = 0;
+    clear();
+    expect(inits()[0].session_id).not.toBe(first);
+  });
+
+  it('matches the way `slash-intercept.ts` does — case-insensitively', () => {
+    // That file's own reason: "the CLI's own command matching is". A fake
+    // stricter than the real thing hides the mirror image of the bug this
+    // whole item is about.
+    proto.handle(userMsg('/CLEAR'));
+    expect(resets()).toHaveLength(1);
+  });
+
+  it('…and does NOT take a leading space, for the same reason', () => {
+    // ` /clear` is not a command to the CLI, and `slash-intercept.ts` documents
+    // deliberately not matching it either.
+    proto.handle(userMsg('  /clear'));
+    expect(resets()).toEqual([]);
+    expect(out.filter((m) => m.type === 'user' && m.isReplay === true)).toHaveLength(1);
+  });
+
+  it('never "rotates" to the id it already had, if the host fails open', () => {
+    // `claimFakeSessionId` FAILS OPEN to `fakeSessionId(0)` — which on the
+    // common single-card path is this session's own id. Taking it would emit a
+    // reset and an init naming ONE conversation, a state the real CLI cannot
+    // produce and a fake must not teach a consumer to tolerate.
+    const p = new FakeStreamProtocol(
+      { ...host, nextSessionId: () => FAKE_SESSION_ID },
+      (m) => out.push(m)
+    );
+    p.handle(userMsg('/clear'));
+    expect(inits()[0].session_id).not.toBe(FAKE_SESSION_ID);
+    expect(resets()[0].session_id).toBe(FAKE_SESSION_ID);
+  });
+
+  it('`/clear something` is an ORDINARY prompt, not a clear', () => {
+    // The real CLI treats it as a different command, and so does
+    // `slash-intercept.ts` on the way out. A fake that swallowed it would hide
+    // a prompt the user actually sent.
+    proto.handle(userMsg('/clear the build cache'));
+    expect(resets()).toEqual([]);
+    expect(out.filter((m) => m.type === 'user' && m.isReplay === true)).toHaveLength(1);
+  });
+});
