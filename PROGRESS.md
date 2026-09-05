@@ -3,14 +3,22 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🚧 IN PROGRESS — 2026-09-05: **#635** — streaming text shows raw markdown until the turn ends
+> # ✅ MERGED — 2026-09-05: **#635** — streaming text shows raw markdown until the turn ends
 >
-> Branch `feature/635-streaming-markdown`, off `main` at `8b42287` (#752). **Built,
-> reviewed, review findings fixed, awaiting commit approval.** 6787/6787 green,
-> lint and typecheck clean. 43 e2e green including `feed-tail-pin` and
-> `feed-restore-position` (the scroll risk). **All 17 mutations caught** —
-> harness `.claude/work_files/mutate-635.mjs` (git-ignored; recreate from the PR
-> diff).
+> **PR #759, squashed to `9f05d3d`, all four CI jobs green.** Issue closed.
+> Rebased onto `main` BEFORE opening the PR — #752 had just cost a full CI cycle
+> to the "branch is not up to date with base" rule, and that is the cheap
+> lesson: rebase at PR time, not at merge time. 6787/6787 green, lint and
+> typecheck clean, 43 e2e including `feed-tail-pin` and `feed-restore-position`
+> (the scroll risk). **All 17 mutations caught** — harness
+> `.claude/work_files/mutate-635.mjs` (git-ignored; recreate from the PR diff).
+>
+> **Next up: nothing claimed.** Live bug candidates, unchanged: **#740** (the
+> other half of #716's typing lag — and **#716 stays open pending the owner's
+> verdict; do not close it and do not re-litigate it**), **#705**, **#731**,
+> **#743** and **#744** (both latent, from #719's forensic report). New from
+> dogfooding today and NOT bugs: **#756** (focus-stealing policy), **#757**
+> (tool-block icons), **#758** (AI task labels).
 >
 > ## WHAT SHIPPED
 > `<Markdown>`'s streaming branch is GONE. Both paths now go through the same
@@ -101,10 +109,11 @@
 >   a different valid origin, for about one frame, and `markdown-links.ts`
 >   refuses anything that is not http(s)/mailto.
 >
-> **NOT RELEASED, and neither is anything before it.** #742, #746, #747, #748,
-> #752 and this are all on `main` and unreleased; latest release is **v0.8.7**.
+> ⚠️ **NOT RELEASED, and neither is anything before it.** **SIX** items are now
+> on `main` and unreleased — #742, #746, #747, #748, #752 and #635 — against
+> latest release **v0.8.7** (2026-09-01); `package.json` still reads `0.8.7`.
 > **Do not offer to cut a release — owner's call, standing since 2026-09-03.**
-> #716 stays open pending his verdict.
+> Six dogfood rows are blocked behind that cut.
 
 > # ✅ MERGED — 2026-09-05: **#752** — the fake models no `/clear`, so the Direct wipe has no e2e
 >
