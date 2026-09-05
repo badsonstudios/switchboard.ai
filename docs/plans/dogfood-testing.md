@@ -195,3 +195,4 @@ deleted; they revive if PTY-transport sessions come back into use.
 | 2026-09-03 | Wants the footer model name clickable — one-click quick-switch popup menu, no OK step | #747 |
 | 2026-09-03 | /clear (menu or typed) sometimes leaves old session text on screen; a second /clear wipes it — intermittent | #748 — **FIXED, moved to Re-test.** Not intermittent: it failed on any session that had not replied yet, and every resumed card |
 | 2026-09-05 | Wants a setting: when a session needs attention, pop its window to the forefront (the DESIGN.md focus-stealing policy, for the future settings screen) | #756 |
+| 2026-09-05 | Wants a small identifying icon beside each feed tool-block name (agent, question, read, shell, …) — spot the block type by shape, not by reading | #757 |
