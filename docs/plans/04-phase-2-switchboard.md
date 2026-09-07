@@ -811,7 +811,7 @@ extension reference (clean blocks, expandable detail); Terminal stays one
 toggle away and raw TUI states surface it explicitly. Litmus checked per
 surface.
 
-## E11 — Session Bus & context transfer (outline)
+## E11 — Session Bus & context transfer (milestone: Phase 2; items 00–05 + 09 filed 2026-09-07)
 
 > **Transport decided 2026-07-26 (architecture review AR-P1-6): the Session Bus
 > is stdio-only in v1.** §5.29 already preferred stdio; this closes it. Two
@@ -831,17 +831,159 @@ surface.
 > adapter contract (P2-E15-01) is how a non-Claude CLI declares whether it can
 > take the bus at all.
 
-Session Bus MCP server (`list/get/send/publish` **+ `get_session_context`**),
-@-references in a prompt composer, drag-drop text/files between sessions,
-context chips + summary handoff (Level 2), **and context transfer Level 3
-(fork-session adoption) behind an experimental flag** (both restored
-2026-07-21 — dropped in the original break-out). The signature "sessions
-aware of each other" feature. §5.2–5.5.
+*Goal: sessions become genuinely aware of each other — Session Bus MCP server
+(`list/get/send/publish` **+ `get_session_context`**), @-references in the
+prompt composer, drag-drop between sessions, context chips + summary handoff
+(Level 2), **and context transfer Level 3 (fork-session adoption) behind an
+experimental flag** (both restored 2026-07-21 — dropped in the original
+break-out). The signature "sessions aware of each other" feature, and Phase 2
+exit criterion 4. Governing spec: DESIGN.md §5.2–5.5.*
 
-*Sequencing note (OQ #1):* DESIGN wants the prompt composer validated EARLY in
-Phase 2, but E11 runs late in this plan — a knowing deviation. If the wait
-starts to hurt (or E9's keyboard work wants a composer anyway), pull a minimal
-composer spike forward ahead of the rest of E11.
+*Sequencing note (OQ #1) — **RESOLVED 2026-09-07, by events rather than by a
+decision.** The note said DESIGN wanted the prompt composer validated early and
+E11 ran late, so pull a minimal composer spike forward if the wait hurt. It
+never hurt: E10-07 (slash autocomplete) and E10-09/#476 (attachment strip,
+file drop) shipped the composer as part of the approvals work, so E11 inherits
+a validated one. Items 07/08 extend it; they do not build it.*
+
+### What E11 actually costs, measured against the code (2026-09-07)
+
+Three findings from reading the tree before writing these items. Each one moves
+an item's size, so they belong in the plan rather than in a PR description.
+
+1. **The composer exists and its autocomplete generalises.** `FeedView.tsx`
+   detects a slash token against the caret, opens a popup, and handles
+   dismissal (`slashToken(draft, caret)`, ~`FeedView.tsx:1736`). `@session` is
+   the same machine with a different token function and a different list
+   source. Item 07 is an M because of the resolution/echo edge cases, not
+   because there is UI to invent.
+2. **`src/main/mcp/` is NOT a bus and shares no code with one.** It manages the
+   *user's* servers (§5.17): read the config files, mutate via the real CLI,
+   `mcp_status` for liveness. The bus is a server we *write and attach*. The
+   only coupling is a constraint — attaching the bus must leave that inventory
+   untouched — and item 03 asserts it.
+3. **A stdio MCP server's stdio belongs to the CLI, so the bus child needs a
+   side channel back to the host.** AR-P1-6 decided the *agent↔bus* transport
+   and is silent on *child↔host*; this is a new question, not a re-opening of
+   that one. **Decided 2026-09-07 (owner): a named pipe / unix domain socket.**
+   No port, no HTTP, no network stack — it preserves the "there is no door to
+   guard" property that made stdio worth choosing. Windows named pipes are
+   ACL'd to the creating user by default, and S-03's token-in-an-ACL'd-file
+   pattern (never on argv) applies to the pipe name. Reusing HookListener's
+   loopback HTTP was the cheaper build and was rejected for re-admitting the
+   §5.29 localhost class on a channel that does not need it.
+
+**The CLI contract, verified against `claude` 2.1.261 on PATH (2026-09-07):**
+`--mcp-config <configs...>` loads servers "from JSON files or strings", and
+`--strict-mcp-config` means "only use MCP servers from `--mcp-config`, ignoring
+all other MCP configurations" — so the default MERGES, which is the behaviour
+the bus needs and `--strict-mcp-config` is the flag we must never pass. That is
+read out of the CLI's own `--help`; **item 03 verifies it empirically** rather
+than trusting the string. (`claude mcp list --json` still does not exist —
+already probed and documented at `src/main/mcp/config.ts:8`. Do not re-derive.)
+
+### Work items
+
+- **P2-E11-00 · Bus feasibility probe — S** (#760)**.** Throwaway under `spike/probes/`,
+  findings-driven like the S-## items. Three questions, in order: does the CLI
+  really launch our stdio server from `--mcp-config`; does a `tools/call`
+  round-trip through the named pipe to Electron main and back; do the user's
+  own servers survive the merge (`mcp_status` before and after).
+  *Done when:* a findings note answers all three or names precisely what
+  breaks, and 02/03 are edited to match what it found.
+- **P2-E11-01 · Session query core — M** (#761)**.** The host-side module the bus and the
+  composer BOTH ask: list sessions (name, folder, provider, status), tail a
+  session's recent output as text, its uncommitted diff. Token caps and any
+  redaction policy live here, once. Transport-free by construction — no MCP
+  import, no IPC import — which is what stops the same question growing two
+  answers when item 08 needs it from the renderer.
+  *Done when:* unit-tested against a fake workspace; a transcript-less session
+  answers empty rather than throwing; caps enforced and asserted; the module
+  imports neither MCP nor IPC.
+- **P2-E11-02 · Bus server process + host channel — M** (#762)**.** *(depends: 00, 01)*
+  One server process per session, identity from argv/env at spawn (§5.4's
+  reason for stdio). Named-pipe channel to the host per the decision above.
+  Exposes exactly ONE tool — `list_sessions` — so the pipe is proven
+  end-to-end before any tool surface is designed on top of it.
+  *Done when:* the server answers `initialize`/`tools/list`/`tools/call` over
+  stdio driven by a test harness (no CLI in the loop); a dead host fails the
+  call cleanly with an error the agent can read, never a hang; the pipe refuses
+  a client that did not present the session's token.
+- **P2-E11-03 · The `mcp` capability + attach at spawn — M** (#763)**.** *(depends: 02)*
+  The §5.3 capability deliberately deferred until "its first registrant and
+  first caller" (`DESIGN.md:222`) — this is that moment. A per-session config
+  file (same shape as the existing `--settings` per-session write), `buildSpawn`
+  adds `--mcp-config`, and **never** `--strict-mcp-config`.
+  *Done when:* a spawned session's argv carries `--mcp-config` and provably
+  never `--strict-mcp-config`; a real session's agent can call `list_sessions`
+  and get its siblings; `mcp_status` still lists the user's own servers
+  (the merge, verified not assumed); the fake provider — which declares no
+  `mcp` capability — spawns byte-identically to today. DESIGN.md §5.3's "as
+  built" note is updated in the same PR.
+- **P2-E11-04 · Read tools — S** (#764)**.** *(depends: 03)* `get_session_output(session,
+  lastN?)` and `get_session_diff(session)` as thin wrappers over 01.
+  *Done when:* both round-trip from a real session; an unknown session name is
+  a clean tool error, not a crash; caps from 01 are observed at the tool edge.
+- **P2-E11-05 · `send_to_session` + delivery policy — M** (#765)**.** *(depends: 04)* The
+  safety-critical tool. §5.4's rule: it NEVER auto-executes in the target.
+  The message lands in the target's composer as a highlighted "from @Session"
+  block and the user presses Enter; a per-session "auto-accept from siblings"
+  toggle exists for deliberate pipeline setups and is off by default. Needs a
+  main→renderer inject channel with a declared capability
+  (`src/shared/ipc/capabilities.ts`).
+  *Done when:* a send from A appears in B's composer as an attributed block and
+  does NOT submit; with the toggle on it does; a send to a session with no live
+  renderer is queued or refused explicitly, never silently dropped; the new
+  channel declares its capability and the drift detector stays green.
+
+**→ 00–05 satisfies Phase 2 exit criterion 4** ("two sessions can exchange
+context via the bus"). The items below are the signature UX and E13's
+prerequisite; 09 is filed with the first group because E13 needs it.
+
+- **P2-E11-09 · Context package generator (Level 2) — M** (#766)**.** *(depends: 01)* The
+  structured handoff of §5.5: goal, decisions, files touched, current state,
+  key snippets. **Mechanical JSONL extraction FIRST** — task statement, todo/
+  plan state, files touched from tool calls, no LLM — because §5.5 names it as
+  the fallback that has to exist anyway (the rate-limit case is exactly when
+  the natural summarizer is unavailable), and it is the only variant that is
+  deterministic and therefore properly testable. The agent-written and
+  `claude -p` variants layer on top of the same package shape.
+  *Done when:* a package generated from a fixture transcript is byte-stable
+  across runs; a transcript with no tool calls still yields a usable package;
+  token estimate reported per section; no LLM is invoked on the default path.
+
+**Not yet filed** (filed once 00's findings are in, per the just-in-time rule —
+00 may reshape the bus items and would reshape these too):
+
+- **P2-E11-06 · Blackboard `publish`/`read` — S.** *(depends: 04)* The shared
+  scratchpad §5.4 gives pipelines.
+- **P2-E11-07 · @-session autocomplete in the composer — M.** Token detection
+  and popup modelled on the slash implementation; lists live sessions by name
+  and color.
+- **P2-E11-08 · @-reference resolution + injection at send — M.** *(depends:
+  07, 01)* `@Name` resolves through 01 and is injected as context ahead of the
+  prompt text. **An unresolvable `@word` stays literal text** — that half gets
+  its own negative table, because a composer that mangles `@` in ordinary prose
+  is #635's lesson repeated on a new surface.
+- **P2-E11-10 · Context chip + drop dialog (Levels 1–2) — M.** *(depends: 09)*
+  Drag A's context chip onto B → "last response | summary handoff | full
+  excerpt" with token-size estimates per option. Cross-session drag of a
+  selection or a feed block is the Level-1 source; `ComposerAttachments` is
+  already the drop target (#476).
+- **P2-E11-11 · `get_session_context` bus tool — S.** *(depends: 04, 09)* The
+  agent-pulled variant of 09, so B's agent can request a handoff mid-task.
+- **P2-E11-12 · Level 3 fork-session adoption — M.** *(depends: 09)* `claude
+  --resume <id> --fork-session`, plus the cross-folder variant that copies the
+  transcript into the target project's transcript dir first. Relies on
+  undocumented storage layout, so it ships behind the experimental flag, off by
+  default, per §5.5.
+
+**E11 exit:** two sessions exchange context over the bus without the user
+touching a terminal; `@session` in the composer resolves to real sibling
+context; a context chip dropped on another session briefs it at a chosen
+fidelity; and every tool that writes into a sibling requires a human keypress
+unless the user deliberately turned that off. Litmus (PHILOSOPHY §4) checked on
+each surface.
 
 ## E12 — Session groups & Feed view (milestone: Phase 2; issues #49–#57 filed 2026-07-21)
 
@@ -925,6 +1067,20 @@ round-trip results as Feed events with one-click "inject findings into author
 session", lineage nesting in the rail ("↳ Review of X", ephemeral by default).
 Agent-initiated `spawn_session` and rules-engine auto-dispatch stay Phase 3
 (Dispatch v2). Depends on E11's context packages — sequence after it.
+
+*Sequencing, sharpened 2026-09-07 once E11 had real items: E13 needs exactly
+**two** of them — **E11-09** (context packages, which is what a "briefed"
+dispatch briefs WITH) and **E11-05** (delivery into a sibling's composer, which
+is how findings get back to the author). It does NOT need 06, 07, 08, 10, 11 or
+12. So E13 can start as soon as those two land, and does not wait for the rest
+of E11. Provisional item shape, NOT filed — the just-in-time rule, and E11-00's
+findings may still move the ground under it: role templates (built-in Code
+Reviewer / Doc Writer / PR Author, user-defined first-class) → manual dispatch
+from the session card and the command palette → clean-room vs briefed context
+policy → workspace policy (same-folder | fresh-worktree) → results round-trip
+as Feed events with one-click "inject findings into author session" → lineage
+nesting in the rail ("↳ Review of X", ephemeral by default). File these when
+E11-05 and E11-09 are merged.*
 
 ## E14 — Notifications v2, event feed v2 & service status (milestone: Phase 2; expanded 2026-08-11 from the 2026-07-21 outline; issues #407 + #420–#425)
 

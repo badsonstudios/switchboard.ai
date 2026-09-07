@@ -3,6 +3,65 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 📋 PLANNED — 2026-09-07: **E11 — Session Bus & context transfer** is now on the board
+>
+> **Phase 2 exit criterion 4 had zero issues filed.** `/pm` broke E11 out of its
+> outline into 13 work items and filed the **seven** on the exit path plus E13's
+> prerequisite: **#760** (00, feasibility probe — `spike` label), **#761** (01,
+> session query core), **#762** (02, bus server + named-pipe host channel),
+> **#763** (03, the `mcp` capability + attach at spawn), **#764** (04, read
+> tools), **#765** (05, `send_to_session` + delivery policy), **#766** (09,
+> context package generator). Plan: `docs/plans/04-phase-2-switchboard.md` →
+> "## E11". **00–05 satisfies exit criterion 4.**
+>
+> **Nothing is implemented and nothing is claimed.** `/next-item` picks up
+> **#760** first — it is a probe, and 02/03 are written against assumptions it
+> is meant to either confirm or break.
+>
+> ## THREE FINDINGS FROM READING THE TREE, ALL OF WHICH MOVED AN ITEM
+> * **The composer already exists, so E11 inherits it.** `FeedView.tsx:1736`
+>   does `slashToken(draft, caret)` → popup → dismissal; `@session` is that
+>   machine with a different token function and list source.
+>   `ComposerAttachments` + #476 already make a drop target. **OQ #1's
+>   sequencing note — "pull a minimal composer spike forward if the wait
+>   hurts" — is RESOLVED by events**: E10-07 and E10-09 shipped the composer as
+>   part of the approvals work. The note is marked resolved in the plan file
+>   rather than left to mislead the next reader.
+> * **`src/main/mcp/` is NOT a bus and shares no code with one.** It manages the
+>   *user's* servers (§5.17). The only coupling is a constraint — attaching the
+>   bus must leave that inventory untouched — and #763 asserts it.
+> * **A stdio MCP server's stdio belongs to the CLI, so the bus child needs a
+>   side channel to the host — and AR-P1-6 never covered that.** New question,
+>   not a re-opening. **Owner decided 2026-09-07: named pipe / unix domain
+>   socket.** No port, no HTTP, no network stack; it keeps the "there is no door
+>   to guard" property that made stdio worth choosing. Reusing HookListener's
+>   loopback HTTP was cheaper and was rejected for re-admitting the §5.29
+>   localhost class on a channel that does not need it. S-03 still applies: the
+>   token lives in an ACL'd file, never on argv.
+>
+> ## THE CLI CONTRACT, VERIFIED — not read off memory
+> `claude` **2.1.261** on PATH: `--mcp-config <configs...>` loads servers "from
+> JSON files or strings", and `--strict-mcp-config` is "only use MCP servers
+> from `--mcp-config`, ignoring all other MCP configurations" — so the default
+> MERGES and **`--strict-mcp-config` is the flag we must never pass**. That is
+> the CLI's own help text; **#763 verifies it empirically** rather than trusting
+> a string. `claude mcp list --json` still does not exist — already probed and
+> documented at `src/main/mcp/config.ts:8`; do not re-derive it.
+>
+> ## NOT FILED, DELIBERATELY
+> **06, 07, 08, 10, 11, 12** (blackboard, @-autocomplete, @-resolution, context
+> chip + drop dialog, `get_session_context`, Level-3 fork adoption) — the
+> just-in-time rule, and #760's findings may reshape them. **E13 is not filed
+> either**, but its dependency is now sharp: it needs exactly **#765 and #766**
+> and none of the rest of E11, so it can start as soon as those two land.
+>
+> Also: **#753 had no milestone** — the only open issue without one. Moved to
+> Phase 2.
+>
+> ⚠️ **Release state unchanged.** Six items on `main` unreleased against v0.8.7;
+> `package.json` still reads `0.8.7`. **Owner's call, standing since
+> 2026-09-03 — do not offer to cut one.** #716 stays open pending his verdict.
+
 > # ✅ MERGED — 2026-09-05: **#635** — streaming text shows raw markdown until the turn ends
 >
 > **PR #759, squashed to `9f05d3d`, all four CI jobs green.** Issue closed.
