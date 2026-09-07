@@ -3,14 +3,18 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔨 IN PROGRESS — 2026-09-07: **#760** — P2-E11-00, bus feasibility probe
+> # ✅ MERGED — 2026-09-07: **#760** — P2-E11-00, bus feasibility probe
 >
-> **Branch `feature/p2-e11-00-bus-feasibility-probe`. Gate 1 passed, probes
-> written and run, `/review` done and its findings worked through. Awaiting
-> Gate 2 (commit approval). Not committed.** Six probes under
+> **PR #767, squashed to `1f1784a`, all four CI jobs green.** Issue closed.
+> Rebased onto `main` BEFORE opening the PR. Six probes under
 > `spike/probes/760/`; deliverable is
 > **`spike/findings/e11-00-bus-feasibility.md`**. Lint and typecheck clean;
-> nothing under `src/` changed, so the unit suite is unaffected.
+> nothing under `src/` changed, so the unit suite was unaffected. Cost: four
+> real turns, all small.
+>
+> **Next up: #761** (session query core) — no dependencies, and both #762 and
+> the later composer work (#768-era @-references) build on it. **#760 was the
+> only blocker on #762**, which is now unblocked too.
 >
 > ## THE BUS DESIGN WORKS — eight questions, all answered
 > `--mcp-config` launches our hand-rolled stdio server (194 lines, no SDK); it
@@ -52,7 +56,7 @@
 > and E13, which both plan headless passes.
 >
 > ## /review CAUGHT FOUR CLAIMS THAT OUTRAN THEIR EVIDENCE
-> All four fixed, and worth knowing because three were *my* over-claims, not
+> All four fixed, and worth knowing because all four were *my* over-claims, not
 > code bugs: the discoverability reversal above; "session fine" for a broken bus
 > (measured only the control channel — the turn was never run, and running it
 > found the 32 s stall); "Electron-as-node is known to work" (the probe ran
@@ -60,9 +64,16 @@
 > (**#182 makes every real-CLI check local-only** — a runner has no subscription
 > login). It also found three substring verdicts that could pass on the wrong
 > evidence — including **Q5 passing on Q4's evidence** — and a settle condition
-> vacuously true on an empty list.
+> vacuously true on an empty list. Three of its suggested measurements were
+> **run rather than hedged**, which is where the 32 s stall and the
+> discoverability reversal both came from — the review did not just correct the
+> note, it produced two of its findings.
 >
-> **Next up after this merges: #761** (session query core), then #762.
+> ⚠️ **NOT RELEASED, and neither is anything before it.** **SEVEN** items are now
+> on `main` and unreleased — #742, #746, #747, #748, #752, #635 and #760 (the
+> last is spike-only and user-invisible) — against latest release **v0.8.7**
+> (2026-09-01); `package.json` still reads `0.8.7`. **Do not offer to cut a
+> release — owner's call, standing since 2026-09-03.**
 
 > # 📋 PLANNED — 2026-09-07: **E11 — Session Bus & context transfer** is now on the board
 >
