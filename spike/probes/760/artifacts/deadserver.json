@@ -1,0 +1,124 @@
+{
+  "cwd": "C:\\Projects\\Switchboard.ai",
+  "cases": {
+    "missing-binary": {
+      "config": {
+        "type": "stdio",
+        "command": "sb-definitely-not-a-real-binary-760",
+        "args": []
+      },
+      "elapsedMs": 3532,
+      "why": "settled",
+      "responded": true,
+      "servers": [
+        {
+          "name": "DeepWiki",
+          "status": "connected",
+          "scope": "local",
+          "serverInfo": {
+            "name": "DeepWiki",
+            "version": "2.14.3"
+          },
+          "tools": [
+            "ask_question",
+            "read_wiki_contents",
+            "read_wiki_structure"
+          ]
+        },
+        {
+          "name": "sbbus",
+          "status": "failed",
+          "scope": "dynamic",
+          "serverInfo": null,
+          "tools": []
+        }
+      ],
+      "sawTypes": [
+        "control_response:"
+      ],
+      "stderr": "",
+      "verdict": "survivable — CLI answered, ours reported as failed after 3532ms"
+    },
+    "exits-immediately": {
+      "config": {
+        "type": "stdio",
+        "command": "C:\\Program Files\\nodejs\\node.exe",
+        "args": [
+          "-e",
+          "process.exit(1)"
+        ]
+      },
+      "elapsedMs": 2033,
+      "why": "settled",
+      "responded": true,
+      "servers": [
+        {
+          "name": "DeepWiki",
+          "status": "connected",
+          "scope": "local",
+          "serverInfo": {
+            "name": "DeepWiki",
+            "version": "2.14.3"
+          },
+          "tools": [
+            "ask_question",
+            "read_wiki_contents",
+            "read_wiki_structure"
+          ]
+        },
+        {
+          "name": "sbbus",
+          "status": "failed",
+          "scope": "dynamic",
+          "serverInfo": null,
+          "tools": []
+        }
+      ],
+      "sawTypes": [
+        "control_response:"
+      ],
+      "stderr": "",
+      "verdict": "survivable — CLI answered, ours reported as failed after 2033ms"
+    },
+    "silent-never-speaks-mcp": {
+      "config": {
+        "type": "stdio",
+        "command": "C:\\Program Files\\nodejs\\node.exe",
+        "args": [
+          "C:\\Projects\\Switchboard.ai\\spike\\probes\\760\\artifacts\\silent-server.mjs"
+        ]
+      },
+      "elapsedMs": 30543,
+      "why": "timeout",
+      "responded": true,
+      "servers": [
+        {
+          "name": "DeepWiki",
+          "status": "connected",
+          "scope": "local",
+          "serverInfo": {
+            "name": "DeepWiki",
+            "version": "2.14.3"
+          },
+          "tools": [
+            "ask_question",
+            "read_wiki_contents",
+            "read_wiki_structure"
+          ]
+        },
+        {
+          "name": "sbbus",
+          "status": "pending",
+          "scope": "dynamic",
+          "serverInfo": null,
+          "tools": []
+        }
+      ],
+      "sawTypes": [
+        "control_response:"
+      ],
+      "stderr": "",
+      "verdict": "survivable — CLI answered, ours reported as pending after 30543ms"
+    }
+  }
+}

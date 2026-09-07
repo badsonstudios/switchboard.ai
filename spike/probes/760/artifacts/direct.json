@@ -1,0 +1,94 @@
+{
+  "pipePath": "\\\\.\\pipe\\sb760-direct-42348",
+  "platform": "win32",
+  "steps": [
+    {
+      "step": "initialize",
+      "result": {
+        "protocolVersion": "2025-06-18",
+        "capabilities": {
+          "tools": {}
+        },
+        "serverInfo": {
+          "name": "sbbus-probe",
+          "version": "0.0.0-760"
+        }
+      }
+    },
+    {
+      "step": "tools/list",
+      "result": {
+        "tools": [
+          {
+            "name": "sb_probe_local",
+            "description": "Answers from inside the MCP server process with no host involvement. Proves the CLI launched the server and can call it.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "sb_probe_echo",
+            "description": "Echoes text back by asking the switchboard host process over its pipe. Proves the whole round trip.",
+            "inputSchema": {
+              "type": "object",
+              "properties": {
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "text"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "step": "tools/call sb_probe_local",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "local ok · session=direct-probe-session · pid=66276 · exec=C:\\Program Files\\nodejs\\node.exe"
+          }
+        ]
+      }
+    },
+    {
+      "step": "tools/call sb_probe_echo (THE PIPE)",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "host said: {\"echo\":\"hello from the agent\",\"askedBy\":\"direct-probe-session\",\"hostPid\":42348,\"sessions\":[{\"name\":\"TradingApp\",\"folder\":\"C:/Projects/TradingApp\",\"status\":\"working\"},{\"name\":\"PropaneMon\",\"folder\":\"C:/Projects/PropaneMon\",\"status\":\"idle\"}]}"
+          }
+        ]
+      }
+    },
+    {
+      "step": "tools/call sb_probe_echo AFTER KILLING THE HOST",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "host unreachable: Error: connect ENOENT \\\\.\\pipe\\sb760-direct-42348"
+          }
+        ],
+        "isError": true
+      }
+    }
+  ],
+  "hostSaw": [
+    {
+      "q": "echo",
+      "session": "direct-probe-session",
+      "text": "hello from the agent"
+    }
+  ],
+  "verdict": "see steps",
+  "serverStderr": "[2026-09-07T18:12:46.536Z] ARGV [\"C:\\\\Program Files\\\\nodejs\\\\node.exe\",\"C:\\\\Projects\\\\Switchboard.ai\\\\spike\\\\probes\\\\760\\\\mcp-bus-server.mjs\",\"--session\",\"direct-probe-session\",\"--pipe\",\"\\\\\\\\.\\\\pipe\\\\sb760-direct-42348\"]\n[2026-09-07T18:12:46.538Z] EXECPATH C:\\Program Files\\nodejs\\node.exe\n[2026-09-07T18:12:46.538Z] SESSION_FROM_ARGV \"direct-probe-session\"\n[2026-09-07T18:12:46.538Z] ENV.SB_PROBE_SESSION null\n[2026-09-07T18:12:46.538Z] ENV.SB_PROBE_LOG null\n[2026-09-07T18:12:46.538Z] ENV.ELECTRON_RUN_AS_NODE null\n[2026-09-07T18:12:46.538Z] CWD C:\\Projects\\Switchboard.ai\n[2026-09-07T18:12:46.539Z] READY pipe=\"\\\\\\\\.\\\\pipe\\\\sb760-direct-42348\"\n[2026-09-07T18:12:46.540Z] <- initialize id=1\n[2026-09-07T18:12:46.540Z] CLIENT_PROTOCOL_VERSION \"2025-06-18\"\n[2026-09-07T18:12:46.540Z] CLIENT_INFO {\"name\":\"probe-direct\",\"version\":\"0\"}\n[2026-09-07T18:12:46.542Z] <- notifications/initialized (notification)\n[2026-09-07T18:12:46.542Z] <- tools/list id=2\n[2026-09-07T18:12:46.542Z] <- tools/call id=3\n[2026-09-07T18:12:46.544Z] <- tools/call id=4\n[2026-09-07T18:12:46.762Z] <- tools/call id=5\n"
+}

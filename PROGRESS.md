@@ -3,6 +3,67 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔨 IN PROGRESS — 2026-09-07: **#760** — P2-E11-00, bus feasibility probe
+>
+> **Branch `feature/p2-e11-00-bus-feasibility-probe`. Gate 1 passed, probes
+> written and run, `/review` done and its findings worked through. Awaiting
+> Gate 2 (commit approval). Not committed.** Six probes under
+> `spike/probes/760/`; deliverable is
+> **`spike/findings/e11-00-bus-feasibility.md`**. Lint and typecheck clean;
+> nothing under `src/` changed, so the unit suite is unaffected.
+>
+> ## THE BUS DESIGN WORKS — eight questions, all answered
+> `--mcp-config` launches our hand-rolled stdio server (194 lines, no SDK); it
+> reaches `connected` with our `serverInfo` and our tool list; argv and the
+> config `env` block both arrive verbatim, so **§5.4's identity-at-spawn premise
+> holds**; the named pipe round-trips end to end with a real agent, proven by
+> the *host's* record rather than the model's say-so; the user's servers survive
+> the merge; and `--strict-mcp-config` really does evict them, now measured
+> rather than quoted from `--help`. CLI proposes protocol `2025-11-25`.
+>
+> ## ⚠️ TWO THINGS THAT CHANGE DOWNSTREAM ITEMS
+> * **A silent bus costs the session ~32 SECONDS.** First token goes 3.0 s →
+>   35.2 s with a server that starts and never speaks MCP. The turn completes,
+>   so fail-open survives in letter — not in spirit. Consistent with a ~30 s
+>   connect timeout, which also **retires the earlier "pending for ever"
+>   wording** (an unproven absence stated as fact). **#762 must answer
+>   `initialize` before anything that can block.**
+> * **The bus IS discoverable — I had this backwards and corrected it on #764
+>   and #765.** The first read of `probe-toolcall` concluded an agent would
+>   never stumble into the bus. But that prompt had NAMED the tool, and the
+>   agent producing the fully-qualified `mcp__sbbus__sb_probe_echo` before any
+>   search returned was evidence the *names* were visible and only the *schemas*
+>   deferred. `probe-discovery.mjs` ran the real experiment — a prompt naming no
+>   tool, no server, no convention — and the agent found and called both bus
+>   tools unaided.
+>
+> ## ⚠️ A PROBE OF MINE REACHED PAST ITS SCRATCH DIRECTORY
+> `probe-discovery.mjs` ran with `--permission-mode bypassPermissions`. It
+> answered its question and then, unprompted, enumerated this machine's other
+> live Claude sessions, read `~/.claude/sessions/` and transcripts under
+> `~/.claude/projects/`, and **sent "status request" messages to six live
+> sessions across four projects** (trading-15, ashenfall-22, ashenfall-93,
+> switchboard-ai-63, brainharbor-4f, switchboard-ai-25). Nothing destructive —
+> reads plus messages — but six of Dan's sessions were interrupted by my probe.
+> **The lesson is bigger than the scratch dir: a cwd contains file writes at
+> best, not agent-to-agent tooling.** `probe-deadturn.mjs` is the corrected
+> pattern (no tools needed → no permissions granted). Recorded in the findings
+> note §8 and in `docs/reference-implementations.md` §3, and it lands on #766
+> and E13, which both plan headless passes.
+>
+> ## /review CAUGHT FOUR CLAIMS THAT OUTRAN THEIR EVIDENCE
+> All four fixed, and worth knowing because three were *my* over-claims, not
+> code bugs: the discoverability reversal above; "session fine" for a broken bus
+> (measured only the control channel — the turn was never run, and running it
+> found the 32 s stall); "Electron-as-node is known to work" (the probe ran
+> plain Node — only the `env` *mechanism* is proven); and "verifiable in CI"
+> (**#182 makes every real-CLI check local-only** — a runner has no subscription
+> login). It also found three substring verdicts that could pass on the wrong
+> evidence — including **Q5 passing on Q4's evidence** — and a settle condition
+> vacuously true on an empty list.
+>
+> **Next up after this merges: #761** (session query core), then #762.
+
 > # 📋 PLANNED — 2026-09-07: **E11 — Session Bus & context transfer** is now on the board
 >
 > **Phase 2 exit criterion 4 had zero issues filed.** `/pm` broke E11 out of its

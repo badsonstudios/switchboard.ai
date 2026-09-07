@@ -1,0 +1,155 @@
+{
+  "pipePath": "\\\\.\\pipe\\sb760-discovery-66120",
+  "scratch": "C:\\Users\\dheinz\\AppData\\Local\\Temp\\sb760-discovery-iPhVnO",
+  "toolUses": [
+    {
+      "name": "ListAgents",
+      "input": {}
+    },
+    {
+      "name": "ToolSearch",
+      "input": {
+        "query": "select:mcp__sbbus__sb_probe_echo,mcp__sbbus__sb_probe_local",
+        "max_results": 2
+      }
+    },
+    {
+      "name": "ToolSearch",
+      "input": {
+        "query": "select:SendMessage",
+        "max_results": 1
+      }
+    },
+    {
+      "name": "mcp__sbbus__sb_probe_local",
+      "input": {}
+    },
+    {
+      "name": "mcp__sbbus__sb_probe_echo",
+      "input": {
+        "text": "discovery ping"
+      }
+    },
+    {
+      "name": "Bash",
+      "input": {
+        "command": "cd ~/.claude 2>/dev/null && ls; echo \"--- sessions dir ---\"; ls sessions 2>/dev/null | head -50; echo \"--- registry hits ---\"; grep -rl -m1 -E \"trading-15|ashenfall-22|ashenfall-93|switchboard-ai-63|brainharbor-4f|switchboard-ai-25\" --include='*.json' --include='*.jsonl' --include='*.txt' --include='*.md' . 2>/dev/null | grep -v '/projects/.*/[0-9a-f-]\\{36\\}\\.jsonl$' | head -30",
+        "description": "Locate on-disk session registry naming the peer sessions"
+      }
+    },
+    {
+      "name": "Bash",
+      "input": {
+        "command": "cd ~/.claude/sessions && for f in 20848 33640 38424 62908 64956 65284; do echo \"=== $f.json ===\"; cat $f.json; echo; done",
+        "description": "Print the six peer session registry files"
+      }
+    },
+    {
+      "name": "SendMessage",
+      "input": {
+        "to": "trading-15",
+        "summary": "ask trading-15 for one-line status",
+        "message": "Status request from sb760-discovery-iphvno-e8: please reply with one line saying what task you are currently working on and whether you are busy or idle. No action needed beyond the reply.",
+        "type": "message",
+        "recipient": "trading-15",
+        "content": "Status request from sb760-discovery-iphvno-e8: pl…"
+      }
+    },
+    {
+      "name": "SendMessage",
+      "input": {
+        "to": "ashenfall-22",
+        "summary": "ask ashenfall-22 for one-line status",
+        "message": "Status request from sb760-discovery-iphvno-e8: please reply with one line saying what task you are currently working on and whether you are busy or idle. No action needed beyond the reply.",
+        "type": "message",
+        "recipient": "ashenfall-22",
+        "content": "Status request from sb760-discovery-iphvno-e8: pl…"
+      }
+    },
+    {
+      "name": "SendMessage",
+      "input": {
+        "to": "ashenfall-93",
+        "summary": "ask ashenfall-93 for one-line status",
+        "message": "Status request from sb760-discovery-iphvno-e8: please reply with one line saying what task you are currently working on and whether you are busy or idle. No action needed beyond the reply.",
+        "type": "message",
+        "recipient": "ashenfall-93",
+        "content": "Status request from sb760-discovery-iphvno-e8: pl…"
+      }
+    },
+    {
+      "name": "SendMessage",
+      "input": {
+        "to": "switchboard-ai-63",
+        "summary": "ask switchboard-ai-63 for one-line status",
+        "message": "Status request from sb760-discovery-iphvno-e8: please reply with one line saying what task you are currently working on and whether you are busy or idle. No action needed beyond the reply.",
+        "type": "message",
+        "recipient": "switchboard-ai-63",
+        "content": "Status request from sb760-discovery-iphvno-e8: pl…"
+      }
+    },
+    {
+      "name": "SendMessage",
+      "input": {
+        "to": "brainharbor-4f",
+        "summary": "ask brainharbor-4f for one-line status",
+        "message": "Status request from sb760-discovery-iphvno-e8: please reply with one line saying what task you are currently working on and whether you are busy or idle. No action needed beyond the reply.",
+        "type": "message",
+        "recipient": "brainharbor-4f",
+        "content": "Status request from sb760-discovery-iphvno-e8: pl…"
+      }
+    },
+    {
+      "name": "SendMessage",
+      "input": {
+        "to": "switchboard-ai-25",
+        "summary": "ask switchboard-ai-25 for one-line status",
+        "message": "Status request from sb760-discovery-iphvno-e8: please reply with one line saying what task you are currently working on and whether you are busy or idle. No action needed beyond the reply.",
+        "type": "message",
+        "recipient": "switchboard-ai-25",
+        "content": "Status request from sb760-discovery-iphvno-e8: pl…"
+      }
+    },
+    {
+      "name": "Bash",
+      "input": {
+        "command": "cd ~/.claude/projects && for pair in \"C--Projects-Trading:198bfdc4-7641-4aaf-b9e3-778588ce7090:trading-15\" \"C--Projects-Ashenfall:8cde33ed-cc46-46fc-ab66-5cf3879f0162:ashenfall-22\" \"C--Projects-Ashenfall:f0f9aff7-bc9c-4017-98f5-0f02898ebedf:ashenfall-93\" \"C--Projects-Switchboard-ai:7c3383b6-3f47-4294-92dd-170f1acc4ea3:switchboard-ai-63\" \"C--Projects-BrainHarbor:d3541975-6739-40b3-8d55-432520ae37c5:brainharbor-4f\" \"C--Projects-Switchboard-ai:0eaf8ee4-26d9-4b31-ac8d-740d6ad0295b:switchboard-ai-25\"; do\n  IFS=: read dir sid name <<< \"$pair\"\n  f=\"$dir/$sid.jsonl\"\n  echo \"===== $name ($f) =====\"\n  if [ ! -f \"$f\" ]; then echo \"MISSING\"; continue; fi\n  stat -c 'last modified: %y  size: %s' \"$f\"\n  echo \"--- last human prompts ---\"\n  grep -E '\"type\":\"user\"' \"$f\" | grep -v '\"tool_result\"' | tail -3 | python -c \"\nimport sys,json\nfor line in sys.stdin:\n    try:\n        o=json.loads(line); c=o['message']['content']\n        if isinstance(c,list): c=' '.join(x.get('text','') for x in c if isinstance(x,dict))\n        print('  >', c.replace('\\n',' ')[:300])\n    except Exception as e: print('  ? parse fail')\n\"\n  echo \"--- last assistant text ---\"\n  grep -E '\"type\":\"assistant\"' \"$f\" | tail -1 | python -c \"\nimport sys,json\nfor line in sys.stdin:\n    try:\n        o=json.loads(line); c=o['message']['content']\n        if isinstance(c,list): c=' '.join(x.get('text','') or ('[tool:'+x.get('name','')+']') for x in c if isinstance(x,dict))\n        print('  <', c.replace('\\n',' ')[:300])\n    except Exception: print('  ? parse fail')\n\"\ndone",
+        "description": "Show last prompts and assistant output from each peer session transcript"
+      }
+    }
+  ],
+  "result": {
+    "subtype": "success",
+    "text": "Six peer sessions are live on this machine. Two are actively working right now, two are mid-conversation, one is done with its last task, and one has been quiet for two days.\n\n| Session | Project | Last activity | What it is doing |\n|---|---|---|---|\n| switchboard-ai-63 | Switchboard.ai | 14:23 today, busy | Running the review skill on the working-tree diff for issue #760, the bus feasibility probe (P2-E11-00). It approved and is now mid-review. |\n| brainharbor-4f | BrainHarbor | 14:26 today, busy | Driving work item WI-514 through the next-item skill, approved and executing. |\n| ashenfall-93 | Ashenfall | 14:23 today | Worldbuilding interview, batch 6 of about 10. Currently asking about giants and lizard people after covering the houses, gods, and the ancients. |\n| ashenfall-22 | Ashenfall | 14:19 today | Just wrote a playtest telemetry design doc making telemetry a standing requirement for every system. Waiting on you. |\n| trading-15 | Trading | 11:56 today | Finished. Merged the change disarming all four sell rules and widening the hold window to 15 days. 341 tests pass with the same 8 pre-existing failures. |\n| switchboard-ai-25 | Switchboard.ai | Sept 5, idle | Last filed issue #758, the AI-generated task label ticket. Idle since then. |\n\nTwo things worth knowing:\n\n- **The Switchboard host bus disagrees with the peer list.** The echo probe over the host pipe reports only two sessions, TradingApp as working and PropaneMon as idle. Neither matches the six Claude Code peers above, so the host's session registry is tracking something different from the CLI's peer registry. That is relevant to the #760 feasibility work that switchboard-ai-63 is reviewing.\n- **Direct status replies are pending.** I sent each peer a one-line status request. None have answered yet since they drain messages at their next tool round. If replies come in, they will land in this conversation and I will relay anything that contradicts the table."
+  },
+  "stderr": "",
+  "hostSaw": [
+    {
+      "q": "echo",
+      "session": "sb-session-discovery-760",
+      "text": "discovery ping"
+    }
+  ],
+  "B1": {
+    "question": "does an agent find the bus when the prompt names no tool?",
+    "hostWasContacted": true,
+    "ourToolCalled": "mcp__sbbus__sb_probe_local",
+    "toolsReachedForInOrder": [
+      "ListAgents",
+      "ToolSearch",
+      "ToolSearch",
+      "mcp__sbbus__sb_probe_local",
+      "mcp__sbbus__sb_probe_echo",
+      "Bash",
+      "Bash",
+      "SendMessage",
+      "SendMessage",
+      "SendMessage",
+      "SendMessage",
+      "SendMessage",
+      "SendMessage",
+      "Bash"
+    ],
+    "verdict": "DISCOVERABLE — the agent found and called a bus tool with nothing naming it"
+  }
+}

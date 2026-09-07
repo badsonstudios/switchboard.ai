@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "sbbus": {
+      "type": "stdio",
+      "command": "C:\\Program Files\\nodejs\\node.exe",
+      "args": [
+        "C:\\Projects\\Switchboard.ai\\spike\\probes\\760\\mcp-bus-server.mjs",
+        "--session",
+        "sb-session-probe-760",
+        "--pipe",
+        "\\\\.\\pipe\\sb760-attach-47608"
+      ],
+      "env": {
+        "SB_PROBE_SESSION": "sb-session-probe-760",
+        "SB_PROBE_LOG": "C:\\Projects\\Switchboard.ai\\spike\\probes\\760\\artifacts\\server.log",
+        "ELECTRON_RUN_AS_NODE": "1"
+      }
+    }
+  }
+}

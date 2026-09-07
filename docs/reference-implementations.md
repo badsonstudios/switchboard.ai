@@ -418,6 +418,42 @@ The consumers are `main/mcp/status.ts` (parse), `main/mcp/merge.ts` (the join to
 the config files, which is what decides whether a row can be removed) and the
 `mcp:status` channel in `main/mcp/ipc.ts`.
 
+##### Attaching OUR OWN server: `--mcp-config`, MEASURED (#760, 2026-09-07, PATH CLI 2.1.261)
+
+The Session Bus (E11) attaches a stdio MCP server we wrote. Probes:
+`spike/probes/760/`; full note: `spike/findings/e11-00-bus-feasibility.md`.
+
+- **`--mcp-config <path>` MERGES** with everything the user already has, and
+  **`--strict-mcp-config` EVICTS it all** — both measured, not read off `--help`.
+  Three runs: baseline `DeepWiki`; with `--mcp-config` `DeepWiki` + ours; with
+  `--strict-mcp-config` **ours only**. So `--strict-mcp-config` is the flag the
+  bus must never pass.
+- **Our server lands at `scope: "dynamic"`** — as `McpManagerDialog.tsx:45`
+  already says. It therefore appears in the §5.17 manager, where `merge.ts`
+  offers no Remove for it (no config file backs it).
+- **`mcp_status` is free proof of a working server.** A row reading
+  `status: "connected"` with OUR `serverInfo` string and OUR tool names proves
+  the CLI spawned the process, sent `initialize`, and called `tools/list` —
+  with no model and no token spend. (Still needs a logged-in CLI, so it is a
+  local `check:*`, never CI — #182.)
+- **argv and the config `env` block both arrive verbatim**, which is what makes
+  §5.4's identity-at-spawn premise real. The CLI proposes protocol version
+  **`2025-11-25`** and identifies as `{"name":"claude-code","version":"2.1.261"}`.
+- **Tool names are `mcp__<server>__<tool>`**, and **schemas are DEFERRED** —
+  the agent reaches them via `ToolSearch`. Names are visible; only the schema is
+  fetched on demand. An agent asked a question the server can answer **does find
+  it unaided** (measured with a prompt naming no tool, no server and no
+  convention).
+- ⚠️ **A server that starts and never speaks MCP costs the session ~32 seconds.**
+  Control channel stays responsive and `mcp_status` reports `pending`, but the
+  first token moves from 3.0 s to 35.2 s — consistent with a ~30 s connect
+  timeout. A crashed or missing binary is cheap by comparison (`failed` in
+  2–3.5 s). **Any server we ship must answer `initialize` before doing anything
+  that can block.**
+- ⚠️ **Writing a control request to stdin at `t=0` is silently lost.** Every 721
+  probe waits ~500 ms before its first write and none says why; that delay is
+  load-bearing. It cost #760 a confident false negative.
+
 ### 1.3 The settings schema is the standout
 
 `claude-code-settings.schema.json` is the full, authoritative schema for
@@ -610,3 +646,25 @@ from "the flag does nothing".
 **The transferable lesson: a silent result is indistinguishable from a broken
 harness.** Assert that your input actually arrived *before* you read any verdict
 out of a probe.
+
+`spike/probes/721/` (control protocol, MCP verbs) and `spike/probes/760/`
+(attaching our own MCP server) are the other two sets. #760 collected the same
+lesson twice more, in new shapes:
+
+- **A verdict computed by substring can pass on the wrong evidence.** Three in
+  one function: a bare `log.includes('"1"')` that matched timestamps; an
+  `includes(SESSION_ID)` meant to prove *argv* that also matched the *env* line,
+  so one question passed on another's evidence; and a log file never bound to
+  the current run, so a stale one would report success while the run launched
+  nothing. Bind every verdict to its own key AND to a per-run token.
+- **A settle condition can be vacuously true.** `[].every(...)` is `true`, so
+  "wait until no server is `pending`" settles instantly on an empty list — and
+  the comparison built on it reported "nothing was lost" when there had been
+  nothing to lose. Require the thing you are measuring to be *present* before
+  you decide it is *settled*.
+- ⚠️ **A `bypassPermissions` probe is not contained by its cwd.** #760's
+  discovery probe ran in a temp directory and still enumerated the machine's
+  other live Claude sessions, read `~/.claude/sessions/` and transcripts, and
+  messaged six sessions across four projects. A cwd contains file writes at
+  best. If a probe needs no tools, give it none — `--permission-mode default`
+  and a prompt with no reason to act.
