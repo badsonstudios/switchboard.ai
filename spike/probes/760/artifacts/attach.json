@@ -1,0 +1,188 @@
+{
+  "cwd": "C:\\Projects\\Switchboard.ai",
+  "configPath": "C:\\Projects\\Switchboard.ai\\spike\\probes\\760\\artifacts\\bus-config.json",
+  "pipePath": "\\\\.\\pipe\\sb760-attach-47608",
+  "cli": "C:\\Users\\dheinz\\AppData\\Roaming\\npm\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe",
+  "runs": {
+    "baseline": {
+      "args": [
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--input-format",
+        "stream-json",
+        "--permission-prompt-tool",
+        "stdio",
+        "--replay-user-messages",
+        "--include-partial-messages"
+      ],
+      "initMcpServers": "(no system:init within 20s)",
+      "why": "settled",
+      "sampleCount": 3,
+      "servers": [
+        {
+          "name": "DeepWiki",
+          "status": "connected",
+          "scope": "local",
+          "serverInfo": {
+            "name": "DeepWiki",
+            "version": "2.14.3"
+          },
+          "tools": [
+            "ask_question",
+            "read_wiki_contents",
+            "read_wiki_structure"
+          ]
+        }
+      ],
+      "sawTypes": [
+        "control_response:"
+      ],
+      "stderr": ""
+    },
+    "with --mcp-config": {
+      "args": [
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--input-format",
+        "stream-json",
+        "--permission-prompt-tool",
+        "stdio",
+        "--replay-user-messages",
+        "--include-partial-messages",
+        "--mcp-config",
+        "C:\\Projects\\Switchboard.ai\\spike\\probes\\760\\artifacts\\bus-config.json"
+      ],
+      "initMcpServers": "(no system:init within 20s)",
+      "why": "settled",
+      "sampleCount": 3,
+      "servers": [
+        {
+          "name": "DeepWiki",
+          "status": "connected",
+          "scope": "local",
+          "serverInfo": {
+            "name": "DeepWiki",
+            "version": "2.14.3"
+          },
+          "tools": [
+            "ask_question",
+            "read_wiki_contents",
+            "read_wiki_structure"
+          ]
+        },
+        {
+          "name": "sbbus",
+          "status": "connected",
+          "scope": "dynamic",
+          "serverInfo": {
+            "name": "sbbus-probe",
+            "version": "0.0.0-760"
+          },
+          "tools": [
+            "sb_probe_local",
+            "sb_probe_echo"
+          ]
+        }
+      ],
+      "sawTypes": [
+        "control_response:"
+      ],
+      "stderr": ""
+    },
+    "with --mcp-config AND --strict-mcp-config": {
+      "args": [
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--input-format",
+        "stream-json",
+        "--permission-prompt-tool",
+        "stdio",
+        "--replay-user-messages",
+        "--include-partial-messages",
+        "--mcp-config",
+        "C:\\Projects\\Switchboard.ai\\spike\\probes\\760\\artifacts\\bus-config.json",
+        "--strict-mcp-config"
+      ],
+      "initMcpServers": "(no system:init within 20s)",
+      "why": "settled",
+      "sampleCount": 1,
+      "servers": [
+        {
+          "name": "sbbus",
+          "status": "connected",
+          "scope": "dynamic",
+          "serverInfo": {
+            "name": "sbbus-probe",
+            "version": "0.0.0-760"
+          },
+          "tools": [
+            "sb_probe_local",
+            "sb_probe_echo"
+          ]
+        }
+      ],
+      "sawTypes": [
+        "control_response:"
+      ],
+      "stderr": ""
+    }
+  },
+  "Q1": {
+    "question": "does the CLI launch our stdio server from --mcp-config?",
+    "server": {
+      "name": "sbbus",
+      "status": "connected",
+      "scope": "dynamic",
+      "serverInfo": {
+        "name": "sbbus-probe",
+        "version": "0.0.0-760"
+      },
+      "tools": [
+        "sb_probe_local",
+        "sb_probe_echo"
+      ]
+    },
+    "verdict": "YES — connected, serverInfo={\"name\":\"sbbus-probe\",\"version\":\"0.0.0-760\"}, tools=sb_probe_local,sb_probe_echo"
+  },
+  "Q3": {
+    "question": "do the user's own MCP servers survive the merge?",
+    "before": [
+      "DeepWiki"
+    ],
+    "after": [
+      "DeepWiki",
+      "sbbus"
+    ],
+    "lost": [],
+    "verdict": "YES — nothing lost (measured against 1: DeepWiki)"
+  },
+  "Q7": {
+    "question": "does --strict-mcp-config really evict the user’s servers?",
+    "servers": [
+      "sbbus"
+    ],
+    "verdict": "YES — only sbbus survives; this is the flag we must never pass"
+  },
+  "Q4": {
+    "question": "does the config `env` block reach the server process?",
+    "SB_PROBE_SESSION": "[2026-09-07T18:30:20.660Z] ENV.SB_PROBE_SESSION \"sb-session-probe-760\"",
+    "ELECTRON_RUN_AS_NODE": "[2026-09-07T18:30:20.660Z] ENV.ELECTRON_RUN_AS_NODE \"1\"",
+    "logIsThisRun": true,
+    "verdict": "YES"
+  },
+  "Q5": {
+    "question": "is argv passed through verbatim? (§5.4 identity-at-spawn)",
+    "argv": "[2026-09-07T18:30:20.657Z] ARGV [\"C:\\\\Program Files\\\\nodejs\\\\node.exe\",\"C:\\\\Projects\\\\Switchboard.ai\\\\spike\\\\probes\\\\760\\\\mcp-bus-server.mjs\",\"--session\",\"sb-session-probe-760\",\"--pipe\",\"\\\\\\\\.\\\\pipe\\\\sb760-attach-47608\"]",
+    "sessionFromArgv": "[2026-09-07T18:30:20.659Z] SESSION_FROM_ARGV \"sb-session-probe-760\"",
+    "execPath": "[2026-09-07T18:30:20.659Z] EXECPATH C:\\Program Files\\nodejs\\node.exe",
+    "clientProtocolVersion": "[2026-09-07T18:30:20.702Z] CLIENT_PROTOCOL_VERSION \"2025-11-25\"",
+    "clientInfo": "[2026-09-07T18:30:20.702Z] CLIENT_INFO {\"name\":\"claude-code\",\"title\":\"Claude Code\",\"version\":\"2.1.261\",\"description\":\"Anthropic's agentic coding tool\",\"websiteUrl\":\"https://claude.com/claude-code\"}",
+    "logIsThisRun": true,
+    "verdict": "YES"
+  },
+  "hostSaw": [],
+  "serverLog": "[2026-09-07T18:30:20.657Z] ARGV [\"C:\\\\Program Files\\\\nodejs\\\\node.exe\",\"C:\\\\Projects\\\\Switchboard.ai\\\\spike\\\\probes\\\\760\\\\mcp-bus-server.mjs\",\"--session\",\"sb-session-probe-760\",\"--pipe\",\"\\\\\\\\.\\\\pipe\\\\sb760-attach-47608\"]\n[2026-09-07T18:30:20.659Z] EXECPATH C:\\Program Files\\nodejs\\node.exe\n[2026-09-07T18:30:20.659Z] SESSION_FROM_ARGV \"sb-session-probe-760\"\n[2026-09-07T18:30:20.660Z] ENV.SB_PROBE_SESSION \"sb-session-probe-760\"\n[2026-09-07T18:30:20.660Z] ENV.SB_PROBE_LOG \"C:\\\\Projects\\\\Switchboard.ai\\\\spike\\\\probes\\\\760\\\\artifacts\\\\server.log\"\n[2026-09-07T18:30:20.660Z] ENV.ELECTRON_RUN_AS_NODE \"1\"\n[2026-09-07T18:30:20.660Z] CWD C:\\Projects\\Switchboard.ai\n[2026-09-07T18:30:20.660Z] READY pipe=\"\\\\\\\\.\\\\pipe\\\\sb760-attach-47608\"\n[2026-09-07T18:30:20.702Z] <- initialize id=0\n[2026-09-07T18:30:20.702Z] CLIENT_PROTOCOL_VERSION \"2025-11-25\"\n[2026-09-07T18:30:20.702Z] CLIENT_INFO {\"name\":\"claude-code\",\"title\":\"Claude Code\",\"version\":\"2.1.261\",\"description\":\"Anthropic's agentic coding tool\",\"websiteUrl\":\"https://claude.com/claude-code\"}\n[2026-09-07T18:30:20.746Z] <- notifications/initialized (notification)\n[2026-09-07T18:30:20.761Z] <- tools/list id=1\n[2026-09-07T18:30:40.663Z] ARGV [\"C:\\\\Program Files\\\\nodejs\\\\node.exe\",\"C:\\\\Projects\\\\Switchboard.ai\\\\spike\\\\probes\\\\760\\\\mcp-bus-server.mjs\",\"--session\",\"sb-session-probe-760\",\"--pipe\",\"\\\\\\\\.\\\\pipe\\\\sb760-attach-47608\"]\n[2026-09-07T18:30:40.665Z] EXECPATH C:\\Program Files\\nodejs\\node.exe\n[2026-09-07T18:30:40.665Z] SESSION_FROM_ARGV \"sb-session-probe-760\"\n[2026-09-07T18:30:40.665Z] ENV.SB_PROBE_SESSION \"sb-session-probe-760\"\n[2026-09-07T18:30:40.665Z] ENV.SB_PROBE_LOG \"C:\\\\Projects\\\\Switchboard.ai\\\\spike\\\\probes\\\\760\\\\artifacts\\\\server.log\"\n[2026-09-07T18:30:40.665Z] ENV.ELECTRON_RUN_AS_NODE \"1\"\n[2026-09-07T18:30:40.666Z] CWD C:\\Projects\\Switchboard.ai\n[2026-09-07T18:30:40.666Z] READY pipe=\"\\\\\\\\.\\\\pipe\\\\sb760-attach-47608\"\n[2026-09-07T18:30:40.714Z] <- initialize id=0\n[2026-09-07T18:30:40.714Z] CLIENT_PROTOCOL_VERSION \"2025-11-25\"\n[2026-09-07T18:30:40.714Z] CLIENT_INFO {\"name\":\"claude-code\",\"title\":\"Claude Code\",\"version\":\"2.1.261\",\"description\":\"Anthropic's agentic coding tool\",\"websiteUrl\":\"https://claude.com/claude-code\"}\n[2026-09-07T18:30:40.746Z] <- notifications/initialized (notification)\n[2026-09-07T18:30:40.776Z] <- tools/list id=1\n"
+}

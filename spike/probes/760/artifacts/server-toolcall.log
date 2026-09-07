@@ -1,0 +1,15 @@
+[2026-09-07T18:05:57.472Z] ARGV ["C:\\Program Files\\nodejs\\node.exe","C:\\Projects\\Switchboard.ai\\spike\\probes\\760\\mcp-bus-server.mjs","--session","sb-session-toolcall-760","--pipe","\\\\.\\pipe\\sb760-toolcall-19012"]
+[2026-09-07T18:05:57.473Z] EXECPATH C:\Program Files\nodejs\node.exe
+[2026-09-07T18:05:57.474Z] SESSION_FROM_ARGV "sb-session-toolcall-760"
+[2026-09-07T18:05:57.474Z] ENV.SB_PROBE_SESSION "sb-session-toolcall-760"
+[2026-09-07T18:05:57.474Z] ENV.SB_PROBE_LOG "C:\\Projects\\Switchboard.ai\\spike\\probes\\760\\artifacts\\server-toolcall.log"
+[2026-09-07T18:05:57.474Z] ENV.ELECTRON_RUN_AS_NODE null
+[2026-09-07T18:05:57.475Z] CWD C:\Projects\Switchboard.ai\spike\probes\760\artifacts\scratch-cwd
+[2026-09-07T18:05:57.475Z] READY pipe="\\\\.\\pipe\\sb760-toolcall-19012"
+[2026-09-07T18:05:57.531Z] <- initialize id=0
+[2026-09-07T18:05:57.532Z] CLIENT_PROTOCOL_VERSION "2025-11-25"
+[2026-09-07T18:05:57.533Z] CLIENT_INFO {"name":"claude-code","title":"Claude Code","version":"2.1.261","description":"Anthropic's agentic coding tool","websiteUrl":"https://claude.com/claude-code"}
+[2026-09-07T18:05:57.553Z] <- notifications/initialized (notification)
+[2026-09-07T18:05:57.596Z] <- tools/list id=1
+[2026-09-07T18:06:05.307Z] <- tools/call id=2
+[2026-09-07T18:06:07.723Z] STDIN_END — exiting

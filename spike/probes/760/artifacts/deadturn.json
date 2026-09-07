@@ -1,0 +1,36 @@
+{
+  "scratch": "C:\\Users\\dheinz\\AppData\\Local\\Temp\\sb760-deadturn-8dqX05",
+  "runs": {
+    "control (no --mcp-config)": {
+      "firstTokenMs": 3029,
+      "totalMs": 3498,
+      "result": {
+        "subtype": "success",
+        "text": "ok"
+      },
+      "toolUses": [],
+      "args": []
+    },
+    "with a SILENT (never-speaks-MCP) bus": {
+      "firstTokenMs": 35154,
+      "totalMs": 35385,
+      "result": {
+        "subtype": "success",
+        "text": "ok"
+      },
+      "toolUses": [],
+      "args": [
+        "--mcp-config",
+        "C:\\Projects\\Switchboard.ai\\spike\\probes\\760\\artifacts\\deadturn-silent.json"
+      ]
+    }
+  },
+  "B2": {
+    "question": "does a permanently-pending MCP server delay or block the first turn?",
+    "controlFirstTokenMs": 3029,
+    "silentFirstTokenMs": 35154,
+    "deltaMs": 32125,
+    "completed": "success",
+    "verdict": "⚠️ DELAYS THE TURN by ~32125ms — fail-open is NOT free"
+  }
+}

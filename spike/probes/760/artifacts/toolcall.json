@@ -1,0 +1,49 @@
+{
+  "pipePath": "\\\\.\\pipe\\sb760-toolcall-19012",
+  "configPath": "C:\\Projects\\Switchboard.ai\\spike\\probes\\760\\artifacts\\bus-config-toolcall.json",
+  "scratch": "C:\\Projects\\Switchboard.ai\\spike\\probes\\760\\artifacts\\scratch-cwd",
+  "toolUses": [
+    {
+      "name": "ToolSearch",
+      "input": {
+        "query": "select:mcp__sbbus__sb_probe_echo",
+        "max_results": 1
+      }
+    },
+    {
+      "name": "mcp__sbbus__sb_probe_echo",
+      "input": {
+        "text": "round trip 760"
+      }
+    }
+  ],
+  "toolResults": [
+    "[{\"type\":\"tool_reference\",\"tool_name\":\"mcp__sbbus__sb_probe_echo\"}]",
+    "[{\"type\":\"text\",\"text\":\"host said: {\\\"echo\\\":\\\"round trip 760\\\",\\\"askedBy\\\":\\\"sb-session-toolcall-760\\\",\\\"hostPid\\\":19012,\\\"sessions\\\":[{\\\"name\\\":\\\"TradingApp\\\",\\\"folder\\\":\\\"C:/Projects/TradingApp\\\",\\\"status\\\":\\\"working\\\"},{\\\"name\\\":\\\"PropaneMon\\\",\\\"folder\\\":\\\"C:/Projects/PropaneMon\\\",\\\"status\\\":\\\"idle\\\"}]}\"}]"
+  ],
+  "result": {
+    "subtype": "success",
+    "text": "host said: {\"echo\":\"round trip 760\",\"askedBy\":\"sb-session-toolcall-760\",\"hostPid\":19012,\"sessions\":[{\"name\":\"TradingApp\",\"folder\":\"C:/Projects/TradingApp\",\"status\":\"working\"},{\"name\":\"PropaneMon\",\"folder\":\"C:/Projects/PropaneMon\",\"status\":\"idle\"}]}",
+    "isError": false
+  },
+  "stderr": "",
+  "hostSaw": [
+    {
+      "q": "echo",
+      "session": "sb-session-toolcall-760",
+      "text": "round trip 760"
+    }
+  ],
+  "serverLog": "[2026-09-07T18:05:57.472Z] ARGV [\"C:\\\\Program Files\\\\nodejs\\\\node.exe\",\"C:\\\\Projects\\\\Switchboard.ai\\\\spike\\\\probes\\\\760\\\\mcp-bus-server.mjs\",\"--session\",\"sb-session-toolcall-760\",\"--pipe\",\"\\\\\\\\.\\\\pipe\\\\sb760-toolcall-19012\"]\n[2026-09-07T18:05:57.473Z] EXECPATH C:\\Program Files\\nodejs\\node.exe\n[2026-09-07T18:05:57.474Z] SESSION_FROM_ARGV \"sb-session-toolcall-760\"\n[2026-09-07T18:05:57.474Z] ENV.SB_PROBE_SESSION \"sb-session-toolcall-760\"\n[2026-09-07T18:05:57.474Z] ENV.SB_PROBE_LOG \"C:\\\\Projects\\\\Switchboard.ai\\\\spike\\\\probes\\\\760\\\\artifacts\\\\server-toolcall.log\"\n[2026-09-07T18:05:57.474Z] ENV.ELECTRON_RUN_AS_NODE null\n[2026-09-07T18:05:57.475Z] CWD C:\\Projects\\Switchboard.ai\\spike\\probes\\760\\artifacts\\scratch-cwd\n[2026-09-07T18:05:57.475Z] READY pipe=\"\\\\\\\\.\\\\pipe\\\\sb760-toolcall-19012\"\n[2026-09-07T18:05:57.531Z] <- initialize id=0\n[2026-09-07T18:05:57.532Z] CLIENT_PROTOCOL_VERSION \"2025-11-25\"\n[2026-09-07T18:05:57.533Z] CLIENT_INFO {\"name\":\"claude-code\",\"title\":\"Claude Code\",\"version\":\"2.1.261\",\"description\":\"Anthropic's agentic coding tool\",\"websiteUrl\":\"https://claude.com/claude-code\"}\n[2026-09-07T18:05:57.553Z] <- notifications/initialized (notification)\n[2026-09-07T18:05:57.596Z] <- tools/list id=1\n[2026-09-07T18:06:05.307Z] <- tools/call id=2\n[2026-09-07T18:06:07.723Z] STDIN_END — exiting\n",
+  "Q2b": {
+    "question": "can a real agent call a bus tool and get the host answer back?",
+    "hostReceivedTheCall": true,
+    "toolNameTheCliUsed": "mcp__sbbus__sb_probe_echo",
+    "verdict": "YES — the host saw the call, and the CLI addressed the tool as \"mcp__sbbus__sb_probe_echo\"",
+    "toolsTheAgentReachedForInOrder": [
+      "ToolSearch",
+      "mcp__sbbus__sb_probe_echo"
+    ],
+    "note": "Verdict label recomputed from this same run's recorded toolUses (the probe had taken toolUses[0], which was the CLI's own ToolSearch). No re-run; the underlying data is the original measurement."
+  }
+}
