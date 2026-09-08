@@ -357,13 +357,16 @@ describe('authentication (the done-when: the pipe refuses an unauthenticated cli
     await expect(closed).resolves.toBeUndefined();
   });
 
-  // POSIX ONLY, and measured rather than assumed (2026-09-08): on a Windows
-  // named pipe the SERVER socket fully closes ~67ms after `end()` even when the
-  // peer is `allowHalfOpen` and never closes its side. There is no half-open
-  // state on that platform, so the reclaim timer is always cleared by 'close'
-  // before it can fire and there is nothing here to test. Unix sockets do have
-  // the state, which is where the timer earns its keep.
-  it.runIf(process.platform !== 'win32')('reclaims a socket from a client that reads its answer and then holds on', async () => {
+  // RUNS EVERYWHERE, but only POSIX distinguishes anything. Measured
+  // 2026-09-08: on a Windows named pipe the server socket fully closes ~67ms
+  // after `end()` even against a peer that is `allowHalfOpen` and never closes
+  // its side, so there the count reaches zero whether the reclaim exists or
+  // not. Unix sockets do have a real half-open state, which is where the timer
+  // earns its keep — the mutation harness marks this mutant posix-only for
+  // exactly that reason. Kept unskipped on Windows anyway: it costs nothing and
+  // it means the mechanics of the test itself are exercised on both platforms,
+  // which is precisely what `runIf(posix)` stopped happening the first time.
+  it('reclaims a socket from a client that reads its answer and then holds on', async () => {
     // The half-open case `end()` alone does not cover: our FIN is sent, the
     // peer never sends its own. A well-behaved child destroys immediately, so
     // this only fires for one that does not — and the endpoint is reachable by
@@ -374,27 +377,28 @@ describe('authentication (the done-when: the pipe refuses an unauthenticated cli
     // teardown, and it passed against a mutant with the reclaim removed
     // entirely.
     const short = new BusHost({ stateDir, log, replyLingerMs: 60, queries: { listSessions: () => listSessions() } });
+    const id = newId();
     try {
-      const ep = await short.registerSession(newId());
-      // `allowHalfOpen` is the whole test. A default socket auto-ends when it
-      // reads the host's FIN, so it closes on its own and the assertion passes
-      // whether the reclaim exists or not — the mutation harness caught exactly
-      // that. Half-open keeps our side up, which is what a client "holding on"
-      // actually is, so only the host's reclaim can close it.
+      const ep = await short.registerSession(id);
+      // `allowHalfOpen` is half the test: a default socket auto-ends when it
+      // reads the host's FIN, so it closes on its own and the assertion would
+      // pass whether the reclaim exists or not. Half-open keeps our side up,
+      // which is what a client "holding on" actually is.
       const sock = net.connect({ path: ep.pipePath, allowHalfOpen: true });
       sock.on('error', () => {});
-      const closed = new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error('the socket was never reclaimed')), 3000);
-        sock.on('close', () => {
-          clearTimeout(timer);
-          resolve();
-        });
-      });
-      // Drain but never close our end — what a client holding on looks like.
-      sock.on('data', () => {});
+      // Drain but never close our end.
+      const read = new Promise<void>((r) => sock.on('data', () => r()));
       await new Promise<void>((r) => sock.on('connect', () => r()));
-      sock.write(JSON.stringify({ v: 1, token: 'nope', op: 'list_sessions' }) + '\n');
-      await expect(closed).resolves.toBeUndefined();
+      sock.write(JSON.stringify({ v: CHANNEL_VERSION, token: 'nope', op: 'list_sessions' }) + '\n');
+      await read;
+
+      // ASSERTED ON THE HOST, not on the client. A half-open client cannot
+      // observe this at all — it stays up by its own choice no matter what the
+      // peer does — so watching it for a 'close' was an assertion that could
+      // never pass on posix. It failed on its first ever run, because this test
+      // is runIf(posix) and Windows had always skipped it.
+      await vi.waitFor(() => expect(short.connectionCount(id)).toBe(0), { timeout: 3000 });
+      sock.destroy();
     } finally {
       short.stop();
     }

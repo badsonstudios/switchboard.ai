@@ -263,6 +263,21 @@ export class BusHost {
     return this.bySession.get(sessionId)?.endpoint ?? null;
   }
 
+  /**
+   * How many connections this session's endpoint is currently holding.
+   *
+   * Exists because the reclaim below is otherwise UNOBSERVABLE from outside.
+   * The first version of its test watched the client for a 'close' — which a
+   * client cannot see: an `allowHalfOpen` socket stays up by its own choice no
+   * matter what the peer does, so the assertion could never pass on posix and
+   * the test failed on its first-ever run (Linux CI; it is `runIf(posix)` and
+   * had been skipped on Windows). The thing that actually matters is that the
+   * HOST let go of the handle, and that is what this reports.
+   */
+  connectionCount(sessionId: string): number {
+    return this.bySession.get(sessionId)?.sockets.size ?? 0;
+  }
+
   private removeTokenFile(sessionId: string): void {
     try {
       fs.unlinkSync(busTokenPath(this.opts.stateDir, sessionId));
