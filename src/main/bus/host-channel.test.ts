@@ -1,0 +1,678 @@
+// The host end, driven over a REAL endpoint — a named pipe on Windows, a unix
+// socket everywhere else. No Electron, no spawning, so it runs in the CI unit
+// job on both operating systems, which is also what gives the unix-socket path
+// its first coverage anywhere (#760 left it written-but-never-executed).
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import fs from 'fs';
+import net from 'net';
+import os from 'os';
+import path from 'path';
+import { BusHost, IDLE_TIMEOUT_MS, REPLY_LINGER_MS } from './host-channel';
+import { busPipePath, busTokenPath } from './bus-paths';
+import { CHANNEL_VERSION } from './channel';
+import { askHost } from './pipe-client';
+import type { Logger } from '../log/logger';
+import type { QueryResult, SessionSummary } from '../sessions/queries';
+
+const SESSIONS: SessionSummary[] = [
+  { id: 'sb-a', name: 'Alpha', folder: '/p/alpha', providerId: 'claude-code', status: 'working' },
+  { id: 'sb-b', name: 'Beta', folder: '/p/beta', providerId: 'claude-code', status: 'idle' },
+];
+
+function fakeLog(): Logger {
+  const l: Logger = {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    child: (): Logger => l,
+  };
+  return l;
+}
+
+let stateDir: string;
+let log: Logger;
+let host: BusHost;
+let listSessions: () => QueryResult<SessionSummary[]>;
+
+beforeEach(() => {
+  stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-bus-host-'));
+  log = fakeLog();
+  listSessions = () => ({ ok: true, value: SESSIONS });
+  host = new BusHost({ stateDir, log, queries: { listSessions: () => listSessions() } });
+});
+
+afterEach(() => {
+  host.stop();
+  fs.rmSync(stateDir, { recursive: true, force: true });
+});
+
+/** A session id short enough to keep the derived socket path well inside sun_path. */
+let n = 0;
+const newId = (): string => `s${process.pid}-${n++}`;
+
+/** Speak to the endpoint directly, so a test can send what a good client would not. */
+function rawAsk(pipePath: string, payload: string, timeoutMs = 2000): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const sock = net.connect({ path: pipePath });
+    const timer = setTimeout(() => {
+      sock.destroy();
+      reject(new Error('no reply'));
+    }, timeoutMs);
+    let buf = '';
+    let closed = false;
+    sock.on('data', (d) => {
+      buf += d.toString();
+      if (buf.includes('\n')) {
+        clearTimeout(timer);
+        closed = true;
+        sock.destroy();
+        resolve(buf.slice(0, buf.indexOf('\n')));
+      }
+    });
+    sock.on('error', (e) => {
+      clearTimeout(timer);
+      reject(e);
+    });
+    sock.on('close', () => {
+      if (!closed) {
+        clearTimeout(timer);
+        reject(new Error('closed without answering'));
+      }
+    });
+    sock.on('connect', () => sock.write(payload));
+  });
+}
+
+describe('registerSession', () => {
+  it('writes the token to a file and returns its PATH (S-03)', async () => {
+    const id = newId();
+    const ep = await host.registerSession(id);
+    expect(fs.existsSync(ep.tokenPath)).toBe(true);
+    // The endpoint carries a path; the secret never leaves the file except in
+    // a payload. Nothing here would put it on argv.
+    expect(ep.pipePath).not.toContain(fs.readFileSync(ep.tokenPath, 'utf8'));
+  });
+
+  it('mints a token with real entropy', async () => {
+    const a = await host.registerSession(newId());
+    const b = await host.registerSession(newId());
+    const ta = fs.readFileSync(a.tokenPath, 'utf8');
+    expect(ta).toMatch(/^[0-9a-f]{64}$/);
+    expect(ta).not.toBe(fs.readFileSync(b.tokenPath, 'utf8'));
+  });
+
+  it('gives different sessions different endpoints', async () => {
+    const a = await host.registerSession(newId());
+    const b = await host.registerSession(newId());
+    expect(a.pipePath).not.toBe(b.pipePath);
+  });
+
+  it('is idempotent — a second register returns the same endpoint, not a second listener', async () => {
+    // A second `listen` on a live Windows pipe name fails with EADDRINUSE, and
+    // a session that cannot take the bus over an accounting slip is a real
+    // outcome of the restart paths.
+    const id = newId();
+    const first = await host.registerSession(id);
+    const second = await host.registerSession(id);
+    expect(second).toEqual(first);
+  });
+
+  it('is idempotent ACROSS AN IN-FLIGHT CALL, not just after one', async () => {
+    // THE RACE. Every other test here awaits the first register before making
+    // the second, so none of them can see this: both calls used to miss the map
+    // (it is written after the await), both minted a token, the second
+    // OVERWROTE the token file, then failed `listen` with EADDRINUSE — leaving
+    // the file holding a token that was in no map. The session then answered
+    // "not authorized" for the rest of its life with nothing in any log.
+    const id = newId();
+    const [a, b] = await Promise.all([host.registerSession(id), host.registerSession(id)]);
+    expect(b).toEqual(a);
+    // The file on disk must still be the token the host will honour.
+    await expect(askHost({ ...a, request: { op: 'list_sessions' } })).resolves.toMatchObject({ ok: true });
+  });
+
+  it('opens exactly one listener under a concurrent register', async () => {
+    const id = newId();
+    const all = await Promise.all([0, 1, 2, 3].map(() => host.registerSession(id)));
+    expect(new Set(all.map((e) => e.pipePath)).size).toBe(1);
+    // A second listener would have leaked; tearing down once must be enough to
+    // make the endpoint dead.
+    host.unregisterSession(id);
+    await expect(
+      askHost({ ...all[0], request: { op: 'list_sessions' }, timeoutMs: 1500 })
+    ).rejects.toThrow();
+  });
+
+  it('an unregister DURING an in-flight register does not leave a live endpoint', async () => {
+    // The mirror of the race above. `unregisterSession` found nothing in
+    // `bySession` — not written until the register lands — so it returned early
+    // and did nothing; the registration then completed and installed a live
+    // endpoint AND a live 0600 token for a session that no longer existed,
+    // reclaimed only at app quit.
+    const id = newId();
+    const opening = host.registerSession(id);
+    host.unregisterSession(id);
+    await expect(opening).rejects.toThrow(/torn down/);
+    expect(host.endpointFor(id)).toBeNull();
+    expect(fs.existsSync(busTokenPath(stateDir, id))).toBe(false);
+  });
+
+  it('…and the discarded endpoint is really closed, not merely forgotten', async () => {
+    const id = newId();
+    const opening = host.registerSession(id);
+    host.unregisterSession(id);
+    await expect(opening).rejects.toThrow();
+    // Nothing must be listening on the name the child would have been told.
+    await expect(
+      askHost({
+        pipePath: busPipePath(id),
+        tokenPath: busTokenPath(stateDir, id),
+        request: { op: 'list_sessions' },
+        timeoutMs: 1500,
+      })
+    ).rejects.toThrow();
+  });
+
+  it('a cancelled register does not poison the NEXT one', async () => {
+    const id = newId();
+    const opening = host.registerSession(id);
+    host.unregisterSession(id);
+    await expect(opening).rejects.toThrow();
+    const ep = await host.registerSession(id);
+    await expect(askHost({ ...ep, request: { op: 'list_sessions' } })).resolves.toMatchObject({ ok: true });
+  });
+
+  it('exposes the endpoint for #763 to write into the MCP config', async () => {
+    const id = newId();
+    const ep = await host.registerSession(id);
+    expect(host.endpointFor(id)).toEqual(ep);
+    expect(host.endpointFor('never-registered')).toBeNull();
+  });
+
+  it.runIf(process.platform !== 'win32')('narrows the socket file to 0600', async () => {
+    // Linux CI is where this runs, and `/tmp` is world-writable there — so the
+    // mode is the difference between "any local process may connect" and "only
+    // this user's".
+    const ep = await host.registerSession(newId());
+    expect(fs.statSync(ep.pipePath).mode & 0o777).toBe(0o600);
+  });
+
+  it.runIf(process.platform !== 'win32')('writes the token file 0600', async () => {
+    // Windows ignores the mode argument entirely (the protection there is
+    // stateDir living under the user profile), so this can only be asserted on
+    // posix — and until it was, `mode: 0o600` was pinned by nothing at all.
+    const ep = await host.registerSession(newId());
+    expect(fs.statSync(ep.tokenPath).mode & 0o777).toBe(0o600);
+  });
+});
+
+describe('the round trip', () => {
+  it('answers list_sessions with the query core’s value', async () => {
+    const id = newId();
+    const ep = await host.registerSession(id);
+    const reply = await askHost({ ...ep, request: { op: 'list_sessions' } });
+    expect(reply).toMatchObject({ ok: true, sessions: SESSIONS });
+  });
+
+  it('names the CALLER, so the child can mark "this session"', async () => {
+    const id = newId();
+    const ep = await host.registerSession(id);
+    const reply = await askHost({ ...ep, request: { op: 'list_sessions' } });
+    expect(reply.callerId).toBe(id);
+  });
+
+  it('derives the caller from the TOKEN, not from anything the child claims', async () => {
+    // The child is passed `--session` on argv, and argv is world-readable. If
+    // the host ever trusted a self-declared id, a session could read a
+    // sibling's answers by lying in one field.
+    //
+    // SENT RAW, not through `askHost`. Going through our own client typed the
+    // hostile field into `args`, where it is nested and harmless — so the test
+    // stopped exercising the attack and a mutant taking `callerId` straight off
+    // the request survived it. A hostile child writes its own JSON; so does this.
+    const id = newId();
+    const ep = await host.registerSession(id);
+    const token = fs.readFileSync(ep.tokenPath, 'utf8');
+    const raw = await rawAsk(
+      ep.pipePath,
+      JSON.stringify({
+        v: CHANNEL_VERSION,
+        token,
+        op: 'list_sessions',
+        // every shape a liar might reach for, at the top level
+        session: 'sb-somebody-else',
+        sessionId: 'sb-somebody-else',
+        callerId: 'sb-somebody-else',
+      }) + '\n'
+    );
+    expect((JSON.parse(raw) as { callerId: string }).callerId).toBe(id);
+  });
+
+  it('serves repeated calls on the same endpoint', async () => {
+    const ep = await host.registerSession(newId());
+    for (let i = 0; i < 3; i++) {
+      await expect(askHost({ ...ep, request: { op: 'list_sessions' } })).resolves.toMatchObject({ ok: true });
+    }
+  });
+
+  it('serves concurrent calls', async () => {
+    const ep = await host.registerSession(newId());
+    const all = await Promise.all(
+      [0, 1, 2, 3].map(() => askHost({ ...ep, request: { op: 'list_sessions' } }))
+    );
+    expect(all.every((r) => r.ok === true)).toBe(true);
+  });
+
+  it('passes a query REFUSAL through with its reason', async () => {
+    listSessions = () => ({ ok: false, reason: 'the session list is unavailable' });
+    const ep = await host.registerSession(newId());
+    await expect(askHost({ ...ep, request: { op: 'list_sessions' } })).resolves.toEqual({
+      ok: false,
+      reason: 'the session list is unavailable',
+    });
+  });
+
+  it('survives a query that THROWS — a child request must not take main down', async () => {
+    listSessions = () => {
+      throw new Error('boom');
+    };
+    const ep = await host.registerSession(newId());
+    await expect(askHost({ ...ep, request: { op: 'list_sessions' } })).resolves.toMatchObject({ ok: false });
+  });
+
+  it('does not leak the internal error text to the agent', async () => {
+    listSessions = () => {
+      throw new Error('ENOENT /Users/danheinz/secret/path');
+    };
+    const ep = await host.registerSession(newId());
+    const reply = await askHost({ ...ep, request: { op: 'list_sessions' } });
+    expect(JSON.stringify(reply)).not.toContain('secret/path');
+  });
+});
+
+describe('authentication (the done-when: the pipe refuses an unauthenticated client)', () => {
+  it('refuses a wrong token', async () => {
+    const ep = await host.registerSession(newId());
+    const raw = await rawAsk(ep.pipePath, JSON.stringify({ v: 1, token: 'x'.repeat(64), op: 'list_sessions' }) + '\n');
+    expect(JSON.parse(raw)).toEqual({ ok: false, reason: 'not authorized' });
+  });
+
+  it('refuses a missing token', async () => {
+    const ep = await host.registerSession(newId());
+    const raw = await rawAsk(ep.pipePath, JSON.stringify({ v: 1, op: 'list_sessions' }) + '\n');
+    expect(JSON.parse(raw)).toEqual({ ok: false, reason: 'not authorized' });
+  });
+
+  it.each([[''], ['   '], ['null'], ['[]']])('refuses a malformed token (%s)', async (token) => {
+    const ep = await host.registerSession(newId());
+    const raw = await rawAsk(ep.pipePath, `{"v":1,"token":${JSON.stringify(token)},"op":"list_sessions"}\n`);
+    expect(JSON.parse(raw)).toEqual({ ok: false, reason: 'not authorized' });
+  });
+
+  it('refuses a token of the RIGHT LENGTH but the wrong value', async () => {
+    // `timingSafeEqual` throws on a length mismatch, so a length guard that
+    // returned early on equal-length input would look identical to a working
+    // comparison in every other test here.
+    const id = newId();
+    const ep = await host.registerSession(id);
+    const real = fs.readFileSync(ep.tokenPath, 'utf8');
+    const forged = real.slice(0, -1) + (real.endsWith('a') ? 'b' : 'a');
+    expect(forged).toHaveLength(real.length);
+    const raw = await rawAsk(ep.pipePath, JSON.stringify({ v: 1, token: forged, op: 'list_sessions' }) + '\n');
+    expect(JSON.parse(raw)).toEqual({ ok: false, reason: 'not authorized' });
+  });
+
+  it('refuses a SIBLING session’s valid token on this endpoint', async () => {
+    // Both facts must agree: a token that is real, on an endpoint that is not
+    // its own, is still a refusal. Not reachable today — endpoint names are
+    // digests of their own session id — but the answer would be another
+    // session's data, which is not a thing to leave resting on reachability.
+    const a = await host.registerSession(newId());
+    const b = await host.registerSession(newId());
+    const bToken = fs.readFileSync(b.tokenPath, 'utf8');
+    const raw = await rawAsk(a.pipePath, JSON.stringify({ v: 1, token: bToken, op: 'list_sessions' }) + '\n');
+    expect(JSON.parse(raw)).toEqual({ ok: false, reason: 'not authorized' });
+  });
+
+  it('does not run the query at all for an unauthenticated client', async () => {
+    const spy = vi.fn((): QueryResult<SessionSummary[]> => ({ ok: true, value: SESSIONS }));
+    listSessions = spy;
+    const ep = await host.registerSession(newId());
+    await rawAsk(ep.pipePath, JSON.stringify({ v: 1, token: 'nope', op: 'list_sessions' }) + '\n');
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('CLOSES the connection on a refusal rather than leaving it open', async () => {
+    const ep = await host.registerSession(newId());
+    const sock = net.connect({ path: ep.pipePath });
+    const closed = new Promise<void>((r) => sock.on('close', () => r()));
+    sock.on('error', () => {});
+    // Reading matters: a Node socket with no 'data' listener stays PAUSED, so
+    // it never processes the host's FIN and never closes. Without this the
+    // test times out against a host that behaved perfectly.
+    sock.on('data', () => {});
+    await new Promise<void>((r) => sock.on('connect', () => r()));
+    sock.write(JSON.stringify({ v: 1, token: 'nope', op: 'list_sessions' }) + '\n');
+    await expect(closed).resolves.toBeUndefined();
+  });
+
+  // RUNS EVERYWHERE, but only POSIX distinguishes anything. Measured
+  // 2026-09-08: on a Windows named pipe the server socket fully closes ~67ms
+  // after `end()` even against a peer that is `allowHalfOpen` and never closes
+  // its side, so there the count reaches zero whether the reclaim exists or
+  // not. Unix sockets do have a real half-open state, which is where the timer
+  // earns its keep — the mutation harness marks this mutant posix-only for
+  // exactly that reason. Kept unskipped on Windows anyway: it costs nothing and
+  // it means the mechanics of the test itself are exercised on both platforms,
+  // which is precisely what `runIf(posix)` stopped happening the first time.
+  it('reclaims a socket from a client that reads its answer and then holds on', async () => {
+    // The half-open case `end()` alone does not cover: our FIN is sent, the
+    // peer never sends its own. A well-behaved child destroys immediately, so
+    // this only fires for one that does not — and the endpoint is reachable by
+    // any process running as this user.
+    //
+    // REAL TIMERS, on a short injected linger. The first version used
+    // `vi.advanceTimersByTimeAsync`, which does not drive libuv's socket
+    // teardown, and it passed against a mutant with the reclaim removed
+    // entirely.
+    const short = new BusHost({ stateDir, log, replyLingerMs: 60, queries: { listSessions: () => listSessions() } });
+    const id = newId();
+    try {
+      const ep = await short.registerSession(id);
+      // `allowHalfOpen` is half the test: a default socket auto-ends when it
+      // reads the host's FIN, so it closes on its own and the assertion would
+      // pass whether the reclaim exists or not. Half-open keeps our side up,
+      // which is what a client "holding on" actually is.
+      const sock = net.connect({ path: ep.pipePath, allowHalfOpen: true });
+      sock.on('error', () => {});
+      // Drain but never close our end.
+      const read = new Promise<void>((r) => sock.on('data', () => r()));
+      await new Promise<void>((r) => sock.on('connect', () => r()));
+      sock.write(JSON.stringify({ v: CHANNEL_VERSION, token: 'nope', op: 'list_sessions' }) + '\n');
+      await read;
+
+      // ASSERTED ON THE HOST, not on the client. A half-open client cannot
+      // observe this at all — it stays up by its own choice no matter what the
+      // peer does — so watching it for a 'close' was an assertion that could
+      // never pass on posix. It failed on its first ever run, because this test
+      // is runIf(posix) and Windows had always skipped it.
+      await vi.waitFor(() => expect(short.connectionCount(id)).toBe(0), { timeout: 3000 });
+      sock.destroy();
+    } finally {
+      short.stop();
+    }
+  });
+
+  it('the default linger is a real duration, not zero', () => {
+    // The seam above only proves the timer fires at whatever it is told. If
+    // the default were 0 the reclaim would race every well-behaved child.
+    expect(REPLY_LINGER_MS).toBeGreaterThanOrEqual(1000);
+  });
+
+  it('says no rather than going silent — a silent refusal costs the child its deadline', async () => {
+    // This is the whole reason a refusal carries a reason at all. Going quiet
+    // would be marginally tidier and would make the child wait out five seconds
+    // for a verdict already reached.
+    const ep = await host.registerSession(newId());
+    const t0 = Date.now();
+    await rawAsk(ep.pipePath, JSON.stringify({ v: 1, token: 'nope', op: 'x' }) + '\n');
+    expect(Date.now() - t0).toBeLessThan(1000);
+  });
+});
+
+describe('bad requests', () => {
+  it('refuses an unparseable line', async () => {
+    const ep = await host.registerSession(newId());
+    const raw = await rawAsk(ep.pipePath, 'not json\n');
+    expect(JSON.parse(raw)).toEqual({ ok: false, reason: 'the request could not be read' });
+  });
+
+  it.each(['[1,2]', '"a string"', '42'])('refuses a non-object request (%s)', async (body) => {
+    const ep = await host.registerSession(newId());
+    const raw = await rawAsk(ep.pipePath, body + '\n');
+    // The REASON, not merely `ok:false`. Dropping the shape guard sends these
+    // down the auth path instead, where they are refused as "not authorized" —
+    // still a refusal, so an assertion on `ok` alone passes either way and the
+    // guard goes unpinned. #761's cap-direction lesson on a new surface.
+    expect(JSON.parse(raw)).toEqual({ ok: false, reason: 'the request could not be read' });
+  });
+
+  it('refuses an unknown op, naming it', async () => {
+    const id = newId();
+    const ep = await host.registerSession(id);
+    const token = fs.readFileSync(ep.tokenPath, 'utf8');
+    const raw = await rawAsk(ep.pipePath, JSON.stringify({ v: 1, token, op: 'delete_everything' }) + '\n');
+    expect(JSON.parse(raw)).toEqual({ ok: false, reason: 'unknown request: delete_everything' });
+  });
+
+  it('refuses an oversized line instead of buffering it', async () => {
+    const ep = await host.registerSession(newId());
+    // No newline, ever: a peer that never framces a message would otherwise
+    // grow the host's buffer without bound.
+    const raw = await rawAsk(ep.pipePath, 'x'.repeat(1_100_000));
+    expect(JSON.parse(raw)).toEqual({ ok: false, reason: 'the request was too large' });
+  });
+});
+
+describe('one request per connection', () => {
+  it('runs the query ONCE for a client that pipelines several lines in one chunk', async () => {
+    // The host used to keep reading after replying, so N lines in one chunk ran
+    // N synchronous `listSessions()` calls on Electron's MAIN THREAD — and the
+    // second `reply()` was a write-after-end, whose 'error' handler destroys the
+    // socket, which discards buffered writes and can truncate the reply already
+    // sent into exactly the bare close `reply()` exists to avoid.
+    const calls = vi.fn((): QueryResult<SessionSummary[]> => ({ ok: true, value: SESSIONS }));
+    listSessions = calls;
+    const id = newId();
+    const ep = await host.registerSession(id);
+    const token = fs.readFileSync(ep.tokenPath, 'utf8');
+    const line = JSON.stringify({ v: CHANNEL_VERSION, token, op: 'list_sessions' }) + '\n';
+    const raw = await rawAsk(ep.pipePath, line.repeat(5));
+    expect(JSON.parse(raw)).toMatchObject({ ok: true });
+    // A beat for any extra work to show up before asserting it did not.
+    await new Promise<void>((r) => setTimeout(r, 100));
+    expect(calls).toHaveBeenCalledTimes(1);
+  });
+
+  it('delivers a WHOLE reply under a pipelined chunk, not a truncated one', async () => {
+    // The consequence that would actually reach a user: a reply cut short is
+    // indistinguishable, at the child, from a host that died.
+    const id = newId();
+    const ep = await host.registerSession(id);
+    const token = fs.readFileSync(ep.tokenPath, 'utf8');
+    const line = JSON.stringify({ v: CHANNEL_VERSION, token, op: 'list_sessions' }) + '\n';
+    const raw = await rawAsk(ep.pipePath, line.repeat(20));
+    expect(JSON.parse(raw)).toMatchObject({ ok: true, sessions: SESSIONS });
+  });
+});
+
+describe('the idle deadline', () => {
+  it('drops a connection that opens and never sends anything', async () => {
+    // A raw `net.Server` has no request timeout — the `http.Server` this
+    // mirrors (`HookListener`) got `requestTimeout` for free, and moving to a
+    // raw socket dropped it silently. Without this a connection sits in the
+    // session's socket set until the session ends, and the endpoint is
+    // reachable by any process running as this user.
+    const short = new BusHost({
+      stateDir,
+      log,
+      idleTimeoutMs: 60,
+      queries: { listSessions: () => listSessions() },
+    });
+    try {
+      const ep = await short.registerSession(newId());
+      const sock = net.connect({ path: ep.pipePath });
+      sock.on('error', () => {});
+      const closed = new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('the idle connection was never dropped')), 3000);
+        sock.on('close', () => {
+          clearTimeout(timer);
+          resolve();
+        });
+      });
+      await new Promise<void>((r) => sock.on('connect', () => r()));
+      await expect(closed).resolves.toBeUndefined();
+    } finally {
+      short.stop();
+    }
+  });
+
+  it('the default deadline is generous enough for a real client', () => {
+    // A child connects and writes in the same tick, so this only has to be
+    // above "immediately". Bounded on both sides: too small breaks real calls,
+    // too large stops bounding anything.
+    expect(IDLE_TIMEOUT_MS).toBeGreaterThanOrEqual(1000);
+    expect(IDLE_TIMEOUT_MS).toBeLessThanOrEqual(60_000);
+  });
+});
+
+describe('the channel version', () => {
+  const send = async (v: unknown): Promise<Record<string, unknown>> => {
+    const id = newId();
+    const ep = await host.registerSession(id);
+    const token = fs.readFileSync(ep.tokenPath, 'utf8');
+    const raw = await rawAsk(ep.pipePath, JSON.stringify({ v, token, op: 'list_sessions' }) + '\n');
+    return JSON.parse(raw) as Record<string, unknown>;
+  };
+
+  it('accepts the current version', async () => {
+    expect(await send(CHANNEL_VERSION)).toMatchObject({ ok: true });
+  });
+
+  it.each([[0], [2], ['1'], [null], [undefined]])('refuses version %j', async (v) => {
+    // The stamp was decorative until review noticed nothing read it. #764 will
+    // widen this payload, and a version nobody checks is a compatibility story
+    // rather than a compatibility mechanism.
+    expect(await send(v)).toMatchObject({ ok: false });
+  });
+
+  it('does not tell an UNAUTHENTICATED client about our versioning', async () => {
+    // The version is checked after auth on purpose: a refusal should not be a
+    // probe for what protocol the host speaks.
+    const ep = await host.registerSession(newId());
+    const raw = await rawAsk(ep.pipePath, JSON.stringify({ v: 99, token: 'nope', op: 'list_sessions' }) + '\n');
+    expect(JSON.parse(raw)).toEqual({ ok: false, reason: 'not authorized' });
+  });
+});
+
+describe('teardown', () => {
+  it('kills the token FILE', async () => {
+    const id = newId();
+    const ep = await host.registerSession(id);
+    host.unregisterSession(id);
+    expect(fs.existsSync(ep.tokenPath)).toBe(false);
+  });
+
+  it('kills the token in MEMORY — a client holding it can no longer authenticate', async () => {
+    // The file is hygiene; this is the security property. A test that only
+    // checked the file would pass with the token still live in the map.
+    const id = newId();
+    const ep = await host.registerSession(id);
+    const token = fs.readFileSync(ep.tokenPath, 'utf8');
+    host.unregisterSession(id);
+    const again = await host.registerSession(id);
+    const raw = await rawAsk(again.pipePath, JSON.stringify({ v: 1, token, op: 'list_sessions' }) + '\n');
+    expect(JSON.parse(raw)).toEqual({ ok: false, reason: 'not authorized' });
+  });
+
+  it('makes the endpoint unusable — the child gets the dead-host path', async () => {
+    const id = newId();
+    const ep = await host.registerSession(id);
+    host.unregisterSession(id);
+    await expect(askHost({ ...ep, request: { op: 'list_sessions' }, timeoutMs: 1500 })).rejects.toThrow();
+  });
+
+  it('a torn-down session can be registered again (restart)', async () => {
+    const id = newId();
+    await host.registerSession(id);
+    host.unregisterSession(id);
+    // On posix this is the unlink working: a leftover socket file would make
+    // the second `listen` fail with EADDRINUSE.
+    const again = await host.registerSession(id);
+    await expect(askHost({ ...again, request: { op: 'list_sessions' } })).resolves.toMatchObject({ ok: true });
+  });
+
+  it('does not cut a SIBLING’S IN-FLIGHT call', async () => {
+    // The bug this pins: the first version of this class kept ONE host-wide
+    // socket set, so tearing down any session destroyed every other session's
+    // live connections. The obvious test — "B still answers after A is
+    // unregistered" — does NOT catch it, because by then no socket is open;
+    // it passed against the broken version. The connection has to be held
+    // across the teardown for the mutation to red.
+    const a = newId();
+    const b = newId();
+    await host.registerSession(a);
+    const epB = await host.registerSession(b);
+    const token = fs.readFileSync(epB.tokenPath, 'utf8');
+
+    const held = net.connect({ path: epB.pipePath });
+    held.on('error', () => {});
+
+    // THE LISTENERS GO ON FIRST. Attaching them after the teardown lets the
+    // very close this test exists to detect fire before anything is listening —
+    // and a paused socket (no 'data' handler yet) does not even process it. The
+    // first version did exactly that and passed against the broken code.
+    const answered = new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('no answer')), 2000);
+      held.on('data', (d) => {
+        clearTimeout(timer);
+        resolve(d.toString());
+      });
+      held.on('close', () => {
+        clearTimeout(timer);
+        reject(new Error('the sibling connection was cut'));
+      });
+    });
+    await new Promise<void>((r) => held.on('connect', () => r()));
+
+    // A PARTIAL request — no newline, so nothing is answered yet. The client's
+    // `connect` fires before the host's `connection` handler runs, so at that
+    // moment B's socket set can still be EMPTY and a teardown that wrongly
+    // destroys every session's sockets would find nothing to destroy. Sending
+    // bytes forces the accept, so the socket really is in the set that the
+    // mutation reaches.
+    const request = JSON.stringify({ v: 1, token, op: 'list_sessions' });
+    held.write(request.slice(0, 10));
+    await vi.waitFor(() => expect(held.bytesWritten).toBeGreaterThan(0));
+    await new Promise<void>((r) => setTimeout(r, 50));
+
+    host.unregisterSession(a);
+
+    held.write(request.slice(10) + '\n');
+    expect(JSON.parse(await answered)).toMatchObject({ ok: true });
+    held.destroy();
+  });
+
+  it('leaves a SIBLING session working', async () => {
+    // The first version of this class kept one host-wide socket set, so one
+    // session closing cut every other session's in-flight call.
+    const a = newId();
+    const b = newId();
+    await host.registerSession(a);
+    const epB = await host.registerSession(b);
+    host.unregisterSession(a);
+    await expect(askHost({ ...epB, request: { op: 'list_sessions' } })).resolves.toMatchObject({ ok: true });
+    expect(host.endpointFor(b)).toEqual(epB);
+  });
+
+  it('unregistering an unknown session is a no-op, not a throw', () => {
+    expect(() => host.unregisterSession('never-existed')).not.toThrow();
+  });
+
+  it('stop() takes every endpoint down', async () => {
+    const a = await host.registerSession(newId());
+    const b = await host.registerSession(newId());
+    host.stop();
+    expect(fs.existsSync(a.tokenPath)).toBe(false);
+    expect(fs.existsSync(b.tokenPath)).toBe(false);
+    await expect(askHost({ ...a, request: { op: 'list_sessions' }, timeoutMs: 1500 })).rejects.toThrow();
+  });
+
+  it.runIf(process.platform !== 'win32')('removes the socket FILE on posix', async () => {
+    const id = newId();
+    const ep = await host.registerSession(id);
+    host.unregisterSession(id);
+    expect(fs.existsSync(ep.pipePath)).toBe(false);
+  });
+});

@@ -361,6 +361,41 @@ spawn via `--mcp-config`.
 > separate §5.27 WebSocket projecting orchestrator state and was never going to
 > ride this pipe.
 
+> **AMENDMENT 2026-09-08 (P2-E11-02, #762) — "no listener, no token" was true of
+> the AGENT↔BUS hop and is NOT true of the whole design.** The paragraph above
+> is left standing because its reasoning about the *agent-facing* transport is
+> unchanged and correct. But it overstated the conclusion, and the overstatement
+> is worth correcting rather than quietly outgrowing.
+>
+> A stdio MCP server's stdin and stdout belong to the CLI that spawned it. So
+> the bus child **cannot answer `list_sessions` at all** without a second
+> channel back to Electron main — the answer lives in the host process, and the
+> one pipe it has is already spoken for. AR-P1-6 decided the agent↔bus hop and
+> was silent on child↔host; that was a gap in the record, not a decision.
+>
+> **Decided 2026-09-07 (owner): the child↔host channel is a named pipe / unix
+> domain socket.** So there IS a listener and there IS a per-session token —
+> just not a network one. What survives intact is the property the stdio
+> argument was actually about: no port, no HTTP, no network stack, and nothing
+> a browser tab, an extension, another machine or the phone can address. §5.29's
+> localhost attack class stays deleted rather than defended. Reusing
+> `HookListener`'s loopback HTTP was the cheaper build and was considered and
+> rejected for re-admitting that class on a channel that does not need it.
+>
+> The token follows S-03 unchanged: **a 0600 file referenced by path on the
+> child's argv, never the token itself**, because argv is world-readable on
+> every platform we ship. The host resolves the caller from the TOKEN and never
+> from the `--session` argument the child carries, so identity-at-spawn is a
+> property rather than an honour system. Windows named pipes are ACL'd to the
+> creating user; on posix the socket is chmod'd 0600 and its name is a digest
+> (a path composed from the state dir overflows `sun_path`'s 104 bytes on
+> macOS).
+>
+> **The binary that runs the server is the Electron binary under
+> `ELECTRON_RUN_AS_NODE`, not `node` on PATH** — measured 2026-09-08: the server
+> is a rollup entry and therefore lives inside `app.asar` when packaged, which
+> Electron can read under run-as-node and plain Node cannot read at all.
+
 Tools exposed:
 
 - `list_sessions()` → names, folders, providers, statuses

@@ -269,16 +269,34 @@ that all held. Concrete edits, made on the issues:
 
 ## What is NOT proven
 
-- **Windows only.** The unix-domain-socket path in `pipe-host.mjs` is written
-  and never executed. Nothing here is evidence about macOS or Linux — including
-  the dead-host error shape, which is `ENOENT` for a Windows named pipe and
-  would be `ECONNREFUSED` for a unix socket.
-- **Electron-as-node is unmeasured** (§3) — only that an `env` block arrives.
+> **Four of these were closed by #762 (2026-09-08)** and are marked ✅ below
+> rather than deleted — the list is a record of what this probe measured, and
+> silently editing it would lose the fact that these were once open. Anything
+> still unmarked is still open.
+
+- ✅ **CLOSED by #762.** ~~**Windows only.** The unix-domain-socket path in
+  `pipe-host.mjs` is written and never executed.~~ `npm run check:bus` runs on
+  the Linux runner in CI, so the socket path — bind, chmod, unlink, restart —
+  now executes on every PR. The dead-host error shape is no longer a Windows
+  fact either: `pipe-client.ts` branches on no errno at all, and
+  `pipe-client.test.ts` pins `ENOENT`/`ECONNREFUSED`/`EACCES`/`ECONNRESET` to
+  one condition with one message.
+- ✅ **CLOSED by #762.** ~~**Electron-as-node is unmeasured** (§3) — only that
+  an `env` block arrives.~~ Measured directly: `ELECTRON_RUN_AS_NODE=1
+  electron.exe <app.asar>/child.js` runs AND reads siblings inside the archive,
+  while plain `node` on the same path is `MODULE_NOT_FOUND`. That inverted the
+  decision — Electron-as-node is the bus's **primary** launcher, not a fallback,
+  because a rollup entry lives inside `app.asar` when packaged.
 - **One pre-existing server, in one scope** (§2). Nothing about `.mcp.json`
   project servers, `user`/`enterprise`/`managed` scopes, or claude.ai connectors.
 - **Whether `mcp_toggle` can reach a `--mcp-config` server** (§1).
-- **One bus server, one session, one call.** No concurrency, no long-running
-  session, no restart, no resume.
+- ⚠️ **Partly closed by #762.** ~~**One bus server, one session, one call.**~~
+  Concurrent calls, repeated calls, two sessions side by side, and teardown →
+  re-register are all covered by `host-channel.test.ts`. **Still open: a
+  long-running session, and resume** — nothing here has run for hours or
+  survived a `--resume`.
 - **`ping` is implemented but was never called by any client** (§4).
-- **No auth on the pipe.** The real token scheme is #762's, per S-03 — token in
-  an ACL'd file, never on argv.
+- ✅ **CLOSED by #762.** ~~**No auth on the pipe.**~~ Per-session 32-byte token
+  in a 0600 file, path on argv and never the token (S-03), compared with
+  `timingSafeEqual`, and the host resolves the caller from the token rather than
+  from the child's `--session` argument.
