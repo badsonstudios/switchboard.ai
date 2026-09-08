@@ -94,6 +94,54 @@ export class GitService {
     return status;
   }
 
+  /**
+   * The working tree's uncommitted changes as ONE unified diff (P2-E11-01).
+   *
+   * WHY THIS EXISTS ALONGSIDE `fileVersions`. That one answers Monaco, which
+   * wants two whole file contents and renders the difference itself. This one
+   * answers a language model, which reads text — and would otherwise be handed
+   * two full copies of every changed file and asked to diff them in its head,
+   * at several times the tokens.
+   *
+   * Diffed against `HEAD` with no pathspec, so BOTH staged and unstaged changes
+   * are included: a sibling agent asking "what have you changed" means
+   * everything not committed, and plain `git diff` would silently omit whatever
+   * the other session had already staged. Untracked files are NOT included —
+   * `git diff` does not see them.
+   *
+   * ⚠️ **A REPO WITH NO COMMITS HAS NO `HEAD`**, and `git diff HEAD` there does
+   * not return nothing — it fails with `fatal: ambiguous argument 'HEAD'`,
+   * which this used to swallow into `{ isRepo: true, text: '' }`. A session
+   * that had just scaffolded an entire project and staged it answered "I have
+   * changed nothing": a confident wrong answer, which is the one failure mode
+   * this whole query path is built to avoid. So an unborn HEAD falls back to
+   * git's empty-tree object, against which every file reads as an addition.
+   *
+   * ⚠️ **`--no-ext-diff` IS THE SECURITY-RELEVANT FLAG, NOT `--no-textconv`.**
+   * An earlier version of this comment claimed `--no-textconv` stopped a repo's
+   * config running commands on our behalf. It does not — it disables textconv
+   * filters only, and `diff.external` (or a `.gitattributes`-selected
+   * `diff.<name>.command`) still executes. Measured: with
+   * `diff.external = sh -c "echo PWNED"`, `--no-textconv` alone runs it and
+   * `--no-ext-diff` does not. This matters more here than anywhere else in the
+   * service, because #764 will point this at a folder another agent controls.
+   *
+   * Fail-open like the rest of this service: not a repo, no git, or a failed
+   * command all yield `{ isRepo: false, text: '' }` rather than throwing.
+   */
+  async diff(folder: string): Promise<{ isRepo: boolean; text: string }> {
+    // One probe, and the same one `status()` uses — `--show-toplevel` was a
+    // second answer to a question this file already asks.
+    const inside = await git(folder, ['rev-parse', '--is-inside-work-tree']);
+    if (!inside.ok || inside.out.trim() !== 'true') return { isRepo: false, text: '' };
+    // git's canonical empty tree: the base every file is an addition against.
+    const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
+    const head = await git(folder, ['rev-parse', '--verify', '-q', 'HEAD']);
+    const base = head.ok ? 'HEAD' : EMPTY_TREE;
+    const r = await git(folder, ['diff', '--no-textconv', '--no-ext-diff', base]);
+    return { isRepo: true, text: r.ok ? r.out : '' };
+  }
+
   /** HEAD vs working-tree contents for a Monaco diff (E5-02). */
   async fileVersions(folder: string, file: string): Promise<FileVersions> {
     const head = await git(folder, ['show', `HEAD:${toGitPath(file)}`]);
