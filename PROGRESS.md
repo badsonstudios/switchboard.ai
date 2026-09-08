@@ -3,35 +3,78 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🚧 IN PROGRESS — 2026-09-08: **#762** — P2-E11-02, bus server + host channel
+> # ✅ MERGED — 2026-09-08: **#762** — P2-E11-02, bus server + host channel
 >
-> Started 2026-09-08. Branch `feature/762-bus-server-host-channel`. Plan gate
-> PASSED. **Implementation complete, tests green, `/review` done and its
-> findings addressed — awaiting the COMMIT gate.** Both approval gates are ON
-> (standing decision 2026-09-07).
+> **PR #770, squashed to `ec48b72`, all four CI jobs green.** Issue closed.
+> Rebased onto `main` before opening. 15 new files under `src/main/bus/`;
+> 231 unit tests; **mutation harness 93/93** (`.claude/work_files/mutate-762.mjs`,
+> git-ignored — recreate from the PR diff). `npm run check:bus` is a new CI job
+> on BOTH runners. No user-facing change, so no manual page and no CHANGELOG
+> entry.
 >
-> **State if this session dies here:** nothing is committed. 15 new files under
-> `src/main/bus/`, plus edits to `electron.vite.config.ts`, `package.json`,
-> `.github/workflows/ci.yml`, `docs/DESIGN.md` (§5.4 amendment) and
-> `spike/findings/e11-00-bus-feasibility.md`. 230 unit tests green;
-> `npm run check:bus` PASS; mutation harness **93/93**
-> (`.claude/work_files/mutate-762.mjs`, git-ignored — recreate from the diff).
-> Only red in the full suite is **#768**, the known `win-cmd.test.ts` flake,
-> green in isolation.
+> **Next up: #763** (the `mcp` capability + attach at spawn) — it consumes
+> `busLaunch()` and `BusHost.registerSession/endpointFor`, which this item built
+> for it. **#766 is also still unblocked** (it needed only #761).
 >
-> **Scope:** the stdio MCP bus server child (`initialize` / `tools/list` /
-> `tools/call`), the named-pipe / unix-socket channel back to Electron main, a
-> per-session token in an ACL'd file (S-03: never on argv), and exactly ONE
-> tool — `list_sessions` — over #761's `SessionQueries`.
+> ## TWO MEASUREMENTS THAT CHANGED THE DESIGN
+> * **Electron-as-node is the PRIMARY launcher, not the backstop.** The issue
+>   named `findNodeOnPath()` as the precedent; it is the wrong one.
+>   `ELECTRON_RUN_AS_NODE=1 electron.exe <app.asar>/x.js` runs AND reads a
+>   sibling inside the archive; `node` on the same path is `MODULE_NOT_FOUND`.
+>   The server is a rollup entry, so packaged it lives inside `app.asar`. #760
+>   left this explicitly unproven (its probe spawned plain Node).
+> * **A Windows named pipe has no half-open state:** the server socket fully
+>   closes ~67 ms after `end()` even against an `allowHalfOpen` peer. So the
+>   socket-reclaim timer only does anything on posix.
 >
-> **The three constraints #760 measured and this item must honour:**
-> `initialize` is answered from a constant BEFORE anything that can block (a
-> silent server costs the session ~32 s); a dead host fails the call with an
-> error the agent can read and NEVER hangs; the dead-host error shape must not
-> encode `ENOENT` (Windows-only fact — a unix socket gives `ECONNREFUSED`).
+> ## THREE REAL BUGS /review CAUGHT, ALL INVISIBLE TO A 78/78 HARNESS
+> * **Two overlapping `registerSession` calls** both missed the map (written
+>   after the await), both minted a token, and the second **overwrote the token
+>   file** before failing `listen` — leaving a file holding a token in no map.
+>   That session answers `not authorized` for the rest of its life with nothing
+>   in any log. Every test awaited the first call before making the second.
+> * **An `unregisterSession` landing mid-registration** was a silent no-op; the
+>   registration then installed a live endpoint and a live 0600 token **for a
+>   dead session**, reclaimed only at app quit.
+> * **The host kept reading after replying** — N pipelined lines ran N
+>   synchronous queries on Electron's MAIN THREAD, and the second reply was a
+>   write-after-end whose `error` handler `destroy()`s the socket, **truncating
+>   the reply already sent** into exactly the bare close that code exists to
+>   prevent.
 >
-> **Out of scope, deliberately:** `--mcp-config` / `buildSpawn` / the `mcp`
-> capability (all #763), the read tools (#764), `send_to_session` (#765).
+> ## ⚠️ THE LESSON THIS ITEM ADDS — `runIf` HID A BROKEN ASSERTION
+> The socket-reclaim test was `runIf(platform !== 'win32')` and therefore had
+> **never once executed** until the Linux CI runner. It then failed — not on the
+> behaviour, but because it watched the CLIENT for a close the client can never
+> see: an `allowHalfOpen` socket stays up by its own choice regardless of the
+> peer. **A platform-skipped test is an unrun test, and an unrun assertion is
+> not evidence of anything.** Fixed by asserting on the HOST
+> (`BusHost.connectionCount`) and unskipping it everywhere — it distinguishes
+> nothing on Windows, but running it there is what would have caught the broken
+> assertion locally instead of on a runner.
+>
+> ## AND THE #761 LESSON, HOLDING
+> The first mutation set read **78/78** and felt like a pass. Asking the
+> reviewer *"what would survive this set?"* produced **eleven named gaps, and
+> every one of them did survive** when tested — including the default host
+> timeout (pinned by nothing, since every test passed one explicitly), the frame
+> limit's magnitude, `busServerPath`'s second candidate (executed by no test at
+> all), and a boundary guard defeatable by a multi-line import.
+>
+> ## DECISIONS TO KEEP
+> **One endpoint per session**, not one shared with the token as sole
+> discriminator. **The host derives identity from the TOKEN, never from the
+> child's `--session`.** The posix endpoint name is a **digest**, because
+> `<stateDir>/<uuid>/bus.sock` is ~107 bytes against `sun_path`'s 104 on macOS.
+> **The platform errno never reaches the model** — it rides `HostError.detail`
+> to stderr. **`registerSession` rethrows on failure**; #763 owns the fail-open
+> decision because only the caller knows whether a session should still start.
+>
+> **DESIGN.md §5.4 amended:** it claimed the bus has "no listener, no token",
+> which the named-pipe channel makes untrue. Four bullets in
+> `spike/findings/e11-00-bus-feasibility.md`'s "what is NOT proven" are now
+> closed — including the unix-socket path, which `check:bus` executes on the
+> Linux runner on every PR.
 
 > # ✅ MERGED — 2026-09-08: **#761** — P2-E11-01, session query core
 >
