@@ -3,7 +3,27 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ✅ MERGED — 2026-09-07: **#760** — P2-E11-00, bus feasibility probe
+> # 🔨 IN PROGRESS — 2026-09-07: **#761** — P2-E11-01, session query core
+>
+> **State: planning, Gate 1 not yet passed. No branch cut, no code written.**
+>
+> **Owner decision 2026-09-07: BOTH gates stay on for every remaining E11 item**
+> (#761–#766) — plan approval and commit approval, twelve checkpoints. Asked
+> because he wants the whole queue merged; answered deliberately. Do not
+> shortcut to auto-merge, and do not re-ask.
+>
+> Plan as presented: `src/main/sessions/queries.ts` (NOT under `bus/` — it
+> predates the bus and the composer path calls it too), a `SessionQueries`
+> class with `list` / `transcriptFor` / `git` injected so it imports nothing
+> transport-shaped. Reads the **transcript on disk**, not a live `FeedBuffer` —
+> there are TWO buffer owners (`StreamFeed` for Direct, `TranscriptWatcher` for
+> PTY) and no registry over them, so disk is the only uniform source and is what
+> §5.4 specifies. `GitService` gains `diff(folder)` returning unified diff text
+> (an agent reads text; `fileVersions` exists for Monaco).
+>
+> Two decisions to keep: **ambiguous session names are REFUSED, not guessed**
+> (two cards can share a title), and **no content redaction in v1** — caps only,
+> flagged rather than silently skipped.
 >
 > **PR #767, squashed to `1f1784a`, all four CI jobs green.** Issue closed.
 > Rebased onto `main` BEFORE opening the PR. Six probes under
