@@ -85,6 +85,12 @@ export default defineConfig({
           // adapter spawns, run under `electron --run-as-node` like the checks
           'fake-stream-cli': 'src/main/providers/fake-stream-cli.ts',
           'fake-stream-check': 'src/main/providers/fake-stream-check.ts',
+          // the Session Bus MCP server (P2-E11-02) — a real program the CLI
+          // spawns from --mcp-config, run under `electron --run-as-node`. It
+          // MUST be an entry: as a chunk it would be inside app.asar under a
+          // name nothing can predict, and `launch.ts` resolves it by name.
+          'bus-server': 'src/main/bus/bus-server.ts',
+          'bus-check': 'src/main/bus/bus-check.ts',
         },
       },
     },

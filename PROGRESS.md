@@ -3,6 +3,36 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🚧 IN PROGRESS — 2026-09-08: **#762** — P2-E11-02, bus server + host channel
+>
+> Started 2026-09-08. Branch `feature/762-bus-server-host-channel`. Plan gate
+> PASSED. **Implementation complete, tests green, `/review` done and its
+> findings addressed — awaiting the COMMIT gate.** Both approval gates are ON
+> (standing decision 2026-09-07).
+>
+> **State if this session dies here:** nothing is committed. 15 new files under
+> `src/main/bus/`, plus edits to `electron.vite.config.ts`, `package.json`,
+> `.github/workflows/ci.yml`, `docs/DESIGN.md` (§5.4 amendment) and
+> `spike/findings/e11-00-bus-feasibility.md`. 230 unit tests green;
+> `npm run check:bus` PASS; mutation harness **93/93**
+> (`.claude/work_files/mutate-762.mjs`, git-ignored — recreate from the diff).
+> Only red in the full suite is **#768**, the known `win-cmd.test.ts` flake,
+> green in isolation.
+>
+> **Scope:** the stdio MCP bus server child (`initialize` / `tools/list` /
+> `tools/call`), the named-pipe / unix-socket channel back to Electron main, a
+> per-session token in an ACL'd file (S-03: never on argv), and exactly ONE
+> tool — `list_sessions` — over #761's `SessionQueries`.
+>
+> **The three constraints #760 measured and this item must honour:**
+> `initialize` is answered from a constant BEFORE anything that can block (a
+> silent server costs the session ~32 s); a dead host fails the call with an
+> error the agent can read and NEVER hangs; the dead-host error shape must not
+> encode `ENOENT` (Windows-only fact — a unix socket gives `ECONNREFUSED`).
+>
+> **Out of scope, deliberately:** `--mcp-config` / `buildSpawn` / the `mcp`
+> capability (all #763), the read tools (#764), `send_to_session` (#765).
+
 > # ✅ MERGED — 2026-09-08: **#761** — P2-E11-01, session query core
 >
 > **PR #769, squashed to `2d4d97e`, all four CI jobs green.** Issue closed.

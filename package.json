@@ -28,7 +28,8 @@
     "check:adapter": "node scripts/run-electron-node.js out/main/adapter-check.js",
     "check:hooks": "node scripts/run-electron-node.js out/main/hook-check.js",
     "check:transcripts": "node scripts/run-electron-node.js out/main/transcript-check.js",
-    "check:fake-stream": "node scripts/run-electron-node.js out/main/fake-stream-check.js"
+    "check:fake-stream": "node scripts/run-electron-node.js out/main/fake-stream-check.js",
+    "check:bus": "node scripts/run-electron-node.js out/main/bus-check.js"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",

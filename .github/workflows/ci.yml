@@ -48,6 +48,13 @@ jobs:
       # once when #163 put a thinking block ahead of the text one. Both are the
       # spawn-and-protocol seam the unit tests deliberately cannot reach.
       - run: npm run check:fake-stream
+      # The Session Bus server (P2-E11-02) driven over real pipes by the real
+      # Electron binary under ELECTRON_RUN_AS_NODE. Needs no model, no `claude`
+      # binary and no login — it talks to our own server — so unlike the three
+      # below it belongs here. Running it on BOTH runners is the point: it is
+      # the first and only thing that executes the UNIX-DOMAIN-SOCKET path,
+      # which #760's findings note lists under "what is NOT proven".
+      - run: npm run check:bus
       # The remaining three check:* scripts are LOCAL-ONLY and deliberately have
       # no job here (#182). Each drives the REAL `claude` CLI through a real
       # model turn:
