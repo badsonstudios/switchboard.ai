@@ -3,27 +3,68 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔨 IN PROGRESS — 2026-09-07: **#761** — P2-E11-01, session query core
+> # ✅ MERGED — 2026-09-08: **#761** — P2-E11-01, session query core
 >
-> **State: planning, Gate 1 not yet passed. No branch cut, no code written.**
+> **PR #769, squashed to `2d4d97e`, all four CI jobs green.** Issue closed.
+> Rebased onto `main` before opening. 60 tests; **mutation harness 40/40**
+> (`.claude/work_files/mutate-761.mjs`, git-ignored — recreate from the PR
+> diff). No user-facing change, so no manual page and no CHANGELOG entry.
 >
-> **Owner decision 2026-09-07: BOTH gates stay on for every remaining E11 item**
+> **Next up: #762** (bus server + named-pipe host channel), which is where
+> #760's "answer `initialize` before anything blocking" becomes a done-when.
+> #766 is also unblocked (it needed only #761).
+>
+> ## TWO REAL BUGS /review CAUGHT — both were in the diff before it looked
+> * **The output cap kept the OLDEST 20k characters and threw away the
+>   newest** — exactly inverting "what is my sibling doing NOW", and reachable
+>   on the default path (five 4k tool results inside 20 blocks). **The old test
+>   asserted only `length === CAP`, which passes in either direction** — the
+>   truncation DIRECTION was entirely unpinned. Now cuts from the front with an
+>   in-band marker.
+> * **`git diff HEAD` in a repo with no commits FAILS rather than returning
+>   nothing**, and that was swallowed into `{isRepo:true, text:''}` — a session
+>   that had just scaffolded a project and staged it answered "I have changed
+>   nothing". Falls back to git's empty-tree object now.
+>
+> ⚠️ **`--no-textconv` does NOT stop a repo's config running commands on our
+> behalf.** It disables textconv filters only; `diff.external` still executes.
+> **`--no-ext-diff` is the flag that does** — verified both ways. My comment
+> claimed otherwise, which is worse than no comment. Regression test uses a
+> hostile `diff.external`. This matters most here because #764 points this at a
+> folder another agent controls.
+>
+> ## THE HARNESS LESSON, WORTH MORE THAN THE ITEM
+> The first mutation set was **19/19 caught** and felt like a pass. Review then
+> named a dozen survivors, **two of which were the live bugs above**. *"All
+> mutations caught" measures only the mutations you thought of.* The set is now
+> 40/40 and pins the things a hand-written set skips: truncation **direction**,
+> that output comes from the **named** session's transcript (every double
+> ignored its argument, so `transcriptFor(session.id)` → `transcriptFor(ref)`
+> survived everything), and **the constant values themselves** — every cap test
+> built its fixture FROM the constant, so 200 → 20,000 stayed green.
+>
+> ## DECISIONS TO KEEP
+> Reads the **transcript on disk**, not a live `FeedBuffer` (two owners,
+> `StreamFeed` and `TranscriptWatcher`, no registry over them). **Ambiguous
+> names REFUSE** and name every candidate with its folder. **Subagent turns are
+> marked `[subagent]` and kept**, not filtered. **A crashed git REFUSES** rather
+> than reporting `isRepo:false` — that would be the same confident lie the
+> ambiguity refusal exists to prevent. **No content redaction in v1.**
+>
+> ⚠️ **#768 filed: `win-cmd.test.ts` is a pre-existing flake** — reddens under
+> full-suite load, green in isolation, **reproduced on a clean tree**. Not
+> caused by #761. It is #714's command-injection regression test, so a test
+> people learn to re-run rather than read is expensive there.
+
+> # 📌 STANDING — 2026-09-07: **both gates stay on for every remaining E11 item**
+>
+> **Owner decision: BOTH gates stay on for every remaining E11 item**
 > (#761–#766) — plan approval and commit approval, twelve checkpoints. Asked
 > because he wants the whole queue merged; answered deliberately. Do not
 > shortcut to auto-merge, and do not re-ask.
 >
-> Plan as presented: `src/main/sessions/queries.ts` (NOT under `bus/` — it
-> predates the bus and the composer path calls it too), a `SessionQueries`
-> class with `list` / `transcriptFor` / `git` injected so it imports nothing
-> transport-shaped. Reads the **transcript on disk**, not a live `FeedBuffer` —
-> there are TWO buffer owners (`StreamFeed` for Direct, `TranscriptWatcher` for
-> PTY) and no registry over them, so disk is the only uniform source and is what
-> §5.4 specifies. `GitService` gains `diff(folder)` returning unified diff text
-> (an agent reads text; `fileVersions` exists for Monaco).
->
-> Two decisions to keep: **ambiguous session names are REFUSED, not guessed**
-> (two cards can share a title), and **no content redaction in v1** — caps only,
-> flagged rather than silently skipped.
+
+> # ✅ MERGED — 2026-09-07: **#760** — P2-E11-00, bus feasibility probe
 >
 > **PR #767, squashed to `1f1784a`, all four CI jobs green.** Issue closed.
 > Rebased onto `main` BEFORE opening the PR. Six probes under
