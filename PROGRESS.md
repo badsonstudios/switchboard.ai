@@ -34,12 +34,45 @@
 > unattended workers is a different risk from one reported item, and that
 > asymmetry is written down in the file so it does not later read as drift.
 
-> # 🔨 IN REVIEW — 2026-09-08: **#763** — P2-E11-03, the `mcp` capability +
+> # 🚢 RELEASED — 2026-09-08: **v0.8.8**, and the "not released" backlog is gone
+>
+> **`d836fbb`, tag `v0.8.8`, installer published** —
+> `switchboard-Setup-0.8.8.exe` (102 MB) + sha256 sidecar. Release workflow
+> green. Cut on the owner's say-so; the hold had been standing since
+> 2026-09-03.
+>
+> Nine items that had been sitting unreleased against v0.8.7 shipped together:
+> **#763** (sessions can see each other), **#747 / #746** (the model button and
+> its live update), **#635** (streaming markdown), **#742** (long-history
+> freeze), **#748** (Clear Session), plus #752, #760, #761, #762.
+>
+> **⚠️ SEVEN DOGFOOD ROWS BECAME TESTABLE AT THIS MOMENT** and were not before
+> it, because the code was on `main` and in no installed build. The tracker's
+> "NOT RELEASED — do not run this row until 0.8.8 is cut" notes are all now
+> false and have been flipped; `docs/plans/dogfood-testing.md` carries the
+> ordering. **When Dan asks what to test, answer from that file, not from here.**
+> Fastest first: #763's `/mcp` check (seconds, and the one that must not have
+> broken anything), then the model controls, then Clear Session.
+>
+> Still open and unchanged by this release: **#716** (half a fix by design — the
+> laptop is the real question), **#719** (2 of 5 bugs), and the two MCP rows only
+> the work laptop can test at all.
+>
+> **`0.8.9 — unreleased` is open** in CHANGELOG.md. Next item files there.
+
+> # ✅ MERGED — 2026-09-08: **#763** — P2-E11-03, the `mcp` capability +
 > attach at spawn
 >
-> Branch `feature/763-mcp-capability-attach`. Implemented, reviewed, review
-> findings fixed, docs written. **PR next.** First item run under the new
-> no-gates workflow.
+> **PR #771, squashed to `83288b5`, all four CI jobs green.** Issue closed.
+> Rebased onto `main` before opening. **Shipped in v0.8.8** the same day.
+> **The first item run under the new no-gates workflow** (see the STANDING block
+> at the top): plan posted to the issue, no approval stops, merged on green CI,
+> one report at the end.
+>
+> **Next up: #764** (P2-E11-04, the read tools — `get_session_output` and
+> `get_session_diff` over #761's query core). It was blocked on this item and is
+> now unblocked. **#766 is also still open and independently unblocked** (it
+> needed only #761), and it is E13's prerequisite.
 >
 > ## DONE-WHEN, WALKED
 > * **`--mcp-config` yes, `--strict-mcp-config` never** — matrix test over six
