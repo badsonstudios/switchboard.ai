@@ -30,7 +30,8 @@ import crypto from 'crypto';
 import fs from 'fs';
 import net from 'net';
 import path from 'path';
-import { busPipePath, busTokenPath } from './bus-paths';
+import { busEndpointFor, busTokenPath } from './bus-paths';
+import { busLaunch, type BusLaunch } from './launch';
 import { CHANNEL_VERSION, isBusOp } from './channel';
 import { LineReader, MAX_LINE_BYTES } from './protocol';
 import type { Logger } from '../log/logger';
@@ -57,6 +58,19 @@ export interface BusHostOptions {
   /** How long a connection may sit without completing a request. Absent =
    *  `IDLE_TIMEOUT_MS`. A test seam, for the same reason as `replyLingerMs`. */
   idleTimeoutMs?: number;
+  /**
+   * Where the COMPILED bus server is. Absent = resolve it (`busServerPath`).
+   *
+   * A seam, and unlike the two above it is not only for tests: `busServerPath`
+   * answers from `__dirname` against the BUILD OUTPUT, so under vitest — which
+   * runs the TypeScript in `src/` — it correctly finds nothing and throws. That
+   * would make `attachSession` answer `null` in every unit test, i.e. the whole
+   * attach path would be untestable while looking fine, which is precisely the
+   * "a platform-skipped test is an unrun test" failure #762 ended on.
+   *
+   * Production passes nothing and resolves for real.
+   */
+  busServerPath?: string;
 }
 
 export interface BusEndpoint {
@@ -137,8 +151,11 @@ export class BusHost {
   }
 
   private async openEndpoint(sessionId: string): Promise<BusEndpoint> {
-    const pipePath = busPipePath(sessionId);
-    const tokenPath = busTokenPath(this.opts.stateDir, sessionId);
+    // THE SAME DERIVATION #763's `--mcp-config` writer uses, deliberately (see
+    // `busEndpointFor`). The config file naming one path while this binds
+    // another would surface as a child dialling an address nothing listens on —
+    // a tool that times out with both sides individually looking correct.
+    const { pipePath, tokenPath } = busEndpointFor(this.opts.stateDir, sessionId);
     const sockets = new Set<net.Socket>();
     const server = net.createServer((sock) => this.serve(sessionId, sock, sockets));
     // A listener that throws after `listen` resolves would otherwise reach the
@@ -253,14 +270,114 @@ export class BusHost {
     this.removeSocketFile(reg.endpoint.pipePath);
   }
 
+  /**
+   * Give back what `attachSession` took, for a session that never started.
+   *
+   * Deliberately the same body as `unregisterSession` and deliberately a
+   * different NAME — exactly the shape `HookListener.releaseHookSettings` has
+   * over its own `unregisterSession`, and for the same reason: a session dies
+   * the same death whether it ran or never got off the ground, but the CALLER
+   * is answering a different question, and a call site reading
+   * `unregisterSession` inside `abandonStart` invites "was this session ever
+   * registered?" every time it is read.
+   *
+   * Idempotent and safe for an id that never attached, which is what makes it
+   * callable from a cleanup path that cannot know how far the start got.
+   */
+  releaseSession(sessionId: string): void {
+    this.unregisterSession(sessionId);
+  }
+
   /** Every endpoint down. Called on app quit. */
   stop(): void {
     for (const sessionId of [...this.bySession.keys()]) this.unregisterSession(sessionId);
   }
 
-  /** The endpoint for a session, if it has one. #763 needs this to write the config. */
+  /** The endpoint for a session, if it has one — i.e. one that is really listening. */
   endpointFor(sessionId: string): BusEndpoint | null {
     return this.bySession.get(sessionId)?.endpoint ?? null;
+  }
+
+  /**
+   * Attach this session to the bus and hand back how to launch its server
+   * (P2-E11-03) — SYNCHRONOUSLY, which is the whole point.
+   *
+   * ── WHY THIS DOES NOT AWAIT `registerSession` ──────────────────────────────
+   *
+   * Its only caller runs inside `SessionManager.create`, which is synchronous
+   * end to end and must stay that way. `sessions/ipc.ts` documents one reason
+   * (no `await` between `bindLive` and `persist.upsert`, or the renderer pulls a
+   * live binding whose card is not written yet); planning #763 found a worse
+   * one — an `await` anywhere before `create` lets two lazy-spawn calls both
+   * pass the reap, which breaks ONE LIVE SESSION PER CARD (P2-E15-08), and the
+   * grid's spawn effect firing twice on remount is an ordinary path, not a
+   * contrived one.
+   *
+   * So the registration is STARTED here and not waited on. That is sound rather
+   * than hopeful, for two reasons that are both properties of merged code:
+   *
+   *   1. The endpoint's paths are DERIVED, not discovered (`busEndpointFor`), so
+   *      the config can name them before anything listens.
+   *   2. The child does not connect at spawn. `pipe-client.ts` reads the token
+   *      file and dials inside `askHost` — at the first TOOL CALL, seconds
+   *      later at the very least — while the promise below settles on the next
+   *      tick of the loop.
+   *
+   * ── AND WHY A FAILURE STILL RETURNS A LAUNCH ───────────────────────────────
+   *
+   * `registerSession` rejects rather than resolving null (#762's deliberate
+   * choice: only the caller knows whether a session should still start). It is
+   * caught here and the session gets its config anyway, because the alternative
+   * failure modes are worse than the one this leaves. A bus that never opened
+   * makes `list_sessions` answer with a readable error — the dead-host path
+   * #762 built and timed — whereas withholding the config would make the tool
+   * VANISH, and an agent cannot report the absence of something it was never
+   * offered. P6: our breakage degrades the session, it does not shape it.
+   */
+  attachSession(sessionId: string): BusLaunch | null {
+    let launch: BusLaunch;
+    try {
+      // Throws only if the compiled server is missing (`busServerPath`), which
+      // is a broken build, not a runtime condition — and is exactly the case
+      // where attaching nothing is right: there is no server to reach.
+      // A plain pass-through: `busLaunch`'s default parameter fires exactly when
+      // this is `undefined`, so production resolves for real. (An earlier
+      // version spread a conditional array here to "avoid passing undefined on",
+      // which review correctly called a no-op with an incorrect comment
+      // attached — the worst kind, since it invites the next reader to preserve
+      // a subtlety that was never there.)
+      launch = busLaunch(
+        sessionId,
+        busEndpointFor(this.opts.stateDir, sessionId),
+        this.opts.busServerPath
+      );
+    } catch (err) {
+      this.opts.log.error('the session bus could not be attached', {
+        sessionId,
+        error: String(err),
+      });
+      return null;
+    }
+    void this.registerSession(sessionId).catch((err: unknown) => {
+      // The session is already starting by the time this lands. Nothing to
+      // unwind and nobody to tell but the log — the agent finds out the honest
+      // way, by calling a tool that answers with a reason.
+      //
+      // A TEARDOWN THAT RACED THE OPEN IS NOT A FAULT. `openEndpoint` rejects
+      // with this exact message when `unregisterSession` arrived mid-flight,
+      // which is an ordinary restart, so logging it at `error` would put
+      // "this session has no siblings" in front of the user on a path where
+      // nothing went wrong (review of #763).
+      const cancelled = String(err).includes('torn down while its bus endpoint was opening');
+      const level = cancelled ? 'info' : 'error';
+      this.opts.log[level](
+        cancelled
+          ? 'bus attach abandoned — the session was torn down while it was opening'
+          : 'the session bus endpoint failed to open — this session has no siblings',
+        { sessionId, error: String(err) }
+      );
+    });
+    return launch;
   }
 
   /**

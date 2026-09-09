@@ -78,6 +78,19 @@ on the floor, and say so in your PR.
 
 ### Added
 
+- **Sessions can now see each other.** Every session switchboard starts is given
+  a small built-in tool that lets its agent ask what other sessions you have
+  open — their names, folders, and whether each one is working or idle. Ask a
+  session "what else am I running?" and it can answer, instead of guessing. This
+  is the groundwork for sessions actually passing work between them; for now it
+  is just the looking.
+
+  You'll see this as a server called **switchboard** in the MCP panel (`/mcp`)
+  for each session, marked read-only. **Your own MCP servers are untouched** —
+  everything you had configured is still there alongside it, in every session.
+  If that row ever shows anything other than **connected**, that session can't
+  see its siblings; the session itself keeps working normally either way.
+
 - **The model name at the bottom of a session is now a button — click it to
   switch models in one go.** A short menu opens listing the models Claude Code
   will accept, with a ✓ on the one you're on; click one and it switches

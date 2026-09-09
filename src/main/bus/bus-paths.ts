@@ -100,3 +100,41 @@ export function busPipePath(sessionId: string, env: PathEnvironment = {}): strin
 export function busTokenPath(stateDir: string, sessionId: string): string {
   return path.join(stateDir, sessionId, BUS_TOKEN_FILE);
 }
+
+/**
+ * Both halves of one session's endpoint, derived and nothing else (#763).
+ *
+ * ── WHY THIS EXISTS AS ONE FUNCTION ────────────────────────────────────────
+ *
+ * TWO CALLERS NAME THIS ENDPOINT AND THEY MUST NOT BE ABLE TO DISAGREE.
+ * `BusHost.openEndpoint` binds a listener at these paths; `claudeAdapter`'s
+ * `mcp` capability writes them into the `--mcp-config` file the CLI hands its
+ * child. If those two ever derived the paths separately, the failure would be a
+ * child dialling an address nothing listens on — which surfaces as a bus tool
+ * that times out, with both sides individually looking correct. One function,
+ * called twice.
+ *
+ * ── AND WHY IT IS PURE ─────────────────────────────────────────────────────
+ *
+ * This is what lets #763 attach the bus WITHOUT awaiting `registerSession`.
+ * `sessions:create` is synchronous end to end and has to stay that way (an
+ * `await` before `manager.create` lets two lazy-spawn calls both pass the reap,
+ * breaking one-live-session-per-card), so the config file must be writable
+ * before the listener exists. It is, because nothing here touches the
+ * filesystem or the network — the names are a function of the session id and
+ * the state dir alone.
+ *
+ * That is not a race being tolerated. `pipe-client.ts` reads the token file and
+ * connects inside `askHost`, i.e. at the child's FIRST TOOL CALL — seconds after
+ * spawn, not at spawn — while the registration promise settles on the next tick.
+ */
+export function busEndpointFor(
+  stateDir: string,
+  sessionId: string,
+  env: PathEnvironment = {}
+): { pipePath: string; tokenPath: string } {
+  return {
+    pipePath: busPipePath(sessionId, env),
+    tokenPath: busTokenPath(stateDir, sessionId),
+  };
+}

@@ -34,20 +34,80 @@
 > unattended workers is a different risk from one reported item, and that
 > asymmetry is written down in the file so it does not later read as drift.
 
-> # 🔨 IN PROGRESS — started 2026-09-08: **#763** — P2-E11-03, the `mcp`
-> capability + attach at spawn
+> # 🔨 IN REVIEW — 2026-09-08: **#763** — P2-E11-03, the `mcp` capability +
+> attach at spawn
 >
-> Plan written and posted to the issue; **no approval gate any more** (see the
-> STANDING block above — the decision changed mid-item). Branch not yet cut.
+> Branch `feature/763-mcp-capability-attach`. Implemented, reviewed, review
+> findings fixed, docs written. **PR next.** First item run under the new
+> no-gates workflow.
 >
-> **Judgment call made rather than asked** (it was the open question at the old
-> Gate 1): our bus server lands at `scope: "dynamic"`, so it will appear in the
-> MCP manager with no Remove button. **Decision: SHOW it, labelled as
-> switchboard's own.** Because fail-open creates the need for a diagnostic — if
-> the bus fails to open, the manager is the one place "switchboard: failed" can
-> be seen — and hiding an MCP server the app itself added is the wrong instinct
-> for a local-first app. Cost: one unremovable row. Reversible in one filter if
-> Dan disagrees.
+> ## DONE-WHEN, WALKED
+> * **`--mcp-config` yes, `--strict-mcp-config` never** — matrix test over six
+>   option combinations, PLUS a source-level guard that fails if the string
+>   appears in any shipping file, PLUS the real-CLI check.
+> * **`mcp_status` still lists the user's own servers** — MEASURED, not
+>   assumed: `DeepWiki` before, `DeepWiki, switchboard` after.
+> * **A real session reaches the bus** — `switchboard` `connected`, our
+>   `serverInfo`, `list_sessions` listed. ⚠️ **What is NOT proven is a MODEL
+>   invoking it** — that needs a turn, and it is Dan's item 2.
+> * **Fake providers spawn byte-identically** — whole-recipe comparison against
+>   literals, not "no new flag".
+> * **DESIGN.md §5.3 as-built updated**, plus §5.11's aside and
+>   `docs/extensibility.md`.
+> * **Local check, never CI** — `check:mcp-attach`, in LOCAL_ONLY, enforced.
+>
+> ## THE UI QUESTION, DECIDED RATHER THAN ASKED
+> Our server lands at `scope: "dynamic"`, read-only. **Decision: SHOW it.**
+> Fail-open creates the need for a diagnostic — if the bus never opens, the MCP
+> manager is the only place that is visible — and hiding a server the app itself
+> added is the wrong instinct for a local-first app. Cost: one unremovable row.
+> **One filter line to reverse if Dan disagrees.**
+>
+> ## ⚠️ THE BUG /review CAUGHT, AND MY OWN COMMENT SWORE COULD NOT HAPPEN
+> **A failed start leaked a live endpoint and a live token, for the life of the
+> app.** `mcpConfigFor` OPENS the endpoint as a side effect; every throw below
+> it in `create` (no CLI on PATH, failed spawn) reaches `abandonStart`, which
+> knew only about the state dir and the hook token. No record → `tearDownLive`
+> never runs → nothing ever released it. Five failed starts, five leaks, plus an
+> orphaned token file written AFTER the directory was deleted. **`start-plan.ts`
+> said in as many words that no release pair was needed, and a test of mine
+> asserted it** — the test was pinning the bug. Fixed with `releaseMcpFor`
+> through `abandonStart`, mirroring #470.
+>
+> ## THE LESSON THIS ITEM ADDS: THE UNITS WERE TESTED, THE WIRING WAS NOT
+> Asking the reviewer *"what would survive this suite?"* produced **25 named
+> mutations**, and the worst tier was uniform: **every line connecting the
+> tested units to the app could be deleted with a green suite** — the
+> `mcpConfig` plumbing in `create`, three lines in `sessions/ipc.ts`, the whole
+> `BusHost` block in `index.ts`. The feature would do nothing and nothing would
+> say so. Two more worth keeping:
+> * **A test that reimplements the code under test proves nothing.** My "the
+>   config was built for the id `create` minted" test drove a hand-written
+>   stand-in for `create`'s body. Now drives the real `SessionManager`.
+> * **`index.ts` has no tests, so nothing load-bearing may live there.** The
+>   summary mapping moved out to `summariesFrom` for exactly that reason.
+> Both new pins were **verified by applying the mutant and watching them go
+> red** rather than assumed.
+>
+> ## SMALLER THINGS REVIEW WAS RIGHT ABOUT
+> * `mcp.json` was pinned only by its dirname — renaming it to `settings.json`
+>   survived, silently destroying every session's hooks.
+> * The "byte-identical" test compared the output to a second call with the same
+>   input: it proved DETERMINISM and its comment claimed more.
+> * A config-write failure (EACCES/read-only state dir) aborted the session —
+>   a P6 inversion on a brand-new path. Now degrades to no-bus.
+> * The check script killed `cmd.exe` and orphaned the real CLI plus its bus
+>   child, twice per run, on Windows.
+> * The check script could print PASS while skipping its headline assertion:
+>   `null` (never answered) and `[]` (none configured) were conflated. **It also
+>   ran in a temp dir, where MCP `local` scope — which is PER PROJECT — showed
+>   nothing, so the merge test was measuring an empty set against an empty set.**
+>
+> ## TOOLING HAZARD, HIT AGAIN
+> `sed -i` / `perl -0pi` on a source file **injected a NUL byte** into
+> `attach.test.ts` — caught only by `scripts/check-nul.js`, and stripping it
+> silently turned `join(' ')` into `join('')`. The standing rule is right: use
+> the Edit tool on source files.
 >
 > **The structural constraint the plan had to solve, recorded here because a
 > fresh session will otherwise re-derive it:** `BusHost.registerSession` is

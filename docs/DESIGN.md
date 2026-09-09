@@ -219,10 +219,35 @@ contract differs in three ways, each deliberate:
   every provider. It is the same class of assumption as the other three, so it is
   declared like them. A provider that has never heard of that file gets nothing
   written on its behalf.
-- **`mcp` is NOT shipped yet.** There is no Session Bus to attach to until E11, and
-  a capability with no implementation and no consumer is exactly what AR-P2-13 had
-  us delete (`event-source`). It arrives beside its first registrant and first
-  caller — as a config-writing capability, since §5.4 made the bus stdio-only.
+- **`mcp` SHIPPED IN P2-E11-03** *(#763, 2026-09-08)*. It was deferred until "its
+  first registrant and first caller" because a capability with no implementation
+  and no consumer is exactly what AR-P2-13 had us delete (`event-source`); E11
+  is that moment. As predicted it is a config-writing capability, since §5.4
+  made the bus stdio-only: `mcp.configFor(sessionId, host)` returns the servers
+  block in the provider's OWN schema, and `buildSpawn` writes it and passes
+  `--mcp-config <path>`. The host owns the wiring (which endpoint, which token
+  file, which binary), the adapter owns the shape — the same split
+  `hooks.settingsFor` has.
+  - **It NEVER passes `--strict-mcp-config`.** Measured, three runs (#760): that
+    flag means "use only the servers in `--mcp-config`" and EVICTS every server
+    the user configured. The default merges, verified end to end by
+    `npm run check:mcp-attach` — `DeepWiki` before, `DeepWiki` + `switchboard`
+    after. A test asserts the flag's absence across the whole option matrix and
+    a second one asserts the string appears in no shipping source file.
+  - **The host method is `attachSession`, not `busServerFor`, because it has a
+    SIDE EFFECT**: it opens the session's endpoint. It is synchronous and does
+    not wait for the listener, because `SessionManager.create` is synchronous
+    end to end and must stay so — an `await` before it lets two lazy-spawn calls
+    both pass the reap and breaks one-live-session-per-card (P2-E15-08). That is
+    safe because the endpoint paths are DERIVED (`busEndpointFor`), not
+    discovered, and because the child dials at its first tool call rather than
+    at spawn.
+  - **It has a release pair** (`releaseSession`), called from `abandonStart`.
+    The first version did not, and every failed start leaked a listening socket
+    and a live token for the life of the app.
+  - **A provider that declares no `mcp` capability spawns byte-identically** to
+    the pre-E11 recipe — asserted as a whole-recipe comparison against literals,
+    not merely "no new flag".
 - **`titles` is a fifth capability** *(added by P2-E7-06, 2026-08-11)*. The CLI
   writes a title of the conversation into its own transcript and we display it
   as the task label (§5.11). Separate from `transcripts` because that one says
@@ -1036,9 +1061,9 @@ Consequences worth designing for, not discovering:
   never, so the card must reserve its space and never reflow when it lands.
 - **This is a §5.3 adapter capability, not a Claude special case.** The
   capability object gains `titles`; an adapter that does not declare it gets
-  folder names and no dead code path. *(As built by P2-E15-01 that object is
-  `{ transcripts, hooks, resume, trust }` — `mcp` waits for E11; see §5.3's "as
-  built" note. `titles` slots in beside them, and its decision belongs in
+  folder names and no dead code path. *(As built the object is
+  `{ transcripts, hooks, titles, resume, trust, mcp }` — `mcp` landed in
+  P2-E11-03; see §5.3's "as built" note. Its decision belongs in
   `sessions/start-plan.ts` with the rest.)*
   **As built (P2-E7-06):** `titles.titleFrom(line) => string | undefined` — a
   per-LINE reader, not "read the title out of this file". The host is already

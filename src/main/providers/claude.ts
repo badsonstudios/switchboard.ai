@@ -10,6 +10,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { ProviderAdapter, SpawnOptions, SpawnRecipe } from '../extensibility/contributions';
+import { BUS_SERVER_NAME } from '../bus/bus-paths';
+import type { BusLaunch } from '../bus/launch';
 import { SlashCommand } from '../../shared/slash-commands';
 import type { AutonomyMode } from '../../shared/sessions';
 // The transcript LOCATION is Claude's, so the check for "is this conversation
@@ -74,6 +76,68 @@ export function writeSessionSettings(
   JSON.parse(json); // round-trip: what we hand the CLI must parse
   fs.writeFileSync(file, json);
   return file;
+}
+
+/**
+ * Write the per-session `--mcp-config` file (P2-E11-03).
+ *
+ * Beside `settings.json`, in the same per-session directory, for the same
+ * reason: `SessionManager.abandonStart` and #290's sweep already reclaim that
+ * directory, so an MCP config for a session that never started dies with
+ * everything else it left behind rather than needing its own cleanup.
+ *
+ * Same round-trip check as `writeSessionSettings`, and the same reasoning —
+ * S-02 measured that the CLI SILENTLY IGNORES a config file it cannot parse, so
+ * a malformed one would present as "the bus tools simply are not there", with
+ * nothing in any log. Throwing is the loud version of that.
+ */
+export function writeSessionMcpConfig(
+  stateDir: string,
+  sessionId: string,
+  config: Record<string, unknown>
+): string {
+  if (typeof config !== 'object' || config === null || Array.isArray(config)) {
+    throw new Error('session mcp config must be a plain object');
+  }
+  const dir = path.join(stateDir, sessionId);
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, 'mcp.json');
+  const json = JSON.stringify(config, null, 2);
+  JSON.parse(json); // round-trip: what we hand the CLI must parse
+  fs.writeFileSync(file, json);
+  return file;
+}
+
+/**
+ * Claude's MCP config schema, built from the host's launch recipe (P2-E11-03).
+ *
+ * The SHAPE half of the `mcp` capability — `{ mcpServers: { <name>: {...} } }`
+ * with `type: 'stdio'`. Not read off `--help`: this is the exact object
+ * `spike/probes/760/probe-attach.mjs` wrote when it measured the CLI answering
+ * `mcp_status` with our server `connected`, our `serverInfo`, and our tools
+ * listed. The standing rule is never to guess a CLI contract, and this one was
+ * not guessed.
+ *
+ * `env` carries `ELECTRON_RUN_AS_NODE=1`, which is load-bearing and looks like
+ * a mistake next to `buildSpawn` STRIPPING that same variable a few lines down.
+ * Both are right: the CLI must not re-exec as bare node (an S-01 landmine),
+ * while the bus server is a rollup entry that in a packaged build lives inside
+ * `app.asar` and can only be run by Electron-as-node (#762 measured plain node
+ * failing with MODULE_NOT_FOUND on that path). #760 measured that an `env` block
+ * in an MCP config reaches the child intact, which is what makes the second one
+ * reachable at all.
+ */
+export function claudeMcpConfig(launch: BusLaunch): Record<string, unknown> {
+  return {
+    mcpServers: {
+      [BUS_SERVER_NAME]: {
+        type: 'stdio',
+        command: launch.command,
+        args: launch.args,
+        env: launch.env,
+      },
+    },
+  };
 }
 
 function validateHooksShape(hooks: unknown): void {
@@ -335,6 +399,19 @@ export const claudeAdapter: ProviderAdapter = {
     // is Claude-specific — a provider that has never heard of `~/.claude.json`
     // must not have it written on its behalf.
     trust: { ensureTrusted: (folder) => ensureFolderTrusted(folder) },
+    // §5.4's Session Bus, attached at spawn (P2-E11-03). The host says HOW to
+    // launch the server; this says what Claude's config file looks like.
+    //
+    // `null` when the host has no bus for this session — it failed to open, or
+    // no `BusHost` is wired — rather than a config naming a server that cannot
+    // answer. The session then spawns exactly as it did before this existed,
+    // which is the fail-open direction (P6): being alone beats not starting.
+    mcp: {
+      configFor: (sessionId, host) => {
+        const launch = host.attachSession(sessionId);
+        return launch ? claudeMcpConfig(launch) : null;
+      },
+    },
   },
 
   slashCommands(): SlashCommand[] {
@@ -356,6 +433,44 @@ export const claudeAdapter: ProviderAdapter = {
         options.settings
       );
       args.push('--settings', settingsPath);
+    }
+    // The Session Bus (P2-E11-03). Written and flagged only when the host
+    // actually supplied one, so a provider or a session without a bus produces
+    // a BYTE-IDENTICAL recipe to the pre-E11 one.
+    //
+    // ⚠️ **`--strict-mcp-config` IS NEVER PASSED, AND THAT IS NOT A STYLE
+    // CHOICE.** It means "use ONLY the servers in --mcp-config, ignoring every
+    // other MCP configuration", so passing it would silently EVICT every server
+    // the user set up. Measured, not read off `--help` (#760, three runs):
+    // baseline `DeepWiki`; with `--mcp-config` `DeepWiki` + ours; with both
+    // flags, **ours only — `DeepWiki` gone**. The default merges, which is the
+    // whole reason attaching a bus is acceptable at all. A test asserts the
+    // flag's ABSENCE across the option matrix, and a second one asserts the
+    // string appears in no non-test source file, because "we just won't add it"
+    // is not a mechanism.
+    //
+    // ⚠️ **THE WRITE IS FAIL-OPEN, UNLIKE `--settings` A FEW LINES UP**, and the
+    // asymmetry is the point. `writeSessionSettings` throwing aborts the start
+    // deliberately: hooks are how the app learns what a session is doing, and a
+    // session running without them is worse than one that did not start. The bus
+    // is the opposite — three separate contracts in this diff promise it can
+    // never shape a session — so an EACCES or ENOSPC here must cost the session
+    // its siblings, not its existence (P6). Found in review of #763: the first
+    // version let this throw straight out through `create`, which made a
+    // read-only state directory a session that will not start.
+    //
+    // The consequence is visible where it should be: no `--mcp-config`, so no
+    // bus tools, so an agent asked about its siblings says it has no way to
+    // look. A malformed-config throw from `writeSessionMcpConfig` lands here
+    // too, which is right — the CLI silently ignores a config it cannot parse,
+    // so shipping one buys nothing over shipping none.
+    if (options.mcpConfig) {
+      try {
+        const mcpPath = writeSessionMcpConfig(options.stateDir, options.sessionId, options.mcpConfig);
+        args.push('--mcp-config', mcpPath);
+      } catch {
+        /* no bus for this session; it still starts */
+      }
     }
     // Duplex stream-json (P2-E18-08a). The flag list is S-10 §1, read out of the
     // SDK's own argument builder inside the VS Code extension bundle — NOT

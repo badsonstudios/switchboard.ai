@@ -17,7 +17,11 @@
 // degrades that one capability to absent — it never takes the session start
 // down with it, because a session that will not start is worse than a session
 // with no transcript pane (PHILOSOPHY: our breakage must not block a session).
-import { HookSettingsHost, ProviderCapabilities } from '../extensibility/contributions';
+import {
+  HookSettingsHost,
+  McpAttachmentHost,
+  ProviderCapabilities,
+} from '../extensibility/contributions';
 import { NativeLineage, resumeCandidates } from './lineage';
 
 /** The persisted card this start is for, if it already existed. */
@@ -53,6 +57,17 @@ export interface StartPlanInput {
    * can put a card into a conversation another card is in.
    */
   claimedNativeIds: () => string[];
+  /**
+   * The Session Bus, for providers that declare the `mcp` capability
+   * (P2-E11-03). Absent = no bus is wired in this build, so no session gets one
+   * however loudly its adapter declares the capability.
+   *
+   * OPTIONAL ON PURPOSE, and not merely for tests. The bus is one of the few
+   * subsystems whose absence must be a supported state rather than a broken
+   * one: `main/index.ts` constructs it, `hook-check` and the e2e harness do not,
+   * and a session with no siblings to talk to is a session, not a fault.
+   */
+  mcpHost?: McpAttachmentHost;
   /**
    * Called when something degraded. A SINK rather than a returned list,
    * because two of the decisions are lazy — `buildSettings` runs later inside
@@ -99,6 +114,38 @@ export interface StartPlan {
    *  why it goes straight to the host and never through the adapter: the
    *  adapter only ever shaped what the host had already registered. */
   releaseSettings?: (sessionId: string) => void;
+  /**
+   * Build the MCP config to attach at spawn (P2-E11-03). Undefined = this
+   * provider declares no `mcp` capability, so nothing is written and no
+   * `--mcp-config` is passed — the session spawns exactly as it did before the
+   * Session Bus existed.
+   *
+   * Returns `undefined` rather than `{}` when the capability is present but has
+   * nothing to attach (no bus for this session, or the adapter declined). The
+   * distinction matters at the call site: `{}` would still be truthy and would
+   * write an empty config file and pass a flag for no servers.
+   *
+   * ⚠️ IT OPENS A LISTENING ENDPOINT as a side effect, so it has a release
+   * pair — see `releaseMcpConfig`.
+   */
+  buildMcpConfig?: (sessionId: string) => Record<string, unknown> | undefined;
+  /**
+   * Undo `buildMcpConfig` for a session that never started. Present exactly
+   * when `buildMcpConfig` is — the pair travels together, like #470's.
+   *
+   * THIS COMMENT USED TO SAY NO PAIR WAS NEEDED, and that was wrong (found in
+   * review of #763). The reasoning was that the endpoint is torn down "on the
+   * same teardown path as everything else" — but a `create` that throws never
+   * gets a record, so `tearDownLive` never runs for that id and there is no
+   * such path. Every failed start after the attach leaked a listening socket
+   * and a live token for the life of the app.
+   *
+   * Goes STRAIGHT TO THE HOST, never through the adapter, for the same reason
+   * `releaseSettings` does: the adapter only ever shaped a launch the host had
+   * already registered, so blaming a "provider capability" for a fault entirely
+   * inside our own bus would be a lie in the log.
+   */
+  releaseMcpConfig?: (sessionId: string) => void;
   /** Prepare the folder for this provider (Claude's trust prompt, §5.9).
    *  Undefined = this provider needs nothing done to the folder. Returns false
    *  when the provider could not do it, so the caller can say so — a silent
@@ -339,6 +386,33 @@ export function planSessionStart(input: StartPlanInput, host: HookSettingsHost):
           }
         }
       : undefined,
+    // §5.4's Session Bus (P2-E11-03). Through the same `safely` sink as the
+    // rest: an adapter that throws while shaping its config degrades to "this
+    // session has no bus" and still starts, which is the only acceptable
+    // direction (P6). `?? undefined` and never `?? {}` — see `buildMcpConfig`.
+    //
+    // `mcpHost` is the seam, and it is undefined when nothing wired a bus (the
+    // whole test suite, and any build where `BusHost` is absent). A declared
+    // capability with no host to serve it must attach NOTHING rather than half
+    // of something.
+    buildMcpConfig:
+      caps?.mcp && input.mcpHost
+        ? (id) =>
+            safely('mcp.configFor', () => caps.mcp!.configFor(id, input.mcpHost!)) ?? undefined
+        : undefined,
+    releaseMcpConfig:
+      caps?.mcp && input.mcpHost
+        ? (id) => {
+            // NOT `safely`: its wording blames a "provider capability", and this
+            // deliberately bypasses the adapter. Same sink, same fail-open,
+            // honest culprit — exactly `releaseSettings`' argument.
+            try {
+              input.mcpHost!.releaseSession(id);
+            } catch (err) {
+              degraded(`session bus "releaseSession" threw: ${String(err)}`);
+            }
+          }
+        : undefined,
     ensureTrusted: caps?.trust
       ? (folder) => safely('trust.ensureTrusted', () => caps.trust!.ensureTrusted(folder)) ?? false
       : undefined,
