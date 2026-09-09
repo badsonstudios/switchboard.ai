@@ -35,6 +35,8 @@ const LOCAL_ONLY: Record<string, string> = {
     'a real interactive `claude` session in a PTY, through to a real Write tool call - real tokens',
   'check:transcripts':
     'a real `claude -p` turn, then parses the transcript the CLI wrote - real tokens',
+  'check:mcp-attach':
+    'a real logged-in `claude` session, driven over the control protocol to read mcp_status - no model turn and no tokens, but the login is the bar (#763)',
 };
 
 /** a `- run: npm run <name>` step, not merely a mention in a comment */
@@ -53,9 +55,10 @@ describe('check:* scripts are all accounted for (#182)', () => {
   it('finds the check scripts at all (guards against the guard silently passing)', () => {
     // If package.json ever stops using the `check:` prefix this whole file
     // would go green over an empty list, which is the failure mode it exists
-    // to prevent. Assert the floor: the two that run in CI plus the three that
-    // cannot.
-    expect(checks.length).toBeGreaterThanOrEqual(5);
+    // to prevent. Assert the floor: the two that run in CI plus the FOUR that
+    // cannot (`check:mcp-attach` joined them in #763; this comment and the
+    // number both said three until then, which is how a floor stops being one).
+    expect(checks.length).toBeGreaterThanOrEqual(6);
   });
 
   it.each(

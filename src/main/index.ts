@@ -72,6 +72,8 @@ import { PushActions } from './events/push-actions';
 import { registerPushIpc } from './events/push-ipc';
 import { SecretStore } from './secrets/store';
 import { GitService } from './git/git-service';
+import { BusHost } from './bus/host-channel';
+import { SessionQueries, summariesFrom } from './sessions/queries';
 import { runPreflight } from './preflight';
 import { startStaticServer, StaticServer } from './static-server';
 import { installCspHeaders } from './csp';
@@ -1802,6 +1804,38 @@ app
     const knownFolder = (folder: string): boolean =>
       manager.list().some((s) => path.resolve(s.identity.folder) === path.resolve(folder));
     const gitService = new GitService();
+
+    // ── the Session Bus (§5.4; #761 built the answers, #762 the channel, #763
+    //    is the first wiring of either) ──────────────────────────────────────
+    //
+    // Both existed as tested modules with NO CALLER until this item. That was
+    // deliberate rather than an oversight — a host with nothing attached to it
+    // is untestable dead weight — and this is the item that gives them one.
+    //
+    // Built HERE, below `gitService`, purely because it needs it. Everything
+    // else it wants (`manager`, `transcripts`, `stateDir`) has existed for
+    // hundreds of lines.
+    //
+    // `list()` answers from SESSIONS, never cards — `summariesFrom` owns that
+    // decision and the reasoning, and it lives in `sessions/queries.ts` rather
+    // than here precisely because this file has no tests (#763 review: every
+    // mutation of an inline mapping survived the suite).
+    const busHost = new BusHost({
+      stateDir,
+      queries: new SessionQueries({
+        list: () => summariesFrom(manager),
+        // The HOST's answer, not one re-derived inside the query module — the
+        // same rule #432 established for `resume`. The watcher already resolved
+        // this path from the provider's own declared root.
+        transcriptFor: (sessionId) => transcripts.transcriptFile(sessionId),
+        // `GitService.diff` was written for exactly this (#761), including the
+        // `--no-ext-diff` hardening — which matters most here, because #764
+        // points it at a folder another agent controls.
+        git: gitService,
+      }),
+      log: createLogger(sink, 'bus'),
+    });
+
     broker.handle('git:status', (_e, folder: string) =>
       knownFolder(folder) ? gitService.status(folder) : { isRepo: false, files: [] }
     );
@@ -1876,6 +1910,7 @@ app
       streamModel,
       streamFeed,
       hooks,
+      bus: busHost,
       transcripts,
       feed,
       broker,
@@ -1933,6 +1968,10 @@ app
       ptys.killAll();
       streams.killAll();
       hooks.stop();
+      // Every bus endpoint down, every token file gone (P2-E11-03). The tokens
+      // live in memory, so a crash that skips this leaves only inert files —
+      // but a clean quit should not need #290's sweep to finish its job.
+      busHost.stop();
       transcripts.stop();
       fsIpc.stop(); // the document viewers' file watches (P2-E16-04)
       updates.stop(); // kills the daily timer; a check in flight becomes a no-op

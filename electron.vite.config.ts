@@ -91,6 +91,7 @@ export default defineConfig({
           // name nothing can predict, and `launch.ts` resolves it by name.
           'bus-server': 'src/main/bus/bus-server.ts',
           'bus-check': 'src/main/bus/bus-check.ts',
+          'mcp-attach-check': 'src/main/bus/mcp-attach-check.ts',
         },
       },
     },

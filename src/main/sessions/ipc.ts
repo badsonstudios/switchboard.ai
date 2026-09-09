@@ -50,6 +50,7 @@ import { StreamModel } from './stream-model';
 import { StreamFeed } from '../feed/stream-feed';
 import { replayResumedHistory } from '../feed/history';
 import { HookListener } from '../hooks/hook-listener';
+import type { BusHost } from '../bus/host-channel';
 import { IpcBroker } from '../ipc/broker';
 import { Channel } from '../../shared/ipc/capabilities';
 import type { PtyAttachment, PtyChunk, PtySnapshot } from '../../shared/ipc/pty';
@@ -88,6 +89,12 @@ export interface SessionIpcDeps {
    *  Absent for a PTY-only wiring, where the transcript is the only source. */
   streamFeed?: StreamFeed;
   hooks: HookListener;
+  /**
+   * The Session Bus host (P2-E11-03, §5.4). Optional: a wiring without one
+   * spawns every session exactly as it did before E11, which is what makes the
+   * whole capability additive.
+   */
+  bus?: BusHost;
   transcripts: TranscriptWatcher;
   feed: EventFeed;
   log: Logger;
@@ -485,6 +492,13 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     // blows up on purpose.
     releaseHeldPermissions(liveId, 'session closed');
     tearDownStep(liveId, 'transcripts.unwatch', () => transcripts.unwatch(liveId));
+    // The bus endpoint, its listener and its token file (P2-E11-03). HERE and
+    // not in `releaseHeldPermissions`, deliberately: #271's gap was about things
+    // that leave somebody BLOCKED — a parked permission, an unanswered control
+    // request — and a bus endpoint holds nobody. A self-exited session keeps its
+    // endpoint until the reap runs this path or the app quits, and in the
+    // meantime the only thing that could reach it is its own dead child.
+    tearDownStep(liveId, 'bus.unregisterSession', () => deps.bus?.unregisterSession(liveId));
     // the next session under this card gets its own list from its own CLI
     tearDownStep(liveId, 'streamCommands.forgetSession', () =>
       streamCommands?.forgetSession(liveId)
@@ -1165,6 +1179,10 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           // callback rather than reading plan.warnings: two of the decisions
           // are lazy and fire long after this line.
           onDegraded: (reason) => log.warn('session start degraded', { cardId: opts.cardId, reason }),
+          // §5.4's Session Bus (P2-E11-03). Undefined in any wiring that has no
+          // `BusHost` — the e2e harness, the check scripts — and a session
+          // without one simply has no siblings to talk to.
+          mcpHost: deps.bus,
         },
         hooks
       );
@@ -1269,6 +1287,14 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           // ...and the same absence means there is nothing to give back if the
           // start throws. The pair travels together (#470).
           releaseSettingsFor: plan.releaseSettings,
+          // no `mcp` capability, or no bus wired = no config and no flag
+          // (P2-E11-03). Undefined here is the byte-identical pre-E11 spawn.
+          mcpConfigFor: plan.buildMcpConfig,
+          // ...and its undo, on every path where `create` throws after the
+          // attach opened an endpoint. The pair travels together (#763 review;
+          // an earlier version had no undo and leaked a listener and a live
+          // token per failed start).
+          releaseMcpFor: plan.releaseMcpConfig,
           autonomy,
           resumeSessionId: plan.resumeSessionId,
           // Resolved above the trust step — see `spawnTransport` for the

@@ -55,9 +55,9 @@ jobs:
       # the first and only thing that executes the UNIX-DOMAIN-SOCKET path,
       # which #760's findings note lists under "what is NOT proven".
       - run: npm run check:bus
-      # The remaining three check:* scripts are LOCAL-ONLY and deliberately have
-      # no job here (#182). Each drives the REAL `claude` CLI through a real
-      # model turn:
+      # The remaining four check:* scripts are LOCAL-ONLY and deliberately have
+      # no job here (#182). The first three each drive the REAL `claude` CLI
+      # through a real model turn:
       #   check:adapter     - two headless `-p` turns: plants a marker word,
       #                       then reads it back through `--resume`
       #   check:hooks       - a real interactive session in a PTY: trust dialog,
@@ -65,6 +65,17 @@ jobs:
       #                       the PreToolUse hook
       #   check:transcripts - a real `-p` turn, then parses the transcript the
       #                       CLI itself wrote under ~/.claude/projects
+      # The fourth is local-only for a DIFFERENT reason, worth stating so it is
+      # not later "fixed" into a job by someone who reads the paragraph below
+      # and sees it does not apply:
+      #   check:mcp-attach  - spends NO tokens and takes no model turn. It spawns
+      #                       a session with our --mcp-config and reads
+      #                       `mcp_status` over the control protocol, which is
+      #                       free. What it needs is a LOGGED-IN CLI: without a
+      #                       login there is no session to ask, and the answer it
+      #                       checks (that the USER'S OWN servers survived the
+      #                       merge) is by definition about a configured machine,
+      #                       which a runner is not. #763.
       # A runner has no subscription login, and giving it one would mean either
       # an ANTHROPIC_API_KEY or spending Dan's subscription tokens on every PR -
       # two hard constraints we do not cross (.claude/CLAUDE.md). Nor is there a

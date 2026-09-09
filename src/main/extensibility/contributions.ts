@@ -5,6 +5,7 @@
 import { SlashCommand } from '../../shared/slash-commands';
 import { CapabilityManifest } from '../../shared/extensibility/registry';
 import type { AutonomyMode } from '../../shared/sessions';
+import type { BusLaunch } from '../bus/launch';
 import { TransportKind } from '../transport/transport';
 
 /**
@@ -40,13 +41,12 @@ export interface ProviderAdapter {
  * §5.3's capability objects. The host ASKS these instead of assuming Claude —
  * the whole point of P2-E15-01 (AR-P0-1).
  *
- * `mcp` is deliberately ABSENT. §5.3 lists it, but there is no Session Bus to
- * attach to until E11, so the field would be a type with no implementation and
- * no consumer — the exact shape P2-E15-02 deleted `event-source` for
- * (AR-P2-13). When E11 lands, it arrives here beside its first registrant and
- * its first caller: an `McpAttachment` that writes the provider's MCP config so
- * the session can reach the stdio bus (§5.4 — stdio-only in v1, so it is a file
- * the adapter writes, not a port it dials).
+ * `mcp` ARRIVED IN P2-E11-03 (#763, 2026-09-08), and the wait was the point.
+ * §5.3 listed it from the start, but until E11 there was no Session Bus to
+ * attach to, so the field would have been a type with no implementation and no
+ * consumer — the exact shape P2-E15-02 deleted `event-source` for (AR-P2-13).
+ * It lands here beside its first registrant (`claudeAdapter`) and its first
+ * caller (`start-plan.ts`), which is the condition the deferral named.
  */
 export interface ProviderCapabilities {
   /**
@@ -98,6 +98,77 @@ export interface ProviderCapabilities {
    * the alternative was leaving it undeclared. DESIGN §5.3 amended to match.
    */
   trust?: TrustCapability;
+  /**
+   * The CLI can be handed extra MCP servers at spawn, which is how a session
+   * reaches the Session Bus (§5.3, §5.4; P2-E11-03). Absent: no config is
+   * written, no `--mcp-config` is passed, and the session spawns EXACTLY as it
+   * did before this capability existed — asserted as a byte-identical recipe,
+   * not merely "no new flag", because that is the claim §5.3 actually makes.
+   *
+   * A session without it is not broken, it is just alone: no `list_sessions`,
+   * and later no read tools and no `send_to_session`.
+   */
+  mcp?: McpCapability;
+}
+
+export interface McpCapability {
+  /**
+   * The MCP config to attach at spawn for `sessionId`, or `null` for "nothing
+   * to attach" (which must spawn identically to having no capability at all).
+   *
+   * THE SAME SPLIT AS `HookCapability.settingsFor`, and for the same reason:
+   * the host owns the WIRING — which endpoint, which token file, which binary
+   * launches the server — because those are switchboard's. The adapter owns the
+   * SHAPE: given the host's launch recipe, express it the way this CLI's config
+   * schema expects. Claude's is `{ mcpServers: { <name>: {...} } }`; a provider
+   * with a different schema translates here instead of the host learning about
+   * it.
+   *
+   * MUST NOT THROW; a throw is caught at the call site and degrades this
+   * capability to absent for the session, because a session that starts without
+   * its bus is enormously better than a session that does not start (P6).
+   */
+  configFor(sessionId: string, host: McpAttachmentHost): Record<string, unknown> | null;
+}
+
+/** The slice of the host's bus an adapter may use. */
+export interface McpAttachmentHost {
+  /**
+   * Attach this session to the bus, and answer with how to launch its server —
+   * `{ command, args, env }`, ready to drop into whatever the provider's config
+   * schema calls a server entry.
+   *
+   * **NAMED FOR THE SIDE EFFECT, not for the return value.** `busServerFor`
+   * would read better at the call site and would be a lie: this does not merely
+   * look something up, it OPENS the session's endpoint. Hiding that behind a
+   * getter-shaped name is how someone later calls it twice, or calls it to
+   * "check", and gets a listener they did not ask for.
+   *
+   * `null` means the host has no bus for this session (the launch recipe could
+   * not be built at all), and the adapter must then attach nothing rather than
+   * write a config naming a server that cannot work.
+   *
+   * ⚠️ **DOES NOT WAIT FOR THE ENDPOINT TO BE LISTENING**, and must not: it is
+   * called from inside `SessionManager.create`, which is synchronous end to end
+   * and has to stay that way (`sessions/ipc.ts` — an `await` before `create`
+   * lets two lazy-spawn calls both pass the reap and breaks one-live-session-
+   * per-card). Safe because the paths are derived rather than discovered
+   * (`busEndpointFor`) and because the child dials at its FIRST TOOL CALL,
+   * seconds later, not at spawn.
+   */
+  attachSession(sessionId: string): BusLaunch | null;
+  /**
+   * Give back everything `attachSession` took out, for a session that will
+   * never exist.
+   *
+   * The host calls this itself on a failed start; an adapter has no reason to.
+   * It is on this interface rather than hidden because the pair is the
+   * documentation: seeing both here is what stops the next reader concluding,
+   * as #763's first draft did, that attaching has no side effect worth undoing.
+   *
+   * Idempotent, and must not throw for an id it does not know.
+   */
+  releaseSession(sessionId: string): void;
 }
 
 export interface TranscriptCapability {
@@ -285,6 +356,16 @@ export interface SpawnOptions {
   autonomy?: AutonomyMode;
   /** extra settings to inject at spawn (S-02 mechanism); hooks land in E2-05 */
   settings?: Record<string, unknown>;
+  /**
+   * MCP servers to attach at spawn (P2-E11-03), already in this provider's own
+   * config schema — the `mcp` capability shaped it, the host only carried it.
+   *
+   * A SECOND CHANNEL RATHER THAN A KEY INSIDE `settings`, deliberately: the CLI
+   * takes these as a separate file behind a separate flag (`--mcp-config`, not
+   * `--settings`), and folding them together would make the adapter unpick one
+   * object into two files. Absent = write no file and pass no flag.
+   */
+  mcpConfig?: Record<string, unknown>;
   /**
    * The transport the HOST would like (P2-E18-08a). A request, not an order:
    * the adapter answers with what it will actually do in `SpawnRecipe.transport`,

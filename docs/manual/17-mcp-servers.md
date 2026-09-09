@@ -175,6 +175,21 @@ remove them from. Those come from your claude.ai account, from a plugin, or from
 Claude Code itself, and that's where you change them. They can still be signed
 in to, turned off and reconnected — see below.
 
+## The "switchboard" server
+
+You'll see a server called **switchboard** in every session's list. That one is
+switchboard.ai's own, and it's how a session can find out about the others you
+have open — see [Sessions](02-sessions.md). It's added automatically when a
+session starts and it's read-only, so there's no Remove button.
+
+It's shown rather than hidden on purpose. If it ever says anything other than
+**connected**, that's your signal that a session can't see its siblings, and
+that's worth knowing rather than being tucked away.
+
+**It doesn't replace anything.** Your own servers are all still there alongside
+it — adding switchboard's server to a session leaves every other one exactly as
+it was.
+
 ## Signing in to a server
 
 Some servers need you to sign in before they'll do anything — the connectors

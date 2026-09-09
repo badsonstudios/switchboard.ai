@@ -49,7 +49,7 @@ import {
   deriveIntents,
 } from '../feed/blocks';
 import { HISTORY_MAX_LINES, readTranscriptTail } from '../feed/history';
-import type { SessionStatus } from '../../shared/sessions';
+import type { SessionIdentity, SessionStatus } from '../../shared/sessions';
 
 /**
  * How much rendered output one query may return, in characters.
@@ -236,6 +236,49 @@ function attempt<T>(fn: () => T, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+/** The slice of `SessionManager` the bus wiring reads. */
+export interface SummarySource {
+  list(): { id: string; identity: SessionIdentity; status: SessionStatus }[];
+}
+
+/**
+ * Live session records → the summaries a sibling can address (#763).
+ *
+ * EXTRACTED FROM `main/index.ts` BECAUSE THAT FILE HAS NO TESTS. Review of #763
+ * pointed out that every mutation of this mapping survived the suite — swapping
+ * `folder` for `providerId`, hardcoding a status, returning `[]` — because the
+ * only copy of it lived inside a 2,000-line bootstrap nothing unit-tests. It is
+ * the one place the live-session id space and the card's display name meet, so
+ * it is exactly the wrong thing to leave unpinned.
+ *
+ * ⚠️ **INCLUDES EXITED SESSIONS, and that is deliberate.** A self-exited session
+ * KEEPS its record until the reap (#187), so it appears here with
+ * `status: 'exited'`. An earlier comment claimed this list was "live sessions"
+ * in the sense of "running", which review correctly called out as not what the
+ * wiring delivers. Listing them is the honest answer — "what did the session I
+ * was watching finish doing?" is a real question, and #764's read tools can
+ * still answer it from the transcript. What a consumer must NOT do is assume a
+ * row here can receive anything: #765's `send_to_session` needs a running
+ * composer and must check `status` rather than trusting membership.
+ *
+ * What it excludes is CARDS. A suspended card has no live id at all, and the
+ * bus addresses sessions by live id (`callerId` is one, the token map is keyed
+ * by one). Merging the two id spaces would hand a model one namespace that
+ * silently contains two.
+ */
+export function summariesFrom(manager: SummarySource): SessionSummary[] {
+  return manager.list().map((r) => ({
+    id: r.id,
+    // The card's title — what the rail shows and what a user would type after
+    // `@`. Carried on `SessionIdentity`, so this needs no reverse lookup
+    // through the live↔card binding, which lives inside `sessions/ipc.ts`.
+    name: r.identity.title,
+    folder: r.identity.folder,
+    providerId: r.identity.providerId,
+    status: r.status,
+  }));
 }
 
 export class SessionQueries {

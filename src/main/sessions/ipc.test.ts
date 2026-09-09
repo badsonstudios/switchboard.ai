@@ -124,6 +124,9 @@ function harness(
     /** make this session's teardown BLOW UP, to prove the spawn path fails open
      *  rather than turning a teardown bug into an unstartable card (#187) */
     throwOnUnwatch?: string;
+    /** make the BUS teardown step blow up, to prove the rest still runs
+     *  (P2-E11-03, the #219 argument applied to the new step) */
+    throwOnBusUnregister?: string;
     /** the same, from the FIRST step of the teardown — `deps.feed.forget`. The
      *  one that used to skip every release after it, the approval denial
      *  included (#219). */
@@ -266,6 +269,10 @@ function harness(
    * per-call assertion would still pass (#187 review).
    */
   const trace: string[] = [];
+  /** the Session Bus wiring (P2-E11-03), in call order */
+  const busAttached: string[] = [];
+  const busReleased: string[] = [];
+  const busUnregistered: string[] = [];
   /** sessions the control channel was told to give up on (#721) */
   const controlForgot = vi.fn();
   /** every control verb the handlers delegated, in order (#721) */
@@ -507,6 +514,28 @@ function harness(
     streamPermissions: opts.streamPermissions,
     streamFeed: opts.streamFeed,
     streamModel: opts.streamModel,
+    /**
+     * The Session Bus host (P2-E11-03).
+     *
+     * Present by DEFAULT rather than only when a test asks for it, and that is
+     * deliberate: this harness has now been bitten three times by a dep that
+     * was absent, which quietly turned its teardown step into a no-op in every
+     * test in this file (`streamPermissions` until #202, `streamModel` until
+     * #746, and the `control` stub above). A bus that is always here means the
+     * `bus.unregisterSession` step is really executed by every teardown these
+     * tests drive, not just the ones that name it.
+     */
+    bus: {
+      attachSession: (id: string) => {
+        busAttached.push(id);
+        return { command: 'electron', args: ['bus.js', '--session', id], env: {} };
+      },
+      releaseSession: (id: string) => busReleased.push(id),
+      unregisterSession: (id: string) => {
+        if (id === opts.throwOnBusUnregister) throw new Error('bus unregister exploded');
+        busUnregistered.push(id);
+      },
+    },
     preferredTransport: opts.preferredTransport,
     /** #539 — the repairs the app announces on screen rather than only logging */
     onHistoryRepair: (r: unknown) => historyRepairs.push(r),
@@ -523,6 +552,10 @@ function harness(
     hookAnswerSurface: (sessionId: string): boolean | undefined =>
       hookAnswerSurface?.(sessionId),
     hookDecisions,
+    /** the Session Bus wiring, in call order (P2-E11-03) */
+    busAttached,
+    busReleased,
+    busUnregistered,
     /** sessions the control channel was told to give up on (#721) */
     controlForgot,
     /** every control verb the handlers delegated, in order (#721) */
@@ -4331,5 +4364,56 @@ describe('pty:snapshot hands find the buffer that actually has the answer (#517)
     expect(sent).toHaveLength(1);
     expect(sent[0].channel).toBe('pty:data:live-1');
     expect(sent[0].payload).toEqual({ epoch: attachment.epoch, d: 'a line the user is watching' });
+  });
+});
+
+// ── the Session Bus wiring (P2-E11-03) ──────────────────────────────────────
+//
+// Review of #763 found that every line connecting the bus to the app could be
+// deleted with a green suite. These are the pins. They are in THIS file rather
+// than beside the unit tests because the thing being asserted is the wiring —
+// that `registerSessionIpc` really reaches the bus — which is exactly what a
+// test against a stand-in cannot say.
+describe('registerSessionIpc — the Session Bus (P2-E11-03)', () => {
+  const dir = process.cwd();
+
+  it('gives the bus endpoint back when the live session is dropped', async () => {
+    // Without this step every closed or restarted session leaves a listening
+    // socket and a live token behind until the app quits. Deleting the
+    // `bus.unregisterSession` teardown step left every suite green before this.
+    const h = harness(undefined, dir, { liveIds: ['live-1'] });
+    await h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 't' });
+    expect(h.busUnregistered).toEqual([]);
+
+    await h.call('sessions:dropLive', 'card-1');
+
+    // The LIVE id, not the card id — they are different id spaces and the bus
+    // is keyed by the live one.
+    expect(h.busUnregistered).toEqual(['live-1']);
+  });
+
+  it('…and when the card is closed', async () => {
+    const h = harness(undefined, dir, { liveIds: ['live-1'] });
+    await h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 't' });
+
+    await h.call('sessions:closeCard', 'card-1');
+
+    expect(h.busUnregistered).toEqual(['live-1']);
+  });
+
+  it('a THROWING bus teardown does not stop the rest of the teardown', async () => {
+    // #219's rule, applied to the new step: every step runs whatever any one of
+    // them does. Without isolation, a bus fault would strand an in-flight
+    // control request and leave the card unclosable.
+    const h = harness(undefined, dir, {
+      liveIds: ['live-1'],
+      throwOnBusUnregister: 'live-1',
+    });
+    await h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 't' });
+
+    await h.call('sessions:dropLive', 'card-1');
+
+    // the step AFTER the bus still ran
+    expect(h.controlForgot).toHaveBeenCalledWith('live-1');
   });
 });

@@ -708,7 +708,8 @@ not a decision to ship a plugin API.
   adapter that declares nothing spawns a PTY and nothing else.
   **The member list is deliberately not restated here: `docs/DESIGN.md` §5.3 is
   the source of truth**, and it carries the as-built record of every change to
-  the object (`trust` added by E15-01, `mcp` deferred to E11, `titles` added by
+  the object (`trust` added by E15-01, `mcp` landed by P2-E11-03 after being
+  deferred to E11, `titles` added by
   P2-E7-06, and the host-resolved transcript root `resume.canResume` now takes,
   #432). This bullet described the pre-E15-01 world for two weeks *because* it
   kept a second copy of that list; a pointer cannot go stale the way a copy

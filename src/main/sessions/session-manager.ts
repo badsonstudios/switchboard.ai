@@ -355,12 +355,29 @@ export class SessionManager {
    * a housekeeping failure that tells the caller nothing about why the session
    * did not start (P6, fail-open).
    */
-  private abandonStart(id: string, releaseSettingsFor?: (sessionId: string) => void): void {
+  private abandonStart(
+    id: string,
+    releaseSettingsFor?: (sessionId: string) => void,
+    releaseMcpFor?: (sessionId: string) => void
+  ): void {
     removeSessionStateDir(this.stateDir, id, this.log);
     try {
       releaseSettingsFor?.(id);
     } catch (err) {
       this.log.warn('could not release session settings after a failed start', {
+        sessionId: id,
+        error: String(err),
+      });
+    }
+    // …and the bus endpoint `mcpConfigFor` opened as a side effect (#763
+    // review). Isolated from the release above rather than sharing its try: both
+    // give back state for an id that will never exist, and a throw in the first
+    // must not be why the second never runs — the same argument `tearDownStep`
+    // makes in sessions/ipc.ts.
+    try {
+      releaseMcpFor?.(id);
+    } catch (err) {
+      this.log.warn('could not release the session bus after a failed start', {
         sessionId: id,
         error: String(err),
       });
@@ -395,6 +412,38 @@ export class SessionManager {
        * Never called once there is a record. Idempotent, and fail-open.
        */
       releaseSettingsFor?: (sessionId: string) => void;
+      /**
+       * MCP config that needs the session id before spawn (P2-E11-03) — the
+       * Session Bus, whose endpoint is named after the id.
+       *
+       * SYNCHRONOUS, like `settingsFor`, and that is a constraint the bus was
+       * built around rather than one it happens to satisfy: `create` is
+       * synchronous end to end and must stay that way, so the bus derives its
+       * endpoint paths instead of waiting to discover them. See
+       * `BusHost.attachSession`.
+       *
+       * ⚠️ IT HAS A SIDE EFFECT: it OPENS the session's bus endpoint. That is
+       * why `releaseMcpFor` exists — see it.
+       */
+      mcpConfigFor?: (sessionId: string) => Record<string, unknown> | undefined;
+      /**
+       * Undo of `mcpConfigFor`, on every path where `create` throws after it
+       * ran. The same pairing `settingsFor`/`releaseSettingsFor` has, and for
+       * the same reason (#470) — found in review of #763, where an earlier
+       * version of this comment claimed no pair was needed.
+       *
+       * IT WAS WRONG, and the leak was real: `mcpConfigFor` opens a LISTENING
+       * endpoint and mints a token as a side effect. Every throw below it —
+       * no CLI on PATH, an unresolvable transport, a failed `spawn` — reaches
+       * `abandonStart`, which knew only about the state directory and the hook
+       * token. No record is created, so `tearDownLive` never runs for that id,
+       * so nothing ever called `unregisterSession`. Each failed start left a
+       * live socket and a live token in memory for the life of the app, plus an
+       * orphaned token file written AFTER `abandonStart` had already deleted
+       * the directory. A user with no `claude` on PATH clicking Start five
+       * times leaked five of them.
+       */
+      releaseMcpFor?: (sessionId: string) => void;
     }
   ): SessionRecord {
     const adapter = this.registry.resolve('provider-adapter', identity.providerId);
@@ -417,6 +466,10 @@ export class SessionManager {
         resumeSessionId: opts?.resumeSessionId,
         autonomy: opts?.autonomy,
         settings: Object.keys(settings).length > 0 ? settings : undefined,
+        // Undefined when there is no bus, no `mcp` capability, or the adapter
+        // declined — and the adapter then passes no `--mcp-config` at all, so
+        // the recipe is byte-identical to the pre-E11 one.
+        mcpConfig: opts?.mcpConfigFor?.(id),
         transport: opts?.transport,
       });
       // Resolved BEFORE the record exists, so an adapter asking for a transport
@@ -429,7 +482,7 @@ export class SessionManager {
       kind = recipe.transport ?? DEFAULT_TRANSPORT;
       transport = this.resolveTransport(kind, identity.providerId);
     } catch (err) {
-      this.abandonStart(id, opts?.releaseSettingsFor);
+      this.abandonStart(id, opts?.releaseSettingsFor, opts?.releaseMcpFor);
       throw err;
     }
     const record: SessionRecord = {
@@ -446,7 +499,7 @@ export class SessionManager {
       proc = transport.spawn({ id, command: recipe.command, args: recipe.args, cwd: identity.folder, env: recipe.env });
     } catch (err) {
       this.log.error('session spawn failed', { sessionId: id, folder: identity.folder, transport: kind, error: String(err) });
-      this.abandonStart(id, opts?.releaseSettingsFor);
+      this.abandonStart(id, opts?.releaseSettingsFor, opts?.releaseMcpFor);
       throw err; // no orphan record: it was never added
     }
     this.sessions.set(id, record);
