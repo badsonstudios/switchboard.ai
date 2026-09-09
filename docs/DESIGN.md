@@ -434,6 +434,40 @@ Now sessions are genuinely aware of each other: the TradingApp agent can *ask* w
 PropaneMon agent changed. This runs on the subscription like everything else — MCP tool
 calls are just tool calls inside a normal Claude Code session.
 
+> **AS BUILT 2026-09-08 (P2-E11-04, #764) — the two READS are shipped;
+> `send_to_session` and the blackboard are not.** `list_sessions` landed with
+> #762/#763. This item added `get_session_output` and `get_session_diff` as thin
+> wrappers over the query core (#761), which owns every cap and every refusal so
+> that the composer's `@session` path gets the same answers rather than growing
+> a second set.
+>
+> **Three contract details worth having written down, because each one was a
+> decision and not a default:**
+>
+> - **A bad session reference REFUSES; an empty session does not.** "No such
+>   session" and "ambiguous — two sessions share that name" come back as
+>   readable `isError` content naming the sessions that do exist, because an
+>   agent told that retries usefully. A session that merely has no transcript
+>   yet, or a folder that is not a repository, answers `ok` and says so in
+>   words. The failure this ordering exists to prevent is an empty success, which
+>   an agent reads as "my sibling did nothing" and believes.
+> - **Every output answer states that long messages are shortened, whether or
+>   not anything was truncated.** `DISPLAY_CAPS` bounds a prose block at 20k
+>   characters and a tool result at 4k *inside* the derivation, and the
+>   `truncated` flag is unset by those cuts — so a 200 KB test failure arrives as
+>   its first 4k and would otherwise read as a complete run.
+> - **`CHANNEL_VERSION` stayed at 1** while `BUS_OPS` gained two words. Adding a
+>   word to the vocabulary is backwards-compatible by construction (`isBusOp`
+>   refuses an unknown op with a reason); the version gate is for a change to the
+>   request ENVELOPE, where there is no graceful degradation to fall back on.
+>
+> `BusHost.answer()` became **async** here — `get_session_diff` shells out to
+> git — and the ordering that costs is owned by `answerAndReply`: the idle
+> deadline is cleared once a whole request is in hand (a slow `git diff` looks
+> exactly like an idle socket, and dropping it would report a busy sibling as an
+> unreachable switchboard), and a socket destroyed during the await is noticed
+> rather than written to.
+
 **Delivery policy (safety):** `send_to_session` never auto-executes in the target by
 default. Incoming messages land in the target's composer as a highlighted "from
 @Session" block; the user hits Enter. Per-session toggle: "auto-accept from siblings"

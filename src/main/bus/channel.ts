@@ -14,8 +14,18 @@
  *
  * It was decorative until review pointed out that nothing read it — a stamp no
  * receiver inspects is a compatibility story, not a compatibility mechanism.
- * The host now refuses an unknown version, so #764 widening the payload is a
- * change both ends must agree on rather than one that half-works.
+ * The host now refuses an unknown version, so widening the payload is a change
+ * both ends must agree on rather than one that half-works.
+ *
+ * ⚠️ **STILL 1 AFTER #764, DELIBERATELY, AND THAT IS THE INTERESTING PART.**
+ * That item added two ops and the note above had been read as "so bump it".
+ * Bumping would have been the wrong move: a v1 child meeting a v2 host fails
+ * EVERY call, including the `list_sessions` that works perfectly — whereas
+ * leaving it alone costs a v1 child nothing and a v2 child one readable
+ * "unknown request" from `isBusOp` if it ever met a v1 host. Adding a word to
+ * the vocabulary is backwards-compatible by construction; this gate is for a
+ * change to the ENVELOPE — renaming `token`, moving `op`, changing the framing
+ * — where there is no graceful degradation to fall back on.
  */
 export const CHANNEL_VERSION = 1;
 
@@ -24,10 +34,10 @@ export const CHANNEL_VERSION = 1;
  *
  * Deliberately the SAME strings as the MCP tool names — an agent-visible tool
  * and its host-side op are one concept, and giving them separate vocabularies
- * would mean a mapping table that can be wrong. #764 and #765 add
- * `get_session_output`, `get_session_diff` and `send_to_session` here.
+ * would mean a mapping table that can be wrong. #765 adds `send_to_session`
+ * here.
  */
-export const BUS_OPS = ['list_sessions'] as const;
+export const BUS_OPS = ['list_sessions', 'get_session_output', 'get_session_diff'] as const;
 
 export type BusOp = (typeof BUS_OPS)[number];
 
@@ -43,3 +53,14 @@ export interface BusRequest {
   /** The MCP tool's own arguments, passed through. Empty for `list_sessions`. */
   args?: Record<string, unknown>;
 }
+
+/**
+ * The argument name every session-addressing tool uses.
+ *
+ * One constant rather than the string typed into a schema, a renderer and a
+ * host handler: those are three independent declarations of one contract, and
+ * a rename in two of the three is a tool that silently resolves `undefined` —
+ * which `SessionQueries.resolve` refuses with "session reference must be a
+ * string", pointing the reader at the model rather than at us.
+ */
+export const SESSION_ARG = 'session';

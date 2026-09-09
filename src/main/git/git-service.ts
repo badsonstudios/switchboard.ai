@@ -126,8 +126,20 @@ export class GitService {
    * `--no-ext-diff` does not. This matters more here than anywhere else in the
    * service, because #764 will point this at a folder another agent controls.
    *
-   * Fail-open like the rest of this service: not a repo, no git, or a failed
-   * command all yield `{ isRepo: false, text: '' }` rather than throwing.
+   * Fail-open like the rest of this service for the question "is this a repo":
+   * not a repo, and no git on PATH, both yield `{ isRepo: false, text: '' }`.
+   *
+   * ⚠️ **A FAILED `git diff` THROWS, and that is the OPPOSITE of the rest of
+   * this service on purpose (#764 review).** This used to be
+   * `text: r.ok ? r.out : ''`, which is the SAME SWALLOW the unborn-HEAD note
+   * above records fixing one line higher, and it is worse here than anywhere
+   * else in the file: the one consumer is `SessionQueries.sessionDiff`, whose
+   * answer is read by a language model, and an empty string there renders as
+   * *"has no uncommitted changes"*. The most likely way to reach it is `git`
+   * exceeding `maxBuffer` — 32 MB — which happens precisely when the sibling
+   * has done the most work, so the tool got less truthful the more there was to
+   * say. `sessionDiff` already refuses on a throw, with a reason, for exactly
+   * this reason; it just never had one to catch.
    */
   async diff(folder: string): Promise<{ isRepo: boolean; text: string }> {
     // One probe, and the same one `status()` uses — `--show-toplevel` was a
@@ -139,7 +151,12 @@ export class GitService {
     const head = await git(folder, ['rev-parse', '--verify', '-q', 'HEAD']);
     const base = head.ok ? 'HEAD' : EMPTY_TREE;
     const r = await git(folder, ['diff', '--no-textconv', '--no-ext-diff', base]);
-    return { isRepo: true, text: r.ok ? r.out : '' };
+    if (!r.ok) {
+      throw new Error(
+        'git could not produce the diff (it may be larger than we can read in one go)'
+      );
+    }
+    return { isRepo: true, text: r.out };
   }
 
   /** HEAD vs working-tree contents for a Monaco diff (E5-02). */

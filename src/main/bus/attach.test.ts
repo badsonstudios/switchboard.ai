@@ -13,9 +13,10 @@ import net from 'net';
 import os from 'os';
 import path from 'path';
 import { BusHost } from './host-channel';
+import { stubQueries } from './fixtures/queries';
 import { busEndpointFor, busPipePath, busTokenPath, BUS_TOKEN_FILE } from './bus-paths';
 import type { Logger } from '../log/logger';
-import type { QueryResult, SessionSummary } from '../sessions/queries';
+import type { SessionSummary } from '../sessions/queries';
 
 const SESSIONS: SessionSummary[] = [
   { id: 'sb-a', name: 'Alpha', folder: '/p/alpha', providerId: 'claude-code', status: 'working' },
@@ -56,7 +57,7 @@ beforeEach(() => {
   host = new BusHost({
     stateDir,
     log,
-    queries: { listSessions: (): QueryResult<SessionSummary[]> => ({ ok: true, value: SESSIONS }) },
+    queries: stubQueries({ listSessions: () => ({ ok: true, value: SESSIONS }) }),
     // Under vitest only the TypeScript exists, so the real resolver correctly
     // finds no compiled `bus-server.js` and throws. Without this seam every
     // test below would silently exercise the "no server" branch while reading
@@ -274,7 +275,7 @@ describe('BusHost.attachSession (P2-E11-03)', () => {
     const noServer = new BusHost({
       stateDir,
       log,
-      queries: { listSessions: (): QueryResult<SessionSummary[]> => ({ ok: true, value: [] }) },
+      queries: stubQueries({ listSessions: () => ({ ok: true, value: [] }) }),
       // Resolve for real: under vitest nothing compiled exists, so this is the
       // genuine missing-server condition rather than a simulated one.
       busServerPath: undefined,

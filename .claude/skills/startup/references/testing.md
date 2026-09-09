@@ -1,10 +1,16 @@
 # Testing — switchboard.ai
 
-**Current phase (Spike 01):** no test suite. Spike items are findings-driven —
-each item's "done when" is an observable behavior plus a written findings note.
-Verify by actually driving the harness (spawn a real `claude` session, trigger
-a real hook, watch a real transcript) and record what happened, including
-numbers (latency, CPU, memory) where the item asks for them.
+**Corrected 2026-09-08:** this file opened with *"Current phase (Spike 01): no
+test suite"* until then, immediately above two thousand lines describing three
+test layers, a CI matrix and five check scripts. Spike 01 closed at 8/8 and
+Phase 1 is long done; the suite is ~7,200 unit tests, Playwright e2e, and the
+`check:*` family. The paragraph below is what survived of the original.
+
+**Spike items are findings-driven** — a `spike/probes/<issue#>/` item's "done
+when" is an observable behavior plus a written findings note, verified by
+driving the real thing (spawn a real `claude` session, trigger a real hook,
+watch a real transcript) and recording what happened, numbers included. That is
+still how a new probe works; it is no longer how the project works.
 
 **The three test layers (run all before calling an item done):**
 

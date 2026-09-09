@@ -223,7 +223,16 @@ async function main(): Promise<void> {
   const host = new BusHost({
     stateDir,
     log,
-    queries: { listSessions: (): QueryResult<SessionSummary[]> => ({ ok: true, value: SESSIONS }) },
+    queries: {
+      listSessions: (): QueryResult<SessionSummary[]> => ({ ok: true, value: SESSIONS }),
+      // This script never calls a tool — it only proves the CLI LISTS our
+      // server beside the user's own (`mcp_status` is free; a tool call needs a
+      // model turn). The two read tools exist here to satisfy `BusQueries` and
+      // refuse if anything ever does reach them, which would be a bug in this
+      // script rather than a condition to answer.
+      sessionOutput: () => ({ ok: false, reason: 'mcp-attach-check answers no reads' }),
+      sessionDiff: () => Promise.resolve({ ok: false, reason: 'mcp-attach-check answers no reads' }),
+    },
   });
 
   try {
