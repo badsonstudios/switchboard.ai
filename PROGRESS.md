@@ -3,6 +3,74 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 📌 STANDING — 2026-09-08: **the approval gates are GONE. One checkpoint,
+> at the end, and it does not block the merge.**
+>
+> **Owner decision, 2026-09-08.** `/next-item`'s two blocking gates — plan
+> approval and commit approval — are removed. The skill runs start to finish:
+> plan → implement → test → `/review` → rebase → PR → **merge on green CI** →
+> update `PROGRESS.md` → **report**.
+>
+> **He was asked directly whether the remaining checkpoint should block the
+> merge, and chose that it should NOT:** *"merge on green CI; the summary is a
+> report."* So the report lands after the work does, and his lever is "change
+> that" / "revert that" — never "yes, you may proceed". This keeps the
+> 2026-09-01 correction intact rather than quietly undoing it.
+>
+> **Do not re-add a gate anywhere, at any level.** The obvious failure mode is
+> re-imposing it one layer down, so `/commit-push-pr`, `/commit` and `/pr` were
+> all changed in the same pass and none of them asks any more. Blockers are
+> still allowed and still stop the run — a decision only Dan can make, a
+> `[user]` item, red CI. A blocker is not a gate.
+>
+> **What replaces Gate 1's value:** the plan is posted as an issue comment and
+> the run continues. Judgment calls that used to wait for approval are now made,
+> and every one of them is named in the final report with the reasoning, so
+> disagreeing costs Dan one sentence.
+>
+> Files changed: `.claude/skills/{next-item,commit-push-pr,autopilot,orchestrate}/SKILL.md`,
+> `.claude/commands/{commit,pr}.md`, `.claude/CLAUDE.md`, `docs/plans/00-process.md`.
+> `/orchestrate` deliberately still queues user-facing PRs for Dan — N parallel
+> unattended workers is a different risk from one reported item, and that
+> asymmetry is written down in the file so it does not later read as drift.
+
+> # 🔨 IN PROGRESS — started 2026-09-08: **#763** — P2-E11-03, the `mcp`
+> capability + attach at spawn
+>
+> Plan written and posted to the issue; **no approval gate any more** (see the
+> STANDING block above — the decision changed mid-item). Branch not yet cut.
+>
+> **Judgment call made rather than asked** (it was the open question at the old
+> Gate 1): our bus server lands at `scope: "dynamic"`, so it will appear in the
+> MCP manager with no Remove button. **Decision: SHOW it, labelled as
+> switchboard's own.** Because fail-open creates the need for a diagnostic — if
+> the bus fails to open, the manager is the one place "switchboard: failed" can
+> be seen — and hiding an MCP server the app itself added is the wrong instinct
+> for a local-first app. Cost: one unremovable row. Reversible in one filter if
+> Dan disagrees.
+>
+> **The structural constraint the plan had to solve, recorded here because a
+> fresh session will otherwise re-derive it:** `BusHost.registerSession` is
+> ASYNC and `sessions:create` is SYNCHRONOUS END TO END — deliberately, and
+> `ipc.ts:267` documents why (no `await` between `bindLive` and
+> `persist.upsert`, or the renderer pulls a live binding whose card is not
+> written yet). Making the handler async also breaks "one live session per
+> card": two lazy-spawn calls could both pass the reap. **So the bus is NOT
+> awaited on the spawn path.** The endpoint's two paths are pure functions of
+> `(stateDir, sessionId)`, so the config file is written synchronously and the
+> registration is kicked off in the same tick; `pipe-client.ts` reads the token
+> and connects at FIRST TOOL CALL, seconds later, not at child spawn.
+>
+> **What is being wired that #762 left dangling:** `BusHost` is not in
+> `main/index.ts` at all, and neither is `SessionQueries` (#761) — this item
+> constructs both. `list()` answers from `manager.list()` (live sessions only:
+> `identity.title` is the name, and `callerId` is a live id) rather than from
+> cards.
+>
+> **Fail-open is this item's to own:** `registerSession` REJECTS on failure by
+> #762's design. Caught here; the session starts anyway (P6) and the agent gets
+> a readable tool error instead of a hang.
+
 > # ✅ MERGED — 2026-09-08: **#762** — P2-E11-02, bus server + host channel
 >
 > **PR #770, squashed to `ec48b72`, all four CI jobs green.** Issue closed.
@@ -129,12 +197,17 @@
 > caused by #761. It is #714's command-injection regression test, so a test
 > people learn to re-run rather than read is expensive there.
 
-> # 📌 STANDING — 2026-09-07: **both gates stay on for every remaining E11 item**
+> # ❌ SUPERSEDED 2026-09-08 — 2026-09-07: **both gates stay on for every
+> remaining E11 item**
 >
-> **Owner decision: BOTH gates stay on for every remaining E11 item**
-> (#761–#766) — plan approval and commit approval, twelve checkpoints. Asked
-> because he wants the whole queue merged; answered deliberately. Do not
-> shortcut to auto-merge, and do not re-ask.
+> **This decision is DEAD. It lasted one day. See the STANDING block at the top
+> of this file.** Kept rather than deleted so a future session that finds the
+> reasoning quoted somewhere knows it was reversed, not forgotten.
+>
+> ~~Owner decision: BOTH gates stay on for every remaining E11 item (#761–#766)
+> — plan approval and commit approval, twelve checkpoints. Asked because he
+> wants the whole queue merged; answered deliberately. Do not shortcut to
+> auto-merge, and do not re-ask.~~
 >
 
 > # ✅ MERGED — 2026-09-07: **#760** — P2-E11-00, bus feasibility probe

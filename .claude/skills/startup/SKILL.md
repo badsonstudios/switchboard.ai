@@ -13,8 +13,10 @@ Read, in order:
 1. `.claude/CLAUDE.md` — high-level project context and index (required).
 2. **`PROGRESS.md`** (repo root) — the live state: current/in-progress item,
    next up, blockers, recent log. **This is how we resume across sessions.**
-3. The current milestone's plan file (`docs/plans/01-spike-foundations.md`
-   while Spike 01 is active) — skim the items.
+3. The current milestone's plan file — **`docs/plans/04-phase-2-switchboard.md`
+   while Phase 2 is active** — skim the epic the next item belongs to. (This
+   said `01-spike-foundations.md` until 2026-09-08; Spike 01 closed at 8/8 long
+   before that.)
 4. The relevant files in `.claude/skills/startup/references/` —
    `project-info.md`, `tech-stack.md`, `architecture.md`, `git-workflow.md`,
    `code-style.md`, `testing.md`, `security.md`, `api-keys-config.md`.
@@ -35,7 +37,10 @@ Read, in order:
 git status --short
 git branch --show-current
 git log --oneline -5
-gh issue list --milestone "Spike 01 - Foundations" --state open 2>/dev/null | head -5
+# The milestone name must MATCH — a wrong one returns empty and looks like
+# "no open issues" rather than an error. Current: "Phase 2 - The Switchboard".
+# `gh api .../milestones` lists them if this ever comes back empty.
+gh issue list --milestone "Phase 2 - The Switchboard" --state open 2>/dev/null | head -5
 node --version 2>/dev/null || echo "Node not found"
 claude --version 2>/dev/null || echo "claude CLI not found (required for spike work)"
 ```

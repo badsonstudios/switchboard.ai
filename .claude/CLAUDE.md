@@ -16,8 +16,9 @@ replacing the many-VS-Code-windows workflow with a single orchestrator:
 attention routing, inter-session communication, per-session git/diff panes,
 approvals, and usage tracking.
 
-**Status:** design complete; implementation starting with **Spike 01**
-(de-risking: PTY hosting, hook round-trips, transcript tailing).
+**Status:** Spike 01 and Phase 1 complete; **Phase 2 (The Switchboard) in
+flight** — currently E11, the Session Bus. Shipping as v0.8.x. `PROGRESS.md` is
+the authority on where things actually stand.
 
 **Design docs (the source of truth for what to build):**
 
@@ -28,8 +29,10 @@ approvals, and usage tracking.
 | `docs/extensibility.md` | Internal contributor guide — contribution points, capability manifests, the bootstrap rule (§5.23 seams; NOT a public plugin API) |
 | `docs/reference-implementations.md` | **When a CLI contract is unclear, read this first.** Two sources on this machine: the unpacked Claude Code VS Code extension (a known-correct consumer — the embedded Agent SDK, the stream-json protocol, the full `settings.json` schema) and the PATH `claude` binary itself, greppable, embedding its zod schemas and message loop (§2.1 — shows what the CLI *does*, not just what a client sends). Navigation recipes and the rules for using both |
 | `docs/plans/00-process.md` | How we work: phases → work items → GitHub issues → PRs |
-| `docs/plans/01-spike-foundations.md` | Current work: spike spec (S-01…S-08) |
-| `docs/plans/02-phase-1-mvp.md` | Phase 1 epics & work items |
+| `docs/plans/04-phase-2-switchboard.md` | **Current work** — Phase 2 epics & work items |
+| `docs/plans/01-spike-foundations.md` | Spike 01 spec (S-01…S-08) — complete |
+| `docs/plans/02-phase-1-mvp.md` | Phase 1 epics & work items — complete |
+| `docs/plans/dogfood-testing.md` | What Dan has and hasn't hand-tested (standing rule below) |
 | `design_handoff_control_room/` | Visual design (mockup export + theme screenshots) |
 | `docs/manual/` | **User manual** (Markdown) — written as features ship; source for the future HTML manual |
 | `PROGRESS.md` (root) | **Live state** — current/next item, log. Always current |
@@ -75,15 +78,31 @@ which is exactly why S-10 probe A had to be run instead of assumed.
 
 Tracker: **GitHub issues** at `badsonstudios/switchboard.ai`, filed per-milestone
 just-in-time from the plan files (see `docs/plans/00-process.md`). Milestones
-mirror phases; the current one is **Spike 01 - Foundations** (issues #1–#8).
+mirror phases; the current one is **Phase 2 - The Switchboard**
+(`docs/plans/04-phase-2-switchboard.md`). Spike 01 closed at 8/8; Phase 1 is
+done. **Check `PROGRESS.md`, not this line, for where work actually is** — this
+one went stale for months and nobody noticed until a `gh issue list` against the
+dead milestone silently returned nothing.
 
 1. Dan says **"do the next item"** (or `/next-item`, or `/next-item S-03` /
    `/next-item 3`).
-2. The skill reads `PROGRESS.md` → picks the issue → plans → **Gate 1: plan
-   approval** → implements → tests green → `/review` → iterates → **Gate 2:
-   commit approval** → `/commit-push-pr` (branch + PR referencing the issue) →
-   updates `PROGRESS.md`. Dan reviews and merges the PR — that's the oversight
-   point.
+2. The skill reads `PROGRESS.md` → picks the issue → plans (and posts the plan
+   to the issue) → implements → tests green → `/review` → iterates → rebases →
+   `/commit-push-pr` (branch + PR referencing the issue) → **merges on green
+   CI** → updates `PROGRESS.md` → **reports**. It does not stop in the middle.
+
+   **ONE CHECKPOINT, AND IT IS AT THE END (changed 2026-09-08).** The two
+   blocking gates — plan approval, commit approval — are gone. Dan removed them
+   and was asked directly whether the remaining checkpoint should block the
+   merge; he chose **merge on green CI, the summary is a report**. So the
+   oversight point is the plain-English report *after* the work has landed, and
+   his lever is "change that" or "revert that", not "yes you may proceed".
+
+   This is deliberate and it is not an invitation to re-add a gate one level
+   down — `/commit-push-pr`, `/commit` and `/pr` were all changed at the same
+   time for exactly that reason. **Blockers still stop the run**: a decision
+   only Dan can make, a `[user]` item, red CI. Those are blockers, not gates —
+   say so plainly and record them in `PROGRESS.md`.
 3. `/pm` manages planning: keeps `docs/plans/*` healthy and files the next
    milestone's issues when a phase nears exit. It does NOT bulk-file future
    phases.
@@ -165,8 +184,8 @@ All tokens and keys live in **`.claude/.env`** (none are required yet).
 - **Branches:** `main` is always-working; one `feature/s-<nn>-<slug>` (spike) or
   `feature/<issue#>-<slug>` branch per work item; PR references the issue
   (`Closes #<n>`); **Claude squash-merges once CI is green** — the gate is green
-  CI, not a human click (corrected 2026-09-01). Reviews are deliberately NOT
-  required on `main`; red CI does not merge. Commit/push only at Gate 2.
+  CI, not a human click (corrected 2026-09-01, re-confirmed 2026-09-08).
+  Reviews are deliberately NOT required on `main`; red CI does not merge.
 - Details: `skills/startup/references/git-workflow.md`.
 
 ## Working / Temporary Files
@@ -185,17 +204,18 @@ Run skills with `/<name>`; agents are delegated to automatically.
 |-------|---------|
 | `/startup` | Load context + read PROGRESS.md + verify environment (every session) |
 | `/pm` | Planning manager — keep `docs/plans/*` healthy, file next milestone's issues just-in-time, triage |
-| `/next-item` | **Orchestrator** — pick up the next issue in the current milestone → plan → **approve** → implement → test → review → **approve** → PR → update PROGRESS.md |
-| `/autopilot` | **Unattended orchestrator** — run a whole milestone issue-by-issue with the gates replaced by self-checks; single `auto/<milestone>` branch + draft PR, never merges to `main` |
+| `/next-item` | **Orchestrator** — pick up the next issue → plan → implement → test → review → PR → merge on green CI → report. No approval gates; the one checkpoint is the report at the end |
+| `/autopilot` | **Unattended milestone runner** — many consecutive items on ONE `auto/<milestone>` branch + one draft PR, never merging to `main`. Since 2026-09-08 its old distinction ("`/next-item` without the gates") is gone; what is left is batching and the never-merge posture. Reach for `/next-item` unless you specifically want the whole milestone on one reviewable branch |
 | `/orchestrate` | **Parallel orchestrator (Fable)** — analyze the queue, dispatch parallel Opus workers in worktrees, sole writer of PROGRESS.md, merge internal PRs on green CI, queue user-facing PRs for Dan. Supersedes /next-item + /autopilot while a run is active |
 | `/check-code` | Code-quality analysis of changed files |
 | `/review` | Deeper architecture / correctness review (code-reviewer agent) |
-| `/commit-push-pr` | Commit, push, open a PR (asks for approval) |
+| `/commit-push-pr` | Commit, push, open a PR, merge on green CI (does not ask) |
 | `/explain` | Explain code or a concept (read-only) |
 | `/deep-research` | Multi-source web research with citations |
 
-**Commands** (`.claude/commands/`): `/commit` (stage + commit, asks first),
-`/pr` (push + open a PR via the `new-pr` script).
+**Commands** (`.claude/commands/`): `/commit` (stage + commit), `/pr` (push +
+open a PR via the `new-pr` script). Neither asks first — invoking them is the
+approval.
 
 | Agent | Purpose |
 |-------|---------|
@@ -231,14 +251,18 @@ Configured in `.claude/settings.json`:
 
 ## Project-Specific Notes
 
-- **No build system yet.** Spike 01 creates a minimal harness under `spike/`;
-  the real scaffold arrives in Phase 1 (P1-E1-01: electron-vite + TS + React).
-  Until then, build/test commands are per-item.
-- **Planned stack** (DESIGN.md §6): Electron + TypeScript + React + xterm.js +
-  node-pty + Monaco + Dockview; vitest for unit tests (Phase 1 decision).
-- **The spike is findings-driven:** every spike item ends in a findings note,
-  and S-08 writes verdicts back into DESIGN.md's open questions. Don't polish
-  spike code — prove mechanisms.
+- **Build/test:** `npm run build`, `npm test` (vitest), `npm run e2e`
+  (Playwright), plus the `check:*` family — local harnesses that drive the real
+  CLI or the real compiled binaries. Some are CI jobs, some are deliberately
+  local-only (#182); `src/main/check-scripts.test.ts` enforces that every one is
+  accounted for either way. *(This said "no build system yet" until 2026-09-08 —
+  the scaffold landed in P1-E1-01 and Phase 1 is long done.)*
+- **Stack** (DESIGN.md §6): Electron + TypeScript + React + xterm.js + node-pty
+  + Monaco + Dockview; vitest for unit tests.
+- **The spike was findings-driven** and is complete — `spike/` is kept as the
+  record, not as live code. New probes still land under `spike/probes/<issue#>/`
+  with their findings note in `spike/findings/`, which is how E11's bus work
+  measured the CLI contracts instead of guessing them.
 - **Dogfooding is a goal:** switchboard.ai will eventually host the Claude Code
   sessions that build switchboard.ai. Design decisions that help that day
   (clean logging, stable hooks usage) are worth small extra effort.

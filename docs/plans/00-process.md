@@ -72,14 +72,18 @@ Every work item ends by telling the owner, **before** the technical summary and
    it core behavior → edge cases → nearby regression risk. 3–7 items; if it
    won't fit, the work item was too big.
 
-- **Where:** `/next-item` Step 9, before Gate 2. The same two sections go into
-  the **PR body** (test list as GitHub checkboxes, so it can be ticked off
-  during review), and into `/autopilot`'s draft-PR description per item — where
-  it matters most, since nobody watched the run.
+- **Where:** `/next-item` Step 9. The same two sections go into the **PR body**
+  (test list as GitHub checkboxes, so it can be ticked off afterwards), into the
+  **Step 11 report**, and into `/autopilot`'s draft-PR description per item —
+  where it matters most, since nobody watched the run.
 - **Why it's separate from `docs/manual/`:** the manual is standing reference
   written for a stranger who has never seen the app. The hand-off is "here is
-  what just landed", written for the person deciding whether to merge it. One
-  is a product; the other is a delivery note.
+  what just landed", written for the person who has to judge it. One is a
+  product; the other is a delivery note.
+- **It carries more weight since 2026-09-08.** With the approval gates gone, the
+  work is merged by the time Dan reads this — so the hand-off is no longer one
+  input into a merge decision, it is the *only* description of the change he is
+  offered. Vague here means the only way to notice a problem is reading the diff.
 - **Purely internal items** get one or two sentences for part 1, and part 2
   says "nothing to click — the gate is the test suite."
 
@@ -100,7 +104,7 @@ is fresh, not reconstructed from a diff months later.
 - **Good enough beats perfect.** A rough draft or a `TODO:` placeholder is an
   acceptable page. No page at all is not.
 - **Purely internal items** (refactors, CI, test harnesses) write nothing —
-  say "no user-facing change" in the Gate 2 summary and move on.
+  say "no user-facing change" in the close-out report and move on.
 
 These pages are the **source for the shipped HTML manual** — the compile step
 is a planned work item (`03-later-phases.md` → "User manual build"). Writing

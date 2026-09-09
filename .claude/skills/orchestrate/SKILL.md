@@ -32,6 +32,13 @@ test.
 ## Hard boundaries (always)
 
 - **Never merge a user-facing PR.** Those queue for Dan (see Merge policy).
+
+  **Deliberately stricter than `/next-item`, which merges everything on green
+  CI (2026-09-08).** Not drift — the difference is that this skill runs *N
+  workers in parallel, unattended*, so nobody is reading a report between
+  landings. `/next-item` lands one reviewed item at a time in front of Dan;
+  this could land six user-facing changes into `main` before he sees any of
+  them. Keep the queue.
 - **Never commit red.** A worker pushes only after its local gate is green.
 - **Never touch `.claude/.env`** or put secrets anywhere git-tracked.
 - **Never re-run the S-09/S-10 probes**; S-11 probes 2–6 spend real
@@ -45,8 +52,8 @@ test.
    the open issues reference.
 2. **Check the main checkout for in-flight work** (`git status`,
    `git branch --show-current`). If a feature branch has uncommitted or
-   unmerged work (e.g. an item awaiting commit approval from a previous
-   session), **ask Dan how to resolve it before dispatching anything** —
+   unmerged work (e.g. an item a previous session left half-landed),
+   **ask Dan how to resolve it before dispatching anything** —
    fold it in, commit it, or park it. Never clobber it.
 3. **Worktree pool.** Maintain up to 3 long-lived worktrees as siblings of
    the repo: `C:\Projects\sb-wt-1`, `sb-wt-2`, `sb-wt-3`.
@@ -101,11 +108,12 @@ The prompt must contain, concretely:
   from the plan file (workers should not re-derive scope).
 - Its worktree path and branch name (`feature/<issue#>-<slug>`).
 - **The worker contract:**
-  1. Work ONLY in your worktree. Follow `/next-item` Steps 2–9 with
-     `/autopilot`'s substitutions: self-check the plan against the
-     done-when + DESIGN.md instead of Gate 1; if the item is ambiguous or
-     contradicts the design docs, STOP and report the specific question —
-     do not guess.
+  1. Work ONLY in your worktree. Follow `/next-item` Steps 2–9. Those steps
+     no longer stop for approval (2026-09-08), but a worker still self-checks
+     the plan against the done-when + DESIGN.md before implementing; if the
+     item is ambiguous or contradicts the design docs, STOP and report the
+     specific question — do not guess. **A worker never merges**: the
+     orchestrator owns that call.
   2. **Never write `PROGRESS.md`** (any copy, any worktree). Plan files,
      DESIGN.md, and `docs/manual/` may be edited when the item requires
      it — merges are serialized so conflicts surface at rebase.

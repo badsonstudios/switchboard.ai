@@ -1,6 +1,6 @@
 ---
 name: autopilot
-description: Autonomous milestone runner — drive consecutive GitHub-issue work items end-to-end WITHOUT per-item approval gates. Plans, implements, tests, reviews, and commits each item to a single milestone branch with a draft PR that Dan reviews asynchronously. Stops only for [user] items, genuine blockers, or the milestone boundary. Use /next-item instead when Dan is at the keyboard and wants the gates.
+description: Unattended milestone runner — drive many consecutive GitHub-issue work items onto ONE milestone branch behind ONE draft PR, never merging to main. Plans, implements, tests, reviews and commits each item. Stops only for [user] items, genuine blockers, or the milestone boundary. Use /next-item for a single item that should land on main itself; use this when you want a whole milestone batched onto one reviewable branch.
 user-invocable: true
 ---
 
@@ -11,11 +11,30 @@ Run a whole milestone (or item range) unattended.
 milestone in `PROGRESS.md`, from the next open issue to the end of that
 milestone**.
 
+## What this is for, now that `/next-item` has no gates either
+
+**Read this before reaching for `/autopilot` (rewritten 2026-09-08).** This
+skill used to exist for one reason: `/next-item` had two blocking approval gates
+and sometimes Dan wasn't at the keyboard to answer them. Those gates are gone —
+`/next-item` now runs start to finish and merges on green CI — so "runs without
+interference" is no longer a distinction.
+
+What is left, and the only reason to choose this over `/next-item`:
+
+- **Batching.** Many items in one run, one branch, one PR to read — instead of N
+  separate PRs, each merged as it finished.
+- **Nothing lands on `main` until Dan says so.** `/next-item` merges itself;
+  this deliberately does not. That makes `/autopilot` the *more* cautious
+  option now, which is the opposite of what it was built for.
+
+So: **`/next-item` is the default.** Pick `/autopilot` when a milestone's items
+are tightly coupled and reviewing them together is genuinely better than
+reviewing them one at a time — not merely because Dan is away.
+
 ## Authority & boundaries
 
-Dan invoked `/autopilot` **specifically to run without interference** — so,
-*within this skill only*, the two `/next-item` approval gates are replaced by
-the self-checks below. Everything else about the work loop is unchanged.
+The per-item self-checks below stand in for the judgment a human would apply
+mid-run. Everything else about the work loop is `/next-item`'s.
 
 Hard boundaries that still apply, always:
 
@@ -48,7 +67,7 @@ Hard boundaries that still apply, always:
 
 Follow `/next-item` Steps 1–11 with these substitutions:
 
-- **Gate 1 (plan approval) → self-check.** Validate the plan against the
+- **Step 3 (record the plan) → self-check as well.** Validate the plan against the
   issue's done-when criteria, the plan-file spec, and the cited DESIGN.md
   sections. Proceed when they agree. Do **not** proceed when the item is
   ambiguous, under-specified, or contradicts the design docs — and don't
@@ -57,7 +76,7 @@ Follow `/next-item` Steps 1–11 with these substitutions:
   depend on it, in which case stop the run.
 - **`[user]` items:** skip, log, continue — unless they gate the remaining
   items, in which case stop the run.
-- **Gate 2 (commit approval) → commit to the milestone branch.** Message
+- **Step 10 (ship it) → commit to the milestone branch, do NOT merge.** Message
   `<item-id>: <title>` (body references the issue: `Refs #<n>` — issues close
   when Dan merges, via the PR description's `Closes` lines). Push, update the
   draft PR description, update `PROGRESS.md` (done + one-line outcome). No
@@ -101,6 +120,7 @@ When the run ends (complete or stopped), report:
 
 - Subagents (Plan, code-reviewer, debugger) inherit the session model — running
   this under Fable means Fable orchestrates and Fable reviews. That's intended.
-- This skill is the unattended sibling of `/next-item`: same spec, same
-  quality bar, different approval model. If Dan is present and wants gates,
-  use `/next-item`.
+- This skill is the batching sibling of `/next-item`: same spec, same quality
+  bar. The difference is scope and landing — many items on one branch that
+  **Dan** merges, versus one item that merges itself on green CI. Neither has
+  approval gates any more (2026-09-08). `/next-item` is the default.

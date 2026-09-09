@@ -1,6 +1,6 @@
 ---
 name: commit-push-pr
-description: Commit the current changes, push to GitHub, and open a pull request. Always asks for explicit approval before committing or pushing. Verifies PROGRESS.md is updated and the PR references its issue when the work belongs to a work item.
+description: Commit the current changes, push to GitHub, open a pull request, and merge it on green CI. Does not ask for approval — it reports what it did. Verifies PROGRESS.md is updated and the PR references its issue when the work belongs to a work item.
 user-invocable: true
 ---
 
@@ -33,12 +33,26 @@ already cover so Dan doesn't repeat machine work. `/next-item` Step 9 produces
 both — reuse them verbatim. Arriving here without them (a direct `/commit-push-pr`
 on untracked work) means writing them now, to the same rules.
 
-## Step 2: Get explicit approval
+## Step 2: Don't ask — check
 
-**CRITICAL: Always ask the user for approval before committing or pushing.**
-Present the plan (files, branch, commit message, PR base) and wait for an
-explicit "yes" — unless the user already told you in this session to
-commit/push without asking again.
+**This step used to be "get explicit approval". It is not any more (2026-09-08).**
+Invoking this skill *is* the authorization: Dan either typed `/commit-push-pr`
+or `/next-item` reached Step 10, and both mean "ship it". Asking again re-imposes
+the commit gate he removed, one level down, which is exactly how a removed gate
+comes back.
+
+So state what you are about to do — files, branch, commit message, PR base — in
+one short block, and then do it. No question mark.
+
+**What replaces the approval is the checklist above and these three refusals**,
+which are not gates and do not soften:
+
+- **Secrets never go in.** Verify nothing sensitive is staged (a PreToolUse hook
+  also blocks `.env`, but do not lean on it).
+- **Red CI does not merge.** Fix it or report the blocker; `--admin` is never
+  the way past a check that is genuinely failing.
+- **Nothing outside the work.** If the diff contains changes you cannot explain
+  as part of this item, stop and say so rather than sweeping them in.
 
 ## Step 3: Branch (if needed)
 
@@ -54,8 +68,8 @@ If on `main`, create a branch first: `git checkout -b feature/<item-id-slug>`
 
 ## Step 5: Push and open the PR
 
-After approval, prefer the helper script (branches if needed, commits staged
-changes, pushes, opens the PR):
+Prefer the helper script (branches if needed, commits staged changes, pushes,
+opens the PR):
 
 ```bash
 # bash
@@ -82,6 +96,11 @@ squash-merges — never self-merge" until 2026-09-01, which was stale and left
 finished work parked waiting on a human who does not merge. Reviews are
 deliberately not required on `main`; that is a decision, not an oversight.
 **Red CI does not merge**, and `--admin` is never the way past a failing check.
+
+Re-confirmed 2026-09-08: when Dan removed `/next-item`'s two approval gates he
+was asked directly whether the remaining checkpoint should block the merge, and
+chose **merge on green CI, summary is a report**. So the report comes *after*
+the merge, and it does not ask permission for something already done.
 
 ## Notes
 
