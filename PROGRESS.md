@@ -34,10 +34,25 @@
 > unattended workers is a different risk from one reported item, and that
 > asymmetry is written down in the file so it does not later read as drift.
 
-> # 🔧 IN PROGRESS — 2026-09-08: **#764** — P2-E11-04, the bus read tools
+> # ✅ MERGED — 2026-09-08: **#764** — P2-E11-04, the bus read tools
 >
+> **PR #773, squashed to `b6a8f59`, all four CI jobs green.** Issue closed.
 > `get_session_output` and `get_session_diff` as thin wrappers over #761's query
-> core. Branch `feature/764-bus-read-tools`. Plan posted to the issue.
+> core. ⚠️ **NOT RELEASED** — v0.8.8 was the last cut, and `0.8.9 — unreleased`
+> is open in CHANGELOG.md. `gh release list` is the authority on what Dan has.
+>
+> **Next up: #765** (P2-E11-05, `send_to_session` + delivery policy — the
+> safety-critical one; §5.4's rule is that it NEVER auto-executes in the
+> target). It was blocked on this item and is now unblocked. **#766 is also open
+> and independently unblocked** (it needed only #761) and is E13's prerequisite,
+> so it is the alternative if a shorter, non-safety-critical slot is wanted.
+> **#772** is new, filed out of this item's review, and wants doing inside E11
+> before #765 adds more bus traffic.
+>
+> ⚠️ **#765 MUST CHECK `status`, NOT MEMBERSHIP.** `list()` includes exited
+> sessions (#187 keeps the record until the reap). A row here can be READ from
+> and cannot necessarily be delivered to. #763 wrote this down; it matters for
+> the first time in #765.
 >
 > **The shape:** two ops in `channel.ts`, two `ToolDescriptor`s in
 > `bus-tools.ts` with their renderers, `BusHost.answer()` turns **async** (the
