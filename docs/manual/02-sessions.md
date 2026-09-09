@@ -254,6 +254,53 @@ how many pinned ones it's keeping. Pinned sessions are left running.
 There's deliberately no shortcut for it: closing everything is not something
 you should be able to do by mistyping a chord.
 
+## Sessions can see each other
+
+Every session you open can find out about the others. You don't switch anything
+on and there's nothing to configure — ask a session about another one in plain
+English and it can go and look.
+
+There are three things a session can find out:
+
+- **Which sessions are open** — their names, the folder each one is working in,
+  and whether it's busy, waiting or finished.
+- **What another session has been doing** — the recent part of its
+  conversation, including the prose it wrote and the tools it ran.
+- **What another session has changed** — the edits it has made in its own
+  project folder that aren't committed yet, as a diff.
+
+So you can say things like *"what has Homebrew been working on?"* or *"look at
+the changes PropaneMon made and tell me if they'd break my build"*, and the
+session goes and reads it rather than making you copy anything across.
+
+Name the other session the way it's named on its tab. If two sessions happen to
+share a name — two checkouts of the same repo is the usual way that happens —
+you'll be told they're ambiguous and shown both, rather than being given a
+confident answer about the wrong one.
+
+**What it deliberately can't do:**
+
+- **It can only read.** Nothing here lets one session type into another, change
+  its files, or make it do anything. Telling a session to do something on your
+  behalf is a separate feature and it isn't built yet.
+- **It reads recent work, not everything.** Conversations get very long, and
+  handing one session another's entire history would fill up its head and leave
+  no room to think. So you get the recent end, and the session is told plainly
+  that there was more.
+- **Very long individual messages are shortened**, and a huge diff is cut off.
+  A session is always warned that shortening can happen, so it doesn't mistake
+  a clipped tool output for the whole story — though for that particular kind of
+  clipping it can't be told exactly where. When *earlier activity* is dropped,
+  or a diff is cut, it is told outright.
+- **Brand-new files that have never been added to git don't show up** in a diff
+  — that's how git itself works, and the session is reminded of it.
+
+If a session says it can't reach switchboard, look at the **switchboard** row
+in that session's `/mcp` panel — see
+[MCP servers](17-mcp-servers.md#the-switchboard-server). Everything else in the
+session keeps working normally either way; this is an extra, and it never gets
+in the way of the work.
+
 ## Good to know
 
 - Quitting the app while sessions are mid-task pops up a warning listing them,

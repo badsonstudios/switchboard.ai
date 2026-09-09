@@ -32,13 +32,20 @@ import net from 'net';
 import path from 'path';
 import { busEndpointFor, busTokenPath } from './bus-paths';
 import { busLaunch, type BusLaunch } from './launch';
-import { CHANNEL_VERSION, isBusOp } from './channel';
+import { CHANNEL_VERSION, SESSION_ARG, isBusOp } from './channel';
 import { LineReader, MAX_LINE_BYTES } from './protocol';
 import type { Logger } from '../log/logger';
 import type { SessionQueries } from '../sessions/queries';
 
-/** Just enough of `SessionQueries` to be callable with a test double. */
-export type BusQueries = Pick<SessionQueries, 'listSessions'>;
+/**
+ * Just enough of `SessionQueries` to be callable with a test double.
+ *
+ * WIDENED BY #764 RATHER THAN RE-DECLARED, which is the point of the `Pick`:
+ * `main/index.ts` passes a whole `SessionQueries` and needed no edit, and a
+ * method dropped from the query core is a typecheck failure here rather than a
+ * tool that answers "unknown request" at runtime.
+ */
+export type BusQueries = Pick<SessionQueries, 'listSessions' | 'sessionOutput' | 'sessionDiff'>;
 
 export interface BusHostOptions {
   /** Same directory `HookListener` writes `hook-token` into. */
@@ -58,6 +65,12 @@ export interface BusHostOptions {
   /** How long a connection may sit without completing a request. Absent =
    *  `IDLE_TIMEOUT_MS`. A test seam, for the same reason as `replyLingerMs`. */
   idleTimeoutMs?: number;
+  /** How long the host gives its own answer. Absent = `ANSWER_DEADLINE_MS`.
+   *  A test seam: the real value is twelve seconds, which no unit test may
+   *  wait out, and fake timers do not drive libuv over a real socket. */
+  answerDeadlineMs?: number;
+  /** The socket backstop behind that race. Absent = `ANSWER_BACKSTOP_MS`. */
+  answerBackstopMs?: number;
   /**
    * Where the COMPILED bus server is. Absent = resolve it (`busServerPath`).
    *
@@ -97,8 +110,50 @@ export const REPLY_LINGER_MS = 5_000;
  */
 export const IDLE_TIMEOUT_MS = 10_000;
 
-/** What a child gets back. `ok:false` carries a reason the AGENT will read. */
-type HostReply = { ok: true; callerId: string; sessions: unknown } | { ok: false; reason: string };
+/**
+ * How long the host gives its OWN answer before saying so (#764 review).
+ *
+ * A different deadline with a different motive from `IDLE_TIMEOUT_MS`, which is
+ * why it is a second constant rather than a reuse: that one bounds a client
+ * that never speaks, this one bounds US. It exists because `answer()` can now
+ * await `git`, `execFile` carries no timeout of its own, and a wedged git on an
+ * unresponsive filesystem would otherwise hold a socket and a promise for the
+ * life of the app — reachable deliberately, and repeatedly, by anything that
+ * can read the token.
+ *
+ * Sized against a measurement rather than a feeling: `git diff` on this
+ * repository (a ~97 KB diff, Windows, warm) runs ~370 ms, and `sessionDiff`
+ * makes three git calls, so a realistic worst case is one to two seconds and a
+ * genuinely enormous repository is several. 12 s sits well above that and BELOW
+ * the 15 s the child allows a diff, so the host's own message — which knows
+ * what it was doing — is the one that normally reaches the model.
+ */
+export const ANSWER_DEADLINE_MS = 12_000;
+
+/**
+ * The socket's backstop while we work — deliberately slack.
+ *
+ * The race in `answerAndReply` is what should fire; this catches only the case
+ * where that machinery itself did not, and it must never be the thing that
+ * pre-empts a working answer.
+ */
+export const ANSWER_BACKSTOP_MS = ANSWER_DEADLINE_MS * 2;
+
+/**
+ * What a child gets back. `ok:false` carries a reason the AGENT will read.
+ *
+ * ONE FIELD PER OP RATHER THAN A UNIFORM `data`, decided in #764. Folding
+ * `list_sessions`'s `sessions` into a shared envelope would have been tidier
+ * and would have changed a wire shape that works, for nothing a reader gains —
+ * the discriminant a consumer actually switches on is the OP IT SENT, which it
+ * already knows. Additive means the only way to get this wrong is to read a
+ * field that is absent, which is `undefined` and renders as the empty answer.
+ */
+type HostReply =
+  | { ok: true; callerId: string; sessions: unknown }
+  | { ok: true; callerId: string; output: unknown }
+  | { ok: true; callerId: string; diff: unknown }
+  | { ok: false; reason: string };
 
 interface Registration {
   token: string;
@@ -471,7 +526,26 @@ export class BusHost {
         // on this connection is ours to act on, and a paused socket cannot
         // deliver another 'data' event while we are answering this one.
         sock.pause();
-        this.reply(sock, this.answer(sessionId, line));
+        // THE IDLE DEADLINE IS DONE ITS JOB — SWAP IT, DO NOT DROP IT (#764).
+        // It exists to bound a connection that opens and never sends a byte,
+        // and this one has now sent a whole request. Left as it was it becomes
+        // something else entirely once `answer` can await: `get_session_diff`
+        // shells out to `git diff` against a folder ANOTHER AGENT is writing,
+        // and a socket with no traffic on it is exactly what a slow diff looks
+        // like — so `destroy()` mid-answer would reach the model as
+        // "switchboard could not be reached", a confident wrong answer about
+        // our own availability for a request that was about to succeed.
+        //
+        // ⚠️ The first cut of this cleared the deadline outright
+        // (`setTimeout(0)`), which review correctly called a hole rather than a
+        // fix: between reading a request and writing a reply the host then had
+        // NO bound at all, so a query that never settles — a wedged `git`, an
+        // unresponsive filesystem — held a socket and a promise until the app
+        // quit, and anything that could read the token could do it on purpose.
+        // The right answer is a longer, differently-motivated deadline, not
+        // none. `answerAndReply` owns what happens when it fires.
+        sock.setTimeout(this.opts.answerBackstopMs ?? ANSWER_BACKSTOP_MS);
+        void this.answerAndReply(sessionId, sock, line);
         return;
       }
       if (reader.hasOverflowed()) {
@@ -484,6 +558,85 @@ export class BusHost {
   }
 
   /**
+   * Await the answer, then reply — if there is still anybody to reply to.
+   *
+   * ── THE ORDERING QUESTION #762 LEFT TO #764 ─────────────────────────────────
+   *
+   * `answer` became async here, and an await opens a window that did not exist
+   * before: between the request arriving and the reply being written, the
+   * session can be torn down (`unregisterSession` destroys every socket on its
+   * endpoint) or the child can give up on its own 5-second deadline and destroy
+   * its end. Both are ORDINARY, not exotic — a restart during a long diff is
+   * the daily case.
+   *
+   * Writing to a destroyed socket is not a throw `reply`'s try/catch would
+   * catch; it is an asynchronous `'error'` event, which the handler in `serve`
+   * turns into another `destroy()`, and the log line it leaves behind describes
+   * a fault that did not happen. So the socket is checked after the await
+   * rather than after the fact.
+   *
+   * `answer` never rejects by contract — every arm catches — but this catches
+   * anyway, because that contract belongs to a method a future op will edit and
+   * an unhandled rejection out of Electron main is a worse way to find out.
+   */
+  private async answerAndReply(sessionId: string, sock: net.Socket, line: string): Promise<void> {
+    let reply: HostReply;
+    try {
+      reply = await this.withDeadline(sessionId, this.answer(sessionId, line));
+    } catch (err) {
+      this.opts.log.error('bus answer threw', { sessionId, error: String(err) });
+      reply = { ok: false, reason: 'switchboard could not answer this request' };
+    }
+    if (sock.destroyed) {
+      // Not a warning. The child hanging up is how a cancelled tool call looks
+      // from here, and a session torn down mid-call is a restart.
+      this.opts.log.debug('bus client went away before its answer was ready', { sessionId });
+      return;
+    }
+    this.reply(sock, reply);
+  }
+
+  /**
+   * Bound our own answer, and SAY SO rather than going quiet.
+   *
+   * Resolving to a refusal instead of rejecting is the point: the alternative
+   * is letting the socket backstop destroy the connection, which reaches the
+   * child as a bare close and reaches the model as "the host closed the
+   * connection without answering" — true, and useless. This says which
+   * operation ran long, from the only layer that knows.
+   *
+   * ⚠️ It does NOT cancel the work. `execFile` is already running and will
+   * finish or hang on its own; what this bounds is how long the socket, the
+   * connection slot and the agent's turn are held hostage to it. Killing the
+   * child git is a bigger question than this item, and pretending otherwise in
+   * a comment is how the next reader stops looking.
+   */
+  private withDeadline(sessionId: string, work: Promise<HostReply>): Promise<HostReply> {
+    const ms = this.opts.answerDeadlineMs ?? ANSWER_DEADLINE_MS;
+    return new Promise<HostReply>((resolve) => {
+      const timer = setTimeout(() => {
+        this.opts.log.warn('a bus answer exceeded its deadline', { sessionId, ms });
+        resolve({
+          ok: false,
+          reason: `switchboard took longer than ${Math.round(ms / 1000)}s to gather this and gave up`,
+        });
+      }, ms);
+      timer.unref?.();
+      work.then(
+        (reply) => {
+          clearTimeout(timer);
+          resolve(reply);
+        },
+        (err: unknown) => {
+          clearTimeout(timer);
+          this.opts.log.error('bus answer rejected', { sessionId, error: String(err) });
+          resolve({ ok: false, reason: 'switchboard could not answer this request' });
+        }
+      );
+    });
+  }
+
+  /**
    * Answer, or REFUSE WITH A REASON and hang up.
    *
    * Refusing in silence would be marginally tidier from a security point of
@@ -491,12 +644,15 @@ export class BusHost {
    * deadline for a verdict we already reached, which is the stall this channel
    * is built to avoid. Say no, immediately, and drop the connection.
    *
-   * SYNCHRONOUS, because every answer it can give today is. #764 adds
-   * `get_session_diff`, which is not — that item turns this async and takes the
-   * ordering question with it, rather than this one carrying an `await` it does
-   * not use in case somebody needs it later.
+   * ASYNC SINCE #764, which is what `get_session_diff` costs: it shells out to
+   * git. Everything before the dispatch at the foot of this method is still
+   * synchronous and still runs before any await — parse, authenticate, version,
+   * vocabulary — so a request that is going to be refused is refused in the
+   * same tick it arrived in, and only a request we are actually going to answer
+   * can hold the connection open. `answerAndReply` owns what the await window
+   * costs.
    */
-  private answer(sessionId: string, line: string): HostReply {
+  private async answer(sessionId: string, line: string): Promise<HostReply> {
     let req: Record<string, unknown>;
     try {
       const parsed: unknown = JSON.parse(line);
@@ -538,17 +694,68 @@ export class BusHost {
     if (!isBusOp(req.op)) {
       return { ok: false, reason: `unknown request: ${String(req.op)}` };
     }
-    // #761's module owns the answer and the caps; this is transport, not
-    // policy. `listSessions` never throws by contract — the try is because that
+    const op = req.op;
+    // TORN DOWN WHILE THIS WAS IN THE PIPE. Cheap, and it matters more now that
+    // an answer can read a 4 MB transcript or shell out to git: without it a
+    // session ending mid-request still pays for the whole answer, for a socket
+    // that is already gone.
+    if (!this.bySession.has(sessionId)) {
+      return { ok: false, reason: 'this session is shutting down' };
+    }
+    // The MCP tool's own arguments, exactly as the model wrote them. NOT
+    // validated here beyond being an object: `SessionQueries.resolve` type-
+    // guards `ref` itself and refuses with a reason an agent can act on, and a
+    // second validator at this layer would be a second answer to one question —
+    // the drift `queries.ts` exists to prevent.
+    const args = req.args && typeof req.args === 'object' && !Array.isArray(req.args)
+      ? (req.args as Record<string, unknown>)
+      : {};
+    // A CAST OVER A GUARD WE DELIBERATELY DO NOT WRITE. `ref` really can be a
+    // number, an object or absent — it is JSON a language model composed — and
+    // `SessionQueries.resolve` type-guards it there, refusing with a reason
+    // that names the sessions which DO exist. A second check here would refuse
+    // with a worse reason and put one question's answer in two places.
+    const ref = args[SESSION_ARG] as string;
+
+    // #761's module owns every answer and every cap; this is transport, not
+    // policy. The queries never throw by contract — the try is because that
     // contract belongs to a module this one does not own, and a throw here
     // would take down Electron main from a child's request.
     try {
-      const result = this.opts.queries.listSessions();
-      if (!result.ok) return { ok: false, reason: result.reason };
-      return { ok: true, callerId: caller, sessions: result.value };
+      switch (op) {
+        case 'list_sessions': {
+          const result = this.opts.queries.listSessions();
+          if (!result.ok) return { ok: false, reason: result.reason };
+          return { ok: true, callerId: caller, sessions: result.value };
+        }
+        case 'get_session_output': {
+          // `lastN` goes through UNTOUCHED, including when it is absent or
+          // nonsense. `sessionOutput` clamps it to `MAX_LAST_N` and falls back
+          // to `DEFAULT_LAST_N`, and doing any of that here would put the cap
+          // in two places — which is the one thing #761's done-when forbids and
+          // the reason "thin" is this item's requirement rather than its taste.
+          const result = this.opts.queries.sessionOutput(ref, args.lastN as number | undefined);
+          if (!result.ok) return { ok: false, reason: result.reason };
+          return { ok: true, callerId: caller, output: result.value };
+        }
+        case 'get_session_diff': {
+          // THE ONLY AWAIT ON THIS PATH, and the reason the method is async.
+          const result = await this.opts.queries.sessionDiff(ref);
+          if (!result.ok) return { ok: false, reason: result.reason };
+          return { ok: true, callerId: caller, diff: result.value };
+        }
+        default: {
+          // Exhaustive over `BusOp` — `isBusOp` gated it above, so TypeScript
+          // narrows `op` to `never` here. A word added to `BUS_OPS` with no case
+          // for it is therefore a COMPILE error rather than a tool that reaches
+          // the host and is told it does not exist.
+          const unhandled: never = op;
+          return { ok: false, reason: `unknown request: ${String(unhandled)}` };
+        }
+      }
     } catch (err) {
-      this.opts.log.error('session query threw on the bus path', { sessionId, error: String(err) });
-      return { ok: false, reason: 'the session list is unavailable' };
+      this.opts.log.error('session query threw on the bus path', { sessionId, op, error: String(err) });
+      return { ok: false, reason: `switchboard could not answer ${op}` };
     }
   }
 

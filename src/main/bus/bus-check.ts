@@ -26,8 +26,20 @@
 // own stdio — so it runs in CI on both operating systems rather than being
 // LOCAL_ONLY (#182). That is what makes point 2 above happen automatically.
 //
+// ── AND WHAT #764 ADDED: THE REAL QUERY CORE, NOT A STUB ────────────────────
+//
+// This used to hand the host `{ listSessions: () => SESSIONS }` — a constant.
+// That was enough while `list_sessions` was the only tool, because the thing
+// under test was the pipe. It is not enough for the read tools: `#761 → host →
+// child → text` is four layers, and a constant at the top proves the bottom
+// three while asserting nothing about the join. So the host below is built with
+// a **real `SessionQueries`**, over a real temp git repo with a real
+// uncommitted change and a real JSONL transcript on disk. What that buys, and
+// nothing else in the suite has: the caps are observed against text that really
+// came out of the derivation, and `git diff` really runs.
+//
 // Run with: npm run check:bus   (after npm run build)
-import { ChildProcess, spawn } from 'child_process';
+import { ChildProcess, execFileSync, spawn } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -35,6 +47,8 @@ import { BusHost } from './host-channel';
 import { busLaunch, busServerPath } from './launch';
 import { LineReader } from './protocol';
 import { BUS_SERVER_NAME } from './bus-paths';
+import { GitService } from '../git/git-service';
+import { DIFF_CHAR_CAP, OUTPUT_CHAR_CAP, SessionQueries } from '../sessions/queries';
 import type { SessionSummary } from '../sessions/queries';
 
 const failures: string[] = [];
@@ -52,10 +66,110 @@ const log = {
   child: () => log,
 } as unknown as import('../log/logger').Logger;
 
+/**
+ * The workspace the real query core is pointed at (#764).
+ *
+ * `PropaneMon` is the SIBLING the caller reads: a real git repo with a real
+ * uncommitted change and a real JSONL transcript. `Switchboard` is the caller
+ * and deliberately has neither, so the two "normal, not an error" branches —
+ * no transcript, not a repository — are covered by the same run rather than
+ * asserted only in unit tests where the file system is a fake.
+ */
+interface Workspace {
+  root: string;
+  repo: string;
+  transcript: string;
+  /** An ordinary directory under no version control at all. */
+  notARepo: string;
+  /** A real repo whose working tree is CLEAN — the third diff outcome. */
+  cleanRepo: string;
+}
+
 const SESSIONS: SessionSummary[] = [
-  { id: 'sb-caller', name: 'Switchboard', folder: '/projects/switchboard', providerId: 'claude-code', status: 'working' },
-  { id: 'sb-other', name: 'PropaneMon', folder: '/projects/propanemon', providerId: 'claude-code', status: 'idle' },
+  { id: 'sb-caller', name: 'Switchboard', folder: '', providerId: 'claude-code', status: 'working' },
+  { id: 'sb-other', name: 'PropaneMon', folder: '', providerId: 'claude-code', status: 'idle' },
+  { id: 'sb-tidy', name: 'Tidy', folder: '', providerId: 'claude-code', status: 'idle' },
 ];
+
+/** One JSONL line the CLI would have written; `deriveIntents` reads these. */
+function turn(role: 'user' | 'assistant', text: string, i: number): string {
+  return JSON.stringify({
+    parentUuid: i === 0 ? null : `u${i - 1}`,
+    isSidechain: false,
+    type: role,
+    message:
+      role === 'user'
+        ? { role: 'user', content: text }
+        : { role: 'assistant', content: [{ type: 'text', text }] },
+    uuid: `u${i}`,
+    timestamp: new Date(Date.UTC(2026, 8, 8, 0, 0, i)).toISOString(),
+  });
+}
+
+/**
+ * A real repo and a real transcript, both deliberately OVER the caps.
+ *
+ * Over on purpose: #764's done-when names the caps at the tool edge, and a
+ * fixture that fits inside them measures nothing. `DISPLAY_CAPS` bounds one
+ * prose block at 20k characters inside the derivation, so a single enormous
+ * message would be cut before `OUTPUT_CHAR_CAP` ever saw it — hence several
+ * large ones, which is also what a real long session looks like.
+ */
+function makeWorkspace(): Workspace {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-bus-ws-'));
+  const repo = path.join(root, 'propanemon');
+  const notARepo = path.join(root, 'switchboard');
+  const cleanRepo = path.join(root, 'tidy');
+  for (const d of [repo, notARepo, cleanRepo]) fs.mkdirSync(d);
+
+  // HERMETIC, or the assertions measure this machine's git config as much as
+  // our code: `init.templateDir`, global hooks and `diff.external` all reach in
+  // otherwise, and `diff.external` is the one `--no-ext-diff` exists to stop.
+  const env = { ...process.env, GIT_CONFIG_GLOBAL: '', GIT_CONFIG_SYSTEM: '', GIT_CONFIG_NOSYSTEM: '1' };
+  const git = (cwd: string, ...args: string[]): void => {
+    execFileSync('git', args, { cwd, stdio: 'pipe', env });
+  };
+  const init = (dir: string): void => {
+    git(dir, 'init', '-q');
+    git(dir, 'config', 'user.email', 'bus-check@example.invalid');
+    git(dir, 'config', 'user.name', 'bus check');
+    git(dir, 'config', 'commit.gpgsign', 'false');
+  };
+
+  init(repo);
+  fs.writeFileSync(path.join(repo, 'burner.ts'), 'export const psi = 1;\n');
+  git(repo, 'add', '-A');
+  git(repo, 'commit', '-qm', 'initial');
+  // The change the sibling is asked about. Long enough to pass DIFF_CHAR_CAP:
+  // every line is a distinct addition, so the diff is roughly the file.
+  const long = Array.from({ length: 1200 }, (_, i) => `export const reading${i} = ${i};`).join('\n');
+  fs.writeFileSync(path.join(repo, 'burner.ts'), `export const psi = 2;\n${long}\n`);
+
+  // THE THIRD DIFF OUTCOME, which was only ever asserted against a hand-built
+  // payload before (#764 review): a real repository with a clean tree. It is
+  // also the outcome the untracked-files wording is about, so it carries an
+  // untracked file — committed to nothing, invisible to `git diff`, and exactly
+  // the state that used to be reported as "matches the last commit".
+  init(cleanRepo);
+  fs.writeFileSync(path.join(cleanRepo, 'kept.ts'), 'export const kept = true;\n');
+  git(cleanRepo, 'add', '-A');
+  git(cleanRepo, 'commit', '-qm', 'initial');
+  fs.writeFileSync(path.join(cleanRepo, 'brand-new.ts'), 'export const unseen = true;\n');
+
+  const transcript = path.join(root, 'propanemon.jsonl');
+  const bulk = 'x'.repeat(9_000);
+  fs.writeFileSync(
+    transcript,
+    [
+      turn('user', 'check the tank pressure', 0),
+      turn('assistant', `THE-OLDEST-LINE ${bulk}`, 1),
+      turn('assistant', `filler ${bulk}`, 2),
+      turn('assistant', `filler ${bulk}`, 3),
+      turn('assistant', 'THE-NEWEST-LINE: the regulator is the fault', 4),
+    ].join('\n') + '\n'
+  );
+  return { root, repo, transcript, notARepo, cleanRepo };
+}
 
 /** Drives one child over its stdio, one JSON-RPC request at a time. */
 class Peer {
@@ -142,7 +256,20 @@ function isError(msg: Record<string, unknown>): boolean {
 
 async function main(): Promise<void> {
   const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-bus-check-'));
-  const host = new BusHost({ stateDir, log, queries: { listSessions: () => ({ ok: true, value: SESSIONS }) } });
+  const ws = makeWorkspace();
+  SESSIONS[0].folder = ws.notARepo;
+  SESSIONS[1].folder = ws.repo;
+  SESSIONS[2].folder = ws.cleanRepo;
+  // THE REAL QUERY CORE (#764), not a constant — see the header. This is the
+  // same construction `main/index.ts` performs, with the same three dependencies
+  // wired the same way round, which is the closest an automated check gets to
+  // the production object graph without booting Electron.
+  const queries = new SessionQueries({
+    list: () => SESSIONS,
+    transcriptFor: (id) => (id === 'sb-other' ? ws.transcript : null),
+    git: new GitService(),
+  });
+  const host = new BusHost({ stateDir, log, queries });
   const sessionId = 'sb-caller';
   const endpoint = await host.registerSession(sessionId);
   console.log(`[bus-check]      endpoint ${endpoint.pipePath}`);
@@ -178,8 +305,9 @@ async function main(): Promise<void> {
 
   const list = await peer.request('tools/list');
   const tools = (list.result as { tools?: { name?: string }[] } | undefined)?.tools ?? [];
-  check('tools/list offers exactly list_sessions', tools.length === 1 && tools[0]?.name === 'list_sessions',
-    tools.map((t) => String(t.name)).join(','));
+  const toolNames = tools.map((t) => String(t.name)).sort().join(',');
+  check('tools/list offers the three read tools', toolNames === 'get_session_diff,get_session_output,list_sessions',
+    toolNames);
 
   // ── the round trip, over a real endpoint ─────────────────────────────────
   const called = await peer.request('tools/call', { name: 'list_sessions', arguments: {} });
@@ -187,6 +315,102 @@ async function main(): Promise<void> {
   check('tools/call round-trips through the host', !isError(called), text);
   check('the sibling session is in the answer', text.includes('PropaneMon'), text);
   check('the caller is marked as itself', text.includes('(this session)'), text);
+
+  // ── #764: the read tools, through the REAL query core ────────────────────
+  //
+  // Everything below runs against a real repo and a real transcript on disk, so
+  // a passing line here means `#761 → host → child → text` joined up — not that
+  // four layers each work against a fake of the next.
+  const out = await peer.request('tools/call', {
+    name: 'get_session_output',
+    arguments: { session: 'PropaneMon' },
+  });
+  const outText = resultText(out);
+  check('get_session_output round-trips', !isError(out), outText.slice(0, 200));
+  check('…and returns the sibling’s NEWEST work', outText.includes('THE-NEWEST-LINE'), outText.slice(-200));
+  // THE CAP, AT THE TOOL EDGE — the done-when, asserted against text that
+  // really came out of the derivation rather than a hand-built string. The
+  // header adds a couple of hundred characters on top of the query core's cap.
+  // TWO-SIDED ON PURPOSE (#764 review). An upper bound alone proves "not too
+  // big", which a renderer returning its last 500 characters also satisfies —
+  // and every other assertion in this block would have stayed green under it.
+  // The lower bound is what proves the cap is being FILLED. The slack above is
+  // the header we add on top of the query core's cap.
+  check(`…observing OUTPUT_CHAR_CAP (${outText.length} chars)`,
+    outText.length < OUTPUT_CHAR_CAP + 800 && outText.length > OUTPUT_CHAR_CAP - 2_000,
+    `${outText.length} vs cap ${OUTPUT_CHAR_CAP}`);
+  check('…and saying so, rather than silently handing over a fragment',
+    /Earlier activity was left out/.test(outText), outText.slice(0, 200));
+  check('…keeping the NEWEST end, not the oldest', !outText.includes('THE-OLDEST-LINE'));
+
+  // `lastN` really reaches the query core. Threaded through four hops —
+  // model → child → pipe → `sessionOutput` — and #762's comment flagged this as
+  // the first argument any of them could silently drop.
+  const outputFor = async (lastN: number): Promise<string> =>
+    resultText(
+      await peer.request('tools/call', {
+        name: 'get_session_output',
+        arguments: { session: 'PropaneMon', lastN },
+      })
+    );
+  const one = await outputFor(1);
+  const two = await outputFor(2);
+  check('lastN reaches the query core', one.length < outText.length && one.includes('THE-NEWEST-LINE'),
+    `${one.length} vs ${outText.length}`);
+  // TWO VALUES, because one survives a mutation that hard-codes `lastN = 1`.
+  check('…and DIFFERENT values give different answers', two.length > one.length, `${two.length} > ${one.length}`);
+
+  // A session with no transcript is a NORMAL STATE and says so in words.
+  const quiet = resultText(
+    await peer.request('tools/call', { name: 'get_session_output', arguments: { session: 'Switchboard' } })
+  );
+  check('a session with no transcript answers plainly, not with an error',
+    /has not produced any readable output yet/.test(quiet), quiet);
+
+  // AN UNKNOWN SESSION IS A CLEAN TOOL ERROR — the done-when that matters most,
+  // because the failure it forbids is an empty success an agent believes.
+  const missing = await peer.request('tools/call', {
+    name: 'get_session_output',
+    arguments: { session: 'NoSuchSession' },
+  });
+  const missingText = resultText(missing);
+  check('an unknown session is an isError, not an empty success', isError(missing), missingText);
+  check('…naming the sessions that DO exist, so the agent can retry',
+    missingText.includes('PropaneMon') && /no session named/.test(missingText), missingText);
+
+  const diff = await peer.request('tools/call', {
+    name: 'get_session_diff',
+    arguments: { session: 'PropaneMon' },
+  });
+  const diffText = resultText(diff);
+  check('get_session_diff round-trips through a REAL git diff', !isError(diff), diffText.slice(0, 200));
+  check('…and carries the sibling’s actual change', /burner\.ts/.test(diffText) && /^\+export const psi = 2;$/m.test(diffText),
+    diffText.slice(0, 300));
+  check(`…observing DIFF_CHAR_CAP (${diffText.length} chars)`,
+    diffText.length < DIFF_CHAR_CAP + 800 && diffText.length > DIFF_CHAR_CAP - 2_000,
+    `${diffText.length} vs cap ${DIFF_CHAR_CAP}`);
+  check('…and saying that it was cut', /cut short/.test(diffText), diffText.slice(0, 200));
+
+  // "Not a repository" and "a repo with nothing uncommitted" are different
+  // facts, and the second is the confident wrong answer if they are conflated.
+  const notRepo = resultText(
+    await peer.request('tools/call', { name: 'get_session_diff', arguments: { session: 'Switchboard' } })
+  );
+  check('a folder that is not a repo says so, rather than "no changes"',
+    /not working inside a git repository/.test(notRepo), notRepo);
+
+  // THE THIRD OUTCOME, against a REAL clean repo (#764 review). It had only
+  // ever been asserted against a hand-built payload, and it is the one the
+  // untracked-files bug lived in: this repo's only change is a brand-new file
+  // `git diff` cannot see, and the old wording called that "matches the last
+  // commit" — flatly telling an agent its scaffolding sibling had done nothing.
+  const clean = resultText(
+    await peer.request('tools/call', { name: 'get_session_diff', arguments: { session: 'Tidy' } })
+  );
+  check('a clean repo says it has no TRACKED changes', /no tracked changes/.test(clean), clean);
+  check('…and warns that untracked files are invisible, on THIS branch too',
+    /Untracked/.test(clean), clean);
+  check('…and does not claim the tree matches the last commit', !/matches the last commit/.test(clean), clean);
 
   // ── a dead host: clean, readable, and FAST ───────────────────────────────
   //
@@ -249,8 +473,29 @@ async function main(): Promise<void> {
   orphan.stdin?.end();
 
   host.stop();
-  fs.rmSync(stateDir, { recursive: true, force: true });
-  fs.rmSync(orphanDir, { recursive: true, force: true });
+  discard(stateDir);
+  discard(orphanDir);
+  discard(ws.root);
+}
+
+/**
+ * Remove a scratch directory, and never fail the run over it.
+ *
+ * ⚠️ **`force: true` DOES NOT COVER `EPERM`.** It suppresses ENOENT and nothing
+ * else, and on Windows git writes its loose objects READ-ONLY — so removing a
+ * repo this script created threw after every assertion had already passed, and
+ * the check reported `threw` for a run that was green. A cleanup failure must
+ * never be able to report itself as a product failure.
+ *
+ * What is left behind is swept: the names have `mkdtemp`'s shape under the OS
+ * temp dir, which is exactly what `scripts/sweep-temp-orphans.js` matches.
+ */
+function discard(dir: string): void {
+  try {
+    fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
+  } catch (err) {
+    console.log(`[bus-check]      could not remove ${dir} (${String(err)}) — the temp sweeper will`);
+  }
 }
 
 /** An endpoint name of the right shape that nothing is listening on. */

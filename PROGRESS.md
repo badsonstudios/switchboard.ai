@@ -34,6 +34,84 @@
 > unattended workers is a different risk from one reported item, and that
 > asymmetry is written down in the file so it does not later read as drift.
 
+> # 🔧 IN PROGRESS — 2026-09-08: **#764** — P2-E11-04, the bus read tools
+>
+> `get_session_output` and `get_session_diff` as thin wrappers over #761's query
+> core. Branch `feature/764-bus-read-tools`. Plan posted to the issue.
+>
+> **The shape:** two ops in `channel.ts`, two `ToolDescriptor`s in
+> `bus-tools.ts` with their renderers, `BusHost.answer()` turns **async** (the
+> ordering question #762 deliberately left to this item), and `check:bus` swaps
+> its stub `queries` for a **real `SessionQueries`** over a real temp git repo
+> and a real transcript file — so #761 → host → child is proven end to end in
+> CI on both OSes rather than only at the seams. 40 assertions there, ~50 new
+> unit tests, seven pins mutation-verified.
+>
+> **Judgment calls made rather than asked** (all reversible, all in the report):
+> * **`CHANNEL_VERSION` stays at 1.** Adding ops is backwards-compatible by
+>   construction — `isBusOp` already refuses an unknown op with a reason the
+>   agent can read — while bumping would make a v1 child fail *every* call,
+>   including the `list_sessions` that works. The gate is for an incompatible
+>   ENVELOPE change, not for a wider vocabulary. Review agreed unprompted.
+> * **Additive reply fields** (`output`, `diff`) rather than folding
+>   `list_sessions`'s `sessions` into a uniform `data`. Leaves a working wire
+>   shape untouched.
+> * **A sibling's content is FENCED and labelled as data** before it enters the
+>   asking model's context. This is the first place in the codebase where one
+>   agent's content reaches another's, and a diff can hold anything a repo holds.
+>   Not a claim to have solved prompt injection — the cheap standard half.
+>
+> ## ⚠️ REVIEW CAUGHT THREE LIVE "CONFIDENT WRONG ANSWER" BUGS
+> All three were the exact failure this item's done-when is written against —
+> the tool telling another agent something false, with no hedge, and a green
+> suite either way.
+> * **A sibling that had scaffolded a whole project was reported as having
+>   changed nothing.** The untracked-files caveat was on the non-empty diff
+>   branch only, and the empty branch said "its working tree matches the last
+>   commit" — false for 40 new unadded files, and false for an unborn HEAD.
+>   **My own test was titled "warns … every time" and asserted only the default
+>   payload.** A title is not an assertion.
+> * **`renderOutput` discarded `truncated` on the empty-text path**, so a window
+>   holding only unrenderable blocks (an attachment-only turn) came out as "has
+>   not produced any readable output yet". The core computed the correcting fact
+>   and the renderer threw it away.
+> * **`GitService.diff` swallowed a failed `git diff` into `{isRepo:true,
+>   text:''}`** → "has no uncommitted changes". The likeliest route is git
+>   exceeding `execFile`'s 32 MB `maxBuffer`, i.e. **the tool got less truthful
+>   the more the sibling had done.** It is the same swallow #761's own comment
+>   records fixing one line higher. Now throws; `sessionDiff` already had the
+>   refusal path waiting and had simply never had anything to catch.
+>
+> ## AND A HOLE IN MY OWN FIX
+> I cleared the idle deadline once a request was read (right reason: a slow
+> `git diff` looks exactly like an idle socket, and dropping it would report a
+> busy sibling as an unreachable switchboard) — **and put nothing back.** Between
+> reading a request and writing a reply the host then had no bound at all: a
+> wedged git held a socket and a promise until app quit, deliberately reachable
+> by anything that can read the token. Replaced with a real answer deadline
+> (12 s) that answers with a reason, plus a slack socket backstop. The
+> **cascade is now asserted as an ordering** rather than as three numbers:
+> host 12 s < the child's slow-tool 15 s < `apply`'s 20 s, innermost first
+> because each layer's message is better than the next one out.
+>
+> ## LESSON 5 EARNED ITS KEEP AGAIN
+> **One of my new tests was decoration and the mutant proved it.** "A client that
+> hangs up mid-answer" asserted only that nothing was logged as an error — which
+> stayed true with the guard deleted, because the stray write is swallowed by the
+> socket's own error handler. Worse, the test's own timing was wrong: releasing
+> the pending query in the same tick resolves it on a MICROTASK, before libuv
+> delivers the socket's close, so `sock.destroyed` was still false and the branch
+> never ran. It now pins the branch itself and fails without the guard.
+>
+> ## DELIBERATELY NOT IN THIS ITEM → **#772**
+> Review was right that nothing bounds the **rate or concurrency** of bus
+> requests, and that `get_session_output` does synchronous 4 MB file I/O plus up
+> to 5,000 `JSON.parse`s **on Electron's main thread** at a sibling's discretion.
+> #764's deadline bounds ONE answer, not N. It also noted both new deadlines
+> rest on a single measurement. Filed as **#772** with a probe as its first
+> step, scoped to land inside E11 before #765 adds more traffic — building it
+> here would have been a second item wearing this one's branch.
+
 > # 🚢 RELEASED — 2026-09-08: **v0.8.8**, and the "not released" backlog is gone
 >
 > **`d836fbb`, tag `v0.8.8`, installer published** —

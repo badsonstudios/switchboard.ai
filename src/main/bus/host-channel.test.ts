@@ -7,12 +7,13 @@ import fs from 'fs';
 import net from 'net';
 import os from 'os';
 import path from 'path';
-import { BusHost, IDLE_TIMEOUT_MS, REPLY_LINGER_MS } from './host-channel';
+import { BusHost, BusQueries, IDLE_TIMEOUT_MS, REPLY_LINGER_MS } from './host-channel';
 import { busPipePath, busTokenPath } from './bus-paths';
 import { CHANNEL_VERSION } from './channel';
+import { stubQueries } from './fixtures/queries';
 import { askHost } from './pipe-client';
 import type { Logger } from '../log/logger';
-import type { QueryResult, SessionSummary } from '../sessions/queries';
+import type { QueryResult, SessionDiff, SessionOutput, SessionSummary } from '../sessions/queries';
 
 const SESSIONS: SessionSummary[] = [
   { id: 'sb-a', name: 'Alpha', folder: '/p/alpha', providerId: 'claude-code', status: 'working' },
@@ -34,12 +35,30 @@ let stateDir: string;
 let log: Logger;
 let host: BusHost;
 let listSessions: () => QueryResult<SessionSummary[]>;
+let sessionOutput: (ref: string, lastN?: number) => QueryResult<SessionOutput>;
+let sessionDiff: (ref: string) => Promise<QueryResult<SessionDiff>>;
+
+/**
+ * The queries every host in this file is built with.
+ *
+ * INDIRECTED THROUGH THE `let`s ON PURPOSE, so a test can swap one answer after
+ * the host exists without rebuilding it — the endpoint is a real socket and
+ * re-registering per case would cost the suite far more than it is worth.
+ */
+const queries = (): BusQueries => ({
+  listSessions: () => listSessions(),
+  sessionOutput: (ref, lastN) => sessionOutput(ref, lastN),
+  sessionDiff: (ref) => sessionDiff(ref),
+});
 
 beforeEach(() => {
   stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-bus-host-'));
   log = fakeLog();
   listSessions = () => ({ ok: true, value: SESSIONS });
-  host = new BusHost({ stateDir, log, queries: { listSessions: () => listSessions() } });
+  const defaults = stubQueries();
+  sessionOutput = defaults.sessionOutput.bind(defaults);
+  sessionDiff = defaults.sessionDiff.bind(defaults);
+  host = new BusHost({ stateDir, log, queries: queries() });
 });
 
 afterEach(() => {
@@ -264,6 +283,297 @@ describe('the round trip', () => {
     expect(all.every((r) => r.ok === true)).toBe(true);
   });
 
+  describe('the read tools (#764)', () => {
+    it('answers get_session_output with the query core’s value, under its own field', async () => {
+      const ep = await host.registerSession(newId());
+      const reply = await askHost({
+        ...ep,
+        request: { op: 'get_session_output', args: { session: '@Beta' } },
+      });
+      expect(reply).toMatchObject({ ok: true, output: { text: 'output for @Beta' } });
+      // Not smuggled into `sessions` — the child reads a different field per op,
+      // and a host that answered under the wrong one would render as an empty
+      // session list.
+      expect(reply.sessions).toBeUndefined();
+    });
+
+    it('answers get_session_diff with the query core’s value, under its own field', async () => {
+      const ep = await host.registerSession(newId());
+      const reply = await askHost({
+        ...ep,
+        request: { op: 'get_session_diff', args: { session: '@Beta' } },
+      });
+      expect(reply).toMatchObject({ ok: true, diff: { isRepo: true, diff: 'diff for @Beta' } });
+      expect(reply.output).toBeUndefined();
+    });
+
+    it('PASSES THE SESSION REFERENCE THROUGH, rather than answering about the caller', async () => {
+      // The mutation that reads as correct: hand `sessionOutput` the caller's
+      // own id and every "it round-trips" assertion above still passes, while
+      // the tool answers the wrong question with total confidence.
+      const asked: unknown[] = [];
+      sessionOutput = (ref) => {
+        asked.push(ref);
+        return { ok: true, value: { session: SESSIONS[1], text: '', blocks: 0, truncated: false } };
+      };
+      const ep = await host.registerSession(newId());
+      await askHost({ ...ep, request: { op: 'get_session_output', args: { session: 'PropaneMon' } } });
+      expect(asked).toEqual(['PropaneMon']);
+    });
+
+    it('PASSES lastN THROUGH UNTOUCHED, including nonsense', async () => {
+      // `MAX_LAST_N` and `DEFAULT_LAST_N` live in the query core and nowhere
+      // else. A clamp added here would be a second answer to one question, and
+      // the composer path (#08) would not get it.
+      const asked: unknown[] = [];
+      sessionOutput = (_ref, lastN) => {
+        asked.push(lastN);
+        return { ok: true, value: { session: SESSIONS[1], text: '', blocks: 0, truncated: false } };
+      };
+      const ep = await host.registerSession(newId());
+      for (const lastN of [5, 999_999, -1]) {
+        await askHost({ ...ep, request: { op: 'get_session_output', args: { session: 'x', lastN } } });
+      }
+      await askHost({ ...ep, request: { op: 'get_session_output', args: { session: 'x' } } });
+      expect(asked).toEqual([5, 999_999, -1, undefined]);
+    });
+
+    it('an unknown session is a refusal WITH THE CORE’S REASON, not an empty success', async () => {
+      // The done-when, at the host seam. Rewriting the reason here would be the
+      // damage: `resolve` names the sessions that DO exist, which is what makes
+      // the refusal actionable.
+      sessionOutput = () => ({ ok: false, reason: 'no session named "Gamma" — running sessions: Alpha' });
+      const ep = await host.registerSession(newId());
+      const reply = await askHost({
+        ...ep,
+        request: { op: 'get_session_output', args: { session: 'Gamma' } },
+      });
+      expect(reply).toEqual({ ok: false, reason: 'no session named "Gamma" — running sessions: Alpha' });
+    });
+
+    it('a MISSING session argument reaches the core, which is what refuses it', async () => {
+      // Deliberately not guarded at this layer: `resolve` type-guards `ref`
+      // because both its consumers cross a boundary where types are not
+      // enforced. A guard here would refuse with a worse reason.
+      const asked: unknown[] = [];
+      sessionOutput = (ref) => {
+        asked.push(ref);
+        return { ok: false, reason: 'session reference must be a string' };
+      };
+      const ep = await host.registerSession(newId());
+      const reply = await askHost({ ...ep, request: { op: 'get_session_output', args: {} } });
+      expect(asked).toEqual([undefined]);
+      expect(reply).toMatchObject({ ok: false, reason: 'session reference must be a string' });
+    });
+
+    it('a REJECTED query is caught rather than crashing Electron main', async () => {
+      // `sessionDiff` never rejects by contract, but that contract belongs to a
+      // module this one does not own, and an unhandled rejection out of main
+      // takes the app down over a child's request.
+      sessionDiff = () => Promise.reject(new Error('git exploded'));
+      const ep = await host.registerSession(newId());
+      const reply = await askHost({ ...ep, request: { op: 'get_session_diff', args: { session: 'x' } } });
+      expect(reply).toMatchObject({ ok: false });
+      expect(String(reply.reason)).toContain('get_session_diff');
+    });
+
+    it('a SYNCHRONOUS throw from a query is caught too', async () => {
+      sessionOutput = () => {
+        throw new Error('boom');
+      };
+      const ep = await host.registerSession(newId());
+      await expect(
+        askHost({ ...ep, request: { op: 'get_session_output', args: { session: 'x' } } })
+      ).resolves.toMatchObject({ ok: false });
+    });
+
+    it('an unknown op is still refused by name', async () => {
+      const ep = await host.registerSession(newId());
+      await expect(askHost({ ...ep, request: { op: 'get_session_brain' } })).resolves.toEqual({
+        ok: false,
+        reason: 'unknown request: get_session_brain',
+      });
+    });
+
+    it('a SLOW answer still arrives — the idle deadline does not eat it', async () => {
+      // THE BUG THE ASYNC TURN INTRODUCES IF NOBODY LOOKS. `IDLE_TIMEOUT_MS`
+      // bounds a connection that opens and never sends a byte; once `answer`
+      // can await, a socket with no traffic on it is ALSO what a slow `git
+      // diff` looks like. Left armed, a big repo reaches the model as
+      // "switchboard could not be reached".
+      //
+      // Driven with a real clock on a deliberately tiny deadline: fake timers do
+      // not drive libuv, which is the same trap the reply-linger test records.
+      const slow = new BusHost({
+        stateDir,
+        log,
+        idleTimeoutMs: 40,
+        queries: {
+          ...queries(),
+          sessionDiff: (ref) =>
+            new Promise((r) =>
+              setTimeout(
+                () => r({ ok: true, value: { session: SESSIONS[1], isRepo: true, diff: `late ${ref}`, truncated: false } }),
+                250
+              )
+            ),
+        },
+      });
+      try {
+        const ep = await slow.registerSession(newId());
+        const reply = await askHost({
+          ...ep,
+          request: { op: 'get_session_diff', args: { session: 'x' } },
+          timeoutMs: 3000,
+        });
+        expect(reply).toMatchObject({ ok: true, diff: { diff: 'late x' } });
+      } finally {
+        slow.stop();
+      }
+    });
+
+    it('a connection that never sends a byte is STILL dropped', async () => {
+      // The other half of the pair above, restated here so the fix cannot be
+      // "remove the idle deadline". `sock.setTimeout(0)` fires only once a
+      // complete request has been read; a silent client never gets there.
+      const short = new BusHost({ stateDir, log, idleTimeoutMs: 60, queries: queries() });
+      try {
+        const ep = await short.registerSession(newId());
+        const sock = net.connect({ path: ep.pipePath });
+        sock.on('error', () => {});
+        const closed = new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error('never dropped')), 3000);
+          sock.on('close', () => {
+            clearTimeout(timer);
+            resolve();
+          });
+        });
+        await new Promise<void>((r) => sock.on('connect', () => r()));
+        await expect(closed).resolves.toBeUndefined();
+      } finally {
+        short.stop();
+      }
+    });
+
+    it('AN ANSWER THAT NEVER SETTLES is bounded, and says which op ran long', async () => {
+      // ⚠️ THE HOLE REVIEW FOUND IN MY OWN FIX. Clearing the idle deadline once
+      // a request is in hand is right — a slow `git diff` must not read as
+      // "switchboard could not be reached" — but the first cut cleared it and
+      // put NOTHING back, so between reading a request and writing a reply the
+      // host had no bound at all. A wedged git held a socket and a promise for
+      // the life of the app, and anything that could read the token could do it
+      // deliberately, N times over.
+      //
+      // Resolving to a refusal rather than letting the socket backstop destroy
+      // the connection is the point: a bare close reaches the model as "the
+      // host closed the connection without answering", which is true and
+      // useless. This names the operation, from the only layer that knows.
+      const stuck = new BusHost({
+        stateDir,
+        log,
+        answerDeadlineMs: 80,
+        queries: { ...queries(), sessionDiff: () => new Promise(() => {}) },
+      });
+      try {
+        const ep = await stuck.registerSession(newId());
+        const reply = await askHost({
+          ...ep,
+          request: { op: 'get_session_diff', args: { session: 'x' } },
+          timeoutMs: 3000,
+        });
+        expect(reply.ok).toBe(false);
+        expect(String(reply.reason)).toMatch(/took longer/);
+      } finally {
+        stuck.stop();
+      }
+    });
+
+    it('…and the connection is given back afterwards, not held', async () => {
+      // The other half: a bounded ANSWER is worth little if the socket it was
+      // holding stays in the set. Measured through `connectionCount`, which is
+      // the observable the reclaim work added for exactly this reason.
+      const stuck = new BusHost({
+        stateDir,
+        log,
+        answerDeadlineMs: 60,
+        replyLingerMs: 60,
+        queries: { ...queries(), sessionDiff: () => new Promise(() => {}) },
+      });
+      const id = newId();
+      try {
+        const ep = await stuck.registerSession(id);
+        await askHost({
+          ...ep,
+          request: { op: 'get_session_diff', args: { session: 'x' } },
+          timeoutMs: 3000,
+        });
+        await new Promise((r) => setTimeout(r, 300));
+        expect(stuck.connectionCount(id)).toBe(0);
+      } finally {
+        stuck.stop();
+      }
+    });
+
+    it('a client that hangs up mid-answer is NOTICED, not written to', async () => {
+      // The await window `answerAndReply` owns. Writing to a destroyed socket is
+      // an asynchronous 'error' event, not a throw the reply path would catch,
+      // and it also arms a reclaim timer whose 'close' has already fired.
+      //
+      // ⚠️ ASSERTED ON THE BRANCH, because the first version of this test was
+      // decoration and the mutant proved it: it checked only that nothing was
+      // logged at `error` or `warn`, and removing the guard entirely kept it
+      // green — the stray write is swallowed by the socket's own 'error'
+      // handler, so "no fault logged" is true with the bug in as well as out.
+      // The debug line fires only when the guard runs.
+      let release!: () => void;
+      const held = new Promise<void>((r) => (release = r));
+      const slow = new BusHost({
+        stateDir,
+        log,
+        queries: {
+          ...queries(),
+          sessionDiff: () =>
+            held.then(() => ({
+              ok: true as const,
+              value: { session: SESSIONS[1], isRepo: true, diff: 'x', truncated: false },
+            })),
+        },
+      });
+      try {
+        const ep = await slow.registerSession(newId());
+        const token = fs.readFileSync(ep.tokenPath, 'utf8');
+        const sock = net.connect({ path: ep.pipePath });
+        sock.on('error', () => {});
+        await new Promise<void>((r) => sock.on('connect', () => r()));
+        sock.write(
+          JSON.stringify({ v: CHANNEL_VERSION, token, op: 'get_session_diff', args: { session: 'x' } }) + '\n'
+        );
+        // Give the host the request, then vanish before the answer is ready.
+        await new Promise((r) => setTimeout(r, 50));
+        sock.destroy();
+        // AND LET THE HOST NOTICE. Releasing in the same tick resolves the
+        // pending query on a MICROTASK, which runs before libuv delivers the
+        // socket's 'close' — so `sock.destroyed` was still false and the guard
+        // was not the thing under test. The first version of this did exactly
+        // that and failed identically with the guard in and out, which is how
+        // it was caught.
+        await new Promise((r) => setTimeout(r, 50));
+        release();
+        await new Promise((r) => setTimeout(r, 100));
+        expect(log.debug).toHaveBeenCalledWith(
+          'bus client went away before its answer was ready',
+          expect.anything()
+        );
+        // …and it is not a FAULT. A child hanging up is how a cancelled tool
+        // call looks from here, and a session torn down mid-call is a restart.
+        expect(log.error).not.toHaveBeenCalled();
+        expect(log.warn).not.toHaveBeenCalled();
+      } finally {
+        slow.stop();
+      }
+    });
+  });
+
   it('passes a query REFUSAL through with its reason', async () => {
     listSessions = () => ({ ok: false, reason: 'the session list is unavailable' });
     const ep = await host.registerSession(newId());
@@ -376,7 +686,7 @@ describe('authentication (the done-when: the pipe refuses an unauthenticated cli
     // `vi.advanceTimersByTimeAsync`, which does not drive libuv's socket
     // teardown, and it passed against a mutant with the reclaim removed
     // entirely.
-    const short = new BusHost({ stateDir, log, replyLingerMs: 60, queries: { listSessions: () => listSessions() } });
+    const short = new BusHost({ stateDir, log, replyLingerMs: 60, queries: queries() });
     const id = newId();
     try {
       const ep = await short.registerSession(id);
@@ -498,7 +808,7 @@ describe('the idle deadline', () => {
       stateDir,
       log,
       idleTimeoutMs: 60,
-      queries: { listSessions: () => listSessions() },
+      queries: queries(),
     });
     try {
       const ep = await short.registerSession(newId());

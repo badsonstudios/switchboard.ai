@@ -76,6 +76,25 @@ on the floor, and say so in your PR.
 
 ## 0.8.9 — unreleased
 
+### Added
+
+- **A session can now read what another session has been doing, and what it has
+  changed.** 0.8.8 let a session find out what *else* you had open; this adds
+  the two things worth knowing about a sibling once you have found it — the
+  recent part of its conversation, and its uncommitted changes as a diff. Ask
+  one session "what has the other one been working on?", or "look at the changes
+  in my other project and tell me whether they'd break this build", and it goes
+  and reads rather than making you copy anything across.
+
+  Both are **read-only** — nothing here lets one session type into another or
+  touch its files. Both hand back the recent end rather than everything, because
+  a whole conversation would fill up the asking session's head and leave it no
+  room to think; when something has been left out the session is told so plainly,
+  so it can ask for something narrower instead of assuming it saw the lot. Asking
+  about a session that isn't open gets a clear "no such session", listing the
+  ones that are, rather than a silent empty answer that reads like "it did
+  nothing".
+
 ## 0.8.8 — 2026-09-08
 
 ### Added

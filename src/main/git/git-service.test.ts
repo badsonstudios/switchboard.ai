@@ -128,6 +128,35 @@ describe('GitService.diff (P2-E11-01)', () => {
     sh(clean, ['commit', '-m', 'init']);
     expect(await svc.diff(clean)).toEqual({ isRepo: true, text: '' });
   });
+
+  it('THROWS when git fails, rather than reporting a clean tree (#764 review)', async () => {
+    // ⚠️ THE BUG THIS PINS. `text: r.ok ? r.out : ''` collapsed every failure of
+    // the diff command into `{ isRepo: true, text: '' }`, which the bus renders
+    // to a language model as "has no uncommitted changes". It is the same
+    // swallow the unborn-HEAD case above records fixing one line higher, and
+    // the likeliest way to reach it — `git` exceeding `execFile`'s 32 MB
+    // `maxBuffer` — happens precisely when the sibling has done the MOST work.
+    // So the tool got less truthful the more there was to say.
+    //
+    // A corrupt loose object is the portable way to make the diff command fail
+    // while the two probes above it still succeed. (`chmod` first: git writes
+    // loose objects read-only, which is also why this suite's temp dirs go
+    // through the registry.)
+    const broken = tempDir('sb-git-broken-');
+    sh(broken, ['init', '-b', 'main']);
+    sh(broken, ['config', 'user.email', 'test@test']);
+    sh(broken, ['config', 'user.name', 'test']);
+    fs.writeFileSync(path.join(broken, 'f.txt'), 'hello\n');
+    sh(broken, ['add', '.']);
+    sh(broken, ['commit', '-m', 'init']);
+    const blob = execFileSync('git', ['rev-parse', 'HEAD:f.txt'], { cwd: broken, encoding: 'utf8' }).trim();
+    const objectPath = path.join(broken, '.git', 'objects', blob.slice(0, 2), blob.slice(2));
+    fs.chmodSync(objectPath, 0o666);
+    fs.writeFileSync(objectPath, 'not a git object');
+    fs.writeFileSync(path.join(broken, 'f.txt'), 'changed\n');
+
+    await expect(svc.diff(broken)).rejects.toThrow(/could not produce the diff/);
+  });
   // Same ceiling as the hook, for the same reason (#512): every case in this
   // suite runs git in a child process.
 }, 30_000);
