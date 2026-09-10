@@ -8,7 +8,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { HISTORY_TAIL_BYTES, readTranscriptTail, replayResumedHistory } from './history';
+import {
+  HISTORY_TAIL_BYTES,
+  readTranscriptTail,
+  readTranscriptWindow,
+  replayResumedHistory,
+} from './history';
 import { slugForCwd } from '../transcripts/paths';
 import { Logger } from '../log/logger';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
@@ -111,6 +116,42 @@ describe('readTranscriptTail', () => {
     const file = writeTranscript(NATIVE, []);
     expect(readTranscriptTail(file)).toEqual([]);
     expect(readTranscriptTail(path.join(root, 'nope.jsonl'))).toEqual([]);
+  });
+});
+
+describe('readTranscriptWindow (#772)', () => {
+  // `cut` is what lets the bus read a small window and know whether a bigger
+  // one could show more. Wrong in the "false" direction, a sibling's long
+  // history is reported as complete; wrong in the "true" direction, every
+  // short transcript claims to have been trimmed.
+  it('is not cut when the window reaches the start of the file', () => {
+    const file = writeTranscript(NATIVE, [userLine('one'), userLine('two')]);
+    const w = readTranscriptWindow(file);
+    expect(w.cut).toBe(false);
+    expect(w.entries).toHaveLength(2);
+  });
+
+  it('is cut when the window starts after byte 0 — including exactly on a line boundary', () => {
+    const lines = [userLine('one'), userLine('two'), userLine('three')];
+    const file = writeTranscript(NATIVE, lines);
+    const midLine = Buffer.byteLength(lines[1] + '\n' + lines[2] + '\n') + 20;
+    const onBoundary = Buffer.byteLength(lines[1] + '\n' + lines[2] + '\n');
+    // On the boundary is the case worth pinning: no fragment was dropped, the
+    // entries look whole, and "one" is still history this read did not see.
+    for (const budget of [midLine, onBoundary]) {
+      const w = readTranscriptWindow(file, budget);
+      expect(w.cut).toBe(true);
+      expect(w.entries).toHaveLength(2);
+    }
+  });
+
+  it('a window exactly the size of the file is not cut', () => {
+    const file = writeTranscript(NATIVE, [userLine('one'), userLine('two')]);
+    expect(readTranscriptWindow(file, fs.statSync(file).size).cut).toBe(false);
+  });
+
+  it('a missing file is no history and not cut', () => {
+    expect(readTranscriptWindow(path.join(root, 'nope.jsonl'))).toEqual({ entries: [], cut: false });
   });
 });
 

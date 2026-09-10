@@ -295,6 +295,13 @@ confident answer about the wrong one.
   or a diff is cut, it is told outright.
 - **Brand-new files that have never been added to git don't show up** in a diff
   — that's how git itself works, and the session is reminded of it.
+- **A session can have at most four of these requests going at once.** One
+  session normally asks one thing at a time; it takes several helpers working in
+  parallel to hit this. The fifth is turned away with a note to wait for one to
+  finish, rather than piling work onto the app while you're using it.
+- **A look at another session's changes gives up after ten seconds** and says
+  so. That only happens on an enormous change set or a disk that has stopped
+  responding.
 
 If a session says it can't reach switchboard, look at the **switchboard** row
 in that session's `/mcp` panel — see

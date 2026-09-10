@@ -115,6 +115,22 @@ on the floor, and say so in your PR.
   was described the same way as one that had just finished a reply. It now
   says "exited".
 
+- **Another session looking at this session's changes can no longer make this
+  session's `git add` fail.** Reading a session's uncommitted changes briefly
+  took a lock inside that project's git folder whenever files had been touched
+  without being changed (a formatter run does that). If the session being read
+  tried to stage or commit at that moment, git refused with "index.lock: File
+  exists". Reading now never writes anything in the other project.
+
+- **Sessions asking each other lots of questions at once no longer make the
+  window stutter.** Several sessions (or one session's helpers) reading another
+  session's recent conversation at the same moment could freeze the app for a
+  noticeable fraction of a second. Each of those reads now does about a tenth
+  of the work, and a session that asks for more than four things at once is
+  told to wait for one to finish instead of piling on. A look at a session's
+  changes that takes more than ten seconds now stops and says so, rather than
+  leaving git running in the background.
+
 ## 0.8.8 — 2026-09-08
 
 ### Added

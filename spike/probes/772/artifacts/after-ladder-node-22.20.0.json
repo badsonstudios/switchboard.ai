@@ -1,0 +1,405 @@
+{
+  "when": "2026-09-10T18:52:33.737Z",
+  "node": "22.20.0",
+  "electron": null,
+  "v8": "12.4.254.21-node.33",
+  "platform": "win32 10.0.26200",
+  "cpu": "13th Gen Intel(R) Core(TM) i9-13900K",
+  "ncpu": 32,
+  "transcripts": [
+    {
+      "label": "real #1",
+      "size": 34833829,
+      "window": 4194304,
+      "entries": 1330,
+      "firstOutputMs": 2.9,
+      "ioMs": 1.5,
+      "tailMs": 13,
+      "output20Ms": 1.3,
+      "output20MaxMs": 1.5,
+      "output200Ms": 18.1
+    },
+    {
+      "label": "real #2",
+      "size": 8430759,
+      "window": 4194304,
+      "entries": 1334,
+      "firstOutputMs": 1.4,
+      "ioMs": 1.5,
+      "tailMs": 14.1,
+      "output20Ms": 1.2,
+      "output20MaxMs": 1.8,
+      "output200Ms": 18.8
+    },
+    {
+      "label": "real #3",
+      "size": 6708698,
+      "window": 4194304,
+      "entries": 1268,
+      "firstOutputMs": 1.3,
+      "ioMs": 1.7,
+      "tailMs": 12.7,
+      "output20Ms": 1.2,
+      "output20MaxMs": 1.3,
+      "output200Ms": 16.7
+    },
+    {
+      "label": "real #4",
+      "size": 6608145,
+      "window": 4194304,
+      "entries": 2466,
+      "firstOutputMs": 2.3,
+      "ioMs": 1.4,
+      "tailMs": 14.4,
+      "output20Ms": 1.2,
+      "output20MaxMs": 1.2,
+      "output200Ms": 21.4
+    },
+    {
+      "label": "real #5",
+      "size": 6194253,
+      "window": 4194304,
+      "entries": 2663,
+      "firstOutputMs": 1.2,
+      "ioMs": 1.2,
+      "tailMs": 14.9,
+      "output20Ms": 1.2,
+      "output20MaxMs": 1.2,
+      "output200Ms": 21.6
+    },
+    {
+      "label": "real #6",
+      "size": 6051343,
+      "window": 4194304,
+      "entries": 2316,
+      "firstOutputMs": 2.7,
+      "ioMs": 1.3,
+      "tailMs": 13.1,
+      "output20Ms": 1.1,
+      "output20MaxMs": 1.2,
+      "output200Ms": 21.5
+    },
+    {
+      "label": "real #7",
+      "size": 2090143,
+      "window": 2090143,
+      "entries": 1102,
+      "firstOutputMs": 1.1,
+      "ioMs": 0.6,
+      "tailMs": 6.9,
+      "output20Ms": 1,
+      "output20MaxMs": 1,
+      "output200Ms": 10.8
+    },
+    {
+      "label": "real #8",
+      "size": 1048807,
+      "window": 1048807,
+      "entries": 407,
+      "firstOutputMs": 1.2,
+      "ioMs": 0.3,
+      "tailMs": 3.1,
+      "output20Ms": 1,
+      "output20MaxMs": 2.1,
+      "output200Ms": 8.2
+    },
+    {
+      "label": "real #9",
+      "size": 262061,
+      "window": 262061,
+      "entries": 184,
+      "firstOutputMs": 1,
+      "ioMs": 0.1,
+      "tailMs": 0.8,
+      "output20Ms": 0.9,
+      "output20MaxMs": 1.9,
+      "output200Ms": 1
+    },
+    {
+      "label": "real #10",
+      "size": 65538,
+      "window": 65538,
+      "entries": 18,
+      "firstOutputMs": 0.4,
+      "ioMs": 0,
+      "tailMs": 0.2,
+      "output20Ms": 0.2,
+      "output20MaxMs": 0.3,
+      "output200Ms": 0.2
+    }
+  ],
+  "git": [
+    {
+      "files": 2000,
+      "touchedAll": true,
+      "plumbingMs": [
+        534.5,
+        513.5,
+        512.6
+      ],
+      "porcelainMs": [
+        492.6,
+        24.9,
+        23.2
+      ],
+      "plumbingAfterRefreshMs": 20.9
+    },
+    {
+      "files": 2000,
+      "dirtyFiles": 0,
+      "diffChars": 0,
+      "error": null,
+      "firstMs": 67.6,
+      "medianMs": 61.7,
+      "maxMs": 67.6,
+      "worstLoopStallMs": 15.5,
+      "partsMs": [
+        19.4,
+        25,
+        22.6,
+        21
+      ]
+    },
+    {
+      "files": 2000,
+      "dirtyFiles": 40,
+      "diffChars": 88600,
+      "error": null,
+      "firstMs": 80,
+      "medianMs": 75.3,
+      "maxMs": 80,
+      "worstLoopStallMs": 15.6,
+      "partsMs": [
+        20.9,
+        22.4,
+        36.6,
+        36
+      ]
+    },
+    {
+      "files": 2000,
+      "dirtyFiles": 800,
+      "diffChars": 1846760,
+      "error": null,
+      "firstMs": 296,
+      "medianMs": 287.2,
+      "maxMs": 296,
+      "worstLoopStallMs": 15.9,
+      "partsMs": [
+        19.6,
+        20.4,
+        260.2,
+        236.5
+      ]
+    },
+    {
+      "files": 20000,
+      "touchedAll": true,
+      "plumbingMs": [
+        2440.6,
+        2486.5,
+        2451.3
+      ],
+      "porcelainMs": [
+        2037,
+        27.2,
+        28.4
+      ],
+      "plumbingAfterRefreshMs": 25.8
+    },
+    {
+      "files": 20000,
+      "dirtyFiles": 0,
+      "diffChars": 0,
+      "error": null,
+      "firstMs": 62.5,
+      "medianMs": 62.4,
+      "maxMs": 62.5,
+      "worstLoopStallMs": 16.3,
+      "partsMs": [
+        19.2,
+        18.7,
+        25.6,
+        25.9
+      ]
+    },
+    {
+      "files": 20000,
+      "dirtyFiles": 40,
+      "diffChars": 88680,
+      "error": null,
+      "firstMs": 73.1,
+      "medianMs": 73.1,
+      "maxMs": 77.4,
+      "worstLoopStallMs": 16,
+      "partsMs": [
+        18.4,
+        18.4,
+        33.8,
+        32.7
+      ]
+    },
+    {
+      "files": 20000,
+      "dirtyFiles": 800,
+      "diffChars": 1848360,
+      "error": null,
+      "firstMs": 180.8,
+      "medianMs": 177.2,
+      "maxMs": 180.8,
+      "worstLoopStallMs": 16.4,
+      "partsMs": [
+        19.4,
+        22,
+        135.2,
+        134.7
+      ]
+    },
+    {
+      "files": 20000,
+      "dirtyFiles": 4000,
+      "diffChars": 9530760,
+      "error": null,
+      "firstMs": 595,
+      "medianMs": 596.5,
+      "maxMs": 607.5,
+      "worstLoopStallMs": 15.9,
+      "partsMs": [
+        19.4,
+        20.5,
+        587.8,
+        555.5
+      ]
+    },
+    {
+      "files": 20000,
+      "dirtyFiles": 14500,
+      "diffChars": 0,
+      "error": "Error: git could not produce the diff: it is larger than the 32 MB switchboard reads in one go",
+      "firstMs": 1936.6,
+      "medianMs": 1936.6,
+      "maxMs": 1963,
+      "worstLoopStallMs": 16.3,
+      "partsMs": [
+        19.9,
+        18.8,
+        2009.8,
+        1997.8
+      ]
+    }
+  ],
+  "host": {
+    "transcriptSize": 34833829,
+    "diffRepo": "sb-772-20000-ccO2b3",
+    "baseline": {
+      "maxGapMs": 16.5,
+      "gapsOver50": 0,
+      "stalledMs": 0
+    },
+    "rows": [
+      {
+        "op": "get_session_output",
+        "n": 1,
+        "ok": 1,
+        "refused": [],
+        "latencyMinMs": 4,
+        "latencyMedianMs": 4,
+        "latencyMaxMs": 4,
+        "burstWallMs": 43.4,
+        "hostMaxGapMs": 15.7,
+        "hostGapsOver50": 0,
+        "hostStalledMs": 0
+      },
+      {
+        "op": "get_session_output",
+        "n": 4,
+        "ok": 4,
+        "refused": [],
+        "latencyMinMs": 4,
+        "latencyMedianMs": 6,
+        "latencyMaxMs": 7,
+        "burstWallMs": 45.9,
+        "hostMaxGapMs": 15.9,
+        "hostGapsOver50": 0,
+        "hostStalledMs": 0
+      },
+      {
+        "op": "get_session_output",
+        "n": 16,
+        "ok": 5,
+        "refused": [
+          "this session already has 4 requests to switchboard in progress, so this one was not started — wait for one of them to finish, then try again",
+          "this session already has 4 requests to switchboard in progress, so this one was not started — wait for one of them to finish, then try again",
+          "this session already has 4 requests to switchboard in progress, so this one was not started — wait for one of them to finish, then try again",
+          "this session already has 4 requests to switchboard in progress, so this one was not started — wait for one of them to finish, then try again",
+          "this session already has 4 requests to switchboard in progress, so this one was not started — wait for one of them to finish, then try again",
+          "this session already has 4 requests to switchboard in progress, so this one was not started — wait for one of them to finish, then try again",
+          "this session already has 4 requests to switchboard in progress, so this one was not started — wait for one of them to finish, then try again",
+          "this session already has 4 requests to switchboard in progress, so this one was not started — wait for one of them to finish, then try again",
+          "this session already has 4 requests to switchboard in progress, so this one was not started — wait for one of them to finish, then try again",
+          "this session already has 4 requests to switchboard in progress, so this one was not started — wait for one of them to finish, then try again",
+          "this session already has 4 requests to switchboard in progress, so this one was not started — wait for one of them to finish, then try again"
+        ],
+        "latencyMinMs": 4,
+        "latencyMedianMs": 4,
+        "latencyMaxMs": 9,
+        "burstWallMs": 49.8,
+        "hostMaxGapMs": 15.9,
+        "hostGapsOver50": 0,
+        "hostStalledMs": 0
+      },
+      {
+        "op": "get_session_diff",
+        "n": 1,
+        "ok": 1,
+        "refused": [],
+        "latencyMinMs": 649,
+        "latencyMedianMs": 649,
+        "latencyMaxMs": 649,
+        "burstWallMs": 688.8,
+        "hostMaxGapMs": 16,
+        "hostGapsOver50": 0,
+        "hostStalledMs": 0
+      },
+      {
+        "op": "get_session_diff",
+        "n": 4,
+        "ok": 4,
+        "refused": [],
+        "latencyMinMs": 825,
+        "latencyMedianMs": 836,
+        "latencyMaxMs": 841,
+        "burstWallMs": 876.5,
+        "hostMaxGapMs": 15.9,
+        "hostGapsOver50": 0,
+        "hostStalledMs": 0
+      },
+      {
+        "op": "get_session_diff",
+        "n": 16,
+        "ok": 4,
+        "refused": [
+          "this session already has 4 requests to switchboard in progress, so this one was not started — wait for one of them to finish, then try again",
+          "this session already has 4 requests to switchboard in progress, so this one was not started — wait for one of them to finish, then try again",
+          "this session already has 4 requests to switchboard in progress, so this one was not started — wait for one of them to finish, then try again",
+          "this session already has 4 requests to switchboard in progress, so this one was not started — wait for one of them to finish, then try again",
+          "this session already has 4 requests to switchboard in progress, so this one was not started — wait for one of them to finish, then try again",
+          "this session already has 4 requests to switchboard in progress, so this one was not started — wait for one of them to finish, then try again",
+          "this session already has 4 requests to switchboard in progress, so this one was not started — wait for one of them to finish, then try again",
+          "this session already has 4 requests to switchboard in progress, so this one was not started — wait for one of them to finish, then try again",
+          "this session already has 4 requests to switchboard in progress, so this one was not started — wait for one of them to finish, then try again",
+          "this session already has 4 requests to switchboard in progress, so this one was not started — wait for one of them to finish, then try again",
+          "this session already has 4 requests to switchboard in progress, so this one was not started — wait for one of them to finish, then try again",
+          "this session already has 4 requests to switchboard in progress, so this one was not started — wait for one of them to finish, then try again"
+        ],
+        "latencyMinMs": 4,
+        "latencyMedianMs": 4,
+        "latencyMaxMs": 831,
+        "burstWallMs": 868.7,
+        "hostMaxGapMs": 16.1,
+        "hostGapsOver50": 0,
+        "hostStalledMs": 0
+      }
+    ]
+  }
+}

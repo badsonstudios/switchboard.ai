@@ -51,6 +51,9 @@ export const TOOL_DEADLINE_MS = 20_000;
  *
  * Each layer's message is better than the next one out, so the innermost one
  * that can fire should fire first. `bus-tools.test.ts` pins the ordering.
+ * Since #772 there is a layer inside all three — `DIFF_BUDGET_MS` (10 s)
+ * kills git itself — and the one measurement above is a table in
+ * `spike/findings/e11-772-bus-cost.md`.
  */
 export const SLOW_TOOL_TIMEOUT_MS = 15_000;
 

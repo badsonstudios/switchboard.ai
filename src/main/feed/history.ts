@@ -57,13 +57,39 @@ export function readTranscriptTail(
   maxBytes = HISTORY_TAIL_BYTES,
   maxLines = HISTORY_MAX_LINES
 ): Record<string, unknown>[] {
+  return readTranscriptWindow(file, maxBytes, maxLines).entries;
+}
+
+/** What `readTranscriptWindow` read, and whether it reached the file's start. */
+export interface TranscriptWindow {
+  entries: Record<string, unknown>[];
+  /**
+   * The byte window began AFTER the start of the file, so there is older
+   * history this read did not see. `false` for a file read whole, or one that
+   * could not be read at all.
+   *
+   * Exists for the bus (#772), which reads a SMALL window first and grows it
+   * only when the answer needs more — and has to know the difference between
+   * "this is everything" and "this is all I looked at". The line budget is a
+   * separate cut and the caller already knows it (`entries.length`).
+   */
+  cut: boolean;
+}
+
+/** `readTranscriptTail`, plus whether the window stopped short of byte 0. */
+export function readTranscriptWindow(
+  file: string,
+  maxBytes = HISTORY_TAIL_BYTES,
+  maxLines = HISTORY_MAX_LINES
+): TranscriptWindow {
+  const none: TranscriptWindow = { entries: [], cut: false };
   let size: number;
   try {
     size = fs.statSync(file).size;
   } catch {
-    return [];
+    return none;
   }
-  if (size <= 0) return [];
+  if (size <= 0) return none;
   const from = Math.max(0, size - maxBytes);
   // ONE BYTE OF CONTEXT for a truncated read, so the cut can be classified
   // rather than assumed. `from` lands wherever the arithmetic put it, and that
@@ -97,7 +123,7 @@ export function readTranscriptTail(
     // appending to yet, so there is no boundary to split a character across.
     text = buf.toString('utf8', 0, got);
   } catch {
-    return [];
+    return none;
   } finally {
     if (fd !== null) {
       try {
@@ -126,7 +152,7 @@ export function readTranscriptTail(
       /* a half-written or oversized line is not history we can show */
     }
   }
-  return out;
+  return { entries: out, cut: from > 0 };
 }
 
 /** Just enough of `StreamFeed` for this to be callable with a test double. */
