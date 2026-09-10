@@ -34,28 +34,54 @@
 > unattended workers is a different risk from one reported item, and that
 > asymmetry is written down in the file so it does not later read as drift.
 
-> # 🔨 IN PROGRESS — 2026-09-10: **#772** — bus read bounds (probe first)
+> # ✅ MERGED — 2026-09-10: **#772** — bus read bounds, measured first
 >
-> Branch `feature/772-bus-bounds`. Step 1 is the probe under
-> `spike/probes/772/` + a findings note, measuring `readTranscriptTail` /
-> `sessionOutput` against this machine's real >4 MB transcripts and
-> `GitService.diff` against synthetic repos at scale, then a real `BusHost`
-> under N concurrent clients. The bound comes after the numbers. Measured
-> already: the CLI runs an MCP tool in parallel only when it declares
-> `readOnlyHint` (`isConcurrencySafe(){return v.annotations?.readOnlyHint??!1}`,
-> PATH 2.1.261) and ours declare none — so one agent loop is serial, and
-> same-endpoint concurrency comes from parallel subagents, a retry after the
-> child gave up, or anything else holding the token.
+> **PR #777, squashed to `af88e63`, all four CI jobs green.** Issue closed.
+> ⚠️ **NOT RELEASED** — joins #764/#765 under `0.8.9 — unreleased`;
+> `gh release list` is the authority.
 >
-> **State (later 2026-09-10):** probe done, findings note written
-> (`spike/findings/e11-772-bus-cost.md`), implementation + tests done and
-> mutant-verified, docs/CHANGELOG/dogfood row written. Review round 1 found a
-> BLOCKER (execFile's timeout kills Git for Windows' `cmd\git.exe` launcher and
-> leaves the real git running — my first kill probe passed for the wrong
-> reason); fixed with a `taskkill /T` tree kill + slot ceiling + restart
-> identity check. Round 2 review in flight. Filed **#776** (repo config runs
-> commands during the bus diff AND the git pane — measured). Nothing committed
-> yet; the branch is the working tree.
+> **Next up: #766** (P2-E11-09, context package generator — E13's
+> prerequisite, needs only #761). **#774** (#765's review follow-ups) and the
+> new **#776** are the alternatives; #776 is a real security-shaped finding
+> (below) but not urgent.
+>
+> **Probe first, as the issue asked** (`spike/probes/772/`,
+> `spike/findings/e11-772-bus-cost.md`). The deadlines #764 guessed held
+> (git cost is set by DIFF size — 100k files clean diff in 88 ms; largest
+> answerable ≈ 2 s). The real problems were elsewhere:
+> * **A burst of the SYNC transcript read is one stall** — 16 at once froze
+>   Electron main 184 ms in one block (libuv runs every ready socket's `data`
+>   in one poll phase). A plain in-flight counter would NEVER have tripped on
+>   it; the bound yields one turn (`setImmediate`) before working so the burst
+>   is counted. After: longest gap = the 16 ms timer floor.
+> * **Porcelain `git diff` rewrote the sibling's `.git/index`** (took
+>   `index.lock`) whenever files were touched-but-unchanged —
+>   `GIT_OPTIONAL_LOCKS=0` does NOT stop it. Now `diff-index -p -M`, byte-identical.
+>
+> **Shipped:** per-endpoint in-flight bound 4 (`list_sessions` exempt),
+> refused not queued, never `uncertain`; slot held until the work settles,
+> written off at the 24 s backstop; identity check after the yield.
+> `sessionOutput` reads 256 KB then ONE read at the old 4 MB (default path
+> 12–17 → ~1.2 ms; two other window designs measured and rejected).
+> `truncated` now reports a byte window cut short. `GitService.diff`: 10 s
+> budget across its three calls, own timer, `taskkill /T` tree kill on Windows,
+> pipes closed on timeout. Cascade pinned: git 10 < host 12 < child 15 < apply 20.
+>
+> ## ⚠️ REVIEW CAUGHT A BLOCKER I HAD "PROVEN" AWAY
+> `execFile`'s `timeout` kills Git for Windows' **`cmd\git.exe` launcher** —
+> which is what an app launched from Explorer runs — and the real git lives on.
+> My kill probe said 0 survivors, positive control and all, because its git hung
+> ON STDIN and exits by itself when the launcher's pipe closes. Then my first
+> unit test for the fix passed against the mutant too: a Node fake launcher's
+> children die with it (Windows job object). `detached` fixed the fake. Round 2
+> then found my replacement timer had dropped `execFile`'s pipe-closing, so a
+> descendant holding git's stdout stretched the budget to its lifetime. **How a
+> process hangs decides whether killing its parent ends it.**
+>
+> ## FILED #776 — repo config runs commands in OUR process
+> `core.fsmonitor` and clean filters in a session's own repo config execute
+> during the bus diff AND the git pane's `status` (measured). Same class as the
+> `diff.external` hole #764 closed. Not built here — it spans all of GitService.
 
 > # ✅ MERGED — 2026-09-10: **#765** — P2-E11-05, `send_to_session` + delivery policy
 >
