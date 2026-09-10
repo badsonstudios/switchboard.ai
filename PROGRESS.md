@@ -34,26 +34,61 @@
 > unattended workers is a different risk from one reported item, and that
 > asymmetry is written down in the file so it does not later read as drift.
 
-> # 🔨 IN PROGRESS — 2026-09-10: **#765** — P2-E11-05, `send_to_session` + delivery policy
+> # ✅ MERGED — 2026-09-10: **#765** — P2-E11-05, `send_to_session` + delivery policy
 >
-> Branch `feature/765-send-to-session`. Plan posted on the issue. Picked over
-> #766/#772 because it completes E11's exit criterion 4; #772 stays next (a
-> send is an IPC hop, not the sync 4 MB read #772 is about).
+> **PR #775, squashed to `8a9ac8a`, all four CI jobs green.** Issue closed.
+> **E11's exit criterion 4 (items 00–05) is now met** — two sessions can
+> exchange context over the bus. ⚠️ **NOT RELEASED** — joins #764 under
+> `0.8.9 — unreleased`; `gh release list` is the authority.
 >
-> **State: implemented, two review rounds done, PR opening — merges on green
-> CI.** Full unit suite green bar one real-fs timing flake in
-> `transcripts/watcher.test.ts` (a different test each run, under load; no
-> changed file is in its import graph). `check:bus` PASS, e2e 3/3. Review
-> round 1 caught a BLOCKER — control characters in a message could turn the
-> user's one reviewed Enter into terminal keystrokes — now refused. Follow-ups
-> filed as **#774**.
+> **Next up: #772** (bus rate/concurrency bound — probe first). It was scoped
+> "before #765 adds more traffic"; #765 was taken first deliberately because a
+> send is an IPC hop, not the sync 4 MB transcript read #772 is about — so
+> #772 is unchanged in size and still first in line. **#766** (context package
+> generator, E13's prerequisite) is the alternative. **#774** holds #765's
+> review follow-ups (sidebar mark for a message waiting on a collapsed card,
+> card-gone ack, double Enter during an attachments send) — none touch the
+> safety property.
 >
-> **Shape:** `SiblingDelivery` (main, transport-free) decides; the renderer
-> only ever HOLDS a message (per-card inbox → highlighted "from @A" block in the
-> composer, sent only by the user's Enter). The push carries no "submit" flag at
-> all — auto-accept is main's decision, made from a per-card flag, Direct
-> transport only, and rate-capped so two auto-accepting sessions cannot loop.
-> A delivery is confirmed by a renderer ack; no ack = an explicit refusal.
+> **Shape:** `SiblingDelivery` (`sessions/delivery.ts`, transport-free)
+> decides; the renderer only ever HOLDS (per-card inbox → highlighted
+> "From @A" block, sent only by the user's Enter). The push has **no field
+> that means "send"** and a test pins its key set. Auto-accept is main's
+> decision from a per-card flag, Direct-only, idle/done/working-only, capped at
+> 5 per target per 10 min. Liveness is `SessionSummary.exited` (from
+> `exitCode`) — `status: 'done'` means BOTH a finished turn and a clean exit.
+>
+> **Judgment calls made rather than asked** (all in the PR and the report):
+> auto-accept Direct-only; a loop breaker even with the toggle on; toggle and
+> ack under `sessions.write`; `delivery` a REQUIRED `BusHost` option; control
+> and invisible characters REFUSED rather than stripped; forwarded text before
+> the user's own words.
+>
+> ## ⚠️ REVIEW CAUGHT A BLOCKER — THE KEYPRESS COULD LIE
+> A message carrying `ESC [201~` would end a Terminal-mode session's bracketed
+> paste early, so the user's ONE reviewed Enter became keystrokes they never
+> saw (a CR that submits, a Shift+Tab that flips permission mode). The block
+> rendered none of it. Now refused in main and again in the renderer, along
+> with bidi overrides and the invisible families a model reads and a person
+> cannot (tag characters, zero-width space, BOM…). Round 2 then found the
+> "arrived a moment ago" settle window measured from ARRIVAL — so a message
+> that landed while the card sat on its Terminal tab went out with the first
+> Enter after the user came back, unseen, under "the user reviewed it". It now
+> runs from the composer's first paint.
+>
+> ## TOOLING HAZARD, AGAIN — MY OWN OUTPUT PUT CONTROL BYTES IN A FILE
+> Writing a regex of backslash-u escapes (backslash, "u", four hex digits)
+> through the Write/Edit tools produced the LITERAL characters — a NUL
+> included — in `shared/sibling-message.ts`, and did it AGAIN in this very
+> paragraph when it first quoted one. `check-nul` and `grep` flagged both. The fix
+> is the rule `renderer/lib/composer.ts` already states: **build control
+> characters from code points** (`String.fromCodePoint(0x1b)`), never type
+> escapes into source through a tool. Worth adding to the lessons list.
+>
+> ## NOISE SIGHTED, NOT CHASED
+> `transcripts/watcher.test.ts` and `discovery-scheduler.test.ts` (real
+> `fs.watch` timing) fail under load locally — a DIFFERENT test every run, none
+> importing anything #765 touched. Green in CI. Same class as #768.
 
 > # ✅ MERGED — 2026-09-08: **#764** — P2-E11-04, the bus read tools
 >
