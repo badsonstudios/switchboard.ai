@@ -7,7 +7,13 @@ import fs from 'fs';
 import net from 'net';
 import os from 'os';
 import path from 'path';
-import { BusHost, BusQueries, IDLE_TIMEOUT_MS, REPLY_LINGER_MS } from './host-channel';
+import {
+  BusHost,
+  BusQueries,
+  IDLE_TIMEOUT_MS,
+  MAX_IN_FLIGHT_PER_SESSION,
+  REPLY_LINGER_MS,
+} from './host-channel';
 import { busPipePath, busTokenPath } from './bus-paths';
 import { CHANNEL_VERSION } from './channel';
 import { stubDelivery, stubQueries } from './fixtures/queries';
@@ -905,6 +911,347 @@ describe('one request per connection', () => {
     const line = JSON.stringify({ v: CHANNEL_VERSION, token, op: 'list_sessions' }) + '\n';
     const raw = await rawAsk(ep.pipePath, line.repeat(20));
     expect(JSON.parse(raw)).toMatchObject({ ok: true, sessions: SESSIONS });
+  });
+});
+
+describe('the in-flight bound (#772)', () => {
+  /** Poll until `cond` holds — the counters move on the host's own schedule. */
+  async function until(cond: () => boolean, ms = 3000): Promise<void> {
+    const deadline = Date.now() + ms;
+    while (!cond()) {
+      if (Date.now() > deadline) throw new Error('condition never held');
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  }
+
+  /** A diff that answers only when the test says so. */
+  function gatedDiff(): { release: () => void; started: () => number } {
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    let started = 0;
+    sessionDiff = () => {
+      started++;
+      return held.then(() => ({
+        ok: true as const,
+        value: { session: SESSIONS[1], isRepo: true, diff: 'x', truncated: false },
+      }));
+    };
+    return { release, started: () => started };
+  }
+
+  const diffReq = { op: 'get_session_diff', args: { session: 'Beta' } };
+
+  it('refuses the request past the bound, with a reason, WITHOUT starting it', async () => {
+    const gate = gatedDiff();
+    const id = newId();
+    const ep = await host.registerSession(id);
+    const admitted = Array.from({ length: MAX_IN_FLIGHT_PER_SESSION }, () =>
+      askHost({ ...ep, request: diffReq, timeoutMs: 5000 })
+    );
+    await until(() => host.inFlightCount(id) === MAX_IN_FLIGHT_PER_SESSION);
+
+    const refused = await askHost({ ...ep, request: diffReq });
+    expect(refused.ok).toBe(false);
+    expect(String(refused.reason)).toMatch(/already have 4 requests to switchboard in progress/);
+    // Nothing was started, so this is a plain "no" — see the send case below.
+    expect(refused.uncertain).toBeUndefined();
+    expect(gate.started()).toBe(MAX_IN_FLIGHT_PER_SESSION);
+
+    gate.release();
+    expect((await Promise.all(admitted)).every((r) => r.ok === true)).toBe(true);
+    // …and the slots come back: the endpoint answers a BOUNDED request again
+    // (not `list_sessions`, which is exempt and would pass either way).
+    await until(() => host.inFlightCount(id) === 0);
+    await expect(
+      askHost({ ...ep, request: { op: 'get_session_output', args: { session: 'Beta' } } })
+    ).resolves.toMatchObject({ ok: true });
+  });
+
+  it('list_sessions is EXEMPT — the cheapest call still answers when four slow ones hold the rest', async () => {
+    const gate = gatedDiff();
+    const id = newId();
+    const ep = await host.registerSession(id);
+    const admitted = Array.from({ length: MAX_IN_FLIGHT_PER_SESSION }, () =>
+      askHost({ ...ep, request: diffReq, timeoutMs: 5000 })
+    );
+    await until(() => host.inFlightCount(id) === MAX_IN_FLIGHT_PER_SESSION);
+    await expect(askHost({ ...ep, request: { op: 'list_sessions' } })).resolves.toMatchObject({ ok: true });
+    gate.release();
+    await Promise.all(admitted);
+  });
+
+  it('a slot whose work NEVER settles is written off at the backstop, loudly — not held for ever', async () => {
+    // Holding until settle is right, but four pieces of work that never settle
+    // (a git stuck in the kernel survives even a kill) would otherwise leave
+    // this session's bus refusing everything for the rest of its life.
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    const stuck = new BusHost({
+      stateDir,
+      log,
+      answerDeadlineMs: 60,
+      answerBackstopMs: 200,
+      delivery: delivery(),
+      queries: {
+        ...queries(),
+        sessionDiff: () =>
+          held.then(() => ({
+            ok: true as const,
+            value: { session: SESSIONS[1], isRepo: true, diff: 'x', truncated: false },
+          })),
+      },
+    });
+    const id = newId();
+    try {
+      const ep = await stuck.registerSession(id);
+      await askHost({ ...ep, request: diffReq, timeoutMs: 3000 });
+      await until(() => stuck.inFlightCount(id) === 0);
+      expect(log.error).toHaveBeenCalledWith(
+        expect.stringMatching(/past its backstop/),
+        expect.objectContaining({ op: 'get_session_diff' })
+      );
+      // …and when the work DOES finish after all, the slot is not given back
+      // a second time — that would push the count below zero and quietly lift
+      // the bound by one.
+      release();
+      await held;
+      await new Promise((r) => setTimeout(r, 20));
+      expect(stuck.inFlightCount(id)).toBe(0);
+    } finally {
+      stuck.stop();
+    }
+  });
+
+  it('work that finishes NORMALLY cancels the ceiling — no false "past its backstop" error later', async () => {
+    // The ceiling's error is the one signal that a dependency never settles.
+    // Left armed after a normal finish it would fire for EVERY request, 24 s
+    // on, and bury that signal — while the counts stayed right, since the
+    // slot is only given back once. So assert on the log, not the count.
+    const quick = new BusHost({
+      stateDir,
+      log,
+      answerBackstopMs: 120,
+      delivery: delivery(),
+      queries: queries(),
+    });
+    const id = newId();
+    try {
+      const ep = await quick.registerSession(id);
+      await expect(askHost({ ...ep, request: diffReq })).resolves.toMatchObject({ ok: true });
+      await new Promise((r) => setTimeout(r, 300));
+      expect(log.error).not.toHaveBeenCalledWith(expect.stringMatching(/past its backstop/), expect.anything());
+    } finally {
+      quick.stop();
+    }
+  });
+
+  it('work finishing after a RESTART gives its slot back to the registration it came from, not the new one', async () => {
+    // The request was admitted on registration 1; the session restarts and
+    // registration 2 takes the name. Releasing by a fresh lookup would drop
+    // registration 2 to -1 — silently lifting its bound to five.
+    const gate = gatedDiff();
+    const id = newId();
+    const ep = await host.registerSession(id);
+    const first = askHost({ ...ep, request: diffReq, timeoutMs: 5000 }).catch(() => null);
+    await until(() => host.inFlightCount(id) === 1);
+    host.unregisterSession(id);
+    await host.registerSession(id);
+    expect(host.inFlightCount(id)).toBe(0);
+    gate.release();
+    await first;
+    await new Promise((r) => setTimeout(r, 20));
+    expect(host.inFlightCount(id)).toBe(0);
+  });
+
+  it('a request admitted just before a RESTART does not run on the new registration', async () => {
+    // A restart fits inside the one-turn yield: `listen` on a pipe settles on
+    // the next tick. Checked by membership, the request would then find the
+    // NEW registration present and run — for a socket that was destroyed with
+    // the old one. The yield is intercepted so the restart lands inside it.
+    //
+    // The spy takes the FIRST `setImmediate` in the process after the request
+    // is sent, on the bet that it is `answer`'s. If a runtime internal ever
+    // gets there first, `calls` stays 0 for the wrong reason and the mutant
+    // check (membership instead of identity) is what would say so — it went
+    // red when this was written.
+    let calls = 0;
+    const real = sessionOutput;
+    sessionOutput = (ref, lastN) => {
+      calls++;
+      return real(ref, lastN);
+    };
+    const id = newId();
+    const ep = await host.registerSession(id);
+    const captured: { resume?: () => void } = {};
+    const yielded = new Promise<void>((r) => {
+      const spy = vi.spyOn(globalThis, 'setImmediate').mockImplementation((fn) => {
+        spy.mockRestore();
+        captured.resume = () => fn();
+        r();
+        return undefined as unknown as NodeJS.Immediate;
+      });
+    });
+    const asked = askHost({
+      ...ep,
+      request: { op: 'get_session_output', args: { session: 'Beta' } },
+      timeoutMs: 2000,
+    }).catch(() => null);
+    await yielded;
+    host.unregisterSession(id);
+    await host.registerSession(id);
+    captured.resume?.();
+    await asked;
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls).toBe(0);
+    expect(host.inFlightCount(id)).toBe(0);
+  });
+
+  it('holds the slot until the WORK settles — not until the deadline answers for it', async () => {
+    // The deadline replies "gave up" while the work runs on. Releasing then
+    // would let a retry start a second git beside the first, and a wedged repo
+    // would collect one per retry. The slot tracks work.
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    const stuck = new BusHost({
+      stateDir,
+      log,
+      answerDeadlineMs: 60,
+      delivery: delivery(),
+      queries: {
+        ...queries(),
+        sessionDiff: () =>
+          held.then(() => ({
+            ok: true as const,
+            value: { session: SESSIONS[1], isRepo: true, diff: 'x', truncated: false },
+          })),
+      },
+    });
+    const id = newId();
+    try {
+      const ep = await stuck.registerSession(id);
+      const reply = await askHost({ ...ep, request: diffReq, timeoutMs: 3000 });
+      expect(String(reply.reason)).toMatch(/took longer/);
+      // Answered — and the work is still running, so the slot is still taken.
+      expect(stuck.inFlightCount(id)).toBe(1);
+      release();
+      await until(() => stuck.inFlightCount(id) === 0);
+    } finally {
+      stuck.stop();
+    }
+  });
+
+  it('a SEND refused at the bound is a plain "not delivered" and never reaches the delivery policy', async () => {
+    // #765's rule: a host refusal that means "gave up" carries `uncertain`,
+    // because the message may already be in a composer. THIS refusal happens
+    // before anything is attempted, so "NOT delivered" is simply true — and
+    // marking it uncertain would teach the agent to doubt a certain answer.
+    const gate = gatedDiff();
+    let sends = 0;
+    send = (callerId, ref, message) => {
+      sends++;
+      return stubDelivery().send(callerId, ref, message);
+    };
+    const id = newId();
+    const ep = await host.registerSession(id);
+    const admitted = Array.from({ length: MAX_IN_FLIGHT_PER_SESSION }, () =>
+      askHost({ ...ep, request: diffReq, timeoutMs: 5000 })
+    );
+    await until(() => host.inFlightCount(id) === MAX_IN_FLIGHT_PER_SESSION);
+
+    const reply = await askHost({
+      ...ep,
+      request: { op: 'send_to_session', args: { session: 'Beta', message: 'hello' } },
+    });
+    expect(reply.ok).toBe(false);
+    expect(reply.uncertain).toBeUndefined();
+    expect(sends).toBe(0);
+    gate.release();
+    await Promise.all(admitted);
+  });
+
+  it('COUNTS a same-turn burst of the SYNCHRONOUS read — the excess is refused, not run back to back', async () => {
+    // ⚠️ THE CASE A PLAIN COUNTER MISSES. `get_session_output` is synchronous:
+    // without the yield in `answer`, each request takes its slot, does all its
+    // work and gives the slot back inside its own 'data' event, so the count
+    // never passes 1 — while libuv runs every ready socket's 'data' in one poll
+    // phase, back to back. #772's probe measured that as a 186 ms stall of
+    // Electron main for sixteen requests. So: every request is written before
+    // the host's loop gets a turn, and some of them must be refused.
+    let calls = 0;
+    const real = sessionOutput;
+    sessionOutput = (ref, lastN) => {
+      calls++;
+      return real(ref, lastN);
+    };
+    const id = newId();
+    const ep = await host.registerSession(id);
+    const token = fs.readFileSync(ep.tokenPath, 'utf8');
+    const N = 12;
+    const socks = await Promise.all(
+      Array.from(
+        { length: N },
+        () =>
+          new Promise<net.Socket>((resolve, reject) => {
+            const s = net.connect({ path: ep.pipePath });
+            s.once('connect', () => resolve(s));
+            s.once('error', reject);
+          })
+      )
+    );
+    await until(() => host.connectionCount(id) === N);
+    const replies = socks.map(
+      (s) =>
+        new Promise<Record<string, unknown>>((resolve, reject) => {
+          let buf = '';
+          s.setEncoding('utf8');
+          s.on('data', (d: string) => {
+            buf += d;
+            const nl = buf.indexOf('\n');
+            if (nl >= 0) {
+              s.destroy();
+              resolve(JSON.parse(buf.slice(0, nl)) as Record<string, unknown>);
+            }
+          });
+          s.once('error', reject);
+        })
+    );
+    const line =
+      JSON.stringify({ v: CHANNEL_VERSION, token, op: 'get_session_output', args: { session: 'Beta' } }) + '\n';
+    for (const s of socks) s.write(line);
+
+    const got = await Promise.all(replies);
+    const refused = got.filter((r) => r.ok !== true);
+    expect(refused.length).toBeGreaterThan(0);
+    for (const r of refused) expect(String(r.reason)).toMatch(/already have/);
+    // Refused means NOT RUN — the stall is the work, not the reply.
+    expect(calls).toBe(N - refused.length);
+  });
+
+  it('a request refused for any EARLIER reason never takes a slot', async () => {
+    // The bound is checked last among the refusals. Counted any earlier, a
+    // handful of bad-token requests would leak slots and leave the endpoint
+    // refusing its own session for the rest of its life.
+    const id = newId();
+    const ep = await host.registerSession(id);
+    for (let i = 0; i < MAX_IN_FLIGHT_PER_SESSION + 2; i++) {
+      const raw = await rawAsk(
+        ep.pipePath,
+        JSON.stringify({ v: CHANNEL_VERSION, token: 'wrong', op: 'list_sessions' }) + '\n'
+      );
+      expect(JSON.parse(raw)).toMatchObject({ ok: false, reason: 'not authorized' });
+    }
+    expect(host.inFlightCount(id)).toBe(0);
+    // A BOUNDED op, deliberately — `list_sessions` is exempt and would answer
+    // even with every slot leaked.
+    await expect(
+      askHost({ ...ep, request: { op: 'get_session_output', args: { session: 'Beta' } } })
+    ).resolves.toMatchObject({ ok: true });
+  });
+
+  it('the bound is four — the value the header argues for', () => {
+    // Every case above builds from the constant, so each follows the number
+    // wherever it goes; this pins the number.
+    expect(MAX_IN_FLIGHT_PER_SESSION).toBe(4);
   });
 });
 

@@ -32,7 +32,7 @@ import net from 'net';
 import path from 'path';
 import { busEndpointFor, busTokenPath } from './bus-paths';
 import { busLaunch, type BusLaunch } from './launch';
-import { CHANNEL_VERSION, MESSAGE_ARG, SESSION_ARG, isBusOp } from './channel';
+import { CHANNEL_VERSION, MESSAGE_ARG, SESSION_ARG, isBusOp, type BusOp } from './channel';
 import { LineReader, MAX_LINE_BYTES } from './protocol';
 import type { Logger } from '../log/logger';
 import type { SessionQueries } from '../sessions/queries';
@@ -81,7 +81,14 @@ export interface BusHostOptions {
    *  A test seam: the real value is twelve seconds, which no unit test may
    *  wait out, and fake timers do not drive libuv over a real socket. */
   answerDeadlineMs?: number;
-  /** The socket backstop behind that race. Absent = `ANSWER_BACKSTOP_MS`. */
+  /**
+   * The socket backstop behind that race. Absent = `ANSWER_BACKSTOP_MS`.
+   *
+   * ALSO the in-flight slot's ceiling since #772 — one "the machinery itself
+   * failed" horizon rather than two. A test that shrinks it to exercise the
+   * socket also writes off slots early; nothing in the suite depends on the
+   * two being separate, and one that does should split this.
+   */
   answerBackstopMs?: number;
   /**
    * Where the COMPILED bus server is. Absent = resolve it (`busServerPath`).
@@ -139,6 +146,13 @@ export const IDLE_TIMEOUT_MS = 10_000;
  * genuinely enormous repository is several. 12 s sits well above that and BELOW
  * the 15 s the child allows a diff, so the host's own message — which knows
  * what it was doing — is the one that normally reaches the model.
+ *
+ * #772 REPLACED THAT ONE DATA POINT WITH A TABLE (`spike/findings/
+ * e11-772-bus-cost.md`): repository size barely moves it — 100,000 files diff
+ * clean in 88 ms — and diff size does: 1.8 MB ≈ 0.2 s, 9 MB ≈ 0.6 s, and the
+ * largest answerable (just under `maxBuffer`) ≈ 2 s. Sixteen concurrent 9 MB
+ * diffs took 3.7 s each. The guess held. Since #772 git is also KILLED at
+ * `DIFF_BUDGET_MS` (10 s), inside this, so for a diff this is a backstop.
  */
 export const ANSWER_DEADLINE_MS = 12_000;
 
@@ -150,6 +164,29 @@ export const ANSWER_DEADLINE_MS = 12_000;
  * pre-empts a working answer.
  */
 export const ANSWER_BACKSTOP_MS = ANSWER_DEADLINE_MS * 2;
+
+/**
+ * The most requests one session's endpoint works on at once (#772).
+ *
+ * `ANSWER_DEADLINE_MS` bounds ONE answer; nothing bounded N of them, and a
+ * burst of reads is how a sibling shapes the responsiveness of the user's UI —
+ * P6 inverted. #772's probe measured it: sixteen `get_session_output` calls
+ * landing together stalled Electron main for 186 ms in a single block.
+ *
+ * WHY FOUR. The CLI runs an MCP tool concurrently only when it declares
+ * `readOnlyHint` (`isConcurrencySafe(){return v.annotations?.readOnlyHint??!1}`,
+ * read out of the PATH binary, 2.1.261), and ours declare none — so ONE agent
+ * loop's bus calls arrive one at a time. What produces real concurrency on one
+ * endpoint is parallel subagents sharing their parent's MCP client, and a
+ * handful of those is the ordinary case. Four admits that and still turns
+ * sixteen into four.
+ *
+ * REFUSED, NOT QUEUED — #772's own words, and the right trade: a queued agent
+ * sits in a tool call waiting on work it cannot see; a refused one reads why
+ * and carries on or retries. A queue would also have to answer "how long", and
+ * every answer to that is a new deadline inside the cascade.
+ */
+export const MAX_IN_FLIGHT_PER_SESSION = 4;
 
 /**
  * What a child gets back. `ok:false` carries a reason the AGENT will read.
@@ -182,6 +219,13 @@ interface Registration {
    *  children and nobody else's. A single host-wide set would have made one
    *  session closing cut every other session's in-flight tool call. */
   sockets: Set<net.Socket>;
+  /**
+   * Requests on this endpoint that have been admitted and whose WORK has not
+   * yet settled (#772). Not "whose answer has not been sent": see `answer`.
+   * Per registration, so a restart starts from zero and a late release from
+   * the previous life decrements the object it came from.
+   */
+  inFlight: number;
 }
 
 export class BusHost {
@@ -307,7 +351,7 @@ export class BusHost {
       throw new Error('the session was torn down while its bus endpoint was opening');
     }
 
-    this.bySession.set(sessionId, { token, server, endpoint, sockets });
+    this.bySession.set(sessionId, { token, server, endpoint, sockets, inFlight: 0 });
     this.byToken.set(token, sessionId);
     this.opts.log.info('bus endpoint up', { sessionId });
     return endpoint;
@@ -467,6 +511,13 @@ export class BusHost {
    */
   connectionCount(sessionId: string): number {
     return this.bySession.get(sessionId)?.sockets.size ?? 0;
+  }
+
+  /** Admitted requests whose work has not settled (#772). Observability, for
+   *  the same reason `connectionCount` exists: the bound is otherwise visible
+   *  only as refusals, which cannot show a slot that was never given back. */
+  inFlightCount(sessionId: string): number {
+    return this.bySession.get(sessionId)?.inFlight ?? 0;
   }
 
   private removeTokenFile(sessionId: string): void {
@@ -671,10 +722,10 @@ export class BusHost {
    * ASYNC SINCE #764, which is what `get_session_diff` costs: it shells out to
    * git. Everything before the dispatch at the foot of this method is still
    * synchronous and still runs before any await — parse, authenticate, version,
-   * vocabulary — so a request that is going to be refused is refused in the
-   * same tick it arrived in, and only a request we are actually going to answer
-   * can hold the connection open. `answerAndReply` owns what the await window
-   * costs.
+   * vocabulary, and since #772 the in-flight bound — so a request that is going
+   * to be refused is refused in the same tick it arrived in, and only a request
+   * we are actually going to answer can hold the connection open.
+   * `answerAndReply` owns what the await window costs.
    */
   private async answer(sessionId: string, line: string): Promise<HostReply> {
     let req: Record<string, unknown>;
@@ -723,9 +774,109 @@ export class BusHost {
     // an answer can read a 4 MB transcript or shell out to git: without it a
     // session ending mid-request still pays for the whole answer, for a socket
     // that is already gone.
-    if (!this.bySession.has(sessionId)) {
+    const reg = this.bySession.get(sessionId);
+    if (!reg) {
       return { ok: false, reason: 'this session is shutting down' };
     }
+
+    // ── THE IN-FLIGHT BOUND (#772) ─────────────────────────────────────────
+    //
+    // `list_sessions` IS EXEMPT (#772 review). It is a map over an in-memory
+    // list — refusing it saves the main thread nothing — and it is how an agent
+    // gets its bearings, so it is the one call that should still answer when
+    // four slow ones are holding the rest.
+    if (op === 'list_sessions') return this.dispatch(sessionId, caller, op, req);
+
+    // Checked LAST among the refusals, so a request that was going to be
+    // refused anyway never costs a slot, and a refusal here is never `uncertain`:
+    // nothing was started, so for a send "NOT delivered" is simply true.
+    if (reg.inFlight >= MAX_IN_FLIGHT_PER_SESSION) {
+      this.opts.log.warn('bus request refused — this endpoint is at its in-flight bound', {
+        sessionId,
+        op,
+        inFlight: reg.inFlight,
+      });
+      // Written to the AGENT, which reads it after the child's per-tool prefix
+      // ("Your message was NOT delivered: …"). "You" rather than "this session",
+      // which next to a sibling's name reads as being about the sibling; and
+      // it names subagents because they are the ordinary way to get here.
+      return {
+        ok: false,
+        reason:
+          `you already have ${reg.inFlight} requests to switchboard in progress (from this ` +
+          'session or its subagents), so this one was not started — wait for one of them to ' +
+          'finish, then try again',
+      };
+    }
+    reg.inFlight++;
+    // Given back exactly once — by the work settling, or by the ceiling below,
+    // whichever comes first.
+    let released = false;
+    const release = (): void => {
+      if (released) return;
+      released = true;
+      reg.inFlight--;
+    };
+    // A CEILING ON THE SLOT (#772 review). Holding it until the work settles
+    // is right — but "the work settles" is a property of every dependency under
+    // it, and one that never does (a git stuck in the kernel on a dead network
+    // share survives even a kill; a future op's bug) would hold the slot for
+    // the life of the session. Four of those and this session's bus refuses
+    // everything, for ever, telling the agent to wait for something that will
+    // never finish. So past the socket's own backstop the slot is written off,
+    // loudly: by then the answer went out long ago and nothing is waiting on it.
+    const ceiling = setTimeout(() => {
+      this.opts.log.error('a bus request is still running past its backstop — giving its slot back', {
+        sessionId,
+        op,
+      });
+      release();
+    }, this.opts.answerBackstopMs ?? ANSWER_BACKSTOP_MS);
+    ceiling.unref?.();
+    try {
+      // ⚠️ THE YIELD IS WHAT MAKES THE BOUND REAL FOR THE SYNC READ. Without
+      // it this counter could never pass 1 for `get_session_output`: that
+      // answer is synchronous, so each request would take its slot, do all its
+      // work and give the slot back inside its own 'data' event — and libuv
+      // runs every ready socket's 'data' in ONE poll phase, back to back. That
+      // is exactly the 186 ms stall #772 measured, and a counter that never
+      // trips would have sat on top of it looking like a fix. Deferring to the
+      // check phase means every request that arrived in the same turn is
+      // COUNTED before any of them runs, so the fifth is refused instead of
+      // queued behind four others on the main thread.
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      // The session can end during that turn, same as during any other await —
+      // AND COME BACK: `listen` on a pipe settles on the next tick, so a restart
+      // (unregister, register) fits inside one yield. `has` would then see the
+      // NEW registration and run this request, which arrived on the old one's
+      // now-destroyed socket. Identity, not membership (#772 review).
+      if (this.bySession.get(sessionId) !== reg) {
+        return { ok: false, reason: 'this session is shutting down' };
+      }
+      return await this.dispatch(sessionId, caller, op, req);
+    } finally {
+      // ON SETTLE, NOT ON ANSWER. `withDeadline` can reply "gave up" while the
+      // work is still running; releasing then would let a retry start a
+      // second `git` beside the first, and a wedged repository would collect
+      // one per retry. The slot tracks WORK. It is bounded because every piece
+      // of work under it is — the transcript read is synchronous, `git` is
+      // killed at `DIFF_BUDGET_MS`, a send settles at its ack deadline — and
+      // the ceiling above is for the day one of those stops being true.
+      //
+      // `reg`, the registration this request was ADMITTED on — never a fresh
+      // lookup, which after a restart would decrement the new one.
+      clearTimeout(ceiling);
+      release();
+    }
+  }
+
+  /** Run one admitted request. Only `answer` calls this, inside its slot. */
+  private async dispatch(
+    sessionId: string,
+    caller: string,
+    op: BusOp,
+    req: Record<string, unknown>
+  ): Promise<HostReply> {
     // The MCP tool's own arguments, exactly as the model wrote them. NOT
     // validated here beyond being an object: `SessionQueries.resolve` type-
     // guards `ref` itself and refuses with a reason an agent can act on, and a

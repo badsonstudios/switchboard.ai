@@ -18,6 +18,7 @@ import {
 import { BUS_OPS, MESSAGE_ARG, SESSION_ARG } from './channel';
 import { SIBLING_MESSAGE_CHAR_CAP } from '../../shared/sibling-message';
 import { ANSWER_DEADLINE_MS } from './host-channel';
+import { DIFF_BUDGET_MS } from '../git/git-service';
 import { DEFAULT_HOST_TIMEOUT_MS } from './pipe-client';
 import { Dispatch, ToolResult, textResult } from './protocol';
 
@@ -147,6 +148,12 @@ describe('the tool surface', () => {
     // that can fire must fire first: host answer deadline < the slow-tool client
     // timeout < `apply`'s backstop. Asserted as an ORDERING rather than as three
     // numbers, so tuning one of them cannot silently invert it.
+    //
+    // #772 added a layer INSIDE the host's: the git budget kills a runaway diff
+    // before the host gives up waiting on it, so the model is told "git did not
+    // finish" rather than "switchboard gave up", and the in-flight slot comes
+    // back with the answer instead of staying held by an orphaned git.
+    expect(DIFF_BUDGET_MS).toBeLessThan(ANSWER_DEADLINE_MS);
     expect(ANSWER_DEADLINE_MS).toBeLessThan(SLOW_TOOL_TIMEOUT_MS);
     expect(SLOW_TOOL_TIMEOUT_MS).toBeLessThan(TOOL_DEADLINE_MS);
     // …and the ordinary client deadline is still the innermost for every other

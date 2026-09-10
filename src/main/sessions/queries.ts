@@ -48,7 +48,12 @@ import {
   FeedBlock,
   deriveIntents,
 } from '../feed/blocks';
-import { HISTORY_MAX_LINES, readTranscriptTail } from '../feed/history';
+import {
+  HISTORY_MAX_LINES,
+  HISTORY_TAIL_BYTES,
+  readTranscriptWindow,
+  type TranscriptWindow,
+} from '../feed/history';
 import type { SessionIdentity, SessionStatus } from '../../shared/sessions';
 
 /**
@@ -73,6 +78,37 @@ export const MAX_LAST_N = 200;
 
 /** Marks output cut at the front, so a model knows it holds a fragment. */
 export const TRIM_MARKER = '…[earlier output trimmed]';
+
+/**
+ * The first transcript window `sessionOutput` reads, in bytes (#772).
+ *
+ * THE CAPS ABOVE BOUND THE ANSWER; THIS BOUNDS THE WORK. The read used to be
+ * `readTranscriptTail`'s default — the whole 4 MB the Feed needs to hydrate
+ * 1,000 blocks — to hand back twenty. That path is SYNCHRONOUS on Electron's
+ * main thread, so its cost is the user's UI stalling, and #772's probe put a
+ * number on it: 12–17 ms per call for any transcript past 4 MB on a fast
+ * desktop (i9-13900K), dominated by `JSON.parse`, not the disk. Sixteen calls
+ * landing together froze the host's loop for 186 ms in ONE stall.
+ *
+ * So the read starts here, and when this has not produced the blocks asked for
+ * it reads ONCE more, at the old budget (`HISTORY_TAIL_BYTES`). 256 KB answered
+ * the default twenty on every real transcript the probe tried, in ~1.2 ms; the
+ * worst case is the old read plus this one, about a millisecond more than
+ * before #772 and never several times it.
+ *
+ * TWO READS, NOT A LADDER — and the probe is why. A fixed 256 KB → 1 MB → 4 MB
+ * ladder made `lastN: 200` SLOWER than before (13–17 ms → 17–21 ms), paying
+ * for every rung on the way up. An estimate from blocks-per-byte seen was
+ * better on average and WORSE on the largest real transcript (13 → 29 ms):
+ * its older entries were denser than its newest, the estimate undershot, and
+ * it took three reads. Only "small, then the old budget" has a worst case you
+ * can state.
+ *
+ * Growing CANNOT change what comes back: derivation is per entry and a tool
+ * result only ever attaches to an EARLIER call, so the newest `want` blocks of
+ * a window holding at least `want` are the newest `want` of any larger one.
+ */
+export const OUTPUT_FIRST_WINDOW = 256 * 1024;
 
 /** One session, as a sibling sees it (§5.4 `list_sessions`). */
 export interface SessionSummary {
@@ -123,8 +159,14 @@ export interface SessionOutput {
   /** how many blocks actually contributed text */
   blocks: number;
   /**
-   * Something was dropped — `lastN`, the character cap, or the transcript
-   * reader's own line budget.
+   * Something was dropped — `lastN`, the character cap, the transcript
+   * reader's own line budget, or its byte window stopping short of the start
+   * of the file (#772: that last one used to go unreported, so a transcript
+   * whose final 4 MB held fewer blocks than asked for came back as complete).
+   * It errs toward "something was dropped": the unread bytes might hold only
+   * lines that render nothing (metadata, snapshots), and it still says so —
+   * the cheap direction to be wrong in, where the other one tells a model it
+   * has the whole story.
    *
    * ⚠️ NOT a promise that everything else is whole. `DISPLAY_CAPS` bounds each
    * prose block at 20k chars and each tool result at 4k INSIDE the derivation,
@@ -202,7 +244,7 @@ function renderBlock(block: FeedBlock): string {
  * for one call rather than for a live view:
  *  - `awaiting` is unbounded where `FeedBuffer.remember` caps at 200, so past
  *    200 unresolved calls the Feed forgets a result and this still attaches it.
- *    The map dies with the call and `readTranscriptTail` bounds entries at
+ *    The map dies with the call and `readTranscriptWindow` bounds entries at
  *    5,000, so there is nothing to leak.
  *  - `seq` here is a local ordinal starting at 0; `FeedBuffer`'s starts at 1
  *    and is shared with the renderer. **Never surface this one** — it is not
@@ -391,8 +433,18 @@ export class SessionQueries {
     if (!file) {
       return { ok: true, value: { session, text: '', blocks: 0, truncated: false } };
     }
-    const entries = attempt(() => readTranscriptTail(file), []);
-    const all = blocksFrom(entries, DISPLAY_CAPS);
+    // Small window first; see `OUTPUT_FIRST_WINDOW` for why, and why only one
+    // more read.
+    const readAt = (bytes: number): TranscriptWindow =>
+      attempt(() => readTranscriptWindow(file, bytes), { entries: [], cut: false });
+    let read = readAt(OUTPUT_FIRST_WINDOW);
+    let all = blocksFrom(read.entries, DISPLAY_CAPS);
+    // Short of blocks, with more of the file behind the window — and not
+    // because the LINE budget cut, which a bigger byte window cannot lift.
+    if (all.length < want && read.cut && read.entries.length < HISTORY_MAX_LINES) {
+      read = readAt(HISTORY_TAIL_BYTES);
+      all = blocksFrom(read.entries, DISPLAY_CAPS);
+    }
     const taken = all.slice(-want);
     const pieces = taken.map(renderBlock).filter((s) => s !== '');
     const rendered = pieces.join('\n\n');
@@ -415,7 +467,8 @@ export class SessionQueries {
         // What actually contributed text — a block that renders to nothing is
         // not output, and counting it produces `{blocks: 20, text: ''}`.
         blocks: pieces.length,
-        truncated: taken.length < all.length || overflow || entries.length >= HISTORY_MAX_LINES,
+        truncated:
+          taken.length < all.length || overflow || read.cut || read.entries.length >= HISTORY_MAX_LINES,
       },
     };
   }

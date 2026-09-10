@@ -10,7 +10,7 @@
 // handle the thing" and never "does it leave everything else alone". So the
 // cases that matter most here are the ones where the RIGHT answer is empty, or
 // a refusal, or an untouched value.
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import {
@@ -18,6 +18,7 @@ import {
   DIFF_CHAR_CAP,
   MAX_LAST_N,
   OUTPUT_CHAR_CAP,
+  OUTPUT_FIRST_WINDOW,
   SessionQueries,
   TRIM_MARKER,
   type DiffSource,
@@ -25,6 +26,7 @@ import {
   type SessionSummary,
 } from './queries';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
+import { HISTORY_MAX_LINES, HISTORY_TAIL_BYTES, readTranscriptWindow } from '../feed/history';
 
 let dir: string;
 
@@ -382,6 +384,134 @@ describe('the values themselves', () => {
     expect(DIFF_CHAR_CAP).toBe(20_000);
     expect(DEFAULT_LAST_N).toBe(20);
     expect(MAX_LAST_N).toBe(200);
+  });
+});
+
+describe('the WORK behind an answer, not just the answer (#772)', () => {
+  // `sessionOutput` runs synchronously on Electron's main thread, so the bytes
+  // it parses are the user's UI stalling. The caps bound what comes BACK; these
+  // pin what gets READ — which nothing in the suite looked at before, and which
+  // is why the whole 4 MB tail was being parsed to return twenty blocks.
+
+  /** An entry whose BYTES are large and whose RENDERED text is tiny. */
+  const padded = (text: string, bytes: number) =>
+    JSON.stringify({
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'text', text }] },
+      // A field the derivation never reads: bulk on disk, nothing on screen,
+      // so the character cap cannot be what cuts in these tests.
+      padding: 'p'.repeat(bytes),
+    });
+
+  /** Sum of bytes actually read from disk while `fn` runs. */
+  function bytesRead(fn: () => void): number {
+    let total = 0;
+    const real = fs.readSync.bind(fs);
+    const spy = vi.spyOn(fs, 'readSync').mockImplementation((...args: Parameters<typeof fs.readSync>) => {
+      const n = real(...args);
+      total += n;
+      return n;
+    });
+    try {
+      fn();
+    } finally {
+      spy.mockRestore();
+    }
+    return total;
+  }
+
+  it('answers the default from a SMALL window — it does not parse the whole tail', () => {
+    // ~2 MB of transcript. Before #772 this read all of it (up to 4 MB) to
+    // hand back twenty blocks.
+    const lines = Array.from({ length: 2_000 }, (_, i) => padded(`block-${i}-end`, 1_000));
+    const q = make(lines);
+    let r: ReturnType<typeof q.sessionOutput> | undefined;
+    const read = bytesRead(() => {
+      r = q.sessionOutput('TradingApp');
+    });
+    if (!r?.ok) throw new Error('refused');
+    expect(r.value.blocks).toBe(DEFAULT_LAST_N);
+    expect(r.value.text).toContain('block-1999-end');
+    expect(read).toBeLessThanOrEqual(OUTPUT_FIRST_WINDOW + 1);
+  });
+
+  it('GROWS the window when the small one lacks the blocks asked for, and returns exactly the newest n', () => {
+    // 3 KB an entry: the first window holds ~85, and 200 were asked for.
+    const lines = Array.from({ length: 400 }, (_, i) => padded(`block-${i}-end`, 3_000));
+    const r = make(lines).sessionOutput('TradingApp', 200);
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.value.blocks).toBe(200);
+    // The boundary is the assertion: the oldest block wanted is present and
+    // the one before it is not — what a whole-file read returns.
+    expect(r.value.text).toContain('block-200-end');
+    expect(r.value.text).not.toContain('block-199-end');
+    expect(r.value.text).toContain('block-399-end');
+  });
+
+  it('grows in ONE step, straight to the old budget — never a ladder that re-reads on the way up', () => {
+    // The probe caught a fixed 256 KB → 1 MB → 4 MB ladder making `lastN: 200`
+    // slower than before it existed: a transcript that needs the whole 4 MB
+    // paid for the 1 MB read on the way. 20 KB entries put ~12 blocks in the
+    // first window and need ~4 MB for 200 — the case where a ladder takes two
+    // extra reads. (3 KB entries would not tell them apart: a ladder reaches
+    // 200 in one step there too.)
+    const lines = Array.from({ length: 210 }, (_, i) => padded(`block-${i}-end`, 20_000));
+    const q = make(lines);
+    let r: ReturnType<typeof q.sessionOutput> | undefined;
+    const read = bytesRead(() => {
+      r = q.sessionOutput('TradingApp', 200);
+    });
+    if (!r?.ok) throw new Error('refused');
+    expect(r.value.blocks).toBe(200);
+    // first window + ONE read at the ceiling (each carries one byte of
+    // boundary context — see `readTranscriptWindow`)
+    expect(read).toBeLessThanOrEqual(OUTPUT_FIRST_WINDOW + 1 + HISTORY_TAIL_BYTES + 1);
+  });
+
+  it('does NOT read again when the first window already reached the start of the file', () => {
+    // Fewer blocks than asked for, but nothing further back to read. A second
+    // read here is pure waste on the main thread — and the commonest case,
+    // since most transcripts are small.
+    const lines = Array.from({ length: 30 }, (_, i) => padded(`block-${i}-end`, 1_000));
+    const q = make(lines);
+    const size = fs.statSync(path.join(dir, 'conv.jsonl')).size;
+    const read = bytesRead(() => q.sessionOutput('TradingApp', 200));
+    expect(read).toBe(size);
+  });
+
+  it('does NOT read again when the LINE budget cut, which a bigger byte window cannot lift', () => {
+    // 7,000 lines that derive no blocks, ~45 bytes each (~315 KB): the first
+    // window holds ~5,800 of them — more than `HISTORY_MAX_LINES` — so the
+    // reader keeps the newest 5,000, and a 4 MB read would keep the SAME 5,000.
+    const lines = Array.from({ length: 7_000 }, (_, i) =>
+      JSON.stringify({ type: 'summary', n: i, pad: 'p'.repeat(8) })
+    );
+    const q = make(lines);
+    // Guard the fixture itself: if the lines grow, the cap stops binding and
+    // this test would pass or fail for a reason that has nothing to do with it.
+    expect(readTranscriptWindow(path.join(dir, 'conv.jsonl'), OUTPUT_FIRST_WINDOW).entries).toHaveLength(
+      HISTORY_MAX_LINES
+    );
+    expect(fs.statSync(path.join(dir, 'conv.jsonl')).size).toBeGreaterThan(OUTPUT_FIRST_WINDOW);
+    const read = bytesRead(() => q.sessionOutput('TradingApp'));
+    expect(read).toBeLessThanOrEqual(OUTPUT_FIRST_WINDOW + 1);
+  });
+
+  it('reports TRUNCATED when the window stopped short of the file start, even with fewer blocks than asked', () => {
+    // ⚠️ THE BUG THIS PINS, which predates #772: a transcript whose last 4 MB
+    // held fewer blocks than asked for came back `truncated: false` — every
+    // block that was read got returned, so nothing LOOKED dropped — while
+    // earlier history sat unread in front of the window. A sibling was told it
+    // had the whole story. 1.2 MB entries: the 4 MB window holds three.
+    const lines = [
+      assistantLine('THE-OLDEST-LINE'),
+      ...Array.from({ length: 4 }, (_, i) => padded(`big-${i}-end`, 1_200_000)),
+    ];
+    const r = make(lines).sessionOutput('TradingApp', DEFAULT_LAST_N);
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.value.blocks).toBeLessThan(DEFAULT_LAST_N);
+    expect(r.value.text).not.toContain('THE-OLDEST-LINE');
+    expect(r.value.truncated).toBe(true);
   });
 });
 

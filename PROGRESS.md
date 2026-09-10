@@ -34,6 +34,29 @@
 > unattended workers is a different risk from one reported item, and that
 > asymmetry is written down in the file so it does not later read as drift.
 
+> # 🔨 IN PROGRESS — 2026-09-10: **#772** — bus read bounds (probe first)
+>
+> Branch `feature/772-bus-bounds`. Step 1 is the probe under
+> `spike/probes/772/` + a findings note, measuring `readTranscriptTail` /
+> `sessionOutput` against this machine's real >4 MB transcripts and
+> `GitService.diff` against synthetic repos at scale, then a real `BusHost`
+> under N concurrent clients. The bound comes after the numbers. Measured
+> already: the CLI runs an MCP tool in parallel only when it declares
+> `readOnlyHint` (`isConcurrencySafe(){return v.annotations?.readOnlyHint??!1}`,
+> PATH 2.1.261) and ours declare none — so one agent loop is serial, and
+> same-endpoint concurrency comes from parallel subagents, a retry after the
+> child gave up, or anything else holding the token.
+>
+> **State (later 2026-09-10):** probe done, findings note written
+> (`spike/findings/e11-772-bus-cost.md`), implementation + tests done and
+> mutant-verified, docs/CHANGELOG/dogfood row written. Review round 1 found a
+> BLOCKER (execFile's timeout kills Git for Windows' `cmd\git.exe` launcher and
+> leaves the real git running — my first kill probe passed for the wrong
+> reason); fixed with a `taskkill /T` tree kill + slot ceiling + restart
+> identity check. Round 2 review in flight. Filed **#776** (repo config runs
+> commands during the bus diff AND the git pane — measured). Nothing committed
+> yet; the branch is the working tree.
+
 > # ✅ MERGED — 2026-09-10: **#765** — P2-E11-05, `send_to_session` + delivery policy
 >
 > **PR #775, squashed to `8a9ac8a`, all four CI jobs green.** Issue closed.
