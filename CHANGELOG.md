@@ -95,6 +95,26 @@ on the floor, and say so in your PR.
   ones that are, rather than a silent empty answer that reads like "it did
   nothing".
 
+- **Sessions can send each other messages — and nothing is sent without you.**
+  A session can pass a finding, a question or a piece of work to another one.
+  The message lands in the other session's prompt box as a highlighted
+  **From @…** block and waits: press **Enter** to send it (with anything you
+  type alongside), or click **×** to throw it away. The session that gets it is
+  told who wrote it and that you passed it on.
+
+  For deliberate pipelines, a session's **⋯** menu has **Accept messages from
+  other sessions automatically**. It is off for every session until you turn it
+  on, it only works in Direct mode, and even then a session takes at most 5
+  messages in 10 minutes on its own — so two sessions that both have it on can't
+  keep messaging each other in a loop while nobody is watching.
+
+### Fixed
+
+- **A session that has ended is no longer listed as merely "done".** When one
+  session asked what else was open, a session whose program had exited cleanly
+  was described the same way as one that had just finished a reply. It now
+  says "exited".
+
 ## 0.8.8 — 2026-09-08
 
 ### Added

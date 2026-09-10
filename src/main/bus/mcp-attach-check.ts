@@ -64,8 +64,8 @@ const log = {
 } as unknown as Logger;
 
 const SESSIONS: SessionSummary[] = [
-  { id: 'sb-self', name: 'Switchboard', folder: '/p/switchboard', providerId: 'claude-code', status: 'working' },
-  { id: 'sb-other', name: 'PropaneMon', folder: '/p/propanemon', providerId: 'claude-code', status: 'idle' },
+  { id: 'sb-self', name: 'Switchboard', folder: '/p/switchboard', providerId: 'claude-code', status: 'working', exited: false },
+  { id: 'sb-other', name: 'PropaneMon', folder: '/p/propanemon', providerId: 'claude-code', status: 'idle', exited: false },
 ];
 
 interface StatusRow {
@@ -233,6 +233,9 @@ async function main(): Promise<void> {
       sessionOutput: () => ({ ok: false, reason: 'mcp-attach-check answers no reads' }),
       sessionDiff: () => Promise.resolve({ ok: false, reason: 'mcp-attach-check answers no reads' }),
     },
+    // Same reasoning, for the one tool that writes (#765): refusing, so a call
+    // that somehow got here could not be mistaken for a delivery.
+    delivery: { send: () => Promise.resolve({ ok: false, reason: 'mcp-attach-check sends nothing' }) },
   });
 
   try {

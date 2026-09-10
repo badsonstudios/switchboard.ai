@@ -280,9 +280,10 @@ confident answer about the wrong one.
 
 **What it deliberately can't do:**
 
-- **It can only read.** Nothing here lets one session type into another, change
-  its files, or make it do anything. Telling a session to do something on your
-  behalf is a separate feature and it isn't built yet.
+- **Reading never changes anything.** Looking at another session doesn't touch
+  its files or its conversation. Sending it a message is the one exception, and
+  it has its own rules — see [Sessions can message each
+  other](#sessions-can-message-each-other) below.
 - **It reads recent work, not everything.** Conversations get very long, and
   handing one session another's entire history would fill up its head and leave
   no room to think. So you get the recent end, and the session is told plainly
@@ -300,6 +301,69 @@ in that session's `/mcp` panel — see
 [MCP servers](17-mcp-servers.md#the-switchboard-server). Everything else in the
 session keeps working normally either way; this is an extra, and it never gets
 in the way of the work.
+
+## Sessions can message each other
+
+A session can also **send a message to another one** — to pass on something it
+found, ask a question, or hand over a piece of work. You can ask for it in plain
+English (*"tell PropaneMon the regulator is the fault"*), or a session may
+decide to do it on its own.
+
+**By default, nothing is sent without you.** The message lands in the other
+session's prompt box as a highlighted block that says **From @** and the name of
+the session that wrote it. It just sits there until you decide:
+
+- **Press Enter** to send it. Anything you've typed in the box goes along with
+  it, after the message — so you can add *"do this, but skip the second part"*.
+  The session that receives it is told the message came from another session and
+  that you passed it on.
+- **Click the ×** on the block to throw it away. Nothing is sent.
+
+This is on purpose. Two sessions that could make each other act without you
+could keep answering each other for ever, spending your usage while nobody is
+watching. Needing your Enter is what stops that.
+
+A few details keep that Enter honest:
+
+- A message that appears **a moment before** you press Enter on your own prompt
+  isn't sent with it — you haven't read it yet. It stays in the box for your
+  next Enter.
+- If what you typed is a **slash command** (like `/compact`), the command goes
+  on its own and the messages stay waiting.
+- Messages can't contain hidden control characters — the kind that could type
+  extra keys into a Terminal-mode session or make text display differently from
+  what is actually sent. A session that tries is told to send plain text.
+
+If the other session's conversation isn't on screen (it's showing its Terminal
+or Changes tab, or it's collapsed), the message waits in its prompt box. Its
+**Session** tab shows a number while messages are waiting. A session can have up
+to 10 messages waiting; after that, the sender is told to wait.
+
+### Letting a session take messages without asking
+
+For a deliberate pipeline — one session hands finished work to the next — you
+can let a session take messages straight away. Open that session's **⋯** menu
+and tick **Accept messages from other sessions automatically**. It's off for
+every session until you turn it on, and it stays on across restarts.
+
+Even when it's on, a message is held for you instead of sent when:
+
+- the session is in **Terminal mode** — switchboard doesn't type into a terminal
+  on its own, in case something on screen would take the keystrokes;
+- the session is **waiting on you** — asking a question or wanting a permission;
+- it has already taken **5 messages in the last 10 minutes** — so two sessions
+  that both have it turned on can't keep messaging each other in a loop.
+
+A message sent automatically is marked that way, so the session receiving it
+knows nobody reviewed it.
+
+### What the sending session is told
+
+The sending session always finds out what happened: whether the message is
+waiting for you, was sent, or couldn't be delivered (the other session has
+ended, or there's no window open to show it). It's told not to wait for a reply
+— nothing comes back automatically. If you want the answer, look at the other
+session, or ask the first one to read what the other has been doing.
 
 ## Good to know
 

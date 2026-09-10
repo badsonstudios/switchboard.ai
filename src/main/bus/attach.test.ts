@@ -13,13 +13,13 @@ import net from 'net';
 import os from 'os';
 import path from 'path';
 import { BusHost } from './host-channel';
-import { stubQueries } from './fixtures/queries';
+import { stubDelivery, stubQueries } from './fixtures/queries';
 import { busEndpointFor, busPipePath, busTokenPath, BUS_TOKEN_FILE } from './bus-paths';
 import type { Logger } from '../log/logger';
 import type { SessionSummary } from '../sessions/queries';
 
 const SESSIONS: SessionSummary[] = [
-  { id: 'sb-a', name: 'Alpha', folder: '/p/alpha', providerId: 'claude-code', status: 'working' },
+  { id: 'sb-a', name: 'Alpha', folder: '/p/alpha', providerId: 'claude-code', status: 'working', exited: false },
 ];
 
 function fakeLog(): Logger {
@@ -58,6 +58,7 @@ beforeEach(() => {
     stateDir,
     log,
     queries: stubQueries({ listSessions: () => ({ ok: true, value: SESSIONS }) }),
+    delivery: stubDelivery(),
     // Under vitest only the TypeScript exists, so the real resolver correctly
     // finds no compiled `bus-server.js` and throws. Without this seam every
     // test below would silently exercise the "no server" branch while reading
@@ -276,6 +277,7 @@ describe('BusHost.attachSession (P2-E11-03)', () => {
       stateDir,
       log,
       queries: stubQueries({ listSessions: () => ({ ok: true, value: [] }) }),
+      delivery: stubDelivery(),
       // Resolve for real: under vitest nothing compiled exists, so this is the
       // genuine missing-server condition rather than a simulated one.
       busServerPath: undefined,

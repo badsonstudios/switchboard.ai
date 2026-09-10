@@ -85,6 +85,8 @@ import { addPopoutWindow, removePopoutWindow, subscribePopoutWindows } from '../
 import { strandedByGroup } from '../lib/popout-rescue';
 import { uiGet, uiSet } from '../lib/ui-state';
 import { pruneDrafts } from '../lib/composer-draft';
+import { pruneInboxes, useHeldCount } from '../lib/sibling-inbox';
+import { AUTO_ACCEPT_LIMIT, AUTO_ACCEPT_WINDOW_MS } from '../../../shared/sibling-message';
 import { pruneAttachmentDrafts } from '../lib/composer-attachment-draft';
 import { setDraggedCard } from '../lib/drag-context';
 import { findBarState, subscribeFindBar } from '../lib/find-bar-state';
@@ -504,6 +506,44 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       .setNotifyWhenDone(cardId, next)
       .then((on) => setNotifyWhenDone(on === true))
       .catch(() => setNotifyWhenDone(!next));
+  };
+  // "Accept messages from other sessions automatically" (P2-E11-05, §5.4).
+  // The notify-when-done shape exactly — main's state, read back after every
+  // write, optional bridge — with ONE difference in the failure direction: an
+  // unreadable or refused answer shows OFF, and off is also what main assumes.
+  // A tick that claimed "on" when main held "off" would be the menu lying
+  // about a safety gate, in the reassuring direction for the wrong reason.
+  const siblingApi = window.switchboard?.sessions as typeof window.switchboard.sessions | undefined;
+  const canAcceptSiblings = typeof siblingApi?.acceptFromSiblings === 'function';
+  const [acceptSiblings, setAcceptSiblings] = React.useState(false);
+  React.useEffect(() => {
+    if (!cardId || !siblingApi || !canAcceptSiblings) return;
+    let alive = true;
+    void siblingApi
+      .acceptFromSiblings(cardId)
+      .then((on) => {
+        if (alive) setAcceptSiblings(on === true);
+      })
+      .catch(() => {
+        /* fail-safe: shows off, which is what main assumes too */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [cardId, canAcceptSiblings, siblingApi]);
+  // …and how many of their messages are waiting in this card's composer, for
+  // the Session tab's badge. An OBSERVER subscription — the card chrome is
+  // mounted whether or not the composer is, and must not make the card count
+  // as "shown" to the sender (`lib/sibling-inbox.ts`).
+  const heldCount = useHeldCount(cardId);
+  const toggleAcceptSiblings = (): void => {
+    if (!cardId || !siblingApi || !canAcceptSiblings) return;
+    const next = !acceptSiblings;
+    setAcceptSiblings(next); // optimistic; the answer below is the truth
+    void siblingApi
+      .setAcceptFromSiblings(cardId, next)
+      .then((on) => setAcceptSiblings(on === true))
+      .catch(() => setAcceptSiblings(false));
   };
   // held permissions awaiting decisions (E10-04) — a QUEUE, not a slot:
   // parallel tool calls each hold their own request (review P0#4)
@@ -1345,6 +1385,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     bindingDiag: binding?.bindingDiag ?? null,
     recentlyDecided,
     changed,
+    waiting: heldCount,
     approval: perm,
     approvalQueued: Math.max(0, cardQueue.length - 1),
     approvalBatched: permBatched,
@@ -1771,6 +1812,30 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                               {notifyWhenDone ? t('grid.checkedIcon') : t('grid.uncheckedIcon')}
                             </span>
                             {t('grid.menuNotifyWhenDone')}
+                          </button>
+                        )}
+                        {/* P2-E11-05. The same toggle-button shape as the entry
+                            above and for the same reasons — including NOT being
+                            locked with the session controls: it is a preference,
+                            and setting up a pipeline before the session starts is
+                            a normal thing to do. The hint quotes the loop
+                            breaker's real numbers, from the constant main
+                            enforces. */}
+                        {canAcceptSiblings && (
+                          <button
+                            aria-pressed={acceptSiblings}
+                            data-testid="card-accept-siblings"
+                            onClick={toggleAcceptSiblings}
+                            title={t('grid.menuAcceptFromSiblingsHint', {
+                              count: AUTO_ACCEPT_LIMIT,
+                              minutes: Math.round(AUTO_ACCEPT_WINDOW_MS / 60_000),
+                            })}
+                            style={menuItemStyle(false)}
+                          >
+                            <span aria-hidden="true" style={{ marginInlineEnd: 6 }}>
+                              {acceptSiblings ? t('grid.checkedIcon') : t('grid.uncheckedIcon')}
+                            </span>
+                            {t('grid.menuAcceptFromSiblings')}
                           </button>
                         )}
                         {/* This card's sound (P2-E14-05a). A COMMAND, not a
@@ -5221,6 +5286,9 @@ export function SessionGrid(props: {
               // to. Same key shape, same rule, so the two halves of one draft
               // cannot end up with different lifetimes.
               pruneAttachmentDrafts(known);
+              // ...and E11-05's messages from other sessions, waiting in the
+              // composer of a card that has since been closed.
+              pruneInboxes(known);
             }
             // The same verdict, on the grid this time. Only GRID panels reach
             // here, and that is now guaranteed rather than usual:

@@ -74,6 +74,8 @@ import { SecretStore } from './secrets/store';
 import { GitService } from './git/git-service';
 import { BusHost } from './bus/host-channel';
 import { SessionQueries, summariesFrom } from './sessions/queries';
+import { SiblingDelivery } from './sessions/delivery';
+import { pushSiblingMessage, registerDeliveryIpc } from './sessions/delivery-ipc';
 import { runPreflight } from './preflight';
 import { startStaticServer, StaticServer } from './static-server';
 import { installCspHeaders } from './csp';
@@ -1820,20 +1822,66 @@ app
     // decision and the reasoning, and it lives in `sessions/queries.ts` rather
     // than here precisely because this file has no tests (#763 review: every
     // mutation of an inline mapping survived the suite).
+    const busLog = createLogger(sink, 'bus');
+    // A named const since #765, because `SiblingDelivery` resolves session
+    // references through the SAME instance the read tools use — so `@Beta`
+    // means one session whether you are reading it or writing to it.
+    const sessionQueries = new SessionQueries({
+      list: () => summariesFrom(manager),
+      // The HOST's answer, not one re-derived inside the query module — the
+      // same rule #432 established for `resume`. The watcher already resolved
+      // this path from the provider's own declared root.
+      transcriptFor: (sessionId) => transcripts.transcriptFile(sessionId),
+      // `GitService.diff` was written for exactly this (#761), including the
+      // `--no-ext-diff` hardening — which matters most here, because #764
+      // points it at a folder another agent controls.
+      git: gitService,
+    });
+    // `send_to_session`'s policy (P2-E11-05). Every dependency is a function
+    // for the reason `sessions/delivery.ts` gives, and each one is the thing
+    // the rest of the app already uses for the same job:
+    //   * `cardIdForLive` is late-bound onto `sessionIpc` below, exactly as
+    //     the rules engine uses it — no tool call can arrive before a session
+    //     exists, and no session exists before `registerSessionIpc` has run.
+    //   * `submit` is `SessionManager.submitPrompt`, the function the
+    //     composer's Enter reaches through `sessions:submitPrompt` — so an
+    //     automatic send is byte-for-byte a user's send, and a Terminal-mode
+    //     session answers false and the message is held instead.
+    //   * `push` goes to the MAIN window only; see `pushSiblingMessage`.
+    const siblingDelivery = new SiblingDelivery({
+      resolve: (ref) => sessionQueries.resolve(ref),
+      cardIdFor: (liveId) => cardIdForLive(liveId),
+      acceptsSiblings: (cardId) => workspace.cardAcceptsSiblings(cardId),
+      submit: (liveId, text) => manager.submitPrompt(liveId, text),
+      push: (message) => pushSiblingMessage(broker, currentWindow, message),
+      log: busLog,
+    });
+    registerDeliveryIpc({
+      broker,
+      log: busLog,
+      store: workspace,
+      knownCard: (cardId) => workspace.listSessions().some((s) => s.id === cardId),
+      delivery: siblingDelivery,
+    });
+    // The e2e seam (#765). Non-packaged builds only, like every other one. The
+    // fake provider declares no `mcp` capability, so no bus child ever runs in
+    // the e2e suite — and without this the only things a spec could drive are
+    // the renderer half, while THIS FILE, which has no tests, holds every
+    // dependency `SiblingDelivery` is given. The seam enters at `send`, one hop
+    // below the pipe `check:bus` already proves, so everything from the
+    // resolver to the composer and back is the production object graph.
+    if (!app.isPackaged && process.env.SWITCHBOARD_E2E_SIBLING_SEND) {
+      (globalThis as { __switchboardSendToSession?: SiblingDelivery['send'] }).__switchboardSendToSession = (
+        callerId,
+        ref,
+        message
+      ) => siblingDelivery.send(callerId, ref, message);
+    }
     const busHost = new BusHost({
       stateDir,
-      queries: new SessionQueries({
-        list: () => summariesFrom(manager),
-        // The HOST's answer, not one re-derived inside the query module — the
-        // same rule #432 established for `resume`. The watcher already resolved
-        // this path from the provider's own declared root.
-        transcriptFor: (sessionId) => transcripts.transcriptFile(sessionId),
-        // `GitService.diff` was written for exactly this (#761), including the
-        // `--no-ext-diff` hardening — which matters most here, because #764
-        // points it at a folder another agent controls.
-        git: gitService,
-      }),
-      log: createLogger(sink, 'bus'),
+      queries: sessionQueries,
+      delivery: siblingDelivery,
+      log: busLog,
     });
 
     broker.handle('git:status', (_e, folder: string) =>

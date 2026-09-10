@@ -22,7 +22,7 @@ import { ContributionRegistry } from '../../shared/extensibility/registry';
 import { MainContributions, SpawnOptions } from '../extensibility/contributions';
 import { LogSink, createLogger } from '../log/logger';
 import { summariesFrom } from './queries';
-import type { SessionStatus } from '../../shared/sessions';
+import type { SessionIdentity, SessionStatus } from '../../shared/sessions';
 
 /** Records what `buildSpawn` was handed, so the plumbing is observable. */
 const seen: SpawnOptions[] = [];
@@ -172,10 +172,16 @@ describe('a FAILED start gives the bus endpoint back (#763 review, Blocker 1)', 
 });
 
 describe('summariesFrom — the mapping that used to live in index.ts (P2-E11-03)', () => {
-  const rec = (over: Record<string, unknown> = {}) => ({
+  // TYPED OVERRIDES since #765. This took `Record<string, unknown>`, which is
+  // how the exited-session test below came to pass `status: 'exited'` — a
+  // value `SessionStatus` does not contain and the state machine cannot
+  // produce — and assert it came back out. It pinned a mapping of a fiction.
+  type Rec = { id: string; identity: SessionIdentity; status: SessionStatus; exitCode: number | null };
+  const rec = (over: Partial<Rec> = {}): Rec => ({
     id: 'live-1',
     identity: { title: 'Alpha', folder: '/p/alpha', providerId: 'claude-code' },
-    status: 'working' as SessionStatus,
+    status: 'working',
+    exitCode: null,
     ...over,
   });
 
@@ -184,7 +190,14 @@ describe('summariesFrom — the mapping that used to live in index.ts (P2-E11-03
     // tests: swapping `folder` for `providerId`, hardcoding a status, or
     // returning `[]` all survived the suite while it lived there.
     expect(summariesFrom({ list: () => [rec()] })).toEqual([
-      { id: 'live-1', name: 'Alpha', folder: '/p/alpha', providerId: 'claude-code', status: 'working' },
+      {
+        id: 'live-1',
+        name: 'Alpha',
+        folder: '/p/alpha',
+        providerId: 'claude-code',
+        status: 'working',
+        exited: false,
+      },
     ]);
   });
 
@@ -206,13 +219,29 @@ describe('summariesFrom — the mapping that used to live in index.ts (P2-E11-03
     expect(out.map((s) => s.status)).toEqual(['working', 'idle']);
   });
 
-  it('INCLUDES exited sessions, and says so with their status', () => {
+  it('INCLUDES exited sessions, and flags them from the EXIT CODE (#765)', () => {
     // Deliberate, and the comment in `queries.ts` documents it: a self-exited
     // session keeps its record until the reap (#187), so it is listable and a
     // sibling can still read what it did. What a consumer must not do is assume
-    // a row can RECEIVE anything — #765 checks `status`, not membership.
-    const [s] = summariesFrom({ list: () => [rec({ status: 'exited' })] });
-    expect(s.status).toBe('exited');
+    // a row can RECEIVE anything.
+    //
+    // A CLEAN EXIT IS `status: 'done'` — the state machine's word for a
+    // finished turn too — so the flag must come from `exitCode` and nothing
+    // else. The first two rows are the pair status cannot tell apart.
+    const out = summariesFrom({
+      list: () => [
+        rec({ id: 'turn-over', status: 'done', exitCode: null }),
+        rec({ id: 'clean-exit', status: 'done', exitCode: 0 }),
+        rec({ id: 'crashed', status: 'crashed', exitCode: 1 }),
+        rec({ id: 'running', status: 'working', exitCode: null }),
+      ],
+    });
+    expect(out.map((s) => [s.id, s.exited])).toEqual([
+      ['turn-over', false],
+      ['clean-exit', true],
+      ['crashed', true],
+      ['running', false],
+    ]);
   });
 
   it('passes an empty list through rather than inventing one', () => {

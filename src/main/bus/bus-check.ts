@@ -50,6 +50,8 @@ import { BUS_SERVER_NAME } from './bus-paths';
 import { GitService } from '../git/git-service';
 import { DIFF_CHAR_CAP, OUTPUT_CHAR_CAP, SessionQueries } from '../sessions/queries';
 import type { SessionSummary } from '../sessions/queries';
+import { SiblingDelivery } from '../sessions/delivery';
+import type { SiblingMessage } from '../../shared/sibling-message';
 
 const failures: string[] = [];
 function check(label: string, ok: boolean, detail = ''): void {
@@ -86,9 +88,14 @@ interface Workspace {
 }
 
 const SESSIONS: SessionSummary[] = [
-  { id: 'sb-caller', name: 'Switchboard', folder: '', providerId: 'claude-code', status: 'working' },
-  { id: 'sb-other', name: 'PropaneMon', folder: '', providerId: 'claude-code', status: 'idle' },
-  { id: 'sb-tidy', name: 'Tidy', folder: '', providerId: 'claude-code', status: 'idle' },
+  { id: 'sb-caller', name: 'Switchboard', folder: '', providerId: 'claude-code', status: 'working', exited: false },
+  { id: 'sb-other', name: 'PropaneMon', folder: '', providerId: 'claude-code', status: 'idle', exited: false },
+  { id: 'sb-tidy', name: 'Tidy', folder: '', providerId: 'claude-code', status: 'idle', exited: false },
+  // #765's two extra targets. `Gone` exited CLEANLY, so its status is 'done' —
+  // the word a finished turn also gets — and only `exited` tells them apart.
+  // `Pipeline` is the one card that accepts siblings' messages automatically.
+  { id: 'sb-gone', name: 'Gone', folder: '', providerId: 'claude-code', status: 'done', exited: true },
+  { id: 'sb-pipe', name: 'Pipeline', folder: '', providerId: 'claude-code', status: 'idle', exited: false },
 ];
 
 /** One JSONL line the CLI would have written; `deriveIntents` reads these. */
@@ -269,7 +276,31 @@ async function main(): Promise<void> {
     transcriptFor: (id) => (id === 'sb-other' ? ws.transcript : null),
     git: new GitService(),
   });
-  const host = new BusHost({ stateDir, log, queries });
+  // THE REAL DELIVERY POLICY (#765), for the reason the query core above is
+  // real: `send_to_session` is five layers — model → child → pipe → host →
+  // `SiblingDelivery` → window — and the safety property lives in the fourth.
+  // Only the two ends Electron owns are stood in for: the WINDOW, which files
+  // what it is pushed and acknowledges on a LATER tick (as IPC would — a
+  // same-tick ack would test an ordering the real transport cannot produce),
+  // and `submit`, which records instead of reaching a CLI.
+  const pushed: SiblingMessage[] = [];
+  const submitted: { liveId: string; text: string }[] = [];
+  const delivery: SiblingDelivery = new SiblingDelivery({
+    resolve: (ref) => queries.resolve(ref),
+    cardIdFor: (liveId) => `card-${liveId}`,
+    acceptsSiblings: (cardId) => cardId === 'card-sb-pipe',
+    submit: (liveId, text) => {
+      submitted.push({ liveId, text });
+      return true;
+    },
+    push: (m) => {
+      pushed.push(m);
+      setImmediate(() => delivery.ack(m.deliveryId, { placed: true, shown: true }));
+      return true;
+    },
+    log,
+  });
+  const host = new BusHost({ stateDir, log, queries, delivery });
   const sessionId = 'sb-caller';
   const endpoint = await host.registerSession(sessionId);
   console.log(`[bus-check]      endpoint ${endpoint.pipePath}`);
@@ -306,8 +337,8 @@ async function main(): Promise<void> {
   const list = await peer.request('tools/list');
   const tools = (list.result as { tools?: { name?: string }[] } | undefined)?.tools ?? [];
   const toolNames = tools.map((t) => String(t.name)).sort().join(',');
-  check('tools/list offers the three read tools', toolNames === 'get_session_diff,get_session_output,list_sessions',
-    toolNames);
+  check('tools/list offers the three read tools and send_to_session',
+    toolNames === 'get_session_diff,get_session_output,list_sessions,send_to_session', toolNames);
 
   // ── the round trip, over a real endpoint ─────────────────────────────────
   const called = await peer.request('tools/call', { name: 'list_sessions', arguments: {} });
@@ -411,6 +442,58 @@ async function main(): Promise<void> {
   check('…and warns that untracked files are invisible, on THIS branch too',
     /Untracked/.test(clean), clean);
   check('…and does not claim the tree matches the last commit', !/matches the last commit/.test(clean), clean);
+
+  // ── #765: send_to_session, through the REAL delivery policy ──────────────
+  //
+  // THE SAFETY PROPERTY FIRST, and asserted the way the done-when insists: not
+  // "the text arrived" — which a version that auto-sends would also pass — but
+  // "nothing was submitted". PropaneMon does not accept automatically.
+  check('list_sessions says a cleanly-exited session EXITED, not "done"',
+    /Gone \[id sb-gone\] — exited/.test(text), text);
+  const sent = await peer.request('tools/call', {
+    name: 'send_to_session',
+    arguments: { session: 'PropaneMon', message: 'the regulator is the fault — check it' },
+  }, 20_000);
+  const sentText = resultText(sent);
+  check('send_to_session round-trips', !isError(sent), sentText);
+  check('…and tells the sender it was NOT sent', /has NOT been sent/.test(sentText), sentText);
+  check('…and NOTHING WAS SUBMITTED — the safety property, end to end', submitted.length === 0,
+    JSON.stringify(submitted));
+  check('…the window was handed exactly that message', pushed.length === 1 &&
+    pushed[0].text === 'the regulator is the fault — check it' && pushed[0].cardId === 'card-sb-other',
+    JSON.stringify(pushed));
+  // WHO IT IS FROM comes from the TOKEN, never from anything the child said.
+  // The caller is the session this endpoint was registered for.
+  check('…attributed to the caller the TOKEN names', pushed[0]?.from.id === 'sb-caller' &&
+    pushed[0]?.from.name === 'Switchboard', JSON.stringify(pushed[0]?.from));
+
+  const auto = await peer.request('tools/call', {
+    name: 'send_to_session',
+    arguments: { session: 'Pipeline', message: 'step 2: run the migration' },
+  }, 20_000);
+  const autoText = resultText(auto);
+  check('a card that accepts automatically is SUBMITTED to', submitted.length === 1 &&
+    submitted[0].liveId === 'sb-pipe', JSON.stringify(submitted));
+  check('…wrapped in a header that says nobody reviewed it',
+    /delivered automatically/.test(submitted[0]?.text ?? '') && /step 2: run the migration/.test(submitted[0]?.text ?? ''),
+    submitted[0]?.text);
+  check('…and the sender is told it went', /was sent to Pipeline/.test(autoText), autoText);
+  check('…without passing through the window', pushed.length === 1, String(pushed.length));
+
+  const toSelf = await peer.request('tools/call', {
+    name: 'send_to_session',
+    arguments: { session: 'Switchboard', message: 'hello me' },
+  }, 20_000);
+  check('sending to yourself is refused as NOT delivered',
+    isError(toSelf) && /NOT delivered/.test(resultText(toSelf)), resultText(toSelf));
+
+  const toGone = await peer.request('tools/call', {
+    name: 'send_to_session',
+    arguments: { session: 'Gone', message: 'are you there?' },
+  }, 20_000);
+  check('an exited session (status "done") is refused, not delivered to',
+    isError(toGone) && /has exited/.test(resultText(toGone)), resultText(toGone));
+  check('…and nothing was pushed or submitted for it', pushed.length === 1 && submitted.length === 1);
 
   // ── a dead host: clean, readable, and FAST ───────────────────────────────
   //

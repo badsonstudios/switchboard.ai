@@ -34,10 +34,17 @@ export const CHANNEL_VERSION = 1;
  *
  * Deliberately the SAME strings as the MCP tool names — an agent-visible tool
  * and its host-side op are one concept, and giving them separate vocabularies
- * would mean a mapping table that can be wrong. #765 adds `send_to_session`
- * here.
+ * would mean a mapping table that can be wrong.
+ *
+ * `send_to_session` (#765) is the first op that WRITES, and it went in without
+ * touching `CHANNEL_VERSION` for the reason that constant's comment gives.
  */
-export const BUS_OPS = ['list_sessions', 'get_session_output', 'get_session_diff'] as const;
+export const BUS_OPS = [
+  'list_sessions',
+  'get_session_output',
+  'get_session_diff',
+  'send_to_session',
+] as const;
 
 export type BusOp = (typeof BUS_OPS)[number];
 
@@ -64,3 +71,6 @@ export interface BusRequest {
  * string", pointing the reader at the model rather than at us.
  */
 export const SESSION_ARG = 'session';
+
+/** `send_to_session`'s text argument — one constant for the same reason. */
+export const MESSAGE_ARG = 'message';

@@ -32,10 +32,11 @@ import net from 'net';
 import path from 'path';
 import { busEndpointFor, busTokenPath } from './bus-paths';
 import { busLaunch, type BusLaunch } from './launch';
-import { CHANNEL_VERSION, SESSION_ARG, isBusOp } from './channel';
+import { CHANNEL_VERSION, MESSAGE_ARG, SESSION_ARG, isBusOp } from './channel';
 import { LineReader, MAX_LINE_BYTES } from './protocol';
 import type { Logger } from '../log/logger';
 import type { SessionQueries } from '../sessions/queries';
+import type { BusDelivery } from '../sessions/delivery';
 
 /**
  * Just enough of `SessionQueries` to be callable with a test double.
@@ -51,6 +52,17 @@ export interface BusHostOptions {
   /** Same directory `HookListener` writes `hook-token` into. */
   stateDir: string;
   queries: BusQueries;
+  /**
+   * Where `send_to_session` goes (#765) — the delivery POLICY lives there, not
+   * here, for the reason every answer lives in `SessionQueries`: this file is
+   * transport.
+   *
+   * REQUIRED, not optional, and that was a choice. Its only production caller
+   * is `main/index.ts`, which has no tests; an optional field there could be
+   * left out and the app would ship a `send_to_session` that refuses every
+   * call, with the whole suite green. Required makes that a compile error.
+   */
+  delivery: BusDelivery;
   log: Logger;
   /**
    * How long a replied-to connection may linger. Absent = `REPLY_LINGER_MS`.
@@ -153,7 +165,14 @@ type HostReply =
   | { ok: true; callerId: string; sessions: unknown }
   | { ok: true; callerId: string; output: unknown }
   | { ok: true; callerId: string; diff: unknown }
-  | { ok: false; reason: string };
+  | { ok: true; callerId: string; delivery: unknown }
+  /**
+   * `uncertain` (#765 review): this refusal is "I gave up waiting", not "the
+   * answer is no". For a read the two cost the same; for a WRITE they differ —
+   * a send the host stopped waiting on may already be in a composer — so the
+   * child must not render it as "NOT delivered".
+   */
+  | { ok: false; reason: string; uncertain?: true };
 
 interface Registration {
   token: string;
@@ -585,7 +604,8 @@ export class BusHost {
       reply = await this.withDeadline(sessionId, this.answer(sessionId, line));
     } catch (err) {
       this.opts.log.error('bus answer threw', { sessionId, error: String(err) });
-      reply = { ok: false, reason: 'switchboard could not answer this request' };
+      // `uncertain`: a throw says nothing about how far a WRITE got.
+      reply = { ok: false, reason: 'switchboard could not answer this request', uncertain: true };
     }
     if (sock.destroyed) {
       // Not a warning. The child hanging up is how a cancelled tool call looks
@@ -619,6 +639,10 @@ export class BusHost {
         resolve({
           ok: false,
           reason: `switchboard took longer than ${Math.round(ms / 1000)}s to gather this and gave up`,
+          // Unreachable for a send today — `DELIVERY_ACK_TIMEOUT_MS` (8 s)
+          // settles first — and marked anyway, because "today" is an ordering
+          // of two constants in two files, not a property of this code.
+          uncertain: true,
         });
       }, ms);
       timer.unref?.();
@@ -630,7 +654,7 @@ export class BusHost {
         (err: unknown) => {
           clearTimeout(timer);
           this.opts.log.error('bus answer rejected', { sessionId, error: String(err) });
-          resolve({ ok: false, reason: 'switchboard could not answer this request' });
+          resolve({ ok: false, reason: 'switchboard could not answer this request', uncertain: true });
         }
       );
     });
@@ -744,6 +768,16 @@ export class BusHost {
           if (!result.ok) return { ok: false, reason: result.reason };
           return { ok: true, callerId: caller, diff: result.value };
         }
+        case 'send_to_session': {
+          // `caller`, from the TOKEN — never anything the child said about
+          // itself. It is who the message will be attributed to in the target's
+          // composer, so it is the one argument here that must not be a claim.
+          // The message itself goes through untouched; `SiblingDelivery` owns
+          // every check on it, for the reason `ref` is not validated here.
+          const result = await this.opts.delivery.send(caller, ref, args[MESSAGE_ARG]);
+          if (!result.ok) return { ok: false, reason: result.reason };
+          return { ok: true, callerId: caller, delivery: result.value };
+        }
         default: {
           // Exhaustive over `BusOp` — `isBusOp` gated it above, so TypeScript
           // narrows `op` to `never` here. A word added to `BUS_OPS` with no case
@@ -755,7 +789,9 @@ export class BusHost {
       }
     } catch (err) {
       this.opts.log.error('session query threw on the bus path', { sessionId, op, error: String(err) });
-      return { ok: false, reason: `switchboard could not answer ${op}` };
+      // `uncertain` for the reason the deadline's refusal carries it: a throw
+      // after a successful submit is a write that WENT, reported as a failure.
+      return { ok: false, reason: `switchboard could not answer ${op}`, uncertain: true };
     }
   }
 
