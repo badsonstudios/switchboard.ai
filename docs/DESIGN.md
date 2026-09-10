@@ -435,7 +435,8 @@ PropaneMon agent changed. This runs on the subscription like everything else —
 calls are just tool calls inside a normal Claude Code session.
 
 > **AS BUILT 2026-09-08 (P2-E11-04, #764) — the two READS are shipped;
-> `send_to_session` and the blackboard are not.** `list_sessions` landed with
+> `send_to_session` and the blackboard are not.** *(`send_to_session` shipped
+> in #765 — see its as-built note under "Delivery policy" below.)* `list_sessions` landed with
 > #762/#763. This item added `get_session_output` and `get_session_diff` as thin
 > wrappers over the query core (#761), which owns every cap and every refusal so
 > that the composer's `@session` path gets the same answers rather than growing
@@ -472,6 +473,49 @@ calls are just tool calls inside a normal Claude Code session.
 default. Incoming messages land in the target's composer as a highlighted "from
 @Session" block; the user hits Enter. Per-session toggle: "auto-accept from siblings"
 for deliberate pipeline setups. This prevents runaway agent-to-agent loops.
+
+> **AS BUILT 2026-09-10 (P2-E11-05, #765).** The rule is kept by *shape*, not by
+> discipline: **main decides, the window only holds.** `sessions/delivery.ts`
+> (`SiblingDelivery`) is the only code that can submit a sibling's message, and
+> it calls `SessionManager.submitPrompt` from one place, behind the card's own
+> flag. The main→renderer push (`sessions:siblingMessage`) carries a message to
+> SHOW and has no field that means "send" — a test pins its key set — so no
+> renderer bug can promote a hold into a send. The composer sends a held message
+> only through the user's own Enter, wrapped in a header saying who wrote it and
+> that the user passed it on.
+>
+> **Four decisions beyond the paragraph above:**
+>
+> - **Liveness is `exited`, not `status`.** `'done'` is the state machine's word
+>   for both a finished turn and a clean exit, so `SessionSummary` gained an
+>   `exited` flag from the record's `exitCode`; exited sessions stay listable and
+>   readable (#187) but refuse delivery, and `list_sessions` now says "exited".
+> - **Never silently dropped.** No window → explicit refusal. The window
+>   acknowledges each delivery (`sessions:siblingMessageAck`, with whether a
+>   composer for that card is mounted); no ack within 8 s → a hedged
+>   "handed over, not confirmed", never "not delivered". 8 s < the host's 12 s
+>   answer deadline < the child's 15 s slow-tool deadline, so the truest message
+>   fires first. A card holds at most 10 waiting messages.
+> - **Auto-accept is Direct-transport only** and only when the target is idle,
+>   done or working (the stream queues a mid-turn message). A Terminal-mode
+>   session, or one waiting on the user, holds the message instead and the
+>   sender is told why — main typing a multi-line message plus Enter into a TUI
+>   could answer a dialog the user is looking at.
+> - **A loop breaker even with the toggle on**: at most 5 automatic sends per
+>   target in 10 minutes, then messages wait for a person. The default-off
+>   toggle stops loops for everyone who leaves it off; a user who turns it on
+>   for both sessions of a pair has built exactly the loop it guards against.
+>   `delivery.test.ts` runs two agents that each answer every message they get:
+>   one hop with defaults, bounded at 2×5+1 sends with both toggles on.
+>
+> **What review added, all so the header's "the user reviewed it" stays true:**
+> control characters (C0/C1, DEL, bidi overrides) are REFUSED — a terminal
+> escape would turn the reviewed Enter into keystrokes nobody saw; a message
+> younger than 1 s is not sent by an Enter that was already on its way for the
+> user's own prompt; a slash command goes alone; and the header's markers carry
+> a reference derived from an id the sender is never told, so a message cannot
+> forge an end marker plus a fake "reviewed" header. The Session tab badges the
+> waiting count, since the composer is unmounted on the other tabs.
 
 ### 5.5 Context transfer between sessions
 

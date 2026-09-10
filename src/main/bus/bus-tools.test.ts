@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import {
   CONTENT_FENCE,
+  SLOW_TOOLS,
   SLOW_TOOL_TIMEOUT_MS,
   TOOLS,
   TOOL_DEADLINE_MS,
@@ -10,10 +11,12 @@ import {
   makeCallTool,
   renderDiff,
   renderOutput,
+  renderSend,
   renderSessions,
   renderableTools,
 } from './bus-tools';
-import { BUS_OPS, SESSION_ARG } from './channel';
+import { BUS_OPS, MESSAGE_ARG, SESSION_ARG } from './channel';
+import { SIBLING_MESSAGE_CHAR_CAP } from '../../shared/sibling-message';
 import { ANSWER_DEADLINE_MS } from './host-channel';
 import { DEFAULT_HOST_TIMEOUT_MS } from './pipe-client';
 import { Dispatch, ToolResult, textResult } from './protocol';
@@ -26,15 +29,15 @@ const SESSIONS = [
 const text = (r: ToolResult): string => r.content.map((c) => c.text).join('\n');
 
 describe('the tool surface', () => {
-  it('is the three read tools — #765 adds the one that writes', () => {
+  it('is the three read tools and the one that writes (#765)', () => {
     // #762 shipped one tool on purpose, to prove the pipe before designing a
-    // surface on it. #764 adds the two READS. `send_to_session` is deliberately
-    // still absent: it is the safety-critical one and carries the delivery
-    // policy argument with it.
+    // surface on it. #764 added the two READS. #765 adds `send_to_session`, the
+    // safety-critical one — its delivery policy is `sessions/delivery.ts`.
     expect(TOOLS.map((t) => t.name)).toEqual([
       'list_sessions',
       'get_session_output',
       'get_session_diff',
+      'send_to_session',
     ]);
   });
 
@@ -63,7 +66,9 @@ describe('the tool surface', () => {
     // `SESSION_ARG` exists so the schema, the host handler and the tests cannot
     // disagree about the word. A rename in two places out of three produces a
     // tool that resolves `undefined` and blames the model.
-    for (const t of TOOLS.filter((x) => x.name !== 'list_sessions')) {
+    // The READ tools: `send_to_session` requires a message too and has its own
+    // assertion below.
+    for (const t of TOOLS.filter((x) => x.name.startsWith('get_'))) {
       expect(t.inputSchema).toMatchObject({ required: [SESSION_ARG] });
       expect(Object.keys((t.inputSchema as { properties: object }).properties)).toContain(SESSION_ARG);
     }
@@ -97,6 +102,34 @@ describe('the tool surface', () => {
     expect(byName.get_session_output).toMatch(/conversation|recently/);
     expect(byName.get_session_output).not.toMatch(/uncommitted/);
     expect(byName.list_sessions).toMatch(/list|what else/);
+    expect(byName.send_to_session).toMatch(/send a message/);
+    expect(byName.send_to_session).not.toMatch(/uncommitted|recently/);
+  });
+
+  it('send_to_session TELLS THE SENDER UP FRONT that it is held and not to wait (#765)', () => {
+    // The description is read BEFORE the tool is used (#760: it is what an
+    // agent matches on), so it is where the sender-side half of loop safety
+    // lives. An agent that expects an answer polls, or sends again; one told
+    // "held for the user, nothing comes back" does neither.
+    const d = TOOLS.find((t) => t.name === 'send_to_session')?.description ?? '';
+    expect(d).toMatch(/only sent when the user presses Enter/);
+    expect(d).toMatch(/do not wait for a reply/);
+  });
+
+  it('send_to_session requires BOTH a session and a message, under the shared names', () => {
+    const t = TOOLS.find((x) => x.name === 'send_to_session');
+    expect(t?.inputSchema).toMatchObject({ required: [SESSION_ARG, MESSAGE_ARG] });
+    const props = (t?.inputSchema as { properties: Record<string, { type?: string; description?: string }> })
+      .properties;
+    expect(props[MESSAGE_ARG].type).toBe('string');
+    // The cap the model is TOLD must be the cap `SiblingDelivery` enforces.
+    expect(props[MESSAGE_ARG].description).toContain(SIBLING_MESSAGE_CHAR_CAP.toLocaleString('en-US'));
+  });
+
+  it('send_to_session waits on the slow-tool deadline — it waits on the WINDOW', () => {
+    // On the default 5 s the child would give up first and tell the agent
+    // switchboard was unreachable, about a message the window may be showing.
+    expect(SLOW_TOOLS.has('send_to_session')).toBe(true);
   });
 
   it('lastN is declared a number, and described', () => {
@@ -176,6 +209,22 @@ describe('renderSessions', () => {
 
   it('one line per session', () => {
     expect(renderSessions(SESSIONS, null).split('\n')).toHaveLength(3); // header + 2
+  });
+
+  it('says EXITED, in place of the status, for a session whose process has ended (#765)', () => {
+    // A clean exit is `status: 'done'` — a finished turn's word too — so this
+    // list used to describe a session whose CLI had gone away as merely done,
+    // and an agent would reasonably try to send it work.
+    const gone = { ...SESSIONS[1], status: 'done', exited: true };
+    expect(renderSessions([gone], null)).toBe(
+      '1 session open in switchboard:\n- Beta [id sb-b] — exited — /p/beta — claude-code'
+    );
+    // …and a finished turn that is still ALIVE keeps saying done.
+    expect(renderSessions([{ ...gone, exited: false }], null)).toContain('— done —');
+  });
+
+  it('does not say exited for a truthy-but-not-true flag', () => {
+    expect(renderSessions([{ ...SESSIONS[1], exited: 'yes' }], null)).toContain('— idle —');
   });
 
   it('renders a row EXACTLY — every field, in order', () => {
@@ -392,6 +441,88 @@ describe('renderDiff (#764)', () => {
   });
 });
 
+describe('renderSend (#765)', () => {
+  const beta = { id: 'sb-b', name: 'Beta' };
+
+  it('HELD: says NOT sent, who has to act, and not to wait — exactly', () => {
+    expect(renderSend({ session: beta, outcome: 'held', shown: true })).toBe(
+      "Your message is waiting in Beta [id sb-b]'s message box. It has NOT been sent: Beta will not " +
+        'see it until the user reads it and presses Enter, which may be much later or not at all. ' +
+        'Do not wait for a reply.'
+    );
+  });
+
+  it('never says "delivered" on the held path — that is the word an agent waits on', () => {
+    expect(renderSend({ session: beta, outcome: 'held', shown: true })).not.toMatch(/delivered/i);
+  });
+
+  it('says when the target is not on screen — and ONLY then', () => {
+    expect(renderSend({ session: beta, outcome: 'held', shown: false })).toMatch(/not on screen right now/);
+    expect(renderSend({ session: beta, outcome: 'held', shown: true })).not.toMatch(/not on screen/);
+    // A missing flag is not proof it is showing; it takes the cautious line.
+    expect(renderSend({ session: beta, outcome: 'held' })).toMatch(/not on screen/);
+  });
+
+  it.each([
+    ['terminal', /runs in Terminal mode/],
+    ['not-ready', /waiting on the user for something else/],
+    ['limit', /\(5 in 10 minutes\).*stop sessions messaging each other in a loop/],
+  ])('explains a %s hold of an auto-accepting session', (held, re) => {
+    const out = renderSend({
+      session: beta,
+      outcome: 'held',
+      shown: true,
+      held,
+      limit: { count: 5, minutes: 10 },
+    });
+    expect(out).toMatch(/has NOT been sent/);
+    expect(out).toMatch(/normally accepts messages from other sessions automatically/);
+    expect(out).toMatch(re);
+  });
+
+  it('an ordinary hold does not claim the session accepts automatically', () => {
+    expect(renderSend({ session: beta, outcome: 'held', shown: true })).not.toMatch(/automatically/);
+  });
+
+  it('a limit hold with no numbers still reads, without inventing any', () => {
+    const out = renderSend({ session: beta, outcome: 'held', shown: true, held: 'limit' });
+    expect(out).toMatch(/as many as it may in a short time, so/);
+    expect(out).not.toMatch(/\(/);
+  });
+
+  it('SUBMITTED: says it went in unreviewed, and that nothing comes back', () => {
+    // "as its next prompt, without anyone reviewing it" — what we KNOW. The
+    // old "which will act on it" claimed what the other agent would do.
+    const out = renderSend({ session: beta, outcome: 'submitted' });
+    expect(out).toMatch(/^Your message was sent to Beta \[id sb-b\] as its next prompt, without anyone reviewing it/);
+    expect(out).toMatch(/Nothing comes back to you automatically/);
+    expect(out).not.toMatch(/NOT|will act on it/);
+  });
+
+  it('NOT ON SCREEN does not promise the user will see it (#765 review)', () => {
+    // A user who stays on the Terminal tab never "opens that session" again.
+    const out = renderSend({ session: beta, outcome: 'held', shown: false });
+    expect(out).toMatch(/may not notice the message until they open it/);
+    expect(out).not.toMatch(/will see/);
+  });
+
+  it('UNCONFIRMED: does not know, says so, and says not to rely on it', () => {
+    const out = renderSend({ session: beta, outcome: 'unconfirmed' });
+    expect(out).toMatch(/did not confirm it arrived/);
+    expect(out).toMatch(/do not assume Beta has it/);
+    expect(out).not.toMatch(/was sent to|has NOT been sent/);
+  });
+
+  it.each([[undefined], [null], [{}], [{ outcome: 'teleported' }], ['held']])(
+    'an unrecognised payload %j says it cannot tell, rather than guessing any outcome',
+    (payload) => {
+      const out = renderSend(payload);
+      expect(out).toMatch(/could not tell whether your message/);
+      expect(out).not.toMatch(/NOT been sent|was sent to|waiting in/);
+    }
+  );
+});
+
 describe('makeCallTool', () => {
   const ok = vi.fn().mockResolvedValue({ ok: true, sessions: SESSIONS, callerId: 'sb-a' });
 
@@ -450,9 +581,20 @@ describe('makeCallTool', () => {
       sessions: SESSIONS,
       output: { session: SESSIONS[1], text: 'OUTPUT-TEXT', blocks: 1, truncated: false },
       diff: { session: SESSIONS[1], isRepo: true, diff: 'DIFF-TEXT', truncated: false },
+      delivery: { session: { ...SESSIONS[1], name: 'DELIVERY-TARGET' }, outcome: 'held', shown: true },
     };
     const call = (name: string): Promise<ToolResult> =>
       makeCallTool({ pipePath: 'p', tokenPath: 't', ask: vi.fn().mockResolvedValue(everything) })(name, {});
+
+    it('send_to_session renders the delivery, and nothing else does', async () => {
+      const t = text(await call('send_to_session'));
+      expect(t).toContain('DELIVERY-TARGET');
+      expect(t).not.toContain('OUTPUT-TEXT');
+      expect(t).not.toContain('DIFF-TEXT');
+      for (const other of ['list_sessions', 'get_session_output', 'get_session_diff']) {
+        expect(text(await call(other))).not.toContain('DELIVERY-TARGET');
+      }
+    });
 
     it('list_sessions renders the sessions', async () => {
       const t = text(await call('list_sessions'));
@@ -615,6 +757,93 @@ describe('makeCallTool', () => {
       const r = await makeCallTool({ pipePath: 'p', tokenPath: 't', ask })('list_sessions', {});
       expect(r.isError).toBe(true);
       expect(text(r)).toContain('just a string');
+    });
+  });
+
+  describe('send_to_session never leaves the sender guessing whether it went (#765)', () => {
+    // Every failure path of a READ says "information is unavailable", which is
+    // true and harmless. For a WRITE that sentence omits the one fact the
+    // sender needs — did the message go? — so each path below says it.
+    const send = (ask: ReturnType<typeof vi.fn>, config: { pipePath: string | null; tokenPath: string | null } = {
+      pipePath: 'p',
+      tokenPath: 't',
+    }): Promise<ToolResult> =>
+      makeCallTool({ ...config, ask })('send_to_session', { session: 'Beta', message: 'hi' });
+
+    it('threads session AND message to the host, on the slow-tool deadline', async () => {
+      const ask = vi.fn().mockResolvedValue({ ok: true, delivery: { outcome: 'held', session: SESSIONS[1] } });
+      await send(ask);
+      expect(ask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          request: { op: 'send_to_session', args: { session: 'Beta', message: 'hi' } },
+          timeoutMs: SLOW_TOOL_TIMEOUT_MS,
+        })
+      );
+    });
+
+    it('a host REFUSAL says the message was NOT delivered, with the reason', async () => {
+      const r = await send(vi.fn().mockResolvedValue({ ok: false, reason: 'Beta [id sb-b] has exited' }));
+      expect(r.isError).toBe(true);
+      expect(text(r)).toBe('Your message was NOT delivered: Beta [id sb-b] has exited');
+    });
+
+    it('a TRANSPORT failure is hedged — it cannot know, and it says do not resend', async () => {
+      // The pipe timing out does not prove the host had not already handed the
+      // message to the window, so "NOT delivered" would be a claim it cannot
+      // make. And "assume it was not" (the first wording) invited a resend —
+      // which on a session that accepts automatically RUNS twice.
+      const r = await send(vi.fn().mockRejectedValue(new Error('the switchboard host did not answer within 15000ms')));
+      expect(r.isError).toBe(true);
+      expect(text(r)).toMatch(/could not confirm whether your message was delivered/);
+      expect(text(r)).toMatch(/do not send the same message again straight away/);
+      expect(text(r)).not.toMatch(/NOT delivered|assume it was not/);
+      expect(text(r)).not.toMatch(/information about other sessions/);
+    });
+
+    it('a host that GAVE UP WAITING is hedged too, never "NOT delivered" (#765 review)', async () => {
+      // `HostReply.uncertain`: the host's own answer deadline is "I stopped
+      // waiting", not "no". For a send, the message may already be in a box.
+      const r = await send(
+        vi.fn().mockResolvedValue({
+          ok: false,
+          reason: 'switchboard took longer than 12s to gather this and gave up',
+          uncertain: true,
+        })
+      );
+      expect(r.isError).toBe(true);
+      expect(text(r)).toMatch(/could not confirm whether your message was delivered/);
+      expect(text(r)).not.toMatch(/NOT delivered/);
+    });
+
+    it('…while a READ that timed out keeps its plain wording', async () => {
+      const r = await makeCallTool({
+        pipePath: 'p',
+        tokenPath: 't',
+        ask: vi.fn().mockResolvedValue({ ok: false, reason: 'gave up', uncertain: true }),
+      })('get_session_diff', {});
+      expect(text(r)).toBe('switchboard could not answer: gave up');
+    });
+
+    it('an ok reply we cannot read is hedged the same way', async () => {
+      const r = await send(vi.fn().mockResolvedValue({ ok: true, callerId: 'sb-a' }));
+      expect(r.isError).toBe(true);
+      expect(text(r)).toMatch(/could not confirm/);
+    });
+
+    it('an unconfigured bus is a definite NOT delivered — nothing was contacted', async () => {
+      const ask = vi.fn();
+      const r = await send(ask, { pipePath: null, tokenPath: 't' });
+      expect(r.isError).toBe(true);
+      expect(text(r)).toMatch(/^Your message was NOT delivered: the switchboard bus is not configured/);
+      expect(ask).not.toHaveBeenCalled();
+    });
+
+    it('a READ tool keeps its own wording on the same failures', async () => {
+      const r = await makeCallTool({ pipePath: 'p', tokenPath: 't', ask: vi.fn().mockResolvedValue({ ok: false, reason: 'x' }) })(
+        'get_session_output',
+        {}
+      );
+      expect(text(r)).toBe('switchboard could not answer: x');
     });
   });
 

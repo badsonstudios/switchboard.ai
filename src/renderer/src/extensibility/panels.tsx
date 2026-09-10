@@ -51,6 +51,11 @@ export const sessionPanels: PanelContribution[] = [
     id: 'feed',
     titleKey: 'grid.viewSession',
     order: 10,
+    // Messages from other sessions waiting in the composer (P2-E11-05, #765
+    // review). The composer only exists while this tab is selected, so on the
+    // Terminal or Changes tab a waiting message would otherwise be invisible —
+    // and the sender is told "not on screen", which this is the answer to.
+    badge: (ctx) => (ctx.waiting !== undefined && ctx.waiting > 0 ? ctx.waiting : null),
     render: (ctx: PanelContext) => (
       <FeedView
         sessionId={ctx.sessionId}

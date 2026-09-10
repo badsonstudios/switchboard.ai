@@ -19,6 +19,7 @@ import { EventDto } from './components/EventsPanel';
 import { EventsDrawer } from './components/EventsDrawer';
 import { Usage, addUsage, estimateCostUsd, ZERO_USAGE } from './lib/usage';
 import { loadUiState, uiGet, uiSet } from './lib/ui-state';
+import { receiveSiblingMessage } from './lib/sibling-inbox';
 import { DEFAULT_AUTONOMY, nextAutonomy } from './lib/autonomy';
 import { initPresentation } from './lib/presentation-boot';
 import { boxOnAnyDisplay, RescuedPopout } from './lib/layout';
@@ -1482,6 +1483,27 @@ export function App(): React.JSX.Element {
     });
     return off;
   }, [focusCard]);
+  // P2-E11-05: another session sent a card a message. HOLD it — file it in the
+  // card's inbox, where its composer shows it for the user to send or dismiss —
+  // and tell main what became of it, because main is waiting to tell the
+  // SENDING agent. Here in the app shell, not in the composer, so a message to
+  // a card whose conversation is not mounted still lands and still answers.
+  // Nothing in this handler submits anything; `lib/sibling-inbox.ts` has no
+  // way to, and the payload has no field that could ask it to.
+  useEffect(() => {
+    const api = window.switchboard?.sessions;
+    const off = api?.onSiblingMessage?.((m) => {
+      const ack = receiveSiblingMessage(m);
+      // No ack for a payload that was not a message: main's own deadline then
+      // reports it as unconfirmed, which is the truth.
+      if (ack && typeof m?.deliveryId === 'string') {
+        void api.ackSiblingMessage?.(m.deliveryId, ack)?.catch?.(() => {
+          /* main times the send out and says so — nothing to add from here */
+        });
+      }
+    });
+    return off;
+  }, []);
   const popoutKeysRef = React.useRef(new Map<Window, (e: KeyboardEvent) => void>());
   useEffect(() => {
     // Returns the command that ran (or null) — the popout bridge below needs

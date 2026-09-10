@@ -10,14 +10,15 @@ import path from 'path';
 import { BusHost, BusQueries, IDLE_TIMEOUT_MS, REPLY_LINGER_MS } from './host-channel';
 import { busPipePath, busTokenPath } from './bus-paths';
 import { CHANNEL_VERSION } from './channel';
-import { stubQueries } from './fixtures/queries';
+import { stubDelivery, stubQueries } from './fixtures/queries';
 import { askHost } from './pipe-client';
 import type { Logger } from '../log/logger';
 import type { QueryResult, SessionDiff, SessionOutput, SessionSummary } from '../sessions/queries';
+import { SiblingDelivery, type BusDelivery } from '../sessions/delivery';
 
 const SESSIONS: SessionSummary[] = [
-  { id: 'sb-a', name: 'Alpha', folder: '/p/alpha', providerId: 'claude-code', status: 'working' },
-  { id: 'sb-b', name: 'Beta', folder: '/p/beta', providerId: 'claude-code', status: 'idle' },
+  { id: 'sb-a', name: 'Alpha', folder: '/p/alpha', providerId: 'claude-code', status: 'working', exited: false },
+  { id: 'sb-b', name: 'Beta', folder: '/p/beta', providerId: 'claude-code', status: 'idle', exited: false },
 ];
 
 function fakeLog(): Logger {
@@ -51,6 +52,10 @@ const queries = (): BusQueries => ({
   sessionDiff: (ref) => sessionDiff(ref),
 });
 
+/** `send_to_session`'s policy, indirected the same way and for the same reason. */
+let send: BusDelivery['send'];
+const delivery = (): BusDelivery => ({ send: (callerId, ref, message) => send(callerId, ref, message) });
+
 beforeEach(() => {
   stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-bus-host-'));
   log = fakeLog();
@@ -58,7 +63,8 @@ beforeEach(() => {
   const defaults = stubQueries();
   sessionOutput = defaults.sessionOutput.bind(defaults);
   sessionDiff = defaults.sessionDiff.bind(defaults);
-  host = new BusHost({ stateDir, log, queries: queries() });
+  send = stubDelivery().send;
+  host = new BusHost({ stateDir, log, queries: queries(), delivery: delivery() });
 });
 
 afterEach(() => {
@@ -283,6 +289,107 @@ describe('the round trip', () => {
     expect(all.every((r) => r.ok === true)).toBe(true);
   });
 
+  describe('send_to_session (#765)', () => {
+    it('hands the delivery policy the CALLER THE TOKEN NAMES, the reference and the message', async () => {
+      // The caller is who the message is attributed to in the target's
+      // composer, so it must come from the token — never from anything the
+      // child said. The endpoint is registered for `id`; that is the caller.
+      const asked: unknown[][] = [];
+      send = (callerId, ref, message) => {
+        asked.push([callerId, ref, message]);
+        return stubDelivery().send(callerId, ref, message);
+      };
+      const id = newId();
+      const ep = await host.registerSession(id);
+      const reply = await askHost({
+        ...ep,
+        request: { op: 'send_to_session', args: { session: 'Beta', message: 'hello there' } },
+      });
+      expect(asked).toEqual([[id, 'Beta', 'hello there']]);
+      expect(reply).toMatchObject({ ok: true, callerId: id, delivery: { outcome: 'held' } });
+      // Under its own field, as every op's answer is.
+      expect(reply.sessions).toBeUndefined();
+      expect(reply.output).toBeUndefined();
+    });
+
+    it('IGNORES a caller the child claims to be — the token decides', async () => {
+      const asked: string[] = [];
+      send = (callerId, ref, message) => {
+        asked.push(callerId);
+        return stubDelivery().send(callerId, ref, message);
+      };
+      const id = newId();
+      const ep = await host.registerSession(id);
+      await askHost({
+        ...ep,
+        request: { op: 'send_to_session', args: { session: 'Beta', message: 'x', from: 'sb-b', callerId: 'sb-b' } },
+      });
+      expect(asked).toEqual([id]);
+    });
+
+    it('passes a refusal through WITH ITS REASON', async () => {
+      send = () => Promise.resolve({ ok: false, reason: 'Beta [id sb-b] has exited' });
+      const ep = await host.registerSession(newId());
+      const reply = await askHost({
+        ...ep,
+        request: { op: 'send_to_session', args: { session: 'Beta', message: 'x' } },
+      });
+      expect(reply).toEqual({ ok: false, reason: 'Beta [id sb-b] has exited' });
+    });
+
+    it('passes a missing or non-text message through for the POLICY to refuse', async () => {
+      // One validator, in `SiblingDelivery`. A second here would be a second
+      // answer to one question — the drift `queries.ts` exists to prevent.
+      const asked: unknown[] = [];
+      send = (callerId, ref, message) => {
+        asked.push(message);
+        return stubDelivery().send(callerId, ref, message);
+      };
+      const ep = await host.registerSession(newId());
+      await askHost({ ...ep, request: { op: 'send_to_session', args: { session: 'Beta' } } });
+      await askHost({ ...ep, request: { op: 'send_to_session', args: { session: 'Beta', message: 7 } } });
+      expect(asked).toEqual([undefined, 7]);
+    });
+
+    it('if the HOST deadline ever fired first, the reply is marked UNCERTAIN, not a flat no (#765 review)', async () => {
+      // Today the delivery's 8 s ack deadline settles before the host's 12 s,
+      // so this cannot happen with the real constants — "today" is an ordering
+      // of two numbers in two files. So invert it here, with the REAL delivery
+      // policy and a window that never answers, and prove the reply the child
+      // gets cannot be rendered as "NOT delivered".
+      const delivery = new SiblingDelivery({
+        resolve: (ref) =>
+          ref === 'Beta' || ref === 'sb-b'
+            ? { ok: true, value: SESSIONS[1] }
+            : { ok: true, value: { ...SESSIONS[0], id: ref } },
+        cardIdFor: (id) => `card-${id}`,
+        acceptsSiblings: () => false,
+        submit: () => false,
+        push: () => true, // handed over; nobody ever answers
+        log,
+        ackTimeoutMs: 5_000,
+      });
+      const slow = new BusHost({ stateDir, log, queries: queries(), delivery, answerDeadlineMs: 60 });
+      const ep = await slow.registerSession(newId());
+      const reply = await askHost({
+        ...ep,
+        request: { op: 'send_to_session', args: { session: 'Beta', message: 'x' } },
+      });
+      expect(reply).toMatchObject({ ok: false, uncertain: true });
+      slow.stop();
+    });
+
+    it('a delivery that REJECTS is answered, not dropped — the host survives our bug', async () => {
+      send = () => Promise.reject(new Error('boom'));
+      const ep = await host.registerSession(newId());
+      const reply = await askHost({
+        ...ep,
+        request: { op: 'send_to_session', args: { session: 'Beta', message: 'x' } },
+      });
+      expect(reply.ok).toBe(false);
+    });
+  });
+
   describe('the read tools (#764)', () => {
     it('answers get_session_output with the query core’s value, under its own field', async () => {
       const ep = await host.registerSession(newId());
@@ -408,6 +515,7 @@ describe('the round trip', () => {
         stateDir,
         log,
         idleTimeoutMs: 40,
+        delivery: delivery(),
         queries: {
           ...queries(),
           sessionDiff: (ref) =>
@@ -436,7 +544,7 @@ describe('the round trip', () => {
       // The other half of the pair above, restated here so the fix cannot be
       // "remove the idle deadline". `sock.setTimeout(0)` fires only once a
       // complete request has been read; a silent client never gets there.
-      const short = new BusHost({ stateDir, log, idleTimeoutMs: 60, queries: queries() });
+      const short = new BusHost({ stateDir, log, idleTimeoutMs: 60, queries: queries(), delivery: delivery() });
       try {
         const ep = await short.registerSession(newId());
         const sock = net.connect({ path: ep.pipePath });
@@ -472,6 +580,7 @@ describe('the round trip', () => {
         stateDir,
         log,
         answerDeadlineMs: 80,
+        delivery: delivery(),
         queries: { ...queries(), sessionDiff: () => new Promise(() => {}) },
       });
       try {
@@ -497,6 +606,7 @@ describe('the round trip', () => {
         log,
         answerDeadlineMs: 60,
         replyLingerMs: 60,
+        delivery: delivery(),
         queries: { ...queries(), sessionDiff: () => new Promise(() => {}) },
       });
       const id = newId();
@@ -530,6 +640,7 @@ describe('the round trip', () => {
       const slow = new BusHost({
         stateDir,
         log,
+        delivery: delivery(),
         queries: {
           ...queries(),
           sessionDiff: () =>
@@ -686,7 +797,7 @@ describe('authentication (the done-when: the pipe refuses an unauthenticated cli
     // `vi.advanceTimersByTimeAsync`, which does not drive libuv's socket
     // teardown, and it passed against a mutant with the reclaim removed
     // entirely.
-    const short = new BusHost({ stateDir, log, replyLingerMs: 60, queries: queries() });
+    const short = new BusHost({ stateDir, log, replyLingerMs: 60, queries: queries(), delivery: delivery() });
     const id = newId();
     try {
       const ep = await short.registerSession(id);
@@ -809,6 +920,7 @@ describe('the idle deadline', () => {
       log,
       idleTimeoutMs: 60,
       queries: queries(),
+      delivery: delivery(),
     });
     try {
       const ep = await short.registerSession(newId());

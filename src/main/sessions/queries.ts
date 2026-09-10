@@ -88,6 +88,22 @@ export interface SessionSummary {
   folder: string;
   providerId: string;
   status: SessionStatus;
+  /**
+   * The session's process has ended (#765).
+   *
+   * ⚠️ `status` CANNOT TELL YOU THIS, which is why it is a field of its own.
+   * `'done'` is what the state machine calls BOTH a finished turn and a clean
+   * exit (`transition`: `exit` with code 0 → `'done'`), so a sibling that
+   * wrapped up its turn and one whose CLI has gone away look identical there.
+   * `send_to_session` must not deliver to the second, and `list_sessions` must
+   * not describe it as merely "done". Derived from the record's `exitCode`,
+   * which is set in exactly one place — the transport's exit — and never
+   * cleared.
+   *
+   * REQUIRED, not optional: an absent flag reads as falsy, i.e. "alive", which
+   * is the one default a delivery check must never get for free.
+   */
+  exited: boolean;
 }
 
 /**
@@ -240,7 +256,7 @@ function attempt<T>(fn: () => T, fallback: T): T {
 
 /** The slice of `SessionManager` the bus wiring reads. */
 export interface SummarySource {
-  list(): { id: string; identity: SessionIdentity; status: SessionStatus }[];
+  list(): { id: string; identity: SessionIdentity; status: SessionStatus; exitCode: number | null }[];
 }
 
 /**
@@ -261,7 +277,9 @@ export interface SummarySource {
  * was watching finish doing?" is a real question, and #764's read tools can
  * still answer it from the transcript. What a consumer must NOT do is assume a
  * row here can receive anything: #765's `send_to_session` needs a running
- * composer and must check `status` rather than trusting membership.
+ * session and checks `exited` rather than trusting membership. (This comment
+ * used to say "check `status`", and #765 found that wrong too: a clean exit is
+ * `status: 'done'`, indistinguishable from a finished turn. See `exited`.)
  *
  * What it excludes is CARDS. A suspended card has no live id at all, and the
  * bus addresses sessions by live id (`callerId` is one, the token map is keyed
@@ -278,6 +296,7 @@ export function summariesFrom(manager: SummarySource): SessionSummary[] {
     folder: r.identity.folder,
     providerId: r.identity.providerId,
     status: r.status,
+    exited: r.exitCode !== null,
   }));
 }
 

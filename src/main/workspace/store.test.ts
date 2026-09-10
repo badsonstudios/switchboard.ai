@@ -491,6 +491,73 @@ describe('suppressed notifications', () => {
   });
 });
 
+describe('accept messages from other sessions automatically (P2-E11-05, §5.4)', () => {
+  it('is OFF for a card nobody has touched, and for a card that does not exist', () => {
+    const st = makeStore(file);
+    st.load();
+    st.upsertSession(sess('one'));
+    expect(st.cardAcceptsSiblings('one')).toBe(false);
+    expect(st.cardAcceptsSiblings('nope')).toBe(false);
+  });
+
+  it('switches on and off, answering what it now holds', () => {
+    const st = makeStore(file);
+    st.load();
+    st.upsertSession(sess('one'));
+    expect(st.setCardAcceptsSiblings('one', true)).toBe(true);
+    expect(st.cardAcceptsSiblings('one')).toBe(true);
+    expect(st.setCardAcceptsSiblings('one', false)).toBe(false);
+    expect(st.cardAcceptsSiblings('one')).toBe(false);
+  });
+
+  it('OFF deletes the field rather than storing false — an untouched workspace carries nothing', () => {
+    const st = makeStore(file);
+    st.load();
+    st.upsertSession(sess('one'));
+    st.setCardAcceptsSiblings('one', true);
+    st.setCardAcceptsSiblings('one', false);
+    expect('acceptFromSiblings' in st.listSessions()[0]).toBe(false);
+  });
+
+  it('refuses an unknown card, answering false', () => {
+    const st = makeStore(file);
+    st.load();
+    expect(st.setCardAcceptsSiblings('ghost', true)).toBe(false);
+    expect(st.cardAcceptsSiblings('ghost')).toBe(false);
+  });
+
+  it('survives quit -> relaunch, so a deliberate pipeline survives a restart', () => {
+    const a = makeStore(file);
+    a.load();
+    a.upsertSession(sess('one'));
+    a.setCardAcceptsSiblings('one', true);
+    a.save();
+    const b = makeStore(file);
+    b.load();
+    expect(b.cardAcceptsSiblings('one')).toBe(true);
+  });
+
+  it('a hand-edited truthy value that is not `true` is OFF — a safety gate does not open on "yes"', () => {
+    const st = makeStore(file);
+    st.load();
+    st.upsertSession({ ...sess('one'), acceptFromSiblings: 'yes' as unknown as boolean });
+    expect(st.cardAcceptsSiblings('one')).toBe(false);
+  });
+
+  it('is kept when the card record is rewritten by a spread-then-override upsert', () => {
+    // `sessions:create` rewrites the card on every start with `{...prior, …}`.
+    // A field that record did not carry forward would silently switch a user's
+    // pipeline off on the next resume.
+    const st = makeStore(file);
+    st.load();
+    st.upsertSession(sess('one'));
+    st.setCardAcceptsSiblings('one', true);
+    const prior = st.listSessions()[0];
+    st.upsertSession({ ...prior, suspendedAt: 'later' });
+    expect(st.cardAcceptsSiblings('one')).toBe(true);
+  });
+});
+
 describe('per-session sounds (P2-E14-05a, §5.11)', () => {
   it('gives the first cards different cues without anyone configuring one', () => {
     // the done-when — "two sessions ring distinguishably" — before any UI

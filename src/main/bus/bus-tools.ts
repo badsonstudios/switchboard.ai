@@ -12,7 +12,10 @@
 // `SessionQueries`, no IPC. `bus-tools.test.ts` asserts that against the source
 // text of the whole child bundle, because the value is not that it is true
 // today but that it stays true after everyone stops looking.
-import { SESSION_ARG } from './channel';
+import { MESSAGE_ARG, SESSION_ARG } from './channel';
+// A constant-only module with no imports of its own, so it is safe in the child
+// graph — and the cap an agent is told must be the cap `SiblingDelivery` enforces.
+import { SIBLING_MESSAGE_CHAR_CAP } from '../../shared/sibling-message';
 import { askHost } from './pipe-client';
 import { Dispatch, ToolDescriptor, ToolResult, textResult } from './protocol';
 
@@ -51,8 +54,17 @@ export const TOOL_DEADLINE_MS = 20_000;
  */
 export const SLOW_TOOL_TIMEOUT_MS = 15_000;
 
-/** Tools whose host work is not a memory lookup. See `SLOW_TOOL_TIMEOUT_MS`. */
-const SLOW_TOOLS = new Set(['get_session_diff']);
+/**
+ * Tools whose host work is not a memory lookup. See `SLOW_TOOL_TIMEOUT_MS`.
+ *
+ * `send_to_session` (#765) waits on the WINDOW to confirm it is holding the
+ * message, and a renderer mid-freeze can take seconds. Its own deadline
+ * (`DELIVERY_ACK_TIMEOUT_MS`, 8 s) sits inside the host's 12 s, which sits
+ * inside this — so on the default 5 s the child would give up first and tell
+ * the agent switchboard was unreachable, about a message the window may be
+ * showing.
+ */
+export const SLOW_TOOLS: ReadonlySet<string> = new Set(['get_session_diff', 'send_to_session']);
 
 export const TOOLS: readonly ToolDescriptor[] = [
   {
@@ -116,6 +128,39 @@ export const TOOLS: readonly ToolDescriptor[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: 'send_to_session',
+    // THE ONLY TOOL HERE THAT WRITES, and its description has two jobs the
+    // others do not. It still has to win discovery (#760: descriptions are what
+    // an agent matches before it fetches a schema). And it has to set the
+    // expectation that stops a loop from the SENDER's side: the message is
+    // held for a person, so an agent that polls for a reply, or sends again
+    // because nothing came back, is doing the wrong thing — say so up front.
+    description:
+      'Send a message to another switchboard session — to hand it a finding, ask it a question, ' +
+      "or pass it a piece of work. The message is placed in that session's message box for the " +
+      'user to review, and is only sent when the user presses Enter, unless the user has set ' +
+      'that session to accept messages from other sessions automatically. Nothing comes back to ' +
+      'you automatically: do not wait for a reply or send the same message again. Name the ' +
+      'session with the name or id that list_sessions reported.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        [SESSION_ARG]: {
+          type: 'string',
+          description: 'The name or id of the session to send to, as list_sessions reported it.',
+        },
+        [MESSAGE_ARG]: {
+          type: 'string',
+          description:
+            'The message, as plain text, written for the other session to read. Up to ' +
+            `${SIBLING_MESSAGE_CHAR_CAP.toLocaleString('en-US')} characters.`,
+        },
+      },
+      required: [SESSION_ARG, MESSAGE_ARG],
+      additionalProperties: false,
+    },
+  },
 ];
 
 /**
@@ -137,7 +182,12 @@ export function renderSessions(sessions: unknown, callerId: unknown): string {
   const lines = sessions.map((raw) => {
     const s = (raw ?? {}) as Record<string, unknown>;
     const mine = s.id !== undefined && s.id === callerId ? ' (this session)' : '';
-    const bits = [s.status, s.folder, s.providerId].filter((b) => typeof b === 'string' && b !== '');
+    // "exited" REPLACES the status rather than joining it (#765). A clean exit
+    // is `status: 'done'` — the word a finished turn also gets — so this list
+    // described a session whose CLI had gone away as merely done, and an agent
+    // reading it would reasonably try to send it work.
+    const status = s.exited === true ? 'exited' : s.status;
+    const bits = [status, s.folder, s.providerId].filter((b) => typeof b === 'string' && b !== '');
     const tail = bits.length > 0 ? ` — ${bits.join(' — ')}` : '';
     return `- ${asText(s.name, '(unnamed)')} [id ${asText(s.id, '?')}]${mine}${tail}`;
   });
@@ -288,6 +338,90 @@ export function renderDiff(payload: unknown): string {
 }
 
 /**
+ * What became of a `send_to_session` (#765), for the agent that sent it.
+ *
+ * ── EVERY BRANCH SAYS WHETHER IT WAS SENT, IN SO MANY WORDS ────────────────
+ *
+ * The failure worth designing against is an agent that believes its sibling
+ * has its message and is acting on it, when in fact it is sitting unread in a
+ * box — so it waits, or polls, or sends again. "Delivered" is the word that
+ * invites that, and it is not used. The held path says NOT SENT and who has to
+ * act; the submitted path says it went; the unconfirmed path says it does not
+ * know, and to act as if it did not arrive.
+ *
+ * A reply that is none of the three — a host newer than this child, or a shape
+ * that went wrong on the way — says it cannot tell, rather than falling through
+ * to any of them. Guessing "held" would be the confident wrong answer.
+ */
+export function renderSend(payload: unknown): string {
+  const p = asRecord(payload);
+  const name = who(p);
+  const plain = asText(asRecord(p.session).name, 'the other session');
+  switch (p.outcome) {
+    case 'submitted':
+      // "Submitted as its next prompt", not "it will act on it" (#765 review):
+      // what we know is that the prompt went in, unreviewed — not what the
+      // other agent will make of it.
+      return (
+        `Your message was sent to ${name} as its next prompt, without anyone reviewing it: the user ` +
+        'lets that session accept messages from other sessions automatically. If it is busy it will ' +
+        'read the message when its current turn ends. Nothing comes back to you automatically — use ' +
+        'get_session_output later to see what it did.'
+      );
+    case 'held': {
+      const parts = [
+        `Your message is waiting in ${name}'s message box. It has NOT been sent: ${plain} will not ` +
+          'see it until the user reads it and presses Enter, which may be much later or not at all. ' +
+          'Do not wait for a reply.',
+      ];
+      if (p.shown !== true) {
+        // NOT "the user will see it next time they open that session" (#765
+        // review) — a user who stays on that session's Terminal tab never
+        // does. Its Session tab counts what is waiting; that is all we know.
+        parts.push(
+          `${plain}'s conversation is not on screen right now, so the user may not notice the ` +
+            'message until they open it.'
+        );
+      }
+      const heldWhy = heldReason(p, plain);
+      if (heldWhy) parts.push(heldWhy);
+      return parts.join(' ');
+    }
+    case 'unconfirmed':
+      return (
+        `switchboard handed your message to its window for ${name}, but the window did not confirm ` +
+        `it arrived. It may or may not be waiting in ${plain}'s message box — do not assume ${plain} ` +
+        'has it, and do not rely on it having been read.'
+      );
+    default:
+      return `switchboard could not tell whether your message to ${name} was delivered.`;
+  }
+}
+
+/** Why a message to a session that accepts automatically was held anyway. */
+function heldReason(p: Record<string, unknown>, plain: string): string | null {
+  const auto = `${plain} normally accepts messages from other sessions automatically, but`;
+  switch (p.held) {
+    case 'terminal':
+      return `${auto} it runs in Terminal mode, where switchboard does not type into it on its own.`;
+    case 'not-ready':
+      return `${auto} it is waiting on the user for something else right now.`;
+    case 'limit': {
+      const l = asRecord(p.limit);
+      const count = typeof l.count === 'number' ? l.count : null;
+      const minutes = typeof l.minutes === 'number' ? l.minutes : null;
+      const span = count !== null && minutes !== null ? ` (${count} in ${minutes} minutes)` : '';
+      return (
+        `${auto} it has already taken as many as it may in a short time${span}, so this one waits ` +
+        'for the user. This limit exists to stop sessions messaging each other in a loop.'
+      );
+    }
+    default:
+      return null;
+  }
+}
+
+/**
  * Tool name → how its host reply reads as text.
  *
  * A TABLE RATHER THAN A SWITCH, so `bus-tools.test.ts` can assert every entry
@@ -299,6 +433,19 @@ interface Renderer {
   /** The reply field this tool's answer arrives in. */
   field: string;
   render(reply: Record<string, unknown>): string;
+  /**
+   * How a REFUSAL opens, when "switchboard could not answer" is the wrong
+   * frame. For a read, a refusal means no information; for a send it means
+   * the message did not go — and an agent must never have to infer that.
+   */
+  refused?: string;
+  /**
+   * How a TRANSPORT failure opens, for the same reason. Deliberately weaker
+   * than `refused`: a pipe that timed out cannot say whether the host had
+   * already handed the message to the window, so this must not claim it did
+   * not go — only that nobody can vouch that it did.
+   */
+  failed?: string;
 }
 
 // `Object.create(null)`, so `RENDERERS['toString']` is a miss rather than a
@@ -310,6 +457,18 @@ const RENDERERS: Record<string, Renderer> = Object.assign(
     list_sessions: { field: 'sessions', render: (r) => renderSessions(r.sessions, r.callerId) },
     get_session_output: { field: 'output', render: (r) => renderOutput(r.output) },
     get_session_diff: { field: 'diff', render: (r) => renderDiff(r.diff) },
+    send_to_session: {
+      field: 'delivery',
+      render: (r) => renderSend(r.delivery),
+      refused: 'Your message was NOT delivered',
+      // NOT "assume it was not" (#765 review): that invites a resend, and on a
+      // session that accepts automatically the duplicate RUNS. The honest
+      // advice is to look before sending again.
+      failed:
+        'switchboard could not confirm whether your message was delivered — it may be waiting in ' +
+        "the other session's message box, it may already have reached it, or it may not have " +
+        'arrived at all. Do not assume it has it, and do not send the same message again straight away',
+    },
   } satisfies Record<string, Renderer>
 );
 
@@ -348,9 +507,22 @@ export function makeCallTool(
   // lastN)` is the first tool that would notice, by silently ignoring `lastN`.
   return async (name: string, args: Record<string, unknown> = {}): Promise<ToolResult> => {
     const { pipePath, tokenPath } = config;
+    // Looked up FIRST (#765) — it used to be read only on the success path,
+    // and the failure paths below are where a WRITE most needs its own words.
+    // "Information about other sessions is unavailable" is a fine thing to
+    // tell an agent whose read failed and a misleading one to tell an agent
+    // whose send failed: it never says the message did not go.
+    const renderer: Renderer | undefined = RENDERERS[name];
     if (!pipePath || !tokenPath) {
       // A misconfiguration, reported rather than exited on — see
       // `bus-server.ts`'s header for why this process never dies at startup.
+      // Nothing was contacted, so for a send this is a definite "not sent".
+      if (renderer?.refused) {
+        return textResult(
+          `${renderer.refused}: the switchboard bus is not configured for this session.`,
+          true
+        );
+      }
       return textResult(
         'The switchboard bus is not configured for this session, so information about other ' +
           'sessions is unavailable. Continue without it.',
@@ -374,9 +546,13 @@ export function makeCallTool(
         // retry against. An agent handed `[]` instead concludes its sibling did
         // nothing and moves on believing it.
         const reason = asText(reply.reason, 'the host refused the request');
-        return textResult(`switchboard could not answer: ${reason}`, true);
+        // A host that GAVE UP WAITING is not a host that said no — see
+        // `HostReply.uncertain`. For a send it takes the hedged wording.
+        if (reply.uncertain === true && renderer?.failed) {
+          return textResult(`${renderer.failed} (${reason}).`, true);
+        }
+        return textResult(`${renderer?.refused ?? 'switchboard could not answer'}: ${reason}`, true);
       }
-      const renderer = RENDERERS[name];
       if (!renderer) {
         // Unreachable through `dispatch`, which refuses a name that is not in
         // `TOOLS` before this runs. Kept because the reachable version of this
@@ -393,6 +569,11 @@ export function makeCallTool(
       // understand, and they are exactly the confident-wrong-answer shape
       // `renderDiff` goes out of its way to avoid one level down.
       if (reply[renderer.field] === undefined) {
+        // A send whose answer we cannot read may well have gone — the host
+        // got as far as replying — so it takes the hedged wording, not "failed".
+        if (renderer.failed) {
+          return textResult(`${renderer.failed} (switchboard could not read its own answer).`, true);
+        }
         return textResult(`switchboard could not read its own answer to "${name}".`, true);
       }
       return textResult(renderer.render(reply));
@@ -406,6 +587,7 @@ export function makeCallTool(
       // state it as fact — sending whoever reads the log to the wrong end of
       // the channel. The parenthetical carries the real cause; the advice is
       // the same either way.
+      if (renderer?.failed) return textResult(`${renderer.failed} (${messageOf(err)}).`, true);
       return textResult(
         'switchboard could not answer this request, so information about other sessions is ' +
           `unavailable right now (${messageOf(err)}). Continue without it.`,

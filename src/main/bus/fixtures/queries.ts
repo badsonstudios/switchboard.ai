@@ -12,10 +12,11 @@
 // for the wrong reason. A test that cares about a refusal states it.
 import type { BusQueries } from '../host-channel';
 import type { SessionSummary } from '../../sessions/queries';
+import type { BusDelivery } from '../../sessions/delivery';
 
 export const STUB_SESSIONS: SessionSummary[] = [
-  { id: 'sb-caller', name: 'Alpha', folder: '/p/alpha', providerId: 'claude-code', status: 'working' },
-  { id: 'sb-other', name: 'Beta', folder: '/p/beta', providerId: 'claude-code', status: 'idle' },
+  { id: 'sb-caller', name: 'Alpha', folder: '/p/alpha', providerId: 'claude-code', status: 'working', exited: false },
+  { id: 'sb-other', name: 'Beta', folder: '/p/beta', providerId: 'claude-code', status: 'idle', exited: false },
 ];
 
 /**
@@ -39,8 +40,33 @@ function subjectOf(ref: unknown): SessionSummary {
       folder: '',
       providerId: 'claude-code',
       status: 'idle',
+      exited: false,
     }
   );
+}
+
+/**
+ * A `BusDelivery` double (#765), in the same spirit as `stubQueries`: dull, and
+ * SUCCEEDING by default, so a test that is not about sending cannot pass for
+ * the wrong reason on a refusal it never asked for. It echoes its arguments
+ * into the receipt for the same reason the query stubs do — a hop that drops
+ * one is then visible in the output — and records every call.
+ */
+export function stubDelivery(
+  over: Partial<BusDelivery> = {}
+): BusDelivery & { calls: { callerId: string; ref: unknown; message: unknown }[] } {
+  const calls: { callerId: string; ref: unknown; message: unknown }[] = [];
+  return {
+    calls,
+    send: (callerId, ref, message) => {
+      calls.push({ callerId, ref, message });
+      return Promise.resolve({
+        ok: true,
+        value: { session: subjectOf(ref), outcome: 'held', shown: true },
+      });
+    },
+    ...over,
+  };
 }
 
 export function stubQueries(over: Partial<BusQueries> = {}): BusQueries {

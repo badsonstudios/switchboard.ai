@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { ContextMenuLabels } from '../shared/context-menu';
 import type { SlashCommand } from '../shared/slash-commands';
 import type { PromptAttachment } from '../shared/prompt-attachments';
+import type { SiblingAck, SiblingMessage } from '../shared/sibling-message';
 import type { PtyAttachment, PtyChunk, PtySnapshot } from '../shared/ipc/pty';
 import type {
   BindingSnapshot,
@@ -521,6 +522,28 @@ const api = {
       ipcRenderer.on('sessions:revealCard', h);
       return () => ipcRenderer.removeListener('sessions:revealCard', h);
     },
+    /**
+     * Another session sent this card a message (P2-E11-05, §5.4) — HOLD it.
+     *
+     * The payload is something to show. It has no field that means "send", and
+     * nothing on this bridge can send it except the user's own Enter through
+     * `submitPrompt`; `shared/sibling-message.ts` explains why that is the
+     * design rather than an omission.
+     */
+    onSiblingMessage: (cb: (m: SiblingMessage) => void): (() => void) => {
+      const h = (_e: unknown, m: SiblingMessage) => cb(m);
+      ipcRenderer.on('sessions:siblingMessage', h);
+      return () => ipcRenderer.removeListener('sessions:siblingMessage', h);
+    },
+    /** Tell main what became of a held message. Its answer goes to the SENDING agent. */
+    ackSiblingMessage: (deliveryId: string, ack: SiblingAck): Promise<boolean> =>
+      ipcRenderer.invoke('sessions:siblingMessageAck', deliveryId, ack),
+    /** Does this card accept siblings' messages without review? Off unless set. */
+    acceptFromSiblings: (cardId: string): Promise<boolean> =>
+      ipcRenderer.invoke('sessions:acceptFromSiblings', cardId),
+    /** Switch it. Resolves the state main now holds, not the one asked for. */
+    setAcceptFromSiblings: (cardId: string, on: boolean): Promise<boolean> =>
+      ipcRenderer.invoke('sessions:setAcceptFromSiblings', cardId, on),
     onExited: (cb: (e: { sessionId: string; code: number; crashed: boolean }) => void): (() => void) => {
       const h = (_e: unknown, x: { sessionId: string; code: number; crashed: boolean }) => cb(x);
       ipcRenderer.on('sessions:exited', h);

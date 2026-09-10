@@ -124,6 +124,17 @@ export interface PersistedSession {
    * choice survives a resume.
    */
   sound?: string;
+  /**
+   * "Accept messages from other sessions automatically" (P2-E11-05, §5.4).
+   *
+   * When true, a sibling's `send_to_session` may be SUBMITTED to this card's
+   * session without anyone pressing Enter — the one thing §5.4's delivery
+   * policy exists to prevent by default. **Absent means off**, and so does any
+   * value that is not literally `true`: the reader is `cardAcceptsSiblings`,
+   * and a hand-edited `"yes"` must not be the thing that switches a safety
+   * gate open. Stored per CARD so a deliberate pipeline survives a resume.
+   */
+  acceptFromSiblings?: boolean;
 }
 
 /**
@@ -1026,6 +1037,31 @@ export class WorkspaceStore {
     if (sound !== null && !isSoundId(sound)) return; // a cue this build cannot play: no-op
     s.sound = sound ?? undefined;
     this.saveSoon();
+  }
+
+  /**
+   * Does this card take siblings' messages without review? (P2-E11-05)
+   *
+   * `=== true` and nothing looser — see `PersistedSession.acceptFromSiblings`.
+   * An unknown card is false, which is the safe answer rather than merely the
+   * quiet one: every caller is asking "may I skip the human?".
+   */
+  cardAcceptsSiblings(cardId: string): boolean {
+    return this.state.sessions.find((s) => s.id === cardId)?.acceptFromSiblings === true;
+  }
+
+  /**
+   * Switch it. Answers the state the store now holds, so a refused write (an
+   * unknown card) leaves the menu showing the truth. Off DELETES the field, so
+   * a workspace nobody has changed carries nothing new.
+   */
+  setCardAcceptsSiblings(cardId: string, on: boolean): boolean {
+    const s = this.state.sessions.find((x) => x.id === cardId);
+    if (!s) return false;
+    if (on) s.acceptFromSiblings = true;
+    else delete s.acceptFromSiblings;
+    this.saveSoon();
+    return s.acceptFromSiblings === true;
   }
 
   /** The USER rules (P2-E14-03). The built-ins are not in here — see the field. */

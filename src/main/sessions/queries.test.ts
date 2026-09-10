@@ -34,6 +34,7 @@ const session = (over: Partial<SessionSummary> = {}): SessionSummary => ({
   folder: 'C:/Projects/TradingApp',
   providerId: 'claude-code',
   status: 'working',
+  exited: false,
   ...over,
 });
 

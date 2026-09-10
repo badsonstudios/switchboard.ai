@@ -172,6 +172,12 @@ export interface PanelContext {
   /** count of changed files, for a tab badge */
   changed: number;
   /**
+   * Messages from other sessions waiting in this card's composer (P2-E11-05),
+   * for the Session tab's badge. Optional so a panel context built without it
+   * — a test, a future host — simply shows no badge.
+   */
+  waiting?: number;
+  /**
    * The held request, if the CLI delegated one to us.
    *
    * `reason` found by #261's dropped-prop audit: the Session panel's consumer

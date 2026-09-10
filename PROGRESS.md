@@ -34,6 +34,27 @@
 > unattended workers is a different risk from one reported item, and that
 > asymmetry is written down in the file so it does not later read as drift.
 
+> # 🔨 IN PROGRESS — 2026-09-10: **#765** — P2-E11-05, `send_to_session` + delivery policy
+>
+> Branch `feature/765-send-to-session`. Plan posted on the issue. Picked over
+> #766/#772 because it completes E11's exit criterion 4; #772 stays next (a
+> send is an IPC hop, not the sync 4 MB read #772 is about).
+>
+> **State: implemented, two review rounds done, PR opening — merges on green
+> CI.** Full unit suite green bar one real-fs timing flake in
+> `transcripts/watcher.test.ts` (a different test each run, under load; no
+> changed file is in its import graph). `check:bus` PASS, e2e 3/3. Review
+> round 1 caught a BLOCKER — control characters in a message could turn the
+> user's one reviewed Enter into terminal keystrokes — now refused. Follow-ups
+> filed as **#774**.
+>
+> **Shape:** `SiblingDelivery` (main, transport-free) decides; the renderer
+> only ever HOLDS a message (per-card inbox → highlighted "from @A" block in the
+> composer, sent only by the user's Enter). The push carries no "submit" flag at
+> all — auto-accept is main's decision, made from a per-card flag, Direct
+> transport only, and rate-capped so two auto-accepting sessions cannot loop.
+> A delivery is confirmed by a renderer ack; no ack = an explicit refusal.
+
 > # ✅ MERGED — 2026-09-08: **#764** — P2-E11-04, the bus read tools
 >
 > **PR #773, squashed to `b6a8f59`, all four CI jobs green.** Issue closed.

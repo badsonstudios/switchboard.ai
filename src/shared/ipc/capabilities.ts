@@ -297,6 +297,22 @@ export const CHANNEL_CAPABILITIES = {
   'sessions:rename': 'sessions.write',
   'sessions:renameCard': 'sessions.write',
   'sessions:setAutonomy': 'sessions.write',
+  // `send_to_session`'s window half (P2-E11-05, §5.4). The READ of a card's
+  // auto-accept flag is `sessions.read` like every other card preference.
+  //
+  // The WRITE is `sessions.write` — the same word as `setAutonomy` above, and
+  // that is the comparison to make: full-auto lets an agent run tools nobody
+  // approved, this lets a SIBLING'S message start a turn nobody approved. Both
+  // take the human out of one loop, deliberately, on one card. Not a word of
+  // its own for the reason `setAutonomy` has none; if the vocabulary ever
+  // splits "remove a human gate" from "rename a card", both move together.
+  'sessions:acceptFromSiblings': 'sessions.read',
+  'sessions:setAcceptFromSiblings': 'sessions.write',
+  // "I am holding that message" — and `sessions.write`, not `.read`, although
+  // it changes nothing in main. Its answer is relayed to ANOTHER AGENT as a
+  // statement of fact ("it is waiting in that session's message box"), so a
+  // consumer allowed only to observe must not be able to forge one.
+  'sessions:siblingMessageAck': 'sessions.write',
   'sessions:setTaskLabel': 'sessions.write',
   'sessions:slashCommands': 'sessions.read',
   'settings:getAutoLabels': 'settings.read',
@@ -373,6 +389,11 @@ export const CHANNEL_CAPABILITIES = {
   // moves the SCREEN, not a session. The verdict, if there is one, still goes
   // through `sessions:decidePermission` and its `sessions.write`.
   'sessions:revealCard': 'sessions.read',
+  // A sibling's message to hold in a card's composer (P2-E11-05). The main→
+  // renderer inject channel §5.4 calls for. `sessions.read`: the window is
+  // being TOLD something about a session, and the payload has no field that
+  // can make it act — `shared/sibling-message.ts` is built so that it cannot.
+  'sessions:siblingMessage': 'sessions.read',
   'sessions:status': 'sessions.read',
   // a card's task label moved, and the renderer did not do it (P2-E7-06) —
   // carries the new value, because its two readers have nothing to re-read

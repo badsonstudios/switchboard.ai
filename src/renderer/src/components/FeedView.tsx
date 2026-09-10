@@ -37,6 +37,14 @@ import { interruptSession, submitPrompt } from '../lib/composer';
 import { interceptSlash } from '../lib/slash-intercept';
 import { sessionStore } from '../store/session-store';
 import { ComposerAttachments } from './ComposerAttachments';
+import { SiblingMessages } from './SiblingMessages';
+import {
+  SIBLING_SETTLE_MS,
+  removeHeldMessages,
+  settledMessages,
+  useHeldMessages,
+  withForwarded,
+} from '../lib/sibling-inbox';
 import { ModelQuickMenu } from './ModelQuickMenu';
 import {
   Attachment,
@@ -1404,6 +1412,34 @@ function Composer({
   /** one line of explanation for a paste that produced nothing, or null */
   const [attachNotice, setAttachNotice] = React.useState<string | null>(null);
 
+  // Messages other sessions sent this card (P2-E11-05, §5.4) — HELD, never
+  // sent, until the user presses Enter below. A module-level store keyed by
+  // card, like the draft, so they outlive this component; subscribing is also
+  // what tells the sender this card's composer is on screen.
+  const held = useHeldMessages(cardId);
+  // WHEN THIS COMPOSER FIRST SHOWED each one — the clock `SIBLING_SETTLE_MS`
+  // runs on (#765 review, round 2). Stamped in an effect, i.e. after the block
+  // has been painted, and forgotten when the message leaves. A remount starts
+  // the clock again, which is right: a block the user has not seen in this
+  // view has not been reviewed in it.
+  const seenAt = React.useRef(new Map<string, number>());
+  const [settleTick, setSettleTick] = React.useState(0);
+  React.useEffect(() => {
+    const now = Date.now();
+    const ids = new Set(held.map((m) => m.id));
+    for (const id of [...seenAt.current.keys()]) if (!ids.has(id)) seenAt.current.delete(id);
+    let youngest = -1;
+    for (const m of held) {
+      const t = seenAt.current.get(m.id) ?? now;
+      seenAt.current.set(m.id, t);
+      if (now - t < SIBLING_SETTLE_MS) youngest = Math.max(youngest, t);
+    }
+    if (youngest < 0) return;
+    // Re-render once the youngest settles, so Send stops being a dead button.
+    const timer = setTimeout(() => setSettleTick((n) => n + 1), youngest + SIBLING_SETTLE_MS - now + 1);
+    return () => clearTimeout(timer);
+  }, [held, settleTick]);
+
   // ── The model chip's quick-switch menu (#747) ──────────────────────────────
   //
   // WHERE the menu was asked for, or null for "shut" — the chip's own box, in
@@ -1899,8 +1935,13 @@ function Composer({
     return () => ro.disconnect();
   }, [remeasure]);
 
-  /** something to send: words, a picture, or both (E10-09) */
-  const sendable = draft.trim().length > 0 || attachments.length > 0;
+  /** something to send: words, a picture, a sibling's message, or any mix (E10-09, E11-05) */
+  // Only SETTLED messages make the box sendable — an Enter would not send the
+  // others, and a lit Send button that does nothing is its own small lie.
+  const sendable =
+    draft.trim().length > 0 ||
+    attachments.length > 0 ||
+    settledMessages(held, seenAt.current).length > 0;
 
   /**
    * The prompt went â€” empty the box AND forget the saved copy, at once.
@@ -1964,7 +2005,25 @@ function Composer({
     // An attachment with nothing typed IS a prompt (Â§5.10's composer is an
     // input route, and "look at this" is a thing people send), so the guard is
     // on BOTH being empty rather than on the text alone.
-    if (!text && attachments.length === 0) return;
+    //
+    // …and so is a sibling's message (P2-E11-05). THIS ENTER IS THE KEYPRESS
+    // §5.4 REQUIRES: the messages waiting above the box go with it, each
+    // wrapped in the header that tells the receiving agent who wrote it and
+    // that the user sent it on, followed by whatever the user typed. Captured
+    // now, like `sending` below — a message that arrives between this press and
+    // the send is not one the user saw, so it stays for the next Enter.
+    //
+    // Two exclusions, both #765 review, both so the header's "the user
+    // reviewed it" stays true:
+    //  - a message that arrived less than `SIBLING_SETTLE_MS` ago stays held —
+    //    an Enter already on its way for the user's OWN prompt did not review it;
+    //  - a SLASH COMMAND goes alone. Folded in after a forwarded message it
+    //    would stop being a command at all (the prompt no longer starts with
+    //    `/`), and the messages would ride a keypress that was not about them.
+    const forwarding = text.startsWith('/') ? [] : settledMessages(held, seenAt.current);
+    if (!text && attachments.length === 0 && forwarding.length === 0) return;
+    const prompt = withForwarded(forwarding, text);
+    const forwardedIds = forwarding.map((m) => m.id);
 
     if (attachments.length === 0) {
       // The path this composer has always had, byte for byte: transport-
@@ -1972,8 +2031,9 @@ function Composer({
       // back to the PTY dance if not. A text prompt cannot be refused â€” one of
       // the two routes always accepts it â€” so the box clears immediately and
       // the send stays as snappy as it was.
-      void submitPrompt(sessionId, text);
+      void submitPrompt(sessionId, prompt);
       clearComposerDraft();
+      removeHeldMessages(cardId, forwardedIds);
       setDismissed(false);
       setAttachNotice(null);
       box.current?.focus();
@@ -1990,7 +2050,7 @@ function Composer({
     // the next prompt, which is where the user put it.
     const sending = attachments;
     const sent = new Set(sending.map((a) => a.id));
-    void submitPrompt(sessionId, text, toPromptAttachments(sending)).then((ok) => {
+    void submitPrompt(sessionId, prompt, toPromptAttachments(sending)).then((ok) => {
       if (!ok) {
         // Everything stays exactly where it was. Clearing a composer whose
         // contents went nowhere is the one outcome the user cannot undo, and a
@@ -2000,6 +2060,9 @@ function Composer({
         return;
       }
       clearComposerDraft();
+      // Only once it WENT, like the draft: a refused send keeps the sibling's
+      // messages on screen with everything else the user was about to send.
+      removeHeldMessages(cardId, forwardedIds);
       setDismissed(false);
       setAttachments((prev) => prev.filter((a) => !sent.has(a.id)));
       setAttachNotice(null);
@@ -2118,6 +2181,10 @@ function Composer({
           box: that is what makes `roomForBox` count them as chrome, so the
           textarea's twelve-line cap is measured against the room actually
           left rather than fighting the strip for it */}
+      {/* Sibling messages (P2-E11-05) — inside the root for the same reason,
+          and above the attachments because they arrived first in the reading
+          order of what Enter will send: the forwarded text leads the prompt. */}
+      <SiblingMessages messages={held} onDismiss={(id) => removeHeldMessages(cardId, [id])} />
       <ComposerAttachments
         attachments={attachments}
         notice={attachNotice}
