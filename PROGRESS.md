@@ -45,6 +45,81 @@
 > unattended workers is a different risk from one reported item, and that
 > asymmetry is written down in the file so it does not later read as drift.
 
+> # ✅ MERGED — 2026-09-11: **#766** — P2-E11-09, the context package generator
+>
+> **PR #780, squashed to `013013a`, all four CI jobs green.** Issue closed.
+> **E13's prerequisite is now in.** ⚠️ **NOT RELEASED** — joins #764/#765/#772
+> under `0.8.9 — unreleased`; `gh release list` is the authority.
+>
+> **Next up: #774** (#765's review follow-ups — sidebar mark for a message
+> waiting on a collapsed card, card-gone ack, double Enter during an attachments
+> send; not safety-critical). **#776** is the alternative and is the more
+> interesting one: a session's own repo config (`core.fsmonitor`, a clean filter)
+> makes switchboard RUN a command, during the bus diff AND the git pane's status
+> — same class as the `diff.external` hole #764 closed, measured with a probe,
+> and the clean-filter half has no known off switch yet. **#779** is new, filed
+> out of this item (transcript schema drift: the CLI has added five keys since
+> `schema.ts` was written; `check:transcripts` passes and reports them).
+>
+> **Shipped:** `sessions/context-package.ts` (pure, transport-free, model-free),
+> `sessions/transcript-blocks.ts` (`blocksFrom`/`renderBlock`/`sliceTail` lifted
+> out of `queries.ts` — shared, and it breaks a would-be import cycle),
+> `SessionQueries.sessionContext`, `readTranscriptHead`, and `touchedPath` shared
+> with the watcher. Six sections, each with a per-section token estimate and its
+> own `truncated`.
+>
+> **TWO BOUNDED READS, BECAUSE THE GOAL IS AT THE WRONG END OF THE FILE.** Every
+> reader in this tree takes the tail; the task statement is the FIRST prompt. A
+> generator built on the tail alone silently reports whatever the user said 400
+> turns in AS THE GOAL. Tail always (2 MB), head (128 KB) only when the tail
+> missed byte 0, and only the goal comes from it.
+>
+> **Budgets measured, not guessed** (#772's rule): 256 KB / 512 KB / 1 MB tails
+> all miss the real fixture's most recent `TodoWrite`; **2 MB** is the first that
+> reaches it, and the plan is a whole section. Whole call **9–11 ms median** on
+> 7.37 MB → **~3,100 estimated tokens**. No ladder — #772 measured one and found
+> it paid for every rung.
+>
+> ## ⚠️ TWO REVIEW ROUNDS, AND ROUND 2 FOUND THE BLOCKER BACK INSIDE ROUND 1'S FIX
+> Round 1: the goal fell back to the tail's oldest prompt and printed it as the
+> task statement. Round 1's fix stopped the fallback — and round 2 found
+> `firstPrompt` had kept **its own copy** of "is this the user speaking", which
+> disagreed with the builder's about **attachment-only turns**, so a session
+> opening with a pasted screenshot had its SECOND prompt returned as the goal.
+> The same blocker, reached through its own fix, because a rule existed twice.
+> One shared `promptText` now serves both — the `touchedPath` argument, made
+> again three hours later by the thing it predicted.
+>
+> Round 2 also found: a **subagent's to-do list** becoming the session's plan (no
+> `!sidechain` guard where `lastProse`/`lastTool` both had one); `derivationCut`
+> counting `tool.detail` — the stringified tool INPUT, rendered nowhere — firing
+> on **435 of the fixture's 1,172 tool blocks (37%)**, i.e. a warning that is a
+> constant; and `slice(-MAX_FILES)` swapping one wrong answer for another, since
+> the map is keyed by FIRST touch, so it dropped the file edited at turn 1 and
+> again at turn 500 — the file the work was about.
+>
+> ## HONESTY FIELDS, AND THE SAME LIE FOUND ONE LAYER DOWN
+> `coverage` is `whole | recent | unreadable`. An unreadable transcript used to
+> report "the whole conversation" over a document saying the session did nothing
+> — #772's lie one layer up, turning a fact about the READ into a fact about the
+> WORK. `TranscriptWindow` gained `read` to tell an empty file from an unread
+> one. **`get_session_output` had the identical defect** and now reports
+> `truncated` for an unreadable transcript — an existing bus contract changed.
+>
+> ## WHAT IT DELIBERATELY DOES NOT CLAIM
+> §5.5 names five sections; four are honestly mechanical and **"Decisions" is
+> not**. The package does not print that heading — it carries the user's own
+> later prompts, under a heading that says so. §5.5's honesty rule applied to the
+> document rather than only to the UI. DESIGN.md §5.5 has the "as built" note.
+>
+> ⚠️ #760's finding is why the mechanical path is the default at all: a headless
+> `claude -p` probe in a temp cwd enumerated the machine's other sessions and
+> messaged six of them across four unrelated projects. **A cwd is not a sandbox.**
+> The LLM-backed variants are NOT built here and will need explicit containment.
+>
+> **55 mutants across seven rounds, all die.** Test title is not an assertion
+> (lesson 3), and neither is a green suite.
+
 > # ✅ MERGED — 2026-09-10: **#772** — bus read bounds, measured first
 >
 > **PR #777, squashed to `af88e63`, all four CI jobs green.** Issue closed.
