@@ -240,6 +240,13 @@ Close out the tracking before you report (never skip):
 - Update `docs/plans/dogfood-testing.md` if anything user-facing merged — add it
   as UNTESTED with a how-to-test line. Automatic, no asking.
 - The issue closes itself on merge via `Closes #<n>`.
+- **The close-out is a PR too — never a push to `main` (Dan, 2026-09-11).**
+  Branch `docs/<issue#>-close-out` from the fresh `main`, commit the
+  `PROGRESS.md` / tracker edits, open a PR, **merge it on green CI**, then
+  `git checkout main && git pull`. The report waits for that merge. Items
+  through #772 pushed their close-outs straight to `main`; the admin bypass
+  printed "Bypassed rule violations" every time and it was treated as noise.
+  It is the alarm.
 
 ## Step 11 — The report (the one checkpoint)
 

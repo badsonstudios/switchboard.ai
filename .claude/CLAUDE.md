@@ -186,6 +186,11 @@ All tokens and keys live in **`.claude/.env`** (none are required yet).
   (`Closes #<n>`); **Claude squash-merges once CI is green** — the gate is green
   CI, not a human click (corrected 2026-09-01, re-confirmed 2026-09-08).
   Reviews are deliberately NOT required on `main`; red CI does not merge.
+- **EVERY commit goes through a PR — including docs-only ones (Dan,
+  2026-09-11).** `PROGRESS.md` close-outs, the dogfood tracker, plans, skills:
+  branch, PR, merge on green CI. **Never push to `main`.** A push that prints
+  "Bypassed rule violations for refs/heads/main" went straight to `main` —
+  that line is the alarm.
 - Details: `skills/startup/references/git-workflow.md`.
 
 ## Working / Temporary Files
