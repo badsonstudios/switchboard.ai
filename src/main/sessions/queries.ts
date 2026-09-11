@@ -41,19 +41,21 @@
 // because an agent told "no such session" or "ambiguous: 2 matches" retries
 // usefully, while one handed `[]` concludes its sibling did nothing and moves
 // on believing it.
-import {
-  BlockIntent,
-  DerivationCaps,
-  DISPLAY_CAPS,
-  FeedBlock,
-  deriveIntents,
-} from '../feed/blocks';
+import { DISPLAY_CAPS } from '../feed/blocks';
+import { blocksFrom, renderBlock, sliceTail } from './transcript-blocks';
 import {
   HISTORY_MAX_LINES,
   HISTORY_TAIL_BYTES,
+  readTranscriptHead,
   readTranscriptWindow,
   type TranscriptWindow,
 } from '../feed/history';
+import {
+  buildContextPackage,
+  PACKAGE_CAPS,
+  promptText,
+  type ContextPackage,
+} from './context-package';
 import type { SessionIdentity, SessionStatus } from '../../shared/sessions';
 
 /**
@@ -211,80 +213,54 @@ export interface SessionQueryDeps {
   git: DiffSource;
 }
 
-/** Prose blocks read as themselves; a tool row reads as one labelled line. */
-function renderBlock(block: FeedBlock): string {
-  // A subagent's turn is NOT the main conversation, and handing it to another
-  // agent unmarked is a misattribution it cannot detect. Labelled rather than
-  // dropped: a sibling's subagent work is often the most interesting thing in
-  // the window, and silently removing it would leave an unexplained gap.
-  const tag = block.sidechain ? '[subagent] ' : '';
-  if (block.kind === 'tool' && block.tool) {
-    const head = `${tag}[${block.tool.name}] ${block.tool.summary}`;
-    return block.tool.out ? `${head}\n  -> ${block.tool.out}` : head;
-  }
-  if (block.kind === 'todos' && block.todos) {
-    return tag + block.todos.map((t) => `- [${t.status}] ${t.content}`).join('\n');
-  }
-  const text = block.text ?? '';
-  if (!text) return '';
-  const label = block.kind === 'user' ? 'User' : block.kind === 'thinking' ? 'Thinking' : 'Claude';
-  return `${tag}${label}: ${text}`;
-}
+/**
+ * How much of a transcript's TAIL a context package reads (#766).
+ *
+ * Measured rather than chosen — the table is on `SessionQueries.sessionContext`,
+ * which is also where the argument for reading two windows lives.
+ */
+export const PACKAGE_TAIL_BYTES = 2 * 1024 * 1024;
 
 /**
- * Fold derivation intents into blocks, attaching tool results to their calls.
+ * How much of a transcript's HEAD is read to find the opening prompt (#766).
  *
- * A miniature of what `FeedBuffer` does. Not reusing `FeedBuffer` itself
- * because it is a live view — it emits through a callback, evicts at
- * `BLOCK_CAP`, and owns `seq` numbering shared with the renderer. None of that
- * belongs in a synchronous read of a file, and constructing one per query to
- * throw it away would couple this to the Feed's eviction policy for nothing.
- *
- * TWO DELIBERATE DIVERGENCES FROM `FeedBuffer`, both toward being more correct
- * for one call rather than for a live view:
- *  - `awaiting` is unbounded where `FeedBuffer.remember` caps at 200, so past
- *    200 unresolved calls the Feed forgets a result and this still attaches it.
- *    The map dies with the call and `readTranscriptWindow` bounds entries at
- *    5,000, so there is nothing to leak.
- *  - `seq` here is a local ordinal starting at 0; `FeedBuffer`'s starts at 1
- *    and is shared with the renderer. **Never surface this one** — it is not
- *    the Feed's `seq` and cannot be used to address a block on screen.
+ * 128 KB, against a first user line that starts at byte 278 in this repo's real
+ * fixture and costs 0.7 ms to reach. The headroom is not for a longer prompt but
+ * for what can precede one: a conversation that opens with a pasted screenshot
+ * or a dropped PDF carries that attachment as base64 on a line of its own, and
+ * a budget sized to the prompt would land inside it and find nothing.
  */
-function blocksFrom(
-  entries: readonly Record<string, unknown>[],
-  caps: DerivationCaps
-): FeedBlock[] {
-  const blocks: FeedBlock[] = [];
-  const awaiting = new Map<string, FeedBlock>();
-  let seq = 0;
-  for (const entry of entries) {
-    // The watcher's other half of this (`full !== boundFile`) is N/A — we read
-    // exactly one file — but a sidechain line lands IN that file and must not
-    // be presented as the main conversation. `renderBlock` marks it.
-    const sidechain = entry.isSidechain === true;
-    let intents: BlockIntent[];
-    try {
-      // Belt-and-braces, not a known path: `deriveIntents` is tolerant by
-      // construction and nothing `JSON.parse` produces can make it throw. Kept
-      // so one malformed entry could never cost the whole tail, and flagged as
-      // untested because it is untestable from outside.
-      intents = deriveIntents(entry, caps);
-    } catch {
-      continue;
-    }
-    for (const intent of intents) {
-      if (intent.t === 'tool-result') {
-        const target = awaiting.get(intent.toolUseId);
-        if (target?.tool) target.tool.out = intent.out;
-        awaiting.delete(intent.toolUseId);
-        continue;
-      }
-      const block: FeedBlock = { ...intent.block, seq: seq++, sidechain };
-      if (intent.toolUseId) awaiting.set(intent.toolUseId, block);
-      blocks.push(block);
-    }
+export const PACKAGE_HEAD_BYTES = 128 * 1024;
+
+/**
+ * The conversation's opening prompt, read from the START of the file (#766).
+ *
+ * Derives blocks rather than picking the first `user` line out of the JSONL,
+ * because "the first line that is a prompt" and "the first line whose type is
+ * user" are not the same line: `isMeta` system lines, `<local-command-*>`
+ * plumbing and `tool_result` carriers all arrive as `type: 'user'`, and the CLI
+ * writes several of them before a real conversation starts. `deriveIntents`
+ * already knows which is which, and having it decide here is the difference
+ * between a goal section that reads like a task and one that opens with a
+ * caveat preamble.
+ *
+ * `undefined` when the head window held no prompt at all — a normal state for a
+ * session that has not been asked anything, and one the package renders as its
+ * own sentence rather than as a blank heading.
+ */
+function firstPrompt(file: string): string | undefined {
+  const head = readTranscriptHead(file, PACKAGE_HEAD_BYTES);
+  for (const block of blocksFrom(head.entries, PACKAGE_CAPS)) {
+    // `promptText`, SHARED with the package's own `userTexts`, and shared
+    // because this loop used to be a second copy of that rule that disagreed
+    // with it about attachment-only turns — so a session opening with a pasted
+    // screenshot had its SECOND prompt returned here and printed as the goal.
+    // It also carries the subagent guard: a `Task` brief lands in this file as
+    // a sidechain `user` line and can precede the human's own.
+    const text = promptText(block);
+    if (text !== undefined) return text;
   }
-  return blocks;
+  return undefined;
 }
 
 /** Run an injected dependency, treating a throw as its empty answer (P6). */
@@ -436,7 +412,7 @@ export class SessionQueries {
     // Small window first; see `OUTPUT_FIRST_WINDOW` for why, and why only one
     // more read.
     const readAt = (bytes: number): TranscriptWindow =>
-      attempt(() => readTranscriptWindow(file, bytes), { entries: [], cut: false });
+      attempt(() => readTranscriptWindow(file, bytes), { entries: [], cut: false, read: false });
     let read = readAt(OUTPUT_FIRST_WINDOW);
     let all = blocksFrom(read.entries, DISPLAY_CAPS);
     // Short of blocks, with more of the file behind the window — and not
@@ -456,7 +432,7 @@ export class SessionQueries {
     // blocks). The marker is in-band so the model knows it holds a fragment.
     const overflow = rendered.length > OUTPUT_CHAR_CAP;
     const text = overflow
-      ? TRIM_MARKER + '\n\n' + rendered.slice(-(OUTPUT_CHAR_CAP - TRIM_MARKER.length - 2))
+      ? TRIM_MARKER + '\n\n' + sliceTail(rendered, OUTPUT_CHAR_CAP - TRIM_MARKER.length - 2)
       : rendered;
 
     return {
@@ -468,8 +444,151 @@ export class SessionQueries {
         // not output, and counting it produces `{blocks: 20, text: ''}`.
         blocks: pieces.length,
         truncated:
-          taken.length < all.length || overflow || read.cut || read.entries.length >= HISTORY_MAX_LINES,
+          taken.length < all.length ||
+          overflow ||
+          read.cut ||
+          read.entries.length >= HISTORY_MAX_LINES ||
+          // THE SAME LIE #766 FOUND ONE LAYER UP, fixed here while the signal
+          // is in hand. `transcriptFor` named a file and the read of it failed
+          // — gone since the path was resolved, locked, a share that dropped —
+          // and every other field then says the sibling has produced nothing.
+          // A model told `{text: '', truncated: false}` concludes its sibling
+          // did nothing and acts on it; told `truncated`, it asks again or says
+          // it could not see. `read` is `true` for a file that is genuinely
+          // empty, so a brand-new session still answers honestly empty.
+          !read.read,
       },
+    };
+  }
+
+  /**
+   * A sibling's work as a Level-2 handoff package (§5.5, #766).
+   *
+   * ── TWO WINDOWS, BECAUSE THE GOAL IS AT THE WRONG END OF THE FILE ────────
+   *
+   * Every other read in this file wants the newest lines. A handoff wants one
+   * thing that is at the very START of the conversation — the task statement —
+   * and on any session worth handing off that line is megabytes behind the
+   * tail. Reading only the tail would report whatever the user happened to say
+   * four hundred turns in AS THE GOAL, and nothing about the answer would look
+   * wrong.
+   *
+   * So: the tail, always. Then, only when the tail did not reach byte 0, a
+   * small head read — and **only the opening prompt is taken from it**.
+   *
+   * That rule is half of what makes the two windows safe to combine without
+   * knowing whether they overlap; it stops a file or a tool call being counted
+   * twice. The other half is in `buildContextPackage`, which decides whether a
+   * prompt is "later" by comparing it to the goal TEXT rather than by asking
+   * which window the goal came from — because a transcript sized just past the
+   * tail budget has a tail that is cut and that still contains the file's first
+   * line, so the two windows really can both hold the opening prompt.
+   *
+   * And when the head read finds no prompt at all — 128 KB of a conversation
+   * that opens with a pasted screenshot is all base64 — the package reports the
+   * goal as unknown rather than falling back to the tail's oldest prompt. That
+   * fallback is the original defect wearing a disguise.
+   *
+   * ── THE BUDGETS ARE MEASURED, NOT GUESSED (#772's standing lesson) ───────
+   *
+   * Against this repo's 7.37 MB transcript fixture on an i9-13900K:
+   *
+   * | tail budget | ms   | entries | files seen | newest todo list found |
+   * |-------------|------|---------|------------|------------------------|
+   * | 256 KB      |  1.2 |     179 |          7 | no                     |
+   * | 512 KB      |  1.8 |     306 |          8 | no                     |
+   * | 1 MB        |  4.8 |     510 |         17 | no                     |
+   * | **2 MB**    | 11.7 |    1113 |         37 | **yes**                |
+   * | 4 MB        | 14.0 |    2282 |         53 | yes                    |
+   *
+   * 2 MB is the first budget that reaches this session's most recent
+   * `TodoWrite`, and the plan is a whole SECTION of the package — a handoff
+   * that reports "this session kept no todo list" about a session that kept one
+   * is the kind of confident wrong answer §5.5's honesty rule exists to stop.
+   * The head read costs 0.7 ms and finds an opening prompt that sits at byte
+   * 278 with room to spare for one preceded by a large pasted attachment.
+   *
+   * THE WHOLE CALL, not just the read, measures **9–11 ms median** across runs
+   * on that fixture (8.0–12.7 over seven-run batches) — derivation adds almost
+   * nothing on top of the parse, which is worth knowing because
+   * `PACKAGE_CAPS.detail` was the obvious suspect. The package it produces
+   * estimates **~3,100 tokens** out of a 7.37 MB conversation, which is §5.5's
+   * entire argument for a handoff over a transcript, stated as a number.
+   *
+   * NO LADDER, deliberately: #772 measured a 256 KB → 1 MB → 4 MB growth
+   * sequence and found it paid for every rung on the way up, making the large
+   * answer SLOWER than a single large read. This is one flat read, and the
+   * second one happens only for the goal.
+   *
+   * ⚠️ 11.7 ms is a synchronous cost on Electron's main thread, and #772's
+   * measurements are why that sentence is here rather than in a commit message:
+   * sixteen 12 ms reads landing in one poll phase froze the host for 184 ms in a
+   * single block. A package is generated by a deliberate gesture — a user
+   * dragging a context chip, or one agent asking once — so this is not that
+   * shape of traffic. Any caller that could make it that shape belongs behind
+   * the bus's per-endpoint in-flight bound, which is where #E11-11 will put it.
+   */
+  sessionContext(ref: string): QueryResult<ContextPackage> {
+    const found = this.resolve(ref);
+    if (!found.ok) return found;
+    const session = found.value;
+
+    // `undefined` for a THROW, `null` for "this session has no transcript", and
+    // the two must not collapse: `attempt(…, null)` mapped a throw onto the
+    // no-transcript branch, which returns `coverage: 'whole'` — so a dependency
+    // that blew up produced a document saying the session had done nothing, over
+    // the claim that this covered all of it. Defensive today (`transcriptFor` is
+    // a Map lookup) and the `attempt` wrapper exists precisely because someone
+    // thought it might not stay one.
+    let file: string | null | undefined;
+    try {
+      file = this.deps.transcriptFor(session.id);
+    } catch {
+      file = undefined;
+    }
+    if (!file) {
+      // A SESSION WITH NO TRANSCRIPT STILL GETS A PACKAGE, empty but whole —
+      // the same call this file's other readers make (a card that has not
+      // started is a normal state, not an error), and the same one the item's
+      // "a transcript with no tool calls still yields a usable package"
+      // done-when makes one step further along.
+      return {
+        ok: true,
+        value: buildContextPackage({
+          session,
+          entries: [],
+          cut: false,
+          unreadable: file === undefined,
+        }),
+      };
+    }
+
+    const tail = attempt(() => readTranscriptWindow(file, PACKAGE_TAIL_BYTES), {
+      entries: [],
+      cut: false,
+      read: false,
+    });
+    // The head read is skipped entirely when the tail already reached byte 0:
+    // the first prompt is then in `entries` and `buildContextPackage` takes it
+    // from there.
+    const goalFromHead = tail.cut ? attempt(() => firstPrompt(file), undefined) : undefined;
+
+    return {
+      ok: true,
+      value: buildContextPackage({
+        session,
+        entries: tail.entries,
+        goalFromHead,
+        // The BYTE window is one of two ways to miss history and the line
+        // budget is the other, so both feed the package's coverage claim.
+        cut: tail.cut || tail.entries.length >= HISTORY_MAX_LINES,
+        // A THIRD way, and the one that used to be invisible: the session HAS a
+        // transcript (`transcriptFor` named one) and the read of it failed. An
+        // unread file and an empty one are the same `entries: []` here, so
+        // without `read` the package reported "this covers the whole
+        // conversation" over a document asserting the session had done nothing.
+        unreadable: !tail.read,
+      }),
     };
   }
 

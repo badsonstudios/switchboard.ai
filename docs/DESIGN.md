@@ -544,6 +544,35 @@ content into B's conversation as input, at a chosen fidelity:
 Drop-dialog UX: dropping a context chip asks "Inject: last response | summary handoff
 | full excerpt…" with token-size estimates shown per option.
 
+**As built (P2-E11-09, #766) — the mechanical generator, and the one heading that
+changed.** The fallback rung (a) above shipped FIRST rather than last, for the reason
+the ladder itself implies: the canonical trigger is the drained rate-limit window, and
+that is precisely when (b) and (c) are unavailable, so the rung that has to exist
+anyway is the one worth having first. It is also the only variant that is
+deterministic, and therefore the only one whose correctness a test suite can speak to
+at all — the package is byte-stable across runs, which no LLM-written variant will
+ever be.
+
+Four of the five sections above are honestly mechanical. **"Decisions" is not**, and
+the shipped package does not use that heading: recovering *"we chose a named pipe
+because HTTP would re-admit the localhost class"* from prose is a language model's
+job, and a mechanical extractor printing its best guess under a heading that
+confident is the honesty rule broken in the one place it matters most. What ships
+instead is the nearest thing that IS a fact — **the user's own later prompts**, which
+is where a course correction is actually recorded — under its own name. The
+agent-written and `claude -p` variants layer onto the same package shape and are
+where a real "Decisions" section comes from.
+
+Two further properties, both recorded because a later reader will otherwise assume
+the easier thing was done: the package reads **two bounded windows, not the whole
+file** — the tail for state, and a small head window for the task statement, which
+lives at the opposite end of the transcript and would otherwise be silently replaced
+by whatever the user happened to say four hundred turns in; and it reports
+**coverage** ("the whole conversation" vs "the most recent part of it") in the
+document itself, because a handoff is the worst possible place to describe a blind
+spot as a fact about the work. Measured: ~3,100 estimated tokens out of a 7.37 MB
+conversation, in 11.2 ms.
+
 **Cross-provider handoff (continue elsewhere).** The same premise extends across
 vendors: because context is local data — transcript + working tree + git state — a
 session can be continued on a *different provider's* CLI (Claude ⇄ Codex ⇄ Gemini),
