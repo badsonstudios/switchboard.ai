@@ -245,9 +245,12 @@ On each worker completion notification:
      protection is STRICT up-to-date (learned 2026-08-21): ANY commit to
      main — including the orchestrator's own PROGRESS doc commits —
      invalidates every open PR's mergeability and forces a full
-     update-branch + re-green cycle.** So: batch PROGRESS pushes and
+     update-branch + re-green cycle.** So: batch PROGRESS updates and
      prefer landing them immediately AFTER a merge (when open PRs are
      already invalidated), never between a PR going green and its merge;
+     **and they land through a `docs/` PR merged on green CI, never a push to
+     `main` (Dan, 2026-09-11 — every commit goes through a PR, no exceptions;
+     "Bypassed rule violations" on a push means it went straight to main);
      and when two internal PRs race, merge the up-to-date one first,
      then update-branch the other once (`gh pr merge --auto --squash`
      after the bump lands it unattended). **Exception —

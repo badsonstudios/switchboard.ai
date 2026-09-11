@@ -3,6 +3,15 @@
 - **Host:** private GitHub repo `badsonstudios/switchboard.ai`. Tracker:
   GitHub issues, current milestone only (see `docs/plans/00-process.md`).
 - **`main` is always-working.** Never commit red to it; never merge red into it.
+- **EVERY commit reaches `main` through a PR — no exceptions (Dan,
+  2026-09-11).** That includes docs-only commits: `PROGRESS.md` close-outs,
+  the dogfood tracker, plan edits, skill edits. **Never `git push origin
+  main` / `HEAD:main`.** Branch `docs/<slug>` (or `docs/<issue#>-close-out`),
+  open a PR, merge on green CI like any other. If a push prints **"Bypassed
+  rule violations for refs/heads/main"**, the push went straight to `main` —
+  that line is the alarm, not noise. (Until 2026-09-11 close-outs were pushed
+  directly, the admin bypass hid it, and it was called a habit rather than a
+  bug.)
 - **Branch per work item:** `feature/<item-id>-<slug>` (e.g.
   `feature/s-01-pty-host`); `fix/<slug>` for untracked fixes;
   `auto/<milestone>` for autopilot runs (draft PR, Dan merges).

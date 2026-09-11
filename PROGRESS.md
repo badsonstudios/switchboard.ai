@@ -3,6 +3,17 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 📌 STANDING — 2026-09-11: **EVERY commit goes through a PR. No pushes to `main`, ever.**
+>
+> **Owner decision, 2026-09-11**, after the #772 close-out was pushed straight
+> to `main` the way every close-out before it had been. Docs-only commits
+> included: `PROGRESS.md`, the dogfood tracker, plans, skills — branch
+> (`docs/<slug>`), PR, merge on green CI. A push printing **"Bypassed rule
+> violations for refs/heads/main"** went straight to `main`; that line is the
+> alarm, not noise. Written into `.claude/CLAUDE.md`, `git-workflow.md`,
+> `/next-item` Step 10 and `/orchestrate`. The direct-push close-outs already
+> on `main` (through `4182777`) stay — rewriting pushed history is worse.
+
 > # 📌 STANDING — 2026-09-08: **the approval gates are GONE. One checkpoint,
 > at the end, and it does not block the merge.**
 >
