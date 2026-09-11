@@ -201,6 +201,39 @@ export const IDENTITY_ONLY_CAPS: DerivationCaps = {
   todos: 0,
 };
 
+/**
+ * The file a tool call touched, if it names one (#766).
+ *
+ * ONE RULE, TWO CALLERS, AND THAT IS THE WHOLE REASON THIS IS A FUNCTION. The
+ * three keys below were written inline in `watcher.ts` (`TranscriptSnapshot.
+ * filesTouched`, which the session card reports) and #766's context package
+ * needs exactly the same fact for its "files touched" section. Two copies of
+ * `file_path ?? path ?? notebook_path` would be two copies for about a week —
+ * the day a tool arrives with a fourth key, one of them learns about it and the
+ * card and the handoff start disagreeing about the same session in front of the
+ * same user.
+ *
+ * NOT `toolIntent`'s `primary`, which is a different question with a
+ * deliberately different answer: that one falls through to `command`,
+ * `description` and `pattern` because it is building a one-line LABEL and any
+ * of those will do. A shell command is not a file, and folding the two would
+ * put `npm test` in a list of files touched.
+ *
+ * Nor is this `FeedBlock.tool.filePath`, which is `file_path` ONLY and stays
+ * that way: the renderer keys its inline diff preview off that field, and
+ * widening it would offer a diff for a `Glob` of a directory.
+ */
+export function touchedPath(input: Record<string, unknown> | undefined): string | undefined {
+  const fp = input?.file_path ?? input?.path ?? input?.notebook_path;
+  // `fp !== ''` is the one thing the watcher's inline expression did not check,
+  // and it is a deliberate (tiny) behaviour change rather than an accident: an
+  // empty string is not a file, and the old code would have listed it as one in
+  // the card's `filesTouched`. Nothing in the suite depended on that, and no
+  // tool the CLI ships sends an empty path — it is closed here because this
+  // rule now has two callers and "the empty case" is where two callers diverge.
+  return typeof fp === 'string' && fp !== '' ? fp : undefined;
+}
+
 /** A block to add, optionally keyed by the tool_use id whose result it awaits. */
 export interface EmitIntent {
   t: 'block';

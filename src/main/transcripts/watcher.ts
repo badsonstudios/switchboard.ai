@@ -13,7 +13,7 @@ import path from 'path';
 import { StringDecoder } from 'string_decoder';
 import { Logger } from '../log/logger';
 import { BindingDiagnostics, BindingState } from '../../shared/transcripts';
-import { FeedBlock, deriveIntents } from '../feed/blocks';
+import { FeedBlock, deriveIntents, touchedPath } from '../feed/blocks';
 import { FeedBuffer } from '../feed/buffer';
 import { conversationExists, slugForCwd } from './paths';
 import { DriftDetector } from './drift';
@@ -1993,8 +1993,11 @@ export class TranscriptWatcher {
     for (const c of content as Array<{ type?: string; name?: string; input?: Record<string, unknown> }>) {
       if (c?.type === 'tool_use') {
         if (c.name && !w.snap.toolsSeen.includes(c.name)) w.snap.toolsSeen.push(c.name);
-        const fp = c.input?.file_path ?? c.input?.path ?? c.input?.notebook_path;
-        if (typeof fp === 'string' && !w.snap.filesTouched.includes(fp)) {
+        // `touchedPath` rather than the three-key expression that used to be
+        // written out here: #766's context package reports the same fact and
+        // must not grow a second opinion about it (see `feed/blocks.ts`).
+        const fp = touchedPath(c.input);
+        if (fp !== undefined && !w.snap.filesTouched.includes(fp)) {
           w.snap.filesTouched.push(fp);
         }
         if ((c.name === 'Agent' || c.name === 'Task') && full === w.boundFile) {

@@ -5,7 +5,13 @@
 // synchronous, because the derivation is now pure — and because the SECOND
 // consumer, `StreamFeed`, has to be able to rely on exactly the same answers.
 import { describe, it, expect } from 'vitest';
-import { IDENTITY_ONLY_CAPS, deriveIntents, EmitIntent, ToolResultIntent } from './blocks';
+import {
+  IDENTITY_ONLY_CAPS,
+  deriveIntents,
+  touchedPath,
+  EmitIntent,
+  ToolResultIntent,
+} from './blocks';
 
 const blocks = (intents: ReturnType<typeof deriveIntents>): EmitIntent[] =>
   intents.filter((i): i is EmitIntent => i.t === 'block');
@@ -306,5 +312,36 @@ describe('attachments that rode with a prompt (#491)', () => {
     );
     expect(b).toHaveLength(1);
     expect(b[0].block.attachments).toEqual({ images: 1, documents: 1 });
+  });
+});
+
+describe('touchedPath — which key names a file (#766)', () => {
+  // Shared with `watcher.ts`'s `filesTouched` so the session card and #766's
+  // handoff cannot describe the same session differently. Each case below is a
+  // way the two could have drifted.
+  it('reads the three keys a tool uses to name a file, in order', () => {
+    expect(touchedPath({ file_path: 'a.ts' })).toBe('a.ts');
+    expect(touchedPath({ path: 'src' })).toBe('src');
+    expect(touchedPath({ notebook_path: 'n.ipynb' })).toBe('n.ipynb');
+    // `file_path` wins when a tool somehow carries two.
+    expect(touchedPath({ path: 'src', file_path: 'a.ts' })).toBe('a.ts');
+  });
+
+  it('is NOT `toolIntent`\'s label rule — a command is not a file', () => {
+    // The label falls through to `command`/`description`/`pattern` because any
+    // of them will do for one line of text. Folding the two would file
+    // `npm test` as a file the session touched.
+    expect(touchedPath({ command: 'npm test' })).toBeUndefined();
+    expect(touchedPath({ description: 'run the suite' })).toBeUndefined();
+    expect(touchedPath({ pattern: '**/*.ts' })).toBeUndefined();
+  });
+
+  it('answers undefined for anything that is not a non-empty string', () => {
+    expect(touchedPath(undefined)).toBeUndefined();
+    expect(touchedPath({})).toBeUndefined();
+    expect(touchedPath({ file_path: '' })).toBeUndefined();
+    expect(touchedPath({ file_path: 42 })).toBeUndefined();
+    expect(touchedPath({ file_path: null })).toBeUndefined();
+    expect(touchedPath({ file_path: { toString: () => 'a.ts' } })).toBeUndefined();
   });
 });

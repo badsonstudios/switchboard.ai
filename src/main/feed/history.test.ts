@@ -10,6 +10,7 @@ import fs from 'fs';
 import path from 'path';
 import {
   HISTORY_TAIL_BYTES,
+  readTranscriptHead,
   readTranscriptTail,
   readTranscriptWindow,
   replayResumedHistory,
@@ -150,8 +151,102 @@ describe('readTranscriptWindow (#772)', () => {
     expect(readTranscriptWindow(file, fs.statSync(file).size).cut).toBe(false);
   });
 
-  it('a missing file is no history and not cut', () => {
-    expect(readTranscriptWindow(path.join(root, 'nope.jsonl'))).toEqual({ entries: [], cut: false });
+  it('a missing file is no history and not cut — and says it was not READ (#766)', () => {
+    expect(readTranscriptWindow(path.join(root, 'nope.jsonl'))).toEqual({
+      entries: [],
+      cut: false,
+      read: false,
+    });
+  });
+
+  it('distinguishes a file that is empty from one that could not be read (#766)', () => {
+    // Both are `entries: []`, and for the Feed the difference genuinely does
+    // not matter. It matters for a handoff, whose whole output is a claim about
+    // a session: a failed read reported as an empty conversation says "this
+    // session did nothing" about a session that may have done everything.
+    const empty = writeTranscript(NATIVE, []);
+    expect(readTranscriptWindow(empty).read).toBe(true);
+    expect(readTranscriptWindow(path.join(root, 'nope.jsonl')).read).toBe(false);
+  });
+});
+
+describe('readTranscriptHead (#766)', () => {
+  // The mirror of `readTranscriptWindow`, and every one of these cases is the
+  // mirror of one above — deliberately, because the two failure modes are the
+  // same two with the ends swapped, and the head one is the newer and therefore
+  // the unproven one. `cut` here means "there is NEWER history past this
+  // window", which is the opposite of what the name means on the tail read, and
+  // getting that backwards is the single most likely mistake in this function.
+  it('reads the OLDEST lines, where the tail read reads the newest', () => {
+    const file = writeTranscript(NATIVE, [userLine('one'), userLine('two'), userLine('three')]);
+    const budget = Buffer.byteLength(userLine('one') + '\n') + 10;
+    const head = readTranscriptHead(file, budget);
+    expect(head.entries).toHaveLength(1);
+    expect(JSON.stringify(head.entries[0])).toContain('one');
+    // The same budget from the other end sees the other end of the file.
+    expect(JSON.stringify(readTranscriptWindow(file, budget).entries)).toContain('three');
+  });
+
+  it('drops the TRAILING fragment, not the leading one', () => {
+    const lines = [userLine('one'), userLine('two')];
+    const file = writeTranscript(NATIVE, lines);
+    // A budget landing mid-way through the second line: that line is a fragment
+    // and must not be parsed, but the first is whole and must survive.
+    const head = readTranscriptHead(file, Buffer.byteLength(lines[0] + '\n') + 20);
+    expect(head.entries).toHaveLength(1);
+    expect(head.cut).toBe(true);
+  });
+
+  it('is not cut when the window reaches the end of the file', () => {
+    const file = writeTranscript(NATIVE, [userLine('one'), userLine('two')]);
+    const exact = readTranscriptHead(file, fs.statSync(file).size);
+    expect(exact.cut).toBe(false);
+    expect(exact.entries).toHaveLength(2);
+    // And a budget larger than the file is still not cut.
+    expect(readTranscriptHead(file, 10 * 1024 * 1024).cut).toBe(false);
+  });
+
+  it('a window that stops inside the first line yields nothing rather than a fragment', () => {
+    const file = writeTranscript(NATIVE, [userLine('one'), userLine('two')]);
+    const head = readTranscriptHead(file, 20);
+    expect(head.entries).toEqual([]);
+    expect(head.cut).toBe(true);
+  });
+
+  it('caps lines from the START, not the end', () => {
+    const file = writeTranscript(NATIVE, [userLine('one'), userLine('two'), userLine('three')]);
+    const head = readTranscriptHead(file, 10 * 1024 * 1024, 2);
+    expect(head.entries).toHaveLength(2);
+    expect(JSON.stringify(head.entries)).toContain('one');
+    expect(JSON.stringify(head.entries)).not.toContain('three');
+  });
+
+  it('a missing file, an empty file and a zero budget are three DIFFERENT no-histories', () => {
+    // All three are `entries: []` and they are not the same claim. Collapsing
+    // them is how a reader ends up asserting completeness about a file it never
+    // opened — which, for this reader, is what `cut: false` means.
+    expect(readTranscriptHead(path.join(root, 'nope.jsonl'), 1024)).toEqual({
+      entries: [],
+      cut: false,
+      read: false,
+    });
+    // Read, and genuinely empty: nothing was missed because there is nothing.
+    const empty = writeTranscript(NATIVE, []);
+    expect(readTranscriptHead(empty, 1024)).toEqual({ entries: [], cut: false, read: true });
+    // A window of no bytes over a file with bytes in it MISSED ALL OF THEM —
+    // and never opened the file, so it did not read it either.
+    const file = writeTranscript(NATIVE, [userLine('one')]);
+    expect(readTranscriptHead(file, 0)).toEqual({ entries: [], cut: true, read: false });
+  });
+
+  it('skips a line that does not parse rather than losing the file', () => {
+    const dir = path.join(root, slugForCwd(folder));
+    fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, `${NATIVE}.jsonl`);
+    fs.writeFileSync(file, `not json\n${userLine('one')}\n[]\n${userLine('two')}\n`);
+    const head = readTranscriptHead(file, 10 * 1024 * 1024);
+    // `[]` is an array, which this reader rejects the way the tail read does.
+    expect(head.entries).toHaveLength(2);
   });
 });
 

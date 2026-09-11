@@ -131,6 +131,17 @@ on the floor, and say so in your PR.
   changes that takes more than ten seconds now stops and says so, rather than
   leaving git running in the background.
 
+### Internal
+
+- **Groundwork for handing one session's work to another.** The app can now read
+  a session's conversation and write a plain-English handoff from it — what the
+  session was asked to do, what the user has said since, its to-do list, the
+  files it has touched, and where it left off. It is built by reading the
+  conversation, not by asking an AI to summarise it, so it works even when the
+  session it describes has run out of its usage window — which is the moment you
+  most want to hand work over. Nothing surfaces this yet; the drag-and-drop
+  gesture that uses it comes later.
+
 ## 0.8.8 — 2026-09-08
 
 ### Added

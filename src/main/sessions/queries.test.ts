@@ -215,7 +215,14 @@ describe('sessionOutput', () => {
     expect(r.value).toMatchObject({ text: '', blocks: 0, truncated: false });
   });
 
-  it('a transcript path that does not exist answers empty rather than throwing', () => {
+  it('a transcript path that does not exist answers empty — but says it is INCOMPLETE (#766)', () => {
+    // The two empties above and this one look identical to a caller and are not
+    // the same claim. A session with no transcript has genuinely produced
+    // nothing; a session whose named transcript could not be read has produced
+    // we-don't-know-what. An agent told `{text: '', truncated: false}` concludes
+    // its sibling did nothing and acts on that — which is the confident wrong
+    // answer this module's header exists to refuse, arriving as an empty value
+    // rather than as a refusal.
     const q = new SessionQueries({
       list: () => [session()],
       transcriptFor: () => path.join(dir, 'gone.jsonl'),
@@ -225,6 +232,21 @@ describe('sessionOutput', () => {
     expect(r.ok).toBe(true);
     if (!r.ok) throw new Error(r.reason);
     expect(r.value.text).toBe('');
+    expect(r.value.truncated).toBe(true);
+  });
+
+  it('…while a transcript that exists and is EMPTY is honestly complete (#766)', () => {
+    // The other half, and what stops the line above from being "always true".
+    const file = path.join(dir, 'empty.jsonl');
+    fs.writeFileSync(file, '');
+    const q = new SessionQueries({
+      list: () => [session()],
+      transcriptFor: () => file,
+      git: noDiff,
+    });
+    const r = q.sessionOutput('TradingApp');
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.value).toMatchObject({ text: '', blocks: 0, truncated: false });
   });
 
   it('a transcript of pure garbage answers empty rather than throwing', () => {
