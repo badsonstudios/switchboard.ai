@@ -45,17 +45,98 @@
 > unattended workers is a different risk from one reported item, and that
 > asymmetry is written down in the file so it does not later read as drift.
 
+> # ✅ MERGED — 2026-09-12: **#776** — a repository's own config, and three
+> rounds of it running our commands
+>
+> **PR #784, squashed to `2889e95`, all four CI jobs green.** Issue closed.
+> Follow-up **#785** filed (a failed `status` renders as "Not a git repository"
+> — pre-existing on every failure path). ⚠️ **NOT RELEASED** — joins
+> #764/#765/#772/#766/#774 under `0.8.9 — unreleased`; `gh release list` is the
+> authority.
+>
+> **Next up: #779** (transcript schema drift — `check:transcripts` reports five
+> keys the CLI has added since `schema.ts` was written; size S). Then **#753**
+> (the watcher's `clear` rebind tag has #748's first-clear blind spot).
+>
+> **Shipped:** `git/repo-config-guard.ts` (pure, its own test file) plus the
+> plumbing in `GitService`. Every invocation now carries
+> `-c core.fsmonitor=false`, `-c core.hooksPath=<an empty dir we create>` and
+> `GIT_OPTIONAL_LOCKS=0`; `status` and `diff-index` additionally carry
+> `GIT_CONFIG_KEY_<n>` pairs neutralising every filter driver defined outside
+> `global`/`system` scope, restored to the trusted value where there is one.
+>
+> **SEVEN VECTORS, FIVE OF THEM NEW.** #772 knew about `core.fsmonitor` and a
+> clean filter. Also live: `filter.<n>.process` (the variant `git lfs install`
+> actually configures), a filter selected by `.git/info/attributes` or by
+> `core.attributesFile`, **`.git/hooks/post-index-change` — which needs NO
+> config file at all, just a written file** — and any of them inside a
+> submodule. `git show HEAD:<path>` and `rev-parse` measured clear.
+>
+> ## ⚠️ THREE REVIEW ROUNDS, AND EACH FOUND THE LAST ONE'S HOLE INSIDE ITS OWN FIX
+> The #766/#774 lesson, twice over in one item.
+>
+> **Round 1** shipped `--attr-source=<empty tree>` as the all-or-nothing
+> fallback for a driver name that could not be quoted onto a command line.
+> Round 2 measured that it is not blanket — it suppresses only the WORKING-TREE
+> `.gitattributes`, while `.git/info/attributes` and `core.attributesFile` still
+> select the driver — so **one unquotable name turned the whole guard off**, and
+> that branch discarded the precise overrides it had already built.
+>
+> **Round 2** moved the overrides to `GIT_CONFIG_KEY_<n>` (every key
+> expressible, so the injection shape and the fallback both disappear) and added
+> submodule enumeration. Round 3 walked around that twice: **`git config --file
+> X --list` defaults to `--no-includes`**, so two lines of `include.path` hid the
+> driver from the guard while git expanded it; and **`sub/.git` is a plain text
+> file an edit-only agent can repoint**, so opening `<gitdir>/modules/<name>` by
+> name found an empty directory. Round 3 stopped guessing: gitlinks come from the
+> INDEX and `git -C <path> config` resolves wherever the submodule really lives —
+> which deleted the directory walk, the symlink check, the linked-worktree
+> two-roots case and the `.gitmodules` gate at once.
+>
+> **A THIRD ONE NOTHING WOULD HAVE CAUGHT:** `GIT_CONFIG_KEY_<n>` is git ≥ 2.31,
+> and the code has a fallback branch *precisely because* Ubuntu 20.04 ships
+> 2.25.1. Those gits ignore the variables and run the driver, silently. The
+> capability is now asked of git behaviourally, not read off `--version`, and a
+> "no" refuses the read.
+>
+> ## TWO PROBES THAT LIED, AND THE THINGS THAT CAUGHT THEM
+> The round-3 probe reported both bypasses "held". They were not: it wrote
+> config values containing `"` with `appendFileSync`, and git's parser strips
+> those quotes, so the command could never run. **The control caught it** —
+> every trial in these probes now has one, and so does every real-git test.
+> Separately, widening a timing assertion for a loaded CI runner swallowed the
+> mutant it existed to kill; the fix was to retune the budget, not the bound.
+>
+> **REJECTED, WITH THE MEASUREMENT:** `--attr-source` (above);
+> `--ignore-submodules=all` (drops a dirty submodule out of the answer entirely
+> — one changed entry became zero); `-c key=value` (a subsection name may
+> contain `=`, and `-c` parses on the first one, so `[filter "x.clean=touch
+> pwned"]` would have had our own guard hand git a command to run).
+>
+> **`status` gained a budget on the GUARD ONLY.** `status` itself stays
+> unbounded on purpose: killing a slow-but-working repository would report it as
+> not being a repository at all. `GIT_OPTIONAL_LOCKS=0` also stops `status`
+> writing a sibling's index — the #772 harm that was fixed for `diff` and missed
+> here.
+>
+> **KNOWN, DELIBERATE REGRESSION:** `git lfs install --local` on a machine with
+> no global LFS now fails the read (the driver is repo-authored, has no trusted
+> value to restore, and is `required`). Pinned by a test; the manual says
+> `git lfs install` without `--local` is the fix. A failed `status` still renders
+> as "Not a git repository" — pre-existing on every failure path, filed as a
+> follow-up.
+>
+> **95 tests in `src/main/git/`**, every vector with its own control proving
+> plain git *does* run it. **25 mutants, all die.** Full suite green (7,685).
+
 > # ✅ MERGED — 2026-09-11: **#774** — #765's review follow-ups, all three
 >
 > **PR #782, all four CI jobs green.** Issue closed. ⚠️ **NOT RELEASED** —
 > joins #764/#765/#772/#766 under `0.8.9 — unreleased`; `gh release list` is the
 > authority.
 >
-> **Next up: #776** (a session's own repo config — `core.fsmonitor`, a clean
-> filter — makes switchboard RUN a command, during the bus diff AND the git
-> pane's status; same class as the `diff.external` hole #764 closed, measured
-> with a probe, and the clean-filter half has no known off switch yet). **#779**
-> (transcript schema drift, size S) is the filler alternative.
+> **Next up: #776** — DONE, see above; it turned out to be seven vectors and
+> three review rounds, not one hole.
 >
 > **Shipped:** a waiting count on the rail row and on a collapsed group's
 > heading; a `gone` refusal so a sender learns its target was closed rather than
