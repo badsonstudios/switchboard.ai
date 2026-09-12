@@ -553,7 +553,23 @@ export class SessionStore {
    * "which repo is this" is how two surfaces start disagreeing about grouping.
    * An explicit `groupId` IS carried, because the card was told one.
    */
+  /**
+   * Every card id this window has ever had in its list (#774 review).
+   *
+   * UNION-ONLY, NEVER SUBTRACTED, and that is the point: it is what lets
+   * `mayHoldForCard` tell "this card was closed" from "I have never heard of
+   * this card", which are the same value in `sessions` and must not be the
+   * same answer. Fed from the PUBLISHED join rather than from `setSessions`, so
+   * a card minted locally and not yet known to main (#687) counts as seen.
+   *
+   * Unbounded in principle, bounded in practice by the cards opened in one run
+   * of the app — a few dozen uuid strings.
+   */
+  private readonly everSeen = new Set<string>();
+
   private publishSessions(): void {
+    for (const s of this.rawSessions) this.everSeen.add(s.id);
+    for (const s of this.notStarted.values()) this.everSeen.add(s.id);
     if (this.notStarted.size === 0) {
       // the overwhelmingly common case — no copy, and `sessions` keeps the
       // identity `setSessions` handed us
@@ -1149,6 +1165,67 @@ export class SessionStore {
   }
   cardIdForLive(liveId: string): string {
     return this.liveToCard.get(liveId) ?? liveId;
+  }
+
+  /**
+   * Does this card still exist? (#774)
+   *
+   * ⚠️ ONLY MEANINGFUL ONCE `sessionsLoaded()` IS TRUE — before that it answers
+   * false for every card in existence. Its caller must not read that as "gone";
+   * see the guard at the sibling-message listener in `App.tsx`.
+   *
+   * ⚠️ `sessions`, NOT `cards`, AND THE DIFFERENCE IS THE WHOLE REASON THIS IS
+   * A METHOD. `state.cards` is dockview's PANEL list: hiding a card removes its
+   * panel (`removePanelKeepingSlot`), so a collapsed or hidden card is absent
+   * from it while being very much still there. `state.sessions` is the
+   * card-keyed join from main plus the locally-minted cards main has not heard
+   * of yet (#687), and it loses a card only when the card is really closed.
+   *
+   * Its caller is the sibling-message push, which refuses a message whose card
+   * has gone — and the card most likely to be holding an unread message is
+   * exactly the hidden one. Asking `cards` there would answer "gone" for the
+   * case the feature exists to serve, so the choice is named once, here, rather
+   * than being re-made correctly at each call site.
+   */
+  hasCard(cardId: string): boolean {
+    return this.state.sessions.some((s) => s.id === cardId);
+  }
+
+  /**
+   * May a message from another session be HELD for this card? (#774)
+   *
+   * The predicate the `sessions:siblingMessage` listener passes to
+   * `receiveSiblingMessage`. It lives here, not at that call site, because it
+   * is the difference between two questions that look like one, and answering
+   * the wrong one destroys a live session's message.
+   *
+   *   **"Is it in the list?" is not "has it been closed?"**
+   *
+   * Refusing is only honest for a card this window has SEEN and then lost.
+   * A card it has never listed is one it does not know about — which is not
+   * the same as one that is gone, and there are two ordinary ways to be in
+   * that state:
+   *
+   *   1. the boot window. This listener is live from the first commit, while
+   *      `sessions` arrives on a round trip that resolves a git root per card.
+   *      A renderer reload sits here with every session in main still running.
+   *   2. ⚠️ A CARD MAIN HAS BOUND AND THIS LIST HAS NOT CAUGHT UP WITH — the
+   *      case the first version of this fix missed (#774 review round 2).
+   *      `sessions:create` binds the card at its END and the refresh follows;
+   *      a `send_to_session` at a just-spawned sibling lands inside that gap,
+   *      which is exactly the orchestrator-and-workers pattern this app is
+   *      built for. And if `sessions:cards` starts failing, `latestWins`
+   *      rightly declines to apply the answer — so the list FREEZES while main
+   *      keeps minting cards, and "not in my list" would then condemn every
+   *      new card for ever. Our own breakage must never block a session.
+   *
+   * Hence `everSeen`: union-only, never subtracted. Errs toward HOLDING, the
+   * direction this whole delivery design errs in — a message wrongly held
+   * waits in a card the user can open, and a message wrongly refused is a
+   * confident lie about work that went nowhere.
+   */
+  mayHoldForCard(cardId: string): boolean {
+    return !this.everSeen.has(cardId) || this.hasCard(cardId);
   }
   /**
    * Release the card's binding — and everything else keyed by the live id that

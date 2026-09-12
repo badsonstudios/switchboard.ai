@@ -52,6 +52,99 @@ describe('SessionStore', () => {
     expect(calls).toBe(2);
   });
 
+  describe('hasCard — does this card still exist (#774)', () => {
+    it('is true for a listed card and false for one that was never there', () => {
+      store.setSessions([session('card-a')]);
+      expect(store.hasCard('card-a')).toBe(true);
+      expect(store.hasCard('card-z')).toBe(false);
+    });
+
+    it('⚠️ stays TRUE for a card with no dockview panel — hidden is not closed', () => {
+      // THE TRAP THIS METHOD EXISTS FOR. `state.cards` is the panel list, and
+      // hiding a card removes its panel; a `hasCard` written against it would
+      // answer "gone" here. Its caller refuses a sibling's message for a card
+      // that is gone, and a hidden card is the one most likely to be holding a
+      // message nobody has read — so that mistake would refuse delivery
+      // precisely in the case #774 was filed to improve.
+      store.setSessions([session('card-a'), session('card-b')]);
+      store.setCards(['card-a']); // card-b is hidden: listed, but no panel
+      expect(store.getState().cards).not.toContain('card-b');
+      expect(store.hasCard('card-b')).toBe(true);
+    });
+
+    it('goes false when the card is really closed', () => {
+      store.setSessions([session('card-a'), session('card-b')]);
+      store.setSessions([session('card-a')]);
+      expect(store.hasCard('card-b')).toBe(false);
+    });
+
+    it('is true for a card minted here that main has not heard of yet (#687)', () => {
+      // `sessions` is a join, and the local half counts: a message to a card
+      // created a moment ago must not be refused because the round trip that
+      // tells main about it has not come back.
+      store.markCardNotStarted({ id: 'card-new', title: 'new', folder: 'C:/proj/new' });
+      expect(store.hasCard('card-new')).toBe(true);
+    });
+  });
+
+  describe('mayHoldForCard — the sibling push’s predicate (#774 review, Blocker)', () => {
+    it('holds for a hidden card it can still see — no panel is not gone', () => {
+      store.setSessions([session('card-a'), session('card-b')]);
+      store.setCards(['card-a']);
+      expect(store.mayHoldForCard('card-b')).toBe(true);
+    });
+
+    it('⚠️ holds for ANY card before sessions:cards has ever answered', () => {
+      // THE BUG THIS EXISTS FOR. The IPC listener is live from the first
+      // commit; `sessions` arrives on an async round trip. In between, a
+      // `hasCard` predicate answers false for every card in existence — so a
+      // message arriving in that window (a renderer reload, with every session
+      // in main still running) was thrown away and its sender told the target
+      // had been closed.
+      expect(store.hasCard('card-a')).toBe(false);
+      expect(store.mayHoldForCard('card-a')).toBe(true);
+    });
+
+    it('refuses only for a card it SAW and then lost — that is a real close', () => {
+      store.setSessions([session('card-a'), session('card-z')]);
+      store.setSessions([session('card-a')]);
+      expect(store.mayHoldForCard('card-z')).toBe(false);
+    });
+
+    it('⚠️ holds for a card main has bound that this list has not caught up with', () => {
+      // ROUND 2's BLOCKER, and it is the round-1 fix's own hole. `sessions:create`
+      // binds the card at its END and the refresh follows; a send to a
+      // just-spawned sibling lands in that gap. A "have we loaded yet" latch
+      // closes after the FIRST answer and then condemns every card minted
+      // after it — so the question has to be per card, not per store.
+      store.setSessions([session('card-a')]);
+      expect(store.hasCard('card-new')).toBe(false);
+      expect(store.mayHoldForCard('card-new')).toBe(true);
+    });
+
+    it('⚠️ holds for every new card while the refresh is FROZEN', () => {
+      // If `sessions:cards` starts failing, `latestWins` declines to apply it
+      // and this list stops moving while main keeps minting cards. Refusing
+      // there would let our own breakage block every session's messages —
+      // the inverse of the fail-open constraint.
+      store.setSessions([session('card-a')]);
+      for (const id of ['card-b', 'card-c', 'card-d']) {
+        expect(store.mayHoldForCard(id)).toBe(true);
+      }
+    });
+
+    it('an empty answer does not condemn a card it never listed', () => {
+      store.setSessions([]);
+      expect(store.mayHoldForCard('card-a')).toBe(true);
+    });
+
+    it('holds for a card that is listed', () => {
+      store.setSessions([session('card-a')]);
+      expect(store.mayHoldForCard('card-a')).toBe(true);
+    });
+
+  });
+
   it('a subscriber that throws does not stop the others', () => {
     const seen: string[] = [];
     store.subscribe(() => {

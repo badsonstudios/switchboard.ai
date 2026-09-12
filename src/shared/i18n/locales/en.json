@@ -129,7 +129,12 @@
     "pinnedHint": "Pinned — sorts first, and bulk actions skip it",
     "rowLabel": "{title} — {state}",
     "rowLabelPinned": "{title} — pinned, {state}",
-    "rowDetail": "{detail}, {state}"
+    "rowDetail": "{detail}, {state}",
+    "waitingHint": "{count, plural, one {# message from another session is waiting here — open it to read and send} other {# messages from other sessions are waiting here — open it to read and send}}",
+    "rowWaiting": "{count, plural, one {# message waiting from another session} other {# messages waiting from other sessions}}, {state}",
+    "waitingChip": "{count} waiting",
+    "groupWaitingHint": "{count, plural, one {# message from another session is waiting in this group} other {# messages from other sessions are waiting in this group}} — expand it to see which sessions",
+    "groupLabelWaiting": "{name} — {count, plural, one {# message waiting from another session} other {# messages waiting from other sessions}}"
   },
   "railStatus": {
     "starting": "starting…",

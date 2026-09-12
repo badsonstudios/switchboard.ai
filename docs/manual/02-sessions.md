@@ -341,10 +341,31 @@ A few details keep that Enter honest:
   extra keys into a Terminal-mode session or make text display differently from
   what is actually sent. A session that tries is told to send plain text.
 
-If the other session's conversation isn't on screen (it's showing its Terminal
-or Changes tab, or it's collapsed), the message waits in its prompt box. Its
-**Session** tab shows a number while messages are waiting. A session can have up
-to 10 messages waiting; after that, the sender is told to wait.
+### How you know one is waiting
+
+You don't have to be looking at a session to find out it has a message.
+
+- **The sessions list on the left** shows a small number on that session's row —
+  whether the session is open, collapsed, hidden, or showing its Terminal or
+  Changes tab.
+- **The group heading** shows a "waiting" count too, so a collapsed group still
+  tells you there's something inside it.
+- **The session's own Session tab** shows the same number when the session is
+  open but you're on one of its other tabs.
+
+(If you've hidden the sessions list altogether, none of these are on screen —
+open it again to see them.)
+
+They all disappear when the messages do — sent or thrown away.
+
+A message from another session **never** flashes, makes a sound, or pulls the
+session in front of what you're doing. Those are reserved for a session that
+needs *you* — a question, or a permission. Another session leaving you a note
+can wait until you look. It also means no session can make your screen jump by
+messaging one of your other sessions.
+
+A session can have up to 10 messages waiting; after that, the sender is told to
+wait until you've dealt with them.
 
 ### Letting a session take messages without asking
 
@@ -368,7 +389,8 @@ knows nobody reviewed it.
 
 The sending session always finds out what happened: whether the message is
 waiting for you, was sent, or couldn't be delivered (the other session has
-ended, or there's no window open to show it). It's told not to wait for a reply
+ended, was closed while the message was on its way, or there's no window open
+to show it). It's told not to wait for a reply
 — nothing comes back automatically. If you want the answer, look at the other
 session, or ask the first one to read what the other has been doing.
 

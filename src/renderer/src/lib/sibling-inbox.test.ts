@@ -9,8 +9,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import {
+  beginSend,
   heldMessages,
   inboxKey,
+  isSendInFlight,
   pruneInboxes,
   receiveSiblingMessage,
   removeHeldMessages,
@@ -146,6 +148,68 @@ describe('receiveSiblingMessage', () => {
     expect(heldMessages('card-b')).toEqual([]);
   });
 
+  describe('the card has to still be there (#774)', () => {
+    const gone = (): boolean => false;
+    const there = (): boolean => true;
+
+    it('refuses as GONE, and files nothing, when the card is no longer known', () => {
+      // Main resolved the target and the message then crossed IPC; a card
+      // closed inside that window used to be filed under, acked as waiting,
+      // and swept at the next boot — with the sending agent told all along
+      // that a person had it.
+      expect(receiveSiblingMessage(msg(), gone)).toEqual({ placed: false, reason: 'gone' });
+      expect(heldMessages('card-b')).toEqual([]);
+    });
+
+    it('is asked about the card the message names', () => {
+      const asked: string[] = [];
+      receiveSiblingMessage(msg({ cardId: 'card-q' }), (id) => {
+        asked.push(id);
+        return true;
+      });
+      expect(asked).toEqual(['card-q']);
+    });
+
+    it('places it when the card is known', () => {
+      expect(receiveSiblingMessage(msg(), there)).toEqual({ placed: true, shown: false });
+      expect(heldMessages('card-b')).toHaveLength(1);
+    });
+
+    it('places it when NO predicate is given — nobody told us otherwise', () => {
+      expect(receiveSiblingMessage(msg())).toEqual({ placed: true, shown: false });
+    });
+
+    it('GONE outranks FULL — a closed card’s inbox is beside the point', () => {
+      for (let i = 0; i < SIBLING_INBOX_CAP; i++) receiveSiblingMessage(msg());
+      expect(receiveSiblingMessage(msg(), gone)).toEqual({ placed: false, reason: 'gone' });
+    });
+
+    it('a payload that is not a message is still NO ack, however gone the card is', () => {
+      // Order matters the other way here: "I could not read it" outranks "the
+      // card is gone", because the first is a fact about this end and the
+      // second is a claim about the card named in a payload we could not read.
+      expect(receiveSiblingMessage('nonsense', gone)).toBeNull();
+    });
+
+    it('a predicate that THROWS means known, not gone', () => {
+      // The doubt resolves toward the old behaviour: wrongly holding costs a
+      // message waiting in a card the user can still open, wrongly refusing
+      // tells an agent its message went nowhere while it sits in the composer.
+      const ack = receiveSiblingMessage(msg(), () => {
+        throw new Error('card list unreadable');
+      });
+      expect(ack).toEqual({ placed: true, shown: false });
+      expect(heldMessages('card-b')).toHaveLength(1);
+    });
+
+    it('a predicate answering a non-boolean is not a yes', () => {
+      // It crosses no boundary, but it is injected — and `=== true` is the
+      // difference between "said yes" and "returned something truthy".
+      const ack = receiveSiblingMessage(msg(), (() => 'yes') as unknown as (id: string) => boolean);
+      expect(ack).toEqual({ placed: false, reason: 'gone' });
+    });
+  });
+
   it('copies only the fields it keeps — nothing else rides into the workspace file', () => {
     receiveSiblingMessage({ ...msg(), submit: true, extra: 'x', from: { id: 'a', name: 'A', role: 'admin' } });
     const [h] = heldMessages('card-b');
@@ -227,6 +291,46 @@ describe('pruning', () => {
     pruneInboxes(new Set(['live']));
     expect(heldMessages('dead')).toEqual([]);
     expect(heldMessages('live')).toHaveLength(1);
+  });
+});
+
+describe('the in-flight send guard (#774)', () => {
+  it('marks and releases, and the release is idempotent', () => {
+    expect(isSendInFlight('card-b')).toBe(false);
+    const done = beginSend('card-b');
+    expect(isSendInFlight('card-b')).toBe(true);
+    done();
+    expect(isSendInFlight('card-b')).toBe(false);
+    done();
+    expect(isSendInFlight('card-b')).toBe(false);
+  });
+
+  it('is per card — one card sending does not block another', () => {
+    beginSend('card-b');
+    expect(isSendInFlight('card-c')).toBe(false);
+  });
+
+  it('an absent card id is never in flight, and its release is a no-op', () => {
+    expect(isSendInFlight(undefined)).toBe(false);
+    expect(() => beginSend(undefined)()).not.toThrow();
+  });
+
+  it('the boot prune clears a send for a card that is gone', () => {
+    // `done()` rides the promise, not the component, so a card closed mid-send
+    // releases normally. This is for the send that NEVER settles: without the
+    // sweep the entry is permanent and the card's Send button is greyed for
+    // the rest of the run with no way back.
+    beginSend('card-b');
+    beginSend('card-c');
+    pruneInboxes(new Set(['card-c']));
+    expect(isSendInFlight('card-b')).toBe(false);
+    expect(isSendInFlight('card-c')).toBe(true);
+  });
+
+  it('a REFUSED knownCards read prunes nothing — the #650 rule', () => {
+    beginSend('card-b');
+    pruneInboxes(new Set());
+    expect(isSendInFlight('card-b')).toBe(true);
   });
 });
 
