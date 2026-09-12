@@ -380,10 +380,19 @@ export function renderSend(payload: unknown): string {
       if (p.shown !== true) {
         // NOT "the user will see it next time they open that session" (#765
         // review) — a user who stays on that session's Terminal tab never
-        // does. Its Session tab counts what is waiting; that is all we know.
+        // does.
+        //
+        // #774 added a waiting count to the sidebar row, which is a better
+        // signal than the Session tab this sentence was written against. It is
+        // deliberately described as something that MAY be visible rather than
+        // as a fact: main cannot see the renderer, and the user can hide the
+        // sidebar entirely. The review caught the first draft of this line
+        // asserting the mark unconditionally — a claim main is in no position
+        // to make, and exactly the confident-wrong-answer shape the rest of
+        // this file is built to avoid.
         parts.push(
           `${plain}'s conversation is not on screen right now, so the user may not notice the ` +
-            'message until they open it.'
+            'message until they open it. Do not treat it as seen.'
         );
       }
       const heldWhy = heldReason(p, plain);

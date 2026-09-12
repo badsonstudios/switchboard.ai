@@ -384,6 +384,19 @@ export class SiblingDelivery {
       case 'ack': {
         const ack = handover.ack;
         if (!ack.placed) {
+          // Two different refusals, and the agent is told which (#774): one is
+          // "come back later", the other is "there is nothing to come back to".
+          // Collapsing them would send a polite retry loop at a card that has
+          // been closed.
+          if (ack.reason === 'gone') {
+            this.deps.log.info('sibling message arrived after the card closed', { cardId, deliveryId });
+            return {
+              ok: false,
+              reason:
+                `${label(target)} was closed while your message was on its way, so nobody has it. ` +
+                'Sending it again will not help until that session is open.',
+            };
+          }
           return {
             ok: false,
             reason:

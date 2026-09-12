@@ -40,9 +40,12 @@ import { ComposerAttachments } from './ComposerAttachments';
 import { SiblingMessages } from './SiblingMessages';
 import {
   SIBLING_SETTLE_MS,
+  beginSend,
+  isSendInFlight,
   removeHeldMessages,
   settledMessages,
   useHeldMessages,
+  useSendInFlight,
   withForwarded,
 } from '../lib/sibling-inbox';
 import { ModelQuickMenu } from './ModelQuickMenu';
@@ -1777,6 +1780,37 @@ function Composer({
   const [commands, setCommands] = React.useState<SlashCommand[] | null>(null);
   const [selected, setSelected] = React.useState(0);
   const [dismissed, setDismissed] = React.useState(false);
+
+  /**
+   * A send is out and has not come back yet (#774) — ONE AT A TIME FROM THIS CARD.
+   *
+   * Only the attachments path can be in this state for any length of time: a
+   * text prompt cannot be refused, so that branch clears the box in the same
+   * tick and there is no window to press Enter into. With attachments the box
+   * is deliberately NOT cleared until main says it went (a refused send must
+   * not silently eat a pasted screenshot), and reading a dropped 4 MB file is
+   * real time — so the second Enter lands on a composer still showing
+   * everything the first one sent, and sends it all again.
+   *
+   * That was true before P2-E11-05 and cost a duplicate prompt. It is worse
+   * now: the held sibling messages are removed only in the same resolved
+   * branch, so the second Enter forwards them A SECOND TIME, each under a
+   * header saying the user reviewed and sent it.
+   *
+   * TWO PIECES BECAUSE THEY ANSWER DIFFERENT QUESTIONS, and neither can do the
+   * other's job:
+   *  - `isSendInFlight` is the GUARD, and it is deliberately NOT component
+   *    state or a ref. It is keyed by card in `lib/sibling-inbox.ts`, because
+   *    this composer unmounts on a view-tab switch while the attachments and
+   *    the held messages both survive it — a local flag came back fresh on
+   *    remount and let the same payload go twice (#774 review).
+   *  - `sendPending` only GREYS the Send button, because this file's rule is
+   *    that a lit Send button doing nothing is a small lie. It is a
+   *    SUBSCRIPTION to the same flag rather than local state, for the same
+   *    remount reason: the release lands in a closure belonging to the
+   *    component that started the send, which by then may not be this one.
+   */
+  const sendPending = useSendInFlight(cardId);
   const token = dismissed ? null : slashToken(draft, caret);
   const popup = token !== null && commands !== null ? filterCommands(commands, token) : [];
   const popupOpen = popup.length > 0;
@@ -1938,10 +1972,13 @@ function Composer({
   /** something to send: words, a picture, a sibling's message, or any mix (E10-09, E11-05) */
   // Only SETTLED messages make the box sendable — an Enter would not send the
   // others, and a lit Send button that does nothing is its own small lie.
+  // …and not while a send is already out (#774): during that window an Enter
+  // is refused, so a lit button would be offering something that does nothing.
   const sendable =
-    draft.trim().length > 0 ||
-    attachments.length > 0 ||
-    settledMessages(held, seenAt.current).length > 0;
+    !sendPending &&
+    (draft.trim().length > 0 ||
+      attachments.length > 0 ||
+      settledMessages(held, seenAt.current).length > 0);
 
   /**
    * The prompt went â€” empty the box AND forget the saved copy, at once.
@@ -2020,6 +2057,13 @@ function Composer({
     //  - a SLASH COMMAND goes alone. Folded in after a forwarded message it
     //    would stop being a command at all (the prompt no longer starts with
     //    `/`), and the messages would ride a keypress that was not about them.
+    // ONE SEND AT A TIME (#774) — see `isSendInFlight`. Below the `/mcp` and
+    // `/model` intercepts, which send nothing and are not what can duplicate,
+    // and ABOVE `forwarding`, which is the line that decides what a second
+    // press would re-send. Deliberately covers the no-attachment branch too:
+    // if the user clears the strip while a send is out, that branch is reached
+    // with the same held messages still on the card, and they would go twice.
+    if (isSendInFlight(cardId)) return;
     const forwarding = text.startsWith('/') ? [] : settledMessages(held, seenAt.current);
     if (!text && attachments.length === 0 && forwarding.length === 0) return;
     const prompt = withForwarded(forwarding, text);
@@ -2050,7 +2094,16 @@ function Composer({
     // the next prompt, which is where the user put it.
     const sending = attachments;
     const sent = new Set(sending.map((a) => a.id));
+    const done = beginSend(cardId);
+    // A SECOND CALLBACK, NOT `.finally` (and not `.catch`): the box has to
+    // reopen even if `submitPrompt` REJECTS, and `void p.then(f).finally(g)`
+    // still leaves that rejection unhandled — an unhandled rejection in a
+    // renderer is a console error today and whatever the window's handler
+    // decides tomorrow. `submitPrompt` resolves `false` rather than throwing,
+    // so this arm should be dead; a guard that can wedge the composer shut for
+    // the rest of the session is not one to leave resting on "should".
     void submitPrompt(sessionId, prompt, toPromptAttachments(sending)).then((ok) => {
+      done();
       if (!ok) {
         // Everything stays exactly where it was. Clearing a composer whose
         // contents went nowhere is the one outcome the user cannot undo, and a
@@ -2066,7 +2119,7 @@ function Composer({
       setDismissed(false);
       setAttachments((prev) => prev.filter((a) => !sent.has(a.id)));
       setAttachNotice(null);
-    });
+    }, done);
     box.current?.focus();
   };
 

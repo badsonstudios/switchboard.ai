@@ -510,7 +510,13 @@ describe('renderSend (#765)', () => {
     // A user who stays on the Terminal tab never "opens that session" again.
     const out = renderSend({ session: beta, outcome: 'held', shown: false });
     expect(out).toMatch(/may not notice the message until they open it/);
+    expect(out).toMatch(/Do not treat it as seen/);
     expect(out).not.toMatch(/will see/);
+    // ⚠️ AND IT DOES NOT DESCRIBE THE WINDOW (#774 review). A draft of this
+    // string asserted "switchboard marks the session in its sidebar" — a claim
+    // main is in no position to make: it cannot see the renderer, and the user
+    // can hide the sidebar outright. Saying less is the honest option.
+    expect(out).not.toMatch(/sidebar|marks the session/i);
   });
 
   it('UNCONFIRMED: does not know, says so, and says not to rely on it', () => {

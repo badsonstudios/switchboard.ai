@@ -108,7 +108,27 @@ on the floor, and say so in your PR.
   messages in 10 minutes on its own — so two sessions that both have it on can't
   keep messaging each other in a loop while nobody is watching.
 
+- **The sessions list now marks a session that has a message waiting.** A
+  message from another session shows a small count on that session's row in the
+  left-hand list, so you can see one is waiting without opening the session.
+  Until now the count only appeared on the session's own **Session** tab, which
+  told you nothing if the session was collapsed, hidden, or simply not the one
+  you were looking at. It does **not** flash, make a sound, or pull the session
+  to the front — another session leaving you a note is not an interruption, and
+  nothing it sends can be sent on without you.
+
 ### Fixed
+
+- **Pressing Enter twice while sending an attachment no longer sends it twice.**
+  With a file or screenshot attached, the prompt box stays filled until the send
+  is confirmed — so a second Enter in that moment sent everything again,
+  including any message another session had left you. The Send button now greys
+  out until the first send finishes.
+
+- **A message sent to a session you just closed now says so.** If a session was
+  closed in the instant a message was on its way to it, the sending session was
+  told the message was waiting for you to read. It was not — it had nowhere to
+  go. The sender is now told the session was closed.
 
 - **A session that has ended is no longer listed as merely "done".** When one
   session asked what else was open, a session whose program had exited cleanly

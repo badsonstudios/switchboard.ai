@@ -73,6 +73,7 @@ import {
   RAIL_WIDTH_DEFAULT,
 } from '../lib/rail-view';
 import { uiGet, uiSet } from '../lib/ui-state';
+import { useHeldCounts } from '../lib/sibling-inbox';
 import { getDraggedCard, setDraggedCard } from '../lib/drag-context';
 import { MenuPlacement, placeMenu } from '../lib/menu-placement';
 import { directionOf } from '../lib/writing-direction';
@@ -659,6 +660,29 @@ export function SessionsRail(props: {
   const grouped = new Map(order.groups.map((g) => [g.id, g.members]));
 
   /**
+   * Messages other sessions have sent, per card, waiting for the user (#774).
+   *
+   * THE SIGNAL FOR A CARD YOU CANNOT SEE. #765 put the count on the card's own
+   * Session tab, which answers nothing for a card that is collapsed or hidden —
+   * the ladder's lower rungs remove the panel outright — and nothing at all for
+   * a user looking at a different card. The rail row is the one surface such a
+   * card still has.
+   *
+   * ONE call for every row, and it subscribes as an OBSERVER: what makes a card
+   * count as "shown" to the sending agent is a mounted COMPOSER, and a rail that
+   * subscribed the ordinary way would report all fifty of them as shown. See
+   * `useHeldCounts`.
+   *
+   * It deliberately does NOT light the attention lamp. The lamp is the channel
+   * for a session asking ITS user for something; letting any sibling ring it
+   * would let one agent make noise about a session the user never asked about,
+   * and the whole delivery design is built on a sibling never being able to act
+   * without a human keypress. A quiet mark you find when you look is the right
+   * loudness for "somebody left you a note".
+   */
+  const waitingCounts = useHeldCounts(props.sessions.map((s) => s.id));
+
+  /**
    * Where a drop against `rowId` would put the dragged session — an insertion
    * index into the bucket WITHOUT it, which is what `planReorder` takes.
    *
@@ -775,6 +799,7 @@ export function SessionsRail(props: {
     const accent = s.accent ?? 'var(--faint)';
     const selected = s.id === props.selectedId;
     const isPinned = props.pinned.has(s.id);
+    const waiting = waitingCounts.get(s.id) ?? 0;
     // a needy session outranks selection: the attention tint is the signal the
     // whole panel exists to carry
     const rowTint = p.needsYou ? tint(hue, 10) : selected ? tint(accent, 10) : 'transparent';
@@ -974,12 +999,21 @@ export function SessionsRail(props: {
               // or a task label would be readable to the eye and to nobody
               // else. (Not when the session needs you: the second line IS the
               // ask then, and the state already says it.)
+              // …and a sibling's waiting message is wrapped around that same
+              // `state` argument (#774) rather than given its own pair of row
+              // labels. Composing keeps this at two row labels instead of four,
+              // exactly as `rowDetail` already does for the task label — and it
+              // has to be here at all because the mark beside the row is
+              // `aria-hidden` decoration like every other glyph on the row.
               aria-label={t(isPinned ? 'rail.rowLabelPinned' : 'rail.rowLabel', {
                 title: s.title,
-                state:
-                  !p.needsYou && s.taskLabel
-                    ? t('rail.rowDetail', { detail: s.taskLabel, state: t(p.labelKey) })
-                    : t(p.labelKey),
+                state: ((): string => {
+                  const state =
+                    !p.needsYou && s.taskLabel
+                      ? t('rail.rowDetail', { detail: s.taskLabel, state: t(p.labelKey) })
+                      : t(p.labelKey);
+                  return waiting > 0 ? t('rail.rowWaiting', { state, count: waiting }) : state;
+                })(),
               })}
               // "this is the session the grid is showing" — a fact about the
               // rail's own list, which is what aria-current is for
@@ -1073,6 +1107,44 @@ export function SessionsRail(props: {
               >
                 {t('rail.closeSessionIcon')}
               </button>
+              {/* #774: what other sessions have left here. Decoration, like
+                  every other mark on the row — the count is in the row button's
+                  accessible name above.
+
+                  IN THE STATUS COLUMN, NOT REPLACING THE STATUS GLYPH: what the
+                  session is doing and what is waiting for you in it are
+                  independent facts, and a working session with a message in it
+                  is the normal case rather than a corner. It sits ABOVE the
+                  glyph so the status column still ends on the glyph every row
+                  has, and it borrows `--status-needs-input` — the same ink the
+                  Session tab's badge uses, so one colour means "a person has to
+                  do something here" on both surfaces. Rule 3 of this file's
+                  header holds: no animation. */}
+              {waiting > 0 && (
+                <span
+                  aria-hidden
+                  data-rail-waiting={s.id}
+                  title={t('rail.waitingHint', { count: waiting })}
+                  style={{
+                    minInlineSize: 16,
+                    blockSize: 16,
+                    borderRadius: 8,
+                    flexShrink: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    paddingInline: 4,
+                    fontFamily: 'var(--font-ui)',
+                    fontWeight: 700,
+                    fontSize: 9.5,
+                    lineHeight: 1,
+                    color: 'var(--status-needs-input-ink)',
+                    background: tint('var(--status-needs-input)', 18),
+                  }}
+                >
+                  {waiting}
+                </span>
+              )}
               {/* The glyph and the ring are DECORATION: `aria-label` on a
                   role-less span is ignored by every screen reader anyway, and
                   the state it was trying to announce is now in the row button's
@@ -1233,6 +1305,13 @@ export function SessionsRail(props: {
   }): React.JSX.Element => {
     const isCollapsed = collapsed.has(opts.key);
     const need = needCount(opts.members, props.needing);
+    // #774 review: a COLLAPSED group renders no member rows at all, so the row
+    // mark — "the one surface a card you cannot see still has" — is not in the
+    // DOM either, and the header said "calm" over five unread messages. The
+    // attention count already rolls up for exactly this reason; this is the
+    // same rule for the same reason, and it is what lets the manual and the
+    // sentence main tells a sending agent both stay true.
+    const waitingHere = opts.members.reduce((n, m) => n + (waitingCounts.get(m.id) ?? 0), 0);
     const g = opts.group;
     const isAuto = opts.kind === 'auto';
     // Membership in an auto-group is DERIVED from the session's folder, so
@@ -1486,6 +1565,18 @@ export function SessionsRail(props: {
               data-rail-group-toggle={opts.key}
               aria-expanded={!isCollapsed}
               aria-controls={bodyId}
+              // …and what is waiting inside it (#774 review round 2). The chip
+              // further along this header is a role-less span, which is
+              // decoration to a screen reader exactly as the row marks are — so
+              // without this, collapsing a group would take the count away from
+              // a screen-reader user completely, on the one surface that exists
+              // BECAUSE the rows are gone. `aria-label` replaces the button's
+              // contents, so the name has to be carried too.
+              aria-label={
+                waitingHere > 0
+                  ? t('rail.groupLabelWaiting', { name: opts.name, count: waitingHere })
+                  : undefined
+              }
               onClick={(e) => {
                 // the header div toggles too (the whole strip is a mouse
                 // target); without this a click here would toggle twice
@@ -1567,6 +1658,37 @@ export function SessionsRail(props: {
           >
             {need ? t('rail.needSummary', { count: need }) : t('rail.calm')}
           </span>
+          {/* …and what siblings have left inside it (#774 review). AFTER the
+              need summary and in its own chip rather than folded into that
+              text: "two of these want you" and "somebody left you a note in
+              here" are different claims, and the first must not be diluted by
+              the second. Shown collapsed or not — the count is about the group
+              either way, and when it is open the rows carry their own marks. */}
+          {waitingHere > 0 && (
+            <span
+              data-rail-group-waiting={opts.key}
+              // its OWN hint, not the row's: the row's says "open it to read
+              // and send", and on a heading "it" points at nothing — there are
+              // N sessions in there.
+              title={t('rail.groupWaitingHint', { count: waitingHere })}
+              style={{
+                fontFamily: 'var(--font-ui)',
+                fontWeight: 700,
+                fontSize: 9,
+                lineHeight: 1,
+                whiteSpace: 'nowrap',
+                flexShrink: 0,
+                marginInlineStart: 4,
+                paddingInline: 4,
+                paddingBlock: 2,
+                borderRadius: 7,
+                color: 'var(--status-needs-input-ink)',
+                background: tint('var(--status-needs-input)', 18),
+              }}
+            >
+              {t('rail.waitingChip', { count: waitingHere })}
+            </span>
+          )}
           {g && (
             <span
               style={{

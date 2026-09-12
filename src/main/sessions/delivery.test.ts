@@ -467,7 +467,24 @@ describe('never silently dropped — "delivered" and "went nowhere" are always t
 
   it('a FULL inbox is a refusal the sender can act on', async () => {
     const h = harness({ ack: { placed: false, reason: 'full' } });
-    expect(reason(await h.delivery.send('live-a', 'Beta', 'x'))).toMatch(/cannot hold more/);
+    const r = reason(await h.delivery.send('live-a', 'Beta', 'x'));
+    expect(r).toMatch(/cannot hold more/);
+    // ...and it still invites the retry that a full box deserves — the #774
+    // branch beside it must not have swallowed this one
+    expect(r).toMatch(/before sending again/);
+  });
+
+  it('a card that CLOSED under the message is a different refusal (#774)', async () => {
+    // "Full" and "gone" are opposite advice. Told the box was full, a sender
+    // waits and tries again; there is nothing to try again at a card that no
+    // longer exists, and a polite retry loop at one is exactly what collapsing
+    // the two reasons would produce.
+    const h = harness({ ack: { placed: false, reason: 'gone' } });
+    const r = reason(await h.delivery.send('live-a', 'Beta', 'x'));
+    expect(r).toMatch(/closed while your message was on its way/);
+    expect(r).toMatch(/will not help/);
+    expect(r).not.toMatch(/cannot hold more/);
+    expect(h.submitted).toEqual([]);
   });
 
   it('reports whether the target composer is on screen', async () => {

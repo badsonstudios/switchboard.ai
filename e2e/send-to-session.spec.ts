@@ -110,6 +110,15 @@ test.describe('send_to_session — the delivery policy, end to end (#765)', () =
     await expect(userTurn(w, MESSAGE)).toHaveCount(0);
     expect((await sessionStatuses(a)).get(beta)).toBe('idle');
 
+    // …and the SIDEBAR says something is waiting (#774). The unit tests pin the
+    // mark against a stubbed store; what only this can see is that the count
+    // survives the real push, the real ack and the real rail — and that the
+    // card whose composer is NOT on screen is the one wearing it.
+    const to = await cardOf(beta);
+    const railMark = w.locator(`[data-rail-waiting="${to.cardId}"]`);
+    await expect(railMark).toHaveText('1', { timeout: 10_000 });
+    await expect(w.locator(`[data-rail-waiting="${from.cardId}"]`)).toHaveCount(0);
+
     // The user's Enter is the keypress §5.4 requires.
     const box = w.locator('[data-composer-dropzone]', { has: w.locator('[data-sibling-message]') }).locator('textarea');
     await box.click();
@@ -118,6 +127,8 @@ test.describe('send_to_session — the delivery policy, end to end (#765)', () =
     await expect(userTurn(w, MESSAGE)).toContainText(`"${alpha}"`);
     await expect(userTurn(w, MESSAGE)).toContainText('The user reviewed it and sent it on to you');
     await expect(heldBlock(w, MESSAGE)).toHaveCount(0);
+    // the mark goes with the message it was about
+    await expect(railMark).toHaveCount(0, { timeout: 10_000 });
   });
 
   test('with "accept automatically" on, it goes straight in — and says nobody reviewed it', async () => {

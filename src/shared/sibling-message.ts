@@ -181,15 +181,22 @@ export interface SiblingMessage {
  * reported to the SENDING agent, because "it is waiting in a box the user is
  * looking at" and "it is waiting in a card that is collapsed" are different
  * facts about how soon anyone will read it.
+ *
+ * The two refusals are different facts too, and the sender is told which
+ * (#774). `full` is "that card is holding all it can, try later"; `gone` is
+ * "there is no such card any more" — a retry to the same session is pointless
+ * and the message needs to go somewhere else, or nowhere.
  */
-export type SiblingAck = { placed: true; shown: boolean } | { placed: false; reason: 'full' };
+export type SiblingAck =
+  | { placed: true; shown: boolean }
+  | { placed: false; reason: 'full' | 'gone' };
 
 /** Guard for the acknowledgement, which crosses from the renderer untyped. */
 export function isSiblingAck(v: unknown): v is SiblingAck {
   if (!v || typeof v !== 'object' || Array.isArray(v)) return false;
   const a = v as Record<string, unknown>;
   if (a.placed === true) return typeof a.shown === 'boolean';
-  return a.placed === false && a.reason === 'full';
+  return a.placed === false && (a.reason === 'full' || a.reason === 'gone');
 }
 
 /**

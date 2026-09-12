@@ -16,6 +16,9 @@ describe('isSiblingAck', () => {
     [{ placed: true, shown: true }],
     [{ placed: true, shown: false }],
     [{ placed: false, reason: 'full' }],
+    // #774 — "that card is gone" is a different fact from "that card is full",
+    // and the sender is given different advice for each
+    [{ placed: false, reason: 'gone' }],
   ])('accepts %j', (v) => {
     expect(isSiblingAck(v)).toBe(true);
   });

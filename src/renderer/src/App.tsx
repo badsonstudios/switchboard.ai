@@ -19,7 +19,7 @@ import { EventDto } from './components/EventsPanel';
 import { EventsDrawer } from './components/EventsDrawer';
 import { Usage, addUsage, estimateCostUsd, ZERO_USAGE } from './lib/usage';
 import { loadUiState, uiGet, uiSet } from './lib/ui-state';
-import { receiveSiblingMessage } from './lib/sibling-inbox';
+import { holdSiblingMessage } from './lib/sibling-hold';
 import { DEFAULT_AUTONOMY, nextAutonomy } from './lib/autonomy';
 import { initPresentation } from './lib/presentation-boot';
 import { boxOnAnyDisplay, RescuedPopout } from './lib/layout';
@@ -1493,7 +1493,27 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     const api = window.switchboard?.sessions;
     const off = api?.onSiblingMessage?.((m) => {
-      const ack = receiveSiblingMessage(m);
+      // IS THAT CARD STILL THERE? (#774) Main resolved the target, then this
+      // travelled over IPC; a card closed in between would otherwise be filed
+      // under, acked as waiting, and swept at the next boot — with the sending
+      // agent told for the whole session that a person had it.
+      //
+      // `hasCard` rather than a `some()` over the `cards` binding above, and
+      // that method's docstring is where the reasoning lives: the obvious list
+      // is the wrong one, and a rule spelled out at its call site is a rule
+      // waiting to be spelled differently at the next one.
+      //
+      // ASKED OF THE STORE, not of the binding: this runs on an IPC callback,
+      // outside React's commit, so it has to see what is true now rather than
+      // what was true when this effect last ran. Its deps are empty
+      // deliberately — re-subscribing the push channel on every card change
+      // would be a far bigger hazard than a stale read.
+      //
+      // The body is `lib/sibling-hold.ts`, not three lines here, because the
+      // interesting mistake is in the JOIN between the inbox and the card list
+      // — and a join reachable only from inside this component is one no test
+      // can stand in front of (#774 review round 2).
+      const ack = holdSiblingMessage(m);
       // No ack for a payload that was not a message: main's own deadline then
       // reports it as unconfirmed, which is the truth.
       if (ack && typeof m?.deliveryId === 'string') {

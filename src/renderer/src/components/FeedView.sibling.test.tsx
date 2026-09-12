@@ -78,6 +78,22 @@ const age = (): void => {
 
 const feedPanel = sessionPanels.find((p) => p.id === 'feed')!;
 
+/**
+ * Really unmount the composer, the way a view-tab switch does.
+ *
+ * `mount()` leaves its root on `roots` for `afterEach`, so calling it twice
+ * gives TWO live composers for one card — which is not a remount, and is not
+ * the state a test about surviving an unmount is claiming to be in (it also
+ * keeps `listeners` non-empty, so the card still reads as shown).
+ */
+async function unmountAll(): Promise<void> {
+  while (roots.length) {
+    const r = roots.pop()!;
+    await act(async () => r.unmount());
+  }
+  document.body.innerHTML = '';
+}
+
 async function mount(transport: TransportKind = 'stream'): Promise<HTMLElement> {
   const host = document.createElement('div');
   document.body.appendChild(host);
@@ -396,6 +412,180 @@ describe('the attachments path (#765 review: nothing pinned it)', () => {
     expect(submitted[0]).toContain('sent one');
     expect(submitted[0]).not.toContain('arrived mid-send');
     expect(blocks(host).map((b) => b.textContent)).toEqual([expect.stringContaining('arrived mid-send')]);
+  });
+
+  describe('a SECOND Enter while that send is in flight (#774)', () => {
+    // With attachments the box is deliberately not cleared until main says the
+    // send went — a refused send must not silently eat a pasted screenshot. So
+    // the second Enter lands on a composer still showing everything the first
+    // one sent. That cost a duplicate PROMPT before P2-E11-05; it now also
+    // forwards the sibling's message a second time, each copy under a header
+    // saying the user reviewed and sent it.
+
+    it('sends once, and forwards the message once', async () => {
+      holdSubmits = true;
+      const host = await mount();
+      await arrive(message('forward me once'));
+      age();
+      await pastePng(host);
+
+      await pressEnter(host);
+      await pressEnter(host);
+      await pressEnter(host);
+
+      await act(async () => {
+        release?.();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(submitted).toHaveLength(1);
+      expect(submittedAttachments).toEqual([1]);
+      // the marker ref appears once, so the message went as one forwarded
+      // block and not as two
+      expect(submitted[0].match(/forward me once/g)).toHaveLength(1);
+      expect(blocks(host)).toEqual([]);
+    });
+
+    it('greys Send while the send is out, rather than offering a press that does nothing', async () => {
+      holdSubmits = true;
+      const host = await mount();
+      await arrive(message('waiting'));
+      age();
+      await pastePng(host);
+      const send = (): HTMLButtonElement =>
+        host.querySelector<HTMLButtonElement>('button[title="Send to the session"]')!;
+      expect(send().disabled).toBe(false);
+
+      await pressEnter(host);
+      expect(send().disabled).toBe(true);
+
+      await act(async () => {
+        release?.();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+    });
+
+    it('opens the box again after a REFUSED send, so the user can retry', async () => {
+      // The guard must not be able to wedge the composer shut: a refused send
+      // leaves everything on screen precisely so it can be sent again.
+      holdSubmits = true;
+      mainTakes = false;
+      const host = await mount();
+      await arrive(message('still here'));
+      age();
+      await pastePng(host);
+      await pressEnter(host);
+
+      await act(async () => {
+        release?.();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(submitted).toEqual([]);
+
+      // ...and now it takes it
+      mainTakes = true;
+      holdSubmits = false;
+      await pressEnter(host);
+      expect(submitted).toHaveLength(1);
+      expect(submitted[0]).toContain('still here');
+    });
+
+    it('⚠️ survives the composer being UNMOUNTED and remounted mid-flight', async () => {
+      // THE REVIEW'S FINDING, and the first version of this guard failed it.
+      // The composer unmounts on a view-tab switch or a collapse, while BOTH
+      // things the guard protects outlive it: the attachments come back from
+      // their own module-level stash, and the held messages live in the inbox.
+      // A guard kept in component state therefore came back a fresh `false`
+      // with the same payload on screen — and the next Enter sent all of it
+      // again. That is the duplicate this item exists to stop, reached through
+      // the fix for it, so the flag is keyed by CARD and outlives the view.
+      holdSubmits = true;
+      const host = await mount();
+      await arrive(message('exactly once'));
+      age();
+      await pastePng(host);
+      await pressEnter(host);
+
+      // flip away and back — the composer really goes, then a new one for the
+      // same card comes up with the attachments restored from their module
+      // stash and the message still held
+      await unmountAll();
+      const host2 = await mount();
+      age();
+      await pressEnter(host2);
+
+      await act(async () => {
+        release?.();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(submitted).toHaveLength(1);
+      expect(submitted[0].match(/exactly once/g)).toHaveLength(1);
+    });
+
+    it('the remounted composer greys Send, then un-greys when the send lands', async () => {
+      // The other half: the release closure belongs to the component that
+      // started the send, which by then is gone — so the flag has to be
+      // OBSERVED, or the new composer comes back greyed for ever.
+      //
+      // A REFUSED send, and NO timer wait, deliberately. Both matter: a refusal
+      // leaves the attachment on screen so the button is sendable the instant
+      // the flag clears, and waiting on the settle tick would re-render the
+      // composer for an unrelated reason — which is exactly how the first
+      // version of this test passed against a release that notified nobody.
+      holdSubmits = true;
+      mainTakes = false;
+      const host = await mount();
+      await arrive(message('watch the button'));
+      age();
+      await pastePng(host);
+      await pressEnter(host);
+
+      await unmountAll();
+      const host2 = await mount();
+      const send = (): HTMLButtonElement =>
+        host2.querySelector<HTMLButtonElement>('button[title="Send to the session"]')!;
+      expect(send().disabled).toBe(true);
+
+      await act(async () => {
+        release?.();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(send().disabled).toBe(false);
+    });
+
+    it('blocks a plain-text Enter too, so the held message cannot go twice', async () => {
+      // The guard is above the branch split on purpose. If it only covered the
+      // attachments path, clearing the strip mid-flight would drop the next
+      // Enter into the text path — where the same held messages are still on
+      // the card, and would be forwarded again.
+      holdSubmits = true;
+      const host = await mount();
+      await arrive(message('only once please'));
+      age();
+      await pastePng(host);
+      await pressEnter(host);
+
+      // the user pulls the attachment off while the send is out
+      const remove = host.querySelector<HTMLButtonElement>('button[title^="Remove"]');
+      if (remove) await act(async () => remove.click());
+      await type(host, 'never mind');
+      await pressEnter(host);
+
+      await act(async () => {
+        release?.();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(submitted).toHaveLength(1);
+      expect(submitted[0]).toContain('only once please');
+      expect(submitted[0]).not.toContain('never mind');
+    });
   });
 });
 
