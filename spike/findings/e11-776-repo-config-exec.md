@@ -284,4 +284,4 @@ Known residuals, none of which this closes:
   value to restore, and is `required`, so git refuses the read. Pinned by a
   test; `git lfs install` without `--local` is the fix.
 - **A failed `status` still reports "Not a git repository"**, which is a lie for
-  every failure and not only this one. Pre-existing, filed separately.
+  every failure and not only this one. Pre-existing; filed as **#785**.
