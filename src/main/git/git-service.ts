@@ -4,6 +4,18 @@
 import { ChildProcess, execFile, spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import {
+  CONFIG_LIST_SCOPED,
+  EMPTY_TREE,
+  type ScopedConfigEntry,
+  configListForScope,
+  filterGuardOverrides,
+  gitlinkPaths,
+  guardArgs,
+  overrideEnv,
+  parseScopedConfig,
+  parseUnscopedConfig,
+} from './repo-config-guard';
 
 export interface GitFileStatus {
   path: string;
@@ -53,6 +65,19 @@ export interface FileVersions {
  */
 export const DIFF_BUDGET_MS = 10_000;
 
+/**
+ * How long the #776 config guard gets on the `status` path, where there is no
+ * outer deadline to sit inside.
+ *
+ * It bounds only OUR added work — reading config, listing the submodule git
+ * directories — never `git status` itself, which is left unbounded because a
+ * huge repository being slow must not be reported as not being a repository.
+ * Generous because exceeding it refuses the read: this is the "something is
+ * badly wrong" bound, not a latency target. The reads it covers measure at
+ * ~12 ms each.
+ */
+export const GUARD_BUDGET_MS = 15_000;
+
 /** How much output one git invocation may produce before it is killed. */
 const MAX_GIT_OUTPUT = 32 * 1024 * 1024;
 
@@ -81,7 +106,8 @@ function git(
   command: GitCommand,
   folder: string,
   args: string[],
-  timeoutMs = 0
+  timeoutMs = 0,
+  env?: NodeJS.ProcessEnv
 ): Promise<GitRun> {
   return new Promise((resolve) => {
     // OUR timer, not `execFile`'s `timeout` — see `killTree` for why.
@@ -90,8 +116,19 @@ function git(
     let grace: NodeJS.Timeout | null = null;
     const child = execFile(
       command.file,
-      [...command.prefixArgs, ...args],
-      { cwd: folder, encoding: 'utf8', maxBuffer: MAX_GIT_OUTPUT, windowsHide: true },
+      [...command.prefixArgs, ...guardArgs(), ...args],
+      {
+        cwd: folder,
+        encoding: 'utf8',
+        maxBuffer: MAX_GIT_OUTPUT,
+        windowsHide: true,
+        // GIT_OPTIONAL_LOCKS=0 suppresses the index refresh `status` would
+        // otherwise write — which is what fires `post-index-change`, and which
+        // also took `.git/index.lock` in a folder another agent may be
+        // `git add`-ing (#772 fixed that for `diff` and never for `status`).
+        // Measured: status output is byte-identical with and without.
+        env: { ...(env ?? process.env), GIT_OPTIONAL_LOCKS: '0' },
+      },
       (err, stdout) => {
         if (timer) clearTimeout(timer);
         if (grace) clearTimeout(grace);
@@ -190,8 +227,187 @@ function failureOf(err: unknown): GitFailure | null {
 export class GitService {
   constructor(private readonly command: GitCommand = SYSTEM_GIT) {}
 
-  private run(folder: string, args: string[], timeoutMs?: number): Promise<GitRun> {
-    return git(this.command, folder, args, timeoutMs);
+  private run(
+    folder: string,
+    args: string[],
+    timeoutMs?: number,
+    env?: NodeJS.ProcessEnv
+  ): Promise<GitRun> {
+    return git(this.command, folder, args, timeoutMs, env);
+  }
+
+  /**
+   * The environment that stops this repository's own config from executing a
+   * command while we read its working tree (#776). Used by `status` and `diff`
+   * — the two reads measured to run a repo-configured filter. `rev-parse` and
+   * `git show HEAD:<path>` were measured NOT to, and get only the guards every
+   * invocation carries.
+   *
+   * `left` is the shared deadline, not a per-call allowance: this makes several
+   * git invocations, and handing each of them the same fixed number would turn
+   * one 10 s budget into thirty-five of them.
+   *
+   * ⚠️ **A CONFIG WE COULD NOT READ MEANS WE DO NOT RUN THE READ.** "No
+   * repo-authored driver" and "we could not find out" must never be the same
+   * answer, and there is no partial guard to fall back to — see `EMPTY_TREE`
+   * for why the attribute-level switch that used to sit here was not the
+   * blanket it looked like. Reaching this means `git config --list` failed
+   * twice on a repository `rev-parse` had already called a work tree, which is
+   * a broken repository or a timeout; both are better refused than guessed at.
+   */
+  private async guardEnv(folder: string, left?: () => number): Promise<NodeJS.ProcessEnv | null> {
+    const entries = await this.scopedConfig(folder, left);
+    if (!entries) return null;
+    const overrides = filterGuardOverrides(entries);
+    // Nothing repo-authored: the common case, and it skips the check below.
+    if (overrides.length === 0) return overrideEnv(process.env, []);
+    if (!(await this.honoursEnvOverrides(folder, left))) return null;
+    return overrideEnv(process.env, overrides);
+  }
+
+  /**
+   * Does this git honour `GIT_CONFIG_KEY_<n>`? Asked once, of git itself.
+   *
+   * ⚠️ **THE WHOLE GUARD IS A NO-OP ON git < 2.31, WHICH IS NOT HYPOTHETICAL.**
+   * `ownConfig` has a fallback branch precisely because Ubuntu 20.04 ships
+   * 2.25.1 and Debian 11 ships 2.30.2 — and those gits do not know these
+   * variables exist. They read the config, ignore our environment, and run the
+   * driver, with nothing to show that anything was skipped. Round 1's
+   * command-line overrides at least degraded to something.
+   *
+   * Asked BEHAVIOURALLY rather than by parsing `git --version`: what matters is
+   * whether the override takes, not what number the binary reports. Memoised —
+   * and only reached when there is actually something to guard, so a repository
+   * with no driver of its own never pays for it.
+   *
+   * A `false` here refuses the read. The alternative — falling back to
+   * `-c key=value` — is what round 1 did, and it cannot express a key
+   * containing `=`, which is exactly the shape an attacker picks.
+   */
+  private envOverridesHonoured: Promise<boolean> | null = null;
+  private honoursEnvOverrides(folder: string, left?: () => number): Promise<boolean> {
+    this.envOverridesHonoured ??= this.run(
+      folder,
+      ['config', '--get', 'switchboard.guardprobe'],
+      left?.(),
+      overrideEnv(process.env, [['switchboard.guardprobe', 'yes']])
+    ).then((r) => r.ok && r.out.trim() === 'yes');
+    return this.envOverridesHonoured;
+  }
+
+  /**
+   * Every config entry that can name a filter driver for this read, with the
+   * scope that set it — or `null` if we could not find out.
+   *
+   * **A SUBMODULE'S OWN CONFIG COUNTS (measured, #776).** Reading the
+   * superproject recurses into each initialised submodule, and a driver defined
+   * in `.git/modules/<name>/config` — a plain file an edit-only agent can write
+   * in any repository that already has submodules — RAN during both `status`
+   * and `diff-index`. The overrides themselves reach it (measured: the
+   * `GIT_CONFIG_*` environment propagates to the child git, as does the
+   * fsmonitor guard); what does not reach it is the *name*, which only that
+   * config knows. So the names are collected from there too.
+   *
+   * `--ignore-submodules=all` would also have closed it and was rejected: it
+   * drops a dirty submodule out of the answer entirely (measured, one changed
+   * entry became zero), which is a confident wrong answer about somebody's
+   * working tree rather than a slower one.
+   */
+  private async scopedConfig(folder: string, left?: () => number): Promise<ScopedConfigEntry[] | null> {
+    const own = await this.ownConfig(folder, left);
+    if (!own) return null;
+    const submodules = await this.submoduleConfig(folder, left);
+    if (!submodules) return null;
+    return [...own, ...submodules];
+  }
+
+  /**
+   * This repository's own config, in the scopes git reports for it.
+   *
+   * ⚠️ **`--show-scope` IS git ≥ 2.26, AND UBUNTU 20.04 SHIPS 2.25.1.** That LTS
+   * is supported to 2030, so "just require a modern git" would blank the git
+   * pane there. The second attempt asks the two repo-writable scopes directly,
+   * with options that have existed for ever. It cannot see the trusted value
+   * behind a shadowed driver, so a driver named there is neutralised to empty
+   * rather than restored; a globally-installed one is still never listed, and
+   * so still never touched.
+   */
+  private async ownConfig(folder: string, left?: () => number): Promise<ScopedConfigEntry[] | null> {
+    const scoped = await this.run(folder, CONFIG_LIST_SCOPED, left?.());
+    if (scoped.ok) return parseScopedConfig(scoped.out);
+
+    const local = await this.run(folder, configListForScope('local'), left?.());
+    if (!local.ok) return null;
+    // `--worktree` returns the local config verbatim when the extension is off
+    // rather than failing, so this usually duplicates the entries above. Both
+    // scopes are untrusted and `filterGuardOverrides` de-duplicates by key, so
+    // the duplication is harmless; it is listed separately for the repository
+    // that HAS `extensions.worktreeConfig` on, where the two really differ.
+    const worktree = await this.run(folder, configListForScope('worktree'), left?.());
+    return [
+      ...parseUnscopedConfig(local.out, 'local'),
+      ...(worktree.ok ? parseUnscopedConfig(worktree.out, 'worktree') : []),
+    ];
+  }
+
+  /**
+   * The config of every populated submodule, recursively.
+   *
+   * ⚠️ **ASK GIT WHERE THE SUBMODULE IS; DO NOT WORK IT OUT.** Two earlier
+   * versions of this tried, and a repository walked around both:
+   *
+   * - Gating on `<folder>/.gitmodules` switched the whole thing off whenever the
+   *   session folder was a subdirectory — measured, `git status` from a
+   *   subdirectory still recurses and still runs the drivers.
+   * - Opening `<gitdir>/modules/<name>` by name missed **a redirected git
+   *   directory**: `sub/.git` is a plain text file an edit-only agent can
+   *   repoint at any ordinary folder, and measured, the driver then RAN during
+   *   both `status` and `diff-index` while `modules/` sat empty. (It also had to
+   *   know that a linked worktree has two roots, `$GIT_DIR` and
+   *   `$GIT_COMMON_DIR`, with submodules possible under either.)
+   *
+   * The index is the honest source — a gitlink is what git recurses into — and
+   * `git -C <path> config` then resolves whatever `.git` file, `core.worktree`
+   * or nesting git itself would use. That deletes all the guessing, and gives
+   * real SCOPES for the submodule's own config, so a globally-installed driver
+   * inside a submodule stays trusted rather than being neutralised.
+   *
+   * `--ignore-submodules=all` would also have closed this and was rejected: it
+   * drops a dirty submodule out of the answer entirely (measured, one changed
+   * entry became zero) — a confident wrong answer about somebody's working tree
+   * rather than a slower one.
+   */
+  private async submoduleConfig(
+    folder: string,
+    left?: () => number,
+    depth = 0,
+    budget = { left: MAX_SUBMODULES }
+  ): Promise<ScopedConfigEntry[] | null> {
+    const staged = await this.run(folder, ['ls-files', '--stage', '-z'], left?.());
+    if (!staged.ok) return null;
+    const paths = gitlinkPaths(staged.out);
+    if (paths.length === 0) return [];
+    // Over the cap, or nested deeper than anyone nests, the answer stops being
+    // "these are the drivers" and becomes "these are some of them" — which is
+    // the one thing a guard may not be. The caller refuses.
+    if (depth >= MAX_SUBMODULE_DEPTH) return null;
+
+    const entries: ScopedConfigEntry[] = [];
+    for (const p of paths) {
+      const dir = path.resolve(folder, p);
+      // A submodule that was never checked out has no config, and git does not
+      // recurse into it. `.git` is a file for a normal submodule and a
+      // directory for an old-style embedded one; either answers "populated".
+      if (!fs.existsSync(path.join(dir, '.git'))) continue;
+      if (budget.left-- <= 0) return null;
+      const own = await this.ownConfig(dir, left);
+      if (!own) return null;
+      entries.push(...own);
+      const nested = await this.submoduleConfig(dir, left, depth + 1, budget);
+      if (!nested) return null;
+      entries.push(...nested);
+    }
+    return entries;
   }
 
   /** repo toplevel for a folder, or null when not a repo / no git */
@@ -201,19 +417,32 @@ export class GitService {
     return r.ok && top ? top : null;
   }
 
-  async status(folder: string): Promise<GitStatus> {
+  /**
+   * ⚠️ **THE BUDGET BOUNDS THE GUARD, NOT THE STATUS (#776 review).** The guard
+   * is what this item added to the pane's hot path — a config read, a directory
+   * listing and one read per submodule, all reachable from files a session can
+   * write — so it is what needs bounding. `status` itself is deliberately left
+   * unbounded, as it always was: a genuinely enormous repository, or a cold
+   * network drive, can legitimately take a long time, and killing it would
+   * report **"Not a git repository"** for a repository that is merely slow.
+   * Trading a hang for a lie is the wrong way round on this surface — the bus's
+   * `diff`, whose answer a model reads, makes the opposite trade and says so.
+   */
+  async status(folder: string, guardBudgetMs = GUARD_BUDGET_MS): Promise<GitStatus> {
     const probe = await this.run(folder, ['rev-parse', '--is-inside-work-tree']);
     if (!probe.ok || !probe.out.trim().startsWith('true')) return { isRepo: false, files: [] };
 
+    const deadline = Date.now() + guardBudgetMs;
+    const env = await this.guardEnv(folder, () => Math.max(1, deadline - Date.now()));
+    if (!env) return { isRepo: false, files: [] };
+
     // quotePath=off: non-ASCII paths arrive literal, so fileVersions can find them
-    const r = await this.run(folder, [
-      '-c',
-      'core.quotePath=off',
-      'status',
-      '--porcelain=v2',
-      '--branch',
-      '--untracked-files=all',
-    ]);
+    const r = await this.run(
+      folder,
+      ['-c', 'core.quotePath=off', 'status', '--porcelain=v2', '--branch', '--untracked-files=all'],
+      0,
+      env
+    );
     if (!r.ok) return { isRepo: false, files: [] };
 
     const status: GitStatus = { isRepo: true, files: [] };
@@ -333,14 +562,26 @@ export class GitService {
     if (inside.failure === 'timeout') throw timedOut();
     if (!inside.ok || inside.out.trim() !== 'true') return { isRepo: false, text: '' };
     // git's canonical empty tree: the base every file is an addition against.
-    const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
+    // Shared with the guard, which points `--attr-source` at the same object.
     const head = await this.run(folder, ['rev-parse', '--verify', '-q', 'HEAD'], left());
     if (head.failure === 'timeout') throw timedOut();
     const base = head.ok ? 'HEAD' : EMPTY_TREE;
+    // `left` ITSELF, not `left()` — the guard makes several invocations, and a
+    // fixed number handed to each of them would turn one 10 s budget into one
+    // per call, which is the bound #772 exists to set, undone.
+    const env = await this.guardEnv(folder, left);
+    if (!env) {
+      if (Date.now() >= deadline) throw timedOut();
+      throw new Error(
+        "git could not read the repository's own configuration, so switchboard did not run " +
+          'git in that folder (the repository may be damaged)'
+      );
+    }
     const r = await this.run(
       folder,
       ['diff-index', '-p', '-M', '--no-color', '--no-textconv', '--no-ext-diff', base],
-      left()
+      left(),
+      env
     );
     if (r.failure === 'timeout') throw timedOut();
     if (r.failure === 'too-large') {
@@ -369,3 +610,14 @@ export class GitService {
 function toGitPath(p: string): string {
   return p.replace(/\\/g, '/');
 }
+
+/**
+ * How many submodules we will read the config of, and how deep we will nest,
+ * before giving up on enumerating them (#776). Past either, the answer stops
+ * being "these are the drivers" and becomes "these are some of them", which is
+ * the one thing a guard may not be — so the read is refused rather than
+ * half-guarded. Both are set well past anything real: "big repository" and
+ * "hostile repository" must not be the same branch.
+ */
+const MAX_SUBMODULES = 512;
+const MAX_SUBMODULE_DEPTH = 10;

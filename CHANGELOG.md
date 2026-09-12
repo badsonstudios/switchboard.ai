@@ -142,6 +142,28 @@ on the floor, and say so in your PR.
   tried to stage or commit at that moment, git refused with "index.lock: File
   exists". Reading now never writes anything in the other project.
 
+- **A project's own git settings can no longer make switchboard run a program.**
+  A git repository can be configured to run a command of its choosing whenever
+  something reads its files — an old feature meant for speeding up large
+  projects and for handling big binary files — and it can also leave scripts in
+  a hidden folder that git runs for the same reason. switchboard reads your
+  projects' files constantly, to draw the Changes tab and to answer a session
+  asking what another session has altered, and it was obeying all of that. That
+  meant a session allowed to edit files but not to run commands could leave one
+  behind for switchboard to run on its behalf, in a project it doesn't even have
+  open. It now refuses, including for a project's sub-projects. Git Large File
+  Storage and other legitimately installed handlers are unaffected — only ones
+  written into the project folder itself are ignored, and the app puts the
+  properly installed one back in their place.
+
+- **Looking at a project's changes no longer disturbs that project's git.** The
+  Changes tab was quietly writing to git's internal bookkeeping every time it
+  found files that had been touched but not altered — what a code formatter
+  leaves behind. If the session working in that folder happened to be running
+  `git add` at the same moment, git could refuse with a lock error. Reading now
+  leaves the other project's git alone, which was fixed for session-to-session
+  reads in the previous release and had been missed here.
+
 - **Sessions asking each other lots of questions at once no longer make the
   window stutter.** Several sessions (or one session's helpers) reading another
   session's recent conversation at the same moment could freeze the app for a

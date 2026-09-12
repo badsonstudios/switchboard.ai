@@ -85,3 +85,18 @@ light colours and the other three give it dark ones. A palette tuned to
   it.
 - The diff reflects what's on disk right now, including changes you made
   yourself outside the app.
+- **switchboard ignores instructions a project leaves for it to run a program.**
+  A git repository can be set up to run a command of its choosing whenever
+  anything reads its files — normally to speed up very large projects, or to
+  handle big binary files — and it can leave scripts in a hidden folder that git
+  runs for the same reason. switchboard reads your projects constantly to draw
+  this tab, so it declines all of that: a session that can edit files shouldn't
+  be able to get the app to run something for it. Handlers you installed
+  yourself, **Git Large File Storage** being the common one, keep working
+  exactly as before — only ones written into the project folder itself are
+  skipped, and this covers a project's sub-projects too.
+
+  The one setup this can't help: if you turned on Large File Storage **for a
+  single project only** (`git lfs install --local`) and never installed it for
+  your account, this tab will report that project as not being a git repository
+  at all. Running `git lfs install` once, without `--local`, fixes it for good.
