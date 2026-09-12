@@ -45,15 +45,87 @@
 > unattended workers is a different risk from one reported item, and that
 > asymmetry is written down in the file so it does not later read as drift.
 
+> # ✅ MERGED — 2026-09-11: **#774** — #765's review follow-ups, all three
+>
+> **PR #782, all four CI jobs green.** Issue closed. ⚠️ **NOT RELEASED** —
+> joins #764/#765/#772/#766 under `0.8.9 — unreleased`; `gh release list` is the
+> authority.
+>
+> **Next up: #776** (a session's own repo config — `core.fsmonitor`, a clean
+> filter — makes switchboard RUN a command, during the bus diff AND the git
+> pane's status; same class as the `diff.external` hole #764 closed, measured
+> with a probe, and the clean-filter half has no known off switch yet). **#779**
+> (transcript schema drift, size S) is the filler alternative.
+>
+> **Shipped:** a waiting count on the rail row and on a collapsed group's
+> heading; a `gone` refusal so a sender learns its target was closed rather than
+> being told the message waits; and one-send-at-a-time from a prompt box.
+> `lib/sibling-hold.ts` is new and exists only because of the review (below).
+>
+> **THE MARK IS AN OBSERVER, NOT A LISTENER.** Subscribing to the inbox's
+> `listeners` registry is what makes a card count as "shown" to the sending
+> agent. A rail is mounted for every session always, so the obvious hook would
+> have reported all fifty cards as shown for ever and quietly deleted the one
+> sentence this feature exists to earn. `useHeldCounts` takes the `observers`
+> side; one hook for the whole list rather than a component per row, because the
+> count has to reach the row BUTTON's accessible name.
+>
+> **It does NOT light the attention lamp** — the issue raised it and answered
+> it. That channel is a session asking ITS user for something; any sibling being
+> able to ring it would let one agent make noise about a session the user never
+> asked about.
+>
+> ## ⚠️ TWO ROUNDS, AND ROUND 2 FOUND THE BLOCKER BACK INSIDE ROUND 1'S FIX
+> The #766 lesson, repeating on a different item.
+>
+> Round 1: the card-exists predicate was asked before `sessions:cards` had ever
+> answered, so a message arriving during a renderer reload — with every session
+> still running in main — was destroyed and its sender told the target had been
+> closed. Round 1 fixed it with a "have we loaded yet" latch. **Round 2 found
+> that latch closes after the FIRST answer and then condemns every card minted
+> after it:** `sessions:create` binds a card at its end and the refresh follows,
+> so a send to a just-spawned sibling lands in the gap — the
+> orchestrator-and-workers pattern this app is built for — and a FAILING
+> refresh freezes the list, which would have let our own breakage refuse every
+> new card for ever (the fail-open constraint, inverted). The question is per
+> CARD, not per store: `everSeen`, union-only. **"Is it in the list?" is not
+> "has it been closed?"**, and only one of those may refuse a message.
+>
+> Round 2 also found the send guard was a `useRef` in a component that unmounts
+> on a view-tab switch, while BOTH things it protects outlive it — the
+> attachments come back from their own module stash and the messages live in the
+> inbox — so a remount came back a fresh `false` and sent the payload twice.
+> **The duplicate the item was filed to kill, one tab-switch away.** It is now
+> keyed by card beside the inbox, and observable, because the release closure
+> belongs to a component that by then may be gone. And a **collapsed rail group
+> renders no rows at all**, so the mark was missing from the one surface that
+> exists because the rows are; the heading now rolls the count up, in its toggle
+> button's accessible name and not only in a decorative chip.
+>
+> ## A JOIN NOBODY COULD TEST, AND TWO CLAIMS WITHDRAWN
+> `mayHoldForCard` vs `hasCard` is the entire correctness of the fix and lived
+> inside a 2,000-line component: swapping them left every test green. Extracted
+> to `lib/sibling-hold.ts` — one function, its own test. The other half of
+> `touchedPath`'s argument: a rule with nowhere to be tested is a rule waiting to
+> be deleted.
+>
+> Two claims were **withdrawn rather than fixed**. Main told the sending agent
+> "switchboard marks the session in its sidebar" — a fact main cannot see and
+> the user can hide — and the manual promised the mark worked however the
+> session was showing. Both now say less. A test pins that main never mentions
+> the sidebar again.
+>
+> **32 mutants across both rounds, all die.** Full suite green (7,611), e2e
+> green. `git-service.test.ts` reddened once under full-suite load and passed on
+> re-run and in isolation — the known real-process timing class, untouched here.
+
 > # ✅ MERGED — 2026-09-11: **#766** — P2-E11-09, the context package generator
 >
 > **PR #780, squashed to `013013a`, all four CI jobs green.** Issue closed.
 > **E13's prerequisite is now in.** ⚠️ **NOT RELEASED** — joins #764/#765/#772
 > under `0.8.9 — unreleased`; `gh release list` is the authority.
 >
-> **Next up: #774** (#765's review follow-ups — sidebar mark for a message
-> waiting on a collapsed card, card-gone ack, double Enter during an attachments
-> send; not safety-critical). **#776** is the alternative and is the more
+> **Next up: #774** — DONE, see above. **#776** is next and is the more
 > interesting one: a session's own repo config (`core.fsmonitor`, a clean filter)
 > makes switchboard RUN a command, during the bus diff AND the git pane's status
 > — same class as the `diff.external` hole #764 closed, measured with a probe,
