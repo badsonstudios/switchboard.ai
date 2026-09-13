@@ -481,6 +481,10 @@ describe('the native session id is learned from system:init (#404, E18-05)', () 
     expect(learned).toEqual(['native-1']);
   });
 
+  // THE BACKSTOP, since #753 — kept rather than replaced (`stream-feed.ts`
+  // makes the same call). A CLI build that stops emitting `conversation_reset`
+  // degrades to this: wrong only for the FIRST clear, instead of to no tag at
+  // all. That is why the #753 describe below has no second copy of this test.
   it("an id CHANGE mid-session is a /clear — fired with cause 'clear'", () => {
     const mgr = streamManager();
     const rec = mgr.create(identity);
@@ -501,7 +505,13 @@ describe('the native session id is learned from system:init (#404, E18-05)', () 
   // resumed conversation. `create()` never seeds the record's id, so that
   // first init must land as a learn, not a 'clear' — the marker the cause
   // drives says "conversation cleared", which a resume is not.
-  it("a session's FIRST init is never tagged 'clear', whatever id it carries", () => {
+  //
+  // TITLE AMENDED BY #753. It used to read "whatever id it carries", which the
+  // fix deliberately made false: a first init PRECEDED BY a `conversation_reset`
+  // frame IS tagged, which is the whole of #753. The invariant that survives is
+  // the one that mattered — absent that frame, a first init teaches, it does
+  // not wipe. The #753 describe below owns the other half.
+  it("a session's FIRST init is never tagged 'clear' — absent a reset frame", () => {
     const mgr = streamManager();
     const rec = mgr.create(identity);
     const causes: Array<string | undefined> = [];
@@ -545,6 +555,211 @@ describe('the native session id is learned from system:init (#404, E18-05)', () 
     const rec = mgr.create(identity);
     mgr.remove(rec.id);
 
+    expect(() => stream.emit(rec.id, init('native-1'))).not.toThrow();
+    expect(mgr.get(rec.id)).toBeUndefined();
+  });
+});
+
+// #753 — the first `/clear` must be tagged, and the id comparison above cannot
+// do it.
+//
+// `prior !== undefined` needs an id to have been learned, and NOTHING announces
+// one until the first TURN (measured, #748 probe 2).
+//
+// FOUR of these go RED against the pre-fix pump, and they are named so nobody
+// has to re-derive which: "a clear on a TURN-LESS session", "a RESUMED spawn",
+// "an unusable init does not spend the latch", and "the latch does not leak
+// between sessions". The rest are CONTROLS — they pass against the pre-fix code
+// by construction, and that is their job. An earlier draft of this header
+// claimed "the first four", which was wrong in a way worth recording: the very
+// first test in the describe is one of the controls and says so in its own
+// comment, so the file contradicted itself two comments apart.
+//
+// The sequence is the one #748 measured against claude 2.1.245 and
+// `fake-stream-protocol.ts` reproduces: `conversation_reset` naming the OLD
+// conversation at +16 ms, then `system:init` naming the NEW one at +36 ms.
+describe("the /clear tag comes from `conversation_reset`, not an id change (#753)", () => {
+  const init = (sessionId: string): Record<string, unknown> => ({
+    type: 'system',
+    subtype: 'init',
+    session_id: sessionId,
+  });
+  /** The frame as the CLI sends it: the id it names is the one being DISCARDED. */
+  const reset = (gone: string, minted = 'decoy-id'): Record<string, unknown> => ({
+    type: 'conversation_reset',
+    session_id: gone,
+    new_conversation_id: minted,
+  });
+  const causesOf = (mgr: SessionManager, out: Array<string | undefined>): (() => void) =>
+    mgr.onNativeSessionId((_id, _n, cause) => out.push(cause));
+
+  // CONTROL, not the finding. A card whose session has run a turn, then
+  // `/clear`: the old code tagged this one correctly via the id change, and it
+  // must still be tagged now that a frame arms it as well. Without this, "the
+  // fix tags clears" would be consistent with a fix that tags ONLY the ones the
+  // old code missed.
+  it("a clear AFTER a turn is tagged — the case that already worked", () => {
+    const mgr = streamManager();
+    const rec = mgr.create(identity);
+    const causes: Array<string | undefined> = [];
+    causesOf(mgr, causes);
+
+    stream.emit(rec.id, init('native-1'));
+    stream.emit(rec.id, reset('native-1'));
+    stream.emit(rec.id, init('native-2'));
+
+    expect(causes).toEqual([undefined, 'clear']);
+  });
+
+  // The FIRST clear on a session that has never announced an id. Untagged
+  // before this fix, because there was nothing to compare against.
+  it("a clear on a TURN-LESS session is tagged 'clear' — no prior id needed", () => {
+    const mgr = streamManager();
+    const rec = mgr.create(identity);
+    const causes: Array<string | undefined> = [];
+    causesOf(mgr, causes);
+
+    stream.emit(rec.id, reset('never-announced'));
+    stream.emit(rec.id, init('native-1'));
+
+    expect(causes).toEqual(['clear']);
+    expect(mgr.get(rec.id)!.nativeSessionId).toBe('native-1');
+  });
+
+  // A `--resume` spawn does not seed the record's id either, so at the manager
+  // seam a resumed card is the same shape as a turn-less one. What differs is
+  // downstream, in the watcher: it IS bound, with the old native id in its
+  // snapshot, so an untagged rebind there logs `transcript mis-bind corrected
+  // (same-cwd race)` at warn for something that is not a mis-bind and skips
+  // `conversationStarted = false`. (Those two branches are already pinned in
+  // `transcripts/watcher.test.ts`; what was missing was the cause reaching
+  // them.)
+  //
+  // SCOPE OF THE ASSERTION, because the ticket's framing is broader than what
+  // this can show. No hook listener is wired here, and in the running app
+  // `SessionStart` fires at CLI LAUNCH and reaches `setNativeSessionId` about a
+  // second after every card spawns — so on a real resumed card `prior` is
+  // normally already set by the time anyone types `/clear`, and the backstop
+  // would have covered it. This pins the manager's own behaviour, which is what
+  // E18-15 leaves standing when it deletes that listener.
+  it("a RESUMED spawn does not seed the record's id — so its first clear needs the frame", () => {
+    const mgr = streamManager();
+    const rec = mgr.create(identity, { resumeSessionId: 'resumed-from' });
+    const causes: Array<string | undefined> = [];
+    causesOf(mgr, causes);
+
+    expect(mgr.get(rec.id)!.nativeSessionId).toBeUndefined(); // the premise
+    stream.emit(rec.id, reset('resumed-from'));
+    stream.emit(rec.id, init('minted-by-clear'));
+
+    expect(causes).toEqual(['clear']);
+  });
+
+  // ANTI-REGRESSION, not coverage — no line in the fix reads this field, so no
+  // mutation of the fix can fail this test. It exists because adopting the
+  // field is the obvious next "improvement": `new_conversation_id` was measured
+  // naming NEITHER side of one exchange (#748 probe 4, three distinct ids), so
+  // adopting it would teach the card an id no transcript will ever be written
+  // under. Labelled so nobody later counts it as a test of the latch.
+  it('`new_conversation_id` is NOT adopted — the init supplies the id', () => {
+    const mgr = streamManager();
+    const rec = mgr.create(identity);
+    const learned: string[] = [];
+    mgr.onNativeSessionId((_id, nativeId) => learned.push(nativeId));
+
+    stream.emit(rec.id, reset('gone', 'the-decoy'));
+    expect(mgr.get(rec.id)!.nativeSessionId).toBeUndefined(); // the frame taught nothing
+    stream.emit(rec.id, init('what-actually-followed'));
+
+    expect(learned).toEqual(['what-actually-followed']);
+  });
+
+  // An init the guard REJECTS taught us nothing, so it cannot have been the
+  // clear's init — spending the latch on it would drop the tag on the floor.
+  it('an unusable init does not spend the latch', () => {
+    const mgr = streamManager();
+    const rec = mgr.create(identity);
+    const causes: Array<string | undefined> = [];
+    causesOf(mgr, causes);
+
+    stream.emit(rec.id, reset('gone'));
+    stream.emit(rec.id, { type: 'system', subtype: 'init' }); // no session_id
+    stream.emit(rec.id, init('')); // empty string
+    stream.emit(rec.id, { type: 'system', subtype: 'init', session_id: 42 }); // not a string
+    stream.emit(rec.id, init('native-1'));
+
+    expect(causes).toEqual(['clear']);
+  });
+
+  // NO TEST FOR "the latch is spent", deliberately — there was one and it was
+  // VACUOUS. Removing `clearPending = false` altogether leaves all 47 tests
+  // green, because a stale latch only ever agrees with the backstop: every
+  // later init that could read it is either the SAME id (which
+  // `setNativeSessionId` drops before the cause is looked at) or a CHANGED one,
+  // which the backstop tags `'clear'` on its own. The consumption is therefore
+  // unobservable through this seam and is kept as a correctness invariant
+  // rather than a behaviour — see the source comment. WHERE it happens is very
+  // much observable, and that is the test above.
+
+  // THE SAFETY CLAIM the source comment makes, pinned rather than asserted in
+  // prose. The CLI's zod description names plan-mode exit and "fresh-session
+  // flows" as emitters too, and #748 measured plan-mode exit emitting zero
+  // frames AND not rotating `session_id`. This says we do not have to rely on
+  // that second measurement: a reset the id does not follow reaches nobody,
+  // because the id is unchanged and `setNativeSessionId` returns before the
+  // cause is looked at. Dies if that early return goes.
+  it('a reset with no id rotation behind it fires nothing at all', () => {
+    const mgr = streamManager();
+    const rec = mgr.create(identity);
+    const causes: Array<string | undefined> = [];
+    causesOf(mgr, causes);
+
+    stream.emit(rec.id, init('native-1'));
+    stream.emit(rec.id, reset('native-1')); // a frame we did not ask for
+    stream.emit(rec.id, init('native-1')); // ... and the id did not move
+
+    expect(causes).toEqual([undefined]);
+  });
+
+  // NO COPY OF THE BACKSTOP HERE, and none of "a first init with no reset is
+  // untagged" either. Both were written and both were straight duplicates of
+  // tests in the `#404` describe above ("an id CHANGE mid-session…" and "a
+  // session's FIRST init is never tagged…"), which assert strictly more. Two
+  // describes pinning one behaviour is how a suite grows a mutant score it has
+  // not earned — the "backstop dropped" mutant killed two tests for one fact.
+  // The rationale each duplicate carried has been moved onto the original.
+
+  // The latch is a closure per spawned session, not shared manager state: two
+  // concurrent Direct cards must not leak a clear into each other.
+  it('the latch does not leak between sessions', () => {
+    const mgr = streamManager();
+    const a = mgr.create(identity);
+    const b = mgr.create(identity);
+    const seen: Array<{ id: string; cause?: string }> = [];
+    mgr.onNativeSessionId((id, _n, cause) => seen.push({ id, cause }));
+
+    stream.emit(a.id, reset('a-gone'));
+    stream.emit(b.id, init('b-first'));
+    stream.emit(a.id, init('a-fresh'));
+
+    expect(seen).toEqual([
+      { id: b.id, cause: undefined },
+      { id: a.id, cause: 'clear' },
+    ]);
+  });
+
+  // SHAPE GUARD, and it pins nothing today: `clearPending = true` is a local
+  // assignment that cannot throw, so no mutation of the current fix fails this.
+  // It is here for the implementation that comes next — the reset frame is now
+  // handled BEFORE any record lookup in that callback, so the first version of
+  // this that reaches for `record` or the watcher will crash on a dead session,
+  // and this is what catches it.
+  it('a reset arriving after remove() is dropped, not a throw', () => {
+    const mgr = streamManager();
+    const rec = mgr.create(identity);
+    mgr.remove(rec.id);
+
+    expect(() => stream.emit(rec.id, reset('gone'))).not.toThrow();
     expect(() => stream.emit(rec.id, init('native-1'))).not.toThrow();
     expect(mgr.get(rec.id)).toBeUndefined();
   });

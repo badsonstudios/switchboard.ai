@@ -534,7 +534,70 @@ export class SessionManager {
       this.apply(id, { kind: 'transport-ready' });
       // 2. The messages themselves drive status from here, and are fanned out
       //    to whoever else needs them (P2-E18-07's permission router).
+      //
+      // The `/clear` latch (#753) lives out here rather than on the record: it
+      // is per-session by construction, needs no teardown, and — the reason
+      // that matters — a field on `SessionRecord` would be copied into every
+      // `{ ...record }` the renderer receives, publishing a 20 ms-lived
+      // internal to the IPC surface.
+      let clearPending = false;
       proc.onMessage((m) => {
+        // `conversation_reset` — the CLI saying, in as many words, that it
+        // threw the conversation away. #753 is #748's defect in the second
+        // consumer: the comparison below infers a clear from an id CHANGING and
+        // cannot fire until it has an id to change FROM. The frame needs no
+        // prior id, so it arms the tag on the FIRST clear. Everything measured
+        // about this frame — the +16 ms/+36 ms ordering, the
+        // `new_conversation_id` decoy, what else emits it — is written up once
+        // in `stream-feed.ts`'s `onConversationReset` header and is not
+        // repeated here. Same ruling, different bookkeeping: that consumer
+        // keeps a `discarded` id because a repeat frame must not wipe twice;
+        // setting a boolean twice needs no such guard.
+        //
+        // WHEN THE BLIND SPOT IS ACTUALLY REACHED — narrower today than the
+        // ticket reads, and the difference is worth knowing. While the hook
+        // listener lives, `SessionStart` fires at CLI LAUNCH and reaches
+        // `setNativeSessionId` about a second after every card spawns
+        // (`transcripts/watcher.test.ts`, "HOOK TRAFFIC ALONE is not
+        // evidence"). So `prior` is normally already defined by the time a
+        // human types `/clear`, even on a resumed card, and the backstop would
+        // have tagged it. What is NOT covered either way is the race the ticket
+        // names: whichever writer lands the new id first wins the cause, and
+        // the hook writer tags only `SessionStart source:'clear'`. This makes
+        // the stream pump a second CORRECT writer instead of a contradicting
+        // one — but it cannot retract a tag the hook writer already landed
+        // untagged, because by then the id has moved and the watcher's branch
+        // is gated on it moving. That residue is #793.
+        //
+        // E18-15 is when this stops being belt-and-braces: it deletes the hook
+        // listener, nothing seeds `prior` until the first TURN's init (measured,
+        // #748 probe 2), and the frame becomes the only thing that can tag a
+        // first clear at all.
+        //
+        // LATCHED, NOT ACTED ON, because the cause has to travel with an id and
+        // this frame carries none worth having — `session_id` names the
+        // conversation being DISCARDED and `new_conversation_id` is the decoy.
+        // So the flag waits ~20 ms for the init that carries the real one.
+        //
+        // NO EXPIRY. The clear's OWN init spends it ~20 ms later, so the
+        // unbounded case is not "a clear with no follow-up prompt" — it is a
+        // clear whose init never arrives at all. Even then the tag stays right:
+        // whenever an init does come it IS the conversation this reset minted.
+        //
+        // A FALSE 'clear' IS ALL BUT INERT, which is what makes trusting this
+        // frame safe rather than merely measured. The CLI's zod description
+        // (still verbatim in the PATH binary 2.1.261, re-read for this item)
+        // names three emitters — "/clear, plan-mode exit, and fresh-session
+        // flows" — and #748 measured plan-mode exit emitting ZERO frames and
+        // not rotating `session_id`. We do not have to rely on that: the cause
+        // does nothing unless the id ALSO changed (`setNativeSessionId` returns
+        // early on an unchanged id; the watcher's branch is behind
+        // `w.snap.nativeSessionId !== nativeId`). And a reset WITH a rotation is
+        // a new conversation whatever minted it. Not literally free: the
+        // residual cost is `conversationStarted = false` in `resetBinding`,
+        // i.e. one suppressed binding-failure diagnostic on a session that did
+        // rotate its id. Fail-open, which is the direction P6 asks for.
+        if (m.type === 'conversation_reset') clearPending = true;
         // The stream carries the resume identity itself: `system:init` arrives
         // once per turn with the conversation's `session_id` (E18-05's
         // done-when, closed without this half — #404). Learned HERE so stream
@@ -542,25 +605,40 @@ export class SessionManager {
         // fire under `--input-format stream-json` (measured 2026-08-10,
         // claude 2.1.226), so today this is a second, idempotent writer of
         // the same id; the day the hooks fall silent it is the only one.
-        // An id CHANGE mid-session means the CLI minted a new conversation —
-        // the same ruling `stream-feed.ts` applies to reset the Feed — and
-        // the watcher needs it tagged 'clear' to rebind with the cleared
-        // marker. (The hook writer is STRICTER — it tags only
+        //
+        // The id comparison is KEPT as the BACKSTOP rather than replaced, the
+        // same call `stream-feed.ts` makes: a CLI build that stops emitting
+        // `conversation_reset` — an older one, a future one — degrades to the
+        // behaviour we had, wrong only for the FIRST clear, instead of to no
+        // tag at all. (The hook writer is STRICTER still — it tags only
         // `SessionStart source:'clear'` — and the first writer to land wins
-        // the cause; the two only diverge for a non-clear id change no CLI
-        // has been seen to make, and the hook writer retires with E18-15.)
-        // A resume is not a change: the record's id starts undefined
-        // (create() never seeds it), so a resumed session's first init lands
-        // untagged, exactly like the hook path's. `&& m.session_id` also
-        // rejects the empty string, as both sibling consumers do — learning
-        // '' would falsely tag the first REAL id as a 'clear'.
+        // the cause; the hook writer retires with E18-15.)
+        //
+        // A resume is not a clear: `create()` never seeds the record's id and
+        // no reset frame precedes a resumed spawn (#748 probe 5 measured zero),
+        // so a resumed session's first init lands untagged, exactly like the
+        // hook path's. `&& m.session_id` also rejects the empty string, as both
+        // sibling consumers do — learning '' would falsely tag the first REAL
+        // id as a 'clear'. An init this guard REJECTS does not spend the latch
+        // either: it taught us nothing, so it cannot have been the clear's init.
         if (m.type === 'system' && m.subtype === 'init' && typeof m.session_id === 'string' && m.session_id) {
           const prior = record.nativeSessionId;
-          this.setNativeSessionId(
-            id,
-            m.session_id,
-            prior !== undefined && prior !== m.session_id ? 'clear' : undefined
-          );
+          const cleared = clearPending || (prior !== undefined && prior !== m.session_id);
+          // ONE-SHOT. Measured UNOBSERVABLE through this seam — deleting this
+          // line leaves the whole suite green — because a stale latch only ever
+          // agrees with the backstop. The argument needs one unstated fact to
+          // hold: NOTHING EVER UN-SETS `record.nativeSessionId` (this method is
+          // its only writer). Given that, a spent latch implies `prior !==
+          // undefined` for ever after, so any later init is either the same id,
+          // which `setNativeSessionId` drops before it looks at the cause, or a
+          // changed one, which the backstop tags anyway. Kept because the latch
+          // is a one-shot and a reader should not have to prove all that to
+          // know it; narrowing the backstop later would make this load-bearing
+          // with no test to notice. WHERE it is spent is a different matter and
+          // is pinned: inside the guard, so an init that taught us nothing
+          // cannot swallow the tag.
+          clearPending = false;
+          this.setNativeSessionId(id, m.session_id, cleared ? 'clear' : undefined);
         }
         const ev = streamStatusEvent(m);
         if (ev && !this.holdSuppressed(id, ev)) this.apply(id, ev);
