@@ -52,6 +52,25 @@ export interface BindingSnapshot {
   bindingDiag: BindingDiagnostics;
 }
 
+/**
+ * Why a session's bound transcript was dropped — it rides `sessions:feedReset`
+ * to the renderer, which is why it lives here rather than in `session-manager`.
+ *
+ * - `'clear'` — the CLI's `/clear` minted a fresh conversation
+ *   (`SessionStart source:'clear'`, or the stream's `conversation_reset`).
+ *   The new conversation has NO transcript until the next prompt.
+ * - `'continued'` — a `continued-in` line said this conversation moved to
+ *   another file (#790). The opposite of a clear in the one way that matters:
+ *   the conversation is demonstrably running and its successor exists NOW.
+ * - absent — first learn, or an unexplained change (correcting a same-cwd
+ *   mis-bind).
+ *
+ * A consumer that only knows `'clear'` keeps working: every other value falls
+ * through to the plain-rebind branch, which is the safe default by
+ * construction rather than by anyone remembering to update it.
+ */
+export type ResetCause = 'clear' | 'continued';
+
 // --- Session find (P2-E17-01, §5.31) -----------------------------------------
 //
 // Shared because these cross the wire on `transcripts:search`: the find bar

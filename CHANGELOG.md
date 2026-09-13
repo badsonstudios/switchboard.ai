@@ -119,6 +119,14 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **A conversation that hands itself over no longer looks frozen.** When Claude
+  Code moves a conversation somewhere else — pushing it into the background is
+  the case we know about — it carries on in a new file and leaves a note in the
+  old one. switchboard never read that note, so it kept watching the file the
+  conversation had left: the Session view simply stopped updating while the
+  session still looked alive, with nothing on screen saying why. It now follows
+  the conversation to wherever it went.
+
 - **Pressing Enter twice while sending an attachment no longer sends it twice.**
   With a file or screenshot attached, the prompt box stays filled until the send
   is confirmed — so a second Enter in that moment sent everything again,

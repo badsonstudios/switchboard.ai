@@ -873,8 +873,10 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   const isStream = (liveId: string): boolean => manager.get(liveId)?.transport === 'stream';
   transcripts.onBlock((sessionId, block) => send('sessions:feedBlock', { sessionId, block }));
   deps.streamFeed?.onBlock((sessionId, block) => send('sessions:feedBlock', { sessionId, block }));
-  // a corrected mis-bind (or /clear) discarded the derived blocks — the
-  // renderer must too; cause 'clear' shows the "conversation cleared" marker
+  // a corrected mis-bind, a /clear, or a conversation that moved (#790,
+  // cause 'continued') discarded the derived blocks — the renderer must too;
+  // cause 'clear' shows the "conversation cleared" marker and every other
+  // value falls through to a plain rebind
   //
   // A reset is routed by source for the same reason a block is, and it is the
   // sharper of the two: the watcher goes on watching a stream session (usage,

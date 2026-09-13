@@ -196,6 +196,16 @@ export const KNOWN_LINE_TYPES: readonly string[] = [
  * A key appearing on an unexpected type therefore costs one warn-once slot and
  * says something true ("the CLI moved this"). That is the right side of the
  * trade; permanent silence is not.
+ *
+ * ⚠️ **ONE KEY HERE IS NOW CONSUMED: `continuedInSessionId` (#790).** It stays
+ * here rather than moving to the root `consumed` list, and that is the whole
+ * point rather than an oversight. Detection treats `consumed` and `ignored`
+ * identically — `drift.ts` merges both into one known-key set — so relocating
+ * it would change exactly one thing: the name would become allowed on all 38
+ * line types. That is #779's own mistake, which this map was created to fix,
+ * and it is *more* costly for a consumed key than for an ignored one, because a
+ * rename of something we build on is the loudest thing the detector exists to
+ * catch. Read this map as "declared for one type", not as "unread".
  */
 export const TYPE_SCOPED_ROOT_KEYS: Readonly<Record<string, readonly string[]>> = {
   'custom-title': ['customTitle'],
@@ -204,6 +214,10 @@ export const TYPE_SCOPED_ROOT_KEYS: Readonly<Record<string, readonly string[]>> 
   'agent-name': ['agentName'],
   'agent-color': ['agentColor'],
   'agent-setting': ['agentSetting'],
+  // CONSUMED (#790) — `watcher.ts`'s `absorbContinuation` rebinds on it. The
+  // CLI's factory also writes `sessionId` and `timestamp` on this line, both
+  // already in the flat root list; its reader-side zod schema requires only
+  // `type` and this key, which is why only this one is read.
   'continued-in': ['continuedInSessionId'],
   'bridge-session': [
     'bridgeSessionId',
