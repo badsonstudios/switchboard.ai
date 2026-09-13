@@ -45,11 +45,17 @@
 > unattended workers is a different risk from one reported item, and that
 > asymmetry is written down in the file so it does not later read as drift.
 
-> # 🔨 IN PROGRESS — 2026-09-12: **#779** — the transcript schema's declared
-> contract vs what the CLI actually writes
+> # ✅ MERGED — 2026-09-12: **#779** — five keys was one turn's worth, and the
+> fix silenced the rename it exists to catch
 >
-> **Started 2026-09-12.** Plan posted to the issue. Size S on paper; the
-> measurement made it S/M.
+> **PR #791, squashed to `c3bb270`, all four CI jobs green.** Issue closed. Size S
+> on paper; the measurement made it S/M. ⚠️ **NOT RELEASED** — joins
+> #764/#765/#772/#766/#774/#776 under `0.8.9 — unreleased`; `gh release list` is
+> the authority.
+>
+> **Next up: #753** (the watcher's `clear` rebind tag has #748's first-clear blind
+> spot). Then **#785** (a failed `git status` renders as "Not a git repository" for
+> every failure — needs a third state on `GitStatus` and one i18n string).
 >
 > **The issue says five keys. The corpus says thirty.** Those five came from
 > `check:transcripts`, which drives ONE `-p` turn — no tools, no subagents, no
