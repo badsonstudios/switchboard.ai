@@ -45,6 +45,93 @@
 > unattended workers is a different risk from one reported item, and that
 > asymmetry is written down in the file so it does not later read as drift.
 
+> # ✅ MERGED — 2026-09-13: **#790** — follow a `continued-in`, and three ways
+> the fix froze the thing it unfreezes
+>
+> **PR #803, squashed to `87ba223`, all four CI jobs green.** Issue closed.
+> Size M, and it stayed M. ⚠️ **NOT RELEASED** — joins
+> #764/#765/#772/#766/#774/#776/#779/#753 under `0.8.9 — unreleased`;
+> `gh release list` is the authority.
+>
+> **Next up: #785** (a failed `git status` renders as "Not a git repository" for
+> EVERY failure — a third state on `GitStatus` plus one i18n string; size S/M).
+> Then **#787** (the CLI writes its own `totalCostUSD`/`modelUsage` in
+> `cost-state` lines while §5.13 estimates), **#788**, **#789**, and **#793**.
+> E11's composer half is now filed as **#796–#801**.
+>
+> **Shipped:** `absorbContinuation` reads the CLI's own record that a
+> conversation has moved to another session file, and enters through the door the
+> hooks already use — `setNativeSessionId`, new cause `'continued'`. #748/#753's
+> shape a third time, and it is what buys the quiesce guard, the same-id early
+> return and the successor-id install for free. **A bare `resetBinding` would have
+> restarted discovery still holding the PREDECESSOR's id** and hunted for the file
+> it had just abandoned; a test pins exactly that.
+>
+> ## THE SHAPE IS THE CLI'S DECLARATION, NOT A CAPTURE — and that is written in
+> ## the source, not filed away in a note
+> Zero occurrences across ~3,300 transcripts, re-measured rather than quoted.
+> **Four CLI-driven variants failed to produce one**: `--bg` with `--resume` under
+> the same id (the CLI explains it in its own output — *same id, no successor to
+> name*), `--bg --fork-session`, the documented "starts a copy" case, and `claude
+> stop`. The remaining trigger is `repl_background_fork`, a guarded TUI gesture
+> with editing-quiet windows and human-cadence checks, and it **was not driven** —
+> a false negative is the likely outcome there, which is #760 §7's trap. So the
+> four fields come from the binary's factory, `sessionId` names the session being
+> **LEFT**, and only the two the CLI's own reader schema requires are read.
+>
+> **THE TICKET'S ROUTING PREMISE WAS WRONG.** It says the CLI marks this
+> `last-wins`; the table says **`boundary-cleared`**, grouped with
+> `file-history-snapshot` and `last-prompt`. Nothing depends on it, but it was
+> being inherited — #753's lesson 4, one item later.
+>
+> ## ⚠️ ONE REVIEW ROUND, AND IT MEASURED THREE DEFECTS IN THE FIX
+> The #766/#774/#776/#779/#753 pattern, a **sixth** time. **Assume the fix
+> contains the next hole** — and this time all three were reproduced with
+> throwaway test files rather than argued.
+>
+> **A RECORD IN A DYING SESSION'S LAST UNREAD BYTES WIPED THE DEAD CARD.**
+> `noteSessionExited` drains `Infinity` **before** `maybeQuiesce`, so the guard
+> that protects a corpse's Feed is not yet armed. The card blanked, its other
+> tails lost their final drain (`resetBinding` clears `w.tails` while
+> `noteSessionExited` iterates it), and the corpse then **BOUND THE SUCCESSOR and
+> streamed a live conversation into an exited card**. Gated on `exitedAt`, not
+> `quiesced` — they differ by exactly the window that bites.
+>
+> **TWO TRANSCRIPTS POINTING AT EACH OTHER REBOUND ~30×/SECOND, FOR EVER**,
+> firing a Feed reset every pass. `w.abandoned` did not stop it because `claim()`
+> **never consulted it** — a property `resetBinding` has asserted in a comment
+> since #129 with nothing enforcing it. Harmless while the only causes were a
+> mis-bind and a `/clear`, because neither reinstates the old id; fatal for a
+> cause that moves the id under your feet. Now bounded at two hops.
+>
+> **THE REBIND SILENTLY NO-OPPED WHEN THE SNAPSHOT HAD NO NATIVE ID** —
+> unparseable head plus a record carrying no `sessionId`, both permitted by the
+> CLI's schema. **#790's own freeze, inside #790's fix.**
+>
+> **A JUDGMENT CALL, NAMED RATHER THAN BURIED:** the `exitedAt` gate can refuse
+> #790's own scenario when the exit is observed before the line is read. Refusing
+> is the right half — #200 already settled that a corpse keeps what it managed to
+> say, and the alternative costs its Feed, its unread tails, and puts a live
+> conversation in a card the user cannot type into. It costs nothing #790 is
+> about: the symptom is a card that LOOKS ALIVE and stops updating.
+>
+> **A MUTANT THIS CHANGE RETIRED, which is a new variant of lesson 3.** The
+> same-id guard shipped as a *documented surviving mutant*; the third review fix
+> made it load-bearing (without it a no-change record now resets a healthy
+> binding). The note calling it unkillable was **deleted rather than left to
+> mislead** — a comment that has become false is the same failure as a test title
+> its assertion no longer matches. Also corrected: a comment claiming a
+> continuation leaves `conversationStarted` set (it does not, and the safety
+> argument it was appended to does not transfer), and the `Infinity` drain's
+> "exactly one caller", already false before this item.
+>
+> **Mutants**, each written to disk with its anchor verified: **14 written, 13
+> dead, 1 documented survivor** (the `return true` short-circuit — unobservable
+> because the mid-drain guard already stops the slice, kept because the two guards
+> say different things). **Two anchors came back MISSED on the second round**,
+> which is the entire reason the harness checks them — #779's lesson paying out
+> directly. Dead tests confirmed to be distinct facts (#753's lesson 2).
+
 > # 📋 FILED — 2026-09-13: **E11's remaining six** — #796–#801. The epic is
 > fully filed for the first time, and the probe that held them back changed
 > nothing structural.
