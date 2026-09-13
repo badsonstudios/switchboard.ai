@@ -98,5 +98,42 @@ light colours and the other three give it dark ones. A palette tuned to
 
   The one setup this can't help: if you turned on Large File Storage **for a
   single project only** (`git lfs install --local`) and never installed it for
-  your account, this tab will report that project as not being a git repository
-  at all. Running `git lfs install` once, without `--local`, fixes it for good.
+  your account, switchboard won't be able to read that project's changes — the
+  tab tells you so, and quotes what git said. Running `git lfs install` once,
+  without `--local`, fixes it for good.
+
+## When the tab says it couldn't read your project's git
+
+Most of the time the Changes tab has three things to say: your changed files,
+**Working tree clean**, or **Not a git repository** for a folder that simply
+isn't under version control. A fourth message means something went wrong:
+
+> switchboard couldn't read this project's git — *…*
+
+The part after the dash is the reason, and usually it's git's own words. Some
+you might see:
+
+- **git could not be started** — git isn't installed, or isn't somewhere the app
+  can find it.
+- **that folder no longer exists** — the session's project folder has been
+  moved, deleted, or is on a drive that isn't connected.
+- **detected dubious ownership…** — git refuses to touch a repository owned by a
+  different user account, which on Windows usually means the folder was created
+  by an installer, a different login, or an elevated command prompt. Tell git the
+  folder is fine with `git config --global --add safe.directory <the folder>`.
+- **git could not enumerate this repository's own configuration** — the project's
+  git settings can't be read at all, which usually means a damaged checkout.
+- **this git is too old…** — git needs to be version 2.31 or newer for the
+  safety rule described above. Upgrading git fixes it.
+- **switchboard could not check whether this git applies its safety overrides**
+  — that check didn't finish in time, usually a very slow or network drive.
+  This one often clears by itself; switch away from the tab and back.
+
+The point of this message is that it is *not* **Not a git repository**. Until
+now every one of these failures said that instead, which is a confident claim
+about your project that happened to be false — and one that reads as "switchboard
+has lost my work" when the real problem is a disconnected drive.
+
+Nothing else in the app changes when this happens: the session keeps running,
+and the git line on the session's card simply goes quiet rather than showing you
+a branch and a change count it couldn't actually check.

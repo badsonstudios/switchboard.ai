@@ -33,7 +33,8 @@ import {
   planDocumentOpen,
 } from '../lib/document-panels';
 import { UsageStrip } from './UsageStrip';
-import { GitContext, GitStatusDto } from './GitContext';
+import { GitContext } from './GitContext';
+import type { GitStatusDto } from '../lib/git-status';
 import { Usage, ZERO_USAGE } from '../lib/usage';
 import type { BindingDiagnostics, BindingState } from '../../../shared/transcripts';
 import {
@@ -1347,7 +1348,13 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // the user.
   const headerAccent = live?.accent ?? cardAccent;
   const headerBadge = live?.badge ?? cardBadge;
-  const changed = git?.files.length ?? 0;
+  // The Changes tab's badge. THE THIRD READER OF `git:status` (#785 review) —
+  // `unreadable` arrives with `files: []`, so this quietly counts zero, which is
+  // the same silence `GitContext` chooses on purpose and is therefore right by
+  // accident rather than by decision. Named here so the NEXT state added to the
+  // DTO is not landed on unnoticed: anything that should not be counted has to
+  // be checked for, not inferred from an empty array.
+  const changed = git?.unreadable ? 0 : (git?.files.length ?? 0);
   // Contributed view tabs (§5.23). The strip and the panel bodies below both
   // render from this list, so a new tab is a contribution plus a bootstrap
   // line — this file is not edited again.

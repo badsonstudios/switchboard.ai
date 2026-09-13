@@ -2,19 +2,19 @@
 // GitService. Nothing renders for a non-repo folder.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-
-export interface GitStatusDto {
-  isRepo: boolean;
-  branch?: string;
-  ahead?: number;
-  behind?: number;
-  files: Array<{ path: string; staged: boolean; unstaged: boolean; untracked: boolean }>;
-}
+import type { GitStatusDto } from '../lib/git-status';
 
 export function GitContext(props: { status: GitStatusDto | null }): React.JSX.Element | null {
   const { t } = useTranslation();
   const s = props.status;
-  if (!s || !s.isRepo) return null;
+  // ⚠️ **`unreadable` DRAWS NOTHING, AND SKIPPING THAT CHECK WOULD HAVE MADE
+  // THIS WORSE THAN IT WAS (#785).** The guard and status branches answer
+  // `isRepo: true` with no branch and no files, so the old `!s.isRepo` test
+  // alone would have let a damaged repository through to render `⎇ ?` and a
+  // silent zero dirty-count — a confident wrong answer this very change
+  // invented. Silence on a card header is not a wrong answer; the Changes tab
+  // is where the user asked the question, and it is where the reason goes.
+  if (!s || !s.isRepo || s.unreadable) return null;
   const changed = s.files.length;
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minInlineSize: 0 }}>

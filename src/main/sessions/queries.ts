@@ -610,7 +610,12 @@ export class SessionQueries {
       // A REFUSAL, not `{isRepo:false}`. Reporting a crashed git as "not a
       // repository" is the same confident lie the ambiguity refusal exists to
       // avoid: the caller would conclude there is nothing to see.
-      return { ok: false, reason: `could not read the diff: ${String(err)}` };
+      //
+      // `.message`, not `String(err)` (#785 review): these are written as
+      // sentences for a reader now — "could not read the diff: Error: that
+      // folder no longer exists" put a stack-trace word in the middle of one.
+      const why = err instanceof Error ? err.message : String(err);
+      return { ok: false, reason: `could not read the diff: ${why}` };
     }
     const overflow = got.text.length > DIFF_CHAR_CAP;
     // Cut at a line boundary: a diff sliced mid-hunk still LOOKS like a valid

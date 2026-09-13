@@ -453,6 +453,51 @@ test.describe('Changes tab (Monaco diff pane)', () => {
     await expect(w.getByText('Not a git repository')).toBeVisible({ timeout: 15_000 });
   });
 
+  test('a repository switchboard could NOT read says why, not "not a repository" (#785)', async () => {
+    // The other half of the test above, and the only end-to-end proof that
+    // #785's reason reaches glass: `gitPaneState` is unit-tested and the
+    // `GitService` branches are unit-tested, but between them sits one
+    // `t('diff.unreadable', …)` call in `DiffPane` that no unit test renders —
+    // swap it for `t('diff.notRepo')` and the whole suite stays green while the
+    // fix silently reverts to the bug.
+    //
+    // A `.git` FILE pointing at a directory that is not there is the cheapest
+    // deterministic damaged repository: no race, no fixture timing, and git
+    // says "not a git repository: <path>" for it — the very message whose
+    // resemblance to the benign one is what this ticket turns on.
+    const folder = registerTempDir(fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-damaged-')));
+    fs.writeFileSync(path.join(folder, 'README.md'), '# e2e\n');
+    fs.writeFileSync(path.join(folder, '.git'), 'gitdir: /switchboard-e2e/definitely-not-there\n');
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    const title = path.basename(folder);
+    await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
+
+    await w.locator('nav [draggable="true"]', { hasText: title }).first().click({ button: 'right' });
+    await w.getByRole('menuitem', { name: 'Open changes' }).click();
+    // GIT'S OWN WORDS GOT THROUGH the IPC and the ICU interpolation, asserted
+    // in ONE locator so a reason dropped on the way cannot pass.
+    //
+    // ⚠️ NOT the gitdir path, which is what this asserted first: the dev
+    // machine's git echoes it into the message and BOTH CI runners print
+    // `(null)` instead — a git BUILD difference, measured the hard way. What is
+    // common to every git is that it says "not a git repository" here, and that
+    // phrase is only in the pane if the reason arrived.
+    await expect(
+      w.getByText(/couldn't read this project's git — not a git repository/i)
+    ).toBeVisible({ timeout: 15_000 });
+    // …and the placeholder itself never reaches a screen. i18next-icu expands
+    // `{reason}`; a `{{reason}}` written out of mustache habit renders verbatim,
+    // which is the defect `locales.test.ts` exists for and this pins end to end.
+    await expect(w.getByText(/\{reason\}/)).toHaveCount(0);
+    // …and the answers it must NOT give. `exact`, because git's own message
+    // contains the phrase "not a git repository" and `getByText` is a
+    // case-insensitive SUBSTRING match by default — without it this asserts
+    // against the very string it is reading.
+    await expect(w.getByText('Not a git repository', { exact: true })).toHaveCount(0);
+    await expect(w.getByText('Working tree clean', { exact: true })).toHaveCount(0);
+  });
+
   test('a Changes tab opens in the main window, not the active popout (E8-04, #434)', async () => {
     skipPopoutOnLinux();
     // #434. `openDiff` called `addPanel` with no `position`, and dockview's

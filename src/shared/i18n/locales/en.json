@@ -345,6 +345,7 @@
   "diff": {
     "tabTitle": "{title} · diff",
     "notRepo": "Not a git repository",
+    "unreadable": "switchboard couldn't read this project's git — {reason}",
     "clean": "Working tree clean",
     "badge": {
       "new": "A",

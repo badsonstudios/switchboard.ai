@@ -119,6 +119,23 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **The Changes tab no longer calls every problem "Not a git repository".** If
+  anything at all went wrong reading a project's git — git not installed, a
+  folder that had been deleted or was on a disconnected drive, a repository git
+  refuses to touch because it belongs to another user account, a damaged
+  checkout — the tab said the project wasn't under version control. That is a
+  confident claim about your work that happens to be false, and for a
+  disconnected drive it reads as though switchboard has lost everything. The tab
+  now says it couldn't read the project's git and tells you why, usually quoting
+  git's own explanation, so the fix is often right there in the message. A
+  folder that genuinely isn't a repository still says so plainly. The little
+  branch-and-changes line on the session's card goes quiet in these cases rather
+  than showing a branch and a change count nobody could check.
+
+  The same failures reached another session as "it is not working inside a git
+  repository" when it asked what a sibling had changed; it now gets the reason
+  instead, and can tell you about it.
+
 - **A conversation that hands itself over no longer looks frozen.** When Claude
   Code moves a conversation somewhere else — pushing it into the background is
   the case we know about — it carries on in a new file and leaves a note in the
