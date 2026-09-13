@@ -183,6 +183,16 @@ on the floor, and say so in your PR.
   session it describes has run out of its usage window — which is the moment you
   most want to hand work over. Nothing surfaces this yet; the drag-and-drop
   gesture that uses it comes later.
+- **The app's record of what Claude Code writes to disk is up to date again.**
+  switchboard keeps a written list of every field it expects to find in a
+  session's history file, and warns in its log when Claude Code starts writing
+  something the list has never heard of — an early warning that a Claude Code
+  update has changed something underneath us. The list had fallen behind:
+  twenty-six fields and four kinds of record were arriving unrecognised on
+  ordinary sessions, and twenty-one further kinds were lined up to do the same
+  the first time you used the feature behind them. That is how a useful warning
+  becomes background noise you stop reading. All of them are now accounted for,
+  and the warning is quiet until there is something real to say.
 
 ## 0.8.8 — 2026-09-08
 
