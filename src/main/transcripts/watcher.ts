@@ -12,7 +12,7 @@ import fs from 'fs';
 import path from 'path';
 import { StringDecoder } from 'string_decoder';
 import { Logger } from '../log/logger';
-import { BindingDiagnostics, BindingState } from '../../shared/transcripts';
+import { BindingDiagnostics, BindingState, type ResetCause } from '../../shared/transcripts';
 import { FeedBlock, deriveIntents, touchedPath } from '../feed/blocks';
 import { FeedBuffer } from '../feed/buffer';
 import { conversationExists, slugForCwd } from './paths';
@@ -574,7 +574,7 @@ export class TranscriptWatcher {
   private readonly headCache = new Map<string, { size: number; mtimeMs: number; head: TranscriptHead }>();
   private readonly listeners = new Set<(s: TranscriptSnapshot) => void>();
   private readonly blockListeners = new Set<(sessionId: string, b: FeedBlock) => void>();
-  private readonly resetListeners = new Set<(sessionId: string, cause?: 'clear') => void>();
+  private readonly resetListeners = new Set<(sessionId: string, cause?: ResetCause) => void>();
   private timer: NodeJS.Timeout | null = null;
   // ONE detector for the whole watcher, not one per session: every session is
   // reading transcripts written by the same CLI build, so a new field is one
@@ -750,7 +750,7 @@ export class TranscriptWatcher {
    * sessionId doesn't match the id the hooks just delivered, unbind and let
    * discovery re-run with the id as the authority.
    */
-  setNativeSessionId(sessionId: string, nativeId: string, cause?: 'clear'): void {
+  setNativeSessionId(sessionId: string, nativeId: string, cause?: ResetCause): void {
     const w = this.sessions.get(sessionId);
     if (!w) return;
     // Frozen means frozen (#200). This is the sharpest reason quiescing has to
@@ -778,6 +778,11 @@ export class TranscriptWatcher {
           from: w.snap.nativeSessionId,
           to: nativeId,
         });
+      } else if (cause === 'continued') {
+        // Not a mis-bind either, and `absorbContinuation` has already logged
+        // the reason with both ids — this branch exists so the misleading
+        // "mis-bind corrected (same-cwd race)" warning below is not emitted for
+        // a rebind we asked for.
       } else {
         this.opts.log.warn('transcript mis-bind corrected (same-cwd race)', {
           sessionId,
@@ -790,11 +795,19 @@ export class TranscriptWatcher {
   }
 
   /** Drop the current binding and start discovery over, clean. */
-  private resetBinding(w: WatchedSession, cause?: 'clear'): void {
+  private resetBinding(w: WatchedSession, cause?: ResetCause): void {
     // Whatever we were reading is now positively somebody else's conversation
-    // (a corrected mis-bind) or a closed chapter of our own (`/clear`). Either
-    // way it will sit there unclaimable for the rest of the run, so it must
-    // stop being treated as a transcript we failed to pick up.
+    // (a corrected mis-bind), a closed chapter of our own (`/clear`), or a
+    // conversation that has moved (`'continued'`, #790). Either way it will sit
+    // there unclaimable for the rest of the run, so it must stop being treated
+    // as a transcript we failed to pick up — AND it must stop being claimable,
+    // which `claim()` now enforces (:1691). That sentence had been here since
+    // #129 describing a property nothing implemented: `abandoned` fed only
+    // `isEvidence`, so an abandoned file could be re-bound the moment its id
+    // became the authority again. Harmless while the only causes were a
+    // mis-bind and a `/clear` — neither reinstates the old id — but #790 makes
+    // the id move under our feet, and review measured A→B→A→B rebinding ~10
+    // times a second for ever, blanking the Feed on every pass.
     if (w.boundFile) w.abandoned.add(w.boundFile);
     w.boundFile = null;
     // Discovery has to start over for this session right now — a corrected
@@ -819,8 +832,18 @@ export class TranscriptWatcher {
     //    turn's evidence over would put a cleared-and-then-idle session into a
     //    red failure state 45 seconds later — B1 again, one step further along.
     //    The next prompt re-latches it through the ordinary `working` path.
+    //  - `'continued'` (#790): behaves like the MIS-BIND, not like the clear,
+    //    and the difference is a fact rather than a preference. A `continued-in`
+    //    record names a successor the CLI wrote because a conversation carrying
+    //    real history moved into it — so that transcript exists NOW, and a
+    //    failure to find it is a genuine fault the give-up clock should report.
+    //    Treating it as a clear would suppress exactly the diagnostic this item
+    //    exists to produce.
     w.candidateSeen = false;
     w.evidenceSince = null;
+    // Deliberately `'clear'` only — see the third bullet above. Widening this
+    // to `cause !== undefined` is the tempting one-character change that
+    // silences #790's own failure mode.
     if (cause === 'clear') w.conversationStarted = false;
     this.refreshBinding(w); // re-arms the clock from whatever evidence survived
     // the renderer must drop the stolen blocks too — the correct transcript
@@ -830,9 +853,10 @@ export class TranscriptWatcher {
 
   /**
    * The session's derived blocks were discarded — a corrected mis-bind, or
-   * (cause 'clear') the CLI's /clear starting a fresh conversation.
+   * (cause 'clear') the CLI's /clear starting a fresh conversation, or (cause
+   * 'continued') a `continued-in` line saying the conversation moved (#790).
    */
-  onReset(l: (sessionId: string, cause?: 'clear') => void): () => void {
+  onReset(l: (sessionId: string, cause?: ResetCause) => void): () => void {
     this.resetListeners.add(l);
     return () => this.resetListeners.delete(l);
   }
@@ -1358,6 +1382,24 @@ export class TranscriptWatcher {
       // `setNativeSessionId`, i.e. from the hooks. If we learned about the
       // `/clear` at all then the hooks are alive, so the next prompt is
       // guaranteed to reach `noteConversationStarted` and prod discovery.
+      //
+      // ⚠️ #790 gave `setNativeSessionId` a SECOND caller —
+      // `absorbContinuation`, reading the TRANSCRIPT rather than the hooks. The
+      // sentence above survives literally (that caller passes `'continued'`,
+      // never `'clear'`), but the SAFETY ARGUMENT does not transfer, and the
+      // first draft of this note claimed it did on the strength of
+      // `conversationStarted` surviving a continuation. Review measured
+      // otherwise: `conversationStarted` is only ever set by
+      // `noteConversationStarted`, so a restored card that bound its transcript
+      // without a turn has it false and a continuation DOES land here.
+      //
+      // Then the guarantee — "the hooks are alive, so the next prompt prods
+      // discovery" — is not available: we learned this from the file, and after
+      // a background hand-over there may be no next prompt in this card at all.
+      // Accepted rather than fixed, because the cost is bounded and small:
+      // `resetBinding` calls `markDirty`, which buys an immediate reprieve
+      // sweep, and thereafter the session still looks on the quiet rung. What
+      // is lost is the fast ladder, not the hunt.
       return now - w.watchedSince <= (this.opts.unpromptedFastMs ?? UNPROMPTED_FAST_MS);
     }
     return true;
@@ -1659,6 +1701,12 @@ export class TranscriptWatcher {
   private claim(w: WatchedSession, full: string): boolean {
     if (full.includes(`${path.sep}subagents${path.sep}`)) return false; // handled post-bind
     if (w.boundFile) return false; // one main transcript per session
+    // A file this session has positively LEFT is never a candidate again — see
+    // `resetBinding`, which has claimed exactly this since #129 without anything
+    // enforcing it. The bound case that matters is #790's: a `continued-in`
+    // cycle otherwise rebinds A→B→A for ever, because each hop reinstates the
+    // other file's id as the authority and nothing remembers the hop before.
+    if (w.abandoned.has(full)) return false;
     // ...and one session per transcript: a file another session already owns
     // is never a candidate (keeps the #8 cwd fallback from double-binding)
     for (const other of this.sessions.values()) {
@@ -1773,8 +1821,13 @@ export class TranscriptWatcher {
    * `budget` bounds ONE slice (#742). Omitted, it is `CATCHUP_CHUNK` and a
    * backlog larger than that is finished by continuations this method schedules
    * itself — see `scheduleCatchUp`. `Infinity` means "finish it here, now", and
-   * has exactly one caller: `noteSessionExited`, where deferring would lose the
-   * last words of a crashed turn (the reason that call site drains at all).
+   * has TWO callers, both on the death path: `noteSessionExited` and
+   * `quiesce`, where deferring would lose the last words of a crashed turn (the
+   * reason those call sites drain at all). This said "exactly one" and was
+   * already wrong; corrected at #790 because that item makes the difference
+   * between them load-bearing — `quiesce` latches `w.quiesced` BEFORE it
+   * drains and `noteSessionExited` does not, which is the whole of why
+   * `absorbContinuation` gates on `exitedAt` rather than on `quiesced`.
    *
    * Steady state is unaffected: an ordinary tail append is orders of magnitude
    * below the budget, so it takes the same single synchronous pass it always
@@ -1856,7 +1909,17 @@ export class TranscriptWatcher {
           typeof e.version === 'string' ? e.version : '(unknown)'
         }`
       );
+      const boundBefore = w.boundFile;
       this.absorb(w, full, e);
+      // A `continued-in` line inside this very slice has already rebound us
+      // (`absorbContinuation`), so `w.boundFile` is null and everything still
+      // sitting in `tail.buf` belongs to a conversation we have positively
+      // left. Reading on would push those lines into the FRESH feed — as
+      // sidechain blocks, because `deriveBlocks` reads `full !== w.boundFile`
+      // — repopulating the snapshot `resetBinding` just blanked. This is the
+      // one place a line can change the binding mid-drain; the hooks path
+      // could never reach it, which is why no guard existed before.
+      if (w.boundFile !== boundBefore) return;
     }
     if (touched) tail.dirty = true;
     // Backlog left over? Come back for it without waiting out a poll interval
@@ -1976,6 +2039,9 @@ export class TranscriptWatcher {
     if (full === w.boundFile && typeof e.sessionId === 'string' && !w.snap.nativeSessionId) {
       w.snap.nativeSessionId = e.sessionId;
     }
+    // BEFORE the rest: if this line says the conversation left, nothing below
+    // is about a conversation we are still following.
+    if (this.absorbContinuation(w, full, e)) return;
     this.absorbTitle(w, full, e);
     this.deriveBlocks(w, full, e);
     const message = e.message as
@@ -2013,6 +2079,130 @@ export class TranscriptWatcher {
         }
       }
     }
+  }
+
+  /**
+   * `continued-in` — the CLI's on-disk record that THIS conversation has moved
+   * to another session file (#790). Returns true when it rebound.
+   *
+   * This is the only line type whose mere ARRIVAL means the watcher must do
+   * something different. Every other field is one we read or do not read with
+   * no consequence; this one says the file we are tailing is finished. Miss it
+   * and the Feed silently stops updating while the card still looks alive —
+   * which reaches a bug report as "it just froze", with nothing in the UI
+   * saying why.
+   *
+   * It is a SECOND channel for a signal that already has a consumer. Until now
+   * a native-id change arrived only through the hooks (`setNativeSessionId`),
+   * and when that channel is quiet nothing notices. So this enters through the
+   * same door rather than beside it — #748/#753's shape, third time — which is
+   * what buys the `quiesced` guard, `markDirty`, the same-id early return and
+   * the `w.nativeSessionId` install for free. Install matters most: a bare
+   * `resetBinding` would restart discovery still holding the PREDECESSOR's id
+   * as its authority, and hunt for the file it had just abandoned.
+   *
+   * ⚠️ **THE TRIGGER IS UNREPRODUCED, AND THE SHAPE IS READ FROM THE BINARY.**
+   * Stated here rather than in a findings note nobody re-reads. `continued-in`
+   * has ZERO occurrences across this machine's ~3,300 transcripts, so the four
+   * fields come from the CLI's own factory in the PATH binary (2.1.261):
+   * `{type, timestamp, sessionId, continuedInSessionId}`, where **`sessionId`
+   * is the session being LEFT**. Its reader-side zod schema requires only
+   * `type` and `continuedInSessionId`, which is why only those two are read
+   * here. The binary names the trigger `repl_background_fork` — backgrounding
+   * the conversation you are sitting in, a guarded TUI gesture. Four CLI-driven
+   * variants were measured and **none** wrote a record (`spike/probes/790/`):
+   * `--bg` with `--resume` under the same id, with `--fork-session`, the
+   * documented "starts a copy" case, and `claude stop`. So the gesture is the
+   * remaining candidate and it was not driven. Treat the shape as the CLI's
+   * declaration, not as a measurement.
+   */
+  private absorbContinuation(
+    w: WatchedSession,
+    full: string,
+    e: Record<string, unknown>
+  ): boolean {
+    if (e.type !== 'continued-in') return false;
+    // The BOUND file only. A subagent's transcript is a different conversation;
+    // letting one through would move the card because a `Task` call's own
+    // conversation went somewhere — the same gate, and the same reason, as
+    // `absorbTitle`'s.
+    if (full !== w.boundFile) return false;
+    // ⚠️ EXITED, not just quiesced. `setNativeSessionId`'s `w.quiesced` guard
+    // (:762) is the one that protects a corpse's Feed — but `noteSessionExited`
+    // drains `Infinity` BEFORE calling `maybeQuiesce`, so a record sitting in
+    // the last unread bytes of a dying session arrives while that latch is
+    // still down. Review measured the result: the dead card's words are wiped,
+    // its remaining tails lose their final drain (`resetBinding` clears
+    // `w.tails` while `noteSessionExited` is iterating it), and the corpse then
+    // BINDS THE SUCCESSOR — so an exited card silently starts streaming a live
+    // conversation the exited process never had. Exactly what quiescing exists
+    // to prevent, arriving through the one window where it is not yet armed.
+    //
+    // ⚠️ THIS GATE CAN REFUSE THE SCENARIO THE ITEM IS ABOUT, and that is a
+    // decision rather than an oversight. If the user hands the conversation off
+    // and the foreground CLI then exits, whichever we observe first decides:
+    // read the line on an ordinary 100ms tick and we rebind; observe the exit
+    // first and `noteSessionExited`'s final drain finds it here, refused.
+    // Refusing is the right half of that trade, because #200 already settled
+    // the underlying question — a corpse keeps what it managed to say, and the
+    // alternative costs its Feed, its last unread tails, and puts a live
+    // conversation inside a card whose process is gone and which the user
+    // cannot type into. It also costs nothing #790 is about: the reported
+    // symptom is a card that LOOKS ALIVE and stops updating, and an exited card
+    // does not look alive — it says `exited`.
+    if (w.exitedAt !== null) return false;
+    const successor = e.continuedInSessionId;
+    if (typeof successor !== 'string' || !successor) return false;
+    const from = w.snap.nativeSessionId;
+    // LOAD-BEARING, and it did not start that way. Through the first review
+    // round this was a documented surviving mutant — `setNativeSessionId`
+    // early-returns on the same id, so deleting it changed nothing observable.
+    // The explicit `resetBinding` below (review's S1) made it matter: without
+    // this guard, a record naming the id we already hold falls through to that
+    // line, finds the session still bound because the install was a no-op, and
+    // resets a binding that was correct. A pointless rebind of a healthy
+    // session, from a line that said nothing had changed. Pinned by the
+    // same-id case in the test file — and the note claiming it was unkillable
+    // was deleted rather than left to mislead, which is the same failure as a
+    // test title its assertion no longer matches (#753).
+    if (successor === from) return false;
+    this.setNativeSessionId(w.sessionId, successor, 'continued');
+    // ⚠️ THE INSTALL IS NOT ALWAYS ENOUGH, and this is the sub-case the CLI's
+    // own schema permits. `setNativeSessionId` unbinds only when it can SEE the
+    // id move — `w.boundFile && w.snap.nativeSessionId && …` (:773) — and the
+    // snapshot's id comes from a `sessionId` on some earlier line. A transcript
+    // whose head never parsed binds by FILENAME and leaves that undefined (the
+    // oversized-first-line case at `claim()`), and this record is not obliged to
+    // carry a `sessionId` either: the CLI's reader-side schema requires only
+    // `type` and `continuedInSessionId`. So the id gets installed, nothing
+    // unbinds, and we go on tailing the file we have just been told is
+    // finished — #790's exact freeze, inside #790's own fix. Measured in review.
+    if (w.boundFile && !w.quiesced) this.resetBinding(w, 'continued');
+    // Logged AFTER, and only for a rebind that happened. Before, this line
+    // announced a rebind that a quiesced session had already refused — the same
+    // honesty property the `successor === from` guard above is defended by,
+    // broken two lines below it.
+    if (!w.boundFile) {
+      this.opts.log.info('conversation continued elsewhere — rebound', {
+        sessionId: w.sessionId,
+        from: from || '(unknown)',
+        to: successor,
+      });
+    }
+    // Whether it actually rebound is `setNativeSessionId`'s call (a quiesced
+    // session refuses, by design — nothing about a corpse's binding is worth
+    // correcting). Either way this line is not ordinary content and the caller
+    // must stop treating it as such.
+    //
+    // ⚠️ A SECOND DOCUMENTED SURVIVOR: returning `false` here passes every
+    // test. The mid-drain guard in `drain` already stops the slice, and a
+    // `continued-in` line has no title and no message content for the rest of
+    // `absorb` to find, so the short-circuit is currently unobservable. It is
+    // kept because the two guards say different things — this one is "this line
+    // is not content", the other is "this FILE is not ours" — and the second
+    // does not imply the first for any future caller of `absorb`. Named rather
+    // than defended with a test that would assert the implementation.
+    return true;
   }
 
   /**

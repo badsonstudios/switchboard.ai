@@ -380,8 +380,9 @@ export function FeedView(props: {
       // upsert: the watcher re-emits a block when its OUT / duration lands
       setBlocks((prev) => upsertBlock(prev, p.block as FeedBlockDto));
     });
-    // a corrected mis-bind (or /clear) restarts the stream from seq 1 â€” drop
-    // the stolen blocks or the shorter correct transcript leaves the old tail
+    // a corrected mis-bind, a /clear, or a conversation that moved (#790)
+    // restarts the stream from seq 1 â€” drop the stolen blocks or the shorter
+    // correct transcript leaves the old tail
     const offReset = window.switchboard.transcripts.onReset((p) => {
       if (p.sessionId !== props.sessionId) return;
       setBlocks([]);

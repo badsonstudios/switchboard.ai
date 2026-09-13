@@ -653,7 +653,10 @@ describe('same-cwd sessions never steal each other\'s transcript (E10 fix)', () 
 
   it("/clear's new id resets WITH cause 'clear' and rebinds to the fresh transcript (E10-07)", async () => {
     watcher.watch('s1', { cwd });
-    const resets: Array<{ sid: string; cause?: 'clear' }> = [];
+    // `cause?: string` rather than `'clear'` since #790 widened the union: the
+    // point of this test is that the value IS `'clear'`, which a type that can
+    // hold nothing else would assert by construction rather than by observation.
+    const resets: Array<{ sid: string; cause?: string }> = [];
     const offReset = watcher.onReset((sid, cause) => resets.push({ sid, cause }));
     const fileA = path.join(projectDir(), 'native-A.jsonl');
     writeLines(fileA, [
@@ -3015,5 +3018,301 @@ describe('binding an existing transcript is sliced, not swallowed whole (#742)',
 
     writeLines(file, [fat(9001)]);
     await waitFor(() => w.snapshot('s1')!.filesTouched.includes('C:/tmp/tw-project/f9001.txt'));
+  });
+});
+
+/**
+ * #790 — a `continued-in` line says the conversation left this file.
+ *
+ * ⚠️ **THE FIXTURE IS THE CLI'S DECLARATION, NOT A CAPTURE.** `continued-in`
+ * has zero occurrences across this machine's ~3,300 transcripts, and four
+ * CLI-driven variants failed to produce one (`spike/probes/790/`). The shape
+ * below is the PATH binary's own factory, 2.1.261:
+ *
+ *   {type:"continued-in", timestamp, sessionId, continuedInSessionId}
+ *
+ * where `sessionId` names the session being LEFT. Anything these tests assert
+ * about the FIELD NAMES is therefore only as good as that reading; what they
+ * assert about the WATCHER is real either way.
+ */
+describe('continued-in: the conversation moved to another transcript (#790)', () => {
+  /** The CLI's factory shape. `sessionId` is the session being left. */
+  const continuedIn = (from: string, to: string) =>
+    JSON.stringify({
+      type: 'continued-in',
+      timestamp: new Date().toISOString(),
+      sessionId: from,
+      continuedInSessionId: to,
+    });
+
+  it('rebinds to the successor and tells the renderer, with cause "continued"', async () => {
+    watcher.watch('s1', { cwd });
+    const resets: Array<{ sid: string; cause?: string }> = [];
+    const offReset = watcher.onReset((sid, cause) => resets.push({ sid, cause }));
+    const fileA = path.join(projectDir(), 'native-A.jsonl');
+    writeLines(fileA, [
+      entry({ sessionId: 'native-A', message: { content: [{ type: 'text', text: 'before the move' }] } }),
+    ]);
+    await waitFor(() => watcher.snapshot('s1')!.bound);
+    expect(watcher.snapshot('s1')!.nativeSessionId).toBe('native-A');
+
+    writeLines(fileA, [continuedIn('native-A', 'native-B')]);
+    await waitFor(() => !watcher.snapshot('s1')!.bound);
+    // The old conversation's blocks go, exactly as for a mis-bind: the
+    // successor replays from seq 1 and would otherwise interleave.
+    expect(watcher.blocks('s1')).toHaveLength(0);
+    expect(resets).toEqual([{ sid: 's1', cause: 'continued' }]);
+    offReset();
+
+    const fileB = path.join(projectDir(), 'native-B.jsonl');
+    writeLines(fileB, [
+      entry({ sessionId: 'native-B', message: { content: [{ type: 'text', text: 'after the move' }] } }),
+    ]);
+    await waitFor(() => watcher.snapshot('s1')!.bound);
+    expect(watcher.snapshot('s1')!.nativeSessionId).toBe('native-B');
+    expect(watcher.blocks('s1').some((b) => b.text === 'after the move')).toBe(true);
+  });
+
+  it('installs the SUCCESSOR id as discovery\'s authority — the whole reason it is not a bare resetBinding', async () => {
+    // The failure this pins: `resetBinding` alone restarts discovery still
+    // holding the PREDECESSOR's id, so it hunts for the file it has just
+    // abandoned and binds nothing, for ever. Two sessions share the folder, so
+    // cwd alone can never bind — only a correct id can.
+    watcher.watch('s1', { cwd });
+    watcher.watch('s2', { cwd });
+    watcher.setNativeSessionId('s1', 'native-A');
+    const fileA = path.join(projectDir(), 'native-A.jsonl');
+    writeLines(fileA, [entry({ sessionId: 'native-A' })]);
+    await waitFor(() => watcher.snapshot('s1')!.bound);
+
+    writeLines(fileA, [continuedIn('native-A', 'native-B')]);
+    await waitFor(() => !watcher.snapshot('s1')!.bound);
+
+    const fileB = path.join(projectDir(), 'native-B.jsonl');
+    writeLines(fileB, [
+      entry({ sessionId: 'native-B', message: { content: [{ type: 'text', text: 'successor' }] } }),
+    ]);
+    await waitFor(() => watcher.snapshot('s1')!.bound);
+    expect(watcher.snapshot('s1')!.nativeSessionId).toBe('native-B');
+    // and it did NOT steal the sibling's claim on the way through
+    expect(watcher.snapshot('s2')!.bound).toBe(false);
+  });
+
+  it('stops reading the rest of the slice — lines after the record never reach the new feed', async () => {
+    // The record and four later lines land in ONE write, so they are parsed in
+    // one drain pass. Without the mid-drain guard, `deriveBlocks` pushes them
+    // into the freshly reset feed as SIDECHAIN blocks (`full !== w.boundFile`
+    // is true once the binding is dropped) and repopulates the snapshot
+    // `resetBinding` just blanked.
+    watcher.watch('s1', { cwd });
+    const fileA = path.join(projectDir(), 'native-A.jsonl');
+    writeLines(fileA, [entry({ sessionId: 'native-A' })]);
+    await waitFor(() => watcher.snapshot('s1')!.bound);
+
+    writeLines(fileA, [
+      continuedIn('native-A', 'native-B'),
+      entry({ sessionId: 'native-A', message: { content: [{ type: 'text', text: 'ghost 1' }] } }),
+      entry({ sessionId: 'native-A', message: { content: [{ type: 'text', text: 'ghost 2' }] } }),
+      entry({ sessionId: 'native-A', message: { content: [{ type: 'text', text: 'ghost 3' }] } }),
+      entry({ sessionId: 'native-A', message: { content: [{ type: 'text', text: 'ghost 4' }] } }),
+    ]);
+    await waitFor(() => !watcher.snapshot('s1')!.bound);
+    await sleep(200); // give any stray drain a chance to do the wrong thing
+    expect(watcher.blocks('s1')).toHaveLength(0);
+    expect(watcher.snapshot('s1')!.lines).toBe(0); // the blank snap stayed blank
+  });
+
+  it('a continued-in on a SUBAGENT file does not move the card', async () => {
+    // A `Task` call's own conversation going somewhere is not this card's
+    // conversation going somewhere — the same gate, and the same reason, as
+    // `absorbTitle`'s bound-file check.
+    //
+    // ⚠️ The first version of this test put the subagent file at
+    // `<nativeId>/sub.jsonl`. The real layout is `<nativeId>/subagents/
+    // agent-*.jsonl` (S-05), so nothing ever tailed it and the test passed
+    // against the mutant that DELETES the gate — a vacuous green, #779's
+    // lesson exactly. The `usage.output` assertion below is the fix that
+    // matters: it fails if the subagent file is not being read, so this test
+    // cannot go vacuous again without saying so.
+    watcher.watch('s1', { cwd });
+    const fileA = path.join(projectDir(), 'native-A.jsonl');
+    writeLines(fileA, [entry({ sessionId: 'native-A' })]);
+    await waitFor(() => watcher.snapshot('s1')!.bound);
+
+    const subDir = path.join(projectDir(), 'native-A', 'subagents');
+    fs.mkdirSync(subDir, { recursive: true });
+    writeLines(path.join(subDir, 'agent-abc123.jsonl'), [
+      entry({
+        sessionId: 'sub-1',
+        isSidechain: true,
+        agentId: 'abc123',
+        message: { usage: { output_tokens: 7 } },
+      }),
+      continuedIn('sub-1', 'sub-2'),
+    ]);
+    // PROOF the subagent file is actually being tailed. Without this the test
+    // asserts only that nothing happened, which is also what happens when
+    // nothing is read at all.
+    await waitFor(() => watcher.snapshot('s1')!.usage.output === 7);
+    expect(watcher.snapshot('s1')!.bound).toBe(true);
+    expect(watcher.snapshot('s1')!.nativeSessionId).toBe('native-A');
+  });
+
+  it('a successor equal to the current id, and a malformed one, are both inert', async () => {
+    watcher.watch('s1', { cwd });
+    const resets: string[] = [];
+    const offReset = watcher.onReset((sid) => resets.push(sid));
+    const fileA = path.join(projectDir(), 'native-A.jsonl');
+    writeLines(fileA, [
+      entry({ sessionId: 'native-A', message: { content: [{ type: 'text', text: 'keep me' }] } }),
+    ]);
+    await waitFor(() => watcher.snapshot('s1')!.bound);
+
+    writeLines(fileA, [
+      continuedIn('native-A', 'native-A'), // points at itself
+      JSON.stringify({ type: 'continued-in', sessionId: 'native-A' }), // no successor
+      JSON.stringify({ type: 'continued-in', continuedInSessionId: 42 }), // wrong type
+      JSON.stringify({ type: 'continued-in', continuedInSessionId: '' }), // empty
+    ]);
+    await sleep(250);
+    expect(watcher.snapshot('s1')!.bound).toBe(true);
+    expect(watcher.snapshot('s1')!.nativeSessionId).toBe('native-A');
+    expect(resets).toEqual([]);
+    // A COUNT, not `.some(…)`: four `continued-in` lines were just written, and
+    // `.some` would stay green against a mutant that derived a block FROM one
+    // of them. One block in, one block out.
+    expect(watcher.blocks('s1')).toHaveLength(1);
+    expect(watcher.blocks('s1')[0].text).toBe('keep me');
+    offReset();
+  });
+
+  it('a record in an EXITING session\'s last unread bytes does not wipe the dead card (#200)', async () => {
+    // ⚠️ THIS TEST REPLACES A VACUOUS ONE. The first version appended the
+    // record to an already-QUIESCED session and asserted nothing changed — but
+    // `quiesce()` clears `w.tails` and the poll loop skips quiesced sessions,
+    // so the line was never read at all. It asserted state nothing could have
+    // touched, and stayed green with the whole feature deleted.
+    //
+    // The live case is the window quiescing has not yet closed:
+    // `noteSessionExited` drains `Infinity` BEFORE `maybeQuiesce`, so a record
+    // in the last unread bytes arrives with `w.quiesced` still false. Review
+    // measured the unguarded result — the dead card blanked, and then REBOUND
+    // to the successor, streaming a live conversation into a corpse.
+    const w = makeWatcher({
+      projectsRoot: root,
+      log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
+      pollMs: 25,
+      postExitSettleMs: 60,
+    });
+    w.watch('s1', { cwd });
+    const fileA = path.join(projectDir(), 'native-A.jsonl');
+    writeLines(fileA, [
+      entry({ sessionId: 'native-A', message: { content: [{ type: 'text', text: 'last words' }] } }),
+    ]);
+    await waitFor(() => w.snapshot('s1')!.bound);
+    const linesBefore = w.snapshot('s1')!.lines;
+
+    // written and NOT yet read — this is the drain `noteSessionExited` does
+    writeLines(fileA, [continuedIn('native-A', 'native-B')]);
+    w.noteSessionExited('s1');
+    // PROOF the record was ingested and then refused, rather than never read —
+    // which is exactly what made the previous version of this test vacuous.
+    expect(w.snapshot('s1')!.lines).toBe(linesBefore + 1);
+    expect(w.snapshot('s1')!.bound).toBe(true);
+    expect(w.blocks('s1').some((b) => b.text === 'last words')).toBe(true);
+
+    // and the corpse must never adopt the successor, even once it exists
+    writeLines(path.join(projectDir(), 'native-B.jsonl'), [
+      entry({ sessionId: 'native-B', message: { content: [{ type: 'text', text: 'a live conversation' }] } }),
+    ]);
+    await sleep(250);
+    expect(w.snapshot('s1')!.nativeSessionId).toBe('native-A');
+    expect(w.blocks('s1').some((b) => b.text === 'a live conversation')).toBe(false);
+  });
+
+  it('a cycle (A→B, B→A) settles instead of rebinding for ever', async () => {
+    // Review measured the unguarded version rebinding ~30 times a second under
+    // a 25ms poll and never converging — each hop reinstates the other file's
+    // id as discovery's authority, and nothing remembered the hop before. Every
+    // pass also fires `sessions:feedReset`, so the Session view blanks on each
+    // one. The guard is `claim()` refusing a file this session has abandoned,
+    // which is a property `resetBinding` had asserted in a comment since #129
+    // with nothing enforcing it.
+    watcher.watch('s1', { cwd });
+    const fileA = path.join(projectDir(), 'native-A.jsonl');
+    const fileB = path.join(projectDir(), 'native-B.jsonl');
+    let resets = 0;
+    const offReset = watcher.onReset(() => resets++);
+    writeLines(fileA, [entry({ sessionId: 'native-A' })]);
+    await waitFor(() => watcher.snapshot('s1')!.bound);
+
+    writeLines(fileB, [entry({ sessionId: 'native-B' }), continuedIn('native-B', 'native-A')]);
+    writeLines(fileA, [continuedIn('native-A', 'native-B')]);
+    // Two hops is the CEILING and the whole point: A is abandoned on the way to
+    // B, B is abandoned on the way back, and there is nowhere left to go. The
+    // count is read after a settling wait rather than at the first reset —
+    // `waitFor(resets >= 1)` returns while the second hop is still in flight,
+    // which is a race, not a finding.
+    await sleep(600); // ~24 polls at pollMs: 25
+    expect(resets).toBeLessThanOrEqual(2);
+    const settled = resets;
+    await sleep(500);
+    expect(resets).toBe(settled); // and it STAYS settled
+    expect(watcher.snapshot('s1')!.bound).toBe(false); // nothing left to claim
+    offReset();
+  });
+
+  it('rebinds even when the snapshot never learned a native id (unparseable head)', async () => {
+    // `setNativeSessionId` unbinds only when it can SEE the id move, and the
+    // snapshot's id comes from a `sessionId` on an earlier line. A transcript
+    // whose head is unparseable binds by FILENAME and leaves it undefined, and
+    // the CLI's own reader schema does not oblige this record to carry a
+    // `sessionId` either. Without the explicit `resetBinding`, the id is
+    // installed, nothing unbinds, and the watcher keeps tailing the file it was
+    // just told is finished — #790's freeze inside #790's fix. Measured in
+    // review.
+    watcher.watch('s1', { cwd });
+    watcher.setNativeSessionId('s1', 'native-A'); // hooks: bind by filename
+    const fileA = path.join(projectDir(), 'native-A.jsonl');
+    // a head line too big to parse, so no `sessionId` ever reaches the snapshot
+    writeLines(fileA, [`{"type":"file-history-snapshot","blob":"${'x'.repeat(200_000)}"`]);
+    await waitFor(() => watcher.snapshot('s1')!.bound);
+    expect(watcher.snapshot('s1')!.nativeSessionId).toBeFalsy();
+
+    // the record carries no `sessionId` either — only what the schema requires
+    writeLines(fileA, [JSON.stringify({ type: 'continued-in', continuedInSessionId: 'native-B' })]);
+    await waitFor(() => !watcher.snapshot('s1')!.bound);
+  });
+
+  it('leaves conversationStarted SET, where a /clear clears it — the control is the clear', async () => {
+    // The decision this pins is the one a one-character change would silence
+    // (`cause === 'clear'` → `cause !== undefined`): a `/clear` drops the
+    // evidence because the CLI writes no transcript until the next prompt, but
+    // a `continued-in` names a successor that exists NOW, so the give-up clock
+    // must still be able to report a failure to find it — which is exactly the
+    // diagnostic #790 exists to produce.
+    //
+    // `awaiting-prompt` is the observable for "no evidence", and it is only
+    // reachable once evidence EXISTS to lose — hence `noteConversationStarted`
+    // on both sessions. Without it both causes land in `searching` and the
+    // test passes while distinguishing nothing.
+    watcher.watch('s1', { cwd });
+    watcher.watch('s2', { cwd });
+    watcher.setNativeSessionId('s1', 'native-A');
+    watcher.setNativeSessionId('s2', 'native-C');
+    watcher.noteConversationStarted('s1');
+    watcher.noteConversationStarted('s2');
+    writeLines(path.join(projectDir(), 'native-A.jsonl'), [entry({ sessionId: 'native-A' })]);
+    writeLines(path.join(projectDir(), 'native-C.jsonl'), [entry({ sessionId: 'native-C' })]);
+    await waitFor(() => watcher.snapshot('s1')!.bound && watcher.snapshot('s2')!.bound);
+
+    // s1: continued — evidence survives
+    writeLines(path.join(projectDir(), 'native-A.jsonl'), [continuedIn('native-A', 'native-B')]);
+    await waitFor(() => !watcher.snapshot('s1')!.bound);
+    expect(watcher.snapshot('s1')!.binding).toBe('searching');
+
+    // s2: the CONTROL — a /clear on the same shape drops it
+    watcher.setNativeSessionId('s2', 'native-D', 'clear');
+    expect(watcher.snapshot('s2')!.binding).toBe('awaiting-prompt');
   });
 });

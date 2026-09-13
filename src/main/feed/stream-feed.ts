@@ -656,6 +656,13 @@ export class StreamFeed {
     return () => this.blockListeners.delete(l);
   }
 
+  /**
+   * Deliberately NARROWER than `ResetCause` (#790). This source feeds the same
+   * `sessions:feedReset` channel, but `'clear'` is the only cause it can
+   * produce — `onConversationReset` is its one emitter. Widening the type to
+   * the channel's full union would let it claim a value it cannot emit, which
+   * is the opposite of what a type is for.
+   */
   onReset(l: (sessionId: string, cause?: 'clear') => void): () => void {
     this.resetListeners.add(l);
     return () => this.resetListeners.delete(l);
