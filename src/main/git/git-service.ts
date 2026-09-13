@@ -173,40 +173,55 @@ function git(
     let abandoned = false;
     let timer: NodeJS.Timeout | null = null;
     let grace: NodeJS.Timeout | null = null;
-    const child = execFile(
-      command.file,
-      [...command.prefixArgs, ...guardArgs(), ...args],
-      {
-        cwd: folder,
-        encoding: 'utf8',
-        maxBuffer: MAX_GIT_OUTPUT,
-        windowsHide: true,
-        // GIT_OPTIONAL_LOCKS=0 suppresses the index refresh `status` would
-        // otherwise write — which is what fires `post-index-change`, and which
-        // also took `.git/index.lock` in a folder another agent may be
-        // `git add`-ing (#772 fixed that for `diff` and never for `status`).
-        // Measured: status output is byte-identical with and without.
-        //
-        // LC_ALL/LANGUAGE (#785): git translates its messages through gettext,
-        // and since #785 we READ one of them to tell "not a repository" apart
-        // from "damaged repository" — both of which exit 128. Under a
-        // translated git that match would fail and every ordinary non-repo
-        // folder would be reported as unreadable. Nothing we parse on stdout is
-        // localized (porcelain=v2, rev-parse, `config --list -z`), so pinning
-        // the locale costs nothing and makes the one message we read a
-        // constant. LANGUAGE is set too because gettext consults it FIRST, and
-        // empty is how it is spelled "unset".
-        env: { ...(env ?? process.env), GIT_OPTIONAL_LOCKS: '0', LC_ALL: 'C', LANGUAGE: '' },
-      },
-      (err, stdout, stderr) => {
-        if (timer) clearTimeout(timer);
-        if (grace) clearTimeout(grace);
-        // Abandoned means we closed the pipes ourselves, so whatever came
-        // back may be cut short: a timeout, whatever the exit code said.
-        const failure = abandoned ? 'timeout' : err ? failureOf(err) : null;
-        resolve({ ok: !err && !abandoned, out: stdout ?? '', err: stderr ?? '', failure });
-      }
-    );
+    let child: ChildProcess;
+    try {
+      child = execFile(
+        command.file,
+        [...command.prefixArgs, ...guardArgs(), ...args],
+        {
+          cwd: folder,
+          encoding: 'utf8',
+          maxBuffer: MAX_GIT_OUTPUT,
+          windowsHide: true,
+          // GIT_OPTIONAL_LOCKS=0 suppresses the index refresh `status` would
+          // otherwise write — which is what fires `post-index-change`, and
+          // which also took `.git/index.lock` in a folder another agent may be
+          // `git add`-ing (#772 fixed that for `diff` and never for `status`).
+          // Measured: status output is byte-identical with and without.
+          //
+          // LC_ALL/LANGUAGE (#785): git translates its messages through
+          // gettext, and since #785 we READ one of them to tell "not a
+          // repository" apart from "damaged repository" — both of which exit
+          // 128. Under a translated git that match would fail and every
+          // ordinary non-repo folder would be reported as unreadable. Nothing
+          // we parse on stdout is localized (porcelain=v2, rev-parse,
+          // `config --list -z`), so pinning the locale costs nothing and makes
+          // the one message we read a constant. LANGUAGE is set too because
+          // gettext consults it FIRST, and empty is how it is spelled "unset".
+          env: { ...(env ?? process.env), GIT_OPTIONAL_LOCKS: '0', LC_ALL: 'C', LANGUAGE: '' },
+        },
+        (err, stdout, stderr) => {
+          if (timer) clearTimeout(timer);
+          if (grace) clearTimeout(grace);
+          // Abandoned means we closed the pipes ourselves, so whatever came
+          // back may be cut short: a timeout, whatever the exit code said.
+          const failure = abandoned ? 'timeout' : err ? failureOf(err) : null;
+          resolve({ ok: !err && !abandoned, out: stdout ?? '', err: stderr ?? '', failure });
+        }
+      );
+    } catch {
+      // ⚠️ **`execFile` CAN THROW RATHER THAN CALL BACK, AND LINUX IS WHERE IT
+      // DOES (#785, found by CI).** Handing it a `cwd` that is a FILE raises
+      // `spawn ENOTDIR` synchronously on Linux, where the same call on Windows
+      // delivers `ENOENT` to the callback — so `status()` REJECTED instead of
+      // returning a `GitStatus`, and the pane's `.then` never ran. That breaks
+      // "our breakage never blocks a session" on a path whose whole subject is
+      // folders that have gone wrong. Pre-existing; #785's new case is what
+      // reached it. Every synchronous failure is the same fact — git never ran
+      // — so it is the same `no-exec` the callback would have reported.
+      resolve({ ok: false, out: '', err: '', failure: 'no-exec' });
+      return;
+    }
     // CLOSE OUR END OF ITS PIPES, which `execFile`'s own timeout does and a
     // bare kill does not (#772 review, round 2). The callback above waits for
     // stdout AND stderr to close, and anything git started — a hook, a filter,

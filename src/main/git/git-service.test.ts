@@ -1337,38 +1337,97 @@ describe('a git switchboard could not READ is not a folder without git (#785)', 
     expect(await svc.diff(plain)).toEqual({ isRepo: false, text: '' });
   });
 
-  it('A `.git` FILE CANNOT TALK ITS WAY BACK INTO "not a git repository"', async () => {
-    // ⚠️ #785 REVIEW. `saysNotARepo` searched the whole of stderr, and the
-    // damaged-repo message it exists to catch echoes the `gitdir:` line back
-    // verbatim — a plain text file a session, or a sibling agent, can write.
-    // Naming the gitdir so git's own output contains the benign phrase
-    // reclassified the damaged repo as healthy and restored the original lie on
-    // demand. Anchored at position 0, the echoed text can never reach it.
-    const hostile = tempDir('sb-785-hostile-');
-    const bait = path.join(tempDir('sb-785-bait-'), 'not a git repository (or any');
-    fs.writeFileSync(path.join(hostile, '.git'), `gitdir: ${bait.replace(/\\/g, '/')}\n`);
+  /**
+   * A git whose `rev-parse` fails with exactly the stderr it is handed.
+   *
+   * ⚠️ **REAL GIT CANNOT DRIVE THESE TWO PORTABLY, AND CI IS WHERE THAT WAS
+   * MEASURED.** The first cut used a real `.git` file naming a hostile gitdir,
+   * because git echoes that path straight back into "not a git repository:
+   * <path>" — measured on the dev machine, git 2.51.0.windows.2. **Both CI
+   * runners print `(null)` / `(NULL)` for the identical fixture**, ubuntu and
+   * windows alike, so this is a git BUILD difference and not a platform one,
+   * and the assumption that it was platform-shaped was wrong twice over. The
+   * bait never reached the parser there, and the tests failed on the runners
+   * while passing locally.
+   *
+   * The vector is real on at least one shipping git, and `detected dubious
+   * ownership in repository at '<path>'` echoes an attacker-writable path on
+   * every one of them — so the defence stays, and it is asserted against the
+   * PARSER with a message we control rather than against whichever phrasing the
+   * local git happens to use. That is the right level anyway: what is being
+   * tested is `saysNotARepo`, not git's wording.
+   */
+  function stderrGit(message: string): GitService {
+    const dir = tempDir('sb-785-stderr-');
+    const script = path.join(dir, 'fake-git.js');
+    fs.writeFileSync(
+      script,
+      `(() => {
+        process.stderr.write(process.argv[2] + '\\n');
+        process.exitCode = 128;
+      })();`
+    );
+    return new GitService({ file: process.execPath, prefixArgs: [script, message] });
+  }
 
-    const s = await svc.status(hostile);
-    // The witness that the bait really is in git's message — without it this
-    // passes against a git that said something else entirely.
-    expect(s.unreadable).toContain('not a git repository (or any');
-    // …and it is still reported as unreadable, not as a plain non-repo.
-    expect(s.unreadable).toBeTruthy();
+  it('A REPOSITORY CANNOT TALK ITS WAY BACK INTO "not a git repository"', async () => {
+    // ⚠️ #785 REVIEW. `saysNotARepo` searched the whole of stderr, and part of
+    // that text is echoed from files a session — or, per #776's threat model, a
+    // sibling agent — can write. Text naming the benign phrase reclassified a
+    // damaged repository as a healthy one and restored the original lie on
+    // demand. Anchored at position 0, the echoed half can never reach it.
+    const bait = await stderrGit(
+      "fatal: not a git repository: /tmp/not a git repository (or any of the parent directories)"
+    ).status(tempDir('sb-785-hostile-'));
+    expect(bait.unreadable).toBeTruthy();
+    // The witness that the bait really did arrive — without it this passes
+    // against a fixture whose message never reached the parser at all, which is
+    // exactly how the first version of this test failed on Linux only.
+    expect(bait.unreadable).toContain('not a git repository (or any');
+
+    // THE CONTROL: the same phrase at position 0 is git's real benign message
+    // and must still be quiet. Either assertion alone survives a `saysNotARepo`
+    // that always answers the same way.
+    const benign = await stderrGit(
+      'fatal: not a git repository (or any of the parent directories): .git'
+    ).status(tempDir('sb-785-benign-'));
+    expect(benign).toEqual({ isRepo: false, files: [] });
   });
 
   it('a reason is capped and stripped of control characters before it is shown', async () => {
     // The same attacker-written text lands in a 200px pane and, through
-    // `diff()`, in another model's context as unfenced prose. A 4 KB gitdir
-    // line is a wall in one and a budget in the other.
-    const hostile = tempDir('sb-785-longbait-');
-    const wide = path.join(tempDir('sb-785-wide-'), 'x'.repeat(400));
-    fs.writeFileSync(path.join(hostile, '.git'), `gitdir: ${wide.replace(/\\/g, '/')}\n`);
-
-    const s = await svc.status(hostile);
+    // `diff()`, in another model's context as unfenced prose. A 4 KB path is a
+    // wall in one and a budget in the other; a control character has no
+    // business in either.
+    const s = await stderrGit(
+      `fatal: not a git repository: /tmp/${'x'.repeat(400)}`
+    ).status(tempDir('sb-785-longbait-'));
     expect(s.unreadable!.length).toBeLessThanOrEqual(201); // 200 + the ellipsis
     expect(s.unreadable).toContain('…');
     // The witness: the fixture really did produce an over-long message.
     expect(s.unreadable).toContain('xxxxxxxx');
+  });
+
+  it('⚠️ AN `execFile` THAT THROWS INSTEAD OF CALLING BACK IS STILL AN ANSWER', async () => {
+    // ⚠️ FOUND BY CI, ON LINUX ONLY, INSIDE #785's OWN NEW CASE. Handing
+    // `execFile` a `cwd` that is a FILE raises `spawn ENOTDIR` SYNCHRONOUSLY on
+    // Linux, where the same call on Windows delivers `ENOENT` to the callback.
+    // `status()` therefore REJECTED rather than returning a `GitStatus`, and the
+    // pane's `.then` never ran at all — which breaks "our breakage never blocks
+    // a session" on the one code path whose entire subject is folders that have
+    // gone wrong. Pre-existing; #785's folder cases are what reached it.
+    //
+    // Driven through the `GitCommand` seam rather than by platform, so it is
+    // the same test everywhere: a NUL in the file name is rejected by Node's
+    // own argument validation, synchronously, before any spawn is attempted.
+    // (Built from a code point — a typed escape would land in this file as a
+    // literal NUL byte and `npm run lint` would reject it.)
+    const throwing = new GitService({ file: `git${String.fromCharCode(0)}x`, prefixArgs: [] });
+    const s = await throwing.status(plain);
+    expect(s.isRepo).toBe(false);
+    expect(s.unreadable).toMatch(/not be installed|PATH/);
+    // …and `diff()` refuses rather than rejecting with a raw Node error.
+    await expect(throwing.diff(plain)).rejects.toThrow(/not be installed|PATH/);
   });
 
   it('a path that is a FILE is not reported as a missing git', async () => {

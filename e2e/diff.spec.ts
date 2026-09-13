@@ -475,10 +475,21 @@ test.describe('Changes tab (Monaco diff pane)', () => {
 
     await w.locator('nav [draggable="true"]', { hasText: title }).first().click({ button: 'right' });
     await w.getByRole('menuitem', { name: 'Open changes' }).click();
-    await expect(w.getByText(/couldn't read this project's git/)).toBeVisible({ timeout: 15_000 });
-    // git's own words got through the IPC and the ICU interpolation — a
-    // `{reason}` left unexpanded, or a reason dropped on the way, fails here.
-    await expect(w.getByText(/definitely-not-there/)).toBeVisible({ timeout: 15_000 });
+    // GIT'S OWN WORDS GOT THROUGH the IPC and the ICU interpolation, asserted
+    // in ONE locator so a reason dropped on the way cannot pass.
+    //
+    // ⚠️ NOT the gitdir path, which is what this asserted first: the dev
+    // machine's git echoes it into the message and BOTH CI runners print
+    // `(null)` instead — a git BUILD difference, measured the hard way. What is
+    // common to every git is that it says "not a git repository" here, and that
+    // phrase is only in the pane if the reason arrived.
+    await expect(
+      w.getByText(/couldn't read this project's git — not a git repository/i)
+    ).toBeVisible({ timeout: 15_000 });
+    // …and the placeholder itself never reaches a screen. i18next-icu expands
+    // `{reason}`; a `{{reason}}` written out of mustache habit renders verbatim,
+    // which is the defect `locales.test.ts` exists for and this pins end to end.
+    await expect(w.getByText(/\{reason\}/)).toHaveCount(0);
     // …and the answers it must NOT give. `exact`, because git's own message
     // contains the phrase "not a git repository" and `getByText` is a
     // case-insensitive SUBSTRING match by default — without it this asserts
