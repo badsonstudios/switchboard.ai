@@ -1,6 +1,13 @@
 // GitService (P1-E5-01): status + diff via the system git binary, parsed
-// models, graceful everywhere — a session folder that isn't a repo (or a
-// machine without git) yields { isRepo: false }, never an error dialog.
+// models, graceful everywhere — a session folder that isn't a repo yields
+// { isRepo: false }, never an error dialog.
+//
+// GRACEFUL IS NOT THE SAME AS SILENT (#785). "A machine without git" used to be
+// in that sentence, alongside a damaged repository, a permission error and
+// #776's deliberate refusal, and all of them came back as `{ isRepo: false }`
+// and drew as "Not a git repository". `status()` now carries `unreadable` for
+// the cases where we could not find out; only the folder that really is not a
+// repository answers plainly.
 import { ChildProcess, execFile, spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
@@ -28,6 +35,42 @@ export interface GitFileStatus {
 
 export interface GitStatus {
   isRepo: boolean;
+  /**
+   * Why this answer is not a reading of the working tree (#785).
+   *
+   * ⚠️ **PRESENT ONLY WHEN WE COULD NOT FIND OUT.** Never on a successful read,
+   * and never on an honest "this folder is not a repository".
+   *
+   * ⚠️ **BUT A CONSUMER READING `isRepo` ALONE IS NOW WRONG, AND THAT IS THE
+   * POINT (#785 review).** This note used to claim the opposite — "every
+   * consumer that has only ever read `isRepo` keeps exactly the meaning it had"
+   * — which is false, deliberately, and by design: a damaged repository used to
+   * answer `isRepo: false` and now answers `true`. `isRepo: false` still means
+   * "not a repository" ONLY when `unreadable` is absent, and `isRepo: true`
+   * with `unreadable` set is the exact shape of a clean checkout. Every reader
+   * has to check. `GitContext` needed a new clause for precisely this, and the
+   * comment asserting nobody did was the thing that would have hidden the next
+   * one. Readers today: `lib/git-status`'s `gitPaneState`, `GitContext`, and
+   * `SessionGrid`'s changed-file badge.
+   *
+   * Before this field, `status()` answered `{ isRepo: false, files: [] }` for
+   * git missing, a damaged repository, a permission error, a `required` filter
+   * that could not run and #776's deliberate refusal alike, and the pane drew
+   * every one of them as **"Not a git repository"** — a confident wrong answer
+   * about the user's project, which is the failure mode this codebase keeps
+   * filing tickets about. `diff()` has thrown a reason since #764; this is
+   * `status()` finally getting somewhere to put one.
+   *
+   * `isRepo` stays as honest as it can be beside it: `true` when `rev-parse`
+   * had already answered `true` before the failure, `false` when we never got
+   * that far. It is NOT a claim that the tree was read.
+   *
+   * The text is English and deliberately un-localized — half of these are git's
+   * own message quoted back, and a translation invented for a sentence we are
+   * quoting is a lie of a different kind. The renderer's one i18n string wraps
+   * it; see `diff.unreadable`.
+   */
+  unreadable?: string;
   branch?: string;
   ahead?: number;
   behind?: number;
@@ -93,12 +136,28 @@ export interface GitCommand {
 
 const SYSTEM_GIT: GitCommand = { file: 'git', prefixArgs: [] };
 
-/** Why a git invocation did not succeed, when the difference matters. */
-type GitFailure = 'timeout' | 'too-large' | 'failed';
+/**
+ * Why a git invocation did not succeed, when the difference matters.
+ *
+ * `no-exec` means git never ran at all — the spawn itself failed. ⚠️ **THAT IS
+ * NOT THE SAME AS "git is not installed" (measured, #785).** A `cwd` that does
+ * not exist produces the byte-identical `ENOENT`, down to `syscall: 'spawn
+ * git'`, so a session folder that has been deleted or sits on a disconnected
+ * drive looks exactly like a machine with no git. `spawnReason` is where that
+ * is separated; the two are not distinguishable from the error alone.
+ */
+type GitFailure = 'timeout' | 'too-large' | 'failed' | 'no-exec';
 
 interface GitRun {
   ok: boolean;
   out: string;
+  /**
+   * git's stderr — what it SAID about the failure, which until #785 was thrown
+   * away. It is the only place git distinguishes "this folder is not a
+   * repository" from "this repository is damaged" or "I refuse to touch a
+   * repository owned by somebody else": both exit 128 (measured).
+   */
+  err: string;
   failure: GitFailure | null;
 }
 
@@ -127,15 +186,25 @@ function git(
         // also took `.git/index.lock` in a folder another agent may be
         // `git add`-ing (#772 fixed that for `diff` and never for `status`).
         // Measured: status output is byte-identical with and without.
-        env: { ...(env ?? process.env), GIT_OPTIONAL_LOCKS: '0' },
+        //
+        // LC_ALL/LANGUAGE (#785): git translates its messages through gettext,
+        // and since #785 we READ one of them to tell "not a repository" apart
+        // from "damaged repository" — both of which exit 128. Under a
+        // translated git that match would fail and every ordinary non-repo
+        // folder would be reported as unreadable. Nothing we parse on stdout is
+        // localized (porcelain=v2, rev-parse, `config --list -z`), so pinning
+        // the locale costs nothing and makes the one message we read a
+        // constant. LANGUAGE is set too because gettext consults it FIRST, and
+        // empty is how it is spelled "unset".
+        env: { ...(env ?? process.env), GIT_OPTIONAL_LOCKS: '0', LC_ALL: 'C', LANGUAGE: '' },
       },
-      (err, stdout) => {
+      (err, stdout, stderr) => {
         if (timer) clearTimeout(timer);
         if (grace) clearTimeout(grace);
         // Abandoned means we closed the pipes ourselves, so whatever came
         // back may be cut short: a timeout, whatever the exit code said.
         const failure = abandoned ? 'timeout' : err ? failureOf(err) : null;
-        resolve({ ok: !err && !abandoned, out: stdout ?? '', failure });
+        resolve({ ok: !err && !abandoned, out: stdout ?? '', err: stderr ?? '', failure });
       }
     );
     // CLOSE OUR END OF ITS PIPES, which `execFile`'s own timeout does and a
@@ -220,8 +289,125 @@ function killTree(child: ChildProcess): void {
 
 function failureOf(err: unknown): GitFailure | null {
   if (!err) return null;
-  if ((err as NodeJS.ErrnoException).code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return 'too-large';
+  const e = err as NodeJS.ErrnoException;
+  if (e.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') return 'too-large';
+  // `syscall` is what separates "the spawn failed" from "git ran and exited
+  // non-zero": an exit-code error has no `syscall` and its `code` is the NUMBER
+  // git exited with, while a spawn failure carries `spawn <file>` and an errno
+  // string. Matching on `ENOENT` alone would also catch nothing else useful —
+  // EACCES and EPERM are the same class of "git never ran".
+  if (typeof e.syscall === 'string' && e.syscall.startsWith('spawn')) return 'no-exec';
   return 'failed';
+}
+
+/**
+ * Git's own account of a failure, as a sentence fragment — or `null` when it
+ * said nothing.
+ *
+ * The FIRST line only, and `fatal: ` taken off the front: git leads with the
+ * thing that went wrong and then, for some failures, adds paragraphs of advice
+ * ("To add an exception for this directory, call…") that belong in a terminal
+ * and not in a 200px pane. `hint:` and `warning:` lines are dropped for the
+ * same reason.
+ */
+function gitSaid(stderr: string): string | null {
+  const line = stderr
+    .split('\n')
+    .map((l) => l.trim())
+    .find((l) => l !== '' && !l.startsWith('hint:') && !l.startsWith('warning:'));
+  if (!line) return null;
+  return clampReason(line.replace(/^fatal:\s*/, ''));
+}
+
+/**
+ * ⚠️ **SOME OF THIS TEXT IS WRITTEN BY THE REPOSITORY (#785 review).** git
+ * echoes a `.git` file's `gitdir:` line straight back into "not a git
+ * repository: <path>", and a `.git` file is a plain text file a session — or,
+ * per #776's threat model, a sibling agent — can write. The result goes two
+ * places that both mind: a 200px pane, where a 4 KB line is a wall, and (via
+ * `diff()`'s throw) another model's context as unfenced prose.
+ *
+ * So it is cut to a length a pane can hold and stripped of control characters,
+ * which have no business in either destination.
+ */
+function clampReason(text: string): string {
+  const clean = text.replace(CONTROL_CHARS, ' ').trim();
+  return clean.length > REASON_CAP ? `${clean.slice(0, REASON_CAP)}…` : clean;
+}
+
+/** As much of git's sentence as a 200px pane can hold without becoming a wall. */
+const REASON_CAP = 200;
+
+/**
+ * C0, DEL and C1 — BUILT FROM CODE POINTS, not typed into a literal.
+ *
+ * A control character typed into a regex literal lands in the source file as a
+ * raw byte: the file becomes binary to every tool that reads it, and the change
+ * is invisible in review. It happened while writing this very function.
+ */
+const CONTROL_CHARS = new RegExp(
+  `[${String.fromCharCode(0)}-${String.fromCharCode(0x1f)}${String.fromCharCode(0x7f)}-${String.fromCharCode(0x9f)}]`,
+  'g'
+);
+
+/**
+ * git's benign "I walked up from here and found no repository".
+ *
+ * ⚠️ **MEASURED, AND NARROWER THAN IT LOOKS (#785).** git says *"not a git
+ * repository"* for a damaged repository too — a `.git` file pointing at a
+ * directory that is not there answers `fatal: not a git repository:
+ * /nonexistent/xyz`, exit 128, exactly like the ordinary folder that simply
+ * is not one. So the match is on the PARENTHESIS, which only the two benign
+ * variants carry (`(or any of the parent directories): .git` and `(or any
+ * parent up to mount point …)`), and everything else is treated as a
+ * repository we could not read.
+ *
+ * Getting this backwards is the whole bug: a folder that is genuinely not a
+ * repository must keep saying so, plainly, because that is the common case and
+ * it is not an error.
+ *
+ * ⚠️ **ANCHORED, BECAUSE PART OF THAT MESSAGE IS ATTACKER-WRITTEN (#785
+ * review).** This took the whole of stderr and searched it, and the damaged-repo
+ * message it exists to catch echoes the `.git` file's `gitdir:` line back
+ * verbatim — a plain text file a session can write. `gitdir: ../not a git
+ * repository (or any` would have reclassified a damaged repository as a benign
+ * one and restored the original lie on demand. Taking `gitSaid`'s extracted
+ * line and anchoring at position 0 puts the phrase somewhere the echoed text
+ * can never reach.
+ */
+function saysNotARepo(said: string | null): boolean {
+  return said !== null && /^not a git repository \(or any/i.test(said);
+}
+
+/**
+ * Which of the two `ENOENT`s this was.
+ *
+ * Measured (#785): `execFile('git', …, { cwd })` with a `cwd` that does not
+ * exist fails with `code: 'ENOENT'`, `syscall: 'spawn git'` — the same error,
+ * field for field, as a machine with no git on its PATH. So the error cannot
+ * answer it and the filesystem is asked instead. A folder deleted in the
+ * microsecond between is reported as "git could not be started", which is the
+ * vaguer of the two and therefore the right way to be wrong.
+ *
+ * ⚠️ **ASYNC, AND THAT IS NOT A STYLE CHOICE (#785 review).** This was
+ * `fs.existsSync`, in the Electron MAIN process, on the code path whose headline
+ * case is a disconnected network drive — where a synchronous stat is an SMB
+ * timeout of seconds, with every session's IPC and every terminal write stalled
+ * behind it. "Our breakage never blocks a session" is a hard constraint, and a
+ * fail-open path that freezes the app is the worst shape a failure can take.
+ *
+ * It asks whether the folder is a DIRECTORY, not merely whether something is
+ * there: a `cwd` pointing at a file fails the same way, and telling that user
+ * git might not be installed is a third wrong answer in the same branch.
+ */
+async function spawnReason(folder: string): Promise<string> {
+  try {
+    const st = await fs.promises.stat(folder);
+    if (!st.isDirectory()) return 'that path is not a folder, so there is nothing to run git in';
+  } catch {
+    return 'that folder no longer exists, or is not reachable';
+  }
+  return 'git could not be started — it may not be installed, or not on the PATH';
 }
 
 export class GitService {
@@ -254,15 +440,26 @@ export class GitService {
    * blanket it looked like. Reaching this means `git config --list` failed
    * twice on a repository `rev-parse` had already called a work tree, which is
    * a broken repository or a timeout; both are better refused than guessed at.
+   *
+   * It says WHICH refusal since #785. The two are different problems with
+   * different answers — "this repository is damaged" versus "this git predates
+   * the mechanism, upgrade it" — and lumping them was fine only while the one
+   * consumer was a thrown string nobody had to act on.
    */
-  private async guardEnv(folder: string, left?: () => number): Promise<NodeJS.ProcessEnv | null> {
+  private async guardEnv(folder: string, left?: () => number): Promise<GuardEnv> {
     const entries = await this.scopedConfig(folder, left);
-    if (!entries) return null;
+    if (!entries) return { env: null, reason: GUARD_CONFIG_UNREADABLE };
     const overrides = filterGuardOverrides(entries);
     // Nothing repo-authored: the common case, and it skips the check below.
-    if (overrides.length === 0) return overrideEnv(process.env, []);
-    if (!(await this.honoursEnvOverrides(folder, left))) return null;
-    return overrideEnv(process.env, overrides);
+    if (overrides.length === 0) return { env: overrideEnv(process.env, []) };
+    const honoured = await this.honoursEnvOverrides(folder, left);
+    // `null` is "the probe did not finish", not "this git is too old" — see
+    // `honoursEnvOverrides`. Both refuse the read; only one blames the user's
+    // git version, and saying that about a git that is fine is the confident
+    // wrong answer #785 exists to stop.
+    if (honoured === null) return { env: null, reason: GUARD_PROBE_UNFINISHED };
+    if (!honoured) return { env: null, reason: GUARD_TOO_OLD };
+    return { env: overrideEnv(process.env, overrides) };
   }
 
   /**
@@ -283,16 +480,44 @@ export class GitService {
    * A `false` here refuses the read. The alternative — falling back to
    * `-c key=value` — is what round 1 did, and it cannot express a key
    * containing `=`, which is exactly the shape an attacker picks.
+   *
+   * ⚠️ **ONLY A DEFINITE ANSWER IS REMEMBERED (#785 review).** This used to
+   * memoise `r.ok && …`, and `r.ok` is false for a probe that TIMED OUT or a
+   * git that never started — neither of which is a fact about this git's
+   * version. On the `status` path the guard's earlier reads share a 15 s budget
+   * with this one, so a slow or network checkout with a repo-authored driver
+   * (`git lfs install --local` writes one, which is the exact case the manual
+   * documents) could spend the budget and leave `left()` clamped to 1 ms. The
+   * cached `false` then sat on the app-wide service for the process lifetime
+   * and told the user, for EVERY project including fast healthy ones, that
+   * their git was too old and they should upgrade it — on git 2.51. #785 is
+   * what made that sentence specific enough to be a lie worth stopping.
+   *
+   * So an indefinite outcome answers `null`, forgets itself, and the next read
+   * asks again. `null` still refuses THIS read — a guard that cannot be checked
+   * is not a guard — it just refuses with a different sentence.
    */
-  private envOverridesHonoured: Promise<boolean> | null = null;
-  private honoursEnvOverrides(folder: string, left?: () => number): Promise<boolean> {
-    this.envOverridesHonoured ??= this.run(
+  private envOverridesHonoured: Promise<boolean | null> | null = null;
+  private honoursEnvOverrides(folder: string, left?: () => number): Promise<boolean | null> {
+    if (this.envOverridesHonoured) return this.envOverridesHonoured;
+    // Annotated, and assigned BEFORE the `then` can run, so concurrent callers
+    // still share one probe the way the old `??=` did.
+    const probe: Promise<boolean | null> = this.run(
       folder,
       ['config', '--get', 'switchboard.guardprobe'],
       left?.(),
       overrideEnv(process.env, [['switchboard.guardprobe', 'yes']])
-    ).then((r) => r.ok && r.out.trim() === 'yes');
-    return this.envOverridesHonoured;
+    ).then((r) => {
+      if (r.failure === 'timeout' || r.failure === 'no-exec') {
+        // Guarded against clobbering a later probe's answer, not just set to
+        // null: another read may already have replaced this one.
+        if (this.envOverridesHonoured === probe) this.envOverridesHonoured = null;
+        return null;
+      }
+      return r.ok && r.out.trim() === 'yes';
+    });
+    this.envOverridesHonoured = probe;
+    return probe;
   }
 
   /**
@@ -424,26 +649,64 @@ export class GitService {
    * write — so it is what needs bounding. `status` itself is deliberately left
    * unbounded, as it always was: a genuinely enormous repository, or a cold
    * network drive, can legitimately take a long time, and killing it would
-   * report **"Not a git repository"** for a repository that is merely slow.
+   * report a repository that is merely slow as one switchboard could not read.
    * Trading a hang for a lie is the wrong way round on this surface — the bus's
    * `diff`, whose answer a model reads, makes the opposite trade and says so.
+   *
+   * (That read **"Not a git repository"** until #785, which is what a killed
+   * `status` reported then. The trade has not changed; the lie it was weighed
+   * against got smaller, and the note would otherwise describe an answer this
+   * method can no longer give.)
    */
   async status(folder: string, guardBudgetMs = GUARD_BUDGET_MS): Promise<GitStatus> {
     const probe = await this.run(folder, ['rev-parse', '--is-inside-work-tree']);
-    if (!probe.ok || !probe.out.trim().startsWith('true')) return { isRepo: false, files: [] };
+    if (!probe.ok) {
+      // git never started: no stderr to read, and the error cannot say whether
+      // it was git or the folder that was missing.
+      if (probe.failure === 'no-exec') {
+        return { isRepo: false, unreadable: await spawnReason(folder), files: [] };
+      }
+      const said = gitSaid(probe.err);
+      // THE ONE BRANCH THAT MUST STAY QUIET. A folder that is not a repository
+      // is the common case and is not an error — see `saysNotARepo` for why the
+      // match is anchored and not a search of the whole of stderr.
+      if (saysNotARepo(said)) return { isRepo: false, files: [] };
+      return {
+        isRepo: false,
+        unreadable: said ?? 'git could not tell whether this folder is a repository',
+        files: [],
+      };
+    }
+    // `false` from a git that answered cleanly: a bare repository, or the
+    // inside of a `.git` directory. Not a working tree, and not a failure.
+    if (!probe.out.trim().startsWith('true')) return { isRepo: false, files: [] };
 
     const deadline = Date.now() + guardBudgetMs;
-    const env = await this.guardEnv(folder, () => Math.max(1, deadline - Date.now()));
-    if (!env) return { isRepo: false, files: [] };
+    // `isRepo: true` from here down, on every branch: `rev-parse` has ALREADY
+    // said this is a work tree, so answering `false` would be a second wrong
+    // answer bolted onto the first. What we no longer have is a reading of it.
+    const guard = await this.guardEnv(folder, () => Math.max(1, deadline - Date.now()));
+    if (!guard.env) return { isRepo: true, unreadable: guard.reason, files: [] };
 
     // quotePath=off: non-ASCII paths arrive literal, so fileVersions can find them
     const r = await this.run(
       folder,
       ['-c', 'core.quotePath=off', 'status', '--porcelain=v2', '--branch', '--untracked-files=all'],
       0,
-      env
+      guard.env
     );
-    if (!r.ok) return { isRepo: false, files: [] };
+    if (!r.ok) {
+      // `no-exec` is reachable here too: git, or the folder, can disappear
+      // between the probe and this call. Falling through to "said nothing about
+      // why" would throw away the one diagnosis we can still make (review nit).
+      const why =
+        r.failure === 'too-large'
+          ? `git status produced more than the ${MAX_GIT_OUTPUT / 1024 / 1024} MB switchboard reads in one go`
+          : r.failure === 'no-exec'
+            ? await spawnReason(folder)
+            : (gitSaid(r.err) ?? 'git status did not succeed, and said nothing about why');
+      return { isRepo: true, unreadable: why, files: [] };
+    }
 
     const status: GitStatus = { isRepo: true, files: [] };
     for (const line of r.out.split('\n')) {
@@ -509,7 +772,8 @@ export class GitService {
    * service, because #764 will point this at a folder another agent controls.
    *
    * Fail-open like the rest of this service for the question "is this a repo":
-   * not a repo, and no git on PATH, both yield `{ isRepo: false, text: '' }`.
+   * a folder that is not one yields `{ isRepo: false, text: '' }`. **No git on
+   * PATH used to yield that too, and does not since #785** — see the probe.
    *
    * ⚠️ **A FAILED `git diff` THROWS, and that is the OPPOSITE of the rest of
    * this service on purpose (#764 review).** This used to be
@@ -560,6 +824,19 @@ export class GitService {
     // second answer to a question this file already asks.
     const inside = await this.run(folder, ['rev-parse', '--is-inside-work-tree'], left());
     if (inside.failure === 'timeout') throw timedOut();
+    // ⚠️ **THE SAME LIE #785 FIXED ON `status`, ON THE PATH A MODEL READS.**
+    // This was `!inside.ok || … → { isRepo: false }`, which `renderDiff` turns
+    // into *"it is not working inside a git repository"* — told, with no
+    // qualification, for a machine with no git, a folder that has been deleted
+    // and a damaged repository alike. That is the confident wrong answer this
+    // whole query path exists to avoid, and it is worse here than on the pane
+    // because the reader is an agent that will act on it. A folder that really
+    // is not a repository still answers plainly; see `saysNotARepo`.
+    if (inside.failure === 'no-exec') throw new Error(await spawnReason(folder));
+    const insideSaid = gitSaid(inside.err);
+    if (!inside.ok && !saysNotARepo(insideSaid)) {
+      throw new Error(insideSaid ?? 'git could not tell whether that folder is a repository');
+    }
     if (!inside.ok || inside.out.trim() !== 'true') return { isRepo: false, text: '' };
     // git's canonical empty tree: the base every file is an addition against.
     // Shared with the guard, which points `--attr-source` at the same object.
@@ -569,19 +846,16 @@ export class GitService {
     // `left` ITSELF, not `left()` — the guard makes several invocations, and a
     // fixed number handed to each of them would turn one 10 s budget into one
     // per call, which is the bound #772 exists to set, undone.
-    const env = await this.guardEnv(folder, left);
-    if (!env) {
+    const guard = await this.guardEnv(folder, left);
+    if (!guard.env) {
       if (Date.now() >= deadline) throw timedOut();
-      throw new Error(
-        "git could not read the repository's own configuration, so switchboard did not run " +
-          'git in that folder (the repository may be damaged)'
-      );
+      throw new Error(guard.reason);
     }
     const r = await this.run(
       folder,
       ['diff-index', '-p', '-M', '--no-color', '--no-textconv', '--no-ext-diff', base],
       left(),
-      env
+      guard.env
     );
     if (r.failure === 'timeout') throw timedOut();
     if (r.failure === 'too-large') {
@@ -590,7 +864,12 @@ export class GitService {
           'switchboard reads in one go'
       );
     }
-    if (!r.ok) throw new Error('git could not produce the diff');
+    // git's own account, when it gave one (#785 review). The `git lfs install
+    // --local` repository the manual documents fails HERE, and the pane has
+    // been quoting `filter 'lfs' failed…` since #785 while the model on the
+    // other end of the bus still got a bare shrug with the actionable half
+    // deleted.
+    if (!r.ok) throw new Error(gitSaid(r.err) ?? 'git could not produce the diff');
     return { isRepo: true, text: r.out };
   }
 
@@ -621,3 +900,50 @@ function toGitPath(p: string): string {
  */
 const MAX_SUBMODULES = 512;
 const MAX_SUBMODULE_DEPTH = 10;
+
+/**
+ * The environment #776's guard built, or why it refused to build one.
+ *
+ * A discriminated pair rather than `NodeJS.ProcessEnv | null` so the refusal
+ * arrives WITH its reason (#785): `status()` puts it on the pane and `diff()`
+ * throws it, and neither can invent it after the fact.
+ */
+type GuardEnv = { env: NodeJS.ProcessEnv; reason?: undefined } | { env: null; reason: string };
+
+/**
+ * ⚠️ **THE SUBMODULE CAP LANDS HERE TOO, AND THE WORDING ADMITS IT.**
+ * `scopedConfig` returns a bare `null` for a config it could not read, a
+ * submodule whose config it could not read, and a repository past
+ * `MAX_SUBMODULES` / `MAX_SUBMODULE_DEPTH` alike. Threading a third reason back
+ * through that recursion buys a distinction for a bound nothing real reaches —
+ * so the sentence says "could not enumerate" and names the three shapes rather
+ * than claiming one of them.
+ */
+const GUARD_CONFIG_UNREADABLE =
+  "git could not enumerate this repository's own configuration, so switchboard did not run git " +
+  'here (the repository may be damaged, its submodules unusual, or the read may have timed out)';
+
+/**
+ * The git-is-too-old refusal, kept APART from the one above since #785.
+ *
+ * It is not a damaged repository — it is a supported platform (Ubuntu 20.04
+ * ships 2.25.1, Debian 11 ships 2.30.2, both below the 2.31 that introduced
+ * `GIT_CONFIG_KEY_<n>`) — and the thing to do about it is upgrade git, which
+ * "the repository may be damaged" would send nobody off to do.
+ */
+const GUARD_TOO_OLD =
+  "this git is too old to apply switchboard's safety overrides (git 2.31 or newer is needed), " +
+  'so switchboard did not run git here';
+
+/**
+ * The guard could not be CHECKED — distinct from both of the above (#785
+ * review).
+ *
+ * A timed-out or unstartable capability probe says nothing about this git's
+ * version, and `GUARD_TOO_OLD` would name a version number and send the user
+ * off to upgrade a git that is fine. Hedged on purpose: this is the one of the
+ * three that is most likely to be transient, and the next read may well answer.
+ */
+const GUARD_PROBE_UNFINISHED =
+  'switchboard could not check whether this git applies its safety overrides (the check did not ' +
+  'finish), so it did not run git here — this may clear by itself';

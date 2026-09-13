@@ -453,6 +453,40 @@ test.describe('Changes tab (Monaco diff pane)', () => {
     await expect(w.getByText('Not a git repository')).toBeVisible({ timeout: 15_000 });
   });
 
+  test('a repository switchboard could NOT read says why, not "not a repository" (#785)', async () => {
+    // The other half of the test above, and the only end-to-end proof that
+    // #785's reason reaches glass: `gitPaneState` is unit-tested and the
+    // `GitService` branches are unit-tested, but between them sits one
+    // `t('diff.unreadable', …)` call in `DiffPane` that no unit test renders —
+    // swap it for `t('diff.notRepo')` and the whole suite stays green while the
+    // fix silently reverts to the bug.
+    //
+    // A `.git` FILE pointing at a directory that is not there is the cheapest
+    // deterministic damaged repository: no race, no fixture timing, and git
+    // says "not a git repository: <path>" for it — the very message whose
+    // resemblance to the benign one is what this ticket turns on.
+    const folder = registerTempDir(fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-damaged-')));
+    fs.writeFileSync(path.join(folder, 'README.md'), '# e2e\n');
+    fs.writeFileSync(path.join(folder, '.git'), 'gitdir: /switchboard-e2e/definitely-not-there\n');
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    const title = path.basename(folder);
+    await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
+
+    await w.locator('nav [draggable="true"]', { hasText: title }).first().click({ button: 'right' });
+    await w.getByRole('menuitem', { name: 'Open changes' }).click();
+    await expect(w.getByText(/couldn't read this project's git/)).toBeVisible({ timeout: 15_000 });
+    // git's own words got through the IPC and the ICU interpolation — a
+    // `{reason}` left unexpanded, or a reason dropped on the way, fails here.
+    await expect(w.getByText(/definitely-not-there/)).toBeVisible({ timeout: 15_000 });
+    // …and the answers it must NOT give. `exact`, because git's own message
+    // contains the phrase "not a git repository" and `getByText` is a
+    // case-insensitive SUBSTRING match by default — without it this asserts
+    // against the very string it is reading.
+    await expect(w.getByText('Not a git repository', { exact: true })).toHaveCount(0);
+    await expect(w.getByText('Working tree clean', { exact: true })).toHaveCount(0);
+  });
+
   test('a Changes tab opens in the main window, not the active popout (E8-04, #434)', async () => {
     skipPopoutOnLinux();
     // #434. `openDiff` called `addPanel` with no `position`, and dockview's

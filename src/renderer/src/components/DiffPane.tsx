@@ -33,6 +33,7 @@ import {
   readDiffPlace,
   rememberDiffPlace,
 } from '../lib/diff-places';
+import { gitPaneState, type GitFileDto, type GitStatusDto } from '../lib/git-status';
 
 /**
  * `folder` + git's forward-slash relative path, in the folder's own spelling.
@@ -56,20 +57,6 @@ declare global {
 window.MonacoEnvironment = {
   getWorker: () => new EditorWorker(),
 };
-
-interface GitFileDto {
-  path: string;
-  xy: string;
-  staged: boolean;
-  unstaged: boolean;
-  untracked: boolean;
-}
-
-interface GitStatusDto {
-  isRepo: boolean;
-  branch?: string;
-  files: GitFileDto[];
-}
 
 export function DiffPane(props: {
   folder: string;
@@ -344,6 +331,8 @@ export function DiffPane(props: {
     return () => d.dispose();
   }, [selected, props.cardId]);
 
+  const paneState = gitPaneState(status);
+
   const badge = (f: GitFileDto): string =>
     f.untracked ? t('diff.badge.new') : f.staged && f.unstaged ? t('diff.badge.both') : f.staged ? t('diff.badge.staged') : t('diff.badge.modified');
 
@@ -358,13 +347,30 @@ export function DiffPane(props: {
           fontSize: 11,
         }}
       >
-        {status && !status.isRepo && (
+        {/* ONE decision, in `lib/git-status` — see `gitPaneState` for why
+            `unreadable` has to be checked before `clean` and not after. */}
+        {paneState?.kind === 'unreadable' && (
+          // The attention ink, not `--muted`: this is something being WRONG,
+          // where the other two are ordinary facts about a folder. Same token
+          // the dirty-count uses on the card header, which #246 contrast-checked
+          // for text on this surface.
+          <div style={{ color: 'var(--status-needs-input-ink)' }}>
+            {t('diff.unreadable', { reason: paneState.reason })}
+          </div>
+        )}
+        {paneState?.kind === 'not-repo' && (
           <div style={{ color: 'var(--muted)' }}>{t('diff.notRepo')}</div>
         )}
-        {status?.isRepo && status.files.length === 0 && (
+        {paneState?.kind === 'clean' && (
           <div style={{ color: 'var(--muted)' }}>{t('diff.clean')}</div>
         )}
-        {status?.files.map((f) => (
+        {/* GATED ON THE SAME DECISION, so "the pane renders from `gitPaneState`
+            and from nothing else" is true rather than nearly true (review nit).
+            Harmless today — `unreadable` always ships `files: []` — but an
+            unreadable answer that somehow carried files would otherwise draw
+            the reason AND a file list under it. */}
+        {paneState?.kind === 'files' &&
+          status?.files.map((f) => (
           <div
             key={f.path}
             onClick={() => setSelected(f.path)}

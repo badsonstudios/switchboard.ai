@@ -1885,7 +1885,19 @@ app
     });
 
     broker.handle('git:status', (_e, folder: string) =>
-      knownFolder(folder) ? gitService.status(folder) : { isRepo: false, files: [] }
+      knownFolder(folder)
+        ? gitService.status(folder)
+        : // A REFUSAL, AND IT SAYS SO (#785 review). This was a bare
+          // `{ isRepo: false }`, which the pane drew as "Not a git repository"
+          // for a folder switchboard declined to read — the same lie #785 is
+          // about, sitting one layer above the fix. Low reachability (the
+          // renderer only asks about folders in this workspace), which is
+          // exactly how it survived the ticket that named it.
+          {
+            isRepo: false,
+            unreadable: 'switchboard only reads git for folders it has open as a session',
+            files: [],
+          }
     );
     broker.handle('git:fileVersions', (_e, folder: string, file: string) => {
       // scope to a known folder AND forbid escaping it (path traversal)
