@@ -811,7 +811,7 @@ extension reference (clean blocks, expandable detail); Terminal stays one
 toggle away and raw TUI states surface it explicitly. Litmus checked per
 surface.
 
-## E11 — Session Bus & context transfer (milestone: Phase 2; items 00–05 + 09 filed 2026-09-07)
+## E11 — Session Bus & context transfer (milestone: Phase 2; items 00–05 + 09 filed 2026-09-07, the remaining six filed 2026-09-13 once #760's findings were in)
 
 > **Transport decided 2026-07-26 (architecture review AR-P1-6): the Session Bus
 > is stdio-only in v1.** §5.29 already preferred stdio; this closes it. Two
@@ -952,31 +952,48 @@ prerequisite; 09 is filed with the first group because E13 needs it.
   across runs; a transcript with no tool calls still yields a usable package;
   token estimate reported per section; no LLM is invoked on the default path.
 
-**Not yet filed** (filed once 00's findings are in, per the just-in-time rule —
-00 may reshape the bus items and would reshape these too):
+**Filed 2026-09-13** — these six were deliberately held back under the
+just-in-time rule pending E11-00's findings, on the grounds that the probe might
+reshape them. It did not: `spike/findings/e11-00-bus-feasibility.md` closes with
+*"nothing needs re-planning"*, and the three things it DID change are folded into
+the done-whens below rather than left as a note somebody has to remember —
+**tool names are `mcp__<server>__<tool>` and schemas are fetched on demand, so a
+tool's DESCRIPTION is what an agent matches against** (§6); **a server that does
+not answer `initialize` promptly costs its session ~32 seconds** (§5); and **a
+headless `claude -p` pass inherits the containment question** (§8). The only E11
+group still unfiled is none — E13 remains unfiled and that is deliberate.
 
-- **P2-E11-06 · Blackboard `publish`/`read` — S.** *(depends: 04)* The shared
-  scratchpad §5.4 gives pipelines.
-- **P2-E11-07 · @-session autocomplete in the composer — M.** Token detection
-  and popup modelled on the slash implementation; lists live sessions by name
-  and color.
-- **P2-E11-08 · @-reference resolution + injection at send — M.** *(depends:
-  07, 01)* `@Name` resolves through 01 and is injected as context ahead of the
-  prompt text. **An unresolvable `@word` stays literal text** — that half gets
-  its own negative table, because a composer that mangles `@` in ordinary prose
-  is #635's lesson repeated on a new surface.
-- **P2-E11-10 · Context chip + drop dialog (Levels 1–2) — M.** *(depends: 09)*
-  Drag A's context chip onto B → "last response | summary handoff | full
-  excerpt" with token-size estimates per option. Cross-session drag of a
-  selection or a feed block is the Level-1 source; `ComposerAttachments` is
-  already the drop target (#476).
-- **P2-E11-11 · `get_session_context` bus tool — S.** *(depends: 04, 09)* The
-  agent-pulled variant of 09, so B's agent can request a handoff mid-task.
-- **P2-E11-12 · Level 3 fork-session adoption — M.** *(depends: 09)* `claude
-  --resume <id> --fork-session`, plus the cross-folder variant that copies the
-  transcript into the target project's transcript dir first. Relies on
+- **P2-E11-06 · Blackboard `publish`/`read` — S** (#796)**.** *(depends: 04)* The
+  shared scratchpad §5.4 gives pipelines. Scope, persistence, caps and the
+  no-key `read` are open decisions the item names rather than inherits; values
+  are attributed from the TOKEN, never from the child's `--session` argv.
+- **P2-E11-07 · @-session autocomplete in the composer — M** (#797)**.** Token
+  detection and popup modelled on the slash implementation
+  (`slashToken(draft, caret)`, ~`FeedView.tsx:1814`); lists live sessions by name
+  and color, from the same `SessionSummary` the bus answers with rather than a
+  second source. Popup only — resolution is 08.
+- **P2-E11-08 · @-reference resolution + injection at send — M** (#798)**.**
+  *(depends: 07, 01)* `@Name` resolves through 01 and is injected as context
+  ahead of the prompt text. **An unresolvable `@word` stays literal text** — that
+  half gets its own negative table, because a composer that mangles `@` in
+  ordinary prose is #635's lesson repeated on a new surface.
+- **P2-E11-10 · Context chip + drop dialog (Levels 1–2) — M** (#799)**.**
+  *(depends: 09)* Drag A's context chip onto B → "last response | summary
+  handoff | full excerpt" with token-size estimates per option, read from
+  `ContextPackage`'s own section estimates rather than recomputed. Cross-session
+  drag of a selection or a feed block is the Level-1 source;
+  `ComposerAttachments` is already the drop target (#476). Injection rides
+  #765's seam — `SiblingDelivery` stays the only code that can submit.
+- **P2-E11-11 · `get_session_context` bus tool — S** (#800)**.** *(depends: 04,
+  09)* The agent-pulled variant of 09, so B's agent can request a handoff
+  mid-task. Thin over `buildContextPackage`; the package's coverage statement
+  survives to the tool output verbatim.
+- **P2-E11-12 · Level 3 fork-session adoption — M** (#801)**.** *(depends: 09)*
+  `claude --resume <id> --fork-session`, plus the cross-folder variant that
+  copies the transcript into the target project's transcript dir first. Relies on
   undocumented storage layout, so it ships behind the experimental flag, off by
-  default, per §5.5.
+  default, per §5.5 — and says in writing which parts of that layout were
+  measured against the PATH binary and at what version.
 
 **E11 exit:** two sessions exchange context over the bus without the user
 touching a terminal; `@session` in the composer resolves to real sibling
