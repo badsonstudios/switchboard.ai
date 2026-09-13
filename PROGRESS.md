@@ -45,6 +45,48 @@
 > unattended workers is a different risk from one reported item, and that
 > asymmetry is written down in the file so it does not later read as drift.
 
+> # 📋 FILED — 2026-09-13: **E11's remaining six** — #796–#801. The epic is
+> fully filed for the first time, and the probe that held them back changed
+> nothing structural.
+>
+> `/pm`, file mode. **E11-06** blackboard `publish`/`read` (#796, S) ·
+> **E11-07** @-session autocomplete (#797, M) · **E11-08** @-reference
+> resolution + injection at send (#798, M) · **E11-10** context chip + drop
+> dialog (#799, M) · **E11-11** `get_session_context` (#800, S) · **E11-12**
+> Level-3 fork adoption (#801, M). All on Phase 2, labelled `phase-2`.
+>
+> **They were held under the just-in-time rule pending #760's findings, on the
+> theory the probe might reshape them. It did not** —
+> `spike/findings/e11-00-bus-feasibility.md` closes with *"nothing needs
+> re-planning"*. So the value of waiting was not in the reshaping; it was in the
+> three measurements that are now folded into the done-whens instead of living in
+> a findings note somebody has to remember to re-read: **a tool's DESCRIPTION is
+> what an agent matches against** (names are visible, schemas are deferred — §6),
+> **a server slow to answer `initialize` costs its session ~32 seconds** (§5), and
+> **a headless `claude -p` pass inherits the containment question** (§8, the probe
+> that read six unrelated projects' transcripts from a "scratch" cwd).
+>
+> **The composer half of E11's exit criteria now has tickets.** Against the
+> epic's own exit — "two sessions exchange context over the bus" ✅ (00–05, all
+> merged), "`@session` resolves to real sibling context" (#797 + #798), "a
+> context chip dropped on another session briefs it at a chosen fidelity"
+> (#799), "every tool that writes into a sibling requires a human keypress"
+> ✅ (#765, kept by shape). Half the epic was closed and half was not yet
+> written down; it is written down now.
+>
+> **What the filings inherit rather than re-derive**, each named in its
+> done-when: #761's query core is the ONE resolver, so #798 does not grow a
+> second answer to the same question; #764's ordering — a bad *reference*
+> refuses, an empty *result* does not, because an empty success is what an agent
+> believes; #765's shape rule, `SiblingDelivery` the only code that can submit,
+> which #799's injection must ride rather than open a second seam; and #766's
+> coverage statement, which #800 must carry through verbatim because a handoff is
+> the worst place to describe a blind spot as a fact.
+>
+> **E13 stays unfiled, deliberately.** Its dependency is sharp and already met —
+> it needs #765 and #766 and none of the rest of E11 — so it can start whenever
+> Dan wants it; the just-in-time rule is the only thing holding it.
+
 > # ✅ MERGED — 2026-09-13: **#753** — the CLI announces the clear, and two
 > rounds of the tests counting one fact twice
 >
