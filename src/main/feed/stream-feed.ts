@@ -295,6 +295,16 @@ export class StreamFeed {
    * the ids agree, the init matches `undefined` and sets it; if they do not,
    * the init still matches `undefined` and sets it. Adopting would be right
    * under only one of them.
+   *
+   * ── THE SECOND CONSUMER ────────────────────────────────────────────────────
+   *
+   * `sessions/session-manager.ts`'s stream pump applies the SAME RULING —
+   * trust the frame, keep the id comparison as a backstop — to a different
+   * question: not "wipe the view" but "tag the watcher's rebind `'clear'`"
+   * (#753). Its bookkeeping differs because the questions do: a repeat frame
+   * must not wipe twice, hence `discarded` here, whereas setting a boolean
+   * latch twice needs no guard. A third consumer should re-use this ruling
+   * rather than re-derive it a third time.
    */
   private onConversationReset(sessionId: string, msg: Record<string, unknown>): void {
     const gone = typeof msg.session_id === 'string' ? msg.session_id : undefined;

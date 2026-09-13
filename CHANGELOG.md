@@ -193,6 +193,19 @@ on the floor, and say so in your PR.
   the first time you used the feature behind them. That is how a useful warning
   becomes background noise you stop reading. All of them are now accounted for,
   and the warning is quiet until there is something real to say.
+- **The app now notices the first time you clear a conversation, not the
+  second.** When you run `/clear`, Claude Code says outright that it has thrown
+  the conversation away — but one part of the app was working it out instead, by
+  watching for the conversation's identifier to change. That can't happen the
+  first time, because there is nothing yet to compare against. On a session
+  reopened from a previous run it meant the log recorded the clear as a mix-up
+  between two sessions in the same folder, and the app kept a timer running for a
+  history file that will not exist until you type again. It now listens for what
+  Claude Code actually says, and falls back to the old guess only if a future
+  Claude Code stops saying it. There is nothing new to click; the one thing you
+  could have seen is a cleared session left alone for a minute and then
+  reopened, which could show the red "can't find this session's history" notice
+  it has no business showing.
 
 ## 0.8.8 — 2026-09-08
 
