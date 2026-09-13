@@ -45,6 +45,84 @@
 > unattended workers is a different risk from one reported item, and that
 > asymmetry is written down in the file so it does not later read as drift.
 
+> # ✅ MERGED — 2026-09-13: **#753** — the CLI announces the clear, and two
+> rounds of the tests counting one fact twice
+>
+> **PR #794, squashed to `bddce21`, all four CI jobs green.** Issue closed. Size S,
+> and it stayed S. ⚠️ **NOT RELEASED** — joins
+> #764/#765/#772/#766/#774/#776/#779 under `0.8.9 — unreleased`; `gh release list`
+> is the authority.
+>
+> **Next up: #790** (nothing handles a `continued-in` line, so the watcher can go
+> on tailing a transcript the conversation has already left — reaches a bug report
+> as "the Feed froze"; size M). Then **#785** (a failed `git status` renders as
+> "Not a git repository" for every failure; size S/M), **#787**, **#788**, **#789**,
+> and the new **#793**.
+>
+> **Shipped:** the stream pump latches on the CLI's `conversation_reset` frame and
+> spends it on the next `system:init` — #748's own fix applied to the second
+> consumer of the same signal. Latched rather than acted on because that frame
+> carries no usable id: `session_id` names the conversation being DISCARDED and
+> `new_conversation_id` is the decoy #748 measured naming neither side of an
+> exchange. The id comparison is KEPT as the backstop, so a build that stops
+> emitting the frame degrades to today's behaviour rather than to no tag at all.
+>
+> **A FALSE 'CLEAR' IS ALL BUT INERT, so the frame did not have to be trusted on a
+> measurement.** The CLI's zod description — still verbatim in the PATH binary
+> 2.1.261, re-read for this item — names plan-mode exit and "fresh-session flows"
+> as emitters too, and #748 measured plan-mode exit emitting nothing. That
+> measurement is now not load-bearing: the cause does nothing unless the id also
+> rotated, at two independent gates (`setNativeSessionId`'s same-id early return,
+> and the watcher's `w.snap.nativeSessionId !== nativeId`). Pinned by a test. The
+> residual cost is one suppressed binding diagnostic — said out loud rather than
+> rounded to zero, which review caught.
+>
+> ## ⚠️ TWO REVIEW ROUNDS, AND THE SECOND FOUND MORE THAN THE FIRST
+> The #766/#774/#776/#779 pattern, a fifth time. **Assume the fix contains the
+> next hole** — and this time the holes were in the *evidence*, not the logic.
+>
+> **THE SUITE COUNTED ONE FACT TWICE.** Two of the new tests were straight
+> duplicates of tests 200 lines above them in the `#404` describe, which assert
+> strictly more. That is why the "backstop dropped" mutant looked like it killed
+> two tests. Same family as #779's blanket guard: **a mutant score the suite has
+> not earned.** Deleted; each duplicate's rationale moved onto the original.
+>
+> **AN EXISTING TEST'S TITLE HAD BEEN MADE FALSE BY THIS FIX** — *"a session's
+> FIRST init is never tagged 'clear', whatever id it carries"* is exactly the
+> invariant the fix deliberately breaks. Amended rather than left standing.
+>
+> **THE TICKET'S NARRATIVE WAS WRONG ABOUT WHERE IT BITES, and so was my first
+> comment.** Both said a resumed card's record has no native id. It has one:
+> while the hook listener lives, `SessionStart` fires at CLI LAUNCH and seeds it
+> about a second after every card spawns — **the project's own measurement, in
+> `watcher.test.ts`, sitting there the whole time.** So the backstop would
+> normally have covered this today; the blind spot becomes real at **E18-15**,
+> when that listener is deleted. #779's lesson one level in: a plausible-sounding
+> comment nobody checked is worse than a missing one, and the file that could
+> have checked it was already in the repo.
+>
+> Also corrected: the test header named the wrong tests as red ("the first four" —
+> the first is a *control* and says so in its own comment, so the file contradicted
+> itself two comments apart), and *"a `/clear` with no follow-up prompt never
+> spends the flag"* contradicted the measurement four lines above it.
+>
+> **#793 FILED — THE BUG THAT SURVIVES THIS SUITE.** The hook listener can land
+> the new id UNTAGGED before the pump reads the init (it tags only
+> `SessionStart source:'clear'`; every other hook calls the same setter with no
+> cause), reaching the identical symptom by another route. **This fix cannot
+> retract it:** the early return stops before the cause is read, and the watcher's
+> branch is gated on the id having already moved, so a late upgrade call is inert.
+> Whether `SessionStart source:'clear'` reliably wins that race is UNMEASURED —
+> and it retires with E18-15 either way, so measure before spending anything.
+>
+> **Mutants**, each written to disk with its anchor verified, against the final
+> 45-test file: pre-#753 pump **4** dead, `cleared = true` **7**, same-id early
+> return removed **2**, consumption moved outside the guard **1**, backstop dropped
+> **1**, latch shared across sessions **1**. Deleting `clearPending = false`
+> **SURVIVES** — documented, not papered over: a stale latch only ever agrees with
+> the backstop, so the consumption is unobservable through this seam and is kept as
+> an invariant. The one test that claimed to pin it was vacuous and was deleted.
+
 > # ✅ MERGED — 2026-09-12: **#779** — five keys was one turn's worth, and the
 > fix silenced the rename it exists to catch
 >
