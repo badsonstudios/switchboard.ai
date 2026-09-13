@@ -6,8 +6,10 @@
 // detector that quarantines a line it does not fully understand has replaced a
 // silent schema break with a loud data-loss bug.
 import { describe, it, expect, vi } from 'vitest';
+import { readFileSync } from 'fs';
+import path from 'path';
 import { DriftDetector, unknownKeys } from './drift';
-import { KNOWN_LINE_TYPES, TRANSCRIPT_SCHEMA } from './schema';
+import { KNOWN_LINE_TYPES, TRANSCRIPT_SCHEMA, TYPE_SCOPED_ROOT_KEYS } from './schema';
 
 /** A realistic assistant line, entirely inside the declared contract. */
 function assistantLine(): Record<string, unknown> {
@@ -229,6 +231,128 @@ describe('DriftDetector (warn-once)', () => {
   });
 });
 
+// #779 — the schema re-measured against 3,259 transcripts / 244,916 lines and
+// against the CLI's own routing tables (PATH binary 2.1.261). Every line below
+// is a shape the corpus actually contained or a payload the binary's reducer
+// names by hand; none is invented. They exist so that removing a key from
+// `schema.ts` reddens a test instead of quietly costing us a real warning slot
+// on Dan's next session.
+describe('lines the 2026-07-31 corpus was too small to contain (#779)', () => {
+  it('accepts a 2.1.261 assistant line — attribution, api block index, thinking breakdown', () => {
+    // Every one of these was reported as drift before #779. `apiBlockIndex` and
+    // `isAbortedMidStream` are 2.1.261-only; `agentId` and `attributionAgent`
+    // span 2.1.226 → 2.1.261, so they were always there and the old corpus
+    // simply never ran a subagent.
+    const line = assistantLine();
+    Object.assign(line, {
+      agentId: 'a01a13363455c1315',
+      attributionAgent: 'deep-research-specialist',
+      attributionMcpServer: 'sbbus',
+      attributionMcpTool: 'sb_probe_echo',
+      apiBlockIndex: 1,
+      isAbortedMidStream: true,
+    });
+    const usage = (line.message as { usage: Record<string, unknown> }).usage;
+    usage.output_tokens_details = { thinking_tokens: 551 };
+    expect(unknownKeys(line)).toEqual([]);
+  });
+
+  it('does not walk INTO the thinking breakdown — it is a counter, not a contract', () => {
+    // Same posture as `cache_creation`: we never read the interior, so its
+    // interior is not ours to declare. Pinning it stops someone "helpfully"
+    // adding a descend for it and turning a future Anthropic sub-key into a
+    // warning about a number we do not use.
+    const line = assistantLine();
+    const usage = (line.message as { usage: Record<string, unknown> }).usage;
+    usage.output_tokens_details = { thinking_tokens: 4, some_future_split: 9 };
+    expect(unknownKeys(line)).toEqual([]);
+  });
+
+  it('accepts a user line the queue touched, and an attachment the CLI expanded', () => {
+    expect(
+      unknownKeys({
+        type: 'user',
+        sessionId: 's-1',
+        turnCompanion: true,
+        queueSkipAttachments: true,
+        interruptedByShutdown: true,
+        message: { role: 'user', content: 'go' },
+      })
+    ).toEqual([]);
+    expect(
+      unknownKeys({
+        type: 'attachment',
+        sessionId: 's-1',
+        rendered: [{ content: '<system-reminder>…' }],
+        renderedInHumanTurn: [{ content: '<system-reminder>…' }],
+      })
+    ).toEqual([]);
+  });
+
+  // The CLI's bookkeeping line types that carry a PAYLOAD, with the fields its
+  // own reducer reads. Four of these (`atis-latch`, `relocated`,
+  // `worktree-state`, `cost-state`) were live drift on every ordinary session;
+  // the rest were waiting for the first time a feature got used.
+  //
+  // The payload-FREE types (`progress`, `observer-ref`, the three
+  // `marble-origami-*`, the two `artifact-*`, `history-suppression`) are
+  // deliberately NOT listed: a row carrying no fields asserts only that the type
+  // is known, which the loop over all of `KNOWN_LINE_TYPES` above already covers.
+  // Including them made the table read as 26 shapes pinned when it was 17.
+  const bookkeeping: ReadonlyArray<readonly [string, Record<string, unknown>]> = [
+    ['atis-latch', { atis: '' }],
+    ['relocated', { relocatedCwd: 'C:/Projects/x/.claude/worktrees/y' }],
+    ['worktree-state', { worktreeSession: { originalCwd: 'C:/p', worktreePath: 'C:/p/.wt' } }],
+    [
+      'cost-state',
+      {
+        totalCostUSD: 4.3635505,
+        modelUsage: { 'claude-opus-5': { inputTokens: 590, outputTokens: 380369 } },
+        hasUnknownModelCost: false,
+        totalAPIDuration: 585311,
+        totalAPIDurationWithoutRetries: 585268,
+        totalToolDuration: 1102,
+        totalDuration: 5766257,
+        totalLinesAdded: 773,
+        totalLinesRemoved: 38,
+        startTime: 1788637029344,
+      },
+    ],
+    ['queue-operation', { operation: 'absorb', reason: 'absorbed_mid_turn' }],
+    ['tag', { tag: 'release' }],
+    ['custom-title', { customTitle: 'The git pane' }],
+    ['agent-name', { agentName: 'debugger' }],
+    ['agent-color', { agentColor: 'cyan' }],
+    ['agent-setting', { agentSetting: 'inherit' }],
+    ['isolation-latch', { side: 'left' }],
+    ['continued-in', { continuedInSessionId: 's-2', timestamp: '2026-09-12T10:00:00.000Z' }],
+    ['ended-by-model', { timestamp: '2026-09-12T10:00:00.000Z' }],
+    ['attribution-snapshot', { messageId: 'm-1' }],
+    ['content-replacement', { agentId: 'a-1', replacements: [] }],
+    ['fork-context-ref', { agentId: 'a-1' }],
+    [
+      'bridge-session',
+      {
+        bridgeSessionId: 'b-1',
+        lastSequenceNum: 7,
+        sessionGroupingId: 'g-1',
+        noHistoryBackfill: true,
+        ownerAccountUuid: 'acc-1',
+        ownerOrganizationUuid: 'org-1',
+        declaredDialogKinds: ['chat'],
+      },
+    ],
+    [
+      'frame-link',
+      { artifactCount: 2, path: 'C:/p/a.html', frameUrl: 'https://x/y', title: 'Chart' },
+    ],
+  ];
+
+  it.each(bookkeeping)('accepts a %s line whole', (type, payload) => {
+    expect(unknownKeys({ type, sessionId: 's-1', ...payload })).toEqual([]);
+  });
+});
+
 describe('the schema itself', () => {
   it('declares no key as both consumed and ignored', () => {
     for (const [path, contract] of Object.entries(TRANSCRIPT_SCHEMA)) {
@@ -254,6 +378,93 @@ describe('the schema itself', () => {
     for (const contract of Object.values(TRANSCRIPT_SCHEMA)) {
       for (const target of Object.values(contract.descend ?? {})) {
         expect(Object.keys(TRANSCRIPT_SCHEMA)).toContain(target);
+      }
+    }
+  });
+
+  it('never declares the same key twice in one list', () => {
+    // #779 added 44 hand-typed names to the root `ignored` array, which is
+    // exactly the size at which a paste lands twice and nobody sees it. A
+    // duplicate is harmless to the walker and invisible to a reader, so it
+    // survives — and then the NEXT person counts the list to answer "is this key
+    // declared?" and gets the wrong answer.
+    for (const [path, contract] of Object.entries(TRANSCRIPT_SCHEMA)) {
+      for (const [name, list] of [
+        ['consumed', contract.consumed],
+        ['ignored', contract.ignored],
+      ] as const) {
+        const dupes = [...new Set(list.filter((k, i) => list.indexOf(k) !== i))];
+        expect(dupes, `${path || '<root>'}.${name} declares ${dupes.join(', ')} twice`).toEqual([]);
+      }
+    }
+    const typeDupes = [
+      ...new Set(KNOWN_LINE_TYPES.filter((t, i) => KNOWN_LINE_TYPES.indexOf(t) !== i)),
+    ];
+    expect(typeDupes, `KNOWN_LINE_TYPES declares ${typeDupes.join(', ')} twice`).toEqual([]);
+  });
+
+  it('the counts its comments claim match the lists they describe', () => {
+    // Not busywork — these numbers had ALREADY rotted when #779 found them: the
+    // root comment read "68 keys, measured" over a list of 69. Nothing noticed,
+    // because the only thing that number does is tell a reader the scale of what
+    // they are about to trust, and a hand-written count beside a hand-written list
+    // is wrong the first time someone appends without counting.
+    //
+    // It reads the comment out of the SOURCE and compares, rather than pinning a
+    // literal here. Review caught why that matters: a literal in the test makes
+    // THREE places to keep in sync, so the next appender bumps the test, forgets
+    // the comment, and gets green with a rotted comment — the exact failure this
+    // is for, one level deeper. Compared against the source there is nothing to
+    // bump and it can only fail when the two genuinely disagree.
+    const src = readFileSync(path.join(__dirname, 'schema.ts'), 'utf8');
+
+    const claimedKeys = Number(/^\s*\/\/ (\d+) keys\./m.exec(src)?.[1]);
+    expect(claimedKeys, 'schema.ts: could not find the "N keys." comment').not.toBeNaN();
+    expect(claimedKeys, 'schema.ts: the root ignored count comment is stale').toBe(
+      TRANSCRIPT_SCHEMA[''].ignored.length
+    );
+
+    const claimedTypes = Number(/enumerate the same (\d+)\b/.exec(src)?.[1]);
+    expect(claimedTypes, 'schema.ts: could not find the line-type count claim').not.toBeNaN();
+    expect(claimedTypes, 'schema.ts: the line-type count claim is stale').toBe(
+      KNOWN_LINE_TYPES.length
+    );
+  });
+
+  it('scopes a type-scoped key to its own type and nowhere else', () => {
+    // The reason TYPE_SCOPED_ROOT_KEYS exists. `path` and `title` belong to a
+    // `frame-link` line; declared flat they would have permanently silenced a
+    // `cwd` → `path` or `aiTitle` → `title` rename, which is the consumed-field
+    // rename this whole file is for. Both directions are asserted, because only
+    // the negative one is load-bearing and only the positive one is why we added
+    // the keys at all.
+    expect(
+      unknownKeys({ type: 'frame-link', sessionId: 's', path: 'C:/p/a.html', title: 'Chart' })
+    ).toEqual([]);
+    const line = assistantLine();
+    line.path = 'C:/p/a.html';
+    line.title = 'Chart';
+    expect(unknownKeys(line)).toEqual(['path', 'title']);
+  });
+
+  it('gives a line with no usable type the SHARED set, not a type-s extras', () => {
+    // A line that will not say what it is does not get a type's allowances.
+    expect(unknownKeys({ sessionId: 's', customTitle: 'x' })).toEqual(['customTitle']);
+    expect(unknownKeys({ type: 42, sessionId: 's', customTitle: 'x' })).toEqual(['customTitle']);
+  });
+
+  it('every type-scoped key is scoped to a DECLARED line type, and is not also flat', () => {
+    // A scope on an undeclared type would be dead (the line reports
+    // `type=<value>` and its keys are checked against the shared set anyway), and
+    // a key in both places is a scope that does nothing — the silent way this
+    // map decays back into the flat list it exists to avoid.
+    for (const [type, keys] of Object.entries(TYPE_SCOPED_ROOT_KEYS)) {
+      expect(KNOWN_LINE_TYPES, `${type} is scoped but not a declared line type`).toContain(type);
+      for (const key of keys) {
+        expect(
+          [...TRANSCRIPT_SCHEMA[''].consumed, ...TRANSCRIPT_SCHEMA[''].ignored],
+          `${key} is scoped to ${type} AND declared flat — the scope does nothing`
+        ).not.toContain(key);
       }
     }
   });

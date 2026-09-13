@@ -17,7 +17,13 @@
 // keys is parsed, absorbed and rendered exactly as before — fail-open is the
 // house rule (PHILOSOPHY), and a drift detector that could break the Feed would
 // be worse than no drift detector.
-import { PathContract, SchemaPath, TRANSCRIPT_SCHEMA, KNOWN_LINE_TYPES } from './schema';
+import {
+  PathContract,
+  SchemaPath,
+  TRANSCRIPT_SCHEMA,
+  KNOWN_LINE_TYPES,
+  TYPE_SCOPED_ROOT_KEYS,
+} from './schema';
 
 /** Never track more than this many distinct drifted keys. A hostile or simply
  *  broken producer must not be able to grow this set without bound — it lives
@@ -55,6 +61,18 @@ const KNOWN: ReadonlyMap<SchemaPath, ReadonlySet<string>> = new Map(
 const KNOWN_TYPES: ReadonlySet<string> = new Set(KNOWN_LINE_TYPES);
 
 /**
+ * The root known-key set for each line type that scopes keys of its own: the
+ * shared root list plus that type's extras, merged once at module load rather
+ * than per line. A type absent from here uses the shared root set unchanged.
+ */
+const ROOT_KNOWN_BY_TYPE: ReadonlyMap<string, ReadonlySet<string>> = new Map(
+  Object.entries(TYPE_SCOPED_ROOT_KEYS).map(([type, extras]) => [
+    type,
+    new Set([...(KNOWN.get('') ?? []), ...extras]),
+  ])
+);
+
+/**
  * Every key in `line` that the declared contract does not know about, as
  * dotted paths (`message.usage.output_tokens_v2`). An unknown line `type`
  * value is reported as the pseudo-key `type=<value>` — §5.26 asks for unknown
@@ -71,7 +89,12 @@ export function unknownKeys(line: unknown): string[] {
   const out: string[] = [];
   const t = line.type;
   if (typeof t === 'string' && !KNOWN_TYPES.has(t)) out.push(`type=${truncate(t)}`);
-  walk(line, '', '', 0, out);
+  // A line type that scopes root keys of its own widens the ROOT set only —
+  // nested paths are shared by every type. An unknown or absent `type` gets the
+  // shared set, which is the strict reading: a line that will not say what it is
+  // does not get a type's extra allowances.
+  const rootKnown = (typeof t === 'string' ? ROOT_KNOWN_BY_TYPE.get(t) : undefined) ?? KNOWN.get('');
+  walk(line, '', '', 0, out, rootKnown);
   return out;
 }
 
@@ -80,11 +103,12 @@ function walk(
   schemaPath: SchemaPath,
   reportPath: string,
   depth: number,
-  out: string[]
+  out: string[],
+  knownOverride?: ReadonlySet<string>
 ): void {
   if (depth > MAX_DEPTH) return;
   const contract = TRANSCRIPT_SCHEMA[schemaPath];
-  const known = KNOWN.get(schemaPath);
+  const known = knownOverride ?? KNOWN.get(schemaPath);
   if (!contract || !known) return;
   for (const key of Object.keys(node)) {
     // One line cannot produce more findings than the whole run can hold.

@@ -45,6 +45,76 @@
 > unattended workers is a different risk from one reported item, and that
 > asymmetry is written down in the file so it does not later read as drift.
 
+> # 🔨 IN PROGRESS — 2026-09-12: **#779** — the transcript schema's declared
+> contract vs what the CLI actually writes
+>
+> **Started 2026-09-12.** Plan posted to the issue. Size S on paper; the
+> measurement made it S/M.
+>
+> **The issue says five keys. The corpus says thirty.** Those five came from
+> `check:transcripts`, which drives ONE `-p` turn — no tools, no subagents, no
+> compaction, no forks. A probe that walks all of `~/.claude/projects`
+> (`spike/probes/779/`, importing the shipped `drift.ts` so it measures OUR
+> detector) reports **30 drifted keys over 3,259 files / 244,916 lines**, against
+> the 250 files / 10,138 lines `schema.ts`'s header was written for.
+>
+> **The CLI publishes its own list of line types.** The PATH binary 2.1.261
+> carries TWO independent routing tables that between them enumerate the same
+> **38 line types**; `KNOWN_LINE_TYPES` declares 13. The same binary's reducer
+> names the payload field it reads for each one. So the header's standing caveat —
+> "THE CORPUS IS A LOWER BOUND, NOT THE FORMAT" — stops being a caveat. #776's
+> lesson again: **don't work out what you can ask.**
+>
+> **`output_tokens_details` is a BREAKDOWN, measured, not reasoned.** 42,071
+> lines carry it, 25,908 with `thinking_tokens > 0`, **zero** where it exceeds
+> `output_tokens`, max ratio 0.9928. Both controls non-zero. Same class as the
+> `cache_creation` and `iterations` warnings already in the file: never sum it on
+> top.
+>
+> **Nothing becomes consumed.** Four follow-ups instead — #787 (the CLI writes
+> its own `totalCostUSD`/`modelUsage` in `cost-state` lines; §5.13 currently
+> *estimates* cost), #788 (`agentId` + the `attribution*` fields would let the
+> Feed group and name subagent blocks where only `isSidechain` is read today),
+> #789 (a thinking-token breakdown), #790 (a review finding — nothing handles a
+> `continued-in` line, so the watcher can go on tailing a transcript the
+> conversation has already left).
+>
+> ## ⚠️ ONE REVIEW ROUND, AND IT FOUND THE DETECTOR'S WHOLE PURPOSE BROKEN BY THE FIX
+> The #766/#774/#776 pattern, a fourth time. **Assume the fix contains the next
+> hole.**
+>
+> The first cut put all 44 new keys in the FLAT root list, which is shared by all
+> 38 line types — including `path` and `title`, which belong to a `frame-link`
+> line. But **`cwd` is consumed** (the primary binding evidence) and **`aiTitle`
+> is read** by `readAiTitle`. So declaring those two names flat made a `cwd` →
+> `path` or `aiTitle` → `title` rename **permanently silent** — and a
+> consumed-field rename is the single loudest thing this detector exists for.
+> Measured, it bought nothing: `path`/`title` occur **zero** times in 246,237
+> lines while `cwd` occurs 207,502 and `aiTitle` 3,229.
+>
+> Fixed with `TYPE_SCOPED_ROOT_KEYS` and a rule worth keeping: **a key we have
+> never actually seen is declared only for the line type the CLI says writes it.**
+> All 19 unmeasured keys moved; the 25 measured ones stay flat.
+>
+> **AND THE MUTANT EVIDENCE WAS VACUOUS — review caught that too.** The suite had
+> a guard asserting the root list's LENGTH, so deleting any single key failed it
+> on arithmetic alone (113 ≠ 112) whether or not a test exercised that key. "18
+> mutants, all die" was guaranteed by counting. This is #776's *"widening a bound
+> swallowed the mutant"* one level up: **a blanket guard swallows every mutant.**
+> Re-run with the guard neutralised: **35 mutants, all die, 29 of them cleanly**,
+> and the four that also trip the guard were re-run in isolation.
+>
+> Third thing review fixed: pinning the count as a LITERAL in the test made three
+> places to keep in sync, so the next appender bumps the test, forgets the
+> comment, and gets green with a rotted comment — the same failure one level
+> deeper. The test now reads the claimed number out of `schema.ts` and compares.
+>
+> **Two comments were also simply wrong**, both measured and corrected: the
+> attachment comment had `attachment` and `rendered` backwards (a Feed built on it
+> would have rendered 27% of attachment lines and dropped the rest), and the
+> CHANGELOG entry said 25 record kinds were "arriving unrecognised" when 21 of
+> them have never appeared on this machine.
+
 > # ✅ MERGED — 2026-09-12: **#776** — a repository's own config, and three
 > rounds of it running our commands
 >
