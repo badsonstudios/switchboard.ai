@@ -45,6 +45,103 @@
 > unattended workers is a different risk from one reported item, and that
 > asymmetry is written down in the file so it does not later read as drift.
 
+> # ✅ MERGED — 2026-09-14: **#788** — the Feed names which subagent is talking,
+> and the interleaving turned out to be ours
+>
+> **PR #810, squashed to `fc99ddb`, all four CI jobs green.** Issue closed. Size M as
+> filed. ⚠️ **NOT RELEASED** — joins
+> #764/#765/#772/#766/#774/#776/#779/#753/#790/#785/#787 under
+> `0.8.9 — unreleased`; `gh release list` is the authority.
+>
+> **Next up: #789** (surface the thinking-token breakdown in usage; #787 already
+> carries `thinkingTokens` per model through `cliCost`, so the data is in hand;
+> size S). Then **#807**, **#793**, or E11's composer half (**#797 → #798** is
+> the natural pair).
+>
+> **Shipped:** `FeedBlock.agentId` / `agentName`, stamped by the SOURCE and not
+> by derivation — a new `BlockOrigin` type on the seam `sidechain` already sat
+> on, so `FeedBuffer.replace` cannot drop half of it across a delta→message
+> supersede. A pure `main/feed/agent-attribution.ts` that reads the CLI's own
+> `agentId`/`attributionAgent` and falls back to the subagent FILENAME. A pure
+> `renderer/src/lib/feed-groups.ts` that turns the block list into captioned
+> runs. A `.agent-divider` caption in the Feed, on the contrast-drift list beside
+> `.turn-divider`. `[subagent]` became `[subagent: <name>]` for the bus readers.
+>
+> **THE TICKET'S PREMISE WAS WRONG, AND THE REPO ALREADY KNEW.** #788 was filed
+> on the reading that the CLI writes two concurrent subagents into one
+> transcript. Measured over 3,214 transcripts / 246,541 lines:
+> `isSidechain: true` appears **0 times in a parent transcript** (all 136,807
+> that carry the field carry `false`), all 68,997 live in
+> `subagents/agent-*.jsonl`, and **each of those 333 files holds exactly one
+> `agentId`** — so two ids never interleave inside a file. DESIGN.md's own
+> resolved open question #5 recorded this in Spike 01: *"no interleaving problem
+> (separate files)"*.
+>
+> **So WE interleave them.** `watcher.ts`'s
+> `sidechain = full !== w.boundFile || e.isSidechain === true` — the left half
+> fires, the right half is dead code at 2.1.226+. We tail every subagent file
+> into ONE `FeedBuffer` in arrival order. The symptom was real and the location
+> was right; only the mechanism was ours. Not hypothetical either: of 61 parent
+> sessions with subagents, **34 ran two or more and 10 ran two that genuinely
+> OVERLAP in time**, the longest by 757 seconds.
+>
+> **TWO MEASUREMENTS RESHAPED THE DESIGN.** One session ran **three overlapping
+> `deep-research-specialist`s**, so a name cannot separate agents and `agentId`
+> is the grouping key with the name only ever a caption (a short id fragment is
+> appended, but ONLY on a collision). And `attributionAgent` is on `assistant`
+> lines only — 35,287 of 35,287 — while `agentId` is also on `user` and
+> `attachment`; a subagent transcript OPENS with an unnamed `user` line. So the
+> name is resolved **per agent across the visible list**, not per run. The case
+> that nearly shipped wrong is a SECOND run of an agent, which frequently
+> contains no named line at all and would have rendered a bare `Subagent`
+> directly beneath the same agent's named caption.
+>
+> ## THE REVIEW ROUND FOUND NO BLOCKER — TEN ITEMS RUNNING, AND THIS IS THE FIRST
+> Five should-fixes, all real. Two were **pre-existing defects this change made
+> fixable rather than caused**: a **thinking duration measured between two
+> different agents** and shown as fact (`prev` is the previous block in the
+> MERGED buffer, so A thinks and B's clock stops the timer), and **"NEW PROMPT"
+> ruling off the task prompt a session handed its own subagent**, as if Dan had
+> typed it.
+>
+> The other three: a caption's name and disambiguating code were functions of the
+> **render window**, so a run's label changed as blocks were evicted or the
+> verbosity chip moved — and a run already read as `Subagent · digger` would
+> sprout a fragment when its twin scrolled into view and drop it again when the
+> twin aged out; `attributionAgent` reached **another session's model
+> unsanitized**, where a newline forges a block boundary in text that model reads
+> as structure; and an **un-attributable** sidechain lost its old (wrong) divider
+> and gained nothing, leaving it with *less* separation than the bug being fixed.
+>
+> ⚠️ **AND THE SCHEMA COMMENT OVERCLAIMED, WHICH IS THIS ITEM'S OWN LESSON
+> POINTED BACK AT IT.** It said the type-scoping was "MEASURED, not inferred from
+> the CLI's reducer" and offered that as the strength. The reviewer read the PATH
+> binary: `agentId` is written on the **ENVELOPE** — spread before the typed
+> entry — so it rides on whatever is appended while an agent id is in scope, and
+> the three types measured are the three that happened to occur. The comment now
+> says what it actually knows: this list is every type we have SEEN, the CLI's
+> set is larger, and drift is fail-open so the cost of the gap is a false alarm.
+> `agentName` has the same envelope problem one map entry above — pre-existing,
+> wider blast radius in team sessions, worth a ticket.
+>
+> ## MUTATION: THREE ROUNDS, AND ROUND 2 IS WHY THERE IS A ROUND 2
+> Round 1: **23/23**. Round 2, aimed at the review fixes: **6 of 16 SURVIVED
+> first time** — the fixes are written after the tests, which is exactly where
+> coverage is thinnest. Two survivors were the same defect in my own test:
+> `\n\r\t` never reaches the sanitizer's emptiness check because `trim()` rejects
+> it first, so only a control character `trim` does NOT remove (U+0001) tests it.
+> Round 3: **2/2**, after an anchor went MISSED — the runner checks its own
+> anchors precisely because "matched 0 times" reads exactly like a kill.
+>
+> One round-2 survivor was an **EQUIVALENT mutant**: an `inRun` latch that was
+> provably identical to the `!current` test beside it. Deleted rather than
+> tested, and the comment claiming its order was load-bearing corrected — a
+> second name for one fact is a thing to remove, not to pin.
+>
+> Probe: `spike/probes/788/`. Findings:
+> `spike/findings/e11-788-agent-attribution.md`, which carries a
+> **what-would-falsify-this** table per #787's lesson.
+
 > # ✅ MERGED — 2026-09-14: **#787** — the CLI's own cost accounting, the ticket
 > premise the measurement broke, and a 2.4× error nobody had ever checked for
 >
