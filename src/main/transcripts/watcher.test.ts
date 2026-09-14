@@ -194,6 +194,137 @@ describe('live usage totals + tolerant reader (the done-when)', () => {
   });
 });
 
+describe('the CLI’s own cost accounting (#787)', () => {
+  const costState = (over: Record<string, unknown> = {}) =>
+    entry({
+      type: 'cost-state',
+      message: undefined,
+      totalCostUSD: 12.5,
+      totalAPIDuration: 1,
+      totalAPIDurationWithoutRetries: 1,
+      totalToolDuration: 1,
+      totalDuration: 1,
+      totalLinesAdded: 0,
+      totalLinesRemoved: 0,
+      startTime: 1_789_180_000_000,
+      hasUnknownModelCost: false,
+      modelUsage: {},
+      ...over,
+    });
+
+  it('reads a cost-state line onto the snapshot', async () => {
+    watcher.watch('s1', { cwd });
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    writeLines(file, [entry(), costState()]);
+    await waitFor(() => watcher.snapshot('s1')?.cliCost !== undefined);
+    expect(watcher.snapshot('s1')!.cliCost!.totalCostUSD).toBe(12.5);
+  });
+
+  it('LAST ONE WINS — it is never summed', async () => {
+    // The CLI's own routing table declares `cost-state` "last-wins", and two of
+    // them in a single transcript is a real observed shape: both #790 probe
+    // transcripts carry a pair written 108 ms apart as the session tore down.
+    // A `+=` here would report double the session's cost on exactly those
+    // files, which is the failure this test exists to make impossible.
+    watcher.watch('s1', { cwd });
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    writeLines(file, [entry(), costState({ totalCostUSD: 12.5 })]);
+    await waitFor(() => watcher.snapshot('s1')?.cliCost !== undefined);
+    writeLines(file, [costState({ totalCostUSD: 13.25 })]);
+    await waitFor(() => watcher.snapshot('s1')?.cliCost?.totalCostUSD === 13.25);
+    expect(watcher.snapshot('s1')!.cliCost!.totalCostUSD).toBe(13.25); // not 25.75
+  });
+
+  it('a cost-state line that breaks the CLI’s contract is malformed, and the previous figure stands', async () => {
+    watcher.watch('s1', { cwd });
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    writeLines(file, [entry(), costState({ totalCostUSD: 12.5 })]);
+    await waitFor(() => watcher.snapshot('s1')?.cliCost !== undefined);
+    const before = watcher.snapshot('s1')!.malformed;
+    writeLines(file, [costState({ totalCostUSD: -3 })]);
+    await waitFor(() => watcher.snapshot('s1')!.malformed > before);
+    // Still the good one. Falling back to the estimate would be defensible;
+    // showing `-$3.00` would not.
+    expect(watcher.snapshot('s1')!.cliCost!.totalCostUSD).toBe(12.5);
+  });
+
+  it('⚠️ SPEND AFTER THE EPITAPH RETIRES IT — a resumed conversation does not keep the old total', async () => {
+    // THE BUG THIS SUITE COULD NOT SEE UNTIL IT WAS WRITTEN DOWN. Every other
+    // test here puts the cost-state line LAST, which is what the corpus showed
+    // and is NOT an invariant: a resumed conversation appends to the same
+    // transcript and we replay it from byte 0. Without the retirement, a
+    // resumed session would show the previous run's total, labelled as Claude
+    // Code's EXACT figure, frozen, while real spend climbed.
+    watcher.watch('s1', { cwd });
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    writeLines(file, [entry(), costState({ totalCostUSD: 12.5 })]);
+    await waitFor(() => watcher.snapshot('s1')?.cliCost !== undefined);
+
+    // ...the conversation is reopened and replies again.
+    writeLines(file, [entry({ message: { usage: { output_tokens: 40 } } })]);
+    await waitFor(() => watcher.snapshot('s1')!.usage.output === 40);
+    expect(watcher.snapshot('s1')!.cliCost).toBeUndefined();
+  });
+
+  it('it is SPEND that retires it, not merely a later line — the teardown latches are inert', async () => {
+    // The observed teardown flush writes two cost-state lines 108ms apart with
+    // `mode` and `permission-mode` latches BETWEEN them. A cruder "any later
+    // line wins" rule would throw the figure away on exactly the shape it
+    // exists for — and a mutation round proved that asserting only the final
+    // value cannot tell the two rules apart, because the last line is a
+    // cost-state either way. So the latch is written on its OWN drain and the
+    // figure is asserted while it is the newest thing in the file.
+    watcher.watch('s1', { cwd });
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    writeLines(file, [
+      entry({ message: { usage: { output_tokens: 40 } } }),
+      costState({ totalCostUSD: 12.5 }),
+    ]);
+    await waitFor(() => watcher.snapshot('s1')?.cliCost !== undefined);
+
+    writeLines(file, [
+      entry({ type: 'mode', mode: 'normal', message: undefined }),
+      entry({ type: 'permission-mode', permissionMode: 'auto', message: undefined }),
+    ]);
+    await waitFor(() => watcher.snapshot('s1')!.lines === 4);
+    expect(watcher.snapshot('s1')!.cliCost!.totalCostUSD).toBe(12.5);
+
+    writeLines(file, [costState({ totalCostUSD: 12.75 })]);
+    await waitFor(() => watcher.snapshot('s1')?.cliCost?.totalCostUSD === 12.75);
+  });
+
+  it('a SUBAGENT’s spend does not retire the parent’s figure', async () => {
+    // Scoping the retirement to the bound file is load-bearing, not tidiness:
+    // within one file the read is sequential so "after" is exact, but tails
+    // drain per file with NO ordering between them. A subagent's lines arriving
+    // after the main file's teardown line would otherwise clear a figure that
+    // is genuinely final — a race that would show up as an intermittently
+    // vanishing cost rather than as anything legible.
+    watcher.watch('s1', { cwd });
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    writeLines(file, [entry(), costState({ totalCostUSD: 12.5 })]);
+    await waitFor(() => watcher.snapshot('s1')?.cliCost !== undefined);
+
+    const subDir = path.join(projectDir(), 'native-1', 'subagents');
+    fs.mkdirSync(subDir, { recursive: true });
+    writeLines(path.join(subDir, 'agent-zzz.jsonl'), [
+      entry({ message: { usage: { output_tokens: 99 } } }),
+    ]);
+    await waitFor(() => watcher.snapshot('s1')!.usage.output === 99);
+    expect(watcher.snapshot('s1')!.cliCost!.totalCostUSD).toBe(12.5);
+  });
+
+  it('is undefined until the CLI writes one — which is the normal state of a running session', async () => {
+    // Measured: 22 of 3,210 transcripts carry a cost-state line at all, because
+    // the CLI writes it on its EXIT path. Absence is not a gap to paper over.
+    watcher.watch('s1', { cwd });
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    writeLines(file, [entry({ message: { usage: { input_tokens: 5 } } })]);
+    await waitFor(() => watcher.snapshot('s1')!.usage.input === 5);
+    expect(watcher.snapshot('s1')!.cliCost).toBeUndefined();
+  });
+});
+
 describe('plan-as-progress extraction (OQ #13 / E7-04)', () => {
   it('captures TodoWrite step counts from the transcript', async () => {
     watcher.watch('s1', { cwd });

@@ -651,11 +651,13 @@
     "input": "↑ {n}",
     "output": "↓ {n}",
     "cache": "⛁ {n}",
-    "cost": "~{cost}",
+    "cost": "{cost}",
     "inputTitle": "Input tokens",
     "outputTitle": "Output tokens",
     "cacheTitle": "Cache-read tokens",
-    "costTitle": "Estimated cost (public per-model rates; you are billed by your subscription)"
+    "costTitleEstimate": "Our estimate, from public per-model rates — a floor, since cache writes are billed at two rates the transcript doesn't separate. Claude Code writes its own exact figure when the session ends. You are billed by your subscription, not per token.",
+    "costTitleCli": "Claude Code's own figure for this session, read from its transcript after the session ended. You are billed by your subscription, not per token.",
+    "costTitleCliFloor": "Claude Code's own figure for this session — at least this much. It used a model it could not price, so its own total is short. You are billed by your subscription, not per token."
   },
   "commands": {
     "jumpTo": "Go to session {n}",

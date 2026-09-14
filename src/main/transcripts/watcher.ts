@@ -17,6 +17,8 @@ import { FeedBlock, deriveIntents, touchedPath } from '../feed/blocks';
 import { FeedBuffer } from '../feed/buffer';
 import { conversationExists, slugForCwd } from './paths';
 import { DriftDetector } from './drift';
+import { parseCostState } from './cost-state';
+import type { CliCost } from '../../shared/transcripts';
 import { DiscoverySchedule, DiscoveryScheduleOptions, rootKey } from './discovery-scheduler';
 
 // Re-exported: these moved to `paths.ts` so the provider adapters can use them
@@ -40,6 +42,19 @@ export interface TranscriptSnapshot {
   usage: UsageTotals;
   /** last-seen model id from the transcript, for cost estimation */
   model?: string;
+  /**
+   * The CLI's OWN cost accounting, if it has written one (#787).
+   *
+   * Undefined for nearly every session, and that is the normal case rather
+   * than a gap: the CLI writes this line on its EXIT path (plus `/clear` and
+   * fork/resume), so a running session has none and 22 of 3,210 measured
+   * transcripts carry one at all. When it IS here it supersedes the estimate
+   * — see `costLine` in `renderer/src/lib/usage.ts`, which is the one place
+   * that decides between the two and labels which it chose.
+   *
+   * LAST-WINS: assigned, never accumulated.
+   */
+  cliCost?: CliCost;
   /**
    * The conversation title the CLI wrote into its own transcript (§5.11,
    * P2-E7-06) — what fills a blank task label. Undefined until a line carries
@@ -219,6 +234,11 @@ interface WatchedSession {
    *  discovery exactly once instead of every tick (P2-E15-11). */
   widenedMarked: boolean;
   cwdDeadlineMarked: boolean;
+  /** One warning per session for a `cost-state` line that breaks the CLI's own
+   *  contract (#787). Per session rather than per line: the teardown flush
+   *  writes a pair, so a retyped field would otherwise log twice for one fault,
+   *  and a replayed transcript would log once per resume for ever. */
+  warnedCostState?: boolean;
   /** A TURN HAS RUN in this session (P2-E15-10 evidence #1). Latched, because
    *  a turn having happened never becomes untrue.
    *
@@ -2043,6 +2063,7 @@ export class TranscriptWatcher {
     // is about a conversation we are still following.
     if (this.absorbContinuation(w, full, e)) return;
     this.absorbTitle(w, full, e);
+    this.absorbCostState(w, full, e);
     this.deriveBlocks(w, full, e);
     const message = e.message as
       | { usage?: Record<string, number>; content?: unknown; model?: string }
@@ -2054,6 +2075,28 @@ export class TranscriptWatcher {
       w.snap.usage.output += usage.output_tokens ?? 0;
       w.snap.usage.cacheRead += usage.cache_read_input_tokens ?? 0;
       w.snap.usage.cacheCreate += usage.cache_creation_input_tokens ?? 0;
+      // ⚠️ SPEND AFTER THE EPITAPH RETIRES IT (#787, found in review).
+      //
+      // `cost-state` is the CLI's accounting AS IT EXITED, and the corpus says
+      // it is the last line of the file — but that is a fact about files nobody
+      // reopened, NOT an invariant. **A resumed conversation appends to the
+      // same transcript**, and we replay that transcript from byte 0 (see
+      // `isOwnResumedFile` and `newTail`), so without this line a resumed
+      // session would re-read the previous run's total, pin it to the card as
+      // Claude Code's EXACT figure, and leave it frozen there while real spend
+      // climbed — the estimate that would have tracked it suppressed the whole
+      // time. Precisely the reading the manual promises does not happen.
+      //
+      // BOUND FILE ONLY, and that is load-bearing rather than tidiness: within
+      // one file the read is sequential so "after" is exact, but tails drain
+      // per file with no ordering between them, and a subagent's lines arriving
+      // after the main file's teardown line would clear a figure that is
+      // genuinely final.
+      //
+      // Last-wins is untouched: the teardown pair is two `cost-state` lines
+      // 108 ms apart with only latches between them — no usage line falls
+      // between them to clear the first.
+      if (full === w.boundFile) w.snap.cliCost = undefined;
     }
     const content = Array.isArray(message?.content) ? message.content : [];
     for (const c of content as Array<{ type?: string; name?: string; input?: Record<string, unknown> }>) {
@@ -2233,6 +2276,45 @@ export class TranscriptWatcher {
     const title = w.readTitle(e);
     if (typeof title !== 'string' || !title || title === w.snap.title) return;
     w.snap.title = title;
+  }
+
+  /**
+   * The CLI's own cost accounting for this session (#787).
+   *
+   * BOUND FILE ONLY, for the same reason `absorbTitle` is: a subagent file
+   * under our session dir is a different conversation's bookkeeping, and this
+   * number is the SESSION's.
+   *
+   * ASSIGNED, NOT ACCUMULATED — the CLI's routing table declares `cost-state`
+   * `last-wins`, and two of them in one transcript is a real, observed shape
+   * (both #790 probe transcripts have a pair written 108 ms apart at teardown).
+   * `+=` here would report double the session's cost on exactly those files.
+   *
+   * A line that does not hold to the CLI's own contract counts as malformed
+   * and leaves the previous value standing. The alternative — taking it
+   * anyway — puts a `NaN` where a dollar figure goes.
+   */
+  private absorbCostState(w: WatchedSession, full: string, e: Record<string, unknown>): void {
+    if (e.type !== 'cost-state' || full !== w.boundFile) return;
+    const cost = parseCostState(e);
+    if (cost === null) {
+      w.snap.malformed++;
+      // AND IT SAYS SO, ONCE PER SESSION (review). `malformed` is surfaced
+      // nowhere in the app, and absence of a figure is the NORMAL state in
+      // 3,188 of 3,210 transcripts — so without this line, the feature dying
+      // outright is indistinguishable from it working as designed. The drift
+      // detector cannot cover it either: it catches keys the CLI ADDS, and the
+      // failure here is a key it stops writing or retypes.
+      if (!w.warnedCostState) {
+        w.warnedCostState = true;
+        this.opts.log.warn('cost-state line rejected — falling back to the estimate', {
+          sessionId: w.sessionId,
+          hint: 'the CLI wrote a cost-state line that breaks its own contract — see src/main/transcripts/cost-state.ts',
+        });
+      }
+      return;
+    }
+    w.snap.cliCost = cost;
   }
 
   /** Read meta sidecars for any agent files under our session dir (S-05). */

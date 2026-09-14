@@ -219,6 +219,32 @@ export const TYPE_SCOPED_ROOT_KEYS: Readonly<Record<string, readonly string[]>> 
   // already in the flat root list; its reader-side zod schema requires only
   // `type` and this key, which is why only this one is read.
   'continued-in': ['continuedInSessionId'],
+  // CONSUMED (#787) — `watcher.ts`'s `absorbCostState` reads these, and
+  // `cost-state.ts` holds them to the CLI's own contract.
+  //
+  // They sat in the root `ignored` list from #779 until #787 built on them, and
+  // they moved HERE rather than to the root `consumed` list for exactly the
+  // reason spelled out above `continued-in`: detection treats the two lists
+  // identically, so the only thing the root list changes is that the names
+  // become legal on all 38 line types — and silencing a rename matters MORE for
+  // something we now render as money.
+  //
+  // MEASURED, not assumed (#787): all ten appear on `cost-state` lines and
+  // nowhere else — 24 occurrences across 243,649 lines of a 3,210-transcript
+  // corpus, zero on any other type. `sessionId` is also on the line and is
+  // already in the flat root list.
+  'cost-state': [
+    'totalCostUSD',
+    'modelUsage',
+    'hasUnknownModelCost',
+    'totalAPIDuration',
+    'totalAPIDurationWithoutRetries',
+    'totalToolDuration',
+    'totalDuration',
+    'totalLinesAdded',
+    'totalLinesRemoved',
+    'startTime',
+  ],
   'bridge-session': [
     'bridgeSessionId',
     'lastSequenceNum',
@@ -243,10 +269,12 @@ export const TRANSCRIPT_SCHEMA: Readonly<Record<SchemaPath, PathContract>> = {
       'isMeta', // CLI-internal lines are not conversation
       'message',
     ],
-    // 94 keys. Grouped only for readability — order is not meaning. 69 were
+    // 84 keys. Grouped only for readability — order is not meaning. 69 were
     // measured 2026-07-31; the other 25 were added 2026-09-12 (#779) and were
-    // each MEASURED over 244,916 lines. Keys named by the CLI's reducer but never
-    // seen are in `TYPE_SCOPED_ROOT_KEYS`, not here.
+    // each MEASURED over 244,916 lines; ten of those 25 left again in #787, for
+    // `TYPE_SCOPED_ROOT_KEYS['cost-state']`, when we started reading them. Keys
+    // named by the CLI's reducer but never seen are in `TYPE_SCOPED_ROOT_KEYS`,
+    // not here.
     //
     // THIS COUNT IS CHECKED AGAINST THIS LIST BY A TEST, because it had already
     // rotted: the comment here read "68 keys, measured" while the list held 69.
@@ -381,21 +409,9 @@ export const TRANSCRIPT_SCHEMA: Readonly<Record<SchemaPath, PathContract>> = {
       // cwd relocation and worktree entry — `relocated` / `worktree-state` lines
       'relocatedCwd',
       'worktreeSession',
-      // `cost-state` lines: the CLI's OWN accounting for the session, written
-      // into the transcript. §5.13 currently ESTIMATES cost from token counts,
-      // and `totalCostUSD` plus the per-model breakdown in `modelUsage` is the
-      // CLI's own number for the same thing — a follow-up, and the most valuable
-      // thing #779 turned up.
-      'totalCostUSD',
-      'modelUsage',
-      'hasUnknownModelCost',
-      'totalAPIDuration',
-      'totalAPIDurationWithoutRetries',
-      'totalToolDuration',
-      'totalDuration',
-      'totalLinesAdded',
-      'totalLinesRemoved',
-      'startTime',
+      // NOTE: the `cost-state` payload keys moved OUT of this list in #787,
+      // when they stopped being ignored and became consumed — they are in
+      // `TYPE_SCOPED_ROOT_KEYS['cost-state']` now. See the note there.
       // NOTE: the payload keys for line types the corpus has never contained are
       // NOT here — they are in `TYPE_SCOPED_ROOT_KEYS`, declared against the one
       // type the CLI says writes them. See the header.

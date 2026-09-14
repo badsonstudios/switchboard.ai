@@ -45,6 +45,72 @@
 > unattended workers is a different risk from one reported item, and that
 > asymmetry is written down in the file so it does not later read as drift.
 
+> # 🔨 IN PROGRESS — 2026-09-14: **#787** — the CLI's own cost accounting, and
+> the ticket premise the measurement broke
+>
+> Branch `feature/787-cli-cost-state`. Size M as filed.
+>
+> **MEASURED FIRST, as the ticket asked — and the answer changes the item.**
+> `cost-state` is written by the CLI's `exitReStampProviders` (source: the PATH
+> binary, `Qne(Xun)` → `appendOwedEntryAtExit`) — at **process exit**, on
+> `/clear`, and on fork/resume. **Never mid-conversation.** Measured over 3,210
+> transcripts: 22 carry one, and in 22/22 it is the **LAST line of the file**.
+> So it cannot REPLACE the live estimate the way the ticket assumes; it can only
+> **supersede** it once the session ends.
+>
+> **AND THE ESTIMATE IT WOULD SUPERSEDE IS BADLY WRONG.** Against the CLI's own
+> ledger: **2.0–2.8× TOO HIGH on Opus** (our table prices Opus at $15/$75; it is
+> $5/$25) and **2.6–3.0× TOO LOW on Fable 5.1** (priced as Sonnet at $3/$15; it
+> is $10/$50). Haiku reconciles to **ratio 1.0000** once `webSearchRequests` is
+> billed at $0.01 each — which is the control that says the method is sound and
+> only the numbers were stale.
+>
+> Three more measurements: `sum(modelUsage[*].costUSD) === totalCostUSD` exactly,
+> 22/22 (and `costUSD` per model is a key the ticket's list MISSED);
+> `hasUnknownModelCost` is **optional** in the CLI's own zod schema, not the
+> plain field the ticket describes; and all ten `cost-state` payload keys are
+> **type-exclusive** — 24 occurrences across 243,649 lines, none on any other
+> line type — so they move to `TYPE_SCOPED_ROOT_KEYS` on #790's precedent rather
+> than staying in the root `ignored` list.
+>
+> Probe: `spike/probes/787/`. Findings: `spike/findings/e11-787-cost-state.md`.
+> Follow-up filed for the token under-count: **#807**.
+>
+> ## ⚠️ THE REVIEW ROUND FOUND A BLOCKER INSIDE THE FIX — NINE ITEMS RUNNING
+> **The measurement above became an INVARIANT in the code, and it is not one.**
+> A **resumed** conversation appends to the same transcript, and we replay that
+> file from byte 0 — so the previous run's `cost-state` was re-read and pinned to
+> a LIVE session as Claude Code's *exact* figure, frozen, while real spend
+> climbed and the estimate that would have tracked it stayed suppressed. Every
+> test in the suite wrote the line LAST, which is exactly why none of them could
+> see it. Retired now by any usage-bearing line **on the bound file** — spend,
+> not merely a later line (the teardown pair has latches between its two
+> `cost-state` lines), and bound-file-only because tails drain per file with no
+> ordering between them.
+>
+> Five more from the same round: an exactly-known `$0.00` rendering as
+> `<$0.01` (and `≥<$0.01` — "at least less than a cent"); the money field having
+> **two entrances and only one guarded**, since the persisted copy comes back
+> from `workspace.json` and is never re-parsed; the status bar re-deriving the
+> honesty rules `usage.ts` claims to own; a rejected `cost-state` line being
+> perfectly silent in a feature whose *absence is normal*; and a `__proto__`
+> model id silently losing a row while `totalCostUSD` still claimed the total.
+>
+> **AND THE CAPTURE IS NARROWER THAN THE DOCS FIRST SAID.** `tearDownLive`
+> unwatches the transcript BEFORE tearing the process down, so ending a session
+> from the UI never captures a figure at all. `/exit` in the Terminal tab is the
+> path that works — the manual and the test list both say so now, or the
+> hand-test would have been run against the one path that cannot pass.
+>
+> ## MUTATION: 23/23 KILLED ACROSS TWO ROUNDS
+> Round 1: 14/14 (after repairing one no-op mutant and one MISSED anchor).
+> Round 2, on the review fixes: **4 of 9 SURVIVED first time** — including two
+> of the three properties of the blocker fix itself. Asserting only the final
+> value cannot tell "retire on spend" from "retire on any later line", because
+> the last line is a `cost-state` either way; the latch had to be asserted on its
+> own drain. `sumCostUsd` was extracted from `App.tsx` for the same reason — a
+> rule inlined in a component was a rule no mutant could reach.
+
 > # ✅ MERGED — 2026-09-13: **#785** — a third state on `GitStatus`, and the
 > sentence the fix itself would have started saying
 >

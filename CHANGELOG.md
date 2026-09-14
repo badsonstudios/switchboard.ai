@@ -119,6 +119,32 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **The cost shown on a session was wrong — badly, and in both directions.**
+  Opus sessions were reported at roughly **two and a half times** what they
+  actually cost, and Fable sessions at about **a third** of it. The prices
+  switchboard was working from had gone stale and Fable was missing from the
+  list entirely, so it was being charged at Sonnet rates. Both are corrected,
+  and the correction is checked against Claude Code's own accounting so it
+  cannot quietly rot again.
+
+  Token counts were never affected — only the dollar figure derived from them.
+
+- **When a session ends, the cost shown becomes Claude Code's own exact figure
+  rather than switchboard's estimate.** Claude Code writes its real accounting
+  out when it closes, and switchboard now reads it. You can tell the two apart
+  at a glance: an estimate is prefixed `~`, the exact figure isn't, and a `≥`
+  means even Claude Code's total is short because it used a model it couldn't
+  price. Hovering explains which you're looking at.
+
+  The exact number genuinely cannot be had before a session ends — Claude Code
+  doesn't write one until it exits — so a long-running session keeps showing the
+  estimate, which is now a deliberate under-estimate rather than a wrong one.
+  It also has to be Claude Code's own decision to stop: `/exit` in the Terminal
+  tab gets you the exact figure; restarting or closing a session from
+  switchboard leaves the estimate standing. Reopening a conversation and working
+  in it further puts the estimate back, because the exact figure it had was the
+  total as of last time.
+
 - **The Changes tab no longer calls every problem "Not a git repository".** If
   anything at all went wrong reading a project's git — git not installed, a
   folder that had been deleted or was on a disconnected drive, a repository git

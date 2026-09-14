@@ -6,6 +6,7 @@ import type { SiblingAck, SiblingMessage } from '../shared/sibling-message';
 import type { PtyAttachment, PtyChunk, PtySnapshot } from '../shared/ipc/pty';
 import type {
   BindingSnapshot,
+  CliCost,
   ResetCause,
   TranscriptSearchRequest,
   TranscriptSearchResult,
@@ -277,6 +278,8 @@ const api = {
           cardId: string;
           priorUsage?: { input: number; output: number; cacheRead: number; cacheCreate: number };
           priorModel?: string;
+          /** the CLI's own cost figure for this card's last conversation (#787) */
+          priorCliCost?: CliCost;
           autonomy?: AutonomyMode;
           taskLabel?: string;
         })
