@@ -175,6 +175,46 @@ export interface TranscriptSearchGroup {
   aligned: boolean;
 }
 
+/**
+ * One model's slice of the CLI's own cost accounting (#787).
+ *
+ * Shared rather than main-only because the RENDERER is what has to choose
+ * between this number and our estimate, and label which it chose. The parser
+ * that produces it, and the measurements behind all of this, are in
+ * `main/transcripts/cost-state.ts`.
+ */
+export interface CliModelCost {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+  webSearchRequests: number;
+  costUSD: number;
+  /** Present only when the CLI recorded it; #789 surfaces this, not #787. */
+  thinkingTokens?: number;
+}
+
+/** The CLI's own accounting for one session, as of the line we last read. */
+export interface CliCost {
+  totalCostUSD: number;
+  /**
+   * THREE STATES, not two: the CLI's own schema declares this `.optional()`,
+   * so `undefined` means "this CLI did not say" — a different claim from
+   * `false` ("I priced every model I used"). Preserved rather than defaulted.
+   */
+  hasUnknownModelCost?: boolean;
+  /** Per-model breakdown. `sum(costUSD) === totalCostUSD` in 22/22 measured. */
+  modelUsage: Record<string, CliModelCost>;
+  totalAPIDuration: number;
+  totalAPIDurationWithoutRetries: number;
+  totalToolDuration: number;
+  totalDuration: number;
+  totalLinesAdded: number;
+  totalLinesRemoved: number;
+  /** epoch ms */
+  startTime: number;
+}
+
 export interface TranscriptSearchResult {
   hits: TranscriptHit[];
   /** matches found in total; `hits` is capped by `limit` */

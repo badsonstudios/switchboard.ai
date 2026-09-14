@@ -29,6 +29,7 @@ import {
   MAX_HISTORY_REPAIR_NOTICES,
 } from '../../shared/history-repair';
 import { WindowState, mergeState, isOnAnyDisplay } from '../window-state';
+import type { CliCost } from '../../shared/transcripts';
 import { UpdatePrefs } from '../../shared/update';
 import { ServiceHealthPrefs } from '../../shared/service-health';
 import { DEFAULT_PUSH_PREFS, PushPrefs } from '../../shared/push';
@@ -76,6 +77,16 @@ export interface PersistedSession {
   /** last-known token totals + model, so usage survives a resume/restart */
   usage?: { input: number; output: number; cacheRead: number; cacheCreate: number };
   model?: string;
+  /**
+   * The CLI's own cost figure for this card's last conversation (#787).
+   *
+   * Persisted for a sharper reason than `usage` is: this number is written
+   * ONCE, on the CLI's exit path, and the watcher that read it stops watching
+   * immediately afterwards. If it were not stored, the one moment it exists
+   * would also be the moment it is lost — the card would fall back to the
+   * estimate the instant the app restarted.
+   */
+  cliCost?: CliCost;
   /** autonomy mode this card runs at (stable across resumes) */
   autonomy?: AutonomyMode;
   /**

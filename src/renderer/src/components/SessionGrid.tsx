@@ -36,7 +36,7 @@ import { UsageStrip } from './UsageStrip';
 import { GitContext } from './GitContext';
 import type { GitStatusDto } from '../lib/git-status';
 import { Usage, ZERO_USAGE } from '../lib/usage';
-import type { BindingDiagnostics, BindingState } from '../../../shared/transcripts';
+import type { BindingDiagnostics, BindingState, CliCost } from '../../../shared/transcripts';
 import {
   Box,
   boxOnAnyDisplay,
@@ -369,7 +369,11 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // Why this card has no session: it ended, or it never started (#355). Named
   // `ended` and not `exited` because the second case did not exit.
   const [ended, setEnded] = React.useState<CardEnded | null>(null);
-  const [usage, setUsage] = React.useState<{ usage: Usage; model?: string } | null>(null);
+  const [usage, setUsage] = React.useState<{
+    usage: Usage;
+    model?: string;
+    cliCost?: CliCost;
+  } | null>(null);
   const [binding, setBinding] = React.useState<{
     binding: BindingState;
     bindingDiag: BindingDiagnostics | null;
@@ -847,7 +851,11 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         });
         // show the usage strip from the start (zeros until the first prompt),
         // so it's visibly present rather than appearing only after activity
-        setUsage({ usage: record.priorUsage ?? ZERO_USAGE, model: record.priorModel });
+        setUsage({
+          usage: record.priorUsage ?? ZERO_USAGE,
+          model: record.priorModel,
+          cliCost: record.priorCliCost,
+        });
         if (record.taskLabel) setTaskLabel(record.taskLabel);
         setCardAutonomy(record.autonomy ?? 'ask');
         // The card's stored choice, so the menu shows what will happen NEXT
@@ -916,12 +924,16 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         sessionId: string;
         usage: Usage;
         model?: string;
+        cliCost?: CliCost;
         plan?: { total: number; completed: number; inProgress: number };
         binding?: BindingState;
         bindingDiag?: BindingDiagnostics;
       };
       if (s.sessionId !== live.id) return;
-      setUsage({ usage: s.usage, model: s.model });
+      // `cliCost` is taken straight from the snapshot, undefined included: a
+      // `/clear` blanks it along with the token totals, and the card must stop
+      // showing the discarded conversation's figure at the same moment (#787).
+      setUsage({ usage: s.usage, model: s.model, cliCost: s.cliCost });
       setPlan(s.plan && s.plan.total > 0 ? s.plan : null);
       if (s.binding) setBinding({ binding: s.binding, bindingDiag: s.bindingDiag ?? null });
     });
@@ -1998,7 +2010,14 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               </span>
             )}
             <GitContext status={git} />
-            {usage && <UsageStrip usage={usage.usage} model={usage.model} inline />}
+            {usage && (
+              <UsageStrip
+                usage={usage.usage}
+                model={usage.model}
+                cliCost={usage.cliCost}
+                inline
+              />
+            )}
           </div>
           {/* active view */}
           <div style={{ flex: 1, minBlockSize: 0, position: 'relative' }}>

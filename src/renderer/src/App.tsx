@@ -17,7 +17,7 @@ import type { SwitchboardApi } from '../../preload';
 import type { HistoryRepairNotice } from '../../shared/history-repair';
 import { EventDto } from './components/EventsPanel';
 import { EventsDrawer } from './components/EventsDrawer';
-import { Usage, addUsage, estimateCostUsd, ZERO_USAGE } from './lib/usage';
+import { Usage, CliCost, addUsage, sumCostUsd, ZERO_USAGE } from './lib/usage';
 import { loadUiState, uiGet, uiSet } from './lib/ui-state';
 import { holdSiblingMessage } from './lib/sibling-hold';
 import { DEFAULT_AUTONOMY, nextAutonomy } from './lib/autonomy';
@@ -547,9 +547,9 @@ export function App(): React.JSX.Element {
   // measurement behind it are in `lib/trust-reach.ts`.
   const trustReaches = trustSettingReaches(sessions);
   const [autoLabels, setAutoLabels] = useState(true);
-  const [usageByLive, setUsageByLive] = useState<Map<string, { usage: Usage; model?: string }>>(
-    new Map()
-  );
+  const [usageByLive, setUsageByLive] = useState<
+    Map<string, { usage: Usage; model?: string; cliCost?: CliCost }>
+  >(new Map());
   const grid = React.useRef<GridController | null>(null);
 
   // §5.30's "opened from wherever a path already appears" (P2-E16-02). The
@@ -567,8 +567,10 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     const offUsage = bridge.sessions?.onUsage?.((snap) => {
-      const s = snap as { sessionId: string; usage: Usage; model?: string };
-      setUsageByLive((prev) => new Map(prev).set(s.sessionId, { usage: s.usage, model: s.model }));
+      const s = snap as { sessionId: string; usage: Usage; model?: string; cliCost?: CliCost };
+      setUsageByLive((prev) =>
+        new Map(prev).set(s.sessionId, { usage: s.usage, model: s.model, cliCost: s.cliCost })
+      );
     });
     // prune a dead live id so the workspace total doesn't double-count after a
     // resume (the resumed session re-reads the full conversation) or a close
@@ -592,10 +594,13 @@ export function App(): React.JSX.Element {
     (acc, v) => addUsage(acc, v.usage),
     ZERO_USAGE
   );
-  const workspaceCost = [...usageByLive.values()].reduce(
-    (acc, v) => acc + estimateCostUsd(v.usage, v.model),
-    0
-  );
+  // `sumCostUsd`, not a local reduce over `estimateCostUsd` (#787, found in
+  // review). This was the one caller re-deriving the choice `usage.ts` claims
+  // to own: it summed estimates and dropped `cliCost` on the floor, so a
+  // session whose card showed Claude Code's exact figure still contributed our
+  // guess to the total. The rule lives in `usage.ts` now, where a test reaches
+  // it — inlined here, a mutation round showed nothing could.
+  const workspaceCost = sumCostUsd(usageByLive.values());
 
   // The speaker for main's cues (P2-E14-05a). This window and no other: a
   // dockview popout ships no script of ours, so `main/events/audio-sink.ts`

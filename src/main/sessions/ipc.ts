@@ -623,7 +623,26 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     const prior = deps.persist.list().find((s) => s.id === cardId);
     if (!prior) return;
     // keep the last real model if this snapshot hasn't seen a model line yet
-    const next: PersistedSession = { ...prior, usage: snap.usage, model: snap.model ?? prior.model };
+    //
+    // `cliCost` is taken STRAIGHT FROM THE SNAPSHOT — deliberately NOT
+    // `snap.cliCost ?? prior.cliCost`, which is the obvious-looking form and is
+    // wrong (#787). The CLI writes a `cost-state` line on `/clear` too, for the
+    // conversation being thrown away. Falling back to `prior` would pin that
+    // dead conversation's dollar figure to the card while a brand-new one ran
+    // underneath it — beside token totals that had correctly reset to zero.
+    //
+    // Plain assignment is self-maintaining instead, and deliberately tracks the
+    // snapshot in BOTH directions: `cliCost` lives on the snapshot, so a later
+    // drain of the same conversation still carries it, a `/clear` reset clears
+    // it exactly when the conversation it described ended — and a RESUME that
+    // spends again clears it too (`watcher.ts` retires the figure on the next
+    // usage-bearing line). A `?? prior.cliCost` would defeat all three.
+    const next: PersistedSession = {
+      ...prior,
+      usage: snap.usage,
+      model: snap.model ?? prior.model,
+      cliCost: snap.cliCost,
+    };
     // ...and the CLI's own conversation title fills a blank label (P2-E7-06).
     // ONE upsert, not two: a second `{...prior, taskLabel}` would be built from
     // the same `prior` and would put the usage totals back to what they were
@@ -1121,6 +1140,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           cardId: opts.cardId,
           priorUsage: prior?.usage,
           priorModel: prior?.model,
+          priorCliCost: prior?.cliCost,
           autonomy: prior?.autonomy ?? running.autonomy,
           taskLabel: prior && visibleTaskLabel(prior, deps.autoLabels()),
         };
@@ -1461,6 +1481,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         cardId: opts.cardId,
         priorUsage: prior?.usage,
         priorModel: prior?.model,
+        priorCliCost: prior?.cliCost,
         autonomy,
         taskLabel: prior && visibleTaskLabel(prior, deps.autoLabels()),
       };

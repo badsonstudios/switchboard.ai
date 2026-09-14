@@ -447,6 +447,34 @@ describe('the schema itself', () => {
     expect(unknownKeys(line)).toEqual(['path', 'title']);
   });
 
+  it('a cost-state payload key on ANY other line type is drift (#787)', () => {
+    // The tightening #787 paid 243,649 measured lines for, pinned. These ten
+    // keys sat in the flat `ignored` list from #779, where they were legal on
+    // all 38 line types; now that `watcher.ts` renders `totalCostUSD` as money,
+    // a rename of it is the loudest thing this detector exists to catch, and
+    // the flat list would have silenced it for ever.
+    expect(
+      unknownKeys({
+        type: 'cost-state',
+        sessionId: 's',
+        totalCostUSD: 1,
+        modelUsage: {},
+        hasUnknownModelCost: false,
+        totalAPIDuration: 0,
+        totalAPIDurationWithoutRetries: 0,
+        totalToolDuration: 0,
+        totalDuration: 0,
+        totalLinesAdded: 0,
+        totalLinesRemoved: 0,
+        startTime: 0,
+      })
+    ).toEqual([]);
+    const line = assistantLine();
+    line.totalCostUSD = 1;
+    line.modelUsage = {};
+    expect(unknownKeys(line)).toEqual(['totalCostUSD', 'modelUsage']);
+  });
+
   it('gives a line with no usable type the SHARED set, not a type-s extras', () => {
     // A line that will not say what it is does not get a type's allowances.
     expect(unknownKeys({ sessionId: 's', customTitle: 'x' })).toEqual(['customTitle']);

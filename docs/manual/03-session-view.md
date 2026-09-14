@@ -327,6 +327,47 @@ including the tool output **quiet** is hiding and the thinking **normal**
 hides, and jumping to a match unfolds it. See
 [Finding something in a session](16-find.md).
 
+## Tokens and cost
+
+Along the right-hand end of the card header, beside the branch name, a session
+shows what it has used: tokens in (`↑`), tokens out (`↓`), tokens read back
+from the cache (`⛁`), and a dollar figure.
+
+**The token counts are exact. The dollar figure has two versions, and the card
+tells you which one you're looking at.**
+
+- **While a session is running** you see something like `~$3.20`. The tilde
+  means switchboard worked it out itself, from published per-model prices. It
+  is an **under**-estimate on purpose: some cached content is billed at two
+  different rates and the session's own records don't say which applies, so
+  switchboard always assumes the cheaper one. Hover for the full explanation.
+- **Once a session has ended**, the tilde disappears and the figure becomes
+  Claude Code's own — `$3.61`. Claude Code writes its exact accounting out when
+  it closes, and switchboard reads it and replaces its own guess. This is the
+  number to trust.
+- **Occasionally you'll see a `≥`**, as in `≥$3.61`. That means Claude Code
+  used a model it couldn't price, so even its own total is short. The real
+  figure is at least that much.
+
+Two things worth knowing:
+
+- **The exact figure only arrives when Claude Code closes itself.** It doesn't
+  write its accounting out until it exits, so there's no way to get the real
+  number mid-session — a session you leave open keeps showing the estimate
+  indefinitely, and that's expected rather than a fault. It also has to be
+  Claude Code's own decision to stop: typing `/exit` in the **Terminal** tab
+  gets you the exact figure, but restarting or closing the session from
+  switchboard shuts the transcript down first and leaves the estimate standing.
+- **You are billed by your subscription, not per token.** The dollar figure is
+  there to give the token counts a sense of scale and to let you compare
+  sessions against each other — it is not a bill.
+
+Clearing a session's conversation resets all of this to zero, including the
+cost, because it's a new conversation. And reopening a conversation you'd
+finished puts the `~` estimate back as soon as it does any more work — the exact
+figure it was showing was the total as of last time, and it stops being the
+whole story the moment the session spends again.
+
 ## The Terminal tab
 
 The real Claude Code interface, available as the last tab on a session running
