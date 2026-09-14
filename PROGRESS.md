@@ -45,6 +45,95 @@
 > unattended workers is a different risk from one reported item, and that
 > asymmetry is written down in the file so it does not later read as drift.
 
+> # ✅ MERGED — 2026-09-13: **#785** — a third state on `GitStatus`, and the
+> sentence the fix itself would have started saying
+>
+> **PR #805, squashed to `45a3606`, all four CI jobs green.** Issue closed.
+> Size S/M as filed, and it grew: one review round and one CI round each found a
+> real defect inside the fix. ⚠️ **NOT RELEASED** — joins
+> #764/#765/#772/#766/#774/#776/#779/#753/#790 under `0.8.9 — unreleased`;
+> `gh release list` is the authority.
+>
+> **Next up: #787** (the CLI writes its own `totalCostUSD`/`modelUsage` in
+> `cost-state` lines while §5.13 estimates; size M). Then **#788**, **#789**,
+> **#793**, or E11's composer half (**#797 → #798** is the natural pair).
+>
+> **Shipped:** `GitStatus.unreadable?: string`, present ONLY when switchboard
+> could not find out — never on a successful read and never on an honest "not a
+> repository". One i18n string, `diff.unreadable`, and a pure `gitPaneState` in
+> `renderer/src/lib/git-status.ts` that the pane renders from and that collapsed
+> three drifting copies of the DTO into one. `diff()` got the parallel fix on
+> the path a MODEL reads, where `{ isRepo: false }` rendered as *"it is not
+> working inside a git repository"* for a machine with no git.
+>
+> ## TWO MEASUREMENTS SHAPED IT, AND ONE OF THEM WAS DISPROVED BY CI
+> **A genuine non-repo and a `.git` file pointing nowhere BOTH exit 128 and BOTH
+> say "not a git repository".** Only the benign one carries the parenthesis, so
+> the match is `^not a git repository \(or any`. The naive phrase calls a damaged
+> repository healthy — a mutant proves it.
+>
+> **`ENOENT` DOES NOT MEAN "git is not installed".** A `cwd` that does not exist
+> produces the byte-identical spawn error, `syscall: 'spawn git'` and all. The
+> filesystem is asked instead — **asynchronously**, because the headline case is
+> a disconnected drive and a synchronous stat there stalls Electron main for
+> seconds, which is the fail-open constraint broken by the fail-open path.
+>
+> Reading stderr means pinning the locale: `LC_ALL=C` / `LANGUAGE=` on every
+> invocation, or a translated `fatal:` reports every ordinary folder as
+> unreadable.
+>
+> ## ⚠️ THE REVIEW ROUND FOUND A BLOCKER INSIDE THE FIX — SEVEN ITEMS RUNNING
+> #776's capability probe memoised `r.ok && …`, and `r.ok` is false for a probe
+> that merely **TIMED OUT**. #785 is what made the sentence specific enough to
+> matter: the cached `false` sits on the app-wide service and would have told the
+> user, **for every project until restart**, that their git was too old and to
+> upgrade it — on git 2.51. Reachable by any repo with a repo-authored driver
+> (`git lfs install --local` writes one) on a checkout slow enough to spend the
+> shared 15 s budget. **Only a definite answer is remembered now**; an unfinished
+> probe answers `null`, forgets itself, and gets its own hedged reason.
+>
+> Five more from the same round: a synchronous `existsSync` on the
+> disconnected-drive path, which also answered "is anything here" rather than "is
+> this a directory"; `saysNotARepo` searching the WHOLE of stderr when part of
+> that text is echoed from a `.git` file a session can write; `diff()`'s last
+> failure still throwing a reasonless shrug while `status()` quoted git; the
+> manual promising a `safe.directory` command `gitSaid` strips; and **a doc
+> comment asserting the OPPOSITE of what the change does** — "every consumer
+> reading `isRepo` keeps exactly the meaning it had", false by design, and
+> exactly what would have hidden the next missed reader.
+>
+> ## ⚠️ AND THEN CI FOUND A FAIL-OPEN HOLE THE DEV MACHINE COULD NOT SHOW
+> **`execFile` CAN THROW INSTEAD OF CALLING BACK.** A `cwd` that is a FILE raises
+> `spawn ENOTDIR` **synchronously on Linux**, where Windows delivers `ENOENT` to
+> the callback — so `status()` REJECTED instead of returning a `GitStatus` and
+> the pane's `.then` never ran. Pre-existing; #785's new folder cases reached it.
+> Now resolved as `no-exec`, and tested through the `GitCommand` seam (a NUL in
+> the file name is refused by Node's own validation, synchronously, everywhere)
+> rather than by relying on a platform to produce the throw.
+>
+> **AND A MEASUREMENT WAS WRONG TWICE OVER.** Two tests leaned on git echoing the
+> hostile gitdir path into its message — true here (2.51.0.windows.2), and
+> **`(null)` on BOTH runners, ubuntu AND windows**. So it is a git BUILD
+> difference, not the platform difference the obvious fix would have assumed. The
+> assertion moved to the PARSER with a message the stand-in controls, which is
+> the right level anyway. **Second time this item a fixture asserted against
+> something never read** — caught by mutation the first time, by CI the second,
+> and both times the witness assertion is what made it visible.
+>
+> ## A LIE THE FIX WOULD HAVE INVENTED
+> `GitContext` returns `null` for an unreadable answer. Without that clause,
+> `isRepo: true` with no branch and no files — the shape of a clean checkout —
+> would have drawn `⎇ ?` and a silent zero for a repository nobody could read.
+> The pane is where the question was asked; silence on a header is not an answer.
+>
+> **Mutants: 28 written, 28 dead, 0 survivors**, each to disk with its anchor
+> verified. ⚠️ **Four anchors came back MISSED on round 2** after the review fixes
+> moved the lines under them — the entire reason the harness checks. Two round-2
+> survivors were real gaps: a stall reported honestly but still *remembered*, and
+> a `status` that cannot spawn losing its diagnosis. One mutant is an e2e and
+> earns it: nothing else renders `t('diff.unreadable')`, so `t('diff.notRepo')`
+> in its place left **7,758 unit tests green** while the fix silently reverted.
+
 > # ✅ MERGED — 2026-09-13: **#790** — follow a `continued-in`, and three ways
 > the fix froze the thing it unfreezes
 >
