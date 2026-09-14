@@ -27,6 +27,19 @@ export interface FeedBlockDto {
   attachments?: { images: number; documents: number };
   durationMs?: number;
   sidechain: boolean;
+  /**
+   * Which subagent produced this block (#788). Absent on the main conversation
+   * and on transcripts older than CLI 2.1.226. The GROUPING key — see
+   * `feed-groups.ts`; two concurrent subagents can share a NAME, so the name
+   * cannot do this job.
+   */
+  agentId?: string;
+  /**
+   * The subagent's name, on the blocks that carry one — sparser than `agentId`,
+   * because the CLI writes it on `assistant` lines only. Read a run's name off
+   * the run, never off its first block.
+   */
+  agentName?: string;
   ts?: string;
   /** tokens are still arriving into this block (P2-E18-10, stream sessions) */
   streaming?: boolean;

@@ -678,6 +678,50 @@ describe('block kinds a sibling actually cares about', () => {
     expect(r.value.text).toContain('Claude: main speaking');
     expect(r.value.text).not.toContain('[subagent] Claude: main speaking');
   });
+
+  it('NAMES the subagent when the line names it (#788)', () => {
+    // A reading model handed two agents' work under one anonymous `[subagent]`
+    // has the Feed's own bug: it reads as one confused agent. The tag carries
+    // the CLI's `attributionAgent` when there is one.
+    const q = make([
+      JSON.stringify({
+        type: 'assistant',
+        isSidechain: true,
+        agentId: 'a1',
+        attributionAgent: 'code-reviewer',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'reviewed it' }] },
+      }),
+      JSON.stringify({
+        type: 'assistant',
+        isSidechain: true,
+        agentId: 'b2',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'no name here' }] },
+      }),
+    ]);
+    const r = q.sessionOutput('TradingApp');
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.value.text).toContain('[subagent: code-reviewer] Claude: reviewed it');
+    // ...and falls back to the bare tag rather than inventing one
+    expect(r.value.text).toContain('[subagent] Claude: no name here');
+  });
+
+  it('does not name a MAIN-conversation line that claims an agent (#788)', () => {
+    // The gate, seen from the readers' side: a name on a non-sidechain line is
+    // not read at all, so the session's own voice can never be attributed to a
+    // subagent it did not come from.
+    const q = make([
+      JSON.stringify({
+        type: 'assistant',
+        agentId: 'a1',
+        attributionAgent: 'code-reviewer',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'main voice' }] },
+      }),
+    ]);
+    const r = q.sessionOutput('TradingApp');
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.value.text).toContain('Claude: main voice');
+    expect(r.value.text).not.toContain('subagent');
+  });
 });
 
 describe('tool results attach to the RIGHT call', () => {

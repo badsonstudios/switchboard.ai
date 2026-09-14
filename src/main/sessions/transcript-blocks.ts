@@ -21,6 +21,7 @@ import {
   FeedBlock,
   deriveIntents,
 } from '../feed/blocks';
+import { agentOriginFor } from '../feed/agent-attribution';
 
 /**
  * Keep the NEWEST `limit` characters, without splitting an astral character.
@@ -55,7 +56,16 @@ export function renderBlock(block: FeedBlock): string {
   // agent unmarked is a misattribution it cannot detect. Labelled rather than
   // dropped: a sibling's subagent work is often the most interesting thing in
   // the window, and silently removing it would leave an unexplained gap.
-  const tag = block.sidechain ? '[subagent] ' : '';
+  // NAMED when the line named it (#788). `[subagent]` said a subagent spoke;
+  // it could not say WHICH, and a reading model handed two agents' work under
+  // one anonymous tag has the same problem the Feed had — it reads as one
+  // confused agent. The bare tag remains the fallback for a transcript older
+  // than CLI 2.1.226, which carries no name to use.
+  const tag = block.sidechain
+    ? block.agentName
+      ? `[subagent: ${block.agentName}] `
+      : '[subagent] '
+    : '';
   if (block.kind === 'tool' && block.tool) {
     const head = `${tag}[${block.tool.name}] ${block.tool.summary}`;
     return block.tool.out ? `${head}\n  -> ${block.tool.out}` : head;
@@ -97,9 +107,26 @@ export function blocksFrom(
   let seq = 0;
   for (const entry of entries) {
     // The watcher's other half of this (`full !== boundFile`) is N/A — we read
-    // exactly one file — but a sidechain line lands IN that file and must not
-    // be presented as the main conversation. `renderBlock` marks it.
+    // exactly one file.
+    //
+    // ⚠️ THIS COMMENT USED TO SAY "a sidechain line lands IN that file", AND
+    // THAT IS MEASURABLY FALSE (#788). Over 3,214 transcripts on CLI
+    // 2.1.226–2.1.261, `isSidechain: true` appears ZERO times in a parent
+    // transcript; every one of the 68,997 is in a `subagents/agent-*.jsonl` of
+    // its own. The readers here point at the main file, so in practice this
+    // branch does not fire on any current CLI — it is kept because an older
+    // transcript on disk still could, and because a fold that silently stopped
+    // marking a subagent's turn would be a misattribution its reader cannot
+    // detect. The identity fields ride along for the same reason: if a reader
+    // is ever pointed at a subagent file, it names the agent instead of
+    // producing a second, quieter answer to the same question.
     const sidechain = entry.isSidechain === true;
+    // `agentOriginFor`, not a second hand-written copy of its gate (review
+    // nit): the rule that a name never travels without the id that groups it
+    // is one rule, and two implementations of it would differ silently. No
+    // path argument — this fold reads a single file it was handed and has no
+    // subagent filename to fall back on.
+    const agent = agentOriginFor(entry, sidechain);
     let intents: BlockIntent[];
     try {
       // Belt-and-braces, not a known path: `deriveIntents` is tolerant by
@@ -117,7 +144,13 @@ export function blocksFrom(
         awaiting.delete(intent.toolUseId);
         continue;
       }
-      const block: FeedBlock = { ...intent.block, seq: seq++, sidechain };
+      // `agent` spreads absent keys rather than `undefined`-valued ones by
+      // construction, which is the same shape `stamp` maintains on the live
+      // path. `agentId` is carried even though only `agentName` is rendered
+      // here: a block with a name and no id would break the invariant the
+      // watcher's blocks hold, and these two folds producing differently
+      // shaped blocks is exactly what this module exists to prevent.
+      const block: FeedBlock = { ...intent.block, seq: seq++, sidechain, ...agent };
       if (intent.toolUseId) awaiting.set(intent.toolUseId, block);
       blocks.push(block);
     }

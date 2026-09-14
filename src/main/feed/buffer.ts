@@ -12,7 +12,7 @@
 // `seq` — the renderer's `upsertBlock` is keyed on it (see `lib/feed.ts`), so
 // re-emitting a block with a new field is how OUT sections, thinking durations
 // and streamed text all reach the view.
-import { BLOCK_CAP, FeedBlock } from './blocks';
+import { BLOCK_CAP, BlockOrigin, DerivedBlock, FeedBlock, originOf, stamp } from './blocks';
 
 /**
  * The longest gap between two blocks that can still be read as "how long it
@@ -75,19 +75,34 @@ export class FeedBuffer {
   }
 
   /** Add a block, assign it a seq, and emit it. */
-  push(b: Omit<FeedBlock, 'seq' | 'sidechain'>, sidechain: boolean): FeedBlock {
+  push(b: DerivedBlock, origin: BlockOrigin): FeedBlock {
     // a thinking block's duration becomes known when the NEXT block lands —
     // unless the two are separated by a seam rather than by thought
     // (MAX_THINKING_GAP_MS)
+    //
+    // ⚠️ **AND UNLESS THE NEXT BLOCK IS SOMEBODY ELSE'S** (#788 review). `prev`
+    // is the previous block in the MERGED buffer, and the premise of this whole
+    // item is that the buffer interleaves N subagent files with no ordering
+    // relation between them. So agent A thinks at `T`, the next poll drains
+    // agent B's file and pushes a line stamped `T+42s`, and A's block renders
+    // "Thought for 42s" — a number about A produced entirely by B's clock. The
+    // same thing happens at every subagent→main-conversation boundary.
+    //
+    // This predates #788; `BlockOrigin` is what makes it FIXABLE, because until
+    // now the buffer had no way to ask whether two adjacent blocks came from
+    // the same place. Both sides are `undefined` on the main conversation, so
+    // the ordinary path is untouched. #395's rule in this file is "no claim
+    // beats a wrong one", and a duration measured across two agents is a wrong
+    // one presented as a fact.
     const prev = this.items[this.items.length - 1];
-    if (prev?.kind === 'thinking' && !prev.durationMs && prev.ts && b.ts) {
+    if (prev?.agentId === origin.agentId && prev?.kind === 'thinking' && !prev.durationMs && prev.ts && b.ts) {
       const ms = Date.parse(b.ts) - Date.parse(prev.ts);
       if (Number.isFinite(ms) && ms > 0 && ms <= MAX_THINKING_GAP_MS) {
         prev.durationMs = ms;
         this.update(prev);
       }
     }
-    const block: FeedBlock = { ...b, seq: ++this.seq, sidechain };
+    const block = stamp(b, ++this.seq, origin);
     this.items.push(block);
     if (this.items.length > this.cap) this.items.splice(0, this.items.length - this.cap);
     this.fire(block);
@@ -113,8 +128,15 @@ export class FeedBuffer {
    * field-by-field persisted-session copy that silently dropped `transport`
    * (#153): what you forget to overwrite survives, invisibly.
    */
-  replace(block: FeedBlock, next: Omit<FeedBlock, 'seq' | 'sidechain'>): FeedBlock {
-    const merged: FeedBlock = { ...next, seq: block.seq, sidechain: block.sidechain };
+  replace(block: FeedBlock, next: DerivedBlock): FeedBlock {
+    // The ORIGIN survives the swap, and it is spread as one group rather than
+    // field-by-field (#788). The message is authoritative about everything the
+    // line says; it is authoritative about nothing the line CANNOT say — which
+    // file this came out of, and therefore which subagent. Listing the fields
+    // individually here is how the next one gets forgotten: `DerivedBlock`
+    // makes `next` structurally incapable of carrying them, so there is exactly
+    // one place they can come from and it is the block being replaced.
+    const merged = stamp(next, block.seq, originOf(block));
     const i = this.items.indexOf(block);
     if (i >= 0) this.items[i] = merged;
     // any tool_result still waiting on the old object would attach to a block

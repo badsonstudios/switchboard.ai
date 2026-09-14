@@ -798,6 +798,9 @@ describe('no model runs on the default path', () => {
     'transcript-blocks.ts',
     'queries.ts',
     '../feed/blocks.ts',
+    // #788: `transcript-blocks.ts` reads it to name a subagent's turn. Pure
+    // string work over one line plus `node:path`.
+    '../feed/agent-attribution.ts',
     '../feed/history.ts',
     // Reached transitively through `history.ts`, and therefore executed —
     // module-level code runs on import whether or not the function that wanted
@@ -813,7 +816,7 @@ describe('no model runs on the default path', () => {
    * `queries.ts` calls it — I/O is their job. "Invokes no model" applies to
    * all five.
    */
-  const PURE = ['context-package.ts', 'transcript-blocks.ts'] as const;
+  const PURE = ['context-package.ts', 'transcript-blocks.ts', '../feed/agent-attribution.ts'] as const;
 
   const read = (name: string) => {
     const source = fs.readFileSync(path.join(__dirname, name), 'utf8');

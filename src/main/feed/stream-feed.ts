@@ -50,7 +50,7 @@
 // ---------------------------------------------------------------------------
 import { Logger } from '../log/logger';
 import { toolCategory } from '../../shared/tool-taxonomy';
-import { FeedBlock, TEXT_CAP, deriveIntents } from './blocks';
+import { DerivedBlock, FeedBlock, TEXT_CAP, deriveIntents } from './blocks';
 import { FeedBuffer } from './buffer';
 
 /**
@@ -169,7 +169,11 @@ export class StreamFeed {
             s.buffer.attachResult(intent.toolUseId, intent.out);
             continue;
           }
-          const block = s.buffer.push(intent.block, e.isSidechain === true);
+          // No `agentId` on this path, and not because it was overlooked: a
+          // replay reads the MAIN transcript only, and `agentId` was measured
+          // zero times there (#788). A sidechain here can only be a
+          // pre-2.1.226 line, which carries no id to group by either.
+          const block = s.buffer.push(intent.block, { sidechain: e.isSidechain === true });
           if (intent.toolUseId) s.buffer.remember(intent.toolUseId, block);
           n++;
         }
@@ -465,7 +469,9 @@ export class StreamFeed {
             ts: streamed.ts ?? intent.block.ts,
             streaming: false,
           })
-        : s.buffer.push({ ...intent.block, streaming: false }, false);
+        : // `sidechain: false` — `onMessage` returns early on
+          // `parent_tool_use_id`, so nothing that reaches here is one (E18-13)
+          s.buffer.push({ ...intent.block, streaming: false }, { sidechain: false });
       if (intent.toolUseId) s.buffer.remember(intent.toolUseId, block);
     }
     // Tokens are done for whatever this message named; anything still open is
@@ -587,7 +593,7 @@ export class StreamFeed {
     const streaming = this.streamingAt(s, index);
     if (streaming) return streaming;
     const type = typeof cb?.type === 'string' ? cb.type : 'text';
-    let seed: Omit<FeedBlock, 'seq' | 'sidechain'>;
+    let seed: DerivedBlock;
     if (type === 'text' || type === 'thinking') {
       seed = { kind: type === 'thinking' ? 'thinking' : 'assistant', text: '' };
     } else if (type === 'tool_use' && typeof cb?.name === 'string') {
@@ -611,7 +617,13 @@ export class StreamFeed {
     } else {
       return undefined;
     }
-    const block = s.buffer.push({ ...seed, ts: new Date().toISOString(), streaming: true }, false);
+    // `sidechain: false` unconditionally — live sidechain traffic never reaches
+    // here at all (`parent_tool_use_id != null` returns early in both
+    // `onStreamEvent` and `onMessage`); rendering it is E18-13's.
+    const block = s.buffer.push(
+      { ...seed, ts: new Date().toISOString(), streaming: true },
+      { sidechain: false }
+    );
     s.assembling.set(index, block);
     return block;
   }

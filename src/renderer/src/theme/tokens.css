@@ -245,6 +245,12 @@
   --radius-chip: 5px;
   --grid-gap: 11px;
   --grid-pad: 12px;
+  /* How far a subagent block is inset from the main conversation. A token
+   * because #788 gave those blocks a CAPTION, and the caption has to sit on the
+   * same spine as the rows it names — two hand-written 14s would be one edit
+   * away from not doing that. Read by `FeedView`'s block style and by
+   * `.agent-divider`. */
+  --feed-sidechain-indent: 14px;
 }
 
 /* ---- Layer 3: component tokens -------------------------------------------- */
@@ -398,6 +404,32 @@ body {
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
+}
+
+/* The caption that opens a subagent's run in the Feed (#788, §5.10 "folded
+ * behind an agent header, indented").
+ *
+ * WHY IT IS QUIETER THAN `.turn-divider` ABOVE, DELIBERATELY. That one is the
+ * conversation's own boundary and #640 asked for it to be found without
+ * reading; this one appears once per subagent run, and a busy orchestration
+ * turn has a dozen of them. Same ink and the same AA promise — a caption nobody
+ * can read is the bug, not a subtler take on it — but no full-bleed rule, less
+ * air, and no uppercase tracking, so a run of them reads as a margin note
+ * rather than as a dozen chapter headings.
+ *
+ * It shares `--feed-sidechain-indent` with the blocks it captions rather than
+ * repeating `14px`: the caption sitting a pixel off the dashed spine it belongs
+ * to is exactly the kind of drift nothing tests and everyone sees. */
+.agent-divider {
+  color: var(--muted);
+  background: var(--panel);
+  margin-inline-start: var(--feed-sidechain-indent);
+  margin-block: 8px 2px;
+  padding-inline-start: 8px;
+  border-inline-start: 1px dashed var(--faint);
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: 600;
 }
 
 /* The composer's textarea grows with its content (P2-E10-08, §5.10) — in CSS,

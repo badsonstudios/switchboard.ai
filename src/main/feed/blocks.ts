@@ -83,6 +83,29 @@ export interface FeedBlock {
   durationMs?: number;
   /** true when the line came from a subagent transcript */
   sidechain: boolean;
+  /**
+   * WHICH subagent produced this block (#788) — the CLI's own `agentId`.
+   *
+   * Absent on the main conversation, and absent on a sidechain block from a
+   * transcript older than CLI 2.1.226, which is the whole of the degrade story:
+   * no id means no group header and today's plain indent.
+   *
+   * This is the GROUPING KEY and never the label. Two subagents running at once
+   * can share a name — measured, three concurrent `deep-research-specialist`s in
+   * one session — so a label cannot separate them and an id must.
+   */
+  agentId?: string;
+  /**
+   * The subagent's name (`attributionAgent`), on the blocks that carry one.
+   *
+   * SPARSER THAN `agentId` ON PURPOSE, because the CLI writes it that way: it
+   * is on `assistant` lines only (35,287 of 35,287), while `agentId` is also on
+   * `user` and `attachment` lines. A subagent transcript opens with an unnamed
+   * `user` line, so the head of a run is routinely anonymous and the NAME OF A
+   * RUN IS NOT THE NAME OF ITS FIRST BLOCK — see `feed-groups.ts`, which
+   * resolves it from whichever block in the run first has one.
+   */
+  agentName?: string;
   ts?: string;
   /**
    * The identity the MESSAGE gave this block, when it gave it one (P2-E17,
@@ -234,10 +257,72 @@ export function touchedPath(input: Record<string, unknown> | undefined): string 
   return typeof fp === 'string' && fp !== '' ? fp : undefined;
 }
 
+/**
+ * What only the SOURCE of a line knows, and derivation deliberately cannot see.
+ *
+ * `sidechain` has always sat on this seam — `deriveIntents` reads one line and
+ * has no idea which FILE it came out of, which is the whole of the question on
+ * the transcript path (`full !== boundFile`). #788 put agent identity on the
+ * same seam for the same reason, and made it a type rather than a second
+ * positional boolean so that `FeedBuffer.replace` cannot quietly drop half of
+ * it: that method re-stamps this group wholesale across a delta→message
+ * supersede, and what you forget to carry there survives as `undefined`,
+ * invisibly (the #153 shape its own comment warns about).
+ */
+export interface BlockOrigin {
+  sidechain: boolean;
+  agentId?: string;
+  agentName?: string;
+}
+
+/** A derived block: everything `deriveIntents` can know from one line alone. */
+export type DerivedBlock = Omit<FeedBlock, 'seq' | keyof BlockOrigin>;
+
+/**
+ * Read a block's origin back off it, for carrying across a `replace`.
+ *
+ * ABSENT, never `undefined`-valued. `{ ...b, agentId: undefined }` is not the
+ * same object as `{ ...b }` — it has the own key, `'agentId' in block` is true,
+ * and every pinned shape in the suite that predates #788 would stop matching.
+ * The house rule is the one `attachments` already follows: a block with nothing
+ * to say says nothing.
+ */
+export function originOf(block: FeedBlock): BlockOrigin {
+  return {
+    sidechain: block.sidechain,
+    ...(block.agentId === undefined ? {} : { agentId: block.agentId }),
+    ...(block.agentName === undefined ? {} : { agentName: block.agentName }),
+  };
+}
+
+/**
+ * Assemble a block: a derived body, a seq, and an origin that OVERRULES the
+ * body about every field it owns.
+ *
+ * ⚠️ **THE DELETES ARE THE WHOLE POINT, and a test caught their absence.**
+ * `{ ...body, ...origin }` only overrules a field the origin actually carries.
+ * `sidechain` is always there, so it was always right; `agentId` and
+ * `agentName` are absent when there is no agent — and an absent key overwrites
+ * nothing, so a body that carried one kept it. A block could therefore be
+ * stamped `sidechain: false` and `agentId: 'x'` at the same time, which is the
+ * one combination `agentOriginFor`'s gate exists to make impossible.
+ *
+ * Nothing produces such a body today — `DerivedBlock` types the fields out of
+ * `deriveIntents`. That is exactly why it was worth closing: the guarantee this
+ * seam is supposed to make is "the source decides", and a guarantee that holds
+ * only because no caller has tried yet is a comment, not a guarantee.
+ */
+export function stamp(body: DerivedBlock, seq: number, origin: BlockOrigin): FeedBlock {
+  const block: FeedBlock = { ...body, seq, ...origin };
+  if (origin.agentId === undefined) delete block.agentId;
+  if (origin.agentName === undefined) delete block.agentName;
+  return block;
+}
+
 /** A block to add, optionally keyed by the tool_use id whose result it awaits. */
 export interface EmitIntent {
   t: 'block';
-  block: Omit<FeedBlock, 'seq' | 'sidechain'>;
+  block: DerivedBlock;
   /** set for `tool` blocks: the id a later `tool_result` will quote */
   toolUseId?: string;
   /**

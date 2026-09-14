@@ -13,7 +13,8 @@ import path from 'path';
 import { StringDecoder } from 'string_decoder';
 import { Logger } from '../log/logger';
 import { BindingDiagnostics, BindingState, type ResetCause } from '../../shared/transcripts';
-import { FeedBlock, deriveIntents, touchedPath } from '../feed/blocks';
+import { BlockOrigin, FeedBlock, deriveIntents, touchedPath } from '../feed/blocks';
+import { agentOriginFor } from '../feed/agent-attribution';
 import { FeedBuffer } from '../feed/buffer';
 import { conversationExists, slugForCwd } from './paths';
 import { DriftDetector } from './drift';
@@ -2045,12 +2046,24 @@ export class TranscriptWatcher {
   private deriveBlocks(w: WatchedSession, full: string, e: Record<string, unknown>): void {
     if (!w.deriveFeed) return;
     const sidechain = full !== w.boundFile || e.isSidechain === true;
+    // THIS IS THE LINE #788 IS ABOUT, AND IT IS THE `full !== w.boundFile` HALF
+    // THAT FIRES. Measured over 3,214 transcripts, `isSidechain: true` appears
+    // ZERO times in a parent transcript — all 68,997 of them are in
+    // `subagents/agent-*.jsonl` files, which is what makes the right-hand test
+    // dead code on any CLI from 2.1.226 on (it is kept because an older
+    // transcript on disk is still a thing we tail).
+    //
+    // So EVERY subagent file this session owns drains into ONE `FeedBuffer`,
+    // in tail-arrival order, and until now they arrived indistinguishable:
+    // three concurrent agents read as one confused agent. `agentOriginFor`
+    // stamps which one, and the renderer groups on it.
+    const origin: BlockOrigin = { sidechain, ...agentOriginFor(e, sidechain, full) };
     for (const intent of deriveIntents(e)) {
       if (intent.t === 'tool-result') {
         w.feed.attachResult(intent.toolUseId, intent.out);
         continue;
       }
-      const block = w.feed.push(intent.block, sidechain);
+      const block = w.feed.push(intent.block, origin);
       if (intent.toolUseId) w.feed.remember(intent.toolUseId, block);
     }
   }

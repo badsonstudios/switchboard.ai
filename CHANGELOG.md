@@ -78,6 +78,25 @@ on the floor, and say so in your PR.
 
 ### Added
 
+- **The conversation now says which helper is talking.** When a session hands
+  work to a sub-agent, that work has always appeared indented behind a dashed
+  line — but with nothing saying who was doing it. Run two helpers at once, which
+  is the normal way to get a big job done quickly, and their replies came back
+  mixed together as one rambling voice. Each stretch of helper work now opens
+  with a small caption naming it, and a new caption appears every time the
+  speaker changes, so two helpers read as two helpers. If both are doing the same
+  kind of job and therefore share a name, the caption adds a short code so you
+  can still tell which is which. Screen readers are told the name too.
+
+  Sub-agent work still doesn't appear at all for sessions in **Direct mode** —
+  that is a separate piece of work. A conversation recorded by an older version
+  of Claude Code shows a plain **Subagent** caption, because those recordings
+  don't say who was speaking.
+
+- **A helper's prompt no longer looks like one of yours.** The "NEW PROMPT" rule
+  across the conversation was appearing above the instructions a session gave its
+  own sub-agent, as if you had typed them. It now marks your prompts only.
+
 - **A session can now read what another session has been doing, and what it has
   changed.** 0.8.8 let a session find out what *else* you had open; this adds
   the two things worth knowing about a sibling once you have found it — the
