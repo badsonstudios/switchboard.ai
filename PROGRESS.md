@@ -45,10 +45,26 @@
 > unattended workers is a different risk from one reported item, and that
 > asymmetry is written down in the file so it does not later read as drift.
 
-> # 🔨 IN PROGRESS — 2026-09-14: **#787** — the CLI's own cost accounting, and
-> the ticket premise the measurement broke
+> # ✅ MERGED — 2026-09-14: **#787** — the CLI's own cost accounting, the ticket
+> premise the measurement broke, and a 2.4× error nobody had ever checked for
 >
-> Branch `feature/787-cli-cost-state`. Size M as filed.
+> **PR #808, squashed to `088b4a3`, all four CI jobs green.** Issue closed.
+> Size M as filed. ⚠️ **NOT RELEASED** — joins
+> #764/#765/#772/#766/#774/#776/#779/#753/#790/#785 under `0.8.9 — unreleased`;
+> `gh release list` is the authority.
+>
+> **Next up: #788** (the Feed can't tell two concurrent subagents apart — only
+> `isSidechain` is read, which indents but cannot group; adjacent to #757; size
+> M). Then **#789**, **#793**, **#807** (filed by this item), or E11's composer
+> half (**#797 → #798** is the natural pair).
+>
+> **Shipped:** `TranscriptSnapshot.cliCost`, parsed by a new
+> `main/transcripts/cost-state.ts` that holds the line to the CLI's own zod
+> contract and rejects it whole otherwise; a pure `costLine()` in
+> `renderer/src/lib/usage.ts` that is the ONE place choosing between the CLI's
+> figure and our estimate and labels which (`~` estimate, bare exact, `≥` floor,
+> three distinct tooltips); a corrected rate table; and `sumCostUsd()` for the
+> status bar.
 >
 > **MEASURED FIRST, as the ticket asked — and the answer changes the item.**
 > `cost-state` is written by the CLI's `exitReStampProviders` (source: the PATH
