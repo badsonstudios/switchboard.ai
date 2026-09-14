@@ -255,7 +255,44 @@ export const TYPE_SCOPED_ROOT_KEYS: Readonly<Record<string, readonly string[]>> 
     'declaredDialogKinds',
   ],
   'frame-link': ['artifactCount', 'frameUrl', 'path', 'title'],
-  'content-replacement': ['replacements'],
+  // CONSUMED (#788) — the Feed groups subagent blocks on `agentId` and labels
+  // the group with `attributionAgent`. Same reasoning as `cost-state` above for
+  // why they are HERE and not in the root `consumed` list: the two lists are
+  // identical to the detector, so the only thing a flat declaration would buy
+  // is the names becoming legal on all 38 line types — and a rename now costs
+  // us a header the user reads, not a key we skip.
+  //
+  // WHAT WAS MEASURED: over 3,214 transcripts / 246,541 lines (2.1.226 →
+  // 2.1.261), `agentId` occurs 68,997 times, on `assistant` (35,287), `user`
+  // (22,506) and `attachment` (11,204) and no other type; `attributionAgent`
+  // 35,287 times on `assistant` alone — one per assistant line that has an
+  // `agentId`, never on a `user` or `attachment` line. That asymmetry is not
+  // noise: it is why the Feed resolves a run's name from the RUN rather than
+  // from its first block. Zero occurrences of either in a parent transcript.
+  // Probe: `spike/probes/788/`.
+  //
+  // ⚠️ **AND THE MEASUREMENT IS NARROWER THAN THE CONTRACT. READ THIS BEFORE
+  // TRUSTING THE LIST ABOVE.** The CLI writes `agentId` on the ENVELOPE, not on
+  // a line type — its generic append path spreads `{…, isSidechain, agentName,
+  // agentId, ...entry}`, so it rides on *whatever* gets appended while an agent
+  // id is in scope, and the three types above are the three that happen to have
+  // been appended in this corpus. `content-replacement` and `fork-context-ref`
+  // are here on **#779's record rather than on this item's measurement** — the
+  // corpus holds zero lines of either, and scoping to what was measured would
+  // have declared the key unknown on two types the CLI demonstrably writes it
+  // to. `drift.test.ts` caught exactly that omission.
+  //
+  // So the honest statement is: this list is every type we have SEEN, and the
+  // set the CLI can produce is larger. Drift is fail-open — one warn-once log
+  // line — so the cost of the gap is a false alarm, not a malfunction. Widen
+  // the list when a new type turns up rather than treating the alarm as real.
+  // The lesson is the one the paragraph above nearly repeated: measuring
+  // carefully and then trusting the measurement past its edge.
+  user: ['agentId'],
+  assistant: ['agentId', 'attributionAgent'],
+  attachment: ['agentId'],
+  'content-replacement': ['agentId', 'replacements'],
+  'fork-context-ref': ['agentId'],
 };
 
 export const TRANSCRIPT_SCHEMA: Readonly<Record<SchemaPath, PathContract>> = {
@@ -269,12 +306,12 @@ export const TRANSCRIPT_SCHEMA: Readonly<Record<SchemaPath, PathContract>> = {
       'isMeta', // CLI-internal lines are not conversation
       'message',
     ],
-    // 84 keys. Grouped only for readability — order is not meaning. 69 were
+    // 82 keys. Grouped only for readability — order is not meaning. 69 were
     // measured 2026-07-31; the other 25 were added 2026-09-12 (#779) and were
-    // each MEASURED over 244,916 lines; ten of those 25 left again in #787, for
-    // `TYPE_SCOPED_ROOT_KEYS['cost-state']`, when we started reading them. Keys
-    // named by the CLI's reducer but never seen are in `TYPE_SCOPED_ROOT_KEYS`,
-    // not here.
+    // each MEASURED over 244,916 lines; ten of those 25 left again in #787, and
+    // `agentId` + `attributionAgent` in #788, all for `TYPE_SCOPED_ROOT_KEYS`,
+    // when we started reading them. Keys named by the CLI's reducer but never
+    // seen are in `TYPE_SCOPED_ROOT_KEYS`, not here.
     //
     // THIS COUNT IS CHECKED AGAINST THIS LIST BY A TEST, because it had already
     // rotted: the comment here read "68 keys, measured" while the list held 69.
@@ -298,12 +335,8 @@ export const TRANSCRIPT_SCHEMA: Readonly<Record<SchemaPath, PathContract>> = {
       'retractedMessageUuids',
       'refusedUserMessageUuid',
       'snapshotMessageId',
-      // The id of the subagent that produced a line — 80,128 occurrences over
-      // 385 files, spanning 2.1.226 → 2.1.261, so it predates our corpus rather
-      // than being new. We read `isSidechain`, which INDENTS a subagent block but
-      // cannot group one: two agents running concurrently interleave into one
-      // indented run. Consuming this is a follow-up, not drift.
-      'agentId',
+      // `agentId` LEFT THIS LIST IN #788 — it is consumed now, and lives in
+      // `TYPE_SCOPED_ROOT_KEYS` under the three types measured to carry it.
       // environment stamps
       'version',
       'gitBranch',
@@ -326,13 +359,12 @@ export const TRANSCRIPT_SCHEMA: Readonly<Record<SchemaPath, PathContract>> = {
       // open with a summary record (the `claim()` archaeology depends on it),
       // and warning about a key we already know about helps nobody
       'summary',
-      // who produced a turn. `attributionSkill` was measured in 2026-07-31;
-      // the other three arrived with the agent/MCP attribution work and name the
-      // subagent, MCP server and MCP tool behind an assistant line. Same
-      // follow-up as `agentId`: naming the agent in the Feed is a feature, and
-      // #757 is the neighbouring ticket.
+      // who produced a turn. `attributionSkill` was measured in 2026-07-31; the
+      // MCP pair arrived with the agent/MCP attribution work and names the MCP
+      // server and tool behind an assistant line. Still unread — #757 is the
+      // neighbouring ticket. (`attributionAgent` left this list in #788, which
+      // renders it; it is in `TYPE_SCOPED_ROOT_KEYS` now.)
       'attributionSkill',
-      'attributionAgent',
       'attributionMcpServer',
       'attributionMcpTool',
       // tool bookkeeping

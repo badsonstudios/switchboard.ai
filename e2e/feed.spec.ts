@@ -1086,4 +1086,62 @@ test.describe('[pty] Feed view (E12-06)', () => {
     // 3. and the button says "Copied" only for a moment
     await expect(fence.locator('[data-feed-copy]')).toHaveText('Copy');
   });
+  test('names and separates two concurrent subagents (#788)', async () => {
+    // The first sidechain coverage in the e2e tree, and it writes the layout
+    // the CLI really writes: subagent turns live in
+    // `<native-id>/subagents/agent-<id>.jsonl`, NOT in the parent transcript.
+    // Measured over 3,214 transcripts, `isSidechain: true` appears zero times
+    // in a parent file — so a spec that set the flag on a main-file line would
+    // be testing a shape the CLI stopped producing, and would pass while the
+    // real path stayed broken.
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    const dir = path.join(a.home, '.claude', 'projects', slugForCwd(folder));
+    fs.mkdirSync(dir, { recursive: true });
+    const line = (o: Record<string, unknown>) =>
+      JSON.stringify({ sessionId: 'native-e2e', cwd: folder, timestamp: new Date().toISOString(), ...o }) + '\n';
+    const say = (text: string, extra: Record<string, unknown> = {}) =>
+      line({ type: 'assistant', message: { content: [{ type: 'text', text }] }, ...extra });
+
+    fs.writeFileSync(path.join(dir, 'native-e2e.jsonl'), say('dispatching two agents'));
+    await expect(w.getByText('dispatching two agents')).toBeVisible({ timeout: 20_000 });
+
+    // Two agents, INTERLEAVED across two files the way concurrent ones arrive,
+    // and sharing a name — the case a label alone cannot separate.
+    const subs = path.join(dir, 'native-e2e', 'subagents');
+    fs.mkdirSync(subs, { recursive: true });
+    const sidechain = { isSidechain: true };
+    fs.writeFileSync(
+      path.join(subs, 'agent-aaaaaa11.jsonl'),
+      say('AGENT A FIRST', { ...sidechain, agentId: 'aaaaaa11', attributionAgent: 'digger' })
+    );
+    await expect(w.getByText('AGENT A FIRST')).toBeVisible({ timeout: 20_000 });
+    fs.writeFileSync(
+      path.join(subs, 'agent-bbbbbb22.jsonl'),
+      say('AGENT B FIRST', { ...sidechain, agentId: 'bbbbbb22', attributionAgent: 'digger' })
+    );
+    await expect(w.getByText('AGENT B FIRST')).toBeVisible({ timeout: 20_000 });
+    fs.appendFileSync(
+      path.join(subs, 'agent-aaaaaa11.jsonl'),
+      say('AGENT A SECOND', { ...sidechain, agentId: 'aaaaaa11' })
+    );
+    await expect(w.getByText('AGENT A SECOND')).toBeVisible({ timeout: 20_000 });
+
+    // Three runs, because A was interrupted by B and came back. Each captioned
+    // with the agent's name AND the id fragment that tells the two
+    // identically-named agents apart.
+    const captions = w.locator('.agent-divider');
+    await expect(captions).toHaveCount(3);
+    await expect(captions.nth(0)).toHaveText('Subagent \u00b7 digger \u00b7 aaaaaa');
+    await expect(captions.nth(1)).toHaveText('Subagent \u00b7 digger \u00b7 bbbbbb');
+    // The THIRD run carries no `attributionAgent` of its own and is named
+    // anyway: a name belongs to the agent, not to the line that happened to
+    // mention it.
+    await expect(captions.nth(2)).toHaveText('Subagent \u00b7 digger \u00b7 aaaaaa');
+
+    // ...and the session's own voice is never captioned.
+    await expect(w.getByText('dispatching two agents')).toBeVisible();
+    await expect(captions.nth(0)).not.toHaveText(/dispatching/);
+  });
 });

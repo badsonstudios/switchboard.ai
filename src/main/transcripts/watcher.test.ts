@@ -382,6 +382,74 @@ describe('subagent visibility (S-05 layout)', () => {
     ]);
     expect(snap.usage.output).toBe(3); // subagent tokens counted
   });
+
+  // #788. The end-to-end proof that the thing the ticket describes actually
+  // happens HERE, in our merge, and is actually fixed — two REAL subagent files
+  // written interleaved, the way two concurrent agents write them.
+  it('stamps each subagent block with the agent that produced it', async () => {
+    watcher.watch('s1', { cwd });
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    writeLines(file, [entry({ type: 'user', message: { role: 'user', content: 'go' } })]);
+    await sleep(100);
+
+    const subDir = path.join(projectDir(), 'native-1', 'subagents');
+    fs.mkdirSync(subDir, { recursive: true });
+    // Agent A opens with an UNNAMED user line, the way the CLI really writes
+    // one: `attributionAgent` is on assistant lines only.
+    writeLines(path.join(subDir, 'agent-aaa.jsonl'), [
+      entry({ type: 'user', isSidechain: true, agentId: 'aaa', message: { role: 'user', content: 'task A' } }),
+    ]);
+    await sleep(120);
+    writeLines(path.join(subDir, 'agent-bbb.jsonl'), [
+      entry({
+        isSidechain: true,
+        agentId: 'bbb',
+        attributionAgent: 'Plan',
+        message: { content: [{ type: 'text', text: 'B says' }] },
+      }),
+    ]);
+    await sleep(120);
+    writeLines(path.join(subDir, 'agent-aaa.jsonl'), [
+      entry({
+        isSidechain: true,
+        agentId: 'aaa',
+        attributionAgent: 'Explore',
+        message: { content: [{ type: 'text', text: 'A says' }] },
+      }),
+    ]);
+    await waitFor(() => watcher.blocks('s1').length >= 4);
+
+    const blocks = watcher.blocks('s1');
+    const main = blocks.find((b) => b.text === 'go')!;
+    expect(main.sidechain).toBe(false);
+    // The session's own voice is never attributed — the gate in
+    // `agentOriginFor`, seen from the far end.
+    expect(main.agentId).toBeUndefined();
+
+    const byText = (t: string): (typeof blocks)[number] => blocks.find((b) => b.text === t)!;
+    expect(byText('task A')).toMatchObject({ sidechain: true, agentId: 'aaa' });
+    // NOT named: the CLI did not name that line, and we do not invent one.
+    expect(byText('task A').agentName).toBeUndefined();
+    expect(byText('B says')).toMatchObject({ sidechain: true, agentId: 'bbb', agentName: 'Plan' });
+    expect(byText('A says')).toMatchObject({ sidechain: true, agentId: 'aaa', agentName: 'Explore' });
+  });
+
+  it('attributes a subagent line that carries no agentId, from its FILE', async () => {
+    // A transcript written before CLI 2.1.226. Without the path fallback one
+    // fieldless line would split a run in two under the same name.
+    watcher.watch('s1', { cwd });
+    writeLines(path.join(projectDir(), 'native-1.jsonl'), [entry()]);
+    await sleep(100);
+    const subDir = path.join(projectDir(), 'native-1', 'subagents');
+    fs.mkdirSync(subDir, { recursive: true });
+    writeLines(path.join(subDir, 'agent-old1.jsonl'), [
+      entry({ message: { content: [{ type: 'text', text: 'ancient' }] } }),
+    ]);
+    await waitFor(() => watcher.blocks('s1').some((b) => b.text === 'ancient'));
+    const b = watcher.blocks('s1').find((x) => x.text === 'ancient')!;
+    expect(b).toMatchObject({ sidechain: true, agentId: 'old1' });
+    expect(b.agentName).toBeUndefined();
+  });
 });
 
 describe('Feed block derivation (P2-E12-06 §5.10)', () => {

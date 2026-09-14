@@ -6,6 +6,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { blockVisible, FeedBlockDto, showsTimelineDot, upsertBlock, Verbosity } from '../lib/feed';
+import { agentRunHeads, type AgentRunHead } from '../lib/feed-groups';
 import { autonomyTooltip } from '../lib/autonomy';
 import { feedKeyAction, FEED_STOP_SELECTOR } from '../lib/feed-keys';
 import {
@@ -82,6 +83,32 @@ import type { TransportKind } from '../../../shared/transport';
 
 export type { FeedBlockDto } from '../lib/feed';
 
+/**
+ * The caption that opens a subagent's run (#788).
+ *
+ * FOUR STRINGS, NOT ONE WITH OPTIONAL ARGUMENTS. A translator seeing
+ * `"Subagent {name} {id}"` has no way to write the sentence that omits the
+ * parts we did not send, and ICU renders a missing one as literal braces. The
+ * unnamed pair exists because a transcript older than CLI 2.1.226 carries an id
+ * we can group on and no name to print — and "Subagent · " with nothing after
+ * it is worse than "Subagent".
+ *
+ * ⚠️ The UNNAMED case takes a discriminator too. Two anonymous runs render the
+ * same caption, so they need separating for exactly the reason two identically
+ * named ones do; dropping it there would leave the one case with no other cue
+ * at all showing two agents one label.
+ */
+function agentCaption(t: (k: string, o?: Record<string, string>) => string, h: AgentRunHead): string {
+  if (!h.name) {
+    return h.discriminator
+      ? t('feedView.subagent.unnamedDiscriminated', { id: h.discriminator })
+      : t('feedView.subagent.unnamed');
+  }
+  return h.discriminator
+    ? t('feedView.subagent.markerDiscriminated', { name: h.name, id: h.discriminator })
+    : t('feedView.subagent.marker', { name: h.name });
+}
+
 function Block({ b }: { b: FeedBlockDto }): React.JSX.Element {
   // Resolved, not switched (Â§5.23): this used to be a seven-branch ternary
   // naming every renderer. A new block shape is now a contribution plus a
@@ -115,7 +142,9 @@ function Block({ b }: { b: FeedBlockDto }): React.JSX.Element {
           : {}),
         ...(b.sidechain
           ? {
-              marginInlineStart: 14,
+              // the token, not `14`: `.agent-divider` captions this run and has
+              // to sit on the same spine (#788)
+              marginInlineStart: 'var(--feed-sidechain-indent)',
               borderInlineStart: '1px dashed var(--faint)',
               opacity: 0.85,
             }
@@ -760,6 +789,19 @@ export function FeedView(props: {
   // block that is not in the list â€” the honest-looking version of doing
   // nothing at all.
   const visibleBlocks = blocks.filter((b) => reveal.revealed.has(b.seq) || blockVisible(b, verbosity));
+  // BOTH lists, deliberately — see `agentRunHeads`. Run boundaries come from
+  // what is rendered; an agent's NAME and whether that name clashes come from
+  // the whole conversation, or a caption would change as blocks scrolled by.
+  //
+  // Derived per render rather than stored, because `upsertBlock` inserts by seq
+  // and evicts at the cap, so a stored grouping would describe a list that no
+  // longer exists. Not memoised: a `useMemo` keyed on `visibleBlocks` would
+  // recompute every render anyway — that array is rebuilt above — and still pay
+  // for the dependency compare. Hoisting the filter and this into ONE memo
+  // would be a real saving; it is deliberately not done here because the
+  // feed's re-render cost is #740's, and one pass over a list already being
+  // walked is not the part worth changing blind.
+  const agentHeads = agentRunHeads(visibleBlocks, blocks);
   return (
     <div style={{ blockSize: '100%', display: 'flex', flexDirection: 'column', background: 'var(--card-bg)' }}>
       <div
@@ -915,6 +957,28 @@ export function FeedView(props: {
           <FeedRevealProvider value={reveal}>
             {visibleBlocks.map((b, i) => (
               <React.Fragment key={b.seq}>
+                {/* WHICH subagent is speaking (#788).
+
+                    The two captions can no longer collide: the turn divider
+                    below now skips sidechain blocks. That was a defect this
+                    item surfaced rather than caused — a subagent's `user` line
+                    is the TASK PROMPT the parent handed it, not a new turn in
+                    the human's conversation, and it has been ruling off
+                    "NEW PROMPT" above other people's prompts since #640. It
+                    read as a stray divider before; beneath an agent caption it
+                    would read as the app disagreeing with itself.
+
+                    NOT `aria-hidden`, and that is the deliberate difference
+                    from `.turn-divider`. That one is hidden because the prompt
+                    under it is already announced as the user's own words, so
+                    saying "new prompt" first is reading the furniture out loud.
+                    An agent's NAME is announced nowhere else at all: hide it
+                    and a screen reader gives three interleaved agents as one
+                    voice, which is this item's own bug for a different reader. */}
+                {(() => {
+                  const head = agentHeads.get(b.seq);
+                  return head ? <div className="agent-divider">{agentCaption(t, head)}</div> : null;
+                })()}
                 {/* A new prompt starts a new turn â€” rule it off (Dan #11), and
                     since #640 rule it off so the eye LANDS on it: scanning a
                     long session, the turn boundaries have to be findable
@@ -926,7 +990,7 @@ export function FeedView(props: {
                     under it is already announced as the user's own words, and a
                     screen reader stopping to say "new prompt" before each one
                     would be reading the furniture out loud. */}
-                {b.kind === 'user' && i > 0 && (
+                {b.kind === 'user' && i > 0 && !b.sidechain && (
                   <div className="turn-divider" aria-hidden>
                     {t('feedView.turnMarker')}
                   </div>

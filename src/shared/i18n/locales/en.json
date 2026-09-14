@@ -619,6 +619,12 @@
     "firehoseHint": "Everything, including thinking and subagent chatter",
     "clearedMarker": "Conversation cleared — context starts fresh",
     "turnMarker": "New prompt",
+    "subagent": {
+      "marker": "Subagent · {name}",
+      "markerDiscriminated": "Subagent · {name} · {id}",
+      "unnamed": "Subagent",
+      "unnamedDiscriminated": "Subagent · {id}"
+    },
     "workingStrip": "Claude is working",
     "expandHint": "click to expand",
     "collapsedIcon": "▸",

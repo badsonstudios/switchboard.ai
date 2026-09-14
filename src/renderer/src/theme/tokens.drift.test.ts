@@ -300,6 +300,12 @@ const FILLED_RULES: Array<[string, number]> = [
   // real text (9px), and the rule itself is `currentColor`, so this one number
   // covers both halves of the divider.
   ['.turn-divider', 4.5],
+  // The subagent run caption (#788). Same ink and the same pair as the turn
+  // divider, and on the list for the same reason plus one of its own: it is the
+  // ONLY place in the app that says which of several concurrent agents is
+  // speaking. A caption at 1.3:1 does not degrade to a subtler hint, it
+  // degrades to the interleaved-anonymous-run bug this item was filed over.
+  ['.agent-divider', 4.5],
   // The events drawer's row at rest (#268). Its de-emphasised twin is in
   // MIXED_RULES below — the pair is on the list together so the "reviewed"
   // step down the neutral ladder is always measured against the step it came

@@ -35,7 +35,7 @@ declare global {
 const feedPanel = sessionPanels.find((p) => p.id === 'feed')!;
 
 /** three turns, with assistant prose and a tool box between them */
-const BLOCKS: FeedBlockDto[] = [
+const THREE_TURNS: FeedBlockDto[] = [
   { seq: 1, kind: 'user', text: 'run the build', sidechain: false },
   { seq: 2, kind: 'assistant', text: 'on it', sidechain: false },
   {
@@ -48,6 +48,9 @@ const BLOCKS: FeedBlockDto[] = [
   { seq: 5, kind: 'assistant', text: 'running them', sidechain: false },
   { seq: 6, kind: 'user', text: 'and ship it', sidechain: false },
 ];
+
+/** reassigned by a case that needs a different conversation; reset per test */
+let BLOCKS: FeedBlockDto[] = THREE_TURNS;
 
 function stubBridge(): void {
   (window as unknown as { switchboard: unknown }).switchboard = {
@@ -117,6 +120,7 @@ beforeAll(() => registerBuiltinContributions(rendererRegistry));
 
 beforeEach(async () => {
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  BLOCKS = THREE_TURNS;
   document.body.innerHTML = '';
   stubBridge();
   // jsdom has no ResizeObserver and the scroll-anchoring effect installs one
@@ -161,6 +165,25 @@ describe('the turn boundary (#640)', () => {
     // ...and it is furniture for the eye: the prompt below is already
     // announced as the user's own words
     expect(divider.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('does NOT rule off a subagent`s task prompt (#788)', async () => {
+    // A sidechain `user` block is the prompt the PARENT handed a subagent, not
+    // a new turn in the human's conversation. It has been getting a
+    // "NEW PROMPT" rule since #640; #788 put an agent caption directly above
+    // the same block, where a second divider read as the app disagreeing with
+    // itself about whose prompt it was.
+    BLOCKS = [
+      { seq: 1, kind: 'user', text: 'do it', sidechain: false },
+      { seq: 2, kind: 'user', text: 'task for the agent', sidechain: true, agentId: 'a1' },
+      { seq: 3, kind: 'user', text: 'and now this', sidechain: false },
+    ];
+    const host = await mountFeed();
+    // one divider, above the human's SECOND prompt — not above the agent's
+    expect(precedes(host)).toEqual(['user']);
+    const ruled = host.querySelector<HTMLElement>('.turn-divider')!
+      .nextElementSibling as HTMLElement;
+    expect(ruled.getAttribute('data-feed-seq')).toBe('3');
   });
 
   it('follows the FILTERED conversation, not the raw one', async () => {

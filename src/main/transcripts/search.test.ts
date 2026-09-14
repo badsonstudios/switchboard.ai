@@ -63,7 +63,7 @@ function feedOf(lines: string[]): FeedBlock[] {
         feed.attachResult(intent.toolUseId, intent.out);
         continue;
       }
-      const block = feed.push(intent.block, false);
+      const block = feed.push(intent.block, { sidechain: false });
       if (intent.toolUseId) feed.remember(intent.toolUseId, block);
     }
   }
@@ -876,7 +876,7 @@ describe('lining the file up with the view buffer', () => {
     const all = lines.map((l, i) =>
       feed.push(
         { kind: 'assistant', text: `B${i + 1} TARGET`, ts: `t${i + 1}` },
-        (l as { isSidechain?: boolean }).isSidechain === true
+        { sidechain: (l as { isSidechain?: boolean }).isSidechain === true }
       )
     );
     expect(all.map((b) => b.seq)).toEqual([1, 2, 3, 4, 5]);

@@ -327,6 +327,41 @@ including the tool output **quiet** is hiding and the thinking **normal**
 hides, and jumping to a match unfolds it. See
 [Finding something in a session](16-find.md).
 
+## When a session sends out helpers
+
+Claude can hand a piece of work to a **sub-agent** — a helper that goes off,
+does one job, and reports back. A session often runs several at once.
+
+Their work appears in the conversation indented behind a dashed line, and each
+stretch of it opens with a small grey caption saying which helper is talking:
+
+> Subagent · code-reviewer
+
+That caption is the thing to look for when two helpers are working at the same
+time. Their replies arrive mixed together, in whatever order they finish, so
+without it you'd be reading two conversations as one. Every time the speaker
+changes, a new caption appears — including when a helper you saw earlier comes
+back.
+
+If two helpers are doing the **same kind of job**, they'll have the same name.
+Then the caption adds a short code so you can still tell them apart:
+
+> Subagent · deep-research-specialist · aaaaaa
+
+The code is just an identifier; it means nothing on its own, and it only shows
+up when there's an actual clash.
+
+**Two things worth knowing:**
+
+- Sessions in **Direct mode** don't show sub-agent work in the conversation at
+  all yet — that's still to come. In **Terminal mode** it's all there.
+- A conversation recorded by an older version of Claude Code may show the
+  indented work with a plain **Subagent** caption and no name. There is nothing
+  wrong; that recording simply doesn't say who was speaking.
+
+Set the detail level to **quiet** if you'd rather not see helper chatter at
+all — it hides their work along with the captions.
+
 ## Tokens and cost
 
 Along the right-hand end of the card header, beside the branch name, a session
