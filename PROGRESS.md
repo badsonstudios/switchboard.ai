@@ -12,7 +12,10 @@
 >
 > **Next up: #793** (measure first), then **#812**, then E11's remaining
 > features: the composer pair **#797 → #798** (never stop between them), then
-> **#799**, **#800**, **#796**, **#801**. #818 is now CLOSED (not by this item).
+> **#799**, **#800**, **#796**, **#801**. Still open, not queued ahead of E11:
+> **#818**. It was AUTO-CLOSED BY ACCIDENT when PR #819 merged ("Filed, not
+> fixed: #818" in its body matched GitHub's closing keyword), and was reopened
+> 2026-09-15. No code references it; the bug stands.
 >
 > ## 🧭 DIRECTION — Dan, 2026-09-15: **finish E11 (session sharing), THEN history**
 > Asked where things stood and chose to keep going: "Once we finish with the
@@ -28,10 +31,11 @@
 > Dan chose to keep developing before cutting. `v0.8.8` is still latest; 15
 > changes are now merged and unreleased. **The version number is his call:**
 > `0.8.90` (recommended — session read/messaging is a new capability),
-> `0.8.81`, or `0.9.0` (not yet — E11 isn't done). The other offer, fixing
-> **#818** before the cut, is moot: #818 is now closed. Check that its fix is on
-> `main` before relying on that. At the cut: one stale "lands in 0.8.9" remains
-> in `docs/plans/dogfood-testing.md` (the #772 row). **Do NOT cut unless asked.**
+> `0.8.81`, or `0.9.0` (not yet — E11 isn't done). Also offered, still
+> standing: fix **#818** before the cut (it is open; see Next up), or Dan clears
+> his stale maximize by hand with palette "Layout: Grid". At the cut: one stale
+> "lands in 0.8.9" remains in `docs/plans/dogfood-testing.md` (the #772 row).
+> **Do NOT cut unless asked.**
 >
 > **THE PREMISE WAS INVERTED — CHECKED AGAINST THE REPO BEFORE THE CORPUS.** The
 > 600× under-count was #787's PROBE, which read the parent file only. The watcher
