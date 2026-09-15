@@ -3,42 +3,96 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔨 IN PROGRESS — 2026-09-15: **#797** — `@`-session autocomplete in the composer (token + popup; resolution is #798)
+> # ✅ MERGED — 2026-09-15: **#797** — `@`-session autocomplete in the composer: one popup for `/` and `@`, fed by the bus's own session list
 >
-> Branch `feature/797-mention-autocomplete` (worktree `C:\tmp\sb-797`). Plan and
-> addendum are posted on the issue. **#798 follows immediately — never stop
-> between the two.**
+> **PR #829, squashed to `1c9e370`, all four CI jobs green first time.** Issue
+> closed. Size M as filed.
+> ⚠️ **NOT RELEASED** — joins the `0.8.81 — unreleased` section; `gh release
+> list` is the authority.
 >
-> - **Token:** `src/shared/mention-token.ts`, pure, 24 tests. `slashToken` is
->   line-initial and cannot be reused: a mention is mid-sentence and opens only at
->   a word boundary.
-> - **List source:** `summariesFrom`, the bus's own source, over a new
->   `sessions:summaries` channel. `SessionSummary` moves to
->   `shared/sessions.ts` and is type-re-exported from `queries.ts`. `accentColor`
->   is added OPTIONAL (it is optional on the record, assigned at create) and
->   painted `?? 'var(--faint)'` at the row, like every other surface.
->   `renderSessions` names its fields, so the colour never reaches another model.
-> - **Popup:** the slash popup is generalised into one completion (slash |
->   mention): one list, one keydown block, one row renderer. The slash popup's
->   own behaviour is unchanged.
-> - **Review (no blocker left, fixes in):** the blocker was that Enter with the
->   caret INSIDE an existing mention replaced part of it. The token now opens
->   only at the END of the `@word`. Enter on a mention follows
->   `mentionEnterAction`:
+> ⚠️ **THIS CLOSE-OUT ALSO REPAIRS THIS FILE.** #797's own PR carried an edit
+> that swallowed the start of #812's heading line, `> # ✅ MERGED — 2026-09-15:
+> **#812**`, and glued its tail onto the end of #797's in-progress entry. No
+> body text was lost. The header COUNT stayed 112, because #797's heading
+> replaced #812's one-for-one, so the count check could not see it. Found
+> reading the file for this close-out. The heading is restored below: count
+> 113, order #797 → #812 → #793 → #807. Lesson (d) and a memory record it.
+>
+> **Next up: #798 — IMMEDIATELY, never stop between the two.** `@Name` is only
+> inserted text until #798 resolves it at send. #798 is PLANNED: notes, a
+> measured probe and a plan are posted on the issue.
+> - The CLI expands `@path` in Direct mode. Measured: `@NOTES.md` was attached
+>   with no Read; a missing `@NOPE.md` still cost the model a Read.
+> - So a RESOLVED mention is rewritten so it isn't `@`-shaped, and the user's line
+>   is quoted in the injected block.
+> - The context is shown in the sent turn; collapsing it is follow-up **#830**.
+>
+> Then **#799**, **#800**, **#796**, **#801**. New follow-ups: **#828** (ARIA
+> listbox semantics for both popups) and **#830**. Still open, not queued ahead of
+> E11: **#818**, **#824**.
+>
+> **What shipped:**
+> - **Typing `@` lists the other open sessions** by name, folder and colour, with
+>   an exited one marked. Tab or Enter or click inserts `@Name`.
+> - **The source is `summariesFrom`**, the same derivation the bus's
+>   `list_sessions` answers from, over a new read-only `sessions:summaries`
+>   channel.
+> - **`SessionSummary` moved to `shared/sessions.ts`**, type-re-exported from
+>   `queries.ts`, with ten importers left unchanged.
+> - **`accentColor` is optional** and painted `?? 'var(--faint)'` at the row, like
+>   every other session surface.
+> - **The slash popup was generalised into ONE completion:** one list, one
+>   keydown block, one row renderer. The slash behaviour itself is unchanged.
+> - **The pure rules live in `shared/mention-token.ts`,** because a rule inlined in
+>   a component is one no mutant can reach.
+>
+> **REVIEW — ONE BLOCKER, TWO BEHAVIOUR FIXES, AND ONE REVERSAL OF MY OWN PLAN.**
+> - **Blocker:** with the caret INSIDE an existing mention (`hey @Tr|adingApp
+>   please`), Enter replaced part of it, leaving `@Trackpad adingApp`. The token
+>   now opens only at the END of the `@word`.
+> - **Substring rewrite:** `ping @app` + Enter became `@TradingApp`, a name nobody
+>   chose. `mentionEnterAction` now decides:
 >   - a full name → send (#163);
 >   - a prefix, or a row the user moved to → complete;
 >   - a bare substring match → send the literal.
+> - **The reversal:** my plan said dismissal should match the slash popup (any
+>   keystroke clears it). The done-when says "stays dismissed for that token", and
+>   the review showed why. Esc is now sticky per `@word`; the slash popup's rule is
+>   untouched. Recorded on the issue.
+> - **Also:** a rejected list fetch is an answer; the capability is pinned as
+>   `sessions.read`; dead token clauses are deleted; the manual says "whose process
+>   has ended", not "finished" (#765).
 >
->   Esc is now sticky per `@word`, which REVERSES the posted plan (see the issue
->   comment). A rejected list fetch no longer swallows Enter.
->   `sessions:summaries` is pinned as `sessions.read`.
-> - **Decisions:** exited sessions are shown and marked; the composer's own
->   session is filtered out. ARIA listbox semantics for both popups → #828.
->   Notes for #798 (names with spaces/`'s`, duplicates, the CLI's `@path`) are
->   posted on #798.
-> - **Mutation:** round 1 16/19 (F3 in-flight guard, F8 selection reset, I1 raw
->   records survived; tests added for all three). Round 2 on the review fixes
->   is next. — team-session envelope keys declared flat; the test now covers every line type, not a sample
+> **MUTATION:** round 1 **16/19** (F3 in-flight guard, F8 selection reset, I1 raw
+> records survived; each got a test). Round 2 **33/37** on the review fixes. Its
+> four survivors each got a test, and a re-run killed all four:
+> - F16, a dismissal never forgotten at the same position;
+> - F18, hover counting as choosing a row;
+> - F19, "moved" not reset between words (only a SUBSTRING match makes that flag
+>   decide anything);
+> - P1, the preload's channel string, pinned because no test loads the preload.
+>
+> One harness lesson: React ignores a `mouseover` whose `relatedTarget` is another
+> React-managed node, so the first hover test never hovered.
+>
+> **Tests:** full suite **8,040 passed / 3 skipped**; typecheck + lint green.
+> **Docs:** manual *Talking to the session* (03) + a pointer from *Slash commands*
+> (05); CHANGELOG `Added`; dogfood tracker row UNTESTED.
+>
+> **LESSONS.**
+> - **(a) A reused helper's ASSUMPTION travels with it.** `insertCommand` and
+>   `slashToken` assume line-initial, and "reuse the popup" was true only for the
+>   popup.
+> - **(b) Check the done-when's exact words before matching an existing
+>   behaviour.** "Same dismissal semantics as the slash popup" and "stays
+>   dismissed for that token" were not the same thing.
+> - **(c) Read, then MEASURE, the consumer that sits after you.** The CLI expands
+>   `@word` itself, and the probe showed even a miss costs a Read.
+> - **(d) A header COUNT cannot see one header replaced by another.** Before
+>   committing an edit to this file, check `git diff -- PROGRESS.md` or the
+>   header LIST, not only `grep -c`.
+
+> # ✅ MERGED — 2026-09-15: **#812** — team-session envelope keys declared flat; the test now covers every line type, not a sample
 >
 > **PR #826, squashed to `44936df`, CI green** (a re-run after rebasing onto
 > #793's close-out: strict branch protection). Issue closed. Size S as filed.
