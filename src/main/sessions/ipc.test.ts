@@ -1405,6 +1405,58 @@ describe('starting a session preserves the card (#153 follow-up)', () => {
   });
 });
 
+// P2-E11-07 — where the composer's `@` popup list comes from.
+//
+// Through the REAL handler, because the item's rule is a wiring rule: the
+// composer must be handed `summariesFrom` — the same derivation the bus's
+// `list_sessions` answers from — and not the raw live records `sessions:list`
+// returns. A handler that returned `manager.list()` would compile (the broker is
+// loosely typed) and render nothing but `undefined` names in the popup.
+describe('registerSessionIpc — @ session summaries (P2-E11-07)', () => {
+  let dir: string;
+  tempDirEach('sb-summaries-', (d) => (dir = d));
+
+  it('answers with SUMMARIES, not raw records — name from the card title, exited from the exit code', async () => {
+    const h = harness(undefined, dir, {
+      liveIds: ['live-1', 'live-2'],
+      exitCodes: { 'live-2': 0 },
+    });
+
+    const rows = (await h.call('sessions:summaries')) as Array<Record<string, unknown>>;
+
+    expect(rows.map((r) => [r.id, r.name, r.exited])).toEqual([
+      ['live-1', 't', false],
+      ['live-2', 't', true],
+    ]);
+    for (const r of rows) {
+      // A raw record carries these; a summary never does.
+      expect(Object.prototype.hasOwnProperty.call(r, 'identity')).toBe(false);
+      expect(Object.prototype.hasOwnProperty.call(r, 'exitCode')).toBe(false);
+      // The harness record has no colour, so the optional field stays ABSENT.
+      expect(Object.prototype.hasOwnProperty.call(r, 'accentColor')).toBe(false);
+    }
+  });
+
+  it('is a READ channel — pinned, because nothing else would notice it becoming a write', () => {
+    // The popup only reads, and a renderer holding `sessions.read` alone must be
+    // able to use it. The broker's own tests check a channel is DECLARED, not
+    // which capability it names — so this is pinned against the declaration,
+    // the way `permission-toast.test.ts` pins `sessions:revealCard`.
+    const caps = fs.readFileSync(path.join(__dirname, '../../shared/ipc/capabilities.ts'), 'utf8');
+    expect(caps).toContain("'sessions:summaries': 'sessions.read'");
+  });
+
+  it('the preload’s `summaries()` invokes THIS channel — pinned, because no test loads the preload', () => {
+    // Mutation round 2 (#797): pointing `summaries()` at `sessions:list` survived
+    // every test — the composer tests stub the preload, the broker's own check
+    // only asks that the channel string appears SOMEWHERE, and it still does (in
+    // `ipc.ts` and the capability map). The renderer would then paint raw
+    // records with no `name`. Pinned against the preload's own line.
+    const preload = fs.readFileSync(path.join(__dirname, '../../preload/index.ts'), 'utf8');
+    expect(preload).toMatch(/summaries:\s*\(\):\s*Promise<SessionSummary\[\]>\s*=>\s*ipcRenderer\.invoke\('sessions:summaries'\)/);
+  });
+});
+
 // P2-E18-09 — where the composer's command list comes from.
 //
 // Through the REAL handler and the REAL StreamCommands, because the whole item

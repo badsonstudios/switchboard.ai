@@ -63,6 +63,7 @@ import { searchTranscripts } from '../transcripts/search';
 import type { TranscriptQuery, TranscriptSearchRequest } from '../../shared/transcripts';
 import { LogFields, Logger } from '../log/logger';
 import { assignAccent, detectProjectType } from './identity';
+import { summariesFrom } from './queries';
 import { EventFeed } from '../events/feed';
 import { HistoryRepair } from './history-repair-log';
 import { planSessionStart } from './start-plan';
@@ -1489,6 +1490,12 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   );
 
   broker.handle('sessions:list', () => manager.list());
+
+  // The composer's `@` popup (P2-E11-07). NOT `sessions:list` mapped in the
+  // renderer: `summariesFrom` is the function the bus's `list_sessions` answers
+  // from (`main/index.ts`), so the composer and the agents are handed the same
+  // names, the same `exited` flag and the same colours — one derivation, not two.
+  broker.handle('sessions:summaries', () => summariesFrom(manager));
 
   // composer slash-command autocomplete (E10-07): builtins + the session
   // folder's and user's own commands/skills. Scan errors fail open in the

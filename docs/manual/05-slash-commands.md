@@ -22,6 +22,9 @@ commands and skills from the folder this session is running in, plus your
 personal ones. Each row is tagged with where it came from: **CLI**,
 **project**, **user**, or **skill**.
 
+The same keys work in the **`@`** list of other sessions — see
+[Talking to the session](03-session-view.md#talking-to-the-session).
+
 A `/` typed mid-sentence is just a slash; the list only opens at the start of a
 line. While it's open it won't submit a *half-typed* command out from under
 you — only a complete one, which is what you asked for by typing it in full.

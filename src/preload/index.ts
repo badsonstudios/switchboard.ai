@@ -32,6 +32,7 @@ import type {
   AutonomyMode,
   SessionCardWire,
   SessionRecordWire,
+  SessionSummary,
   StatusChange,
 } from '../shared/sessions';
 import type { TransportKind } from '../shared/transport';
@@ -295,6 +296,8 @@ const api = {
     /** composer autocomplete data (E10-07): builtins + project/user commands */
     slashCommands: (liveId: string): Promise<SlashCommand[]> =>
       ipcRenderer.invoke('sessions:slashCommands', liveId),
+    /** the composer's `@` popup list (P2-E11-07) — the bus's own `summariesFrom` */
+    summaries: (): Promise<SessionSummary[]> => ipcRenderer.invoke('sessions:summaries'),
     /**
      * Every persisted CARD, with its live status joined on (E7-05).
      *
