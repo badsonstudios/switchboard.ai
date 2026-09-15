@@ -458,9 +458,13 @@ export const TRANSCRIPT_SCHEMA: Readonly<Record<SchemaPath, PathContract>> = {
       'role',
       'usage',
       'model', // last-seen model id, for cost estimation
+      // The key that makes a response count ONCE (#807, `usage-ledger.ts`).
+      // Listed here to record the dependency; `drift.ts` treats consumed and
+      // ignored alike, so this changes no warning — a rename is reported as an
+      // unknown key either way, and would make every copy count again.
+      'id',
     ],
     ignored: [
-      'id',
       'type',
       'stop_reason',
       'stop_sequence',

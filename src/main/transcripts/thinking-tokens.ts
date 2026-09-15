@@ -11,12 +11,13 @@
 // field. Adding it to our output total would inflate every number the card
 // shows and turn nothing red.
 //
-// PER LINE, AGAINST THE SAME LINE'S `output_tokens`. The watcher adds this to
-// its thinking total on exactly the lines, and at exactly the place, it adds
-// `output_tokens` to its output total. That keeps each LINE's thinking inside
-// that line's output. It does NOT by itself make the session totals safe: the
-// watcher adds `output_tokens` without validating it, so a hostile negative
-// output would lower the output total and leave thinking where it was. The
+// PER LINE, AGAINST THE SAME LINE'S `output_tokens`. `usage-ledger.ts` takes
+// this from exactly the copy it takes `output_tokens` from, and replaces both
+// together when a later copy of the response arrives (#807). That keeps each
+// response's thinking inside that response's output. It does NOT by itself
+// make the session totals safe: the ledger refuses a non-finite
+// `output_tokens` but not a negative one, so a hostile negative output would
+// lower the output total and leave thinking where it was. The
 // check the DISPLAY rests on is `thinkingPart` in the renderer, which re-tests
 // `thinking <= output` on the totals.
 //
