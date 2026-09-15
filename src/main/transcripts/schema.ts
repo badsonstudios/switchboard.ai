@@ -35,7 +35,8 @@
 // routing tables — a GC-policy map and a dedup/routing map — which between them
 // enumerate **the same 38 line types**. `KNOWN_LINE_TYPES` declared 13. The same
 // binary's reducer chain then names the payload field it reads for each type
-// (`tag`→`tag`, `agent-name`→`agentName`, `isolation-latch`→`side`,
+// (`tag`→`tag`, `agent-name`→`agentName` — declared flat since #812, see the
+// envelope note — `isolation-latch`→`side`,
 // `continued-in`→`continuedInSessionId`, …), so the payload keys below are READ
 // from the CLI rather than inferred from what this machine happened to trigger.
 //
@@ -69,7 +70,10 @@
 // The rule that came out of it: **a key we have never actually seen is declared
 // only for the line type the CLI says writes it** (`TYPE_SCOPED_ROOT_KEYS`
 // below). If it turns up on another type, that is genuinely news and we want the
-// warning. The 25 keys the corpus DID measure stay in the flat list — their
+// warning. (One exception, and it is not a relaxation of the rule: a key the
+// CLI writes on the ENVELOPE of every line is legal on every type by contract,
+// so it is flat — #812's `teamName` / `agentName`, see their note in the root
+// `ignored` list.) The 25 keys the corpus DID measure stay in the flat list — their
 // presence is not news anywhere, which is the whole reason they are ignored.
 //
 // The legacy 69 keys from 2026-07-31 are also still flat. Re-partitioning those
@@ -212,7 +216,11 @@ export const TYPE_SCOPED_ROOT_KEYS: Readonly<Record<string, readonly string[]>> 
   'custom-title': ['customTitle'],
   tag: ['tag'],
   'isolation-latch': ['side'],
-  'agent-name': ['agentName'],
+  // `'agent-name': ['agentName']` LEFT THIS MAP IN #812. `agentName` is a
+  // team-session ENVELOPE key the CLI writes on every line type, so it is
+  // declared flat in the root `ignored` list, and a key in both places is a
+  // scope that does nothing (`drift.test.ts` fails on it). An `agent-name` line
+  // now gets the shared root set, which contains the key.
   'agent-color': ['agentColor'],
   'agent-setting': ['agentSetting'],
   // CONSUMED (#790) — `watcher.ts`'s `absorbContinuation` rebinds on it. The
@@ -274,7 +282,7 @@ export const TYPE_SCOPED_ROOT_KEYS: Readonly<Record<string, readonly string[]>> 
   //
   // ⚠️ **AND THE MEASUREMENT IS NARROWER THAN THE CONTRACT. READ THIS BEFORE
   // TRUSTING THE LIST ABOVE.** The CLI writes `agentId` on the ENVELOPE, not on
-  // a line type — its generic append path spreads `{…, isSidechain, agentName,
+  // a line type — its generic append path spreads `{…, isSidechain, teamName, agentName,
   // agentId, ...entry}`, so it rides on *whatever* gets appended while an agent
   // id is in scope, and the three types above are the three that happen to have
   // been appended in this corpus. `content-replacement` and `fork-context-ref`
@@ -307,12 +315,15 @@ export const TRANSCRIPT_SCHEMA: Readonly<Record<SchemaPath, PathContract>> = {
       'isMeta', // CLI-internal lines are not conversation
       'message',
     ],
-    // 82 keys. Grouped only for readability — order is not meaning. 69 were
+    // 84 keys. Grouped only for readability — order is not meaning. 69 were
     // measured 2026-07-31; the other 25 were added 2026-09-12 (#779) and were
     // each MEASURED over 244,916 lines; ten of those 25 left again in #787, and
     // `agentId` + `attributionAgent` in #788, all for `TYPE_SCOPED_ROOT_KEYS`,
-    // when we started reading them. Keys named by the CLI's reducer but never
-    // seen are in `TYPE_SCOPED_ROOT_KEYS`, not here.
+    // when we started reading them; and two joined in #812 (69 + 25 − 10 − 2 + 2
+    // = 84). Keys named by the CLI's reducer but never seen are in
+    // `TYPE_SCOPED_ROOT_KEYS`, not here — with ONE deliberate exception: those
+    // two team-session ENVELOPE keys, which are flat because the CLI writes them
+    // on every line type (see their note below).
     //
     // THIS COUNT IS CHECKED AGAINST THIS LIST BY A TEST, because it had already
     // rotted: the comment here read "68 keys, measured" while the list held 69.
@@ -338,6 +349,29 @@ export const TRANSCRIPT_SCHEMA: Readonly<Record<SchemaPath, PathContract>> = {
       'snapshotMessageId',
       // `agentId` LEFT THIS LIST IN #788 — it is consumed now, and lives in
       // `TYPE_SCOPED_ROOT_KEYS` under the three types measured to carry it.
+      //
+      // TEAM-SESSION ENVELOPE KEYS (#812). Flat on purpose: the CLI's generic
+      // append builds every line as `{parentUuid, logicalParentUuid,
+      // isSidechain, teamName: d?.teamName, agentName: d?.agentName, promptId,
+      // agentId, ...entry, …}` (PATH binary 2.1.270 read verbatim; unchanged in
+      // 2.1.272), so with a team context `d` set both ride on WHATEVER type is
+      // appended. "Legal on every type" is the contract, not a shortcut.
+      //
+      // The rename-blindness `TYPE_SCOPED_ROOT_KEYS` exists to prevent costs
+      // nothing here ONLY while nothing reads either key. That is pinned, not
+      // assumed: `agent-attribution.test.ts` asserts `agentNameFromLine` ignores
+      // a root `agentName` (the tempting fallback, since `FeedBlock` has a field
+      // of that name). If you ever consume one, move it back to a scoped entry.
+      //
+      // `agentName` used to be scoped to `agent-name` alone; that came from the
+      // CLI's reducer and was never measured. Counted 2026-09-15 over 270,366
+      // lines / 3,151 transcripts (`spike/probes/812/`): 0 of either key on any
+      // type, i.e. none among the transcripts still on disk carried a team
+      // context. Latent, and drift is fail-open, so the old scoping cost a false
+      // alarm, not a malfunction. Do not CONSUME these here: naming a team member
+      // is a feature, and nothing here could hand-test it.
+      'teamName',
+      'agentName',
       // environment stamps
       'version',
       'gitBranch',
