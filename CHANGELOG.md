@@ -78,6 +78,17 @@ on the floor, and say so in your PR.
 
 ### Added
 
+- **See how much of a session's output was thinking.** The tokens-out figure on
+  a session card is now followed by a fainter one — `↓ 4.2k (2.9k thinking)` —
+  showing how much of that output was the model working things through before
+  it answered. Thinking is usually the biggest part of a session's output and,
+  until now, the part you couldn't see. It is already **inside** the tokens-out
+  number, not extra on top of it, and hovering shows it as a percentage.
+
+  It only appears once a session has done some thinking, and not for
+  conversations recorded by versions of Claude Code older than 2.1.233, which
+  didn't record it.
+
 - **The conversation now says which helper is talking.** When a session hands
   work to a sub-agent, that work has always appeared indented behind a dashed
   line — but with nothing saying who was doing it. Run two helpers at once, which

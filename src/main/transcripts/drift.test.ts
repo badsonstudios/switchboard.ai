@@ -257,14 +257,31 @@ describe('lines the 2026-07-31 corpus was too small to contain (#779)', () => {
     expect(unknownKeys(line)).toEqual([]);
   });
 
-  it('does not walk INTO the thinking breakdown — it is a counter, not a contract', () => {
-    // Same posture as `cache_creation`: we never read the interior, so its
-    // interior is not ours to declare. Pinning it stops someone "helpfully"
-    // adding a descend for it and turning a future Anthropic sub-key into a
-    // warning about a number we do not use.
+  it('DOES walk into the thinking breakdown now that the card reads it (#789)', () => {
+    // #779 pinned the opposite — no descend, "a counter, not a contract" — and
+    // that was right while nothing read the interior. #789 shows
+    // `thinking_tokens` on the card, so a rename would blank the figure with no
+    // log line saying why. Both directions are asserted: the key we read is
+    // quiet, a sibling beside it is news, and a rename of it is news.
     const line = assistantLine();
     const usage = (line.message as { usage: Record<string, unknown> }).usage;
+
+    usage.output_tokens_details = { thinking_tokens: 4 };
+    expect(unknownKeys(line)).toEqual([]);
+
     usage.output_tokens_details = { thinking_tokens: 4, some_future_split: 9 };
+    expect(unknownKeys(line)).toEqual(['message.usage.output_tokens_details.some_future_split']);
+
+    usage.output_tokens_details = { thinking_token_count: 4 };
+    expect(unknownKeys(line)).toEqual(['message.usage.output_tokens_details.thinking_token_count']);
+  });
+
+  it('is quiet about the null breakdown the CLI writes on <synthetic> lines', () => {
+    // Measured 2026-09-15: 20 corpus lines, all `<synthetic>`, all `output_tokens: 0`.
+    const line = JSON.parse(JSON.stringify(assistantLine())) as Record<string, unknown>;
+    const usage = (line.message as { usage: Record<string, unknown> }).usage;
+    usage.output_tokens_details = null;
+    expect(usage.output_tokens_details).toBeNull(); // witness
     expect(unknownKeys(line)).toEqual([]);
   });
 

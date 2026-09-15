@@ -581,7 +581,13 @@ function harness(
       sessionId: string;
       title?: string;
       lines?: number;
-      usage?: { input: number; output: number; cacheRead: number; cacheCreate: number };
+      usage?: {
+        input: number;
+        output: number;
+        cacheRead: number;
+        cacheCreate: number;
+        thinking?: number;
+      };
       model?: string;
     }) => {
       const full = {
@@ -1352,7 +1358,9 @@ describe('starting a session preserves the card (#153 follow-up)', () => {
   it('keeps usage, model, task label and group membership too', async () => {
     const h = harness(undefined, dir, {
       prior: priorWith({
-        usage: { input: 1, output: 2, cacheRead: 3, cacheCreate: 4 },
+        // `thinking` included (#789): optional on the persisted type, so an
+        // explicit four-field copy would drop it and no type check would object
+        usage: { input: 1, output: 2, cacheRead: 3, cacheCreate: 4, thinking: 1 },
         model: 'claude-x',
         taskLabel: 'refactor the thing',
         groupId: 'group-9',
@@ -1362,7 +1370,7 @@ describe('starting a session preserves the card (#153 follow-up)', () => {
     await start(h);
 
     const saved = h.upserted.at(-1)!;
-    expect(saved.usage).toEqual({ input: 1, output: 2, cacheRead: 3, cacheCreate: 4 });
+    expect(saved.usage).toEqual({ input: 1, output: 2, cacheRead: 3, cacheCreate: 4, thinking: 1 });
     expect(saved.model).toBe('claude-x');
     expect(saved.taskLabel).toBe('refactor the thing');
     expect(saved.groupId).toBe('group-9');
@@ -4214,6 +4222,23 @@ describe('auto task labels (P2-E7-06, §5.11)', () => {
       expect(() => h.labelFor('live-nobody')).not.toThrow();
       expect(h.labelFor('live-nobody')).toBeUndefined();
     });
+  });
+
+  it('persists the thinking figure from a live snapshot, not just the four totals (#789)', () => {
+    // Found by mutation, not review: the relaunch test above seeds `thinking`
+    // on the PRIOR card, which only proves `...prior` keeps it. This is the
+    // other write — the one every drain makes. `thinking` is optional on the
+    // persisted type, so a hand-written four-field copy here would drop it and
+    // no type check would object.
+    const h = harness(claudeLike, dir, { prior: card() });
+    start(h);
+
+    h.fireSnapshot({
+      sessionId: 'live-1',
+      usage: { input: 1, output: 10, cacheRead: 0, cacheCreate: 0, thinking: 7 },
+    });
+
+    expect(stored(h).usage).toEqual({ input: 1, output: 10, cacheRead: 0, cacheCreate: 0, thinking: 7 });
   });
 
   it('a snapshot that has ingested nothing changes no label', () => {

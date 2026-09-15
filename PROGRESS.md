@@ -3,6 +3,13 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔨 IN PROGRESS — 2026-09-15: **#789** — thinking-token breakdown on the usage strip
+>
+> Branch `feature/789-thinking-tokens`; plan posted on the issue. Source is
+> `message.usage.output_tokens_details.thinking_tokens`, accumulated beside
+> `output` per line (NOT `cliCost`'s ledger). Also owed to the close-out:
+> **#812** was filed after #811 merged and is not yet recorded here.
+
 > # 📌 STANDING — 2026-09-11: **EVERY commit goes through a PR. No pushes to `main`, ever.**
 >
 > **Owner decision, 2026-09-11**, after the #772 close-out was pushed straight

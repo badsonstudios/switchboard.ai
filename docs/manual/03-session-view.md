@@ -368,6 +368,17 @@ Along the right-hand end of the card header, beside the branch name, a session
 shows what it has used: tokens in (`↑`), tokens out (`↓`), tokens read back
 from the cache (`⛁`), and a dollar figure.
 
+When the model thinks before it answers, the tokens-out figure is followed by a
+fainter one: `↓ 4.2k (2.9k thinking)`. That is how much of the output was the
+model working things through rather than writing the reply you read. It is
+already **inside** the tokens-out number — the session did not use 4.2k plus
+2.9k — and hovering it shows the share as a percentage. It doesn't appear until
+a session has actually done some thinking, and conversations recorded by
+versions of Claude Code older than 2.1.233 never show it, because they didn't
+record it. Unlike the other counts, the thinking figure can read a little
+**low** — never high: a conversation you started on an older version and carried
+on after updating only counts the thinking recorded since.
+
 **The token counts are exact. The dollar figure has two versions, and the card
 tells you which one you're looking at.**
 

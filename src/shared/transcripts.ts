@@ -190,7 +190,13 @@ export interface CliModelCost {
   cacheCreationInputTokens: number;
   webSearchRequests: number;
   costUSD: number;
-  /** Present only when the CLI recorded it; #789 surfaces this, not #787. */
+  /**
+   * Present only when the CLI recorded it. Parsed, and deliberately NOT what the
+   * card's thinking figure is built from (#789): this is the CLI's ledger, which
+   * only lands at exit and which #807 measured running above our per-session
+   * totals — so set beside OUR output figure it could read as more thinking than
+   * output. The card takes thinking from the same lines as its output.
+   */
   thinkingTokens?: number;
 }
 

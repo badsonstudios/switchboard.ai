@@ -7,6 +7,7 @@ import {
   addUsage,
   costLine,
   sumCostUsd,
+  thinkingPart,
   ZERO_USAGE,
   type CliCost,
   type CliModelCost,
@@ -349,5 +350,62 @@ describe('addUsage', () => {
   it('sums fieldwise from zero', () => {
     const total = addUsage(ZERO_USAGE, { input: 5, output: 10, cacheRead: 100, cacheCreate: 2 });
     expect(total).toEqual({ input: 5, output: 10, cacheRead: 100, cacheCreate: 2 });
+  });
+});
+
+describe('thinkingPart (#789) — a part of output, never more than it', () => {
+  const base = { input: 0, output: 4200, cacheRead: 0, cacheCreate: 0 };
+
+  it('gives the tokens and their share of output', () => {
+    expect(thinkingPart({ ...base, thinking: 2900 })).toEqual({ tokens: 2900, pct: 69 });
+  });
+
+  it('accepts thinking equal to output (100%)', () => {
+    expect(thinkingPart({ ...base, thinking: 4200 })).toEqual({ tokens: 4200, pct: 100 });
+  });
+
+  it('never says 100% unless it is exactly all, nor 0% unless it is exactly none', () => {
+    expect((4183 / 4200) * 100).toBeGreaterThan(99.5); // witness: would round to 100
+    expect(thinkingPart({ ...base, thinking: 4183 })!.pct).toBe(99);
+    expect((17 / 4200) * 100).toBeLessThan(0.5); // witness: would round to 0
+    expect(thinkingPart({ ...base, thinking: 17 })!.pct).toBe(1);
+  });
+
+  it('rounds to nearest, not down', () => {
+    expect((2980 / 4200) * 100).toBeCloseTo(70.95, 2); // witness: floor 70, round 71
+    expect(thinkingPart({ ...base, thinking: 2980 })!.pct).toBe(71);
+  });
+
+  it('shows NOTHING when thinking exceeds output — the persisted copy is never re-parsed', () => {
+    expect(thinkingPart({ ...base, thinking: 4201 })).toBeNull();
+  });
+
+  it('shows nothing for a record written before #789 (no key at all)', () => {
+    const old = { ...base };
+    expect(Object.prototype.hasOwnProperty.call(old, 'thinking')).toBe(false); // witness
+    expect(thinkingPart(old)).toBeNull();
+  });
+
+  it('shows nothing for zero, rather than "(0 thinking)"', () => {
+    expect(thinkingPart({ ...base, thinking: 0 })).toBeNull();
+  });
+
+  it('shows nothing for a hand-edited non-number, NaN or negative', () => {
+    expect(thinkingPart({ ...base, thinking: '2900' as unknown as number })).toBeNull();
+    expect(thinkingPart({ ...base, thinking: NaN })).toBeNull();
+    expect(thinkingPart({ ...base, thinking: -1 })).toBeNull();
+  });
+
+  it('shows nothing when OUTPUT itself is not a number', () => {
+    // `!(t <= output)` rather than `t > output`: against NaN both comparisons
+    // are false, so only the negated form refuses it.
+    expect(thinkingPart({ ...base, output: NaN, thinking: 5 })).toBeNull();
+  });
+
+  it('is never priced: the estimate is identical with or without it', () => {
+    // The hard rule, pinned where the money is: thinking is already inside
+    // `output`, so charging it again at the output rate would double-bill it.
+    const without = estimateCostUsd(base, 'claude-opus-5');
+    expect(estimateCostUsd({ ...base, thinking: 2900 }, 'claude-opus-5')).toBe(without);
   });
 });
