@@ -105,9 +105,17 @@ on the floor, and say so in your PR.
   `@SessionName` into your message. Enter never swaps in a name you didn't pick:
   if what you typed only appears inside a session's name, Enter sends your text
   as written. An `@` in the middle of ordinary text, such as an email address,
-  opens nothing and is left exactly as you typed it. For now the mention is
-  just the name in your message; bringing that session's recent work in with it
-  is the next step.
+  opens nothing and is left exactly as you typed it.
+
+- **A mention brings that session's recent work with it.** Send "take
+  `@TradingApp`'s fix and apply it here" and TradingApp's recent conversation
+  goes in front of your message, marked as coming from TradingApp — you can see
+  all of it in your turn in the conversation. The mention itself is sent as
+  `"TradingApp" (session)`, because Claude would otherwise read `@TradingApp` as
+  a file name. An `@` that matches no open session, an email address, anything
+  inside code, and the session you're typing in are sent exactly as typed. If
+  two open sessions share the name, nothing is sent: a note under the box names
+  both, with their folders, and your message stays where it is.
 
 - **See how much of a session's output was thinking.** The tokens-out figure on
   a session card is now followed by a fainter one — `↓ 4.2k (2.9k thinking)` —

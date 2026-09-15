@@ -74,6 +74,8 @@ import { SecretStore } from './secrets/store';
 import { GitService } from './git/git-service';
 import { BusHost } from './bus/host-channel';
 import { SessionQueries, summariesFrom } from './sessions/queries';
+import { resolveMentions } from './sessions/mention-resolve';
+import { renderOutput } from './bus/bus-tools';
 import { SiblingDelivery } from './sessions/delivery';
 import { pushSiblingMessage, registerDeliveryIpc } from './sessions/delivery-ipc';
 import { runPreflight } from './preflight';
@@ -2014,6 +2016,11 @@ app
         parsePreferredTransport(process.env[TRANSPORT_ENV_VAR], log.app.warn),
       // the sweep reattached a card to a conversation nobody asked it to (#539)
       onHistoryRepair: (repair) => historyRepairs.add(repair),
+      // The composer's `@Name` at send (P2-E11-08) — the SAME `sessionQueries`
+      // the bus tools answer from, and `renderOutput`'s wording, so a mention
+      // and `get_session_output` cannot disagree about a session.
+      resolveMentions: (text, ownSessionId) =>
+        resolveMentions(sessionQueries, renderOutput, text, ownSessionId),
     });
     // the live -> card join the rules engine scopes by (P2-E14-03)
     cardIdForLive = sessionIpc.cardIdFor;

@@ -350,6 +350,24 @@ Before sending, switchboard.ai resolves `@TradingApp` from the Session Bus (last
 messages, or a named artifact) and injects it as context ahead of the prompt text.
 Autocomplete popup lists live sessions by name/color.
 
+> **As built (#797, #798, 2026-09-15).** The popup lists `summariesFrom` — the
+> bus's own list. At send, a draft that may mention a session goes to main
+> (`sessions:resolveMentions`, gated `transcripts.read`), where the finder
+> (`shared/mention-finder.ts`: the LONGEST known name at each word-boundary `@`,
+> case-insensitive, `'s` ends a name, code spans skipped) runs over
+> `SessionQueries` — the instance the bus tools use — and each resolved session
+> is injected ONCE, ahead of the prose, as `renderOutput`'s text (#764's
+> wording and fence; default `lastN`). **The mention is rewritten** to
+> `"Name" (session)` in the sent prose: measured on CLI 2.1.272
+> (`spike/findings/e11-798-cli-at-mention.md`), the CLI expands any `@word` as a
+> file mention itself — a same-named file is attached, and even a miss costs the
+> model a `Read`. An unresolved `@word`, the composer's own session, and a
+> forwarded sibling message's text are sent as typed; slash commands are not
+> resolved. An **ambiguous** name refuses the whole send with `resolve`'s reason
+> (`code: 'ambiguous'`). A failed lookup fails open: the draft is sent as typed
+> and the composer says so. The context is shown in the sent user turn, not
+> expanded in the composer; collapsing it there is #830.
+
 **Tier 3 — Session Bus MCP server (agent-driven).**
 switchboard.ai runs a local MCP server; each Claude session gets it attached at
 spawn via `--mcp-config`.

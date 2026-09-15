@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { ContextMenuLabels } from '../shared/context-menu';
 import type { SlashCommand } from '../shared/slash-commands';
+import type { MentionPrompt } from '../shared/mention-prompt';
 import type { PromptAttachment } from '../shared/prompt-attachments';
 import type { SiblingAck, SiblingMessage } from '../shared/sibling-message';
 import type { PtyAttachment, PtyChunk, PtySnapshot } from '../shared/ipc/pty';
@@ -298,6 +299,12 @@ const api = {
       ipcRenderer.invoke('sessions:slashCommands', liveId),
     /** the composer's `@` popup list (P2-E11-07) — the bus's own `summariesFrom` */
     summaries: (): Promise<SessionSummary[]> => ipcRenderer.invoke('sessions:summaries'),
+    /**
+     * The prompt a draft with `@Name` mentions actually sends, or the reasons it
+     * must not go (P2-E11-08). `null` = main refused the call itself.
+     */
+    resolveMentions: (liveId: string, text: string): Promise<MentionPrompt | null> =>
+      ipcRenderer.invoke('sessions:resolveMentions', liveId, text),
     /**
      * Every persisted CARD, with its live status joined on (E7-05).
      *

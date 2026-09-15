@@ -38,6 +38,9 @@ let summaryFetches: number;
 /** `sessions.summaries` behaviour for the next call */
 let summariesMode: 'resolve' | 'hold' | 'refuse' | 'reject';
 let releaseSummaries: (() => void) | null = null;
+/** what main's `sessions.resolveMentions` answers (P2-E11-08); every call is recorded */
+let resolveMentions: (id: string, text: string) => Promise<unknown>;
+let resolveCalls: Array<[string, string]>;
 const roots: Root[] = [];
 
 /** The composer below is mounted as `live-b` / "Beta" — its OWN session. */
@@ -78,6 +81,7 @@ function stubBridge(): void {
             return Promise.resolve(SESSIONS);
         }
       },
+      resolveMentions: (id: string, text: string) => resolveMentions(id, text),
       submitPrompt: (_id: string, text: string) => {
         submitted.push(text);
         return Promise.resolve(true);
@@ -161,6 +165,13 @@ beforeEach(async () => {
   summaryFetches = 0;
   summariesMode = 'resolve';
   releaseSummaries = null;
+  resolveCalls = [];
+  // Default: main resolves nothing, so the draft comes back exactly as typed —
+  // which is also what every pre-#798 test in this file expects to be sent.
+  resolveMentions = (id, text) => {
+    resolveCalls.push([id, text]);
+    return Promise.resolve({ ok: true, prompt: text });
+  };
   vi.stubGlobal(
     'ResizeObserver',
     class {
@@ -440,6 +451,88 @@ describe('an @ in ordinary prose', () => {
     expect(rows(host)).toHaveLength(0);
     await press(host, 'Enter');
     expect(submitted).toEqual(['mail dan@example.com']);
+  });
+});
+
+describe('sending a draft that mentions a session (P2-E11-08)', () => {
+  const notice = (host: HTMLElement): string =>
+    host.querySelector<HTMLElement>('[data-composer-attach-notice]')?.textContent ?? '';
+
+  it('asks main about THIS session’s draft, sends the prompt main built, and clears the box', async () => {
+    resolveMentions = (id, text) => {
+      resolveCalls.push([id, text]);
+      return Promise.resolve({ ok: true, prompt: 'CONTEXT BLOCK\n\ntake "TradingApp" (session) now' });
+    };
+    const host = await mount();
+    await type(host, 'take @TradingApp now');
+    await press(host, 'Enter');
+
+    expect(resolveCalls).toEqual([[OWN_ID, 'take @TradingApp now']]);
+    expect(submitted).toEqual(['CONTEXT BLOCK\n\ntake "TradingApp" (session) now']);
+    expect(boxOf(host).value).toBe('');
+    expect(notice(host)).toBe('');
+  });
+
+  it('a draft with no @ at a word boundary never asks main — the instant path is untouched', async () => {
+    const host = await mount();
+    await type(host, 'mail dan@example.com');
+    await press(host, 'Enter');
+    expect(resolveCalls).toEqual([]);
+    expect(submitted).toEqual(['mail dan@example.com']);
+  });
+
+  it('a SLASH COMMAND is never resolved, @ or not', async () => {
+    const host = await mount();
+    await type(host, '/review @TradingApp');
+    await press(host, 'Escape'); // close the slash popup so Enter sends
+    await press(host, 'Enter');
+    expect(resolveCalls).toEqual([]);
+    expect(submitted).toEqual(['/review @TradingApp']);
+  });
+
+  it('an AMBIGUOUS name: nothing is sent, the draft stays, and the reason is under the box', async () => {
+    const reason = '"TradingApp" is ambiguous — 2 sessions share that name: TradingApp (live-a, /p/trading); TradingApp (live-z, /p/t2). Use the session id.';
+    resolveMentions = () => Promise.resolve({ ok: false, refusals: [reason] });
+    const host = await mount();
+    await type(host, 'take @TradingApp now');
+    await press(host, 'Enter');
+
+    expect(submitted).toEqual([]);
+    expect(boxOf(host).value).toBe('take @TradingApp now');
+    expect(notice(host)).toContain('Not sent');
+    expect(notice(host)).toContain('/p/t2');
+  });
+
+  it('the lookup FAILING fails open: sent as typed, and the box says the context did not go', async () => {
+    resolveMentions = () => Promise.reject(new Error('main is gone'));
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const host = await mount();
+    await type(host, 'take @TradingApp now');
+    await press(host, 'Enter');
+
+    expect(submitted).toEqual(['take @TradingApp now']);
+    expect(boxOf(host).value).toBe('');
+    expect(notice(host)).toContain("couldn't look up the sessions you mentioned");
+  });
+
+  it('a second Enter while the lookup is out sends NOTHING more (#774’s one-send guard)', async () => {
+    let release: (() => void) | null = null;
+    resolveMentions = (id, text) => {
+      resolveCalls.push([id, text]);
+      return new Promise((resolve) => {
+        release = () => resolve({ ok: true, prompt: text });
+      });
+    };
+    const host = await mount();
+    await type(host, 'take @TradingApp now');
+    await press(host, 'Enter');
+    await press(host, 'Enter');
+    expect(resolveCalls).toHaveLength(1);
+    expect(submitted).toEqual([]);
+
+    await act(async () => release!());
+    await flush();
+    expect(submitted).toEqual(['take @TradingApp now']);
   });
 });
 

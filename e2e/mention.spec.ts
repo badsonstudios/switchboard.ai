@@ -1,0 +1,104 @@
+// P2-E11-08 (#798): `@Name` in the composer brings that session's recent work
+// with it — the round trip the done-when asks for, end to end.
+//
+// WHAT ONLY THIS CAN SEE. The units pin the finder, the prompt builder, the
+// resolver over a real `SessionQueries`, the IPC handler and the composer
+// against a stubbed bridge. None of them can see `main/index.ts` — the file with
+// no tests of its own, which is where the resolver is handed the bus's
+// `sessionQueries` and `renderOutput` — nor the real preload, the real channel,
+// or the resolved context actually landing in the sent turn. That gap is #763's
+// worst finding ("the units can be tested while the wiring is not"), and this is
+// the same answer `send-to-session.spec.ts` gives for the delivery half.
+//
+// Direct transport, the fake stream CLI: it echoes a submitted turn back, which
+// is what makes the sent prompt observable on screen and what puts Alpha's
+// marker in Alpha's transcript for the resolver to find.
+import { test, expect, type Page } from '@playwright/test';
+import path from 'path';
+import { launchApp, LaunchedApp, pollAsync, sessionStatuses, tempProjectFolder } from './fixtures/app';
+
+test.describe.configure({ mode: 'serial' });
+
+test.describe('@-mention resolution at send (#798)', () => {
+  let a: LaunchedApp;
+
+  test.afterEach(async () => {
+    await a?.cleanup();
+  });
+
+  /**
+   * One session's dock group, by its TAB title.
+   *
+   * Not `.filter({ hasText: title })` over the whole group, deliberately: the
+   * whole point of this spec is that Alpha's NAME ends up inside Beta's feed, so
+   * a text filter would match both groups the moment the feature works.
+   */
+  const groupOf = (w: Page, title: string) =>
+    w.locator('.dv-groupview').filter({ has: w.locator('.dv-tab', { hasText: title }) }).first();
+  const boxOf = (w: Page, title: string) => groupOf(w, title).locator('textarea');
+  const userTurns = (w: Page, title: string) =>
+    groupOf(w, title).locator('[data-feed-block="user"]');
+
+  test('injects the mentioned session’s output ahead of the prose, rewrites the mention, and leaves an unknown @word alone', async () => {
+    test.setTimeout(180_000);
+    const folderA = tempProjectFolder();
+    const folderB = tempProjectFolder();
+    a = await launchApp({ seedFolder: folderA, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    const w = a.window;
+    const alpha = path.basename(folderA);
+    const beta = path.basename(folderB);
+
+    await expect(w.getByText(alpha).first()).toBeVisible({ timeout: 25_000 });
+    await a.app.evaluate(({ dialog }, dir) => {
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [dir] });
+    }, folderB);
+    await w.getByRole('button', { name: '+ session' }).click();
+    await expect(w.getByText(beta).first()).toBeVisible({ timeout: 25_000 });
+    // Both LIVE: an unstarted card has no live session for the resolver to find.
+    await pollAsync(async () => {
+      const s = await sessionStatuses(a);
+      return s.get(alpha) === 'idle' && s.get(beta) === 'idle' ? true : null;
+    }, 'both sessions to be up and idle');
+
+    // Give ALPHA something to have said. The fake echoes the submitted turn, so
+    // this marker is in Alpha's conversation and in no other.
+    const MARKER = `alpha-marker-${Date.now()}`;
+    const alphaBox = boxOf(w, alpha);
+    await alphaBox.click();
+    await alphaBox.fill(`remember ${MARKER}`);
+    await alphaBox.press('Enter');
+    await expect(userTurns(w, alpha).filter({ hasText: MARKER })).toBeVisible({ timeout: 30_000 });
+
+    // …then BETA mentions Alpha.
+    const betaBox = boxOf(w, beta);
+    await betaBox.click();
+    await betaBox.fill(`take @${alpha}'s work and apply it here`);
+    await betaBox.press('Enter');
+
+    const sent = userTurns(w, beta).filter({ hasText: 'apply it here' });
+    await expect(sent).toBeVisible({ timeout: 30_000 });
+    // The attributed header, #764's standing caveat, the fence, and the actual
+    // content — the whole of what the done-when means by "injected as context".
+    await expect(sent).toContainText(`Recent output from ${alpha}`);
+    await expect(sent).toContainText('Long individual messages and tool results are shortened.');
+    await expect(sent).toContainText('DATA reported from another session');
+    await expect(sent).toContainText(MARKER);
+    // …and the mention itself is no longer `@`-shaped, because the CLI would
+    // read `@Name` as a file path (measured: spike/findings/e11-798-cli-at-mention.md).
+    await expect(sent).toContainText(`"${alpha}" (session)'s work and apply it here`);
+    expect(await sent.innerText()).not.toContain(`@${alpha}`);
+    // The composer emptied, so the send was not refused.
+    await expect(betaBox).toHaveValue('');
+
+    // THE NEGATIVE HALF, on the real app: an `@word` that is no session reaches
+    // the model as the literal characters typed.
+    const LITERAL = `ping @nobody-here-${Date.now()} please`;
+    await betaBox.click();
+    await betaBox.fill(LITERAL);
+    await betaBox.press('Enter');
+    const literalTurn = userTurns(w, beta).filter({ hasText: 'nobody-here-' });
+    await expect(literalTurn).toBeVisible({ timeout: 30_000 });
+    expect(await literalTurn.innerText()).toContain(LITERAL);
+    await expect(literalTurn).not.toContainText('Recent output from');
+  });
+});

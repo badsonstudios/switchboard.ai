@@ -8,7 +8,13 @@
 // stops being a nicety: a path that skips it is a control that silently does
 // nothing for every user, which is what `/clear` and `/compact` were.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { sendSessionCommand, submitPrompt, interruptSession, SUBMIT_DELAY_MS } from './composer';
+import {
+  sendSessionCommand,
+  submitPrompt,
+  interruptSession,
+  resolveDraftMentions,
+  SUBMIT_DELAY_MS,
+} from './composer';
 import { sessionStore } from '../store/session-store';
 import { ipcRefusal } from '../../../shared/ipc/refusal';
 
@@ -52,6 +58,59 @@ beforeEach(() => {
 
 const ESC = String.fromCharCode(27);
 const CR = String.fromCharCode(13);
+
+describe('resolveDraftMentions — what a draft with @-mentions becomes (P2-E11-08)', () => {
+  const answer = (value: unknown) => {
+    (window.switchboard.sessions as unknown as { resolveMentions: unknown }).resolveMentions = (
+      id: string,
+      text: string
+    ) => {
+      asked.push([id, text]);
+      return value instanceof Error ? Promise.reject(value) : Promise.resolve(value);
+    };
+  };
+  let asked: Array<[string, string]>;
+  beforeEach(() => {
+    asked = [];
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  it('asks main about THIS session and sends the prompt main built', async () => {
+    answer({ ok: true, prompt: 'BLOCK\n\ntake "A" (session)' });
+    await expect(resolveDraftMentions('live-1', 'take @A')).resolves.toEqual({
+      kind: 'send',
+      prompt: 'BLOCK\n\ntake "A" (session)',
+    });
+    expect(asked).toEqual([['live-1', 'take @A']]);
+  });
+
+  it('passes an ambiguous-name refusal through — the send must not happen', async () => {
+    answer({ ok: false, refusals: ['"A" is ambiguous'] });
+    await expect(resolveDraftMentions('live-1', 'take @A')).resolves.toEqual({
+      kind: 'refused',
+      refusals: ['"A" is ambiguous'],
+    });
+  });
+
+  // Fail open (P6): every way the LOOKUP can fail sends the draft as typed and
+  // is marked so the composer can say the context did not go.
+  const failures: Array<[string, unknown]> = [
+    ['main answers null (it refused the call)', null],
+    ['the channel is refused by capability', ipcRefusal('sessions:resolveMentions', 'capability' as Parameters<typeof ipcRefusal>[1])],
+    ['the invoke rejects', new Error('gone')],
+    ['a shape nobody sends', { ok: 'maybe' }],
+    ['a refusal with no reasons', { ok: false, refusals: [] }],
+  ];
+  for (const [what, value] of failures) {
+    it(`${what} → unresolved, the draft exactly as typed`, async () => {
+      answer(value);
+      await expect(resolveDraftMentions('live-1', 'take @A')).resolves.toEqual({
+        kind: 'unresolved',
+        prompt: 'take @A',
+      });
+    });
+  }
+});
 
 describe('sendSessionCommand — the ⋯ menu route (#381)', () => {
   it('goes over the typed transport when the session has one', async () => {

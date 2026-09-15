@@ -64,6 +64,7 @@ import type { TranscriptQuery, TranscriptSearchRequest } from '../../shared/tran
 import { LogFields, Logger } from '../log/logger';
 import { assignAccent, detectProjectType } from './identity';
 import { summariesFrom } from './queries';
+import type { MentionPrompt } from '../../shared/mention-prompt';
 import { EventFeed } from '../events/feed';
 import { HistoryRepair } from './history-repair-log';
 import { planSessionStart } from './start-plan';
@@ -157,6 +158,13 @@ export interface SessionIpcDeps {
    * be delivered must never cost a session its start (P6).
    */
   onHistoryRepair?: (repair: HistoryRepair) => void;
+  /**
+   * The composer's `@Name` at send (P2-E11-08): the prompt a draft actually
+   * sends, or the reasons it must not. `mention-resolve.ts` is the composition;
+   * `main/index.ts` hands it the bus's own `SessionQueries` and `renderOutput`.
+   * Optional: a wiring without one sends every draft exactly as typed.
+   */
+  resolveMentions?: (text: string, ownSessionId: string) => MentionPrompt;
 }
 
 /**
@@ -1496,6 +1504,27 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   // from (`main/index.ts`), so the composer and the agents are handed the same
   // names, the same `exited` flag and the same colours — one derivation, not two.
   broker.handle('sessions:summaries', () => summariesFrom(manager));
+
+  // The composer's `@Name` at send (P2-E11-08). The draft goes in; the prompt
+  // to send — or the reasons it must not go — comes back. The work is
+  // `mention-resolve.ts`; this is the boundary, so it checks what the renderer
+  // sent and turns a throw into an answer (#347). `null` means the lookup did
+  // not happen, and the composer then sends the draft as typed and SAYS so.
+  broker.handle('sessions:resolveMentions', (_e, sessionId: unknown, text: unknown) => {
+    if (typeof sessionId !== 'string' || typeof text !== 'string') {
+      return refuse('sessions:resolveMentions', 'sessionId and text are required');
+    }
+    if (!deps.resolveMentions) return { ok: true, prompt: text } satisfies MentionPrompt;
+    try {
+      return deps.resolveMentions(text, sessionId);
+    } catch (err) {
+      log.warn('sessions:resolveMentions failed; the draft will be sent as typed', {
+        sessionId,
+        error: String(err),
+      });
+      return null;
+    }
+  });
 
   // composer slash-command autocomplete (E10-07): builtins + the session
   // folder's and user's own commands/skills. Scan errors fail open in the
