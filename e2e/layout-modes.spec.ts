@@ -229,7 +229,24 @@ test.describe('layout modes (E9-07)', () => {
     // give a stray reactive sweep a chance to undo it before we believe it
     await w.waitForTimeout(500);
     await expect(tabs(w)).toHaveCount(2);
+
+    // #813: and LEAVING it again must not fold it. The owner's repro — a card
+    // clicked while a maximize was held collapsed the moment focus moved on, by
+    // clicking a card in the workspace or a row in the rail alike. Asserted
+    // BEFORE the un-maximize below, whose restore would otherwise re-expand
+    // the folded card and hide the bug (it did, for six weeks).
+    await tabs(w).filter({ hasText: first }).click();
+    await expect(w.locator('.dv-active-tab')).toContainText(first);
+    await w.waitForTimeout(500);
+    await expect(tabs(w)).toHaveCount(2);
+    await expect(strip(w)).toHaveCount(0);
+    await row(w, second).click();
+    await expect(w.locator('.dv-active-tab')).toContainText(second);
     await row(w, first).click();
+    await expect(w.locator('.dv-active-tab')).toContainText(first);
+    await w.waitForTimeout(500);
+    await expect(tabs(w)).toHaveCount(2);
+    await expect(strip(w)).toHaveCount(0);
 
     // ...and again puts it back exactly as it was — including the hidden one
     // STAYING hidden

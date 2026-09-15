@@ -260,6 +260,26 @@ takes the notice down and writes everything you've done since. Your sessions run
 normally the whole time. The full explanation is in
 [Organizing your workspace](07-workspace.md#when-saving-keeps-failing).
 
+**A session's card disappeared when I clicked a different session.**
+Look in the Sessions list first: if the session is still listed, it is still
+running, and clicking it brings the card back — it was folded into the
+Collapsed strip, not closed. Then look at the layout chip in the title bar:
+
+- **It ends in · maximized.** A session is still maximized, perhaps from long
+  ago. Older versions folded every busy card you clicked away from while a
+  maximize was on. That no longer happens in the Grid layout, and the leftover
+  maximize is harmless, so there's nothing you need to do. If you want it gone,
+  run **Layout: Grid — every session gets a card** from the command palette:
+  that clears it, and also brings back every session you'd folded or hidden.
+  (Undoing the maximize by double-clicking the maximized session's header puts
+  back the arrangement from when you took it, which may be days old.)
+- **It says Focus or Queue.** Folding the card you leave is that layout doing
+  its job. Click the chip until it says **Grid**.
+
+If a card still goes missing, [the log](#where-the-logs-are) has a `[ladder]`
+line every time a card is folded, hidden or tabbed, saying which rule did it —
+that line is what to report.
+
 **My layout didn't come back and there was no banner.**
 A *single* failed write doesn't raise a banner — a scanner touching the file for
 a moment is an everyday event on Windows and the next attempt works, so a notice

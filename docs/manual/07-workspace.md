@@ -329,7 +329,17 @@ hidden by hand before you maximized.
 Picking a layout mode while a session is maximized ends the maximize: you've
 just asked for a whole arrangement, so that's the one you get. And a maximize
 isn't a trap — clicking another session while one is maximized brings that one
-back as usual; the rest stay folded until you undo it.
+back as usual; the rest stay folded until you undo it. A maximize only
+rearranges the workspace at the moment you take it and the moment you undo it,
+and never folds anything later on its own — so in the **Grid** layout, a session
+you went to look at stays when you click away from it again. In **Focus** and
+**Queue**, the layout's own rule keeps working while a session is maximized:
+Focus folds the card you leave (the maximized one included), and Queue keeps
+bringing out sessions that need you.
+
+Undoing a maximize puts back the arrangement from the moment you took it. If a
+maximize has been left on for a long time — the layout chip ends in
+**· maximized** — undoing it can bring back an arrangement that old.
 
 This works on a **suspended** session too (one that came back with the app and
 hasn't been resumed yet). Its card keeps a header — the session's name, its

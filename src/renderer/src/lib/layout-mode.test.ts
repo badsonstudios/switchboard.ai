@@ -289,14 +289,19 @@ describe('layout modes (E9-07, §5.8)', () => {
       expect(held.maximized).toBe('a'); // ...and the edit is immutable
     });
 
-    it('a maximize whose card is not on screen is ignored, not obeyed', () => {
-      // fail-open, and specifically: a maximize left over from a card that has
-      // been CLOSED must not make `grid` start enforcing. If it did, grid's own
-      // plan ("every session gets a card") would re-expand every card the user
-      // had collapsed by hand, on the next status push and every one after.
+    it('a maximize whose card is not in the rail is ignored, not obeyed', () => {
+      // fail-open: a maximize left over from a card that has been CLOSED folds
+      // nothing. The switch sees grid's own plan and nothing else — so only the
+      // hand-collapsed 'a' comes back, because this IS a grid switch.
       const cards = [card('a', { ladder: 'collapsed' }), card('b')];
-      expect(moves(state({ maximized: 'ghost', mode: 'grid' }), cards, 'b', 'react')).toEqual({});
-      expect(isEnforced(state({ maximized: 'ghost' }), null)).toBe(false);
+      expect(moves(state({ maximized: 'ghost', mode: 'grid' }), cards, 'b', 'switch')).toEqual({
+        a: 'expanded',
+      });
+      // ...and a LIVE maximize, for contrast, folds 'b' on the very same switch
+      expect(moves(state({ maximized: 'a', mode: 'grid' }), cards, 'b', 'switch')).toEqual({
+        a: 'expanded',
+        b: 'collapsed',
+      });
     });
 
     it('lets you go and look at another session while it is held', () => {
@@ -307,6 +312,49 @@ describe('layout modes (E9-07, §5.8)', () => {
       expect(moves(state({ maximized: 'a' }), cards, 'b', 'react')).toEqual({});
       // ...but taking the maximize in the first place still puts 'b' away
       expect(moves(state({ maximized: 'a' }), cards, 'b', 'switch')).toEqual({ b: 'collapsed' });
+    });
+
+    it('does not fold the session you LEFT while it is held (#813)', () => {
+      // The owner's repro: 'a' maximized, went to look at 'b', then clicked 'c'
+      // (a rail row or a card — both just move the active card). 'b' is WORKING,
+      // so it needs nobody, and it used to fold the moment it stopped being the
+      // active one. The test above only ever asserted the card you went TO.
+      const cards = [card('a'), card('b'), card('c')];
+      expect(moves(state({ maximized: 'a' }), cards, 'c', 'react')).toEqual({});
+      // the witness that this is the MAXIMIZE's rule and not an accident of the
+      // cards: focus mode is a mode the user picked, and the same walk does fold
+      expect(moves(state({ mode: 'focus' }), cards, 'c', 'react')).toEqual({
+        a: 'collapsed',
+        b: 'collapsed',
+      });
+    });
+
+    it('under Focus and Queue, a held maximize leaves the MODE in charge of a reactive pass (#813)', () => {
+      // Focus: the big card follows you — off the maximized one, too
+      expect(moves(state({ mode: 'focus', maximized: 'a' }), [card('a'), card('b')], 'b', 'react')).toEqual({
+        a: 'collapsed',
+      });
+      // Queue: a session that starts needing you still comes out the instant it
+      // does — a held maximize must not quietly switch that off
+      expect(
+        moves(
+          state({ mode: 'queue', maximized: 'a' }),
+          [card('a'), card('b', { ladder: 'collapsed', needsAttention: true })],
+          'a',
+          'react'
+        )
+      ).toEqual({ b: 'expanded' });
+    });
+
+    it('does not re-expand a maximized card the user collapsed by hand (#813)', () => {
+      // a status push is not the user asking for the blow-up again
+      const cards = [card('a', { ladder: 'collapsed' }), card('b')];
+      expect(moves(state({ maximized: 'a' }), cards, 'b', 'react')).toEqual({});
+      // ...while taking the maximize still expands it
+      expect(moves(state({ maximized: 'a' }), cards, 'b', 'switch')).toEqual({
+        a: 'expanded',
+        b: 'collapsed',
+      });
     });
 
     it('never closes an OS window to restore a card popped out since', () => {
@@ -326,11 +374,14 @@ describe('layout modes (E9-07, §5.8)', () => {
       expect(cycleMode('queue')).toBe('grid');
     });
 
-    it('is enforced by every mode but the default, and by a maximize', () => {
+    it('is enforced by every mode but the default — and NOT by a maximize (#813)', () => {
       expect(isEnforced(DEFAULT_LAYOUT)).toBe(false);
       expect(isEnforced(state({ mode: 'focus' }))).toBe(true);
       expect(isEnforced(state({ mode: 'queue' }))).toBe(true);
-      expect(isEnforced(state({ maximized: 'a' }))).toBe(true);
+      // a maximize is a gesture: it rearranged once, when it was taken
+      expect(isEnforced(state({ maximized: 'a' }))).toBe(false);
+      // ...and holding one does not switch off the mode underneath it
+      expect(isEnforced(state({ mode: 'focus', maximized: 'a' }))).toBe(true);
     });
 
     it('an untouched workspace writes NOTHING to the ui blob', () => {

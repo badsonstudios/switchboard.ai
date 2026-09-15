@@ -169,6 +169,16 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **A session's card no longer disappears when you click a different session.**
+  If a session had ever been maximized and the maximize was still on — even
+  long after, with that session sitting quietly in a tab — every busy session
+  you clicked away from folded itself into the Collapsed strip, whether you
+  clicked its neighbour in the workspace or a row in the Sessions list. It read
+  as the card closing. A maximize now rearranges the workspace only when you
+  take it and when you undo it, and never folds anything on its own afterwards.
+  The log now also says which rule folded, hid or tabbed a card, and when a card
+  was closed.
+
 - **The cost shown on a session was wrong — badly, and in both directions.**
   Opus sessions were reported at roughly **two and a half times** what they
   actually cost, and Fable sessions at about **a third** of it. The prices

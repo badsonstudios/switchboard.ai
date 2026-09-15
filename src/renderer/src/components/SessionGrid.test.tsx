@@ -22,6 +22,7 @@ import {
   clusterCardWithGroup,
   cycleLayoutMode,
   endedCopy,
+  forgetClosedCard,
   forgetDockBacks,
   isDockviewReturn,
   layoutSweepPort,
@@ -40,6 +41,7 @@ import type { DockviewApi } from 'dockview-react';
 import en from '../../../shared/i18n/locales/en.json';
 import { sessionStore } from '../store/session-store';
 import { DEFAULT_LAYOUT, withMaximized, withMode } from '../lib/layout-mode';
+import { DEFAULT_BOOK, withGlobal } from '../lib/presentation-policy';
 import type { SweepRequest } from '../lib/layout-sweep';
 import type { Ladder } from '../lib/presentation';
 import type { RailSession } from '../model/types';
@@ -189,8 +191,13 @@ describe('layoutSweepPort.needed — the cheap early-out', () => {
     }
   });
 
-  it('lets a reactive pass through under `grid` while a maximize is held', () => {
+  it('drops a reactive pass under `grid` even while a maximize is held (#813)', () => {
+    // A held maximize used to let every reactive pass through, and each one
+    // folded the card focus had just left. A maximize rearranges once.
     sessionStore.setLayout(withMaximized(DEFAULT_LAYOUT, 'a', { a: 'expanded' }));
+    expect(layoutSweepPort.needed(sweep({ trigger: 'react' }))).toBe(false);
+    // ...while the mode underneath it still reacts
+    sessionStore.setLayout(withMaximized(withMode('focus'), 'a', { a: 'expanded' }));
     expect(layoutSweepPort.needed(sweep({ trigger: 'react' }))).toBe(true);
   });
 
@@ -256,6 +263,21 @@ describe('layoutSweepPort.plan — computed over the store', () => {
     ]);
   });
 
+  it('a held maximize folds nothing when focus moves on (#813)', () => {
+    // The owner's workspace, reduced: a maximize held on a card that is now
+    // just a tab somewhere, two WORKING sessions, focus moving from one to the
+    // other. Wired through the store exactly as App's reactive effect reads it.
+    seed([
+      { id: 'a', status: 'working' },
+      { id: 'b', status: 'working' },
+      { id: 'c', status: 'working' },
+    ]);
+    for (const id of ['a', 'b', 'c']) place(id, 'expanded');
+    sessionStore.setLayout(withMaximized(DEFAULT_LAYOUT, 'a', { a: 'expanded', b: 'expanded', c: 'expanded' }));
+    sessionStore.setActiveCard('c');
+    expect(layoutSweepPort.plan(sweep({ trigger: 'react' }))).toEqual([]);
+  });
+
   it('passes an un-maximize payload through verbatim', () => {
     seed([{ id: 'a' }, { id: 'b' }]);
     place('a', 'expanded');
@@ -319,8 +341,8 @@ describe('layoutSweepPort.plan — a card whose start was refused (#687)', () =>
   it('and the pre-fix state, stated: an unlisted card is maximized by nobody', () => {
     // The control that makes the test above mean something. Same gesture, same
     // store, ONE difference — nothing told the store the card exists. The
-    // maximize is recorded and `heldMaximize` resolves it to null, so grid mode
-    // stops enforcing and there is no plan at all. That was the bug.
+    // maximize is recorded and `heldMaximize` resolves it to null, so the very
+    // switch that folds 'a' above finds nothing to fold. That was the bug.
     seed([{ id: 'a' }]);
     place('a', 'expanded');
     place('ghost', 'expanded');
@@ -328,7 +350,7 @@ describe('layoutSweepPort.plan — a card whose start was refused (#687)', () =>
     toggleMaximizeCard(noGrid, 'ghost');
 
     expect(sessionStore.getLayout().maximized).toBe('ghost');
-    expect(layoutSweepPort.plan(sweep({ trigger: 'react' }))).toEqual([]);
+    expect(layoutSweepPort.plan(sweep({ trigger: 'switch' }))).toEqual([]);
   });
 
   it('does not give a card main DOES know about a second turn in the plan', () => {
@@ -341,6 +363,80 @@ describe('layoutSweepPort.plan — a card whose start was refused (#687)', () =>
     expect(layoutSweepPort.plan(sweep({ trigger: 'switch' }))).toEqual([
       { cardId: 'a', rung: 'expanded' },
     ]);
+  });
+});
+
+describe('the ladder breadcrumb (#813)', () => {
+  // #813's log bundle could not say why a card had vanished: nothing in the
+  // renderer wrote a line when one moved. The renderer console is forwarded
+  // into switchboard.log, so these lines ARE the log bundle's answer.
+  /** a grid with no panels: enough for a rung change to run end to end */
+  const bare = { getPanel: () => undefined } as never;
+
+  let log: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    seed([{ id: 'a', status: 'working' }, { id: 'b', status: 'working' }]);
+    place('a', 'expanded');
+  });
+  afterEach(() => {
+    log.mockRestore();
+    sessionStore.initPolicies(DEFAULT_BOOK);
+    delete (window as unknown as { switchboard?: unknown }).switchboard;
+  });
+
+  it('a command says so, between which rungs', () => {
+    setCardLadder(bare, 'a', 'hidden');
+    expect(log).toHaveBeenCalledWith('[ladder] moving session-a: expanded → hidden (command)');
+    expect(sessionStore.getPresentation('a').ladder).toBe('hidden');
+  });
+
+  it('the submit policy names itself — driven through the real policy path', () => {
+    sessionStore.initPolicies(withGlobal(DEFAULT_BOOK, 'auto-collapse'));
+    applySubmitPolicy(bare, 'a');
+    expect(log).toHaveBeenCalledWith('[ladder] moving session-a: expanded → collapsed (submit policy)');
+  });
+
+  it('a sweep names its trigger and mode — and a maximize, only on the switch that takes it', () => {
+    sessionStore.setLayout(withMode('focus'));
+    void layoutSweepPort.applyMove({ cardId: 'a', rung: 'hidden' }, { ...sweep({ trigger: 'react' }), api: bare });
+    expect(log).toHaveBeenCalledWith('[ladder] moving session-a: expanded → hidden (layout sweep: react, focus mode)');
+
+    place('a', 'expanded');
+    sessionStore.setLayout(withMaximized(DEFAULT_LAYOUT, 'b', { a: 'expanded', b: 'expanded' }));
+    void layoutSweepPort.applyMove({ cardId: 'a', rung: 'collapsed' }, { ...sweep({ trigger: 'switch' }), api: bare });
+    expect(log).toHaveBeenCalledWith(
+      '[ladder] moving session-a: expanded → collapsed (layout sweep: switch, grid mode, maximize)'
+    );
+    // a HELD maximize on a reactive pass is not what moved anything (#813)
+    place('a', 'expanded');
+    void layoutSweepPort.applyMove({ cardId: 'a', rung: 'collapsed' }, { ...sweep({ trigger: 'react' }), api: bare });
+    expect(log).toHaveBeenLastCalledWith('[ladder] moving session-a: expanded → collapsed (layout sweep: react, grid mode)');
+  });
+
+  it('an un-maximize says it is a restore', () => {
+    void layoutSweepPort.applyMove(
+      { cardId: 'a', rung: 'hidden' },
+      { ...sweep({ trigger: 'switch', restore: { a: 'hidden' } }), api: bare }
+    );
+    expect(log).toHaveBeenCalledWith('[ladder] moving session-a: expanded → hidden (layout sweep: un-maximize restore)');
+  });
+
+  it('writes nothing for a move that moves nothing', () => {
+    place('a', 'collapsed');
+    setCardLadder(bare, 'a', 'collapsed');
+    expect(log).not.toHaveBeenCalled();
+  });
+
+  it('a real close says so, and runs the one list of forgets', () => {
+    const closeCard = vi.fn(() => Promise.resolve());
+    (window as unknown as { switchboard: unknown }).switchboard = { sessions: { closeCard } };
+    sessionStore.setLayout(withMaximized(DEFAULT_LAYOUT, 'a', { a: 'expanded' }));
+    forgetClosedCard('a');
+    expect(log).toHaveBeenCalledWith('[dock] session-a closed — its record is forgotten');
+    expect(closeCard).toHaveBeenCalledWith('a');
+    // a witness from the list itself: the maximize held for it is gone
+    expect(sessionStore.getLayout().maximized).toBeNull();
   });
 });
 

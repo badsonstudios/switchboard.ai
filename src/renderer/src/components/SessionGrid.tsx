@@ -2136,16 +2136,12 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               four, is exactly the kind of exception the manual ends up writing
               down.
 
-              WHAT THE GESTURE CAN AND CANNOT DO HERE, so nobody reads more
-              into this than it gives: the double-click reaches
-              `toggleMaximizeCard` and the maximize is recorded, but the SWEEP
-              declines it, because `lib/layout-mode`'s `heldMaximize` honours a
-              maximize only for a card the session list still holds — and a card
-              whose `sessions:create` was refused was never registered as one.
-              It has no rail row either. That is older than this header and true
-              of `Ctrl+Shift+M` on the same card today; it is reported on #606's
-              PR rather than fixed here, because widening it is a lifecycle
-              change (does a refused card exist?) and not a header.
+              WHAT THE GESTURE DOES HERE: the full maximize, since #687. A card
+              whose `sessions:create` was refused used to be in no session list,
+              so `lib/layout-mode`'s `heldMaximize` resolved a maximize on it to
+              nobody and the sweep declined it. The store gives such a card a row
+              now, so it is in rail order and a maximize resolves like any other
+              (SessionGrid.test's #687 block holds both halves of that).
 
               Deliberately the SAME subset as the suspended header, through the
               same three module-scope pieces (`cheadStyle`, `cheadName`,
@@ -3765,6 +3761,39 @@ function tabStackGroup(api: DockviewApi, exceptCardId: string): DockviewApi['gro
   return null;
 }
 
+/**
+ * A card is really going away: forget every record keyed by it, and tell main
+ * to end its session. THE ONE LIST of per-card forgets.
+ *
+ * Both close paths come here — dockview's `onDidRemovePanel` for a card with a
+ * panel, and `retireCard` for a HIDDEN card, which has no panel to remove. They
+ * used to be two hand-written copies of this list, which `retireCard`'s own
+ * docblock warned is how a new per-card record ends up retired on one path and
+ * leaked on the other. #813 added a reason of its own: the close breadcrumb has
+ * to be on both paths, or closing a hidden card is the one removal the log
+ * cannot explain.
+ */
+export function forgetClosedCard(cardId: string): void {
+  // #813's breadcrumb, closing half: a hide says why in moveCardToRung, and
+  // this is the removal that really is the card going away
+  console.log(`[dock] session-${cardId} closed — its record is forgotten`);
+  sessionStore.forgetCardLiveIds(cardId);
+  sessionStore.forgetPresentation(cardId);
+  // ...including a maximize held for it: a stale one would leave the chip
+  // saying "maximized" about nothing, and the next toggle restoring a snapshot
+  // taken around a card that is gone (E9-07)
+  sessionStore.forgetLayoutCard(cardId);
+  // ...and its pin (E9-09), which would otherwise keep protecting — and
+  // sorting first — a card that no longer exists
+  sessionStore.forgetPin(cardId);
+  // ...and the not-started row, if this was a card main never heard of (#687).
+  // The store's half of `state.sessions` is the ONE per-card record `closeCard`
+  // below cannot retire for us: main has nothing to forget. Left behind, it is
+  // a rail row for a card with no panel.
+  sessionStore.clearCardNotStarted(cardId);
+  void window.switchboard.sessions.closeCard(cardId);
+}
+
 // ── §5.8's presentation ladder (P2-E9-05) ───────────────────────────────────
 //
 // ONE verb drives all four rungs, and that is the point: E9-06's presentation
@@ -3857,7 +3886,7 @@ export function applySubmitPolicy(api: DockviewApi | null, cardId: string): void
     // names, and a pinned card sits it out
     pinned: sessionStore.isPinned(cardId),
   });
-  if (rung) setCardLadder(api, cardId, rung);
+  if (rung) setCardLadder(api, cardId, rung, 'submit policy');
 }
 
 /**
@@ -3877,24 +3906,41 @@ export function moveCardToRung(
   api: DockviewApi,
   cardId: string,
   rung: Ladder,
-  focus: boolean
+  focus: boolean,
+  why: string
 ): Promise<void> {
   // A transition for this card is already in flight. Without this, a collapse
   // issued while a reveal is awaiting `sessions.cards()` would write its rung,
   // find no panel, return — and then the in-flight reveal would add the panel
   // and write `expanded` on top, silently discarding the user's command.
   if (laddering.has(cardId)) return Promise.resolve();
-  if (sessionStore.getPresentation(cardId).ladder === rung) return Promise.resolve(); // already there
+  const from = sessionStore.getPresentation(cardId).ladder;
+  if (from === rung) return Promise.resolve(); // already there
+  // THE BREADCRUMB (#813). A card leaving the workspace looks exactly like a
+  // crash to the person watching it, and until this line nothing said which
+  // rule had moved it: #813's log bundle held the fingerprints of eight
+  // restores and not one word about what had folded the card each time. The
+  // renderer console is forwarded into switchboard.log, so this is the answer
+  // the next report of that shape carries with it. Logged as the move STARTS:
+  // it records which rule decided, not that dockview carried it out.
+  console.log(`[ladder] moving session-${cardId}: ${from} → ${rung} (${why})`);
   if (rung === 'expanded') return revealCardPanel(api, cardId, focus);
   if (rung === 'tabbed') return toTabbed(api, cardId);
   removePanelKeepingSlot(api, cardId, rung);
   return Promise.resolve();
 }
 
-/** Put a card on a named rung. Safe on a card with no panel — that is the point. */
-export function setCardLadder(api: DockviewApi | null, cardId: string, rung: Ladder): void {
+/** Put a card on a named rung. Safe on a card with no panel — that is the point.
+ *  `why` goes into the breadcrumb; everything the user drives directly is a
+ *  `command`, and the rules that move cards on their own name themselves. */
+export function setCardLadder(
+  api: DockviewApi | null,
+  cardId: string,
+  rung: Ladder,
+  why = 'command'
+): void {
   if (!api || !cardId) return;
-  void moveCardToRung(api, cardId, rung, true);
+  void moveCardToRung(api, cardId, rung, true, why);
 }
 
 /**
@@ -4001,7 +4047,16 @@ export const layoutSweepPort: SweepPort<LayoutSweep> = {
   // WITHOUT FOCUS: `focus` mode moves the big card to whatever you are already
   // in, so grabbing focus would be the layout telling the user where to look.
   // Single-card commands focus, because there the move IS the gesture.
-  applyMove: (move, req) => moveCardToRung(req.api, move.cardId, move.rung, false),
+  applyMove: (move, req) => {
+    const layout = sessionStore.getLayout();
+    // a maximize only ever moves cards on the switch that takes it (#813), so
+    // only a switch names it — a fold by a maximize must not read as the mode's
+    const held = req.trigger === 'switch' && layout.maximized ? ', maximize' : '';
+    const why = req.restore
+      ? 'layout sweep: un-maximize restore'
+      : `layout sweep: ${req.trigger}, ${layout.mode} mode${held}`;
+    return moveCardToRung(req.api, move.cardId, move.rung, false, why);
+  },
 
   aborted: () => sessionStore.isTearingDown(),
 
@@ -4599,9 +4654,10 @@ export function SessionGrid(props: {
    * card, `closeAllCards` asks once about the lot, and both then do exactly the
    * same thing per card. Extracted at E9-09 because the second caller made the
    * duplication a correctness problem rather than a tidiness one — the by-hand
-   * branch is a hand-written copy of what `onDidRemovePanel` does, and two
+   * branch was a hand-written copy of what `onDidRemovePanel` does, and two
    * copies of that list is how a new per-card record (a pin, say) ends up
-   * retired on one close path and leaked on the other.
+   * retired on one close path and leaked on the other. Both now run
+   * `forgetClosedCard` (#813).
    *
    * A card WITH a panel is closed by removing it, because dockview's
    * `onDidRemovePanel` runs the same forgets; a HIDDEN card has no panel to
@@ -4616,12 +4672,7 @@ export function SessionGrid(props: {
       api.removePanel(panel); // onDidRemovePanel -> the forgets below
       return;
     }
-    sessionStore.forgetCardLiveIds(cardId);
-    sessionStore.forgetPresentation(cardId);
-    sessionStore.forgetLayoutCard(cardId);
-    sessionStore.forgetPin(cardId);
-    sessionStore.clearCardNotStarted(cardId); // #687 — see onDidRemovePanel's copy
-    void window.switchboard.sessions.closeCard(cardId);
+    forgetClosedCard(cardId); // the same list onDidRemovePanel runs
   }, []);
 
   // §5.8's auto-minimize on submit (P2-E9-06). Subscribed ONCE, here, rather
@@ -5128,24 +5179,7 @@ export function SessionGrid(props: {
         // hiding removes the panel too, and means the opposite: keep the record
         // AND the running session (P2-E15-08)
         if (sessionStore.isHiding(m[1])) return;
-        sessionStore.forgetCardLiveIds(m[1]);
-        sessionStore.forgetPresentation(m[1]);
-        // ...including a maximize held for it: a stale one would leave the
-        // workspace blown up around nothing AND make the default mode start
-        // enforcing (E9-07, lib/layout-mode's isEnforced)
-        sessionStore.forgetLayoutCard(m[1]);
-        // ...and its pin (E9-09), which would otherwise keep protecting — and
-        // sorting first — a card that no longer exists
-        sessionStore.forgetPin(m[1]);
-        // ...and the not-started row, if this was a card main never heard of
-        // (#687). The store's half of `state.sessions` is the ONE per-card
-        // record `closeCard` below cannot retire for us: main has nothing to
-        // forget. Left behind, it is a rail row for a card with no panel —
-        // exactly the mismatch this issue was filed about, pointing the other
-        // way. This is the list the docblock on `retireCard` warns about
-        // keeping two copies of; the other copy is there.
-        sessionStore.clearCardNotStarted(m[1]);
-        void window.switchboard.sessions.closeCard(m[1]);
+        forgetClosedCard(m[1]);
       });
 
       // FAIL-OPEN, and specifically: whatever happens in here, layout sweeps
