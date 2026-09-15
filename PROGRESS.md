@@ -3,17 +3,87 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔨 IN PROGRESS — 2026-09-15: **#807** — per-session token totals vs the CLI's ledger
+> # ✅ MERGED — 2026-09-15: **#807** — the watcher OVER-counted tokens; the ticket's under-count was a probe's
 >
-> Branch `feature/807-usage-ledger`. **THE TICKET'S PREMISE IS INVERTED FOR THE
-> WATCHER.** The 600× under-count was #787's PROBE (parent file only, de-duped);
-> the watcher already folds subagent files in (`watcher.test.ts` "subagent
-> tokens counted") and does NOT de-dupe, so it OVER-counts 1.5–7×. Measured
-> (`spike/probes/807/`): parent + subagents, one count per `message.id`, LATEST
-> copy wins → input / cache 0.98–1.013 (21 of 25 sessions exactly 1.0000) and
-> output 0.97–1.00 against `cost-state.modelUsage`. Residual: Haiku side-queries
-> the CLI bills but writes to no transcript. Implemented + reviewed (no
-> blocker, 4 should-fixes taken); mutation round 1 14/15, round 2 running.
+> **PR #821, squashed to `75b8bd8`, all four CI jobs green first time.** Issue
+> closed. Size M as filed.
+> ⚠️ **NOT RELEASED** — joins #764…#813 under `0.8.81 — unreleased`;
+> `gh release list` is the authority.
+>
+> **Next up: #793** (measure first), then **#812**, then E11's remaining
+> features: the composer pair **#797 → #798** (never stop between them), then
+> **#799**, **#800**, **#796**, **#801**. Still open, not queued ahead of E11:
+> **#818**. It was AUTO-CLOSED BY ACCIDENT when PR #819 merged ("Filed, not
+> fixed: #818" in its body matched GitHub's closing keyword), and was reopened
+> 2026-09-15. No code references it; the bug stands.
+>
+> ## 🧭 DIRECTION — Dan, 2026-09-15: **finish E11 (session sharing), THEN history**
+> Asked where things stood and chose to keep going: "Once we finish with the
+> session sharing, we'll move to something else. I want to work on probably the
+> history next." So E11's queue runs to empty before a gear change, and the
+> next area after it is **history**. Not yet mapped to issues. Most likely the
+> card's **History** tab, still a "History (soon)" placeholder in the strip
+> (`04-phase-2-switchboard.md`, Feed · Terminal · Changes · History-soon).
+> Possibly **#722**'s cross-session activity report. **Confirm which with Dan
+> when E11 empties, then `/pm` shapes and files it.**
+>
+> ## ⏸ OPEN QUESTION FOR DAN AT RELEASE CUT (deferred by Dan 2026-09-15, still open)
+> Dan chose to keep developing before cutting. `v0.8.8` is still latest; 15
+> changes are now merged and unreleased. **The version number is his call:**
+> `0.8.90` (recommended — session read/messaging is a new capability),
+> `0.8.81`, or `0.9.0` (not yet — E11 isn't done). Also offered, still
+> standing: fix **#818** before the cut (it is open; see Next up), or Dan clears
+> his stale maximize by hand with palette "Layout: Grid". At the cut: one stale
+> "lands in 0.8.9" remains in `docs/plans/dogfood-testing.md` (the #772 row).
+> **Do NOT cut unless asked.**
+>
+> **THE PREMISE WAS INVERTED — CHECKED AGAINST THE REPO BEFORE THE CORPUS.** The
+> 600× under-count was #787's PROBE, which read the parent file only. The watcher
+> had folded `subagents/agent-*.jsonl` in since S-05 (a test pinned it) and
+> summed EVERY line's `message.usage`. The CLI writes a response's usage once per
+> content block, so the card read **1.5–7.5× high**.
+>
+> **Measured** (`spike/probes/807/`, findings `e11-807-usage-ledger.md`) over
+> 265k lines: only `output_tokens` (and `thinking_tokens`) ever differ between
+> copies, all in subagent files, and none ever decreases. Latest copy per
+> `message.id` against `cost-state.modelUsage` over 25 sessions: input/cache
+> 0.98–1.013 (21 exact), output 0.97–1.00. The low-input tail is a Haiku
+> side-query row the CLI writes to no transcript.
+>
+> **Shipped:** pure `main/transcripts/usage-ledger.ts` (one contribution per
+> `message.id`, a later copy replaces, non-finite → 0), and
+> `WatchedSession.ledger` recreated with the snapshot in `resetBinding`.
+> DESIGN §5.13 and §5.6 now say subagents are separate files.
+>
+> **REVIEW — no blocker, four should-fixes, all taken.**
+> - "Never high" was an overclaim: one session reads 1.3% high, and nothing
+>   clamps.
+> - Resume is UNMEASURED: no corpus session has two non-empty ledgers.
+> - `requestId` added nothing (0 of 41,705 ids carry two), and a copy lacking
+>   one would split a response, so the key is `message.id` alone. That diverges
+>   from the plan and is noted on the issue.
+> - Moving a key to `consumed` changes no drift behaviour, and the comments
+>   said it did.
+>
+> **MUTATION:** round 1 **14/15**. Its one survivor was exactly the reviewer's
+> mutant ("the ledger remembers the FIRST copy": the fixture's 2, 2, 4450 hid
+> it), and a test with three strictly growing copies now kills it. Round 2, on
+> the review fixes: **13/14**. The survivor is the reviewer's "key per FILE"
+> mutant, kept deliberately: it is equivalent on every measured transcript
+> (0 responses span two files), so there is no test pinning unseen behaviour.
+> It is a falsifier in the findings instead.
+>
+> **LESSONS.** (a) A ticket's number can be a measurement of a *different
+> reader*. Find which code produced it before theorising about the cause.
+> (b) A fixture whose middle copy equals its first cannot tell "previous" from
+> "first". Three strictly distinct values or it isn't a test. (c) A key half
+> that never separates anything is not free: it is a way to split one thing
+> into two.
+>
+> **Tests:** full suite 7,963 passed / 3 skipped; typecheck + lint green. The
+> regression test was RED on old code with exactly the inflated totals.
+> **Docs:** manual *Tokens and cost*, CHANGELOG `Fixed`, dogfood tracker row
+> UNTESTED.
 
 > # 📌 STANDING — 2026-09-15: **Patch versions are two or three digits. The release after 0.8.8 is 0.8.81.**
 >
