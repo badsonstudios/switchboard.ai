@@ -3,6 +3,66 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ MERGED — 2026-09-15: **#812** — team-session envelope keys declared flat; the test now covers every line type, not a sample
+>
+> **PR #826, squashed to `44936df`, CI green** (a re-run after rebasing onto
+> #793's close-out: strict branch protection). Issue closed. Size S as filed.
+> No separate in-progress entry: the item was finished before its PROGRESS
+> line could land without colliding with #793's close-out, so start and finish
+> are recorded here together.
+> Internal: no user-facing change, no manual page, no dogfood row.
+>
+> **Next up: E11's composer pair — #797 → #798** (never stop between them),
+> then **#799**, **#800**, **#796**, **#801**. Small follow-up filed: **#824**
+> (`sessionKind`, same envelope shape, S). Still open, not queued ahead of E11:
+> **#818**.
+>
+> **THE ENVELOPE, VERIFIED VERBATIM (PATH 2.1.270, unchanged in 2.1.272).** The
+> CLI's generic append builds every line as `{parentUuid, logicalParentUuid,
+> isSidechain, teamName: d?.teamName, agentName: d?.agentName, promptId,
+> agentId, ...entry, …}`, so with a team context both keys ride on every line
+> type. The schema had scoped `agentName` to `agent-name` alone (from the
+> reducer, never measured) and never declared `teamName`: a false alarm on
+> every line of a team session. Counted 2026-09-15: 0 of either key across
+> 270,366 lines / 3,151 transcripts (`spike/probes/812/`). Latent.
+>
+> **Shipped:** both keys in the flat root `ignored` list with the envelope note;
+> `'agent-name': ['agentName']` DELETED rather than kept beside the flat entry
+> (the overlap guard fails on a key in both places, correctly: such a scope does
+> nothing); count 82 → 84. Tests are RED on the old schema, on the intended
+> assertions.
+>
+> **REVIEW — NO BLOCKER, AND ITS SURVIVING MUTANT WAS REAL.** The first test
+> file covered five types: a loop over four hand-picked ones (assistant, user,
+> attachment, system) plus a separate `agent-name` test. Scoping both keys to
+> exactly those five, with the count fixed, stayed green. That is the edit #788
+> made to `agentId`. The test now loops over every `KNOWN_LINE_TYPES`, which made
+> the separate `agent-name` test redundant (deleted). Second survivor: "nothing
+> reads either key" was true and unenforced, and the tempting slip is
+> `line.attributionAgent ?? line.agentName` because `FeedBlock` already has an
+> `agentName`. `agent-attribution.test.ts` now pins it. The zero count is
+> committed as a probe. Nits: "never ran a team session" → "none among the
+> transcripts still on disk"; count prose adds up to 84; header rule points at
+> the exception.
+>
+> **MUTATION:** round 1 **6/6**; round 2 **8/8**. Round 2 re-ran round 1
+> against the rewritten tests and added the review's two named survivors:
+> keys scoped to exactly those five types, and the root-`agentName` fallback.
+> Both are killed now; both would have survived the first test file.
+>
+> **ALSO THIS ROUND:** issue 818 had been auto-closed by accident. PR #819's
+> body said "Filed, not fixed: #818" and GitHub read "fixed: #818" as a closing
+> keyword. Reopened, and saved as a memory. Main's branch protection is STRICT
+> (a PR must be up to date to merge), so a second PR opened off the same `main`
+> re-runs CI after the first merges. That is also saved as a memory.
+>
+> **LESSONS.** (a) A test that samples N of M cases pins "these N", not "all M".
+> When the contract is "every type", loop the declared list. (b) A flat
+> declaration is safe only while nothing reads the key; pin the absence of the
+> read, don't assert it in a comment. (c) The same review read the envelope's
+> identity block and found a third key (#824): when a fix is about a SHAPE,
+> read the whole shape.
+
 > # ✅ MERGED — 2026-09-15: **#793** — the `/clear` hook race: not observed in 40 trials; the risky mode was Terminal, not Direct
 >
 > **PR #823, squashed to `56014ff`, all four CI jobs green first time.** Issue
