@@ -56,7 +56,7 @@ import {
   promptText,
   type ContextPackage,
 } from './context-package';
-import type { SessionIdentity, SessionStatus } from '../../shared/sessions';
+import type { SessionIdentity, SessionStatus, SessionSummary } from '../../shared/sessions';
 
 /**
  * How much rendered output one query may return, in characters.
@@ -112,37 +112,15 @@ export const TRIM_MARKER = '…[earlier output trimmed]';
  */
 export const OUTPUT_FIRST_WINDOW = 256 * 1024;
 
-/** One session, as a sibling sees it (§5.4 `list_sessions`). */
-export interface SessionSummary {
-  id: string;
-  /**
-   * The display title — what `@name` resolves against.
-   *
-   * This is the app's `identity.title` under a different name, because the
-   * surface it serves is `@name` rather than a window caption. The mapping
-   * lives wherever `SessionQueryDeps.list` is wired and nowhere else.
-   */
-  name: string;
-  folder: string;
-  providerId: string;
-  status: SessionStatus;
-  /**
-   * The session's process has ended (#765).
-   *
-   * ⚠️ `status` CANNOT TELL YOU THIS, which is why it is a field of its own.
-   * `'done'` is what the state machine calls BOTH a finished turn and a clean
-   * exit (`transition`: `exit` with code 0 → `'done'`), so a sibling that
-   * wrapped up its turn and one whose CLI has gone away look identical there.
-   * `send_to_session` must not deliver to the second, and `list_sessions` must
-   * not describe it as merely "done". Derived from the record's `exitCode`,
-   * which is set in exactly one place — the transport's exit — and never
-   * cleared.
-   *
-   * REQUIRED, not optional: an absent flag reads as falsy, i.e. "alive", which
-   * is the one default a delivery check must never get for free.
-   */
-  exited: boolean;
-}
+/**
+ * One session, as a sibling sees it (§5.4 `list_sessions`).
+ *
+ * DECLARED IN `shared/sessions.ts` since #797 (the composer's `@` popup needs
+ * it in the renderer) and re-exported here, TYPE-ONLY, so every main-side
+ * import of it from this module is unchanged — and so this adds no runtime
+ * import (see `context-package.ts` on why that matters for this module).
+ */
+export type { SessionSummary } from '../../shared/sessions';
 
 /**
  * Every answer is this or a refusal — never a bare value and never a throw.
@@ -315,6 +293,10 @@ export function summariesFrom(manager: SummarySource): SessionSummary[] {
     providerId: r.identity.providerId,
     status: r.status,
     exited: r.exitCode !== null,
+    // Copied straight through, still optional (#797): absent stays absent, and
+    // the row that paints it resolves the backstop (`?? 'var(--faint)'`), like
+    // every other surface that paints a session. See `SessionSummary.accentColor`.
+    ...(r.identity.accentColor === undefined ? {} : { accentColor: r.identity.accentColor }),
   }));
 }
 

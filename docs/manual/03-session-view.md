@@ -182,6 +182,22 @@ The box at the bottom sends straight to the real Claude Code session:
   interrupts the current turn.
 - Typing `/` at the start of a line opens command autocomplete — see
   [Slash commands](05-slash-commands.md).
+- Typing **`@`** opens a list of your other open sessions, anywhere in your
+  message — "take `@TradingApp`'s fix and apply it here". Each row shows the
+  session's name, its folder and its colour, and a session whose process has
+  ended is marked **exited** (you can still refer to it). Keep typing to narrow
+  the list. **Tab** (or a click) always puts `@SessionName` into your message.
+  **Enter** does too when the name *starts* with what you typed, or when you've
+  moved to a row with the arrow keys — but if you've typed the whole name,
+  Enter sends, and if what you typed only appears somewhere *inside* a name,
+  Enter sends your text exactly as written rather than swapping in a name you
+  didn't pick. **Esc** closes the list for that `@` until you start a new one.
+  The session you're typing in isn't listed. The list only opens while you're
+  typing at the end of the `@`-word, so clicking into a name you already wrote
+  and pressing Enter just sends. An `@` inside ordinary text, like an email
+  address, opens nothing and stays exactly as you typed it. *For now the mention is just
+  the name in your message; bringing that session's recent work along with it
+  comes next.*
 
 Under the box is a row showing this session's **autonomy mode** (click to
 cycle) and the **model** it's running — click that to switch it, or see
