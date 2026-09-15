@@ -19,7 +19,7 @@ import { FeedBuffer } from '../feed/buffer';
 import { conversationExists, slugForCwd } from './paths';
 import { DriftDetector } from './drift';
 import { parseCostState } from './cost-state';
-import { thinkingTokensOf } from './thinking-tokens';
+import { UsageLedger, usageKey } from './usage-ledger';
 import type { CliCost } from '../../shared/transcripts';
 import { DiscoverySchedule, DiscoveryScheduleOptions, rootKey } from './discovery-scheduler';
 
@@ -276,6 +276,10 @@ interface WatchedSession {
    *  folder that nobody can take" — turning our own abandoned history into
    *  permanent evidence that our transcript is missing (P2-E15-10). */
   abandoned: Set<string>;
+  /** What each response has already added to `snap.usage`, so a later copy of
+   *  it replaces rather than adds (#807). Recreated with the snapshot and never
+   *  apart from it — see `UsageLedger`. */
+  ledger: UsageLedger;
   /**
    * The last tick on which THIS session took part in its root's sweep (#388).
    *
@@ -760,6 +764,7 @@ export class TranscriptWatcher {
       lastDiscoveryAt: 0,
       tails: new Map(),
       snap: this.blankSnap(sessionId, root),
+      ledger: new UsageLedger(),
       feed: new FeedBuffer((b) => this.reemit(sessionId, b)),
       exitedAt: null,
       quiesced: false,
@@ -845,6 +850,10 @@ export class TranscriptWatcher {
     w.tails.clear();
     w.feed.reset();
     w.snap = this.blankSnap(w.sessionId, w.projectsRoot);
+    // With the snapshot, always: a forked or continued conversation's new file
+    // can repeat the old one's message ids, and a ledger that remembered them
+    // would net the rebuilt totals to zero (#807).
+    w.ledger = new UsageLedger();
     // A fresh search starts now, so the give-up clock restarts — otherwise a
     // rebind ten minutes into a healthy session would report as failed on
     // arrival. What survives depends on WHY we are here, and the two causes
@@ -2090,12 +2099,11 @@ export class TranscriptWatcher {
     if (typeof message?.model === 'string') w.snap.model = message.model;
     const usage = message?.usage;
     if (usage) {
-      w.snap.usage.input += usage.input_tokens ?? 0;
-      w.snap.usage.output += usage.output_tokens ?? 0;
-      w.snap.usage.cacheRead += usage.cache_read_input_tokens ?? 0;
-      w.snap.usage.cacheCreate += usage.cache_creation_input_tokens ?? 0;
-      // Beside `output`, on the same line, and never added INTO it (#789).
-      w.snap.usage.thinking += thinkingTokensOf(usage);
+      // Subagent files INCLUDED — they are separate files, not sidechains of
+      // this one, and the CLI's ledger counts them (#807). Once per response:
+      // the CLI writes each response's usage several times, and in a subagent
+      // file the later copies carry more output than the earlier ones.
+      w.ledger.absorb(w.snap.usage, usage, usageKey(e));
       // ⚠️ SPEND AFTER THE EPITAPH RETIRES IT (#787, found in review).
       //
       // `cost-state` is the CLI's accounting AS IT EXITED, and the corpus says

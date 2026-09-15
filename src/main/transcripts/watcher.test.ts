@@ -406,6 +406,86 @@ describe('subagent visibility (S-05 layout)', () => {
     expect(snap.usage.output).toBe(3); // subagent tokens counted
   });
 
+  // #807. A REAL subagent transcript (sanitized: content replaced, usage and
+  // ids verbatim), because the defect lives in a shape a hand-built line would
+  // not think to contain: the CLI writes each response's usage on every
+  // content-block line, the early copies carry a partial `output_tokens`, and a
+  // copy can arrive AFTER a tool result. Summing every copy — what the watcher
+  // did — over-counted every field.
+  it('counts each response once, from its LATEST copy, across the parent and a real subagent file', async () => {
+    const fixture = fs.readFileSync(path.join(__dirname, 'fixtures', 'subagent-usage-copies.jsonl'), 'utf8');
+
+    // WITNESS: the fixture really holds the thing under test. Without this, a
+    // re-generated fixture with one copy per response would pass for the wrong
+    // reason.
+    const copies = new Map<string, Array<{ at: number; output: number }>>();
+    fixture
+      .split('\n')
+      .filter(Boolean)
+      .forEach((l, at) => {
+        const e = JSON.parse(l) as {
+          requestId?: string;
+          message?: { id?: string; usage?: { output_tokens: number } };
+        };
+        if (!e.message?.usage) return;
+        const k = `${e.message.id}:${e.requestId}`;
+        copies.set(k, [...(copies.get(k) ?? []), { at, output: e.message.usage.output_tokens }]);
+      });
+    const grown = [...copies.values()].filter((c) => new Set(c.map((x) => x.output)).size > 1);
+    expect(grown.length).toBeGreaterThan(0);
+    expect(grown.some((c) => c.some((x, i) => i > 0 && x.at !== c[i - 1].at + 1))).toBe(true);
+
+    watcher.watch('s1', { cwd });
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    // The parent's own repeats are identical copies — the other half of the rule.
+    const parentUsage = { input_tokens: 5, output_tokens: 40, cache_read_input_tokens: 1000, cache_creation_input_tokens: 0 };
+    const parentCopy = (block: string) =>
+      entry({ requestId: 'req_parent', message: { id: 'msg_parent', usage: parentUsage, content: [{ type: block }] } });
+    writeLines(file, [parentCopy('thinking'), parentCopy('text'), parentCopy('tool_use')]);
+    await waitFor(() => watcher.snapshot('s1')?.bound === true);
+
+    const subDir = path.join(projectDir(), 'native-1', 'subagents');
+    fs.mkdirSync(subDir, { recursive: true });
+    fs.writeFileSync(path.join(subDir, 'agent-a0d37a75ef5daf960.jsonl'), fixture);
+    await waitFor(() => watcher.snapshot('s1')!.lines === 3 + 13);
+
+    // Latest copy per response, summed by hand from the fixture:
+    //   msg_…MMBG  2 / 1191 (thinking 100) / 17891 / 4405
+    //   msg_…LSA5  2 / 4450 (thinking 229) / 22296 / 9225  — third copy, after a tool result
+    //   msg_…K1SX  2 /  209 (thinking   0) / 31521 / 5310
+    // plus the parent's one response. Every copy summed would be 27/5976/137191/41795.
+    expect(watcher.snapshot('s1')!.usage).toEqual({
+      input: 6 + 5,
+      output: 5850 + 40,
+      cacheRead: 71708 + 1000,
+      cacheCreate: 18940,
+      thinking: 329,
+    });
+  });
+
+  // #807. The ledger lives and dies with the snapshot. A forked conversation
+  // carries the same message ids into a new file, so a ledger that survived the
+  // rebind would read the new file's copies as REPLACEMENTS for responses the
+  // blank totals no longer hold — and net them to zero.
+  it('forgets which responses it counted when a mis-bind resets the snapshot', async () => {
+    watcher.watch('s1', { cwd });
+    const shared = (sessionId: string) =>
+      entry({
+        sessionId,
+        requestId: 'req_shared',
+        message: { id: 'msg_shared', usage: { input_tokens: 3, output_tokens: 10 }, content: [{ type: 'text', text: 'hi' }] },
+      });
+    writeLines(path.join(projectDir(), 'native-A.jsonl'), [shared('native-A')]);
+    await waitFor(() => watcher.snapshot('s1')?.bound === true);
+    expect(watcher.snapshot('s1')!.usage.output).toBe(10);
+
+    watcher.setNativeSessionId('s1', 'native-B');
+    expect(watcher.snapshot('s1')!.usage.output).toBe(0);
+    writeLines(path.join(projectDir(), 'native-B.jsonl'), [shared('native-B')]);
+    await waitFor(() => watcher.snapshot('s1')?.bound === true && watcher.snapshot('s1')!.lines === 1);
+    expect(watcher.snapshot('s1')!.usage).toMatchObject({ input: 3, output: 10 });
+  });
+
   // #788. The end-to-end proof that the thing the ticket describes actually
   // happens HERE, in our merge, and is actually fixed — two REAL subagent files
   // written interleaved, the way two concurrent agents write them.

@@ -615,8 +615,10 @@ empirical validation.
 
 ### 5.6 Agent watcher windows
 
-When a Claude session spawns a subagent (Task tool), its activity appears in the
-transcript as a sidechain, and `SubagentStop` hooks fire on completion.
+When a Claude session spawns a subagent (Task tool), its activity is written to
+its own transcript file, `<uuid>/subagents/agent-<id>.jsonl`, beside the
+parent's — not into the parent's transcript (corrected 2026-09-15, #807; see
+§5.13) — and `SubagentStop` hooks fire on completion.
 
 - Sidebar shows a nested entry under the parent session while a subagent runs.
 - If "watcher windows" is enabled (global + per-session toggle), a mini panel/floating
@@ -1276,9 +1278,27 @@ unknown version must show tokens with **no cost** rather than a confident wrong
 number at the old rate. The pricing table is **data, not code** — a JSON file
 keyed by model, so a price change is a data edit.
 
-Per-session attribution is EXACT: each session maps 1:1 to a transcript JSONL,
-and every entry records token usage (input/output/cache read+write). Subagent
-sidechains land in the parent's transcript → counted where they belong.
+Per-session attribution matches the CLI's own ledger for everything the CLI
+records: each session maps 1:1 to a transcript JSONL plus its subagent files,
+and every assistant entry records token usage (input/output/cache read+write).
+**Subagent sidechains do NOT land in the parent's transcript** — they are
+separate files, `<uuid>/subagents/agent-*.jsonl` (corrected 2026-09-15, #807;
+this sentence said the opposite and was wrong on every CLI measured) — so they
+are folded into the parent's totals explicitly. Counting rule, measured against
+`cost-state.modelUsage` over 25 single-run sessions: **one contribution per
+`message.id`, and a later copy REPLACES the earlier one** rather than adding to
+it. (Not `message.id:requestId`: no response id ever carries two request ids,
+and 16 carry none.) Streaming writes a message several times; in subagent files
+the copies carry a growing `output_tokens`, so "first copy wins" under-counts
+output by up to a third and "every copy" over-counts every field 1.5–7×. With
+the rule, input and both cache fields land at 0.98–1.013 of the CLI's figure
+(most at exactly 1.0000) and output at 0.97–1.00. The CLI also bills side
+queries (e.g. a Haiku row) that it writes to no transcript, which makes our
+totals usually LOW — but not a guaranteed floor: one session read 1.3% high.
+**A resumed conversation is unmeasured:** we replay the whole file, the CLI
+appears to restore its ledger from the last `cost-state` on resume, and the
+corpus holds no resumed session with two non-empty ledgers to check that
+against.
 Dispatched sessions (§5.15) are their own sessions → counted separately.
 
 Surfaces in switchboard.ai:

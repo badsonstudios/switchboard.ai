@@ -3,6 +3,18 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔨 IN PROGRESS — 2026-09-15: **#807** — per-session token totals vs the CLI's ledger
+>
+> Branch `feature/807-usage-ledger`. **THE TICKET'S PREMISE IS INVERTED FOR THE
+> WATCHER.** The 600× under-count was #787's PROBE (parent file only, de-duped);
+> the watcher already folds subagent files in (`watcher.test.ts` "subagent
+> tokens counted") and does NOT de-dupe, so it OVER-counts 1.5–7×. Measured
+> (`spike/probes/807/`): parent + subagents, one count per `message.id`, LATEST
+> copy wins → input / cache 0.98–1.013 (21 of 25 sessions exactly 1.0000) and
+> output 0.97–1.00 against `cost-state.modelUsage`. Residual: Haiku side-queries
+> the CLI bills but writes to no transcript. Implemented + reviewed (no
+> blocker, 4 should-fixes taken); mutation round 1 14/15, round 2 running.
+
 > # 📌 STANDING — 2026-09-15: **Patch versions are two or three digits. The release after 0.8.8 is 0.8.81.**
 >
 > **Owner decision, 2026-09-15.** `0.8.8` → **`0.8.81`** → `0.8.82` … `0.8.99` →

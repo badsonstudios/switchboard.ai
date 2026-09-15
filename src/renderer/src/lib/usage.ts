@@ -1,5 +1,5 @@
 // Usage/cost helpers for the session card (P2-E7-01, #787). Subscription-first:
-// the exact token counts are the real signal, and the dollar figure is there to
+// the token counts are the real signal, and the dollar figure is there to
 // give them a scale — the user is not billed per token on a subscription.
 //
 // TWO SOURCES, AND THE UI SAYS WHICH (#787). While a session runs there is only

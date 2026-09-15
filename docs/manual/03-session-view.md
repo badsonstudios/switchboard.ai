@@ -379,8 +379,15 @@ record it. Unlike the other counts, the thinking figure can read a little
 **low** — never high: a conversation you started on an older version and carried
 on after updating only counts the thinking recorded since.
 
-**The token counts are exact. The dollar figure has two versions, and the card
-tells you which one you're looking at.**
+**The token counts closely match Claude Code's own count** — typically to
+within a percent or two — including the work done by any helper agents the
+session starts, which are counted as part of it. What they can't include is
+background work Claude Code does with a lighter model and never writes down (for
+example, naming the conversation), so where they differ they usually read a
+little **low**.
+
+**The dollar figure has two versions, and the card tells you which one you're
+looking at.**
 
 - **While a session is running** you see something like `~$3.20`. The tilde
   means switchboard worked it out itself, from published per-model prices. It

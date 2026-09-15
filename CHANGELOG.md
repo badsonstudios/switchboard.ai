@@ -169,6 +169,14 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **A session's token counts were inflated — often two to five times over.**
+  Claude Code writes the same reply's usage down several times while it is
+  still arriving, and switchboard added up every copy. It now counts each reply
+  once, from its final copy, so the tokens-in, tokens-out and cache figures on a
+  card — and the `~` cost estimate built from them — match Claude Code's own
+  accounting, helper agents included. A session that is already open corrects
+  itself the next time it is opened or resumed.
+
 - **A session's card no longer disappears when you click a different session.**
   If a session had ever been maximized and the maximize was still on — even
   long after, with that session sitting quietly in a tab — every busy session
