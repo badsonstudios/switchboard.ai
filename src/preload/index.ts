@@ -276,7 +276,13 @@ const api = {
     }): Promise<
       | (SessionRecordDto & {
           cardId: string;
-          priorUsage?: { input: number; output: number; cacheRead: number; cacheCreate: number };
+          priorUsage?: {
+            input: number;
+            output: number;
+            cacheRead: number;
+            cacheCreate: number;
+            thinking?: number;
+          };
           priorModel?: string;
           /** the CLI's own cost figure for this card's last conversation (#787) */
           priorCliCost?: CliCost;

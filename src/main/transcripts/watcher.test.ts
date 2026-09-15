@@ -161,6 +161,29 @@ describe('binding validation (the S-04 race fix)', () => {
   });
 });
 
+describe('thinking tokens (#789) — counted INSIDE output, never on top of it', () => {
+  it('accumulates thinking beside output, and a line breaking the subset adds none', async () => {
+    watcher.watch('s1', { cwd });
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    writeLines(file, [
+      entry({ message: { usage: { output_tokens: 10, output_tokens_details: { thinking_tokens: 7 } } } }),
+    ]);
+    await waitFor(() => watcher.snapshot('s1')!.usage.output > 0);
+    // The intermediate state, on its own step: output is 10, NOT 17.
+    expect(watcher.snapshot('s1')!.usage).toMatchObject({ output: 10, thinking: 7 });
+
+    writeLines(file, [
+      entry({ message: { usage: { output_tokens: 5 } } }),
+      entry({ message: { usage: { output_tokens: 3, output_tokens_details: { thinking_tokens: 9 } } } }),
+    ]);
+    await waitFor(() => watcher.snapshot('s1')!.usage.output > 10);
+    const u = watcher.snapshot('s1')!.usage;
+    expect(u.output).toBe(18);
+    expect(u.thinking).toBe(7); // the 9-of-3 line contributed nothing
+    expect(u.thinking).toBeLessThanOrEqual(u.output);
+  });
+});
+
 describe('live usage totals + tolerant reader (the done-when)', () => {
   it('token counts update live across appends; malformed lines never crash', async () => {
     watcher.watch('s1', { cwd });

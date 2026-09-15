@@ -90,6 +90,7 @@ export type SchemaPath =
   | ''
   | 'message'
   | 'message.usage'
+  | 'message.usage.output_tokens_details'
   | 'message.content.*';
 
 export interface PathContract {
@@ -477,6 +478,25 @@ export const TRANSCRIPT_SCHEMA: Readonly<Record<SchemaPath, PathContract>> = {
       'output_tokens',
       'cache_read_input_tokens',
       'cache_creation_input_tokens',
+      // CONSUMED since #789, for its one sub-key `thinking_tokens`, read by
+      // `thinking-tokens.ts` — and DESCENDED since #789, reversing #779's
+      // no-descend. That posture was right while we read nothing inside it; once
+      // the card shows `thinking_tokens`, a rename would make the figure vanish
+      // with nothing in the log saying why, which is the exact break this file
+      // exists to make loud. The price is a warning when Anthropic adds a
+      // sibling sub-key, and that is the detector doing its job.
+      //
+      // ⚠️ NEVER SUM IT ON TOP OF `output_tokens` — and unlike `cache_creation`
+      // and `iterations` below, this one was MEASURED rather than reasoned (#779,
+      // `spike/probes/779/usage-details.mjs`). It is a BREAKDOWN OF
+      // `output_tokens`: over 42,071 lines that carry it, 25,908 of them with
+      // `thinking_tokens > 0`, it exceeded `output_tokens` **zero** times, with a
+      // maximum ratio of 0.9928 — approaching 1.0 without ever crossing it,
+      // which is what a subset does on a thinking-heavy turn and not what an
+      // independent quantity does. The CLI agrees by construction: its own
+      // aggregator adds `output_tokens` to a running total and tracks
+      // `thinking_tokens` in a SEPARATE field, never summing the two.
+      'output_tokens_details',
     ],
     ignored: [
       'service_tier',
@@ -489,22 +509,18 @@ export const TRANSCRIPT_SCHEMA: Readonly<Record<SchemaPath, PathContract>> = {
       // tokens (the ClaudeMon read, DESIGN §5.13)
       'iterations',
       'speed',
-      // NEVER SUM THIS ON TOP EITHER — and unlike the two above, this one was
-      // MEASURED rather than reasoned (#779, `spike/probes/779/usage-details.mjs`).
-      // Its only sub-key is `thinking_tokens`, and it is a BREAKDOWN OF
-      // `output_tokens`: over 42,071 lines that carry it, 25,908 of them with
-      // `thinking_tokens > 0`, it exceeded `output_tokens` **zero** times, with a
-      // maximum ratio of 0.9928 — approaching 1.0 without ever crossing it,
-      // which is what a subset does on a thinking-heavy turn and not what an
-      // independent quantity does. The CLI agrees by construction: its own
-      // aggregator adds `output_tokens` to a running total and tracks
-      // `thinking_tokens` in a SEPARATE field, never summing the two. Surfacing
-      // the breakdown in §5.13's usage pane is a follow-up; adding it to the
-      // output total would silently inflate every number we show.
-      'output_tokens_details',
     ],
-    // deliberately no descend: every sub-object here is a counter we do not
-    // read, and their interiors are not a contract we depend on
+    // Only the one sub-object we read INSIDE is walked. The rest are counters we
+    // do not read, and their interiors are not a contract we depend on.
+    descend: { output_tokens_details: 'message.usage.output_tokens_details' },
+  },
+
+  'message.usage.output_tokens_details': {
+    // Its only sub-key, measured across 48,588 lines through CLI 2.1.270 (#789).
+    // The CLI also writes the whole object as `null` on `<synthetic>` lines; the
+    // walker only descends into plain objects, so that is not drift.
+    consumed: ['thinking_tokens'],
+    ignored: [],
   },
 
   'message.content.*': {

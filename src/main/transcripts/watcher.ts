@@ -19,6 +19,7 @@ import { FeedBuffer } from '../feed/buffer';
 import { conversationExists, slugForCwd } from './paths';
 import { DriftDetector } from './drift';
 import { parseCostState } from './cost-state';
+import { thinkingTokensOf } from './thinking-tokens';
 import type { CliCost } from '../../shared/transcripts';
 import { DiscoverySchedule, DiscoveryScheduleOptions, rootKey } from './discovery-scheduler';
 
@@ -31,6 +32,11 @@ export interface UsageTotals {
   output: number;
   cacheRead: number;
   cacheCreate: number;
+  /**
+   * The part of `output` the model spent thinking (#789). A SUBSET of `output`,
+   * never added to it — see `thinking-tokens.ts` for the measurement.
+   */
+  thinking: number;
 }
 
 export interface TranscriptSnapshot {
@@ -652,7 +658,7 @@ export class TranscriptWatcher {
         searchingMs: null,
         projectsRoot,
       },
-      usage: { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 },
+      usage: { input: 0, output: 0, cacheRead: 0, cacheCreate: 0, thinking: 0 },
       lines: 0,
       malformed: 0,
       driftKeys: [],
@@ -2088,6 +2094,8 @@ export class TranscriptWatcher {
       w.snap.usage.output += usage.output_tokens ?? 0;
       w.snap.usage.cacheRead += usage.cache_read_input_tokens ?? 0;
       w.snap.usage.cacheCreate += usage.cache_creation_input_tokens ?? 0;
+      // Beside `output`, on the same line, and never added INTO it (#789).
+      w.snap.usage.thinking += thinkingTokensOf(usage);
       // ⚠️ SPEND AFTER THE EPITAPH RETIRES IT (#787, found in review).
       //
       // `cost-state` is the CLI's accounting AS IT EXITED, and the corpus says

@@ -59,7 +59,7 @@ describe('parseCostState', () => {
     expect(c!.startTime).toBe(1_789_180_000_000);
   });
 
-  it('carries thinkingTokens through for #789 without surfacing it', () => {
+  it('carries thinkingTokens through (parsed; the card deliberately reads its own, #789)', () => {
     const c = parseCostState(copy());
     expect(c!.modelUsage['claude-opus-5'].thinkingTokens).toBe(177370);
   });

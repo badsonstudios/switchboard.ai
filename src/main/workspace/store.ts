@@ -75,7 +75,8 @@ export interface PersistedSession {
   cededNativeIds?: string[];
   suspendedAt: string;
   /** last-known token totals + model, so usage survives a resume/restart */
-  usage?: { input: number; output: number; cacheRead: number; cacheCreate: number };
+  // `thinking` is optional: every workspace.json written before #789 lacks it
+  usage?: { input: number; output: number; cacheRead: number; cacheCreate: number; thinking?: number };
   model?: string;
   /**
    * The CLI's own cost figure for this card's last conversation (#787).

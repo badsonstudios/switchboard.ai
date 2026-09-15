@@ -7,7 +7,7 @@
 // otherwise it renders its own strip.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Usage, CliCost, formatTokens, costLine } from '../lib/usage';
+import { Usage, CliCost, formatTokens, costLine, thinkingPart } from '../lib/usage';
 
 export function UsageStrip(props: {
   usage: Usage;
@@ -18,6 +18,7 @@ export function UsageStrip(props: {
   const { t } = useTranslation();
   const u = props.usage;
   const cost = costLine(u, props.model, props.cliCost);
+  const thinking = thinkingPart(u);
   // Three distinct tooltips, because the three cases make genuinely different
   // claims and a single "estimated cost" string would be a lie in two of them.
   const costTitle =
@@ -29,7 +30,21 @@ export function UsageStrip(props: {
   const body = (
     <>
       <span title={t('usage.inputTitle')}>{t('usage.input', { n: formatTokens(u.input) })}</span>
-      <span title={t('usage.outputTitle')}>{t('usage.output', { n: formatTokens(u.output) })}</span>
+      <span title={t('usage.outputTitle')}>
+        {t('usage.output', { n: formatTokens(u.output) })}
+        {/* Inside the output span, not beside it: it is a part of that number (#789). */}
+        {thinking && (
+          <>
+            {' '}
+            <span
+              title={t('usage.thinkingTitle', { pct: thinking.pct })}
+              style={{ color: 'var(--faint)' }}
+            >
+              {t('usage.thinking', { n: formatTokens(thinking.tokens) })}
+            </span>
+          </>
+        )}
+      </span>
       <span title={t('usage.cacheTitle')} style={{ color: 'var(--faint)' }}>
         {t('usage.cache', { n: formatTokens(u.cacheRead) })}
       </span>

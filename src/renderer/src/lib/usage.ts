@@ -16,6 +16,15 @@ export interface Usage {
   output: number;
   cacheRead: number;
   cacheCreate: number;
+  /**
+   * The part of `output` the model spent thinking (#789) — INSIDE `output`,
+   * never on top of it, and never priced separately.
+   *
+   * OPTIONAL because the persisted copy is a second entrance: every
+   * `workspace.json` written before #789 lacks it. Read it through
+   * `thinkingPart`, which treats absent, zero and invalid alike.
+   */
+  thinking?: number;
 }
 
 /**
@@ -106,6 +115,8 @@ export function formatUsd(n: number): string {
   return `$${n.toFixed(2)}`;
 }
 
+// `thinking` is deliberately NOT summed: nothing shows a workspace-wide thinking
+// total (#789). Add it here before anything does, or that total reads nothing.
 export function addUsage(a: Usage, b: Usage): Usage {
   return {
     input: a.input + b.input,
@@ -116,6 +127,36 @@ export function addUsage(a: Usage, b: Usage): Usage {
 }
 
 export const ZERO_USAGE: Usage = { input: 0, output: 0, cacheRead: 0, cacheCreate: 0 };
+
+/**
+ * How much of a session's output was thinking, or `null` when there is nothing
+ * honest to show (#789).
+ *
+ * THIS is the check the display rests on — not the watcher. The watcher keeps
+ * each line's thinking inside that line's output, but it adds `output_tokens`
+ * without validating it, so the totals are not safe by construction. And the
+ * card record comes back from `workspace.json` and is never re-parsed, the same
+ * second entrance `costLine` guards. A figure that claims more thinking than
+ * output is the one inversion this breakdown must never show, so it shows
+ * nothing instead.
+ *
+ * Absent, `0` and invalid all come out `null` — none of them is something to
+ * put on the card, and the difference between them is not the user's problem.
+ */
+export function thinkingPart(u: Usage): { tokens: number; pct: number } | null {
+  const t = u.thinking;
+  // `!(t <= output)`, not `t > output`: against a NaN output both comparisons
+  // are false, and only the negated form refuses it. The same negation refuses a
+  // NaN or Infinite `t` against a finite output, so there is deliberately no
+  // `Number.isFinite` here: it would differ only when BOTH are Infinity, which
+  // `workspace.json` cannot hold (`JSON.stringify` writes Infinity as `null`).
+  if (typeof t !== 'number' || t <= 0 || !(t <= u.output)) return null;
+  // 1–99 unless EXACT. Plain rounding said "100% of the output was thinking" at
+  // 99.6%, beside an output figure visibly larger than the thinking one, and
+  // "0%" beside a figure that is plainly not nothing.
+  const pct = t === u.output ? 100 : Math.min(99, Math.max(1, Math.round((t / u.output) * 100)));
+  return { tokens: t, pct };
+}
 
 /**
  * What the card should actually show for cost, and how honest it can be about

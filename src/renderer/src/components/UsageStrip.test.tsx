@@ -14,7 +14,7 @@ import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
 import en from '../../../shared/i18n/locales/en.json';
 import { UsageStrip } from './UsageStrip';
-import type { CliCost } from '../lib/usage';
+import type { CliCost, Usage } from '../lib/usage';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -54,7 +54,7 @@ afterEach(() => {
   host.remove();
 });
 
-function render(props: { model?: string; cliCost?: CliCost }): void {
+function render(props: { model?: string; cliCost?: CliCost; usage?: Usage }): void {
   act(() => {
     root.render(<UsageStrip usage={USAGE} {...props} />);
   });
@@ -112,5 +112,41 @@ describe('UsageStrip cost figure', () => {
   it('renders the tokens beside the cost, so the exact signal is not lost', () => {
     render({ model: 'claude-opus-5', cliCost: cli() });
     expect(host.textContent).toContain('1.00M');
+  });
+});
+
+describe('UsageStrip thinking breakdown (#789)', () => {
+  const THINKING: Usage = { input: 0, output: 4200, cacheRead: 0, cacheCreate: 0, thinking: 2900 };
+
+  /** The output `<span>`, found by its own tooltip against the real catalogue. */
+  function outputSpan(): HTMLElement {
+    const found = host.querySelector<HTMLElement>(`span[title="${en.usage.outputTitle}"]`);
+    expect(found, 'no output span rendered').toBeTruthy();
+    return found!;
+  }
+
+  it('shows the thinking figure INSIDE the output span, with the output number unchanged', () => {
+    render({ usage: THINKING });
+    // `4.2k`, not `7.1k`: the breakdown is a part of output and must not be
+    // added to the figure it breaks down.
+    expect(outputSpan().textContent).toBe('↓ 4.2k (2.9k thinking)');
+  });
+
+  it('tooltips the share as a percentage, from the real en.json', () => {
+    render({ usage: THINKING });
+    const inner = outputSpan().querySelector<HTMLElement>('span[title]');
+    expect(inner).toBeTruthy();
+    expect(inner!.getAttribute('title')).toBe(en.usage.thinkingTitle.replace('{pct}', '69'));
+    expect(inner!.getAttribute('style')).toContain('var(--faint)');
+  });
+
+  it('shows nothing extra for a session with no thinking recorded', () => {
+    render({ usage: { input: 0, output: 4200, cacheRead: 0, cacheCreate: 0 } });
+    expect(outputSpan().textContent).toBe('↓ 4.2k');
+  });
+
+  it('shows nothing extra when a persisted record claims more thinking than output', () => {
+    render({ usage: { ...THINKING, thinking: 5000 } });
+    expect(outputSpan().textContent).toBe('↓ 4.2k');
   });
 });
