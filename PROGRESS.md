@@ -16,6 +16,24 @@
 > `version.test.ts` pins the trap. **Every block below that says
 > `0.8.9 — unreleased` means the section now headed `0.8.81 — unreleased`.**
 
+> # 🔧 IN PROGRESS — 2026-09-15: **#813** — a held maximize folds the card you leave (DETOUR; the E11 queue resumes at #807 after)
+>
+> Branch `feature/813-maximize-folds-departed-card`. **Root cause found, not a
+> #708 regression:** Dan's `workspace.json` holds `ui.layoutMode.maximized` on a
+> card that is now a background tab. `isEnforced` counts a held maximize even in
+> grid, so every reactive sweep (on `activeCard` change — rail click OR card
+> click, owner confirmed both) collapses the expanded card you just left unless
+> it needs a human; WORKING doesn't. Rule dates from E9-07 (`3f9047d`,
+> 2026-08-04). **Fix:** a maximize plans nothing on `react`; `isEnforced` = mode
+> ≠ grid; a reasoned renderer breadcrumb on every panel-removing rung change and
+> close. Plan posted on the issue. **NOT Ctrl+Shift+M as a workaround** (the
+> plan comment said so, wrongly): an un-maximize restores the snapshot from when
+> the maximize was taken — days old on Dan's machine. After the fix a stale
+> maximize is harmless; the palette's "Layout: Grid" clears it. Review: no
+> blocker; fixes in flight (focus/queue tests, one maximize resolution,
+> `forgetClosedCard` shared by both close paths, docs corrections). Follow-up
+> filed for the stale-restore hazard.
+
 > # ✅ MERGED — 2026-09-15: **#789** — the card shows how much output was thinking,
 > and mutation found the write the review's fix missed
 >

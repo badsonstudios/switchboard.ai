@@ -1054,8 +1054,9 @@ describe('SessionStore — layout mode (P2-E9-07)', () => {
   });
 
   it('forgets a closed card at the moment it closes, not at the next boot', () => {
-    // a stale maximize makes the DEFAULT mode start enforcing, so this cannot
-    // wait for the boot prune — see lib/layout-mode's isEnforced
+    // a stale maximize leaves the chip saying "maximized" about nothing, and the
+    // next toggle would restore around a card that is gone — so this cannot
+    // wait for the boot prune
     store.setLayout(withMaximized(DEFAULT_LAYOUT, 'card-A', { 'card-A': 'expanded' }));
     store.forgetLayoutCard('card-B'); // an unrelated close: no write, no re-render
     expect(store.getLayout().maximized).toBe('card-A');

@@ -128,16 +128,19 @@ export interface LayoutMove {
 export type LayoutTrigger = 'switch' | 'react';
 
 /**
- * Is a mode actively holding the workspace in shape right now?
+ * Is a MODE actively holding the workspace in shape right now?
  *
- * `held` is the maximize AS RESOLVED AGAINST THE CARDS ON SCREEN, not the
- * stored id — a maximize whose card has been closed must not count. If it did,
- * `grid` would start enforcing (its plan is "every session gets a card") and
- * every card the user collapsed by hand would pop back open on the next status
- * push, which is the one thing this file's header says must never happen.
+ * A MAXIMIZE DOES NOT COUNT (#813). A maximize is a gesture, not a mode: it
+ * rearranges the workspace once, on the `switch` that takes it, and holds its
+ * snapshot for the undo — it never sweeps again. It used to count, and that
+ * made a maximize into a quiet focus mode: every reactive pass folded whichever
+ * expanded card focus had just LEFT, unless it needed a human. The owner's
+ * maximize had been taken days earlier, on a card that was by then a background
+ * tab, so nothing on screen said a maximize was held — and every WORKING session
+ * he clicked away from (a rail row or another card, alike) collapsed.
  */
-export function isEnforced(state: LayoutState, held: string | null = state.maximized): boolean {
-  return held !== null || state.mode !== 'grid';
+export function isEnforced(state: LayoutState): boolean {
+  return state.mode !== 'grid';
 }
 
 /** The maximize, if the card it names is still on screen. */
@@ -157,14 +160,17 @@ function wants(opts: {
   cards: readonly LayoutCard[];
   activeCardId: string | null;
   trigger: LayoutTrigger;
+  /** the maximize `plan` resolved — null on every reactive pass (#813) */
+  maximized: string | null;
 }): Map<string, Ladder> {
-  const { state, cards, activeCardId, trigger } = opts;
+  const { state, cards, activeCardId, trigger, maximized } = opts;
   const want = new Map<string, Ladder>();
   if (cards.length === 0) return want;
 
   // ── which card is the big one ─────────────────────────────────────────────
   //
-  // Maximize names it outright. Otherwise focus mode follows the card you are
+  // A maximize names it outright — on the switch that takes it; `plan` hands
+  // this function none on a reactive pass (#813). Otherwise focus mode follows the card you are
   // IN, which is what makes it a mode and not a one-off — click another session
   // and the big card moves with you.
   //
@@ -190,7 +196,6 @@ function wants(opts: {
   // would hand the screen to the blocked session and fold the card you were
   // reading. A mode may rearrange what is on screen; it may not decide, on its
   // own initiative, which card you meant.
-  const maximized = heldMaximize(state, cards);
   const active = cards.find((c) => c.cardId === activeCardId && !c.poppedOut)?.cardId ?? null;
   const onScreen = cards.find((c) => c.ladder === 'expanded' && !c.poppedOut)?.cardId ?? null;
   const large =
@@ -218,8 +223,8 @@ function wants(opts: {
       // It uses the ACTIVE card and not `large`: queue is the one mode with a
       // complete plan without a big card, so the fallbacks that invent one for
       // focus mode would only weaken "only the sessions that need you". (A
-      // maximize cannot reach here — it returned above — which is exactly why
-      // `active` alone is the whole rule.)
+      // maximize taken on this switch returned above, and a HELD one plays no
+      // part in a reactive pass — which is why `active` alone is the whole rule.)
       const kept = active;
       for (const c of cards) {
         want.set(c.cardId, c.needsAttention || c.cardId === kept ? 'expanded' : 'collapsed');
@@ -254,11 +259,14 @@ export function plan(opts: {
   restore?: Readonly<Record<string, Ladder>>;
 }): LayoutMove[] {
   const { state, cards, activeCardId, trigger, restore } = opts;
-  const maximized = heldMaximize(state, cards);
   // Nothing is holding the workspace in shape, and nobody asked for a change.
-  if (trigger === 'react' && !isEnforced(state, maximized) && !restore) return [];
+  if (trigger === 'react' && !isEnforced(state) && !restore) return [];
+  // THE ONE PLACE a maximize is resolved: on the switch that takes it, and never
+  // on a reactive pass (#813, see `isEnforced`) — there, the mode's own rules
+  // are the whole plan. `wants` and the exemption below both read this answer.
+  const maximized = trigger === 'switch' ? heldMaximize(state, cards) : null;
 
-  const want = wants({ state, cards, activeCardId, trigger });
+  const want = wants({ state, cards, activeCardId, trigger, maximized });
   const active = activeCardId;
 
   const up: LayoutMove[] = [];
@@ -288,15 +296,9 @@ export function plan(opts: {
     // ...except on the maximize ITSELF, which is an explicit "blow this one up
     // and put the rest away" — the card you were in is exactly what it is
     // putting away, and it comes back the moment you double-click again.
-    //
-    // On a REACTIVE pass the exemption stands even under a maximize, and that
-    // is the difference between a held maximize and a trap: §5.8 says clicking
-    // a session anywhere reveals it, so a click that expanded a card and then
-    // watched the next sweep fold it again — handing focus back to the
-    // maximized card — would leave the user no way out but a shortcut nobody
-    // told them about. The maximize keeps holding everything else down; the
-    // card you deliberately went to stays.
-    if (card.cardId === active && !(maximized && trigger === 'switch')) continue;
+    // (`maximized` is only ever set on a switch; a reactive pass under a held
+    // maximize plans nothing of the maximize's at all — #813.)
+    if (card.cardId === active && !maximized) continue;
     if (card.ladder !== 'expanded') continue;
     down.push({ cardId: card.cardId, rung: target });
   }
@@ -368,8 +370,8 @@ export function withoutMaximized(state: LayoutState): LayoutState {
  * write and re-render — the same contract `prunePresentation` and
  * `prunePolicies` use, and for the same reason: a workspace must not accrete a
  * record per session it ever opened. A maximize whose card is gone is dropped
- * outright; otherwise the workspace would stay in a shape held for a session
- * that no longer exists.
+ * outright; otherwise the chip would say "maximized" about a session that no
+ * longer exists, and the next toggle would restore a snapshot taken around it.
  */
 export function pruneLayout(state: LayoutState, knownCardIds: Iterable<string>): LayoutState | null {
   const known = new Set(knownCardIds);
@@ -378,8 +380,8 @@ export function pruneLayout(state: LayoutState, knownCardIds: Iterable<string>):
 
 /** One card has just been closed. The same rule as `pruneLayout`, at the moment
  *  it happens rather than at the next boot — a maximize held for a card that no
- *  longer exists would leave the workspace blown up around nothing, AND would
- *  make the default mode start enforcing (see `isEnforced`). */
+ *  longer exists would leave the chip saying "maximized" about nothing, and the
+ *  next toggle would restore a snapshot taken around it. */
 export function forgetLayoutCard(state: LayoutState, cardId: string): LayoutState | null {
   return dropCards(state, (id) => id !== cardId);
 }
