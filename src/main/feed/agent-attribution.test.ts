@@ -70,6 +70,18 @@ describe('agentNameFromLine', () => {
     }
   });
 
+  it('never falls back to the team-session ENVELOPE keys (#812)', () => {
+    // `schema.ts` declares `agentName` and `teamName` FLAT — legal on every line
+    // type — and that is only safe while nothing reads them: a flat key's rename
+    // is silent. The tempting slip is `line.attributionAgent ?? line.agentName`,
+    // because `FeedBlock` already has a field called `agentName`. This pins that
+    // it does not happen; consuming either key means moving it back to a scoped
+    // entry in `schema.ts` first.
+    const line = JSON.parse('{"agentName":"researcher","teamName":"team-alpha"}') as Record<string, unknown>;
+    expect(Object.prototype.hasOwnProperty.call(line, 'agentName')).toBe(true); // witness
+    expect(agentNameFromLine(line)).toBeUndefined();
+  });
+
   describe('it is sanitized, because it leaves the app (#788 review)', () => {
     // `renderBlock` prepends this as `[subagent: <name>]` into text ANOTHER
     // session's model reads as structure. Built as JSON TEXT so the control

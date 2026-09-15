@@ -498,6 +498,51 @@ describe('the schema itself', () => {
     expect(unknownKeys({ type: 42, sessionId: 's', customTitle: 'x' })).toEqual(['customTitle']);
   });
 
+  describe('team-session envelope keys (#812)', () => {
+    // The CLI's generic append builds EVERY line as an envelope around the typed
+    // entry — PATH binary 2.1.270, verbatim: `{parentUuid, logicalParentUuid,
+    // isSidechain, teamName: d?.teamName, agentName: d?.agentName, promptId,
+    // agentId, ...entry, ..., gitBranch, slug}`. With a team context set, both
+    // keys ride on whatever type is appended. Built as TEXT, not as an object
+    // literal, with a witness that the keys really are on the line: without it,
+    // a fixture that simply LEFT a key out would report nothing and pass for the
+    // wrong reason. (`slug` is declared flat, so leaving it out is fine. And this
+    // is about these two keys only: `agentId` is also on the envelope but stays
+    // scoped per #788, so a teammate line of another type carrying it would
+    // still report — that documented gap is not this item's.)
+    const envelopeLine = (type: string, extra = '') =>
+      JSON.parse(
+        `{"parentUuid":"u-0","logicalParentUuid":null,"isSidechain":false,` +
+          `"teamName":"team-alpha","agentName":"researcher","promptId":"p-1",` +
+          `"type":"${type}","uuid":"u-1","sessionId":"s-1","cwd":"C:/tmp/x",` +
+          `"timestamp":"2026-09-15T10:00:00.000Z","version":"2.1.270",` +
+          `"userType":"external","gitBranch":"main"${extra}}`
+      ) as Record<string, unknown>;
+
+    const witness = (line: Record<string, unknown>) => {
+      expect(Object.prototype.hasOwnProperty.call(line, 'teamName'), 'teamName parsed onto the line').toBe(true);
+      expect(Object.prototype.hasOwnProperty.call(line, 'agentName'), 'agentName parsed onto the line').toBe(true);
+    };
+
+    it('reports neither key on ANY declared line type — the envelope contract, not a sample', () => {
+      // Every type, not a hand-picked few (review, #812): a sample of types lets
+      // a future edit scope the keys to exactly that sample and stay green,
+      // which is what #788 did to `agentId` after measuring. Types with a scoped
+      // entry and types without one (`system`, `agent-name`) both run here.
+      for (const type of KNOWN_LINE_TYPES) {
+        const line = envelopeLine(type);
+        witness(line);
+        expect(unknownKeys(line), `${type} line`).toEqual([]);
+      }
+    });
+
+    it('still reports a genuinely unknown key on the same line — not blind', () => {
+      const line = envelopeLine('assistant', ',"teamRosterV2":1');
+      witness(line);
+      expect(unknownKeys(line)).toEqual(['teamRosterV2']);
+    });
+  });
+
   it('every type-scoped key is scoped to a DECLARED line type, and is not also flat', () => {
     // A scope on an undeclared type would be dead (the line reports
     // `type=<value>` and its keys are checked against the shared set anyway), and
