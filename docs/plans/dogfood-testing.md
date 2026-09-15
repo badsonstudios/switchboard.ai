@@ -231,3 +231,4 @@ deleted; they revive if PTY-transport sessions come back into use.
 | 2026-09-05 | Wants a setting: when a session needs attention, pop its window to the forefront (the DESIGN.md focus-stealing policy, for the future settings screen) | #756 |
 | 2026-09-05 | Wants a small identifying icon beside each feed tool-block name (agent, question, read, shell, …) — spot the block type by shape, not by reading | #757 |
 | 2026-09-05 | Wants AI-generated task labels that follow the session — app runs Claude over the transcript and refreshes the label as work drifts (evolves P2-E7-06) | #758 |
+| 2026-09-15 | Submitting a prompt closed the session card; session survived in the rail, click brought it back — suspect §5.8 auto-minimize armed by a stray titlebar-chip click, else a real panel close | #813 |
