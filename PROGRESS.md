@@ -16,23 +16,61 @@
 > `version.test.ts` pins the trap. **Every block below that says
 > `0.8.9 — unreleased` means the section now headed `0.8.81 — unreleased`.**
 
-> # 🔧 IN PROGRESS — 2026-09-15: **#813** — a held maximize folds the card you leave (DETOUR; the E11 queue resumes at #807 after)
+> # ✅ MERGED — 2026-09-15: **#813** — the card that "closed" was folded by a maximize held for days
 >
-> Branch `feature/813-maximize-folds-departed-card`. **Root cause found, not a
-> #708 regression:** Dan's `workspace.json` holds `ui.layoutMode.maximized` on a
-> card that is now a background tab. `isEnforced` counts a held maximize even in
-> grid, so every reactive sweep (on `activeCard` change — rail click OR card
-> click, owner confirmed both) collapses the expanded card you just left unless
-> it needs a human; WORKING doesn't. Rule dates from E9-07 (`3f9047d`,
-> 2026-08-04). **Fix:** a maximize plans nothing on `react`; `isEnforced` = mode
-> ≠ grid; a reasoned renderer breadcrumb on every panel-removing rung change and
-> close. Plan posted on the issue. **NOT Ctrl+Shift+M as a workaround** (the
-> plan comment said so, wrongly): an un-maximize restores the snapshot from when
-> the maximize was taken — days old on Dan's machine. After the fix a stale
-> maximize is harmless; the palette's "Layout: Grid" clears it. Review: no
-> blocker; fixes in flight (focus/queue tests, one maximize resolution,
-> `forgetClosedCard` shared by both close paths, docs corrections). Follow-up
-> filed for the stale-restore hazard.
+> **PR #819, squashed to `dec5181`, CI green (4/4 after one flake re-run).**
+> Issue closed. ⚠️ **NOT RELEASED** — joins #764…#789 under `0.8.81 —
+> unreleased`; `gh release list` is the authority.
+>
+> **DETOUR OVER — Next up: #807** (subagent transcripts under-count our token
+> totals; correct DESIGN §5.13's sidechain sentence; not cost-state; size M).
+> Then **#793** (measure first), **#812**, or E11's composer half (**#797 →
+> #798**). The E11 queue is exactly where #789's close-out left it. New since:
+> **#818** (undoing a long-held maximize restores a days-old snapshot — filed
+> from #813's review, pre-existing, not queued ahead of E11).
+>
+> **ROOT CAUSE — IN THE LOG BUNDLE ALL ALONG, UNDER A KEY NOBODY CHECKED.** The
+> analysis ruled out `ui.presentationPolicy` and stopped. The same file's
+> `ui.layoutMode` held `maximized` on a card that was by then a background tab.
+> `isEnforced()` counted a held maximize even under `grid`, so App's reactive
+> `applyLayout('react')` (on `activeCard` change) planned "maximized expanded,
+> all else collapsed", sparing only the active card and `needsYou` sessions.
+> Leave a card → it is no longer active → collapsed. **Why only WORKING**
+> (owner's re-repro): acknowledging a finished session relaxes only its FEED
+> entry to "Ready"; its status stays `done`, which is `needsYou`. Latent since
+> E9-07 (`3f9047d`, 2026-08-04) — NOT a regression of #708's fix. The unit test
+> asserted only the card you went TO; the e2e walked the exact repro and the
+> un-maximize on the next line re-expanded the folded card.
+>
+> **FIX:** a maximize is resolved ONCE, in `plan`, on the switch that takes it;
+> `isEnforced(state)` = `mode !== 'grid'`. Breadcrumb: `[ladder] moving
+> session-<id>: from → to (why)` on every rung change; `forgetClosedCard` is now
+> the one list of per-card forgets for BOTH close paths and logs `[dock] … closed`.
+>
+> **JUDGMENT CALLS (Dan may reverse):** (1) "maximize is a gesture" over "end
+> the maximize when you click away" — the latter silently discards the undo.
+> (2) #818 filed, not fixed — pre-existing, and widening a regression detour.
+> (3) The plan comment's Ctrl+Shift+M workaround was WRONG (restores the stale
+> snapshot); corrected on the issue.
+>
+> **LESSONS.** (a) Check EVERY key of the evidence, not the one the theory named.
+> (b) The reviewer's surviving mutant was real (focus/queue + held maximize had
+> no exact test) and its twin was equivalent — deleted, not tested. (c) Round 1's
+> first mutation run was void: the worktree copy had no `node_modules` (Git
+> Bash mangled `mklink /J`), so the baseline was red and the runner — which
+> printed ABORT and carried on — reported false kills. The runner now exits.
+> CRLF working copies also silently zeroed four `\n` anchors. Round 2: **12/12**.
+>
+> **CI flake, handled by the book:** first run 3/4 — `windows-latest` red on
+> `check:pty` alone (exit 1, no assertion, only the #176-class crashpad /
+> AttachConsole noise; the PR touches no main/pty code; both e2e jobs green).
+> Same signature as the two earlier sightings recorded below (PR #443, #377
+> wave): ONE failed-job re-run, no code change. **Re-run green (7m36s) → 4/4.**
+>
+> **Tests:** full suite 7,946 passed / 3 skipped; typecheck + lint green; e2e
+> `layout-modes` + `about` 8/8, RED→GREEN on tab-click and rail-click paths.
+> **Docs:** manual *Workspace → Maximize*, *Troubleshooting*, CHANGELOG `Fixed`;
+> dogfood tracker #813 → RE-TEST.
 
 > # ✅ MERGED — 2026-09-15: **#789** — the card shows how much output was thinking,
 > and mutation found the write the review's fix missed
