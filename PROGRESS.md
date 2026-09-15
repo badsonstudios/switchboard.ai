@@ -3,6 +3,27 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔨 IN PROGRESS — 2026-09-15: **#793** — after `/clear`, does the tagged SessionStart hook land first?
+>
+> Branch `feature/793-clear-hook-order`. MEASURE-FIRST item, measured with the
+> real CLI 2.1.270 (`spike/probes/793/`).
+>
+> **Direct mode:** 15/15 tagged-first, beating the stream init by 17–33 ms. The
+> CLI awaits SessionStart(clear) inline here, so the order is structural.
+>
+> **Terminal mode (PTY):** the ONLY caller passing `deferSessionStartHooks` is
+> the TUI host, so the hook is queued, not awaited, and there is no pump
+> fallback. Measured **25/25 tagged-first** at 164–186 ms. With a prompt typed
+> straight after `/clear`, it registered in 6 of 15 tries (the TUI drops input
+> while clearing), and its hook trailed the tagged one by 84–91 ms every time.
+>
+> **Review:** blocker B1 taken. The first write-up blamed the stream host for
+> the deferral; it is the TUI host. Comments and findings are now scoped per
+> mode, "unreachable" is now "not observed", and the missing falsifiers are
+> added: the tagged hook LOST rather than late, and a background task
+> surviving `/clear` (unmeasured). Outcome: comment + findings + both probes,
+> no behaviour change. Commit/PR next.
+
 > # ✅ MERGED — 2026-09-15: **#807** — the watcher OVER-counted tokens; the ticket's under-count was a probe's
 >
 > **PR #821, squashed to `75b8bd8`, all four CI jobs green first time.** Issue

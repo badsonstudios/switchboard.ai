@@ -612,7 +612,12 @@ export class SessionManager {
         // behaviour we had, wrong only for the FIRST clear, instead of to no
         // tag at all. (The hook writer is STRICTER still — it tags only
         // `SessionStart source:'clear'` — and the first writer to land wins
-        // the cause; the hook writer retires with E18-15.)
+        // the cause; the hook writer retires with E18-15. Whether an untagged
+        // hook can win that race after a `/clear` was MEASURED for #793 on CLI
+        // 2.1.270: in Direct mode (this path) the CLI awaits the tagged hook,
+        // and it landed first 15/15; Terminal mode defers it and it still
+        // landed first 25/25 — see the note at the tag site in
+        // `hook-listener.ts`.)
         //
         // A resume is not a clear: `create()` never seeds the record's id and
         // no reset frame precedes a resumed spawn (#748 probe 5 measured zero),
