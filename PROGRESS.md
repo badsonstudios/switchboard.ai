@@ -3,12 +3,101 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔨 IN PROGRESS — 2026-09-15: **#789** — thinking-token breakdown on the usage strip
+> # 📌 STANDING — 2026-09-15: **Patch versions are two or three digits. The release after 0.8.8 is 0.8.81.**
 >
-> Branch `feature/789-thinking-tokens`; plan posted on the issue. Source is
-> `message.usage.output_tokens_details.thinking_tokens`, accumulated beside
-> `output` per line (NOT `cliCost`'s ledger). Also owed to the close-out:
-> **#812** was filed after #811 merged and is not yet recorded here.
+> **Owner decision, 2026-09-15.** `0.8.8` → **`0.8.81`** → `0.8.82` … `0.8.99` →
+> `0.8.100`. The patch only ever goes UP as a whole number: the update checker
+> compares each part as an integer, so `0.8.9` after `0.8.81` is a silent
+> DOWNGRADE that nobody on 0.8.81 would ever be offered. A "0.8.9-sized" step is
+> written **`0.8.90`**. At a cut that looks bigger than an ordinary patch, **ask
+> Dan** which it is: the next patch, `0.8.90`, or `0.9.0`. Written into
+> CHANGELOG.md cut step 1; `scripts/release-notes.test.js` now FAILS if the open
+> `— unreleased` heading does not rank above `package.json`'s version, and
+> `version.test.ts` pins the trap. **Every block below that says
+> `0.8.9 — unreleased` means the section now headed `0.8.81 — unreleased`.**
+
+> # ✅ MERGED — 2026-09-15: **#789** — the card shows how much output was thinking,
+> and mutation found the write the review's fix missed
+>
+> **PR #816, squashed to `aef183e`, all four CI jobs green.** Issue closed. Size S
+> as filed. ⚠️ **NOT RELEASED** — joins
+> #764/#765/#772/#766/#774/#776/#779/#753/#790/#785/#787/#788 under
+> `0.8.81 — unreleased` (renamed from `0.8.9` — see the STANDING block above);
+> `gh release list` is the authority.
+>
+> **Next up: #813 — REGRESSION, JUMPS THE QUEUE (Dan, 2026-09-15).** Clicking
+> another session in the rail while the current one is WORKING closes the
+> departed session's card (the session survives in the rail) — #708's family,
+> fixed in v0.8.2, back in 0.8.8. Dan's logs.zip ELIMINATED the §5.8
+> auto-minimize theory the ticket body still carries (no `presentationPolicy` in
+> workspace.json); read the comments, not just the body. Logged in the dogfood
+> tracker by another session's PR #814 (merged, `c27d190`). **Fix it first, THEN
+> resume the E11 queue below exactly where it stands.**
+>
+> **After #813: #807** (our per-session token totals under-count the CLI's ledger
+> because subagent transcripts are separate files; DESIGN §5.13's "sidechains
+> land in the parent's transcript" needs correcting either way; do NOT fix with
+> cost-state; size M). Then **#793** (measure first), **#812**, or E11's composer
+> half (**#797 → #798**).
+>
+> **NEW SINCE #788's CLOSE-OUT, NOT RECORDED UNTIL NOW: #812** — `agentName` /
+> `teamName` are CLI ENVELOPE keys (spread before the typed entry on every
+> appended line), but `schema.ts` scopes `agentName` to `agent-name` only and
+> never declares `teamName`. 0 of either in 258,358 lines — latent, fires only in
+> a team session, drift is fail-open. Size S.
+>
+> **Shipped:** `↓ 4.2k (2.9k thinking)` on the usage strip, from
+> `message.usage.output_tokens_details.thinking_tokens`, accumulated per line
+> beside `output` by a pure `main/transcripts/thinking-tokens.ts`. A violating
+> line (non-finite, negative, or above its own line's `output_tokens`) adds **0,
+> not a clamp**. `thinkingPart` in `renderer/src/lib/usage.ts` re-checks
+> `thinking <= output` on the TOTALS, percent clamped 1–99 unless exact.
+> `thinking` is required on main's `UsageTotals`, OPTIONAL on renderer/persisted
+> types (every older `workspace.json` lacks it). `addUsage` deliberately does not
+> sum it.
+>
+> **THE PREMISE HELD, RE-MEASURED ON THE CURRENT CLI.** #779 measured 42,071
+> lines. Re-run 2026-09-15 through **2.1.270**, read-only, nothing spawned:
+> 259,678 lines, **48,588** with a numeric breakdown, **0** with thinking >
+> output, max ratio **0.9964**. The one non-numeric shape is REAL and was not in
+> the ticket: `output_tokens_details: null` on **20 `<synthetic>` lines**
+> (2.1.233–2.1.261, always `output_tokens: 0`). The reader's null check was
+> written as a hostile case and turned out to be a corpus case; without it the
+> watcher's absorb loop throws.
+>
+> **NOT `cliCost.modelUsage.*.thinkingTokens`**, though the hand-off pointed at
+> it: a different ledger, exit-only, and #807 measured it above our totals — set
+> beside OUR output it can read as more thinking than output, the one inversion
+> the ticket's hard rule forbids. One source per ratio.
+>
+> ## THE REVIEW FOUND NO BLOCKER — AND ITS PERSISTENCE FIX WAS HALF-APPLIED
+> Three should-fixes, all taken. **(1) Descend into `output_tokens_details`,
+> AGAINST THE TICKET'S LITERAL TEXT** ("reading it directly, not declaring a new
+> schema path"). That sentence was written while the key was `ignored`, when "a
+> counter, not a contract" was true. Once the card reads `thinking_tokens`, a
+> rename blanks the figure silently — the exact break the drift detector exists
+> for. `drift.test.ts`'s #779 test pinning NO descend was flipped, both
+> directions asserted. **(2) Persistence untested.** **(3) Two comments said
+> "by construction"** — the watcher adds `output_tokens` unvalidated, so only
+> the render guard actually holds the totals.
+>
+> ⚠️ **(2) IS THE LESSON.** The fix added `thinking` to the RELAUNCH test's
+> fixture, which only proves `...prior` keeps it. The reviewer's surviving bug
+> was in the DRAIN write (`ipc.ts` `usage: snap.usage`). Mutation round 2 aimed
+> at the review fixes: **22/23, and the one survivor was exactly the mutant the
+> reviewer had named** — a four-field copy at the drain. A new `fireSnapshot`
+> test killed it: **23/23**. A fix to "nothing tests X" can test a DIFFERENT X
+> with the same name. Run the reviewer's own mutant against the fix.
+>
+> **Two equivalent mutants were deleted as code, not tested around:**
+> `typeof t !== 'number'` beside `Number.isFinite(t)` in the reader (now one
+> type-guard helper), and `Number.isFinite` in `thinkingPart`, which differed
+> only when BOTH values are Infinity — which `workspace.json` cannot hold.
+>
+> **Tests:** full suite 7,935 passed / 3 skipped; typecheck + lint green.
+> **Docs:** `docs/manual/03-session-view.md` (Tokens and cost), CHANGELOG
+> `Added`, dogfood tracker row UNTESTED. DESIGN §5.13 untouched — its sidechain
+> sentence is #807's.
 
 > # 📌 STANDING — 2026-09-11: **EVERY commit goes through a PR. No pushes to `main`, ever.**
 >

@@ -23,6 +23,7 @@ import {
   installerName,
 } from './release-notes.js';
 import { tempDir } from '../src/test-temp-dirs';
+import { isNewerVersion } from '../src/main/update/version';
 
 const root = process.cwd();
 const SCRIPT = path.join(root, 'scripts', 'release-notes.js');
@@ -146,6 +147,14 @@ describe('CHANGELOG parsing', () => {
       version
     );
     expect(versions[1], 'only one section may sit above the current version').toBe(version);
+    // ...and it must RANK above it (owner, 2026-09-15). Patches went to two
+    // digits at 0.8.81, and the update checker compares each part as a whole
+    // number — so a placeholder of `0.8.9` above a released `0.8.81` would cut a
+    // release nobody on 0.8.81 is ever offered. Red here, at filing time.
+    expect(
+      isNewerVersion(versions[0], version),
+      `the unreleased placeholder ${versions[0]} must rank above ${version}: the patch only goes up as a whole number (CHANGELOG.md, cut step 1)`
+    ).toBe(true);
   });
 
   it('pins package-lock.json to the same version as package.json', () => {

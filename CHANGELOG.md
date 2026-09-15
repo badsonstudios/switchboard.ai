@@ -35,7 +35,7 @@ on the floor, and say so in your PR.
 **To cut a release:**
 
 1. Bump `version` in `package.json`. **Pre-1.0 policy (owner, 2026-08-20):
-   a release is a PATCH bump by default** (0.8.1, 0.8.2, …) — the numbering
+   a release is a PATCH bump by default** (0.8.81, 0.8.82, …) — the numbering
    moves slowly on purpose. A MINOR bump is reserved for a deliberate
    milestone batch the owner names as one, and **1.0 is the release where
    all (or the substantial majority) of the planned feature set is in** —
@@ -53,6 +53,26 @@ on the floor, and say so in your PR.
    heading fails the release gate as "no notes for this version"). The update
    checker already handles four parts (`main/update/version.ts`); the release
    gate is the thing that does not. No four-part scheme was adopted.
+
+   **FROM 0.8.8 ON, THE PATCH IS WRITTEN WITH TWO OR THREE DIGITS (owner,
+   2026-09-15).** The release after `0.8.8` is **`0.8.81`**, then `0.8.82` …
+   `0.8.99`, then `0.8.100`. This supersedes the `0.8.10` example above; the
+   rule that nothing rolls over by counting still stands.
+
+   ⚠️ **THE PATCH ONLY EVER GOES UP AS A WHOLE NUMBER, SO IT NEVER GOES BACK TO
+   FEWER DIGITS.** The in-app update checker compares each part as an integer
+   (`main/update/version.ts`), which makes `0.8.9` after `0.8.81` a DOWNGRADE —
+   9 is less than 81. Nobody on 0.8.81 would ever be offered it, and nothing
+   would say so. A step that reads like "0.8.9" is written **`0.8.90`**.
+   `release-notes.test.js` fails if the open `— unreleased` heading does not
+   rank above `package.json`'s version, and `version.test.ts` pins the trap.
+   (The release notes' rollup walks this file in order and compares nothing, so
+   it is unaffected.)
+
+   **A bigger batch is a question, not a decision.** When cutting, if the batch
+   reads bigger than an ordinary patch, ask the owner which it is: the next patch
+   (`0.8.82`), a bigger patch step (`0.8.90`), or a minor (`0.9.0`). A minor
+   stays the owner's call, as above.
 
    If the
    open unreleased section's placeholder version is not the number you landed
@@ -74,7 +94,7 @@ on the floor, and say so in your PR.
 
 ---
 
-## 0.8.9 — unreleased
+## 0.8.81 — unreleased
 
 ### Added
 

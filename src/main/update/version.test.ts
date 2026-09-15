@@ -90,6 +90,16 @@ describe('isNewerVersion (the one the dialog hangs on)', () => {
     expect(isNewerVersion('1.0.0-beta', '1.0.0')).toBe(false);
   });
 
+  it('two-digit patches: 0.8.81 is newer than 0.8.8, and a later 0.8.9 is NOT (owner, 2026-09-15)', () => {
+    // From 0.8.8 the patch is written with two or three digits. Parts compare as
+    // whole numbers, so going BACK to one digit is a silent downgrade: nobody on
+    // 0.8.81 would be offered 0.8.9. CHANGELOG.md writes that step as 0.8.90.
+    expect(isNewerVersion('0.8.81', '0.8.8')).toBe(true);
+    expect(isNewerVersion('0.8.9', '0.8.81')).toBe(false);
+    expect(isNewerVersion('0.8.90', '0.8.89')).toBe(true);
+    expect(isNewerVersion('0.8.100', '0.8.99')).toBe(true);
+  });
+
   it('STAYS QUIET when it cannot read a version — the fail-safe direction', () => {
     expect(isNewerVersion('nightly', '0.1.0')).toBe(false);
     expect(isNewerVersion('0.2.0', 'unknown')).toBe(false);
