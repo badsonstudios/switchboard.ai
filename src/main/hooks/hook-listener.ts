@@ -972,6 +972,32 @@ export class HookListener {
     // /clear mints a NEW conversation id (verified vs claude 2.1.218): tag
     // the id change with its cause so the feed can say "cleared", not just
     // silently rebind (E10-07 feedback — Dan: "no response that it cleared")
+    //
+    // ONLY `SessionStart source:'clear'` is tagged, and the FIRST writer of a
+    // new id wins its cause (`SessionManager.setNativeSessionId` returns on an
+    // unchanged id before reading it). So an untagged hook carrying the new id,
+    // landing first, would log a false mis-bind and leave the give-up clock
+    // armed (#793). NOT OBSERVED in 40 trials on CLI 2.1.270
+    // (`spike/findings/e11-793-clear-hook-order.md`), and the two modes differ:
+    //
+    //  - DIRECT (stream-json): ordered by construction. With no deferral passed,
+    //    the CLI's clear awaits SessionStart(clear) before it returns (read from
+    //    the binary), and the next message is processed only after that; the
+    //    stream init also backs the tag up. 15/15 tagged-first, 69–87 ms.
+    //  - TERMINAL (PTY): the TUI host is the one caller that passes
+    //    `deferSessionStartHooks`, so the hook is QUEUED, and this listener is
+    //    the ONLY writer — no stream init to fall back on. Still 25/25
+    //    tagged-first at 164–186 ms; a prompt typed straight after `/clear`
+    //    registered in 6 of 15 tries (the TUI drops the rest while clearing)
+    //    and its `UserPromptSubmit` trailed the tagged hook by 84–91 ms.
+    //
+    // What would reopen it, Terminal mode first: a release that releases the
+    // deferred hooks later; the tagged hook LOST rather than late (forwarder
+    // timeout, a token-file read failure); or a background task that survives
+    // `/clear` and reports under the new id before the hook lands (unmeasured).
+    // Symptom: `transcript mis-bind corrected (same-cwd race)` at warn right
+    // after a `/clear` with no second session in that folder — re-run
+    // `spike/probes/793/`. Retires with E18-15, which deletes this writer.
     if (nativeId) {
       this.opts.manager.setNativeSessionId(
         sessionId,
