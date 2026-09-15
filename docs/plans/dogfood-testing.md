@@ -231,3 +231,5 @@ deleted; they revive if PTY-transport sessions come back into use.
 | 2026-09-05 | Wants a setting: when a session needs attention, pop its window to the forefront (the DESIGN.md focus-stealing policy, for the future settings screen) | #756 |
 | 2026-09-05 | Wants a small identifying icon beside each feed tool-block name (agent, question, read, shell, …) — spot the block type by shape, not by reading | #757 |
 | 2026-09-05 | Wants AI-generated task labels that follow the session — app runs Claude over the transcript and refreshes the label as work drifts (evolves P2-E7-06) | #758 |
+| 2026-09-15 | Clicking another rail session closes the WORKING session's card (survives in the rail; click restores). Repro'd across multiple sessions, v0.8.8 laptop, days of uptime — #708's family back; first read blamed prompt submit, owner then pinned it to the rail click | #813 |
+| 2026-09-15 | Wants Help-menu one-click diagnostic bundle: zip logs + workspace.json + version info, reveal in Explorer, and hand to email pre-addressed to the owner — born from hand-collecting #813's logs | #815 |
