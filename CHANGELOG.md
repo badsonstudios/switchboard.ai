@@ -115,7 +115,10 @@ on the floor, and say so in your PR.
   a file name. An `@` that matches no open session, an email address, anything
   inside code, and the session you're typing in are sent exactly as typed. If
   two open sessions share the name, nothing is sent: a note under the box names
-  both, with their folders, and your message stays where it is.
+  both, with their folders, and your message stays where it is — you can then
+  rename one or mention it by its session id. Mention several sessions and each
+  one's work comes along once; if the total would be too long, the ones you
+  mentioned first come along and a line says which were left out.
 
 - **See how much of a session's output was thinking.** The tokens-out figure on
   a session card is now followed by a fainter one — `↓ 4.2k (2.9k thinking)` —

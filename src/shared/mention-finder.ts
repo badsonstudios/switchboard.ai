@@ -48,6 +48,23 @@ export interface FoundMention {
   end: number;
   /** the matched name, spelled as the session list spells it */
   name: string;
+  /**
+   * The same name spelled AS THE USER TYPED IT — which is what must be resolved.
+   *
+   * Review blocker, #798. Matching here is case-insensitive, so two sessions
+   * whose titles differ only in case (`API` and `api`, the ordinary result of
+   * two checkouts) both match either spelling, and `name` is whichever one the
+   * sort happened to reach first. Resolving THAT hands back a session the user
+   * did not name, silently — while an agent calling `get_session_output("api")`
+   * gets the other one, because `SessionQueries.resolve` matches exact-first and
+   * only falls back to case-insensitive when nothing matched exactly.
+   *
+   * So the typed spelling is carried through and resolved: `resolve` then either
+   * finds the exact session the user meant, or refuses a genuine same-case
+   * duplicate as ambiguous. `name` remains what the list calls it — useful for
+   * grouping and for a human-readable log, never for the lookup.
+   */
+  typed: string;
 }
 
 /** `[from, to)` ranges of fenced code blocks and inline code spans. */
@@ -75,7 +92,13 @@ function codeRanges(text: string): Array<[number, number]> {
  * caller's decision.
  */
 export function findMentions(text: string, names: readonly string[]): FoundMention[] {
-  const candidates = [...new Set(names.filter((n) => n.trim() !== ''))].sort((a, b) => b.length - a.length);
+  // TRIMMED, not merely non-blank (review nit): a title is user-editable, so
+  // `"Trading "` and `"Trading"` can both exist. Untrimmed, the longer one wins
+  // and swallows the user's space — and `resolve` trims it straight back to the
+  // other session.
+  const candidates = [...new Set(names.map((n) => n.trim()).filter((n) => n !== ''))].sort(
+    (a, b) => b.length - a.length
+  );
   if (candidates.length === 0) return [];
   const code = codeRanges(text);
   const inCode = (i: number) => code.some(([a, b]) => i >= a && i < b);
@@ -92,7 +115,9 @@ export function findMentions(text: string, names: readonly string[]): FoundMenti
       return after === undefined || NAME_END.test(after);
     });
     if (!hit) continue;
-    found.push({ start: i, end: i + 1 + hit.length, name: hit });
+    // `typed` is the span AS WRITTEN — same length as the candidate, because
+    // that is how it matched, but not necessarily the same characters.
+    found.push({ start: i, end: i + 1 + hit.length, name: hit, typed: rest.slice(0, hit.length) });
     i += hit.length; // non-overlapping: resume after the name
   }
   return found;

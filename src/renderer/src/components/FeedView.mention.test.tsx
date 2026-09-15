@@ -17,6 +17,13 @@ import { sessionPanels } from '../extensibility/panels';
 import { PanelContext } from '../extensibility/contributions';
 import { loadUiState } from '../lib/ui-state';
 import { ipcRefusal } from '../../../shared/ipc/refusal';
+import {
+  SIBLING_SETTLE_MS,
+  heldMessages,
+  receiveSiblingMessage,
+  resetInboxCacheForTests,
+} from '../lib/sibling-inbox';
+import type { SiblingMessage } from '../../../shared/sibling-message';
 import type { SessionSummary } from '../../../shared/sessions';
 import type { SlashCommand } from '../../../shared/slash-commands';
 
@@ -533,6 +540,87 @@ describe('sending a draft that mentions a session (P2-E11-08)', () => {
     await act(async () => release!());
     await flush();
     expect(submitted).toEqual(['take @TradingApp now']);
+  });
+});
+
+// Both of these were named by the #798 review as mutants that survived the
+// suite: the guard release, and the one place forwarded messages and mention
+// resolution meet.
+describe('a mention send and the rest of the composer', () => {
+  /** A settled sibling message on this card, the way `App.tsx` delivers one. */
+  async function heldMessageArrives(text: string): Promise<void> {
+    let now = 1_000_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const m: SiblingMessage = {
+      deliveryId: 'd1',
+      cardId: 'card-b',
+      from: { id: 'live-a', name: 'TradingApp' },
+      text,
+      at: new Date(now).toISOString(),
+    };
+    await act(async () => {
+      receiveSiblingMessage(m);
+    });
+    // SETTLED: a message that arrived less than `SIBLING_SETTLE_MS` ago is not
+    // one the user has reviewed, and rides the NEXT Enter by design (#765).
+    now += SIBLING_SETTLE_MS + 1;
+    await flush();
+  }
+
+  afterEach(() => {
+    resetInboxCacheForTests();
+  });
+
+  it('releases the one-send guard, so the NEXT draft still sends', async () => {
+    const host = await mount();
+    await type(host, 'take @TradingApp now');
+    await press(host, 'Enter');
+    expect(submitted).toHaveLength(1);
+
+    // The mutant this kills: dropping `done()` from the resolution callback.
+    // The card would stay in-flight for ever — Send greyed, Enter dead, across
+    // remounts, clearable only by closing the card.
+    await type(host, 'and another one');
+    await press(host, 'Enter');
+    expect(submitted).toEqual(['take @TradingApp now', 'and another one']);
+  });
+
+  it('releases it after a REFUSAL too — an ambiguous name must not wedge the box', async () => {
+    resolveMentions = () => Promise.resolve({ ok: false, refusals: ['"TradingApp" is ambiguous'] });
+    const host = await mount();
+    await type(host, 'take @TradingApp now');
+    await press(host, 'Enter');
+    expect(submitted).toEqual([]);
+
+    resolveMentions = (_id, text) => Promise.resolve({ ok: true, prompt: text });
+    await type(host, 'never mind then');
+    await press(host, 'Enter');
+    expect(submitted).toEqual(['never mind then']);
+  });
+
+  it('carries held sibling messages with it, ahead of the injected context, and forwards them ONCE', async () => {
+    resolveMentions = (id, text) => {
+      resolveCalls.push([id, text]);
+      return Promise.resolve({ ok: true, prompt: `CONTEXT\n\ntake "TradingApp" (session) now` });
+    };
+    const host = await mount();
+    await heldMessageArrives('the regulator is the fault');
+    await type(host, 'take @TradingApp now');
+    await press(host, 'Enter');
+
+    expect(submitted).toHaveLength(1);
+    const sent = submitted[0];
+    // The forwarded message leads, then the injected context, then the prose —
+    // and ONLY the user's own text was sent for resolution.
+    expect(resolveCalls).toEqual([[OWN_ID, 'take @TradingApp now']]);
+    expect(sent).toContain('the regulator is the fault');
+    expect(sent.indexOf('the regulator is the fault')).toBeLessThan(sent.indexOf('CONTEXT'));
+    expect(sent).toContain('CONTEXT\n\ntake "TradingApp" (session) now');
+    // …and it is gone from the card, so a second Enter cannot send it again.
+    expect(heldMessages('card-b')).toHaveLength(0);
+    await type(host, 'anything else');
+    await press(host, 'Enter');
+    expect(submitted[1]).toBe('anything else');
   });
 });
 

@@ -358,7 +358,16 @@ Autocomplete popup lists live sessions by name/color.
 > `SessionQueries` — the instance the bus tools use — and each resolved session
 > is injected ONCE, ahead of the prose, as `renderOutput`'s text (#764's
 > wording and fence; default `lastN`). **The mention is rewritten** to
-> `"Name" (session)` in the sent prose: measured on CLI 2.1.272
+> `"Name" (session)` — spelled **as the user typed it**, and it is that spelling
+> that is resolved, not the session list's: two sessions differing only by case
+> are the ordinary result of two checkouts, and `resolve` matches exact-first, so
+> resolving the list's spelling would hand back a session the user did not name
+> while the bus handed an agent the other one (#798 review). Session **ids** are
+> candidates too, which is what makes the ambiguity refusal's "Use the session
+> id" true in the composer. Injection is deduplicated on the resolved id, and the
+> total is bounded (`TOTAL_CONTEXT_CHAR_CAP`): whole blocks only, later ones
+> dropped with an in-band note naming them, since each session's 20k cap said
+> nothing about four of them at once. The rewrite is measured on CLI 2.1.272
 > (`spike/findings/e11-798-cli-at-mention.md`), the CLI expands any `@word` as a
 > file mention itself — a same-named file is attached, and even a miss costs the
 > model a `Read`. An unresolved `@word`, the composer's own session, and a

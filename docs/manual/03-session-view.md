@@ -204,7 +204,9 @@ The box at the bottom sends straight to the real Claude Code session:
   otherwise read `@TradingApp` as a *file* called TradingApp.) You'll see all of
   it in your turn in the conversation, so nothing is added behind your back.
   Very long messages and tool output are shortened, and only the most recent
-  part of the conversation comes along.
+  part of the conversation comes along. If you mention several sessions at once
+  and the total is too long, the ones you mentioned first come along and a line
+  in your message says which were left out.
   - An `@` that doesn't match an open session, an email address, an `@` inside
     `` `code` `` or a code block, or the session you're typing in, is sent
     exactly as you typed it.

@@ -41,15 +41,22 @@ export function resolveMentions(
   // No list, nothing to match against: the draft goes as typed, exactly as it
   // did before this feature existed.
   if (!listed.ok) return { ok: true, prompt: text };
-  const found = findMentions(
-    text,
-    listed.value.map((s) => s.name)
-  );
+  // IDS ARE CANDIDATES TOO (review should-fix, #798). `resolve` matches an id
+  // before any name, and it is the escape hatch it offers when two sessions
+  // share a title — "Use the session id." So the manual and the refusal both
+  // tell the user something true only if `@<id>` is findable in the first place.
+  const found = findMentions(text, [
+    ...listed.value.map((s) => s.name),
+    ...listed.value.map((s) => s.id),
+  ]);
   if (found.length === 0) return { ok: true, prompt: text };
 
+  // Keyed on what the USER TYPED, never on the list's spelling — see
+  // `FoundMention.typed`. `@api` and `@API` are two keys, and if they resolve to
+  // one session the builder injects it once, on `key`.
   const answers = new Map<string, MentionAnswer>();
-  for (const name of new Set(found.map((m) => m.name))) {
-    answers.set(name, answerFor(queries, render, name, ownSessionId));
+  for (const typed of new Set(found.map((m) => m.typed))) {
+    answers.set(typed, answerFor(queries, render, typed, ownSessionId));
   }
   return buildMentionPrompt(text, found, answers);
 }
@@ -57,17 +64,17 @@ export function resolveMentions(
 function answerFor(
   queries: MentionQueries,
   render: (output: unknown) => string,
-  name: string,
+  typed: string,
   ownSessionId: string
 ): MentionAnswer {
-  const found = queries.resolve(name);
+  const found = queries.resolve(typed);
   if (!found.ok) {
     return found.code === 'ambiguous' ? { kind: 'ambiguous', reason: found.reason } : { kind: 'missing' };
   }
   if (found.value.id === ownSessionId) return { kind: 'own' };
-  // BY ID, not by name again: the name has been resolved once, and asking a
+  // BY ID, not by the spelling again: it has been resolved once, and asking a
   // second time is a second chance for it to mean something else.
   const output = queries.sessionOutput(found.value.id);
   if (!output.ok) return { kind: 'missing' };
-  return { kind: 'resolved', block: render(output.value) };
+  return { kind: 'resolved', block: render(output.value), key: found.value.id };
 }

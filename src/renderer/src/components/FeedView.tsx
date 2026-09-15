@@ -2170,6 +2170,37 @@ function Composer({
     clearDraft(cardId);
   };
 
+  /**
+   * The prompt went — empty the box, UNLESS the user has typed more since
+   * (review should-fix, #798).
+   *
+   * Until #798 a text-only send cleared the box in the same tick as the
+   * keypress, so there was no window to type into. A draft with an `@` now waits
+   * on an IPC round trip that reads a transcript in main, and the textarea stays
+   * editable throughout — only Send is greyed and Enter is swallowed by the
+   * one-send guard. So `clearComposerDraft()` on the way back could wipe
+   * characters the user typed after pressing Enter, and `clearDraft` would take
+   * the persisted copy with them: unrecoverable, and the kind of loss §5.10 is
+   * careful about.
+   *
+   * Compared with the FUNCTIONAL setter rather than the `draft` this closure
+   * captured, which is a render old by the time this runs.
+   */
+  const clearSentDraft = (sent: string): void => {
+    let left = '';
+    setDraftState((current) => {
+      // The common case is an exact match — the box is untouched since Enter.
+      // Anything else keeps only what the send did not carry.
+      left = current === sent ? '' : current.startsWith(sent) ? current.slice(sent.length) : current;
+      return left;
+    });
+    // `clearDraft` is immediate where `saveDraft` is debounced (see
+    // `composer-draft.ts`), so the two branches are not symmetrical and must not
+    // be collapsed: forget the sent prompt at once, but PERSIST what is left.
+    if (left === '') clearDraft(cardId);
+    else saveDraft(cardId, left);
+  };
+
   const submit = (): void => {
     const text = draft.replace(/\r\n/g, '\n').trimEnd();
     // `/mcp` IS OURS TO ANSWER (Â§5.17, #632). Its CLI form opens an interactive
@@ -2290,7 +2321,7 @@ function Composer({
         // the two routes always accepts it â€” so the box clears immediately and
         // the send stays as snappy as it was.
         void submitPrompt(sessionId, prompt);
-        clearComposerDraft();
+        clearSentDraft(text);
         removeHeldMessages(cardId, forwardedIds);
         setDismissed(false);
         setAttachNotice(notice);
@@ -2326,7 +2357,7 @@ function Composer({
           setAttachNotice(t('feedView.attach.notSent'));
           return;
         }
-        clearComposerDraft();
+        clearSentDraft(text);
         // Only once it WENT, like the draft: a refused send keeps the sibling's
         // messages on screen with everything else the user was about to send.
         removeHeldMessages(cardId, forwardedIds);

@@ -11,8 +11,19 @@
 // the same answer `send-to-session.spec.ts` gives for the delivery half.
 //
 // Direct transport, the fake stream CLI: it echoes a submitted turn back, which
-// is what makes the sent prompt observable on screen and what puts Alpha's
-// marker in Alpha's transcript for the resolver to find.
+// is what puts Alpha's marker in Alpha's transcript for the resolver to find.
+//
+// ONE COMPOSER IS ON SCREEN. Two sessions share one dockview group and only the
+// active tab's panel is rendered (measured — the DOM holds exactly one
+// `textarea` and one `[data-composer-dropzone]`), so the visible composer is the
+// session created last: Beta. Alpha is therefore given its turn through the same
+// typed transport the composer uses (`sessions.submitPrompt`) rather than by
+// typing into a box that is not on screen. That is SETUP; the subject of this
+// spec is Beta's Enter, which goes through the real composer.
+//
+// The test is self-checking about which card it typed into: if the visible
+// composer were Alpha's, `@alpha` would be the composer's OWN session, would be
+// left literal by design, and every assertion below would fail.
 import { test, expect, type Page } from '@playwright/test';
 import path from 'path';
 import { launchApp, LaunchedApp, pollAsync, sessionStatuses, tempProjectFolder } from './fixtures/app';
@@ -26,18 +37,8 @@ test.describe('@-mention resolution at send (#798)', () => {
     await a?.cleanup();
   });
 
-  /**
-   * One session's dock group, by its TAB title.
-   *
-   * Not `.filter({ hasText: title })` over the whole group, deliberately: the
-   * whole point of this spec is that Alpha's NAME ends up inside Beta's feed, so
-   * a text filter would match both groups the moment the feature works.
-   */
-  const groupOf = (w: Page, title: string) =>
-    w.locator('.dv-groupview').filter({ has: w.locator('.dv-tab', { hasText: title }) }).first();
-  const boxOf = (w: Page, title: string) => groupOf(w, title).locator('textarea');
-  const userTurns = (w: Page, title: string) =>
-    groupOf(w, title).locator('[data-feed-block="user"]');
+  const box = (w: Page) => w.locator('textarea');
+  const userTurns = (w: Page) => w.locator('[data-feed-block="user"]');
 
   test('injects the mentioned session’s output ahead of the prose, rewrites the mention, and leaves an unknown @word alone', async () => {
     test.setTimeout(180_000);
@@ -60,22 +61,75 @@ test.describe('@-mention resolution at send (#798)', () => {
       return s.get(alpha) === 'idle' && s.get(beta) === 'idle' ? true : null;
     }, 'both sessions to be up and idle');
 
-    // Give ALPHA something to have said. The fake echoes the submitted turn, so
-    // this marker is in Alpha's conversation and in no other.
+    const liveIdOf = (title: string): Promise<string> =>
+      pollAsync(async () => {
+        const cards = (await w.evaluate(() => window.switchboard.sessions.cards())) as Array<{
+          title: string;
+          liveId?: string;
+        }>;
+        return cards.find((c) => c.title === title)?.liveId ?? null;
+      }, `a live session for "${title}"`);
+    const alphaLive = await liveIdOf(alpha);
+    const betaLive = await liveIdOf(beta);
+
+    // SETUP: give Alpha something to have said. The fake echoes the submitted
+    // turn and mirrors it into its JSONL transcript, which is the file
+    // `SessionQueries` reads.
     const MARKER = `alpha-marker-${Date.now()}`;
-    const alphaBox = boxOf(w, alpha);
-    await alphaBox.click();
-    await alphaBox.fill(`remember ${MARKER}`);
-    await alphaBox.press('Enter');
-    await expect(userTurns(w, alpha).filter({ hasText: MARKER })).toBeVisible({ timeout: 30_000 });
+    expect(
+      await w.evaluate(
+        ([id, t]) => window.switchboard.sessions.submitPrompt(id, t),
+        [alphaLive, `remember ${MARKER}`] as [string, string]
+      )
+    ).toBe(true);
 
-    // …then BETA mentions Alpha.
-    const betaBox = boxOf(w, beta);
-    await betaBox.click();
-    await betaBox.fill(`take @${alpha}'s work and apply it here`);
-    await betaBox.press('Enter');
+    // …then WAIT UNTIL ALPHA'S OUTPUT IS ACTUALLY READABLE.
+    //
+    // NOT a flake guard — the two facts really are separate, and the first run
+    // of this spec proved it. A Direct session's Feed is built from the STREAM,
+    // so a turn is on screen the moment the fake echoes it; `@Name` resolution
+    // goes through `SessionQueries`, which reads the transcript FILE, and the
+    // watcher binds that file a poll or two later (`BindingState`:
+    // `awaiting-prompt` → `searching` → `bound`). Mention Alpha in between and
+    // the resolver answers, correctly, that Alpha has produced no readable
+    // output yet. That is the honest answer to a question asked too early; what
+    // this spec is here to check is the answer once there is something to read.
+    //
+    // The wait asks the RESOLVER, not the binding state, because the resolver is
+    // the precondition the assertions depend on — a bound transcript whose bytes
+    // have not been read yet is still empty. Read-only: it resolves a sample, it
+    // sends nothing.
+    const resolveFromBeta = (text: string): Promise<{ ok?: boolean; prompt?: string } | null> =>
+      w.evaluate(
+        ([id, t]) => window.switchboard.sessions.resolveMentions(id, t),
+        [betaLive, text] as [string, string]
+      );
+    try {
+      await pollAsync(
+        async () => {
+          const r = await resolveFromBeta(`@${alpha}`);
+          return r?.prompt?.includes(MARKER) ? true : null;
+        },
+        "alpha's recent output to become readable",
+        40_000
+      );
+    } catch (err) {
+      // Say WHICH of the two it was, rather than "timed out": did the watcher
+      // never bind Alpha's conversation, or did it bind one with nothing in it?
+      const snap = await w.evaluate((id) => window.switchboard.transcripts.binding(id), alphaLive);
+      const answer = await resolveFromBeta(`@${alpha}`);
+      throw new Error(
+        `${(err as Error).message}\nalpha binding: ${JSON.stringify(snap)}\n` +
+          `resolver said: ${JSON.stringify(answer)}`
+      );
+    }
 
-    const sent = userTurns(w, beta).filter({ hasText: 'apply it here' });
+    // THE SUBJECT: Beta's own Enter, through the real composer.
+    await box(w).click();
+    await box(w).fill(`take @${alpha}'s work and apply it here`);
+    await box(w).press('Enter');
+
+    const sent = userTurns(w).filter({ hasText: 'apply it here' });
     await expect(sent).toBeVisible({ timeout: 30_000 });
     // The attributed header, #764's standing caveat, the fence, and the actual
     // content — the whole of what the done-when means by "injected as context".
@@ -88,15 +142,15 @@ test.describe('@-mention resolution at send (#798)', () => {
     await expect(sent).toContainText(`"${alpha}" (session)'s work and apply it here`);
     expect(await sent.innerText()).not.toContain(`@${alpha}`);
     // The composer emptied, so the send was not refused.
-    await expect(betaBox).toHaveValue('');
+    await expect(box(w)).toHaveValue('');
 
     // THE NEGATIVE HALF, on the real app: an `@word` that is no session reaches
     // the model as the literal characters typed.
     const LITERAL = `ping @nobody-here-${Date.now()} please`;
-    await betaBox.click();
-    await betaBox.fill(LITERAL);
-    await betaBox.press('Enter');
-    const literalTurn = userTurns(w, beta).filter({ hasText: 'nobody-here-' });
+    await box(w).click();
+    await box(w).fill(LITERAL);
+    await box(w).press('Enter');
+    const literalTurn = userTurns(w).filter({ hasText: 'nobody-here-' });
     await expect(literalTurn).toBeVisible({ timeout: 30_000 });
     expect(await literalTurn.innerText()).toContain(LITERAL);
     await expect(literalTurn).not.toContainText('Recent output from');

@@ -78,9 +78,60 @@ describe('resolveMentions — a live session', () => {
     });
   });
 
-  it('resolves case-insensitively, the way `resolve` does, and names the session as it is spelled', () => {
+  it('resolves case-insensitively, the way `resolve` does, and prints back what the user typed', () => {
     const r = run(queries([OWN, TRADING], { 'live-a': ['done'] }), 'ask @tradingapp');
-    expect(r.ok && r.prompt.endsWith('ask "TradingApp" (session)')).toBe(true);
+    // The BLOCK names the session as the list spells it; the prose keeps the
+    // user's own words, minus the `@` shape.
+    expect(r.ok && r.prompt.includes('Recent output from TradingApp [id live-a]')).toBe(true);
+    expect(r.ok && r.prompt.endsWith('ask "tradingapp" (session)')).toBe(true);
+  });
+
+  it('a SESSION ID resolves too — the escape hatch the ambiguous refusal offers', () => {
+    const r = run(queries([OWN, TRADING], { 'live-a': ['by id'] }), 'ask @live-a about it');
+    expect(r.ok && r.prompt.includes('by id')).toBe(true);
+    expect(r.ok && r.prompt.endsWith('ask "live-a" (session) about it')).toBe(true);
+  });
+});
+
+// THE REVIEW BLOCKER. Two sessions whose titles differ only in case are the
+// ordinary result of two checkouts, and the finder matches case-insensitively —
+// so resolving the LIST's spelling instead of the user's handed back whichever
+// session sorted first, silently, while an agent asking the bus for the same
+// name got the other one.
+describe('resolveMentions — two sessions that differ only by case', () => {
+  const API = summary({ id: 'live-up', name: 'API', folder: 'C:/p/api-upper' });
+  const api = summary({ id: 'live-lo', name: 'api', folder: 'C:/p/api-lower' });
+
+  it('gives the user the session they actually typed, exactly as `resolve` would', () => {
+    const q = queries([OWN, API, api], { 'live-up': ['UPPER output'], 'live-lo': ['lower output'] });
+    const upper = run(q, 'ask @API');
+    const lower = run(q, 'ask @api');
+
+    expect(upper.ok && upper.prompt.includes('UPPER output')).toBe(true);
+    expect(upper.ok && upper.prompt.includes('lower output')).toBe(false);
+    expect(lower.ok && lower.prompt.includes('lower output')).toBe(true);
+    expect(lower.ok && lower.prompt.includes('UPPER output')).toBe(false);
+    // …the same answers the bus gives for the same two strings.
+    const busUpper = q.resolve('API');
+    const busLower = q.resolve('api');
+    expect(busUpper.ok && busUpper.value.id).toBe('live-up');
+    expect(busLower.ok && busLower.value.id).toBe('live-lo');
+  });
+
+  it('injects ONE block when two spellings mean one session', () => {
+    // Only `api` exists, so `@API` and `@api` both resolve to it — one session,
+    // one block, both mentions rewritten.
+    const q = queries([OWN, api], { 'live-lo': ['just the one'] });
+    const r = run(q, 'ask @api and @API');
+    if (!r.ok) throw new Error(r.refusals.join('; '));
+    expect(r.prompt.split('just the one')).toHaveLength(2);
+    expect(r.prompt.endsWith('ask "api" (session) and "API" (session)')).toBe(true);
+  });
+
+  it('a true same-case duplicate is still refused as ambiguous', () => {
+    const twin = summary({ id: 'live-2', name: 'api', folder: 'C:/p/api-2' });
+    const r = run(queries([OWN, api, twin]), 'ask @api');
+    expect(r.ok).toBe(false);
   });
 });
 

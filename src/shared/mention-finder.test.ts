@@ -40,7 +40,25 @@ describe('findMentions — where a known session is mentioned', () => {
   });
 
   it('returns the offsets of the @ and just past the name', () => {
-    expect(findMentions('take @TradingApp and', NAMES)).toEqual([{ start: 5, end: 16, name: 'TradingApp' }]);
+    expect(findMentions('take @TradingApp and', NAMES)).toEqual([
+      { start: 5, end: 16, name: 'TradingApp', typed: 'TradingApp' },
+    ]);
+  });
+
+  // The review blocker: `name` is the list's spelling, `typed` is the user's,
+  // and only the second one may be resolved — two sessions can differ by case.
+  it('carries the spelling the USER typed beside the one the list uses', () => {
+    expect(findMentions('ask @tradingapp now', NAMES)).toEqual([
+      { start: 4, end: 15, name: 'TradingApp', typed: 'tradingapp' },
+    ]);
+  });
+
+  it('a title with surrounding space matches the trimmed name, and takes only what was typed', () => {
+    // Titles are user-editable, so `"Trading "` and `"Trading"` can both exist.
+    // Untrimmed, the longer candidate wins and swallows the user's space.
+    expect(findMentions('ask @Trading , ok', ['Trading ', 'Trading'])).toEqual([
+      { start: 4, end: 12, name: 'Trading', typed: 'Trading' },
+    ]);
   });
 
   it('the LONGEST name that fits wins — a shorter name that is its prefix does not', () => {
