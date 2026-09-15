@@ -2189,9 +2189,17 @@ function Composer({
   const clearSentDraft = (sent: string): void => {
     let left = '';
     setDraftState((current) => {
-      // The common case is an exact match — the box is untouched since Enter.
-      // Anything else keeps only what the send did not carry.
-      left = current === sent ? '' : current.startsWith(sent) ? current.slice(sent.length) : current;
+      // WHAT WAS SENT IS THE TRIMMED, NEWLINE-NORMALISED DRAFT (see `submit`),
+      // so the box legitimately holds trailing whitespace that did go: picking a
+      // slash command inserts `/clear ` WITH its trailing space, and CI caught
+      // this — `slash-commands.spec.ts` found a lone `" "` left in the box after
+      // a send that had cleared it since E10-07.
+      //
+      // So: a remainder of nothing but whitespace is nothing. Only real
+      // characters — typed after Enter, while the lookup was out — are kept.
+      const normalised = current.replace(/\r\n/g, '\n');
+      const rest = normalised.startsWith(sent) ? normalised.slice(sent.length) : null;
+      left = rest === null ? current : rest.trim() === '' ? '' : rest;
       return left;
     });
     // `clearDraft` is immediate where `saveDraft` is debounced (see

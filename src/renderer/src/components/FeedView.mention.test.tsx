@@ -598,6 +598,18 @@ describe('a mention send and the rest of the composer', () => {
     expect(submitted).toEqual(['never mind then']);
   });
 
+  it('clears the box completely when the draft ends in whitespace that was trimmed off the send', async () => {
+    // CI caught this one, on both runners: what is SENT is the trimmed draft, so
+    // "keep whatever the send did not carry" left a lone `" "` behind for every
+    // slash command — picking one inserts `/clear ` with its trailing space.
+    // A remainder of nothing but whitespace is nothing.
+    const host = await mount();
+    await type(host, '/clear ');
+    await press(host, 'Enter');
+    expect(submitted).toEqual(['/clear']);
+    expect(boxOf(host).value).toBe('');
+  });
+
   it('keeps what was typed DURING the lookup — only the sent draft is cleared', async () => {
     // Mutation survivor, and the review's should-fix: the box stays editable
     // while main resolves (only Send is greyed and Enter is swallowed), so
