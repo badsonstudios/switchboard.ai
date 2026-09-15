@@ -3,6 +3,61 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔄 IN PROGRESS — 2026-09-15: **#798** — `@Name` resolves at send: the mentioned session's recent work goes ahead of the prompt
+>
+> **Branch `feature/798-mention-resolution`, rebased on `06d9e36`. PR not open
+> yet.** Implementation, review and tests are done; the PR opens next and merges
+> on green CI. A mutation round is running as this is written.
+>
+> **What it does.** A draft that mentions another session is resolved in MAIN
+> over a new `sessions:resolveMentions` channel (gated **`transcripts.read`** —
+> the answer carries another session's conversation, which is what
+> `transcripts:search` already gates). The finder (`shared/mention-finder.ts`)
+> says where a known session is mentioned, `SessionQueries` — the same instance
+> the bus tools use — says what it is, and `renderOutput` renders it with #764's
+> wording and fence. Each resolved session is injected once, ahead of the prose,
+> in first-mention order.
+>
+> **Decisions worth finding again:**
+> - A resolved mention is rewritten to `"Name" (session)`. MEASURED (CLI
+>   2.1.272, `spike/findings/e11-798-cli-at-mention.md`): the CLI expands any
+>   `@word` as a file mention of its own — a same-named file is attached, and
+>   even a miss cost the model a `Read`. The user's line is **NOT** quoted inside
+>   the block: every word they typed is already in the prose that follows it, so
+>   quoting would send it twice. (The #797 close-out below says otherwise — it
+>   was written before this was settled. This entry is the correct one.)
+> - **The spelling the USER typed is what gets resolved** (review blocker). The
+>   finder matches case-insensitively, so `@api` with two sessions `API` and
+>   `api` open would otherwise resolve to whichever sorted first — silently, and
+>   disagreeing with what the bus tells an agent asking the same question.
+> - **Session ids are candidates**, so "Use the session id" — what the ambiguity
+>   refusal tells the user — is true in the composer too.
+> - **A total cap on injected context.** Each session's output was capped at 20k
+>   and nothing bounded four of them at once. Whole blocks only; any left out are
+>   named in-band and their mentions are still rewritten out of `@` shape.
+> - **An ambiguous name refuses the whole send**, keeps the draft, and shows
+>   `resolve`'s own reason. A failed lookup **fails open**: the draft goes as
+>   typed and the composer says the context did not.
+> - Forwarded sibling messages and slash commands are never resolved.
+>
+> **Review:** one blocker (the case-only collision above), six should-fixes, all
+> addressed. Follow-up **#832** filed: an `@word` INSIDE injected or forwarded
+> content is expanded by the receiving session's CLI against its own folder —
+> true for #765's sibling messages too, so it is a decision to make once, on
+> evidence, rather than in this PR.
+>
+> **Verified:** typecheck, eslint, 426 unit tests across the eight affected
+> files, and `e2e/mention.spec.ts` green against a fresh build — two Direct
+> sessions, the injected block and rewritten mention in the sent turn, an unknown
+> `@word` left literal.
+>
+> **A property worth knowing, found by the e2e:** a Direct session's Feed is
+> built from the stream, so a turn is on screen BEFORE its transcript is bound on
+> disk — and resolution reads the file. Mention a session in that window and it
+> answers, honestly, that it has produced no readable output yet.
+>
+> **Next up after this: #799**, then **#800**, **#796**, **#801**.
+
 > # ✅ MERGED — 2026-09-15: **#797** — `@`-session autocomplete in the composer: one popup for `/` and `@`, fed by the bus's own session list
 >
 > **PR #829, squashed to `1c9e370`, all four CI jobs green first time.** Issue
@@ -23,8 +78,10 @@
 > measured probe and a plan are posted on the issue.
 > - The CLI expands `@path` in Direct mode. Measured: `@NOTES.md` was attached
 >   with no Read; a missing `@NOPE.md` still cost the model a Read.
-> - So a RESOLVED mention is rewritten so it isn't `@`-shaped, and the user's line
->   is quoted in the injected block.
+> - So a RESOLVED mention is rewritten so it isn't `@`-shaped. (This bullet used
+>   to add "and the user's line is quoted in the injected block". It is not, and
+>   should not be: the prose that follows the block already carries every word
+>   the user typed. Corrected while building #798 — see its entry above.)
 > - The context is shown in the sent turn; collapsing it is follow-up **#830**.
 >
 > Then **#799**, **#800**, **#796**, **#801**. New follow-ups: **#828** (ARIA
