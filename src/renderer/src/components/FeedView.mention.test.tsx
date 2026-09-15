@@ -598,6 +598,28 @@ describe('a mention send and the rest of the composer', () => {
     expect(submitted).toEqual(['never mind then']);
   });
 
+  it('keeps what was typed DURING the lookup — only the sent draft is cleared', async () => {
+    // Mutation survivor, and the review's should-fix: the box stays editable
+    // while main resolves (only Send is greyed and Enter is swallowed), so
+    // clearing it wholesale on the way back eats characters the user typed after
+    // pressing Enter — and takes the persisted copy with them.
+    let release: (() => void) | null = null;
+    resolveMentions = (_id, text) =>
+      new Promise((resolve) => {
+        release = () => resolve({ ok: true, prompt: text });
+      });
+    const host = await mount();
+    await type(host, 'ask @TradingApp');
+    await press(host, 'Enter');
+    await type(host, 'ask @TradingApp about the cache');
+
+    await act(async () => release!());
+    await flush();
+
+    expect(submitted).toEqual(['ask @TradingApp']);
+    expect(boxOf(host).value).toBe(' about the cache');
+  });
+
   it('carries held sibling messages with it, ahead of the injected context, and forwards them ONCE', async () => {
     resolveMentions = (id, text) => {
       resolveCalls.push([id, text]);

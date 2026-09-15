@@ -66,6 +66,23 @@ describe('findMentions — where a known session is mentioned', () => {
     expect(names('@Trading please')).toEqual(['Trading']);
   });
 
+  it('…even when the SHORTER name would also end legally', () => {
+    // Mutation survivor: with `TradingApp`/`Trading`, `@TradingApp` rules the
+    // short one out by itself, because `A` is not a name-ending character — so
+    // searching shortest-first passed every test. Here both endings are legal
+    // (`My` ends at the space), and only the length decides.
+    expect(names('see @My Project today', ['My', 'My Project'])).toEqual(['My Project']);
+  });
+
+  it('never finds a second mention INSIDE the one it just matched', () => {
+    // Mutation survivor: a session TITLE may contain an `@` — `deploy @staging`
+    // is an ordinary name — and resuming the scan inside the matched span finds
+    // that one again as a mention of its own.
+    expect(names('ping @deploy @staging now', ['deploy @staging', 'staging'])).toEqual([
+      'deploy @staging',
+    ]);
+  });
+
   it('matches a name containing a SPACE — what the popup trigger cannot', () => {
     expect(names('see @My Project today')).toEqual(['My Project']);
   });

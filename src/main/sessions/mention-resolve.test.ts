@@ -163,6 +163,23 @@ describe('resolveMentions — left exactly as typed', () => {
     expect(run(queries([OWN, odd]), text)).toEqual({ ok: true, prompt: text });
   });
 
+  it('a session that RESOLVES but cannot be read — literal, never an empty block', () => {
+    // Mutation survivor, and a defensive branch worth keeping honest: the name
+    // resolved, so the session exists, but its output could not be fetched.
+    // Injecting `{block: ''}` would tell the model the session had said nothing,
+    // which is the confident wrong answer the query core exists to refuse.
+    const q = queries([OWN, TRADING], { 'live-a': ['out'] });
+    const unreadable = {
+      listSessions: () => q.listSessions(),
+      resolve: (ref: string) => q.resolve(ref),
+      sessionOutput: () => ({ ok: false as const, reason: 'the transcript went away' }),
+    };
+    expect(resolveMentions(unreadable, renderOutput, 'ask @TradingApp', OWN.id)).toEqual({
+      ok: true,
+      prompt: 'ask @TradingApp',
+    });
+  });
+
   it('the session list itself refusing — the draft goes as typed', () => {
     const q = queries([OWN, TRADING]);
     const broken = { listSessions: () => ({ ok: false as const, reason: 'down' }), resolve: q.resolve.bind(q), sessionOutput: q.sessionOutput.bind(q) };

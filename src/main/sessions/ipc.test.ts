@@ -1466,14 +1466,31 @@ describe('registerSessionIpc — @ session summaries (P2-E11-07)', () => {
     expect(h.call('sessions:resolveMentions', 'live-b', 'ask @X')).toEqual({ ok: true, prompt: 'ask @X' });
   });
 
-  it('resolveMentions answers null — never a rejection — for a malformed call or a resolver that throws', () => {
+  it('resolveMentions refuses a malformed call WITHOUT asking the resolver at all', () => {
+    // Mutation survivor: with a resolver that throws, deleting the argument
+    // check still answered `null` — by way of the catch, one layer too late.
+    // What the boundary owes is that untrusted renderer input never reaches the
+    // query core (§5.29), so the resolver's call log is the assertion.
+    const calls: unknown[][] = [];
+    const h = harness(undefined, dir, {
+      resolveMentions: (text, own) => {
+        calls.push([text, own]);
+        return { ok: true, prompt: text };
+      },
+    });
+    expect(h.call('sessions:resolveMentions', 42, 'ask @X')).toBeNull();
+    expect(h.call('sessions:resolveMentions', 'live-b', undefined)).toBeNull();
+    expect(h.call('sessions:resolveMentions', 'live-b', { text: 'ask @X' })).toBeNull();
+    expect(h.call('sessions:resolveMentions')).toBeNull();
+    expect(calls).toEqual([]);
+  });
+
+  it('resolveMentions turns a resolver THROW into null — never a rejected promise', () => {
     const h = harness(undefined, dir, {
       resolveMentions: () => {
         throw new Error('the query core blew up');
       },
     });
-    expect(h.call('sessions:resolveMentions', 42, 'ask @X')).toBeNull();
-    expect(h.call('sessions:resolveMentions', 'live-b', undefined)).toBeNull();
     expect(h.call('sessions:resolveMentions', 'live-b', 'ask @X')).toBeNull();
   });
 
