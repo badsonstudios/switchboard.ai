@@ -3,26 +3,62 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔨 IN PROGRESS — 2026-09-15: **#793** — after `/clear`, does the tagged SessionStart hook land first?
+> # ✅ MERGED — 2026-09-15: **#793** — the `/clear` hook race: not observed in 40 trials; the risky mode was Terminal, not Direct
 >
-> Branch `feature/793-clear-hook-order`. MEASURE-FIRST item, measured with the
-> real CLI 2.1.270 (`spike/probes/793/`).
+> **PR #823, squashed to `56014ff`, all four CI jobs green first time.** Issue
+> closed. Size S as filed.
+> Internal: no user-facing change, no manual page, no dogfood row.
 >
-> **Direct mode:** 15/15 tagged-first, beating the stream init by 17–33 ms. The
-> CLI awaits SessionStart(clear) inline here, so the order is structural.
+> **Next up: #812** (drift: `agentName` / `teamName` are envelope keys; plan
+> posted on the issue). Then E11's composer pair **#797 → #798** (never stop
+> between them), then **#799**, **#800**, **#796**, **#801**. Still open, not
+> queued ahead of E11: **#818**.
 >
-> **Terminal mode (PTY):** the ONLY caller passing `deferSessionStartHooks` is
-> the TUI host, so the hook is queued, not awaited, and there is no pump
-> fallback. Measured **25/25 tagged-first** at 164–186 ms. With a prompt typed
-> straight after `/clear`, it registered in 6 of 15 tries (the TUI drops input
-> while clearing), and its hook trailed the tagged one by 84–91 ms every time.
+> **MEASURED, NOT ARGUED.** The hook listener tags only
+> `SessionStart source:'clear'`, and the first writer of a new native id wins
+> its cause. Read from the PATH binary (2.1.270): the clear function AWAITS
+> SessionStart(clear) inline unless `deferSessionStartHooks` is passed, and the
+> **only caller passing it is the interactive TUI host**.
 >
-> **Review:** blocker B1 taken. The first write-up blamed the stream host for
-> the deferral; it is the TUI host. Comments and findings are now scoped per
-> mode, "unreachable" is now "not observed", and the missing falsifiers are
-> added: the tagged hook LOST rather than late, and a background task
-> surviving `/clear` (unmeasured). Outcome: comment + findings + both probes,
-> no behaviour change. Commit/PR next.
+> - **Direct mode (stream-json):** 15/15 tagged-first at 69–87 ms, 17–33 ms
+>   before `system:init`. Ordered by construction; the pump is a second tagged
+>   writer on top.
+> - **Terminal mode (PTY):** the hook is deferred and the listener is the ONLY
+>   writer, yet 25/25 tagged-first at 164–186 ms. A prompt typed ~80 ms after
+>   `/clear` registered 6 of 15 times (the TUI drops input while clearing) and
+>   trailed the tagged hook by 84–91 ms.
+>
+> **Outcome:** a per-mode comment at the tag site (`hook-listener.ts`), a
+> pointer in `session-manager.ts`, probes for both transports, and
+> `spike/findings/e11-793-clear-hook-order.md`. No behaviour change, as the
+> issue itself prescribed for this result. Retires with E18-15.
+>
+> **REVIEW — ONE BLOCKER, AND IT CHANGED WHAT GOT MEASURED.** My first
+> write-up named the stream host as the deferring caller. It is the TUI host: a
+> `this.stream.…` property sits in that same call's object, which is what
+> misled the first read. The reviewer's grep, re-verified wider, moved the real
+> question to Terminal mode, which had not been probed. Should-fixes taken:
+> - "Unreachable" became "not observed".
+> - The probe only scores OBSERVED trials.
+> - Scenario B waits for the prompt's own result.
+> - Windows kills the process tree before `cmd.exe`.
+> - Falsifiers added: the tagged hook LOST rather than late (Terminal mode has
+>   no fallback); a background task surviving `/clear` (UNMEASURED —
+>   `SCENARIOS=G` exists but needs a Bash permission grant in the TUI).
+>
+> **PROBE HYGIENE (worth keeping):** the PTY probe copies credentials into a
+> temp HOME. The smoke run left ONE such HOME behind (a single `rmSync` lost
+> the race with the killed CLI's handles). Fixed: unlink the secret files by
+> name, retry, print `!! CLEANUP` on any survivor. Every run was checked with
+> `claude agents --json` before and after (4 interactive, none leaked) and
+> `%TEMP%\sb793*` was swept to 0.
+>
+> **LESSONS.** (a) A minified call's neighbouring properties are the only label
+> it has. Read enough of them to name the host before building on it. (b) A
+> prompt typed "immediately" may never register: count the trials where the
+> competing writer actually fired, not the trials run. (c) Measure the
+> transport where the guarantee is WEAKEST, not the one you happen to have a
+> probe for.
 
 > # ✅ MERGED — 2026-09-15: **#807** — the watcher OVER-counted tokens; the ticket's under-count was a probe's
 >
