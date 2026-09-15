@@ -195,9 +195,26 @@ The box at the bottom sends straight to the real Claude Code session:
   The session you're typing in isn't listed. The list only opens while you're
   typing at the end of the `@`-word, so clicking into a name you already wrote
   and pressing Enter just sends. An `@` inside ordinary text, like an email
-  address, opens nothing and stays exactly as you typed it. *For now the mention is just
-  the name in your message; bringing that session's recent work along with it
-  comes next.*
+  address, opens nothing and stays exactly as you typed it.
+- **A mention brings that session's recent work with it.** When you send
+  "take `@TradingApp`'s fix and apply it here", switchboard.ai looks up
+  TradingApp's recent conversation and puts it in front of your message, marked
+  as coming from TradingApp. In what's sent, your `@TradingApp` becomes
+  `"TradingApp" (session)` — the rest of your words are unchanged. (Claude would
+  otherwise read `@TradingApp` as a *file* called TradingApp.) You'll see all of
+  it in your turn in the conversation, so nothing is added behind your back.
+  Very long messages and tool output are shortened, and only the most recent
+  part of the conversation comes along. If you mention several sessions at once
+  and the total is too long, the ones you mentioned first come along and a line
+  in your message says which were left out.
+  - An `@` that doesn't match an open session, an email address, an `@` inside
+    `` `code` `` or a code block, or the session you're typing in, is sent
+    exactly as you typed it.
+  - If two open sessions have the **same name**, nothing is sent: a note under
+    the box lists both, with their folders, and your message stays in the box.
+    Rename one, or use the session's id in place of the name.
+  - If the lookup itself fails, your message is still sent as you typed it, and
+    a note under the box says the other session's work didn't go with it.
 
 Under the box is a row showing this session's **autonomy mode** (click to
 cycle) and the **model** it's running — click that to switch it, or see

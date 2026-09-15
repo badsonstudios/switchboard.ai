@@ -130,7 +130,12 @@ export type { SessionSummary } from '../../shared/sessions';
  * error the agent cannot read, over IPC it is a rejected promise the renderer
  * turns into a toast. A refusal carries a reason the caller can act on.
  */
-export type QueryResult<T> = { ok: true; value: T } | { ok: false; reason: string };
+export type QueryResult<T> =
+  | { ok: true; value: T }
+  // `code` is set only where a caller has to tell refusals apart without
+  // reading English. `'ambiguous'` is the one the composer needs (#798): it
+  // stops a send, where "no session by that name" leaves the `@` as typed.
+  | { ok: false; reason: string; code?: 'ambiguous' };
 
 export interface SessionOutput {
   session: SessionSummary;
@@ -357,6 +362,7 @@ export class SessionQueries {
     }
     return {
       ok: false,
+      code: 'ambiguous',
       // The FOLDER is in here because the documented way to reach this state is
       // two checkouts of one repo, where it is the only human-meaningful
       // difference between the candidates.

@@ -17,6 +17,13 @@ import { sessionPanels } from '../extensibility/panels';
 import { PanelContext } from '../extensibility/contributions';
 import { loadUiState } from '../lib/ui-state';
 import { ipcRefusal } from '../../../shared/ipc/refusal';
+import {
+  SIBLING_SETTLE_MS,
+  heldMessages,
+  receiveSiblingMessage,
+  resetInboxCacheForTests,
+} from '../lib/sibling-inbox';
+import type { SiblingMessage } from '../../../shared/sibling-message';
 import type { SessionSummary } from '../../../shared/sessions';
 import type { SlashCommand } from '../../../shared/slash-commands';
 
@@ -38,6 +45,9 @@ let summaryFetches: number;
 /** `sessions.summaries` behaviour for the next call */
 let summariesMode: 'resolve' | 'hold' | 'refuse' | 'reject';
 let releaseSummaries: (() => void) | null = null;
+/** what main's `sessions.resolveMentions` answers (P2-E11-08); every call is recorded */
+let resolveMentions: (id: string, text: string) => Promise<unknown>;
+let resolveCalls: Array<[string, string]>;
 const roots: Root[] = [];
 
 /** The composer below is mounted as `live-b` / "Beta" — its OWN session. */
@@ -78,6 +88,7 @@ function stubBridge(): void {
             return Promise.resolve(SESSIONS);
         }
       },
+      resolveMentions: (id: string, text: string) => resolveMentions(id, text),
       submitPrompt: (_id: string, text: string) => {
         submitted.push(text);
         return Promise.resolve(true);
@@ -161,6 +172,13 @@ beforeEach(async () => {
   summaryFetches = 0;
   summariesMode = 'resolve';
   releaseSummaries = null;
+  resolveCalls = [];
+  // Default: main resolves nothing, so the draft comes back exactly as typed —
+  // which is also what every pre-#798 test in this file expects to be sent.
+  resolveMentions = (id, text) => {
+    resolveCalls.push([id, text]);
+    return Promise.resolve({ ok: true, prompt: text });
+  };
   vi.stubGlobal(
     'ResizeObserver',
     class {
@@ -440,6 +458,203 @@ describe('an @ in ordinary prose', () => {
     expect(rows(host)).toHaveLength(0);
     await press(host, 'Enter');
     expect(submitted).toEqual(['mail dan@example.com']);
+  });
+});
+
+describe('sending a draft that mentions a session (P2-E11-08)', () => {
+  const notice = (host: HTMLElement): string =>
+    host.querySelector<HTMLElement>('[data-composer-attach-notice]')?.textContent ?? '';
+
+  it('asks main about THIS session’s draft, sends the prompt main built, and clears the box', async () => {
+    resolveMentions = (id, text) => {
+      resolveCalls.push([id, text]);
+      return Promise.resolve({ ok: true, prompt: 'CONTEXT BLOCK\n\ntake "TradingApp" (session) now' });
+    };
+    const host = await mount();
+    await type(host, 'take @TradingApp now');
+    await press(host, 'Enter');
+
+    expect(resolveCalls).toEqual([[OWN_ID, 'take @TradingApp now']]);
+    expect(submitted).toEqual(['CONTEXT BLOCK\n\ntake "TradingApp" (session) now']);
+    expect(boxOf(host).value).toBe('');
+    expect(notice(host)).toBe('');
+  });
+
+  it('a draft with no @ at a word boundary never asks main — the instant path is untouched', async () => {
+    const host = await mount();
+    await type(host, 'mail dan@example.com');
+    await press(host, 'Enter');
+    expect(resolveCalls).toEqual([]);
+    expect(submitted).toEqual(['mail dan@example.com']);
+  });
+
+  it('a SLASH COMMAND is never resolved, @ or not', async () => {
+    const host = await mount();
+    await type(host, '/review @TradingApp');
+    await press(host, 'Escape'); // close the slash popup so Enter sends
+    await press(host, 'Enter');
+    expect(resolveCalls).toEqual([]);
+    expect(submitted).toEqual(['/review @TradingApp']);
+  });
+
+  it('an AMBIGUOUS name: nothing is sent, the draft stays, and the reason is under the box', async () => {
+    const reason = '"TradingApp" is ambiguous — 2 sessions share that name: TradingApp (live-a, /p/trading); TradingApp (live-z, /p/t2). Use the session id.';
+    resolveMentions = () => Promise.resolve({ ok: false, refusals: [reason] });
+    const host = await mount();
+    await type(host, 'take @TradingApp now');
+    await press(host, 'Enter');
+
+    expect(submitted).toEqual([]);
+    expect(boxOf(host).value).toBe('take @TradingApp now');
+    expect(notice(host)).toContain('Not sent');
+    expect(notice(host)).toContain('/p/t2');
+  });
+
+  it('the lookup FAILING fails open: sent as typed, and the box says the context did not go', async () => {
+    resolveMentions = () => Promise.reject(new Error('main is gone'));
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const host = await mount();
+    await type(host, 'take @TradingApp now');
+    await press(host, 'Enter');
+
+    expect(submitted).toEqual(['take @TradingApp now']);
+    expect(boxOf(host).value).toBe('');
+    expect(notice(host)).toContain("couldn't look up the sessions you mentioned");
+  });
+
+  it('a second Enter while the lookup is out sends NOTHING more (#774’s one-send guard)', async () => {
+    let release: (() => void) | null = null;
+    resolveMentions = (id, text) => {
+      resolveCalls.push([id, text]);
+      return new Promise((resolve) => {
+        release = () => resolve({ ok: true, prompt: text });
+      });
+    };
+    const host = await mount();
+    await type(host, 'take @TradingApp now');
+    await press(host, 'Enter');
+    await press(host, 'Enter');
+    expect(resolveCalls).toHaveLength(1);
+    expect(submitted).toEqual([]);
+
+    await act(async () => release!());
+    await flush();
+    expect(submitted).toEqual(['take @TradingApp now']);
+  });
+});
+
+// Both of these were named by the #798 review as mutants that survived the
+// suite: the guard release, and the one place forwarded messages and mention
+// resolution meet.
+describe('a mention send and the rest of the composer', () => {
+  /** A settled sibling message on this card, the way `App.tsx` delivers one. */
+  async function heldMessageArrives(text: string): Promise<void> {
+    let now = 1_000_000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const m: SiblingMessage = {
+      deliveryId: 'd1',
+      cardId: 'card-b',
+      from: { id: 'live-a', name: 'TradingApp' },
+      text,
+      at: new Date(now).toISOString(),
+    };
+    await act(async () => {
+      receiveSiblingMessage(m);
+    });
+    // SETTLED: a message that arrived less than `SIBLING_SETTLE_MS` ago is not
+    // one the user has reviewed, and rides the NEXT Enter by design (#765).
+    now += SIBLING_SETTLE_MS + 1;
+    await flush();
+  }
+
+  afterEach(() => {
+    resetInboxCacheForTests();
+  });
+
+  it('releases the one-send guard, so the NEXT draft still sends', async () => {
+    const host = await mount();
+    await type(host, 'take @TradingApp now');
+    await press(host, 'Enter');
+    expect(submitted).toHaveLength(1);
+
+    // The mutant this kills: dropping `done()` from the resolution callback.
+    // The card would stay in-flight for ever — Send greyed, Enter dead, across
+    // remounts, clearable only by closing the card.
+    await type(host, 'and another one');
+    await press(host, 'Enter');
+    expect(submitted).toEqual(['take @TradingApp now', 'and another one']);
+  });
+
+  it('releases it after a REFUSAL too — an ambiguous name must not wedge the box', async () => {
+    resolveMentions = () => Promise.resolve({ ok: false, refusals: ['"TradingApp" is ambiguous'] });
+    const host = await mount();
+    await type(host, 'take @TradingApp now');
+    await press(host, 'Enter');
+    expect(submitted).toEqual([]);
+
+    resolveMentions = (_id, text) => Promise.resolve({ ok: true, prompt: text });
+    await type(host, 'never mind then');
+    await press(host, 'Enter');
+    expect(submitted).toEqual(['never mind then']);
+  });
+
+  it('clears the box completely when the draft ends in whitespace that was trimmed off the send', async () => {
+    // CI caught this one, on both runners: what is SENT is the trimmed draft, so
+    // "keep whatever the send did not carry" left a lone `" "` behind for every
+    // slash command — picking one inserts `/clear ` with its trailing space.
+    // A remainder of nothing but whitespace is nothing.
+    const host = await mount();
+    await type(host, '/clear ');
+    await press(host, 'Enter');
+    expect(submitted).toEqual(['/clear']);
+    expect(boxOf(host).value).toBe('');
+  });
+
+  it('keeps what was typed DURING the lookup — only the sent draft is cleared', async () => {
+    // Mutation survivor, and the review's should-fix: the box stays editable
+    // while main resolves (only Send is greyed and Enter is swallowed), so
+    // clearing it wholesale on the way back eats characters the user typed after
+    // pressing Enter — and takes the persisted copy with them.
+    let release: (() => void) | null = null;
+    resolveMentions = (_id, text) =>
+      new Promise((resolve) => {
+        release = () => resolve({ ok: true, prompt: text });
+      });
+    const host = await mount();
+    await type(host, 'ask @TradingApp');
+    await press(host, 'Enter');
+    await type(host, 'ask @TradingApp about the cache');
+
+    await act(async () => release!());
+    await flush();
+
+    expect(submitted).toEqual(['ask @TradingApp']);
+    expect(boxOf(host).value).toBe(' about the cache');
+  });
+
+  it('carries held sibling messages with it, ahead of the injected context, and forwards them ONCE', async () => {
+    resolveMentions = (id, text) => {
+      resolveCalls.push([id, text]);
+      return Promise.resolve({ ok: true, prompt: `CONTEXT\n\ntake "TradingApp" (session) now` });
+    };
+    const host = await mount();
+    await heldMessageArrives('the regulator is the fault');
+    await type(host, 'take @TradingApp now');
+    await press(host, 'Enter');
+
+    expect(submitted).toHaveLength(1);
+    const sent = submitted[0];
+    // The forwarded message leads, then the injected context, then the prose —
+    // and ONLY the user's own text was sent for resolution.
+    expect(resolveCalls).toEqual([[OWN_ID, 'take @TradingApp now']]);
+    expect(sent).toContain('the regulator is the fault');
+    expect(sent.indexOf('the regulator is the fault')).toBeLessThan(sent.indexOf('CONTEXT'));
+    expect(sent).toContain('CONTEXT\n\ntake "TradingApp" (session) now');
+    // …and it is gone from the card, so a second Enter cannot send it again.
+    expect(heldMessages('card-b')).toHaveLength(0);
+    await type(host, 'anything else');
+    await press(host, 'Enter');
+    expect(submitted[1]).toBe('anything else');
   });
 });
 

@@ -7,6 +7,7 @@
 // source files.
 import { sessionStore } from '../store/session-store';
 import type { PromptAttachment } from '../../../shared/prompt-attachments';
+import { answered } from '../../../shared/ipc/refusal';
 
 const ESC = String.fromCharCode(27);
 const CR = String.fromCharCode(13);
@@ -88,6 +89,37 @@ export async function submitPrompt(
 
   await sendSessionCommand(sessionId, text);
   return true;
+}
+
+/**
+ * What a draft that may mention other sessions turns into (P2-E11-08).
+ *
+ * - `send`: the prompt main built — each mentioned session's recent output
+ *   ahead of the prose, or the draft unchanged when nothing resolved.
+ * - `refused`: an ambiguous name; nothing may go, and these say why.
+ * - `unresolved`: the lookup itself did not happen — a refusal, a `null`, a
+ *   rejection, a shape we do not recognise. The draft goes AS TYPED (P6: our
+ *   breakage never blocks a session) and the composer says the context did not.
+ *
+ * NEVER REJECTS, for the same reason `mainTook` does not: its caller is a
+ * `void`-ed key handler holding the one-send-at-a-time guard.
+ */
+export type DraftMentions =
+  | { kind: 'send'; prompt: string }
+  | { kind: 'refused'; refusals: string[] }
+  | { kind: 'unresolved'; prompt: string };
+
+export async function resolveDraftMentions(sessionId: string, text: string): Promise<DraftMentions> {
+  try {
+    const r = answered(await window.switchboard.sessions.resolveMentions(sessionId, text));
+    if (r && r.ok === true && typeof r.prompt === 'string') return { kind: 'send', prompt: r.prompt };
+    if (r && r.ok === false && Array.isArray(r.refusals) && r.refusals.length > 0) {
+      return { kind: 'refused', refusals: r.refusals };
+    }
+  } catch (err) {
+    console.warn('[composer] sessions.resolveMentions failed — sending the draft as typed', err);
+  }
+  return { kind: 'unresolved', prompt: text };
 }
 
 /**

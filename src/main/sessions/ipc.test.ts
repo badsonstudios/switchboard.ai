@@ -147,6 +147,8 @@ function harness(
      *  `spawn` that fails. `sessions:create` must answer `null` rather than
      *  rejecting the renderer's promise (#347). */
     throwOnSpawn?: boolean;
+    /** the composer's `@Name` resolver (P2-E11-08); absent = a wiring without one */
+    resolveMentions?: SessionIpcDeps['resolveMentions'];
   } = {}
 ) {
   const created: Array<{
@@ -539,6 +541,7 @@ function harness(
     preferredTransport: opts.preferredTransport,
     /** #539 — the repairs the app announces on screen rather than only logging */
     onHistoryRepair: (r: unknown) => historyRepairs.push(r),
+    resolveMentions: opts.resolveMentions,
   } as unknown as SessionIpcDeps;
 
   const ipc = registerSessionIpc(deps);
@@ -1444,6 +1447,63 @@ describe('registerSessionIpc — @ session summaries (P2-E11-07)', () => {
     // the way `permission-toast.test.ts` pins `sessions:revealCard`.
     const caps = fs.readFileSync(path.join(__dirname, '../../shared/ipc/capabilities.ts'), 'utf8');
     expect(caps).toContain("'sessions:summaries': 'sessions.read'");
+  });
+
+  it('resolveMentions (P2-E11-08) hands the resolver the draft and the OWN session id, and answers with its result', () => {
+    const seen: unknown[][] = [];
+    const h = harness(undefined, dir, {
+      resolveMentions: (text, own) => {
+        seen.push([text, own]);
+        return { ok: false, refusals: ['"X" is ambiguous'] };
+      },
+    });
+    expect(h.call('sessions:resolveMentions', 'live-b', 'ask @X')).toEqual({ ok: false, refusals: ['"X" is ambiguous'] });
+    expect(seen).toEqual([['ask @X', 'live-b']]);
+  });
+
+  it('resolveMentions with no resolver wired answers the draft EXACTLY as typed', () => {
+    const h = harness(undefined, dir);
+    expect(h.call('sessions:resolveMentions', 'live-b', 'ask @X')).toEqual({ ok: true, prompt: 'ask @X' });
+  });
+
+  it('resolveMentions refuses a malformed call WITHOUT asking the resolver at all', () => {
+    // Mutation survivor: with a resolver that throws, deleting the argument
+    // check still answered `null` — by way of the catch, one layer too late.
+    // What the boundary owes is that untrusted renderer input never reaches the
+    // query core (§5.29), so the resolver's call log is the assertion.
+    const calls: unknown[][] = [];
+    const h = harness(undefined, dir, {
+      resolveMentions: (text, own) => {
+        calls.push([text, own]);
+        return { ok: true, prompt: text };
+      },
+    });
+    expect(h.call('sessions:resolveMentions', 42, 'ask @X')).toBeNull();
+    expect(h.call('sessions:resolveMentions', 'live-b', undefined)).toBeNull();
+    expect(h.call('sessions:resolveMentions', 'live-b', { text: 'ask @X' })).toBeNull();
+    expect(h.call('sessions:resolveMentions')).toBeNull();
+    expect(calls).toEqual([]);
+  });
+
+  it('resolveMentions turns a resolver THROW into null — never a rejected promise', () => {
+    const h = harness(undefined, dir, {
+      resolveMentions: () => {
+        throw new Error('the query core blew up');
+      },
+    });
+    expect(h.call('sessions:resolveMentions', 'live-b', 'ask @X')).toBeNull();
+  });
+
+  it('resolveMentions is gated on TRANSCRIPTS — it returns what another session said, not just its name', () => {
+    const caps = fs.readFileSync(path.join(__dirname, '../../shared/ipc/capabilities.ts'), 'utf8');
+    expect(caps).toContain("'sessions:resolveMentions': 'transcripts.read'");
+  });
+
+  it('the preload’s `resolveMentions()` invokes THIS channel with (liveId, text) — no test loads the preload', () => {
+    const preload = fs.readFileSync(path.join(__dirname, '../../preload/index.ts'), 'utf8');
+    expect(preload).toMatch(
+      /resolveMentions:\s*\(liveId: string, text: string\):\s*Promise<MentionPrompt \| null>\s*=>\s*ipcRenderer\.invoke\('sessions:resolveMentions', liveId, text\)/
+    );
   });
 
   it('the preload’s `summaries()` invokes THIS channel — pinned, because no test loads the preload', () => {

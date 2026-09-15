@@ -318,6 +318,11 @@ export const CHANNEL_CAPABILITIES = {
   // The composer's `@` popup list (P2-E11-07): `summariesFrom`, the same source
   // the bus's `list_sessions` answers from, so the two cannot disagree.
   'sessions:summaries': 'sessions.read',
+  // The composer's `@Name` at send (P2-E11-08). TRANSCRIPTS, not sessions: the
+  // answer carries another session's recent output, which `transcripts:search`
+  // already gates — a surface allowed only to LIST sessions must not be able to
+  // read what they said.
+  'sessions:resolveMentions': 'transcripts.read',
   'settings:getAutoLabels': 'settings.read',
   'settings:setAutoLabels': 'settings.write',
   'settings:getAutoTrust': 'settings.read',

@@ -143,6 +143,9 @@ describe('resolve', () => {
     expect(r.ok).toBe(false);
     if (r.ok) throw new Error('unreachable');
     expect(r.reason).toContain('ambiguous');
+    // …and says so in a FIELD, so the composer (#798) never has to read English
+    // to know that this refusal stops a send.
+    expect(r.code).toBe('ambiguous');
     // BOTH ids present: the refusal has to be actionable, and "2 matches" with
     // no way to disambiguate is a dead end dressed as an error message.
     expect(r.reason).toContain('sess-1');

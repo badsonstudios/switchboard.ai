@@ -34,7 +34,8 @@ import {
   lostAttachmentNames,
   stashAttachments,
 } from '../lib/composer-attachment-draft';
-import { interruptSession, submitPrompt } from '../lib/composer';
+import { interruptSession, resolveDraftMentions, submitPrompt } from '../lib/composer';
+import { mayMention } from '../../../shared/mention-finder';
 import { interceptSlash } from '../lib/slash-intercept';
 import { sessionStore } from '../store/session-store';
 import { ComposerAttachments } from './ComposerAttachments';
@@ -2169,6 +2170,45 @@ function Composer({
     clearDraft(cardId);
   };
 
+  /**
+   * The prompt went — empty the box, UNLESS the user has typed more since
+   * (review should-fix, #798).
+   *
+   * Until #798 a text-only send cleared the box in the same tick as the
+   * keypress, so there was no window to type into. A draft with an `@` now waits
+   * on an IPC round trip that reads a transcript in main, and the textarea stays
+   * editable throughout — only Send is greyed and Enter is swallowed by the
+   * one-send guard. So `clearComposerDraft()` on the way back could wipe
+   * characters the user typed after pressing Enter, and `clearDraft` would take
+   * the persisted copy with them: unrecoverable, and the kind of loss §5.10 is
+   * careful about.
+   *
+   * Compared with the FUNCTIONAL setter rather than the `draft` this closure
+   * captured, which is a render old by the time this runs.
+   */
+  const clearSentDraft = (sent: string): void => {
+    let left = '';
+    setDraftState((current) => {
+      // WHAT WAS SENT IS THE TRIMMED, NEWLINE-NORMALISED DRAFT (see `submit`),
+      // so the box legitimately holds trailing whitespace that did go: picking a
+      // slash command inserts `/clear ` WITH its trailing space, and CI caught
+      // this — `slash-commands.spec.ts` found a lone `" "` left in the box after
+      // a send that had cleared it since E10-07.
+      //
+      // So: a remainder of nothing but whitespace is nothing. Only real
+      // characters — typed after Enter, while the lookup was out — are kept.
+      const normalised = current.replace(/\r\n/g, '\n');
+      const rest = normalised.startsWith(sent) ? normalised.slice(sent.length) : null;
+      left = rest === null ? current : rest.trim() === '' ? '' : rest;
+      return left;
+    });
+    // `clearDraft` is immediate where `saveDraft` is debounced (see
+    // `composer-draft.ts`), so the two branches are not symmetrical and must not
+    // be collapsed: forget the sent prompt at once, but PERSIST what is left.
+    if (left === '') clearDraft(cardId);
+    else saveDraft(cardId, left);
+  };
+
   const submit = (): void => {
     const text = draft.replace(/\r\n/g, '\n').trimEnd();
     // `/mcp` IS OURS TO ANSWER (Â§5.17, #632). Its CLI form opens an interactive
@@ -2242,61 +2282,99 @@ function Composer({
     if (isSendInFlight(cardId)) return;
     const forwarding = text.startsWith('/') ? [] : settledMessages(held, seenAt.current);
     if (!text && attachments.length === 0 && forwarding.length === 0) return;
-    const prompt = withForwarded(forwarding, text);
     const forwardedIds = forwarding.map((m) => m.id);
 
-    if (attachments.length === 0) {
-      // The path this composer has always had, byte for byte: transport-
-      // agnostic (P2-E18-08a), main answers whether it took it, and this falls
-      // back to the PTY dance if not. A text prompt cannot be refused â€” one of
-      // the two routes always accepts it â€” so the box clears immediately and
-      // the send stays as snappy as it was.
-      void submitPrompt(sessionId, prompt);
-      clearComposerDraft();
-      removeHeldMessages(cardId, forwardedIds);
-      setDismissed(false);
-      setAttachNotice(null);
+    // `@Name` MENTIONS (P2-E11-08, §5.2 Tier 2). A draft that may mention
+    // another session is resolved in MAIN before it goes — the same query core
+    // and wording the bus tools use — and comes back as the prompt to send
+    // (that session's recent output ahead of the prose) or as the reasons it
+    // must not go. So this send awaits, like the attachment path below, behind
+    // the same one-send-at-a-time guard; a draft with no `@` at a word boundary
+    // never reaches here and keeps the instant path.
+    //
+    // ONLY THE USER'S OWN TEXT is resolved. A forwarded sibling message that
+    // says `@Other` is another agent's words — resolving it would let one
+    // session pull a third session's output into this one without the user
+    // asking. And a SLASH COMMAND is left alone: rewriting its arguments could
+    // change what the command does.
+    //
+    // Refused (an ambiguous name): nothing is sent or cleared, and `resolve`'s
+    // reason — every candidate and its folder — is shown under the box. Lookup
+    // FAILED (main unreachable, the call refused): fail open, send as typed,
+    // and say that the context did not go.
+    if (!text.startsWith('/') && mayMention(text)) {
+      const done = beginSend(cardId);
+      void resolveDraftMentions(sessionId, text).then((r) => {
+        done();
+        if (r.kind === 'refused') {
+          setAttachNotice(t('feedView.mention.refused', { reasons: r.refusals.join(' ') }));
+          return;
+        }
+        dispatch(
+          withForwarded(forwarding, r.prompt),
+          r.kind === 'unresolved' ? t('feedView.mention.lookupFailed') : null
+        );
+      }, done);
       box.current?.focus();
       return;
     }
+    dispatch(withForwarded(forwarding, text), null);
 
-    // WITH ATTACHMENTS the send can genuinely fail (no PTY fallback carries a
-    // bitmap or a document block), so the draft is cleared only once we know it
-    // went.
-    // The exact set being sent, captured now. Reading a dropped file takes real
-    // time â€” a 4 MB log is not a clipboard bitmap â€” so a transfer can land
-    // BETWEEN this submit and its acknowledgement. Clearing the strip wholesale
-    // would eat that new attachment; removing only what we sent leaves it for
-    // the next prompt, which is where the user put it.
-    const sending = attachments;
-    const sent = new Set(sending.map((a) => a.id));
-    const done = beginSend(cardId);
-    // A SECOND CALLBACK, NOT `.finally` (and not `.catch`): the box has to
-    // reopen even if `submitPrompt` REJECTS, and `void p.then(f).finally(g)`
-    // still leaves that rejection unhandled — an unhandled rejection in a
-    // renderer is a console error today and whatever the window's handler
-    // decides tomorrow. `submitPrompt` resolves `false` rather than throwing,
-    // so this arm should be dead; a guard that can wedge the composer shut for
-    // the rest of the session is not one to leave resting on "should".
-    void submitPrompt(sessionId, prompt, toPromptAttachments(sending)).then((ok) => {
-      done();
-      if (!ok) {
-        // Everything stays exactly where it was. Clearing a composer whose
-        // contents went nowhere is the one outcome the user cannot undo, and a
-        // pasted screenshot is not recoverable from the clipboard a minute
-        // later.
-        setAttachNotice(t('feedView.attach.notSent'));
+    /** Send the draft's final form. `notice` is what stays under the box once it went. */
+    function dispatch(prompt: string, notice: string | null): void {
+      if (attachments.length === 0) {
+        // The path this composer has always had, byte for byte: transport-
+        // agnostic (P2-E18-08a), main answers whether it took it, and this falls
+        // back to the PTY dance if not. A text prompt cannot be refused â€” one of
+        // the two routes always accepts it â€” so the box clears immediately and
+        // the send stays as snappy as it was.
+        void submitPrompt(sessionId, prompt);
+        clearSentDraft(text);
+        removeHeldMessages(cardId, forwardedIds);
+        setDismissed(false);
+        setAttachNotice(notice);
+        box.current?.focus();
         return;
       }
-      clearComposerDraft();
-      // Only once it WENT, like the draft: a refused send keeps the sibling's
-      // messages on screen with everything else the user was about to send.
-      removeHeldMessages(cardId, forwardedIds);
-      setDismissed(false);
-      setAttachments((prev) => prev.filter((a) => !sent.has(a.id)));
-      setAttachNotice(null);
-    }, done);
-    box.current?.focus();
+
+      // WITH ATTACHMENTS the send can genuinely fail (no PTY fallback carries a
+      // bitmap or a document block), so the draft is cleared only once we know it
+      // went.
+      // The exact set being sent, captured now. Reading a dropped file takes real
+      // time â€” a 4 MB log is not a clipboard bitmap â€” so a transfer can land
+      // BETWEEN this submit and its acknowledgement. Clearing the strip wholesale
+      // would eat that new attachment; removing only what we sent leaves it for
+      // the next prompt, which is where the user put it.
+      const sending = attachments;
+      const sent = new Set(sending.map((a) => a.id));
+      const done = beginSend(cardId);
+      // A SECOND CALLBACK, NOT `.finally` (and not `.catch`): the box has to
+      // reopen even if `submitPrompt` REJECTS, and `void p.then(f).finally(g)`
+      // still leaves that rejection unhandled — an unhandled rejection in a
+      // renderer is a console error today and whatever the window's handler
+      // decides tomorrow. `submitPrompt` resolves `false` rather than throwing,
+      // so this arm should be dead; a guard that can wedge the composer shut for
+      // the rest of the session is not one to leave resting on "should".
+      void submitPrompt(sessionId, prompt, toPromptAttachments(sending)).then((ok) => {
+        done();
+        if (!ok) {
+          // Everything stays exactly where it was. Clearing a composer whose
+          // contents went nowhere is the one outcome the user cannot undo, and a
+          // pasted screenshot is not recoverable from the clipboard a minute
+          // later.
+          setAttachNotice(t('feedView.attach.notSent'));
+          return;
+        }
+        clearSentDraft(text);
+        // Only once it WENT, like the draft: a refused send keeps the sibling's
+        // messages on screen with everything else the user was about to send.
+        removeHeldMessages(cardId, forwardedIds);
+        setDismissed(false);
+        setAttachments((prev) => prev.filter((a) => !sent.has(a.id)));
+        setAttachNotice(notice);
+      }, done);
+      box.current?.focus();
+    }
   };
 
   return (
