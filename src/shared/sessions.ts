@@ -295,3 +295,60 @@ export interface SessionCardWire {
    */
   transport?: TransportKind;
 }
+
+/**
+ * One session, as a sibling sees it (§5.4 `list_sessions`), and as the
+ * composer's `@` popup lists it (P2-E11-07).
+ *
+ * MOVED HERE FROM `main/sessions/queries.ts` (#797) for the reason at the top
+ * of this file: the renderer needs it, and a hand-copied twin is the defect
+ * #590 and #618 each removed once already. `queries.ts` re-exports it, so no
+ * main-side import changed. The bus and the composer read the SAME shape from
+ * the SAME `summariesFrom`, which is #761's point: one question, one answer.
+ */
+export interface SessionSummary {
+  id: string;
+  /**
+   * The display title — what `@name` resolves against.
+   *
+   * This is the app's `identity.title` under a different name, because the
+   * surface it serves is `@name` rather than a window caption. The mapping
+   * lives wherever `SessionQueryDeps.list` is wired and nowhere else.
+   */
+  name: string;
+  folder: string;
+  providerId: string;
+  status: SessionStatus;
+  /**
+   * The session's process has ended (#765).
+   *
+   * ⚠️ `status` CANNOT TELL YOU THIS, which is why it is a field of its own.
+   * `'done'` is what the state machine calls BOTH a finished turn and a clean
+   * exit (`transition`: `exit` with code 0 → `'done'`), so a sibling that
+   * wrapped up its turn and one whose CLI has gone away look identical there.
+   * `send_to_session` must not deliver to the second, and `list_sessions` must
+   * not describe it as merely "done". Derived from the record's `exitCode`,
+   * which is set in exactly one place — the transport's exit — and never
+   * cleared.
+   *
+   * REQUIRED, not optional: an absent flag reads as falsy, i.e. "alive", which
+   * is the one default a delivery check must never get for free.
+   */
+  exited: boolean;
+  /**
+   * The card's accent colour, e.g. `var(--accent-teal)` (#797: the `@` popup
+   * shows a session by name AND colour).
+   *
+   * OPTIONAL, copied straight from `identity.accentColor`, which is optional on
+   * the record. Unlike `exited` above, absence has one honest reading here:
+   * `sessions:create` always ASSIGNS a colour, so a missing one is a backstop
+   * case, and every surface that paints a session row already resolves it where
+   * it paints (`?? 'var(--faint)'`). Defaulting it here instead would put a CSS
+   * token into data the bus also receives.
+   *
+   * It never reaches another session's model: `renderSessions`
+   * (`bus/bus-tools.ts`) builds each `list_sessions` line from named fields,
+   * and this is not one of them.
+   */
+  accentColor?: string;
+}

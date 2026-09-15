@@ -78,6 +78,14 @@ import {
   SlashCommand,
   slashToken,
 } from '../../../shared/slash-commands';
+import {
+  caretAfterMention,
+  filterSummaries,
+  insertMention,
+  mentionEnterAction,
+  mentionToken,
+} from '../../../shared/mention-token';
+import type { SessionSummary } from '../../../shared/sessions';
 import { answered } from '../../../shared/ipc/refusal';
 import type { TransportKind } from '../../../shared/transport';
 
@@ -1841,10 +1849,25 @@ function Composer({
   // character pops the list â€” CLI builtins + the project's/user's own
   // commands and skills. Selecting only INSERTS text; submission stays a
   // plain PTY write and the real CLI executes the command.
+  //
+  // `@session` autocomplete (P2-E11-07) is the SAME popup, not a second one:
+  // one list of rows, one `selected`, one `dismissed`, one keydown block. What
+  // differs is only the token rule (a mention is mid-sentence, a slash command
+  // is line-initial — see `shared/mention-token.ts`) and where the rows come
+  // from (`summariesFrom`, the bus's own list, over `sessions:summaries`).
   const [caret, setCaret] = React.useState(0);
   const [commands, setCommands] = React.useState<SlashCommand[] | null>(null);
+  const [summaries, setSummaries] = React.useState<SessionSummary[] | null>(null);
   const [selected, setSelected] = React.useState(0);
   const [dismissed, setDismissed] = React.useState(false);
+  /** The `@` Escape was pressed on — that mention stays closed until a different `@` (review, #797). */
+  const [mentionDismissedAt, setMentionDismissedAt] = React.useState<number | null>(null);
+  /**
+   * The user MOVED the highlight (arrows or pointer) since this completion
+   * opened. On a mention, Enter completes a substring match only when they did
+   * — see `mentionEnterAction`. Reset whenever the completion changes.
+   */
+  const [navigated, setNavigated] = React.useState(false);
 
   /**
    * A send is out and has not come back yet (#774) — ONE AT A TIME FROM THIS CARD.
@@ -1876,11 +1899,59 @@ function Composer({
    *    component that started the send, which by then may not be this one.
    */
   const sendPending = useSendInFlight(cardId);
-  const token = dismissed ? null : slashToken(draft, caret);
-  const popup = token !== null && commands !== null ? filterCommands(commands, token) : [];
+  const slash = dismissed ? null : slashToken(draft, caret);
+  // Precedence is written down, not assumed: `/(@x` is a real draft in which
+  // BOTH tokens hold (`(` is a mention boundary inside a slash token), and the
+  // slash popup keeps it.
+  const rawMention = slash !== null ? null : mentionToken(draft, caret);
+  // Escape on a mention closes it FOR THAT @WORD (review, #797): typing more of
+  // the same word keeps it closed, and a new `@` elsewhere opens again. The
+  // slash popup's `dismissed` boolean is untouched.
+  const mention = rawMention !== null && rawMention.at !== mentionDismissedAt ? rawMention : null;
+  // `token` stays the SLASH token: the command fetch and the #163 Enter rule
+  // below key on it, unchanged.
+  const token = slash;
+  /** One popup row, whichever list it came from — so there is one row renderer. */
+  type CompletionRow = {
+    kind: 'slash' | 'mention';
+    key: string;
+    label: string;
+    detail: string;
+    badge: string;
+    /** a session's colour; `?? 'var(--faint)'` is the same backstop every row that paints a session uses */
+    accent?: string;
+    /** what gets inserted: the command name, or the session's display name */
+    name: string;
+  };
+  const popup: CompletionRow[] =
+    slash !== null
+      ? commands === null
+        ? []
+        : filterCommands(commands, slash).map((c) => ({
+            kind: 'slash' as const,
+            key: `${c.source}:${c.name}`,
+            label: '/' + c.name,
+            detail: c.description ?? '',
+            badge: t(`feedView.slashSource.${c.source}`),
+            name: c.name,
+          }))
+      : mention !== null && summaries !== null
+        ? filterSummaries(summaries, mention.query, sessionId).map((s) => ({
+            kind: 'mention' as const,
+            key: `session:${s.id}`,
+            label: '@' + s.name,
+            detail: s.folder,
+            badge: s.exited ? t('feedView.mentionExited') : '',
+            accent: s.accentColor ?? 'var(--faint)',
+            name: s.name,
+          }))
+        : [];
   const popupOpen = popup.length > 0;
   const syncCaret = (): void => setCaret(box.current?.selectionStart ?? 0);
-  const popupWanted = token !== null;
+  const popupWanted = slash !== null;
+  const mentionWanted = mention !== null;
+  /** Which completion is live, as one comparable key: the selection resets when it changes. */
+  const completionKey = slash !== null ? `/${slash}` : mention !== null ? `@${mention.at}:${mention.query}` : '';
   React.useEffect(() => {
     // fetch on every popup OPENING (not each keystroke) so a just-added
     // command file shows up without restarting anything
@@ -1902,14 +1973,46 @@ function Composer({
     };
   }, [popupWanted, sessionId]);
   React.useEffect(() => {
+    // The session list, fetched on every @-popup OPENING exactly as the command
+    // list above is: a session opened a moment ago is offered without a restart.
+    // `[]` for a refused read, `null` only for "not fetched" — the same two
+    // facts the command fetch keeps apart (#650).
+    if (!mentionWanted) {
+      setSummaries(null);
+      return;
+    }
+    let cancelled = false;
+    void window.switchboard.sessions
+      .summaries()
+      .then((list) => {
+        if (!cancelled) setSummaries(answered(list) ?? []);
+      })
+      // A REJECTED invoke is an answer too (review, #797): left at `null`, the
+      // in-flight guard below would swallow Enter and Tab for as long as the
+      // caret sits in an `@word`. Nothing to offer, so nothing is offered.
+      .catch(() => {
+        if (!cancelled) setSummaries([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [mentionWanted]);
+  React.useEffect(() => {
     setSelected(0);
-  }, [token]);
+    setNavigated(false);
+  }, [completionKey]);
+  // A dismissal is FOR ONE `@`: forget it once that `@` is gone, or a different
+  // one is being typed — otherwise deleting and retyping it would stay closed.
+  const rawMentionAt = rawMention?.at ?? null;
+  React.useEffect(() => {
+    if (mentionDismissedAt !== null && rawMentionAt !== mentionDismissedAt) setMentionDismissedAt(null);
+  }, [rawMentionAt, mentionDismissedAt]);
   // arrow-key navigation must keep the highlighted row visible in the
   // scrollable popup (36+ builtins overflow the 200px box)
   const selectedRow = React.useRef<HTMLDivElement | null>(null);
   React.useEffect(() => {
     selectedRow.current?.scrollIntoView({ block: 'nearest' });
-  }, [selected, token]);
+  }, [selected, completionKey]);
 
   // Placing the caret after an insert has to wait for React to COMMIT the new
   // draft: the textarea is controlled, so its DOM value is written during the
@@ -1937,10 +2040,18 @@ function Composer({
     setPendingCaret(null);
   }, [pendingCaret]);
 
-  const pick = (name: string): void => {
-    setDraft(insertCommand(draft, caret, name));
+  const pick = (row: CompletionRow): void => {
+    if (row.kind === 'mention' && mention !== null) {
+      // Replaces only the `@partial` — a mention is mid-sentence, so the text
+      // before the `@` and after the caret both survive.
+      setDraft(insertMention(draft, mention, caret, row.name));
+      setDismissed(true); // closed until the token changes again
+      setPendingCaret({ pos: caretAfterMention(mention, row.name) }); // after "@name "
+      return;
+    }
+    setDraft(insertCommand(draft, caret, row.name));
     setDismissed(true); // closed until the token changes again
-    setPendingCaret({ pos: name.length + 2 }); // after "/name "
+    setPendingCaret({ pos: row.name.length + 2 }); // after "/name "
   };
 
   // Auto-grow (P2-E10-08, Â§5.10): the box is as tall as what the browser
@@ -2252,15 +2363,20 @@ function Composer({
             padding: 3,
           }}
         >
-          {popup.map((c, i) => {
-            const slashName = '/' + c.name;
+          {popup.map((row, i) => {
             return (
             <div
-              key={`${c.source}:${c.name}`}
+              key={row.key}
+              // which list the row came from — a stable hook for tests and e2e,
+              // so neither has to find a row by its styling
+              data-completion-row={row.kind}
               ref={i === selected ? selectedRow : undefined}
               onMouseDown={(e) => e.preventDefault() /* keep the textarea focused */}
-              onClick={() => pick(c.name)}
-              onMouseEnter={() => setSelected(i)}
+              onClick={() => pick(row)}
+              onMouseEnter={() => {
+                setSelected(i);
+                setNavigated(true); // pointing at a row is choosing it, as the arrows are
+              }}
               style={{
                 display: 'flex',
                 alignItems: 'baseline',
@@ -2271,8 +2387,26 @@ function Composer({
                 background: i === selected ? 'var(--chip)' : 'transparent',
               }}
             >
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700, color: 'var(--text)', flexShrink: 0 }}>
-                {slashName}
+              {row.accent !== undefined && (
+                // The session's colour (#797) — the same swatch every row that
+                // paints a session shows, so `@TradingApp` reads as the card it is.
+                <span
+                  aria-hidden="true"
+                  style={{
+                    inlineSize: 7,
+                    blockSize: 7,
+                    borderRadius: '50%',
+                    background: row.accent,
+                    flexShrink: 0,
+                    alignSelf: 'center',
+                  }}
+                />
+              )}
+              <span
+                data-completion-label=""
+                style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700, color: 'var(--text)', flexShrink: 0 }}
+              >
+                {row.label}
               </span>
               <span
                 style={{
@@ -2285,10 +2419,10 @@ function Composer({
                   whiteSpace: 'nowrap',
                 }}
               >
-                {c.description ?? ''}
+                {row.detail}
               </span>
               <span style={{ fontSize: 9, color: 'var(--faint)', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
-                {t(`feedView.slashSource.${c.source}`)}
+                {row.badge}
               </span>
             </div>
             );
@@ -2333,7 +2467,12 @@ function Composer({
           if (e.nativeEvent.isComposing || e.keyCode === 229) return;
           // fetch still in flight for a wanted popup: swallow Enter/Tab so a
           // fast "/âŽ" can't submit a bare slash before the list arrives
-          if (popupWanted && commands === null && (e.key === 'Enter' || e.key === 'Tab')) {
+          // ...and the same for the `@` list (#797): a fast "@Tra⏎" must not
+          // send before the session list it would have completed from arrives.
+          if (
+            ((popupWanted && commands === null) || (mentionWanted && summaries === null)) &&
+            (e.key === 'Enter' || e.key === 'Tab')
+          ) {
             e.preventDefault();
             return;
           }
@@ -2341,6 +2480,7 @@ function Composer({
             if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
               e.preventDefault();
               setSelected((s) => (s + (e.key === 'ArrowDown' ? 1 : popup.length - 1)) % popup.length);
+              setNavigated(true); // a deliberate choice — see `mentionEnterAction`
               return;
             }
             if (e.key === 'Enter' || e.key === 'Tab') {
@@ -2353,16 +2493,30 @@ function Composer({
               // command dead in Direct mode. Tab still completes, so the
               // trailing space is still one keystroke away when a command
               // takes arguments.
-              if (e.key === 'Enter' && token !== null && isCompleteCommand(token, chosen.name)) {
+              // On a MENTION row Enter has one more case than on a command
+              // (#797, `mentionEnterAction`): typed in full → send, as #163;
+              // a prefix, or a row the user moved to → complete; a bare
+              // substring match → send the literal, so `ping @app` never becomes
+              // a name nobody picked. Tab always completes, on either kind.
+              const sends =
+                e.key === 'Enter' &&
+                (chosen.kind === 'mention'
+                  ? mention !== null && mentionEnterAction(mention.query, chosen.name, navigated) === 'send'
+                  : token !== null && isCompleteCommand(token, chosen.name));
+              if (sends) {
                 submit();
                 return;
               }
-              pick(chosen.name);
+              pick(chosen);
               return;
             }
             if (e.key === 'Escape') {
               e.preventDefault();
-              setDismissed(true);
+              // A mention closes for THAT `@` only — more of the same word stays
+              // closed, a new `@` opens again (review, #797). The slash popup
+              // keeps its own rule: closed until the draft next changes.
+              if (mention !== null) setMentionDismissedAt(mention.at);
+              else setDismissed(true);
               return;
             }
           }

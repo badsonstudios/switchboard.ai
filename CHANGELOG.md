@@ -98,6 +98,17 @@ on the floor, and say so in your PR.
 
 ### Added
 
+- **Mention another session by typing `@`.** In a session's message box, type
+  `@` and a list of your other open sessions appears — each with its name,
+  folder and colour, and one whose process has ended marked `exited`. Keep
+  typing to narrow it down, then press Tab or Enter (or click) to put
+  `@SessionName` into your message. Enter never swaps in a name you didn't pick:
+  if what you typed only appears inside a session's name, Enter sends your text
+  as written. An `@` in the middle of ordinary text, such as an email address,
+  opens nothing and is left exactly as you typed it. For now the mention is
+  just the name in your message; bringing that session's recent work in with it
+  is the next step.
+
 - **See how much of a session's output was thinking.** The tokens-out figure on
   a session card is now followed by a fainter one — `↓ 4.2k (2.9k thinking)` —
   showing how much of that output was the model working things through before

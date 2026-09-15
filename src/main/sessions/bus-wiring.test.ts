@@ -244,6 +244,24 @@ describe('summariesFrom — the mapping that used to live in index.ts (P2-E11-03
     ]);
   });
 
+  it('carries the card colour through for the composer @ popup (#797)', () => {
+    const [s] = summariesFrom({
+      list: () => [
+        rec({ identity: { title: 'Alpha', folder: '/p/alpha', providerId: 'claude-code', accentColor: 'var(--accent-teal)' } }),
+      ],
+    });
+    expect(s.accentColor).toBe('var(--accent-teal)');
+  });
+
+  it('leaves the colour ABSENT when the record has none — not present-as-undefined (#797)', () => {
+    // `toEqual` cannot see this difference: it ignores undefined properties, so
+    // `{ accentColor: undefined }` and no key at all compare equal. The field is
+    // optional on the record and optional here; absent stays absent, and the row
+    // that paints it resolves the backstop. Asserted on the property itself.
+    const [s] = summariesFrom({ list: () => [rec()] });
+    expect(Object.prototype.hasOwnProperty.call(s, 'accentColor')).toBe(false);
+  });
+
   it('passes an empty list through rather than inventing one', () => {
     expect(summariesFrom({ list: () => [] })).toEqual([]);
   });

@@ -644,7 +644,8 @@
       "user-command": "user",
       "project-skill": "skill",
       "user-skill": "skill · user"
-    }
+    },
+    "mentionExited": "exited"
   },
   "statusbar": {
     "sessions": "{count, plural, =0 {no sessions} one {# session} other {# sessions}}",

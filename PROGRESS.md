@@ -3,7 +3,42 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ✅ MERGED — 2026-09-15: **#812** — team-session envelope keys declared flat; the test now covers every line type, not a sample
+> # 🔨 IN PROGRESS — 2026-09-15: **#797** — `@`-session autocomplete in the composer (token + popup; resolution is #798)
+>
+> Branch `feature/797-mention-autocomplete` (worktree `C:\tmp\sb-797`). Plan and
+> addendum are posted on the issue. **#798 follows immediately — never stop
+> between the two.**
+>
+> - **Token:** `src/shared/mention-token.ts`, pure, 24 tests. `slashToken` is
+>   line-initial and cannot be reused: a mention is mid-sentence and opens only at
+>   a word boundary.
+> - **List source:** `summariesFrom`, the bus's own source, over a new
+>   `sessions:summaries` channel. `SessionSummary` moves to
+>   `shared/sessions.ts` and is type-re-exported from `queries.ts`. `accentColor`
+>   is added OPTIONAL (it is optional on the record, assigned at create) and
+>   painted `?? 'var(--faint)'` at the row, like every other surface.
+>   `renderSessions` names its fields, so the colour never reaches another model.
+> - **Popup:** the slash popup is generalised into one completion (slash |
+>   mention): one list, one keydown block, one row renderer. The slash popup's
+>   own behaviour is unchanged.
+> - **Review (no blocker left, fixes in):** the blocker was that Enter with the
+>   caret INSIDE an existing mention replaced part of it. The token now opens
+>   only at the END of the `@word`. Enter on a mention follows
+>   `mentionEnterAction`:
+>   - a full name → send (#163);
+>   - a prefix, or a row the user moved to → complete;
+>   - a bare substring match → send the literal.
+>
+>   Esc is now sticky per `@word`, which REVERSES the posted plan (see the issue
+>   comment). A rejected list fetch no longer swallows Enter.
+>   `sessions:summaries` is pinned as `sessions.read`.
+> - **Decisions:** exited sessions are shown and marked; the composer's own
+>   session is filtered out. ARIA listbox semantics for both popups → #828.
+>   Notes for #798 (names with spaces/`'s`, duplicates, the CLI's `@path`) are
+>   posted on #798.
+> - **Mutation:** round 1 16/19 (F3 in-flight guard, F8 selection reset, I1 raw
+>   records survived; tests added for all three). Round 2 on the review fixes
+>   is next. — team-session envelope keys declared flat; the test now covers every line type, not a sample
 >
 > **PR #826, squashed to `44936df`, CI green** (a re-run after rebasing onto
 > #793's close-out: strict branch protection). Issue closed. Size S as filed.
