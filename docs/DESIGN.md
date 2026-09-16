@@ -2647,6 +2647,57 @@ a pointer where they left.)*
   > computed) are absent from the menu for the same reason they refuse drops:
   > an offer that does nothing wastes more time than a missing one.
 
+### 5.33 Session history — opening a past conversation
+
+*Added 2026-09-16 (owner request; issue #836, plan E20).*
+
+Every conversation the CLI has ever written lives under `~/.claude/projects`, one
+JSONL per conversation, in a directory named for its folder. switchboard can only
+open the ones a **card** already points at, which on the owner's machine is a
+handful out of 3,036. Session history closes that: a control in the session
+card's chrome lists that folder's past conversations, and picking one opens it.
+
+**The CLI is the reference implementation, and it is not reimplemented here.**
+`-r, --resume [value]` opens an interactive picker whose rows carry
+`firstPrompt`, `gitBranch`, `forkCount`, `artifactCount` and `showProjectPath`,
+with type-to-search, `ctrl+a` for all projects, branch and worktree filters,
+session rename and pagination. The **VS Code extension has no picker** — it
+contributes `reopenClosedSession` and builds `--resume=<id>` through the embedded
+SDK. So this is a native surface over the same on-disk data, reached through the
+adapter's existing `sessions.resume` capability (§5.3) — P7 holds: the CLI still
+decides and does, we present.
+
+**The description problem, measured (2026-09-16).** Over the 200 most recently
+written transcripts: `ai-title` in **196**, `last-prompt` in **200**, `summary`
+in **0**. A row's description is therefore the conversation's `ai-title` — which
+§5.11 already consumes through the adapter's `titles` capability, so no second
+derivation and no tokens spent on chrome — falling back to the first user prompt,
+which is exactly what the CLI's picker shows. **`summary` is not a source on this
+machine**, despite being a known line type; anything built on it would render
+blank for every conversation here.
+
+**Shape (owner decisions, 2026-09-16).** Folder-scoped by default with a toggle
+to every project — the CLI's own default, and the reason the common case stays
+short. Picking opens a **new** card resumed into that conversation in its own
+folder; the card the user clicked from is untouched, because "go back to a
+previous session" should never cost the one they are in. Two entry points: the
+card's chrome, and the `+ session` flow after a folder is chosen. v1 is search
+plus description; branch/worktree filters, rename and fork nesting wait.
+
+**Boundaries.** An entry that cannot be resumed — folder gone, transcript
+unreadable — explains itself rather than failing on click (the rule §5.4's
+refusals follow). The listing respects `MAX_LISTED_CONVERSATIONS`: a folder past
+that is reported as unscannable, never silently truncated, because a list that
+quietly omits the conversation you want is worse than one that admits its limit.
+A conversation id crossing from the renderer is untrusted input and is validated
+where it enters (§5.29).
+
+**Not this section.** The greyed-out **History tab** in the per-session tab strip
+is defined above as the checkout's *git log* — a different thing wearing the same
+word, and the collision is unresolved. The **activity report (#722)** summarises
+what happened across sessions in a date range; it shares this section's transcript
+scan and should build on it rather than growing a second one.
+
 ## 6. Tech Stack — Decision
 
 **Chosen: Electron + TypeScript + xterm.js + node-pty + Monaco + React.**
