@@ -341,6 +341,13 @@ export const CHANNEL_CAPABILITIES = {
   // deserve no capability of their own.
   'update:setPrefs': 'settings.write',
   'transcripts:blocks': 'transcripts.read',
+  // Session history (P2-E20-01, §5.33): a folder's past conversations, each with
+  // a short description. TRANSCRIPTS, not sessions, by `sessions:resolveMentions`'
+  // argument above — the description is the conversation's own `ai-title` or, when
+  // it has none, the user's FIRST PROMPT VERBATIM. That is conversation content,
+  // and it is content from conversations no card has ever owned, so a surface
+  // allowed only to list sessions must not be able to read it.
+  'transcripts:history': 'transcripts.read',
   // Session find (P2-E17-01, §5.31). Deliberately NOT a capability of its own,
   // unlike E16's `fs.read`, and the reason is the FILE rather than the payload:
   // this scans the transcript the watcher already picked for that session, so it

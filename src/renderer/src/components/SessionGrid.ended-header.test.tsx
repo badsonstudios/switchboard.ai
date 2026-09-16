@@ -40,7 +40,7 @@ import { DEFAULT_LAYOUT } from '../lib/layout-mode';
 import { registerBuiltinContributions } from '../bootstrap';
 import { rendererRegistry } from '../extensibility/registry-instance';
 import type { IDockviewPanelProps } from 'dockview-react';
-import { SessionGrid, endedPill, type CardParams } from './SessionGrid';
+import { SessionGrid, endedCopy, endedPill, type CardParams } from './SessionGrid';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -270,6 +270,40 @@ describe('the maximize gesture (§5.8), which is why the header is here', () => 
 // here - which is the obvious next step, and the reason the function is total
 // rather than a one-armed `if`. Pinned for the same reason `endedCopy` is
 // pinned: which words go with which ending, and that every key really exists.
+// A card opened FROM the history picker explains ITSELF when the conversation
+// cannot be opened (P2-E20-01, §5.33). This is pinned here, beside the other
+// which-words-go-with-which-ending cases, because it is the half the #836 review
+// found missing: main deliberately REFUSES that start rather than quietly
+// opening a fresh session, and the refusal is only defensible if the user is
+// told. Before this, the card showed the generic hint — which explains a folder
+// that moved, and sends the reader looking in the wrong place.
+describe('endedCopy — the picked-conversation refusal (P2-E20-01)', () => {
+  it('gives a refused pick its own sentence, not the folder-moved hint', () => {
+    expect(endedCopy({ kind: 'never-started', pickRefused: true }).detail).toBe(
+      'sessionHistory.openFailed'
+    );
+  });
+
+  it('leaves every OTHER never-started card exactly as it was', () => {
+    // The flag is additive: a card that was never started for the ordinary
+    // reasons still gets the ordinary words.
+    expect(endedCopy({ kind: 'never-started' }).detail).toBe('grid.notStartedHint');
+    expect(endedCopy({ kind: 'never-started', pickRefused: true }).heading).toBe(
+      'grid.sessionNotStarted'
+    );
+  });
+
+  it('names a key that really exists in en.json', () => {
+    // The same guarantee the `endedPill` block below makes: a detail key that
+    // does not resolve renders as the key itself, which looks like a bug in the
+    // feature rather than in the wiring.
+    const text = 'sessionHistory.openFailed'
+      .split('.')
+      .reduce<unknown>((node, part) => (node as Record<string, unknown> | undefined)?.[part], en);
+    expect(typeof text).toBe('string');
+  });
+});
+
 describe('endedPill', () => {
   it('calls a crash a crash, on the ramp position the alarm lives at', () => {
     expect(endedPill({ kind: 'exited', code: 137, crashed: true })).toEqual({

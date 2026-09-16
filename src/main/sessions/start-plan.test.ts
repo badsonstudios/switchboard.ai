@@ -111,6 +111,104 @@ describe('planSessionStart', () => {
     });
   });
 
+  describe('a conversation the USER picked out of history (P2-E20-01, §5.33)', () => {
+    /** Only `picked-1` is really on disk. */
+    const onlyPicked = () =>
+      fullCaps({ resume: { canResume: ({ nativeSessionId }) => nativeSessionId === 'picked-1' } });
+
+    it('resumes it, and says the resume was CHOSEN rather than inferred', () => {
+      const p = plan({ capabilitiesOf: onlyPicked, requestedConversationId: 'picked-1' });
+      expect(p.resumeSessionId).toBe('picked-1');
+      // `picked` and not `stored`: the other three values are recoveries or
+      // inferences, and a log that cannot tell them apart cannot answer "why is
+      // my card in this conversation?"
+      expect(p.resumedVia).toBe('picked');
+      expect(p.requestedUnavailable).toBe(false);
+    });
+
+    it('is asked about through the SAME `canResume` as every other candidate', () => {
+      // A picked id crossed an IPC boundary; a stale one makes the CLI exit at
+      // spawn. It gets no more trust than an id we stored ourselves.
+      const asked: ResumeQuery[] = [];
+      plan({
+        capabilitiesOf: () =>
+          fullCaps({
+            resume: {
+              canResume: (q) => {
+                asked.push(q);
+                return true;
+              },
+            },
+          }),
+        requestedConversationId: 'picked-1',
+      });
+      expect(asked).toEqual([
+        { projectsRoot: '/roots/claude', folder: '/work/app', nativeSessionId: 'picked-1' },
+      ]);
+    });
+
+    it('is IGNORED for a card that already has a conversation of its own', () => {
+      // The picker opens a NEW card every time, so a card with a chain is not a
+      // pick target. Enforced in the plan rather than at the call site, so no
+      // future caller can turn a pick into a way to move an existing card into
+      // somebody else's conversation.
+      const p = plan({
+        capabilitiesOf: () => fullCaps(),
+        prior: { nativeSessionId: 'its-own' },
+        requestedConversationId: 'picked-1',
+      });
+      expect(p.resumeSessionId).toBe('its-own');
+      expect(p.resumedVia).toBe('stored');
+      expect(p.requestedUnavailable).toBe(false);
+    });
+
+    it('a pick that is NOT on disk refuses instead of quietly starting a fresh session', () => {
+      // The one place this path deliberately does not fail open: the user named
+      // a conversation, and an empty new one in the same folder is
+      // indistinguishable from switchboard having wiped it.
+      const p = plan({ capabilitiesOf: onlyPicked, requestedConversationId: 'gone' });
+      expect(p.resumeSessionId).toBeUndefined();
+      expect(p.requestedUnavailable).toBe(true);
+    });
+
+    it('a provider that cannot resume at all reports the same refusal', () => {
+      const p = plan({
+        capabilitiesOf: () => fullCaps({ resume: undefined }),
+        requestedConversationId: 'picked-1',
+      });
+      expect(p.resumeSessionId).toBeUndefined();
+      expect(p.requestedUnavailable).toBe(true);
+    });
+
+    it('never reaches for the repair sweep — a new card must not adopt a stranger', () => {
+      // `findOrphaned` is fenced on `candidates.length > 0`, and a picked card
+      // has none. Worth pinning here too: the sweep takes "the newest unclaimed
+      // conversation in this folder", which for a brand-new card would be
+      // somebody else's.
+      const looked: OrphanQuery[] = [];
+      const p = plan({
+        capabilitiesOf: () =>
+          fullCaps({
+            resume: {
+              canResume: () => false,
+              findOrphaned: (q) => {
+                looked.push(q);
+                return 'someone-elses';
+              },
+            },
+          }),
+        requestedConversationId: 'gone',
+      });
+      expect(looked).toEqual([]);
+      expect(p.resumeSessionId).toBeUndefined();
+      expect(p.requestedUnavailable).toBe(true);
+    });
+
+    it('says nothing about availability when nobody picked anything', () => {
+      expect(plan({ capabilitiesOf: () => fullCaps() }).requestedUnavailable).toBe(false);
+    });
+  });
+
   describe('resume asks the provider rather than assuming', () => {
     it('no resume capability means a fresh session even with a native id', () => {
       const p = plan({

@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { ContextMenuLabels } from '../shared/context-menu';
 import type { SlashCommand } from '../shared/slash-commands';
 import type { MentionPrompt } from '../shared/mention-prompt';
+import type { ConversationHistory, ConversationHistoryRequest } from '../shared/session-history';
 import type { PromptAttachment } from '../shared/prompt-attachments';
 import type { SiblingAck, SiblingMessage } from '../shared/sibling-message';
 import type { PtyAttachment, PtyChunk, PtySnapshot } from '../shared/ipc/pty';
@@ -275,6 +276,16 @@ const api = {
       title: string;
       autonomy?: AutonomyMode;
       groupId?: string;
+      /**
+       * Open this card ON a conversation picked out of the history list
+       * (P2-E20-01, §5.33) — rather than on whatever the card's own lineage
+       * points at, which is what every other start does.
+       *
+       * Only honoured for a card that holds no conversation of its own, and
+       * refused (a `null` answer) when the conversation cannot be resumed or
+       * another card already has it.
+       */
+      resumeConversationId?: string;
     }): Promise<
       | (SessionRecordDto & {
           cardId: string;
@@ -1008,6 +1019,18 @@ const api = {
      */
     search: (req: TranscriptSearchRequest): Promise<TranscriptSearchResult> =>
       ipcRenderer.invoke('transcripts:search', req),
+    /**
+     * A folder's past conversations, described (P2-E20-01, §5.33).
+     *
+     * `scope: 'folder'` is the default the picker opens on; `'all'` widens it to
+     * every project on the machine, and rows then carry the folder they belong
+     * to. `null` = main refused the call itself. An `unknown` status inside the
+     * answer is a different thing from that: it means we LOOKED and could not
+     * list — an unreadable directory, or one past the 500 entries the scan
+     * will do — and the picker says which rather than showing an empty list.
+     */
+    history: (req: ConversationHistoryRequest): Promise<ConversationHistory | null> =>
+      ipcRenderer.invoke('transcripts:history', req),
     onBlock: (cb: (payload: { sessionId: string; block: unknown }) => void): (() => void) => {
       const h = (_e: unknown, p: { sessionId: string; block: unknown }) => cb(p);
       ipcRenderer.on('sessions:feedBlock', h);

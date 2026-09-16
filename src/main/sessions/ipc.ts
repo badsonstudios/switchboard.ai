@@ -60,7 +60,10 @@ import type { TransportKind } from '../../shared/transport';
 import type { ProviderCapabilities } from '../extensibility/contributions';
 import { TranscriptWatcher } from '../transcripts/watcher';
 import { searchTranscripts } from '../transcripts/search';
+import { listHistory } from '../transcripts/history';
+import { isConversationId } from '../transcripts/paths';
 import type { TranscriptQuery, TranscriptSearchRequest } from '../../shared/transcripts';
+import type { ConversationHistoryRequest } from '../../shared/session-history';
 import { LogFields, Logger } from '../log/logger';
 import { assignAccent, detectProjectType } from './identity';
 import { summariesFrom } from './queries';
@@ -1026,6 +1029,12 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         // and the runtime check is what makes it true.
         autonomy?: string;
         groupId?: string;
+        /**
+         * A conversation the user picked out of the history list (P2-E20-01).
+         * Declared `string` and checked at runtime like `cardId` above — the
+         * annotation is a claim about the wire that only the check makes true.
+         */
+        resumeConversationId?: string;
       }
     ) => {
       // Validate untrusted renderer input (§5.29). REFUSED, not thrown (#347):
@@ -1057,6 +1066,28 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         return refuse('sessions:create', 'folder is not a directory', {
           cardId: opts.cardId,
           folder: opts.folder,
+        });
+      }
+
+      // ── the conversation the user PICKED out of history (P2-E20-01, §5.33) ──
+      //
+      // §5.29: validate the SHAPE where it enters. `isConversationId` is the
+      // same guard `locateConversation` applies before interpolating an id into
+      // a path, and it is what keeps `..` out of one.
+      //
+      // REFUSED rather than ignored, here and at every other gate below it. An
+      // ignored pick starts a fresh session in the right folder, which is
+      // indistinguishable — to the user, at the moment it happens — from
+      // switchboard having wiped the conversation they asked for.
+      if (opts.resumeConversationId !== undefined && typeof opts.resumeConversationId !== 'string') {
+        return refuse('sessions:create', 'resumeConversationId must be a string', {
+          cardId: opts.cardId,
+        });
+      }
+      const picked = opts.resumeConversationId;
+      if (picked !== undefined && !isConversationId(picked)) {
+        return refuse('sessions:create', 'resumeConversationId is not a conversation id', {
+          cardId: opts.cardId,
         });
       }
 
@@ -1176,6 +1207,10 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           isRegistered: deps.isRegisteredProvider,
           defaultProviderId: deps.defaultProviderId,
           folder: opts.folder,
+          // Honoured only for a card with no conversation of its own — the plan
+          // enforces that, not this call site, so the rule holds for every
+          // caller rather than for this one.
+          requestedConversationId: picked,
           prior: {
             providerId: prior?.identity.providerId,
             nativeSessionId: prior?.nativeSessionId,
@@ -1217,6 +1252,57 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         },
         hooks
       );
+      // THE PICK DID NOT RESOLVE, so nothing starts (P2-E20-01, §5.33).
+      //
+      // The transcript is gone, the directory would not list, or the provider
+      // cannot resume at all. Every other declined resume on this path falls
+      // through to a fresh session, which is right when nobody named one; here
+      // somebody did, and §5.33 requires that an entry which cannot be resumed
+      // "says so and why, and is never a dead click". The renderer turns this
+      // `null` into that sentence.
+      if (plan.requestedUnavailable) {
+        return refuse('sessions:create', 'the picked conversation could not be resumed', {
+          cardId: opts.cardId,
+          folder: opts.folder,
+          conversation: picked ?? '',
+        });
+      }
+      // ...AND NOT ONE ANOTHER CARD IS ALREADY IN (#539's hazard, new door).
+      //
+      // Measured 2026-08-15: plain `--resume` APPENDS to the transcript rather
+      // than forking it, so two cards resumed into one conversation both write
+      // one file. The repair sweep is fenced against creating that state; a
+      // user-driven picker is a second way in, and the list marking a row
+      // `claimed` is a courtesy — this is the guard. Ceded ids count as held,
+      // for #539's own reason: the card that gave one up is waiting to be given
+      // it back.
+      //
+      // Gated on the PLAN'S DECISION, not on the wire value. `resumeConversationId`
+      // is a dockview panel param, so it is serialized into the saved layout and
+      // re-sent on every remount and every relaunch — it is not the one-shot it
+      // reads like. Gating on "the renderer mentioned an id" would therefore keep
+      // testing a card against a conversation it already legitimately owns, and
+      // the day another card acquires that id (the #539 cede path is the live
+      // example) the ORIGINAL card would be refused for ever. `resumedVia ===
+      // 'picked'` fires exactly when a pick is about to be used, which is the
+      // only moment the question means anything; a card resuming its own chain
+      // is already fenced by `claimedNativeIds` on the adoption path.
+      if (plan.resumedVia === 'picked' && picked !== undefined) {
+        const heldByAnother = deps.persist
+          .list()
+          .some(
+            (s) =>
+              s.id !== opts.cardId &&
+              [...resumeCandidates(s), ...(s.cededNativeIds ?? [])].includes(picked)
+          );
+        if (heldByAnother) {
+          return refuse('sessions:create', 'another card already holds that conversation', {
+            cardId: opts.cardId,
+            conversation: picked,
+          });
+        }
+      }
+
       const identity = {
         title,
         folder: opts.folder,
@@ -1523,6 +1609,75 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         error: String(err),
       });
       return null;
+    }
+  });
+
+  // Session history (P2-E20-01, §5.33): a folder's past conversations, each
+  // described well enough to recognise. The work is `transcripts/history.ts`;
+  // this is the boundary.
+  //
+  // ASYNC so the renderer's call yields before the scan runs. The scan itself is
+  // synchronous and bounded (300 rows, 400 directories, one capped head read
+  // each) — the honest statement is that it is short, not that it is
+  // interruptible. `transcripts:search` is async for the same reason.
+  //
+  // It asks the DEFAULT provider, because a picker opened before any session
+  // exists has no card to take a provider from. That is also why nothing new was
+  // wired into `main/index.ts`: the root and the title reader are read off the
+  // capabilities the session IPC already holds, so there is no second source for
+  // them to disagree with.
+  broker.handle('transcripts:history', async (_e, req: unknown) => {
+    const r = (req ?? {}) as Partial<ConversationHistoryRequest>;
+    // §5.29 — narrow at the boundary. An unknown scope is the folder one, not a
+    // refusal: the widening toggle is a convenience and a malformed one should
+    // cost the user the toggle, never the list.
+    const scope = r.scope === 'all' ? 'all' : 'folder';
+    const folder = typeof r.folder === 'string' && r.folder ? r.folder : undefined;
+    if (scope === 'folder' && !folder) {
+      return refuse('transcripts:history', 'the folder scope needs a folder');
+    }
+    const caps = deps.capabilitiesOf(deps.defaultProviderId());
+    let projectsRoot = '';
+    try {
+      projectsRoot = caps?.transcripts?.projectsRoot() ?? '';
+    } catch (err) {
+      log.warn('transcripts:history could not resolve the transcripts root', {
+        error: String(err),
+      });
+    }
+    // A provider that declares no transcripts has no history to show, and that
+    // is a STATUS rather than a refusal — the picker says "nothing to list here"
+    // instead of looking broken.
+    if (!projectsRoot) {
+      return { status: 'unknown' as const, reason: 'this provider does not keep transcripts' };
+    }
+    await Promise.resolve();
+    try {
+      return listHistory(
+        // `isFinite`, not `typeof === 'number'`: `NaN` survives the typeof check,
+        // and `Math.min(NaN, …)` is `NaN`, and `slice(0, NaN)` is `[]` — so a
+        // malformed limit would render as "no previous conversations" rather
+        // than as a clamped list. Not reachable from our own renderer; it is
+        // exactly the Phase-4 caller the broker exists to be strict about.
+        { scope, folder, ...(Number.isFinite(r.limit) ? { limit: r.limit } : {}) },
+        {
+          projectsRoot,
+          readTitle: caps?.titles ? (line) => caps.titles!.titleFrom(line) : undefined,
+          // Exactly `sessions:create`'s own expression, ceded ids included
+          // (#539): a conversation another card holds must be marked here for
+          // the same reason the repair sweep may not adopt one — plain
+          // `--resume` appends, so two cards in one conversation write one file.
+          claimed: () =>
+            deps.persist
+              .list()
+              .flatMap((s) => [...resumeCandidates(s), ...(s.cededNativeIds ?? [])]),
+        }
+      );
+    } catch (err) {
+      // P6: a scan that threw must not reject the renderer's promise. The picker
+      // shows the reason and the user can still start a new session.
+      log.warn('transcripts:history failed', { scope, folder, error: String(err) });
+      return { status: 'unknown' as const, reason: String(err) };
     }
   });
 
