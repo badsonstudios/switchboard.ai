@@ -3,7 +3,7 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🚢 RELEASE CUT — 2026-09-16: **v0.8.90** — session history, and the `@`-mention pair
+> # 🚢 RELEASED — 2026-09-16: **v0.8.90** — session history, and the `@`-mention pair
 >
 > **Owner asked for the cut and chose the number**: `0.8.90`, not `0.8.81`. The
 > batch reads bigger than an ordinary patch — session history is a whole new
@@ -23,13 +23,29 @@
 > send), #797 (`@`-session autocomplete), plus everything else that had been
 > sitting in the section since v0.8.8.
 >
-> **How the cut works, and where it can still fail:** `package.json`,
-> `CHANGELOG.md` and `package-lock.json` move in one commit, through a PR like
-> everything else. The **tag `v0.8.90` is pushed from `main` after that merges**,
-> and pushing the tag is what triggers the Release workflow — build, package,
-> checksum, publish. So a merged release commit is NOT a release.
-> **`gh release list` is the authority**, and until it shows `v0.8.90` the users
-> of this repo are still on v0.8.8.
+> **PUBLISHED and verified, 2026-09-16 16:20:40Z.** `gh release list` shows
+> **v0.8.90 · Latest** — not a draft, not a prerelease — carrying
+> `switchboard-Setup-0.8.90.exe` (97 MB) and its `.sha256` sidecar, which is what
+> the in-app updater verifies before it runs an installer. Release workflow run
+> `35120379034` concluded **success**; the tag `v0.8.90` points at `bab6444`,
+> identical to `main` and to the commit carrying `package.json` 0.8.90, which is
+> the equality the workflow gates on.
+>
+> **How it works, and where it can still fail:** `package.json`, `CHANGELOG.md`
+> and `package-lock.json` move in one commit, through a PR like everything else
+> (#842). The **tag is pushed from `main` after that merges**, and pushing the tag
+> is what triggers the workflow — build, package, checksum, publish. So a merged
+> release commit is NOT a release, and **`gh release list` is the authority**
+> rather than a green workflow: `gh run watch --exit-status` was observed
+> returning **0 on a CANCELLED run** during this cut, because piping it through
+> `tail` masks the exit status. Judge a run by its `conclusion` field.
+>
+> **The cut was not clean, and both hiccups are worth knowing.** A concurrent
+> session merged #841 to `main` mid-flight, which put the release PR `BEHIND`
+> under strict branch protection — rebased onto it (no conflict; it touched only
+> the dogfood tracker) and force-pushed the release branch, never `main`. And the
+> PR check rollup lagged badly enough to read as "CI never triggered", which
+> prompted one unnecessary empty commit before the run surfaced on its own.
 
 > # ✅ MERGED — 2026-09-16: **#836** — session history: open a previous conversation from the session card
 >
@@ -447,15 +463,23 @@
 > Possibly **#722**'s cross-session activity report. **Confirm which with Dan
 > when E11 empties, then `/pm` shapes and files it.**
 >
-> ## ⏸ OPEN QUESTION FOR DAN AT RELEASE CUT (deferred by Dan 2026-09-15, still open)
-> Dan chose to keep developing before cutting. `v0.8.8` is still latest; 15
-> changes are now merged and unreleased. **The version number is his call:**
-> `0.8.90` (recommended — session read/messaging is a new capability),
-> `0.8.81`, or `0.9.0` (not yet — E11 isn't done). Also offered, still
-> standing: fix **#818** before the cut (it is open; see Next up), or Dan clears
-> his stale maximize by hand with palette "Layout: Grid". At the cut: one stale
-> "lands in 0.8.9" remains in `docs/plans/dogfood-testing.md` (the #772 row).
-> **Do NOT cut unless asked.**
+> ## ✅ ANSWERED 2026-09-16 — the question this block deferred is closed
+> **Dan asked for the cut, and chose `0.8.90`** (over `0.8.81` and `0.9.0`) — the
+> recommendation this block recorded, on the reasoning it recorded. Shipped as
+> **v0.8.90**, published 16:20:40Z; see the release entry at the top of this file.
+>
+> Three loose ends this block listed, and what actually became of them:
+> - **#818 was NOT fixed before the cut.** It remains OPEN, and the release went
+>   out without it. That was not a decision anyone took — the cut was asked for
+>   directly and this block was found afterwards, while correcting the tracker.
+>   Still open, still in the follow-up list; the hand-clear workaround (palette
+>   "Layout: Grid") is unchanged.
+> - **The stale "lands in 0.8.9" in the #772 tracker row is fixed**, along with
+>   fifteen others: every row saying NOT RELEASED / "do not run until 0.8.81 is
+>   cut" now names v0.8.90 and says it is ready to run. Two rows were telling Dan
+>   NOT to test things he could already test, which is worse than a wrong number
+>   in the file he reads to decide what to test.
+> - **"Do NOT cut unless asked" held.** Nothing was cut until he asked.
 >
 > **THE PREMISE WAS INVERTED — CHECKED AGAINST THE REPO BEFORE THE CORPUS.** The
 > 600× under-count was #787's PROBE, which read the parent file only. The watcher
