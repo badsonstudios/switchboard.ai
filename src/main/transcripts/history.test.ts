@@ -111,6 +111,35 @@ describe('listHistory — one folder', () => {
     expect(rows[0].description).toBe('the real question');
   });
 
+  it('skips a leading slash command and describes the conversation by the real question (#846)', () => {
+    // The owner's report: rows read `<command-name>/clear</command-name>…`
+    // instead of prose. Measured at 5 of the 40 newest transcripts and 39 of the
+    // newest 400 — method stated in `shared/command-invocation.ts`, because an
+    // earlier pass quoted a figure that did not reproduce.
+    seed('C:/work/app', 'conv-cmd', [
+      ...preamble,
+      userLine('C:/work/app', '<command-name>/clear</command-name>\n  <command-message>clear</command-message>'),
+      userLine('C:/work/app', 'what did we decide about the cache'),
+    ]);
+    const rows = ok(listHistory({ scope: 'folder', folder: 'C:/work/app' }, deps())).rows;
+    expect(rows[0]).toMatchObject({
+      description: 'what did we decide about the cache',
+      descriptionFrom: 'prompt',
+    });
+  });
+
+  it('describes a commands-ONLY conversation by the command, never by markup (#846)', () => {
+    // A row has to say something, and `/clear` beats both blank and XML. The
+    // context package deliberately does NOT do this — see promptText.
+    seed('C:/work/app', 'conv-only', [
+      ...preamble,
+      userLine('C:/work/app', '<command-name>/next-item</command-name>\n<command-args>818</command-args>'),
+    ]);
+    const rows = ok(listHistory({ scope: 'folder', folder: 'C:/work/app' }, deps())).rows;
+    expect(rows[0]).toMatchObject({ description: '/next-item 818', descriptionFrom: 'prompt' });
+    expect(rows[0].description).not.toContain('<command-name>');
+  });
+
   it("says 'none' rather than inventing a description", () => {
     seed('C:/work/app', 'conv-d', [...preamble, { type: 'last-prompt' }]);
     const rows = ok(listHistory({ scope: 'folder', folder: 'C:/work/app' }, deps())).rows;

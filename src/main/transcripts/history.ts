@@ -50,6 +50,7 @@ import {
   ConversationRow,
   MAX_HISTORY_ROWS,
 } from '../../shared/session-history';
+import { commandInvocation } from '../../shared/command-invocation';
 import { blocksFrom } from '../sessions/transcript-blocks';
 import { PACKAGE_CAPS, promptText } from '../sessions/context-package';
 // The head budget belongs to the question "where does the opening prompt live",
@@ -320,11 +321,28 @@ function describe(
     // turn as words. A second first-prompt rule here would drift from the one
     // `SessionQueries` already uses.
     const first = safely(() => {
+      // ONE pass, two answers. Prose wins: `promptText` skips slash-command
+      // invocations (#846), so a conversation that opens with `/clear` and then
+      // asks a real question is described by the question — the whole point.
+      //
+      // The command is remembered as we go rather than found by a second walk
+      // over the same window: a second `blocksFrom` would re-parse 128 KB for
+      // the 8-in-200 no-title rows, and two loops over one window is how the
+      // two rules would eventually drift apart.
+      let command: string | undefined;
       for (const block of blocksFrom(head.entries, PACKAGE_CAPS)) {
         const text = promptText(block);
         if (text !== undefined) return text;
+        // NOTHING BUT COMMANDS is a real conversation shape, and this is the
+        // difference between a useful row and a blank one. A row must say
+        // something, so it says what the user actually ran — `/clear`,
+        // `/next-item 818`. The context package deliberately does NOT do this:
+        // a session goal of "/clear" is worse than admitting there is none.
+        if (!command && block.kind === 'user' && !block.sidechain) {
+          command = commandInvocation(block.text ?? '') ?? undefined;
+        }
       }
-      return undefined;
+      return command;
     }, undefined);
     if (first) {
       description = first;
