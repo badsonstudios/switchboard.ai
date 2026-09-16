@@ -3,36 +3,83 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🚧 IN PROGRESS — 2026-09-16: **#818** — a long-held maximize restores a days-old layout when undone
+> # ✅ MERGED — 2026-09-16: **#818** — a long-held maximize no longer replays a days-old layout
 >
-> **Started 2026-09-16** on `feature/818-stale-maximize`, off `928fd73`.
+> **PR #844, squashed to `a3a3809`.** Issue CLOSED — by `Fixes #818`, written
+> deliberately, in contrast to the accident that closed it the first time (PR
+> #819 said "Filed, not fixed: #818" and GitHub's parser matched `fixed: #818`).
+> ⚠️ **NOT RELEASED** — joins the `0.8.91 — unreleased` section; `gh release
+> list` is the authority (latest tag is **v0.8.90**, cut earlier the same day).
 >
-> **Taken AHEAD of #799 (E11) on purpose, and the reason is the release.**
-> v0.8.90 shipped **#813** an hour earlier, and #813 is precisely what lets a
-> maximize sit for days with the workspace looking completely normal — before it,
-> a held maximize kept folding cards, which was its own bug but also a loud
-> symptom. So the release made this trap *quieter*, not rarer. The owner's laptop
-> is in that state right now (`ui.layoutMode.maximized` on a background tab, a
-> 15-card snapshot), and the gesture that misfires — double-click a header
-> meaning "maximize this" — is one he uses.
+> **Taken ahead of #799 because the release made it worse.** v0.8.90 shipped
+> **#813**, which is exactly what lets a maximize sit for days with the workspace
+> looking normal — before it, a held maximize kept folding cards, which was its
+> own bug but also a loud symptom. The release made this trap *quieter*, not
+> rarer, and the owner's laptop was in that state.
 >
-> **Note the issue was CLOSED BY ACCIDENT once already:** PR #819 wrote "Filed,
-> not fixed: #818" and GitHub's parser matched `fixed: #818`. Reopened by hand.
-> Same trap this session deliberately avoided in its own PR bodies.
+> **What it does.** The gesture reads as an *undo* only while the maximized card
+> is still `expanded` (or popped out); otherwise a double-click is a fresh
+> maximize, which is what the user means. And an undo restores only the part of
+> the snapshot the workspace has not moved on from.
 >
-> **What the code actually does** (read, not assumed): `toggleMaximizeCard` reads
-> any double-click on the maximized card as UNDO, and `plan()` applies the stored
-> snapshot **exactly — beating every exemption**, sparing only a card popped out
-> since. There are just three writers of layout state (take, undo, switch mode),
-> so **nothing invalidates the snapshot when the workspace changes under it**.
+> **Decisions worth finding again:**
+> - **The rule compares END STATES, so it never asks WHO moved a card.** That is
+>   the whole reason it works: E9-05 reveals cards on attention and E9-06
+>   auto-collapses them constantly, so any rule keyed on "did this card move"
+>   would fire on machine-driven churn. **The issue's option 2 was rejected for
+>   this** — it needs a user-vs-machine distinction, and the only one available
+>   (`setCardLadder`'s `why`) is a free-form LOG STRING, so promoting it to a
+>   control input makes a typo a silent behaviour change and adds a fourth writer
+>   of layout state.
+> - **The acceptance rule is DERIVED from what a maximize produces**, not
+>   invented: the maximized card accepts `expanded`; a card whose snapshot rung
+>   was not `expanded` accepts exactly that rung; one whose snapshot rung WAS
+>   `expanded` accepts `expanded` or `collapsed`. That third branch looks vacuous
+>   and is the safety: when the rungs already agree the entry is a no-op, while
+>   the damage came entirely from cards snapshotted `collapsed`/`tabbed`/`hidden`
+>   and re-expanded since. It is also what keeps the documented "a maximize is not
+>   a trap" behaviour working.
+> - **Both narrowings are MONOTONE** — they can only make the undo do less, never
+>   more. That is what makes them fail-open by construction.
+> - **`plan()` now treats a supplied restore as the WHOLE plan**, and this is
+>   required rather than tidy: grid's switch wants every card `expanded`, so
+>   falling through would re-promote exactly the cards the filter just spared.
+> - ⚠️ **The inherited-snapshot trap.** `withMaximized` keeps the ORIGINAL
+>   snapshot while one is held, so a fresh maximize taken over a *stale* one must
+>   be based on `withoutMaximized(cur)` — otherwise the days-old snapshot is
+>   inherited and the whole fix is silently defeated one gesture later. Pinned by
+>   its own test.
+> - **§5.8 still holds:** "restores the prior layout on repeat" means *wherever it
+>   is still the prior layout*. DESIGN carries an inline amendment saying so.
 >
-> ⚠️ **The issue's option 2 is more dangerous than it reads** and should not be
-> taken at face value: "drop the maximize when its card leaves `expanded` by any
-> other path" would fire on MACHINE-driven rung changes, which happen constantly
-> — E9-05 reveals a card on attention, E9-06 auto-collapses. Dropping the user's
-> maximize because the presentation policy moved something is a new bug. The real
-> axis is **staleness** — does the workspace still resemble what this maximize
-> produced — not "did anything move".
+> **Known limitation, documented rather than hidden:** a card you collapsed BY
+> HAND while a maximize was held is still re-expanded by the undo. End-state
+> comparison cannot tell your collapse from the maximize's, and the permissiveness
+> that causes it is the same one that keeps "not a trap" working. The manual says
+> this in the user's words.
+>
+> **Review: no blockers, five should-fixes and three nits, all addressed or
+> recorded.** The sharpest was **a regression this diff introduced**: a popped-out
+> card sitting at `tabbed` read as not-standing, so the gesture became a fresh
+> maximize whose up-push runs BEFORE the popped-out exemption — it could have
+> dragged the panel out of the OS window the user placed. Also: the docs
+> overstated the rule (fixed), `plan()`'s comment overstated the reactive pass (a
+> queued `react` IS dropped if a sweep is in flight — softened, and self-healing),
+> and the empty-restore map is load-bearing on `{}` being TRUTHY — now commented
+> at the seam and pinned by a test, because tightening it to `.length > 0` would
+> resurrect this exact bug. Recorded without a code change: the fix couples "can I
+> undo?" to "did the take's sweep land?"; fail-open holds and recovery exists.
+>
+> **Verified:** typecheck, eslint, the full unit suite (295 files, **8,200+**),
+> layout-mode **39 → 53** cases, the SessionGrid family at **212**, the full
+> Playwright suite (370 collected), and the three maximize-relevant specs re-run
+> against a bundle REBUILT with the review fixes — the first full e2e had started
+> before them and was therefore stale.
+>
+> ⚠️ **The merge failed once**, on a GitHub GraphQL server error, and the
+> post-merge assert caught it: the PR was still OPEN with `mergedAt: null`. The
+> standing rule — never chain branch deletion to an unverified merge — is exactly
+> what stopped that becoming the #819-class incident again. Retried and merged.
 
 > # 🚢 RELEASED — 2026-09-16: **v0.8.90** — session history, and the `@`-mention pair
 >
