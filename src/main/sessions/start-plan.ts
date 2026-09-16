@@ -43,6 +43,25 @@ export interface StartPlanInput {
   folder: string;
   prior?: PriorCard;
   /**
+   * A conversation the USER picked out of the history list (P2-E20-01, §5.33).
+   *
+   * Every other resume on this path is inferred — from the card's own head id,
+   * its ancestors, or the repair sweep's guess at what it lost. This one was
+   * chosen, which changes two things.
+   *
+   * It is honoured ONLY for a card with no conversation of its own. The picker
+   * always opens a NEW card (§5.33: "the card you clicked from is untouched"),
+   * so a card that already has a chain is not a pick target — and refusing it
+   * here means no future caller can turn a pick into a way to move an existing
+   * card into somebody else's conversation, whatever the renderer sends.
+   *
+   * It is still asked about through `resume.canResume`, like every other
+   * candidate: a picked id is untrusted renderer input and a stale one makes
+   * the CLI exit at spawn. When the provider says no, this does NOT fall back
+   * to a fresh session — see `requestedUnavailable`.
+   */
+  requestedConversationId?: string;
+  /**
    * Every native id any card in the workspace points at, head or ancestor
    * (#484). Only read when a card's whole chain came up empty and the provider
    * offers to look for the conversation it lost — the list is what stops that
@@ -93,7 +112,23 @@ export interface StartPlan {
    * need to be different lines in the log. Undefined exactly when
    * `resumeSessionId` is.
    */
-  resumedVia?: 'stored' | 'lineage' | 'adopted';
+  resumedVia?: 'stored' | 'lineage' | 'adopted' | 'picked';
+  /**
+   * The user picked a conversation and it could not be resumed (P2-E20-01).
+   *
+   * Set exactly when `requestedConversationId` was given and did not resolve —
+   * the transcript is gone, the directory would not read, or the provider
+   * declares no `resume` capability at all.
+   *
+   * IT EXISTS SO THE CALLER CAN REFUSE, and that is the one place this feature
+   * deliberately does not fail open. Everywhere else a declined resume starts a
+   * fresh session, which is right when nobody asked for a particular one. Here
+   * somebody did: opening an empty new conversation in that folder instead
+   * looks exactly like the app wiped their history, and it would do it silently.
+   * P6 is about OUR breakage not blocking a session — the ordinary new-session
+   * path is untouched and one click away.
+   */
+  requestedUnavailable?: boolean;
   /** watch transcripts under this root; undefined = do not watch at all */
   transcriptsRoot?: string;
   /**
@@ -252,11 +287,50 @@ export function planSessionStart(input: StartPlanInput, host: HookSettingsHost):
   const candidates = resumeCandidates(input.prior);
   let resumeSessionId: string | undefined;
   let resumedVia: StartPlan['resumedVia'];
+  let requestedUnavailable = false;
   // A capability that throws is degraded ONCE and then not asked again, the
   // same ruling `titles` gets below: `safely` reports on every call, and a
   // provider whose check throws would otherwise post one warning per ancestor
   // for a fault the reader already knows about.
   let resumeBroken = false;
+  // ── A CONVERSATION THE USER PICKED (P2-E20-01, §5.33) ────────────────────
+  //
+  // Asked FIRST and asked ONLY for a card with nothing of its own. The picker
+  // opens a new card every time, so `candidates.length > 0` means this is not a
+  // pick target at all — an existing card keeps the conversation it has, and no
+  // renderer message can move it into somebody else's.
+  //
+  // Through the same `canResume` as every other candidate: a picked id crossed
+  // an IPC boundary, and a stale one makes the CLI exit at spawn. What differs
+  // is the FAILURE — it is recorded rather than swallowed, because the caller
+  // must refuse the start instead of quietly opening a fresh conversation the
+  // user did not ask for (see `requestedUnavailable`).
+  const picked = candidates.length === 0 ? input.requestedConversationId : undefined;
+  if (picked) {
+    if (!caps?.resume) {
+      // A provider that cannot resume cannot honour a pick. Saying so is the
+      // whole point: falling through would start an empty session in the right
+      // folder, which is the one outcome that looks like data loss.
+      requestedUnavailable = true;
+    } else {
+      const before = warnings.length;
+      const yes = safely('resume.canResume', () =>
+        caps.resume!.canResume({
+          projectsRoot: transcriptsRoot ?? '',
+          folder: input.folder,
+          nativeSessionId: picked,
+        })
+      );
+      if (yes === undefined && warnings.length > before) resumeBroken = true;
+      if (yes) {
+        resumeSessionId = picked;
+        resumedVia = 'picked';
+      } else {
+        requestedUnavailable = true;
+      }
+    }
+  }
+
   // A provider that declares no `resume` at all is asked nothing — walking a
   // ten-deep chain to call `undefined?.canResume` ten times says the same thing
   // slower, and leaves a reader wondering which of the two absences the loop is
@@ -368,6 +442,7 @@ export function planSessionStart(input: StartPlanInput, host: HookSettingsHost):
     providerId,
     resumeSessionId,
     resumedVia,
+    requestedUnavailable,
     transcriptsRoot,
     readTitle,
     buildSettings: caps?.hooks

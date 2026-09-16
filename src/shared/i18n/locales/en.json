@@ -252,6 +252,27 @@
     "checkedIcon": "☑",
     "uncheckedIcon": "☐"
   },
+  "sessionHistory": {
+    "open": "Previous conversations",
+    "openIcon": "🕘",
+    "title": "Previous conversations",
+    "placeholder": "Search previous conversations…",
+    "loading": "Looking…",
+    "empty": "No previous conversations in this folder.",
+    "emptyAll": "No previous conversations on this machine.",
+    "noMatch": "Nothing matches \"{query}\".",
+    "scopeFolder": "This folder",
+    "scopeAll": "All projects",
+    "scopeAllHint": "Show conversations from every project on this machine",
+    "noDescription": "(no title or opening prompt)",
+    "claimed": "already open",
+    "claimedHint": "A session card already has this conversation open. Opening it twice would write to one conversation from two places.",
+    "unscannable": "These conversations can't be listed: {reason}",
+    "truncated": "Showing the {count} most recent. Some projects were skipped.",
+    "lastActive": "Last active {when}",
+    "openFailed": "That conversation couldn't be opened. It may have been deleted, or its folder may be gone.",
+    "newConversation": "Start a new conversation instead"
+  },
   "sounds": {
     "auto": "Automatic",
     "autoNow": "Automatic ({name})",

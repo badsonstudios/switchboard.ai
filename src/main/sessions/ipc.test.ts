@@ -740,6 +740,162 @@ function cardHelpers(
   };
 }
 
+describe('session history (P2-E20-01, §5.33)', () => {
+  let folder: string;
+  let projects: string;
+  tempDirEach('sb-hist-ipc-', (d) => (folder = d));
+  beforeEach(() => {
+    projects = tempDir('sb-hist-root-');
+  });
+
+  /** A transcript on disk, in the directory the provider's layout puts it. */
+  function seedConversation(nativeId: string, cwd: string, title = 'A titled conversation'): void {
+    const dir = path.join(projects, slugForCwd(cwd).toLowerCase());
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, `${nativeId}.jsonl`),
+      [
+        JSON.stringify({ type: 'queue-operation' }),
+        JSON.stringify({
+          type: 'user',
+          isSidechain: false,
+          cwd,
+          message: { role: 'user', content: 'the opening ask' },
+          uuid: 'u1',
+        }),
+        JSON.stringify({ type: 'ai-title', aiTitle: title, sessionId: nativeId }),
+      ].join('\n') + '\n'
+    );
+  }
+
+  /** The Claude-shaped adapter, pointed at this test's root. */
+  const caps = (): ProviderCapabilities => ({
+    transcripts: { projectsRoot: () => projects },
+    titles: { titleFrom: readAiTitle },
+    resume: {
+      canResume: ({ projectsRoot, folder: f, nativeSessionId }) =>
+        conversationExists(projectsRoot, f, nativeSessionId),
+    },
+  });
+
+  describe('transcripts:history', () => {
+    it("lists a folder's conversations, described", async () => {
+      seedConversation('conv-a', folder);
+      const h = harness(caps(), folder);
+      const a = (await h.call('transcripts:history', { scope: 'folder', folder })) as {
+        status: string;
+        rows: { nativeId: string; description: string; descriptionFrom: string }[];
+      };
+      expect(a.status).toBe('ok');
+      expect(a.rows).toEqual([
+        expect.objectContaining({
+          nativeId: 'conv-a',
+          description: 'A titled conversation',
+          descriptionFrom: 'title',
+        }),
+      ]);
+    });
+
+    it('marks a conversation another card already holds', async () => {
+      // The picker greys it out; this is what tells it to. The refusal in
+      // `sessions:create` is the actual guard — see below.
+      seedConversation('taken', folder);
+      const h = harness(caps(), folder, {
+        otherCards: [priorCard({ folder, id: 'card-2', nativeSessionId: 'taken' })],
+      });
+      const a = (await h.call('transcripts:history', { scope: 'folder', folder })) as {
+        rows: { claimed: boolean }[];
+      };
+      expect(a.rows[0].claimed).toBe(true);
+    });
+
+    it('refuses the folder scope without a folder rather than listing the machine', async () => {
+      const h = harness(caps(), folder);
+      expect(await h.call('transcripts:history', { scope: 'folder' })).toBeNull();
+    });
+
+    it('a provider that keeps no transcripts has nothing to list, and that is not a refusal', async () => {
+      // A status the picker can explain, rather than a `null` that looks broken.
+      const h = harness({}, folder);
+      const a = (await h.call('transcripts:history', { scope: 'folder', folder })) as {
+        status: string;
+      };
+      expect(a.status).toBe('unknown');
+    });
+  });
+
+  describe('sessions:create with a picked conversation', () => {
+    it('resumes the conversation the user chose', () => {
+      seedConversation('picked-1', folder);
+      const h = harness(caps(), folder);
+      h.call('sessions:create', {
+        cardId: 'card-1',
+        folder,
+        title: 't',
+        resumeConversationId: 'picked-1',
+      });
+      expect(h.created[0].resumeSessionId).toBe('picked-1');
+    });
+
+    it('refuses an id that is not shaped like a conversation, and spawns nothing', () => {
+      // §5.29 at the boundary: the id is interpolated into a path downstream.
+      const h = harness(caps(), folder);
+      expect(
+        h.call('sessions:create', {
+          cardId: 'card-1',
+          folder,
+          title: 't',
+          resumeConversationId: '../../etc/passwd',
+        })
+      ).toBeNull();
+      expect(h.created).toHaveLength(0);
+    });
+
+    it('refuses a conversation that is NOT on disk instead of starting a fresh one', () => {
+      // The one deliberate non-fail-open: an empty new session in the right
+      // folder is indistinguishable from the app having wiped the conversation.
+      const h = harness(caps(), folder);
+      expect(
+        h.call('sessions:create', {
+          cardId: 'card-1',
+          folder,
+          title: 't',
+          resumeConversationId: 'never-existed',
+        })
+      ).toBeNull();
+      expect(h.created).toHaveLength(0);
+    });
+
+    it('refuses a conversation another card already holds', () => {
+      // Plain `--resume` APPENDS rather than forking (measured 2026-08-15), so
+      // two cards here means two cards writing one transcript. #539 fenced the
+      // repair sweep against this state; the picker is a second door into it.
+      seedConversation('taken', folder);
+      const h = harness(caps(), folder, {
+        otherCards: [priorCard({ folder, id: 'card-2', nativeSessionId: 'taken' })],
+      });
+      expect(
+        h.call('sessions:create', {
+          cardId: 'card-1',
+          folder,
+          title: 't',
+          resumeConversationId: 'taken',
+        })
+      ).toBeNull();
+      expect(h.created).toHaveLength(0);
+    });
+
+    it('leaves an ordinary create exactly as it was', () => {
+      // The whole feature is additive: a card that names no conversation takes
+      // the pre-E20 path, byte for byte.
+      const h = harness(caps(), folder);
+      h.call('sessions:create', { cardId: 'card-1', folder, title: 't' });
+      expect(h.created).toHaveLength(1);
+      expect(h.created[0].resumeSessionId).toBeUndefined();
+    });
+  });
+});
+
 describe('registerSessionIpc — provider capabilities (P2-E15-01)', () => {
   let folder: string;
   tempDirEach('sb-ipc-', (d) => (folder = d));

@@ -98,6 +98,19 @@ on the floor, and say so in your PR.
 
 ### Added
 
+- **Open a conversation you had before.** Every session card now has a 🕘 button
+  that lists the previous conversations in that folder, newest first, each with
+  a short description — the title Claude gave it, or the first thing you asked.
+  Start typing to narrow the list, or switch it to **All projects** to see
+  conversations from everywhere on your machine, with the folder shown beside
+  each one. Picking one opens it in a **new** card, in its own folder; the
+  session you clicked from is left exactly as it was. The same list is offered
+  when you start a session with **+ session** and the folder you choose already
+  has conversations in it — with "Start a new conversation instead" there to
+  wave it away. A conversation that another card already has open is shown but
+  greyed out, because two cards in one conversation would write over each
+  other, and one that can't be opened says why instead of doing nothing.
+
 - **Mention another session by typing `@`.** In a session's message box, type
   `@` and a list of your other open sessions appears — each with its name,
   folder and colour, and one whose process has ended marked `exited`. Keep

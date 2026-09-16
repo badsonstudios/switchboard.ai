@@ -3,7 +3,10 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔭 NEXT — 2026-09-16: **session history** — open a previous conversation from the session card (#836); E11 pauses after #798
+> # 🚧 IN PROGRESS — 2026-09-16: **#836** — session history: open a previous conversation from the session card; E11 pauses after #798
+>
+> **Started 2026-09-16** on `feature/836-session-history`, off `590db6e` (the
+> plan PR #837, merged). Plan posted to the issue.
 >
 > **Owner pivot, 2026-09-16.** E11 stops here and is resumed later. The next work
 > is SESSION HISTORY: the Claude Code "history button" applied to switchboard — a

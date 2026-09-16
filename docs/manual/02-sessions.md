@@ -18,6 +18,46 @@ Three ways, all equivalent:
 If you open a second session in a folder you already have open, switchboard
 adds a number to the name so you can tell them apart.
 
+## Opening a conversation you had before
+
+Every conversation you have ever had with Claude Code is saved on your machine,
+including the ones you had in a terminal without switchboard. The **🕘** button
+in a session card's header lists the ones belonging to that session's folder,
+newest first.
+
+1. Click **🕘** in the card header. A list opens showing each past
+   conversation with a short description — the title Claude gave it, or, when it
+   never gave it one, the first thing you asked, in quotes — and when you last
+   worked on it.
+2. Start typing to narrow the list down. It searches the descriptions.
+3. Click the one you want, or move to it with the arrow keys and press Enter.
+
+It opens in a **new** card, in its own folder. The session you clicked from
+carries on untouched — going back to an old conversation never costs you the one
+you are in.
+
+To look further afield, click **This folder** at the top of the list and it
+becomes **All projects**: every conversation on your machine, with the folder
+each one belongs to shown beside it. Picking one still opens it in its own
+folder, wherever that is.
+
+You are offered the same list when you start a session with **+ session**, right
+after you pick a folder — but only when that folder has conversations in it
+already. **Start a new conversation instead** at the bottom skips it, and so
+does `Esc`.
+
+Two things the list will tell you rather than hide:
+
+- **"already open"** beside a greyed-out conversation means a card in your
+  workspace already has it. You cannot open it twice, because both cards would
+  write into the same conversation and tangle it. Go to the card that has it.
+- If a folder's conversations **can't be listed** — the folder has been moved,
+  or it holds more conversations than switchboard will scan at once — the list
+  says so and why, instead of pretending the folder is empty.
+
+Renaming a conversation, filtering by branch, and reading one without opening it
+are not here yet.
+
 Every new session starts in [**Direct mode**](12-direct-mode.md): switchboard
 talks to Claude Code without a terminal, so permission requests are answered
 here in the card instead of escaping into a terminal prompt. The trade is that

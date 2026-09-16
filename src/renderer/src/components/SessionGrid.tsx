@@ -25,6 +25,7 @@ import { ContributionBoundary } from '../extensibility/boundary';
 import { IdentityChip, identityBadgeStyle } from './IdentityChip';
 import { DiffPane } from './DiffPane';
 import { DocumentViewer } from './DocumentViewer';
+import { SessionHistoryDialog } from './SessionHistoryDialog';
 import { baseName } from '../lib/document-kind';
 import {
   closableDocuments,
@@ -119,6 +120,16 @@ export interface CardParams {
   title?: string;
   /** persistent-group membership at creation (E12); undefined = ungrouped */
   groupId?: string;
+  /**
+   * A past conversation this card was opened ON (P2-E20-01, §5.33).
+   *
+   * Set only by the history picker, and read exactly once — by the lazy-spawn
+   * effect, on the first `sessions:create` this card makes. It is params rather
+   * than state because dockview freezes params into the panel, which is what
+   * makes the resume survive the card being hidden and revealed before it ever
+   * becomes visible enough to spawn.
+   */
+  resumeConversationId?: string;
 }
 
 interface Live {
@@ -154,7 +165,23 @@ interface Live {
  */
 export type CardEnded =
   | { kind: 'exited'; code: number; crashed: boolean }
-  | { kind: 'never-started' };
+  | {
+      kind: 'never-started';
+      /**
+       * This card was opened ON a conversation picked out of history, and that
+       * conversation could not be opened (P2-E20-01, §5.33).
+       *
+       * It exists because the generic not-started copy NAMES THE WRONG CAUSE
+       * here — "the folder may have been renamed, deleted, or be on a drive
+       * that isn't connected" — and because §5.33 requires that an entry which
+       * cannot be resumed "says so and why, and is never a dead click". Main
+       * deliberately refuses this start rather than opening a fresh session
+       * (see `start-plan.ts`'s `requestedUnavailable`), and that refusal is only
+       * defensible if the user is told. Without this the card offered neither
+       * the conversation, nor a session, nor a reason.
+       */
+      pickRefused?: boolean;
+    };
 
 /**
  * The i18n keys the ended overlay renders, for one `CardEnded` (#355).
@@ -175,7 +202,10 @@ export function endedCopy(ended: CardEnded): {
   if (ended.kind === 'never-started') {
     return {
       heading: 'grid.sessionNotStarted',
-      detail: 'grid.notStartedHint',
+      // The picked-conversation refusal gets its OWN sentence: the generic hint
+      // below explains a folder that moved, which is not what happened and
+      // sends the reader looking in the wrong place (P2-E20-01, §5.33).
+      detail: ended.pickRefused ? 'sessionHistory.openFailed' : 'grid.notStartedHint',
       action: 'grid.tryAgain',
     };
   }
@@ -386,6 +416,11 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // selection again.
   const [tabFocus, setTabFocus] = React.useState<string | null>(null);
   const [status, setStatus] = React.useState<SessionStatus>('starting');
+  // The session-history picker, open over THIS card (P2-E20-01, §5.33).
+  // Component-local because it is a gesture rather than presentation state:
+  // nothing outside this card opens it, and a card that unmounts while it is up
+  // has taken the surface it was anchored to with it.
+  const [historyOpen, setHistoryOpen] = React.useState(false);
   const cardId = props.params?.cardId;
   // PRESENTATION STATE LIVES IN THE STORE (P2-E15-08, AR-P1-5), not here.
   //
@@ -812,7 +847,15 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     // rename that landed before the start failed is the one that shows.
     const startFailed = (why: unknown): void => {
       console.warn(`[sessions] session did not start for ${cardId} — see the app log`, why ?? '');
-      setEnded({ kind: 'never-started' });
+      // A card opened FROM the history picker says why in its own words
+      // (P2-E20-01). Every reachable failure on that path is about the
+      // conversation — main refuses the create when it cannot be resumed or
+      // another card holds it — and the sentence covers a missing folder too,
+      // so it is more accurate than the generic hint even for the rarer causes.
+      setEnded({
+        kind: 'never-started',
+        ...(props.params?.resumeConversationId ? { pickRefused: true } : {}),
+      });
       if (cardId) {
         sessionStore.markCardNotStarted({
           id: cardId,
@@ -828,7 +871,17 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       }
     };
     void window.switchboard.sessions
-      .create({ cardId, folder, title: props.api.title ?? folder, autonomy, groupId: props.params?.groupId })
+      .create({
+        cardId,
+        folder,
+        title: props.api.title ?? folder,
+        autonomy,
+        groupId: props.params?.groupId,
+        // The conversation this card was opened ON, when it came from the
+        // history picker (P2-E20-01). Absent for every ordinary card, which is
+        // the byte-identical pre-E20 start.
+        resumeConversationId: props.params?.resumeConversationId,
+      })
       .then((answer) => {
         // #440: a refused `sessions:create` resolves a truthy brand, so
         // `if (!record)` would sail past `startFailed` and then throw on
@@ -1627,6 +1680,43 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 thing the two bindings and the palette also do — the card gives
                 its slot back and becomes a row in the collapsed strip, still
                 running, one click from coming straight back here. */}
+            {/* §5.33's entry point on the card: this folder's past
+                conversations. Picking one opens a NEW card resumed into it —
+                this card is never re-pointed, because "go back to a previous
+                session" must not cost the one you are in.
+
+                `data-no-maximize` for the reason the task label carries it: the
+                header's double-click maximizes, and a button that opens a modal
+                must not also be a way to swallow the layout. */}
+            <button
+              data-testid="card-history"
+              data-no-maximize
+              onClick={() => setHistoryOpen(true)}
+              title={t('sessionHistory.open')}
+              aria-label={t('sessionHistory.open')}
+              style={cheadBtn}
+            >
+              {t('sessionHistory.openIcon')}
+            </button>
+            {historyOpen && folder && (
+              <SessionHistoryDialog
+                open
+                folder={folder}
+                onClose={() => setHistoryOpen(false)}
+                onPick={(pick) => {
+                  setHistoryOpen(false);
+                  // A NEW card, in the conversation's OWN folder — which is not
+                  // necessarily this card's, once the list is widened to every
+                  // project. Placed like the card ＋ places one: into this
+                  // window when the card is popped out, and by the grid's own
+                  // rules when it is not.
+                  void addSessionCardTo(props.containerApi, pick.folder, {
+                    into: poppedOut ? props.api.group : null,
+                    resumeConversationId: pick.nativeId,
+                  });
+                }}
+              />
+            )}
             <button
               data-testid="card-collapse"
               onClick={() => cardId && setCardLadder(props.containerApi, cardId, 'collapsed')}
@@ -2728,10 +2818,15 @@ function focusedPopoutGroup(api: DockviewApi): DockviewApi['groups'][number] | n
 async function addSessionCardTo(
   api: DockviewApi | null,
   folder: string,
-  opts: { groupId?: string; into?: DockviewApi['groups'][number] | null } = {}
+  opts: {
+    groupId?: string;
+    into?: DockviewApi['groups'][number] | null;
+    /** open the new card ON a conversation picked from history (P2-E20-01) */
+    resumeConversationId?: string;
+  } = {}
 ): Promise<void> {
   if (!api) return;
-  const { groupId, into } = opts;
+  const { groupId, into, resumeConversationId } = opts;
   const title = folder.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? folder;
   const cardId = crypto.randomUUID();
   // A persistent-group member clusters with its siblings (E12-02): reuse the
@@ -2763,12 +2858,20 @@ async function addSessionCardTo(
   // not a pure question: it can un-hide a group or mint one. Asked first (as
   // the `find(...) ?? addGroup()` it replaces was) a sibling win would leave
   // that brand new group behind in the grid, empty, for ever.
-  const refGroup = into ?? sibling ?? sessionCardHome(api);
+  // A NAMED destination still has to be ALIVE. `newSessionIn` checks this before
+  // it calls us, but the history picker (§5.33) can sit open for as long as the
+  // user reads it, and a command or a layout mode driven from the main window
+  // can dock the card back and dispose the group underneath it meanwhile. The
+  // check belongs here, where every caller inherits it, rather than in the one
+  // that happened to think of it first — handing `addPanel` a disposed group is
+  // the corpse `newSessionIn` already refuses to pass.
+  const liveInto = into && api.groups.includes(into) ? into : null;
+  const refGroup = liveInto ?? sibling ?? sessionCardHome(api);
   api.addPanel({
     id: `session-${cardId}`,
     component: 'sessionCard',
     title,
-    params: { cardId, folder, title, groupId } satisfies CardParams,
+    params: { cardId, folder, title, groupId, resumeConversationId } satisfies CardParams,
     // NO `direction` — `within` (the default) is the only target dockview
     // resolves against the reference group itself. Any of the four directions
     // sends it through `getGridLocation(referenceGroup.element)` against the
@@ -2850,7 +2953,22 @@ export async function clusterCardWithGroup(
 async function newSessionIn(
   api: DockviewApi | null,
   into: DockviewApi['groups'][number] | null,
-  onError: (message: string) => void
+  onError: (message: string) => void,
+  /**
+   * §5.33's second entry point: once the folder is known, offer that folder's
+   * past conversations before minting a fresh one.
+   *
+   * Returns true when it took over — the picker is up and will add the card
+   * itself. The folder dialog is a NATIVE modal, so this is the only seam in
+   * this flow where a surface of ours can exist at all.
+   *
+   * Absent (the card header's ＋, and every test that predates E20) means the
+   * old behaviour exactly: pick a folder, add a card.
+   */
+  offerHistory?: (
+    folder: string,
+    into: DockviewApi['groups'][number] | null
+  ) => Promise<boolean>
 ): Promise<void> {
   if (!api) return;
   try {
@@ -2868,6 +2986,11 @@ async function newSessionIn(
     // is not a destination — fall through to the grid's own placement rules
     // rather than handing `addPanel` a corpse.
     const stillOpen = into && api.groups.includes(into) ? into : null;
+    // The picker only interrupts when it has something to offer — see
+    // `offerHistory`'s own implementation, which answers false for a folder with
+    // no past conversations. A brand-new folder therefore behaves exactly as it
+    // did before E20 rather than gaining a dialog that says "nothing here".
+    if (offerHistory && (await offerHistory(folder, stillOpen))) return;
     await addSessionCardTo(api, folder, { into: stillOpen });
   } catch (e) {
     // our breakage must be visible, not mute (fail-open)
@@ -4616,17 +4739,41 @@ export function SessionGrid(props: {
   // pressed inside a popped-out session, which App's key bridge dispatches
   // here, and the ＋ on a popped-out card's header — which does not ask this
   // question at all, because it already knows its own group.
+  // §5.33's `+ session` half. The picker is offered only when the chosen folder
+  // HAS past conversations: asking first costs one bounded scan (whose per-file
+  // descriptions the dialog's own fetch then re-uses from main's cache), and it
+  // is what keeps "new session in a fresh folder" a two-click gesture instead of
+  // a three-click one with a dialog that has nothing in it.
+  const [picker, setPicker] = React.useState<{
+    folder: string;
+    into: DockviewApi['groups'][number] | null;
+  } | null>(null);
+  const offerHistory = useCallback(
+    async (folder: string, into: DockviewApi['groups'][number] | null): Promise<boolean> => {
+      // #440: a refusal resolves TRUTHY, so this must be laundered before it is
+      // read as a listing. Any non-answer means "just make the card" — the
+      // picker is an offer, and our failure to produce it never blocks a start.
+      const a = answered(await window.switchboard.transcripts.history({ scope: 'folder', folder }));
+      if (!a || a.status !== 'ok' || a.rows.length === 0) return false;
+      setPicker({ folder, into });
+      return true;
+    },
+    []
+  );
   const newSession = useCallback(async () => {
     const api = apiRef.current;
-    await newSessionIn(api, api ? focusedPopoutGroup(api) : null, setError);
-  }, []);
+    await newSessionIn(api, api ? focusedPopoutGroup(api) : null, setError, offerHistory);
+  }, [offerHistory]);
   // The main window's own chrome does not INFER a destination — it knows one.
   // `newSession` above has to ask which window has focus because a keystroke
   // carries no such information; a click on a button that only exists in this
   // window carries it, and asking anyway would put #434/#462's regression back
   // within reach of a window manager that reports focus a moment late. Same
   // argument the card ＋ makes by naming its own group (lib/new-session-target).
-  const newSessionInGrid = useCallback(() => newSessionIn(apiRef.current, null, setError), []);
+  const newSessionInGrid = useCallback(
+    () => newSessionIn(apiRef.current, null, setError, offerHistory),
+    [offerHistory]
+  );
 
   // §5.8's presentation ladder (P2-E9-05). The verbs are MODULE functions on
   // (api, cardId) — see setCardLadder — for the reason popOutCardPanel is one:
@@ -5464,6 +5611,29 @@ export function SessionGrid(props: {
              (#84) — a class here never reached the popups */
         />
       </div>
+      {/* §5.33's `+ session` picker. Mounted at the GRID rather than inside a
+          card: the folder has been chosen but no card exists yet, so there is
+          nothing else for it to hang off. */}
+      {picker && (
+        <SessionHistoryDialog
+          open
+          folder={picker.folder}
+          onClose={() => setPicker(null)}
+          onPick={(pick) => {
+            setPicker(null);
+            void addSessionCardTo(apiRef.current, pick.folder, {
+              into: picker.into,
+              resumeConversationId: pick.nativeId,
+            });
+          }}
+          // The escape hatch that keeps this an OFFER: the user came here to
+          // start a session, and the picker must never be the only way out.
+          onNewConversation={() => {
+            setPicker(null);
+            void addSessionCardTo(apiRef.current, picker.folder, { into: picker.into });
+          }}
+        />
+      )}
     </main>
   );
 }
