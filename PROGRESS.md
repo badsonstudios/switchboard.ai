@@ -3,52 +3,112 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🚧 IN PROGRESS — 2026-09-16: **#836** — session history: open a previous conversation from the session card; E11 pauses after #798
+> # ✅ MERGED — 2026-09-16: **#836** — session history: open a previous conversation from the session card
 >
-> **Started 2026-09-16** on `feature/836-session-history`, off `590db6e` (the
-> plan PR #837, merged). Plan posted to the issue.
+> **PR #839, squashed to `1b9a83c`.** Issue closed. Size M as filed. E20's only
+> item; the plan for it landed the same day in #837 (`590db6e`).
+> ⚠️ **NOT RELEASED** — joins the `0.8.81 — unreleased` section; `gh release
+> list` is the authority (latest tag is still **v0.8.8**, which also has #797 and
+> #798 sitting unreleased behind it).
 >
-> **Owner pivot, 2026-09-16.** E11 stops here and is resumed later. The next work
-> is SESSION HISTORY: the Claude Code "history button" applied to switchboard — a
-> control on a session card drops down that folder's past conversations, each with
-> a short description, and picking one opens it.
+> **What it does.** A **🕘** in every session card's header lists that folder's
+> past conversations, newest first, each described by the CLI's own `ai-title` —
+> or, when it never wrote one, the first user prompt, shown in quotes because it
+> is the user's own words rather than a summary. Type to narrow; flip **This
+> folder** to **All projects** and rows gain the folder they belong to. Picking
+> one opens a **NEW** card resumed into that conversation **in its own folder**;
+> the card clicked from is untouched. `+ session` offers the same list once a
+> folder is chosen.
 >
-> **Brief: issue #836.** Spec: `docs/plans/04-phase-2-switchboard.md` § E20 and
-> `docs/DESIGN.md` §5.33.
+> **Decisions worth finding again:**
+> - **A picked conversation that cannot be resumed REFUSES the start**, and this
+>   is the one deliberate departure from fail-open in the feature. Everywhere
+>   else a declined resume starts a fresh session, which is right when nobody
+>   named one; here somebody did, and an empty session in the right folder is
+>   indistinguishable from the app having wiped their history. The refusal says
+>   so **in its own sentence on the card** — `CardEnded.pickRefused`, pinned in
+>   `SessionGrid.ended-header.test.tsx`.
+> - **Two cards can never land in one conversation.** Plain `--resume` APPENDS
+>   rather than forking (measured 2026-08-15), so this is the high-consequence
+>   question. Four guards, and the decisive property is that `sessions:create` is
+>   **synchronous** from the check to `persist.upsert` — two picks cannot
+>   interleave. Ceded ids count as held (#539).
+> - **The pick is honoured only for a card with no conversation of its own**, and
+>   that is enforced in `start-plan.ts`, not at the call site, so no future caller
+>   can turn a pick into a way to move an existing card into someone else's
+>   conversation.
+> - **The held-check gates on the PLAN'S DECISION, not the wire value.**
+>   `resumeConversationId` is a dockview panel param, so it is serialized into
+>   the saved layout and re-sent on every remount — gating on "the renderer
+>   mentioned an id" could have refused a card that legitimately owned its
+>   conversation for ever.
+> - **`+ session` only interrupts when the folder HAS history** — otherwise it
+>   goes straight to a new session exactly as before. A dialog saying "nothing
+>   here" on every new session in a fresh folder was the worse trade.
+> - **A modal, not an anchored dropdown**, copying `CommandPalette` — a 300-row
+>   searchable list anchored to a card header on a 4-way split is exactly the
+>   #641/#642 clipping class. It therefore ships WITH listbox semantics, which
+>   #828 says the composer popup still lacks.
 >
-> **Owner decisions (2026-09-16), all four answered:**
-> - **Scope:** the session's own folder by default, with a toggle to every project.
-> - **On pick:** opens a **NEW** card, resumed into that conversation, in its own
->   folder. The card you clicked from is untouched.
-> - **Entry points:** a button on the session card **and** the `+ session` flow.
-> - **v1 fidelity:** type-to-search + a short description (title, else first
->   prompt) + when it was last active; folder shown once the list is widened. No
->   branch/worktree filters, no rename, no fork nesting — those are follow-ups.
+> **Measured, not assumed** (`spike/findings/e20-836-transcript-head.md`):
+> - One bounded 128 KB head read answers BOTH questions per row: `cwd` present
+>   **200/200** (average line 2.0), `ai-title` **192/200 in-window** (the last one
+>   never past line 18, never two in a file), a first prompt **200/200**,
+>   **neither 0/200**. So no tail read and no second pass.
+>   ⚠️ **192/200 supersedes the 196/200 this entry used to quote** — that was a
+>   different sample answering "anywhere in the file"; 192 is the number the
+>   behaviour actually rests on. `summary` re-confirmed at **0/200**.
+> - **A whole-machine scan costs 62 ms** (9 ms walk + 53 ms reading 14.6 MB).
+>   Shrinking the head budget to 32 KB saves 40 ms and **loses a third of the
+>   titles**, so the shared budget stayed — the review's hypothesis was reasonable
+>   and the measurement contradicted it.
+> - **The 500-entry cap barely bites.** Of 59 project directories holding 3,037
+>   transcripts, exactly **one** is past it — a machine-generated BrainHarbor
+>   artifacts pipeline with 2,887 — while every real project sits at **8–42**.
+>   Respecting the cap (which §5.33 and the issue both require) costs nothing
+>   here, and that is now written down rather than assumed.
 >
-> **Measured before planning — do not re-derive.** Across the 200 most recently
-> written transcripts under `~/.claude/projects`: `ai-title` **196/200**,
-> `last-prompt` **200/200**, `summary` **0/200**. So the description comes from
-> `ai-title` — which the Claude adapter already reads (`readAiTitle`, wired as the
-> `titles` capability) — falling back to the first user prompt, which is what the
-> CLI's own picker shows. **`summary` is not a source on this machine.**
+> **Review: no blockers, five should-fixes, all addressed.** The one that
+> mattered: the refusal was **invisible** — a refused pick showed the generic
+> "the folder may have been renamed" copy, naming the wrong cause and leaving the
+> user with no conversation, no session and no reason, which removed the entire
+> justification for the non-fail-open exception. Also fixed: the all-projects
+> directory cap now takes the most recently used projects rather than `readdir`
+> order (it could otherwise drop the project you used this morning);
+> `addSessionCardTo` re-checks that a named destination group is still alive,
+> since the picker can sit open for minutes; `Number.isFinite` on the wire limit.
+> **Three perf nits were closed by measurement rather than code.**
 >
-> **The CLI owns the reference picker.** `-r, --resume [value]` is *"Resume a
-> conversation by session ID, or open interactive picker with optional search
-> term"*. Its rows carry `firstPrompt`, `gitBranch`, `forkCount`,
-> `artifactCount`, `showProjectPath`; its controls are type-to-search,
-> `ctrl+a` (all projects), branch and worktree filters, `Rename session`, and
-> pagination. The VS Code **extension** has no picker of its own — it contributes
-> `reopenClosedSession` and builds `--resume=<id>` through the embedded SDK.
+> **Follow-up filed: #838** — `isConversationId` admits a leading dash, so an id
+> could reach the CLI's arg parser as a flag. Pre-existing, gated behind
+> `canResume` finding a real file; not this PR's to fix.
 >
-> **What already exists:** `listConversations` (mtime-sorted, refuses past 500
-> entries), `locateConversation` / `conversationExists` (id shape validated), and
-> the adapter's `sessions.resume` capability with `canResume` + `start-plan`. The
-> gap is descriptions, the UI, and resuming a transcript no card has ever owned.
+> **Verified:** typecheck, eslint, the full unit suite (295 files, **8,186**
+> tests), and the **full Playwright suite (370 collected, 367 passed, 3 skipped)**
+> against a rebuilt bundle — then all four CI jobs green.
 >
-> **Still open in E11, to come back to:** #799, #800, #796, #801.
-> **#722 is NOT this.** The activity report is a different feature over the same
-> transcript scan; whatever lists and slices transcripts for history should be the
-> thing #722 later builds on, rather than a second scanner.
+> **Two lessons from this run, both about tests rather than product:**
+> - (a) **`card-header` is the wrong thing to count for "a card exists".** The
+>   header is behind `{live ? … }`, and two sessions in one folder share a
+>   dockview group where only the ACTIVE tab's panel is in the DOM. The first
+>   draft of the e2e asserted `toHaveCount(2)` and failed while the feature was
+>   working perfectly — the snapshot showed the resumed card right there. Count
+>   cards via `sessions.cards()`; assert the conversation by its replayed text.
+> - (b) **A background command piped through `tail` writes only the tail to its
+>   log.** Grepping that log for a spec name found nothing and looked exactly
+>   like "my spec never ran in the suite". `playwright test --list` is the
+>   authority on what is collected (370 tests in 76 files, the new spec among
+>   them). Diagnose with the tool that knows, not with the log you truncated.
+>
+> **Next up: #799**, then **#800**, **#796**, **#801** — E11 resumes where it
+> paused. **#722 is NOT this**: the activity report is a different feature over
+> the same transcript scan, and should build on `transcripts/history.ts` rather
+> than growing a second scanner.
+>
+> **[user] OPEN, Dan's to decide:** the release version. Latest tag is v0.8.8;
+> #797, #798 and now #836 are merged and unreleased. The standing rule below says
+> the next patch is **0.8.81**, with **0.8.90** reserved for a "0.8.9-sized" step
+> and **0.9.0** for a deliberate milestone. Nothing was cut.
 
 > # ✅ MERGED — 2026-09-15: **#798** — `@Name` resolves at send: the mentioned session's recent work goes ahead of the prompt
 >
