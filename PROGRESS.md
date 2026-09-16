@@ -3,11 +3,32 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔄 IN PROGRESS — 2026-09-15: **#798** — `@Name` resolves at send: the mentioned session's recent work goes ahead of the prompt
+> # ✅ MERGED — 2026-09-15: **#798** — `@Name` resolves at send: the mentioned session's recent work goes ahead of the prompt
 >
-> **Branch `feature/798-mention-resolution`, rebased on `06d9e36`. PR not open
-> yet.** Implementation, review and tests are done; the PR opens next and merges
-> on green CI. A mutation round is running as this is written.
+> **PR #833, squashed to `841ec77`.** Issue closed. Size M as filed.
+> ⚠️ **NOT RELEASED** — joins the `0.8.81 — unreleased` section; `gh release
+> list` is the authority.
+>
+> **CI went RED once, and it was mine.** Both e2e jobs failed on
+> `slash-commands.spec.ts`: a composer that has cleared itself since E10-07 was
+> left holding a lone `" "`. The cause was this item's new "clear only what was
+> sent" rule meeting the fact that what is SENT is the trimmed draft — and
+> picking a slash command inserts `/clear ` WITH its trailing space. Fixed in
+> `63cd4e0` (a whitespace-only remainder is nothing), pinned by a unit test, and
+> the second run was green on all four jobs. **The lesson is about the local
+> run, not the rule:** eleven other `FeedView.*.test.tsx` suites existed that I
+> was not running — including the composer and attachment ones that cover the
+> very path I had changed on both send branches. Run the family, not the file.
+>
+> **Mutation: 46 mutants, two rounds.** Round 1 left eight alive; five were real
+> gaps (longest-name-wins was never pinned — `@TradingApp` rules the short name
+> out by itself; a second mention could be found INSIDE the one just matched, and
+> a title may contain an `@`; a session that resolves but cannot be read could be
+> injected as an empty block; the IPC argument check could be deleted and the
+> catch below still answered `null`; nothing covered text typed during the
+> lookup). All five killed in round 2. Three survivors are equivalent and say so
+> where they live: fetching output by the typed spelling rather than the resolved
+> id, not stripping the IPC refusal brand, and persisting the leftover draft.
 >
 > **What it does.** A draft that mentions another session is resolved in MAIN
 > over a new `sessions:resolveMentions` channel (gated **`transcripts.read`** —
@@ -24,8 +45,9 @@
 >   `@word` as a file mention of its own — a same-named file is attached, and
 >   even a miss cost the model a `Read`. The user's line is **NOT** quoted inside
 >   the block: every word they typed is already in the prose that follows it, so
->   quoting would send it twice. (The #797 close-out below says otherwise — it
->   was written before this was settled. This entry is the correct one.)
+>   quoting would send it twice. (#797's close-out planned the opposite, having
+>   been written before this was settled; that bullet is corrected in its entry
+>   below rather than left to mislead the next reader.)
 > - **The spelling the USER typed is what gets resolved** (review blocker). The
 >   finder matches case-insensitively, so `@api` with two sessions `API` and
 >   `api` open would otherwise resolve to whichever sorted first — silently, and
