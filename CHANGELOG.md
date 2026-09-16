@@ -98,6 +98,17 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **Previous conversations are described by what you asked, not by markup.** In
+  the list of previous conversations, a chat that began with a slash command
+  showed the command's raw markup — `<command-name>/clear</command-name>` and
+  the rest — instead of anything readable. Now the list skips past commands to
+  the first real thing you asked, and a conversation that was *only* commands is
+  described by the command itself, written the way you typed it: `/clear`,
+  `/next-item 818`. The same fix stops that markup reaching another session when
+  one hands its work to another, where it could previously appear as the stated
+  goal. In the conversation view, a command now shows what it was given too, so
+  `/next-item 818` reads as itself rather than as a bare `/next-item`.
+
 - **A maximize you left on days ago can no longer ambush you.** Maximizing a
   session holds on to how the workspace looked, so it can put that back when you
   undo it. But a maximize left on for a long time made that memory a trap: if the

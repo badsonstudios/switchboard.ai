@@ -62,6 +62,7 @@
 // formatted by hand. Timestamps that appear in the output come FROM THE
 // TRANSCRIPT, which is stable by construction.
 import { DerivationCaps, FeedBlock, TEXT_CAP, touchedPath } from '../feed/blocks';
+import { isCommandPlumbing } from '../../shared/command-invocation';
 import { blocksFrom, renderBlock, sliceTail } from './transcript-blocks';
 // TYPE-ONLY, and it has to stay that way: `queries.ts` imports this module for
 // `sessionContext`, so a VALUE import here would close a runtime cycle between
@@ -415,6 +416,20 @@ function cap(text: string, limit: number): { text: string; truncated: boolean } 
 export function promptText(block: FeedBlock): string | undefined {
   if (block.kind !== 'user' || block.sidechain) return undefined;
   const text = (block.text ?? '').trim();
+  // A SLASH COMMAND IS NOT PROSE (#846). The CLI writes `/clear` as an ordinary
+  // user line whose text is `<command-name>…</command-name>` markup, and it
+  // opens 5 of the 40 newest transcripts here (39 of the newest 400 — method in
+  // `shared/command-invocation.ts`) — so every reader of this function could
+  // show markup where it meant to show what the user asked. The history picker
+  // did, which is how it was reported; the context package would have offered it
+  // as the session's GOAL.
+  //
+  // Skipped rather than rendered, because that is what this function is for:
+  // its callers all want the words a person typed. A caller that wants to SHOW
+  // the command (the Feed, and the history row that has nothing else to show)
+  // reads `commandInvocation` instead — same module, so the two answers cannot
+  // drift.
+  if (text && isCommandPlumbing(text)) return undefined;
   if (text) return text;
   const a = block.attachments;
   if (!a) return undefined;

@@ -28,7 +28,9 @@ newest first.
 1. Click **🕘** in the card header. A list opens showing each past
    conversation with a short description — the title Claude gave it, or, when it
    never gave it one, the first thing you asked, in quotes — and when you last
-   worked on it.
+   worked on it. If a conversation began with a slash command, the list skips
+   past it to the first real thing you asked; a conversation that was *only*
+   commands is described by the command itself, like `/clear`.
 2. Start typing to narrow the list down. It searches the descriptions.
 3. Click the one you want, or move to it with the arrow keys and press Enter.
 

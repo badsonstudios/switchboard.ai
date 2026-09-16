@@ -122,6 +122,24 @@ describe('the sections §5.5 asks for', () => {
     expect(sectionOf(pkg, 'goal').text).not.toContain('sidebar');
   });
 
+  it('never takes a SLASH COMMAND as the goal — it is markup, not a task (#846)', () => {
+    // The CLI writes `/clear` as an ordinary user line whose text is
+    // `<command-name>…</command-name>` markup, and it opens 28 of the 40 newest
+    // transcripts here. Before #846 this package would have offered that markup
+    // to another session as the stated GOAL of the work — the half of the bug
+    // the owner could not see, since he reported it from the history picker.
+    const pkg = build([
+      userLine('<command-name>/clear</command-name>\n  <command-message>clear</command-message>'),
+      assistantLine('Cleared.'),
+      userLine('Port the settings pane to the new theme tokens.'),
+    ]);
+    expect(sectionOf(pkg, 'goal').text).toBe('Port the settings pane to the new theme tokens.');
+    expect(sectionOf(pkg, 'goal').text).not.toContain('command-name');
+    // ...and it is not quietly demoted into the instructions either: a command
+    // is not something the user asked for, anywhere in the package.
+    expect(sectionOf(pkg, 'instructions').text).not.toContain('command-name');
+  });
+
   it("prefers the head window's prompt over the window's oldest when given one", () => {
     // The whole reason `sessionContext` reads two windows: on a long session the
     // tail's first prompt is merely the oldest SURVIVOR, not the task statement.

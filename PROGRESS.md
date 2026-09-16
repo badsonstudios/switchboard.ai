@@ -3,6 +3,56 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🚧 IN PROGRESS — 2026-09-16: **#846** — session history describes conversations with raw command plumbing
+>
+> **Started 2026-09-16** on `feature/846-command-plumbing`, off `4936193`.
+>
+> **Owner-reported, hand-testing #836 on v0.8.90 — a defect in RELEASED code.**
+> History rows read `<command-name>/clear</command-name> <command-message>…`
+> instead of prose.
+>
+> ⚠️ **THE FIRST FIGURE FILED HERE WAS WRONG, AND A REVIEW CAUGHT IT.** This
+> entry said 105 of 150 (71%); re-measured with the method written down, it is
+> **5 of the newest 40, 5 of the newest 150, and 39 of the newest 400** that open
+> with `<command-name>`. `<command-message>` never leads a surviving first block.
+> The wrong number had reached three code comments and a test before it was
+> re-run. **The method is now stated in `shared/command-invocation.ts`** so the
+> next reader reproduces it instead of inheriting it. The bug is real either way
+> — the owner hit it — but the size of it was overstated.
+>
+> It is only *sometimes* visible because the row prefers `ai-title` (192/200) and
+> falls back to the first prompt rarely.
+>
+> ⚠️ **The first shape table filed on the issue was WRONG and is corrected in a
+> comment.** `<local-command-caveat>` (116) and untagged `isMeta` lines (68) are
+> already dropped by `deriveIntents` (`if (entry.isMeta === true) return []`),
+> and `<local-command-stdout>` is turned into an ASSISTANT block by
+> `localCommandText` before any prompt test runs. One family survives, not five.
+>
+> **Blast radius is wider than the picker.** The description is built on
+> `promptText` (`sessions/context-package.ts`), shared with `firstPrompt`
+> (`sessions/queries.ts`) — the context package's GOAL section. So hand-offs can
+> carry `<command-name>/clear</command-name>` as the stated goal. Fix belongs in
+> the shared helper, not in the history module.
+>
+> **The reference implementation, read not guessed** (VS Code extension
+> `webview/index.js`, 2.1.226): it keeps an explicit prefix list —
+> `<local-command-stdout>`, `<local-command-stderr>`, `<system-reminder>`,
+> `<bash-input>`, `<bash-stdout>`, `<bash-stderr>`, `<task-notification>`,
+> `<tick>`, `<command-name>`, `<command-message>` — and a `startsWith` predicate
+> that skips any message beginning with one. When it DOES show a command it
+> never renders the XML: it extracts `<command-name>` + `<command-args>` and
+> joins them (`/clear`, `/next-item 818`).
+>
+> **Lead worth following before writing anything:** `blocks.ts` already has an
+> `isPlumbing` predicate, consulted by `userIntents` for both string and text-item
+> content. The fix may be a missing tag in an existing shared list rather than a
+> new rule — confirm against the real derived blocks first, since the 105/150
+> figure counts RAW lines and is not proof about derived ones.
+>
+> Related: **#704** (`<task-notification>` rendering as raw XML) is the same
+> family, and is on the reference list too.
+
 > # ✅ MERGED — 2026-09-16: **#818** — a long-held maximize no longer replays a days-old layout
 >
 > **PR #844, squashed to `a3a3809`.** Issue CLOSED — by `Fixes #818`, written

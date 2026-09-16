@@ -27,6 +27,10 @@ This is the conversation, rendered to be read rather than scrolled past:
 - **Checklists** from Claude's own task tracking render as `[x]` / `[~]` / `[ ]`.
 - **Local commands** — `/usage`, `/cost`, `/context` and the like, which Claude
   Code answers itself — print their output here too.
+- **A slash command you ran** collapses to a single line showing the command and
+  what you gave it — `/next-item 818` rather than just `/next-item`. Click it to
+  see the whole thing. If what you gave it was long (a whole briefing pasted in,
+  say), the line is shortened with an `…`; the full text is inside.
 
 The view stays pinned to the newest message, including when you switch back to
 a session you'd left. Scroll up freely; it won't yank you back.

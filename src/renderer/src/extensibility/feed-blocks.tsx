@@ -13,6 +13,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { FeedBlockDto } from '../lib/feed';
+import { commandInvocation, isCommandPlumbing } from '../../../shared/command-invocation';
 import {
   codeForCopyButton,
   FEED_CODE_ATTR,
@@ -626,8 +627,20 @@ function UserPill({ b }: { b: FeedBlockDto }): React.JSX.Element {
   const revealed = useRevealed(b.seq);
   const open = expanded || revealed;
   const bodyId = React.useId();
-  // a skill / slash-command invocation carries a command-name tag
-  const cmd = /<command-name>([^<]+)<\/command-name>/.exec(text)?.[1];
+  // A skill / slash-command invocation carries a command-name tag. The rule is
+  // SHARED with the prompt readers that skip these blocks (#846) — this used to
+  // be a private regex here, and two copies of "what is a command" is how the
+  // Feed and the history picker would come to disagree about the same line. It
+  // also now shows the args, so `/next-item 818` reads as itself rather than as
+  // a bare `/next-item`.
+  // ...and it must AGREE with the prompt readers about what a command is. The
+  // tags are matched anywhere in the text, so without this guard a message that
+  // merely QUOTES the markup — the owner's own bug report for #846 does exactly
+  // that — would be collapsed into a `/clear` chip with the real sentence hidden
+  // behind the expander. `isCommandPlumbing` anchors at the start, which is the
+  // rule main uses to skip these blocks; asking it first is what makes "one
+  // rule, both readers" true rather than merely intended.
+  const cmd = isCommandPlumbing(text) ? (commandInvocation(text) ?? undefined) : undefined;
   const long = text.length > 500;
   const expandable = !!(cmd || long);
   const label = cmd ?? `${text.slice(0, 160).split(String.fromCharCode(10))[0]}…`;
