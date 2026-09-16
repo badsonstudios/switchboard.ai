@@ -267,12 +267,15 @@ Collapsed strip, not closed. Then look at the layout chip in the title bar:
 
 - **It ends in · maximized.** A session is still maximized, perhaps from long
   ago. Older versions folded every busy card you clicked away from while a
-  maximize was on. That no longer happens in the Grid layout, and the leftover
-  maximize is harmless, so there's nothing you need to do. If you want it gone,
-  run **Layout: Grid — every session gets a card** from the command palette:
-  that clears it, and also brings back every session you'd folded or hidden.
-  (Undoing the maximize by double-clicking the maximized session's header puts
-  back the arrangement from when you took it, which may be days old.)
+  maximize was on. That no longer happens in the Grid layout, and a leftover
+  maximize can no longer surprise you either: if that session isn't filling the
+  workspace any more, double-clicking its header just maximizes it, and undoing
+  one only puts back the parts of the arrangement you haven't changed since. So
+  there's nothing you need to do. If you want the chip clear anyway, either
+  double-click that session's header twice — the workspace will fold around it
+  and come straight back — or run **Layout: Grid — every session gets a card**
+  from the command palette — which also brings back every
+  session you'd folded or hidden.
 - **It says Focus or Queue.** Folding the card you leave is that layout doing
   its job. Click the chip until it says **Grid**.
 

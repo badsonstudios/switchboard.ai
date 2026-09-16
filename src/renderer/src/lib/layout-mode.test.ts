@@ -4,12 +4,14 @@ import {
   DEFAULT_LAYOUT,
   forgetLayoutCard,
   isEnforced,
+  isMaximizeStanding,
   LayoutCard,
   LayoutState,
   loadLayout,
   persistableLayout,
   plan,
   pruneLayout,
+  restorableRungs,
   snapshotRungs,
   withMaximized,
   withMode,
@@ -259,6 +261,125 @@ describe('layout modes (E9-07, §5.8)', () => {
       const again = withMaximized(held, 'b', { a: 'collapsed', b: 'expanded' });
       expect(again.maximized).toBe('b');
       expect(again.restore).toEqual(original);
+    });
+
+    // ── #818: a maximize left on for days must not replay a stale arrangement ──
+    //
+    // Since #813 a held maximize stops rearranging anything after the moment it
+    // is taken, so it can sit for DAYS with the workspace looking completely
+    // normal — the only sign is the chip's `· maximized`. Undoing it then put
+    // back an arrangement nobody remembered asking for. Two narrowings, both
+    // MONOTONE (they can only make the undo do less, never more).
+
+    describe('is this maximize still standing? (#818)', () => {
+      it('stands while its card is still the one filling the workspace', () => {
+        const cards = [card('a'), card('b', { ladder: 'collapsed' })];
+        expect(isMaximizeStanding(state({ maximized: 'a' }), cards)).toBe(true);
+      });
+
+      it('does NOT stand once the user has put that card away', () => {
+        // the Monday/Thursday case: the maximize is still recorded, but the
+        // workspace stopped looking like it long ago
+        for (const rung of ['collapsed', 'tabbed', 'hidden'] as const) {
+          const cards = [card('a', { ladder: rung }), card('b')];
+          expect(isMaximizeStanding(state({ maximized: 'a' }), cards)).toBe(false);
+        }
+      });
+
+      it('does not stand for a card that is gone, and holds nothing for no maximize', () => {
+        expect(isMaximizeStanding(state({ maximized: 'ghost' }), [card('a')])).toBe(false);
+        expect(isMaximizeStanding(state(), [card('a')])).toBe(false);
+      });
+
+      it('stands when the maximized card is popped out at a NON-expanded rung', () => {
+        // a popped-out card that was `tabbed` keeps `tabbed`. Reading that as
+        // not-standing would send the gesture to a fresh maximize, whose
+        // up-push runs BEFORE the popped-out exemption and would drag the panel
+        // out of the window the user placed.
+        const cards = [card('a', { poppedOut: true, ladder: 'tabbed' }), card('b')];
+        expect(isMaximizeStanding(state({ maximized: 'a' }), cards)).toBe(true);
+      });
+
+      it('still stands when the maximized card is POPPED OUT', () => {
+        // it is expanded — in its own window. Reading this as "not standing"
+        // would take a fresh maximize and fold the main window around a card
+        // that is not in it.
+        const cards = [card('a', { poppedOut: true }), card('b', { ladder: 'collapsed' })];
+        expect(isMaximizeStanding(state({ maximized: 'a' }), cards)).toBe(true);
+      });
+    });
+
+    describe('which of the snapshot survives (#818)', () => {
+      it('keeps the WHOLE snapshot when nothing has moved — the ordinary undo is unchanged', () => {
+        // The guard on "take a maximize, undo it a minute later". If this ever
+        // goes red, the fix has started costing the common case.
+        const snapshot = { a: 'expanded', b: 'expanded', c: 'hidden' } as Record<string, Ladder>;
+        const held = withMaximized(DEFAULT_LAYOUT, 'a', snapshot);
+        const now = [card('a'), card('b', { ladder: 'collapsed' }), card('c', { ladder: 'hidden' })];
+        expect(restorableRungs(held, now)).toEqual(snapshot);
+      });
+
+      it('drops a card the user has RE-EXPANDED since — the actual bug', () => {
+        // snapshot says hidden; the user has since brought it back. Replaying
+        // `hidden` would hide a session they deliberately re-opened.
+        const held = withMaximized(DEFAULT_LAYOUT, 'a', { a: 'expanded', b: 'hidden' });
+        const now = [card('a'), card('b', { ladder: 'expanded' })];
+        expect(restorableRungs(held, now)).toEqual({ a: 'expanded' });
+      });
+
+      it('drops a card the user has pushed FURTHER DOWN since', () => {
+        const held = withMaximized(DEFAULT_LAYOUT, 'a', { a: 'expanded', b: 'expanded' });
+        const now = [card('a'), card('b', { ladder: 'hidden' })];
+        expect(restorableRungs(held, now)).toEqual({ a: 'expanded' });
+      });
+
+      it('keeps a card still folded exactly as this maximize left it', () => {
+        // snapshot `expanded`, now `collapsed` — that IS what the maximize did,
+        // so the undo still un-folds it. Without this the undo would do nothing.
+        const held = withMaximized(DEFAULT_LAYOUT, 'a', { a: 'expanded', b: 'expanded' });
+        const now = [card('a'), card('b', { ladder: 'collapsed' })];
+        expect(restorableRungs(held, now)).toEqual({ a: 'expanded', b: 'expanded' });
+      });
+
+      it('keeps a card the maximize was never allowed to fold', () => {
+        // it needed a human, so the exemption spared it and it is still
+        // expanded — the accepted set for an `expanded` snapshot is both rungs,
+        // which is also what keeps "a maximize is not a trap" working.
+        const held = withMaximized(DEFAULT_LAYOUT, 'a', { a: 'expanded', b: 'expanded' });
+        const now = [card('a'), card('b', { needsAttention: true })];
+        expect(restorableRungs(held, now)).toEqual({ a: 'expanded', b: 'expanded' });
+      });
+
+      it('judges the MAXIMIZED card against `expanded` specifically', () => {
+        // it was collapsed before the maximize and is expanded now: that is
+        // exactly what the maximize produced, so the undo re-collapses it
+        const held = withMaximized(DEFAULT_LAYOUT, 'a', { a: 'collapsed' });
+        expect(restorableRungs(held, [card('a')])).toEqual({ a: 'collapsed' });
+        // ...but a maximized card the user has since hidden keeps nothing
+        expect(restorableRungs(held, [card('a', { ladder: 'hidden' })])).toEqual({});
+      });
+
+      it('holds nothing for closed cards, or when no maximize is held', () => {
+        const held = withMaximized(DEFAULT_LAYOUT, 'a', { a: 'expanded', gone: 'hidden' });
+        expect(restorableRungs(held, [card('a')])).toEqual({ a: 'expanded' });
+        expect(restorableRungs(DEFAULT_LAYOUT, [card('a')])).toEqual({});
+      });
+    });
+
+    describe('a restore is the WHOLE plan (#818)', () => {
+      it('leaves a card created since the snapshot alone, even on a grid switch', () => {
+        // grid's own plan wants every card expanded. Falling through to it would
+        // move a card the restore deliberately says nothing about.
+        const cards = [card('a'), card('newbie', { ladder: 'collapsed' })];
+        expect(moves(state({ mode: 'grid' }), cards, 'a', 'switch', { a: 'expanded' })).toEqual({});
+      });
+
+      it('an emptied restore moves NOTHING — it cannot re-expand the workspace', () => {
+        // the end state of a fully-stale snapshot: every entry filtered out. It
+        // must be a no-op, not a grid sweep.
+        const cards = [card('a', { ladder: 'collapsed' }), card('b', { ladder: 'hidden' })];
+        expect(moves(state({ mode: 'grid' }), cards, null, 'switch', {})).toEqual({});
+      });
     });
 
     it('a maximize whose card is gone stops holding the workspace open', () => {

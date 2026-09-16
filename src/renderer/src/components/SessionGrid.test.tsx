@@ -131,6 +131,12 @@ describe('toggleMaximizeCard', () => {
 
   it('lets go on the second toggle, and forgets the snapshot with it', () => {
     toggleMaximizeCard(noGrid, 'b');
+    // What the take's SWEEP does in the real app, and unit-land does not: the
+    // `gridReady` fence is shut here, so no move is ever applied and 'b' would
+    // still read as `collapsed`. #818 only undoes a maximize that is still
+    // STANDING, so without this the second toggle is a fresh maximize and this
+    // test would be asserting against a workspace the app never produces.
+    place('b', 'expanded');
     toggleMaximizeCard(noGrid, 'b');
     expect(sessionStore.getLayout().maximized).toBeNull();
     expect(sessionStore.getLayout().restore).toEqual({});
@@ -141,10 +147,35 @@ describe('toggleMaximizeCard', () => {
     // the all-collapsed workspace the first one produced.
     toggleMaximizeCard(noGrid, 'b');
     const first = sessionStore.getLayout().restore;
+    // the sweep's half, as above — 'b' is the maximized card and the real app
+    // has it expanded by now. The original snapshot is only inherited by the
+    // next maximize while the held one is STANDING (#818).
+    place('b', 'expanded');
     place('a', 'collapsed');
     toggleMaximizeCard(noGrid, 'a');
     expect(sessionStore.getLayout().maximized).toBe('a');
     expect(sessionStore.getLayout().restore).toEqual(first);
+  });
+
+  it('a double-click on a maximize that no longer STANDS is a fresh one (#818)', () => {
+    // The trap this catches is not the undo — it is the snapshot. `withMaximized`
+    // keeps the ORIGINAL snapshot while a maximize is held, so handing it a state
+    // whose stale maximize is still set would let the days-old arrangement be
+    // inherited by the new maximize: declined on this gesture, back on the next.
+    toggleMaximizeCard(noGrid, 'b');
+    const stale = sessionStore.getLayout().restore;
+    // the user puts 'b' away by hand at some point over the following days, and
+    // rearranges the rest — the workspace no longer looks like that snapshot
+    place('b', 'hidden');
+    place('a', 'collapsed');
+    place('c', 'expanded');
+
+    toggleMaximizeCard(noGrid, 'b');
+
+    const after = sessionStore.getLayout();
+    expect(after.maximized).toBe('b'); // a fresh maximize, not an undo
+    expect(after.restore).not.toEqual(stale);
+    expect(after.restore).toEqual({ a: 'collapsed', b: 'hidden', c: 'expanded' });
   });
 
   it('does nothing without a grid or a card', () => {
@@ -216,6 +247,28 @@ describe('layoutSweepPort.plan — computed over the store', () => {
       'b',
       'c',
     ]);
+  });
+
+  it('an EMPTY restore reaches the sweeper AS a restore, and moves nothing (#818)', () => {
+    // The seam this guards is one character wide. `restorableRungs` legitimately
+    // returns `{}` when the whole snapshot has gone stale, and `applyLayout`
+    // forwards it only because `{}` is TRUTHY. Tighten that to
+    // `Object.keys(restore).length > 0` and the key vanishes, `plan` stops
+    // treating it as the whole plan, and a grid switch re-expands the entire
+    // workspace — #818 itself, back again. The contrast below is the assertion:
+    // the same store, same trigger, with and without the empty map.
+    seed([{ id: 'a' }, { id: 'b' }]);
+    place('a', 'collapsed');
+    place('b', 'hidden');
+    sessionStore.setLayout(withMode('grid'));
+
+    // grid's own switch wants every card expanded...
+    expect(layoutSweepPort.plan(sweep({ trigger: 'switch' }))).toEqual([
+      { cardId: 'a', rung: 'expanded' },
+      { cardId: 'b', rung: 'expanded' },
+    ]);
+    // ...and an un-maximize carrying a fully-stale snapshot must do NOTHING.
+    expect(layoutSweepPort.plan(sweep({ trigger: 'switch', restore: {} }))).toEqual([]);
   });
 
   it('includes cards with no panel — a mode has to be able to bring one back', () => {

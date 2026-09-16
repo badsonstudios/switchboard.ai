@@ -323,8 +323,10 @@ you put it — it's out of the way already, and a mode won't drag it half-way ba
 Sometimes you just want one session, right now, without changing the mode.
 **Double-click a session's header** and it fills the workspace; everything else
 folds into the Collapsed strip. Double-click again — or press `Ctrl+Shift+M` —
-and the workspace goes back **exactly** as it was, including anything you'd
-hidden by hand before you maximized.
+and the workspace goes back as it was, including anything you'd hidden by hand
+before you maximized. Sessions you've *brought back since* are left where you
+put them: undoing a maximize puts back the parts of the arrangement you haven't
+changed, rather than overwriting newer decisions with older ones.
 
 Picking a layout mode while a session is maximized ends the maximize: you've
 just asked for a whole arrangement, so that's the one you get. And a maximize
@@ -337,9 +339,15 @@ you went to look at stays when you click away from it again. In **Focus** and
 Focus folds the card you leave (the maximized one included), and Queue keeps
 bringing out sessions that need you.
 
-Undoing a maximize puts back the arrangement from the moment you took it. If a
-maximize has been left on for a long time — the layout chip ends in
-**· maximized** — undoing it can bring back an arrangement that old.
+A maximize you left on a long time ago can't ambush you. If the session you
+maximized is no longer filling the workspace — you collapsed, tabbed or hid it
+at some point since — then double-clicking its header means what you'd expect,
+"maximize this", and not "put back whatever the workspace looked like the day I
+took this". And when you *do* undo one, sessions you've **re-opened** since, or
+pushed **further out of the way**, stay where you put them, and sessions created
+since are left alone. (A session you simply collapsed by hand does come back —
+from the outside that looks exactly like one the maximize folded, and guessing
+wrong there would be the worse mistake.)
 
 This works on a **suspended** session too (one that came back with the app and
 hasn't been resumed yet). Its card keeps a header — the session's name, its

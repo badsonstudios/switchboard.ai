@@ -762,6 +762,16 @@ done | crashed`) fed by hooks + transcript events. The layout engine reacts to i
   maximize and restores the prior layout on repeat. Invariant: hiding chrome
   NEVER removes capability — everything hidden stays reachable via hotkeys and
   the command palette.
+  *(Amended 2026-09-16, #818: "restores the prior layout" means wherever it is
+  still the prior layout. A maximize holds its snapshot until undone, and since
+  #813 it stops rearranging anything after the moment it is taken — so it can sit
+  for days looking normal and then replay a stale arrangement. Two narrowings,
+  both monotone, both of which can only make the undo do LESS: the gesture only
+  reads as an undo while the maximized card is still expanded, and the restore
+  skips any card whose rung today is not one that maximize could have produced.
+  A card the user rearranged since belongs to a NEWER layout, and replaying its
+  old rung would discard the more recent arrangement rather than restore the
+  prior one.)*
 
 ### 5.9 Notifications & rules engine
 

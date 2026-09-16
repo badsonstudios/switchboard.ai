@@ -44,3 +44,8 @@ spike/probes/760/artifacts/bus-config-discovery.json
 # blanket `*.log` above would have made that citation point at nothing.
 !spike/probes/760/artifacts/server.log
 !spike/probes/760/artifacts/server-toolcall.log
+
+# electron-vite writes a timestamped temp config beside the real one on every
+# build and does not always clean it up. Untracked and easy to sweep into a
+# `git add -A` without noticing (#818 review caught one mid-PR).
+electron.vite.config.*.mjs

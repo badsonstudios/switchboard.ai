@@ -3,6 +3,37 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🚧 IN PROGRESS — 2026-09-16: **#818** — a long-held maximize restores a days-old layout when undone
+>
+> **Started 2026-09-16** on `feature/818-stale-maximize`, off `928fd73`.
+>
+> **Taken AHEAD of #799 (E11) on purpose, and the reason is the release.**
+> v0.8.90 shipped **#813** an hour earlier, and #813 is precisely what lets a
+> maximize sit for days with the workspace looking completely normal — before it,
+> a held maximize kept folding cards, which was its own bug but also a loud
+> symptom. So the release made this trap *quieter*, not rarer. The owner's laptop
+> is in that state right now (`ui.layoutMode.maximized` on a background tab, a
+> 15-card snapshot), and the gesture that misfires — double-click a header
+> meaning "maximize this" — is one he uses.
+>
+> **Note the issue was CLOSED BY ACCIDENT once already:** PR #819 wrote "Filed,
+> not fixed: #818" and GitHub's parser matched `fixed: #818`. Reopened by hand.
+> Same trap this session deliberately avoided in its own PR bodies.
+>
+> **What the code actually does** (read, not assumed): `toggleMaximizeCard` reads
+> any double-click on the maximized card as UNDO, and `plan()` applies the stored
+> snapshot **exactly — beating every exemption**, sparing only a card popped out
+> since. There are just three writers of layout state (take, undo, switch mode),
+> so **nothing invalidates the snapshot when the workspace changes under it**.
+>
+> ⚠️ **The issue's option 2 is more dangerous than it reads** and should not be
+> taken at face value: "drop the maximize when its card leaves `expanded` by any
+> other path" would fire on MACHINE-driven rung changes, which happen constantly
+> — E9-05 reveals a card on attention, E9-06 auto-collapses. Dropping the user's
+> maximize because the presentation policy moved something is a new bug. The real
+> axis is **staleness** — does the workspace still resemble what this maximize
+> produced — not "did anything move".
+
 > # 🚢 RELEASED — 2026-09-16: **v0.8.90** — session history, and the `@`-mention pair
 >
 > **Owner asked for the cut and chose the number**: `0.8.90`, not `0.8.81`. The
