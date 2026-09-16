@@ -73,6 +73,8 @@ import {
   LayoutTrigger,
   plan as layoutPlan,
   snapshotRungs,
+  isMaximizeStanding,
+  restorableRungs,
   withMaximized,
   withMode,
   withoutMaximized,
@@ -4202,6 +4204,13 @@ export function applyLayout(
   if (!api) return;
   // Nothing awaits a sweep: a click that changes the mode is done the moment
   // the mode is written, and the cards catch up. The promise exists for tests.
+  // ⚠️ `restore` MAY BE AN EMPTY OBJECT, AND `{}` MUST STILL BE PASSED (#818).
+  // `restorableRungs` legitimately returns `{}` when the whole snapshot is
+  // stale, and `plan` reads the PRESENCE of a restore as "this is the whole
+  // plan". Tightening this to `Object.keys(restore).length > 0` would drop the
+  // key, `plan` would fall through to the mode, and a grid switch would
+  // re-expand the entire workspace — #818 exactly, back again. It works because
+  // `{}` is truthy; that is load-bearing, not incidental.
   void layoutSweeper.request({ api, trigger, ...(restore ? { restore } : {}) });
 }
 
@@ -4229,13 +4238,31 @@ export function cycleLayoutMode(api: DockviewApi | null): void {
 export function toggleMaximizeCard(api: DockviewApi | null, cardId: string): void {
   if (!api || !cardId) return;
   const cur = sessionStore.getLayout();
-  if (cur.maximized === cardId) {
-    const restore = cur.restore; // read BEFORE the edit forgets it
+  // ONE read of the rungs for both questions below — asking twice could see two
+  // different workspaces if anything landed between them.
+  const cards = layoutCards();
+  const standing = isMaximizeStanding(cur, cards);
+  // UNDO ONLY A MAXIMIZE THAT IS STILL STANDING (#818). A held maximize whose
+  // card the user has since collapsed, tabbed or hidden is not something this
+  // gesture can "put back" — they are asking to blow this card up, which is what
+  // the fall-through does.
+  if (cur.maximized === cardId && standing) {
+    // read BEFORE the edit forgets it, and filtered to the part of the
+    // arrangement the workspace has not moved on from
+    const restore = restorableRungs(cur, cards);
     sessionStore.setLayout(withoutMaximized(cur));
     applyLayout(api, 'switch', restore);
     return;
   }
-  sessionStore.setLayout(withMaximized(cur, cardId, snapshotRungs(layoutCards())));
+  // LET GO OF A STALE MAXIMIZE BEFORE TAKING THE NEW ONE, and this line is the
+  // whole fix working or silently not working: `withMaximized` keeps the
+  // ORIGINAL snapshot when one is already held (so moving a maximize from card
+  // to card still restores the arrangement before the first blow-up). Hand it
+  // `cur` with a stale maximize still set and the days-old snapshot is inherited
+  // by the new maximize — the exact arrangement we just declined to restore,
+  // back again one gesture later.
+  const base = standing ? cur : withoutMaximized(cur);
+  sessionStore.setLayout(withMaximized(base, cardId, snapshotRungs(cards)));
   applyLayout(api, 'switch');
 }
 

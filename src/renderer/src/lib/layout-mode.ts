@@ -151,6 +151,38 @@ function heldMaximize(state: LayoutState, cards: readonly LayoutCard[]): string 
 }
 
 /**
+ * Is this maximize still the thing on screen? (#818)
+ *
+ * A maximize holds its snapshot until it is undone, and since #813 it stops
+ * rearranging anything after the moment it is taken — so it can sit for DAYS
+ * with the workspace looking completely normal, the only sign being the chip's
+ * `· maximized`. Undoing it then replays an arrangement nobody remembers asking
+ * for. This is the question that tells the two apart.
+ *
+ * ONE CARD IS CHECKED — the one the gesture names. The sharper predicate ("is
+ * every other card still folded as this maximize left it") fails twice: a
+ * maximize that folded NOTHING, because everything else was already out of the
+ * way, would never read as standing and the chip could never be cleared by the
+ * gesture — a worse trap than the one being fixed; and keying on "has another
+ * card moved" would fire on E9-05's reveal-on-attention, which moves cards on
+ * its own initiative. Whether the maximized card is still blown up is the whole
+ * question, and it is the user's own doing either way.
+ *
+ * A POPPED-OUT maximized card always stands, whatever rung it holds. Usually it
+ * is `expanded` anyway — the panel mount forces that rung when the card has no
+ * panel — but a popped-out card that was `tabbed` KEEPS `tabbed`, and rung alone
+ * would then read it as not-standing. That matters more than it looks: the
+ * fall-through takes a fresh maximize, and a take's up-push to `expanded` runs
+ * BEFORE `plan`'s popped-out exemption, so it would drag the panel back out of
+ * the OS window the user placed. Standing instead routes the gesture to the undo,
+ * which honours that exemption — the behaviour this path had before #818.
+ */
+export function isMaximizeStanding(state: LayoutState, cards: readonly LayoutCard[]): boolean {
+  const held = heldMaximize(state, cards);
+  return !!held && cards.some((c) => c.cardId === held && (c.ladder === 'expanded' || c.poppedOut));
+}
+
+/**
  * The rung each card should be on — before the exemptions, which `plan` applies.
  *
  * A card absent from the map is one this mode has no opinion about.
@@ -284,6 +316,26 @@ export function plan(opts: {
       if (exact !== card.ladder) (exact === 'expanded' ? up : down).push({ cardId: card.cardId, rung: exact });
       continue;
     }
+    // A RESTORE IS THE WHOLE PLAN — a card it does not name is left alone (#818).
+    //
+    // Required for correctness, not tidiness. `restorableRungs` drops entries
+    // the workspace has moved on from, and the entire point of dropping one is
+    // to leave that card where the user has since put it; falling through to the
+    // mode's plan here would promote it anyway — grid's own switch wants every
+    // card `expanded` — so we would decline to restore it and then move it, which
+    // is the bug wearing a different hat. It also leaves a card CREATED since the
+    // snapshot untouched, and makes an emptied restore a genuine no-op rather
+    // than a full grid re-expansion.
+    //
+    // Under focus/queue a mode USUALLY gets its say on the reactive pass that
+    // follows the state change — but not always, and the difference is not worth
+    // hiding: if a sweep is already in flight when the undo lands, the undo's
+    // `switch` takes the single queued slot and the `react` behind it is dropped
+    // (`lib/layout-sweep`). A card the restore skipped then stays un-modelled by
+    // the mode until the next store change, which in practice is moments away —
+    // statuses, focus and the rail all push constantly. Self-healing, never
+    // blocking, and strictly better than re-promoting a card the user has moved.
+    if (restore) continue;
     const target = want.get(card.cardId);
     if (!target || target === card.ladder) continue;
     if (target === 'expanded') {
@@ -311,6 +363,71 @@ export function plan(opts: {
 export function snapshotRungs(cards: readonly LayoutCard[]): Record<string, Ladder> {
   const out: Record<string, Ladder> = {};
   for (const c of cards) out[c.cardId] = c.ladder;
+  return out;
+}
+
+/**
+ * The part of the snapshot the workspace has NOT moved on from (#818).
+ *
+ * §5.8 says a maximize "restores the prior layout on repeat", and it still does:
+ * **the prior layout is restored wherever it is still the prior layout.** A card
+ * the user has rearranged since belongs to a NEWER arrangement, and replaying its
+ * old rung would discard the more recent one rather than restore the prior one.
+ *
+ * ── THE RULE, DERIVED FROM WHAT A MAXIMIZE ACTUALLY PRODUCES ────────────────
+ *
+ * Read it off `plan` above rather than inventing it:
+ *
+ *   • the maximized card            → `expanded`, exactly
+ *   • a card whose snapshot rung was NOT `expanded` → untouched, because
+ *     exemption four leaves a card that is already out of the way alone
+ *   • a card whose snapshot rung WAS `expanded`     → `collapsed`, unless it was
+ *     exempt at the time (needed a human, popped out), in which case `expanded`
+ *
+ * So an entry survives only if the card's rung TODAY is one this maximize could
+ * have produced. The third case accepts two values and looks vacuous — it is the
+ * reason the rule is safe. If the card is `expanded` now and the snapshot says
+ * `expanded`, the entry is a no-op anyway (`plan` emits nothing when the rungs
+ * already agree), so accepting it costs nothing. The damage in the reported
+ * scenario comes entirely from cards whose snapshot rung was `collapsed`,
+ * `tabbed` or `hidden` and which the user has RE-EXPANDED since — and for those
+ * the accepted set is a single value, so every one of them is caught. Sharp
+ * exactly where the bug lives; permissive exactly where it is free.
+ *
+ * It also preserves the documented "a maximize is not a trap": going to look at
+ * a folded card while a maximize is held, then undoing it, still restores in
+ * full — that card's snapshot rung was `expanded`, so both its old and its new
+ * rung are accepted.
+ *
+ * COMPARES END STATES, so it never has to ask WHO moved a card. That is what
+ * makes it immune to E9-05's reveal-on-attention and E9-06's auto-collapse
+ * without needing a user-vs-machine distinction — and why the rung mover does
+ * not become a fourth writer of layout state.
+ *
+ * Read it BEFORE `withoutMaximized`, which is what forgets the snapshot.
+ *
+ * ONLY MEANINGFUL FOR A MAXIMIZE THAT IS STILL STANDING, and it enforces that
+ * itself rather than trusting the caller. A not-standing maximize is one the
+ * gesture no longer treats as an undo at all, so answering it with a partial
+ * snapshot would hand a future caller a half-restore nobody asked for.
+ */
+export function restorableRungs(
+  state: LayoutState,
+  cards: readonly LayoutCard[]
+): Record<string, Ladder> {
+  const out: Record<string, Ladder> = {};
+  if (!state.maximized || !isMaximizeStanding(state, cards)) return out;
+  for (const card of cards) {
+    const snapshot = state.restore[card.cardId];
+    if (!snapshot) continue;
+    const survives =
+      card.cardId === state.maximized
+        ? card.ladder === 'expanded'
+        : snapshot === 'expanded'
+          ? card.ladder === 'expanded' || card.ladder === 'collapsed'
+          : card.ladder === snapshot;
+    if (survives) out[card.cardId] = snapshot;
+  }
   return out;
 }
 

@@ -96,6 +96,19 @@ on the floor, and say so in your PR.
 
 ## 0.8.91 — unreleased
 
+### Fixed
+
+- **A maximize you left on days ago can no longer ambush you.** Maximizing a
+  session holds on to how the workspace looked, so it can put that back when you
+  undo it. But a maximize left on for a long time made that memory a trap: if the
+  session you maximized was no longer filling the workspace, double-clicking its
+  header — meaning "maximize this" — instead put back an arrangement from days
+  earlier, folding away sessions you were working in and ignoring ones you'd
+  opened since. Now the double-click means what you expect in that situation, and
+  when you *do* undo a maximize only the parts you haven't changed since are put
+  back — sessions you've re-opened in the meantime, or pushed further out of the
+  way, stay where you put them, and sessions opened since are left alone.
+
 ## 0.8.90 — 2026-09-16
 
 ### Added
