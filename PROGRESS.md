@@ -3,6 +3,34 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🚢 RELEASE CUT — 2026-09-16: **v0.8.90** — session history, and the `@`-mention pair
+>
+> **Owner asked for the cut and chose the number**: `0.8.90`, not `0.8.81`. The
+> batch reads bigger than an ordinary patch — session history is a whole new
+> feature (E20, #836) on top of `@`-autocomplete (#797) and `@`-resolution
+> (#798) — which is exactly the case the standing rule below reserves `0.8.90`
+> for. The patch part is an INTEGER: `0.8.90` ranks above `0.8.81`, and nothing
+> rolls over by counting.
+>
+> ⚠️ **THIS SUPERSEDES THE "NOT RELEASED" NOTES BELOW.** The #836, #798 and #797
+> entries each say they join the `0.8.81 — unreleased` section. That section is
+> now headed **`0.8.90 — 2026-09-16`**; a fresh `0.8.91 — unreleased` is open
+> above it for the next item. Those three entries are left otherwise untouched
+> rather than edited in place — rewriting three headings to correct one number is
+> how a heading gets swallowed (the #797/#812 incident).
+>
+> **What shipped in it:** #836 (session history), #798 (`@Name` resolves at
+> send), #797 (`@`-session autocomplete), plus everything else that had been
+> sitting in the section since v0.8.8.
+>
+> **How the cut works, and where it can still fail:** `package.json`,
+> `CHANGELOG.md` and `package-lock.json` move in one commit, through a PR like
+> everything else. The **tag `v0.8.90` is pushed from `main` after that merges**,
+> and pushing the tag is what triggers the Release workflow — build, package,
+> checksum, publish. So a merged release commit is NOT a release.
+> **`gh release list` is the authority**, and until it shows `v0.8.90` the users
+> of this repo are still on v0.8.8.
+
 > # ✅ MERGED — 2026-09-16: **#836** — session history: open a previous conversation from the session card
 >
 > **PR #839, squashed to `1b9a83c`.** Issue closed. Size M as filed. E20's only
