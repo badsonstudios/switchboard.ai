@@ -1558,6 +1558,60 @@ multi-session work routine; findings feed Phase 3's review-dashboard planning.
 
 ---
 
+## E20 — Session history (milestone: Phase 2; added 2026-09-16, owner request — issue #836)
+
+*Goal: every conversation on the machine becomes reachable. switchboard can only
+open a conversation some card already points at; there are 3,036 transcripts
+under `~/.claude/projects` on the owner's machine and no way in. This is the
+CLI's `--resume` picker as a native surface — folder-scoped, searchable, each row
+described — with the pick opening a new card resumed into that conversation.
+Governing spec: DESIGN.md §5.33, §5.10 (card chrome), §5.25 (resume).*
+
+**Owner decisions (2026-09-16).** Folder-scoped by default with a toggle to all
+projects · picking opens a NEW card · two entry points (card button, `+ session`)
+· v1 is search + description only.
+
+**Measured, not assumed (2026-09-16).** Over the 200 newest transcripts:
+`ai-title` 196/200, `last-prompt` 200/200, `summary` **0/200** — the row's
+description is `ai-title` (already read via `readAiTitle`) falling back to the
+first user prompt. The CLI's own picker rows carry `firstPrompt`, `gitBranch`,
+`forkCount`, `artifactCount`, `showProjectPath`; the VS Code extension has no
+picker at all, so the CLI is the reference and no client is reimplemented here.
+
+Work items:
+
+- **P2-E20-01 · Session history picker — M (§5.33, §5.10, §5.25).** *(no deps;
+  issue #836)* A control in the session card's chrome opens that folder's past
+  conversations, newest first, with type-to-search; a toggle widens the list to
+  every project and rows then show which folder they belong to. Each row is a
+  short description — the conversation's `ai-title`, else its first user prompt —
+  plus when it was last active. Picking one spawns a **new** card resumed into
+  that conversation in its own folder, through the adapter's existing
+  `sessions.resume` path rather than a second resume implementation. The same
+  picker is reachable from `+ session` once a folder is chosen. Listing builds on
+  `listConversations` (mtime-sorted, refuses past `MAX_LISTED_CONVERSATIONS`) and
+  `locateConversation`; a conversation id arriving from the renderer is untrusted
+  input and is validated where it enters (§5.29). Reading 500 files per open is
+  the cost centre — read only what a row needs and cache per folder, invalidated
+  on mtime.
+  *Done when:* the card control lists that folder's conversations newest-first
+  with search; the toggle widens to all projects and rows gain their folder; each
+  row shows title-or-first-prompt and last-active; picking opens a NEW resumed
+  card while the originating card is untouched; the same picker opens from
+  `+ session`; an entry that cannot be resumed (folder gone, transcript
+  unreadable) says why and is never a dead click; a folder with no past
+  conversations says so plainly; the 500-entry refusal is respected rather than
+  bypassed and the scan never blocks the UI; `docs/manual/` page before the PR;
+  dogfood tracker row on merge.
+
+**Out of scope for v1, and why they are separate:** the CLI's branch/worktree
+filters, session rename, and fork nesting with fork/artifact counts (follow-ups
+once the list earns its keep) · reading a past conversation **without** resuming
+it, which is entangled with the greyed-out **History tab** — DESIGN currently
+defines that tab as the folder's *git log*, not transcripts, and that collision
+should be settled on its own · the **activity report (#722)**, a different
+feature over the same transcript scan.
+
 ## Exit criteria (Phase 2 ships when)
 0. **(added 2026-07-26)** The seams are real: a second provider adapter could
    be written without editing `sessions/ipc.ts`, renderer contributions resolve
@@ -1587,6 +1641,12 @@ before the rest of E9 — E9-05 and E9-07 are hard-blocked on E15-08, and every
 other E15 item is cheap now and an audit later)** → rest of E9 → E11 →
 E13 after E11 (needs its context packages) → E14 interleaves anywhere after
 E9 (actionable-toast slice pairs with E10's approval bar).
+
+**E20 inserted 2026-09-16 (owner request), and E11 pauses for it.** E11 ran
+00–08; #798 (`@Name` resolution at send) merged and the owner chose to take
+session history next, coming back to **#799, #800, #796, #801** afterwards. E20
+has no dependency on the rest of E11 — it reads transcripts and uses the resume
+path, neither of which the bus owns.
 
 **Three items added 2026-07-30**, all user-facing, none blocking anything:
 **E7-06** (auto task labels), **E16** (document viewer) and **E17** (session

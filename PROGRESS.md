@@ -3,6 +3,50 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔭 NEXT — 2026-09-16: **session history** — open a previous conversation from the session card (#836); E11 pauses after #798
+>
+> **Owner pivot, 2026-09-16.** E11 stops here and is resumed later. The next work
+> is SESSION HISTORY: the Claude Code "history button" applied to switchboard — a
+> control on a session card drops down that folder's past conversations, each with
+> a short description, and picking one opens it.
+>
+> **Brief: issue #836.** Spec: `docs/plans/04-phase-2-switchboard.md` § E20 and
+> `docs/DESIGN.md` §5.33.
+>
+> **Owner decisions (2026-09-16), all four answered:**
+> - **Scope:** the session's own folder by default, with a toggle to every project.
+> - **On pick:** opens a **NEW** card, resumed into that conversation, in its own
+>   folder. The card you clicked from is untouched.
+> - **Entry points:** a button on the session card **and** the `+ session` flow.
+> - **v1 fidelity:** type-to-search + a short description (title, else first
+>   prompt) + when it was last active; folder shown once the list is widened. No
+>   branch/worktree filters, no rename, no fork nesting — those are follow-ups.
+>
+> **Measured before planning — do not re-derive.** Across the 200 most recently
+> written transcripts under `~/.claude/projects`: `ai-title` **196/200**,
+> `last-prompt` **200/200**, `summary` **0/200**. So the description comes from
+> `ai-title` — which the Claude adapter already reads (`readAiTitle`, wired as the
+> `titles` capability) — falling back to the first user prompt, which is what the
+> CLI's own picker shows. **`summary` is not a source on this machine.**
+>
+> **The CLI owns the reference picker.** `-r, --resume [value]` is *"Resume a
+> conversation by session ID, or open interactive picker with optional search
+> term"*. Its rows carry `firstPrompt`, `gitBranch`, `forkCount`,
+> `artifactCount`, `showProjectPath`; its controls are type-to-search,
+> `ctrl+a` (all projects), branch and worktree filters, `Rename session`, and
+> pagination. The VS Code **extension** has no picker of its own — it contributes
+> `reopenClosedSession` and builds `--resume=<id>` through the embedded SDK.
+>
+> **What already exists:** `listConversations` (mtime-sorted, refuses past 500
+> entries), `locateConversation` / `conversationExists` (id shape validated), and
+> the adapter's `sessions.resume` capability with `canResume` + `start-plan`. The
+> gap is descriptions, the UI, and resuming a transcript no card has ever owned.
+>
+> **Still open in E11, to come back to:** #799, #800, #796, #801.
+> **#722 is NOT this.** The activity report is a different feature over the same
+> transcript scan; whatever lists and slices transcripts for history should be the
+> thing #722 later builds on, rather than a second scanner.
+
 > # ✅ MERGED — 2026-09-15: **#798** — `@Name` resolves at send: the mentioned session's recent work goes ahead of the prompt
 >
 > **PR #833, squashed to `841ec77`.** Issue closed. Size M as filed.
