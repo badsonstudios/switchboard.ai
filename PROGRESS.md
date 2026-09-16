@@ -3,55 +3,81 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🚧 IN PROGRESS — 2026-09-16: **#846** — session history describes conversations with raw command plumbing
+> # ✅ MERGED — 2026-09-16: **#846** — conversations are described by what was asked, not by command markup
 >
-> **Started 2026-09-16** on `feature/846-command-plumbing`, off `4936193`.
+> **PR #847, squashed to `7196f6e`.** Issue closed by `Closes #846`.
+> ⚠️ **NOT RELEASED** — joins the `0.8.91 — unreleased` section; `gh release
+> list` is the authority and **v0.8.90** is still the latest tag, so this is on
+> `main` and in no installed build.
 >
-> **Owner-reported, hand-testing #836 on v0.8.90 — a defect in RELEASED code.**
-> History rows read `<command-name>/clear</command-name> <command-message>…`
-> instead of prose.
+> **Owner-reported while hand-testing #836 on v0.8.90 — a defect in RELEASED
+> code**, and the dogfood loop doing exactly what it exists for. The #836 tracker
+> row is marked partly invalidated rather than left looking as though it passed:
+> its "do the descriptions help you RECOGNISE a conversation?" check is precisely
+> what failed.
 >
-> ⚠️ **THE FIRST FIGURE FILED HERE WAS WRONG, AND A REVIEW CAUGHT IT.** This
-> entry said 105 of 150 (71%); re-measured with the method written down, it is
-> **5 of the newest 40, 5 of the newest 150, and 39 of the newest 400** that open
-> with `<command-name>`. `<command-message>` never leads a surviving first block.
-> The wrong number had reached three code comments and a test before it was
-> re-run. **The method is now stated in `shared/command-invocation.ts`** so the
-> next reader reproduces it instead of inheriting it. The bug is real either way
-> — the owner hit it — but the size of it was overstated.
+> **What it does.** The CLI writes a slash command as an ordinary `user` line
+> whose text is `<command-name>…</command-name>` markup. The prompt readers now
+> skip it and take the first real prose turn; a conversation that is *only*
+> commands is described by the command itself (`/clear`, `/next-item 818`).
 >
-> It is only *sometimes* visible because the row prefers `ai-title` (192/200) and
-> falls back to the first prompt rarely.
+> **Decisions worth finding again:**
+> - **The fix is in `promptText`, not in the history module.** That one choke
+>   point is shared with `firstPrompt`'s GOAL section and the context package's
+>   instruction list, so the markup stopped reaching **session hand-offs** at the
+>   same time — a half the owner could never have seen, and which would otherwise
+>   have survived the visible fix.
+> - **Two exports, because two consumers want different things from one line:**
+>   `isCommandPlumbing` (prose readers skip) and `commandInvocation` (the Feed and
+>   the history fallback render). That split is the reference implementation's own
+>   — the VS Code webview keeps a `startsWith` prefix list AND a separate
+>   name+args extractor. Read, not guessed.
+> - **It lives in `src/shared/`**, not beside `isPlumbing` in `main/feed/blocks.ts`,
+>   because **the renderer cannot import from `src/main`** — a helper there would
+>   have forced the Feed to keep its private regex, which is the duplication this
+>   removed.
+> - **`isPlumbing` was deliberately left alone.** It covers the disjoint
+>   `<local-command-*>` family and is correct; `isMeta` lines and
+>   `<local-command-stdout>` never reach a prompt test at all.
 >
-> ⚠️ **The first shape table filed on the issue was WRONG and is corrected in a
-> comment.** `<local-command-caveat>` (116) and untagged `isMeta` lines (68) are
-> already dropped by `deriveIntents` (`if (entry.isMeta === true) return []`),
-> and `<local-command-stdout>` is turned into an ASSISTANT block by
-> `localCommandText` before any prompt test runs. One family survives, not five.
+> ⚠️ **TWO THINGS I GOT WRONG, BOTH CAUGHT BY REVIEW — worth reading before
+> trusting a number in this file.**
+> - **A measurement did not reproduce.** This entry and the issue said 105 of 150
+>   (71%). Re-run with the method written down it is **5 of the newest 40, 5 of
+>   150, 39 of 400**. The wrong figure had reached three code comments and a test.
+>   The method now lives in `shared/command-invocation.ts` so the next reader
+>   reproduces it rather than inheriting it. The bug was real; its size was not.
+> - **A blocker in my own fix.** Retiring the Feed's private regex made its
+>   collapsed marker show a command's ARGUMENTS — fine for `/next-item 818`, and
+>   wrong here: **7 of the 10 commands with non-empty args in the 1,200 newest
+>   transcripts run to 1,907–5,929 characters with up to 94 newlines**, because
+>   `/startup` and `/next-item` are invoked with whole briefings. That blob would
+>   have become a one-line `nowrap` marker AND an expander button's accessible
+>   name. `commandInvocation` now flattens and clamps to 80 chars; the full text
+>   stays in the expanded body.
 >
-> **Blast radius is wider than the picker.** The description is built on
-> `promptText` (`sessions/context-package.ts`), shared with `firstPrompt`
-> (`sessions/queries.ts`) — the context package's GOAL section. So hand-offs can
-> carry `<command-name>/clear</command-name>` as the stated goal. Fix belongs in
-> the shared helper, not in the history module.
+> **Also from review:** the Feed and the prompt readers still disagreed until the
+> Feed was made to consult `isCommandPlumbing` first — `commandInvocation` matches
+> the tags ANYWHERE, so a message that merely *quotes* the markup was being
+> collapsed into a chip with the real sentence hidden. The message in question is
+> the bug report that opened this issue. And a false claim in my own rationale is
+> corrected: **`<task-notification>` leads 275 surviving user blocks**, far more
+> than the command tags. It never leads a transcript's FIRST surviving block, so
+> no description shows it, but it does reach the instruction list — deferred to
+> **#704** on purpose, since claiming it here would change Feed rendering too.
 >
-> **The reference implementation, read not guessed** (VS Code extension
-> `webview/index.js`, 2.1.226): it keeps an explicit prefix list —
-> `<local-command-stdout>`, `<local-command-stderr>`, `<system-reminder>`,
-> `<bash-input>`, `<bash-stdout>`, `<bash-stderr>`, `<task-notification>`,
-> `<tick>`, `<command-name>`, `<command-message>` — and a `startsWith` predicate
-> that skips any message beginning with one. When it DOES show a command it
-> never renders the XML: it extracts `<command-name>` + `<command-args>` and
-> joins them (`/clear`, `/next-item 818`).
+> **Verified:** typecheck, eslint, the full unit suite (296 files, **8,219**
+> passed), the affected suites, the whole `feed-blocks` and `FeedView` families,
+> and the full Playwright suite (370 collected, 367 passed) against a bundle
+> **rebuilt with the review fixes** — the earlier full e2e had started before they
+> landed and was stale, which is the second time this session a green e2e had to
+> be discarded for that reason.
 >
-> **Lead worth following before writing anything:** `blocks.ts` already has an
-> `isPlumbing` predicate, consulted by `userIntents` for both string and text-item
-> content. The fix may be a missing tag in an existing shared list rather than a
-> new rule — confirm against the real derived blocks first, since the 105/150
-> figure counts RAW lines and is not proof about derived ones.
+> **Recorded, not taken:** a command-plus-attachment turn loses its attachment
+> note (unreachable in practice), and a commands-only row renders in quotation
+> marks as though the command were the user's words.
 >
-> Related: **#704** (`<task-notification>` rendering as raw XML) is the same
-> family, and is on the reference list too.
+> **Next up: #799**, then **#800**, **#796**, **#801** — E11 resumes.
 
 > # ✅ MERGED — 2026-09-16: **#818** — a long-held maximize no longer replays a days-old layout
 >
