@@ -11,6 +11,7 @@ import path from 'path';
 import {
   beginSend,
   heldMessages,
+  holdContextBlock,
   inboxKey,
   isSendInFlight,
   pruneInboxes,
@@ -372,6 +373,124 @@ describe('withForwarded — what the user’s Enter actually sends', () => {
 
   it('no messages is exactly what was typed', () => {
     expect(withForwarded([], 'just me')).toBe('just me');
+  });
+});
+
+describe('holdContextBlock — a context chip dropped on this card (P2-E11-10)', () => {
+  const from = { id: 'sess-a', name: 'TradingApp' };
+
+  it('files the block and marks it as CONTEXT, not as a message', () => {
+    expect(holdContextBlock('card-1', from, '# Context from @TradingApp\n')).toBe('held');
+    const held = heldMessages('card-1');
+    expect(held).toHaveLength(1);
+    expect(held[0].kind).toBe('context');
+    expect(held[0].from).toEqual(from);
+    expect(held[0].text).toBe('# Context from @TradingApp\n');
+  });
+
+  it('persists immediately — the composer may unmount before any debounce', () => {
+    holdContextBlock('card-1', from, 'BLOCK');
+    expect(sent.at(-1)?.[inboxKey('card-1')]).toBeTruthy();
+  });
+
+  it('waits its turn behind whatever is already held, oldest first', () => {
+    holdContextBlock('card-1', from, 'FIRST');
+    holdContextBlock('card-1', from, 'SECOND');
+    expect(heldMessages('card-1').map((h) => h.text)).toEqual(['FIRST', 'SECOND']);
+  });
+
+  it('gives each block its own id, so removing one does not take the other', () => {
+    holdContextBlock('card-1', from, 'FIRST');
+    holdContextBlock('card-1', from, 'SECOND');
+    const [a, b] = heldMessages('card-1');
+    expect(a.id).not.toBe(b.id);
+    removeHeldMessages('card-1', [a.id]);
+    expect(heldMessages('card-1').map((h) => h.text)).toEqual(['SECOND']);
+  });
+
+  it(`answers FALSE at the ${SIBLING_INBOX_CAP}-block ceiling — refused, never silently dropped`, () => {
+    for (let i = 0; i < SIBLING_INBOX_CAP; i++) {
+      expect(holdContextBlock('card-1', from, `b${i}`)).toBe('held');
+    }
+    expect(holdContextBlock('card-1', from, 'one too many')).toBe('full');
+    expect(heldMessages('card-1')).toHaveLength(SIBLING_INBOX_CAP);
+  });
+
+  it('answers FULL once the waiting characters would pass the blob ceiling', () => {
+    // The cap protects the WORKSPACE FILE, which every other preference shares,
+    // so it applies to a dragged package exactly as to a sibling's message.
+    expect(holdContextBlock('card-1', from, 'x'.repeat(SIBLING_INBOX_CHAR_CAP))).toBe('held');
+    expect(holdContextBlock('card-1', from, 'x'.repeat(100))).toBe('full');
+  });
+
+  it('⚠️ tells the three refusals APART, so the message shown can be true', () => {
+    // They used to be one `false`, which rendered as "this session is already
+    // holding as much as it can" — a specific and actionable claim, and a false
+    // one for both of these.
+    expect(holdContextBlock(undefined, from, 'BLOCK')).toBe('no-card');
+    expect(holdContextBlock('card-1', from, '')).toBe('empty');
+    expect(heldMessages('card-1')).toHaveLength(0);
+  });
+});
+
+describe('a context block is not a sibling’s message (P2-E11-10)', () => {
+  const from = { id: 'sess-a', name: 'TradingApp' };
+
+  it('⚠️ goes VERBATIM — no sibling header, because no sibling sent it', () => {
+    // `formatSiblingPrompt` says another session wrote this and the user passed
+    // it on. The user went and FETCHED this one, and main already rendered its
+    // "Context from @A" header, its provenance sentence and its coverage line.
+    // Wrapping it would misattribute the user's own gesture to an agent.
+    holdContextBlock('card-1', from, 'CONTEXT-DOC');
+    expect(withForwarded(heldMessages('card-1'), '')).toBe('CONTEXT-DOC');
+  });
+
+  it('still wraps an actual sibling message, and keeps both in order', () => {
+    expect(receiveSiblingMessage(msg({ cardId: 'card-1', text: 'from an agent' }))).toEqual({
+      placed: true,
+      shown: false,
+    });
+    holdContextBlock('card-1', from, 'CONTEXT-DOC');
+    const out = withForwarded(heldMessages('card-1'), 'and do this');
+    expect(out).toContain('from another switchboard session');
+    expect(out).toContain('from an agent');
+    // The context block is in there untouched, and the typed text is last.
+    expect(out).toContain('CONTEXT-DOC');
+    expect(out.indexOf('CONTEXT-DOC')).toBeGreaterThan(out.indexOf('from an agent'));
+    expect(out.endsWith('and do this')).toBe(true);
+    // …and the context block did NOT pick up an attribution header of its own.
+    expect(out.match(/from another switchboard session/g)).toHaveLength(1);
+  });
+});
+
+describe('the kind discriminant tolerates what other builds wrote', () => {
+  it('⚠️ reads a stored message with NO kind as a sibling message', async () => {
+    // Every message written before this field existed is sitting in a real
+    // workspace blob with no `kind`. Requiring it would fail them all on the
+    // next launch — silently deleting messages nobody had read.
+    bridge({
+      [inboxKey('card-1')]: [
+        { id: 'd1', from: { id: 'sess-a', name: 'A' }, text: 'older build', at: 'now' },
+      ],
+    });
+    await loadUiState();
+    resetInboxCacheForTests();
+    const held = heldMessages('card-1');
+    expect(held).toHaveLength(1);
+    expect(held[0].kind).toBeUndefined();
+    // …and it is still wrapped as the message it is.
+    expect(withForwarded(held, '')).toContain('from another switchboard session');
+  });
+
+  it('drops an entry whose kind it does not recognise, rather than guessing a header', async () => {
+    bridge({
+      [inboxKey('card-1')]: [
+        { id: 'd1', from: { id: 'sess-a', name: 'A' }, text: 'from later', at: 'now', kind: 'whatever' },
+      ],
+    });
+    await loadUiState();
+    resetInboxCacheForTests();
+    expect(heldMessages('card-1')).toHaveLength(0);
   });
 });
 

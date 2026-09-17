@@ -191,6 +191,8 @@
     "resuming": "Resuming {title}…",
     "taskLabelEmpty": "+ task label",
     "taskLabelHint": "Click to set a task label for this session",
+    "contextChip": "context",
+    "contextChipHint": "Drag this onto another session's prompt box to hand that session this one's context",
     "plan": "✓ {done}/{total}",
     "planTitle": "Plan progress (TodoWrite steps completed)",
     "popOut": "Pop out into its own window",
@@ -251,6 +253,35 @@
     "menuSoundHint": "The sound this session makes when it wants you. Click to hear the next one and keep it. Sessions get different sounds automatically; this pins one — keep clicking past the last to go back to automatic.",
     "checkedIcon": "☑",
     "uncheckedIcon": "☐"
+  },
+  "contextDrop": {
+    "title": "Hand over context",
+    "from": "from {from}",
+    "fromTo": "from {from} to {to}",
+    "close": "Close",
+    "closeIcon": "×",
+    "coverage": {
+      "whole": "This covers the whole of that session's conversation.",
+      "recent": "This covers the most recent part of that session's conversation — there is older history it does not include.",
+      "unreadable": "That session's transcript could not be read. The options below will look empty — that says what could not be seen, not that the session has done nothing."
+    },
+    "option": {
+      "state": "Last response",
+      "package": "Summary handoff",
+      "excerpt": "Full excerpt"
+    },
+    "hint": {
+      "state": "The last thing that session said, and the last thing it did.",
+      "package": "A structured handoff: the goal, what you asked along the way, the plan, the files touched, recent activity, and where it left off.",
+      "excerpt": "The recent end of the conversation — what was said and what was run, as it happened."
+    },
+    "tokens": "~{tokens} tokens",
+    "emptyMark": "nothing recorded",
+    "defaultMark": "default",
+    "currentMark": "✓",
+    "note": "Nothing is sent. What you choose waits in the other session's prompt box until you press Enter there.",
+    "cancel": "Cancel",
+    "ok": "Add to prompt box"
   },
   "sessionHistory": {
     "open": "Previous conversations",
@@ -617,6 +648,20 @@
       "hint": "Not sent yet. Press Enter to send it to this session, with anything you type — or dismiss it.",
       "dismiss": "Dismiss the message from {name}",
       "dismissIcon": "×"
+    },
+    "context": {
+      "label": "Context from other sessions",
+      "from": "Context from @{name}",
+      "fromHint": "Context you took from the session “{name}” (session id {id})",
+      "hint": "Not sent yet. Press Enter to send it to this session, with anything you type — or dismiss it.",
+      "dismiss": "Dismiss the context from {name}",
+      "dropHint": "Drop to hand this session the other one's context",
+      "emptyOption": "That option had nothing in it, so nothing has been added.",
+      "noCard": "This session can't hold context right now.",
+      "selfDrop": "That chip is this session's own context. Drag it onto a different session.",
+      "failed": "That session's context couldn't be read, so nothing has been added.",
+      "held": "Context from {name} is waiting in the prompt box. Press Enter to send it.",
+      "full": "This session is already holding as much as it can. Send or dismiss what's waiting first."
     },
     "attached": {
       "images": "{images, plural, one {# image} other {# images}} attached",

@@ -63,6 +63,7 @@
 // TRANSCRIPT, which is stable by construction.
 import { DerivationCaps, FeedBlock, TEXT_CAP, touchedPath } from '../feed/blocks';
 import { isCommandPlumbing } from '../../shared/command-invocation';
+import { cleanSenderName } from '../../shared/sibling-message';
 import { blocksFrom, renderBlock, sliceTail } from './transcript-blocks';
 // TYPE-ONLY, and it has to stay that way: `queries.ts` imports this module for
 // `sessionContext`, so a VALUE import here would close a runtime cycle between
@@ -687,7 +688,7 @@ export function buildContextPackage(src: PackageSource): ContextPackage {
  * recent end is describing its own blind spot. Printing the second sentence in
  * the first case would invent a missing history that does not exist.
  */
-function emptySection(id: SectionId, coverage: ContextPackage['coverage']): string {
+export function emptySection(id: SectionId, coverage: ContextPackage['coverage']): string {
   // EVERY coverage-sensitive section branches, and the review that found two of
   // them unhedged is why this is one predicate rather than a per-case judgement
   // call: `plan` and `state` each read as a fact about the SESSION ("kept no
@@ -737,7 +738,7 @@ function emptySection(id: SectionId, coverage: ContextPackage['coverage']): stri
  * would conclude something false about the work rather than something true
  * about the read.
  */
-const COVERAGE_LINE: Record<ContextPackage['coverage'], string> = {
+export const COVERAGE_LINE: Record<ContextPackage['coverage'], string> = {
   whole: 'the whole conversation',
   recent:
     'the most recent part of the conversation — there is older history not included here',
@@ -782,7 +783,12 @@ function groupDigits(n: number): string {
  */
 export function renderPackage(pkg: ContextPackage): string {
   const lines: string[] = [];
-  lines.push(`# Context from @${pkg.session.name}`);
+  // FLATTENED (#799 review). A card title is the user's, but it lands in the
+  // heading of a document another model reads — and nothing on the rename paths
+  // normalises whitespace, so a newline in a title would break the header. Same
+  // helper, same reason, as the sibling message's own attribution line. It is
+  // identity for every ordinary title, so byte-stability is untouched.
+  lines.push(`# Context from @${cleanSenderName(pkg.session.name)}`);
   lines.push('');
   lines.push(
     'This handoff was extracted mechanically from the session transcript — no model ' +

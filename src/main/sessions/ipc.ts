@@ -67,6 +67,7 @@ import type { ConversationHistoryRequest } from '../../shared/session-history';
 import { LogFields, Logger } from '../log/logger';
 import { assignAccent, detectProjectType } from './identity';
 import { summariesFrom } from './queries';
+import type { ContextOffer } from '../../shared/context-drop';
 import type { MentionPrompt } from '../../shared/mention-prompt';
 import { EventFeed } from '../events/feed';
 import { HistoryRepair } from './history-repair-log';
@@ -137,6 +138,14 @@ export interface SessionIpcDeps {
   defaultProviderId: () => string;
   /** git toplevel for a folder (null if not a repo) — auto-group key (E12-05) */
   repoRoot: (folder: string) => Promise<string | null>;
+  /**
+   * The handoff behind a dropped context chip (P2-E11-10, §5.5).
+   *
+   * OPTIONAL for `resolveMentions`' reason: a wiring without it — the unit
+   * harness, or any future host that does not build packages — refuses the drop
+   * rather than failing to start. `null` means no offer could be made.
+   */
+  contextOffer?: (ref: string) => ContextOffer | null;
   /** slash-command discovery for the composer popup (E10-07, §5.17) — async:
    *  the scan must never stall the main process on a slow disk */
   slashCommands: (folder: string, providerId: string) => Promise<SlashCommand[]>;
@@ -1596,6 +1605,33 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   // `mention-resolve.ts`; this is the boundary, so it checks what the renderer
   // sent and turns a throw into an answer (#347). `null` means the lookup did
   // not happen, and the composer then sends the draft as typed and SAYS so.
+  // The context chip's drop dialog (P2-E11-10, §5.5). ONE build of ONE package
+  // answers both halves the dialog needs — the size of each fidelity and the
+  // text each would inject — so the number the user chose from and the block
+  // that lands cannot be two different reads of a live transcript.
+  //
+  // `null` rather than an empty offer when it cannot be built: "there is no
+  // such session" and "that session has nothing to hand over" are different
+  // facts, and only the second one is an offer. The composer refuses out loud
+  // rather than opening a dialog with nothing in it.
+  broker.handle('sessions:contextOffer', (_e, ref: unknown) => {
+    if (typeof ref !== 'string' || ref.trim() === '') {
+      return refuse('sessions:contextOffer', 'a session reference is required');
+    }
+    if (!deps.contextOffer) return null;
+    try {
+      return deps.contextOffer(ref);
+    } catch (err) {
+      // P6: a package build that threw must not reject the renderer's promise.
+      // The drop is refused with a notice and the session is untouched.
+      log.warn('sessions:contextOffer failed; the drop will be refused', {
+        ref,
+        error: String(err),
+      });
+      return null;
+    }
+  });
+
   broker.handle('sessions:resolveMentions', (_e, sessionId: unknown, text: unknown) => {
     if (typeof sessionId !== 'string' || typeof text !== 'string') {
       return refuse('sessions:resolveMentions', 'sessionId and text are required');

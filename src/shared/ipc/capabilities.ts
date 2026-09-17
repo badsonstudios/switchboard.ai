@@ -323,6 +323,12 @@ export const CHANNEL_CAPABILITIES = {
   // already gates — a surface allowed only to LIST sessions must not be able to
   // read what they said.
   'sessions:resolveMentions': 'transcripts.read',
+  // The context chip's drop dialog (P2-E11-10, §5.5). TRANSCRIPTS for exactly
+  // `resolveMentions`' reason, and more so: the answer carries a rendered
+  // handoff built from another session's conversation — its goal, its plan, the
+  // files it touched, what it last said. A caller allowed only to LIST sessions
+  // must not be able to read what they did.
+  'sessions:contextOffer': 'transcripts.read',
   'settings:getAutoLabels': 'settings.read',
   'settings:setAutoLabels': 'settings.write',
   'settings:getAutoTrust': 'settings.read',

@@ -25,14 +25,31 @@ export function SiblingMessages({
   return (
     <div
       role="group"
-      aria-label={t('feedView.sibling.label')}
+      // NAMED FOR WHAT IT HOLDS (#799 review). A group holding only context the
+      // user dragged is not "messages from other sessions", and that label is
+      // the only thing a screen-reader user gets for the region.
+      aria-label={t(
+        messages.every((m) => m.kind === 'context')
+          ? 'feedView.context.label'
+          : 'feedView.sibling.label'
+      )}
       data-sibling-messages=""
       style={{ display: 'flex', flexDirection: 'column', gap: 4 }}
     >
-      {messages.map((m) => (
+      {messages.map((m) => {
+        // A CONTEXT BLOCK IS NOT A MESSAGE (P2-E11-10), and every line the user
+        // reads has to say which they are looking at. Both wait the same way and
+        // both go on the same Enter — what differs is where they came from:
+        // another agent chose to send a message, while the user themselves
+        // dragged this context across. Labelling the second as the first would
+        // attribute the user's own gesture to a session that never asked.
+        const isContext = m.kind === 'context';
+        const ns = isContext ? 'feedView.context' : 'feedView.sibling';
+        return (
         <div
           key={m.id}
           data-sibling-message={m.id}
+          data-sibling-kind={isContext ? 'context' : 'sibling'}
           style={{
             // Highlighted, per §5.4 — and by an edge AND a wash, never the hue
             // alone (§5.32): the "From @…" line says what it is in words.
@@ -50,15 +67,15 @@ export function SiblingMessages({
               // Two cards can share a name (two checkouts of one repo), so
               // the session id is one hover away — the same id `list_sessions`
               // shows an agent, so the user and the agent can compare notes.
-              title={t('feedView.sibling.fromHint', { name: m.from.name, id: m.from.id })}
+                      title={t(`${ns}.fromHint`, { name: m.from.name, id: m.from.id })}
               style={{ fontSize: 11, fontWeight: 700, color: 'var(--text)', flex: 1, minInlineSize: 0 }}
             >
-              {t('feedView.sibling.from', { name: m.from.name })}
+              {t(`${ns}.from`, { name: m.from.name })}
             </span>
             <button
               onClick={() => onDismiss(m.id)}
-              aria-label={t('feedView.sibling.dismiss', { name: m.from.name })}
-              title={t('feedView.sibling.dismiss', { name: m.from.name })}
+              aria-label={t(`${ns}.dismiss`, { name: m.from.name })}
+              title={t(`${ns}.dismiss`, { name: m.from.name })}
               data-sibling-dismiss={m.id}
               style={{
                 background: 'transparent',
@@ -90,9 +107,10 @@ export function SiblingMessages({
           >
             {m.text}
           </div>
-          <div style={{ fontSize: 10, color: 'var(--muted)' }}>{t('feedView.sibling.hint')}</div>
+          <div style={{ fontSize: 10, color: 'var(--muted)' }}>{t(`${ns}.hint`)}</div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

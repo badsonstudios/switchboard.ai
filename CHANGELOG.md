@@ -96,6 +96,29 @@ on the floor, and say so in your PR.
 
 ## 0.8.91 — unreleased
 
+### Added
+
+- **Hand one session's context to another by dragging it.** Every running
+  session now has a small **context** chip in its header. Drag that chip onto
+  another session's prompt box and you're asked what to hand over: the **last
+  response**, a **summary handoff** (the goal, what you asked along the way, the
+  plan, the files touched, recent activity and where it left off), or a **full
+  excerpt** of the recent conversation. Each option shows roughly how many
+  tokens it will cost the session receiving it, so you can see before you choose
+  that one of them is ten times the size of another. The summary handoff is the
+  default.
+
+  What you pick lands in the other session's prompt box as a block you can read,
+  exactly like a message from another session — **nothing is sent until you
+  press Enter there**, and you can add your own instructions alongside it or
+  throw it away. Cancel leaves both sessions untouched.
+
+  It tells you what it doesn't know, too: if it could only read the recent part
+  of a long conversation it says so, both in the dialog and in what the other
+  session receives, rather than presenting a partial read as the whole story.
+  An option with nothing behind it is marked "nothing recorded" instead of
+  looking full.
+
 ### Fixed
 
 - **Previous conversations are described by what you asked, not by markup.** In
