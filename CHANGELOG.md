@@ -143,6 +143,21 @@ on the floor, and say so in your PR.
   back — sessions you've re-opened in the meantime, or pushed further out of the
   way, stay where you put them, and sessions opened since are left alone.
 
+### Internal
+
+- **switchboard now records its own CPU use in the log, once a minute.** Each
+  line names every process the app is running — the main one, each window, the
+  graphics one — and how much CPU each is using, expressed as "cores' worth" so
+  the figure means the same thing on a laptop as on a big desktop. It also
+  records how long the app was blocked from responding, which is the closest
+  thing to a measure of "how frozen was it". Minutes where something is
+  genuinely busy are marked so they stand out when reading back.
+
+  This exists for the freezes where switchboard pegs the processor and the
+  machine becomes too slow to investigate with. You don't have to do anything,
+  or notice anything, at the moment it happens: the next time it does, the log
+  already says which part of the app was responsible.
+
 ## 0.8.90 — 2026-09-16
 
 ### Added
