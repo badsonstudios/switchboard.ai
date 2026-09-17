@@ -58,6 +58,16 @@ export const SIBLING_SETTLE_MS = 1_000;
 
 const PREFIX = 'siblingInbox.';
 
+/**
+ * What became of a dropped context block — and WHY, when it did not land.
+ *
+ * `no-card` and `empty` are should-not-happens from our own composer; they are
+ * distinguished anyway because the message the user is shown has to be true, and
+ * "the box is full" is a specific, actionable claim that must not be made about
+ * an empty box.
+ */
+export type ContextHoldResult = 'held' | 'full' | 'empty' | 'no-card';
+
 /** One message, as it waits in a card. `id` is the delivery id main minted. */
 export interface HeldMessage {
   id: string;
@@ -65,6 +75,36 @@ export interface HeldMessage {
   text: string;
   /** ISO timestamp of the send */
   at: string;
+  /**
+   * What KIND of thing is waiting (P2-E11-10).
+   *
+   * ⚠️ OPTIONAL, AND ABSENT MEANS `'sibling'`. Every message written by a build
+   * before this field existed is sitting in a workspace blob right now with no
+   * `kind` at all, and a required field would make each of them fail
+   * `isHeldMessage` on the next launch — silently deleting messages the user had
+   * not read. Absence has one honest reading and this is it.
+   *
+   * ⚠️ AND THE REVERSE DIRECTION, which the argument above is silent about
+   * (#799 review): a build from BEFORE this field reading a blob written by one
+   * AFTER it accepts a `kind: 'context'` entry — its guard ignores keys it does
+   * not know — and wraps it in `formatSiblingPrompt`, misattributing a block the
+   * user dragged to a sibling that never sent it. Nothing can be done about it
+   * from here (that code is already shipped), and downgrading is rare; it is
+   * written down so the next person to widen this field knows the hazard runs
+   * both ways.
+   *
+   * The discriminant exists because the two share everything EXCEPT their
+   * header. A sibling's message is wrapped at send by `formatSiblingPrompt`,
+   * which says another agent wrote it and the user passed it on. A context block
+   * was DRAGGED BY THE USER out of another session and arrives with the header
+   * main already rendered onto it — wrapping it in the sibling header would
+   * attribute the user's own gesture to an agent that never asked for it.
+   *
+   * What it deliberately does NOT change is the safety property this module is
+   * built around: neither kind carries a field meaning "send it", and the only
+   * thing that can submit either is the composer's own Enter.
+   */
+  kind?: 'sibling' | 'context';
 }
 
 export function inboxKey(cardId: string): string {
@@ -112,6 +152,11 @@ function isHeldMessage(v: unknown): v is HeldMessage {
     m.id !== '' &&
     typeof m.text === 'string' &&
     typeof m.at === 'string' &&
+    // ABSENT IS VALID — see `HeldMessage.kind`. Anything else present but
+    // unrecognised is not: a key a LATER build wrote would render through a
+    // branch this build does not have, and the tolerant thing there is to drop
+    // the entry rather than show it under the wrong header.
+    (m.kind === undefined || m.kind === 'sibling' || m.kind === 'context') &&
     !!from &&
     typeof from === 'object' &&
     typeof from.id === 'string' &&
@@ -254,11 +299,73 @@ export function settledMessages(
  * differ only in the sentence that says which they were.
  */
 export function withForwarded(messages: readonly HeldMessage[], typed: string): string {
-  // `m.id` is the delivery id main minted and NEVER returned to the sender, so
-  // its first stretch is a marker ref the sender cannot forge.
-  const parts = messages.map((m) => formatSiblingPrompt(m.from, m.text, 'user', markerRef(m.id)));
+  const parts = messages.map((m) =>
+    // A CONTEXT BLOCK GOES AS IT IS (P2-E11-10). Main already rendered its
+    // "Context from @A" header, its provenance sentence and its coverage line,
+    // and wrapping it in `formatSiblingPrompt` would tell the receiving agent
+    // that another SESSION sent it and a human relayed it — when in fact the
+    // human went and fetched it. The forgery guard that header carries is for a
+    // message whose text an untrusted agent chose; this text is our own.
+    m.kind === 'context'
+      ? m.text
+      : // `m.id` is the delivery id main minted and NEVER returned to the sender,
+        // so its first stretch is a marker ref the sender cannot forge.
+        formatSiblingPrompt(m.from, m.text, 'user', markerRef(m.id))
+  );
   if (typed !== '') parts.push(typed);
   return parts.join('\n\n');
+}
+
+/**
+ * Park a dropped context block in a card's composer (P2-E11-10, §5.5).
+ *
+ * THE SAME STORE AS A SIBLING'S MESSAGE, on purpose. Everything this needs was
+ * built once already and is hard to get right twice: keyed by card so it
+ * survives the resume that churns the live id, persisted so it survives a quit,
+ * pruned at the boot sweep, settle-timed so an Enter already on its way does not
+ * send something the user has not seen, removed only once a send actually
+ * resolves. A parallel store would need all of it and would drift.
+ *
+ * ⚠️ ANSWERS WHICH REFUSAL, not a boolean (#799 review). §5.5's rule is that a
+ * drop is refused explicitly or queued, never silently dropped — and a caller
+ * handed only `false` can only say one thing, so all three refusals rendered as
+ * "this session is already holding as much as it can". Two of them are not that:
+ * telling someone their box is full when it is empty hands them an action that
+ * cannot help.
+ *
+ * NOTE THE CAPS ARE THE SIBLING ONES and that is deliberate rather than lazy:
+ * they bound what one card may park in the workspace blob, which is a property
+ * of the BLOB, not of who filled it. A package measures a few thousand tokens,
+ * so the ceiling is nowhere near — but a user dragging chip after chip onto one
+ * composer is exactly the shape `SIBLING_INBOX_CHAR_CAP` exists for.
+ */
+export function holdContextBlock(
+  cardId: string | undefined,
+  from: SiblingSender,
+  text: string,
+  at: string = new Date().toISOString()
+): ContextHoldResult {
+  if (!cardId) return 'no-card';
+  if (text === '') return 'empty';
+  const now = heldMessages(cardId);
+  if (now.length >= SIBLING_INBOX_CAP) return 'full';
+  const waiting = now.reduce((n, h) => n + h.text.length, 0);
+  if (waiting + text.length > SIBLING_INBOX_CHAR_CAP) return 'full';
+  write(cardId, [
+    ...now,
+    {
+      // Minted HERE rather than by main, and that is the one real difference
+      // from the sibling path: there is no delivery to correlate and no sender
+      // to keep an unguessable reference from. It only has to be unique within
+      // the card, which is what the React key and the removal need.
+      id: crypto.randomUUID(),
+      from: { id: from.id, name: from.name },
+      text,
+      at,
+      kind: 'context',
+    },
+  ]);
+  return 'held';
 }
 
 /**

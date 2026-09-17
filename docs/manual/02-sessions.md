@@ -436,6 +436,62 @@ to show it). It's told not to wait for a reply
 — nothing comes back automatically. If you want the answer, look at the other
 session, or ask the first one to read what the other has been doing.
 
+## Handing one session's work to another
+
+Reading another session's work is one thing; **handing a session everything it
+needs to carry on** is another. That's what the **context** chip is for.
+
+Every running session has one, in its header next to the status. Drag it onto
+another session's prompt box and let go.
+
+You'll be asked what to hand over, with a rough size beside each choice:
+
+- **Last response** — the last thing that session said, and the last thing it
+  did. Small. Good for *"here's what it just told me, what do you think?"*
+- **Summary handoff** — the goal it was given, what you asked for along the way,
+  its plan, the files it touched, what it has been doing recently, and where it
+  left off. This is the default, and it's the one to reach for when you want
+  another session to pick the work up.
+- **Full excerpt** — the recent end of the conversation as it happened, prose
+  and tool activity together, rather than summarised. Usually *smaller* than the
+  summary handoff, which covers the same ground plus everything else.
+
+The sizes matter, which is why they're shown. Everything you hand over gets
+read by the session receiving it every time it takes a turn, so a large excerpt
+costs that session room to think — and costs you usage. The numbers let you see
+that one option is ten times another before you pick it, rather than afterwards.
+
+**Nothing is sent by choosing.** What you pick appears in the other session's
+prompt box as a block you can read, the same way a message from another session
+does. It sits there until **you press Enter** in that session — and anything you
+type goes with it, so you can add *"carry on from here, but skip the tests"*.
+Click the **×** to throw it away instead. **Cancel** closes the dialog and
+leaves both sessions exactly as they were.
+
+### What it tells you that you might not think to ask
+
+- **How much it actually read.** Long conversations are read from the recent end
+  only. When that happens it says so — in the dialog, and again in the text the
+  other session receives — instead of handing over a partial account that reads
+  like the whole story.
+- **When there's nothing there.** An option with nothing behind it is marked
+  *nothing recorded* rather than being hidden or shown as though it were full. A
+  session you've just opened has nothing to hand over yet, and that's what it
+  will say.
+- **That nobody wrote it.** The handoff is assembled from the transcript
+  mechanically — it reports what the conversation *contains*, not what it meant.
+  The text says so, so the session reading it treats it as notes rather than as
+  a briefing from a colleague.
+
+### Good to know
+
+- **Drag it onto a different session.** Dropping a session's own chip on its own
+  prompt box is refused — it would just be handing a session a summary of what
+  it already knows.
+- **Only running sessions have a chip.** A suspended one has no conversation to
+  read yet; start it first.
+- The session you drag *from* keeps everything. Nothing is moved or cleared.
+
 ## Good to know
 
 - Quitting the app while sessions are mid-task pops up a warning listing them,

@@ -75,6 +75,7 @@ import { GitService } from './git/git-service';
 import { BusHost } from './bus/host-channel';
 import { SessionQueries, summariesFrom } from './sessions/queries';
 import { resolveMentions } from './sessions/mention-resolve';
+import { buildContextOffer } from './sessions/context-drop';
 import { renderOutput } from './bus/bus-tools';
 import { SiblingDelivery } from './sessions/delivery';
 import { pushSiblingMessage, registerDeliveryIpc } from './sessions/delivery-ipc';
@@ -2021,6 +2022,14 @@ app
       // and `get_session_output` cannot disagree about a session.
       resolveMentions: (text, ownSessionId) =>
         resolveMentions(sessionQueries, renderOutput, text, ownSessionId),
+      // The context chip's drop dialog (P2-E11-10) — the SAME `sessionQueries`
+      // the bus tools, `@Name` and `get_session_output` answer from, so a chip
+      // dragged across the screen and an agent asking about the same session
+      // cannot come back with different accounts of it.
+      contextOffer: (ref) => {
+        const got = sessionQueries.sessionContext(ref);
+        return got.ok ? buildContextOffer(got.value) : null;
+      },
     });
     // the live -> card join the rules engine scopes by (P2-E14-03)
     cardIdForLive = sessionIpc.cardIdFor;

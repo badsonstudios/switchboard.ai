@@ -40,9 +40,17 @@ import { interceptSlash } from '../lib/slash-intercept';
 import { sessionStore } from '../store/session-store';
 import { ComposerAttachments } from './ComposerAttachments';
 import { SiblingMessages } from './SiblingMessages';
+import { ContextDropDialog } from './ContextDropDialog';
+import {
+  CONTEXT_DND_TYPE,
+  isContextOffer,
+  type ContextOffer,
+  type ContextOfferOption,
+} from '../../../shared/context-drop';
 import {
   SIBLING_SETTLE_MS,
   beginSend,
+  holdContextBlock,
   isSendInFlight,
   removeHeldMessages,
   settledMessages,
@@ -1776,10 +1784,122 @@ function Composer({
    */
   const [dragDepth, setDragDepth] = React.useState(0);
   const dragging = dragDepth > 0;
+  /**
+   * The in-flight drag is carrying a CONTEXT CHIP, not files (#799 review).
+   *
+   * Without it the overlay reads "Drop files to attach them to your prompt"
+   * over the exact target the manual tells the user to aim a chip at. Set on
+   * `dragenter` — which fires per element crossed, so it is refreshed for every
+   * new drag — and cleared by the same window-level escape hatch that zeroes
+   * the counter, so it cannot outlive the drag that set it.
+   */
+  const [dragContext, setDragContext] = React.useState(false);
 
   /** a drag carrying FILES, as opposed to a text selection or an internal drag */
   const hasFiles = (dt: DataTransfer | null): boolean =>
     Array.from(dt?.types ?? []).includes('Files');
+
+  /** …and one carrying another session's CONTEXT CHIP (P2-E11-10, §5.5). */
+  const hasContext = (dt: DataTransfer | null): boolean =>
+    Array.from(dt?.types ?? []).includes(CONTEXT_DND_TYPE);
+
+  /**
+   * The offer behind a chip that has landed here — §5.5's drop dialog is open
+   * on it while this is set. `null` is "no drop in progress".
+   */
+  const [offer, setOffer] = React.useState<ContextOffer | null>(null);
+
+  /** an offer request is on the wire right now — see `onContextDrop` */
+  const contextCallOut = React.useRef(false);
+
+  /**
+   * A context chip landed on this composer (P2-E11-10, §5.5).
+   *
+   * IT NEVER INJECTS BLIND. It asks main what that session is offering and puts
+   * the answer in front of the user, because the three fidelities differ by an
+   * order of magnitude and the largest of them is spent out of THIS session's
+   * context window — a choice that belongs to the person, every time.
+   */
+  const onContextDrop = (fromId: string): void => {
+    setAttachNotice(null);
+    if (!fromId) return;
+    // ONE CHIP AT A TIME (#799 review). Two dropped before the first offer
+    // resolves would resolve last-wins, silently discarding the first — and a
+    // package build is a real round trip, so the window is not theoretical.
+    if (contextCallOut.current) return;
+    // A SELF-DROP IS NOT A TRANSFER. A session handed a summary of itself gets
+    // a few thousand tokens of what it already knows. Refused OUT LOUD rather
+    // than ignored: a gesture that does nothing and says nothing is
+    // indistinguishable from the app failing to notice it (#163's lesson), and
+    // it is the same call `@Name` makes when it resolves to its own session.
+    if (fromId === sessionId) {
+      setAttachNotice(t('feedView.context.selfDrop'));
+      return;
+    }
+    const call = window.switchboard.sessions.contextOffer?.(fromId);
+    // No bridge method at all — a partial `window.switchboard` in a unit
+    // harness, or a host that wired no package builder. Same user-visible
+    // outcome as any other failure, and said rather than swallowed.
+    //
+    // `=== undefined` rather than `!call`: a truthiness test on a value that
+    // may be a Promise is `no-misused-promises`, and rightly — a pending
+    // promise is always truthy, so the shape invites reading "did it work"
+    // off a value that only says "a call was made".
+    if (call === undefined) {
+      setAttachNotice(t('feedView.context.failed'));
+      return;
+    }
+    contextCallOut.current = true;
+    void call.then(
+      (raw) => {
+        contextCallOut.current = false;
+        // `answered` BEFORE anything reads it (#650): a broker refusal is a
+        // truthy object, and `isContextOffer` is not one of the launderers the
+        // scanner recognises. Both a refusal and a malformed answer land as "no
+        // offer", which is what the user is told.
+        const got = answered(raw);
+        if (!isContextOffer(got)) {
+          setAttachNotice(t('feedView.context.failed'));
+          return;
+        }
+        setOffer(got);
+      },
+      () => {
+        // Released on BOTH arms: a guard that can stay latched would refuse
+        // every later drop for the life of the card, which is worse than the
+        // discarded offer it exists to prevent.
+        contextCallOut.current = false;
+        setAttachNotice(t('feedView.context.failed'));
+      }
+    );
+  };
+
+  /**
+   * OK in the dialog: park the chosen text in THIS card's composer.
+   *
+   * Nothing is submitted, here or anywhere on this path — the block waits for
+   * the user's Enter exactly as a sibling's message does (§5.4), which is the
+   * seam #765 built and this item rides rather than opening a second one.
+   */
+  const onContextChoose = (from: ContextOffer['from'], option: ContextOfferOption): void => {
+    const result = holdContextBlock(cardId, from, option.text);
+    setOffer(null);
+    // REFUSED OR QUEUED, NEVER SILENT — §5.5's rule. And REFUSED WITH THE REAL
+    // REASON (#799 review): these used to collapse into "this session is
+    // already holding as much as it can", which is a specific, actionable claim
+    // and is false for two of the three — telling someone their box is full
+    // when it is empty hands them an action that cannot help.
+    setAttachNotice(
+      result === 'held'
+        ? t('feedView.context.held', { name: from.name })
+        : t(`feedView.context.${result === 'full' ? 'full' : result === 'empty' ? 'emptyOption' : 'noCard'}`)
+    );
+    // The whole point of the gesture is "now press Enter here", so it ends with
+    // the caret where that happens. Without this the OK button is removed from
+    // under the focus and it lands on `<body>` — every other send path in this
+    // file ends the same way.
+    box.current?.focus();
+  };
 
   /**
    * THE ESCAPE HATCH for the counter.
@@ -1793,7 +1913,10 @@ function Composer({
    * cannot outlive the drag that caused it.
    */
   React.useEffect(() => {
-    const clear = (): void => setDragDepth(0);
+    const clear = (): void => {
+      setDragDepth(0);
+      setDragContext(false);
+    };
     window.addEventListener('dragend', clear);
     window.addEventListener('drop', clear);
     return () => {
@@ -1803,13 +1926,14 @@ function Composer({
   }, []);
 
   const onDragEnter = (e: React.DragEvent<HTMLDivElement>): void => {
-    if (!hasFiles(e.dataTransfer)) return;
+    if (!hasFiles(e.dataTransfer) && !hasContext(e.dataTransfer)) return;
     e.preventDefault();
+    setDragContext(hasContext(e.dataTransfer));
     setDragDepth((d) => d + 1);
   };
 
   const onDragOver = (e: React.DragEvent<HTMLDivElement>): void => {
-    if (!hasFiles(e.dataTransfer)) return;
+    if (!hasFiles(e.dataTransfer) && !hasContext(e.dataTransfer)) return;
     // preventDefault on dragover is what MAKES this a drop target; without it
     // the browser refuses the drop and shows the "no entry" cursor
     e.preventDefault();
@@ -1832,6 +1956,20 @@ function Composer({
     // BEFORE the guard: a drop is the end of a drag however it is shaped, and a
     // counter left standing here is exactly the stuck overlay above.
     setDragDepth(0);
+    // A CONTEXT CHIP, CHECKED BEFORE THE FILE GUARD (P2-E11-10). The id is read
+    // SYNCHRONOUSLY for the same reason the folder/file split below is: a
+    // `DataTransfer` is neutered the instant this handler returns, so the one
+    // fact the whole gesture depends on has to come out now, even though
+    // everything done with it happens after an await.
+    if (hasContext(e.dataTransfer)) {
+      const fromId = e.dataTransfer.getData(CONTEXT_DND_TYPE);
+      e.preventDefault();
+      // Swallowed like a file drop, and for the same reason: `App.tsx` has a
+      // window-level listener that turns a drop into a new session.
+      e.stopPropagation();
+      onContextDrop(fromId);
+      return;
+    }
     if (!hasFiles(e.dataTransfer)) return;
     e.preventDefault();
     e.stopPropagation();
@@ -2420,7 +2558,7 @@ function Composer({
             zIndex: 2,
           }}
         >
-          {t('feedView.attach.dropHint')}
+          {t(dragContext ? 'feedView.context.dropHint' : 'feedView.attach.dropHint')}
         </div>
       )}
       {popupOpen && (
@@ -2515,6 +2653,16 @@ function Composer({
           and above the attachments because they arrived first in the reading
           order of what Enter will send: the forwarded text leads the prompt. */}
       <SiblingMessages messages={held} onDismiss={(id) => removeHeldMessages(cardId, [id])} />
+      {/* §5.5's drop dialog (P2-E11-10). Mounted only while a chip has landed,
+          so Cancel — and Escape, and a click on the scrim — leave both composers
+          exactly as they were, because nothing was ever written. */}
+      {offer && (
+        <ContextDropDialog
+          offer={offer}
+          onCancel={() => setOffer(null)}
+          onChoose={(option) => onContextChoose(offer.from, option)}
+        />
+      )}
       <ComposerAttachments
         attachments={attachments}
         notice={attachNotice}

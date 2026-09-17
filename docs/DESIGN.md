@@ -600,6 +600,46 @@ document itself, because a handoff is the worst possible place to describe a bli
 spot as a fact about the work. Measured: ~3,100 estimated tokens out of a 7.37 MB
 conversation, in 11.2 ms.
 
+**As built (P2-E11-10, #799) — the chip, the dialog, and the seam it rides.** The
+gesture ships as §5.5 describes it: a **context chip** in every live card's header
+(live only — a package resolves a LIVE id, so a chip on a suspended card would be
+a handle on nothing), dragged under its own transfer type onto the composer
+dropzone #476 already built. A drop **opens the dialog rather than injecting**,
+and a self-drop is refused out loud.
+
+The three fidelities are not invented for the dialog — each is something the #766
+package already computes: *last response* is its `state` section, *summary
+handoff* is the whole rendered document (**the default**, as §5.5 says), and
+*full excerpt* is its `activity` section. **Every size shown is a field copied off
+`PackageSection.tokens` / `ContextPackage.tokens`, never recomputed** — the
+done-when, and the reason is that a second estimator is a second answer that
+drifts the day either side's caps move. The test that pins it hands in a package
+whose section estimates are deliberately wrong and asserts the dialog repeats
+them, because for a real package a recomputation would agree and the test would
+pass by accident.
+
+**One IPC call carries the sizes AND the text of all three options**, from one
+build of one package. Sizes-now-text-on-OK was rejected: the source is a LIVE
+session, so the second read would happen after however long the user spent
+reading, and the estimate they chose from would describe a conversation that had
+moved on. Coverage survives into **every** option, not just the whole package —
+a single section lifted out carries no `Covers:` line of its own, and an excerpt
+that dropped it would walk back exactly the guarantee #766 exists to make.
+
+**Injection rides #765's seam rather than opening a second one.** A chosen block
+is parked in the target card's inbox (`lib/sibling-inbox.ts`) — keyed by card,
+persisted, pruned at the boot sweep, settle-timed, removed only once a send
+resolves, and structurally incapable of submitting, since nothing on the path
+calls `submitPrompt`. What it does **not** reuse is `formatSiblingPrompt`'s
+header, which says another session sent a message and the user relayed it: the
+user went and *fetched* this, and main has already rendered its own header onto
+it. A `kind` discriminant tells the two apart; **absent reads as `'sibling'`**,
+because every message written before the field existed is sitting in a real
+workspace blob without it and a required field would delete them all on the next
+launch. Control and invisible characters are **stripped in main** rather than
+refused — the refusal exists to teach a sending agent to send plain text, and
+here there is no such agent.
+
 **Cross-provider handoff (continue elsewhere).** The same premise extends across
 vendors: because context is local data — transcript + working tree + git state — a
 session can be continued on a *different provider's* CLI (Claude ⇄ Codex ⇄ Gemini),

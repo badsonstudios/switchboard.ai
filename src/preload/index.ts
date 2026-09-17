@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { ContextMenuLabels } from '../shared/context-menu';
 import type { SlashCommand } from '../shared/slash-commands';
 import type { MentionPrompt } from '../shared/mention-prompt';
+import type { ContextOffer } from '../shared/context-drop';
 import type { ConversationHistory, ConversationHistoryRequest } from '../shared/session-history';
 import type { PromptAttachment } from '../shared/prompt-attachments';
 import type { SiblingAck, SiblingMessage } from '../shared/sibling-message';
@@ -316,6 +317,14 @@ const api = {
      */
     resolveMentions: (liveId: string, text: string): Promise<MentionPrompt | null> =>
       ipcRenderer.invoke('sessions:resolveMentions', liveId, text),
+    /**
+     * What a dropped context chip is offering (P2-E11-10, §5.5): the three
+     * fidelities, the size of each, and the text each would inject — all from
+     * one build of one package, so the number shown and the block delivered
+     * describe the same read. `null` = no offer could be made.
+     */
+    contextOffer: (ref: string): Promise<ContextOffer | null> =>
+      ipcRenderer.invoke('sessions:contextOffer', ref),
     /**
      * Every persisted CARD, with its live status joined on (E7-05).
      *

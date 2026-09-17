@@ -83,6 +83,7 @@ import { presentStatus } from '../lib/rail-view';
 import { tabStripAction } from '../lib/tabstrip-keys';
 import { cardHeaderTitle } from '../lib/card-title';
 import { StatusPill } from './StatusPill';
+import { CONTEXT_DND_TYPE } from '../../../shared/context-drop';
 import type { Ladder } from '../lib/presentation';
 import { pickAdoptedGroupId } from '../lib/groups';
 import { addPopoutWindow, removePopoutWindow, subscribePopoutWindows } from '../lib/popout-windows';
@@ -1690,6 +1691,56 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 `data-no-maximize` for the reason the task label carries it: the
                 header's double-click maximizes, and a button that opens a modal
                 must not also be a way to swallow the layout. */}
+            {/* §5.5's CONTEXT CHIP (P2-E11-10) — the handle for the signature
+                gesture: drag it onto another session's prompt box and that
+                session is offered this one's context at a chosen fidelity.
+
+                ONLY ON A CARD WITH A LIVE SESSION, which this arm already
+                guarantees. A package is built by resolving a LIVE id
+                (`sessionContext` → `summariesFrom`), and a suspended card has
+                none — so a chip there would be a handle on nothing, and the
+                drop would fail at the far end for a reason the user could not
+                have guessed from a control that looked ready.
+
+                `data-no-maximize` for the reason the task label carries it: the
+                header's double-click maximizes, and starting a drag from a
+                child that also swallows clicks must not fold the workspace.
+
+                A SPAN, not a button. It is a drag handle, not a control that
+                does something when pressed — and `draggable` on a `button` is
+                the pairing that fights the native press-and-hold behaviour. The
+                label says what it is for, and the manual says the rest. */}
+            <span
+              data-testid="card-context-chip"
+              data-no-maximize
+              draggable
+              onDragStart={(e) => {
+                // The LIVE id, which is what `resolve` matches first and
+                // exactly. The card title would be ambiguous precisely when it
+                // matters — two checkouts of one repo share a name, and that is
+                // the ordinary way to end up with two sessions worth handing
+                // context between.
+                e.dataTransfer.setData(CONTEXT_DND_TYPE, live.id);
+                // `copy`, not `move`: the source session keeps its context. A
+                // `move` cursor over the target would promise otherwise.
+                e.dataTransfer.effectAllowed = 'copy';
+              }}
+              title={t('grid.contextChipHint')}
+              aria-label={t('grid.contextChipHint')}
+              style={{
+                fontSize: 9.5,
+                fontFamily: 'var(--font-mono)',
+                color: 'var(--muted)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-chip)',
+                paddingInline: 5,
+                paddingBlock: 1,
+                cursor: 'grab',
+                flexShrink: 0,
+              }}
+            >
+              {t('grid.contextChip')}
+            </span>
             <button
               data-testid="card-history"
               data-no-maximize

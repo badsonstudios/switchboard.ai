@@ -129,6 +129,26 @@ export function hasUnsafeControl(text: string): boolean {
 }
 
 /**
+ * Take everything on the `UNSAFE` list OUT — the other answer to the same
+ * hazard, for the one caller that cannot use the first (P2-E11-10).
+ *
+ * A SIBLING'S MESSAGE IS REFUSED, and that stays right: the sender is an agent
+ * which can be told "send plain text", and silently editing another agent's
+ * words would be its own small lie.
+ *
+ * A CONTEXT DROP HAS NO SUCH SENDER. The text is our own mechanical rendering of
+ * a transcript the user deliberately dragged, and a transcript can legitimately
+ * contain a control byte — a tool that printed one, a file that held one. Refusing
+ * there would kill the whole gesture over a character nobody typed, with a
+ * message about "plain text" addressed to nobody. So this path strips instead,
+ * in MAIN, where the text is built — before it reaches a surface a human will
+ * review and press Enter on, which is the property `UNSAFE` actually protects.
+ */
+export function stripUnsafeControls(text: string): string {
+  return text.replace(UNSAFE_ALL, '');
+}
+
+/**
  * The loop breaker for sessions that accept siblings' messages automatically.
  *
  * §5.4 names the default-off toggle as the thing that stops runaway loops, and

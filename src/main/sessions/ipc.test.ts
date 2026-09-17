@@ -149,6 +149,7 @@ function harness(
     throwOnSpawn?: boolean;
     /** the composer's `@Name` resolver (P2-E11-08); absent = a wiring without one */
     resolveMentions?: SessionIpcDeps['resolveMentions'];
+    contextOffer?: SessionIpcDeps['contextOffer'];
   } = {}
 ) {
   const created: Array<{
@@ -542,6 +543,7 @@ function harness(
     /** #539 — the repairs the app announces on screen rather than only logging */
     onHistoryRepair: (r: unknown) => historyRepairs.push(r),
     resolveMentions: opts.resolveMentions,
+    contextOffer: opts.contextOffer,
   } as unknown as SessionIpcDeps;
 
   const ipc = registerSessionIpc(deps);
@@ -1653,6 +1655,69 @@ describe('registerSessionIpc — @ session summaries (P2-E11-07)', () => {
   it('resolveMentions is gated on TRANSCRIPTS — it returns what another session said, not just its name', () => {
     const caps = fs.readFileSync(path.join(__dirname, '../../shared/ipc/capabilities.ts'), 'utf8');
     expect(caps).toContain("'sessions:resolveMentions': 'transcripts.read'");
+  });
+
+  // ── the context chip's drop dialog (P2-E11-10, §5.5) ──────────────────────
+  it('contextOffer hands the builder the session reference and answers with its offer', () => {
+    const seen: string[] = [];
+    const offer = {
+      from: { id: 'sess-a', name: 'A' },
+      coverage: 'whole' as const,
+      options: [{ id: 'package' as const, tokens: 10, empty: false, text: 'x' }],
+    };
+    const h = harness(undefined, dir, {
+      contextOffer: (ref) => {
+        seen.push(ref);
+        return offer;
+      },
+    });
+    expect(h.call('sessions:contextOffer', 'sess-a')).toEqual(offer);
+    expect(seen).toEqual(['sess-a']);
+  });
+
+  it('contextOffer with no builder wired answers null — the drop is refused, not injected blind', () => {
+    const h = harness(undefined, dir);
+    expect(h.call('sessions:contextOffer', 'sess-a')).toBeNull();
+  });
+
+  it('contextOffer refuses a malformed call WITHOUT asking the builder at all', () => {
+    // §5.29 at the boundary: untrusted renderer input must not reach the query
+    // core. The builder's call log is the assertion, because a check deleted in
+    // favour of the catch below would still answer null — one layer too late.
+    const calls: unknown[] = [];
+    const h = harness(undefined, dir, {
+      contextOffer: (ref) => {
+        calls.push(ref);
+        return null;
+      },
+    });
+    expect(h.call('sessions:contextOffer', 42)).toBeNull();
+    expect(h.call('sessions:contextOffer', '')).toBeNull();
+    expect(h.call('sessions:contextOffer', '   ')).toBeNull();
+    expect(h.call('sessions:contextOffer', { ref: 'sess-a' })).toBeNull();
+    expect(h.call('sessions:contextOffer')).toBeNull();
+    expect(calls).toEqual([]);
+  });
+
+  it('contextOffer turns a builder THROW into null — never a rejected promise', () => {
+    // P6: a package build that blew up must not reject the renderer's promise.
+    // The drop is refused with a notice and the session keeps working.
+    const h = harness(undefined, dir, {
+      contextOffer: () => {
+        throw new Error('the package builder exploded');
+      },
+    });
+    expect(h.call('sessions:contextOffer', 'sess-a')).toBeNull();
+  });
+
+  it('contextOffer is gated on TRANSCRIPTS — the offer carries what another session did', () => {
+    const caps = fs.readFileSync(path.join(__dirname, '../../shared/ipc/capabilities.ts'), 'utf8');
+    expect(caps).toContain("'sessions:contextOffer': 'transcripts.read'");
+  });
+
+  it('the preload’s `contextOffer()` invokes THIS channel — no test loads the preload', () => {
+    const preload = fs.readFileSync(path.join(__dirname, '../../preload/index.ts'), 'utf8');
+    expect(preload).toContain("ipcRenderer.invoke('sessions:contextOffer', ref)");
   });
 
   it('the preload’s `resolveMentions()` invokes THIS channel with (liveId, text) — no test loads the preload', () => {
