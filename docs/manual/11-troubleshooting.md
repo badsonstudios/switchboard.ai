@@ -395,3 +395,35 @@ timestamps.
 
 TODO: confirm these paths against a packaged build, and note what's safe to
 share — logs include folder paths and command lines.
+
+## switchboard is slowing my whole computer down
+
+If the app starts pegging your processor — fans up, everything sluggish, the
+mouse itself going stiff — **the log already has what's needed to work out
+why, and you don't have to catch it in the act.**
+
+Once a minute switchboard writes a `cpu heartbeat` line recording how hard each
+of its own processes is working. That matters because switchboard isn't one
+program: there's a main process doing the background work, a separate one for
+each window, and one for graphics. Knowing *which* was busy is most of the
+answer, and it's the thing that's impossible to check by hand on a machine
+that's already too slow to open Task Manager.
+
+Two things on that line are worth knowing how to read:
+
+- **`cores` — the one listed against each process, and `totalCores` for the
+  whole app — is a count of processor cores' worth of work**, not a percentage.
+  `1.0` means one core completely busy; `0.1` is a tenth of one. It's written
+  this way on purpose so a reading from a laptop and a reading from a fast
+  desktop mean the same thing. (`coreCount`, separately, is just how many cores
+  the machine has — it's there so the two readings can be compared.)
+- **`lagMaxMs` is how long the app went unable to respond** during that minute,
+  in thousandths of a second. A small number is normal and always present. A
+  number in the thousands means it genuinely froze.
+
+Busy minutes are recorded as warnings, so they stand out when you read back
+through the file, and the first line covers the minute from launch onwards —
+including startup, which is usually the busiest minute of a run.
+
+If you hit a freeze, the useful thing to send is the log itself; it covers the
+whole period, including the part where the machine was too slow to use.

@@ -3,6 +3,35 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🚧 IN PROGRESS — 2026-09-17: **#719** — switchboard.exe pegs the laptop CPU
+>
+> **Branch `feature/719-cpu-heartbeat`.** Picked up at the owner's explicit
+> direction (issue comment, 2026-09-17): this jumped the E11 queue ahead of
+> #800/#796/#801 after a THIRD occurrence, the second in one day.
+>
+> **Scope is instrumentation-first, and that is settled, not optional** — the
+> owner arrived at it independently in the machine-scope comment. Three facts
+> force it: the burner is **laptop-only** (zero occurrences on this dev
+> desktop, same builds, same owner), a **restart clears it** (accumulating
+> in-process state, not system-level), and **no capture exists from any of the
+> three occurrences**. So the item does NOT budget for a local repro; it ships
+> a per-process CPU heartbeat to the laptop and lets occurrence 4 name its own
+> burner.
+>
+> **Do not re-derive:** bugs 1+3 shipped in v0.8.7 (PR #745), bug 2 in v0.8.8
+> (PR #749). All three occurrences post-date them, so the remaining cause is
+> none of those three. Bugs 4 and 5 have their own tickets (#743, #744).
+>
+> **The sharpest lead, being read in parallel:** the owner ran **v0.8.8 for
+> seven days on this same laptop with zero incidents**, then took **three
+> incidents in under two days on v0.8.90**. 47 commits sit between those tags.
+> Workload changed too, so this is correlation, not proof — but the version
+> boundary sits exactly on the behaviour change.
+>
+> **#815 (Help-menu log bundle) is NOT being folded in** — it is a separate
+> filed item with its own spec. The heartbeat writes to the existing log, which
+> the owner can already copy by hand; retrieval is #815's job.
+
 > # ✅ MERGED — 2026-09-17: **#799** — a context chip dropped on another session briefs it at a chosen fidelity
 >
 > **PR #852, squashed to `17aa901`.** Issue closed by `Closes #799`.

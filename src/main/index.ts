@@ -4,6 +4,7 @@ import {
   Menu,
   net,
   Notification,
+  powerMonitor,
   safeStorage,
   screen,
   session,
@@ -19,6 +20,7 @@ import { registry } from './extensibility';
 import { PtyService } from './pty/pty-service';
 import { StreamService } from './transport/stream-service';
 import { createDiagnosticLogger } from './transport/diagnostics';
+import { CpuHeartbeat } from './diagnostics/cpu-heartbeat';
 import { parsePreferredTransport, TRANSPORT_ENV_VAR } from './transport/preferred-transport';
 import { StreamPermissions } from './sessions/stream-permissions';
 import { StreamCommands } from './sessions/stream-commands';
@@ -1369,6 +1371,48 @@ app
       installBusy: () => installer.busy(),
     });
     updates.start();
+    // #719 — the app pegs the owner's laptop, has done so four times, and has
+    // been captured zero times: it happens on a machine we cannot reproduce on,
+    // and while it happens the mouse barely moves, so "look at Task Manager"
+    // asks the impossible of the one person present. This writes a per-process
+    // CPU line every minute so the next occurrence names its own burner with no
+    // user action at all.
+    //
+    // `percentCPUUsage` is a share of the WHOLE MACHINE (measured — probe 719),
+    // so the service converts to cores' worth; `cores` goes on every line so the
+    // laptop's numbers and this desktop's can be read against each other.
+    const cpuHeartbeat = new CpuHeartbeat({
+      getMetrics: () =>
+        app.getAppMetrics().map((m) => {
+          // A plain `?? 0` would admit NaN, and ONE NaN poisons the whole line:
+          // the total becomes NaN, JSON.stringify writes it as null, and every
+          // comparison against NaN is false — so the busiest minute of the run
+          // would be recorded as a quiet one.
+          const pct = m.cpu.percentCPUUsage;
+          return {
+            pid: m.pid,
+            type: m.type,
+            name: m.name,
+            percent: Number.isFinite(pct) ? pct : 0,
+          };
+        }),
+      log: createLogger(sink, 'cpu'),
+      coreCount: os.cpus().length,
+      // Load, beside the burn. "2 cores' worth" cannot be read without knowing
+      // whether the app was hosting twelve sessions or none at the time.
+      counters: () => ({
+        windows: BrowserWindow.getAllWindows().length,
+        ptys: ptys.list().length,
+        streams: streams.list().length,
+      }),
+    });
+    cpuHeartbeat.start();
+    // The lag gauge cannot tell a SUSPENDED machine from a WEDGED one — both
+    // look like "no timer fired for hours" — so the OS is asked rather than
+    // guessed. Without this, every morning on a laptop writes one warn line
+    // claiming the app hung all night, and the laptop is the only machine that
+    // has ever shown #719.
+    powerMonitor.on('resume', () => cpuHeartbeat.clockJumped());
     broker.handle('update:check', (_e, opts: { manual?: boolean } = {}) =>
       // `push: false` — this caller gets the answer as the return value, and
       // pushing as well would open the dialog twice.
@@ -2052,6 +2096,7 @@ app
       fsIpc.stop(); // the document viewers' file watches (P2-E16-04)
       updates.stop(); // kills the daily timer; a check in flight becomes a no-op
       health.stop(); // same, for the status-page poll
+      cpuHeartbeat.stop(); // the #719 per-process CPU line, and its lag gauge
       staticServer?.close();
       scheduleForcedExit();
     });
