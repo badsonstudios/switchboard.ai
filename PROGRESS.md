@@ -3,6 +3,86 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ MERGED — 2026-09-17: **#799** — a context chip dropped on another session briefs it at a chosen fidelity
+>
+> **PR #852, squashed to `17aa901`.** Issue closed by `Closes #799`.
+> ⚠️ **NOT RELEASED** — joins the `0.8.91 — unreleased` section alongside #818
+> and #846; `gh release list` is the authority and **v0.8.90** is still the
+> latest tag, so this is on `main` and in no installed build.
+>
+> **E11 resumes after three interruptions** (#836, then #818 and #846, both
+> owner-found while hand-testing). This is §5.5's signature gesture: every live
+> card header carries a **context chip**, dragged onto another session's prompt
+> box, which opens a dialog offering *last response | summary handoff | full
+> excerpt* with a token estimate each, and parks the chosen text in the target
+> composer **unsent**.
+>
+> **Decisions worth finding again:**
+> - **The three fidelities are not invented for the dialog** — each is something
+>   #766's package already computes (`state`, the whole document, `activity`), so
+>   the sizes are FIELDS COPIED off `PackageSection.tokens` /
+>   `ContextPackage.tokens`. The done-when said "never recomputed", and the test
+>   that pins it hands in a package whose estimates are DELIBERATELY WRONG and
+>   asserts the dialog repeats them — because against a real package a
+>   recomputation agrees, and the test would pass by accident.
+> - **One IPC call carries the sizes AND all three texts, from one package
+>   build.** Sizes-now/text-on-OK was rejected: the source is a LIVE session, so
+>   the second read happens after however long the user spent reading, and the
+>   estimate they chose from would describe a conversation that had moved on.
+> - **It rides #765's seam rather than opening a second one.** The block waits in
+>   the card's inbox — keyed by card, persisted, pruned, settle-timed — and
+>   nothing on the path calls `submitPrompt`. What it does NOT reuse is
+>   `formatSiblingPrompt`'s header, which says another session sent a message and
+>   the user relayed it; the user went and *fetched* this.
+> - **`kind` is optional and absent reads as `'sibling'`.** Every message written
+>   before the field existed is in a real workspace blob without it; a required
+>   field would have failed them all on the next launch, silently deleting
+>   messages nobody had read. The reverse direction (an older build reading a
+>   `'context'` entry and misattributing it) is unfixable from here and is
+>   written down in the field's own comment.
+> - **Coverage survives into every option**, including the single-section
+>   excerpts, which carry no `Covers:` line of their own — an excerpt that lost it
+>   would hand the next session a partial read as a complete account, which is
+>   exactly what #766 built `coverage` to prevent.
+>
+> **Review found no blockers and six should-fixes, all of them honesty defects,
+> all fixed:** a refusal that said "this session is already holding as much as it
+> can" for three different causes (false for two of them); **the manual claiming
+> the full excerpt was "the biggest of the three" when it never is** — the
+> summary handoff is the sum of all six sections and the excerpt is one of them,
+> capped, so package ≥ excerpt always; a tooltip still saying another session
+> *sent* a block the user fetched; the drag overlay reading "Drop files to attach
+> them to your prompt" over a context chip; the session name going unflattened
+> into a document another model reads (now `cleanSenderName`, the helper the
+> sibling header already used); and focus dropped on OK, ending a gesture whose
+> whole point is "now press Enter here" on `<body>`.
+>
+> **CI went red once and was NOT merged through** — `git-service.test.ts >
+> "taskkill that cannot even START"`, 299/300 files passing, Linux and both e2e
+> jobs green. That is the known Windows load flake **#835**, in a file this
+> change does not touch; green on re-run, and the sighting is recorded there with
+> its timing (3,692 ms against 472 ms for its passing neighbour). **A merge was
+> also refused once** for the strict up-to-date rule after the other session
+> landed `1736cc2`; the assert caught it (`state: OPEN`, `mergeCommit: null`),
+> and the branch was rebased and verified to have swallowed nothing rather than
+> reaching for `--admin`.
+>
+> **Verified:** typecheck, eslint, the full unit suite (300 files, **8,297**
+> passed), the whole `FeedView.*`, `SessionGrid.*`, `feed-blocks.*` and
+> `sibling*` families, and the composer-family e2e (context drop, file drop,
+> paste, `@`-mention) against a bundle **rebuilt after the review fixes**.
+>
+> **Recorded, not taken:** the chip is **drag-only** — no keyboard or palette
+> route to the gesture, while the dialog it opens is fully keyboard-operable.
+> Filed as **#851** rather than fixed here. And the e2e proves the source and
+> delivery halves *separately*: two cards share a dockview group, so only one
+> card's DOM exists at a time and a genuine cross-card pointer drag cannot be
+> synthesized. That drag is item 1 on the owner's hand-test list.
+>
+> **Next up: #800**, then **#796**, **#801** — E11 continues. ⚠️ **Interrupted
+> again on 2026-09-17 at the owner's request: #719 (CPU pegging) is being taken
+> next**, having recurred a third time and worse on the laptop.
+
 > # ✅ MERGED — 2026-09-16: **#846** — conversations are described by what was asked, not by command markup
 >
 > **PR #847, squashed to `7196f6e`.** Issue closed by `Closes #846`.
