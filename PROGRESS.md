@@ -3,34 +3,97 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🚧 IN PROGRESS — 2026-09-17: **#719** — switchboard.exe pegs the laptop CPU
+> # ✅ MERGED — 2026-09-17: **#719** — a per-process CPU heartbeat, so the next freeze names its own burner
 >
-> **Branch `feature/719-cpu-heartbeat`.** Picked up at the owner's explicit
-> direction (issue comment, 2026-09-17): this jumped the E11 queue ahead of
-> #800/#796/#801 after a THIRD occurrence, the second in one day.
+> **PR #854, squashed to `1723cbc`.** ⚠️ **#719 REMAINS OPEN, deliberately — this
+> fixes nothing.** No closing keyword was used: it is the instrumentation that
+> lets occurrence 4 identify the cause, and the ticket must not retire on the
+> strength of a diagnostic.
+> ⚠️ **NOT RELEASED** — joins the `0.8.91 — unreleased` section alongside #818,
+> #846 and #799; `gh release list` is the authority and **v0.8.90** is still the
+> latest tag, so this is on `main` and in no installed build.
 >
-> **Scope is instrumentation-first, and that is settled, not optional** — the
-> owner arrived at it independently in the machine-scope comment. Three facts
-> force it: the burner is **laptop-only** (zero occurrences on this dev
-> desktop, same builds, same owner), a **restart clears it** (accumulating
-> in-process state, not system-level), and **no capture exists from any of the
-> three occurrences**. So the item does NOT budget for a local repro; it ships
-> a per-process CPU heartbeat to the laptop and lets occurrence 4 name its own
-> burner.
+> **Jumped the E11 queue** at the owner's explicit direction after a THIRD
+> occurrence, the second in one day. E11 resumes after it.
 >
-> **Do not re-derive:** bugs 1+3 shipped in v0.8.7 (PR #745), bug 2 in v0.8.8
-> (PR #749). All three occurrences post-date them, so the remaining cause is
-> none of those three. Bugs 4 and 5 have their own tickets (#743, #744).
+> **Why instrumentation and not a fix.** Four occurrences, zero captures. It
+> happens on the owner's laptop and never on this desktop, and while it happens
+> the mouse barely moves — so "open Task Manager and see which process is hot"
+> asks the impossible of the only person present. The owner reached
+> instrumentation-first independently; this item treated that as settled scope
+> and did **not** budget for a local repro. **Do not re-derive:** bugs 1+3
+> shipped in v0.8.7, bug 2 in v0.8.8; all occurrences post-date them, so the
+> cause is none of those three. Bugs 4 and 5 keep their tickets (#743, #744).
 >
-> **The sharpest lead, being read in parallel:** the owner ran **v0.8.8 for
-> seven days on this same laptop with zero incidents**, then took **three
-> incidents in under two days on v0.8.90**. 47 commits sit between those tags.
-> Workload changed too, so this is correlation, not proof — but the version
-> boundary sits exactly on the behaviour change.
+> **The measurement that would have broken the item if skipped.**
+> `percentCPUUsage` from `app.getAppMetrics()` is a share of the **WHOLE
+> MACHINE**, not of one core. Probe `spike/probes/719/` ran real Electron with N
+> renderers in hard infinite loops against a known number of pegged cores:
+> 1 core = **3.1%**, 2 = **6.2%**, 4 = **12.4%**, against `N/32` predicting
+> 3.125 / 6.25 / 12.5. **Ratio 1.00, dead linear.** So a threshold picked by eye
+> on this 32-core desktop — "warn over 50%" — would need **sixteen pegged
+> cores** and would never once have fired on the laptop. Everything is logged in
+> **cores' worth**, with `coreCount` beside it.
+> `spike/findings/719-cpu-metrics.md` is the record.
 >
-> **#815 (Help-menu log bundle) is NOT being folded in** — it is a separate
-> filed item with its own spec. The heartbeat writes to the existing log, which
-> the owner can already copy by hand; retrieval is #815's job.
+> **Three more things the probe settled, each a design input:**
+> - **A sample AVERAGES the interval since the previous call** — at a 10s gap two
+>   pegged cores still read their full 6.2%. A 60s beat is a true 60s average and
+>   cannot miss a sustained burn between beats.
+> - **Attribution is correct** — the burning renderer reads high, main reads
+>   0.0%. That is the whole product: main-process burn points at the
+>   scheduler/git family, renderer burn at the feed.
+> - **`cumulativeCPUUsage` is NOT always zero on Windows**, contradicting the
+>   caveat in Electron's own typing (`electron.d.ts:7359`). Recorded because the
+>   typing is what the next reader checks first.
+>
+> **A defect caught in the real app, not in theory:** the first beat read a flat
+> zero, because `percentCPUUsage` has nothing to diff against until called once —
+> so the busiest minute of every run, **startup**, was structurally unreportable.
+> `start()` now takes a priming call.
+>
+> **Review found 1 blocker and 6 should-fixes, all fixed.** The blocker:
+> **`cores` named two different things in one log line** and the manual
+> documented the wrong one — teaching the owner the exact misreading the feature
+> exists to prevent, in the one document written for the one person who gets the
+> one capture. The machine's count is now `coreCount`. Also fixed: **every
+> laptop resume wrote a false multi-hour freeze at `warn`** (now `powerMonitor`'s
+> `resume` tells the gauge the OS slept — deliberately NOT a plausibility cap on
+> large lag, because a real freeze can last minutes and a cap would discard the
+> evidence); **`busy` judged only the busiest process**, missing the whole-machine
+> shape (eight renderers at 0.45 cores each, none individually alarming) — now
+> also promotes on `totalCores >= coreCount * 0.25`; **five mutations survived
+> the tests**, one under a name claiming coverage it lacked; **log volume** (568
+> bytes/line would have cut retention from two months to ~30 days — dropping the
+> redundant raw percentage and omitting idle processes brings a real line to
+> **176 bytes**, a 69% cut); and a **`NaN` percentage would have logged a burning
+> minute as quiet**, since every comparison against NaN is false.
+>
+> **Verified:** 24 new tests; full suite **301 files, 8,321 passed**; typecheck;
+> eslint; and an end-to-end run of the real built app writing real lines at the
+> right cadence with the right fields. Stated honestly: the **non-zero** path is
+> proven by the probe against the identical API rather than in situ, because an
+> idle app legitimately reports nothing.
+>
+> **Leads recorded for whoever picks this up next** (detail in the issue, from
+> the v0.8.8→v0.8.90 diff read):
+> - **#743 is closer to firing than its own ticket says.** `seenNames` is scoped
+>   **per watched root**; #743 was filed recording ~1,232 entries against the
+>   5,000 cap, and the largest tree on this machine is now **2,951** — 2.4x
+>   growth, 59% of the cap. **Wants one number off the laptop:** the file count
+>   of its largest directory under `~/.claude/projects`.
+> - **The `continued-in` rebind loop (#790) is dead on the evidence we have** —
+>   zero matches for `continued elsewhere`, and 496 `transcript bound` lines
+>   spread over two months with a busiest minute of **11**, against the ~600/min
+>   a real loop would produce.
+> - **#819 (the maximize fix) makes the app do strictly LESS work** — it is the
+>   least likely thing in the version window, not the most.
+>
+> **#815 (Help-menu log bundle) was NOT folded in** — separate filed item. The
+> heartbeat writes to the existing log, which the owner can copy by hand;
+> retrieval is #815's job.
+>
+> **Next up: #800**, then **#796**, **#801** — E11 resumes.
 
 > # ✅ MERGED — 2026-09-17: **#799** — a context chip dropped on another session briefs it at a chosen fidelity
 >
