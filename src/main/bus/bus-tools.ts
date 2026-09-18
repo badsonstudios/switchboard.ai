@@ -12,10 +12,14 @@
 // `SessionQueries`, no IPC. `bus-tools.test.ts` asserts that against the source
 // text of the whole child bundle, because the value is not that it is true
 // today but that it stays true after everyone stops looking.
-import { MESSAGE_ARG, SESSION_ARG } from './channel';
+import { DETAIL_ARG, MESSAGE_ARG, SESSION_ARG } from './channel';
+// A constant-only module with no imports of its own, so it is safe in the child
+// graph for the reason `sibling-message` is — and the levels an agent is OFFERED
+// must be the levels `SessionQueries` accepts.
+import { CONTEXT_FIDELITIES, DEFAULT_FIDELITY } from '../../shared/context-drop';
 // A constant-only module with no imports of its own, so it is safe in the child
 // graph — and the cap an agent is told must be the cap `SiblingDelivery` enforces.
-import { SIBLING_MESSAGE_CHAR_CAP } from '../../shared/sibling-message';
+import { SIBLING_MESSAGE_CHAR_CAP, cleanSenderName } from '../../shared/sibling-message';
 import { askHost } from './pipe-client';
 import { Dispatch, ToolDescriptor, ToolResult, textResult } from './protocol';
 
@@ -164,6 +168,49 @@ export const TOOLS: readonly ToolDescriptor[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: 'get_session_context',
+    // THE DISCOVERY PROBLEM THIS ONE HAS THAT THE OTHERS DO NOT: it overlaps
+    // `get_session_output`, and an agent that reaches for the wrong one gets a
+    // worse answer rather than an error. So the description leads with what is
+    // different — a structured handoff you can CARRY ON from, rather than a
+    // window onto what a sibling has been saying.
+    description:
+      'Get a structured handoff of what another switchboard session is working on — the goal it ' +
+      'was given, what the user asked for along the way, its plan, the files it touched, what it ' +
+      'has been doing lately and where it left off, in one document. Use this when you are taking ' +
+      "over or continuing a sibling's work and need its context in one piece, rather than reading " +
+      'its raw output and piecing the story together yourself. Name the session with the name or ' +
+      'id that list_sessions reported. The handoff is extracted mechanically from that session' +
+      "'s transcript — no model writes it — and it states in the document how much of the " +
+      'conversation it was able to cover.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        [SESSION_ARG]: {
+          type: 'string',
+          description: 'The name or id of the session to get context from, as list_sessions reported it.',
+        },
+        [DETAIL_ARG]: {
+          type: 'string',
+          // `enum` AND the prose, deliberately. A model that fetched this schema
+          // gets a machine-checkable list; one working from the description
+          // alone still learns the three words. The array is spread from the
+          // shared constant, so the levels offered here cannot drift from the
+          // ones the host accepts — that is one vocabulary with two doors, the
+          // other being the drop dialog a user drags a context chip onto.
+          enum: [...CONTEXT_FIDELITIES],
+          description:
+            'How much to hand over. "state" is only the last thing that session said and the last ' +
+            'thing it did — small. "package" is the whole structured handoff and is what you want ' +
+            'to pick up someone else\'s work. "excerpt" is the recent end of the conversation as ' +
+            `it happened, prose and tool calls together. Defaults to "${DEFAULT_FIDELITY}".`,
+        },
+      },
+      required: [SESSION_ARG],
+      additionalProperties: false,
+    },
+  },
 ];
 
 /**
@@ -202,10 +249,28 @@ function asText(v: unknown, fallback: string): string {
   return typeof v === 'string' && v !== '' ? v : fallback;
 }
 
-/** `Name [id …]`, for a payload that crossed a pipe and may be any shape. */
+/**
+ * `Name [id …]`, for a payload that crossed a pipe and may be any shape.
+ *
+ * FLATTENED SINCE #800, which made this the THIRD instance of one hazard and so
+ * the point at which it stops being an oversight. A card title is the user's
+ * text and nothing on the rename paths normalises whitespace, so a newline in
+ * one breaks the sentence this builds — a sentence that sits directly above the
+ * content fence, where a forged line is worth the most. #799's review already
+ * fixed exactly this for `renderPackage`'s heading and `renderExcerpt`'s; this
+ * is the same hazard through a different door, so it takes the same helper
+ * rather than a second answer to one question. It also strips controls, and it
+ * is identity for every ordinary title.
+ *
+ * ⚠️ `renderSessions` still interpolates a row's name raw. Left alone
+ * deliberately: it is #764's surface, unchanged by this item, and it has its own
+ * exactly-pinned rendering. Worth closing, but not from inside this item.
+ */
 function who(payload: Record<string, unknown>): string {
   const s = (payload.session ?? {}) as Record<string, unknown>;
-  return `${asText(s.name, '(unnamed)')} [id ${asText(s.id, '?')}]`;
+  // `cleanSenderName` answers `(unnamed)` for an empty string, which is the same
+  // fallback `asText` was giving — so a non-string name lands there too.
+  return `${cleanSenderName(typeof s.name === 'string' ? s.name : '')} [id ${asText(s.id, '?')}]`;
 }
 
 function asRecord(payload: unknown): Record<string, unknown> {
@@ -434,6 +499,89 @@ function heldReason(p: Record<string, unknown>, plain: string): string | null {
 }
 
 /**
+ * A sibling's handoff package as text (#800, §5.5's agent-pulled variant).
+ *
+ * ── THIS RENDERER DELIBERATELY ADDS ALMOST NOTHING ──────────────────────────
+ *
+ * The other renderers in this file BUILD the sentence a model reads. This one
+ * must not: `renderPackage` already produced a complete document — headings, the
+ * "no model wrote this" preamble, the session's own details, and the `Covers:`
+ * line — for a reader that is exactly this reader. Restating any of that here
+ * would be a second voice on one fact, and the coverage statement is the fact
+ * where a second voice is most expensive: #766 built it precisely so a read that
+ * stopped short could not arrive looking complete, and the done-when asks that it
+ * survive to this output VERBATIM. It does, because it travels inside `text` and
+ * nothing here touches `text`.
+ *
+ * So the header's only job is the framing the document cannot give itself: whose
+ * it is, at what level it was asked for, and — #764's standing rule, which
+ * applies to every answer and not only cut ones — that long content is shortened.
+ *
+ * `coverage` is read for ONE branch only. `unreadable` is the state where every
+ * section below reads as "this session has done nothing", and the document says
+ * so itself in `COVERAGE_LINE` — but it says it four lines in, under a heading,
+ * and this is the sentence an agent sees first. It is the one case worth saying
+ * twice.
+ */
+export function renderContext(payload: unknown): string {
+  const p = asRecord(payload);
+  const name = who(p);
+  const text = typeof p.text === 'string' ? p.text : '';
+  const level = asText(p.level, '');
+  const head =
+    `Context handoff from ${name}${level ? `, at detail level "${level}"` : ''}. It was extracted ` +
+    "mechanically from that session's transcript — no model wrote it — and long messages and tool " +
+    'results are shortened. The document below says for itself how much of that conversation it ' +
+    'covers; read that line before you rely on it.';
+  if (text === '') {
+    // OUR FAULT, NOT A FACT ABOUT THE SIBLING — the same rule `makeCallTool`
+    // applies to an absent payload one level up. Every other branch here would
+    // otherwise present an empty fence as though the session had handed over
+    // nothing, which is a claim manufactured from an answer we failed to read.
+    return `${head} switchboard could not read the handoff document out of its own answer.`;
+  }
+  if (p.coverage === 'unreadable') {
+    return (
+      `${head} switchboard could NOT read ${name}'s transcript at all, so the empty sections below ` +
+      'say what this handoff could not see — NOT what that session did.\n\n' +
+      quoted(text)
+    );
+  }
+  if (p.empty === true) {
+    // ⚠️ `empty` IS PER-LEVEL, NOT PER-PACKAGE, and the first cut of this
+    // sentence forgot it — which review caught by RUNNING it rather than reading
+    // it. `buildContextOffer` computes `empty` from ONE SECTION for `state` and
+    // `excerpt`; only at `package` does it mean "every section was empty". So on
+    // a session where the user has typed a prompt and the agent has not yet
+    // replied — precisely the session you ask about when you say "pick up where
+    // X got to" — `state` is empty while `package` is a document containing the
+    // goal. The sentence here said "a fuller level will not invent one", in
+    // switchboard's own voice, and talked the agent out of the one call that
+    // would have answered its question.
+    //
+    // And `coverage` matters for the same reason it does three lines up: when
+    // the read stopped short, an empty section is a statement about OUR READ,
+    // not about the work — which is exactly what `emptySection` hedges inside
+    // the document, and what a flat "a fact about the session" here would
+    // contradict two lines above the body that says so.
+    const why =
+      p.coverage !== 'whole'
+        ? 'Nothing was recorded at this level in the part of the conversation switchboard could ' +
+          'read — which is a statement about the READ, not about what that session has done. ' +
+          'There is older history this did not reach.'
+        : level === DEFAULT_FIDELITY
+          ? 'That session has recorded nothing to hand over yet — no goal, no plan, no files, no ' +
+            'output. That is a fact about the session rather than a failed read, and there is no ' +
+            'fuller level to ask for.'
+          : 'There is nothing at this level yet — a fact about the session rather than a failed ' +
+            `read. It says nothing about the REST of the handoff: ask again for "${DEFAULT_FIDELITY}", ` +
+            "which may still carry that session's goal, its plan and the files it has touched.";
+    return `${head} ${why}\n\n${quoted(text)}`;
+  }
+  return `${head}\n\n${quoted(text)}`;
+}
+
+/**
  * Tool name → how its host reply reads as text.
  *
  * A TABLE RATHER THAN A SWITCH, so `bus-tools.test.ts` can assert every entry
@@ -469,6 +617,7 @@ const RENDERERS: Record<string, Renderer> = Object.assign(
     list_sessions: { field: 'sessions', render: (r) => renderSessions(r.sessions, r.callerId) },
     get_session_output: { field: 'output', render: (r) => renderOutput(r.output) },
     get_session_diff: { field: 'diff', render: (r) => renderDiff(r.diff) },
+    get_session_context: { field: 'context', render: (r) => renderContext(r.context) },
     send_to_session: {
       field: 'delivery',
       render: (r) => renderSend(r.delivery),

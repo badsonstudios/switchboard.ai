@@ -137,6 +137,17 @@ on the floor, and say so in your PR.
   An option with nothing behind it is marked "nothing recorded" instead of
   looking full.
 
+- **A session can now fetch that handoff itself, without you dragging
+  anything.** Ask a session to pick up where another one got to and it can go
+  and get the same context package on its own, mid-task — the same three
+  choices, the same document, including the line saying how much of the
+  conversation could actually be read and the note that no model wrote it.
+
+  It only ever *reads*. Nothing lands in your prompt box and nothing is sent to
+  anyone: handing a session a message still needs your Enter, exactly as before.
+  A session that has nothing recorded yet is told so plainly, rather than being
+  handed a blank document that looks like a real one.
+
 ### Fixed
 
 - **Previous conversations are described by what you asked, not by markup.** In

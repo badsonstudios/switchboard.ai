@@ -19,7 +19,13 @@ import { CHANNEL_VERSION } from './channel';
 import { stubDelivery, stubQueries } from './fixtures/queries';
 import { askHost } from './pipe-client';
 import type { Logger } from '../log/logger';
-import type { QueryResult, SessionDiff, SessionOutput, SessionSummary } from '../sessions/queries';
+import type {
+  QueryResult,
+  SessionContextAnswer,
+  SessionDiff,
+  SessionOutput,
+  SessionSummary,
+} from '../sessions/queries';
 import { SiblingDelivery, type BusDelivery } from '../sessions/delivery';
 
 const SESSIONS: SessionSummary[] = [
@@ -44,6 +50,7 @@ let host: BusHost;
 let listSessions: () => QueryResult<SessionSummary[]>;
 let sessionOutput: (ref: string, lastN?: number) => QueryResult<SessionOutput>;
 let sessionDiff: (ref: string) => Promise<QueryResult<SessionDiff>>;
+let sessionContextFor: (ref: string, level?: unknown) => QueryResult<SessionContextAnswer>;
 
 /**
  * The queries every host in this file is built with.
@@ -56,6 +63,7 @@ const queries = (): BusQueries => ({
   listSessions: () => listSessions(),
   sessionOutput: (ref, lastN) => sessionOutput(ref, lastN),
   sessionDiff: (ref) => sessionDiff(ref),
+  sessionContextFor: (ref, level) => sessionContextFor(ref, level),
 });
 
 /** `send_to_session`'s policy, indirected the same way and for the same reason. */
@@ -69,6 +77,7 @@ beforeEach(() => {
   const defaults = stubQueries();
   sessionOutput = defaults.sessionOutput.bind(defaults);
   sessionDiff = defaults.sessionDiff.bind(defaults);
+  sessionContextFor = defaults.sessionContextFor.bind(defaults);
   send = stubDelivery().send;
   host = new BusHost({ stateDir, log, queries: queries(), delivery: delivery() });
 });
@@ -477,6 +486,56 @@ describe('the round trip', () => {
       const reply = await askHost({ ...ep, request: { op: 'get_session_output', args: {} } });
       expect(asked).toEqual([undefined]);
       expect(reply).toMatchObject({ ok: false, reason: 'session reference must be a string' });
+    });
+
+    it('answers get_session_context under its OWN field (#800)', async () => {
+      const ep = await host.registerSession(newId());
+      const reply = await askHost({
+        ...ep,
+        request: { op: 'get_session_context', args: { session: '@Beta' } },
+      });
+      expect(reply).toMatchObject({ ok: true, context: { text: 'context for @Beta' } });
+      // A host that answered under `output` would render as an empty handoff
+      // through the wrong renderer — the drift the per-op field exists to stop.
+      expect(reply.output).toBeUndefined();
+      expect(reply.diff).toBeUndefined();
+    });
+
+    it('PASSES detail_level THROUGH UNTOUCHED, including absent and nonsense (#800)', async () => {
+      // The vocabulary, the default and the refusal all live in the query core.
+      // Defaulting here would put the default in two places, and the mutation
+      // that reads as correct — substituting `'package'` for an absent level —
+      // would make the core's own default unreachable and untested.
+      const asked: unknown[] = [];
+      sessionContextFor = (_ref, level) => {
+        asked.push(level);
+        return {
+          ok: true,
+          value: { session: SESSIONS[1], coverage: 'whole', level: 'package', text: 't', tokens: 1, empty: false },
+        };
+      };
+      const ep = await host.registerSession(newId());
+      for (const detail_level of ['state', 'excerpt', 'everything', 7]) {
+        await askHost({ ...ep, request: { op: 'get_session_context', args: { session: 'x', detail_level } } });
+      }
+      await askHost({ ...ep, request: { op: 'get_session_context', args: { session: 'x' } } });
+      expect(asked).toEqual(['state', 'excerpt', 'everything', 7, undefined]);
+    });
+
+    it('an unknown level refuses WITH THE CORE’S REASON (#800)', async () => {
+      // Rewriting it here would be the damage: the core's reason names the
+      // levels that DO exist, which is what makes the refusal actionable.
+      sessionContextFor = () => ({
+        ok: false,
+        reason: 'unknown detail level "everything" — valid levels are state, package, excerpt',
+      });
+      const ep = await host.registerSession(newId());
+      const reply = await askHost({
+        ...ep,
+        request: { op: 'get_session_context', args: { session: 'Beta', detail_level: 'everything' } },
+      });
+      expect(reply).toMatchObject({ ok: false });
+      expect(String(reply.reason)).toContain('state, package, excerpt');
     });
 
     it('a REJECTED query is caught rather than crashing Electron main', async () => {
@@ -976,6 +1035,32 @@ describe('the in-flight bound (#772)', () => {
     );
     await until(() => host.inFlightCount(id) === MAX_IN_FLIGHT_PER_SESSION);
     await expect(askHost({ ...ep, request: { op: 'list_sessions' } })).resolves.toMatchObject({ ok: true });
+    gate.release();
+    await Promise.all(admitted);
+  });
+
+  it('get_session_context is NOT exempt — a burst of packages is what this bound is for (#800)', async () => {
+    // `sessionContext`'s own doc comment reserved this bound for this item, in
+    // so many words. The read is 9–11 ms of SYNCHRONOUS work on Electron's main
+    // thread, and #772 measured sixteen such calls landing together stalling the
+    // host for 186 ms in one block. `list_sessions` is exempt because it is a
+    // map over an in-memory list; this is not that, and the lazy way to add a
+    // tool is to copy the exemption along with the case above it.
+    const gate = gatedDiff();
+    const id = newId();
+    const ep = await host.registerSession(id);
+    const admitted = Array.from({ length: MAX_IN_FLIGHT_PER_SESSION }, () =>
+      askHost({ ...ep, request: diffReq, timeoutMs: 5000 })
+    );
+    await until(() => host.inFlightCount(id) === MAX_IN_FLIGHT_PER_SESSION);
+
+    const refused = await askHost({
+      ...ep,
+      request: { op: 'get_session_context', args: { session: 'Beta' } },
+    });
+    expect(refused.ok).toBe(false);
+    expect(String(refused.reason)).toMatch(/already have 4 requests to switchboard in progress/);
+
     gate.release();
     await Promise.all(admitted);
   });

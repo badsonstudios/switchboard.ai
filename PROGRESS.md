@@ -3,6 +3,22 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔵 IN PROGRESS — started 2026-09-18: **#800** — P2-E11-11 · `get_session_context` bus tool
+>
+> The agent-pulled variant of #766's context package: B's agent asks for A's
+> handoff mid-task instead of waiting for the user to drag a chip. Size **S**.
+> Both dependencies are closed (#764 the read tools, #766 the package generator).
+>
+> **E11 resumes here** after two interruptions (#719, then #815). Branch
+> `feature/800-get-session-context`.
+>
+> **The decision made at pickup, recorded before implementing:** `detail_level`
+> reuses the EXISTING `CONTEXT_FIDELITIES` vocabulary (`state` | `package` |
+> `excerpt`, default `package`) that #799's drop dialog already speaks, rather
+> than inventing a second set of words for the agent. Same three choices, one
+> constant, so the agent-pulled and user-dragged variants cannot drift — and
+> `buildContextOffer` already renders all three from one package build.
+
 > # ✅ MERGED — 2026-09-18: **#815** — report a problem from the Help menu, to a GitHub issue or email
 >
 > **PR #857, squashed to `19f6cf4`.** Issue closed by `Closes #815`.

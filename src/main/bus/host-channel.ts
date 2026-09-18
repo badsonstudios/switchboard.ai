@@ -32,7 +32,7 @@ import net from 'net';
 import path from 'path';
 import { busEndpointFor, busTokenPath } from './bus-paths';
 import { busLaunch, type BusLaunch } from './launch';
-import { CHANNEL_VERSION, MESSAGE_ARG, SESSION_ARG, isBusOp, type BusOp } from './channel';
+import { CHANNEL_VERSION, DETAIL_ARG, MESSAGE_ARG, SESSION_ARG, isBusOp, type BusOp } from './channel';
 import { LineReader, MAX_LINE_BYTES } from './protocol';
 import type { Logger } from '../log/logger';
 import type { SessionQueries } from '../sessions/queries';
@@ -46,7 +46,10 @@ import type { BusDelivery } from '../sessions/delivery';
  * method dropped from the query core is a typecheck failure here rather than a
  * tool that answers "unknown request" at runtime.
  */
-export type BusQueries = Pick<SessionQueries, 'listSessions' | 'sessionOutput' | 'sessionDiff'>;
+export type BusQueries = Pick<
+  SessionQueries,
+  'listSessions' | 'sessionOutput' | 'sessionDiff' | 'sessionContextFor'
+>;
 
 export interface BusHostOptions {
   /** Same directory `HookListener` writes `hook-token` into. */
@@ -202,6 +205,7 @@ type HostReply =
   | { ok: true; callerId: string; sessions: unknown }
   | { ok: true; callerId: string; output: unknown }
   | { ok: true; callerId: string; diff: unknown }
+  | { ok: true; callerId: string; context: unknown }
   | { ok: true; callerId: string; delivery: unknown }
   /**
    * `uncertain` (#765 review): this refusal is "I gave up waiting", not "the
@@ -918,6 +922,22 @@ export class BusHost {
           const result = await this.opts.queries.sessionDiff(ref);
           if (!result.ok) return { ok: false, reason: result.reason };
           return { ok: true, callerId: caller, diff: result.value };
+        }
+        case 'get_session_context': {
+          // THE LEVEL GOES THROUGH UNTOUCHED, exactly as `lastN` does above and
+          // for the same reason: the vocabulary, the default and the refusal
+          // that names the valid words all live in the query core. Defaulting it
+          // here would put the default in two places, and the day §5.5's changed,
+          // the bus would keep handing out the old one.
+          //
+          // SYNCHRONOUS, and deliberately not on `SLOW_TOOLS`: the package is a
+          // bounded two-window read measured at 9–11 ms on a 7.37 MB transcript.
+          // What it IS subject to is the in-flight bound above — which is what
+          // `sessionContext`'s own doc comment says this item is for, since a
+          // burst of these is the one traffic shape that could stall main.
+          const result = this.opts.queries.sessionContextFor(ref, args[DETAIL_ARG]);
+          if (!result.ok) return { ok: false, reason: result.reason };
+          return { ok: true, callerId: caller, context: result.value };
         }
         case 'send_to_session': {
           // `caller`, from the TOKEN — never anything the child said about

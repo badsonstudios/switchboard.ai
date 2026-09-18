@@ -44,6 +44,7 @@ export const BUS_OPS = [
   'get_session_output',
   'get_session_diff',
   'send_to_session',
+  'get_session_context',
 ] as const;
 
 export type BusOp = (typeof BUS_OPS)[number];
@@ -74,3 +75,15 @@ export const SESSION_ARG = 'session';
 
 /** `send_to_session`'s text argument — one constant for the same reason. */
 export const MESSAGE_ARG = 'message';
+
+/**
+ * `get_session_context`'s fidelity argument (#800) — one constant, same reason.
+ *
+ * The WORD is declared here because both ends of this channel speak it. The
+ * VOCABULARY it takes is not ours to declare: it is `CONTEXT_FIDELITIES` in
+ * `shared/context-drop.ts`, which the drop dialog (#799) already speaks, and
+ * re-listing those three words in this file would be the second declaration
+ * that this module exists to prevent. The child never validates the value —
+ * `SessionQueries` does, once, and refuses with a reason naming the valid ones.
+ */
+export const DETAIL_ARG = 'detail_level';

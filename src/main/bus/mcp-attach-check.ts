@@ -232,6 +232,7 @@ async function main(): Promise<void> {
       // script rather than a condition to answer.
       sessionOutput: () => ({ ok: false, reason: 'mcp-attach-check answers no reads' }),
       sessionDiff: () => Promise.resolve({ ok: false, reason: 'mcp-attach-check answers no reads' }),
+      sessionContextFor: () => ({ ok: false, reason: 'mcp-attach-check answers no reads' }),
     },
     // Same reasoning, for the one tool that writes (#765): refusing, so a call
     // that somehow got here could not be mistaken for a delivery.

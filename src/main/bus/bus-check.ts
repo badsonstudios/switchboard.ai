@@ -337,8 +337,9 @@ async function main(): Promise<void> {
   const list = await peer.request('tools/list');
   const tools = (list.result as { tools?: { name?: string }[] } | undefined)?.tools ?? [];
   const toolNames = tools.map((t) => String(t.name)).sort().join(',');
-  check('tools/list offers the three read tools and send_to_session',
-    toolNames === 'get_session_diff,get_session_output,list_sessions,send_to_session', toolNames);
+  check('tools/list offers the four read tools and send_to_session',
+    toolNames === 'get_session_context,get_session_diff,get_session_output,list_sessions,send_to_session',
+    toolNames);
 
   // ── the round trip, over a real endpoint ─────────────────────────────────
   const called = await peer.request('tools/call', { name: 'list_sessions', arguments: {} });
@@ -442,6 +443,91 @@ async function main(): Promise<void> {
   check('…and warns that untracked files are invisible, on THIS branch too',
     /Untracked/.test(clean), clean);
   check('…and does not claim the tree matches the last commit', !/matches the last commit/.test(clean), clean);
+
+  // ── #800: the handoff package, through the REAL generator ────────────────
+  //
+  // The value this adds over the unit tests, and the reason it is worth four
+  // extra round trips: the package is built from a REAL transcript on disk by
+  // the real two-window read, so the goal below is genuinely recovered from the
+  // START of the file while the state comes from its END. A stub cannot be wrong
+  // about that; this can.
+  const ctx = await peer.request('tools/call', {
+    name: 'get_session_context',
+    arguments: { session: 'PropaneMon' },
+  });
+  const ctxText = resultText(ctx);
+  check('get_session_context round-trips through the real package generator', !isError(ctx), ctxText.slice(0, 200));
+  check('…defaulting to the summary handoff, without being asked',
+    /detail level "package"/.test(ctxText), ctxText.slice(0, 300));
+  // THE DONE-WHEN: the coverage statement survives to the tool output VERBATIM.
+  // It is the package's own line, printed by `renderPackage`, not re-worded by
+  // the renderer — which is why this asserts the document's markup rather than
+  // any sentence the bus layer writes.
+  check('…carrying the package’s OWN coverage statement, verbatim',
+    /- \*\*Covers:\*\* the whole conversation/.test(ctxText), ctxText.slice(0, 700));
+  check('…and the goal, which lives at the START of the transcript',
+    /check the tank pressure/.test(ctxText), ctxText.slice(0, 700));
+  check('…and where it left off, which lives at the END',
+    /THE-NEWEST-LINE/.test(ctxText), ctxText.slice(-400));
+  check('…saying plainly that no model wrote it', /extracted\s+mechanically/.test(ctxText), ctxText.slice(0, 400));
+
+  const stateLevel = resultText(
+    await peer.request('tools/call', {
+      name: 'get_session_context',
+      arguments: { session: 'PropaneMon', detail_level: 'state' },
+    })
+  );
+  // `detail_level` really reaches the query core — the same mutation `lastN`'s
+  // check guards, one tool along: a host that dropped it would answer the
+  // default and every assertion above would still pass.
+  check('detail_level reaches the query core', /detail level "state"/.test(stateLevel), stateLevel.slice(0, 200));
+  check('…and a smaller level really is smaller', stateLevel.length < ctxText.length,
+    `${stateLevel.length} vs ${ctxText.length}`);
+  check('…while still carrying the coverage statement an excerpt would lose',
+    /\*\*Covers:\*\*/.test(stateLevel), stateLevel.slice(0, 400));
+
+  const badLevel = await peer.request('tools/call', {
+    name: 'get_session_context',
+    arguments: { session: 'PropaneMon', detail_level: 'everything' },
+  });
+  const badLevelText = resultText(badLevel);
+  check('an unknown detail level is a refusal, not a silent fallback to the default',
+    isError(badLevel), badLevelText);
+  check('…naming the levels that DO exist, so the agent can retry',
+    /state, package, excerpt/.test(badLevelText), badLevelText);
+
+  const noTranscript = await peer.request('tools/call', {
+    name: 'get_session_context',
+    arguments: { session: 'Switchboard' },
+  });
+  const noTranscriptText = resultText(noTranscript);
+  // A session with no transcript answers `ok` AND SAYS SO IN WORDS — #764's
+  // ordering: the failure to prevent is an empty success an agent reads as "my
+  // sibling did nothing" and believes.
+  check('a session with no transcript answers ok, not an error', !isError(noTranscript), noTranscriptText);
+  check('…and says the session recorded nothing, rather than handing over a blank document',
+    /recorded nothing to hand over yet/.test(noTranscriptText), noTranscriptText);
+  // AT THE WHOLE PACKAGE there genuinely is no fuller level, so saying so is
+  // true here — and only here. The next check is the other half.
+  check('…and, at the whole package, that there is nothing fuller to ask for',
+    /no fuller level to ask for/.test(noTranscriptText), noTranscriptText);
+
+  // ⚠️ THE BLOCKER REVIEW CAUGHT BY RUNNING IT, pinned end to end because the
+  // unit test alone could not: `empty` is PER-LEVEL, so an empty `state` says
+  // nothing about what `package` holds. The first cut told the agent "a fuller
+  // level will not invent one" at every level — talking it out of the one call
+  // that would have answered its question. This asserts the opposite advice
+  // reaches the model through the real pipe.
+  const emptyState = resultText(
+    await peer.request('tools/call', {
+      name: 'get_session_context',
+      arguments: { session: 'Switchboard', detail_level: 'state' },
+    })
+  );
+  check('an empty SECTION points at the fuller handoff instead of closing the door',
+    /ask again for "package"/.test(emptyState), emptyState);
+  check('…and does NOT claim a fuller level would be pointless',
+    !/no fuller level/.test(emptyState), emptyState);
 
   // ── #765: send_to_session, through the REAL delivery policy ──────────────
   //
