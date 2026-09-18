@@ -117,7 +117,17 @@ export interface ContextOffer {
   options: ContextOfferOption[];
 }
 
-function isFidelity(v: unknown): v is ContextFidelity {
+/**
+ * Guard for a fidelity that arrived from outside.
+ *
+ * EXPORTED SINCE #800, which added a second door onto this vocabulary: the
+ * `get_session_context` bus tool takes a `detail_level` a language model wrote,
+ * so the value really can be a number, an object or a misspelling. It is the
+ * same three words the drop dialog offers and it is checked with the same
+ * predicate, so the agent-pulled and user-dragged variants cannot come to
+ * disagree about what a valid level is.
+ */
+export function isContextFidelity(v: unknown): v is ContextFidelity {
   return (CONTEXT_FIDELITIES as readonly unknown[]).includes(v);
 }
 
@@ -143,7 +153,7 @@ export function isContextOffer(v: unknown): v is ContextOffer {
     if (!raw || typeof raw !== 'object') return false;
     const r = raw as Record<string, unknown>;
     return (
-      isFidelity(r.id) &&
+      isContextFidelity(r.id) &&
       typeof r.tokens === 'number' &&
       Number.isFinite(r.tokens) &&
       typeof r.empty === 'boolean' &&

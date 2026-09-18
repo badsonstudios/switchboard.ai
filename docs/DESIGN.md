@@ -640,6 +640,42 @@ launch. Control and invisible characters are **stripped in main** rather than
 refused — the refusal exists to teach a sending agent to send plain text, and
 here there is no such agent.
 
+**As built (P2-E11-11, #800) — the agent-pulled variant, and the vocabulary it did
+NOT invent.** `get_session_context(session, detail_level)` ships as the bullet above
+describes it, and the interesting decision is what it reuses. `detail_level` is
+**the same `CONTEXT_FIDELITIES` the drop dialog speaks** — `state` | `package` |
+`excerpt`, defaulting to `package` — rather than a second set of words written for
+an agent. The tool is one more door onto the gesture #799 built, not a second
+feature that happens to resemble it, so two vocabularies would have been two
+declarations of one contract: the day either moved, a tool would refuse a level the
+dialog still offered. The tool's `enum` is spread from that constant, and the host
+validates against it once, in the query core, where the refusal that names the valid
+levels already lives.
+
+Thin to the point of selecting rather than building: `sessionContextFor` calls
+#766's generator and then #799's `buildContextOffer`, and every number it returns
+is a field copied off the option it chose. **No second generator, no second
+estimator, no second rendering of a package.** The coverage statement therefore
+survives to the tool output *verbatim* — not because the bus layer repeats it, but
+because it travels inside the rendered document and nothing at the tool edge touches
+the text.
+
+Two orderings are deliberate and are the parts worth finding again. **The level is
+validated before the session is resolved** — inverting this file's usual rule, and
+on purpose: the level is a free comparison against three words, while resolving
+first would read up to 2 MB of transcript synchronously on main to answer a call
+that cannot succeed either way. And **an absent level takes the default while a
+present-but-wrong one is refused**; collapsing those would mean an agent that asked
+for "full" was handed the default and told nothing, and would go on believing
+"full" is a level this tool has.
+
+It is **not** a slow tool (the package is a bounded two-window read, 9–11 ms on a
+7.37 MB transcript) but it **is** subject to the per-endpoint in-flight bound —
+which is what `sessionContext`'s own doc comment had been reserving for this item,
+since a burst of packages is the one traffic shape that could stall the host. No LLM
+runs on this path: it serves #766's mechanical extraction, so §8's containment
+question ("a cwd is not a sandbox") is not reached and is not answered here.
+
 **Cross-provider handoff (continue elsewhere).** The same premise extends across
 vendors: because context is local data — transcript + working tree + git state — a
 session can be continued on a *different provider's* CLI (Claude ⇄ Codex ⇄ Gemini),

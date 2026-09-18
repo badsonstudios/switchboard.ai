@@ -310,6 +310,9 @@ There are three things a session can find out:
   conversation, including the prose it wrote and the tools it ran.
 - **What another session has changed** — the edits it has made in its own
   project folder that aren't committed yet, as a diff.
+- **Everything another session would need to carry on** — the handoff described
+  in [Handing one session's work to another](#handing-one-sessions-work-to-another)
+  below. A session can ask for that itself, without you dragging anything.
 
 So you can say things like *"what has Homebrew been working on?"* or *"look at
 the changes PropaneMon made and tell me if they'd break my build"*, and the
@@ -482,6 +485,34 @@ leaves both sessions exactly as they were.
   mechanically — it reports what the conversation *contains*, not what it meant.
   The text says so, so the session reading it treats it as notes rather than as
   a briefing from a colleague.
+
+### A session can ask for the handoff itself
+
+Dragging the chip is you deciding to hand work over. A session can also ask for
+the same handoff **on its own, mid-task** — say *"pick up where PropaneMon got
+to"* and it will go and fetch one rather than asking you to drag anything.
+
+It's the same three choices, in the same words: the summary handoff unless it
+asks for something else, and it can ask for just the last response or the recent
+excerpt instead. What it gets back is the same document you'd have handed it,
+including the line saying how much of the conversation was actually read and the
+note that nobody wrote it.
+
+Two things worth knowing, because they're different from the drag:
+
+- **Nothing appears in your prompt box.** This is one session reading another,
+  so the handoff goes straight into the asking session's own thinking. There's
+  nothing for you to press Enter on — and nothing is sent *to* anyone. Handing a
+  session a message still needs you, exactly as before.
+- **A session that hasn't done anything yet says so.** It won't be handed a
+  blank document that looks like a real one. If it asked for one of the smaller
+  choices and there's nothing there, it's told the fuller handoff may still have
+  something — and if the whole handoff is empty, it's told that too, so it
+  doesn't go round again for the same nothing.
+- **It knows the difference between "nothing happened" and "I couldn't read
+  it all".** On a very long conversation, only the recent end is read; if
+  nothing turns up in that part, the session is told plainly that this is about
+  how much could be read, not about what the other session has done.
 
 ### Good to know
 

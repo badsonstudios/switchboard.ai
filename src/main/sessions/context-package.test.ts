@@ -813,6 +813,10 @@ describe('no model runs on the default path', () => {
   // different property from "invokes no model".)
   const MODULES = [
     'context-package.ts',
+    // #800 put this on the default path: `sessionContextFor` selects a fidelity
+    // through `buildContextOffer` rather than rendering a fourth view of a
+    // package, so the agent-pulled tool executes this module on every call.
+    'context-drop.ts',
     'transcript-blocks.ts',
     'queries.ts',
     '../feed/blocks.ts',
@@ -834,7 +838,15 @@ describe('no model runs on the default path', () => {
    * `queries.ts` calls it — I/O is their job. "Invokes no model" applies to
    * all five.
    */
-  const PURE = ['context-package.ts', 'transcript-blocks.ts', '../feed/agent-attribution.ts'] as const;
+  const PURE = [
+    'context-package.ts',
+    // #800: it selects and renders, and it reads nothing. Held to the stricter
+    // bar for the same reason the generator is — a module that could open a
+    // file could open one naming a model.
+    'context-drop.ts',
+    'transcript-blocks.ts',
+    '../feed/agent-attribution.ts',
+  ] as const;
 
   const read = (name: string) => {
     const source = fs.readFileSync(path.join(__dirname, name), 'utf8');
@@ -869,8 +881,10 @@ describe('no model runs on the default path', () => {
     };
     walk('context-package.ts');
     walk('queries.ts');
-    // `shared/*` is types only and carries no executable path; everything else
-    // the two entry points reach must be on the scanned list.
+    // `shared/*` is excluded: it is types, string constants and small guards
+    // (`sibling-message.ts`, and since #800 `context-drop.ts`'s fidelity list and
+    // its predicate), none of which can reach a program or a socket. Everything
+    // else the two entry points reach must be on the scanned list.
     const executable = [...reached].filter((r) => !r.includes('shared/'));
     expect([...executable].sort()).toEqual([...MODULES].sort());
   });

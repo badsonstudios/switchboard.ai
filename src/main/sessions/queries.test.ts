@@ -27,6 +27,7 @@ import {
 } from './queries';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import { HISTORY_MAX_LINES, HISTORY_TAIL_BYTES, readTranscriptWindow } from '../feed/history';
+import { CONTEXT_FIDELITIES, DEFAULT_FIDELITY } from '../../shared/context-drop';
 
 let dir: string;
 
@@ -843,6 +844,142 @@ describe('the diff cut', () => {
     // one that is visibly incomplete.
     expect(r.value.diff.endsWith('[diff truncated]')).toBe(true);
     expect(r.value.truncated).toBe(true);
+  });
+});
+
+describe('sessionContextFor (#800)', () => {
+  const lines = [userLine('add a stop-loss'), assistantLine('done — it is wired to the ticker')];
+
+  it('takes the default when no level is asked for', () => {
+    const r = make(lines).sessionContextFor('TradingApp');
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.value.level).toBe(DEFAULT_FIDELITY);
+    expect(r.value.text).toContain('# Context from @TradingApp');
+    expect(r.value.text).toContain('add a stop-loss');
+  });
+
+  it.each(CONTEXT_FIDELITIES)('%s is a level this core accepts and renders', (level) => {
+    // TOTAL OVER THE VOCABULARY, so a fidelity added to the shared constant and
+    // not handled here fails rather than being refused at a tool the dialog
+    // still offers it at.
+    const r = make(lines).sessionContextFor('TradingApp', level);
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.value.level).toBe(level);
+    expect(r.value.text).toContain('Context from @TradingApp');
+  });
+
+  it('different levels really are different documents', () => {
+    // The mutation that reads as correct: return the package whatever was asked
+    // for. Every "it answers" assertion above survives it.
+    const q = make(lines);
+    const pkg = q.sessionContextFor('TradingApp', 'package');
+    const state = q.sessionContextFor('TradingApp', 'state');
+    if (!pkg.ok || !state.ok) throw new Error('refused');
+    expect(state.value.text.length).toBeLessThan(pkg.value.text.length);
+    expect(state.value.text).toContain('done — it is wired to the ticker');
+    expect(state.value.text).not.toContain('## Goal');
+  });
+
+  it('an unknown level is a refusal naming the valid ones — never a silent fallback', () => {
+    // The done-when. An agent that asked for "full" and was handed the default
+    // would be told nothing, and would go on believing "full" is a level.
+    const r = make(lines).sessionContextFor('TradingApp', 'everything');
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toContain('"everything"');
+    expect(r.reason).toContain('state, package, excerpt');
+    expect(r.reason).toContain(DEFAULT_FIDELITY);
+  });
+
+  it('a level that is not even a string says what it got, without pasting it in', () => {
+    // It is JSON a model composed, so it can be an object or a 10 KB string.
+    const q = make(lines);
+    expect(q.sessionContextFor('TradingApp', 7)).toMatchObject({ ok: false });
+    expect(String((q.sessionContextFor('TradingApp', 7) as { reason: string }).reason)).toContain('(a number)');
+    expect(String((q.sessionContextFor('TradingApp', null) as { reason: string }).reason)).toContain('(a null)');
+    const huge = q.sessionContextFor('TradingApp', 'x'.repeat(5_000));
+    expect(String((huge as { reason: string }).reason).length).toBeLessThan(200);
+  });
+
+  it('CHECKS THE LEVEL BEFORE IT READS ANYTHING', () => {
+    // Deliberately unlike every other method here, which resolves first. The
+    // level is a free comparison against three words; resolving first would read
+    // up to 2 MB of transcript, synchronously on main, to answer a call that
+    // cannot succeed whatever the file says.
+    let reads = 0;
+    const q = new SessionQueries({
+      list: () => [session()],
+      transcriptFor: () => {
+        reads++;
+        return null;
+      },
+      git: noDiff,
+    });
+    expect(q.sessionContextFor('TradingApp', 'everything').ok).toBe(false);
+    expect(reads).toBe(0);
+    // …and a GOOD level still reads, so the assertion above is about ordering
+    // rather than about a method that never reads at all.
+    expect(q.sessionContextFor('TradingApp', 'package').ok).toBe(true);
+    expect(reads).toBe(1);
+  });
+
+  it('an unknown session refuses with the reason that names the sessions that exist', () => {
+    const r = make(lines).sessionContextFor('Nope');
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.reason).toContain('TradingApp');
+  });
+
+  it('a session with no transcript answers ok, and says it is empty', () => {
+    // #764's ordering: the failure to prevent is an empty success an agent reads
+    // as "my sibling did nothing" and believes. `empty` is how the answer says
+    // so without the caller having to infer it from length.
+    const r = make([]).sessionContextFor('TradingApp');
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.value.empty).toBe(true);
+    expect(r.value.coverage).toBe('whole');
+    expect(r.value.text).toContain('Context from @TradingApp');
+  });
+
+  it('COPIES the package’s own estimate and coverage — it does not compute a second one', () => {
+    // The same rule the drop dialog follows, and for the same reason: a second
+    // estimator would disagree with the first the day either one's caps moved.
+    const q = make(lines);
+    const pkg = q.sessionContext('TradingApp');
+    const answer = q.sessionContextFor('TradingApp', 'package');
+    if (!pkg.ok || !answer.ok) throw new Error('refused');
+    expect(answer.value.tokens).toBe(pkg.value.tokens);
+    expect(answer.value.coverage).toBe(pkg.value.coverage);
+    expect(answer.value.session).toEqual(pkg.value.session);
+  });
+
+  it('reads the NAMED sibling’s transcript, not the caller’s', () => {
+    // The mutation that reads as correct at this layer: answer about the first
+    // session in the list. Every assertion above survives it, because `make()`
+    // gives one session one transcript. `bus-check` catches it end to end; this
+    // catches it here, where the bug would actually be written.
+    const mine = writeTranscript([userLine('my own work')]);
+    const theirs = path.join(dir, 'theirs.jsonl');
+    fs.writeFileSync(theirs, userLine('their work') + '\n');
+    const q = new SessionQueries({
+      list: () => [session(), session({ id: 'sess-2', name: 'Other' })],
+      transcriptFor: (id) => (id === 'sess-2' ? theirs : mine),
+      git: noDiff,
+    });
+    const r = q.sessionContextFor('Other');
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.value.session.name).toBe('Other');
+    expect(r.value.text).toContain('their work');
+    expect(r.value.text).not.toContain('my own work');
+  });
+
+  it('the coverage statement reaches the TEXT, not just the field', () => {
+    // What a model actually reads is the document. #766 renders `Covers:` into
+    // it precisely so a partial read cannot arrive looking complete, and the
+    // agent-pulled variant must not be the door that drops it.
+    const r = make(lines).sessionContextFor('TradingApp', 'state');
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.value.text).toContain('**Covers:**');
   });
 });
 

@@ -88,6 +88,33 @@ export function stubQueries(over: Partial<BusQueries> = {}): BusQueries {
         ok: true,
         value: { session: subjectOf(ref), isRepo: true, diff: `diff for ${String(ref)}`, truncated: false },
       }),
+    // #800. Echoes the LEVEL as well as the ref, for the reason `lastN` is
+    // echoed above: this is the argument the host could silently drop or
+    // silently default, and a constant here would absorb either.
+    //
+    // `coverage: 'whole'` and `empty: false` are the dull, succeeding defaults
+    // this file exists to provide — a stub that claimed a partial read would
+    // make every test that forgot to say otherwise assert against a caveat it
+    // never asked for.
+    sessionContextFor: (ref, level) => ({
+      ok: true,
+      value: {
+        session: subjectOf(ref),
+        coverage: 'whole',
+        level: level === undefined ? 'package' : (level as 'state' | 'package' | 'excerpt'),
+        // The level is echoed with `JSON.stringify` for a non-string rather than
+      // `String()`: it is whatever JSON a model wrote, and an object stringifies
+      // to `[object Object]` — useless in exactly the case a test is most likely
+      // to be asserting about.
+      text:
+        `context for ${String(ref)}` +
+        (level === undefined
+          ? ''
+          : ` level=${typeof level === 'string' ? level : JSON.stringify(level)}`),
+        tokens: 42,
+        empty: false,
+      },
+    }),
     ...over,
   };
 }

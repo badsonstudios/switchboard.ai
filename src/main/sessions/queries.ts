@@ -56,6 +56,21 @@ import {
   promptText,
   type ContextPackage,
 } from './context-package';
+// #800's one new dependency, and it adds no transport: `context-drop.ts` is the
+// module that already turns ONE package build into the three things §5.5 offers,
+// for the drop dialog. The agent-pulled tool wants exactly the same three, so it
+// selects from the same builder rather than rendering a fourth view of a package.
+//
+// NO RUNTIME CYCLE, and it is worth stating because the graph looks like one:
+// `context-drop` imports `context-package`, which imports this module — TYPE-ONLY
+// (see its comment), which is erased. A value import there would close it.
+import { buildContextOffer } from './context-drop';
+import {
+  CONTEXT_FIDELITIES,
+  DEFAULT_FIDELITY,
+  isContextFidelity,
+  type ContextFidelity,
+} from '../../shared/context-drop';
 import type { SessionIdentity, SessionStatus, SessionSummary } from '../../shared/sessions';
 
 /**
@@ -162,6 +177,38 @@ export interface SessionOutput {
   truncated: boolean;
 }
 
+/**
+ * A sibling's handoff, at one chosen fidelity (§5.5 `get_session_context`).
+ *
+ * `text` is the WHOLE answer — the rendered document, coverage statement and
+ * all. The fields beside it are COPIED off the option that was chosen; nothing
+ * here recomputes them.
+ *
+ * ⚠️ `tokens` IS THE CHOSEN OPTION'S ESTIMATE, NOT ALWAYS THE PACKAGE'S — the
+ * whole document at `package`, and the SECTION's estimate at `state` and
+ * `excerpt` (review measured 14 / 0 / 8 off one build). An earlier version of
+ * this comment said "the package's own estimate" flatly, which would send a
+ * reader comparing it against `ContextPackage.tokens` and concluding the
+ * document had been truncated. Still an estimate, never a count.
+ *
+ * ⚠️ `tokens` DOES NOT REACH THE AGENT. `renderContext` deliberately prints no
+ * size line — the drop dialog needs numbers to choose BETWEEN options, and an
+ * agent that has already chosen does not. It is carried for the IPC callers that
+ * do compare, and so the bus edge does not have to build a second answer if one
+ * ever wants it. `empty` is different and IS read: it is how the answer says
+ * "there was nothing at this level" without a reader inferring it from length.
+ */
+export interface SessionContextAnswer {
+  session: SessionSummary;
+  /** #766's coverage, carried beside the text that already states it. */
+  coverage: ContextPackage['coverage'];
+  /** The level that was actually used — the default, when none was asked for. */
+  level: ContextFidelity;
+  text: string;
+  tokens: number;
+  empty: boolean;
+}
+
 export interface SessionDiff {
   session: SessionSummary;
   isRepo: boolean;
@@ -244,6 +291,22 @@ function firstPrompt(file: string): string | undefined {
     if (text !== undefined) return text;
   }
   return undefined;
+}
+
+/**
+ * A rejected `detail_level`, rendered short enough to sit inside a sentence.
+ *
+ * The value is JSON a language model wrote, so it is not necessarily a string
+ * and not necessarily small. A type name for a non-string is more use to the
+ * caller than `[object Object]`, and 40 characters is enough to show a
+ * misspelling — which is the mistake this refusal actually exists for.
+ */
+function describeLevel(v: unknown): string {
+  if (typeof v === 'string') return JSON.stringify(v.length > 40 ? v.slice(0, 40) + '…' : v);
+  // `typeof {}` and `typeof []` are both `object`, and "(a object)" is our own
+  // grammar mistake sitting in front of a language model. Cheap to get right.
+  const kind = v === null ? 'null' : typeof v;
+  return `(${/^[aeiou]/.test(kind) ? 'an' : 'a'} ${kind})`;
 }
 
 /** Run an injected dependency, treating a throw as its empty answer (P6). */
@@ -577,6 +640,76 @@ export class SessionQueries {
         // conversation" over a document asserting the session had done nothing.
         unreadable: !tail.read,
       }),
+    };
+  }
+
+  /**
+   * A sibling's handoff at a chosen fidelity (#800, §5.5's agent-pulled variant).
+   *
+   * THIN BY CONSTRUCTION, and the thinness is the requirement rather than the
+   * taste: `sessionContext` above builds the package and `buildContextOffer`
+   * already renders the three fidelities §5.5 names, so this method selects. It
+   * reads nothing, caps nothing and estimates nothing — every number it returns
+   * is a field copied off the option it chose.
+   *
+   * ── WHY THE LEVEL IS CHECKED BEFORE THE SESSION IS RESOLVED ───────────────
+   *
+   * Every other refusal in this file resolves first, because `ref` is the
+   * argument most likely to be wrong. This one goes the other way round, for a
+   * reason that is about cost rather than about ordering taste: the level is a
+   * free local comparison against three words, and resolving first would read up
+   * to 2 MB of transcript, on Electron's main thread, to answer a call that
+   * cannot succeed whatever the file says. An agent that got BOTH arguments
+   * wrong pays one extra round trip either way.
+   *
+   * ── THE VOCABULARY IS NOT DECLARED HERE ───────────────────────────────────
+   *
+   * It is `CONTEXT_FIDELITIES`, which the drop dialog (#799) already speaks. The
+   * agent-pulled and user-dragged variants are the same three choices over the
+   * same package, so they read one constant — a second list for the agent would
+   * be a second declaration of one contract, and the day either moved, a tool
+   * would start refusing a level the dialog still offered.
+   */
+  sessionContextFor(ref: string, level?: unknown): QueryResult<SessionContextAnswer> {
+    // ABSENT TAKES THE DEFAULT; PRESENT-BUT-WRONG IS REFUSED. Not the same
+    // thing, and collapsing them is the silent fallback the done-when forbids:
+    // an agent that asked for "full" and was handed the default would be told
+    // nothing, and would go on believing "full" is a level this tool has.
+    const chosen = level === undefined ? DEFAULT_FIDELITY : level;
+    if (!isContextFidelity(chosen)) {
+      return {
+        ok: false,
+        // The bad value is ECHOED BACK BOUNDED. It is JSON a model composed, so
+        // it can be an object or a 10 KB string, and a reason that pasted one
+        // whole would be a refusal the agent has to scroll. A misspelling is
+        // the case worth showing, and 40 characters shows it.
+        reason:
+          `unknown detail level ${describeLevel(chosen)} — valid levels are ` +
+          `${CONTEXT_FIDELITIES.join(', ')} (leave it out for "${DEFAULT_FIDELITY}")`,
+      };
+    }
+    const built = this.sessionContext(ref);
+    if (!built.ok) return built;
+    const pkg = built.value;
+    const option = buildContextOffer(pkg).options.find((o) => o.id === chosen);
+    if (!option) {
+      // Unreachable: `buildContextOffer` maps over `CONTEXT_FIDELITIES` and is
+      // total over it by construction, which is the same property the `Exclude`
+      // in its `SECTION_FOR` key type exists to keep. Kept because the reachable
+      // version of this is a fourth fidelity added there and not handled, and
+      // saying so beats handing back another level's document.
+      return { ok: false, reason: `switchboard could not build the "${chosen}" handoff` };
+    }
+    return {
+      ok: true,
+      value: {
+        session: pkg.session,
+        coverage: pkg.coverage,
+        level: chosen,
+        text: option.text,
+        tokens: option.tokens,
+        empty: option.empty,
+      },
     };
   }
 
