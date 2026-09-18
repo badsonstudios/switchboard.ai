@@ -784,7 +784,7 @@
     }
   },
   "commands": {
-    "reportProblem": "Report a problem… — file an issue or email your logs",
+    "reportProblem": "Report a problem…",
     "jumpTo": "Go to session {n}",
     "nextSession": "Next session",
     "prevSession": "Previous session",

@@ -1,5 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { filterRows, firstRunnable, paletteRows, SESSION_ROW_PREFIX } from './palette';
+import { fuzzyRank } from './fuzzy';
+import en from '../../../shared/i18n/locales/en.json';
 import { Command, CommandContext } from './commands';
 
 const ctx: CommandContext = {
@@ -117,5 +119,45 @@ describe('filterRows', () => {
     ];
     expect(firstRunnable(disabledFirst)).toBe(1);
     expect(firstRunnable([{ ...rows()[0], enabled: false }])).toBe(-1);
+  });
+});
+
+/**
+ * A query typed by a person must reach the command that person meant — checked
+ * against the REAL shipped titles, not a fixture.
+ *
+ * How this got written: #815 added a command titled "Report a problem… — file
+ * an issue or email your logs". Its WORD STARTS read **R**eport / **a** /
+ * **i**ssue / **l**ogs, so the acronym pass scored it 35 against 25 for
+ * "Toggle the sessions rail" — four boundary bonuses beat one boundary plus
+ * three consecutive ones. Typing `rail` and pressing Enter opened a dialog
+ * instead of hiding the rail.
+ *
+ * The matcher was right; the title was careless. Only the e2e caught it, which
+ * is a ten-minute round trip on two runners for a fact this file can settle in
+ * milliseconds — and the trap is GENERAL, since any future title whose
+ * initials spell a short word will take that word's query.
+ */
+describe('a real query reaches the command it names (#815 regression)', () => {
+  /** every command title the app actually ships, paired with its i18n leaf */
+  const titles = Object.entries(en.commands).filter(
+    (entry): entry is [string, string] => typeof entry[1] === 'string'
+  );
+
+  it('finds the shipped titles at all (guards against the guard passing on an empty list)', () => {
+    expect(titles.length).toBeGreaterThan(20);
+  });
+
+  it('"rail" ranks the sessions rail first', () => {
+    const ranked = fuzzyRank('rail', titles, ([, title]) => title);
+    expect(ranked[0]?.item[0]).toBe('toggleRail');
+  });
+
+  it('"Report a problem…" cannot take that query at all', () => {
+    // Not merely outranked — it contains no `i`, so no pass can match it. That
+    // is deliberate: being second by ten points is a fact someone can undo by
+    // rewording an unrelated command.
+    const ranked = fuzzyRank('rail', titles, ([, title]) => title);
+    expect(ranked.map((r) => r.item[0])).not.toContain('reportProblem');
   });
 });
