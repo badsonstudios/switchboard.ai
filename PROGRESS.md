@@ -3,21 +3,77 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔵 IN PROGRESS — started 2026-09-18: **#800** — P2-E11-11 · `get_session_context` bus tool
+> # ✅ MERGED — 2026-09-18: **#800** — P2-E11-11 · `get_session_context`, the agent-pulled context handoff
 >
-> The agent-pulled variant of #766's context package: B's agent asks for A's
-> handoff mid-task instead of waiting for the user to drag a chip. Size **S**.
-> Both dependencies are closed (#764 the read tools, #766 the package generator).
+> **PR #859, squashed to `8a4ec65`.** Issue closed by `Closes #800`; **#801 was
+> checked afterwards and is still open** — the closing-keyword trap did not fire
+> this time.
+> ⚠️ **NOT RELEASED** — joins the `0.8.91 — unreleased` section alongside #818,
+> #846, #799, #719 and #815; `gh release list` is the authority and **v0.8.90**
+> is still the latest tag, so this is on `main` and in no installed build.
 >
-> **E11 resumes here** after two interruptions (#719, then #815). Branch
-> `feature/800-get-session-context`.
+> **E11 resumed here** after two interruptions (#719, then #815). One session's
+> agent can now fetch another's handoff package mid-task instead of waiting for
+> the user to drag a context chip.
 >
-> **The decision made at pickup, recorded before implementing:** `detail_level`
-> reuses the EXISTING `CONTEXT_FIDELITIES` vocabulary (`state` | `package` |
-> `excerpt`, default `package`) that #799's drop dialog already speaks, rather
-> than inventing a second set of words for the agent. Same three choices, one
-> constant, so the agent-pulled and user-dragged variants cannot drift — and
-> `buildContextOffer` already renders all three from one package build.
+> **Thin was the requirement, not the taste.** It is a tool edge over #766's
+> generator and #799's `buildContextOffer`: no second generator, no second
+> estimator, no second rendering. That is *why* the package's coverage statement
+> reaches the agent verbatim — it travels inside the rendered document and
+> nothing at the bus layer touches the text.
+>
+> **The decision recorded at pickup, before implementing, and it held:**
+> `detail_level` reuses the EXISTING `CONTEXT_FIDELITIES` vocabulary (`state` |
+> `package` | `excerpt`, default `package`) that #799's drop dialog already
+> speaks, rather than inventing a second set of words for the agent. One
+> constant, two doors; the tool's `enum` is spread from it and a fourth fidelity
+> now fails a test rather than being offered by the dialog and refused by the
+> tool.
+>
+> **Two orderings are deliberate and are the parts worth finding again.** The
+> level is validated BEFORE the session is resolved — inverting `queries.ts`'s
+> usual rule on purpose, because the level is a free comparison against three
+> words while resolving first would read up to 2 MB of transcript synchronously
+> on main to answer a call that cannot succeed anyway. And an absent level takes
+> the default while a present-but-wrong one is REFUSED: collapsing those would
+> mean an agent that asked for "full" was handed the default and told nothing.
+>
+> **Review found 1 blocker and 5 should-fixes, all taken. The blocker is the one
+> worth remembering, and it was found by RUNNING the code rather than reading
+> it.** `empty` is **per-LEVEL, not per-package** — `buildContextOffer` computes
+> it from one section for `state`/`excerpt`. So on a session where the user had
+> typed a prompt the agent had not yet answered — *exactly* the session you ask
+> about when told to pick work up — `state` came back empty and the tool said
+> **"a fuller level will not invent one"**, while the `package` option for the
+> same build was a 728-character document containing the goal. Switchboard was
+> talking an agent out of the one call that would have answered its question,
+> and the same false claim had already been written into the user manual. The
+> sentence is now per-level and hedged on `coverage`, and `check:bus` drives that
+> path end to end — the harness previously only exercised the non-empty case, so
+> the unit test alone could not have caught a regression in it.
+>
+> Also fixed: the empty branch ignored `coverage` (a partial read reported its
+> own blind spot as a fact about the other session's work, contradicting the
+> document two lines below); `SessionContextAnswer.tokens` was documented as the
+> package's estimate when at two of three levels it is the section's; every
+> coverage assertion tested only the easy `whole` half; `describeLevel` said
+> "(a object)" to a model; and `who()` did not flatten a session name — which
+> #800 made the THIRD instance, so it now shares #799's helper.
+>
+> **Verified:** typecheck, lint, the full suite at **8,439 passing, 306/306
+> files, zero failures**, a build, and `npm run check:bus` PASS. All four CI
+> checks green (ubuntu 4m19s, windows 8m22s, e2e ubuntu 10m54s, e2e windows
+> 23m56s).
+>
+> ⚠️ **One flake sighting, and it was self-inflicted — recorded so it is not
+> mistaken for a defect later.** `scripts/eslint-hex-rule.test.js` ("catches a
+> shorthand with letters") timed out at its 5 s limit on ONE full-suite run —
+> the run where a build, a lint and the suite were all executing concurrently. It
+> passed on every sequential run before and after. Same load-sensitivity family
+> as **#835**; the lesson is that this machine cannot run those three at once.
+>
+> **Next up: #796** (P2-E11-06 — the blackboard publish/read scratchpad), then
+> **#801** (P2-E11-12, Level 3 fork-session adoption).
 
 > # ✅ MERGED — 2026-09-18: **#815** — report a problem from the Help menu, to a GitHub issue or email
 >
