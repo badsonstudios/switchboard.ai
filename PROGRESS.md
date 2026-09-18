@@ -3,47 +3,111 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🚧 IN PROGRESS — 2026-09-18: **#815** — the diagnostic bundle, and a second destination: file a GitHub issue
+> # ✅ MERGED — 2026-09-18: **#815** — report a problem from the Help menu, to a GitHub issue or email
 >
-> **Branch `feature/815-diagnostic-bundle`.** Taken at the owner's direction
-> straight after #719, and for the same reason: #719 now writes a `cpu
-> heartbeat` line naming the burning process, but that evidence is stuck in a
-> folder on the laptop. This is what gets it off the machine.
+> **PR #857, squashed to `19f6cf4`.** Issue closed by `Closes #815`.
+> ⚠️ **NOT RELEASED** — joins the `0.8.91 — unreleased` section alongside #818,
+> #846, #799 and #719; `gh release list` is the authority and **v0.8.90** is
+> still the latest tag, so this is on `main` and in no installed build.
+>
+> **Taken straight after #719, and for the same reason:** #719 now writes a
+> `cpu heartbeat` line naming the burning process, but that evidence was stuck
+> in a folder on the laptop. This is what gets it off the machine.
 >
 > **Scope grew on pickup (owner, 2026-09-18).** The ticket as filed covered
 > email only. The owner asked for **either email or a new GitHub issue**, from a
-> dialog with **a subject field and a free-text description**. Recorded as a
-> comment on #815 rather than left in chat.
+> dialog with a subject field and a free-text description. Recorded as a comment
+> on the issue before implementing rather than left in chat.
 >
-> **Why the GitHub route is cheap — checked, not assumed:**
-> - The app **already calls `api.github.com` against this very repo** (the update
->   checker polls `/releases` hourly, default on). Same host, same trust
->   boundary — no new service, so P8 is not strained.
-> - **A token chain already exists** (`update/token.ts`): env → credential store
->   → **`gh auth token`**, and shelling `gh` is already shipped code. Where `gh`
->   is signed in this is **zero-config**, which is what litmus test 1 demands.
-> - **The credential-store slot was pre-built and left empty** —
->   `credentialStoreToken` is a documented no-op whose header says it exists so
->   `secrets/store.ts` can plug in with no caller change. That store is now real,
->   so this item wires the stub (and its comment, which still claims no
->   credential store exists, is now stale).
-> - GitHub PATs are **already redacted from logs**.
+> **Why the GitHub route was cheap — checked, not assumed:**
+> - the app has polled `api.github.com` against this very repo hourly since the
+>   update checker landed. Same host, same trust boundary — no new service, so
+>   P8 is not strained;
+> - a token chain already existed (env → credential store → `gh auth token`),
+>   and shelling `gh` was already shipped code, so a machine with `gh` signed in
+>   needs **zero setup** — which is what litmus test 1 demands;
+> - the credential-store slot in `update/token.ts` had been **pre-built and left
+>   empty for two items**, with a comment saying it was waiting for exactly this.
 >
-> **The constraint that shaped it: GitHub's REST API cannot attach a file to an
-> issue** — attachments are web-form-only. Pretending otherwise would ship a
-> button that silently drops the thing it claims to send.
-> **Owner's call: post via the API, keep the zip on disk.** The issue carries the
-> subject, the description, and the diagnostics **inline** (version, build
-> identity, OS, core count, recent `cpu heartbeat` warnings); the zip is still
-> written and revealed, and the dialog reports the issue URL so dragging the zip
-> on is available but never required.
+> **The constraint that shaped the whole feature: GitHub's REST API cannot
+> attach a file to an issue.** Attachments are web-form-only. So the zip is
+> written and revealed but never attached, and that sentence appears in the
+> dialog, the issue body, the manual and the CHANGELOG. A button implying
+> otherwise would have dropped the evidence the feature exists to move.
 >
-> **Architecture is already decided by existing rules:** the renderer cannot
-> reach the network (`connect-src 'self'`) and has **no read path to secrets** by
-> design, so main resolves the token and POSTs; the window only collects text.
+> **Architecture was decided by existing rules, not by preference.** The renderer
+> cannot reach the network (`connect-src 'self'`) and has no read path to a
+> stored secret (§5.29), so main resolves the token and POSTs; the window only
+> collects text. Two new capabilities rather than one, following the
+> vocabulary's own reasoning: `diagnostics.report` (writes to a third-party
+> host) and `diagnostics.credential` (plants the secret it writes with).
 >
-> **`yazl` added as a dependency** — nothing in the tree zipped, which the ticket
-> anticipated and pre-authorised.
+> **`yazl` is inlined into the main bundle, NOT shipped from `node_modules`.**
+> Its own dependency `buffer-crc32` is invisible to the packaging guard — that
+> scan only sees direct imports — so an allowlist entry would have left a
+> `MODULE_NOT_FOUND` in the **installed build only**, at the moment someone
+> tried to report a problem. Verified against the real bundle rather than the
+> config: no external reference to either package survives, the zip writer's own
+> code is present, and `node-pty` is still external as a control.
+>
+> **Review found 1 blocker and 6 should-fixes, all taken.** The blocker is the
+> one worth remembering: **saving a token left the dialog contradicting
+> itself** — the fresh status came back and was discarded, so the panel went on
+> saying "no GitHub sign-in was found, paste a token below" after a save that
+> had worked. It is the only setup gesture in the feature and it is aimed
+> squarely at the machine where `gh` is absent, **which is never this one** — so
+> hand-testing here would never have found it either. Also fixed: **the unit
+> suite really shelled out to `gh auth token`**, so credential tests passed for
+> the wrong reason on any machine with `gh` signed in (there is now an injection
+> seam, a stateful fake store, and inverse cases that could not previously
+> exist); **403-vs-rate-limit was mapped to something false** (the *secondary*
+> limit throttles content-creating POSTs and leaves `x-ratelimit-remaining`
+> healthy, so someone filing two reports in a row was told their good token had
+> expired; 429 was unhandled entirely); **404 on a private repo is an auth fact**,
+> not a missing repo; **the description was unbounded** (pasting a log would hit
+> GitHub's 65,536-character limit and return a flat "refused"); **redaction
+> missed `github_pat_…`** fine-grained tokens; and **a refused credential write
+> was swallowed**, plus the result line was not announced to screen readers and a
+> `null` status rendered an empty panel.
+>
+> **CI went red, and it was a real defect this item introduced — worth keeping.**
+> Both e2e runners failed the same test: `palette.spec.ts > Enter runs the
+> selected command`, which types `rail`, presses Enter and expects the sessions
+> rail to hide. The new command was titled *"Report a problem… — file an issue or
+> email your logs"*, whose WORD STARTS read **R**eport / **a** / **i**ssue /
+> **l**ogs. The palette's acronym pass scores four boundary hits at **35**
+> against **25** for "Toggle the sessions rail" (one boundary plus three
+> consecutive, minus a length penalty), so Enter opened the dialog instead.
+>
+> **The matcher was right; the title was careless.** `fuzzy.ts`'s scoring is
+> deliberate and thoroughly pinned, so the fix was the title, not the ranking:
+> "Report a problem…" contains no `i` at all, so no pass can match that query,
+> and it matches the style of its Help sibling "Check for updates…". Added a
+> regression test that ranks the **real shipped titles out of `en.json`** —
+> because the trap is general, and only the e2e could catch it before: a
+> ten-minute round trip on two runners for a fact a unit test settles in
+> milliseconds.
+>
+> **Verified:** typecheck, lint (incl. the NUL scan), the full suite at **8,404
+> passing, 306/306 files, zero failures**, a build, and the previously-failing
+> `palette.spec.ts` re-run locally at **8/8** against a bundle the runner's own
+> freshness banner confirmed was built after every bundled change. Earlier runs
+> also hit `git-service.test.ts` reddening under full-suite load while passing
+> **74/74 in isolation, confirmed twice** — the known flake family; that sighting
+> is recorded on **#835**, along with the fact that it is now a SECOND test in
+> that file, which makes the file look load-sensitive rather than either test
+> unlucky.
+>
+> **Declined deliberately, both written down rather than left silent:**
+> - the **update checker still cannot see a stored token** — wiring it means
+>   threading `tokenSources` through release-critical code. Filed as **#856**,
+>   and `token.ts`'s comment points there instead of claiming the slot is fully
+>   wired.
+> - **zips accumulate in `userData` with no pruning**, and reveal drops the user
+>   into `AppData\Roaming`. Worth a follow-up; not a blocker.
+>
+> **Next up: #800**, then **#796**, **#801** — E11 resumes after two
+> interruptions (#719, then this).
 
 > # ✅ MERGED — 2026-09-17: **#719** — a per-process CPU heartbeat, so the next freeze names its own burner
 >
