@@ -48,6 +48,13 @@ import { DEFAULT_SOUND } from '../../shared/sounds';
 import { answered, took } from '../../shared/ipc/refusal';
 import { PushSetupDialog } from './components/PushSetupDialog';
 import { QuietHoursDialog } from './components/QuietHoursDialog';
+import { ReportProblemDialog } from './components/ReportProblemDialog';
+import {
+  unavailableReport,
+  unknownReportStatus,
+  type ReportStatus,
+  type ReportWriteResult,
+} from '../../shared/diagnostics';
 import { McpManagerDialog } from './components/McpManagerDialog';
 import { ModelPickerDialog } from './components/ModelPickerDialog';
 import type { QuietState } from '../../shared/quiet-hours';
@@ -250,6 +257,10 @@ export function App(): React.JSX.Element {
   const [quietOpen, setQuietOpen] = useState(false);
   // The MCP Manager (§5.17, #632). Read-only in PR 1.
   const [mcpOpen, setMcpOpen] = useState(false);
+  // Help ▸ Report a problem… (#815). `null` status means "main has not said
+  // yet", which the dialog renders as unknown rather than as "no credential".
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportStatus, setReportStatus] = useState<ReportStatus | null>(null);
   // ...and the other door to it: `/mcp` typed in a composer (#632). The signal
   // comes off the store rather than a prop, because the composer is rendered by
   // dockview three levels down — see `subscribeMcpOpen`.
@@ -800,6 +811,29 @@ export function App(): React.JSX.Element {
     void answer.then((s) => setQuietState(answered(s) ?? null)).catch(() => setQuietState(null));
     // eslint's exhaustive-deps plugin isn't installed; bridge is stable
   }, []);
+  // ── report a problem (#815) ──────────────────────────────────────────────
+  //
+  // Optional-chained and swallowed like the push family above, for the same
+  // #444 reason: a diagnostic must never be able to white-screen the shell. A
+  // bridge with no `diagnostics` namespace leaves the status null, which the
+  // dialog renders as "not known yet" rather than as a working form.
+  const refreshReportStatus = React.useCallback(() => {
+    const answer = bridge.diagnostics?.reportStatus?.();
+    if (!answer) return setReportStatus(null);
+    // #650: a refusal is a third way of not being told, not a status whose
+    // every flag happens to be undefined.
+    void answer
+      .then((s) => setReportStatus(answered(s) ?? null))
+      .catch(() => setReportStatus(null));
+    // eslint's exhaustive-deps plugin isn't installed; bridge is stable
+  }, []);
+  const openReportProblem = React.useCallback(() => {
+    // Cleared FIRST, so the dialog cannot show last time's answer while this
+    // one is in flight — the `openQuietHours` rule, for its reason.
+    setReportStatus(null);
+    setReportOpen(true);
+    refreshReportStatus();
+  }, [refreshReportStatus]);
   const openQuietHours = React.useCallback(() => {
     // Cleared FIRST, so the dialog's one-shot seeding cannot take a stale
     // answer from the last time it was open: null means "main has not said
@@ -1210,7 +1244,14 @@ export function App(): React.JSX.Element {
   useEffect(() => {
     railHiddenRef.current = railHidden;
     modalOpenRef.current =
-      paletteOpen || aboutOpen || updateOpen || pushOpen || quietOpen || mcpOpen || modelFor !== null;
+      paletteOpen ||
+      aboutOpen ||
+      updateOpen ||
+      pushOpen ||
+      quietOpen ||
+      mcpOpen ||
+      reportOpen ||
+      modelFor !== null;
   });
 
   // Set when a command deliberately raised a DIFFERENT OS window (jumping to a
@@ -1359,6 +1400,9 @@ export function App(): React.JSX.Element {
           // §5.17's manager (#632). An inline thunk over a `useState` setter,
           // which is stable — so it needs no entry in the dependency list below.
           openMcpManager: () => setMcpOpen(true),
+          // #815. The Help menu delivers `app.reportProblem` to this same
+          // command, so the menu and the palette are one implementation.
+          reportProblem: openReportProblem,
           checkForUpdates,
           // §5.30's `Open file…`. Picking a file in the native dialog is also
           // what GRANTS it: main widens the `fs.read` scope with the chosen
@@ -1825,7 +1869,9 @@ export function App(): React.JSX.Element {
         }}
         // a second dialog is above this one: two stacked `aria-modal` regions
         // is a thing screen readers disagree about, so only the top one claims it
-        dialogAbove={updateOpen || pushOpen || quietOpen || mcpOpen || modelFor !== null}
+        dialogAbove={
+          updateOpen || pushOpen || quietOpen || mcpOpen || reportOpen || modelFor !== null
+        }
         onOpenPushSetup={openPushSetup}
         onOpenQuietHours={openQuietHours}
       />
@@ -1862,6 +1908,51 @@ export function App(): React.JSX.Element {
         // session the dialog on screen belongs to.
         liveId={modelFor}
         {...(modelSessionTitle ? { sessionTitle: modelSessionTitle } : {})}
+      />
+      <ReportProblemDialog
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+        status={reportStatus}
+        onSubmit={(draft) => {
+          const answer = bridge.diagnostics?.submit?.(draft);
+          // No namespace, or a refusal: a real result saying nothing was sent,
+          // rather than a rejected promise the dialog would have to catch.
+          if (!answer) return Promise.resolve(unavailableReport(draft.destination));
+          return answer
+            .then((r) => answered(r) ?? unavailableReport(draft.destination))
+            .catch(() => unavailableReport(draft.destination));
+        }}
+        onSetToken={(value) => {
+          const answer = bridge.diagnostics?.setGitHubToken?.(value);
+          // A write we could not even attempt is `ok: false` — the dialog says
+          // so rather than clearing the field as though it had landed.
+          const refused = (): ReportWriteResult => ({
+            status: reportStatus ?? unknownReportStatus(),
+            ok: false,
+          });
+          if (!answer) return Promise.resolve(refused());
+          return answer
+            .then((r) => {
+              const laundered = answered(r);
+              if (!laundered) return refused();
+              const next = laundered.status;
+              // THE WHOLE POINT OF THE ROUND TRIP. Without this the panel goes
+              // on saying "no GitHub sign-in was found — paste a token below"
+              // after a save that WORKED, while holding the fresh answer in
+              // hand. It is the only setup gesture in the feature, and it is
+              // aimed squarely at the machine where `gh` is absent — which is
+              // never this one, so hand-testing here would never show it.
+              setReportStatus(next);
+              return laundered;
+            })
+            .catch(() => refused());
+        }}
+        // THE SAME GATE the update dialog's links go through
+        // (`update:openExternal` → `isAllowedReleaseUrl`), which refuses
+        // anything that is not https on github.com. A filed issue's URL is
+        // exactly that, so this needs no door of its own — and opening one
+        // would be a second, weaker path to the browser.
+        onOpenIssue={(url) => void bridge.update?.openExternal?.(url)?.catch(() => {})}
       />
       <QuietHoursDialog
         open={quietOpen}

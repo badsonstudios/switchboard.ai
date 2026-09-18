@@ -39,6 +39,12 @@ import type {
   StatusChange,
 } from '../shared/sessions';
 import type { TransportKind } from '../shared/transport';
+import type {
+  ReportDraft,
+  ReportResult,
+  ReportStatus,
+  ReportWriteResult,
+} from '../shared/diagnostics';
 import type { ControlVerdict } from '../shared/control';
 import type { NotificationPrefs } from '../shared/notifications';
 import type { WorkspaceSaveState } from '../shared/workspace';
@@ -998,6 +1004,28 @@ const api = {
    * renders documents it did not write, and a compromise here must not be able
    * to walk off with the user's Pushover token.
    */
+  /**
+   * Help ▸ Report a problem… (#815).
+   *
+   * **There is no `getGitHubToken`, and there will not be one** — the same
+   * contract `push` keeps below, for the same reason. `reportStatus` answers
+   * WHETHER a credential can be resolved; it can never say what it is.
+   *
+   * `submit` does the network call in MAIN, not here: this process cannot
+   * reach the internet at all (`connect-src 'self'`), so the window's whole job
+   * is to collect a subject and a description.
+   */
+  diagnostics: {
+    reportStatus: (): Promise<ReportStatus> => ipcRenderer.invoke('diag:reportStatus'),
+    submit: (draft: ReportDraft): Promise<ReportResult> => ipcRenderer.invoke('diag:submit', draft),
+    /**
+     * Store a GitHub token; an empty string forgets it. Answers the status the
+     * store now holds AND whether the write happened — a machine with no
+     * keyring refuses, and the dialog has to be able to say so.
+     */
+    setGitHubToken: (value: string): Promise<ReportWriteResult> =>
+      ipcRenderer.invoke('diag:setGitHubToken', value),
+  },
   push: {
     getConfig: (): Promise<PushConfig> => ipcRenderer.invoke('push:getConfig'),
     /** answers the new config AND whether the write happened — see PushWriteResult */

@@ -91,6 +91,11 @@ module.exports = {
     'node_modules/node-pty/build/Release/*.node',
     'node_modules/node-pty/build/Release/*.dll',
     'node_modules/node-pty/build/Release/*.exe',
+    // NOTHING here for #815's zip writer, deliberately: `yazl` is inlined into
+    // the main bundle instead (`src/build/bundled-deps.ts` carries the why —
+    // its `buffer-crc32` dependency is invisible to the runtime-dep guard).
+    // A package that is already inside `out/main/index.js` must not also be
+    // shipped from node_modules; `packaging.test.ts` asserts both halves.
   ],
 
   /**

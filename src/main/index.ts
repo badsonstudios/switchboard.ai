@@ -21,6 +21,7 @@ import { PtyService } from './pty/pty-service';
 import { StreamService } from './transport/stream-service';
 import { createDiagnosticLogger } from './transport/diagnostics';
 import { CpuHeartbeat } from './diagnostics/cpu-heartbeat';
+import { registerReportIpc } from './diagnostics/report-ipc';
 import { parsePreferredTransport, TRANSPORT_ENV_VAR } from './transport/preferred-transport';
 import { StreamPermissions } from './sessions/stream-permissions';
 import { StreamCommands } from './sessions/stream-commands';
@@ -1540,6 +1541,16 @@ app
               .catch((err: unknown) =>
                 log.app.warn('menu update check failed', { error: String(err) })
               ),
+          // Help ▸ Report a problem… (#815). THROUGH THE COMMAND REGISTRY, for
+          // `openFile`'s reason: the dialog belongs to the renderer, and a menu
+          // item that opened its own would be a second path to one action.
+          // `fromPopout: false` — the click came from the application menu,
+          // which belongs to the main window.
+          reportProblem: () => {
+            if (!acceleratorDeps(false).deliver('app.reportProblem')) {
+              log.app.warn('menu report-problem could not reach the renderer');
+            }
+          },
         })
       )
     );
@@ -1692,6 +1703,23 @@ app
     });
     ruleActions.register(ACTION_PUSH, pushActions.pushHandler);
     ruleActions.register(ACTION_WEBHOOK, pushActions.webhookHandler);
+    // Help ▸ Report a problem… (#815). Registered HERE because it needs the
+    // same `secretStore` the push credentials use — one store, one set of
+    // rules about what may read it. `bundleDeps` is a thunk because uptime and
+    // the log paths are read fresh for every report, not captured at startup.
+    registerReportIpc({
+      broker,
+      log: createLogger(sink, 'report'),
+      secrets: secretStore,
+      bundleDeps: () => ({
+        logsDir: logsDir(),
+        userDataDir: app.getPath('userData'),
+        outDir: app.getPath('userData'),
+        version: app.getVersion(),
+        identity: BUILD_IDENTITY,
+        uptimeMs: Math.round(process.uptime() * 1000),
+      }),
+    });
     // ── the two channels that stay in the room (P2-E14-05a, §5.9 + §5.11) ──
     //
     // A cue that says WHICH card wants you, and a voice that says it out loud.

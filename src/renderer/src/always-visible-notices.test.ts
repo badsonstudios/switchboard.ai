@@ -188,6 +188,7 @@ const NOT_A_NOTICE: Readonly<Record<string, string>> = {
   UpdateDialog: 'a modal, same as AboutPanel',
   CommandPalette: 'a modal, same as AboutPanel',
   PushSetupDialog: 'a modal, same as AboutPanel (P2-E14-06)',
+  ReportProblemDialog: 'a modal, same as AboutPanel (#815)',
   QuietHoursDialog: 'a modal, same as AboutPanel (P2-E14-05b)',
   McpManagerDialog: 'a modal, same as AboutPanel (§5.17, #632)',
   ModelPickerDialog: 'a modal, same as AboutPanel (#721)',

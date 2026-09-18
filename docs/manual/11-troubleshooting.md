@@ -427,3 +427,43 @@ including startup, which is usually the busiest minute of a run.
 
 If you hit a freeze, the useful thing to send is the log itself; it covers the
 whole period, including the part where the machine was too slow to use.
+
+## Sending a problem report
+
+**Help ▸ Report a problem…** does the collecting for you. (It is in the command
+palette too — press `Ctrl+Shift+P` and type *report*.)
+
+Give it a **subject** and describe **what happened**, then choose where it
+should go:
+
+| Choice | What happens |
+|---|---|
+| **Create a GitHub issue** | Files it straight away and tells you the issue number. |
+| **Open an email** | Opens your mail app with the address already filled in. |
+| **Just build the zip** | Writes the file and shows it to you. Send it however you like. |
+
+**Whichever you choose, the zip is always written and always shown to you in
+Explorer.** It contains your log files, your workspace file, and a short summary
+of your build and machine. It deliberately does **not** contain your
+conversations.
+
+**The zip is never attached for you.** GitHub only accepts file attachments
+through its website, and email programs cannot be handed an attachment from
+outside either. So the report carries the useful details as text — your
+description, the version and system information, and any recent minutes where
+the app was working unusually hard — and the zip waits in your folder. If
+someone asks for it, drag it onto the issue or into your email.
+
+### Filing to GitHub
+
+If you are already signed in with the GitHub command-line tool, this works with
+no setup at all and there is nothing to configure.
+
+If you are not, the box will say so and offer a **GitHub token** field. Paste one
+in and press **Save token**; it is kept in your operating system's own secure
+store, is never displayed back to you, and never appears in the log. To remove
+it, save an empty box.
+
+If a machine cannot store secrets at all, the app says so plainly rather than
+accepting a token it would have to throw away — the other two options still
+work.

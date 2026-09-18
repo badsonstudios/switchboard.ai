@@ -98,6 +98,24 @@ on the floor, and say so in your PR.
 
 ### Added
 
+- **Report a problem without leaving the app.** A new **Help ▸ Report a
+  problem…** (also in the command palette) opens a box with a subject and a
+  description, and asks where it should go: **create a GitHub issue**, **open an
+  email**, or **just build the zip**. Whichever you pick, your logs, your
+  workspace file and your build details are collected into a single zip and
+  shown to you in Explorer — so the thing worth sending is always in your hand.
+
+  Filing a GitHub issue needs no setup if you are already signed in to the
+  GitHub command-line tool; if you are not, you can paste a token once and the
+  app keeps it in the operating system's own secure store. It is never shown
+  back to you and never written to the log.
+
+  One honest limitation, stated in the box itself: **GitHub only accepts file
+  attachments through its website**, so the zip is never attached for you. The
+  issue carries your description plus the details that matter — version, system,
+  and any recent minutes where the app was working unusually hard — and names
+  where the zip is so you can drag it on if it is needed.
+
 - **Hand one session's context to another by dragging it.** Every running
   session now has a small **context** chip in its header. Drag that chip onto
   another session's prompt box and you're asked what to hand over: the **last

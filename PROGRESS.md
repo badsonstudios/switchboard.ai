@@ -3,6 +3,48 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🚧 IN PROGRESS — 2026-09-18: **#815** — the diagnostic bundle, and a second destination: file a GitHub issue
+>
+> **Branch `feature/815-diagnostic-bundle`.** Taken at the owner's direction
+> straight after #719, and for the same reason: #719 now writes a `cpu
+> heartbeat` line naming the burning process, but that evidence is stuck in a
+> folder on the laptop. This is what gets it off the machine.
+>
+> **Scope grew on pickup (owner, 2026-09-18).** The ticket as filed covered
+> email only. The owner asked for **either email or a new GitHub issue**, from a
+> dialog with **a subject field and a free-text description**. Recorded as a
+> comment on #815 rather than left in chat.
+>
+> **Why the GitHub route is cheap — checked, not assumed:**
+> - The app **already calls `api.github.com` against this very repo** (the update
+>   checker polls `/releases` hourly, default on). Same host, same trust
+>   boundary — no new service, so P8 is not strained.
+> - **A token chain already exists** (`update/token.ts`): env → credential store
+>   → **`gh auth token`**, and shelling `gh` is already shipped code. Where `gh`
+>   is signed in this is **zero-config**, which is what litmus test 1 demands.
+> - **The credential-store slot was pre-built and left empty** —
+>   `credentialStoreToken` is a documented no-op whose header says it exists so
+>   `secrets/store.ts` can plug in with no caller change. That store is now real,
+>   so this item wires the stub (and its comment, which still claims no
+>   credential store exists, is now stale).
+> - GitHub PATs are **already redacted from logs**.
+>
+> **The constraint that shaped it: GitHub's REST API cannot attach a file to an
+> issue** — attachments are web-form-only. Pretending otherwise would ship a
+> button that silently drops the thing it claims to send.
+> **Owner's call: post via the API, keep the zip on disk.** The issue carries the
+> subject, the description, and the diagnostics **inline** (version, build
+> identity, OS, core count, recent `cpu heartbeat` warnings); the zip is still
+> written and revealed, and the dialog reports the issue URL so dragging the zip
+> on is available but never required.
+>
+> **Architecture is already decided by existing rules:** the renderer cannot
+> reach the network (`connect-src 'self'`) and has **no read path to secrets** by
+> design, so main resolves the token and POSTs; the window only collects text.
+>
+> **`yazl` added as a dependency** — nothing in the tree zipped, which the ticket
+> anticipated and pre-authorised.
+
 > # ✅ MERGED — 2026-09-17: **#719** — a per-process CPU heartbeat, so the next freeze names its own burner
 >
 > **PR #854, squashed to `1723cbc`.** ⚠️ **#719 REMAINS OPEN, deliberately — this

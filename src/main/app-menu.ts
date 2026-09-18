@@ -32,6 +32,14 @@ export interface MenuActions {
   /** manual "Check for updates…" (P2-E19-03) */
   checkForUpdates?: () => void;
   /**
+   * Help > Report a Problem… (#815).
+   *
+   * Like `openFile` below, this does NOT do the work here: it delivers a
+   * command id to the renderer, which owns the dialog. The menu and the palette
+   * then reach one implementation rather than two that can drift.
+   */
+  reportProblem?: () => void;
+  /**
    * File > Open File… (#569).
    *
    * Deliberately NOT "show a dialog here". The renderer already owns this
@@ -127,21 +135,30 @@ export function buildMenuTemplate(
       : [{ role: 'minimize' }],
   });
 
-  // Help exists for exactly one thing so far: the manual update check
-  // (P2-E19-03). It is in the menu as well as the palette and the About panel
-  // because the menu is where every desktop app has put it for thirty years,
-  // and §5.8's promise is that capability is never out of reach — a user who
-  // has never opened the palette still has to be able to ask.
+  // Help is in the menu as well as the palette because the menu is where every
+  // desktop app has put it for thirty years, and §5.8's promise is that
+  // capability is never out of reach — a user who has never opened the palette
+  // still has to be able to ask.
   //
-  // NO accelerator: the registry owns keys, and this is a once-in-a-while
-  // action (`app-menu.test.ts` asserts the menu claims none of the two the
-  // renderer needs).
+  // BUILT FROM WHATEVER EXISTS, rather than gated on one action. It used to be
+  // `if (actions.checkForUpdates)` wrapping a one-item list, which quietly
+  // meant a build wiring only the OTHER entry would have no Help menu at all.
+  //
+  // NO accelerator on any of these: the registry owns keys, and these are
+  // once-in-a-while actions (`app-menu.test.ts` asserts the menu claims none of
+  // the two the renderer needs).
+  const help: MenuItemConstructorOptions[] = [];
   if (actions.checkForUpdates) {
-    template.push({
-      label: 'Help',
-      submenu: [{ label: 'Check for Updates…', click: () => actions.checkForUpdates?.() }],
-    });
+    help.push({ label: 'Check for Updates…', click: () => actions.checkForUpdates?.() });
   }
+  if (actions.reportProblem) {
+    // ONE entry, not the two #815 first described ("Zip log files" / "Zip and
+    // email log files"). The destination — GitHub issue, email, or just the zip
+    // — is a choice INSIDE the dialog, alongside the subject and description it
+    // collects, so two menu items would be two doors into one room.
+    help.push({ label: 'Report a Problem…', click: () => actions.reportProblem?.() });
+  }
+  if (help.length > 0) template.push({ label: 'Help', submenu: help });
 
   return template;
 }

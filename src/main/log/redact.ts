@@ -8,7 +8,13 @@ const SECRET_KEY_RE = /(token|secret|password|passwd|credential|api[-_]?key|auth
 const SECRET_VALUE_RES: RegExp[] = [
   /sk-[A-Za-z0-9_-]{10,}/g, // API-key style (incl. sk-ant-...)
   /(?:Bearer|Basic)\s+[A-Za-z0-9+/._=-]{8,}/gi,
-  /gh[pousr]_[A-Za-z0-9]{20,}/g, // GitHub tokens
+  /gh[pousr]_[A-Za-z0-9]{20,}/g, // GitHub classic tokens
+  // GitHub FINE-GRAINED tokens (#815). Not covered by the line above — `gh` is
+  // followed by `i`, which that alternation cannot match — and not by the
+  // long-hex net either, since these are mixed case with underscores. The
+  // key-based net still catches anything logged under a `token` key, but this
+  // is the backstop that makes it safe to invite a user to paste one at all.
+  /github_pat_[A-Za-z0-9_]{30,}/g,
   /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}/g, // JWT
   /\b[0-9a-f]{32,}\b/gi, // long hex (session tokens, hashes-as-secrets)
 ];

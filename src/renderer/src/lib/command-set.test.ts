@@ -52,6 +52,7 @@ function deps(): CommandDeps & DepMocks {
     openAbout: vi.fn(),
     checkForUpdates: vi.fn(),
     openFile: vi.fn(),
+    reportProblem: vi.fn(),
     closeAllDocuments: vi.fn(),
     openPushSetup: vi.fn(),
     openQuietHours: vi.fn(),
@@ -276,7 +277,7 @@ describe('seed command set (E9-01)', () => {
     expect(d.openFind).toHaveBeenCalledWith('doc-3');
   });
 
-  it('exactly THREE commands may fire while the user is typing, and they are named', () => {
+  it('exactly FOUR commands may fire while the user is typing, and they are named', () => {
     // The rule is *never steal a keystroke a text surface should get*, and the
     // list of chords that qualify is short and closed. `palette.open` (E9-02)
     // is the fail-open route to everything else; `find.open` (P2-E17-02,
@@ -292,11 +293,19 @@ describe('seed command set (E9-01)', () => {
     // is the most likely moment anyone reaches for it. Proven by
     // `e2e/file-menu.spec.ts`'s composer test, which fails without the scope.
     //
+    // `app.reportProblem` joined them in #815, and for the half that forced
+    // `view.openFile` rather than the key half: the Help menu delivers it down
+    // this identical accelerator channel, and the most likely moment anyone
+    // reaches for "report a problem" is while something is going wrong in the
+    // composer they are focused on. It claims NO binding at all, so the "is this
+    // a text-editing key?" question never arises for it.
+    //
     // Anything else in this list is a bug — and NO scope whatsoever fires inside
     // a terminal (proven in commands.test.ts), which is what leaves the hosted
     // CLI's own `ctrl+o` alone.
     const typingOk = buildCommands(deps()).filter((c) => c.scope === 'typing-ok');
     expect(typingOk.map((c) => c.id).sort()).toEqual([
+      'app.reportProblem',
       'find.open',
       'palette.open',
       'view.openFile',
