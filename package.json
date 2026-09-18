@@ -2,7 +2,7 @@
   "name": "switchboard",
   "version": "0.8.90",
   "private": true,
-  "description": "switchboard.ai \u2014 an IDE for AI sessions: one window, many agents",
+  "description": "switchboard.ai — an IDE for AI sessions: one window, many agents",
   "author": "badsonstudios",
   "license": "UNLICENSED",
   "main": "./out/main/index.js",
@@ -45,7 +45,8 @@
     "node-pty": "^1.1.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "react-i18next": "^17.0.10"
+    "react-i18next": "^17.0.10",
+    "yazl": "^3.3.1"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.0.1",
@@ -54,6 +55,7 @@
     "@types/node": "^22.15.0",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
+    "@types/yazl": "^3.3.1",
     "@vitejs/plugin-react": "^4.6.0",
     "electron": "^43.1.1",
     "electron-builder": "^26.15.3",

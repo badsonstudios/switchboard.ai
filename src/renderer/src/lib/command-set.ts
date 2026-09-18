@@ -74,6 +74,8 @@ export interface CommandDeps {
   checkForUpdates: () => void;
   /** pick a file and open it in a §5.30 document viewer (E16-02) */
   openFile: () => void;
+  /** Help ▸ Report a problem… — opens the report dialog (#815) */
+  reportProblem: () => void;
   /** close every docked §5.30 viewer at once, sparing popped-out ones (#543) */
   closeAllDocuments: () => void;
   /** set up phone push / webhooks — the credential surface (E14-06, §5.29) */
@@ -688,6 +690,21 @@ export function buildCommands(deps: CommandDeps): Command[] {
       binding: 'Mod+O',
       scope: 'typing-ok',
       run: () => deps.openFile(),
+    },
+    {
+      // Help ▸ Report a problem… (#815). The MENU delivers this same id rather
+      // than opening a dialog of its own, so the palette and the menu reach one
+      // implementation — the `view.openFile` arrangement, for its reason.
+      //
+      // `typing-ok` because a menu click is not typing, and the single most
+      // likely moment to reach for this is while something is going wrong in a
+      // composer you are focused on. No binding: it is a once-in-a-while action
+      // and the registry's keys are spoken for.
+      id: 'app.reportProblem',
+      titleKey: 'commands.reportProblem',
+      categoryKey: CATEGORY_HELP,
+      scope: 'typing-ok',
+      run: () => deps.reportProblem(),
     },
     {
       // The answer to accretion #530 left open (#543). Removing the peek slot

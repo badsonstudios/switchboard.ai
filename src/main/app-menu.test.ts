@@ -85,6 +85,30 @@ describe('Help ▸ Check for Updates… (P2-E19-03)', () => {
     expect(labels(buildMenuTemplate('win32'))).not.toContain('Help');
   });
 
+  it('Help ▸ Report a Problem… appears when the app wires it up, and RUNS it (#815)', () => {
+    const reportProblem = vi.fn();
+    const template = buildMenuTemplate('win32', { reportProblem });
+    expect(labels(template)).toContain('Help');
+    const help = template.find((m) => m.label === 'Help');
+    const item = (help?.submenu as MenuItemConstructorOptions[]).find(
+      (i) => i.label === 'Report a Problem…'
+    );
+    expect(item).toBeDefined();
+    // only the MIDDLE parameter (`browserWindow`) is declared
+    // `BaseWindow | undefined`; the other two are not optional
+    item?.click?.(undefined as never, undefined, undefined as never);
+    expect(reportProblem).toHaveBeenCalledTimes(1);
+  });
+
+  it('Help is built from WHATEVER is wired, not gated on the update check (#815)', () => {
+    // It used to be `if (actions.checkForUpdates)` wrapping a one-item list, so
+    // a build wiring only the other entry would have had no Help menu at all.
+    const template = buildMenuTemplate('win32', { reportProblem: () => {} });
+    const help = template.find((m) => m.label === 'Help');
+    const items = (help?.submenu as MenuItemConstructorOptions[]).map((i) => i.label);
+    expect(items).toEqual(['Report a Problem…']);
+  });
+
   it('claims no accelerator — the registry owns keys', () => {
     const template = buildMenuTemplate('win32', { checkForUpdates: () => {} });
     const help = template.find((t) => t.label === 'Help')!;

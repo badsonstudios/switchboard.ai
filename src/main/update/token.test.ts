@@ -12,7 +12,12 @@ vi.mock('child_process', async (importOriginal) => {
   return { ...real, execFile: h.execFile };
 });
 
-import { credentialStoreToken, ghCliToken, resolveUpdateToken } from './token';
+import {
+  credentialStoreToken,
+  credentialStoreTokenFrom,
+  ghCliToken,
+  resolveUpdateToken,
+} from './token';
 
 /** Script the next `execFile` call: (err, stdout). */
 function ghAnswers(err: Error | null, stdout = ''): void {
@@ -32,11 +37,52 @@ beforeEach(() => {
   h.execFile.mockReset();
 });
 
+describe('credentialStoreTokenFrom — the slot, filled (#815)', () => {
+  it('answers the stored token, trimmed', async () => {
+    expect(await credentialStoreTokenFrom({ get: () => '  ghp_stored  ' }).resolve()).toBe(
+      'ghp_stored'
+    );
+  });
+
+  it('treats a whitespace-only value as no token', async () => {
+    expect(await credentialStoreTokenFrom({ get: () => '   ' }).resolve()).toBeNull();
+  });
+
+  it('treats an absent value as no token', async () => {
+    expect(await credentialStoreTokenFrom({ get: () => null }).resolve()).toBeNull();
+  });
+
+  it('a store that THROWS is a store with no token, not a failed check', async () => {
+    // A locked keyring must never turn an update check or a problem report into
+    // an error — every other source in this chain fails the same quiet way.
+    const src = credentialStoreTokenFrom({
+      get: () => {
+        throw new Error('keyring locked');
+      },
+    });
+    expect(await src.resolve()).toBeNull();
+  });
+
+  it('KEEPS ITS PLACE: a stored token wins over whatever gh is signed in as', async () => {
+    // The order is the decision, not an accident. A token the user deliberately
+    // pasted is a stronger statement of intent than the CLI's ambient login.
+    ghAnswers(null, 'ghp_from_cli\n');
+    const resolved = await resolveUpdateToken([
+      credentialStoreTokenFrom({ get: () => 'ghp_from_store' }),
+      ghCliToken,
+    ]);
+    expect(resolved).toEqual({ token: 'ghp_from_store', source: 'credential-store' });
+  });
+});
+
 describe('the credential-store slot', () => {
   it('is a documented NO-OP today, and still a real entry in the order', async () => {
-    // §5.29's credential store does not exist in this codebase yet, and this
-    // item deliberately did not build one. The slot stays so the day it lands
-    // is one function body, not a rewrite of the resolution order.
+    // The UNCONFIGURED export, which is what `DEFAULT_TOKEN_SOURCES` still
+    // holds: the store itself now exists (`secrets/store.ts`) and
+    // `credentialStoreTokenFrom` above reads it, but only the #815 report path
+    // passes that in. The update checker still resolves this no-op, which is
+    // why a token pasted into the report dialog does not yet switch update
+    // checks back on — recorded in `token.ts` as a follow-up, not a mystery.
     expect(await credentialStoreToken.resolve()).toBeNull();
     expect(credentialStoreToken.id).toBe('credential-store');
   });

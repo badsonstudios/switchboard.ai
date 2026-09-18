@@ -108,6 +108,8 @@ describe('the IPC capability map (the done-when: no channel is untagged)', () =>
       'src/main/fs/ipc.ts',
       'src/main/events/rules-ipc.ts',
       'src/main/events/push-ipc.ts',
+      // the report dialog's three channels (#815)
+      'src/main/diagnostics/report-ipc.ts',
       'src/main/events/sound-ipc.ts',
       'src/main/mcp/ipc.ts',
       // the three inbound `send_to_session` channels AND the outbound push,

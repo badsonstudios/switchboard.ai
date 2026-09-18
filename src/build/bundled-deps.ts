@@ -21,4 +21,17 @@
 // allowlist — shipping the node_modules copy of a dependency that is already
 // inside `out/main/index.js` is dead weight that reads like a requirement.
 // `src/main/packaging.test.ts` asserts both halves of that sentence.
-export const BUNDLED_INTO_MAIN: readonly string[] = ['i18next', 'i18next-icu'];
+// `yazl` (#815, the diagnostic zip) joins them for the FIRST reason above,
+// almost exactly: it declares `buffer-crc32` as its own dependency, and that
+// package is not in this app's `dependencies` either — so the runtime-dep guard
+// cannot see it, and the installed build would throw `MODULE_NOT_FOUND` the
+// first time someone tried to report a problem. That is a packaged-build-only
+// failure at the worst possible moment: the one gesture whose entire job is to
+// work when something else has already gone wrong.
+//
+// It meets the safety condition: pure JS, no native code, and its only other
+// import is node's own `zlib`. Shipping `node_modules/buffer-crc32/**` in the
+// allowlist instead was tried and is wrong twice over — nothing in our source
+// imports it, so it reads as dead weight to the guard above, and it leaves the
+// graph an install-time hope rather than a build-time fact.
+export const BUNDLED_INTO_MAIN: readonly string[] = ['i18next', 'i18next-icu', 'yazl'];

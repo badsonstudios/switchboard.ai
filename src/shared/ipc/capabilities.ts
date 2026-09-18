@@ -102,6 +102,20 @@ export const CAPABILITIES = [
   // reason, and it is the sharpest of the three: those two READ
   // from a public host, this one WRITES a session's task label
   // out of the machine.
+  'diagnostics.report', // builds a zip of the logs AND POSTS A NEW ISSUE to the
+  // project's GitHub repo (#815). Its own capability for the
+  // `push.send` reason, and it is the same shape: this WRITES
+  // machine-derived text out to a third-party host. The fact
+  // that `update.check` already talks to the same host is not
+  // a reason to share its word — that one reads a version
+  // number, this one creates something.
+  'diagnostics.credential', // stores the GitHub token that makes the above
+  // possible (#815). Split from `diagnostics.report` by
+  // exactly the argument `push.write` makes: depositing a
+  // secret in the OS credential store is strictly more
+  // power than filing a report, and a Phase-4 consumer
+  // that may file one must not silently acquire the
+  // ability to plant the credential it is filed with.
   'shell.openExternal', // hands a URL to the user's BROWSER. Its own capability
   // for the `dialog.open` reason — putting something in
   // front of the user, outside the app, is a power in its
@@ -139,6 +153,19 @@ export const CHANNEL_CAPABILITIES = {
   'app:movePopout': 'app.window',
   'app:raisePopout': 'app.window',
   'app:workAreas': 'app.window',
+  // The Help ▸ Report a problem dialog (#815). `reportStatus` answers BOOLEANS
+  // only — whether a credential can be resolved at all — and never a value;
+  // there is no channel here that reads one back, for `push-ipc.ts`' reason.
+  // CREDENTIAL, not report: every field it answers is a credential fact —
+  // whether one can be resolved, whether the store works, whether one is saved.
+  // `push.read` sets the precedent two tables away in `docs/extensibility.md`
+  // ("WHICH credentials exist — booleans, never a value"). Tagged as `report` it
+  // would let a consumer granted only the send power learn credential state for
+  // free, while one granted only the credential power could not ask whether the
+  // store it writes to even works.
+  'diag:reportStatus': 'diagnostics.credential',
+  'diag:submit': 'diagnostics.report',
+  'diag:setGitHubToken': 'diagnostics.credential',
   'events:ack': 'events.write',
   'events:dismiss': 'events.write',
   'events:list': 'events.read',

@@ -21,6 +21,7 @@
 //
 // Nothing here throws, and nothing here logs the token.
 import { execFile } from 'child_process';
+import { GITHUB_TOKEN_SECRET_KEY } from '../../shared/diagnostics';
 
 /** One place a token might come from. Resolves null when it has none. */
 export interface TokenSource {
@@ -33,16 +34,55 @@ export interface TokenSource {
 const GH_TIMEOUT_MS = 5_000;
 
 /**
- * DESIGN.md §5.29's OS credential store.
+ * The bit of `secrets/store.ts` this needs. An interface rather than the class
+ * so the token layer stays testable with no Electron and no keyring.
+ */
+export interface SecretReader {
+  get(key: string): string | null;
+}
+
+/**
+ * DESIGN.md §5.29's OS credential store — **the slot, now filled (#815).**
  *
- * Intentionally empty. Kept as a real entry rather than a comment so the order
- * is expressed in code — the day the credential store exists, this function
- * gets a body and no caller changes.
+ * This was a documented no-op for two items, because there was no credential
+ * store to read and building one for an update checker would have been the tail
+ * wagging the dog. `secrets/store.ts` now exists (safeStorage, ciphertext at
+ * `<userData>/secrets.json`), so the slot can finally be filled.
  *
- * `Promise.resolve(null)` rather than `async`, because there is nothing here to
- * await yet and `TokenSource.resolve`'s contract is the RETURN TYPE, not the
- * keyword. `ghCliToken` below does the same. Whoever gives this a real body can
- * put `async` back the moment it has an `await` in it.
+ * **WHO ACTUALLY USES IT, stated plainly because the obvious reading is wrong:**
+ * only the #815 report path (`diagnostics/report-ipc.ts`) passes this in.
+ * `UpdateService` still resolves `DEFAULT_TOKEN_SOURCES` below, whose
+ * credential-store entry is the no-op — so a token pasted into the report
+ * dialog does NOT yet switch update checks back on. That is a real
+ * inconsistency for a user who does it, and it is written down rather than left
+ * silent: see **#856**. Wiring it means threading `tokenSources` through
+ * `UpdateService`, which is release-critical code and did not belong in the
+ * diff that filled this slot.
+ *
+ * A factory rather than a const because the store is constructed in
+ * `index.ts` with the app's paths; there is nothing sensible to read at module
+ * scope.
+ */
+export function credentialStoreTokenFrom(secrets: SecretReader): TokenSource {
+  return {
+    id: 'credential-store',
+    resolve: () => {
+      try {
+        const token = secrets.get(GITHUB_TOKEN_SECRET_KEY);
+        return Promise.resolve(token && token.trim() ? token.trim() : null);
+      } catch {
+        // A store that throws is a store with no token — same as everything
+        // else in this chain, and never a reason to fail a check or a report.
+        return Promise.resolve(null);
+      }
+    },
+  };
+}
+
+/**
+ * The unconfigured form, kept so `DEFAULT_TOKEN_SOURCES` still resolves without
+ * a store wired in (tests, and any caller that has no `SecretStore` to hand).
+ * Prefer `credentialStoreTokenFrom` wherever the store exists.
  */
 export const credentialStoreToken: TokenSource = {
   id: 'credential-store',
