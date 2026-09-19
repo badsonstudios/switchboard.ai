@@ -3,20 +3,104 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔧 IN PROGRESS — 2026-09-19: **#864** — the main window forgets its monitor after display sleep
+> # ✅ MERGED — 2026-09-19: **#864** — the main window comes back to the monitor it was on
 >
-> Branch `feature/864-main-window-display-restore`. Owner dogfood report: when
-> his monitors sleep and wake, switchboard's main window comes back on the
-> PRIMARY display while every other app returns to where it was.
+> **PR #871, squashed to `d5c2db8`.** Issue closed by `Closes #864`; **#835 and
+> #768 were checked afterwards and are both still open** — the closing-keyword
+> trap did not fire.
+> ⚠️ **NOT RELEASED** — opens the `0.8.92 — unreleased` section; v0.8.91 shipped
+> earlier the same day and does **not** contain this.
 >
-> **The asymmetry is the whole ticket.** Popouts got display-departure rescue
-> and a display-return offer (E8-02 / E8-06); the main window got a boot-time
-> restore and nothing else. Between boot and close nobody watches where the OS
-> shoves it, so the post-shuffle primary position quietly becomes its new truth —
-> and if the app closes before the next wake, that position is what gets
-> persisted, making the demotion permanent across launches too.
+> Popouts got display-departure rescue and a display-return offer (E8-02 /
+> E8-06); the main window got a boot-time restore and nothing in between. A
+> monitor sleeping is usually a real DETACH, so Windows shoved the window onto
+> the primary — and because geometry saves on every move, that shove quietly
+> became the window's new truth, permanently so if the app quit before the
+> monitor returned. Bounds are now remembered **per display fingerprint**: a save
+> made while a monitor is asleep carries the fingerprint of the arrangement it is
+> actually on, so it can only overwrite that arrangement's own note. That
+> structural split replaced the comparison-guard the ticket sketched — it removes
+> the race rather than refereeing it.
 >
-> **Flip this heading when it lands.** A heading nobody flips is a quiet lie.
+> **THE REVIEW CAUGHT A BLOCKER THAT WOULD HAVE SHIPPED A SILENT NO-OP, and it is
+> the thing worth finding again.** The first cut armed a 600 ms timer on
+> `display-added` and read the memory when it FIRED. During those 600 ms the OS
+> shuffles windows, every `move` saves, and the save recomputes the fingerprint
+> fresh — by then the *returned* arrangement's. So the shoved rectangle was
+> written under the very key the restore was about to read; the restore then saw
+> "already where it belongs", did nothing, and destroyed the note on the way
+> past. Invisible to every test we can run, and a no-op on exactly the hardware
+> the feature exists for. **The fix is ordering**: snapshot the memory when the
+> event ARRIVES (first of a burst wins) and suspend geometry saving until the
+> restore has run — reusing the `restoringLayout` pattern already in that file.
+> Where the OS just shoved the window is not where the user put it, and should
+> never have been recorded as intent.
+>
+> **A TEST OF MINE ASSERTED NOTHING AGAIN — second item running.** The LRU test
+> re-added the desk entry immediately after each new arrangement, so the entry was
+> evicted and silently RECREATED inside the same loop iteration: it passed under
+> FIFO and proved nothing. The review caught it empirically, not by reading. #801
+> had the same shape (a flag flipped after the stub it configures was already
+> built). **The pattern to watch: a test whose setup re-establishes the very
+> condition it claims to be testing.**
+>
+> Also from review: eviction is genuinely LRU now (it was FIFO while its own
+> comment claimed otherwise, so the desk used daily would be dropped FIRST); the
+> cap is 8, because a fingerprint is built from WORK areas and those shift on
+> taskbar and DPI changes, minting new keys; only `display-added` pushes to the
+> renderer, because the extra pushes could raise the popout reconnect offer with
+> nothing reconnected AND re-raise it after dismissal (the stash is only cleared
+> on accept); minimized/fullscreen defers and retries instead of skipping; and an
+> already-correctly-maximized window no longer flickers. The maximize dance moved
+> into a pure `planDisplayRestore`, so the part most likely to be wrong on real
+> hardware is decided by arithmetic on CI.
+>
+> **Verified:** typecheck, lint and build clean; 208 targeted unit tests; full
+> suite **8,557 passing**; `reconnect.spec.ts` green in isolation. Settle timing
+> is tunable via `SWITCHBOARD_DISPLAY_SETTLE_MS` for dogfooding without a rebuild.
+>
+> ⚠️ **CI WENT RED ON THE FIRST RUN AND IT WAS #835, ON THE RUNNER.** `windows-latest`
+> failed on `git-service.test.ts > A STALLED CAPABILITY PROBE…` — verbatim a
+> sighting already documented on that ticket (the **250 ms** `svcSlow.status(dir,
+> 250)` budget). Ubuntu, e2e ubuntu and e2e windows all passed; this branch
+> touches no git code; the same test passed locally at 1023 ms in isolation. Job
+> re-run: green at 8m28s, merged. **This was the first sighting on CI rather than
+> the dev desktop, and it BLOCKED A MERGE** — which the ticket had predicted a
+> thin budget eventually would. Recorded there, with the argument that the cost is
+> now "blocks any PR at random and makes whoever it hits prove it isn't theirs".
+>
+> ⚠️ **THE PIPELINE EXIT-CODE TRAP FIRED TWICE MORE, both caught by re-checking.**
+> A backgrounded `gh … --watch | tail` reported **exit 0** while `CHECKS_RC=1` sat
+> in its own log, because the status belonged to `tail`. Same shape as the lesson
+> from #801. **Never merge on a watcher's exit code — re-query `gh pr checks` and
+> capture the status directly.**
+>
+> **Not verifiable here, and the whole point:** no CI runner has two displays or a
+> way to detach one, so nothing above proves the bug is fixed on the owner's rig.
+> The dogfood tracker carries the six hand-test steps; the monitor must be POWERED
+> OFF, not locked.
+>
+> **Next up:** nothing nominated. Open Phase 2 queue includes #856, #851, #832,
+> #830, #828, #824, plus #719 and #740.
+
+> # 🚢 RELEASED — 2026-09-19: **v0.8.91** — sessions can see, brief and fork each other
+>
+> **Published 19:06 UTC**, `switchboard-Setup-0.8.91.exe` (102 MB) + its
+> `.sha256`, tag on `d016fdf`. `gh release list` shows it as **Latest**.
+>
+> **This supersedes the `⚠️ NOT RELEASED` note on the eight entries below** —
+> #801, #796, #800, #815, #719, #799, #846 and #818 are all in an installed build
+> now. Those notes are left as written rather than rewritten in place, the same
+> way the v0.8.90 heading handled its backlog: the entries are a record of what
+> was true when they landed, and this heading is where the file says otherwise.
+> **`gh release list` remains the authority**; the next unreleased section is
+> `0.8.92 — unreleased`, which currently holds #864 alone.
+>
+> **The hand-test that matters is fork (#801)**, and it is now reachable: turn on
+> **⑂ fork sessions** in the title bar, then a session's **⋯** → *Fork into a new
+> session*. The one question no test can answer is whether the forked session is
+> actually USEFUL — and whether the original is genuinely untouched, which is the
+> damaging failure if it is wrong.
 
 > # ✅ MERGED — 2026-09-19: **#801** — P2-E11-12 · Level 3 fork-session adoption
 >
