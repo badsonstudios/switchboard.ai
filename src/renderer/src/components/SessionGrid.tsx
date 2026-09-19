@@ -133,6 +133,23 @@ export interface CardParams {
    * becomes visible enough to spawn.
    */
   resumeConversationId?: string;
+  /**
+   * Another session's conversation this card ADOPTED by forking it (§5.5
+   * Level 3, P2-E11-12) — experimental, and only ever set while the flag is on.
+   *
+   * Params rather than state for `resumeConversationId`'s reason: dockview
+   * freezes params into the panel, so the intent survives a card being hidden
+   * and revealed before it is ever visible enough to spawn.
+   *
+   * ⚠️ AND THAT IS ALSO WHY MAIN RE-CHECKS THE FLAG. Params are serialized into
+   * the saved layout, so this can arrive on a later launch — after the
+   * experiment was switched off — and must be refused then rather than honoured
+   * because it was legitimate when it was written.
+   *
+   * `sourceFolder` travels with the id because the source may live in a
+   * different project folder; that is the case the feature exists for.
+   */
+  forkFrom?: { sourceSessionId: string; sourceFolder: string };
 }
 
 interface Live {
@@ -148,6 +165,18 @@ interface Live {
    *  Not optional: a live session always has one (#445), and an optional field
    *  here is an invitation to invent a default for it. */
   transport: TransportKind;
+  /**
+   * The CLI's own id for the conversation this session is in (§5.5 Level 3).
+   *
+   * OPTIONAL, and genuinely absent much of the time: the CLI does not announce
+   * an id until it has one, so a session that has just started and taken no
+   * turn has none. That is exactly why the fork control is gated on it rather
+   * than on the session merely being alive — there is nothing to fork from yet,
+   * and a control that looked ready would fail at the far end for a reason the
+   * user could not have guessed. (The context chip above makes the same
+   * argument about suspended cards.)
+   */
+  nativeSessionId?: string;
 }
 
 /**
@@ -574,6 +603,36 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       alive = false;
     };
   }, [cardId, canAcceptSiblings, siblingApi]);
+  // §5.5 Level 3 — fork adoption (P2-E11-12). EXPERIMENTAL, off by default.
+  //
+  // Read once per mount, not subscribed: this is a workspace-wide experiment
+  // switch, not a per-card preference, and a card mounted while it was off stays
+  // that way until it remounts. Fail-safe in the same direction as the sibling
+  // toggle above — an unreadable or refused answer shows OFF, which is also what
+  // main assumes, so the menu can never advertise a gesture main will refuse.
+  //
+  // Whether the entry is DRAWN is decided here; whether a fork is ALLOWED is
+  // decided in main, which re-checks the flag on every request. The absence is a
+  // kindness to the user, not the enforcement (see `sessions:create`).
+  const settingsApi = window.switchboard?.settings as
+    | typeof window.switchboard.settings
+    | undefined;
+  const [forkOn, setForkOn] = React.useState(false);
+  React.useEffect(() => {
+    if (typeof settingsApi?.getExperimentalFork !== 'function') return;
+    let alive = true;
+    void settingsApi
+      .getExperimentalFork()
+      .then((on) => {
+        if (alive) setForkOn(on === true);
+      })
+      .catch(() => {
+        /* fail-safe: stays off, which is what main assumes too */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [settingsApi]);
   // …and how many of their messages are waiting in this card's composer, for
   // the Session tab's badge. An OBSERVER subscription — the card chrome is
   // mounted whether or not the composer is, and must not make the card count
@@ -904,6 +963,10 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
           autonomy: record.autonomy,
           status: record.status,
           transport: record.transport,
+          // §5.5 Level 3 — what a fork would be forked FROM. Often undefined
+          // here: a session that has just spawned has not been told its
+          // conversation id yet, and the fork control stays absent until it is.
+          nativeSessionId: record.nativeSessionId,
         });
         // show the usage strip from the start (zeros until the first prompt),
         // so it's visibly present rather than appearing only after activity
@@ -2000,6 +2063,48 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                             {t('grid.menuAcceptFromSiblings')}
                           </button>
                         )}
+                        {/* Fork this conversation into a new session (§5.5
+                            Level 3, P2-E11-12). EXPERIMENTAL.
+
+                            ABSENT, NOT DISABLED, when the experiment is off —
+                            the item's done-when, and the right call for an
+                            experiment: a greyed entry advertises a feature the
+                            user cannot evaluate and invites a support question
+                            answered with "yes, but not really".
+
+                            Gated on a NATIVE CONVERSATION ID and not merely on
+                            a live session, for the context chip's reason one
+                            door along: the CLI announces no id until the
+                            session has one, so a card that has taken no turn
+                            has nothing to fork FROM, and a control that looked
+                            ready would fail at the far end for a reason the
+                            user could not have guessed.
+
+                            A COMMAND, not a toggle — it makes a new card — so
+                            it reads as an action and its hint says what will
+                            happen, the lesson #153 taught the transport entry. */}
+                        {forkOn && live?.nativeSessionId && folder && (
+                          <button
+                            data-testid="card-fork"
+                            onClick={() => {
+                              // A NEW card, in this card's own folder, placed
+                              // the way the history picker places one: into
+                              // this window when the card is popped out, and by
+                              // the grid's own rules when it is not (#531).
+                              void addSessionCardTo(props.containerApi, folder, {
+                                into: poppedOut ? props.api.group : null,
+                                forkFrom: {
+                                  sourceSessionId: live.nativeSessionId!,
+                                  sourceFolder: folder,
+                                },
+                              });
+                            }}
+                            title={t('grid.menuForkHint')}
+                            style={menuItemStyle(false)}
+                          >
+                            {t('grid.menuFork')}
+                          </button>
+                        )}
                         {/* This card's sound (P2-E14-05a). A COMMAND, not a
                             toggle — it has eight states, not two — so it says
                             what it is now and what clicking does, the lesson
@@ -2876,10 +2981,13 @@ async function addSessionCardTo(
     into?: DockviewApi['groups'][number] | null;
     /** open the new card ON a conversation picked from history (P2-E20-01) */
     resumeConversationId?: string;
+    /** open the new card as a FORK of another session's conversation (§5.5
+     *  Level 3, P2-E11-12) — experimental, and main re-checks the flag */
+    forkFrom?: { sourceSessionId: string; sourceFolder: string };
   } = {}
 ): Promise<void> {
   if (!api) return;
-  const { groupId, into, resumeConversationId } = opts;
+  const { groupId, into, resumeConversationId, forkFrom } = opts;
   const title = folder.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? folder;
   const cardId = crypto.randomUUID();
   // A persistent-group member clusters with its siblings (E12-02): reuse the
@@ -2924,7 +3032,7 @@ async function addSessionCardTo(
     id: `session-${cardId}`,
     component: 'sessionCard',
     title,
-    params: { cardId, folder, title, groupId, resumeConversationId } satisfies CardParams,
+    params: { cardId, folder, title, groupId, resumeConversationId, forkFrom } satisfies CardParams,
     // NO `direction` — `within` (the default) is the only target dockview
     // resolves against the reference group itself. Any of the four directions
     // sends it through `getGridLocation(referenceGroup.element)` against the

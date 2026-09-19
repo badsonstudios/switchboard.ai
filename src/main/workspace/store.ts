@@ -219,6 +219,22 @@ export interface WorkspaceState {
    */
   autoLabels: boolean;
   /**
+   * §5.5 Level 3 — fork adoption, EXPERIMENTAL and OFF BY DEFAULT (P2-E11-12).
+   *
+   * The only pref in this file whose default is `false`, and the reason is the
+   * one §5.5 gives: Level 3 leans on CLI behaviour that no documentation
+   * promises. It is measured (`spike/findings/e11-801-fork-adoption.md`, claude
+   * 2.1.272) rather than guessed, but "measured against one version" is exactly
+   * the drift class DESIGN §5.2 describes, and an off switch is what makes that
+   * honest instead of optimistic.
+   *
+   * OFF MEANS THE SURFACE IS ABSENT, NOT DISABLED — the done-when, and the
+   * right call for an experiment: a greyed control advertises a feature the
+   * user cannot evaluate and invites a support question we would answer with
+   * "yes, but not really".
+   */
+  experimentalFork: boolean;
+  /**
    * Update-check preferences (P2-E19-03). A top-level TYPED field rather than
    * a key in the opaque `ui` blob, because MAIN is the reader: the daily timer
    * and the skip decision run with no renderer involved, and the renderer
@@ -336,6 +352,8 @@ const EMPTY: WorkspaceState = {
   rules: [],
   autoTrust: true,
   autoLabels: true,
+  // the one default-OFF pref here — see the field's note
+  experimentalFork: false,
   updates: { autoCheck: true },
   health: { poll: true },
   push: { ...DEFAULT_PUSH_PREFS },
@@ -596,6 +614,12 @@ export class WorkspaceStore {
         rules,
         autoTrust: raw.autoTrust !== false, // default on
         autoLabels: raw.autoLabels !== false, // default on — same shape, same reason
+        // ⚠️ THE OPPOSITE SHAPE ON PURPOSE: `=== true`, not `!== false`. The two
+        // above read "on unless explicitly off"; an experiment must read "off
+        // unless explicitly on", so a missing key, a hand-edited string, or a
+        // file written by an older build all land OFF rather than silently
+        // enabling a feature nobody asked for.
+        experimentalFork: raw.experimentalFork === true,
         updates: updates.value,
         health: health.value,
         push: push.value,
@@ -1199,6 +1223,15 @@ export class WorkspaceStore {
 
   setAutoLabels(on: boolean): void {
     this.state.autoLabels = on;
+    this.saveSoon();
+  }
+
+  getExperimentalFork(): boolean {
+    return this.state.experimentalFork;
+  }
+
+  setExperimentalFork(on: boolean): void {
+    this.state.experimentalFork = on;
     this.saveSoon();
   }
 

@@ -122,6 +122,14 @@ export interface SessionIpcDeps {
    *  to the session title — the screen-share switch. */
   autoLabels: () => boolean;
   setAutoLabels: (on: boolean) => void;
+  /**
+   * §5.5 Level 3 — fork adoption, experimental and OFF by default (P2-E11-12).
+   *
+   * Read on every fork request rather than cached: main must not trust the
+   * renderer's copy of this, and the surface being absent when off is a UI
+   * convenience, not the enforcement. The enforcement is here.
+   */
+  experimentalFork: () => boolean;
   /** persisted session cards (resume-on-focus across app restarts, §5.25) */
   persist: {
     list: () => PersistedSession[];
@@ -1044,6 +1052,12 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
          * annotation is a claim about the wire that only the check makes true.
          */
         resumeConversationId?: string;
+        /**
+         * Open this card as a FORK of another session's conversation (§5.5
+         * Level 3, P2-E11-12). `sourceFolder` is carried because the source may
+         * live in a different project folder — that is the case this exists for.
+         */
+        forkFrom?: { sourceSessionId: string; sourceFolder: string };
       }
     ) => {
       // Validate untrusted renderer input (§5.29). REFUSED, not thrown (#347):
@@ -1098,6 +1112,52 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         return refuse('sessions:create', 'resumeConversationId is not a conversation id', {
           cardId: opts.cardId,
         });
+      }
+
+      // ── FORK ADOPTION (§5.5 Level 3, P2-E11-12) ──────────────────────────
+      //
+      // THE FLAG IS ENFORCED HERE, not in the renderer. The surface is absent
+      // when the experiment is off, which is a kindness to the user; this is the
+      // part that makes it true. A dockview panel param is serialized into the
+      // saved layout and re-sent on every remount, so a fork request can arrive
+      // from a layout saved while the flag WAS on — and must be refused now that
+      // it is off, rather than honoured because it was once legitimate.
+      let forkFrom: { sourceSessionId: string; sourceFolder: string } | undefined;
+      if (opts.forkFrom !== undefined) {
+        const f = opts.forkFrom as Partial<{ sourceSessionId: string; sourceFolder: string }>;
+        if (!f || typeof f !== 'object') {
+          return refuse('sessions:create', 'forkFrom must be an object', { cardId: opts.cardId });
+        }
+        if (!deps.experimentalFork()) {
+          return refuse('sessions:create', 'fork adoption is off (experimental)', {
+            cardId: opts.cardId,
+          });
+        }
+        // §5.29: validate the SHAPE where it enters. The id is interpolated into
+        // a path AND handed to the CLI as `--resume`'s operand, which is exactly
+        // what `isConversationId` guards — including the leading dash that would
+        // reach argv as a flag (#838).
+        if (typeof f.sourceSessionId !== 'string' || !isConversationId(f.sourceSessionId)) {
+          return refuse('sessions:create', 'forkFrom.sourceSessionId is not a conversation id', {
+            cardId: opts.cardId,
+          });
+        }
+        // The source folder decides WHICH transcript directory is searched, so a
+        // bad one is a silent "no such conversation" rather than an error. It is
+        // checked as a real directory for the same reason `folder` is above.
+        let sourceIsDir = false;
+        try {
+          sourceIsDir =
+            typeof f.sourceFolder === 'string' && fs.statSync(f.sourceFolder).isDirectory();
+        } catch {
+          sourceIsDir = false;
+        }
+        if (!sourceIsDir) {
+          return refuse('sessions:create', 'forkFrom.sourceFolder is not a directory', {
+            cardId: opts.cardId,
+          });
+        }
+        forkFrom = { sourceSessionId: f.sourceSessionId, sourceFolder: f.sourceFolder as string };
       }
 
       const prior = deps.persist.list().find((s) => s.id === opts.cardId);
@@ -1220,6 +1280,10 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           // enforces that, not this call site, so the rule holds for every
           // caller rather than for this one.
           requestedConversationId: picked,
+          // §5.5 Level 3. Like the pick above, the plan enforces "only for a
+          // card with no conversation of its own" — not this call site — so the
+          // rule holds for every caller rather than for this one.
+          requestedFork: forkFrom,
           prior: {
             providerId: prior?.identity.providerId,
             nativeSessionId: prior?.nativeSessionId,
@@ -1274,6 +1338,20 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           cardId: opts.cardId,
           folder: opts.folder,
           conversation: picked ?? '',
+        });
+      }
+      // THE FORK COULD NOT BE SET UP, so nothing starts (§5.5 Level 3).
+      //
+      // Its own refusal rather than sharing the pick's, because the sentences
+      // differ and the user's next move differs with them: a conversation that
+      // could not be opened versus a session that could not be forked. Same
+      // no-fall-open rule — somebody asked for a specific conversation's
+      // history, and an empty session in the right folder looks like it was lost.
+      if (plan.forkUnavailable) {
+        return refuse('sessions:create', 'that session could not be forked', {
+          cardId: opts.cardId,
+          folder: opts.folder,
+          conversation: forkFrom?.sourceSessionId ?? '',
         });
       }
       // ...AND NOT ONE ANOTHER CARD IS ALREADY IN (#539's hazard, new door).
@@ -1423,6 +1501,10 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           releaseMcpFor: plan.releaseMcpConfig,
           autonomy,
           resumeSessionId: plan.resumeSessionId,
+          // §5.5 Level 3. Undefined on every ordinary start, so the spawn recipe
+          // is unchanged for any session that is not a fork.
+          forkSession: plan.forkSession,
+          forkSessionId: plan.forkSessionId,
           // Resolved above the trust step — see `spawnTransport` for the
           // precedence and why it is one value rather than two.
           transport: spawnTransport,
@@ -1448,7 +1530,15 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
       if (plan.transcriptsRoot !== undefined) {
         const watching = transcripts.watch(record.id, {
           cwd: opts.folder,
-          nativeSessionId: plan.resumeSessionId,
+          // ⚠️ THE FORK'S OWN ID, NEVER THE SOURCE'S (§5.5 Level 3).
+          //
+          // `plan.resumeSessionId` on a fork is ANOTHER CARD'S conversation — it
+          // is there for argv and nothing else. Watching it would point this
+          // card at the source's transcript, so two cards would tail one file
+          // and this card's Feed would fill with a conversation it is not in.
+          // The forked id is what the CLI announces on `system:init` (measured,
+          // 2.1.272), so the watch and the session agree from the first frame.
+          nativeSessionId: plan.forkSessionId ?? plan.resumeSessionId,
           projectsRoot: plan.transcriptsRoot,
           // A stream session's Feed comes from its typed messages (P2-E18-10),
           // so the transcript must not derive blocks for it as well — the two
@@ -1492,11 +1582,23 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         // just declared unusable would make the refusal mean two different
         // things on two paths.
         if (watching && record.transport === 'stream' && plan.resumeSessionId && deps.streamFeed) {
+          // A FORK REPLAYS THE SOURCE'S TRANSCRIPT, from the SOURCE'S FOLDER.
+          //
+          // Both halves are deliberate. The fork's own transcript does not exist
+          // yet at this instant — the CLI writes it on the first turn — so
+          // replaying "this card's conversation" would find nothing, and a
+          // session whose whole selling point is that it CARRIES the history
+          // would open with an empty Feed while the model silently knew
+          // everything. Reading the source instead shows the user exactly what
+          // the model was handed. It is a read of another card's file and
+          // nothing more: `replayResumedHistory` opens it `'r'` and closes it,
+          // and the source card keeps tailing its own copy undisturbed.
+          const from = plan.forkSession && forkFrom ? forkFrom : null;
           replayResumedHistory(deps.streamFeed, log, {
             sessionId: record.id,
             projectsRoot: plan.transcriptsRoot,
-            folder: opts.folder,
-            nativeSessionId: plan.resumeSessionId,
+            folder: from ? from.sourceFolder : opts.folder,
+            nativeSessionId: from ? from.sourceSessionId : plan.resumeSessionId,
           });
         }
       }
@@ -1513,6 +1615,14 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
       // then override pays that cost the other way round — a field is kept
       // unless someone means to change it, and forgetting is visible rather
       // than silent.
+      // WHICH CONVERSATION IS *THIS CARD'S*, as opposed to which one the CLI was
+      // pointed at. They are the same thing on every start except a fork, where
+      // `resumeSessionId` is the SOURCE — another card's conversation, present
+      // for argv and nothing else. Named rather than inlined into the spread
+      // below, because `a ?? b ? c : d` is exactly the kind of expression a
+      // later reader re-parses wrongly, and getting it wrong here writes
+      // somebody else's conversation onto this card (see the note below).
+      const ownConversationId = plan.forkSessionId ?? plan.resumeSessionId;
       deps.persist.upsert({
         ...prior,
         id: opts.cardId,
@@ -1536,8 +1646,19 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         // into the chain beneath it. Nothing resolved → the card keeps exactly
         // what it had, and the fresh session's `onNativeSessionId` will push
         // that down the chain when it announces its own id.
-        ...(plan.resumeSessionId
-          ? recordNativeId(prior, plan.resumeSessionId)
+        // ⚠️ A FORK RECORDS ITS OWN NEW ID, NEVER THE ONE IT FORKED FROM.
+        //
+        // This is the single most dangerous line in the feature. `recordNativeId`
+        // makes its argument the card's HEAD, and every "who holds this
+        // conversation" question in the app — `claimedNativeIds`, the picker's
+        // `claimed` badge, the #539 cede path, the orphan-adoption fence — reads
+        // that chain. Writing the SOURCE id here would make this card claim a
+        // conversation another card is actively in, and the two would then
+        // contend for one transcript exactly as #484 describes. The fork's id is
+        // the card's own conversation; the source's is somebody else's, and it
+        // does not belong in this card's lineage at any depth.
+        ...(ownConversationId
+          ? recordNativeId(prior, ownConversationId)
           : {
               nativeSessionId: prior?.nativeSessionId,
               nativeSessionLineage: prior?.nativeSessionLineage,

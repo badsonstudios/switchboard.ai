@@ -388,6 +388,15 @@ export class SessionManager {
     identity: SessionIdentity,
     opts?: {
       resumeSessionId?: string;
+      /**
+       * Fork `resumeSessionId` rather than continuing it (§5.5 Level 3,
+       * P2-E11-12). Passed straight through to the adapter, which decides
+       * whether its CLI can express it — the manager has no opinion.
+       */
+      forkSession?: boolean;
+      /** The id the forked session must take. A UUID; the adapter refuses
+       *  anything else rather than spawning an unpinned fork. */
+      forkSessionId?: string;
       autonomy?: AutonomyMode;
       settings?: Record<string, unknown>;
       /** Which transport to ASK the adapter for (P2-E18-08a). The adapter
@@ -464,6 +473,10 @@ export class SessionManager {
         sessionId: id,
         stateDir: this.stateDir,
         resumeSessionId: opts?.resumeSessionId,
+        // §5.5 Level 3. Both undefined on every ordinary start, so the recipe an
+        // adapter builds is unchanged for every session that is not a fork.
+        forkSession: opts?.forkSession,
+        forkSessionId: opts?.forkSessionId,
         autonomy: opts?.autonomy,
         settings: Object.keys(settings).length > 0 ? settings : undefined,
         // Undefined when there is no bus, no `mcp` capability, or the adapter

@@ -62,6 +62,22 @@ export interface StartPlanInput {
    */
   requestedConversationId?: string;
   /**
+   * ADOPT another session's conversation by FORKING it (§5.5 Level 3,
+   * P2-E11-12) — experimental, and the caller only sets this when the flag is on.
+   *
+   * ⚠️ THE SOURCE FOLDER IS CARRIED, AND IT IS NOT `folder`. The defining case
+   * is cross-folder: session A's conversation adopted by a new card in folder B.
+   * `folder` above is B — where the new session will RUN — while the transcript
+   * being forked lives under A's directory. Collapsing the two would look right
+   * for the same-folder case and silently answer "no such conversation" for the
+   * one this feature exists for.
+   *
+   * Like `requestedConversationId`, honoured ONLY for a card with no
+   * conversation of its own, and a fork that cannot be resolved REFUSES rather
+   * than falling through to a fresh session — see `forkUnavailable`.
+   */
+  requestedFork?: { sourceSessionId: string; sourceFolder: string };
+  /**
    * Every native id any card in the workspace points at, head or ancestor
    * (#484). Only read when a card's whole chain came up empty and the provider
    * offers to look for the conversation it lost — the list is what stops that
@@ -112,7 +128,38 @@ export interface StartPlan {
    * need to be different lines in the log. Undefined exactly when
    * `resumeSessionId` is.
    */
-  resumedVia?: 'stored' | 'lineage' | 'adopted' | 'picked';
+  resumedVia?: 'stored' | 'lineage' | 'adopted' | 'picked' | 'forked';
+  /**
+   * This start FORKS `resumeSessionId` instead of continuing it (§5.5 Level 3).
+   *
+   * ⚠️ WHEN THIS IS SET, `resumeSessionId` IS SOMEBODY ELSE'S CONVERSATION and
+   * is for ARGV ONLY. Every other consumer of that field — the transcript
+   * watch, the history replay, and above all `recordNativeId` — must use
+   * `forkSessionId` instead. Writing the source id onto this card would make it
+   * CLAIM a conversation another card is in, which is the #484 / #539 failure
+   * the whole feature is fenced against.
+   */
+  forkSession?: boolean;
+  /**
+   * The id the forked conversation will take — minted HERE, before spawn.
+   *
+   * Known in advance rather than discovered, because the card has to be bound to
+   * something the moment it starts. Measured (claude 2.1.272): the CLI announces
+   * exactly this id on `system:init`, so the value planned here is the value the
+   * session really gets.
+   */
+  forkSessionId?: string;
+  /**
+   * A fork was asked for and could not be set up — the source transcript is
+   * gone, the root would not read, or this provider cannot fork at all.
+   *
+   * Its own field rather than folding into `requestedUnavailable`, because the
+   * caller's refusal sentence differs: one says the conversation you picked
+   * could not be opened, the other says this session could not be forked. Same
+   * reason that one does not fall open: somebody asked for a specific thing, and
+   * quietly starting an empty session instead looks like data loss.
+   */
+  forkUnavailable?: boolean;
   /**
    * The user picked a conversation and it could not be resumed (P2-E20-01).
    *
@@ -293,6 +340,55 @@ export function planSessionStart(input: StartPlanInput, host: HookSettingsHost):
   // provider whose check throws would otherwise post one warning per ancestor
   // for a fault the reader already knows about.
   let resumeBroken = false;
+  // ── ADOPTING ANOTHER SESSION'S CONVERSATION BY FORKING IT (§5.5 Level 3) ──
+  //
+  // Asked FIRST, and asked ONLY for a card with nothing of its own — the same
+  // fence `picked` sits behind, for the same reason. A fork always opens a NEW
+  // card, so a card that already has a chain is not a fork target, and refusing
+  // it here means no future caller can turn a fork into a way to move an
+  // existing card into somebody else's conversation.
+  //
+  // ⚠️ THE ID THIS RESOLVES INTO `resumeSessionId` BELONGS TO ANOTHER CARD, and
+  // that is safe only because `forkSession` travels with it: the CLI is told to
+  // FORK rather than continue, which was measured (claude 2.1.272) to leave the
+  // source transcript byte-identical. Every downstream consumer that would
+  // normally treat `resumeSessionId` as "this card's conversation" reads
+  // `forkSessionId` instead — see the note on `StartPlan.forkSession`.
+  let forkSession = false;
+  let forkSessionId: string | undefined;
+  let forkUnavailable = false;
+  const fork = candidates.length === 0 ? input.requestedFork : undefined;
+  if (fork) {
+    if (!caps?.fork) {
+      // A provider that cannot fork cannot honour this, and saying so is the
+      // point: falling through would start an EMPTY session in the right folder,
+      // which is the outcome that looks exactly like the history was lost.
+      forkUnavailable = true;
+    } else {
+      const ok = safely('fork.canFork', () =>
+        caps.fork!.canFork({
+          projectsRoot: transcriptsRoot ?? '',
+          // the SOURCE's folder — not `input.folder`, which is where the new
+          // session will run. The cross-folder case is the whole feature.
+          sourceFolder: fork.sourceFolder,
+          sourceSessionId: fork.sourceSessionId,
+        })
+      );
+      if (ok) {
+        resumeSessionId = fork.sourceSessionId;
+        resumedVia = 'forked';
+        forkSession = true;
+        // Minted HERE so the card can be bound before the process exists.
+        // `globalThis.crypto` rather than a node:crypto import for the reason
+        // `shared/stream-protocol.ts` gives — and it must be a real UUID,
+        // because the CLI validates `--session-id` and refuses anything else.
+        forkSessionId = globalThis.crypto.randomUUID();
+      } else {
+        forkUnavailable = true;
+      }
+    }
+  }
+
   // ── A CONVERSATION THE USER PICKED (P2-E20-01, §5.33) ────────────────────
   //
   // Asked FIRST and asked ONLY for a card with nothing of its own. The picker
@@ -305,7 +401,11 @@ export function planSessionStart(input: StartPlanInput, host: HookSettingsHost):
   // is the FAILURE — it is recorded rather than swallowed, because the caller
   // must refuse the start instead of quietly opening a fresh conversation the
   // user did not ask for (see `requestedUnavailable`).
-  const picked = candidates.length === 0 ? input.requestedConversationId : undefined;
+  // `!fork` as well: a start that asked to FORK is not also a pick, and a fork
+  // that failed must refuse rather than quietly trying the other door. Gated on
+  // the REQUEST, not on whether it succeeded, so an unresolvable fork cannot
+  // fall through into a resume of something else.
+  const picked = candidates.length === 0 && !fork ? input.requestedConversationId : undefined;
   if (picked) {
     if (!caps?.resume) {
       // A provider that cannot resume cannot honour a pick. Saying so is the
@@ -443,6 +543,11 @@ export function planSessionStart(input: StartPlanInput, host: HookSettingsHost):
     resumeSessionId,
     resumedVia,
     requestedUnavailable,
+    // §5.5 Level 3. All three are absent on every ordinary start, so nothing
+    // downstream changes shape for a session that is not a fork.
+    forkSession: forkSession || undefined,
+    forkSessionId,
+    forkUnavailable: forkUnavailable || undefined,
     transcriptsRoot,
     readTitle,
     buildSettings: caps?.hooks

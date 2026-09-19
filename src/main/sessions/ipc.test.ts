@@ -150,6 +150,10 @@ function harness(
     /** the composer's `@Name` resolver (P2-E11-08); absent = a wiring without one */
     resolveMentions?: SessionIpcDeps['resolveMentions'];
     contextOffer?: SessionIpcDeps['contextOffer'];
+    /** §5.5 Level 3 (P2-E11-12). Defaults OFF, like the shipped flag — a
+     *  harness that defaulted it on would let every "fork is refused when the
+     *  experiment is off" test pass without exercising the refusal. */
+    experimentalFork?: boolean;
   } = {}
 ) {
   const created: Array<{
@@ -159,6 +163,11 @@ function harness(
      *  carries it from the plan into the manager has something behind it */
     releaseSettingsFor?: unknown;
     resumeSessionId?: string;
+    /** §5.5 Level 3 — recorded so the wiring that carries a fork from the plan
+     *  into the manager has something behind it, and so a fork that silently
+     *  degraded into an ordinary resume is visible rather than inferred. */
+    forkSession?: boolean;
+    forkSessionId?: string;
     transport?: string;
   }> = [];
   const upserted: PersistedSession[] = [];
@@ -176,6 +185,9 @@ function harness(
     ...(opts.otherCards ?? []).map((c) => ({ ...c })),
   ];
   let autoLabels = opts.autoLabels ?? true;
+  // OFF by default — the state nearly every user is in, and the one the
+  // refusal path depends on.
+  const experimentalFork = opts.experimentalFork ?? false;
   const watched: Array<{
     sessionId: string;
     projectsRoot?: string;
@@ -354,6 +366,8 @@ function harness(
           settingsFor?: unknown;
           releaseSettingsFor?: unknown;
           resumeSessionId?: string;
+          forkSession?: boolean;
+          forkSessionId?: string;
           transport?: string;
         }
       ) => {
@@ -363,6 +377,11 @@ function harness(
           settingsFor: o?.settingsFor,
           releaseSettingsFor: o?.releaseSettingsFor,
           resumeSessionId: o?.resumeSessionId,
+          // §5.5 Level 3. Recorded rather than dropped so a fork that quietly
+          // degraded into an ordinary resume — the damaging failure #801 names
+          // — is assertable here instead of only visible against the real CLI.
+          forkSession: o?.forkSession,
+          forkSessionId: o?.forkSessionId,
           transport: o?.transport,
         });
         const id = spawnIds.shift() ?? record.id;
@@ -484,6 +503,12 @@ function harness(
     setAutoLabels: (on: boolean) => {
       autoLabels = on;
     },
+    // §5.5 Level 3 (P2-E11-12). OFF in the harness by default, matching the
+    // shipped default — a fixture that defaulted it ON would let every fork
+    // refusal test pass for the wrong reason, and would quietly stop covering
+    // the state nearly every user is actually in. Tests that need it on flip
+    // `experimentalFork` themselves.
+    experimentalFork: () => experimentalFork,
     persist: {
       // A store that REMEMBERS. The label loop reads the card back after every
       // write — "has this title already been stored?" is the de-dupe — so a
@@ -1980,6 +2005,181 @@ describe('registerSessionIpc — slash commands (P2-E18-09)', () => {
 // from its JSONL transcript, a stream session's from its typed messages. The
 // renderer must not be able to tell them apart — and, more importantly, exactly
 // ONE source may be live for a given session or every block renders twice.
+// §5.5 Level 3 — fork adoption (P2-E11-12, #801). The CLI contract behind this
+// was measured, not assumed: `spike/probes/801/` drove claude 2.1.272 and
+// `spike/findings/e11-801-fork-adoption.md` records what came back. These pin
+// OUR side — the flag, the refusals, and the one that matters most, which
+// conversation ends up written onto the card.
+describe('fork adoption (P2-E11-12, §5.5 Level 3)', () => {
+  let source: string;
+  let target: string;
+  let projects: string;
+  tempDirEach('sb-fork-src-', (d) => (source = d));
+  beforeEach(() => {
+    projects = tempDir('sb-fork-root-');
+    target = tempDir('sb-fork-tgt-');
+  });
+
+  function seed(nativeId: string, cwd: string): void {
+    const dir = path.join(projects, slugForCwd(cwd).toLowerCase());
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, `${nativeId}.jsonl`), '{"type":"queue-operation"}\n');
+  }
+
+  /** A Claude-shaped adapter that CAN fork, pointed at this test's root. */
+  const forkCaps = (): ProviderCapabilities => ({
+    transcripts: { projectsRoot: () => projects },
+    resume: {
+      canResume: ({ projectsRoot, folder: f, nativeSessionId }) =>
+        conversationExists(projectsRoot, f, nativeSessionId),
+    },
+    fork: {
+      canFork: ({ projectsRoot, sourceFolder, sourceSessionId }) =>
+        conversationExists(projectsRoot, sourceFolder, sourceSessionId),
+    },
+  });
+
+  /** The same adapter with the capability withheld — every other fake provider. */
+  const noForkCaps = (): ProviderCapabilities => {
+    const c = forkCaps();
+    delete c.fork;
+    return c;
+  };
+
+  const forkCall = (h: { call: (c: string, ...a: unknown[]) => unknown }, o = {}) =>
+    h.call('sessions:create', {
+      cardId: 'card-1',
+      folder: target,
+      title: 't',
+      forkFrom: { sourceSessionId: 'conv-a', sourceFolder: source },
+      ...o,
+    });
+
+  it('FORKS: the CLI is pointed at the source, and told to fork rather than continue', () => {
+    seed('conv-a', source);
+    const h = harness(forkCaps(), target, { experimentalFork: true });
+    forkCall(h);
+    // `--resume` gets the SOURCE — that is the conversation being forked FROM.
+    expect(h.created[0].resumeSessionId).toBe('conv-a');
+    expect(h.created[0].forkSession).toBe(true);
+    // ...and the new id is pinned in advance, because the card has to be bound
+    // to something the moment it starts. A real UUID: the CLI refuses anything
+    // else, and the adapter refuses to spawn an unpinned fork at all.
+    expect(h.created[0].forkSessionId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+    );
+  });
+
+  // ── THE MOST DANGEROUS LINE IN THE FEATURE ────────────────────────────────
+  it("records the FORK's conversation on the card, never the one it forked from", () => {
+    seed('conv-a', source);
+    const h = harness(forkCaps(), target, { experimentalFork: true });
+    forkCall(h);
+
+    const card = h.cards.find((c) => c.id === 'card-1')!;
+    const forkId = h.created[0].forkSessionId;
+    expect(card.nativeSessionId).toBe(forkId);
+    // The source id must not be the head, an ancestor, or anywhere in the
+    // chain. `recordNativeId` makes its argument the head, and every "who holds
+    // this conversation" question in the app reads that chain — so writing
+    // `conv-a` here would make this card CLAIM a conversation the source card is
+    // actively in, and the two would contend for one transcript (#484, #539).
+    expect(card.nativeSessionId).not.toBe('conv-a');
+    expect(card.nativeSessionLineage ?? []).not.toContain('conv-a');
+  });
+
+  it('works CROSS-FOLDER — the source lives somewhere else entirely', () => {
+    // The case the feature exists for, and the one a same-folder-only
+    // implementation would pass every other test while failing.
+    seed('conv-a', source);
+    expect(path.resolve(source)).not.toBe(path.resolve(target));
+    const h = harness(forkCaps(), target, { experimentalFork: true });
+    forkCall(h);
+    expect(h.created[0].forkSession).toBe(true);
+    expect(h.created[0].identity.folder).toBe(target);
+  });
+
+  // ── THE REFUSALS ──────────────────────────────────────────────────────────
+
+  it('REFUSES when the experiment is off, and spawns nothing', () => {
+    // The surface is absent when the flag is off, which is a kindness. THIS is
+    // what makes it true — and it is reachable in normal use, because a fork
+    // request is a dockview panel param serialized into the saved layout and
+    // re-sent on every relaunch. A layout saved while the flag was on must not
+    // keep forking after it is switched off.
+    seed('conv-a', source);
+    const h = harness(forkCaps(), target, { experimentalFork: false });
+    expect(forkCall(h)).toBeNull();
+    expect(h.created).toEqual([]);
+  });
+
+  it('REFUSES a provider that does not declare the capability, and spawns nothing', () => {
+    // Same-provider only (§5.5): transcript formats are not interchangeable, and
+    // both fakes withhold `fork` precisely so this path is unreachable for them.
+    seed('conv-a', source);
+    const h = harness(noForkCaps(), target, { experimentalFork: true });
+    expect(forkCall(h)).toBeNull();
+    expect(h.created).toEqual([]);
+  });
+
+  it('REFUSES a source conversation that is not on disk — it does not start an empty session', () => {
+    // No `seed` call. Falling through to a fresh session would be the one
+    // outcome indistinguishable, to the user, from the history being lost.
+    const h = harness(forkCaps(), target, { experimentalFork: true });
+    expect(forkCall(h)).toBeNull();
+    expect(h.created).toEqual([]);
+  });
+
+  it.each([
+    ['a leading dash, which would reach the CLI as a flag (#838)', '--help'],
+    ['a path traversal', '../../etc/passwd'],
+    ['empty', ''],
+    ['not a string', 42],
+  ])('REFUSES a source id that is %s', (_label, sourceSessionId) => {
+    seed('conv-a', source);
+    const h = harness(forkCaps(), target, { experimentalFork: true });
+    expect(forkCall(h, { forkFrom: { sourceSessionId, sourceFolder: source } })).toBeNull();
+    expect(h.created).toEqual([]);
+  });
+
+  it('REFUSES a source folder that is not a directory', () => {
+    // The source folder decides WHICH transcript directory is searched, so a bad
+    // one would otherwise be a silent "no such conversation" rather than an error.
+    seed('conv-a', source);
+    const h = harness(forkCaps(), target, { experimentalFork: true });
+    expect(
+      forkCall(h, { forkFrom: { sourceSessionId: 'conv-a', sourceFolder: path.join(source, 'nope') } })
+    ).toBeNull();
+    expect(h.created).toEqual([]);
+  });
+
+  it('a card that already HAS a conversation is never a fork target', () => {
+    // The same fence the history pick sits behind: a fork always opens a NEW
+    // card, so a card with a chain of its own is not one — which is what stops a
+    // future caller turning a fork into a way to move an existing card into
+    // somebody else's conversation.
+    seed('conv-a', source);
+    seed('mine-1', target);
+    const h = harness(forkCaps(), target, {
+      experimentalFork: true,
+      prior: priorCard({ folder: target, id: 'card-1', nativeSessionId: 'mine-1' }),
+    });
+    forkCall(h);
+    // it resumed its OWN conversation and forked nothing
+    expect(h.created[0].forkSession).toBeUndefined();
+    expect(h.created[0].resumeSessionId).toBe('mine-1');
+  });
+
+  it('an ordinary start still passes no fork options at all', () => {
+    // The byte-identity claim, at this layer: a session that is not a fork must
+    // reach the manager exactly as it did before this item existed.
+    const h = harness(forkCaps(), target, { experimentalFork: true });
+    h.call('sessions:create', { cardId: 'card-2', folder: target, title: 't' });
+    expect(h.created[0].forkSession).toBeUndefined();
+    expect(h.created[0].forkSessionId).toBeUndefined();
+  });
+});
+
 describe('the Feed has two sources and one channel (P2-E18-10)', () => {
   let dir: string;
   tempDirEach('sb-ipc-feed-', (d) => (dir = d));

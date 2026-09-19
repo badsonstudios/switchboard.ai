@@ -360,6 +360,11 @@ export const CHANNEL_CAPABILITIES = {
   'settings:setAutoLabels': 'settings.write',
   'settings:getAutoTrust': 'settings.read',
   'settings:setAutoTrust': 'settings.write',
+  // §5.5 Level 3, behind its experimental flag (P2-E11-12). An ordinary
+  // preference read/write pair — the flag only decides whether a SURFACE is
+  // drawn; nothing here can start, fork or reach a session.
+  'settings:getExperimentalFork': 'settings.read',
+  'settings:setExperimentalFork': 'settings.write',
   'transcripts:binding': 'transcripts.read',
   'update:cancelInstall': 'update.install',
   'update:check': 'update.check',

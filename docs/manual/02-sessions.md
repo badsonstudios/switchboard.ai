@@ -527,6 +527,44 @@ leaves both sessions exactly as they were.
   The text says so, so the session reading it treats it as notes rather than as
   a briefing from a colleague.
 
+### Forking a session (experimental)
+
+Handing over a handoff gives the other session a *summary*. Forking gives it the
+**whole conversation** — everything the first session has been told, word for
+word — and then the two carry on independently.
+
+It's off until you turn it on. When it's off there's nothing to click: the menu
+entry isn't there at all, rather than being there and greyed out.
+
+To use it, turn on **Fork sessions** in the title bar, then open a session's
+**⋯** menu and choose **Fork into a new session**. A new session opens that
+already knows everything the first one does.
+
+A few things worth knowing:
+
+- **The original is not touched.** It isn't paused, changed, or interrupted, and
+  nothing is added to its history. You can keep working in it while the fork runs.
+- **They diverge from that moment.** The fork inherits the conversation up to the
+  point you forked it, and after that they know nothing about each other. Telling
+  one something doesn't tell the other.
+- **The fork opens in the same project folder**, as a new session beside the one
+  it came from.
+- **You need to have actually talked to it.** A session that has only just
+  started has no conversation to fork yet, so the menu entry stays hidden until
+  it has one.
+- **It costs what a long conversation costs.** The fork carries the entire history,
+  so every turn it takes is priced like a turn in the session it came from — not
+  like a fresh start. If you only need "here's what I worked out", the **context**
+  chip above is the cheaper tool, and usually the right one.
+
+**Why it's marked experimental.** This one leans on behaviour of the Claude
+command-line tool that isn't written down anywhere — it was worked out by
+measuring what the tool actually does, and a future version could change it
+without saying so. It has been tested and it works; the label is there because
+"we measured this" is a weaker promise than "this is documented", and you deserve
+to know which one you're relying on. If a future update breaks it, switch it off
+and nothing else about your sessions changes.
+
 ### A session can ask for the handoff itself
 
 Dragging the chip is you deciding to hand work over. A session can also ask for

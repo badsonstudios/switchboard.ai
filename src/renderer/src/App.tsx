@@ -558,6 +558,12 @@ export function App(): React.JSX.Element {
   // measurement behind it are in `lib/trust-reach.ts`.
   const trustReaches = trustSettingReaches(sessions);
   const [autoLabels, setAutoLabels] = useState(true);
+  // §5.5 Level 3 — fork adoption (P2-E11-12). The one chip that starts OFF, and
+  // it starts off here as well as in the store: this initial value is what the
+  // bar draws for the instant before main answers, and an experiment that
+  // flickered ON during that frame would be the one place the UI overstated
+  // what the app does.
+  const [experimentalFork, setExperimentalFork] = useState(false);
   const [usageByLive, setUsageByLive] = useState<
     Map<string, { usage: Usage; model?: string; cliCost?: CliCost }>
   >(new Map());
@@ -640,6 +646,12 @@ export function App(): React.JSX.Element {
     // the honest default for a setting we could not read is off.
     void bridge.settings?.getAutoTrust?.().then((on) => setAutoTrust(took(on)));
     void bridge.settings?.getAutoLabels?.().then((on) => setAutoLabels(took(on)));
+    // `took` matters more here than anywhere else in this block: a refusal must
+    // read as OFF, and off is also what main assumes — so a setting we could not
+    // read can never leave the bar advertising a gesture main will refuse.
+    void bridge.settings
+      ?.getExperimentalFork?.()
+      .then((on) => setExperimentalFork(took(on)));
     void bridge.preflight?.check?.().then((answer) => {
       // Same as above (#650): `r.ok` off a refusal is `undefined`, which would
       // paint the CLI as BROKEN on the strength of a call we were not allowed
@@ -1815,6 +1827,18 @@ export function App(): React.JSX.Element {
             // the user's expense.
             if (on) sharedAnnouncer().say(sample);
           });
+        }}
+        experimentalFork={experimentalFork}
+        onToggleExperimentalFork={() => {
+          const next = !experimentalFork;
+          setExperimentalFork(next); // optimistic: the chip must move on the click…
+          // …and main answers with what it actually STORED. `took` (#440) so a
+          // refusal reads as off rather than as a truthy object — the same
+          // convention as auto-trust and auto-labels, and the direction that
+          // matters most for an experiment nobody has switched on yet.
+          void bridge.settings
+            ?.setExperimentalFork?.(next)
+            .then((on) => setExperimentalFork(took(on)));
         }}
         autoLabels={autoLabels}
         onToggleAutoLabels={() => {

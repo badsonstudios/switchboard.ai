@@ -71,6 +71,19 @@ const MATRIX: { label: string; opts: Partial<SpawnOptions> }[] = [
   { label: 'resume', opts: { resumeSessionId: 'native-1' } },
   { label: 'settings', opts: { settings: { model: 'x' } } },
   { label: 'full-auto', opts: { autonomy: 'full-auto' } },
+  // §5.5 Level 3 (P2-E11-12). In the matrix rather than in a test of its own so
+  // the fork argv is pinned by the SAME literal-expectation machinery as
+  // everything else — a fork that quietly gained or lost a flag would otherwise
+  // only be caught by the feature's own tests, which are the ones most likely to
+  // be edited alongside the change that broke it.
+  {
+    label: 'fork',
+    opts: {
+      resumeSessionId: 'native-1',
+      forkSession: true,
+      forkSessionId: '9eba5fec-dc28-47f9-b032-21b76ab84673',
+    },
+  },
   {
     label: 'everything',
     opts: {
@@ -238,6 +251,12 @@ describe('claudeAdapter.buildSpawn — --mcp-config (P2-E11-03)', () => {
       );
     }
     if (opts.resumeSessionId) expected.push('--resume', opts.resumeSessionId);
+    // Both flags, in this order, and ONLY alongside a resume id — `--fork-session`
+    // is documented as "use with --resume or --continue", and a lone one would be
+    // a bug upstream that this expectation would otherwise hide.
+    if (opts.forkSession && opts.resumeSessionId) {
+      expected.push('--fork-session', '--session-id', opts.forkSessionId!);
+    }
     expected.push('--permission-mode', AUTONOMY_PERMISSION_MODE[opts.autonomy ?? 'ask']);
     expect(recipe.args).toEqual(expected);
     // ...and nothing was written for a session that asked for nothing.

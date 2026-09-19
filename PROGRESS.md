@@ -3,6 +3,52 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔨 IN PROGRESS — 2026-09-19: **#801** — P2-E11-12 · Level 3 fork-session adoption
+>
+> **Branch `feature/801-fork-session-adoption`.** The LAST open E11 item — #797
+> and #798 are closed, so **E11 exits when this lands**.
+>
+> **The design premise changed before any code was written, and that is the
+> headline.** DESIGN §5.5 said the cross-folder variant should *"copy A's
+> transcript into the target project's transcript dir, then fork-resume there"* —
+> which would have made switchboard the first code in the repo to WRITE into
+> `~/.claude/projects`, a directory the CLI owns. **It is unnecessary.** Measured
+> against `claude` **2.1.272** (`spike/probes/801/`, write-up
+> `spike/findings/e11-801-fork-adoption.md`): `--resume <id> --fork-session
+> --session-id <uuid>`, spawned with the cwd set to the TARGET folder, carries the
+> source conversation's whole history, leaves the source transcript
+> **byte-identical** (sha256, size AND mtime), and writes the fork into the
+> **target** folder's project directory. DESIGN §5.5 amended with the measurement
+> rather than implemented as written.
+>
+> **The control variant is what settled it.** Cross-folder by absolute `.jsonl`
+> path works — the file form of `--resume` is real and undocumented in `--help` —
+> but cross-folder by **plain id** works just as well, because the resume resolver
+> carries two cross-directory fallbacks. Three ways to express it; the one that
+> invents nothing ships.
+>
+> **Two probe rounds, because round 1 measured the wrong transport.** Round 1
+> drove headless `-p`; the app spawns duplex stream-json. Round 2 re-ran the
+> cross-folder fork under the exact flag list copied from `claude.ts` and
+> answered the safety-critical question: **`system:init.session_id` is the id we
+> passed to `--session-id`, not the parent's.** Had it been the parent's, a forked
+> card would have bound to the source's transcript and two cards would tail one
+> file — the #484 / #539 failure. Six trivial turns total, foreground only, every
+> transcript created was deleted.
+>
+> **Landed so far:** a `fork` provider capability declared ONLY by the real
+> adapter (both fakes deliberately do NOT declare it — all three register under
+> `claude-code`, so the absence IS the gate); the argv in `buildSpawn`, which
+> **throws** rather than spawning an unpinned fork; the experimental flag in the
+> workspace store (**off by default**, and the only `=== true` pref in the file);
+> the plan/manager/IPC wiring, where three downstream consumers — the transcript
+> watch, the history replay and `recordNativeId` — read the **fork's** id and
+> never the source's; and **#838's leading-dash hole** in `isConversationId`,
+> which sits directly on this path.
+>
+> **Still to do:** the renderer surface (absent, not disabled, when the flag is
+> off), the manual page, the CHANGELOG entry, and the full suite.
+
 > # ✅ MERGED — 2026-09-19: **#796** — P2-E11-06 · Blackboard `publish`/`read`, the shared scratchpad
 >
 > **PR #862, squashed to `ae1be47`.** Issue closed by `Closes #796`; **#861, #835

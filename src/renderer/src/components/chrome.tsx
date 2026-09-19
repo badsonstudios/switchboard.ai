@@ -72,6 +72,17 @@ export function TitleBar(props: {
    *  in, on the card, in the rail and in OS toasts */
   autoLabels: boolean;
   onToggleAutoLabels: () => void;
+  /**
+   * §5.5 Level 3 — fork adoption (P2-E11-12). EXPERIMENTAL, off by default.
+   *
+   * The only experiment switch in the app, and it is a chip for the reason
+   * there is no alternative rather than because a chip is ideal: there is no
+   * settings page, and a feature the user must be able to turn OFF the moment
+   * it misbehaves cannot live somewhere they have to go hunting for. It sits
+   * last among the preference chips because it is the one nobody needs daily.
+   */
+  experimentalFork: boolean;
+  onToggleExperimentalFork: () => void;
   /** §5.9's per-session cues (P2-E14-05a) — on, each card rings its own sound
    *  instead of everything sharing one beep */
   soundsOn: boolean;
@@ -166,6 +177,26 @@ export function TitleBar(props: {
         testId="speak-announcements"
       >
         {props.speakOn ? t('titlebar.speakOn') : t('titlebar.speakOff')}
+      </Chip>
+      {/* Fork adoption (P2-E11-12, §5.5 Level 3). EXPERIMENTAL, off by default
+          — the only default-off preference in this bar.
+
+          A chip rather than a buried setting for a different reason from the
+          three above it: those govern noise, this governs a feature that leans
+          on undocumented CLI behaviour. It was measured rather than guessed
+          (claude 2.1.272), but a measurement against one version is exactly the
+          drift DESIGN §5.2 describes — so the off switch has to be somewhere
+          the user can reach in one click on the day it stops working, not
+          behind a page that does not exist.
+
+          States the word ON or OFF, never colour alone (§5.32), like the rest. */}
+      <Chip
+        selected={props.experimentalFork}
+        onClick={props.onToggleExperimentalFork}
+        title={t('titlebar.forkHint')}
+        testId="experimental-fork"
+      >
+        {props.experimentalFork ? t('titlebar.forkOn') : t('titlebar.forkOff')}
       </Chip>
       {/* The autonomy chip (E6-01). Its TOOLTIP carries what the mode actually
           does (#534) — the names alone never told anyone that full-auto is the

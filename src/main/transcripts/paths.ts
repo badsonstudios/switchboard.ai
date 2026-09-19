@@ -103,9 +103,24 @@ export function locateConversation(
   return couldNotLook ? { status: 'unknown', reason: couldNotLook } : { status: 'absent' };
 }
 
-/** Is this string shaped like a conversation id at all? */
+/**
+ * Is this string shaped like a conversation id at all?
+ *
+ * ⚠️ THE FIRST CHARACTER IS CONSTRAINED SEPARATELY, AND THAT IS THE POINT
+ * (#838). The old pattern was `/^[A-Za-z0-9._-]+$/`, which admits a LEADING
+ * DASH — and an id is not only interpolated into a path, it is handed to the
+ * CLI as the value of `--resume`. `--help`, or any other dash-led string,
+ * therefore reaches argv where it parses as a FLAG rather than as the operand
+ * it was passed as. §5.29's rule is to validate where the untrusted value
+ * enters, and this is that gate: the id arrives from the persisted workspace
+ * file, from hook payloads, and from the renderer's history picker.
+ *
+ * A leading dot is excluded by the same anchor, which is a second thing worth
+ * having: `.` and `..` are not conversations, and a dotfile in the project
+ * directory is not one either.
+ */
 export function isConversationId(nativeId: string): boolean {
-  return /^[A-Za-z0-9._-]+$/.test(nativeId);
+  return /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(nativeId);
 }
 
 /**
