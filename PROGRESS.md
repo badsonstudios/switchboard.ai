@@ -4692,7 +4692,19 @@
 > "connected"**, because no automated test can prove the CLI launch works on
 > real hardware — which is exactly how that blocker got in.
 
-> # 🔨 IN PROGRESS — 2026-08-25: #632 — MCP Manager (§5.17), PR 1 of 2
+> # ✅ MERGED — 2026-08-25: #632 — MCP Manager (§5.17), PR 1 of 2
+>
+> *(**Heading corrected 2026-09-19** — found while closing out #801, which is the
+> only reason it was noticed at all. This read `🔨 IN PROGRESS` for three and a
+> half weeks after both halves had shipped, so a fresh session reading this file
+> top-down was told work was live that had finished in August. **PR 1 merged as
+> #713** on 2026-08-25 — as this block's own body states further down — and **PR 2
+> shipped separately under its own issue #714, as PR #720**, on 2026-08-27. Issue
+> #632 is closed, as are the follow-ons #729 and #734. **Only the heading was ever
+> wrong**; not a word of the record below is changed. The lesson is the one
+> CLAUDE.md already warns about — this file is only an authority while its
+> headings are true, and a heading nobody flips is a quiet lie that survives every
+> later edit.)*
 >
 > **Gate 1 PASSED.** Branch `feature/632-mcp-manager`, off main @ `4b8c09e`.
 > Green-field: the only MCP code in `src/` before this was the `/mcp` entry in
