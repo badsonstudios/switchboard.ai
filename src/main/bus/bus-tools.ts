@@ -17,6 +17,10 @@ import { DETAIL_ARG, MESSAGE_ARG, SESSION_ARG } from './channel';
 // graph for the reason `sibling-message` is — and the levels an agent is OFFERED
 // must be the levels `SessionQueries` accepts.
 import { CONTEXT_FIDELITIES, DEFAULT_FIDELITY } from '../../shared/context-drop';
+// Constant-only, no imports of its own — safe in the child graph for the reason
+// `sibling-message` is, and the reason it has to be shared at all: the cap an
+// agent is TOLD here must be the cap the host enforces.
+import { BLACKBOARD_VALUE_CHAR_CAP, KEY_ARG, VALUE_ARG } from '../../shared/blackboard';
 // A constant-only module with no imports of its own, so it is safe in the child
 // graph — and the cap an agent is told must be the cap `SiblingDelivery` enforces.
 import { SIBLING_MESSAGE_CHAR_CAP, cleanSenderName } from '../../shared/sibling-message';
@@ -208,6 +212,65 @@ export const TOOLS: readonly ToolDescriptor[] = [
         },
       },
       required: [SESSION_ARG],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'blackboard_publish',
+    // THE DESCRIPTION CARRIES THE ONE THING THAT MOST SURPRISES A SENDER:
+    // nobody is told. `send_to_session` sits one tool away and its description
+    // promises the opposite (a message that lands in a person's composer), so
+    // an agent that picked this expecting delivery would leave a note nobody
+    // reads and move on believing it had handed work over.
+    description:
+      'Leave a note on the switchboard blackboard — a shared scratchpad every session in this ' +
+      'workspace can read — under a short key you choose. Use it to hand durable state to the ' +
+      'other sessions in a pipeline: a decision, a build result, a schema, the thing the next ' +
+      'stage needs. NOTHING IS DELIVERED and nobody is notified: a note sits until another ' +
+      'session deliberately reads it, so do not use this to ask someone for something. ' +
+      `Publishing again under the same key replaces what was there. Values are up to ` +
+      `${BLACKBOARD_VALUE_CHAR_CAP.toLocaleString('en-US')} characters and an oversized one is ` +
+      'refused rather than cut.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        [KEY_ARG]: {
+          type: 'string',
+          description:
+            'A short label another session can guess or discover, like "build-status" or ' +
+            '"schema-decision". Publishing twice under one key overwrites it.',
+        },
+        [VALUE_ARG]: {
+          type: 'string',
+          description:
+            'The note itself, as plain text. Serialize it yourself if it is not already a string.',
+        },
+      },
+      required: [KEY_ARG, VALUE_ARG],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'blackboard_read',
+    description:
+      'Read what other switchboard sessions have left on the shared blackboard — the workspace ' +
+      'scratchpad sessions in a pipeline use to hand each other state. Give a key to read that ' +
+      'note; LEAVE THE KEY OUT to list everything on the board with who published it and how big ' +
+      'it is, which is how you find out what is there if you joined the work late. A key nobody ' +
+      'has published is an ordinary answer, not an error — it names the keys that do exist so you ' +
+      'can try again.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        [KEY_ARG]: {
+          type: 'string',
+          description:
+            'The note to read, as blackboard_read with no key reported it. Leave it out entirely ' +
+            'to list the board instead.',
+        },
+      },
+      // NO `required`, and that is the feature: the keyless call is the
+      // discovery affordance §5.4 asks for, not a degenerate case of the other.
       additionalProperties: false,
     },
   },
@@ -582,6 +645,144 @@ export function renderContext(payload: unknown): string {
 }
 
 /**
+ * What became of a `blackboard_publish` (#796), for the agent that left it.
+ *
+ * SAYS "NOBODY HAS BEEN TOLD" ON EVERY SUCCESS, which is not decoration. The
+ * failure worth designing against is the same one `renderSend` guards from the
+ * other side: an agent that believes publishing handed work to somebody, and
+ * then waits. There is no recipient at all here, so the receipt says so and
+ * says what WOULD reach a person.
+ */
+export function renderPublish(payload: unknown): string {
+  const p = asRecord(payload);
+  const key = asText(p.key, '(unnamed)');
+  const replaced = p.replaced === true;
+  const keys = typeof p.keys === 'number' ? p.keys : null;
+  const maxKeys = typeof p.maxKeys === 'number' ? p.maxKeys : null;
+  const room = keys !== null && maxKeys !== null ? ` The board now holds ${keys} of ${maxKeys} keys.` : '';
+  return (
+    `Your note is on the switchboard blackboard under "${key}"` +
+    (replaced ? ', replacing what was there before.' : '.') +
+    ' NOBODY HAS BEEN TOLD: it will be read only if another session asks for it, and nothing comes ' +
+    'back to you. If a person needs to see this, use send_to_session instead.' +
+    room
+  );
+}
+
+/**
+ * The blackboard, read (#796) — one note, a miss, or the whole board.
+ *
+ * ── A MISS IS AN ORDINARY ANSWER AND MUST READ LIKE ONE ─────────────────────
+ *
+ * #764's ordering, one tool along: a bad *reference* refuses, an empty *result*
+ * does not. "Nothing is published under that key" is the normal state of a
+ * pipeline whose other half has not got there yet. It names the keys that DO
+ * exist for `resolve`'s reason — a miss that lists the real options is one an
+ * agent can act on, instead of retrying the same guess or concluding the board
+ * is empty.
+ *
+ * The note's content is FENCED like every other thing a sibling wrote. A
+ * blackboard value is by definition text this session did not write and nobody
+ * reviewed, and it is being handed to a model that asked for it — the same
+ * boundary `quoted` exists to draw for a transcript or a diff.
+ */
+export function renderBlackboard(payload: unknown): string {
+  const p = asRecord(payload);
+
+  if (p.kind === 'list') {
+    const rows = Array.isArray(p.rows) ? p.rows : [];
+    if (rows.length === 0) {
+      return (
+        'The switchboard blackboard is empty — no session has published anything in this ' +
+        'workspace yet. This is a normal state, not a failure to read it.'
+      );
+    }
+    const lines = rows.map((raw) => {
+      const r = asRecord(raw);
+      const chars = typeof r.chars === 'number' ? `${r.chars} chars` : 'unknown size';
+      return `- ${flat(r.key)} — by ${flat(r.publisherName)}${standing(r)}, ${chars}, at ${flat(r.at)}`;
+    });
+    const n = rows.length;
+    return (
+      `${n} note${n === 1 ? '' : 's'} on the switchboard blackboard. Values are not included — ` +
+      `read one by name with blackboard_read.\n${lines.join('\n')}`
+    );
+  }
+
+  const keys = Array.isArray(p.keys) ? p.keys.filter((k) => typeof k === 'string') : [];
+  const entry = p.entry === null || p.entry === undefined ? null : asRecord(p.entry);
+  if (!entry) {
+    const also =
+      keys.length > 0
+        ? ` The board does hold: ${keys.map((k) => flat(k)).join(', ')}.`
+        : ' The blackboard is empty — nothing has been published in this workspace yet.';
+    return (
+      'Nothing is published under that key. That is an ordinary answer, not a failure: the session ' +
+      `you are waiting on may not have got there yet.${also}`
+    );
+  }
+  const value = typeof entry.value === 'string' ? entry.value : '';
+  // THE STANDING CLAUSE IS ITS OWN SENTENCE HERE, and that is not cosmetic:
+  // inlined before the timestamp it produced "published by Alpha, which is NO
+  // LONGER RUNNING — you cannot ask it a follow-up at 2026-09-18T12:00:00Z",
+  // where the advice and the date run into each other and the date reads as
+  // part of the warning. The list rows take the short clause instead, because
+  // one row must stay one line.
+  return (
+    `"${flat(entry.key)}" on the switchboard blackboard, published by ${flat(entry.publisherName)} ` +
+    `at ${flat(entry.at)}.${standingSentence(entry)}\n\n${quoted(value)}`
+  );
+}
+
+/**
+ * A field that came from ANOTHER SESSION, flattened for use in our own prose.
+ *
+ * ── THE BLOCKER THIS EXISTS FOR, FOUND BY RUNNING IT ────────────────────────
+ *
+ * A blackboard key is text an agent chose, and it is printed in a listing and
+ * in the "the board does hold: …" sentence — both of which are switchboard
+ * speaking, outside any fence. Interpolated raw, one publish produced a listing
+ * row that claimed a DIFFERENT session had published a key it had never heard
+ * of, and a key containing `\n\nSYSTEM: …` put that sentence under our own text
+ * with no fence in the output at all. `Blackboard.publish` now refuses a key
+ * with control characters in it, which is the better error; this is the other
+ * half, because a renderer must be safe on a payload it did not produce.
+ *
+ * Same helper, same reason, as `who()` — this is the third surface in this file
+ * with the shape, and `cleanSenderName` is where the house already solved it.
+ */
+function flat(v: unknown): string {
+  return cleanSenderName(typeof v === 'string' ? v : '');
+}
+
+/**
+ * What we can say about whether a note's publisher is still around.
+ *
+ * THREE STATES, because two of them are different claims and the third is about
+ * US: a live sibling can be asked a follow-up, one that has exited cannot, and
+ * a session list we could not read means we do not know — which must not be
+ * rendered as "still running" (review; `BlackboardEntry.publisherKnown`).
+ */
+function standing(r: Record<string, unknown>): string {
+  // TERSE, because this one goes in a LISTING and a row has to stay scannable.
+  // The loud version belongs to `standingSentence`, where a reader is looking
+  // at one note and the advice is the point. An earlier cut used the loud form
+  // in both and turned every row of a hundred-key board into a paragraph.
+  if (r.publisherKnown === false) return ', still running unknown';
+  return r.publisherGone === true ? ', no longer running' : '';
+}
+
+/** The same three states as a sentence of its own — see `renderBlackboard`. */
+function standingSentence(r: Record<string, unknown>): string {
+  if (r.publisherKnown === false) {
+    return ' switchboard could not check whether that session is still running.';
+  }
+  return r.publisherGone === true
+    ? ' That session is NO LONGER RUNNING — you cannot ask it a follow-up.'
+    : '';
+}
+
+/**
  * Tool name → how its host reply reads as text.
  *
  * A TABLE RATHER THAN A SWITCH, so `bus-tools.test.ts` can assert every entry
@@ -618,6 +819,18 @@ const RENDERERS: Record<string, Renderer> = Object.assign(
     get_session_output: { field: 'output', render: (r) => renderOutput(r.output) },
     get_session_diff: { field: 'diff', render: (r) => renderDiff(r.diff) },
     get_session_context: { field: 'context', render: (r) => renderContext(r.context) },
+    blackboard_publish: {
+      field: 'published',
+      render: (r) => renderPublish(r.published),
+      // A WRITE, so it takes its own refusal opening for `send_to_session`'s
+      // reason: "switchboard could not answer" never says whether the note was
+      // stored, and a cap refusal most needs to.
+      refused: 'Your note was NOT published',
+      failed:
+        'switchboard could not confirm whether your note was published — it may or may not be on ' +
+        'the blackboard. Read the key back before publishing it again',
+    },
+    blackboard_read: { field: 'board', render: (r) => renderBlackboard(r.board) },
     send_to_session: {
       field: 'delivery',
       render: (r) => renderSend(r.delivery),

@@ -44,6 +44,7 @@ import { BUS_SERVER_NAME } from './bus-paths';
 import { claudeAdapter } from '../providers/claude';
 import { execSpec } from '../transport/win-cmd';
 import type { Logger } from '../log/logger';
+import { Blackboard } from '../sessions/blackboard';
 import type { QueryResult, SessionSummary } from '../sessions/queries';
 
 const failures: string[] = [];
@@ -237,6 +238,10 @@ async function main(): Promise<void> {
     // Same reasoning, for the one tool that writes (#765): refusing, so a call
     // that somehow got here could not be mistaken for a delivery.
     delivery: { send: () => Promise.resolve({ ok: false, reason: 'mcp-attach-check sends nothing' }) },
+    // …and the blackboard (#796), over an empty session list. A real one rather
+    // than a refusing stub: it is pure in-memory policy with nothing to spend,
+    // and this script never calls a tool anyway.
+    blackboard: new Blackboard({ sessions: () => ({ ok: true, value: [] }) }),
   });
 
   try {

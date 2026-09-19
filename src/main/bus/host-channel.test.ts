@@ -16,7 +16,9 @@ import {
 } from './host-channel';
 import { busPipePath, busTokenPath } from './bus-paths';
 import { CHANNEL_VERSION } from './channel';
-import { stubDelivery, stubQueries } from './fixtures/queries';
+import { stubBlackboard, stubDelivery, stubQueries } from './fixtures/queries';
+import { Blackboard } from '../sessions/blackboard';
+import { BLACKBOARD_VALUE_CHAR_CAP } from '../../shared/blackboard';
 import { askHost } from './pipe-client';
 import type { Logger } from '../log/logger';
 import type {
@@ -51,6 +53,8 @@ let listSessions: () => QueryResult<SessionSummary[]>;
 let sessionOutput: (ref: string, lastN?: number) => QueryResult<SessionOutput>;
 let sessionDiff: (ref: string) => Promise<QueryResult<SessionDiff>>;
 let sessionContextFor: (ref: string, level?: unknown) => QueryResult<SessionContextAnswer>;
+/** The REAL blackboard (#796) — shared by every endpoint, as in production. */
+let blackboard: Blackboard;
 
 /**
  * The queries every host in this file is built with.
@@ -79,7 +83,12 @@ beforeEach(() => {
   sessionDiff = defaults.sessionDiff.bind(defaults);
   sessionContextFor = defaults.sessionContextFor.bind(defaults);
   send = stubDelivery().send;
-  host = new BusHost({ stateDir, log, queries: queries(), delivery: delivery() });
+  // THIS FILE'S OWN SESSIONS, not the fixture's defaults — the ids differ
+  // (`sb-a`/`sb-b` here, `sb-caller`/`sb-other` there), and a blackboard over
+  // the wrong list would resolve every publisher as "no longer running" and
+  // make the attribution assertions pass or fail for the wrong reason.
+  blackboard = stubBlackboard(SESSIONS);
+  host = new BusHost({ stateDir, log, queries: queries(), delivery: delivery(), blackboard });
 });
 
 afterEach(() => {
@@ -384,7 +393,14 @@ describe('the round trip', () => {
         log,
         ackTimeoutMs: 5_000,
       });
-      const slow = new BusHost({ stateDir, log, queries: queries(), delivery, answerDeadlineMs: 60 });
+      const slow = new BusHost({
+        stateDir,
+        log,
+        queries: queries(),
+        delivery,
+        blackboard: stubBlackboard(SESSIONS),
+        answerDeadlineMs: 60,
+      });
       const ep = await slow.registerSession(newId());
       const reply = await askHost({
         ...ep,
@@ -538,6 +554,109 @@ describe('the round trip', () => {
       expect(String(reply.reason)).toContain('state, package, excerpt');
     });
 
+    it('A PUBLISHES AND B READS IT — two endpoints, no CLI in the loop (#796)', async () => {
+      // The done-when, and the reason it is asserted here rather than only in
+      // `check:bus`: this is where the two sessions are genuinely separate
+      // endpoints with separate tokens, so "B can see A's note" is proved
+      // against the real host rather than against one object called twice.
+      const a = await host.registerSession('sb-a');
+      const b = await host.registerSession('sb-b');
+
+      const published = await askHost({
+        ...a,
+        request: { op: 'blackboard_publish', args: { key: 'build-status', value: 'green on windows' } },
+      });
+      expect(published).toMatchObject({ ok: true, published: { key: 'build-status', replaced: false } });
+
+      const read = await askHost({ ...b, request: { op: 'blackboard_read', args: { key: 'build-status' } } });
+      const board = read.board as { kind: string; entry: { value: string; publisherId: string; publisherName: string } };
+      expect(board.kind).toBe('entry');
+      expect(board.entry.value).toBe('green on windows');
+      // ATTRIBUTED FROM THE TOKEN. The child never sends a publisher argument at
+      // all — there is no field for one — so the only thing that can name the
+      // author is the endpoint the request authenticated on.
+      expect(board.entry.publisherId).toBe('sb-a');
+      expect(board.entry.publisherName).toBe('Alpha');
+    });
+
+    it('EXTRA ARGUMENTS CANNOT FORGE THE PUBLISHER (#796 done-when)', async () => {
+      // The schema's `additionalProperties: false` is a DESCRIPTION the model
+      // may ignore — the host reads `args` as an arbitrary record and never
+      // validates it, deliberately. So the guarantee cannot be "the field does
+      // not exist"; it has to be "the host never looks at one", and this is the
+      // test that reddens if anyone ever writes `args.publisherId ?? caller`.
+      const b = await host.registerSession('sb-b');
+      await askHost({
+        ...b,
+        request: {
+          op: 'blackboard_publish',
+          args: { key: 'forged', value: 'v', publisherId: 'sb-a', session: 'sb-a', from: 'sb-a' },
+        },
+      });
+      const read = await askHost({ ...b, request: { op: 'blackboard_read', args: { key: 'forged' } } });
+      const got = read.board as { entry: { publisherId: string; publisherName: string } };
+      expect(got.entry.publisherId).toBe('sb-b');
+      expect(got.entry.publisherName).toBe('Beta');
+    });
+
+    it('a key with a line break is REFUSED at the host (#796 blocker)', async () => {
+      const a = await host.registerSession('sb-a');
+      const reply = await askHost({
+        ...a,
+        request: {
+          op: 'blackboard_publish',
+          args: { key: 'status\n- forged — by Beta, 4 chars, at then', value: 'v' },
+        },
+      });
+      expect(reply).toMatchObject({ ok: false });
+      expect(String(reply.reason)).toMatch(/single line of plain text/);
+      expect(blackboard.size()).toBe(0);
+    });
+
+    it('a keyless read LISTS the board — how a session that joined late finds out (#796)', async () => {
+      const a = await host.registerSession('sb-a');
+      // DISTINCTIVE VALUE TEXT, deliberately. The first cut asserted the rows
+      // did not contain "one" — which they always do, because `publisherGone`
+      // has "one" inside it. A negative assertion needs a needle that cannot
+      // occur by accident, or it fails (or passes) for a reason nobody meant.
+      await askHost({ ...a, request: { op: 'blackboard_publish', args: { key: 'k1', value: 'SECRET-VALUE-1' } } });
+      await askHost({ ...a, request: { op: 'blackboard_publish', args: { key: 'k2', value: 'SECRET-VALUE-2' } } });
+
+      const listed = await askHost({ ...a, request: { op: 'blackboard_read', args: {} } });
+      const board = listed.board as { kind: string; rows: { key: string; chars: number }[] };
+      expect(board.kind).toBe('list');
+      expect(board.rows.map((r) => r.key)).toEqual(['k1', 'k2']);
+      // The VALUES are deliberately absent: discovery costs a bounded answer.
+      expect(JSON.stringify(board.rows)).not.toContain('SECRET-VALUE');
+      expect(board.rows[0].chars).toBe(14);
+    });
+
+    it('a PRESENT-but-wrong key is refused, rather than quietly listing the board (#796)', async () => {
+      // The distinction the dispatch makes on purpose: only an ABSENT key is the
+      // discovery call. Listing for a malformed key would answer a question the
+      // agent did not ask, and it would never learn its key was nonsense.
+      const a = await host.registerSession('sb-a');
+      const reply = await askHost({ ...a, request: { op: 'blackboard_read', args: { key: 42 } } });
+      expect(reply).toMatchObject({ ok: false });
+      expect(String(reply.reason)).toMatch(/must be a string/);
+    });
+
+    it('an over-cap publish is REFUSED with the core’s reason, and stores nothing (#796)', async () => {
+      const a = await host.registerSession('sb-a');
+      const reply = await askHost({
+        ...a,
+        request: {
+          op: 'blackboard_publish',
+          args: { key: 'huge', value: 'x'.repeat(BLACKBOARD_VALUE_CHAR_CAP + 1) },
+        },
+      });
+      expect(reply).toMatchObject({ ok: false });
+      expect(String(reply.reason)).toMatch(/NOT published/);
+      // The half a "returns an error" assertion would miss: nothing was stored,
+      // so a reader does not find a truncated note under that key.
+      expect(blackboard.size()).toBe(0);
+    });
+
     it('a REJECTED query is caught rather than crashing Electron main', async () => {
       // `sessionDiff` never rejects by contract, but that contract belongs to a
       // module this one does not own, and an unhandled rejection out of main
@@ -581,6 +700,7 @@ describe('the round trip', () => {
         log,
         idleTimeoutMs: 40,
         delivery: delivery(),
+        blackboard: stubBlackboard(SESSIONS),
         queries: {
           ...queries(),
           sessionDiff: (ref) =>
@@ -609,7 +729,14 @@ describe('the round trip', () => {
       // The other half of the pair above, restated here so the fix cannot be
       // "remove the idle deadline". `sock.setTimeout(0)` fires only once a
       // complete request has been read; a silent client never gets there.
-      const short = new BusHost({ stateDir, log, idleTimeoutMs: 60, queries: queries(), delivery: delivery() });
+      const short = new BusHost({
+        stateDir,
+        log,
+        idleTimeoutMs: 60,
+        queries: queries(),
+        delivery: delivery(),
+        blackboard: stubBlackboard(SESSIONS),
+      });
       try {
         const ep = await short.registerSession(newId());
         const sock = net.connect({ path: ep.pipePath });
@@ -646,6 +773,7 @@ describe('the round trip', () => {
         log,
         answerDeadlineMs: 80,
         delivery: delivery(),
+        blackboard: stubBlackboard(SESSIONS),
         queries: { ...queries(), sessionDiff: () => new Promise(() => {}) },
       });
       try {
@@ -672,6 +800,7 @@ describe('the round trip', () => {
         answerDeadlineMs: 60,
         replyLingerMs: 60,
         delivery: delivery(),
+        blackboard: stubBlackboard(SESSIONS),
         queries: { ...queries(), sessionDiff: () => new Promise(() => {}) },
       });
       const id = newId();
@@ -706,6 +835,7 @@ describe('the round trip', () => {
         stateDir,
         log,
         delivery: delivery(),
+        blackboard: stubBlackboard(SESSIONS),
         queries: {
           ...queries(),
           sessionDiff: () =>
@@ -862,7 +992,14 @@ describe('authentication (the done-when: the pipe refuses an unauthenticated cli
     // `vi.advanceTimersByTimeAsync`, which does not drive libuv's socket
     // teardown, and it passed against a mutant with the reclaim removed
     // entirely.
-    const short = new BusHost({ stateDir, log, replyLingerMs: 60, queries: queries(), delivery: delivery() });
+    const short = new BusHost({
+      stateDir,
+      log,
+      replyLingerMs: 60,
+      queries: queries(),
+      delivery: delivery(),
+      blackboard: stubBlackboard(SESSIONS),
+    });
     const id = newId();
     try {
       const ep = await short.registerSession(id);
@@ -1077,6 +1214,7 @@ describe('the in-flight bound (#772)', () => {
       answerDeadlineMs: 60,
       answerBackstopMs: 200,
       delivery: delivery(),
+      blackboard: stubBlackboard(),
       queries: {
         ...queries(),
         sessionDiff: () =>
@@ -1117,6 +1255,7 @@ describe('the in-flight bound (#772)', () => {
       log,
       answerBackstopMs: 120,
       delivery: delivery(),
+      blackboard: stubBlackboard(SESSIONS),
       queries: queries(),
     });
     const id = newId();
@@ -1202,6 +1341,7 @@ describe('the in-flight bound (#772)', () => {
       log,
       answerDeadlineMs: 60,
       delivery: delivery(),
+      blackboard: stubBlackboard(SESSIONS),
       queries: {
         ...queries(),
         sessionDiff: () =>
@@ -1353,6 +1493,7 @@ describe('the idle deadline', () => {
       idleTimeoutMs: 60,
       queries: queries(),
       delivery: delivery(),
+      blackboard: stubBlackboard(SESSIONS),
     });
     try {
       const ep = await short.registerSession(newId());
