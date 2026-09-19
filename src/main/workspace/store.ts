@@ -28,7 +28,14 @@ import {
   isSaneHistoryRepair,
   MAX_HISTORY_REPAIR_NOTICES,
 } from '../../shared/history-repair';
-import { WindowState, mergeState, isOnAnyDisplay } from '../window-state';
+import {
+  ArrangementMemories,
+  MAX_REMEMBERED_ARRANGEMENTS,
+  WindowState,
+  isOnAnyDisplay,
+  mergeState,
+  rememberArrangement,
+} from '../window-state';
 import type { CliCost } from '../../shared/transcripts';
 import { UpdatePrefs } from '../../shared/update';
 import { ServiceHealthPrefs } from '../../shared/service-health';
@@ -165,6 +172,16 @@ export interface PersistedGroup {
 
 export interface PersistedWindow extends WindowState {
   displayFingerprint: string;
+  /**
+   * Where the window sat on each display arrangement we have seen (#864).
+   *
+   * `bounds`/`displayFingerprint` above are the LAST save, whatever the
+   * monitors were doing at the time; this is the per-arrangement memory that
+   * survives one of them going to sleep. Optional because every workspace file
+   * written before this existed has no such key, and a first launch has nothing
+   * to remember.
+   */
+  arrangements?: ArrangementMemories;
 }
 
 // The notification prefs record moved to `shared/notifications.ts` in #618,
@@ -1014,7 +1031,30 @@ export class WorkspaceStore {
   }
 
   setWindow(w: PersistedWindow): void {
-    this.state.window = w;
+    // The per-arrangement map is the STORE's to keep, not the caller's to
+    // supply, and that is what closes #864's permanent half. Every save during
+    // a monitor shuffle carries the fingerprint of the arrangement it is
+    // actually on, so a shoved-onto-the-primary position can only ever
+    // overwrite the PRIMARY's own note. The two-monitor rectangle survives the
+    // interlude untouched, because nothing that happens while that monitor is
+    // asleep is ever written under its key.
+    //
+    // No bounds (a rescued window centred by Electron) records nothing: there
+    // is no position worth remembering, and writing one would teach the map a
+    // rectangle the user never chose.
+    const arrangements = w.bounds
+      ? rememberArrangement(this.state.window?.arrangements ?? {}, w.displayFingerprint, {
+          bounds: w.bounds,
+          isMaximized: w.isMaximized,
+        })
+      : (this.state.window?.arrangements ?? {});
+    // Omitted rather than written as `{}` — a workspace file from before this
+    // existed should round-trip unchanged, and `save()` serializes this object
+    // verbatim, so an empty map here would put the key on disk anyway.
+    this.state.window = {
+      ...w,
+      ...(Object.keys(arrangements).length > 0 ? { arrangements } : {}),
+    };
     this.saveSoon();
   }
 
@@ -1242,11 +1282,36 @@ export class WorkspaceStore {
   restoreWindow(currentWorkAreas: Rectangle[]): WindowState {
     const w = this.state.window;
     if (!w) return { bounds: null, isMaximized: false };
-    const sameArrangement = w.displayFingerprint === displayFingerprint(currentWorkAreas);
+    const fingerprint = displayFingerprint(currentWorkAreas);
+    const sameArrangement = w.displayFingerprint === fingerprint;
+    // A note earned on the arrangement we are booting INTO beats the last-saved
+    // rectangle, and that gap is #864's persistence half: quit while the
+    // monitors are asleep and the last save is the shoved primary position, but
+    // the note for this arrangement still remembers where the window lived.
+    // Only consulted when the arrangement differs — if it matches, the last
+    // save was made on these very displays and is the better answer.
+    const remembered = w.arrangements?.[fingerprint];
+    if (!sameArrangement && remembered && isOnAnyDisplay(remembered.bounds, currentWorkAreas)) {
+      return { bounds: { ...remembered.bounds }, isMaximized: remembered.isMaximized };
+    }
     if (w.bounds && (sameArrangement || isOnAnyDisplay(w.bounds, currentWorkAreas))) {
       return { bounds: w.bounds, isMaximized: w.isMaximized };
     }
     return { bounds: null, isMaximized: w.isMaximized }; // rescue, keep maximized
+  }
+
+  /**
+   * Bounds remembered per display arrangement (#864) — read by the runtime
+   * restore when a display comes back. Deep-copied: callers must not be able to
+   * edit the store's memory in place.
+   */
+  rememberedArrangements(): ArrangementMemories {
+    const from = this.state.window?.arrangements ?? {};
+    const out: ArrangementMemories = {};
+    for (const [fp, entry] of Object.entries(from)) {
+      out[fp] = { bounds: { ...entry.bounds }, isMaximized: entry.isMaximized };
+    }
+    return out;
   }
 
   /**
@@ -1814,6 +1879,36 @@ function sanitizePush(p: unknown): Repaired<PushPrefs> {
   };
 }
 
+/**
+ * The per-arrangement map, entry by entry (#864).
+ *
+ * `mergeState` is reused as the per-entry judge rather than re-deriving what a
+ * usable rectangle is — it already enforces finite numbers, the minimum window
+ * size, and integer rounding, and having two answers to that question is how
+ * they drift apart. An entry that fails is dropped alone; the rest of the map
+ * is still good, and losing every remembered monitor because one key rotted
+ * would be a worse trade than saying so in the log.
+ */
+function sanitizeArrangements(raw: unknown): Repaired<ArrangementMemories> {
+  if (raw === undefined || raw === null) return { value: {}, repaired: [] };
+  if (typeof raw !== 'object' || Array.isArray(raw)) return { value: {}, repaired: ['arrangements'] };
+  const out: ArrangementMemories = {};
+  let dropped = false;
+  for (const [fp, entry] of Object.entries(raw as Record<string, unknown>)) {
+    const merged = mergeState(entry);
+    if (!fp || !merged.bounds) {
+      dropped = true;
+      continue;
+    }
+    out[fp] = { bounds: merged.bounds, isMaximized: merged.isMaximized };
+  }
+  // A hand-edited file could carry more arrangements than we would ever write.
+  const keys = Object.keys(out);
+  const overflow = keys.slice(0, Math.max(0, keys.length - MAX_REMEMBERED_ARRANGEMENTS));
+  for (const stale of overflow) delete out[stale];
+  return { value: out, repaired: dropped || overflow.length > 0 ? ['arrangements'] : [] };
+}
+
 function sanitizeWindow(w: unknown): Repaired<PersistedWindow | null> {
   // No saved window at all — a first launch. Not a repair.
   if (w === undefined || w === null) return { value: null, repaired: [] };
@@ -1828,5 +1923,15 @@ function sanitizeWindow(w: unknown): Repaired<PersistedWindow | null> {
   // that were WRITTEN and came back unusable — non-finite, or below the minimum
   // size mergeState enforces — count as a repair.
   if (bounds !== undefined && bounds !== null && merged.bounds === null) repaired.unshift('bounds');
-  return { value: { ...merged, displayFingerprint: fp }, repaired };
+  const arrangements = sanitizeArrangements((w as { arrangements?: unknown }).arrangements);
+  return {
+    value: {
+      ...merged,
+      displayFingerprint: fp,
+      // omitted rather than written as `{}` — a file from before #864 should
+      // round-trip unchanged, not grow an empty key on its first load
+      ...(Object.keys(arrangements.value).length > 0 ? { arrangements: arrangements.value } : {}),
+    },
+    repaired: [...repaired, ...arrangements.repaired],
+  };
 }

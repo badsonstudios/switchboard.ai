@@ -3,6 +3,21 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔧 IN PROGRESS — 2026-09-19: **#864** — the main window forgets its monitor after display sleep
+>
+> Branch `feature/864-main-window-display-restore`. Owner dogfood report: when
+> his monitors sleep and wake, switchboard's main window comes back on the
+> PRIMARY display while every other app returns to where it was.
+>
+> **The asymmetry is the whole ticket.** Popouts got display-departure rescue
+> and a display-return offer (E8-02 / E8-06); the main window got a boot-time
+> restore and nothing else. Between boot and close nobody watches where the OS
+> shoves it, so the post-shuffle primary position quietly becomes its new truth —
+> and if the app closes before the next wake, that position is what gets
+> persisted, making the demotion permanent across launches too.
+>
+> **Flip this heading when it lands.** A heading nobody flips is a quiet lie.
+
 > # ✅ MERGED — 2026-09-19: **#801** — P2-E11-12 · Level 3 fork-session adoption
 >
 > **PR #866, squashed to `922915f`.** Issue closed by `Closes #801`, and **#838

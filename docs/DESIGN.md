@@ -3122,6 +3122,16 @@ context transfer, and the attention queue work across monitors.
 - **Reconnect offer**: when a known display fingerprint reappears, the Feed offers
   one-click "restore layout?" — never automatic (the new display might be a
   projector).
+- **The MAIN window returns by itself** (#864), and is the deliberate exception to
+  the line above. Its bounds are remembered per display fingerprint, and when a
+  known arrangement reappears it goes back with no offer and no prompt. Monitor
+  sleep is usually a real detach, so without this the OS's shuffle onto the
+  primary becomes the window's new saved position — permanently, if the app quits
+  before the monitor returns. The projector worry does not apply: an arrangement
+  we have never seen is left alone, so only a return to somewhere the window has
+  already lived moves it. Popouts keep the consent gate; they are a layout, and a
+  layout landing on an unexpected display is a mess to undo, while one window
+  going back where it was is what every other app on the machine does.
 - **Topology-aware layouts**: named layouts can bind to a display-topology
   fingerprint; on startup the matching layout applies automatically ("3-monitor
   desk" vs "laptop only" — the docking-station commute solved).

@@ -192,6 +192,117 @@ describe('missing-display rescue (done-when part 2)', () => {
   });
 });
 
+describe('per-arrangement window memory (#864: monitor sleep)', () => {
+  const twoMonitors = () => displayFingerprint([primary, left]);
+  const oneMonitor = () => displayFingerprint([primary]);
+  const onLeft = { x: -1800, y: 50, width: 800, height: 600 };
+  const shoved = { x: 100, y: 100, width: 800, height: 600 };
+
+  /** the window living on the left-hand monitor, saved there */
+  const atTheDesk = (st: ReturnType<typeof makeStore>) =>
+    st.setWindow({ bounds: onLeft, isMaximized: false, displayFingerprint: twoMonitors() });
+
+  it('the shuffle-time save cannot overwrite the sleeping monitor note', () => {
+    const st = makeStore(file);
+    st.load();
+    atTheDesk(st);
+    // the monitor sleeps: Windows shoves the window onto the primary and every
+    // move saves it there, under the ONE-monitor fingerprint
+    st.setWindow({ bounds: shoved, isMaximized: false, displayFingerprint: oneMonitor() });
+
+    expect(st.rememberedArrangements()[twoMonitors()].bounds).toEqual(onLeft);
+  });
+
+  it('relaunching into the returned arrangement restores the remembered monitor', () => {
+    const a = makeStore(file);
+    a.load();
+    atTheDesk(a);
+    a.setWindow({ bounds: shoved, isMaximized: false, displayFingerprint: oneMonitor() });
+    a.save(); // quit while the monitors are still asleep
+
+    const b = makeStore(file); // relaunch after they wake
+    b.load();
+    expect(b.restoreWindow([primary, left]).bounds).toEqual(onLeft);
+  });
+
+  it('the last save still wins when the arrangement never changed', () => {
+    const st = makeStore(file);
+    st.load();
+    atTheDesk(st);
+    const moved = { x: -1700, y: 80, width: 900, height: 700 };
+    st.setWindow({ bounds: moved, isMaximized: false, displayFingerprint: twoMonitors() });
+    expect(st.restoreWindow([primary, left]).bounds).toEqual(moved);
+  });
+
+  it('a rescued window (no bounds) records nothing', () => {
+    const st = makeStore(file);
+    st.load();
+    atTheDesk(st);
+    st.setWindow({ bounds: null, isMaximized: false, displayFingerprint: oneMonitor() });
+    expect(st.rememberedArrangements()[oneMonitor()]).toBeUndefined();
+    expect(st.rememberedArrangements()[twoMonitors()].bounds).toEqual(onLeft);
+  });
+
+  it('round-trips through a save/load', () => {
+    const a = makeStore(file);
+    a.load();
+    atTheDesk(a);
+    a.save();
+    const b = makeStore(file);
+    b.load();
+    expect(b.rememberedArrangements()[twoMonitors()].bounds).toEqual(onLeft);
+  });
+
+  it('a file written before this existed loads without growing the key', () => {
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        version: 1,
+        sessions: [],
+        window: { bounds: onLeft, isMaximized: false, displayFingerprint: twoMonitors() },
+      })
+    );
+    const st = makeStore(file);
+    st.load();
+    expect(st.rememberedArrangements()).toEqual({});
+    expect(st.restoreWindow([primary, left]).bounds).toEqual(onLeft);
+  });
+
+  it('a corrupt entry is dropped alone, not the whole map', () => {
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        version: 1,
+        sessions: [],
+        window: {
+          bounds: onLeft,
+          isMaximized: false,
+          displayFingerprint: twoMonitors(),
+          arrangements: {
+            [twoMonitors()]: { bounds: onLeft, isMaximized: false },
+            rotten: { bounds: { x: 0, y: 0, width: NaN, height: 10 }, isMaximized: false },
+          },
+        },
+      })
+    );
+    const st = makeStore(file);
+    st.load();
+    const kept = st.rememberedArrangements();
+    expect(kept[twoMonitors()].bounds).toEqual(onLeft);
+    expect(kept.rotten).toBeUndefined();
+    // that the drop is also AUDIBLE is asserted where the rest of the
+    // never-a-silent-repair rule lives — see the #344 describe below
+  });
+
+  it('callers cannot edit the store memory through what they are handed', () => {
+    const st = makeStore(file);
+    st.load();
+    atTheDesk(st);
+    st.rememberedArrangements()[twoMonitors()].bounds.x = 999;
+    expect(st.rememberedArrangements()[twoMonitors()].bounds.x).toBe(onLeft.x);
+  });
+});
+
 describe('persistent groups (P2-E12-01: durable containers, empty ≠ gone)', () => {
   const grp = (id: string, name = id) => ({ id, name, color: '#4a90d9' });
 
@@ -1284,6 +1395,29 @@ describe('load-time repairs are audible (#344)', () => {
   });
 
   describe('field-level repairs', () => {
+    // #864: the remembered-monitor map is the newest thing that can rot, and it
+    // rots one entry at a time. Losing every remembered monitor because one key
+    // went bad would be a worse trade than saying so — so the drop is partial,
+    // and it is still audible.
+    it('a rotten remembered-monitor entry is named, and the rest of the map survives', () => {
+      write({
+        version: 1,
+        sessions: [],
+        window: {
+          bounds: { x: 10, y: 20, width: 1200, height: 800 },
+          isMaximized: false,
+          displayFingerprint: 'fp',
+          arrangements: {
+            good: { bounds: { x: 10, y: 20, width: 1200, height: 800 }, isMaximized: false },
+            rotten: { bounds: { x: 0, y: 0, width: NaN, height: 10 }, isMaximized: false },
+          },
+        },
+      });
+      const warns = loadWarns();
+      expect(warns).toHaveLength(1);
+      expect(warns[0].fields).toMatchObject({ unusable: ['arrangements'] });
+    });
+
     it('dropped session entries are counted', () => {
       write({ version: 1, sessions: [sess('ok'), { id: 42 }, 'x'] });
       const warns = loadWarns();
