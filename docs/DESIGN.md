@@ -461,9 +461,69 @@ Now sessions are genuinely aware of each other: the TradingApp agent can *ask* w
 PropaneMon agent changed. This runs on the subscription like everything else — MCP tool
 calls are just tool calls inside a normal Claude Code session.
 
-> **AS BUILT 2026-09-08 (P2-E11-04, #764) — the two READS are shipped;
-> `send_to_session` and the blackboard are not.** *(`send_to_session` shipped
-> in #765 — see its as-built note under "Delivery policy" below.)* `list_sessions` landed with
+> **AS BUILT (P2-E11-06, #796) — the blackboard, and the four decisions it was filed
+> with.** The ticket shipped scope, persistence, caps and the keyless `read` as open
+> questions to be *named rather than inherited*; here is what they became.
+>
+> **The tools are `blackboard_publish` / `blackboard_read`, not the bare
+> `publish` / `read` this list writes.** A deliberate deviation. Tool NAMES are what an
+> agent matches on before it ever fetches a schema (#760 §6), and a bare `read` sits
+> directly beside the CLI's own file-reading `Read` — #800 had just measured what
+> overlapping tools cost, which is a worse ANSWER rather than an error, and nothing
+> surfaces that. The prefix makes the pair unmistakable and keeps them adjacent in a
+> listing.
+>
+> **Scope: one workspace-wide keyspace**, every entry attributed to the publishing
+> session — resolved from the TOKEN, never from the child's `--session` argv, so the
+> author of a note is a property rather than a claim. The publisher's NAME is resolved
+> at read time rather than stored, so a card renamed between publish and read does not
+> send its reader looking for a session listed under something else.
+>
+> **Persistence: in memory, for the life of the app — NOT the workspace store**, and
+> the reasons are ordered by weight. A restart has already destroyed the pipeline
+> (restore yields SUSPENDED records; nothing is running), so notes that survived would
+> be attributed to sessions that no longer exist. Persisting would put disk I/O inside a
+> tool call on the main thread, which is the cost #772 measured and bounded. It would
+> also put agent-written content into `workspace.json`, which `SIBLING_INBOX_CHAR_CAP`
+> already worries about for the same file. And it is the reversible direction: adding
+> persistence later is additive, removing it after agents have written to the workspace
+> file is not.
+>
+> **Caps refuse, never truncate** — key 128, value 20,000, 100 keys, 100,000 characters
+> overall. A truncated note still reads as a complete one (`SIBLING_MESSAGE_CHAR_CAP`'s
+> own argument), and the publishing agent can shorten its own text better than we can.
+> The total is charged against *what the write would leave behind*, so an overwrite that
+> SHRINKS a value is not refused by a full board — the one accounting bug that would
+> make a full board impossible to empty.
+>
+> **A keyless `read` LISTS the board**, which the ticket named as the case that matters:
+> an agent joining a pipeline late has no other way to discover what is there. The
+> listing carries key, publisher, size and age but **not** the values, so discovery
+> costs a bounded answer rather than the whole ceiling. Only an ABSENT key takes that
+> branch — a key that is present but malformed is refused, because listing for it would
+> answer a question the agent did not ask.
+>
+> **Why this is outside §5.4's human-keypress rule rather than an exception to it:** that
+> rule is about `send_to_session` injecting into a sibling's composer. This is the other
+> shape — a write nobody receives. **Publishing never causes execution, delivery or
+> notification in another session:** there is no composer on the path, no submit, no IPC
+> and no renderer consumer, so nothing reaches a session that did not call the read tool
+> itself. *(Narrowed after review, which was right that the first version — "a session
+> that never reads cannot be affected by one that publishes" — claimed more than is true
+> and would have been quoted back later. The caps are workspace-global, so a session
+> looping on generated keys can exhaust them and make a sibling's next publish fail, and
+> the namespace is shared, so one session may overwrite another's key. Both are bounded
+> and neither is execution; attribution on every answer is what keeps them honest.)*
+> The receipt says so in as many words
+> ("NOBODY HAS BEEN TOLD") and points at `send_to_session` for when a person is what is
+> actually wanted, because the neighbouring tool promising delivery is exactly what makes
+> that mistake available.
+
+> **AS BUILT 2026-09-08 (P2-E11-04, #764) — the two READS are shipped.**
+> *(`send_to_session` shipped in #765 — see its as-built note under "Delivery
+> policy" below. The blackboard shipped in #796; its note follows this one. This
+> sentence read "`send_to_session` and the blackboard are not" until both were
+> built, which is how a true line becomes a false one by standing still.)* `list_sessions` landed with
 > #762/#763. This item added `get_session_output` and `get_session_diff` as thin
 > wrappers over the query core (#761), which owns every cap and every refusal so
 > that the composer's `@session` path gets the same answers rather than growing

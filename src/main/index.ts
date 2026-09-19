@@ -81,6 +81,7 @@ import { resolveMentions } from './sessions/mention-resolve';
 import { buildContextOffer } from './sessions/context-drop';
 import { renderOutput } from './bus/bus-tools';
 import { SiblingDelivery } from './sessions/delivery';
+import { Blackboard } from './sessions/blackboard';
 import { pushSiblingMessage, registerDeliveryIpc } from './sessions/delivery-ipc';
 import { runPreflight } from './preflight';
 import { startStaticServer, StaticServer } from './static-server';
@@ -1952,10 +1953,17 @@ app
         message
       ) => siblingDelivery.send(callerId, ref, message);
     }
+    // The shared scratchpad (#796). In-memory for the life of the app and owned
+    // here, so it dies with the process it belongs to — see `blackboard.ts` for
+    // why it is deliberately not in the workspace store. It reads the session
+    // list through the SAME query core the bus answers `list_sessions` from, so
+    // a publisher's name on the board and in that list cannot disagree.
+    const blackboard = new Blackboard({ sessions: () => sessionQueries.listSessions() });
     const busHost = new BusHost({
       stateDir,
       queries: sessionQueries,
       delivery: siblingDelivery,
+      blackboard,
       log: busLog,
     });
 

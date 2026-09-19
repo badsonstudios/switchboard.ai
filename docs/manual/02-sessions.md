@@ -313,6 +313,8 @@ There are three things a session can find out:
 - **Everything another session would need to carry on** — the handoff described
   in [Handing one session's work to another](#handing-one-sessions-work-to-another)
   below. A session can ask for that itself, without you dragging anything.
+- **Notes other sessions have left** — see [The shared
+  board](#the-shared-board) below.
 
 So you can say things like *"what has Homebrew been working on?"* or *"look at
 the changes PropaneMon made and tell me if they'd break my build"*, and the
@@ -438,6 +440,45 @@ ended, was closed while the message was on its way, or there's no window open
 to show it). It's told not to wait for a reply
 — nothing comes back automatically. If you want the answer, look at the other
 session, or ask the first one to read what the other has been doing.
+
+## The shared board
+
+Sessions can also leave each other **notes**, on a board they all share. (A
+session will usually call it the **blackboard** — that's the same thing.) A
+session pins a note under a short name it picks — *build-status*,
+*schema-decision* — and any other session in the workspace can look that name up
+later, or ask what's on the board if it doesn't know what to look for.
+
+This is for the case where you've deliberately set two or three sessions up to
+work in sequence: one finishes a piece and leaves the result where the next one
+will find it, without you carrying it across.
+
+**Nothing is delivered and nobody is interrupted.** A note doesn't appear in
+anyone's prompt box, nothing is sent, and no session is told it's there — it
+just sits until another session goes looking. That's the difference between a
+note and a message: [a message](#sessions-can-message-each-other) waits for your
+Enter because it's aimed at someone, and a note is aimed at whoever comes
+looking.
+
+A session reading a note is told who left it and when — and if that session has
+since finished, it's told that too, so it doesn't try to go back and ask a
+session that's no longer there.
+
+**Good to know:**
+
+- **The board is cleared when you quit.** It's for work in flight, not a
+  filing cabinet. If something matters tomorrow, have the session write it into
+  the project.
+- **Notes are capped**, and a session trying to pin something too big is told
+  so plainly rather than having it quietly cut in half. The same goes for
+  leaving too many.
+- **Pinning the same name twice replaces it** — and *any* session can replace
+  *any* name, not just the one that pinned it first. That's deliberate: it's how
+  a session keeps a running status up to date. A session reading a note is
+  always told who left the version it's holding, so it can tell.
+- **The board is shared, so one session can fill it.** A session that pins a
+  great many notes can use up the room, and then another session's attempt to
+  pin one is refused — with an explanation, not silently.
 
 ## Handing one session's work to another
 

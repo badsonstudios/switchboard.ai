@@ -10,6 +10,7 @@
 // So the DEFAULTS here are deliberately dull and deliberately succeed: a stub
 // that refused by default would make every test that forgot to override it pass
 // for the wrong reason. A test that cares about a refusal states it.
+import { Blackboard } from '../../sessions/blackboard';
 import type { BusQueries } from '../host-channel';
 import type { SessionSummary } from '../../sessions/queries';
 import type { BusDelivery } from '../../sessions/delivery';
@@ -67,6 +68,20 @@ export function stubDelivery(
     },
     ...over,
   };
+}
+
+/**
+ * A real `Blackboard` over a stub session list (#796).
+ *
+ * NOT a hand-written fake, deliberately — unlike the queries above. The
+ * blackboard's whole substance IS its policy (caps, overwrite, the miss that
+ * names real keys), so a fake would be a reimplementation of the thing under
+ * test, which is the "fixture built from the value it claims to verify" shape
+ * this repo has been bitten by. It takes no I/O and no clock of its own, so the
+ * real one is as cheap as a fake.
+ */
+export function stubBlackboard(sessions: SessionSummary[] = STUB_SESSIONS): Blackboard {
+  return new Blackboard({ sessions: () => ({ ok: true, value: sessions }) });
 }
 
 export function stubQueries(over: Partial<BusQueries> = {}): BusQueries {

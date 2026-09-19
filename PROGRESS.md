@@ -3,6 +3,27 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔵 IN PROGRESS — started 2026-09-18: **#796** — P2-E11-06 · Blackboard `publish`/`read`
+>
+> The shared scratchpad §5.4 gives pipelines: sessions leave each other durable
+> notes without a send that needs a human keypress. Size **S**. Its one
+> dependency (#764, the read tools) is closed. Branch `feature/796-blackboard`.
+>
+> **This ticket deliberately ships with FOUR OPEN DECISIONS** — scope,
+> persistence, caps, and what a no-key `read` does — which it says must be named
+> rather than inherited silently. They are answered in a plan comment on the
+> issue before implementing.
+>
+> **One thing in the ticket is being questioned rather than followed, and it is
+> recorded here in case that turns out wrong:** the done-when asks for the
+> round-trip to be proved by a local `check:*` script and explicitly NOT in CI.
+> But `check:bus` already runs in CI precisely because it drives our own server
+> with no model turn and no login — and `check-scripts.test.ts`'s `LOCAL_ONLY`
+> sets a high bar for exemption ("needs a real model turn" or "needs interactive
+> login" — never "it is slow"). A blackboard round-trip clears neither bar, so a
+> new local-only script would be an exemption with no reason behind it.
+> Resolution and rationale go in the plan comment and the PR.
+
 > # ✅ MERGED — 2026-09-18: **#800** — P2-E11-11 · `get_session_context`, the agent-pulled context handoff
 >
 > **PR #859, squashed to `8a4ec65`.** Issue closed by `Closes #800`; **#801 was

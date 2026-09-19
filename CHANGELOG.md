@@ -148,6 +148,19 @@ on the floor, and say so in your PR.
   A session that has nothing recorded yet is told so plainly, rather than being
   handed a blank document that looks like a real one.
 
+- **Sessions can leave each other notes on a shared board.** A session can now
+  pin a short note under a name it chooses — a build result, a decision, the
+  thing the next stage needs — and any other session in the workspace can look
+  it up later, or list what's on the board if it wants to find out what's there.
+  It's meant for the case where you've set two or three sessions up to work in
+  sequence.
+
+  **Nobody is interrupted by it.** A note isn't delivered, doesn't appear in
+  anyone's prompt box, and nothing is sent — it simply sits there until another
+  session goes looking. A session reading a note is told who left it and when,
+  and told if that session has since finished, so it doesn't try to go back and
+  ask a session that's gone. The board is cleared when you quit the app.
+
 ### Fixed
 
 - **Previous conversations are described by what you asked, not by markup.** In

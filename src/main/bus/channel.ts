@@ -45,6 +45,8 @@ export const BUS_OPS = [
   'get_session_diff',
   'send_to_session',
   'get_session_context',
+  'blackboard_publish',
+  'blackboard_read',
 ] as const;
 
 export type BusOp = (typeof BUS_OPS)[number];
@@ -87,3 +89,23 @@ export const MESSAGE_ARG = 'message';
  * `SessionQueries` does, once, and refuses with a reason naming the valid ones.
  */
 export const DETAIL_ARG = 'detail_level';
+
+/**
+ * The blackboard's argument names (#796) — re-exported from `shared/blackboard.ts`
+ * rather than declared twice.
+ *
+ * They live in `shared/` because the CAPS beside them have to: `bus-tools.ts`
+ * quotes the value limit in a tool description, and the number an agent is told
+ * must be the number the host enforces. Re-exported here so every other reader
+ * of this channel finds its whole vocabulary in one file.
+ *
+ * ⚠️ **The TOOL NAMES are `blackboard_publish` / `blackboard_read`, while
+ * DESIGN §5.4 writes the concept as `publish(key, value)` / `read(key)`.** A
+ * deliberate deviation, recorded rather than silent: MCP tool names are what an
+ * agent matches on before it ever fetches a schema (#760 §6), and a bare `read`
+ * sits directly beside the CLI's own file-reading `Read`. #800 measured what
+ * overlapping tools cost — the wrong pick returns a worse ANSWER rather than an
+ * error, which nothing surfaces. The prefix makes the pair unmistakable and
+ * keeps them adjacent in any listing.
+ */
+export { KEY_ARG, VALUE_ARG } from '../../shared/blackboard';

@@ -32,11 +32,21 @@ import net from 'net';
 import path from 'path';
 import { busEndpointFor, busTokenPath } from './bus-paths';
 import { busLaunch, type BusLaunch } from './launch';
-import { CHANNEL_VERSION, DETAIL_ARG, MESSAGE_ARG, SESSION_ARG, isBusOp, type BusOp } from './channel';
+import {
+  CHANNEL_VERSION,
+  DETAIL_ARG,
+  KEY_ARG,
+  MESSAGE_ARG,
+  SESSION_ARG,
+  VALUE_ARG,
+  isBusOp,
+  type BusOp,
+} from './channel';
 import { LineReader, MAX_LINE_BYTES } from './protocol';
 import type { Logger } from '../log/logger';
 import type { SessionQueries } from '../sessions/queries';
 import type { BusDelivery } from '../sessions/delivery';
+import type { Blackboard } from '../sessions/blackboard';
 
 /**
  * Just enough of `SessionQueries` to be callable with a test double.
@@ -66,6 +76,14 @@ export interface BusHostOptions {
    * call, with the whole suite green. Required makes that a compile error.
    */
   delivery: BusDelivery;
+  /**
+   * The shared scratchpad (#796). REQUIRED for `delivery`'s reason, and it is
+   * the same reasoning worth repeating: its only production caller is
+   * `main/index.ts`, which has no tests, so an optional field there could be
+   * left out and the app would ship a blackboard that refused every call with
+   * the whole suite green. Required makes that a compile error.
+   */
+  blackboard: Blackboard;
   log: Logger;
   /**
    * How long a replied-to connection may linger. Absent = `REPLY_LINGER_MS`.
@@ -206,6 +224,8 @@ type HostReply =
   | { ok: true; callerId: string; output: unknown }
   | { ok: true; callerId: string; diff: unknown }
   | { ok: true; callerId: string; context: unknown }
+  | { ok: true; callerId: string; published: unknown }
+  | { ok: true; callerId: string; board: unknown }
   | { ok: true; callerId: string; delivery: unknown }
   /**
    * `uncertain` (#765 review): this refusal is "I gave up waiting", not "the
@@ -938,6 +958,31 @@ export class BusHost {
           const result = this.opts.queries.sessionContextFor(ref, args[DETAIL_ARG]);
           if (!result.ok) return { ok: false, reason: result.reason };
           return { ok: true, callerId: caller, context: result.value };
+        }
+        case 'blackboard_publish': {
+          // `caller`, FROM THE TOKEN — never anything the child said about
+          // itself. It is the attribution every future reader of this note will
+          // be shown, so it is the one argument here that must not be a claim.
+          // The key and the value go through untouched: `Blackboard` owns every
+          // cap and every refusal, for the reason `ref` is not validated here.
+          const result = this.opts.blackboard.publish(caller, args[KEY_ARG], args[VALUE_ARG]);
+          if (!result.ok) return { ok: false, reason: result.reason };
+          return { ok: true, callerId: caller, published: result.value };
+        }
+        case 'blackboard_read': {
+          // ABSENT KEY IS THE DISCOVERY CALL, not a malformed read — §5.4's
+          // "how does an agent that joined late find out what is there". Only
+          // `undefined` takes that branch: a key that is present but wrong
+          // (a number, an empty string) must reach the policy and be REFUSED
+          // there, because silently listing the board for it would answer a
+          // question the agent did not ask.
+          const key = args[KEY_ARG];
+          const result = key === undefined ? this.opts.blackboard.list() : this.opts.blackboard.read(key);
+          if (!result.ok) return { ok: false, reason: result.reason };
+          const board = Array.isArray(result.value)
+            ? { kind: 'list', rows: result.value }
+            : { kind: 'entry', ...result.value };
+          return { ok: true, callerId: caller, board };
         }
         case 'send_to_session': {
           // `caller`, from the TOKEN — never anything the child said about
