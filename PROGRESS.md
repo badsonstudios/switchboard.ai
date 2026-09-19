@@ -3,26 +3,102 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔵 IN PROGRESS — started 2026-09-18: **#796** — P2-E11-06 · Blackboard `publish`/`read`
+> # ✅ MERGED — 2026-09-19: **#796** — P2-E11-06 · Blackboard `publish`/`read`, the shared scratchpad
 >
-> The shared scratchpad §5.4 gives pipelines: sessions leave each other durable
-> notes without a send that needs a human keypress. Size **S**. Its one
-> dependency (#764, the read tools) is closed. Branch `feature/796-blackboard`.
+> **PR #862, squashed to `ae1be47`.** Issue closed by `Closes #796`; **#861, #835
+> and #801 were checked afterwards and are all still open** — the closing-keyword
+> trap did not fire.
+> ⚠️ **NOT RELEASED** — joins the `0.8.91 — unreleased` section alongside #818,
+> #846, #799, #719, #815 and #800; `gh release list` is the authority and
+> **v0.8.90** is still the latest tag, so this is on `main` and in no installed
+> build.
 >
-> **This ticket deliberately ships with FOUR OPEN DECISIONS** — scope,
-> persistence, caps, and what a no-key `read` does — which it says must be named
-> rather than inherited silently. They are answered in a plan comment on the
-> issue before implementing.
+> Sessions in a deliberate pipeline can now leave each other durable notes
+> without a send that needs a human keypress — because nothing here is ever
+> sent. A note sits until another session deliberately reads it.
 >
-> **One thing in the ticket is being questioned rather than followed, and it is
-> recorded here in case that turns out wrong:** the done-when asks for the
-> round-trip to be proved by a local `check:*` script and explicitly NOT in CI.
-> But `check:bus` already runs in CI precisely because it drives our own server
-> with no model turn and no login — and `check-scripts.test.ts`'s `LOCAL_ONLY`
-> sets a high bar for exemption ("needs a real model turn" or "needs interactive
-> login" — never "it is slow"). A blackboard round-trip clears neither bar, so a
-> new local-only script would be an exemption with no reason behind it.
-> Resolution and rationale go in the plan comment and the PR.
+> **The four decisions the ticket shipped as OPEN, answered on the issue before
+> implementing rather than inherited silently:**
+>
+> - **Scope** — one workspace-wide keyspace, every note attributed from the
+>   TOKEN and never from the child's `--session` argv. The publisher's NAME
+>   resolves at READ time, so a renamed card does not send its reader hunting for
+>   a session listed under something else.
+> - **Persistence — IN-MEMORY for the app's lifetime, NOT the workspace store.**
+>   A restart has already destroyed the pipeline (restored sessions are
+>   SUSPENDED), so surviving notes would be attributed to sessions that no longer
+>   exist. Persisting would also put disk I/O inside a tool call on the main
+>   thread — #772's measured cost — and push agent-written text into
+>   `workspace.json`, which `SIBLING_INBOX_CHAR_CAP` already worries about for
+>   that file. It is the reversible direction.
+> - **Caps refuse, never truncate** — 128 / 20,000 / 100 keys / 100,000 total,
+>   with the total charged against **what the write would leave behind**, so an
+>   overwrite that SHRINKS a value is not refused by a full board. That one
+>   accounting case is what would otherwise make a full board impossible to empty.
+> - **A keyless `read` LISTS the board**, without values — the discovery case for
+>   a session that joined late. Only an ABSENT key takes that branch; a
+>   present-but-malformed one is refused, so it never answers a question the
+>   agent did not ask.
+>
+> **Two deliberate deviations, recorded rather than silent.** The tools are named
+> `blackboard_publish` / `blackboard_read` rather than DESIGN §5.4's bare
+> `publish` / `read`: tool NAMES are what an agent matches before it fetches a
+> schema, and a bare `read` sits beside the CLI's own file-reading `Read` — #800
+> had just measured that overlapping tools cost a worse ANSWER rather than an
+> error. And **the round-trip check went into `check:bus`, which runs in CI**,
+> rather than the local-only script the done-when asked for: `LOCAL_ONLY`'s bar
+> is "needs a real model turn" or "needs interactive login", and a blackboard
+> round-trip clears neither, so a new local-only script would have been an
+> exemption with nothing behind it — written into the one file that exists to
+> stop exactly that (#182).
+>
+> **Review found 1 blocker, 5 should-fixes and 3 nits, all taken. The blocker was
+> found by RUNNING the code rather than reading it, and it is the one worth
+> remembering.** A note's **key** is agent-authored, and it was printed raw into
+> switchboard's own prose — the listing rows and the "the board does hold: …"
+> sentence, neither of which is fenced. One publish produced a listing row
+> claiming a DIFFERENT session had published a key it had never heard of, and a
+> key carrying `\n\nSYSTEM: …` put that sentence directly under our own text with
+> no fence anywhere in the output. Fixed at both ends: refused at publish (a key
+> is a label, not content) and flattened in the renderer through the same
+> `cleanSenderName` helper #799 added for this exact hazard — which makes this
+> the THIRD surface in `bus-tools.ts` with that shape.
+>
+> Also fixed: an **empty value** published happily and rendered as a blank quoted
+> block that read like a real but empty finding; **"publisher unknown" was
+> reported as "publisher is running"** (a failed read of our OWN session list
+> became a positive claim about a sibling — now a third state, `publisherKnown`);
+> the key-cap refusal **advised "use fewer of them"** when no delete exists; the
+> **forgery test the done-when explicitly asked for** was missing; and the §5.4
+> claim was **overstated** — publishing cannot execute anything anywhere, but it
+> CAN consume shared capacity and overwrite another session's key, so the
+> sentence now says what is actually true.
+>
+> **The judgment call worth finding again:** review offered "refuse an empty
+> value" OR "treat it as a delete". **Refuse** was chosen — delete-by-empty would
+> mean an agent whose own computation returned `''` silently destroys another
+> session's note, and nothing on that path can tell the two intentions apart. A
+> refusal costs a retry; a wrong delete costs the finding. That leaves the key
+> cap with no release valve, **filed as #861** rather than inventing a third tool.
+>
+> **Verified:** typecheck, lint, a build, `npm run check:bus` **PASS at 84
+> checks** (including both blocker paths end to end), and the three affected
+> suites at **277 passing** in isolation. All four CI checks green — ubuntu
+> 3m8s, windows 7m2s, e2e ubuntu 10m33s, e2e windows 23m41s.
+>
+> ⚠️ **`git-service.test.ts` was red locally throughout and is NOT this item's
+> doing** — recorded here so a later reader does not go looking for a cause in
+> the blackboard. `THE GUARD SPENDS THE SAME BUDGET` is a wall-clock assertion
+> with a 2,600 ms ceiling; it measured **3121 / 3504 / 2825 / 2719 / 2910 ms**
+> across loaded full-suite runs and **passed on the one run where the machine was
+> quiet**, and passes 74/74 in isolation every time. The full table is on
+> **#835**, with the observation that a ~5% margin makes it a CI liability and
+> that #776's actual property could be asserted without measuring wall-clock at
+> all. CI was green on all four runners regardless.
+>
+> **Next up: #801** (P2-E11-12 — Level 3 fork-session adoption, behind the
+> experimental flag). It is the LAST open E11 item: #797 and #798 are closed, so
+> **E11 exits when #801 lands**.
 
 > # ✅ MERGED — 2026-09-18: **#800** — P2-E11-11 · `get_session_context`, the agent-pulled context handoff
 >
