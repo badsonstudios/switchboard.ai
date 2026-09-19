@@ -248,6 +248,37 @@ contract differs in three ways, each deliberate:
   - **A provider that declares no `mcp` capability spawns byte-identically** to
     the pre-E11 recipe — asserted as a whole-recipe comparison against literals,
     not merely "no new flag".
+- **`fork` is a sixth capability** *(added by P2-E11-12, #801, 2026-09-19)*. The CLI
+  can start a NEW conversation carrying an existing one's entire history, leaving the
+  original untouched — §5.5's Level 3. Shipped behind the experimental flag, off by
+  default.
+  - **Separate from `resume`, and the separation is the whole point.** Resume
+    CONTINUES a conversation: measured twice now (2026-08-15, and again here against
+    2.1.272) plain `--resume` re-adopts the id and APPENDS to the same transcript.
+    Fork MINTS a second conversation from the same history. A provider could easily
+    have the first without the second, and conflating them would let a Level 3
+    gesture degrade into a resume that writes into the SOURCE session's transcript —
+    the damaging failure, because "fork" failing open onto "resume in place" is
+    silent and destroys the thing it was asked to preserve.
+  - **The query carries the SOURCE's folder, not the target's**, which is why it is
+    not `ResumeQuery`. A resume always asks about the folder the session is starting
+    in; a fork's defining case is CROSS-FOLDER, and Claude's layout derives the
+    transcript directory from the folder path — so reusing the resume shape would
+    have looked right on every same-folder test and answered "no such conversation"
+    for the case the feature exists for.
+  - **The host pins the new id** (`--session-id`, which the CLI validates as a UUID)
+    rather than letting the fork mint one. Measured on the stream transport:
+    `system:init.session_id` comes back as exactly that value, so the card binds to
+    the FORK's transcript from the first frame. Left unpinned, the card's only
+    candidate until the id arrives is the SOURCE id — two cards, one transcript,
+    which is #484/#539 again.
+  - **Same-provider only**, per §5.5: transcript formats are not interchangeable, so
+    this must be unreachable from a cross-provider handoff. **Neither fake declares
+    it**, and that absence IS the gate — all three adapters register under one
+    provider id, so no id check could tell them apart.
+  - **What is measured versus assumed is written down**, per the standing rule:
+    `spike/findings/e11-801-fork-adoption.md`, against `claude` 2.1.272, with the
+    probes committed under `spike/probes/801/`.
 - **`titles` is a fifth capability** *(added by P2-E7-06, 2026-08-11)*. The CLI
   writes a title of the conversation into its own transcript and we display it
   as the task label (§5.11). Separate from `transcripts` because that one says
@@ -622,9 +653,43 @@ content into B's conversation as input, at a chosen fidelity:
   can be 100k+ tokens and would consume B's context window and rate limits.
 - **Level 3 — Full context adoption (experimental).** `claude --resume <id>
   --fork-session` starts a NEW session carrying A's entire conversation history.
-  Cross-folder variant: copy A's transcript into the target project's transcript dir,
-  then fork-resume there. Relies on undocumented storage layout — ship behind an
-  "experimental" flag.
+  Cross-folder variant: spawn in the TARGET folder and fork by id — the CLI resolves
+  the conversation across project directories and writes the new transcript into the
+  target's own directory. Relies on undocumented storage layout — ship behind an
+  "experimental" flag. *(Amended 2026-09-19, P2-E11-12 — see the as-built note.)*
+
+> **AMENDED 2026-09-19 (P2-E11-12, #801) — the cross-folder variant does NOT copy a
+> transcript, and this paragraph used to say it did.** The original read *"copy A's
+> transcript into the target project's transcript dir, then fork-resume there"*. That
+> was a design-time guess made before anyone drove the CLI, and it was the single
+> riskiest line in the feature: it would have made switchboard the first code in the
+> repo to WRITE into `~/.claude/projects`, a directory the CLI owns.
+>
+> **Measured instead** (claude **2.1.272**, two probes, `spike/probes/801/`, write-up
+> in `spike/findings/e11-801-fork-adoption.md`): `--resume <id> --fork-session
+> --session-id <uuid>`, spawned with the cwd set to the TARGET folder, carries the
+> source conversation's whole history, leaves the source transcript **byte-identical**
+> (sha256, size and mtime), and writes the fork into the **target** folder's project
+> directory. No copy, no path construction, nothing written into the CLI's tree.
+>
+> **The control variant is what settled it.** Cross-folder by absolute `.jsonl` path
+> works too — the file form of `--resume` is real, undocumented in `--help`, and has
+> its own telemetry entrypoint — but cross-folder by **plain id** works just as well,
+> because the CLI's resume resolver carries two cross-directory fallbacks
+> (`tengu_resume_worktree_fallback`, `tengu_transcript_id_scan_fallback`). Three ways
+> to express it; the one that invents nothing is the one that ships.
+>
+> **Why `--session-id` is pinned rather than letting the fork mint its own.** Measured
+> on the stream transport: `system:init.session_id` comes back as exactly the id we
+> passed. The host needs that id to bind the new card — left unpinned, the card's only
+> candidate until the id arrives is the SOURCE id, which would bind two cards to one
+> transcript (the §5.25 / #484 / #539 failure). Pinning it makes that impossible rather
+> than unlikely. The CLI validates it as a UUID and refuses anything else.
+>
+> **Still same-provider only**, unchanged: transcript formats are not interchangeable,
+> and the gate is a `fork` provider capability that only the Claude adapter declares.
+> Neither fake declares it — all three adapters register under one provider id, so the
+> absence IS the gate.
 - **Agent-pulled variant.** Session Bus MCP tool `get_session_context(session,
   detail_level)` lets B's agent request a handoff package mid-task on its own.
 

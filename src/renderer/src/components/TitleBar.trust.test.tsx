@@ -65,6 +65,8 @@ async function bar(opts: {
       layoutMaximized={false}
       onCycleLayoutMode={noop}
       layoutBinding="Ctrl+Alt+L"
+      experimentalFork={false}
+      onToggleExperimentalFork={noop}
       autoTrust={opts.autoTrust}
       trustReaches={opts.trustReaches}
       onToggleTrust={opts.onToggleTrust ?? noop}

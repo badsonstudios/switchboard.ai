@@ -293,6 +293,18 @@ const api = {
        * another card already has it.
        */
       resumeConversationId?: string;
+      /**
+       * Open this card as a FORK of another session's conversation (§5.5
+       * Level 3, P2-E11-12) — it starts carrying that conversation's whole
+       * history, and the original is left untouched.
+       *
+       * Experimental and off by default; main refuses this outright when the
+       * flag is off, rather than trusting the renderer not to send it.
+       *
+       * `sourceFolder` travels because the source may live in a DIFFERENT
+       * project folder from this card — that is the case the feature exists for.
+       */
+      forkFrom?: { sourceSessionId: string; sourceFolder: string };
     }): Promise<
       | (SessionRecordDto & {
           cardId: string;
@@ -774,6 +786,17 @@ const api = {
     getAutoLabels: (): Promise<boolean> => ipcRenderer.invoke('settings:getAutoLabels'),
     setAutoLabels: (on: boolean): Promise<boolean> =>
       ipcRenderer.invoke('settings:setAutoLabels', on),
+    /**
+     * §5.5 Level 3 — fork adoption (P2-E11-12). EXPERIMENTAL, off by default.
+     *
+     * When off the fork surface is ABSENT rather than disabled, so this is what
+     * the renderer asks before drawing it at all. Main does not trust the
+     * answer: it re-checks the flag before acting on any fork request.
+     */
+    getExperimentalFork: (): Promise<boolean> =>
+      ipcRenderer.invoke('settings:getExperimentalFork'),
+    setExperimentalFork: (on: boolean): Promise<boolean> =>
+      ipcRenderer.invoke('settings:setExperimentalFork', on),
   },
   preflight: {
     check: (): Promise<{

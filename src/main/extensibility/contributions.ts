@@ -87,6 +87,26 @@ export interface ProviderCapabilities {
    *  a fresh session, and a persisted native id is simply not used. */
   resume?: ResumeCapability;
   /**
+   * The CLI can FORK a conversation — start a new session carrying an existing
+   * one's whole history, leaving the original untouched (§5.5 Level 3,
+   * P2-E11-12). Absent: the fork surface is not offered at all.
+   *
+   * SEPARATE FROM `resume`, and the separation is the point. Resume CONTINUES a
+   * conversation — measured 2026-08-15 and again here: plain `--resume`
+   * re-adopts the id and APPENDS to the same transcript. Fork MINTS a second
+   * conversation from the same history. A provider could easily have the first
+   * without the second, and conflating them would let a Level 3 gesture fall
+   * through to a resume that writes into the source session's transcript —
+   * which is precisely the damaging failure #801 names.
+   *
+   * ⚠️ **LEVEL 3 IS SAME-PROVIDER ONLY.** DESIGN §5.5 records that transcript
+   * formats are not interchangeable across vendors, so this must never be
+   * reachable from a cross-provider handoff. Declaring the capability is how a
+   * provider says "these transcripts are mine and I can fork them"; an adapter
+   * that cannot must simply not declare it, and then no code path can offer it.
+   */
+  fork?: ForkCapability;
+  /**
    * The CLI needs the project folder prepared before it will work there —
    * Claude's per-folder trust acceptance (§5.9). Absent: nothing is done to the
    * folder, which is the right default; a provider that has never heard of
@@ -109,6 +129,43 @@ export interface ProviderCapabilities {
    * and later no read tools and no `send_to_session`.
    */
   mcp?: McpCapability;
+}
+
+/**
+ * Which conversation is being forked, and WHERE IT LIVES.
+ *
+ * ⚠️ `sourceFolder` IS THE SOURCE'S FOLDER, NOT THE TARGET'S, and that is the
+ * whole reason this is not `ResumeQuery`. A resume always asks about the folder
+ * the session is starting in; a fork's defining case is CROSS-FOLDER — session
+ * A's conversation adopted by a new session in folder B — so the two questions
+ * genuinely differ, and reusing the resume shape here would have sent the
+ * lookup to the wrong directory in exactly the case the feature exists for.
+ * (Claude's layout derives the directory name from the folder path, so asking
+ * about B would look in a directory A's transcript is not in and answer "no".)
+ */
+export interface ForkQuery {
+  /** the transcript root the HOST resolved and will read back from (#432) */
+  projectsRoot: string;
+  /** the folder the SOURCE conversation belongs to */
+  sourceFolder: string;
+  /** the conversation being forked FROM */
+  sourceSessionId: string;
+}
+
+export interface ForkCapability {
+  /**
+   * Is this conversation really there to be forked?
+   *
+   * Asked BEFORE the id reaches argv, for `ResumeCapability.canResume`'s reason:
+   * a stale id makes the CLI exit at spawn and the card crash. Measured
+   * behaviour on a missing conversation is a non-zero exit in under a second
+   * with `No conversation found with session ID: <id>` — fast and readable, but
+   * still a session that never starts, and the user asked for a specific one.
+   *
+   * MUST NOT THROW; a throw is caught at the call site and degrades the
+   * capability to absent for that start, which costs the fork and not the app.
+   */
+  canFork(query: ForkQuery): boolean;
 }
 
 export interface McpCapability {
@@ -352,6 +409,39 @@ export interface SpawnOptions {
   stateDir: string;
   /** provider-native session id to resume */
   resumeSessionId?: string;
+  /**
+   * FORK the resumed conversation instead of continuing it (§5.5 Level 3).
+   *
+   * Only meaningful alongside `resumeSessionId` — there is nothing to fork from
+   * otherwise, and the CLI's own help says so (`--fork-session`: *"When
+   * resuming, create a new session ID instead of reusing the original (use with
+   * --resume or --continue)"*). An adapter that sees this without a resume id
+   * must pass neither flag rather than guess.
+   *
+   * MEASURED, claude 2.1.272 (`spike/findings/e11-801-fork-adoption.md`): with
+   * this set, the source transcript is byte-identical afterwards — same sha256,
+   * size and mtime — and the new conversation is written into the project
+   * directory of the spawn's OWN cwd, which is what makes the cross-folder case
+   * work without copying anything.
+   */
+  forkSession?: boolean;
+  /**
+   * The id the forked session must take.
+   *
+   * ⚠️ **MUST BE A VALID UUID.** The CLI validates `--session-id` against
+   * `/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i` (read
+   * out of the binary) and refuses anything else — at spawn, which is a card
+   * that dies on open rather than a refusal anyone can act on. Validate before
+   * building a recipe with this in it.
+   *
+   * WHY PIN IT AT ALL, when `--fork-session` mints an id by itself: because the
+   * host has to know which conversation the new card belongs to. Measured on the
+   * stream transport, `system:init.session_id` comes back as exactly this value
+   * — so the card binds to the FORK's transcript. Left unpinned, the id is only
+   * learned after the fact, and until it arrives the card's only candidate is
+   * the SOURCE id, which would bind two cards to one file (#484, #539).
+   */
+  forkSessionId?: string;
   /** autonomy profile (§5.9): how much the session may do unprompted */
   autonomy?: AutonomyMode;
   /** extra settings to inject at spawn (S-02 mechanism); hooks land in E2-05 */

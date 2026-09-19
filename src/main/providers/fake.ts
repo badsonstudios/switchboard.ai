@@ -38,6 +38,15 @@ export const fakeAdapter: ProviderAdapter = {
         conversationExists(projectsRoot, folder, nativeSessionId),
     },
     trust: { ensureTrusted: (folder) => ensureFolderTrusted(folder) },
+    // ⚠️ `fork` IS DELIBERATELY ABSENT, and it is the ONE capability this fake
+    // does not mirror (P2-E11-12, #801). Do not "fix" the asymmetry.
+    //
+    // The done-when is that a provider without the capability "cannot reach this
+    // path at all — the fake provider spawns byte-identically to today". Since
+    // all three adapters register under the same `claude-code` id, a provider-id
+    // check could not tell them apart; the ONLY thing that keeps Level 3 out of
+    // the fakes is this absence. Declaring it here would hand the e2e harness a
+    // surface that spawns the real `--fork-session` argv against a shell.
   },
   // a tiny builtin catalog so the composer popup + ⋯ session controls are
   // e2e-drivable; the hosted shell just echoes an unknown "/clear" (harmless)

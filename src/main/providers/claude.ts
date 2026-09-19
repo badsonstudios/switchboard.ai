@@ -318,6 +318,27 @@ export const AUTONOMY_PERMISSION_MODE: Record<AutonomyMode, string> = {
   'full-auto': 'bypassPermissions',
 };
 
+/**
+ * What the CLI accepts for `--session-id`.
+ *
+ * Its own validator, read out of the binary (2.1.272) rather than guessed at
+ * from the word "uuid" in the help text, which says *"must be a valid UUID"*
+ * without saying which dialect:
+ *
+ *     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+ *
+ * Note it is NOT RFC-4122-strict — no version or variant nibble is pinned — so
+ * this deliberately matches the CLI's leniency rather than being stricter than
+ * the thing it is protecting. Being stricter would refuse ids the CLI would
+ * have taken, which is our bug wearing the CLI's clothes.
+ *
+ * HERE AND NOT IN `transcripts/paths.ts`, because it is a fact about one CLI's
+ * flag, not about a transcript layout. `isConversationId` answers a different
+ * question (is this safe to interpolate into a path) and is deliberately looser
+ * — conversation ids on disk are not all UUIDs.
+ */
+const CLI_SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export const claudeAdapter: ProviderAdapter = {
   manifest: {
     id: 'claude-code',
@@ -393,6 +414,20 @@ export const claudeAdapter: ProviderAdapter = {
           )?.nativeId ?? null
         );
       },
+    },
+    // §5.5 Level 3 (P2-E11-12): this CLI can start a NEW conversation carrying
+    // an existing one's whole history. Declared here and NOWHERE ELSE — neither
+    // fake declares it, which is what makes the surface unreachable outside the
+    // real adapter by construction rather than by an id check (all three
+    // adapters register under `claude-code`, so a provider-id branch would not
+    // have told them apart).
+    //
+    // Asked about the SOURCE folder, not the target: Claude's layout derives the
+    // transcript directory from the folder path, and the case this feature
+    // exists for is precisely the one where those differ.
+    fork: {
+      canFork: ({ projectsRoot, sourceFolder, sourceSessionId }) =>
+        conversationExists(projectsRoot, sourceFolder, sourceSessionId),
     },
     // §5.9: the CLI refuses to work in a folder the user has not accepted, and
     // it asks with a modal we cannot answer from here. Writing the acceptance
@@ -502,6 +537,36 @@ export const claudeAdapter: ProviderAdapter = {
       );
     }
     if (options.resumeSessionId) args.push('--resume', options.resumeSessionId);
+    // §5.5 Level 3 — fork adoption (P2-E11-12).
+    //
+    // MEASURED against claude 2.1.272, not read off `--help`
+    // (`spike/findings/e11-801-fork-adoption.md`): this pair starts a new
+    // conversation carrying the resumed one's whole history, leaves the SOURCE
+    // transcript byte-identical (sha256, size and mtime), and writes the new
+    // transcript into the project directory of THIS spawn's cwd — which is what
+    // makes the cross-folder case work with nothing copied and nothing written
+    // into a directory the CLI owns.
+    //
+    // GUARDED ON `resumeSessionId` because there is nothing to fork from
+    // otherwise, and the CLI says so itself: `--fork-session` is documented as
+    // "use with --resume or --continue". A fork intent with no source is a bug
+    // upstream, and passing a lone `--fork-session` would hide it.
+    if (options.forkSession && options.resumeSessionId) {
+      args.push('--fork-session');
+      // ⚠️ THROWS RATHER THAN DROPPING THE FLAG, and that asymmetry is
+      // deliberate — it is the `--settings` posture, not the `--mcp-config`
+      // one. An unpinned fork still RUNS; it just mints an id we only learn
+      // afterwards, and until it arrives the card's sole candidate is the
+      // SOURCE id. That binds two cards to one transcript, which is the #484 /
+      // #539 failure this whole item is written around. A session that does not
+      // start is recoverable; two cards silently sharing a conversation is not.
+      if (!CLI_SESSION_ID.test(options.forkSessionId ?? '')) {
+        throw new Error(
+          'fork requires a valid UUID for --session-id; the CLI refuses anything else'
+        );
+      }
+      args.push('--session-id', options.forkSessionId!);
+    }
     // §5.9 autonomy profiles -> CLI permission modes. EVERY profile names its
     // mode explicitly, including `ask`; see the note on AUTONOMY_PERMISSION_MODE.
     args.push('--permission-mode', AUTONOMY_PERMISSION_MODE[options.autonomy ?? 'ask']);

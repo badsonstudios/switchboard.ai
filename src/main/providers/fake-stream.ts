@@ -62,6 +62,10 @@ export const fakeStreamAdapter: ProviderAdapter = {
         conversationExists(projectsRoot, folder, nativeSessionId),
     },
     trust: { ensureTrusted: (folder) => ensureFolderTrusted(folder) },
+    // ⚠️ `fork` IS DELIBERATELY ABSENT — the same single exception the PTY fake
+    // makes, for the same reason (P2-E11-12, #801). See the note there. The
+    // absence IS the gate: every adapter registers under `claude-code`, so
+    // nothing else distinguishes a fake from the real CLI here.
   },
 
   // The FALLBACK list — what the composer offers before the CLI has spoken.

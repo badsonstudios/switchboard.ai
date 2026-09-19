@@ -2045,6 +2045,15 @@ app
       workspace.setAutoTrust(on === true);
       return workspace.getAutoTrust();
     });
+    // §5.5 Level 3, experimental and off by default (P2-E11-12). `=== true` for
+    // the reason every setter on this file uses it: an absent or non-boolean
+    // argument must read as OFF rather than as truthy — the `mcp_toggle` hazard
+    // `shared/stream-protocol.ts` documents, applied to our own wire.
+    broker.handle('settings:getExperimentalFork', () => workspace.getExperimentalFork());
+    broker.handle('settings:setExperimentalFork', (_e, on: boolean) => {
+      workspace.setExperimentalFork(on === true);
+      return workspace.getExperimentalFork();
+    });
     const sessionIpc: SessionIpcHandle = registerSessionIpc({
       manager,
       ptys,
@@ -2071,6 +2080,10 @@ app
       autoTrust: () => workspace.getAutoTrust(),
       autoLabels: () => workspace.getAutoLabels(),
       setAutoLabels: (on) => workspace.setAutoLabels(on),
+      // §5.5 Level 3 (P2-E11-12). A thunk, not a snapshot: the flag can be
+      // turned off while cards are open, and the next fork request must see
+      // that rather than a value read at wiring time.
+      experimentalFork: () => workspace.getExperimentalFork(),
       persist: {
         list: () => workspace.listSessions(),
         upsert: (s) => workspace.upsertSession(s),

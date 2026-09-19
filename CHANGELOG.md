@@ -98,6 +98,26 @@ on the floor, and say so in your PR.
 
 ### Added
 
+- **Fork a session, so a second one starts knowing everything the first does
+  (experimental, off by default).** Turn on **Fork sessions** in the title bar,
+  then pick **Fork into a new session** from a session's **⋯** menu. The new
+  session inherits the whole conversation — not a summary of it — and the two
+  then go their own ways. The original is never touched: it isn't paused,
+  changed, or added to, and you can keep working in it while the fork runs.
+
+  The fork opens in the same project folder, beside the session it came from.
+  The entry stays hidden until there is actually a conversation to fork — a
+  session you have only just opened has nothing to carry yet.
+
+  Two honest notes. It **costs what a long conversation costs**, because the fork
+  really does carry the whole history — if you only need "here's what I worked
+  out", the context chip is the cheaper tool. And it is marked **experimental**
+  because it relies on behaviour of the Claude command-line tool that is not
+  documented anywhere: it was measured rather than read, it works today, and if a
+  future update changes it you can switch it off without affecting anything else.
+
+  While the switch is off the menu entry is **absent**, not greyed out.
+
 - **Report a problem without leaving the app.** A new **Help ▸ Report a
   problem…** (also in the command palette) opens a box with a subject and a
   description, and asks where it should go: **create a GitHub issue**, **open an

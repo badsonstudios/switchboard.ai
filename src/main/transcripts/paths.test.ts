@@ -56,6 +56,30 @@ describe('locateConversation', () => {
     expect(locateConversation(root, folder, '')).toEqual({ status: 'absent' });
   });
 
+  it('says ABSENT for a DASH-LED id, which would reach the CLI as a flag (#838)', () => {
+    // Not a path-traversal case like the one above — this one survives every
+    // filesystem check and fails at argv. `isConversationId` is what stands
+    // between a persisted-or-picked id and `args.push('--resume', id)`, so an
+    // id that parses as an option is refused at the gate rather than at spawn.
+    expect(locateConversation(root, folder, '--help')).toEqual({ status: 'absent' });
+    expect(locateConversation(root, folder, '-rf')).toEqual({ status: 'absent' });
+    // ...and a leading dot, which is the same anchor doing the other half of
+    // its job: a dotfile in the project directory is not a conversation.
+    expect(locateConversation(root, folder, '.hidden')).toEqual({ status: 'absent' });
+  });
+
+  it('still finds an id that merely CONTAINS dashes and dots', () => {
+    // The guard tightened the FIRST character only. A real conversation id is
+    // a uuid — dashes throughout — so a fix that refused those would have
+    // severed every card in the workspace, which is a far worse bug than the
+    // one #838 reports.
+    const file = seed('9eba5fec-dc28-47f9-b032-21b76ab84673');
+    expect(locateConversation(root, folder, '9eba5fec-dc28-47f9-b032-21b76ab84673')).toEqual({
+      status: 'found',
+      file,
+    });
+  });
+
   it('says UNKNOWN when the root will not list — the transient case (#484)', () => {
     // One antivirus scan, one indexer oplock, one network drive between
     // reconnects. Before this, the caller heard "not there" and wrote that down
