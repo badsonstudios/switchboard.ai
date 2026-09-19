@@ -149,8 +149,16 @@ for a second monitor. The session keeps running throughout; nothing restarts.
 Window positions are remembered. If a monitor is missing at startup,
 switchboard rescues any windows that were on it rather than losing them
 off-screen — and when that monitor comes back, Events offers a one-click
-**Restore** to put the layout back the way it was. It never moves your windows
-without asking.
+**Restore** to put the layout back the way it was. It never moves your
+pop-outs without asking.
+
+The main switchboard window is the one exception, and it works the way you'd
+expect from any other app: when your monitors go to sleep and wake up, it
+returns to the monitor it was on by itself, rather than piling onto your main
+display with everything else. It remembers a position for each monitor setup
+you use, so moving between a desk and a laptop on its own keeps both. It only
+ever goes back to a monitor it has already been on — plug in a projector and
+the window stays where it is.
 
 If you use a screen reader, you don't have to keep checking Events for that
 offer: a monitor coming back is something the app notices, not you, so the

@@ -11,7 +11,7 @@ import {
   shell,
 } from 'electron';
 import path from 'path';
-import { windowOptionsFrom, WindowState } from './window-state';
+import { ArrangementMemories, planDisplayRestore, windowOptionsFrom, WindowState } from './window-state';
 import { WorkspaceStore, displayFingerprint } from './workspace/store';
 import os from 'os';
 import { LogSink, createLogger } from './log/logger';
@@ -287,6 +287,15 @@ const popoutWindows: Array<{ win: BrowserWindow; groupId?: string }> = [];
 // apart, so a geometry nudge during that window would make the renderer
 // serialize a layout that is missing the popouts still to come (#86)
 let restoringLayout = false;
+// #864: true while the displays are settling after a hotplug, sleep or wake.
+// Geometry saving is suspended for that window, because where the OS has just
+// shoved the main window is not where the user put it — and recording it would
+// overwrite the very note the restore is about to read.
+let displaySettling = false;
+/** a restore deferred because the window was minimized or fullscreen (#864) */
+let retryWhenVisible = false;
+/** set once the display handlers exist; runs a deferred restore (#864) */
+let onWindowBecameVisible: (() => void) | null = null;
 let busySessions: () => string[] = () => [];
 let quitConfirmed = false;
 
@@ -408,8 +417,14 @@ const contextMenuDeps: ContextMenuDeps = makeContextMenuDeps({
 
 function trackWindowGeometry(win: BrowserWindow): void {
   let lastNormalBounds = win.getNormalBounds();
-  const save = () => {
+  const save = (force = false) => {
     if (win.isDestroyed()) return;
+    // #864: while the displays are settling, the window's position is the OS's
+    // doing and not the user's. Saving it would bury the remembered rectangle
+    // under the shoved one — under the fingerprint of the arrangement we are
+    // about to restore INTO, which is what would make the restore a no-op.
+    // The close path forces it: a quit mid-settle must still persist something.
+    if (displaySettling && !force) return;
     workspace.setWindow({
       bounds: win.isMaximized() ? lastNormalBounds : win.getNormalBounds(),
       isMaximized: win.isMaximized(),
@@ -417,15 +432,23 @@ function trackWindowGeometry(win: BrowserWindow): void {
     });
   };
   const onChange = () => {
+    // not even lastNormalBounds: a shuffle must leave no trace to save later
+    if (displaySettling) return;
     if (!win.isMaximized()) lastNormalBounds = win.getNormalBounds();
     save();
   };
   win.on('resize', onChange);
   win.on('move', onChange);
-  win.on('maximize', save);
-  win.on('unmaximize', save);
+  // wrapped, not passed directly: these hand the listener an event object,
+  // which as a positional argument would read as `force`
+  win.on('maximize', () => save());
+  win.on('unmaximize', () => save());
+  // #864: a window that was minimized or fullscreen when the displays changed
+  // could not be placed then. Try again the moment it becomes placeable.
+  win.on('restore', () => onWindowBecameVisible?.());
+  win.on('leave-full-screen', () => onWindowBecameVisible?.());
   win.on('close', () => {
-    save();
+    save(true);
     workspace.save(); // flush the debounce before the process dies
   });
 }
@@ -935,9 +958,7 @@ app
     });
     // display work areas — for popout-position rescue on restore (E8-02)
     broker.handle('app:workAreas', () => screen.getAllDisplays().map((d) => d.workArea));
-    // display reconnected (docking back at the desk) — the renderer may offer
-    // to restore rescued popouts; NEVER restores automatically (E8-06, §7)
-    screen.on('display-added', () => {
+    const tellRendererDisplaysChanged = (): void => {
       const win = currentWindow;
       if (win && !win.isDestroyed()) {
         pushToRenderer?.(
@@ -946,6 +967,122 @@ app
           screen.getAllDisplays().map((d) => d.workArea)
         );
       }
+    };
+    /**
+     * Put the MAIN window back on the monitor it was on (#864).
+     *
+     * Popouts have had display-departure rescue and a display-return offer
+     * since E8-02/E8-06; the main window had a boot-time restore and nothing in
+     * between. A monitor going to sleep is usually a real detach (DisplayPort
+     * drops off the bus), Windows shoves our window onto the primary, and
+     * because geometry saves on every move that shoved position quietly became
+     * the window's new truth — permanently, if the app closed before the
+     * monitor came back.
+     *
+     * AUTOMATIC, deliberately unlike the popout offer's consent gate (E8-06
+     * §7). Returning the main window to the monitor it was already on is what
+     * every other window on the machine does; an offer after every monitor wake
+     * would be more intrusive than the defect. `planDisplayRestore` is what
+     * keeps that safe — it only ever returns the window to an arrangement it
+     * has already lived on, so a genuinely new display (the projector §7 worries
+     * about) still never attracts it.
+     *
+     * THE ORDER IS THE WHOLE FIX, and getting it wrong makes this a silent
+     * no-op on exactly the hardware it exists for. The memory is snapshotted
+     * when the display event ARRIVES, and geometry saving is suspended until
+     * the restore has run, because `trackWindowGeometry` recomputes the
+     * fingerprint on every move: without that, the OS's post-hotplug shuffle
+     * writes the shoved rectangle under the arrangement we are about to restore
+     * INTO, the restore then reads its own overwritten note, concludes the
+     * window is already where it belongs, and does nothing — having destroyed
+     * the evidence on the way past.
+     */
+    const restoreMainWindowPosition = (memories: ArrangementMemories): void => {
+      const win = currentWindow;
+      if (!win || win.isDestroyed()) return;
+      // Minimized or fullscreen: nothing meaningful to place, and moving a
+      // window the user cannot see is a surprise saved up for later. Deferred
+      // rather than dropped — `onWindowBecameVisible` picks it back up.
+      if (win.isMinimized() || win.isFullScreen()) {
+        retryWhenVisible = true;
+        return;
+      }
+      const areas = workAreas();
+      const plan = planDisplayRestore({
+        memories,
+        fingerprint: displayFingerprint(areas),
+        currentBounds: win.getNormalBounds(),
+        workAreas: areas,
+        isMaximized: win.isMaximized(),
+      });
+      // Saving reopens BEFORE the verbs below, deliberately: the move and
+      // resize they raise are the ordinary path recording where the window
+      // ended up, which is exactly what we want written.
+      displaySettling = false;
+      if (!plan) return;
+      if (plan.unmaximizeFirst) win.unmaximize();
+      win.setBounds(plan.bounds);
+      if (plan.maximizeAfter) win.maximize();
+      log.ui.info('main window returned to its remembered display', {
+        bounds: `${plan.bounds.x},${plan.bounds.y} ${plan.bounds.width}x${plan.bounds.height}`,
+      });
+    };
+    /** how long to let the OS finish shuffling before we place the window */
+    const displaySettleMs = positiveMs(process.env.SWITCHBOARD_DISPLAY_SETTLE_MS) ?? 600;
+    let displaySettleTimer: NodeJS.Timeout | undefined;
+    let pendingMemories: ArrangementMemories | null = null;
+    const scheduleMainWindowRestore = (): void => {
+      // The FIRST event of a burst wins: the snapshot has to predate the
+      // shuffle, and a later event in the same burst has already lost that race.
+      if (!pendingMemories) pendingMemories = workspace.rememberedArrangements();
+      displaySettling = true;
+      clearTimeout(displaySettleTimer);
+      // The OS keeps moving windows for a beat AFTER it announces the display,
+      // and a hotplug emits a burst of events — placing into that settles
+      // nothing. One restore per burst, once the dust is down.
+      displaySettleTimer = setTimeout(() => {
+        const memories = pendingMemories ?? {};
+        pendingMemories = null;
+        try {
+          restoreMainWindowPosition(memories);
+        } finally {
+          displaySettling = false; // never leave saving suspended
+        }
+      }, displaySettleMs);
+      displaySettleTimer.unref?.();
+    };
+    onWindowBecameVisible = () => {
+      if (!retryWhenVisible) return;
+      retryWhenVisible = false;
+      scheduleMainWindowRestore();
+    };
+    // Display reconnected (docking back at the desk, or a monitor waking). The
+    // renderer may offer to restore rescued popouts; that offer NEVER restores
+    // automatically (E8-06, §7). The main window is the exception, above.
+    //
+    // ONLY THIS EVENT TELLS THE RENDERER, and the other two deliberately do
+    // not. The reconnect offer is raised whenever a stashed popout box overlaps
+    // a current work area, so pushing on a taskbar resize or a DPI change would
+    // raise "restore your popouts?" with nothing having reconnected — and would
+    // re-raise it after the user dismissed it, because the stash is only
+    // cleared when the offer is accepted. The popout flow stays as it was.
+    screen.on('display-added', () => {
+      tellRendererDisplaysChanged();
+      scheduleMainWindowRestore();
+    });
+    // A display LEAVING had no handler at all before #864, which is half of why
+    // the main window forgot where it lived: the shove that follows was being
+    // recorded as the user's own choice. Suspending saves is most of the value
+    // here; placing the window matters too, for the arrangement you drop INTO
+    // when you unplug at the desk.
+    screen.on('display-removed', () => {
+      scheduleMainWindowRestore();
+    });
+    // A resolution or work-area change is the same class of event as a hotplug
+    // — a monitor waking at a different resolution looks exactly like this —
+    // and it changes the fingerprint, so the same decision applies.
+    screen.on('display-metrics-changed', () => {
+      scheduleMainWindowRestore();
     });
     // move a popout window to a restored display (E8-06 accept). Done here:
     // the DOM's window.moveTo clamps to currently-known screens mid-hotplug,

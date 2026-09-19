@@ -96,6 +96,17 @@ on the floor, and say so in your PR.
 
 ## 0.8.92 — unreleased
 
+### Fixed
+
+- **The main window comes back to the monitor it was on.** When your monitors
+  go to sleep and wake up again, switchboard used to reappear on your main
+  display no matter which one it had been on — and if you closed the app while
+  the monitors were still asleep, it stayed there for good. It now remembers
+  where it sat on each monitor arrangement you use and returns there when that
+  arrangement comes back, the way your other apps do. It only ever goes back to
+  a monitor it has already been on, so plugging into a projector or a new
+  display never drags the window onto it.
+
 ## 0.8.91 — 2026-09-19
 
 ### Added
