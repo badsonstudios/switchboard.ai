@@ -3,51 +3,102 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔨 IN PROGRESS — 2026-09-19: **#801** — P2-E11-12 · Level 3 fork-session adoption
+> # ✅ MERGED — 2026-09-19: **#801** — P2-E11-12 · Level 3 fork-session adoption
 >
-> **Branch `feature/801-fork-session-adoption`.** The LAST open E11 item — #797
-> and #798 are closed, so **E11 exits when this lands**.
+> **PR #866, squashed to `922915f`.** Issue closed by `Closes #801`, and **#838
+> closed with it** — its leading-dash hole sits directly on this path. **#835,
+> #861 and #864 were checked afterwards and are all still open**; the
+> closing-keyword trap did not fire.
+> ⚠️ **NOT RELEASED** — joins the `0.8.91 — unreleased` section alongside #818,
+> #846, #799, #719, #815, #800 and #796; `gh release list` is the authority and
+> **v0.8.90** is still the latest tag, so this is on `main` and in no installed
+> build.
 >
-> **The design premise changed before any code was written, and that is the
+> 🎉 **E11 EXITS HERE.** This was the last open item, and a milestone query for
+> E11 afterwards returns **nothing**. Two sessions can now exchange context over
+> the bus, `@session` resolves in the composer, a dropped chip briefs at a chosen
+> fidelity, an agent can pull a handoff itself, sessions can leave each other
+> notes — and now one session can start out *being* another.
+>
+> **THE DESIGN PREMISE CHANGED BEFORE ANY CODE WAS WRITTEN, and that is the
 > headline.** DESIGN §5.5 said the cross-folder variant should *"copy A's
 > transcript into the target project's transcript dir, then fork-resume there"* —
-> which would have made switchboard the first code in the repo to WRITE into
-> `~/.claude/projects`, a directory the CLI owns. **It is unnecessary.** Measured
+> which would have made switchboard **the first code in this repo to WRITE into
+> `~/.claude/projects`**, a directory the CLI owns. It is unnecessary. Measured
 > against `claude` **2.1.272** (`spike/probes/801/`, write-up
 > `spike/findings/e11-801-fork-adoption.md`): `--resume <id> --fork-session
 > --session-id <uuid>`, spawned with the cwd set to the TARGET folder, carries the
 > source conversation's whole history, leaves the source transcript
 > **byte-identical** (sha256, size AND mtime), and writes the fork into the
-> **target** folder's project directory. DESIGN §5.5 amended with the measurement
-> rather than implemented as written.
+> **target** folder's project directory. §5.5 amended with the measurement rather
+> than implemented as written, and §5.3 gained `fork` as a sixth capability.
 >
-> **The control variant is what settled it.** Cross-folder by absolute `.jsonl`
-> path works — the file form of `--resume` is real and undocumented in `--help` —
-> but cross-folder by **plain id** works just as well, because the resume resolver
-> carries two cross-directory fallbacks. Three ways to express it; the one that
-> invents nothing ships.
+> **The control variant is what settled it, and it is the part worth finding
+> again.** Cross-folder by absolute `.jsonl` path works — the file form of
+> `--resume` is real, undocumented in `--help`, and has its own telemetry
+> entrypoint — but cross-folder by **plain id** works just as well, because the
+> resume resolver carries two cross-directory fallbacks. Three ways to express
+> it; the one that invents nothing ships. Without that control, a success on the
+> path form would have "proved" a mechanism we did not need.
 >
 > **Two probe rounds, because round 1 measured the wrong transport.** Round 1
-> drove headless `-p`; the app spawns duplex stream-json. Round 2 re-ran the
-> cross-folder fork under the exact flag list copied from `claude.ts` and
-> answered the safety-critical question: **`system:init.session_id` is the id we
-> passed to `--session-id`, not the parent's.** Had it been the parent's, a forked
-> card would have bound to the source's transcript and two cards would tail one
-> file — the #484 / #539 failure. Six trivial turns total, foreground only, every
-> transcript created was deleted.
+> drove headless `-p`; the app spawns duplex stream-json. Round 2 re-ran the fork
+> under the exact flag list copied from `claude.ts` and answered the
+> safety-critical question: **`system:init.session_id` is the id we passed to
+> `--session-id`, not the parent's.** Had it been the parent's, a forked card
+> would have bound to the source's transcript and two cards would tail one file —
+> #484 / #539 again. Six trivial turns total, foreground only, no `--bg`, and
+> every transcript the runs created was deleted.
 >
-> **Landed so far:** a `fork` provider capability declared ONLY by the real
-> adapter (both fakes deliberately do NOT declare it — all three register under
-> `claude-code`, so the absence IS the gate); the argv in `buildSpawn`, which
-> **throws** rather than spawning an unpinned fork; the experimental flag in the
-> workspace store (**off by default**, and the only `=== true` pref in the file);
-> the plan/manager/IPC wiring, where three downstream consumers — the transcript
-> watch, the history replay and `recordNativeId` — read the **fork's** id and
-> never the source's; and **#838's leading-dash hole** in `isConversationId`,
-> which sits directly on this path.
+> **What shipped:** a `fork` provider capability declared ONLY by the real adapter
+> (both fakes deliberately withhold it — all three register under `claude-code`,
+> so the absence IS the gate); argv in `buildSpawn` that **throws** rather than
+> spawning an unpinned fork; the experimental flag in the workspace store (**off
+> by default**, and the only `=== true` pref in that file, so a missing or
+> hand-edited key lands off); a title-bar switch and a ⋯ entry that is **absent,
+> not greyed**, when off, with main re-checking the flag on every request; and the
+> wiring where three downstream consumers — the transcript watch, the history
+> replay and `recordNativeId` — read the **fork's** id and never the source's.
 >
-> **Still to do:** the renderer surface (absent, not disabled, when the flag is
-> off), the manual page, the CHANGELOG entry, and the full suite.
+> **Three defects were found in my own work before it landed, all by running it
+> rather than reading it.** Two were in the new renderer test: a guard assertion
+> that was itself vacuous (it checked for a sibling menu entry the stub bridge
+> never enabled), and — the instructive one — a flag that decides the SHAPE of the
+> stub bridge and is read when it is BUILT, flipped inside a test after
+> `beforeEach` had already built one, so the test asserted nothing it claimed to.
+> The third was a **second `TitleBar` fixture** I had not found when adding the two
+> new props; there are exactly three call sites and all are now accounted for.
+>
+> ⚠️ **A NEAR-MISS WORTH REMEMBERING: a red run reported exit code 0.** The gate
+> was `npm test 2>&1 | tail -60`, so the status belonged to `tail`, not to the
+> suite — three tests were failing behind a green-looking exit. Every check after
+> that captured the code directly (`cmd > log; RC=$?`). This is the same shape as
+> the merge rule, one layer earlier: **never read a pipeline's exit status as the
+> command's.**
+>
+> **Verified:** typecheck clean, lint clean, full suite **8,531 passing**, and all
+> four CI checks green — ubuntu 4m26s, windows 7m46s, e2e ubuntu 9m3s, e2e windows
+> 22m29s. Rebased onto `2e86cd6` before merge (branch protection is
+> strict-up-to-date) and the rebase was verified to have kept both dogfood rows,
+> the code, and PROGRESS.md's heading list intact.
+>
+> ⚠️ **`git-service.test.ts` was the only local red and is NOT this item's doing** —
+> `THE GUARD SPENDS THE SAME BUDGET` measured 3211 ms against a 2600 ms wall-clock
+> ceiling, and passes **74/74 in isolation**. This branch touches no git code. A
+> *second* test in that file (the 250 ms stalled-probe case) reddened on one run
+> and passed on the next, and both sightings are recorded on **#835** — three
+> load-sensitive tests on three different budgets now, which points at the
+> approach rather than any one ceiling.
+>
+> **Not measured, and deliberately not built on:** forking a conversation that is
+> **live in another process** (every probe forked an idle one); the `left_arrow`
+> REPL gesture; and whether the fork's transcript is a full copy of the parent's
+> history — line counts suggest it is, which would make a 7 MB conversation cost
+> 7 MB on disk, but that is suggested rather than measured.
+>
+> **Next up: E11 is done and no successor was nominated.** The open Phase 2 queue
+> includes #864 (main window forgets its monitor after display sleep, filed today),
+> #856, #851, #832, #830, #828 and #824. Dan picks, or `/next-item` does.
 
 > # ✅ MERGED — 2026-09-19: **#796** — P2-E11-06 · Blackboard `publish`/`read`, the shared scratchpad
 >
