@@ -4907,7 +4907,20 @@
 > project entry for `C:\Projects\Switchboard.ai`. The probe server was removed
 > and `~/.claude.json` verified clean; the scratch dir is deleted.
 >
-> # ⏳ PR OPEN — 2026-08-24: #687 — a refused-create card now has a rail row
+> # ✅ MERGED — 2026-08-24: #687 — a refused-create card now has a rail row
+>
+> *(**Heading corrected 2026-09-19**, with the #632 one above it — the second and
+> last stale in-flight heading in this file. It read `⏳ PR OPEN` for three and a
+> half weeks, and the record below still says "PR #712 open, awaiting Dan's review
+> + squash-merge". **PR #712 merged the very next day**, 2026-08-25, squashed to
+> `055d188` — `#687: a session that never started is in the Sessions list (#712)`,
+> verified on `main` — and issue #687 is closed. **Only the heading is changed.**
+> The account below, including that now-overtaken sentence, is left exactly as
+> written: it was a true record of what was believed on the day, and this note
+> sits above it so nobody reads it as a claim about now. A full sweep found no
+> other stale in-flight heading — the remaining non-`✅` ones are `🚢 RELEASED`,
+> `📌 STANDING`, `📋 FILED`/`PLANNED`, `SUPERSEDED`, and the archived orchestration
+> run blocks, all of which are terminal or permanent by design.)*
 >
 > **PR #712 open, awaiting Dan's review + squash-merge.** Branch
 > `feature/687-not-started-rail-row` @ `d19a693`, based on main @ `4b8c09e`.
