@@ -3,6 +3,73 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔨 IN PROGRESS — 2026-09-20: **#758** — AI-generated task labels that follow the session
+>
+> Branch `feature/758-ai-task-labels`. **Planning done and posted to the issue**;
+> nothing implemented yet. The probe runs before the feature is written.
+>
+> **The owner made four decisions in planning (2026-09-20) — do not re-litigate:**
+>
+> 1. **The rail row redesign is NOT in this item.** He asked for it in the same
+>    breath (status beside the name, task label on two lines) and chose to have it
+>    filed on its own: **#877**. This item generates the label text; that one
+>    displays it. He picked the layout off a mockup
+>    (`.claude/work_files/rail-mockup.html`, three columns): **status as one short
+>    word** beside the name, label on two lines, and the longer ask sentence
+>    ("Wants permission to run") kept for screen readers only. The variant that
+>    gave needy rows their full sentence on its own line was rejected as less
+>    scannable.
+> 2. **Containment: no tools AND evict MCP servers.**
+> 3. **Measure first** — a committed probe under `spike/probes/758/`, because the
+>    flags' real behaviour is exactly what bit #760.
+>
+> ⚠️ **THE LANDMINE THAT SHAPED THIS ITEM, and it is already recorded in our own
+> source.** `sessions/context-package.ts` says a headless `claude -p` pass was
+> **considered and rejected** for the neighbouring feature, citing #760: a `-p`
+> probe run in a temp cwd with `--permission-mode bypassPermissions` enumerated
+> the machine's other live sessions, read the user's transcripts, and **sent
+> messages to six sessions across four unrelated projects**. The recorded lesson
+> is **"a cwd is not a sandbox"**, and that finding says in as many words that
+> anything running a headless pass over a transcript inherits the question. This
+> item inherits it. The answer the finding itself gives is not to referee the
+> turn but to give it nothing to act with: `--tools ""` (no built-in tools at
+> all), `--restricted`, `--strict-mcp-config` with no `--mcp-config` (so no
+> Session Bus and none of the user's own servers), `--permission-mode default`,
+> and a short timeout.
+>
+> ⚠️ **THIS DELIBERATELY INVERTS A STANDING RULE IN OUR SOURCE, and the inversion
+> is the interesting part.** `providers/claude.ts` documents that
+> `--strict-mcp-config` is **never** passed, because for a user's session it
+> silently evicts every MCP server they configured (measured in #760, three runs:
+> with both flags, "ours only — DeepWiki gone"). A guard in `claude-mcp.test.ts`
+> enforces it with a source walk over the whole of `src/`, a bounded `EXEMPT`
+> allowlist, and a further test asserting the exemption does **not** cover the
+> session-spawn file. For a six-word labeler, eviction is the *point* — it is not
+> a user session and has no business holding the user's tools. So the labeler
+> module joins `EXEMPT` **with its own positive test** (it always passes
+> `--tools ""` and `--strict-mcp-config`, and never spawns a user session) rather
+> than the guard being widened. The guard keeps meaning what it was written to
+> mean.
+>
+> **Cadence is the design problem, not summarization.** Trigger is an **ending
+> turn**, not a clock: gate on the `working` → `idle`/`done` transition the app
+> already computes, skip when the transcript has not grown, a minimum gap per
+> session, one run in flight per session, and discard the result if the user typed
+> a label while it was in flight. An idle session therefore costs nothing with no
+> timer running. Opt-in, **off by default**, on the `experimentalFork` shape
+> (`=== true`, so a missing key or an older workspace file lands OFF). The write
+> goes **through `nextAutoLabel`**, never straight to `taskLabel`, so every
+> P2-E7-06 ownership rule carries over untouched.
+>
+> **Measured, not assumed:** `--max-turns` **no longer exists** on the installed
+> CLI (2.1.272) — checked against `--help`, so the turn bound is print mode plus a
+> timeout. `--tools ""` ("use \"\" to disable all tools") and `--restricted` are
+> what the probe exists to verify.
+>
+> **Leaves a seam for #722** (activity report): there is no production "run the
+> CLI once and hand me stdout" helper today, so this adds the one composing module
+> instead of a second spelling of it.
+
 > # ✅ MERGED — 2026-09-19: **#873** — the Terminal tab and the ⋯ transport switch are removed
 >
 > **PR #875, squashed to `b67f95d`** (72 files, +1,228 / −2,582). The issue was
