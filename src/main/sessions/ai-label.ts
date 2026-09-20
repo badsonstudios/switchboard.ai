@@ -15,10 +15,18 @@
 // project carry NONE at all. #758 is the owner's ask for a label that follows
 // the work as it drifts.
 //
-// The ownership rules are NOT re-litigated here. A label this module produces
-// is an `auto` label like any other, and it goes through `nextAutoLabel` to
-// land: typing still pins a card for ever, clearing still hands it back, the
-// auto-labels switch still hides it, the 120-char cap still applies.
+// The ownership rules are NOT re-litigated here — but note HOW they are kept,
+// because it is not by calling `nextAutoLabel`. That function takes a CLI title
+// and answers synchronously; this source is asynchronous and its answer arrives
+// ~14 seconds after the decision to ask, so the rules are re-checked at the
+// landing instead, by `acceptAiLabel`: typing still pins a card for ever,
+// clearing still hands it back, and the 120-char cap lands in `cleanAiLabel`.
+//
+// The one rule that is NOT here is the screen-share switch, because it is not
+// about ownership: whether a stored label is SHOWN is `visibleTaskLabel`'s
+// answer, and the caller re-reads it at publish time (see `ipc.ts`). Saying
+// "it goes through `nextAutoLabel`" would be a tidier sentence and a false one,
+// and the clause it would paper over is the one a review caught missing.
 //
 // ── THE DESIGN PROBLEM IS CADENCE, NOT SUMMARIZATION ───────────────────────
 //
@@ -224,9 +232,30 @@ function stripControl(s: string): string {
   let out = '';
   for (const ch of s) {
     const code = ch.codePointAt(0) ?? 0;
-    out += code < 0x20 || code === 0x7f ? ' ' : ch;
+    out += isStrippable(code) ? ' ' : ch;
   }
   return out;
+}
+
+/**
+ * C0/C1 controls, plus the invisible characters that REORDER or HIDE text.
+ *
+ * The bidi overrides and isolates (U+202A–202E, U+2066–2069) can make a label
+ * render in an order it is not written in, and the zero-width family
+ * (U+200B–200D, U+FEFF) can hide characters inside one. Both are display
+ * spoofing rather than injection — React escapes, and the rail passes the label
+ * to ICU as a VALUE, which is not re-parsed — but the stated threat model here
+ * is model output derived from a transcript that may be adversarial, and a card
+ * title that reads backwards is exactly the kind of thing nobody would think to
+ * suspect. Cheap to refuse, so refused.
+ */
+function isStrippable(code: number): boolean {
+  if (code < 0x20 || code === 0x7f) return true; // C0 + DEL
+  if (code >= 0x80 && code <= 0x9f) return true; // C1
+  if (code >= 0x200b && code <= 0x200f) return true; // zero-width + LRM/RLM
+  if (code >= 0x202a && code <= 0x202e) return true; // bidi embedding/override
+  if (code >= 0x2066 && code <= 0x2069) return true; // bidi isolates
+  return code === 0xfeff; // BOM / zero-width no-break space
 }
 
 /**

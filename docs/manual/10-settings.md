@@ -147,7 +147,8 @@ Turn it off and the spending stops at once. The full walk-through is in
 
 ## What's remembered
 
-Your theme, language, notification setting, auto-label setting, autonomy default, what cards do on
+Your theme, language, notification setting, auto-label setting, **AI-label
+setting** (which stays off until you turn it on, including after an update), autonomy default, what cards do on
 submit (global, per group and per session), what a session may do when it needs
 you (global and per session), layout, groups, sessions, per-session detail
 level, and window position all persist across restarts, stored on your machine.

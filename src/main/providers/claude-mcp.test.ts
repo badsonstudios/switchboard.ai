@@ -315,7 +315,14 @@ function flagOffenders(root: string): string[] {
       // read the user's transcripts and messaged six sessions across four
       // unrelated projects. For it, eviction is the entire point. The exemption
       // is earned by `CONTAINED_ARGS`, and asserted below rather than trusted.
-      if (EXEMPT.includes(e.name)) continue;
+      // Exempt by PATH, not by basename. `EXEMPT.includes(e.name)` skipped any
+      // file of that name ANYWHERE under `src/`, so a future
+      // `src/main/anywhere/claude-oneshot.ts` would have been silently exempt —
+      // the same unbounded-exemption shape the paragraph above is proud of
+      // having closed, reintroduced one line down. Caught in review.
+      const exemptAt = EXEMPT_HOME[e.name];
+      if (exemptAt !== undefined && path.resolve(full) === path.resolve(__dirname, exemptAt, e.name))
+        continue;
       for (const line of fs.readFileSync(full, 'utf8').split('\n')) {
         if (!line.includes('--strict-mcp-config')) continue;
         // Prose may name it — the reason we never pass it has to be writable

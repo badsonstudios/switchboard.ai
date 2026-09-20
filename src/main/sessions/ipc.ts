@@ -649,8 +649,24 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     });
     if (!verdict.run) return;
 
-    const excerpt = buildExcerpt(transcripts.blocks(liveId).map(renderBlock));
-    if (!excerpt) return;
+    // ⚠️ ROUTED BY TRANSPORT, exactly as `transcripts:blocks` is. The first cut
+    // read `transcripts.blocks()` unconditionally and **the feature never ran
+    // once in the shipped configuration**: a stream session is watched with
+    // `deriveFeed: false`, so the watcher derives no blocks and hands back an
+    // empty list — while `snapshot.lines` still counts, so `shouldRelabel`
+    // happily said "run". Every session ships as `stream` since #873, so the
+    // labeler decided to spend, found nothing, and returned one line later.
+    // Caught in review; the cadence tests missed it because the harness leaves
+    // `transport` at its `pty` default.
+    const blocks =
+      isStream(liveId) && deps.streamFeed ? deps.streamFeed.blocks(liveId) : transcripts.blocks(liveId);
+    const excerpt = buildExcerpt(blocks.map(renderBlock));
+    if (!excerpt) {
+      // The one branch that used to be silent, and the reason that defect could
+      // have shipped: "decided to run, then did nothing" must leave a trace.
+      log.debug('ai label skipped: nothing readable in the conversation yet', { cardId, liveId });
+      return;
+    }
 
     // Sampled BEFORE the run so the last-writer rule has something to compare
     // against ~14 seconds later, which is plenty of time for the owner to type
@@ -668,7 +684,17 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         const label = res.ok ? acceptAiLabel(fresh, res.text, ownerAtStart) : null;
         if (label === null) return;
         deps.persist.upsert({ ...fresh, taskLabel: label, labelSource: 'auto' });
-        publishLabel(cardId, label);
+        // ⚠️ THE SCREEN-SHARE SWITCH IS RE-READ HERE, and it has to be. A run
+        // takes ~14 seconds; the owner can hit 🏷 inside that window precisely
+        // BECAUSE someone started watching, and `setAutoLabels` has already
+        // swept every card blank by the time this resolves. Publishing the raw
+        // string would push a freshly-generated phrase from their transcript
+        // straight back onto the card — the exact case §5.11's switch exists
+        // for. STORING it is right (it is an ordinary auto label, and the
+        // switch hides rather than deletes); SHOWING it is not ours to decide
+        // here, so the answer goes through the same rule every other label
+        // does.
+        publishLabel(cardId, visibleTaskLabel({ taskLabel: label, labelSource: 'auto' }, deps.autoLabels()));
       })
       .catch((err: unknown) => {
         // `runContainedPrompt` is documented never to reject, so this is the
@@ -2128,6 +2154,13 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   broker.handle('sessions:closeCard', (_e, cardId: string) => {
     dropLiveForCard(cardId);
     deps.persist.remove(cardId);
+    // #758's throttle memory dies with the card. Card ids are reused by the
+    // renderer, so leaving it would hand a brand-new card the closed one's
+    // `lastRunAt` and silently suppress its first label for up to ten minutes.
+    // A run still in flight re-creates the entry in its own `.finally`; that is
+    // harmless (the `.then` already bails on a card that no longer exists) and
+    // the next close clears it again.
+    aiLabelState.delete(cardId);
   });
 
   // drop only the live session (restart): keep the record so it can respawn

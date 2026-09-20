@@ -53,10 +53,46 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** The argv the runner actually handed to `spawn`, shim-unwrapped. */
+/** The argv the runner actually handed to `spawn`. */
 function spawnedArgv(): string[] {
   const call = vi.mocked(spawn).mock.calls[0];
   return (call?.[1] as string[]) ?? [];
+}
+
+/**
+ * The arguments AS THE CLI WILL RECEIVE THEM, on either platform.
+ *
+ * ⚠️ THIS IS A TOKENISER AND NOT A STRING MATCH, after two failed attempts that
+ * are worth recording because both looked right:
+ *
+ *   1. `expect(joined).toContain('-p')` is vacuous — `--permission-mode`
+ *      contains `-p`, so removing `-p` entirely left the test green.
+ *   2. Matching `-p` with quote/space boundaries fails on Windows: `quoteArg`
+ *      wraps every argument in quotes and `escapeForCmd` turns each `"` into
+ *      `^"`, so the real line is `"^"…claude.cmd^" ^"--tools^" ^"^" …` and the
+ *      character after `-p` is a CARET. Guessing the escaping instead of
+ *      reading it cost two rounds.
+ *
+ * And a quoted-token pattern fails the other way: `execSpec` only wraps for a
+ * `.cmd` on win32, and passes argv straight through everywhere else — so on
+ * CI's ubuntu leg there are no quotes at all. Tokenising is the only form that
+ * asserts the same claim on both.
+ */
+function containedArgs(): string[] {
+  const argv = spawnedArgv();
+  // Not the cmd.exe shim: these already ARE the arguments.
+  if (argv[0] !== '/d') return [...argv];
+  // Undo `escapeForCmd`'s carets, drop `execSpec`'s outer quotes, then take each
+  // quoted run — including `""`, the empty tool list, which is the argument
+  // whose loss would silently hand the labeler all 33 tools.
+  const line = (argv[argv.length - 1] ?? '').replace(/\^([()%!^"<>&|])/g, '$1');
+  const inner = line.replace(/^"/, '').replace(/"$/, '');
+  const tokens = (inner.match(/"(?:[^"]|"")*"/g) ?? []).map((t) =>
+    t.slice(1, -1).replace(/""/g, '"')
+  );
+  // token 0 is the CLI itself on this path; the argv branch above excludes it,
+  // so drop it to make both platforms answer the same question.
+  return /claude\.(cmd|exe)$/i.test(tokens[0] ?? '') ? tokens.slice(1) : tokens;
 }
 
 describe('the containment posture (CONTAINED_ARGS)', () => {
@@ -123,13 +159,32 @@ describe('the prompt goes on stdin, never into argv', () => {
     const p = runContainedPrompt({ prompt: 'x', cwd: 'C:\\proj' }, { log: log() });
     fake.emit('close', 0);
     await p;
-    const argv = spawnedArgv();
-    // The shim wraps everything into one cmd.exe command line, so assert on the
-    // joined form rather than on positions.
-    const line = argv.join(' ');
-    expect(line).toContain('-p');
-    expect(line).toContain('--tools');
-    expect(line).toContain('--strict-mcp-config');
+    // ⚠️ MATCHED AS WHOLE TOKENS, AND UNWRAPPED FIRST. Two traps here, both hit
+    // on the way to this version:
+    //
+    //   1. `expect(joinedLine).toContain('-p')` is VACUOUS — `--permission-mode`
+    //      contains `-p`, so deleting `-p` from the argv left the test green
+    //      while stdin stopped being the prompt source at all.
+    //   2. `expect(argv).toContain('-p')` is WRONG ON WINDOWS. With a `.cmd`,
+    //      `execSpec` hands `spawn` the cmd.exe wrapper — `/d /v:off /s /c
+    //      "<the whole command line>"` — so the flags are inside one string, not
+    //      argv entries. On Linux the same call passes the flags through
+    //      directly, so an array assertion passes on CI's ubuntu leg and fails
+    //      on its windows one.
+    const args = containedArgs();
+    expect(args).toContain('-p');
+    expect(args).toContain('--tools');
+    expect(args).toContain('--strict-mcp-config');
+    // THE EMPTY TOOL LIST SURVIVED THE SHIM. If this argument is ever dropped
+    // the labeler silently receives all 33 tools — measured — which is the
+    // loudest possible silent failure on this path.
+    expect(args[args.indexOf('--tools') + 1]).toBe('');
+    // `-p` carries NO VALUE and is LAST, so no prompt was smuggled into argv
+    // (the #714 boundary — the excerpt only ever travels on stdin).
+    expect(args[args.length - 1]).toBe('-p');
+    // The containment claim is "strict-mcp-config WITH NO `--mcp-config`", so
+    // the absence is half of it and was asserted nowhere before.
+    expect(args).not.toContain('--mcp-config');
   });
 
   it('uses the small model by default and honours an override', async () => {
@@ -197,11 +252,23 @@ describe('every failure resolves — fail-open is structural (P6)', () => {
       await vi.advanceTimersByTimeAsync(1_001);
       const r = await p;
       expect(r).toMatchObject({ ok: false, failure: 'timeout' });
-      // Through the `.cmd` shim we hold cmd.exe and `claude.exe` is its child.
-      // `killTree` shells out to taskkill on win32; on this runner the branch
-      // taken depends on the platform, so the claim asserted here is the one
-      // that holds everywhere: the runner did not simply walk away.
-      expect(r.ok).toBe(false);
+      // ⚠️ THE KILL IS ASSERTED, not just the verdict. This test's name claims
+      // the tree is killed and its two assertions used to say only "it timed
+      // out" — deleting the `killTree` call left it green while a 230 MB
+      // `claude.exe` was orphaned holding a model call, which is the entire
+      // reason the line exists. Caught in review.
+      //
+      // The branch differs by platform, so each is asserted where it applies:
+      // on win32 `killTree` spawns taskkill (a SECOND spawn, ours being the
+      // first); elsewhere it calls `child.kill()`.
+      if (process.platform === 'win32') {
+        const calls = vi.mocked(spawn).mock.calls;
+        expect(calls.length).toBeGreaterThan(1);
+        expect(calls[calls.length - 1][0]).toBe('taskkill');
+        expect(calls[calls.length - 1][1]).toEqual(['/pid', String(fake.pid), '/T', '/F']);
+      } else {
+        expect(fake.kill).toHaveBeenCalled();
+      }
     } finally {
       vi.useRealTimers();
     }

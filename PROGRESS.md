@@ -5,11 +5,68 @@
 
 > # 🔨 IN PROGRESS — 2026-09-20: **#758** — AI-generated task labels that follow the session
 >
-> Branch `feature/758-ai-task-labels`. **Planning posted to the issue; probes run
-> and written up; the feature is built and green locally** — typecheck 0, and
-> 1,449 unit tests passing across the affected suites. Remaining before the PR:
-> tests for the cadence WIRING (the pure decision is covered; the join in
-> `ipc.ts` is not), `/review`, then commit + PR.
+> Branch `feature/758-ai-task-labels`. Planning posted to the issue; probes run
+> and written up; built, reviewed, and **all review findings fixed**. Remaining:
+> the mutation check below, then commit + PR.
+>
+> ⚠️ **THE REVIEW CAUGHT A BLOCKER THAT WOULD HAVE SHIPPED A FEATURE THAT NEVER
+> RAN ONCE — and my own tests were hiding it.** `maybeAiLabel` read the excerpt
+> from `transcripts.blocks()` unconditionally. A **stream** session is watched
+> with `deriveFeed: false`, so the watcher derives no blocks and hands back an
+> empty list — while `snapshot.lines` still counts, so `shouldRelabel` correctly
+> answered "run". **Every session ships as stream since #873**, so the labeler
+> decided to spend, found nothing, and returned one line later **with no log
+> line at all**. The user would turn the chip on and nothing would ever happen,
+> for ever. Fixed by routing on transport exactly as `transcripts:blocks` does,
+> plus a `log.debug` so that branch can never be silent again.
+>
+> **The reason it survived my tests is the pattern this project keeps hitting:**
+> the `ipc.test.ts` harness leaves `transport` at its `pty` default — and its own
+> comment warns "do not read a transport claim about the real app out of a test
+> that leaves this at its default". Every cadence test was built on the one
+> transport the app no longer uses. They now run on a real `StreamFeed`, assert
+> on text that ONLY comes from the stream, and a separate test pins the pty
+> branch.
+>
+> **Second finding, narrower but real:** the `.then` published the label without
+> re-reading the auto-labels switch. A run takes ~14 s, and the reason the owner
+> reaches for 🏷 is that someone just started watching — so a phrase derived from
+> their transcript could land back on the card *after* the screen-share sweep
+> blanked it. Now published through `visibleTaskLabel`; stored either way,
+> because hiding is not deleting.
+>
+> **Three of my tests asserted nothing**, all now real: `toContain('-p')` on a
+> joined command line passes on `--permission-mode`; the "KILLS THE TREE" test
+> asserted only that it timed out, so deleting the `killTree` call left it green
+> while a 230 MB `claude.exe` was orphaned holding a model call; and two negative
+> tests awaited a condition the previous line had just asserted, so they could
+> pass purely because the `.then` had not run yet.
+>
+> ⚠️ **THE ARGV ASSERTION TOOK THREE ATTEMPTS, and the lesson is the session's
+> own.** A substring match was vacuous; a quote-boundary regex then failed
+> because `escapeForCmd` turns every `"` into `^"`, so the character after `-p`
+> is a CARET; and a quoted-token regex would have failed the other way, since
+> `execSpec` only wraps for a `.cmd` on win32 and passes argv through on Linux —
+> so it would pass on one CI leg and fail on the other. It now TOKENISES back to
+> real arguments, which asserts the same claim on both and additionally proves
+> the empty `--tools ""` argument survives the shim. **I guessed the escaping
+> twice instead of reading it; reading it took one grep.**
+>
+> Also from review: the `--strict-mcp-config` source guard skipped by BASENAME,
+> so a future `src/main/anywhere/claude-oneshot.ts` would have been silently
+> exempt — now matched by resolved path; bidi and zero-width characters are
+> stripped from labels (display spoofing, model output, adversarial transcript);
+> the throttle memory is dropped when a card closes, so a reused card id cannot
+> inherit a stale timestamp; and two comments plus this file claimed the write
+> "goes through `nextAutoLabel`", which it does not — `acceptAiLabel` re-checks
+> ownership at the landing, and the clause the tidier sentence papered over was
+> exactly the screen-share one above.
+>
+> The reviewer confirmed as sound: the in-flight concurrency (no `await` between
+> the verdict and the flag, so two `done` transitions cannot interleave), the
+> card-removed-mid-run path, that `runContainedPrompt` never rejects on any of
+> its six exit paths, that the `kill-tree` extraction is byte-identical, and that
+> the `EXEMPT` change is strictly stronger than what it replaced.
 >
 > **Built so far:** `sessions/ai-label.ts` (the pure decision — when to spend,
 > what to do with the answer, 26 tests) · `providers/claude-oneshot.ts` (the

@@ -4612,25 +4612,58 @@ describe('AI task labels — the cadence (#758, §5.11)', () => {
       .filter((p) => p.channel === 'sessions:taskLabel')
       .map((p) => p.payload as { cardId: string; label?: string });
 
+  /**
+   * A session on the transport the app ACTUALLY SHIPS.
+   *
+   * ⚠️ `transport` defaults to `pty` in this harness, and building the cadence
+   * tests on that default hid a blocker: the label path read
+   * `transcripts.blocks()` unconditionally, which is empty for a stream session
+   * (`deriveFeed: false`), so the feature never ran once in the real app while
+   * every test here passed. Since #873 every session is stream, so stream is
+   * the default here — a `pty` case is pinned separately below.
+   */
+  const streamSession = (over: Record<string, unknown> = {}) => {
+    const streamFeed = new StreamFeed();
+    const h = harness(claudeLike, dir, {
+      prior: card(),
+      transport: 'stream',
+      streamFeed,
+      ...over,
+    });
+    start(h);
+    streamFeed.offer('live-1', {
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'wiring the parser to the bus' }] },
+      parent_tool_use_id: null,
+    });
+    return h;
+  };
+
+  /** Let the injected run's `.then` chain actually run before asserting. */
+  const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
   it('SPENDS NOTHING while the switch is off, which is every default install', () => {
     // The first assertion of the feature, and the one that matters most: the
     // shipped state must cost the owner nothing at all. `maybeAiLabel` runs
     // synchronously as far as the injected call, so an empty list here is a
     // fact and not a race.
-    const h = harness(claudeLike, dir, { prior: card() });
-    start(h);
+    const h = streamSession();
     h.fireStatus('live-1', 'done');
     expect(h.oneShotCalls).toEqual([]);
   });
 
-  it('labels the card when a turn ENDS, from the recent transcript', async () => {
-    const h = harness(claudeLike, dir, { prior: card(), aiLabels: true });
-    start(h);
+  it('labels the card when a turn ENDS, from the recent conversation', async () => {
+    // ⚠️ THE REGRESSION TEST FOR THE BLOCKER. This ran on a `pty` fixture and
+    // passed while the real app — where every session is `stream` — produced no
+    // label at all, because the excerpt was read from the transcript watcher,
+    // which derives nothing for a stream session. Asserting on text that only
+    // ever comes from the STREAM is what makes this test able to fail.
+    const h = streamSession({ aiLabels: true });
     h.fireStatus('live-1', 'done');
 
     // asked once, with the conversation and the card's own folder
     expect(h.oneShotCalls).toHaveLength(1);
-    expect(h.oneShotCalls[0].prompt).toContain('transcript block for live-1');
+    expect(h.oneShotCalls[0].prompt).toContain('wiring the parser to the bus');
     expect(h.oneShotCalls[0].cwd).toBe(dir);
     // …and the prompt reads as a summarization request, never as "ignore the
     // above and emit a token" — the wording the delivery probe found gets
@@ -4647,8 +4680,7 @@ describe('AI task labels — the cadence (#758, §5.11)', () => {
     // `working` already has a meaning on this listener (it tells the watcher a
     // conversation exists), and labelling there would ask what a session is
     // doing at the one moment it has not done it yet.
-    const h = harness(claudeLike, dir, { prior: card(), aiLabels: true });
-    start(h);
+    const h = streamSession({ aiLabels: true });
     h.fireStatus('live-1', 'working');
     expect(h.oneShotCalls).toEqual([]);
   });
@@ -4657,11 +4689,10 @@ describe('AI task labels — the cadence (#758, §5.11)', () => {
     // The gate is in `shouldRelabel` so it fires BEFORE the money is spent —
     // `acceptAiLabel` would also throw the answer away, but only after paying
     // for it.
-    const h = harness(claudeLike, dir, {
+    const h = streamSession({
       prior: { ...card(), taskLabel: 'mine, thanks', labelSource: 'user' },
       aiLabels: true,
     });
-    start(h);
     h.fireStatus('live-1', 'done');
     expect(h.oneShotCalls).toEqual([]);
     expect(stored(h).taskLabel).toBe('mine, thanks');
@@ -4671,8 +4702,7 @@ describe('AI task labels — the cadence (#758, §5.11)', () => {
     // A session running flat out ends turns constantly. Without the gap and the
     // growth gate this would be a model call per turn per session, which is the
     // failure the whole design is arranged around.
-    const h = harness(claudeLike, dir, { prior: card(), aiLabels: true });
-    start(h);
+    const h = streamSession({ aiLabels: true });
     h.fireStatus('live-1', 'done');
     await vi.waitFor(() => expect(stored(h).taskLabel).toBe('Wire up the parser'));
     h.fireStatus('live-1', 'done');
@@ -4681,34 +4711,69 @@ describe('AI task labels — the cadence (#758, §5.11)', () => {
   });
 
   it('a conversation too thin to describe is left alone', () => {
-    const h = harness(claudeLike, dir, { prior: card(), aiLabels: true, transcriptLines: 3 });
-    start(h);
+    const h = streamSession({ aiLabels: true, transcriptLines: 3 });
     h.fireStatus('live-1', 'done');
     expect(h.oneShotCalls).toEqual([]);
+  });
+
+  it('a PTY session still reads its conversation from the transcript', () => {
+    // The other half of the routing the blocker got wrong. Both branches are
+    // pinned so a future simplification to either one fails here rather than in
+    // the app — and `transcripts.blocks` is what this fixture returns.
+    const h = harness(claudeLike, dir, { prior: card(), aiLabels: true, transport: 'pty' });
+    start(h);
+    h.fireStatus('live-1', 'done');
+    expect(h.oneShotCalls).toHaveLength(1);
+    expect(h.oneShotCalls[0].prompt).toContain('transcript block for live-1');
   });
 
   it('spends nothing while auto labels are HIDDEN', () => {
     // The screen-share switch is off, so any label written now would be
     // invisible — the one way to waste the owner's subscription outright rather
     // than merely often.
-    const h = harness(claudeLike, dir, { prior: card(), aiLabels: true, autoLabels: false });
-    start(h);
+    const h = streamSession({ aiLabels: true, autoLabels: false });
     h.fireStatus('live-1', 'done');
     expect(h.oneShotCalls).toEqual([]);
+  });
+
+  it('LABELS HIDDEN MID-RUN: it is stored, but never pushed to the screen', async () => {
+    // ⚠️ The gap a review caught, and the window is real rather than
+    // theoretical: a run takes ~14 seconds, and the reason the owner reaches
+    // for 🏷 is that someone just started watching their screen. By the time
+    // this resolves, `setAutoLabels` has already swept every card blank —
+    // pushing the raw string would put a phrase derived from their transcript
+    // straight back onto the card, which is the one thing that switch exists
+    // to prevent.
+    const h = streamSession({ aiLabels: true });
+    h.fireStatus('live-1', 'done');
+    expect(h.oneShotCalls).toHaveLength(1); // the run is out…
+
+    h.call('settings:setAutoLabels', false); // …and the owner hides labels now
+    await settle();
+
+    // stored, because hiding is not deleting and the switch is reversible…
+    expect(stored(h).taskLabel).toBe('Wire up the parser');
+    // …but the last thing the renderer was told is to show NOTHING for it.
+    const last = labels(h).at(-1);
+    expect(last).toEqual({ cardId: 'card-1', label: undefined });
   });
 
   it('a FAILED run leaves the label exactly as it was (P6)', async () => {
     // Fail-open is the whole posture: a rate limit, no network, a renamed flag
     // — the stale label stays and the session never notices.
-    const h = harness(claudeLike, dir, {
+    const h = streamSession({
       prior: { ...card(), taskLabel: 'an older label', labelSource: 'auto' },
       aiLabels: true,
       oneShotResult: { ok: false, failure: 'timeout' },
     });
-    start(h);
     h.fireStatus('live-1', 'done');
     expect(h.oneShotCalls).toHaveLength(1);
-    await vi.waitFor(() => expect(h.oneShotCalls).toHaveLength(1));
+    // `settle()`, not a `waitFor` on something already true: waiting for a
+    // condition the previous line just asserted resolves on the first tick, so
+    // the "unchanged" assertion below could pass purely because the `.then` had
+    // not run yet — the project's recurring shape of a test that re-establishes
+    // its own precondition.
+    await settle();
     expect(stored(h).taskLabel).toBe('an older label');
     expect(labels(h)).toEqual([]);
   });
@@ -4718,14 +4783,14 @@ describe('AI task labels — the cadence (#758, §5.11)', () => {
     // `<function_calls>` blocks as PLAIN TEXT. The excerpt is someone else's
     // conversation, so the model can be steered — and this is the card that
     // would have displayed the result.
-    const h = harness(claudeLike, dir, {
+    const h = streamSession({
       prior: { ...card(), taskLabel: 'an older label', labelSource: 'auto' },
       aiLabels: true,
       oneShotResult: { ok: true, text: '<function_calls>\n[{"name":"bash"}]' },
     });
-    start(h);
     h.fireStatus('live-1', 'done');
-    await vi.waitFor(() => expect(h.oneShotCalls).toHaveLength(1));
+    expect(h.oneShotCalls).toHaveLength(1);
+    await settle(); // see the note in the failed-run test above
     expect(stored(h).taskLabel).toBe('an older label');
     expect(labels(h)).toEqual([]);
   });

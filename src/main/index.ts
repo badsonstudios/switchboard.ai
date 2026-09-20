@@ -2230,7 +2230,13 @@ app
       // Its own log subsystem, not `ipc`: a labeler that starts failing (a rate
       // limit, a CLI upgrade that renames a flag) should be findable without
       // reading every IPC line, and this is the one path that spends money.
-      runOneShot: (req) => runContainedPrompt(req, { log: createLogger(sink, 'ai-label') }),
+      runOneShot: ((): ((req: Parameters<typeof runContainedPrompt>[0]) => ReturnType<typeof runContainedPrompt>) => {
+        // Built ONCE, not per call: a label run happens on every finished turn
+        // across every open session, and minting a logger each time is pure
+        // churn for the life of the app.
+        const aiLabelLog = createLogger(sink, 'ai-label');
+        return (req) => runContainedPrompt(req, { log: aiLabelLog });
+      })(),
       // §5.5 Level 3 (P2-E11-12). A thunk, not a snapshot: the flag can be
       // turned off while cards are open, and the next fork request must see
       // that rather than a value read at wiring time.
