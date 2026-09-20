@@ -3,12 +3,23 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🚧 IN PROGRESS — 2026-09-19: **#873** — the Terminal tab and the ⋯ transport switch are removed
+> # ✅ MERGED — 2026-09-19: **#873** — the Terminal tab and the ⋯ transport switch are removed
 >
-> Branch `feature/873-remove-terminal-tab`, off `9a8b86e`. **UI-level removal
-> only** — the PTY/xterm transport, its adapters, the fake provider and the
-> `check:*` scripts all stay, because E18-16 still requires PTY to keep WORKING
-> as the fallback while Direct mode is under test.
+> **PR #875, squashed to `b67f95d`** (72 files, +1,228 / −2,582). The issue was
+> closed by the PR body's closing keyword; **#835, #768 and #705 were checked
+> immediately afterwards against a baseline taken before the merge and are all
+> still open** — the closing-keyword trap did not fire.
+> ⚠️ **NOT RELEASED** — joins the `0.8.92 — unreleased` section alongside #864.
+> `gh release list` is the authority and **v0.8.91** is still the latest tag, so
+> this is on `main` and in no installed build.
+>
+> **UI-level removal only** — the PTY/xterm transport, its adapters, the fake
+> provider and the `check:*` scripts all stay, because E18-16 still requires PTY
+> to keep WORKING as the fallback while Direct mode is under test. That item is
+> now marked **PARTIALLY EXECUTED** in `docs/plans/05-transport-migration.md`, so
+> nobody reads it as done when only its UI half shipped. DESIGN §5.10 carries an
+> amendment for the same reason — including its now-false "Terminal-only remains
+> a valid presentation (escape hatch)" clause.
 >
 > **The shape, and the one decision worth re-reading.** I planned to register the
 > Terminal panel only for PTY cards, so the e2e suite's xterm witnesses would
@@ -100,7 +111,18 @@
 > `points.test.ts`, not the real one. An e2e seeding a stale view id into the ui
 > blob would prove it end to end.
 >
-> **Next:** commit, PR, merge on green CI.
+> **CI: all four jobs green on the first run — and two of them settled the
+> known-red items above.** `windows-latest` passed, so `git-service.test.ts`'s
+> 2600 ms budget is fine on a quiet machine; `e2e windows-latest` passed in
+> 19m49s, so `popout-new-session.spec.ts` passes on CI *for this exact branch*.
+> Both local reds were this desktop, not this change — which is the outcome the
+> evidence predicted, and the reason neither was "fixed" by guessing.
+>
+> **Next up:** nothing nominated. The follow-up above — an e2e proving the
+> removed-tab fallback against the REAL resolver rather than `points.test.ts`'s
+> copy of it — is deliberately **unfiled**; worth an issue if Dan wants it. Open
+> Phase 2 queue still includes #856, #851, #832, #830, #828, #824, plus #719 and
+> #740.
 
 > # ✅ MERGED — 2026-09-19: **#864** — the main window comes back to the monitor it was on
 >
