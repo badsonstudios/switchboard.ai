@@ -3,6 +3,43 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🚢 RELEASED — 2026-09-20: **v0.8.92** — Claude writes the task labels, and the Terminal tab is gone
+>
+> **Published 18:11 UTC**, `switchboard-Setup-0.8.92.exe` (97 MB) + its
+> `.sha256`, tag on `ff315a8`. `gh release list` shows it as **Latest**, and it
+> is neither a draft nor a prerelease — so the in-app update check offers it.
+>
+> **This supersedes the `⚠️ NOT RELEASED` note on the three entries below** —
+> **#758**, **#873** and **#864** are all in an installed build now. Those notes
+> are left as written rather than rewritten in place, the same way v0.8.91's
+> heading handled its backlog: an entry records what was true when it landed, and
+> this heading is where the file says otherwise. **`gh release list` remains the
+> authority**; the next unreleased section is `0.8.93 — unreleased`, which is
+> currently empty.
+>
+> **THE THREE HAND-TESTS THIS UNBLOCKS, and they have been waiting on a release
+> rather than on anyone's attention:**
+>
+> - **#873's seven steps** are the big one — the Terminal tab and the ⋯ transport
+>   switch are gone, which is a user-visible REMOVAL that no machine here could
+>   judge. The two worth the time are the **migration log line** (a card that had
+>   been set to Terminal must come back on Direct, keep its conversation, and log
+>   that it moved) and the **trust-chip tooltip**, which used to point at a menu
+>   item that no longer exists.
+> - **#864 needs the real rig** — a second monitor, **POWERED OFF** rather than
+>   locked or blanked. No CI runner has two displays, so nothing automated says
+>   anything about whether this works on Dan's desk.
+> - **#758's drift step** — turn the labels chip to **✨ AI labels**, then keep
+>   working until the job genuinely changes. The label must FOLLOW. That is the
+>   whole feature, and a label that never updates means it failed even if the
+>   first one looked right.
+>
+> **The cut caught one thing worth remembering:** `package-lock.json` was stale
+> after the version bump, and `release-notes.test.js` failed on it — the guard
+> that exists because the lock once sat on `0.1.0` through four releases. Cut
+> step 1 says `npm install --package-lock-only`; it is not optional and the gate
+> is what enforces it.
+
 > # ✅ MERGED — 2026-09-20: **#758** — AI-written task labels that follow the session
 >
 > **PR #878, squashed to `52802fa`** (30 files). The issue was closed by the PR
