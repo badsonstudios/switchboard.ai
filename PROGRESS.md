@@ -3,11 +3,24 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔨 IN PROGRESS — 2026-09-20: **#758** — AI-generated task labels that follow the session
+> # ✅ MERGED — 2026-09-20: **#758** — AI-written task labels that follow the session
 >
-> Branch `feature/758-ai-task-labels`. Planning posted to the issue; probes run
-> and written up; built, reviewed, and **all review findings fixed**. Remaining:
-> the mutation check below, then commit + PR.
+> **PR #878, squashed to `52802fa`** (30 files). The issue was closed by the PR
+> body's closing keyword; **#877, #879, #835, #768, #705, #718 and #722 were all
+> checked immediately afterwards against a baseline taken BEFORE the merge and
+> are still open** — the closing-keyword trap did not fire. (#760 reads closed in
+> both snapshots; it was already closed.)
+>
+> ⚠️ **NOT RELEASED** — `gh release list` still shows **v0.8.91** as Latest and
+> `package.json` is 0.8.91, so this is on `main`, in the `0.8.92 — unreleased`
+> section, and **in no installed build**. Dan cannot hand-test it yet.
+>
+> **Two issues were filed out of this item**, both on Dan's explicit call:
+> **#877** (sessions-rail row layout — status beside the name, task label on two
+> lines; he picked the shape off a mockup) and **#879** (the title bar does not
+> fit: 675px of overflow at 1024px, ~11 controls off-screen, the document
+> scrolling sideways — pre-existing, and the reason this item ends with one chip
+> rather than two).
 >
 > ⚠️ **THE REVIEW CAUGHT A BLOCKER THAT WOULD HAVE SHIPPED A FEATURE THAT NEVER
 > RAN ONCE — and my own tests were hiding it.** `maybeAiLabel` read the excerpt
@@ -116,9 +129,28 @@
 > The three states map onto the two booleans that already existed, so **main, the
 > store and the IPC are untouched** by the fold — it is renderer-only.
 >
-> **Still unproven and honest about it:** neither CI failure reproduces locally,
-> so the fold is reasoned from the measurement rather than demonstrated here. CI
-> is the arbiter.
+> **CI SETTLED IT, AND THE FOLD WAS RIGHT.** Neither geometry failure ever
+> reproduced on this machine, so the fix was reasoned from the measurement and
+> CI was the only arbiter available. On `f612638` **`e2e windows-latest` passed
+> at 18m53s** — both specs that had failed on the two previous heads were green,
+> which is the evidence the crowding diagnosis was correct.
+>
+> ⚠️ **Then the UNIT job failed on #835 and it took a re-run** — the test named
+> in that ticket's own title (`taskkill that cannot even START`,
+> `expected false to be true`, 3,679 ms), green on re-run at 8m4s. **Sighting 6
+> is logged there with the argument that clears this branch**: the failing run's
+> commit was RENDERER-ONLY, while the two heads that actually carried the
+> `killTree` extraction both passed the same job. #835 now has two distinct
+> signatures in one file — that test and the 2,600 ms budget — both load-only,
+> both green in isolation, which points at the file's reliance on real process
+> timing rather than at either assertion. **Second merge this ticket has
+> blocked.**
+>
+> Final state: all four jobs green, squash-merged.
+>
+> **Next up:** nothing nominated. **#877** (the rail rows) is the natural
+> follow-on and is filed with its shape already decided. Open Phase 2 queue also
+> includes #879, #856, #851, #832, #830, #828, #824, plus #719 and #740.
 >
 > **Built so far:** `sessions/ai-label.ts` (the pure decision — when to spend,
 > what to do with the answer, 26 tests) · `providers/claude-oneshot.ts` (the
