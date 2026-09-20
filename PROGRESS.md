@@ -5,8 +5,29 @@
 
 > # 🔨 IN PROGRESS — 2026-09-20: **#758** — AI-generated task labels that follow the session
 >
-> Branch `feature/758-ai-task-labels`. **Planning done and posted to the issue**;
-> nothing implemented yet. The probe runs before the feature is written.
+> Branch `feature/758-ai-task-labels`. **Planning posted to the issue; probes run
+> and written up; the feature is built and green locally** — typecheck 0, and
+> 1,449 unit tests passing across the affected suites. Remaining before the PR:
+> tests for the cadence WIRING (the pure decision is covered; the join in
+> `ipc.ts` is not), `/review`, then commit + PR.
+>
+> **Built so far:** `sessions/ai-label.ts` (the pure decision — when to spend,
+> what to do with the answer, 26 tests) · `providers/claude-oneshot.ts` (the
+> contained run, 15 tests) · `transport/kill-tree.ts` (extracted from
+> `git-service.ts` rather than copied — see below) · the `aiLabels` workspace
+> setting, OFF by default on the `experimentalFork` shape · the IPC pair, the
+> preload bridge, the capability entries · the **✨ AI labels** title-bar chip ·
+> the cadence hook on `manager.onStatusChange` when a turn reaches `done` ·
+> manual pages, CHANGELOG, dogfood row.
+>
+> ⚠️ **IT TOUCHES ONE GIT FILE, AND THAT IS WORTH KNOWING BEFORE READING CI.**
+> `killTree` was private to `git-service.ts` and the one-shot runner needs it too
+> (through the `.cmd` shim we hold cmd.exe and the 230 MB `claude.exe` is its
+> child, so `kill()` would orphan a model call). It is now
+> `transport/kill-tree.ts`, imported by both, rather than a second shipping copy
+> — the thing `env.ts` exists to prevent. **So if #835 reddens on this branch it
+> is NOT automatically "not ours" this time**; `git-service.test.ts` was run in
+> isolation and passed **74/74**.
 >
 > **The owner made four decisions in planning (2026-09-20) — do not re-litigate:**
 >

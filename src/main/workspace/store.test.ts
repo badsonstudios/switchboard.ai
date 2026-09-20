@@ -805,6 +805,44 @@ describe('update prefs (P2-E19-03)', () => {
     expect(b.getAutoLabels()).toBe(false);
   });
 
+  it('AI labels default OFF, and only a literal true turns them on (#758)', () => {
+    // ⚠️ THE OPPOSITE DEFAULT FROM EVERY OTHER PREF IN THIS FILE, and the one
+    // that must not drift. `autoLabels` reads a line the CLI already wrote and
+    // costs nothing; this one runs a contained `claude -p` over the transcript
+    // and SPENDS THE OWNER'S SUBSCRIPTION. A workspace file written before the
+    // feature existed cannot have consented to that, so absent must mean off.
+    const st = makeStore(file);
+    st.load();
+    expect(st.getAiLabels()).toBe(false);
+
+    // …and the `=== true` shape, not `!== false`: a hand-edited string or a
+    // number is not consent either.
+    for (const junk of ['true', 1, {}, null]) {
+      fs.writeFileSync(file, JSON.stringify({ version: 1, aiLabels: junk }));
+      const s = makeStore(file);
+      s.load();
+      expect(s.getAiLabels(), `aiLabels: ${JSON.stringify(junk)}`).toBe(false);
+    }
+  });
+
+  it('the AI-label switch survives a reload once it is turned on (#758)', () => {
+    const a = makeStore(file);
+    a.load();
+    a.setAiLabels(true);
+    a.save();
+
+    const b = makeStore(file);
+    b.load();
+    expect(b.getAiLabels()).toBe(true);
+    // and off again, so the owner can stop the spending as easily as they
+    // started it
+    b.setAiLabels(false);
+    b.save();
+    const c = makeStore(file);
+    c.load();
+    expect(c.getAiLabels()).toBe(false);
+  });
+
   it('a card remembers who set its label (P2-E7-06)', () => {
     // `labelSource` is what makes "typing pins it forever" survive a restart.
     const a = makeStore(file);
@@ -1541,6 +1579,16 @@ describe('load-time repairs are audible (#344)', () => {
       const warns = loadWarns();
       expect(warns).toHaveLength(1);
       expect(warns[0].msg).toMatch(/auto-label .* leaving it on/);
+    });
+
+    it('a non-boolean AI-label setting says it stayed OFF (#758)', () => {
+      // The opposite direction from every other repair note in this block, and
+      // deliberately so: this setting spends the owner's subscription, so junk
+      // in the file must never be read as consent to start spending.
+      write({ version: 1, aiLabels: 'yes please' });
+      const warns = loadWarns();
+      expect(warns).toHaveLength(1);
+      expect(warns[0].msg).toMatch(/AI-label .* leaving it off/);
     });
   });
 

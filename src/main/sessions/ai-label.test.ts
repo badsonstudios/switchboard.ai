@@ -164,7 +164,18 @@ describe('what the model said is untrusted text (cleanAiLabel)', () => {
   });
 
   it('collapses whitespace and strips control characters', () => {
-    expect(cleanAiLabel('Fix   the\tlogin redirect')).toBe('Fix the login redirect');
+    // Every control character here is built from its CODE POINT rather than
+    // typed as a Unicode escape, because an escape written into a source file
+    // through this project's tooling lands as a REAL control byte — invisible
+    // in editors and diffs, and the accident `check-nul.js` exists to catch for
+    // NUL (#435). Writing one even inside a comment does it, which is how this
+    // comment got mangled on the first attempt. `stripControl` is written the
+    // same way, for the same reason.
+    const bel = String.fromCharCode(7);
+    const tab = String.fromCharCode(9);
+    expect(cleanAiLabel(`Fix   the${tab}login${bel} redirect`)).toBe('Fix the login redirect');
+    // …and a NUL specifically, which is the byte the repo has a scanner for
+    expect(cleanAiLabel(`Fix the${String.fromCharCode(0)} login`)).toBe('Fix the login');
   });
 
   it('REFUSES anything that opens like markup or a tool call', () => {

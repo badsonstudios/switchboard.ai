@@ -125,6 +125,26 @@ at once and sends notifications back to using the session's name. **Labels you
 typed yourself stay visible** — those are your words. Nothing is deleted, so
 turning it back on restores everything instantly.
 
+## AI task labels
+
+**✨ AI labels** is the only setting in switchboard that spends your Claude
+subscription, so it is **off until you turn it on** — and it stays off after an
+update, and after moving to a new machine.
+
+With it on, switchboard asks Claude to read what each session has recently been
+doing and write a short label for it, refreshing it as the work moves on. The
+setting above shows the name Claude gave the *conversation*, which describes how
+a session started; this one describes what it is doing **now**.
+
+It only asks when a session finishes a turn, only when the conversation has
+actually grown, at most once every ten minutes per session, and never more than
+one at a time per session — so idle sessions cost you nothing at all. The check
+runs with **no tools**: it cannot run commands, change files, or reach your
+other sessions.
+
+Turn it off and the spending stops at once. The full walk-through is in
+[Sessions › Letting Claude write the label instead](02-sessions.md#letting-claude-write-the-label-instead-and-keep-it-up-to-date).
+
 ## What's remembered
 
 Your theme, language, notification setting, auto-label setting, autonomy default, what cards do on

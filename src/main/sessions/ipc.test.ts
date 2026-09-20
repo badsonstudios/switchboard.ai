@@ -81,6 +81,17 @@ function harness(
     autoTrust?: boolean;
     /** auto task labels (P2-E7-06) — defaults ON, which is the shipped default */
     autoLabels?: boolean;
+    /**
+     * AI-written task labels (#758) — defaults OFF, matching the shipped
+     * default. A harness that defaulted it ON would let every "it did not
+     * spend anything" assertion pass for the wrong reason, and would stop
+     * covering the state every user starts in.
+     */
+    aiLabels?: boolean;
+    /** what the injected one-shot answers; absent = a plain successful label */
+    oneShotResult?: { ok: true; text: string } | { ok: false; failure: string };
+    /** transcript size the watcher reports, for the staleness gates (#758) */
+    transcriptLines?: number;
     /** the watcher refuses a root it cannot poll safely */
     watchAccepts?: boolean;
     /** live session ids the manager should claim to know (P2-E18-08b) */
@@ -185,6 +196,8 @@ function harness(
     ...(opts.otherCards ?? []).map((c) => ({ ...c })),
   ];
   let autoLabels = opts.autoLabels ?? true;
+  // #758. OFF by default, like the shipped setting — see the option's note.
+  let aiLabels = opts.aiLabels ?? false;
   // OFF by default — the state nearly every user is in, and the one the
   // refusal path depends on.
   const experimentalFork = opts.experimentalFork ?? false;
@@ -284,6 +297,15 @@ function harness(
    * per-call assertion would still pass (#187 review).
    */
   const trace: string[] = [];
+  /**
+   * Status-change listeners (#758). The stub used to DISCARD these, which was
+   * harmless while nothing in this module acted on a transition — the AI-label
+   * cadence does, so the one signal that can make the app spend the owner's
+   * subscription would otherwise be the one signal no test could send.
+   */
+  const statusListeners: Array<(c: { sessionId: string; to: string }) => void> = [];
+  /** every contained one-shot the label path asked for, in order (#758) */
+  const oneShotCalls: Array<{ prompt: string; cwd: string }> = [];
   /** the Session Bus wiring (P2-E11-03), in call order */
   const busAttached: string[] = [];
   const busReleased: string[] = [];
@@ -298,7 +320,9 @@ function harness(
       onNativeSessionId: (l: (liveId: string, nativeId: string, cause?: 'clear') => void) => {
         nativeIdListeners.push(l);
       },
-      onStatusChange: () => {},
+      onStatusChange: (l: (c: { sessionId: string; to: string }) => void) => {
+        statusListeners.push(l);
+      },
       onSessionExit: (l: (e: { sessionId: string; code: number; crashed: boolean }) => void) => {
         exitListeners.push(l);
       },
@@ -464,6 +488,24 @@ function harness(
         return watchAccepts;
       },
       blocks: (id: string) => [{ seq: 1, kind: 'assistant', text: `transcript block for ${id}` }],
+      // #758's staleness gates read the line count off the snapshot. Big enough
+      // by default to clear the "too thin" floor, so a test that cares about a
+      // DIFFERENT gate does not have to set it.
+      snapshot: (id: string) => ({ sessionId: id, lines: opts.transcriptLines ?? 500 }),
+      /**
+       * P2-E15-10's "a conversation started" signal.
+       *
+       * A PRE-EXISTING HOLE IN THIS STUB, exposed rather than created by #758.
+       * The status listener has always called this on a `working` transition,
+       * but the manager stub DISCARDED its listeners, so the line was
+       * unreachable from here and a missing method cost nothing. Now that
+       * `fireStatus` exists, omitting it makes any test that fires `working`
+       * die with "not a function" — which is a fact about the fixture, not
+       * about the code under test.
+       */
+      noteConversationStarted: (id: string) => {
+        trace.push(`conversation-started:${id}`);
+      },
       // Which file a session is bound to — how `transcripts:search` turns a
       // session id into something to scan (P2-E17-01). `null` is the ordinary
       // answer for a session nobody has prompted yet.
@@ -502,6 +544,21 @@ function harness(
     autoLabels: () => autoLabels,
     setAutoLabels: (on: boolean) => {
       autoLabels = on;
+    },
+    // AI task labels (#758). OFF by default, and `setAiLabels` writes through so
+    // the switch test drives the real handler rather than a stub of it.
+    aiLabels: () => aiLabels,
+    setAiLabels: (on: boolean) => {
+      aiLabels = on;
+    },
+    // The contained one-shot, INJECTED. Records what it was asked and answers
+    // whatever the test wants — so "did this spend anything?" is a length check
+    // on an array rather than an inference from a label that may not have
+    // changed for three other reasons.
+    runOneShot: (req: { prompt: string; cwd: string }) => {
+      oneShotCalls.push({ prompt: req.prompt, cwd: req.cwd });
+      const answer = opts.oneShotResult ?? { ok: true as const, text: 'Wire up the parser\n' };
+      return Promise.resolve(answer);
     },
     // §5.5 Level 3 (P2-E11-12). OFF in the harness by default, matching the
     // shipped default — a fixture that defaulted it ON would let every fork
@@ -598,6 +655,12 @@ function harness(
     fireNativeId: (liveId: string, nativeId: string, cause?: 'clear') => {
       for (const l of nativeIdListeners) l(liveId, nativeId, cause);
     },
+    /** Play the session manager: a live session reached a status (#758). */
+    fireStatus: (sessionId: string, to: string) => {
+      for (const l of statusListeners) l({ sessionId, to });
+    },
+    /** what the injected one-shot was asked to run, in order (#758) */
+    oneShotCalls,
     watched,
     cards,
     /**
@@ -4533,6 +4596,153 @@ describe('the env override is not written back onto the card (P2-E18-17)', () =>
 // title on its snapshot, and this module decides what that does to the card.
 // Driven by the REAL captured `ai-title` titles, so a repeat here is a repeat
 // the CLI actually produced.
+describe('AI task labels — the cadence (#758, §5.11)', () => {
+  let dir: string;
+  tempDirEach('sb-ai-label-', (d) => (dir = d));
+  const { card, start } = cardHelpers(() => dir);
+
+  /** an adapter that writes transcripts; titles are irrelevant to this path */
+  const claudeLike: ProviderCapabilities = {
+    transcripts: { projectsRoot: () => '/roots/claude' },
+  };
+
+  const stored = (h: { cards: PersistedSession[] }) => h.cards.find((c) => c.id === 'card-1')!;
+  const labels = (h: { pushed: Array<{ channel: string; payload: unknown }> }) =>
+    h.pushed
+      .filter((p) => p.channel === 'sessions:taskLabel')
+      .map((p) => p.payload as { cardId: string; label?: string });
+
+  it('SPENDS NOTHING while the switch is off, which is every default install', () => {
+    // The first assertion of the feature, and the one that matters most: the
+    // shipped state must cost the owner nothing at all. `maybeAiLabel` runs
+    // synchronously as far as the injected call, so an empty list here is a
+    // fact and not a race.
+    const h = harness(claudeLike, dir, { prior: card() });
+    start(h);
+    h.fireStatus('live-1', 'done');
+    expect(h.oneShotCalls).toEqual([]);
+  });
+
+  it('labels the card when a turn ENDS, from the recent transcript', async () => {
+    const h = harness(claudeLike, dir, { prior: card(), aiLabels: true });
+    start(h);
+    h.fireStatus('live-1', 'done');
+
+    // asked once, with the conversation and the card's own folder
+    expect(h.oneShotCalls).toHaveLength(1);
+    expect(h.oneShotCalls[0].prompt).toContain('transcript block for live-1');
+    expect(h.oneShotCalls[0].cwd).toBe(dir);
+    // …and the prompt reads as a summarization request, never as "ignore the
+    // above and emit a token" — the wording the delivery probe found gets
+    // REFUSED, which would make the feature silently stop working.
+    expect(h.oneShotCalls[0].prompt).not.toMatch(/ignore/i);
+
+    // the label lands, as an AUTO label, and the renderer is told
+    await vi.waitFor(() => expect(stored(h).taskLabel).toBe('Wire up the parser'));
+    expect(stored(h).labelSource).toBe('auto');
+    expect(labels(h)).toEqual([{ cardId: 'card-1', label: 'Wire up the parser' }]);
+  });
+
+  it('only a FINISHED turn triggers it — a starting one never does', () => {
+    // `working` already has a meaning on this listener (it tells the watcher a
+    // conversation exists), and labelling there would ask what a session is
+    // doing at the one moment it has not done it yet.
+    const h = harness(claudeLike, dir, { prior: card(), aiLabels: true });
+    start(h);
+    h.fireStatus('live-1', 'working');
+    expect(h.oneShotCalls).toEqual([]);
+  });
+
+  it('never spends a call on a label the user typed', () => {
+    // The gate is in `shouldRelabel` so it fires BEFORE the money is spent —
+    // `acceptAiLabel` would also throw the answer away, but only after paying
+    // for it.
+    const h = harness(claudeLike, dir, {
+      prior: { ...card(), taskLabel: 'mine, thanks', labelSource: 'user' },
+      aiLabels: true,
+    });
+    start(h);
+    h.fireStatus('live-1', 'done');
+    expect(h.oneShotCalls).toEqual([]);
+    expect(stored(h).taskLabel).toBe('mine, thanks');
+  });
+
+  it('does not relabel on every turn — the second ending is refused', async () => {
+    // A session running flat out ends turns constantly. Without the gap and the
+    // growth gate this would be a model call per turn per session, which is the
+    // failure the whole design is arranged around.
+    const h = harness(claudeLike, dir, { prior: card(), aiLabels: true });
+    start(h);
+    h.fireStatus('live-1', 'done');
+    await vi.waitFor(() => expect(stored(h).taskLabel).toBe('Wire up the parser'));
+    h.fireStatus('live-1', 'done');
+    h.fireStatus('live-1', 'done');
+    expect(h.oneShotCalls).toHaveLength(1);
+  });
+
+  it('a conversation too thin to describe is left alone', () => {
+    const h = harness(claudeLike, dir, { prior: card(), aiLabels: true, transcriptLines: 3 });
+    start(h);
+    h.fireStatus('live-1', 'done');
+    expect(h.oneShotCalls).toEqual([]);
+  });
+
+  it('spends nothing while auto labels are HIDDEN', () => {
+    // The screen-share switch is off, so any label written now would be
+    // invisible — the one way to waste the owner's subscription outright rather
+    // than merely often.
+    const h = harness(claudeLike, dir, { prior: card(), aiLabels: true, autoLabels: false });
+    start(h);
+    h.fireStatus('live-1', 'done');
+    expect(h.oneShotCalls).toEqual([]);
+  });
+
+  it('a FAILED run leaves the label exactly as it was (P6)', async () => {
+    // Fail-open is the whole posture: a rate limit, no network, a renamed flag
+    // — the stale label stays and the session never notices.
+    const h = harness(claudeLike, dir, {
+      prior: { ...card(), taskLabel: 'an older label', labelSource: 'auto' },
+      aiLabels: true,
+      oneShotResult: { ok: false, failure: 'timeout' },
+    });
+    start(h);
+    h.fireStatus('live-1', 'done');
+    expect(h.oneShotCalls).toHaveLength(1);
+    await vi.waitFor(() => expect(h.oneShotCalls).toHaveLength(1));
+    expect(stored(h).taskLabel).toBe('an older label');
+    expect(labels(h)).toEqual([]);
+  });
+
+  it('an answer that looks like markup is refused rather than written', async () => {
+    // Probe 758 Q4: a contained turn asked to snoop replied with
+    // `<function_calls>` blocks as PLAIN TEXT. The excerpt is someone else's
+    // conversation, so the model can be steered — and this is the card that
+    // would have displayed the result.
+    const h = harness(claudeLike, dir, {
+      prior: { ...card(), taskLabel: 'an older label', labelSource: 'auto' },
+      aiLabels: true,
+      oneShotResult: { ok: true, text: '<function_calls>\n[{"name":"bash"}]' },
+    });
+    start(h);
+    h.fireStatus('live-1', 'done');
+    await vi.waitFor(() => expect(h.oneShotCalls).toHaveLength(1));
+    expect(stored(h).taskLabel).toBe('an older label');
+    expect(labels(h)).toEqual([]);
+  });
+
+  it('the switch is readable and writable over IPC, and starts off', () => {
+    // Both handlers are SYNCHRONOUS, like `settings:getAutoLabels` beside them,
+    // so the harness hands back the value itself rather than a promise — using
+    // `.resolves` here fails with "you must provide a Promise to expect()".
+    const h = harness(claudeLike, dir, { prior: card() });
+    expect(h.call('settings:getAiLabels')).toBe(false);
+    expect(h.call('settings:setAiLabels', true)).toBe(true);
+    expect(h.call('settings:getAiLabels')).toBe(true);
+    // …and only a real `true` turns it on, like the store behind it
+    expect(h.call('settings:setAiLabels', 'yes')).toBe(false);
+  });
+});
+
 describe('auto task labels (P2-E7-06, §5.11)', () => {
   let dir: string;
   tempDirEach('sb-label-', (d) => (dir = d));

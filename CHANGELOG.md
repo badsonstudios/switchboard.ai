@@ -96,6 +96,24 @@ on the floor, and say so in your PR.
 
 ## 0.8.92 — unreleased
 
+### Added
+
+- **Claude can write your task labels, and keep them up to date.** Sessions
+  already borrow the name Claude gives the conversation, but that describes how
+  a session *started* — not much help by the afternoon, when the one that began
+  as "fix the login redirect" is three jobs further on. Turn on **✨ AI labels**
+  in the title bar and switchboard asks Claude to read what each session has
+  actually been doing and write a short label for it, then write a new one as
+  the work moves on. **It is off until you switch it on, because it is the one
+  thing in switchboard that spends your Claude subscription** — and it is
+  careful about when: only when a session finishes a turn, only when the
+  conversation has actually grown, at most once every ten minutes per session,
+  and never two at once for the same session. An idle session costs you nothing.
+  Anything you type still wins — type a label while it is thinking and your
+  words are kept. If it fails, the label you had simply stays. The check runs
+  with **no tools at all**: it cannot run commands, change files, or reach your
+  other sessions.
+
 ### Changed
 
 - **The Terminal tab is gone, and so is the option to switch a session to it.**

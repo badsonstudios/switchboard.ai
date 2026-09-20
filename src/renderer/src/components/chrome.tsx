@@ -73,6 +73,21 @@ export function TitleBar(props: {
   autoLabels: boolean;
   onToggleAutoLabels: () => void;
   /**
+   * AI-written task labels (#758, §5.11) — OFF by default.
+   *
+   * The chip beside the one above, and the pairing is the point: that one
+   * decides whether a label we ALREADY HAVE is shown, and costs nothing. This
+   * one decides whether the app may SPEND the owner's subscription to write a
+   * new one — a short contained run when a turn finishes. A switch that bills
+   * the user is a switch they turn on themselves, and it has to be as easy to
+   * turn off again, which is why it is a chip rather than a buried setting.
+   *
+   * Optional so the existing render tests — which predate it — keep passing a
+   * prop set that never mentioned it, and read as OFF, which is the truth.
+   */
+  aiLabels?: boolean;
+  onToggleAiLabels?: () => void;
+  /**
    * §5.5 Level 3 — fork adoption (P2-E11-12). EXPERIMENTAL, off by default.
    *
    * The only experiment switch in the app, and it is a chip for the reason
@@ -156,6 +171,18 @@ export function TitleBar(props: {
         testId="auto-labels"
       >
         {props.autoLabels ? t('titlebar.autoLabelsOn') : t('titlebar.autoLabelsOff')}
+      </Chip>
+      {/* AI-written task labels (#758). Next to the labels chip because they
+          govern the same line of text, and AFTER it because it is the one that
+          spends money: the cheap switch reads first. States ON or OFF in words
+          like the rest (§5.32) — never colour alone. */}
+      <Chip
+        selected={props.aiLabels === true}
+        onClick={props.onToggleAiLabels ?? ((): void => {})}
+        title={t('titlebar.aiLabelsHint')}
+        testId="ai-labels"
+      >
+        {props.aiLabels ? t('titlebar.aiLabelsOn') : t('titlebar.aiLabelsOff')}
       </Chip>
       {/* The two audio channels (P2-E14-05a, §5.9). Chips, beside the labels
           chip and for the same reason: what they govern is NOISE in a shared

@@ -787,6 +787,17 @@ const api = {
     setAutoLabels: (on: boolean): Promise<boolean> =>
       ipcRenderer.invoke('settings:setAutoLabels', on),
     /**
+     * AI-written task labels (#758, §5.11) — OFF by default, because unlike
+     * `autoLabels` above this one spends the owner's subscription: it runs a
+     * contained `claude -p` over the recent transcript when a turn ends.
+     *
+     * Main does not trust the renderer's copy — the flag is re-read at the
+     * moment a turn ends, which is the only moment it can authorise a run.
+     */
+    getAiLabels: (): Promise<boolean> => ipcRenderer.invoke('settings:getAiLabels'),
+    setAiLabels: (on: boolean): Promise<boolean> =>
+      ipcRenderer.invoke('settings:setAiLabels', on),
+    /**
      * §5.5 Level 3 — fork adoption (P2-E11-12). EXPERIMENTAL, off by default.
      *
      * When off the fork surface is ABSENT rather than disabled, so this is what

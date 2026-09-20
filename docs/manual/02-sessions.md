@@ -113,6 +113,45 @@ Things worth knowing:
 - **Other tools may not have it.** This works for any CLI that writes a title of
   its own. One that doesn't simply has no auto label — nothing breaks.
 
+### Letting Claude write the label instead (and keep it up to date)
+
+The label above is the name Claude gave the *conversation*, and it usually
+describes how the session **started**. That is fine for an hour and less useful
+by the afternoon, when a session that began as "fix the login redirect" is three
+jobs further on.
+
+Turn on **✨ AI labels** in the title bar and switchboard will ask Claude to read
+what the session has actually been doing and write a short label for it — then
+write a new one as the work moves on.
+
+**This one costs you tokens, which is why it is off until you switch it on.**
+Everything else about labels is free; this runs a small background check against
+your Claude subscription. So it is deliberately careful about when it bothers:
+
+- **Only when a session finishes a turn.** A session sitting idle never costs
+  you anything, however long it sits there.
+- **Only when something actually happened.** If the conversation hasn't grown
+  since the last time, there is nothing new to describe and it doesn't ask.
+- **Not more than once every ten minutes per session**, however busy it is.
+- **One at a time per session**, so a chatty session can't stack them up.
+- **Anything you type still wins.** If you type a label while it is thinking,
+  your words are kept and its answer is thrown away.
+
+Things worth knowing:
+
+- **It takes a few seconds and happens in the background.** Nothing waits for
+  it, and nothing in your session pauses or slows down. If it fails — no
+  network, a rate limit — the label you already had simply stays.
+- **It can't touch anything.** The check runs with no tools at all: it cannot
+  run commands, edit files, or reach your other sessions. It reads the recent
+  conversation and answers with one line.
+- **It uses a small, cheap model.** A six-word label does not need a big one.
+- **Turning it off stops the spending immediately.** The last label it wrote
+  stays on the card, because a label is a label — clear the box yourself if you
+  don't want it.
+- **The 🏷 labels switch still rules.** If auto labels are hidden (see below),
+  no AI labels are written either — there would be nothing to see for the money.
+
 ### Turning it off (screen-sharing)
 
 The label is derived from your conversation, so it can put a phrase from your

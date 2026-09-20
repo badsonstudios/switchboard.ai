@@ -558,6 +558,11 @@ export function App(): React.JSX.Element {
   // measurement behind it are in `lib/trust-reach.ts`.
   const trustReaches = trustSettingReaches(sessions);
   const [autoLabels, setAutoLabels] = useState(true);
+  // AI-written task labels (#758). Starts OFF here as well as in the store, for
+  // `experimentalFork`'s reason below and one more: this is what the bar draws
+  // for the instant before main answers, and a chip that flickered ON would say
+  // the app was spending the owner's subscription when it was not.
+  const [aiLabels, setAiLabels] = useState(false);
   // §5.5 Level 3 — fork adoption (P2-E11-12). The one chip that starts OFF, and
   // it starts off here as well as in the store: this initial value is what the
   // bar draws for the instant before main answers, and an experiment that
@@ -646,6 +651,11 @@ export function App(): React.JSX.Element {
     // the honest default for a setting we could not read is off.
     void bridge.settings?.getAutoTrust?.().then((on) => setAutoTrust(took(on)));
     void bridge.settings?.getAutoLabels?.().then((on) => setAutoLabels(took(on)));
+    // #758: `took` is doing real work here too. A refusal must read as OFF,
+    // because off is what main assumes — and this is the one setting where a
+    // chip wrongly showing ON would claim the app is spending the owner's
+    // subscription when it is not.
+    void bridge.settings?.getAiLabels?.().then((on) => setAiLabels(took(on)));
     // `took` matters more here than anywhere else in this block: a refusal must
     // read as OFF, and off is also what main assumes — so a setting we could not
     // read can never leave the bar advertising a gesture main will refuse.
@@ -1850,6 +1860,16 @@ export function App(): React.JSX.Element {
           // as a truthy object, the same convention as the card's own
           // notify-when-done toggle.
           void bridge.settings?.setAutoLabels?.(next).then((on) => setAutoLabels(took(on)));
+        }}
+        aiLabels={aiLabels}
+        onToggleAiLabels={() => {
+          const next = !aiLabels;
+          setAiLabels(next); // optimistic, like every other chip…
+          // …and main answers with what it actually STORED. `took` (#440) so a
+          // refusal reads as off — the safe direction for a switch that
+          // authorises spending, where the failure to avoid is a chip claiming
+          // ON while main never agreed.
+          void bridge.settings?.setAiLabels?.(next).then((on) => setAiLabels(took(on)));
         }}
         railHidden={railHidden}
         onToggleRail={toggleRail}
