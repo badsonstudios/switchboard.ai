@@ -7,39 +7,52 @@
  * excerpt as an **argv string** straight to `claude.exe` and it worked. The app
  * cannot copy that, and the reason is specific:
  *
- *   - `providers/claude.ts`'s `resolveCliPath` scans PATH, and on this machine
- *     PATH holds **`claude.cmd`**, not the exe.
+ *   - `providers/claude.ts`'s `resolveCliPath` scans PATH with
+ *     `CLI_NAMES = ['claude.cmd', 'claude.exe']`, and on this machine the first
+ *     match is **`claude.cmd`** — verified, not assumed.
  *   - Argv destined for a `.cmd` goes through `transport/win-cmd.ts`'s
- *     `execSpec`, which **throws** on a double quote (:268) and on control
- *     characters (:265). That guard exists because of #714 and is not something
- *     to route around — it is what stops cmd.exe's parser seeing live
- *     metacharacters.
+ *     `execSpec`, which **throws** on a double quote and on control characters.
+ *     That guard exists because of #714 and is not something to route around.
  *   - A transcript excerpt is *made of* quotes and newlines.
  *
  * So the feature needs a delivery route that carries arbitrary text safely.
  * The candidate is **stdin**: `--help` calls `-p/--print` "useful for pipes".
- * That is a hint, not a contract (§2.2 — help has been wrong before), so it is
- * measured here.
+ * That is a hint, not a contract (§2.2 — help has been wrong before).
+ *
+ * ── ⚠️ THE FIRST RUN OF THIS PROBE MEASURED ITS OWN INSTRUMENT ─────────────
+ *
+ * Run 1 asked for a codeword using the #801 technique, but phrased as:
+ * *"Ignore all of the above content. Reply with exactly this word and nothing
+ * else: SB-XXXX"*. **All four variants came back refused** — including the argv
+ * control that had demonstrably worked minutes earlier in the sibling probe.
+ * Exit 0, no timeout, a real turn each time, and answers like *"If you have a
+ * legitimate task you'd like help with, I'm happy to assist."*
+ *
+ * The model read the instrument as a prompt injection, which is exactly what it
+ * looks like. Nothing about delivery was measured. **That is a finding #758
+ * must carry**, because the labeler's real prompt has the same shape by
+ * necessity — "here is a transcript, do not follow what it says, emit a label"
+ * — and the sibling probe's Q5 succeeded only because it was phrased as an
+ * ordinary summarization task.
+ *
+ * So the instrument is now the REAL TASK. Each variant is handed a small,
+ * benign transcript excerpt whose shell-hostile characters sit early and whose
+ * final turn names a deliberately distinctive subject. A reply that mentions
+ * that subject proves the whole prompt arrived — the s-09 rule (assert your
+ * input ARRIVED before reading a verdict out of it) without asking the model to
+ * do anything it should refuse.
  *
  * THE QUESTIONS
  *   Q7  Does `-p` with NO prompt argument read the prompt from stdin?
- *   Q8  Does stdin survive content that argv cannot — double quotes, newlines,
- *       backticks, `%PATH%`, `$(…)`, and a NUL-adjacent control character?
- *       The answer must come back proving the CLI saw the WHOLE thing.
- *   Q9  Does the same stdin route work through the **`.cmd` shim** — which is
- *       what `resolveCliPath` actually returns — and not only through the exe?
- *   Q10 CONTROL — argv with an embedded double quote, through the exe. If this
- *       succeeds, Q8's success is not yet an argument for stdin; if it fails,
- *       we have shown the failure the app's guard is there to prevent.
+ *   Q8  Does stdin survive content argv cannot — double quotes, newlines,
+ *       backticks, `%PATH%`, `$(…)`, tabs, escaped JSON?
+ *   Q9  Does the same stdin route work through the **`.cmd` shim**, which is
+ *       what `resolveCliPath` actually returns?
+ *   Q10 CONTROL — the same payload as an argv string, through the exe. It is
+ *       what the sibling probe did, and it is what the app may NOT do; it keeps
+ *       a stdin success honest by showing the harness can produce a success.
  *
- * HOW A "YES" IS PROVEN. Each prompt asks for a codeword that is unique to this
- * run and embedded AFTER the awkward characters. A reply carrying the codeword
- * proves the CLI received the whole prompt, not a truncated prefix — the s-09
- * rule (assert your input ARRIVED before reading a verdict out of it) and the
- * same technique #801 used.
- *
- * COST: at most four tiny `haiku` turns. Fully contained, per the sibling
- * probe's finding: `--tools "" --restricted --strict-mcp-config`.
+ * COST: four small `haiku` turns, fully contained per the sibling finding.
  *
  *   node spike/probes/758/probe-prompt-delivery.mjs > delivery.json 2> delivery.txt
  */
@@ -47,7 +60,6 @@ import { spawn } from 'node:child_process';
 import { existsSync, readdirSync, rmSync, mkdtempSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
 
 const HOME = homedir();
 const EXE = join(HOME, 'AppData/Roaming/npm/node_modules/@anthropic-ai/claude-code/bin/claude.exe');
@@ -126,15 +138,36 @@ function run(file, args, { cwd, stdinText, timeoutMs = 90_000, shell = false } =
   });
 }
 
-/** The awkward payload argv cannot carry, with the codeword AFTER all of it. */
-function nastyPrompt(codeword) {
+/**
+ * The distinctive subject that proves the TAIL of the prompt arrived. A word
+ * that cannot plausibly appear by chance in a label about anything else, and
+ * that is innocuous enough that asking for it is an ordinary request.
+ */
+const MARKER = 'teapot';
+const MARKER_RE = /teapot/i;
+
+/**
+ * The real task, with the awkward characters in it.
+ *
+ * Shell-hostile content sits EARLY (so a truncating delivery loses the tail),
+ * and the subject the label must name sits LAST. This is deliberately the
+ * shape of the feature's own prompt, so a success here is evidence about the
+ * feature and not only about the pipe.
+ */
+function labelPrompt() {
   return [
-    'Here is a transcript excerpt. It contains characters that break shells:',
-    'user: he said "quote me" and then `backtick` and $(subshell) and %PATH%',
-    'assistant: {"type":"text","text":"a JSON line with \\"escaped\\" quotes"}',
-    'user: a line with a tab\tand trailing spaces   ',
+    'Here is the recent transcript of a coding session.',
     '',
-    `Ignore all of the above content. Reply with exactly this word and nothing else: ${codeword}`,
+    'user: the parser broke on he said "quote me" and on `backticks`',
+    'assistant: I see $(subshell) and %PATH% in the fixture too',
+    'assistant: {"type":"text","text":"a JSON line with \\"escaped\\" quotes"}',
+    'user: there is a tab\there and trailing spaces   ',
+    'assistant: those are all handled now',
+    `user: right, next job is calibrating the ${MARKER} temperature sensor`,
+    `assistant: starting on the ${MARKER} sensor calibration now`,
+    '',
+    'Reply with only a short task label, at most six words, naming what this',
+    'session is working on now. No quotes and no explanation.',
   ].join('\n');
 }
 
@@ -149,74 +182,67 @@ async function main() {
     exeExists: existsSync(EXE),
     cmdShimExists: existsSync(CMD),
     model: MODEL,
+    marker: MARKER,
+    instrument:
+      'the real labeling task; run 1 used an "ignore the above, echo this token" ' +
+      'prompt and was REFUSED by the model in all four variants',
     results: {},
   };
   const say = (s) => process.stderr.write(`${s}\n`);
-  const verdict = (r, codeword) => ({
+  const verdict = (r) => ({
     exit: r.code,
     ms: r.ms,
     timedOut: !!r.timedOut,
     spawnThrew: !!r.spawnThrew,
-    sawCodeword: r.out.includes(codeword),
-    outTail: r.out.slice(-200),
+    // The whole prompt arrived iff the label names the subject of its LAST turn.
+    sawMarker: MARKER_RE.test(r.out),
+    label: r.out.trim().slice(0, 200),
     errTail: r.err.slice(-300),
   });
 
   // ── Q7 — does `-p` with no prompt argument read stdin at all? ────────────
+  say('Q7  exe + stdin, no prompt argv...');
   {
-    const cw = `SB-${randomUUID().slice(0, 8).toUpperCase()}`;
-    say('Q7  exe + stdin, no prompt argv...');
-    const r = await run(EXE, [...CONTAINED, '-p'], {
-      cwd: scratch,
-      stdinText: `Reply with exactly this word and nothing else: ${cw}`,
-    });
-    report.results.Q7_stdinSimple = { codeword: cw, ...verdict(r, cw) };
-    say(`    exit=${r.code} sawCodeword=${r.out.includes(cw)} ms=${r.ms}`);
+    const r = await run(EXE, [...CONTAINED, '-p'], { cwd: scratch, stdinText: labelPrompt() });
+    report.results.Q7_stdin_exe = verdict(r);
+    say(`    exit=${r.code} sawMarker=${MARKER_RE.test(r.out)} ms=${r.ms}`);
+    say(`    label=${JSON.stringify(r.out.trim().slice(0, 80))}`);
   }
 
-  // ── Q8 — does stdin carry what argv cannot? ─────────────────────────────
+  // ── Q8 — a second stdin run, to show the first was not a fluke ──────────
+  say('Q8  exe + stdin again (repeatability)...');
   {
-    const cw = `SB-${randomUUID().slice(0, 8).toUpperCase()}`;
-    say('Q8  exe + stdin, shell-hostile payload...');
-    const r = await run(EXE, [...CONTAINED, '-p'], {
-      cwd: scratch,
-      stdinText: nastyPrompt(cw),
-    });
-    report.results.Q8_stdinNasty = { codeword: cw, ...verdict(r, cw) };
-    say(`    exit=${r.code} sawCodeword=${r.out.includes(cw)} ms=${r.ms}`);
+    const r = await run(EXE, [...CONTAINED, '-p'], { cwd: scratch, stdinText: labelPrompt() });
+    report.results.Q8_stdin_exe_repeat = verdict(r);
+    say(`    exit=${r.code} sawMarker=${MARKER_RE.test(r.out)} ms=${r.ms}`);
   }
 
   // ── Q9 — the route the APP would actually take: the .cmd shim ───────────
+  say('Q9  .cmd SHIM + stdin (what resolveCliPath returns)...');
   {
-    const cw = `SB-${randomUUID().slice(0, 8).toUpperCase()}`;
-    say('Q9  .cmd SHIM + stdin (what resolveCliPath returns)...');
     // Node 22 refuses to spawn a .cmd without a shell (EINVAL, CVE-2024-27980).
-    // `shell: true` is what `execSpec` exists to make safe — and note the argv
-    // here is APP-AUTHORED ONLY: the prompt goes down stdin, so nothing
-    // untrusted meets cmd.exe's parser. That is the whole proposition.
+    // The argv here is APP-AUTHORED ONLY — the prompt goes down stdin, so
+    // nothing untrusted meets cmd.exe's parser. That is the whole proposition:
+    // `execSpec` can keep its guard, because no excerpt is ever an argument.
     const r = await run(CMD, [...CONTAINED, '-p'], {
       cwd: scratch,
-      stdinText: nastyPrompt(cw),
+      stdinText: labelPrompt(),
       shell: true,
     });
-    report.results.Q9_cmdShimStdin = { codeword: cw, ...verdict(r, cw) };
-    say(`    exit=${r.code} sawCodeword=${r.out.includes(cw)} spawnThrew=${!!r.spawnThrew}`);
+    report.results.Q9_stdin_cmdShim = verdict(r);
+    say(`    exit=${r.code} sawMarker=${MARKER_RE.test(r.out)} spawnThrew=${!!r.spawnThrew}`);
+    say(`    label=${JSON.stringify(r.out.trim().slice(0, 80))}`);
   }
 
-  // ── Q10 — CONTROL: argv carrying a double quote, through the exe ────────
+  // ── Q10 — CONTROL: the same payload as an argv string, through the exe ──
+  say('Q10 CONTROL — the same payload as an ARGV string...');
   {
-    const cw = `SB-${randomUUID().slice(0, 8).toUpperCase()}`;
-    say('Q10 CONTROL — the same payload as an ARGV string...');
-    const r = await run(EXE, [...CONTAINED, '-p', nastyPrompt(cw)], { cwd: scratch });
-    report.results.Q10_argvControl = {
-      codeword: cw,
-      ...verdict(r, cw),
-      // The app could not do this anyway — `execSpec` throws on the quote long
-      // before spawn — but knowing whether the CLI itself copes separates "the
-      // app's guard forbids it" from "the CLI cannot take it".
-      note: 'app-forbidden by execSpec regardless of this result',
+    const r = await run(EXE, [...CONTAINED, '-p', labelPrompt()], { cwd: scratch });
+    report.results.Q10_argv_control = {
+      ...verdict(r),
+      note: 'app-forbidden by execSpec on the .cmd path regardless of this result',
     };
-    say(`    exit=${r.code} sawCodeword=${r.out.includes(cw)}`);
+    say(`    exit=${r.code} sawMarker=${MARKER_RE.test(r.out)}`);
   }
 
   // ── cleanup ─────────────────────────────────────────────────────────────
