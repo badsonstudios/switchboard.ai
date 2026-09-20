@@ -4,7 +4,7 @@
 // keyboard alone.
 import { test, expect, Page } from '@playwright/test';
 import path from 'path';
-import { launchApp, LaunchedApp, showTerminal, tempProjectFolder } from './fixtures/app';
+import { launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -193,7 +193,7 @@ test.describe('command palette (E9-02)', () => {
     expect(strayText.join('|')).not.toContain('hello-a');
   });
 
-  test('opens while the composer has focus, never from inside the terminal', async () => {
+  test('opens while the composer has focus, and gives focus back', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
@@ -210,12 +210,12 @@ test.describe('command palette (E9-02)', () => {
     // focus went back to the composer, not nowhere
     await expect(composer).toBeFocused();
 
-    // the terminal is absolute: the CLI gets Ctrl+Shift+P, we do not
-    await showTerminal(w);
-    await w.locator('.xterm-screen').first().click();
-    await w.keyboard.press(`${MOD}+Shift+P`);
-    await expect(palette(w)).toHaveCount(0);
-    // the title-bar chip is the way in from there
+    // The other half of this test put focus inside the terminal and asserted
+    // the CLI kept Ctrl+Shift+P — absolute, because the terminal owns every key
+    // it can see. There is no terminal surface since #873, so nothing can hold
+    // the chord back from us and the case cannot be staged.
+
+    // the title-bar chip is the other way in, from anywhere
     await w.getByTitle(/Show every command/).click();
     await expect(palette(w)).toBeVisible();
   });

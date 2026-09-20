@@ -113,7 +113,7 @@ describe('seed command set (E9-01)', () => {
   it('card commands are disabled with no focused session', () => {
     const cmds = buildCommands(deps());
     const empty = ctxWith(['a'], null);
-    for (const id of ['session.close', 'session.popOut', 'view.terminal', 'session.pin']) {
+    for (const id of ['session.close', 'session.popOut', 'view.changes', 'session.pin']) {
       expect(byId(cmds, id).enabled?.(empty)).toBe(false);
     }
     expect(byId(cmds, 'session.close').enabled?.(ctxWith(['a'], 'a'))).toBe(true);

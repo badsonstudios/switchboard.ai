@@ -637,10 +637,15 @@ export async function launchSecondInstance(
  *      `SWITCHBOARD_TRANSPORT: 'pty'`, or it takes this fixture's PTY-only fake
  *      in a file whose other tests ask for `SWITCHBOARD_FAKE_PROVIDER:
  *      'stream'`; and
- *   2. what it ASSERTS is the terminal's own answer — a live `.xterm`, the
- *      ABSENCE of the "No terminal for this session" notice, the curated
- *      command list, a trust acceptance on disk, a panel the Direct path draws
- *      and the PTY path deliberately does not.
+ *   2. what it ASSERTS is the terminal's own answer — the curated command list,
+ *      a trust acceptance on disk, a panel the Direct path draws and the PTY
+ *      path deliberately does not.
+ *
+ * Clause (2) used to begin "a live `.xterm`, the ABSENCE of the 'No terminal
+ * for this session' notice". Both of those witnesses were the Terminal tab, and
+ * #873 removed it — no surface renders a PTY now, so a test can still SELECT
+ * the terminal transport but can no longer read its answer off the screen.
+ * What is left are the off-screen witnesses, and they are the stronger ones.
  *
  * (1) without (2) is NOT tagged, and that distinction is the whole reason the
  * rule needs writing down: every transport-switch test in
@@ -1089,10 +1094,11 @@ export function skipPopoutOnLinux(): void {
   );
 }
 
-/** Switch to the Terminal tab (always present, last — 2026-07-22). */
-export async function showTerminal(window: Page): Promise<void> {
-  await window.getByRole('tab', { name: 'Terminal' }).click();
-}
+// `showTerminal` lived here: one click on the Terminal tab, which every spec
+// that needed an xterm went through. The tab was removed (#873) and no surface
+// renders a PTY any more, so there is nothing for it to switch to and it has no
+// callers left. The PTY transport itself is unchanged and still reachable with
+// `SWITCHBOARD_TRANSPORT=pty`; what is gone is the way to LOOK at one.
 
 /**
  * Open the events drawer (P2-E14-01, Shape B).
@@ -1401,11 +1407,12 @@ export async function launchDirectToolTurn(prefix: string): Promise<DirectToolTu
     const w = app.window;
     await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
 
-    // it really is Direct — see (3) above
-    await w.getByRole('tab', { name: 'Terminal' }).first().click();
-    await expect(w.getByText('No terminal for this session')).toBeVisible({ timeout: 30_000 });
-    await w.getByRole('tab', { name: 'Session', exact: true }).first().click();
-
+    // The "it really is Direct" probe was a Terminal-tab round trip: click the
+    // tab, read "No terminal for this session", click back. Both the tab and
+    // that notice are gone (#873). The claim is not weakened — it is carried by
+    // `SWITCHBOARD_FAKE_PROVIDER: 'stream'` above, which is what SELECTS the
+    // transport rather than merely observing it, and by the stream-only feed
+    // assertion below.
     const box = w.getByPlaceholder(/Prompt this session/);
     await box.click();
     await box.fill('!tools');

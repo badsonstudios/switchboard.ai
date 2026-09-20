@@ -1559,6 +1559,78 @@ describe('load-time repairs are audible (#344)', () => {
     expect(warns[0].msg).toMatch(/newer version/i);
   });
 
+  // #873: the Terminal tab and the ⋯ transport switch are gone, so a card that
+  // stored `transport: 'pty'` would spawn a CLI with no surface anywhere in the
+  // app that could show it — running where nobody can see it.
+  describe('v1 -> v2: the removed Terminal transport (#873)', () => {
+    it('clears a stored Terminal choice, keeps the others, and says how many moved', () => {
+      write({
+        version: 1,
+        sessions: [
+          { ...sess('a'), transport: 'pty' },
+          { ...sess('b'), transport: 'stream' },
+          sess('c'),
+        ],
+      });
+      const warns: Line[] = [];
+      const state = makeStore(file, fakeLogger(warns)).load();
+
+      // CLEARED rather than rewritten to 'stream'. Absent means "never chose",
+      // which is exactly what is true once the control that did the choosing is
+      // gone — so the card follows DEFAULT_SESSION_TRANSPORT *and* still
+      // honours a SWITCHBOARD_TRANSPORT override. Pinning 'stream' would
+      // dead-end the one route PTY has left, which E18-16 needs kept open.
+      expect('transport' in state.sessions.find((s) => s.id === 'a')!).toBe(false);
+      // an explicit Direct choice is not touched — only 'pty' is lifted
+      expect(state.sessions.find((s) => s.id === 'b')?.transport).toBe('stream');
+      // and a card that never chose stays that way
+      expect('transport' in state.sessions.find((s) => s.id === 'c')!).toBe(false);
+
+      // audible, like every other load-time repair in this file
+      expect(warns).toHaveLength(1);
+      expect(warns[0].msg).toMatch(/removed Terminal transport/i);
+      expect(warns[0].fields).toMatchObject({ sessions: 1 });
+    });
+
+    it('says nothing when no card was on the Terminal', () => {
+      // the note has to be about something that HAPPENED — a line on every
+      // launch would be noise, and would train the reader to skip the file
+      write({ version: 1, sessions: [sess('a'), { ...sess('b'), transport: 'stream' }] });
+      expect(loadWarns()).toEqual([]);
+    });
+
+    // THE CASE THE FIRST VERSION GOT WRONG, and the reason the count is a
+    // difference across the dispatch rather than a tally of what went in.
+    //
+    // A v2 file has already been lifted, so its migration is the identity and
+    // nothing moves — but a `'pty'` can still be present, either hand-edited or
+    // re-persisted by a developer running `SWITCHBOARD_TRANSPORT=pty`, which
+    // `sessions:create` writes back on every spawn. Counting the INPUT claimed
+    // a migration on every launch, for ever, about a card that stayed on the
+    // PTY the whole time — a false line in the one file someone reads to find
+    // out what happened.
+    it('is silent on a v2 file that still holds a pty card — nothing was lifted', () => {
+      write({ version: 2, sessions: [{ ...sess('a'), transport: 'pty' }] });
+      const warns: Line[] = [];
+      const state = makeStore(file, fakeLogger(warns)).load();
+
+      // the card is untouched: v2 is the current shape, so the choice stands
+      expect(state.sessions.find((s) => s.id === 'a')?.transport).toBe('pty');
+      expect(warns).toEqual([]);
+    });
+
+    // A file from the FUTURE is read-only — this build will never write it — so
+    // a "we moved your sessions" line would contradict the "changes made this
+    // run will NOT be saved" note raised beside it.
+    it('is silent on a file from the future, which is never written back', () => {
+      write({ version: CURRENT_VERSION + 1, sessions: [{ ...sess('a'), transport: 'pty' }] });
+      const warns = loadWarns();
+      expect(warns).toHaveLength(1);
+      expect(warns[0].msg).toMatch(/newer version/i);
+      expect(warns.map((w) => w.msg).join(' ')).not.toMatch(/removed Terminal transport/i);
+    });
+  });
+
   // The whole reason the notes are collected and emitted after the load: a warn
   // raised inside the try would be caught by the corrupt-file handler, and a
   // dangling groupId would cost the user their entire workspace.

@@ -70,11 +70,11 @@ actually serve it.
 | Point | Contract | Registered today |
 |---|---|---|
 | `command-set` | `CommandSetContribution` | `core-commands` — the E9-01 seed set, resolved by the palette and the keyboard dispatcher |
-| `panel` | `PanelContribution` | `panel-session`, `panel-changes`, `panel-history` (placeholder), `panel-terminal` — the session card's view-tab strip |
+| `panel` | `PanelContribution` | `panel-session`, `panel-changes`, `panel-history` (placeholder) — the session card's view-tab strip. `panel-terminal` was a fourth until #873 removed the Terminal tab; the PTY code behind it stayed |
 | `feed-block-renderer` | `FeedBlockRendererContribution` | `feed-block-{todos,bash,edit,tool,thinking,user,markdown}` — one per transcript block shape |
 | `status-bar-item` | `StatusBarItemContribution` | `status-{session-count,usage,service-health,cli-version,theme}` |
 | `theme` | `ThemeContribution` | `theme-{nordic,daylight,high-contrast,soft-contrast}` — the picker and the status bar list from here |
-| `find-provider` | `FindProviderContribution` | `find-session`, `find-changes`, `find-terminal`, `find-document` — **all four of the §5.31 names** (#533) |
+| `find-provider` | `FindProviderContribution` | `find-session`, `find-changes`, `find-document`. `find-terminal` is written and exported but **no longer registered** (#873): find dispatches to the focused panel's provider, and there is no Terminal panel left to focus |
 
 `theme` (P2-E15-05) is the first **data-only** point: every other contribution
 hands over a function — build these commands, render this block — and this one
@@ -117,6 +117,23 @@ can only be read). A registrant answering from somewhere the user is not looking
 is a normal thing for this point to have to express; the lesson is that it must
 say so per RESULT, not per availability.
 
+> **CORRECTION (#873, 2026-09-19).** Both paragraphs above are kept as the
+> record of what this point learned — but `find-terminal` is **no longer
+> registered**. The Terminal tab was removed, find dispatches to the FOCUSED
+> PANEL's provider, and there is no Terminal panel left to focus. The provider
+> is still written, still exported and still unit-tested directly; it simply is
+> not in `findProviders`, because registering it would add a permanently
+> unavailable group to every Ctrl+F.
+>
+> The consequence is worth stating plainly, because it undoes the thing this
+> point was shaped for: a session card now has exactly **one** `bar` registrant.
+> `find-changes` delegates to Monaco rather than reporting a group, and
+> `find-document` serves a tab with no session behind it — so the grouped count
+> above has nothing left to group. The machinery is intact and still pinned by
+> `lib/find-groups.test.ts`, which builds group inputs directly and never goes
+> through the registry; what it lacks is a second registrant to be observable
+> with. It becomes observable again the day one arrives.
+
 The **document viewer** (§5.30) is the fourth, and it arrived carrying two
 lessons rather than one registrant:
 
@@ -138,8 +155,10 @@ lessons rather than one registrant:
   what the Phase-4 gate asks for.
 
 The three renderer points added by P2-E15-03 are deliberately **dissimilar**:
-`panel` renders a whole view and has a mount lifecycle (`keepMounted`, because
-unmounting the terminal throws away its xterm view), `feed-block-renderer`
+`panel` renders a whole view and has a mount lifecycle (`keepMounted`, added
+because unmounting the terminal threw away its xterm view — that panel went in
+#873 and nothing claims the flag today, but the contract stands for the next
+panel that owns live state it cannot rebuild), `feed-block-renderer`
 *competes* to claim an input and is order-sensitive, and `status-bar-item` just
 puts a thing on a bar. A contract that has only ever seen one shape of consumer
 has not been tested, and the Phase-4 gate asks for dissimilar consumers for
@@ -546,7 +565,7 @@ because every hit was one of these deliberate seams.
 | `sessions.read` | list cards, statuses, pending permissions |
 | `sessions.spawn` | create / resume / close — **starts processes** |
 | `sessions.write` | rename, task label, autonomy, permission decisions |
-| `pty.read` | attach to a terminal's output stream, or read its scrollback (§5.31's Terminal group) |
+| `pty.read` | attach to a terminal's output stream, or read its scrollback. (It fed §5.31's Terminal find group until #873 unregistered that provider along with the Terminal tab; the capability, and the code behind it, remain) |
 | `pty.write` | send keystrokes to a running CLI |
 | `transcripts.read` | conversation blocks, and **searching the transcript file** (§5.31) |
 | `git.read` | status and file versions |

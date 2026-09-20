@@ -316,11 +316,10 @@ test.describe('a hook Notification cannot fake a permission on Direct (#313)', (
       timeout: 25_000,
     });
 
-    // it really is Direct — otherwise all of this is a PTY test that passes
-    await w.getByRole('tab', { name: 'Terminal' }).first().click();
-    await expect(w.getByText('No terminal for this session')).toBeVisible({ timeout: 30_000 });
-    await w.getByRole('tab', { name: 'Session', exact: true }).first().click();
-
+    // The "it really is Direct" probe was a Terminal-tab round trip, and went
+    // with the tab (#873). `SWITCHBOARD_TRANSPORT: 'stream'` above SELECTS the
+    // transport rather than observing it, so the claim rests on the spawn
+    // rather than on a witness we no longer have.
     const box = w.getByPlaceholder(/Prompt this session/);
     const row = (status: string): string => `nav .rail-row[data-session-status="${status}"]`;
 

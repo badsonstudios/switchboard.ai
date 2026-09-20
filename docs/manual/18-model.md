@@ -76,21 +76,10 @@ guess and be wrong about the one thing you opened this to find out.
 Two ways to clear it up: switch to a model (then it's ticked, because you chose
 it), or send any prompt and look again.
 
-## In Terminal mode
+## When the name is plain text
 
-Both of these are for sessions running in **Direct mode**, which is how sessions
-start. A session you've switched to **Terminal** mode has Claude Code's own
-`/model` picker available in its Terminal tab, and that one can do a little more
-than this — so `/model` there goes straight to Claude Code, as it always has.
-
-On a Terminal-mode session the model name at the bottom is **plain text, not a
-button**: switchboard can't change that session's model, so it doesn't pretend
-to offer. Hover it and it tells you where the switcher is. If you open the
-picker with `/model` on one anyway, that says so too, rather than failing
-silently.
-
-The name also goes back to plain text on a session that has **stopped** —
-there's nothing running to switch.
+The model name at the bottom is **plain text, not a button**, on a session that
+has **stopped** — there is nothing running to switch.
 
 ## If something goes wrong
 

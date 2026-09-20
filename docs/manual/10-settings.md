@@ -6,7 +6,7 @@ Everything lives as chips in the title bar. There's no settings window yet.
 
 | Chip | Does |
 |---|---|
-| **🔓 auto-trust / 🔒 ask trust** | Whether new folders are trusted automatically. Greyed out unless a session is set to Terminal mode — see below |
+| **🔓 auto-trust / 🔒 ask trust** | Whether new folders are trusted automatically. Greyed out, because nothing can ask any more — see below |
 | **🏷 auto labels / 🏷 labels off** | Whether a blank task label fills itself from the title Claude gives the conversation. Turn it off before a screen-share — see below |
 | **🛡 ask / plan / auto-edit / full-auto** | The autonomy mode *new* sessions start at — click to cycle |
 | **⬍ Keep visible / Collapse on submit / Hide on submit** | What happens to a session's card when you send it a prompt — click to cycle. See below |
@@ -84,56 +84,31 @@ Claude Code asks whether you trust a folder the first time it runs there. With
 **auto-trust** on (the default), switchboard answers that for you, on the
 grounds that choosing a folder to run an agent in *is* the trust decision.
 
-Switch it to **🔒 ask trust** if you'd rather answer that prompt yourself.
-Where the question appears — and whether it appears at all — depends on the
-session's mode:
+You can switch it to **🔒 ask trust** if you'd rather answer that prompt
+yourself — but today nothing will ask you. Claude Code only ever draws the trust
+question inside its own terminal interface, and switchboard no longer runs
+sessions there ([Direct mode](12-direct-mode.md)); it does not raise the
+question any other way, so it simply runs in the folder. Measured against claude
+2.1.226.
 
-- **Terminal mode:** Claude Code draws the trust question in its own terminal
-  interface, and you answer it there, in the session's **Terminal** tab.
-- **[Direct mode](12-direct-mode.md)** (what new sessions use): **Claude Code
-  never asks.** It has no terminal to ask in, and it does not raise the question
-  any other way — it simply runs in the folder. Measured against claude 2.1.226.
+### Why the chip is greyed out
 
-So **🔒 ask trust** can only ever get you *asked* in a Terminal-mode session.
-
-### Why the chip is sometimes greyed out
-
-Because of that, the chip **is disabled whenever no session is set to run in
-Terminal mode** — which, since Direct mode is what new sessions use, is most of
-the time. Hover it and it tells you why: there is no session there that could
-put the question in front of you.
-
-It comes back to life the moment any session is switched to Terminal mode from
-its **⋯** menu — including while that session is still running and waiting for a
-restart, because the choice is what the *next* start will use, and the next
-start is what reads this setting.
+Because of that, the chip **is disabled**. Hover it and it tells you why: there
+is no session that could put the question in front of you, so the setting has
+nothing to govern.
 
 Being disabled never changes what you had chosen. If you had picked **🔒 ask
-trust**, the chip still says so, greyed out, and it is still what you get the
-moment a Terminal-mode session starts.
+trust**, the chip still says so, greyed out, and that is still what you would
+get if anything could ask.
 
 And while the chip is greyed out, **switchboard doesn't answer the question
-either.** With **auto-trust** on, switchboard records your acceptance in Claude
-Code's own settings before a Terminal-mode session starts — that's the whole
-point of the setting. It doesn't do that for Direct-mode sessions: there was
-never a question to get ahead of, and recording an answer you were never able to
-give would quietly use up the one thing this chip controls.
+either.** It does not record an acceptance in Claude Code's own settings on your
+behalf — there was never a question to get ahead of, and recording an answer you
+were never able to give would quietly use up the one thing this chip controls.
 
-So a folder you've only ever run in Direct mode stays un-answered, and the
-question is still there to be asked. If being asked matters for a folder, do
-this — in this order, and at any time, before or after it has run in Direct
-mode:
-
-1. Switch that session to **Terminal** mode from its **⋯** menu. The chip wakes
-   up straight away.
-2. Set it to **🔒 ask trust**.
-3. Restart the session — **Restart session now**, offered in the same **⋯**
-   menu after a mode switch, or the session's own **Restart** button if it has
-   already ended. Claude Code puts the trust question in the session's
-   **Terminal** tab.
-
-Once you've answered it there, the answer is remembered, and Direct mode works
-the same either way.
+So a folder switchboard has run in stays un-answered, and the question is still
+there to be asked the first time you run `claude` in that folder yourself, in a
+terminal of your own.
 
 ## Auto task labels
 

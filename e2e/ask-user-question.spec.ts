@@ -134,7 +134,9 @@ test.describe("the CLI's own questions (#563)", () => {
     // likely thing a person does in the middle of "which of these three
     // approaches?" — unmounts the whole thing. The unit test pins the mechanism;
     // this is the real dockview tab switch it exists for.
-    await w.getByRole('tab', { name: 'Terminal' }).first().click();
+    // (the Terminal tab was the unmount lever until #873; Changes does the same
+    // job, and is the tab a person actually reaches for mid-decision)
+    await w.getByRole('tab', { name: 'Changes' }).first().click();
     await expect(panel(w)).toHaveCount(0, { timeout: 20_000 }); // genuinely gone
     await w.getByRole('tab', { name: 'Session', exact: true }).first().click();
     await expect(panel(w)).toBeVisible({ timeout: 20_000 });
@@ -336,18 +338,18 @@ test.describe('[pty] Terminal mode keeps its questions in the terminal (#563)', 
     const w = a.window;
     await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
 
-    // PROVE IT REALLY IS A PTY SESSION FIRST. Without this the test is worth
-    // nothing: `session-manager` falls back to the PTY when the stream is
-    // refused and vice versa, so "no panel appeared" from a session that turned
-    // out to be Direct-with-a-broken-fake would read exactly the same. A
-    // Terminal tab with a real terminal behind it — rather than the
-    // "No terminal for this session" notice a Direct card shows — is the
-    // witness, and it is the same one `stream-transport.spec.ts` uses pointed the other
-    // way.
-    await w.getByRole('tab', { name: 'Terminal' }).first().click();
-    await expect(w.getByText('No terminal for this session')).toHaveCount(0);
-    await w.getByRole('tab', { name: 'Session' }).first().click();
-
+    // ⚠️ THIS TEST IS WEAKER THAN IT WAS, and the comment stays so nobody
+    // re-reads it as equally strong. It used to PROVE the session was really on
+    // the PTY by finding a real terminal behind the Terminal tab — which
+    // mattered because `session-manager` falls back to the PTY when the stream
+    // is refused and vice versa, so "no panel appeared" from a session that
+    // turned out to be Direct-with-a-broken-fake reads exactly the same.
+    //
+    // That witness was the Terminal tab itself, and it is gone (#873). The
+    // transport is still SELECTED by `SWITCHBOARD_TRANSPORT: 'pty'` above, but
+    // nothing on screen confirms the selection took. If this test ever goes
+    // green while the panel regresses, a silent fall-back to Direct is the
+    // first thing to suspect.
     const box = w.getByPlaceholder(/Prompt this session/);
     await box.click();
     await box.fill('!ask');

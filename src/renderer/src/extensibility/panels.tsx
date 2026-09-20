@@ -7,12 +7,9 @@
 // the ui blob (`viewTab.<cardId>`) and named by the E9-01 commands and by
 // `GridController.setView`. 'feed' is the Session view — the internal id
 // predates the rename and changing it would be a migration for no gain.
-import React from 'react';
-import { useTranslation } from 'react-i18next';
 import { manifestFor, PanelContext, PanelContribution } from './contributions';
 import { RendererRegistry } from './registry-instance';
 import { safely } from './boundary';
-import { TerminalPane } from '../components/TerminalPane';
 import { DiffPane } from '../components/DiffPane';
 import { FeedView } from '../components/FeedView';
 
@@ -82,13 +79,19 @@ export const sessionPanels: PanelContribution[] = [
         // not merely unhelpful, it is false and its button is dead. The guard
         // has lived in `terminalHandoff` since #153's follow-up; it was dead
         // code the whole time because this render site never threaded the
-        // context through. The sibling Terminal panel below reads the same
-        // `ctx.transport` and got it right, which is how two surfaces in one
-        // window came to contradict each other.
+        // context through. The Terminal panel that used to sit below read the
+        // same `ctx.transport` and got it right, which is how two surfaces in
+        // one window came to contradict each other. That panel went in #873, so
+        // this is now the only render site consuming the guard.
         transport={ctx.transport}
         onDecide={ctx.onDecide}
         onCycleAutonomy={ctx.onCycleAutonomy}
-        onJumpToTerminal={() => ctx.setView('terminal')}
+        // No `onJumpToTerminal` since #873: the tab it jumped to is gone, and
+        // `setView('terminal')` would now resolve to the Session tab — a button
+        // labelled "Open Terminal" that quietly does something else. The bar
+        // still states what the CLI is waiting on; it just no longer offers a
+        // door. It is PTY-only anyway (`terminalHandoff` returns null on
+        // Direct), so no migrated session reaches it at all.
       />
     ),
   },
@@ -122,54 +125,26 @@ export const sessionPanels: PanelContribution[] = [
     enabled: () => false,
     render: () => null,
   },
-  {
-    // LAST, deliberately (owner call 2026-07-22), and the only panel that must
-    // survive being inactive: unmounting the terminal throws away the xterm
-    // view and the user's scrollback with it.
-    manifest: manifest('panel-terminal', 'Terminal'),
-    id: 'terminal',
-    titleKey: 'grid.viewTerminal',
-    order: 100,
-    keepMounted: true,
-    // A stream session has NO PTY, so there is nothing for xterm to attach to.
-    // Saying that in one sentence is the honest degrade (P2-E18-08b); rendering
-    // an empty black rectangle would look like a broken terminal, which is the
-    // failure mode #125 was about — a surface that is technically correct and
-    // reads as breakage.
-    render: (ctx) =>
-      ctx.transport === 'stream' ? (
-        <StreamTerminalNotice />
-      ) : (
-        // `cardId` so the pane can publish its scrollback as THIS card's find
-        // surface (P2-E17-03) — the same reason `DiffPane` takes it
-        <TerminalPane sessionId={ctx.sessionId} visible={ctx.visible} cardId={ctx.cardId} />
-      ),
-  },
+  // THE TERMINAL TAB IS GONE (#873, owner call 2026-09-19): *"we don't need the
+  // Terminal tab anymore, and we don't need the option to switch to Terminal in
+  // the menu. Remove the tab and the menu item — leave the code behind."*
+  //
+  // `TerminalPane`, `terminal-attach`, `PtyService` and the whole PTY transport
+  // stay in the tree: E18-16 still requires PTY to keep WORKING as the fallback
+  // while Direct mode is under test, and this is a UI-level removal, not the
+  // cutover. What is gone is the only user-facing route to it.
+  //
+  // WHY THE CONTRIBUTION IS REMOVED RATHER THAN HIDDEN FOR NON-PTY CARDS.
+  // `PanelContribution.enabled` says there is deliberately no "hide it
+  // entirely" option, and `points.test.ts` pins that as §5.8 — a tab is never
+  // hidden, only greyed, because a vanishing tab teaches the user the app is
+  // unpredictable. Registering this panel only for PTY cards would break that
+  // rule from inside. Deleting it does not: §5.8 governs what EXISTS, and a tab
+  // that does not exist is not a tab the user is being kept from seeing.
 ];
 
-/**
- * What the Terminal tab shows for a STREAM session (P2-E18-08b).
- *
- * There is no PTY to attach to, so xterm would render an empty black
- * rectangle — technically correct and indistinguishable from a broken
- * terminal, which is exactly the failure #125 was about. Say what is true
- * instead, and say what the user gains rather than only what is missing.
- */
-function StreamTerminalNotice(): React.JSX.Element {
-  const { t } = useTranslation();
-  return (
-    <div
-      style={{
-        padding: '16px 18px',
-        fontSize: 12,
-        lineHeight: 1.6,
-        color: 'var(--text)',
-        fontFamily: 'var(--font-ui)',
-        maxInlineSize: 560,
-      }}
-    >
-      <div style={{ fontWeight: 700, marginBlockEnd: 6 }}>{t('terminal.streamTitle')}</div>
-      <div style={{ color: 'var(--muted)' }}>{t('terminal.streamBody')}</div>
-    </div>
-  );
-}
+// `StreamTerminalNotice` lived here (P2-E18-08b): the Terminal tab's honest
+// answer for a session with no PTY. It went with the tab (#873) — there is no
+// longer a surface for it to be the body of. Its strings stay in `en.json`
+// unreferenced rather than being deleted, alongside the rest of the transport
+// vocabulary the code still speaks.

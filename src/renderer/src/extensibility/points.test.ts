@@ -38,9 +38,11 @@ function ctx(over: Partial<PanelContext> = {}): PanelContext {
 // would have stayed green while the strip drifted.
 
 describe('the built-in renderer points', () => {
-  it('ships four panels in a fixed order, Terminal last', () => {
+  it('ships three panels in a fixed order', () => {
+    // Terminal was a fourth, deliberately last. It went with the tab (#873);
+    // the PTY code behind it stayed.
     const ids = listPanels(createRendererRegistry()).map((p) => p.id);
-    expect(ids).toEqual(['feed', 'diff', 'history', 'terminal']);
+    expect(ids).toEqual(['feed', 'diff', 'history']);
   });
 
   it('a tab is never HIDDEN, only greyed — §5.8: you can see what exists', () => {
@@ -49,7 +51,7 @@ describe('the built-in renderer points', () => {
     // also keeps `view.changes` from selecting a tab that isn't there.
     const r = createRendererRegistry();
     const folderless = ctx({ folder: undefined });
-    expect(listPanels(r).map((p) => p.id)).toEqual(['feed', 'diff', 'history', 'terminal']);
+    expect(listPanels(r).map((p) => p.id)).toEqual(['feed', 'diff', 'history']);
     const diff = listPanels(r).find((p) => p.id === 'diff')!;
     expect(panelEnabled(diff, folderless)).toBe(false);
     expect(panelEnabled(diff, ctx())).toBe(true);
@@ -77,11 +79,16 @@ describe('the built-in renderer points', () => {
     expect(panelBadge(bad, ctx())).toBeNull();
   });
 
-  it('only the Terminal survives being inactive (its xterm view would be lost)', () => {
+  it('nothing needs to survive being inactive any more', () => {
+    // Terminal was the only panel that did: unmounting it threw away the xterm
+    // view and the user's scrollback with it. It went with the tab (#873), so
+    // every surviving panel mounts on demand. `keepMounted` stays on the
+    // contract — it is the answer for the next panel that owns live state it
+    // cannot rebuild — and this is what pins that nothing claims it today.
     const kept = listPanels(createRendererRegistry())
       .filter((p) => p.keepMounted)
       .map((p) => p.id);
-    expect(kept).toEqual(['terminal']);
+    expect(kept).toEqual([]);
   });
 
   it('Changes badges the changed-file count, and nothing when clean', () => {
@@ -147,15 +154,20 @@ describe('choosing the active panel', () => {
     const panels = listPanels(createRendererRegistry()).filter((p) => ids.includes(p.id));
     return (panels.find((p) => p.id === view && panelEnabled(p, c)) ?? panels[0])?.id;
   };
-  const all = ['feed', 'diff', 'history', 'terminal'];
+  const all = ['feed', 'diff', 'history'];
 
   it('uses the persisted panel when it exists and is selectable', () => {
-    expect(active(all, 'terminal', ctx())).toBe('terminal');
+    expect(active(all, 'diff', ctx())).toBe('diff');
   });
 
   it('falls back when the persisted id names no panel at all', () => {
     // an id left behind by a contribution that has since been removed
     expect(active(all, 'notes-from-a-plugin-we-uninstalled', ctx())).toBe('feed');
+    // 'terminal' is now a REAL instance of that, not a hypothetical: every
+    // workspace upgrading past #873 holds cards persisted on a tab that no
+    // longer exists. This is what stops them coming back to a blank card body
+    // with no tab lit — and it is why the removal needed no ui-blob migration.
+    expect(active(all, 'terminal', ctx())).toBe('feed');
   });
 
   it('falls back when the persisted panel is DISABLED rather than blanking', () => {
@@ -181,7 +193,6 @@ describe('the done-when: extending needs no edit to the consumers', () => {
       'diff',
       'notes',
       'history',
-      'terminal',
     ]);
   });
 

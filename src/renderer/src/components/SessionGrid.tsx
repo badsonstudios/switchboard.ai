@@ -97,7 +97,7 @@ import { setDraggedCard } from '../lib/drag-context';
 import { findBarState, subscribeFindBar } from '../lib/find-bar-state';
 import { FindBar } from './FindBar';
 import { sendSessionCommand } from '../lib/composer';
-import { DEFAULT_SESSION_TRANSPORT, type TransportKind } from '../../../shared/transport';
+import { type TransportKind } from '../../../shared/transport';
 import type { AutonomyMode, SessionStatus } from '../../../shared/sessions';
 import { srOnly } from './sr-only';
 import {
@@ -504,36 +504,10 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     setCardAutonomy(next);
     void window.switchboard.sessions.setAutonomy(cardId, next);
   };
-  // per-card transport (P2-E18-08b). Applies on the NEXT spawn, exactly like
-  // autonomy above — the CLI cannot change either on a live session. It is
-  // ACCEPTED either way; when a session is running we say the change is queued
-  // rather than implying it took effect.
-  //
-  // Seeded from the shared default rather than a hard-coded `'pty'` (#381).
-  // Defence in depth: the menu only renders for a LIVE session and the create
-  // response sets this in the same batch as `live`, so the seed is not
-  // observable today — but it is the answer this component gives if it is ever
-  // asked before main has answered, and that answer should not be a second
-  // opinion about what the default is.
-  const [cardTransport, setCardTransport] = React.useState<TransportKind>(
-    DEFAULT_SESSION_TRANSPORT
-  );
-  const [transportPending, setTransportPending] = React.useState(false);
-  const toggleTransport = (): void => {
-    if (!cardId) return;
-    const next = cardTransport === 'stream' ? 'pty' : 'stream';
-    void window.switchboard.sessions.setTransport(cardId, next).then((answer) => {
-      // #650: `{ok:false, reason}` is this channel's own way of saying no, and
-      // a broker refusal is a THIRD thing that is neither - `r.ok` off the
-      // brand is `undefined`, so this read happens to bail, but only by luck.
-      // `answered` makes a refusal take the same path the handler's own no
-      // takes: the switch does not move, because nothing switched.
-      const r = answered(answer);
-      if (!r?.ok) return;
-      setCardTransport(next);
-      setTransportPending(!!r.pending);
-    });
-  };
+  // The per-card transport state (P2-E18-08b) lived here: the current mode, the
+  // pending-restart flag, and the toggle that drove `sessions:setTransport`.
+  // All three were the ⋯ menu switch's backing store, and went with it (#873).
+  // The IPC channel itself is deliberately kept — see the note in the menu.
   // Per-session "notify when done" (P2-E14-03, §5.9). It lives in this menu
   // rather than the composer's options row because it is a durable property of
   // the CARD — like the transport switch directly above it — not a choice
@@ -977,14 +951,11 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         });
         if (record.taskLabel) setTaskLabel(record.taskLabel);
         setCardAutonomy(record.autonomy ?? 'ask');
-        // The card's stored choice, so the menu shows what will happen NEXT
-        // spawn. Main's answer, verbatim — this line used to read
-        // `record.transport === 'stream' ? 'stream' : 'pty'`, which is a
-        // SECOND default for the same contract and disagreed with the one the
-        // `cardTransport` state is seeded from, `DEFAULT_SESSION_TRANSPORT`
-        // (#445). A live record always carries a transport — that is what
-        // `SessionRecordDto` promises — so there is nothing here to default.
-        setCardTransport(record.transport);
+        // The card's stored transport was seeded into component state here, so
+        // the ⋯ menu could label which mode the next spawn would use. Both the
+        // menu and that state are gone (#873). `record.transport` itself is
+        // still carried — it is published with the card above, where the
+        // handoff rule and the trust chip read it.
       })
       .catch(startFailed)
       .finally(() => {
@@ -1958,51 +1929,19 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                       </div>
                     ) : (
                       <>
-                        <button
-                          onClick={toggleTransport}
-                          title={t('grid.menuTransportHint')}
-                          style={menuItemStyle(false)}
-                        >
-                          {/* State and ACTION stated separately. The first
-                              version showed only the current mode — and in a
-                              menu, entries read as commands, so "Transport:
-                              Terminal" looked like "switch to Terminal". I
-                              misread my own control while helping Dan test it
-                              (#153). */}
-                          {t('grid.menuTransportSwitch', {
-                            now: t(
-                              cardTransport === 'stream'
-                                ? 'grid.transportStream'
-                                : 'grid.transportPty'
-                            ),
-                            next: t(
-                              cardTransport === 'stream'
-                                ? 'grid.transportPty'
-                                : 'grid.transportStream'
-                            ),
-                          })}
-                        </button>
-                        {transportPending && (
-                          <div style={{ padding: '2px 8px 6px' }}>
-                            <div style={{ color: 'var(--muted)', fontSize: 10, marginBlockEnd: 4 }}>
-                              {t('grid.menuTransportPending')}
-                            </div>
-                            {/* Without this the setting could NEVER take
-                                effect: the only other route to a restart is the
-                                card's ✕, which DELETES the card record and the
-                                stored choice with it (#153). */}
-                            <button
-                              onClick={() => {
-                                setMenuOpen(false);
-                                setTransportPending(false);
-                                restartSelf();
-                              }}
-                              style={menuConfirmBtn(true)}
-                            >
-                              {t('grid.menuTransportRestart')}
-                            </button>
-                          </div>
-                        )}
+                        {/* THE TRANSPORT SWITCH WAS HERE (#153), AND IS GONE
+                            (#873, owner call 2026-09-19): *"we don't need the
+                            option to switch to Terminal in the menu."* With it
+                            went its pending-restart affordance, which existed
+                            only because a switch needed a way to take effect.
+
+                            The transport itself is untouched: `setTransport`
+                            still exists on the IPC channel, and
+                            `SWITCHBOARD_TRANSPORT=pty` still reaches the PTY,
+                            which E18-16 requires while Direct mode is under
+                            test. What is gone is the user-facing choice — so a
+                            card's transport is now the Direct default unless a
+                            developer overrides it for the whole app. */}
                         {/* A STATEFUL entry, not a command — a screen reader
                             has to be told this one has an on/off, and the box
                             glyph is the same fact for everyone else (never
@@ -2270,9 +2209,11 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
           {/* active view */}
           <div style={{ flex: 1, minBlockSize: 0, position: 'relative' }}>
             {panels.map((p) =>
-              // keepMounted panels stay in the tree and hide (the terminal
-              // would lose its xterm view otherwise); everything else mounts
-              // only while it is the active tab
+              // keepMounted panels stay in the tree and hide; everything else
+              // mounts only while it is the active tab. Nothing claims the flag
+              // since #873 took the Terminal panel (which would otherwise have
+              // lost its xterm view), so today this is the second branch every
+              // time — the first is kept for the next panel that needs it
               // a contributed panel that throws must cost that panel, not the
               // window — there is no other error boundary in the renderer
               p.keepMounted ? (
@@ -4844,8 +4785,9 @@ export interface GridController {
   /** how many documents `closeAllDocuments` would actually take, so the
    *  palette's enabled state and the command's effect are one read (#543) */
   closableDocumentCount: () => number;
-  /** switch a card's active view tab; 'terminal' toggles back to the Session
-   *  view when the Terminal is already showing (E9-01) */
+  /** switch a card's active view tab; passing the ALREADY-ACTIVE id toggles
+   *  back to the Session view (E9-01). `view.terminal` was the original caller
+   *  and went with its tab in #873 — `view.changes` is what uses it now. */
   toggleCardView: (cardId: string, view: PanelId) => void;
   /** pop the card out to its own window, or dock it back in (E9-01) */
   popOutCard: (cardId: string) => void;

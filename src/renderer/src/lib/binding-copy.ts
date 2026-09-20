@@ -25,12 +25,21 @@ export interface EmptyStateCopy {
    * `null` for every state that is not a problem — there is nothing to reassure
    * anyone about when nothing has gone wrong.
    *
-   * TRANSPORT-DEPENDENT, and that is the whole of #447. The original line
-   * ("The Terminal tab is unaffected — your session is still running there.")
-   * is true only where a terminal exists. On Direct it composed with the
-   * Terminal tab's own equally-true "No terminal for this session" (P2-E18-08b)
-   * into a lie: two honest surfaces sending the user to a place that is not
-   * there. Same defect class as #261's handoff bar, one surface over.
+   * STILL TRANSPORT-DEPENDENT, and the history is why. #447: the PTY line read
+   * "The Terminal tab is unaffected — your session is still running there",
+   * which was true only where a terminal existed. On Direct it composed with
+   * the Terminal tab's own equally-true "No terminal for this session"
+   * (P2-E18-08b) into a lie — two honest surfaces sending the user to a place
+   * that was not there. Same defect class as #261's handoff bar, one surface
+   * over, and the reason this field takes the transport at all.
+   *
+   * #873 removed the tab, and with it the destination. The PTY line no longer
+   * names a place to go — it says the session is still running and only this
+   * view of its conversation is missing — so the contradiction #447 was about
+   * can no longer be constructed. The split is KEPT rather than collapsed
+   * because the two transports still differ in the thing that matters here:
+   * a Direct session's conversation never came from that file in the first
+   * place, which is a stronger reassurance than the PTY line can give.
    */
   fallback: string | null;
 }

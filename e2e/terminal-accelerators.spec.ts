@@ -1,30 +1,45 @@
-// #90: the palette and the attention jump, reachable from INSIDE a session
-// terminal — where every renderer accelerator is deaf by design, because the
-// xterm surface is the real CLI and owns every key it can see.
+// #90: the palette and the attention jump, claimed in the BROWSER process
+// (Electron's `before-input-event`) rather than in the renderer.
 //
-// The claim lives above the renderer (Electron's before-input-event), so the
-// mechanism these tests drive is a browser-process one; what they assert is the
-// user-visible half of it, plus the half that matters more: that NOTHING else
-// is taken from the CLI.
+// WHAT THIS FILE USED TO PROVE, AND WHY MOST OF IT IS GONE (#873).
 //
-// TRANSPORT SCOPE (P2-E18-18, #404): `[pty]`, and legitimately so — the whole
-// item is about focus being INSIDE an xterm surface, which a Direct session
-// does not have (its Terminal tab renders the P2-E18-08b notice instead,
-// `extensibility/panels.tsx`). There is no Direct counterpart to write: with no
-// surface to steal a key back FROM, the two accelerators here are just ordinary
-// renderer accelerators on the default transport, and they are covered as such
-// — Ctrl+Shift+P by `palette.spec.ts`, Ctrl+Space by `attention.spec.ts` and
-// `stream-attention.spec.ts` ("Ctrl+Space jumps to the Direct session that is
-// waiting"). See `launchApp` in `fixtures/app.ts` for the tag.
+// The mechanism exists so that two chords still reach switchboard from INSIDE
+// an xterm surface, where every renderer accelerator is deaf by design because
+// the terminal is the real CLI and owns every key it can see. Four tests here
+// staged exactly that: focus the xterm, send a chord through
+// `webContents.sendInputEvent`, and assert both that the two claimed chords
+// work and — far more importantly — that NOTHING else is taken from the CLI.
+//
+// **There is no longer an xterm surface anywhere in the app.** `TerminalPane`
+// was mounted only by the `panel-terminal` contribution, and that went with the
+// Terminal tab. PTY sessions still spawn under `SWITCHBOARD_TRANSPORT=pty` and
+// the transport still works — E18-16 requires it — but nothing renders one, so
+// focus can never be inside a terminal and the scenario cannot be staged.
+//
+// Deleted with that surface:
+//
+//  - "Ctrl+Shift+P opens the palette from inside a terminal — and the PTY
+//    survives"
+//  - "Ctrl+Space jumps to the session that needs you, from inside a terminal"
+//  - "a popped-out session terminal reaches the palette too"
+//  - **"NOTHING else is intercepted — every other key still reaches the CLI"**,
+//    which was the load-bearing one: it watched the accelerator channel while
+//    eight chords Claude Code itself binds (Ctrl+R, Ctrl+T, Ctrl+O, …) were
+//    pressed, and failed if any of them was ever stolen. Nothing replaces it.
+//    The browser-process claim is still live code, so if a terminal surface
+//    ever returns, restore this test with it — the guarantee it protected is a
+//    P7 one, and it is currently unguarded.
+//
+// The two chords themselves are still covered as ordinary renderer accelerators
+// on the default transport: Ctrl+Shift+P by `palette.spec.ts`, Ctrl+Space by
+// `attention.spec.ts` and `stream-attention.spec.ts`.
+//
+// What remains below is the SCOPE rule, which never needed a terminal: the
+// browser-process claim is window-wide, so something has to stop it yanking you
+// away mid-sentence while you are typing.
 import { test, expect, ElectronApplication, Page } from '@playwright/test';
 import path from 'path';
-import {
-  hookPoster,
-  launchApp,
-  LaunchedApp,
-  showTerminal,
-  tempProjectFolder,
-} from './fixtures/app';
+import { hookPoster, launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';
 
 const palette = (w: Page) => w.getByRole('dialog', { name: 'Command palette' });
 const activeTab = (w: Page) => w.locator('.dv-active-tab');
@@ -70,94 +85,9 @@ async function chord(
   );
 }
 
-/** put focus INSIDE the xterm surface — the state the whole item is about */
-async function focusTerminal(w: Page): Promise<void> {
-  await showTerminal(w);
-  await expect(w.locator('.xterm-screen').first()).toBeVisible({ timeout: 15_000 });
-  await w.locator('.xterm-screen').first().click();
-  await expect
-    .poll(() => w.evaluate(() => !!document.activeElement?.closest('.xterm')), { timeout: 10_000 })
-    .toBe(true);
-}
-
-test.describe('[pty] terminal accelerators (#90)', () => {
+test.describe('browser-process accelerators keep their scope (#90)', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
-
-  test('Ctrl+Shift+P opens the palette from inside a terminal — and the PTY survives', async () => {
-    const folder = tempProjectFolder();
-    a = await launchApp({ seedFolder: folder });
-    const w = a.window;
-    await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
-    await focusTerminal(w);
-
-    await chord(a.app, 'P', ['control', 'shift']);
-    await expect(palette(w)).toBeVisible({ timeout: 10_000 });
-    // ...with the caret IN it. Opening a palette you then have to click would
-    // be no better than the title-bar chip this replaces — and the terminal is
-    // the one surface that would otherwise keep the keystrokes.
-    await expect(w.getByPlaceholder('Type a command or a session name…')).toBeFocused();
-
-    // and the terminal underneath is untouched: still a live CLI
-    await w.keyboard.press('Escape');
-    await expect(palette(w)).toHaveCount(0);
-    await w.locator('.xterm-screen').first().click();
-    await w.keyboard.type('echo SB90_ALIVE');
-    await w.keyboard.press('Enter');
-    await expect(w.getByText(/SB90_ALIVE/).first()).toBeVisible({ timeout: 15_000 });
-  });
-
-  test('Ctrl+Space jumps to the session that needs you, from inside a terminal', async () => {
-    const folders = [tempProjectFolder(), tempProjectFolder(), tempProjectFolder()];
-    a = await launchApp({ seedFolder: folders[0] });
-    const w = a.window;
-    const [first, second, third] = folders.map((f) => path.basename(f));
-    await expect(w.getByText(first).first()).toBeVisible({ timeout: 25_000 });
-    for (const folder of folders.slice(1)) {
-      await a.app.evaluate(({ dialog }, dir) => {
-        dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [dir] });
-      }, folder);
-      await w.getByRole('button', { name: '+ session' }).click();
-      await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
-    }
-
-    // TWO sessions wait, deliberately: one press must advance exactly one step.
-    // With a single waiting session a double dispatch would be invisible — the
-    // second advance finds an empty queue and does nothing — and "the page
-    // never also sees the keystroke" is the load-bearing assumption of the
-    // whole design, so it needs something that would actually break.
-    const post = await hookPoster(a, 3);
-    await post(second, {
-      hook_event_name: 'Notification',
-      message: 'Claude needs your permission to use Bash',
-    });
-    await post(third, {
-      hook_event_name: 'Notification',
-      message: 'Claude needs your permission to use Bash',
-    });
-    // Read off the events TAB, not the drawer's rows: the drawer is collapsed
-    // by default (P2-E14-01) and this test is about a keystroke typed INTO a
-    // terminal — opening an overlay across the right edge of the workspace
-    // first would be staging the wrong scene. The tab's count is the same
-    // queue depth, permanently on screen.
-    await expect(w.getByTestId('events-tab')).toHaveAttribute('data-count', '2', {
-      timeout: 15_000,
-    });
-
-    // focus the session that is NOT waiting, and dig into its terminal —
-    // exactly where the hotkey used to be dead
-    await w.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+1`);
-    await expect(activeTab(w)).toContainText(first);
-    await focusTerminal(w);
-
-    await chord(a.app, ' ', ['control']);
-    await expect(activeTab(w)).toContainText(second, { timeout: 10_000 });
-    // and it is still on the FIRST of the two waiting sessions a moment later,
-    // i.e. the press advanced once, not twice
-    await w.waitForTimeout(500);
-    await expect(activeTab(w)).toContainText(second);
-    await expect(activeTab(w)).not.toContainText(third);
-  });
 
   test('Ctrl+Space still stands down while you are typing in the composer', async () => {
     // The claim is window-wide (before-input-event is per webContents), so the
@@ -182,8 +112,9 @@ test.describe('[pty] terminal accelerators (#90)', () => {
       hook_event_name: 'Notification',
       message: 'Claude needs your permission to use Bash',
     });
-    // the tab again, for the reason above — this one is Ctrl+Space from a
-    // terminal, so the terminal has to be the only thing in the way
+    // read the count off the events TAB rather than the drawer's rows: the
+    // drawer is collapsed by default (P2-E14-01), and opening an overlay across
+    // the workspace would be staging the wrong scene
     await expect(w.getByTestId('events-tab')).toHaveAttribute('data-count', '1', {
       timeout: 15_000,
     });
@@ -198,64 +129,6 @@ test.describe('[pty] terminal accelerators (#90)', () => {
 
     // ...and the palette, which IS allowed while typing, still opens
     await chord(a.app, 'P', ['control', 'shift']);
-    await expect(palette(w)).toBeVisible({ timeout: 10_000 });
-  });
-
-  test('NOTHING else is intercepted — every other key still reaches the CLI', async () => {
-    const folder = tempProjectFolder();
-    a = await launchApp({ seedFolder: folder });
-    const w = a.window;
-    await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
-    await focusTerminal(w);
-
-    // watch the channel the claim delivers on: if a key is ever taken from the
-    // CLI, it shows up here and nowhere else
-    await w.evaluate(() => {
-      const g = window as unknown as { __accelerators: string[] };
-      g.__accelerators = [];
-      window.switchboard.onAccelerator?.((p) => g.__accelerators.push(p.commandId));
-    });
-    const seen = (): Promise<string[]> =>
-      w.evaluate(() => (window as unknown as { __accelerators: string[] }).__accelerators);
-
-    // keys Claude Code itself binds, plus our own renderer-only accelerators
-    await chord(a.app, 'r', ['control']); // history search
-    await chord(a.app, 't', ['control']); // todos
-    await chord(a.app, 'o', ['control']); // transcript
-    await chord(a.app, 'B', ['control', 'shift']); // brief
-    await chord(a.app, 'Escape', []);
-    await chord(a.app, 'Up', []);
-    await chord(a.app, '1', ['control']); // ours, but renderer-only
-    await chord(a.app, ' ', []); // a bare space is a keystroke, not a chord
-    expect(await seen()).toEqual([]);
-
-    // ...and the two that ARE claimed still are, so the check above is real
-    await chord(a.app, ' ', ['control']);
-    await chord(a.app, 'P', ['control', 'shift']);
-    await expect.poll(seen, { timeout: 10_000 }).toEqual(['attention.next', 'palette.open']);
-  });
-
-  test('a popped-out session terminal reaches the palette too', async () => {
-    // dockview popouts open a real 2nd OS window — unreliable under headless
-    // xvfb, covered on Windows + macOS (same rationale as palette.spec.ts)
-    test.skip(
-      process.platform === 'linux',
-      'popout opens a 2nd OS window — unreliable under headless xvfb'
-    );
-    const folder = tempProjectFolder();
-    a = await launchApp({ seedFolder: folder });
-    const w = a.window;
-    await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
-
-    await w.getByTitle('Pop out into its own window').click();
-    await expect.poll(() => a.app.windows().length, { timeout: 15_000 }).toBe(2);
-    const popout = a.app.windows().find((p) => p !== w)!;
-    await popout.waitForLoadState('domcontentloaded');
-    // the card's terminal moved with it — tearing a session off must not cost
-    // it a capability (§5.8)
-    await focusTerminal(popout);
-
-    await chord(a.app, 'P', ['control', 'shift'], 'popout');
     await expect(palette(w)).toBeVisible({ timeout: 10_000 });
   });
 });

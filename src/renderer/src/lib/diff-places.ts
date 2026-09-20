@@ -1,9 +1,10 @@
 // Where the reader was in a card's Changes tab, across an unmount (#562).
 //
 // THE MECHANISM, measured rather than assumed. `panels.tsx` renders only the
-// ACTIVE panel — the Terminal alone is `keepMounted` — so switching a card's tab
-// destroys `DiffPane` and every piece of state in it. Come back and the pane has
-// **no file selected at all**, let alone the same place in it.
+// ACTIVE panel — nothing is `keepMounted` since #873 took the Terminal, which
+// was the sole exception — so switching a card's tab destroys `DiffPane` and
+// every piece of state in it. Come back and the pane has **no file selected at
+// all**, let alone the same place in it.
 //
 // NOTE WHAT THIS IS NOT. #562 was filed expecting #555's defect: a dockview MOVE
 // that detaches and reappends the DOM. The Changes tab is IMMUNE to that, and

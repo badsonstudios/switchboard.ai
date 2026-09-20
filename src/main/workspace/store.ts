@@ -196,7 +196,7 @@ export interface PersistedWindow extends WindowState {
 export type { NotificationPrefs };
 
 export interface WorkspaceState {
-  version: 1;
+  version: typeof CURRENT_VERSION;
   sessions: PersistedSession[];
   groups: PersistedGroup[];
   window: PersistedWindow | null;
@@ -313,7 +313,7 @@ export interface WorkspaceState {
 }
 
 /** The schema version this build writes. Bump it and add a MIGRATIONS entry. */
-export const CURRENT_VERSION = 1;
+export const CURRENT_VERSION = 2;
 
 /**
  * Version dispatch (P2-E15-13, §5.26, AR-P2-9).
@@ -325,16 +325,52 @@ export const CURRENT_VERSION = 1;
  * belt-and-braces split is deliberate — a migration can be wrong about a
  * hand-edited file, the sanitizer never is.
  *
- * There is exactly one version today, so the only entry is the identity, and
- * writing the hook now is free. **The rule when you add v2:** bump
- * `CURRENT_VERSION`, add `2: (raw) => raw` as the new identity, and rewrite
- * `1:` to lift a v1 file *directly* to v2 — every version below
- * `CURRENT_VERSION` keeps an entry, and each is rewritten (not composed) on the
- * next bump. Nothing outside this table moves.
+ * **The rule when you add v3:** bump `CURRENT_VERSION`, add `3: (raw) => raw`
+ * as the new identity, and rewrite `1:` and `2:` to lift a file of that version
+ * *directly* to v3 — every version below `CURRENT_VERSION` keeps an entry, and
+ * each is rewritten (not composed) on the next bump. Nothing outside this table
+ * moves.
  */
 type Migration = (raw: Record<string, unknown>) => Record<string, unknown>;
+
+/**
+ * v1 -> v2 (#873): the Terminal tab and the ⋯ transport switch are gone, so a
+ * card still carrying `transport: 'pty'` would spawn a CLI with no surface
+ * anywhere in the app that could show it — running where nobody can see it.
+ *
+ * The stored choice is CLEARED rather than rewritten to `'stream'`. Absent
+ * means "never chose", which is exactly what is true once the control that did
+ * the choosing is gone; it leaves the card following `DEFAULT_SESSION_TRANSPORT`
+ * (Direct) AND still honouring a `SWITCHBOARD_TRANSPORT` override. Pinning
+ * `'stream'` would instead dead-end the one route PTY has left, which E18-16
+ * requires to keep working while Direct mode is under test.
+ *
+ * Pure and silent on purpose: `load()` counts what this changed and reports it,
+ * because `fileNotes` is this file's one reporting channel.
+ */
+function dropPtyTransport(raw: Record<string, unknown>): Record<string, unknown> {
+  if (!Array.isArray(raw.sessions)) return raw;
+  // `unknown[]`, not the `any[]` the guard leaves behind: every entry here came
+  // off a hand-editable file, and the sanitizer downstream is what decides
+  // whether any of it is usable. Typing the callback's return keeps that
+  // honesty instead of laundering the file's contents into `any`.
+  const sessions = raw.sessions as unknown[];
+  let lifted = false;
+  const next = sessions.map((s): unknown => {
+    if (!s || typeof s !== 'object') return s;
+    const rec = s as Record<string, unknown>;
+    if (rec.transport !== 'pty') return s;
+    lifted = true;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { transport: _removed, ...rest } = rec;
+    return rest;
+  });
+  return lifted ? { ...raw, sessions: next } : raw;
+}
+
 const MIGRATIONS: Record<number, Migration | undefined> = {
-  1: (raw) => raw, // identity: v1 IS the current shape
+  1: dropPtyTransport, // v1 -> v2: clears the removed Terminal transport
+  2: (raw) => raw, // identity: v2 IS the current shape
 };
 
 /** No entry for this version (a future file, or a table gap): read it as-is. */
@@ -488,9 +524,9 @@ export class WorkspaceStore {
       const fileVersion = detectVersion(obj.version);
       if (fileVersion > CURRENT_VERSION) {
         // Written by a NEWER switchboard.ai. Fail-open says boot anyway, so we
-        // read what we recognize — but saving would rewrite their file as a
-        // lossy v1 and destroy whatever this build cannot see. So: display it,
-        // never write it.
+        // read what we recognize — but saving would rewrite their file at THIS
+        // build's version (v2 today) and destroy whatever it cannot see. So:
+        // display it, never write it.
         this.readOnly = true;
         fileNotes.push({
           msg: 'workspace file was written by a newer version of switchboard.ai — loading it read-only; changes made this run will NOT be saved',
@@ -501,7 +537,42 @@ export class WorkspaceStore {
       // reader and let the sanitizer keep whatever still makes sense. (Nothing
       // below is reset in the `catch` on purpose: if the sanitizer ever chokes
       // on a future file, staying read-only is the safe half of the failure.)
-      const raw = (MIGRATIONS[fileVersion] ?? passthrough)(obj) as Partial<WorkspaceState>;
+      // #873: one line when the lift actually moved cards off the removed
+      // Terminal transport — and SILENCE otherwise.
+      //
+      // Measured as a DIFFERENCE across the dispatch rather than as a count of
+      // what went in. The first version counted `obj.sessions` before the table
+      // ran, which made the note a claim about the input instead of about the
+      // migration, and it was wrong in three ways that all reach real users:
+      // a v2 file with a hand-edited `'pty'` kept the PTY while being told it
+      // had moved; a file from the FUTURE is `passthrough` + read-only, so the
+      // line contradicted the "will NOT be saved" note pushed just above it;
+      // and a developer running `SWITCHBOARD_TRANSPORT=pty` re-persists `'pty'`
+      // on every spawn, so the line would have fired on every launch, for ever,
+      // about a card that never moved.
+      //
+      // A difference cannot say any of those: the identity entries and
+      // `passthrough` leave the count untouched, so it is zero exactly when
+      // nothing happened. `fileNotes` rather than `note()` because this must be
+      // audible on a file that loaded read-only too — though by construction it
+      // no longer fires on one.
+      const countPty = (v: unknown): number =>
+        Array.isArray(v)
+          ? v.filter(
+              (s) =>
+                !!s && typeof s === 'object' && (s as Record<string, unknown>).transport === 'pty'
+            ).length
+          : 0;
+      const ptyBefore = countPty(obj.sessions);
+      const migrated = (MIGRATIONS[fileVersion] ?? passthrough)(obj);
+      const raw = migrated as Partial<WorkspaceState>;
+      const ptyLifted = ptyBefore - countPty(migrated.sessions);
+      if (ptyLifted > 0) {
+        fileNotes.push({
+          msg: 'sessions were moved off the removed Terminal transport and now follow the Direct default (#873)',
+          fields: { sessions: ptyLifted },
+        });
+      }
       const groups = keepSane(raw.groups, isSaneGroup, 'group', note).map((g) => {
         const repaired = repairGroupName(g);
         // identity compare: the repair hands BACK the same object when the
@@ -1368,7 +1439,7 @@ export class WorkspaceStore {
       clearTimeout(this.saveTimer);
       this.saveTimer = null;
     }
-    if (this.readOnly) return; // never downgrade a future-version file to v1
+    if (this.readOnly) return; // never downgrade a future-version file to ours
     // A damaged file that a failed set-aside left behind is still sitting at
     // `this.file`, and the rename below is what destroys it (#352). Nothing
     // pending is the normal case, and it answers instantly.

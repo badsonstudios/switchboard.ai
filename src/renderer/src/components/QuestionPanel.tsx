@@ -120,7 +120,7 @@ export type QuestionDecide = (
 /**
  * Answers in progress, keyed by request id, OUTSIDE React (#563 review).
  *
- * The Session panel is not `keepMounted` — only the terminal is — so clicking
+ * The Session panel is not `keepMounted` — nothing is, since #873 — so clicking
  * **Changes** to look at the diff before answering "which of these three
  * approaches?", collapsing the card, or a dockview move that remounts the tree
  * all unmount this component. With the selections in component state alone,

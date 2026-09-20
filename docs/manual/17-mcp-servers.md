@@ -77,8 +77,6 @@ came from — your claude.ai account settings, or the plugin that installed them
 one you're in:
 
 - **The session isn't running.** Start it and the full list appears.
-- **The session is in Terminal mode.** Terminal-mode sessions can't be asked
-  this question. Switch it to Direct mode, or run `/mcp` in its Terminal tab.
 - **The session didn't answer.** Rare; try closing and reopening the panel.
 
 In all three the panel falls back to reading your configuration files, which is
@@ -256,10 +254,6 @@ You have three ways, and none of them needs a restart any more:
   tells you if any didn't come back. **It skips servers you've turned off**, so
   it can't quietly switch them back on behind you.
 
-**A Terminal-mode session works differently.** It can't be asked directly, so
-the bottom button still says **Reconnect** and types `/mcp` into the terminal —
-Claude Code's own picker opens there and you answer it yourself.
-
 **A session that isn't running** has nothing to reconnect; start it first.
 
 ## Approving a shared server
@@ -290,9 +284,8 @@ means the `claude` command isn't where switchboard expected it. You'll only see
 this on a session that isn't running; a running session reports its own states.
 
 **The list is shorter than `/mcp` shows.** Read the note at the bottom of the
-panel: it says which of the three reasons applies — the session isn't running,
-it's in Terminal mode, or it didn't answer. Starting the session, or switching
-it to Direct mode, gets you the full list.
+panel: it says which of the two reasons applies — the session isn't running, or
+it didn't answer. Starting the session gets you the full list.
 
 **A server says "not connecting".** The command is the first thing to check: the
 row shows exactly what Claude Code is trying to run. A typo, a program that

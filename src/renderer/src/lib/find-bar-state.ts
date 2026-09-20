@@ -12,7 +12,8 @@
 //   • `term` and the two options — STICKY, and sticky is a browser-find
 //     promise: you press Ctrl+F, type, Esc, switch tab, press Ctrl+F again and
 //     your term is still there. Component state dies with the panel, and every
-//     tab switch unmounts one (`keepMounted` is the exception, not the rule).
+//     tab switch unmounts one (`keepMounted` would be the exception, and since
+//     #873 took the Terminal panel nothing claims it at all).
 //
 // NOT PERSISTED, deliberately: §5.31's non-goals say no search history, and a
 // term restored from three days ago at the next launch is the smallest,

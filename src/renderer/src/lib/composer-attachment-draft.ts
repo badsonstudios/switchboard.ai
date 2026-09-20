@@ -46,8 +46,9 @@
 // WHY MEMORY IS ENOUGH FOR MOST OF IT. The three ways a draft gets lost are not
 // equal, and only one of them needs disk:
 //
-//   * switching the card's view tab unmounts the Session panel (only
-//     `panel-terminal` is `keepMounted`) — same run, same renderer realm;
+//   * switching the card's view tab unmounts the Session panel (nothing is
+//     `keepMounted` since #873 took the Terminal panel, so this is true of
+//     every tab) — same run, same renderer realm;
 //   * the stranded-popout rescue (#292) rebuilds the card from its record —
 //     same run, same realm;
 //   * quitting and relaunching — a new process.

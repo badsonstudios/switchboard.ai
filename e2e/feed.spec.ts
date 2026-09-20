@@ -20,7 +20,6 @@ import {
   hookPoster,
   launchApp,
   LaunchedApp,
-  showTerminal,
   tabFromFeedToComposer,
   tempProjectFolder,
 } from './fixtures/app';
@@ -793,23 +792,17 @@ test.describe('[pty] Feed view (E12-06)', () => {
     await popout.evaluate(() => window.close());
   });
 
-  test('the composer drives the real CLI over the PTY (E10-02)', async () => {
-    const folder = tempProjectFolder();
-    a = await launchApp({ seedFolder: folder });
-    const w = a.window;
-    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
-
-    // type a prompt in the Session tab's composer and hit Enter — the fake
-    // provider is a real shell, so the command actually executes
-    const box = w.getByPlaceholder(/Prompt this session/);
-    await box.fill('echo COMPOSER_OK_42');
-    await box.press('Enter');
-    await expect(box).toHaveValue(''); // cleared on submit
-
-    // proof it reached the CLI: the (hidden) Terminal shows the output
-    await showTerminal(w);
-    await expect(w.getByText(/COMPOSER_OK_42/).first()).toBeVisible({ timeout: 15_000 });
-  });
+  // "the composer drives the real CLI over the PTY (E10-02)" stood here. It
+  // typed `echo COMPOSER_OK_42` into the composer and then read the echo out of
+  // the Terminal tab's scrollback — the scrollback was the only witness that
+  // the keystrokes had reached a real process.
+  //
+  // That surface is gone (#873) and no other rendered surface shows PTY output,
+  // so the composer→PTY path has no e2e witness left. The composer still writes
+  // to the PTY in code, and the transport itself is exercised below the UI by
+  // the `check:pty` harness. The composer→CLI claim on the DEFAULT transport is
+  // covered throughout the `stream*.spec.ts` family, where a prompt produces a
+  // rendered reply.
 
   // P2-E10-08 (#406). The unit tests pin the sizing rule against a stubbed
   // layout; only a real engine can say whether the box actually wraps, caps and

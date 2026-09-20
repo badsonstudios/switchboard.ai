@@ -1,21 +1,17 @@
 # 12 — Direct mode (beta)
 
-There are two ways switchboard can talk to Claude Code. This page explains what
-the newer one is, why it's now what you get, and what you give up.
+This page explains how switchboard talks to Claude Code, and what that costs.
 
 **Short version:** Direct mode fixes permission prompts that used to escape into
-the terminal and ask you twice. It costs you the terminal itself. **Every new
-session starts in Direct mode**, and you can put an individual session back on
-Terminal if you need one.
+the terminal and ask you twice. It costs you the terminal itself. **It is now
+the only mode** — every session runs this way, and there is nothing to turn on.
 
-> **Where this is going.** Direct mode is intended to become the *only* mode.
-> Once it's been properly tested in real use, Terminal mode will be removed, not
-> kept as an option. Making it the default is that test: it's how the mode gets
-> used in real work rather than by people who went looking for it. Nothing is
-> being taken away yet — Terminal mode still fully works and is one menu click
-> away — but if you're deciding where to invest your habits, invest them here.
-> The list under **What you give up** is the list of things that will need a
-> real replacement or an honest goodbye.
+> **This used to be a choice.** A session could be put back on "Terminal mode",
+> which hosted the real Claude Code interface in a tab on the card. That mode
+> has been removed as a choice, along with the tab and the ⋯-menu switch that
+> reached it. A session you had set to Terminal moves to Direct the next time
+> switchboard starts, and says so in the log; its conversation and history are
+> untouched. The list under **What you give up** is what actually went with it.
 
 ---
 
@@ -42,47 +38,24 @@ explanation of *why* it's asking, which the normal mode never receives.
 
 ## You already have it
 
-New sessions start in Direct mode. There's nothing to switch on, and the sign
-you're in it is the Terminal tab: it says *"No terminal for this session."*
+Every session runs in Direct mode. There is nothing to switch on, nothing to
+check, and no setting that changes it.
 
-To check which mode a session is on, open the **⋯** menu on its header. The
-entry reads **Transport: _current mode_ — switch to _the other one_** — the
-first half is what the session is on now, the second half is what the click
-would do.
-
-## Switching a session (either way)
-
-1. Open the **⋯** menu on the session's header.
-2. Click **Transport: … — switch to …**.
-3. If the session is running, the menu says *"Saved. This session is still
-   running on the old one."* and offers **Restart session now**. Click it.
-
-Restarting keeps the session card and its history — it just stops the CLI and
-starts it again in the new mode. If you'd rather not restart right now, leave
-it: the change is already saved and applies whenever the session next starts.
-
-**Don't close the card to force a restart.** Closing a card (the ✕) forgets it
-entirely, including this setting — use **Restart session now** instead.
-
-The choice is remembered per session, so a session you put on Terminal stays on
-Terminal — through a restart and through closing and reopening the app. Only
-sessions that have never been switched follow the default. (This works the same
-way as the autonomy setting: chosen now, applied at the next start.)
-
-> **If you were already using switchboard before this changed:** a session you
-> had explicitly set — to either mode — keeps exactly what you set. A session
-> you never touched was never "on Terminal" so much as "on whatever the default
-> was", and the default is now Direct, so those sessions move. If one of them
-> was one you relied on the terminal for, put it back with the menu above; that
-> choice then sticks.
+> **If you were using switchboard before this changed:** a session you had
+> explicitly set to Terminal mode moves to Direct the next time the app starts.
+> The card, its name, its conversation and its history all come back exactly as
+> they were — the only thing that changes is how switchboard talks to the CLI
+> behind it.
 
 ## What you give up
 
-**The Terminal tab stops working for that session** — there's no terminal to
-show, and the tab says so. That means you lose:
+**There is no terminal, and no Terminal tab.** That means you lose:
 
 - **Ctrl-R history search** and **vim mode**
 - Anything else that only exists as a full-screen terminal interface
+
+If you need one of those for a particular piece of work, run `claude` yourself
+in a terminal — it is the same CLI and the same conversation history.
 
 This list used to be longer. It named the pickers for `/resume` and `/rewind`,
 and slash commands generally were called a known gap — none of which is true any
@@ -98,17 +71,15 @@ doesn't: Claude Code raises no trust question at all outside its own terminal,
 so it just runs in the folder. Nothing hangs and nothing is hidden from you.
 
 That is why the **🔓 auto-trust / 🔒 ask trust** chip in the title bar is greyed
-out while every session is in Direct mode — hover it and it says so. It is not
-broken: there is just no session there that could put the question in front of
-you. Switch a session to Terminal mode from its **⋯** menu and the chip works
-again. Full story in [Settings](10-settings.md#trusting-folders).
+out — hover it and it says so. It is not broken: there is no longer any session
+that could put the question in front of you, so the setting has nothing to
+govern. Your choice is kept exactly as you left it. Full story in
+[Settings](10-settings.md#trusting-folders).
 
 Because nothing can ask, switchboard doesn't answer on your behalf either: a
-Direct-mode session leaves Claude Code's trust setting for that folder exactly
-as it found it, whichever way the chip is set. The question is still there to be
-asked the first time you run in Terminal mode — and with **auto-trust** on (the
-default) that is the moment switchboard answers it for you, so switch the chip
-to **🔒 ask trust** first if you want to see the prompt yourself.
+session leaves Claude Code's trust setting for that folder exactly as it found
+it, whichever way the chip is set. Nothing is recorded in your name for a
+question you were never able to see.
 
 Everything else works the same — better, in a couple of places. Your
 conversation still appears in the Session view (and arrives faster; see
@@ -127,17 +98,15 @@ file changes are unaffected.
 - **Any other session.** The setting is per session. You can run one session in
   Direct mode and leave the rest alone.
 
-## Why it's marked beta
+## What is still being worked out
 
 Some parts of Claude Code have no equivalent outside a terminal yet — plan-mode
-approval and multiple-choice questions are the two being looked at. "Beta" means
-those are still being worked out, **not** that Direct mode is an experiment that
-might be withdrawn: it's the mode that's staying.
+approval and multiple-choice questions are the two being looked at. Those are
+still being built, and until they are, a session that hits one has to be told to
+carry on another way.
 
-Terminal mode remains the safe fallback, and it's still the right choice for a
-session where you actually rely on the terminal — Ctrl-R history or vim mode.
-Put those sessions back on it. Everywhere else, stay on Direct and tell us what
-breaks: that feedback is the gate on removing Terminal mode.
+There is no longer a fallback to switch to, so if something breaks, say so —
+that is now the only way it gets found.
 
 ## Fixed: `/usage`, `/cost` and `/context` now show their output
 
@@ -145,10 +114,10 @@ Commands that Claude Code answers *itself* rather than by asking Claude —
 **`/usage`**, **`/cost`**, **`/context`** — used to produce no visible output in
 the Session view at all. The command ran; there was simply nothing on screen.
 
-They now print their output into the Session view like any other reply, in both
-modes. (It was never really a Direct-mode fault — the output had always been
-missing from the Session view, and in Terminal mode you'd see it in the Terminal
-tab instead, so Direct mode only removed the place it was hiding.)
+They now print their output into the Session view like any other reply. (It was
+never really a Direct-mode fault — the output had always been missing from the
+Session view, and back when there was a Terminal tab you would see it there
+instead, so Direct mode only removed the place it had been hiding.)
 
 ## What you see when a session resumes
 
@@ -271,19 +240,13 @@ decide it again.
 
 ## Replies arrive as they're written
 
-In Direct mode Claude's reply appears **a word at a time**, with a small block
-cursor at the end while it's still being written — the same way it looks in the
-terminal. In Terminal mode the Session view instead waits for each message to be
-finished and written to disk, so replies land in chunks a moment behind.
-
-Nothing else about the Session view changes: prompts, file edits, commands,
-thinking and checklists all look and behave exactly the same in either mode.
+Claude's reply appears **a word at a time**, with a small block cursor at the
+end while it's still being written — the same way it looks in a terminal. (The
+old Terminal mode instead waited for each message to be finished and written to
+disk, so replies landed in chunks a moment behind.)
 
 ## If something looks wrong
 
-- **The Terminal tab is empty and says there's no terminal.** That's correct
-  for a Direct-mode session, which is what a new session is. Switch it to
-  Terminal via the ⋯ menu if you need one.
 - **A card said it needed permission and there was nothing to answer.** Fixed.
   In Direct mode every real permission request arrives with an **Allow / Deny**
   bar attached to it, so the amber "needs permission" badge is now only ever
@@ -291,9 +254,6 @@ thinking and checklists all look and behave exactly the same in either mode.
   sends a slower, vaguer nudge of its own a few seconds behind — sometimes after
   you'd already answered — and switchboard used to believe it. In Direct mode it
   no longer does.
-- **You switched and nothing changed.** The change applies at the *next* start.
-  Use **Restart session now** in the same menu — closing the card instead will
-  forget the setting along with the card.
 - **Claude says a request was declined and you never saw it.** Nobody could be
   asked — the window was closed or its display crashed while the session kept
   running, or the question sat unanswered for five minutes. In Direct mode there

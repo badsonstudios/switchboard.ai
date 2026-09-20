@@ -108,10 +108,15 @@ describe('the fail-open line follows the transport (#447)', () => {
   // and the bug was IN THE WORDS. Pin both.
   const strings = en.binding as Record<string, string>;
 
-  it('the PTY wording still names the Terminal tab', () => {
+  it('the PTY wording says the session is fine WITHOUT naming a place to go', () => {
+    // It used to read "The Terminal tab is unaffected — your session is still
+    // running there." That sentence named a destination, and #873 removed the
+    // destination — so it now says what is still true instead: the CLI is fine,
+    // and only this view of its conversation is missing.
     expect(strings.unboundFallback).toBe(
-      'The Terminal tab is unaffected — your session is still running there.'
+      'Your session is unaffected — it is still running, and only this view of its conversation is missing.'
     );
+    expect(strings.unboundFallback.toLowerCase()).not.toContain('terminal');
   });
 
   it('the Direct wording never sends anyone to a terminal that does not exist', () => {

@@ -70,11 +70,7 @@ thing you'd do by hand, and they work the same in either mode.
 - **`/model` and `/mcp` open switchboard's own panels**, in either mode. Type
   either one and you get a picker you can finish in — the model list comes from
   Claude Code itself, and `/mcp` opens the [MCP servers](17-mcp-servers.md)
-  panel. Neither needs the Terminal tab any more.
-
-  In **Terminal** mode `/model` is the exception: Claude Code's own picker works
-  there and is the better one, so switchboard stays out of the way and tells you
-  to type it in the terminal.
+  panel. Neither needs a terminal any more.
 - **Everything else is passed straight through.** A command switchboard has no
   panel for is sent to Claude Code exactly as you typed it, and Claude Code
   answers it however it normally would. Commands it answers itself — `/usage`,

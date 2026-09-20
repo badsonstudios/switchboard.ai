@@ -811,6 +811,18 @@ extension reference (clean blocks, expandable detail); Terminal stays one
 toggle away and raw TUI states surface it explicitly. Litmus checked per
 surface.
 
+> **AMENDED 2026-09-19 (#873).** E10's exit was met and stands, but its last
+> clause no longer describes the product: **Terminal is not one toggle away —
+> there is no Terminal tab at all**, and the `view.terminal` command named in
+> E9-01's seed list above (and E12-07's "flip the default tab from Terminal to
+> Feed") is retired with it. The first half of this exit is now simply how the
+> app works rather than an achievement to check: a coding turn never had a
+> terminal to be visible. "Raw TUI states surface it explicitly" survives as the
+> handoff bar, which still SAYS where a CLI-kept decision lives but no longer
+> offers to take you there. The PTY transport itself is untouched — see
+> `docs/plans/05-transport-migration.md` → E18-16 for what remains of the
+> cutover.
+
 ## E11 — Session Bus & context transfer (milestone: Phase 2; items 00–05 + 09 filed 2026-09-07, the remaining six filed 2026-09-13 once #760's findings were in)
 
 > **Transport decided 2026-07-26 (architecture review AR-P1-6): the Session Bus

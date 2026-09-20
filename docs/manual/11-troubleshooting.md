@@ -79,14 +79,10 @@ as it appears. It's the only warning that explains why nothing will start, so
 it announces itself rather than waiting to be found.
 
 **A session sits on "starting" and won't finish.**
-Some Claude Code start-up prompts — trust dialogs, the "resume from summary"
-picker on a very long conversation — appear only in the terminal, where
-switchboard can't see them. After about eight seconds the Session tab shows a
-bar across the bottom: **"Claude is showing a start-up dialog."** Click **Open
-Terminal**, answer the prompt there, and the session carries on normally.
-
-This one is **Terminal mode only** — a [Direct mode](12-direct-mode.md) session
-draws no start-up dialog and has no terminal, so it never shows that bar.
+Sessions run in [Direct mode](12-direct-mode.md), which draws no start-up
+dialog at all — so a session stuck on "starting" is not waiting behind a prompt
+you cannot see. [The log](#where-the-logs-are) has the reason; restarting the
+card is the usual fix.
 
 **A card says "Session didn't start" the moment I open it.**
 The usual cause is that **the folder isn't there any more** — it was renamed or
@@ -126,31 +122,13 @@ If the card says **Session ended** instead, that is the other panel and a
 different story: a session that *did* run and has stopped — see
 [Restarting a dead session](02-sessions.md#restarting-a-dead-session).
 
-**Claude asked me in the Terminal instead of in the card.**
-That's the deliberate fallback in **Terminal mode** — a session you put back on
-the terminal, since new ones run in [Direct mode](12-direct-mode.md) — and the
-Session tab tells you when it happens — a coloured bar along the bottom with an **Open
-Terminal** button, in the same place the Allow/Deny bar appears.
+**Permissions are answered in the card, never in a terminal.**
+[Direct mode](12-direct-mode.md) exists to stop permission requests escaping
+into a terminal and asking you twice: Claude hands the decision to switchboard
+properly and you answer it right there in the card. There is no terminal behind
+the app to be sent to, so switchboard never shows a bar pointing at one.
 
-Two different things can put it there. Usually switchboard simply couldn't get
-the question in front of you and handed it back rather than answering on your
-behalf. But some decisions **Claude Code insists on making in its own prompt** —
-most commonly writing to a project's own `.claude` folder, which it treats as a
-sensitive location. For those, switchboard deliberately **stands aside instead
-of asking you the same question twice**: it can see the request, but its answer
-wouldn't stick, so the only prompt you get is the real one. You'll see it every
-time such a file changes, and no setting on our side turns it off. Answer it in
-the Terminal; choosing the "…for this session" option stops it repeating until
-that session ends.
-
-Either way, **nothing gets auto-approved.**
-
-None of this applies to a session on [Direct mode](12-direct-mode.md). That mode
-exists to stop permissions escaping into a terminal in the first place: Claude
-hands the decision to switchboard properly and you answer it in the card. There
-is no terminal to be sent to, so no bar and no **Open Terminal** button ever
-appear — switchboard stays quiet rather than offering a button that goes
-nowhere.
+**Nothing gets auto-approved.**
 
 **A Direct-mode session says a request was declined and I never saw it.**
 Because nobody could be asked. In Direct mode there is no second prompt behind
@@ -174,7 +152,7 @@ to carry on. To keep a session moving while you're away, turn on **Allow all
 (this session)** before you go — that answers at the source and needs no window
 at all.
 
-**The Session tab is empty but the Terminal is working.**
+**The Session tab is empty.**
 The tab itself tells you which case you're in — read what it says before doing
 anything:
 
@@ -184,9 +162,8 @@ anything:
   to this card; give it a moment.
 - *"Couldn't find this session's transcript"* — see below.
 
-In Terminal mode the Terminal tab is the same session either way, and always
-works. A **[Direct mode](12-direct-mode.md)** session has no terminal to fall
-back to — its Terminal tab says so — and doesn't need one: see below.
+There is no terminal inside the app to fall back to, and you don't need one —
+see below.
 
 **The Session tab says it couldn't find the transcript.**
 The conversation view reads the file Claude Code writes for each session. When
@@ -203,16 +180,12 @@ that file can't be found, the message names what switchboard did see:
   If a Claude Code update moved where conversations are stored, that's what
   this looks like; please report it with the path shown.
 
-**As long as the card is still running, the session itself is fine.** In
-**Terminal mode** this only affects the rendered conversation view — the CLI is
-running, your work is not lost, and the **Terminal** tab shows the session
-exactly as Claude Code draws it. Restarting the app is safe and often enough,
-since matching starts fresh.
-
-In **[Direct mode](12-direct-mode.md)** it costs you even less, and the message
-says so instead of pointing at a Terminal tab that has no terminal in it: a
-Direct session's conversation comes into the window over its own connection and
-never came from that file, so what you see in the Session tab is unaffected.
+**As long as the card is still running, the session itself is fine**, and this
+costs you less than it looks like it might. A session's conversation arrives in
+the window over its own connection ([Direct mode](12-direct-mode.md)) and never
+came from that file, so what you see in the Session tab is unaffected, your work
+is not lost, and the CLI is still running. Restarting the app is safe and often
+enough, since matching starts fresh.
 What the missing file does cost is the **usage totals** for that session and
 **resuming the conversation** the next time you open switchboard — so if this
 sticks around, it is worth reporting with the path shown.

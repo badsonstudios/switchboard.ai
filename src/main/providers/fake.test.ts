@@ -1,9 +1,11 @@
 // The PTY fake's transport REFUSAL, pinned (P2-E18-14).
 //
 // This is the single most load-bearing fact about the e2e suite, and until this
-// file it was asserted in exactly one place — an e2e now in
-// `stream-transport.spec.ts` that
-// launches the whole app to check a Terminal tab has a terminal behind it.
+// file it was asserted in exactly one place — an e2e in
+// `stream-transport.spec.ts` that launched the whole app to check a Terminal
+// tab had a terminal behind it. **That test went with the tab (#873)**, and no
+// rendered surface shows a PTY any more, so this unit test is now the only
+// thing holding the fact down.
 //
 // The fact: since #381 the host asks every session for `stream`, and this
 // adapter answers with a recipe that declares no transport at all, which
