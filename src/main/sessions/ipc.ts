@@ -658,6 +658,36 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
    * outcome here ends in "leave the label alone", and nothing on this path can
    * touch the session it is describing.
    */
+  /**
+   * A conversation was wiped or rebound — so an AUTO label describing it is now
+   * a lie (#883, found by `stream-feed.spec`'s `/clear` test).
+   *
+   * Two things go wrong without this, and the second is the worse one:
+   *
+   *   1. The card keeps describing a conversation the user just cleared.
+   *   2. **It can never recover**, because the instant label only ever fills a
+   *      BLANK. A stale label from the wiped conversation would sit there
+   *      permanently, and the next prompt could not name the card.
+   *
+   * So the auto label goes and the next prompt names it again. The throttle
+   * memory goes with it — it recorded line counts for a transcript that no
+   * longer exists, and keeping it would suppress the first AI label of the new
+   * conversation.
+   *
+   * A LABEL THE USER TYPED IS THEIRS AND STAYS. Clearing a conversation is not
+   * a request to forget what they called the card.
+   */
+  const clearAutoLabelOnReset = (liveId: string): void => {
+    const cardId = cardOfLive.get(liveId);
+    if (!cardId) return;
+    const card = deps.persist.list().find((s) => s.id === cardId);
+    if (!card?.taskLabel) return;
+    if (labelSourceOf(card) === 'user') return;
+    deps.persist.upsert({ ...card, taskLabel: undefined, labelSource: 'auto' });
+    aiLabelState.delete(cardId);
+    publishLabel(cardId, undefined);
+  };
+
   const maybeAiLabel = (liveId: string): void => {
     const runOneShot = deps.runOneShot;
     if (!runOneShot) return; // a wiring without one simply has no AI labels
@@ -1122,10 +1152,17 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   // built, with nothing to replay it from. A stream session's resets come off
   // its own `system:init` instead.
   transcripts.onReset((sessionId, cause) => {
+    // BEFORE the stream gate: the label belongs to the CARD, not to whichever
+    // transport built its conversation, and a mis-bind correction invalidates it
+    // exactly as a `/clear` does (#883).
+    clearAutoLabelOnReset(sessionId);
     if (isStream(sessionId)) return;
     send('sessions:feedReset', { sessionId, cause });
   });
-  deps.streamFeed?.onReset((sessionId, cause) => send('sessions:feedReset', { sessionId, cause }));
+  deps.streamFeed?.onReset((sessionId, cause) => {
+    clearAutoLabelOnReset(sessionId);
+    send('sessions:feedReset', { sessionId, cause });
+  });
   broker.handle('transcripts:blocks', (_e, liveId: string) => {
     if (typeof liveId !== 'string') return [];
     return isStream(liveId) && deps.streamFeed

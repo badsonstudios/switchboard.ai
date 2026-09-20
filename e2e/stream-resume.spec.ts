@@ -145,7 +145,12 @@ test.describe('a resumed Direct session replays its history (#395)', () => {
     // THE ASSERTION THIS ISSUE IS ABOUT: both halves of the old turn are there,
     // and nobody has typed anything into this launch.
     await expect(w2.getByText('FAKE-REPLY: remember this turn')).toBeVisible({ timeout: 30_000 });
-    await expect(w2.getByText('remember this turn', { exact: true })).toHaveCount(1);
+    // Scoped to the conversation (#883): the card's task label is seeded from
+    // the prompt now, so the same words are also in the card header and the
+    // rail. This assertion is about the FEED not replaying the turn twice.
+    await expect(
+      w2.locator('[data-feed-region]').getByText('remember this turn', { exact: true })
+    ).toHaveCount(1);
     await expect(w2.getByText('FAKE-REPLY: remember this turn')).toHaveCount(1);
 
     // ...and now the seam. The next turn appends BELOW the replayed history:
@@ -203,6 +208,13 @@ test.describe('a resumed Direct session replays its history (#395)', () => {
     await box2.fill('still works');
     await box2.press('Enter');
     await expect(w2.getByText('FAKE-REPLY: still works')).toBeVisible({ timeout: 30_000 });
-    await expect(w2.getByText('this history is about to be deleted', { exact: true })).toHaveCount(0);
+    // Scoped to the conversation (#883). The claim is that there is no HISTORY
+    // to show — and there is not. The words survive only in the card's task
+    // label, which was seeded from that prompt on the first run and persists in
+    // the workspace file. A window-wide locator now counts that label and says
+    // nothing about the feed.
+    await expect(
+      w2.locator('[data-feed-region]').getByText('this history is about to be deleted', { exact: true })
+    ).toHaveCount(0);
   });
 });

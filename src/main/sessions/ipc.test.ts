@@ -4853,6 +4853,35 @@ describe('AI task labels — the cadence (#758, §5.11)', () => {
     expect(labels(h)).toEqual([]);
   });
 
+  it('a CLEARED conversation drops its auto label, so the next prompt can name the card', () => {
+    // ⚠️ FOUND BY `stream-feed.spec`'s /clear test, not by reasoning. Two things
+    // went wrong without this, and the second is the worse one: the card kept
+    // describing a conversation the user had just wiped, and — because the
+    // instant label only ever fills a BLANK — it could never recover. The stale
+    // label would sit there permanently and no later prompt could rename it.
+    const h = streamSession();
+    h.call('sessions:submitPrompt', 'live-1', 'the old conversation');
+    expect(stored(h).taskLabel).toBe('the old conversation');
+
+    for (const l of h.resets) l('live-1', 'clear');
+
+    expect(stored(h).taskLabel).toBeUndefined();
+    expect(labels(h).at(-1)).toEqual({ cardId: 'card-1', label: undefined });
+
+    // …and the card is nameable again, which is the half that was unrecoverable
+    h.call('sessions:submitPrompt', 'live-1', 'the new conversation');
+    expect(stored(h).taskLabel).toBe('the new conversation');
+  });
+
+  it('a cleared conversation does NOT drop a label the user typed', () => {
+    // Clearing a conversation is not a request to forget what they called the
+    // card. Their words survive every reset, as they survive everything else.
+    const h = streamSession({ prior: { ...card(), taskLabel: 'mine, thanks', labelSource: 'user' } });
+    for (const l of h.resets) l('live-1', 'clear');
+    expect(stored(h).taskLabel).toBe('mine, thanks');
+    expect(stored(h).labelSource).toBe('user');
+  });
+
   it('the switch is readable and writable over IPC, and starts ON (#883)', () => {
     // Both handlers are SYNCHRONOUS, like `settings:getAutoLabels` beside them,
     // so the harness hands back the value itself rather than a promise — using

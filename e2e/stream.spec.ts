@@ -495,7 +495,13 @@ test.describe('the Feed is built from typed messages (P2-E18-10)', () => {
 
     // `exact`, because the reply quotes the prompt back and a substring match
     // would find both — which is the same trap the duplicate check below is for
-    const pill = w.getByText('remember this prompt', { exact: true });
+    // SCOPED TO THE CONVERSATION (#883). The claim below is "the feed renders
+    // the prompt once" — and since the card's task label is now seeded from the
+    // prompt the instant it is sent, those same words legitimately appear in the
+    // card header and the rail too. A window-wide locator counts three and says
+    // nothing about the feed. Narrowed, not relaxed: a feed that rendered the
+    // block twice still fails this.
+    const pill = w.locator('[data-feed-region]').getByText('remember this prompt', { exact: true });
     await expect(pill).toBeVisible({ timeout: 30_000 });
     // ONE copy: the stream is the only source now, and a session whose watcher
     // still derived blocks from the transcript would show every block twice
