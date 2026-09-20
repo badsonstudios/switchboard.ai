@@ -55,6 +55,13 @@ export function AboutPanel(props: {
    */
   onOpenQuietHours?: () => void;
   /**
+   * Task label size (#877). The mouse path to that dialog. Here for the reason
+   * quiet hours is — set-it-once, and the title bar already overflowed once
+   * over this feature (#879). Optional, like the rest. When the settings screen
+   * lands (#885) this row and its neighbours move into it.
+   */
+  onOpenTaskLabelSize?: () => void;
+  /**
    * Another modal is stacked ON TOP of this one (the update dialog, which is
    * reachable from here). Two nested `aria-modal="true"` regions is a case
    * screen readers handle inconsistently, so the panel underneath stops
@@ -334,6 +341,26 @@ export function AboutPanel(props: {
           >
             <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{t('quiet.title')}</span>
             <AboutButton onClick={props.onOpenQuietHours}>{t('quiet.open')}</AboutButton>
+          </div>
+        )}
+        {/* Task label size (#877). Same row shape, same reason. */}
+        {props.onOpenTaskLabelSize && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 10,
+              padding: '10px 14px',
+              borderBlockStart: '1px solid var(--border)',
+            }}
+          >
+            <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
+              {t('taskLabelSize.title')}
+            </span>
+            <AboutButton onClick={props.onOpenTaskLabelSize}>
+              {t('taskLabelSize.open')}
+            </AboutButton>
           </div>
         )}
         <div

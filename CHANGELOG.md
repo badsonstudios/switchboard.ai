@@ -96,7 +96,22 @@ on the floor, and say so in your PR.
 
 ## 0.8.93 — unreleased
 
+### Added
+
+- **Task labels have room to be read, and you choose how much.** Labels get up
+  to **three lines** now, on the cards and in the sessions list, and Claude is
+  asked for a fuller phrase to fill them — a session no longer has to explain
+  itself in six words trimmed with an ellipsis. If you run a lot of sessions and
+  want the density back, **Task label size…** (the command palette, or the
+  About panel) offers Full (three lines, the default), Medium (two) and Compact
+  (one line, exactly how labels looked before).
+
 ### Changed
+
+- **A session's state now sits beside its name in the sessions list, so the
+  task label keeps its own space.** The row used to show either the label or
+  the state and never both — so a session that needed you lost its label at the
+  one moment you most want to know which piece of work is asking.
 
 - **Task labels now name themselves the moment you send your first prompt, and
   Claude's labels are on by default.** Previously a new session sat blank until

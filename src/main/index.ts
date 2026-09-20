@@ -2227,6 +2227,11 @@ app
       // run — never a copy taken when the app started.
       aiLabels: () => workspace.getAiLabels(),
       setAiLabels: (on) => workspace.setAiLabels(on),
+      // #877. Thunks for the same reason as the pair above: the size can change
+      // while cards are on screen, and the next render must see that rather than
+      // a value read at wiring time.
+      taskLabelSize: () => workspace.getTaskLabelSize(),
+      setTaskLabelSize: (size) => workspace.setTaskLabelSize(size),
       // Its own log subsystem, not `ipc`: a labeler that starts failing (a rate
       // limit, a CLI upgrade that renames a flag) should be findable without
       // reading every IPC line, and this is the one path that spends money.

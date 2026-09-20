@@ -47,11 +47,13 @@ async function togglePin(w: Page, title: string): Promise<void> {
   await w.getByRole('menu').getByRole('menuitem', { name: /^(Pin|Unpin) session$/ }).click();
 }
 
-/** the rail's own order, top to bottom — what Ctrl+1..9 counts against. The
- *  row button's FIRST span is the title; its second is the sub-label. */
+/** the rail's own order, top to bottom — what Ctrl+1..9 counts against. Read
+ *  through the title's OWN hook: it used to be the row button's first direct
+ *  child span, until #877 wrapped it in a flex row beside the status word and
+ *  that selector started quietly returning the task label instead. */
 async function railTitles(w: Page): Promise<string[]> {
   return rows(w).evaluateAll((els) =>
-    els.map((e) => e.querySelector('[data-rail-open] > span')?.textContent?.trim() ?? '')
+    els.map((e) => e.querySelector('[data-rail-title]')?.textContent?.trim() ?? '')
   );
 }
 

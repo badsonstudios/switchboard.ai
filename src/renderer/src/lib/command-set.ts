@@ -82,6 +82,8 @@ export interface CommandDeps {
   openPushSetup: () => void;
   /** set the quiet-hours window — when nothing person-facing fires (E14-05b) */
   openQuietHours: () => void;
+  /** how many lines a session's task label may use (#877) */
+  openTaskLabelSize: () => void;
   /** the MCP servers the ACTIVE session can see (§5.17, #632) — also where a
    *  typed `/mcp` lands, since its CLI picker has no terminal in Direct mode */
   openMcpManager: () => void;
@@ -244,6 +246,18 @@ export function buildCommands(deps: CommandDeps): Command[] {
       categoryKey: CATEGORY_ATTENTION,
       scope: 'app',
       run: () => deps.openQuietHours(),
+    },
+    {
+      // Task label size (#877). Under VIEW, not Attention: it changes how much
+      // of the rail and the card headers a label may occupy, which is the same
+      // question `toggleTabRows` answers. Palette-only and unbound, for the
+      // reason quiet hours is — the title bar's chip row already overflowed
+      // once over this feature (#879) and is not growing again.
+      id: 'view.taskLabelSize',
+      titleKey: 'commands.taskLabelSize',
+      categoryKey: CATEGORY_VIEW,
+      scope: 'app',
+      run: () => deps.openTaskLabelSize(),
     },
     {
       // The MCP Manager (§5.17, #632). Under SESSION and not Attention: it

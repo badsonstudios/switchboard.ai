@@ -48,6 +48,7 @@ import { DEFAULT_SOUND } from '../../shared/sounds';
 import { answered, took } from '../../shared/ipc/refusal';
 import { PushSetupDialog } from './components/PushSetupDialog';
 import { QuietHoursDialog } from './components/QuietHoursDialog';
+import { TaskLabelSizeDialog } from './components/TaskLabelSizeDialog';
 import { ReportProblemDialog } from './components/ReportProblemDialog';
 import {
   unavailableReport,
@@ -58,6 +59,12 @@ import {
 import { McpManagerDialog } from './components/McpManagerDialog';
 import { ModelPickerDialog } from './components/ModelPickerDialog';
 import type { QuietState } from '../../shared/quiet-hours';
+import {
+  DEFAULT_TASK_LABEL_SIZE,
+  LABEL_LINES,
+  taskLabelSizeOf,
+  type TaskLabelSize,
+} from '../../shared/task-label-size';
 import { unavailablePushConfig } from '../../shared/push';
 import type {
   PushConfig,
@@ -255,6 +262,10 @@ export function App(): React.JSX.Element {
   // else on screen reads the window, so it is fetched when the dialog opens
   // rather than held at mount.
   const [quietOpen, setQuietOpen] = useState(false);
+  // Task label size (#877). Unlike push and quiet hours this needs NO on-open
+  // fetch: the value is already held at mount (the rail and every card header
+  // draw from it), so the dialog only has to render it.
+  const [labelSizeOpen, setLabelSizeOpen] = useState(false);
   // The MCP Manager (§5.17, #632). Read-only in PR 1.
   const [mcpOpen, setMcpOpen] = useState(false);
   // Help ▸ Report a problem… (#815). `null` status means "main has not said
@@ -566,6 +577,11 @@ export function App(): React.JSX.Element {
   // below still resolves a REFUSAL to off, which is the safe direction when main
   // declines to say.
   const [aiLabels, setAiLabels] = useState(true);
+  // How much task label to show (#877). Starts at the DEFAULT rather than the
+  // smallest: this is what the bar and the rail draw for the instant before main
+  // answers, and starting compact would flash a denser layout on every launch
+  // and then reflow.
+  const [taskLabelSize, setTaskLabelSize] = useState<TaskLabelSize>(DEFAULT_TASK_LABEL_SIZE);
   // §5.5 Level 3 — fork adoption (P2-E11-12). The one chip that starts OFF, and
   // it starts off here as well as in the store: this initial value is what the
   // bar draws for the instant before main answers, and an experiment that
@@ -659,6 +675,22 @@ export function App(): React.JSX.Element {
     // chip wrongly showing ON would claim the app is spending the owner's
     // subscription when it is not.
     void bridge.settings?.getAiLabels?.().then((on) => setAiLabels(took(on)));
+    // #877. No `took` here: this is not a boolean where a refusal has a safe
+    // direction — it is a vocabulary, and `taskLabelSizeOf` already answers the
+    // default for anything it cannot read, including the `undefined` a refused
+    // call resolves to.
+    void bridge.settings?.getTaskLabelSize?.().then((size) => {
+      // `answered` FIRST, then normalise: a refusal resolves an `IpcRefusal`
+      // OBJECT (#346/#650), and while `taskLabelSizeOf` would reject that
+      // object like any other non-member, laundering at the boundary is the
+      // house rule and `scripts/refusal-truthiness.js` enforces it — a reader
+      // should not have to know this particular normaliser is total.
+      const next = taskLabelSizeOf(answered(size));
+      setTaskLabelSize(next); // the rail takes it as a prop from here…
+      // …and the cards read it from the store, because a dockview panel's params
+      // are fixed at creation and could never see a later change (#877).
+      sessionStore.setTaskLabelSize(next);
+    });
     // `took` matters more here than anywhere else in this block: a refusal must
     // read as OFF, and off is also what main assumes — so a setting we could not
     // read can never leave the bar advertising a gesture main will refuse.
@@ -868,6 +900,28 @@ export function App(): React.JSX.Element {
     setQuietOpen(true);
     refreshQuiet();
   }, [refreshQuiet]);
+  /**
+   * Store a new task label size (#877) and put it on screen at once.
+   *
+   * TWO consumers, both updated here: React state feeds the rail as a prop, and
+   * `sessionStore` feeds every card header through `useSyncExternalStore` —
+   * dockview fixes a panel's params at creation, so a card that is already open
+   * can only be reached through the store. Optimistic, then corrected by what
+   * main says it actually stored; `taskLabelSizeOf` resolves a refusal (or any
+   * other non-answer) to the default, which is the direction that shows MORE
+   * rather than silently cropping somebody's labels.
+   */
+  const applyTaskLabelSize = React.useCallback((size: TaskLabelSize) => {
+    const show = (next: TaskLabelSize): void => {
+      setTaskLabelSize(next);
+      sessionStore.setTaskLabelSize(next);
+    };
+    show(size);
+    void bridge.settings
+      ?.setTaskLabelSize?.(size)
+      ?.then((stored) => show(taskLabelSizeOf(answered(stored))))
+      ?.catch(() => {});
+  }, []);
   const setQuietWindow = React.useCallback(
     (win: { start: string; end: string } | null) => {
       // Both ends go together, because half a window is not a window. Clearing
@@ -1274,6 +1328,7 @@ export function App(): React.JSX.Element {
       updateOpen ||
       pushOpen ||
       quietOpen ||
+      labelSizeOpen ||
       mcpOpen ||
       reportOpen ||
       modelFor !== null;
@@ -1422,6 +1477,9 @@ export function App(): React.JSX.Element {
           openAbout: () => setAboutOpen(true),
           openPushSetup,
           openQuietHours,
+          // #877. A thunk over a `useState` setter, which is stable — so, like
+          // `openMcpManager` below, it needs no entry in the dependency list.
+          openTaskLabelSize: () => setLabelSizeOpen(true),
           // §5.17's manager (#632). An inline thunk over a `useState` setter,
           // which is stable — so it needs no entry in the dependency list below.
           openMcpManager: () => setMcpOpen(true),
@@ -1925,10 +1983,17 @@ export function App(): React.JSX.Element {
         // a second dialog is above this one: two stacked `aria-modal` regions
         // is a thing screen readers disagree about, so only the top one claims it
         dialogAbove={
-          updateOpen || pushOpen || quietOpen || mcpOpen || reportOpen || modelFor !== null
+          updateOpen ||
+          pushOpen ||
+          quietOpen ||
+          labelSizeOpen ||
+          mcpOpen ||
+          reportOpen ||
+          modelFor !== null
         }
         onOpenPushSetup={openPushSetup}
         onOpenQuietHours={openQuietHours}
+        onOpenTaskLabelSize={() => setLabelSizeOpen(true)}
       />
       <PushSetupDialog
         open={pushOpen}
@@ -2014,6 +2079,12 @@ export function App(): React.JSX.Element {
         onClose={() => setQuietOpen(false)}
         state={quietState}
         onSet={setQuietWindow}
+      />
+      <TaskLabelSizeDialog
+        open={labelSizeOpen}
+        onClose={() => setLabelSizeOpen(false)}
+        size={taskLabelSize}
+        onSet={applyTaskLabelSize}
       />
       <UpdateDialog
         open={updateOpen}
@@ -2106,6 +2177,9 @@ export function App(): React.JSX.Element {
             groups={groups}
             needing={needing}
             palette={palette}
+            // #877 — the shared table turns the owner's chosen size into a line
+            // count, so "full" cannot mean three lines here and two on a card.
+            labelLines={LABEL_LINES[taskLabelSize]}
             onRename={(cardId, title) => {
               void bridge.sessions?.renameCard?.(cardId, title).then(() => refreshSessions());
             }}

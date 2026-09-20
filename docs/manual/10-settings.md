@@ -151,10 +151,27 @@ other sessions.
 Turn it off and the spending stops at once. The full walk-through is in
 [Sessions › Letting Claude write the label instead](02-sessions.md#letting-claude-write-the-label-instead-and-keep-it-up-to-date).
 
+## Task label size
+
+How much of each label you see. Reachable with **`Ctrl+Shift+P`** → *task label
+size*, or from the **About** panel.
+
+| Setting | What you get |
+|---|---|
+| **Full** | Up to three lines. The default — Claude is asked for a phrase, and this is the room to read it |
+| **Medium** | Up to two lines. A compromise when you are running a lot of sessions |
+| **Compact** | One line, trimmed with an ellipsis — exactly how labels looked before this setting existed |
+
+It applies to both places a label appears: the card header and the sessions
+list. Nothing is lost at the smaller sizes — the label is still there in full,
+and it is still read out in full to a screen reader; you are only choosing how
+many lines of it are drawn. The change takes effect immediately, on sessions
+that are already open.
+
 ## What's remembered
 
 Your theme, language, notification setting, auto-label setting, **AI-label
-setting** (which stays off until you turn it on, including after an update), autonomy default, what cards do on
+setting** (on unless you turn it off), **task label size**, autonomy default, what cards do on
 submit (global, per group and per session), what a session may do when it needs
 you (global and per session), layout, groups, sessions, per-session detail
 level, and window position all persist across restarts, stored on your machine.

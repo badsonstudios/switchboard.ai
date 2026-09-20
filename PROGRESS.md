@@ -3,6 +3,146 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🗺 THE QUEUE — owner's order, set 2026-09-20
+>
+> **#877 (merging) → #885 settings → #733 multi-question panel → RELEASE.**
+> Dan's words: *"once we finish the settings, next I want to work on the ticket
+> where we're going to do some updates to how a question is asked, when there are
+> multiple questions… and that's the one we're going to do next before we do a
+> release."*
+>
+> - **#885 — settings modal.** All six decisions are recorded as a comment on the
+>   issue. Shape: a MODAL. Absorbs quiet hours + push (their files go away);
+>   **does NOT absorb the MCP manager** — it is session-scoped and read-only, an
+>   inspector rather than a preference, and putting it in a global modal would
+>   make it lie about its scope. **Theme (5) + language (2) leave the title bar**;
+>   the fast off-switches (labels, sounds, speak, auto-trust, notifications) stay,
+>   because "needs it off NOW" is the test that earns a chip. Global defaults
+>   only — per-session overrides stay on the card's ⋯ menu. Defaults taken on the
+>   last two: `Ctrl+,` plus the palette, and no search box at ~15 preferences.
+>   **#879 should close with this item** and the residual overflow re-measured at
+>   1024px rather than declared fixed. `TaskLabelSizeDialog.tsx` is absorbed too,
+>   so #877's stopgap does not outlive its reason.
+> - **#733 — the multi-question panel.** Dan's own dogfood feedback (2026-08-30),
+>   two parts: single-select answers **auto-advance to the next UNANSWERED tab**
+>   (checkbox questions stay put; ticking *Other* must not advance, because it
+>   opens a text field to type in), and the **`line-through` on skipped tabs**,
+>   which he read as a rendering glitch — the affordance failed its legibility
+>   test on the person it was built for, so it needs a redesign rather than a
+>   wontfix.
+> - **THEN the release**, which is also when the v0.8.92 hand-tests stop being
+>   optional: #873's seven steps, #864 on the real dual-monitor rig, and #758's
+>   drift step. ⚠️ Four user-facing features will be stacked unverified by then.
+
+> # 🔄 IN FLIGHT — 2026-09-20: **#877** — task labels get three lines, and a size setting
+>
+> **Branch `feature/877-label-lines-and-size`, rebased on `68f0257`. PR open,
+> merging on green CI.** Filed out of #758 and then WIDENED by Dan twice while
+> #883 was in flight: first "I would like it to be at least three lines max",
+> then the decision that settled the shape — **"default to the full width and
+> fill the space, but have options to make it smaller in our options settings"**,
+> applied to **both** the rail and the card header.
+>
+> **What shipped, in four pieces:**
+>
+> 1. **A shared size vocabulary** — `src/shared/task-label-size.ts`:
+>    `full` (3 lines) / `medium` (2) / `compact` (1), default **full**, with
+>    `isTaskLabelSize` as the §5.29 guard and `taskLabelSizeOf` as the total
+>    normaliser. ONE table, imported by the rail, the card header, the store and
+>    the dialog — so no two surfaces can disagree about what "full" means.
+> 2. **The rail row, relaid out** (the shape Dan picked off a mockup): the state
+>    is now ONE SHORT WORD to the right of the name, from the same `status.*`
+>    vocabulary the card header's pill uses, and the task label has lines of its
+>    own below it. ⚠️ **This fixed a real regression nobody had filed:** the row
+>    used to show EITHER the label or the state and never both, so a session that
+>    needed you lost its task label at the one moment you most want to know which
+>    piece of work is asking. The longer ask stays in the row's accessible name.
+> 3. **The setting** — `TaskLabelSizeDialog`, reached by the palette
+>    (`view.taskLabelSize`, under **View** beside `toggleTabRows`) and by a button
+>    in the About panel, following `QuietHoursDialog`'s conventions exactly. No
+>    Save button: one control, a closed vocabulary, and the rail behind the dialog
+>    reflows on the click. **No twelfth chip** — the bar overflowed once over this
+>    very feature (#879).
+> 4. **The prompt widened to match the room** — "in at most fifteen words" rather
+>    than six. The six-word cap was never a design decision; it was the shape the
+>    old one-line layout forced.
+>
+> **THE ONE THAT WOULD HAVE SHIPPED BROKEN.** A dockview panel's params are fixed
+> when the panel is created, so a card that is already open can only be reached
+> through `sessionStore` — a version that passed the size as a param would look
+> right in every screenshot and change nothing until you closed and reopened the
+> card. The e2e test measures the **computed clamp on the card header**, not just
+> on the rail (the rail takes an ordinary prop and would stay green either way),
+> and that assertion was **mutation-checked**: removing the one
+> `sessionStore.setTaskLabelSize(next)` line fails exactly that test and nothing
+> else.
+>
+> **The layout change broke three e2e tests, and the reason is worth keeping.**
+> Four specs read the rail's order through `[data-rail-open] > span` — the title
+> was the row button's first direct-child span until this row grew a flex
+> wrapper, at which point that selector silently started returning the TASK
+> LABEL. Three tests then failed on a mismatched string with nothing to do with
+> ordering. Fixed by giving the title its own `data-rail-title` hook and moving
+> both helpers onto it, rather than by writing a longer structural selector.
+>
+> **Verification:** typecheck 0, lint 0, build 0. Unit **8631 passed / 1 failed**
+> — the failure is `git-service.test.ts`'s timing guard at **2819ms vs 2600ms**,
+> which is **#835, sighting 8**, and it passes **74/74 in isolation** (32.5s).
+> e2e: task-label 5/5 (including the new size test), rail-reorder + pinning 6/6,
+> and a 49-test sweep over a11y-keyboard, focus-policy, session,
+> stream-attention, about, palette and chrome — all green.
+> **Six unit fixes mutation-checked**, each killing exactly its own test: the
+> rail's clamp reading the SETTING rather than a constant, the aria-label
+> carrying the label on a row that needs you, the main store's sanitiser, the IPC
+> guard, the renderer store's sanitiser, and the dialog checking the STORED size.
+>
+> **Also corrected in passing:** two manual pages and the dogfood tracker still
+> said AI labels ship OFF, which #883 reversed; `10-settings.md`'s "what's
+> remembered" list said the setting "stays off until you turn it on".
+>
+> **DESIGN.md §5.11 amended** — the "one-line" task label is now "up to three
+> lines", with the reasoning that "one-line" was an unexamined inheritance from
+> the six-word prompt rather than a layout constraint that earned its keep.
+>
+> ### ⚠️ CI ROUND 1 FAILED ON BOTH PLATFORMS — three tests, and ONE WAS A REAL BUG
+>
+> **`gh pr checks --watch` exited 0 while reporting two failed jobs.** The trap
+> fired again; the authority is a fresh `gh pr checks`, never the exit status.
+>
+> **1–2. `rail.spec.ts` ×2 — a stale test, correctly failing.** It asserted the
+> LONG ask (`Wants permission to run`) was VISIBLE on the row, with a comment
+> reading "the row now SPELLS OUT the ask instead of showing a status word". That
+> was true and it is exactly what this item reverses — the long ask and the task
+> label were competing for one line, which is WHY a session that needed you lost
+> its label. Rewritten to assert the short word is visible **and** the full ask
+> is in the row button's accessible name: stronger than before, because it proves
+> the ask was relocated rather than dropped.
+>
+> **3. `urgency.spec.ts:309` — MY BUG, and the one worth remembering.** The row's
+> state word was written as `` t(`status.${p.token}`) ``. **`token` is the COLOUR
+> RAMP stem, not the state name**, and the ramp deliberately collapses states
+> that share a hue: `suspended` → `idle`, `not-started` → `idle`, `starting` →
+> `working`. So three pairs of genuinely different states were given ONE WORD
+> each, and a **suspended session read "idle"** — the distinction the rail exists
+> to draw. Fixed by giving `StatusPresentation` its own `shortKey` column, keyed
+> by STATE, in the `status.*` namespace the card header's pill already resolves
+> (§5.11: one identity, same word on every surface). Five tests pin all three
+> collapsed pairs, and each also asserts the pair still SHARES a token — so the
+> test records why the shortcut was tempting. **Mutation-checked:** putting
+> `suspended`'s short word back to `status.idle` fails exactly that test.
+>
+> **The mechanism behind all three is one thing: structural e2e locators.** The
+> specs read this row through `[data-rail-open] > span` and through the ask's
+> WORDS, so a layout change surfaced as failures about mismatched strings with
+> nothing to do with what the tests were named after. The row now carries
+> `data-rail-title`, `data-rail-state` and `data-rail-label`, and the four
+> helpers were moved onto them.
+>
+> **After the fix — the FULL e2e suite was run locally rather than another
+> subset**, because two rounds of surprises had earned it: **352 passed, 2
+> skipped, 11.4m**, including both specs that failed on CI. Unit 8631 passed with
+> only #835 (sighting 9, 74/74 isolated); typecheck, lint and build clean.
+
 > # ✅ MERGED — 2026-09-20: **#883** — the card names itself the instant you prompt it, and AI labels default ON
 >
 > **PR #884, squashed to `700c201`.** Issue closed by the PR body's keyword;

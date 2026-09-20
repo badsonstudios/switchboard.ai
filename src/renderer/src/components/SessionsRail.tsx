@@ -93,6 +93,7 @@ import {
   resolveFocusPolicy,
 } from '../lib/focus-policy';
 import { srOnly } from './sr-only';
+import { DEFAULT_TASK_LABEL_SIZE, LABEL_LINES } from '../../../shared/task-label-size';
 
 export type { RailSession, RailGroup } from '../model/types';
 
@@ -244,6 +245,19 @@ export function SessionsRail(props: {
   onClose: (id: string) => void;
   /** the card the grid is currently showing, for the selected-row tint */
   selectedId?: string | null;
+  /**
+   * How many lines the task label may take (#877) — `LABEL_LINES` from the
+   * shared size vocabulary, never a number invented here.
+   *
+   * A COUNT rather than the size name, because this component's job is to draw
+   * the clamp, not to interpret a preference: `shared/task-label-size.ts` owns
+   * what "full" means, so the rail and the card header cannot come to disagree.
+   *
+   * Optional, and the omission reads as the DEFAULT size — which is the truth
+   * for the render tests that predate this and never mention it. The same call
+   * the labels chip makes for `aiLabels`.
+   */
+  labelLines?: number;
   /** palette for the recolor cycle — persisted data owned by the main process */
   palette: string[];
   onCreateGroup: (name: string) => void;
@@ -1008,10 +1022,15 @@ export function SessionsRail(props: {
               aria-label={t(isPinned ? 'rail.rowLabelPinned' : 'rail.rowLabel', {
                 title: s.title,
                 state: ((): string => {
-                  const state =
-                    !p.needsYou && s.taskLabel
-                      ? t('rail.rowDetail', { detail: s.taskLabel, state: t(p.labelKey) })
-                      : t(p.labelKey);
+                  // #877: the label is announced WHENEVER there is one, including
+                  // on a row that needs you. It used to be dropped in exactly
+                  // that case — so the one moment you most want to know WHICH
+                  // piece of work is asking, the row stopped saying. The ask
+                  // (`p.labelKey`) still leads, because that is the demand; the
+                  // label follows as the detail.
+                  const state = s.taskLabel
+                    ? t('rail.rowDetail', { detail: s.taskLabel, state: t(p.labelKey) })
+                    : t(p.labelKey);
                   return waiting > 0 ? t('rail.rowWaiting', { state, count: waiting }) : state;
                 })(),
               })}
@@ -1041,32 +1060,98 @@ export function SessionsRail(props: {
                 cursor: 'pointer',
               }}
             >
+              {/* LINE 1 — the name, and the state as ONE SHORT WORD to its
+                  right (#877, the layout Dan picked off the mockup).
+
+                  The row used to show EITHER the label or the status on line 2,
+                  never both, so a session that needed you lost its task label
+                  entirely — at the one moment you most want to know which piece
+                  of work is asking. The short word is
+                  `presentStatus().shortKey` — the same `status.*` vocabulary the
+                  card header's pill uses, so two surfaces cannot describe one
+                  session differently.
+
+                  ⚠️ IT IS NOT DERIVED FROM `token`, which is what this first
+                  did. `token` is the COLOUR RAMP stem and the ramp collapses
+                  states that share a hue, so that spelling renamed a SUSPENDED
+                  session "idle" — the very distinction the rail exists to draw.
+                  CI caught it on Windows; `rail-view.test.ts` pins all three
+                  collapsed pairs now.
+
+                  The longer ask ("Wants
+                  permission to run") leaves the visible row and stays in the
+                  row button's accessible name, where nothing is lost to a
+                  screen reader. */}
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, inlineSize: '100%' }}>
+                <span
+                  // A NAMED hook, because the structural one broke here (#877).
+                  // Four e2e specs read the rail's order through
+                  // `[data-rail-open] > span` — the title was the button's first
+                  // direct child span until this row grew a flex wrapper, and
+                  // then that selector silently started returning the TASK
+                  // LABEL instead. Three tests failed on a mismatched string
+                  // rather than on anything to do with ordering, which is a
+                  // twenty-minute detour for whoever next touches this markup.
+                  data-rail-title={s.id}
+                  style={{
+                    flex: 1,
+                    minInlineSize: 0,
+                    fontSize: 11.5,
+                    fontWeight: p.needsYou ? 700 : 600,
+                    color: 'var(--text)',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {s.title}
+                </span>
+                <span
+                  // Named, like the title and the label beside it: the visible
+                  // state moved from the long ask on line 2 to this short word
+                  // (#877), and a spec that looks for it by its words is a spec
+                  // that breaks the next time the vocabulary is reworded.
+                  data-rail-state={s.id}
+                  style={{
+                    flexShrink: 0,
+                    fontFamily: 'var(--font-ui)',
+                    fontSize: 9,
+                    fontWeight: 700,
+                    // the ask's ink when it needs you, quiet otherwise — the
+                    // §5.8 ladder still reads at a glance, and the tint, the
+                    // 4px edge bar and the bold name all still carry it
+                    color: p.needsYou ? ink : 'var(--muted)',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {t(p.shortKey)}
+                </span>
+              </div>
+              {/* LINES 2…N — the task label, in its own space.
+
+                  `labelLines` comes from the shared size vocabulary, so "full"
+                  means the same here as on the card header. The em dash holds
+                  ONE line open when there is no label yet: §5.11 asks that the
+                  row not reflow when one lands, and a label arrives late or
+                  never. */}
               <span
+                // The clamp is the only thing the size setting DOES, and it is
+                // a computed style — so e2e needs a name to measure it on.
+                data-rail-label={s.id}
                 style={{
-                  fontSize: 11.5,
-                  fontWeight: p.needsYou ? 700 : 600,
-                  color: 'var(--text)',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {s.title}
-              </span>
-              <span
-                style={{
-                  // the ask is prose in the status color; a calm sub-label is
-                  // quiet mono, so the two never compete
-                  fontFamily: p.needsYou ? 'var(--font-ui)' : 'var(--font-mono)',
-                  fontWeight: p.needsYou ? 600 : 400,
+                  fontFamily: 'var(--font-mono)',
+                  fontWeight: 400,
                   fontSize: 9.5,
-                  color: p.needsYou ? ink : 'var(--muted)',
+                  lineHeight: 1.35,
+                  color: s.taskLabel ? 'var(--muted)' : 'var(--faint)',
+                  display: '-webkit-box',
+                  WebkitLineClamp: props.labelLines ?? LABEL_LINES[DEFAULT_TASK_LABEL_SIZE],
+                  WebkitBoxOrient: 'vertical',
                   overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
+                  maxInlineSize: '100%',
                 }}
               >
-                {p.needsYou ? t(p.labelKey) : (s.taskLabel ?? t(p.labelKey))}
+                {s.taskLabel ?? '—'}
               </span>
             </button>
             {/* §5.8's pin (E9-09), on the row itself. AFTER the name block and

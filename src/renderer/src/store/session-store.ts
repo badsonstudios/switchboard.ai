@@ -19,6 +19,11 @@
 // Plain class + useSyncExternalStore. No new dependency: what we need is a
 // synchronous read and a subscription, and that is the whole of it.
 import { EventDto, RailGroup, RailSession } from '../model/types';
+import {
+  DEFAULT_TASK_LABEL_SIZE,
+  taskLabelSizeOf,
+  type TaskLabelSize,
+} from '../../../shared/task-label-size';
 import { railOrder, RailOrderResult } from '../lib/groups';
 import { attentionQueue, needingCards, nextInQueue, withVisit } from '../lib/queue';
 import {
@@ -168,6 +173,17 @@ export interface SessionState {
    * RENDERS from it — that is the same test `policies` and `pinned` pass.
    */
   readonly pendingPermissions: readonly PermissionRequestDto[];
+  /**
+   * How much task label to show (#877).
+   *
+   * In `state` because a surface RENDERS from it — the same test `policies` and
+   * `pinned` pass. It lives here rather than being threaded down as a prop
+   * because the card header is a DOCKVIEW PANEL: its params are fixed when the
+   * panel is created, so a preference that can change while cards are open
+   * could not reach it that way. The rail takes it as a prop because App
+   * renders the rail directly; both read the same stored value.
+   */
+  readonly taskLabelSize: TaskLabelSize;
 }
 
 const EMPTY: SessionState = {
@@ -185,6 +201,7 @@ const EMPTY: SessionState = {
   pinned: NO_PINS,
   manualOrder: NO_ORDER,
   pendingPermissions: [],
+  taskLabelSize: DEFAULT_TASK_LABEL_SIZE,
 };
 
 /** The "no batch" snapshot, once. `useSyncExternalStore` compares by identity,
@@ -645,6 +662,23 @@ export class SessionStore {
     this.rawSessions = sessions;
     this.publishSessions();
   }
+  /** How much task label the card header may draw (#877). */
+  getTaskLabelSize(): TaskLabelSize {
+    return this.getState().taskLabelSize;
+  }
+
+  /**
+   * The owner changed the size — tell every card.
+   *
+   * Tolerant of junk for the same reason the loader is: an unreadable value is
+   * one nobody chose, so it lands on the default rather than on the smallest.
+   */
+  setTaskLabelSize(size: unknown): void {
+    const next = taskLabelSizeOf(size);
+    if (next === this.getState().taskLabelSize) return;
+    this.set({ taskLabelSize: next });
+  }
+
   /** Replace the event list (a push from main, or the initial list). */
   setEvents(events: EventDto[]): void {
     this.feedDelivered = true;

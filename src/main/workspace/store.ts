@@ -23,6 +23,13 @@ import { LogFields, Logger } from '../log/logger';
 import { SessionIdentity } from '../sessions/session-manager';
 import { sanitizeLineage } from '../sessions/lineage';
 import { UntangleChange, untangleDuplicateConversations } from '../sessions/untangle';
+// #877: the size is a NAMED value shared with the renderer, so the rail and the
+// card header cannot come to disagree about what "full" means.
+import {
+  DEFAULT_TASK_LABEL_SIZE,
+  taskLabelSizeOf,
+  type TaskLabelSize,
+} from '../../shared/task-label-size';
 import {
   HistoryRepairNotice,
   isSaneHistoryRepair,
@@ -258,6 +265,15 @@ export interface WorkspaceState {
    */
   aiLabels: boolean;
   /**
+   * How much task label is shown (#877) — `full` (3 lines), `medium` (2) or
+   * `compact` (1, which is exactly the pre-#877 behaviour).
+   *
+   * A NAMED SIZE rather than a line count, so the rail and the card header
+   * cannot come to mean different things by it; `shared/task-label-size.ts`
+   * owns the mapping and the reasoning.
+   */
+  taskLabelSize: TaskLabelSize;
+  /**
    * §5.5 Level 3 — fork adoption, EXPERIMENTAL and OFF BY DEFAULT (P2-E11-12).
    *
    * The only pref in this file whose default is `false`, and the reason is the
@@ -430,6 +446,9 @@ const EMPTY: WorkspaceState = {
   // ON as of #883 (owner, 2026-09-20), reversing #758's opt-in. See the field's
   // note for why he changed it after using it.
   aiLabels: true,
+  // #877: the owner asked for the space filled by default, with smaller sizes
+  // available for anyone who wants the rail dense instead.
+  taskLabelSize: DEFAULT_TASK_LABEL_SIZE,
   // the one default-OFF pref left — an experiment leaning on undocumented CLI
   // behaviour may not arrive switched on.
   experimentalFork: false,
@@ -736,6 +755,9 @@ export class WorkspaceStore {
         // predates the feature (and every fresh install) gets it ON. A file
         // that says `false` is a choice and is honoured.
         aiLabels: raw.aiLabels !== false,
+        // Tolerant by design: an unreadable size is one nobody chose, so it
+        // lands on the default rather than on the smallest. See the helper.
+        taskLabelSize: taskLabelSizeOf(raw.taskLabelSize),
         // ⚠️ THE OPPOSITE SHAPE, AND THE LAST ONE LIKE IT: `=== true`, not
         // `!== false`. An experiment must read "off unless explicitly on", so a
         // missing key, a hand-edited string, or a file written by an older
@@ -1368,6 +1390,15 @@ export class WorkspaceStore {
 
   setAutoLabels(on: boolean): void {
     this.state.autoLabels = on;
+    this.saveSoon();
+  }
+
+  getTaskLabelSize(): TaskLabelSize {
+    return this.state.taskLabelSize;
+  }
+
+  setTaskLabelSize(size: TaskLabelSize): void {
+    this.state.taskLabelSize = size;
     this.saveSoon();
   }
 

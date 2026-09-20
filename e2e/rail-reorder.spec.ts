@@ -24,7 +24,7 @@ const row = (w: Page, title: string) => rows(w).filter({ hasText: title }).first
 /** the rail's own order, top to bottom — what Ctrl+1..9 counts against */
 async function railTitles(w: Page): Promise<string[]> {
   return rows(w).evaluateAll((els) =>
-    els.map((e) => e.querySelector('[data-rail-open] > span')?.textContent?.trim() ?? '')
+    els.map((e) => e.querySelector('[data-rail-title]')?.textContent?.trim() ?? '')
   );
 }
 

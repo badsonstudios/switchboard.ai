@@ -92,6 +92,13 @@ import {
 // subscription the one path no test could reach.
 import type { OneShotRequest, OneShotResult } from '../providers/claude-oneshot';
 import { renderBlock } from './transcript-blocks';
+// #877: the size vocabulary, shared so main's guard and the dialog's options
+// cannot drift apart.
+import {
+  DEFAULT_TASK_LABEL_SIZE,
+  isTaskLabelSize,
+  type TaskLabelSize,
+} from '../../shared/task-label-size';
 import { PersistedSession } from '../workspace/store';
 import { commandsFromCli, SlashCommand } from '../../shared/slash-commands';
 import { DEFAULT_SESSION_TRANSPORT } from '../transport/transport';
@@ -153,6 +160,14 @@ export interface SessionIpcDeps {
    */
   aiLabels?: () => boolean;
   setAiLabels?: (on: boolean) => void;
+  /**
+   * How much task label to show (#877) — `full`, `medium` or `compact`.
+   *
+   * Optional like the pair above: a wiring without it renders the default, which
+   * is the size someone who never opened the dialog gets anyway.
+   */
+  taskLabelSize?: () => TaskLabelSize;
+  setTaskLabelSize?: (size: TaskLabelSize) => void;
   /**
    * Run one CONTAINED `claude -p` and hand back what it said (#758).
    *
@@ -2358,6 +2373,18 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     // is what `took()` on the renderer side reads as a refusal (#440).
     deps.setAiLabels?.(on === true);
     return deps.aiLabels?.() ?? false;
+  });
+
+  // How much label is shown (#877). A preference about RENDERING, so unlike the
+  // switch above it spends nothing and needs no re-publish: the renderer clamps
+  // what it already holds.
+  broker.handle('settings:getTaskLabelSize', () => deps.taskLabelSize?.() ?? DEFAULT_TASK_LABEL_SIZE);
+  broker.handle('settings:setTaskLabelSize', (_e, size: unknown) => {
+    // §5.29: untrusted renderer input, so the vocabulary is checked at runtime
+    // against the SHARED guard — an inline copy of the list is the one thing
+    // that can go stale and silently refuse a size the dialog still offers.
+    if (isTaskLabelSize(size)) deps.setTaskLabelSize?.(size);
+    return deps.taskLabelSize?.() ?? DEFAULT_TASK_LABEL_SIZE;
   });
 
   // rename a card by cardId (works for suspended cards too) — updates the

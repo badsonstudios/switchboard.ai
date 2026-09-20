@@ -831,6 +831,40 @@ describe('update prefs (P2-E19-03)', () => {
     expect(off.getAiLabels()).toBe(false);
   });
 
+  it('the task label size defaults to full and rejects anything else (#877)', () => {
+    // NOT the `!== false` shape the switch above uses, because this is not a
+    // boolean: it is a closed vocabulary, so the load path resolves anything
+    // outside it to the default. That direction is deliberate — the default
+    // shows MORE, so a corrupt file loses nobody's labels.
+    const st = makeStore(file);
+    st.load();
+    expect(st.getTaskLabelSize()).toBe('full');
+
+    for (const junk of ['FULL', 'tiny', '', 3, true, null, {}]) {
+      fs.writeFileSync(file, JSON.stringify({ version: 1, taskLabelSize: junk }));
+      const s = makeStore(file);
+      s.load();
+      expect(s.getTaskLabelSize(), `taskLabelSize: ${JSON.stringify(junk)}`).toBe('full');
+    }
+
+    // …and a real member of the vocabulary IS honoured.
+    fs.writeFileSync(file, JSON.stringify({ version: 1, taskLabelSize: 'compact' }));
+    const compact = makeStore(file);
+    compact.load();
+    expect(compact.getTaskLabelSize()).toBe('compact');
+  });
+
+  it('the task label size survives a reload (#877)', () => {
+    const a = makeStore(file);
+    a.load();
+    a.setTaskLabelSize('medium');
+    a.save();
+
+    const b = makeStore(file);
+    b.load();
+    expect(b.getTaskLabelSize()).toBe('medium');
+  });
+
   it('the AI-label switch survives a reload once it is turned on (#758)', () => {
     const a = makeStore(file);
     a.load();

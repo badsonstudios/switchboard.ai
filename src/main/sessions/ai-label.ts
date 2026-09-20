@@ -212,7 +212,18 @@ export function buildLabelPrompt(excerpt: string): string {
     '',
     excerpt,
     '',
-    'In at most six words, name the task this session is working on now.',
+    // ⚠️ FIFTEEN WORDS, NOT SIX (#877). Six words was ~30-40 characters — barely
+    // one line — so giving the label three lines of room would have shown two
+    // empty ones. The owner asked for the space filled: "Default to the full
+    // width and fill the space".
+    //
+    // Fifteen lands around 90-100 characters, comfortably under the 120-char
+    // cap, which matters: the cap truncates mid-word, and a label that ends in
+    // "…" because the model was asked for more than it may keep reads as a bug
+    // rather than as a limit. Someone who wants terse labels back chooses a
+    // smaller SIZE, which clamps the lines without lying to the model about how
+    // much it may say.
+    'In at most fifteen words, say what this session is working on now.',
     'Answer with the label only — no quotes, no punctuation at the end, and no explanation.',
   ].join('\n');
 }

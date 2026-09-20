@@ -60,9 +60,23 @@ test.describe('sessions rail', () => {
       message: 'Claude needs your permission to use Bash',
     });
 
-    // the row now SPELLS OUT the ask instead of showing a status word
+    // ⚠️ REWRITTEN BY #877, AND THE OLD COMMENT IS THE POINT. It read "the row
+    // now SPELLS OUT the ask instead of showing a status word", and asserted
+    // `Wants permission to run` was VISIBLE on the row. That was true, and it
+    // cost the row its task label: the long ask and the label competed for the
+    // same second line, so a session that needed you showed no label at all —
+    // at the one moment you most want to know WHICH piece of work is asking.
+    //
+    // So the ask moved. The visible row carries the short `status.*` word (the
+    // same vocabulary the card header's pill uses) and the FULL ask lives in the
+    // row button's accessible name, which is asserted here rather than dropped:
+    // nothing was lost, it was relocated, and this pair is what says so.
     await expect(r).toHaveAttribute('data-session-status', 'needs-permission', { timeout: 15_000 });
-    await expect(r.getByText('Wants permission to run')).toBeVisible();
+    await expect(r.locator('[data-rail-state]')).toHaveText('needs you');
+    await expect(r.locator('[data-rail-open]')).toHaveAttribute(
+      'aria-label',
+      /Wants permission to run/
+    );
     await expect(r).toHaveAttribute('data-needs-you', 'true');
 
     // ...the name goes bold and the identity bar thickens (2.5px -> 4px)
@@ -85,7 +99,13 @@ test.describe('sessions rail', () => {
     await post(title, { hook_event_name: 'Stop' }); // finished, unreviewed
     const r = row(w, title);
     await expect(r).toHaveAttribute('data-session-status', 'done', { timeout: 15_000 });
-    await expect(r.getByText('Finished — review changes')).toBeVisible();
+    // …and the same relocation as above (#877): the short word on the row, the
+    // whole sentence in its accessible name.
+    await expect(r.locator('[data-rail-state]')).toHaveText('done');
+    await expect(r.locator('[data-rail-open]')).toHaveAttribute(
+      'aria-label',
+      /Finished — review changes/
+    );
 
     // back to work: the attention treatment must clear completely, or the rail
     // cries wolf and the whole panel stops meaning anything

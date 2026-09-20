@@ -115,19 +115,80 @@ test.describe('auto task labels (E7-06)', () => {
     writeTranscript(a.home, folder, [REVISED.lines[1][1]]);
     await expect(cardLabel(w)).toHaveText(SETTLED_TITLE);
 
-    // THREE STATES ON ONE CHIP as of #758: auto → AI → off → auto. Reaching
-    // the screen-share state is two clicks from the default now, not one —
-    // the cost of the bar having no room for a second chip (#879). The
-    // assertions are unchanged: what is being tested is that the phrase leaves
-    // the screen and comes back, not how many clicks it takes.
-    await w.getByTestId('auto-labels').click(); // auto → AI (still showing)
+    // THREE STATES ON ONE CHIP as of #758, and since #883 the cycle STARTS at
+    // ✨ AI labels: AI → auto → off → AI. Reaching the screen-share state is
+    // two clicks from the default, not one — the cost of the bar having no room
+    // for a second chip (#879). The assertions are unchanged: what is being
+    // tested is that the phrase leaves the screen and comes back, not how many
+    // clicks it takes.
+    await w.getByTestId('auto-labels').click(); // AI → auto (still showing)
     await expect(cardLabel(w)).toHaveText(SETTLED_TITLE);
-    await w.getByTestId('auto-labels').click(); // AI → off
+    await w.getByTestId('auto-labels').click(); // auto → off
     await expect(cardLabel(w)).toHaveText('+ task label');
     await expect(railRow(w, SETTLED_TITLE)).toHaveCount(0); // and off the rail
 
-    await w.getByTestId('auto-labels').click(); // off → auto
+    await w.getByTestId('auto-labels').click(); // off → AI
     await expect(cardLabel(w)).toHaveText(SETTLED_TITLE);
+  });
+
+  test('the size setting clamps the label, on open cards, and survives a relaunch', async () => {
+    // #877. TWO claims no unit test can make, and they are the two that matter:
+    //
+    //  • the change reaches a card that is ALREADY OPEN. A dockview panel's
+    //    params are fixed when it is created, so the only route to a live card
+    //    is the store — a version that passed the size as a param would look
+    //    perfect in every screenshot and change nothing until you reopened the
+    //    card;
+    //  • it survives a relaunch, which means it reached main and the workspace
+    //    file rather than living in React state.
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const first = a;
+    const w = first.window;
+    writeTranscript(first.home, folder, [REVISED.lines[1][1]]);
+    await expect(cardLabel(w)).toHaveText(SETTLED_TITLE);
+
+    // The COMPUTED clamp, because that is the only thing the setting does.
+    const clamp = (page: Page): Promise<string> =>
+      page
+        .locator('[data-rail-label]')
+        .first()
+        .evaluate((el) => getComputedStyle(el).webkitLineClamp);
+    // ⚠️ THE CARD HEADER IS THE ONE THAT PROVES THE STORE ROUTE. The rail takes
+    // the size as an ordinary React prop; the header cannot, because dockview
+    // fixes a panel's params when the panel is created. So a wiring that
+    // updated React state and skipped the store would keep this assertion green
+    // on the rail and change nothing on the card in front of the user.
+    const headerClamp = (page: Page): Promise<string> =>
+      cardLabel(page).evaluate((el) => getComputedStyle(el).webkitLineClamp);
+    expect(await clamp(w)).toBe('3'); // Full, the default
+    expect(await headerClamp(w)).toBe('3');
+
+    // …through the palette, which is the door the manual sends people to
+    await w.keyboard.press('Control+Shift+P');
+    await w.getByPlaceholder('Type a command or a session name…').fill('task label size');
+    await w.keyboard.press('Enter');
+    const dialog = w.getByRole('dialog', { name: 'Task label size' });
+    await expect(dialog).toBeVisible();
+
+    await dialog.locator('[data-task-label-size="compact"]').click();
+    await expect.poll(() => clamp(w)).toBe('1');
+    await expect.poll(() => headerClamp(w)).toBe('1'); // the open card, live
+    await w.keyboard.press('Escape');
+
+    // AND IT STICKS. A relaunch, not a re-render: this is the half that proves
+    // the pick reached the workspace file.
+    await first.close();
+    a = await launchApp({ home: first.home });
+    const w2 = a.window;
+    await expect(w2.locator('[data-rail-label]').first()).toBeVisible({ timeout: 25_000 });
+    expect(await clamp(w2)).toBe('1');
+    expect(await headerClamp(w2)).toBe('1');
+    // …and the dialog opens showing what is actually stored, not the default
+    await w2.keyboard.press('Control+Shift+P');
+    await w2.getByPlaceholder('Type a command or a session name…').fill('task label size');
+    await w2.keyboard.press('Enter');
+    await expect(w2.locator('[data-task-label-size="compact"]')).toBeChecked();
   });
 
   test('a transcript with no ai-title line looks exactly as it does today', async () => {
