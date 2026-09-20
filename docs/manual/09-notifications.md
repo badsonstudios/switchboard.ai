@@ -39,7 +39,7 @@ yourself or just came back to the card.
 | | |
 |---|---|
 | **Click the tab** | on the right edge, vertically centered |
-| **`Ctrl+E`** | from anywhere except inside a terminal or a text box |
+| **`Ctrl+E`** | from anywhere except inside a text box |
 | **The command palette** | `Ctrl+Shift+P` → "Show or hide the events drawer" |
 
 To close it, use whichever you reach for first:
@@ -141,8 +141,8 @@ the lamp brings it back to exactly where it was. If the session is in its own
 pop-out window, clicking the lamp raises that window rather than pulling the
 card back into the main one.
 
-The strip never goes away. Hide the sessions list, switch a card to its
-Terminal, take a card out of the workspace entirely — the lamps stay put. It's
+The strip never goes away. Hide the sessions list, switch a card to its Changes
+tab, take a card out of the workspace entirely — the lamps stay put. It's
 the one place that always shows you every session you have, so you never have to
 wonder whether something is out of sight and shouting.
 

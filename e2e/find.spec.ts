@@ -25,7 +25,6 @@ import {
   launchDirectToolTurn,
   LaunchedApp,
   registerTempDir,
-  showTerminal,
   tempProjectFolder,
 } from './fixtures/app';
 
@@ -53,7 +52,6 @@ function seedTranscript(home: string, folder: string, term: string, times: numbe
 
 const bar = (w: Page) => w.locator('[data-testid="find-bar"]');
 const count = (w: Page) => w.locator('[data-testid="find-count"]');
-const groups = (w: Page) => w.locator('[data-testid="find-groups"]');
 // #520's marks. The attribute, not the tag: the results list renders a plain
 // `<mark>` around each snippet's match, and a bare `mark` locator would count
 // the bar's own chrome as feed paint and pass with nothing highlighted at all.
@@ -181,79 +179,19 @@ test.describe('[pty] Session find (E17-02)', () => {
   // provider (History) is deliberately not clickable, so the greyed-bar paths —
   // the reason text, focus landing on the close button, Escape from there —
   // are asserted in `components/FindBar.test.tsx` instead of here.
-  test('the Terminal is a group of its own, labelled scrollback-only (E17-03)', async () => {
-    const folder = tempProjectFolder();
-    a = await launchApp({ seedFolder: folder });
-    const w = a.window;
-    await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
-    // three in the transcript, none of them ever printed to the terminal
-    seedTranscript(a.home, folder, 'TRANSCRIPT_ONLY', 3, 'GROUPED');
-    await expect(w.getByText(/GROUPED/).first()).toBeVisible({ timeout: 25_000 });
-
-    // BEFORE the Terminal has ever been shown the group is STILL THERE, with a
-    // real count (#517). This assertion is the inversion of #516's: back then
-    // the renderer's xterm was the only buffer find could reach, a hidden pane
-    // is ingest-only (S-07), and so the group had to be withheld rather than
-    // print a zero about a buffer with no lines. Find now reads MAIN's ring
-    // buffer, which is complete whether or not this tab was ever opened — so
-    // the zero is a real statement about the last 5,000 lines.
-    await w.keyboard.press(`${MOD}+f`);
-    await w.locator('[data-testid="find-input"]').fill('TRANSCRIPT_ONLY');
-    await expect(count(w)).toHaveText('1 of 3', { timeout: 15_000 });
-    await expect(groups(w)).toContainText('3 in Session', { timeout: 15_000 });
-    await expect(groups(w)).toContainText('0 in Terminal (scrollback only)');
-    await w.keyboard.press('Escape');
-
-    // put something in the scrollback that is NOT in the transcript. The fake
-    // provider spawns the OS shell, so this is real PTY output.
-    await showTerminal(w);
-    await w.locator('.xterm-screen').first().click();
-    await w.keyboard.type('echo SCROLLBACK_ONLY_MARKER');
-    await w.keyboard.press('Enter');
-    await expect(w.getByText(/SCROLLBACK_ONLY_MARKER/).first()).toBeVisible({ timeout: 15_000 });
-
-    // Ctrl+F cannot come from INSIDE the xterm — the terminal owns every key it
-    // can see and E17-03 declined to claim Ctrl+F from the CLI (it is bound to
-    // scroll:fullPageDown). Clicking the tab is how a user leaves the surface.
-    await w.locator('[data-testid="view-tabs"] [data-vtab="terminal"]').click();
-    await w.keyboard.press(`${MOD}+f`);
-    await expect(bar(w)).toHaveCount(1);
-    await expect(w.locator('[data-testid="find-input"]')).toBeEnabled();
-
-    // a term that is ONLY in the scrollback: found here, zero in the session,
-    // and the session's zero is stated rather than implied by silence
-    await w.locator('[data-testid="find-input"]').fill('SCROLLBACK_ONLY_MARKER');
-    await expect(groups(w)).toContainText('scrollback only', { timeout: 15_000 });
-    await expect(groups(w)).toContainText('0 in Session');
-    await expect(groups(w)).not.toContainText('0 in Terminal');
-    // this pane IS on screen, so the matches are highlighted where they sit and
-    // the bar does not say they are out of reach
-    await expect(bar(w)).not.toContainText('open the Terminal tab');
-
-    // …and the reverse, which is the item's third done-when: a term present
-    // only in the TRANSCRIPT still shows its Session count from this tab, with
-    // the terminal's 0 labelled so it cannot be read as "not in this session"
-    await w.locator('[data-testid="find-input"]').fill('TRANSCRIPT_ONLY');
-    await expect(groups(w)).toContainText('3 in Session', { timeout: 15_000 });
-    await expect(groups(w)).toContainText('0 in Terminal (scrollback only)');
-    // the count is a position inside ONE group, never a total across two
-    await expect(count(w)).toHaveText('1 of 3');
-    await w.keyboard.press('Escape');
-
-    // #517's other half: LEAVE the Terminal tab, so the pane stops being fed,
-    // and search again. The renderer's xterm is frozen from this moment on;
-    // main's ring buffer is not, and it is what answers.
-    await w.getByRole('tab', { name: 'Session' }).first().click();
-    await w.keyboard.press(`${MOD}+f`);
-    await w.locator('[data-testid="find-input"]').fill('SCROLLBACK_ONLY_MARKER');
-    await expect(groups(w)).toContainText('scrollback only', { timeout: 15_000 });
-    await expect(groups(w)).not.toContainText('0 in Terminal');
-    // …and it says why they cannot be stepped to, rather than offering a jump
-    // that would scroll a terminal nobody is looking at
-    await expect(w.locator('[data-testid="find-notice"]')).toContainText('open the Terminal tab', {
-      timeout: 15_000,
-    });
-  });
+  // "the Terminal is a group of its own, labelled scrollback-only (E17-03)"
+  // stood here, and it was the biggest test in this file: the grouped count,
+  // the labelled zero that means "not in the last 5,000 lines" rather than "not
+  // in this session", #517's ring-buffer read for a tab never opened, and the
+  // "open the Terminal tab" notice for hits with nothing on screen to scroll.
+  //
+  // All of it described the Terminal find group, and `find-terminal` is no
+  // longer registered (#873) — find dispatches to the focused panel's provider
+  // and there is no Terminal panel left to focus. A session now has exactly one
+  // searchable surface, so there is no second group to label, count or step
+  // into. The provider is still exported and still unit-tested directly in
+  // `extensibility/find-providers.test.ts`; what is gone is the end-to-end
+  // proof, and it returns with the next `bar` registrant.
 });
 
 // ---------------------------------------------------------------------------

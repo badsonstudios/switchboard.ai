@@ -60,18 +60,23 @@ function hit(over: Partial<TranscriptSearchResult['hits'][number]> = {}): Transc
 
 describe('the find-provider point (P2-E17-02, §5.23)', () => {
   it('registers all four of §5.31’s named registrants (#533)', () => {
-    // Three of four for two milestones; the fourth was blocked on the dispatch
-    // half rather than on this file — see `find-providers.ts`'s closing note.
+    // All four shipped at #533. `find-terminal` was UNREGISTERED with the
+    // Terminal tab (#873): find dispatches to the focused panel's provider, and
+    // there is no Terminal panel left to focus, so registering it would add a
+    // permanently-unavailable group to every Ctrl+F. The provider itself is
+    // still exported and still exercised directly further down this file.
     const ids = listFindProviders(fresh()).map((p) => p.manifest.id);
-    expect(ids).toEqual(['find-session', 'find-changes', 'find-terminal', 'find-document']);
+    expect(ids).toEqual(['find-session', 'find-changes', 'find-document']);
   });
 
   it('resolves a provider BY PANEL, which is how one Ctrl+F serves every view', () => {
     const r = fresh();
     expect(findProviderFor(r, 'feed')?.manifest.id).toBe('find-session');
     expect(findProviderFor(r, 'diff')?.manifest.id).toBe('find-changes');
-    expect(findProviderFor(r, 'terminal')?.manifest.id).toBe('find-terminal');
     expect(findProviderFor(r, 'document')?.manifest.id).toBe('find-document');
+    // and a panel nobody registers resolves to nothing rather than to a
+    // neighbour — 'terminal' is the live example since #873
+    expect(findProviderFor(r, 'terminal')).toBeNull();
   });
 
   it('answers null for a panel with no provider — the greyed bar’s input', () => {
@@ -89,7 +94,7 @@ describe('the find-provider point (P2-E17-02, §5.23)', () => {
     for (const p of listFindProviders(fresh())) {
       expect(p.labelKey, p.manifest.id).toBeTruthy();
     }
-    expect(findProviderFor(fresh(), 'terminal')?.labelKey).toBe('find.group.terminal');
+    expect(findProviderFor(fresh(), 'document')?.labelKey).toBe('find.group.document');
   });
 
   it('takes a new provider with no edit to any consumer (the point is real)', () => {

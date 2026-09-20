@@ -303,7 +303,10 @@ export function FeedView(props: {
   /** transcript binding state (P2-E15-10) â€” decides what an EMPTY feed says */
   binding?: BindingState;
   bindingDiag?: BindingDiagnostics | null;
-  /** the Feed never accepts input; this jumps to the Terminal tab (Â§5.10) */
+  /** Jumped to the Terminal tab, which no longer exists (#873). Nothing passes
+   *  it now, and the handoff bar drops its button when it is absent rather than
+   *  offering a door to nowhere. Kept as a seam for whatever E18-11 decides a
+   *  CLI-kept decision should route to. */
   onJumpToTerminal?: () => void;
   /** composer options row data (E10-05) */
   autonomy?: string;
@@ -1200,23 +1203,30 @@ function TerminalHandoffBar({
         <div style={{ fontWeight: 700, marginBlockEnd: 2 }}>{t(handoff.title)}</div>
         <div style={{ lineHeight: 1.45 }}>{t(handoff.body)}</div>
       </div>
-      <button
-        onClick={onJump}
-        style={{
-          background: 'var(--btn-primary-bg)',
-          color: 'var(--btn-primary-text)',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius-chip)',
-          padding: '5px 14px',
-          cursor: 'pointer',
-          fontFamily: 'var(--font-ui)',
-          fontSize: 11.5,
-          fontWeight: 600,
-          flexShrink: 0,
-        }}
-      >
-        {t('handoff.jump')}
-      </button>
+      {/* Only when there is somewhere to go (#873). The Terminal tab was the
+          only destination this button ever had; with it gone the caller passes
+          no `onJump`, and a button that looks like a way out but goes nowhere
+          is worse than no button — it is the dead-affordance failure #261 was
+          about, one surface over. */}
+      {onJump && (
+        <button
+          onClick={onJump}
+          style={{
+            background: 'var(--btn-primary-bg)',
+            color: 'var(--btn-primary-text)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-chip)',
+            padding: '5px 14px',
+            cursor: 'pointer',
+            fontFamily: 'var(--font-ui)',
+            fontSize: 11.5,
+            fontWeight: 600,
+            flexShrink: 0,
+          }}
+        >
+          {t('handoff.jump')}
+        </button>
+      )}
     </div>
   );
 }

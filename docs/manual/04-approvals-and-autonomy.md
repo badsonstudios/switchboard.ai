@@ -27,7 +27,7 @@ Three buttons:
 
 If several requests pile up, they queue: the bar shows **+2 more waiting** and
 advances as you answer. The card surfaces its Session tab automatically when a
-request arrives, even if you were looking at the Terminal.
+request arrives, even if you were looking at another tab.
 
 **You can also answer without coming back at all.** If desktop pop-ups are on
 and you're in another app, the pop-up for a permission request carries **Allow**
@@ -132,10 +132,6 @@ inside the question you're on and never wander into another one.
 - **"Allow all (this session)" does not answer questions.** It's a standing yes
   to *tool use*, not a standing yes to *you*. Questions always wait for a real
   person, even in a session where you've turned everything else off.
-- **Terminal-mode sessions keep their questions in the terminal.** Claude Code
-  draws the question there itself, and switchboard can't reach into it — so
-  you'll find it on the **Terminal** tab rather than as a panel. Switch the
-  session to [Direct mode](12-direct-mode.md) to get the clickable panel.
 
 ## When several sessions ask the same thing
 
@@ -250,9 +246,10 @@ else the keyboard for the length of the task.
   what Claude Code chooses — on a Pro, Max or Team plan a session that specifies
   nothing now starts in **auto** mode, where a second model reviews each action
   instead of you. An **ask** session is now told to stop for *you*, which is
-  what the name always promised. If you *want* the reviewing model, press
-  **Shift+Tab** inside the session's **Terminal** tab — that is Claude Code's
-  own control, and switchboard doesn't take it away.
+  what the name always promised. The reviewing model is Claude Code's own
+  control (**Shift+Tab** inside its interface), and switchboard has no way to
+  reach it now that sessions run without a terminal — if you want it, run
+  `claude` yourself in the project folder.
 - **If switchboard can't reach you, it stops asking.** When does that happen?
   On **macOS**, closing the window leaves your sessions running in the
   background. On any platform, switchboard's display can crash while the
@@ -263,19 +260,14 @@ else the keyboard for the length of the task.
   has no time limit at all; it waits for you. See [When Claude asks you a
   question](#when-claude-asks-you-a-question).)
 
-  What happens next depends on which mode the session is in:
-
-  - **Terminal mode** — the question falls through to Claude Code's own prompt
-    in the **Terminal** tab, and is waiting for you there. Reopen the window and
-    new approvals come back to the card.
-  - **[Direct mode](12-direct-mode.md)** — there is no terminal prompt behind
-    it. Claude Code is waiting on switchboard and on nothing else, so leaving
-    the question unanswered would leave the session stuck for ever. Switchboard
-    **declines** it instead, and tells Claude plainly that nobody was available
-    rather than that it was blocked — so it stops and asks again rather than
-    hunting for a way round. You'll see it come back as a normal request the
-    next time you're there. If you want a session to keep going while you're
-    away, turn on **Allow all (this session)** before you leave.
+  There is no terminal prompt behind it: Claude Code is waiting on switchboard
+  and on nothing else, so leaving the question unanswered would leave the
+  session stuck for ever. Switchboard **declines** it instead, and tells Claude
+  plainly that nobody was available rather than that it was blocked — so it
+  stops and asks again rather than hunting for a way round. You'll see it come
+  back as a normal request the next time you're there. If you want a session to
+  keep going while you're away, turn on **Allow all (this session)** before you
+  leave.
 - **A question can't outlive the session that asked it.** If a session dies
   while an approval is on screen, the question dies with it — nothing is left
   waiting on an answer that can no longer go anywhere. Starting the card again

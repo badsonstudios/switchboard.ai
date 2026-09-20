@@ -309,7 +309,8 @@ export function buildCommands(deps: CommandDeps): Command[] {
     // owns the chord (the contribution builder dedupes by binding, so the
     // second would silently lose it). The named-targets split the ladder and
     // the policies use is for choices with three or four values; a boolean has
-    // one control, exactly as `view.rail` and `view.terminal` do.
+    // one control, exactly as `view.rail` does — and as `view.terminal` did,
+    // until #873 retired it with the tab it selected.
     {
       id: 'session.pin',
       titleKey: 'commands.togglePin',
@@ -637,18 +638,10 @@ export function buildCommands(deps: CommandDeps): Command[] {
         if (ctx.activeCardId) deps.popOutCard(ctx.activeCardId);
       },
     },
-    {
-      id: 'view.terminal',
-      titleKey: 'commands.toggleTerminal',
-      categoryKey: CATEGORY_VIEW,
-      binding: 'Mod+`',
-      scope: 'app',
-      enabled: hasActive,
-      disabledReasonKey: 'commands.disabled.noActiveSession',
-      run: (ctx) => {
-        if (ctx.activeCardId) deps.toggleCardView(ctx.activeCardId, 'terminal');
-      },
-    },
+    // `view.terminal` (Ctrl+`) was here. It toggled the card to the Terminal
+    // tab, which no longer exists (#873) — a binding whose only job is to
+    // select a removed panel would resolve to the Session tab and read as a
+    // dead key. `toggleCardView` itself stays: `view.changes` below uses it.
     {
       id: 'view.changes',
       titleKey: 'commands.toggleChanges',

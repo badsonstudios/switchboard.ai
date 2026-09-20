@@ -3,6 +3,105 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🚧 IN PROGRESS — 2026-09-19: **#873** — the Terminal tab and the ⋯ transport switch are removed
+>
+> Branch `feature/873-remove-terminal-tab`, off `9a8b86e`. **UI-level removal
+> only** — the PTY/xterm transport, its adapters, the fake provider and the
+> `check:*` scripts all stay, because E18-16 still requires PTY to keep WORKING
+> as the fallback while Direct mode is under test.
+>
+> **The shape, and the one decision worth re-reading.** I planned to register the
+> Terminal panel only for PTY cards, so the e2e suite's xterm witnesses would
+> survive. **Rejected:** `points.test.ts` carries a dedicated test — *"a tab is
+> never HIDDEN, only greyed — §5.8: you can see what exists"* — and
+> `PanelContribution.enabled` says in its own doc that there is deliberately no
+> "hide it entirely" option. Conditional registration would have broken a
+> recorded principle from the inside. Removing the contribution outright does
+> not: §5.8 governs what EXISTS, and a tab that does not exist is not one the
+> user is being kept from seeing.
+>
+> **Done so far:** the `panel-terminal` contribution + `StreamTerminalNotice`;
+> the ⋯ transport switch, its pending-restart block and its backing state; the
+> `view.terminal` command and its Ctrl+` binding; `terminalFindProvider`'s
+> REGISTRATION (the provider stays exported and still unit-tested directly); the
+> handoff bar's dead "Open Terminal" button; the workspace **v1→v2 migration**;
+> CHANGELOG; and 13 manual pages.
+>
+> **The migration clears `transport: 'pty'` rather than writing `'stream'`.**
+> Absent means "never chose", which is what is true once the control is gone — so
+> the card follows the Direct default AND still honours `SWITCHBOARD_TRANSPORT`.
+> Pinning `'stream'` would dead-end the one route PTY has left. Proven by two new
+> store tests; 184/184 green.
+>
+> **A landmine that was already defused:** a card persisted on the Terminal *view
+> tab* needs no ui-blob migration — `SessionGrid.tsx:1550` resolves
+> `?? panels[0]`, and its comment already anticipates "a removed contribution".
+> `points.test.ts` now pins that with `'terminal'` as the real example.
+>
+> ⚠️ **A REAL COVERAGE LOSS, recorded rather than buried.** Grouped find needed
+> TWO `bar` registrants, and `find-groups.ts` names the pair it was built for:
+> the transcript engine and the terminal's scrollback. With `find-terminal`
+> unregistered, `find-changes` delegating to Monaco and `find-document` serving a
+> tab with no session behind it, **a session card now has exactly one bar-mode
+> group** — so 12 `FindBar` tests described a state the app can no longer reach
+> and were deleted. The arithmetic stays pinned by `find-groups.test.ts`
+> (synthetic inputs, no registry). What is gone is the integration proof that the
+> bar drives two real providers at once; it returns with the next `bar`
+> registrant.
+>
+> ⚠️ **One of those tests was passing for the wrong reason** — "the count is a
+> position INSIDE one group" stepped 1-of-2 → 2-of-2 → 1-of-2, which a single
+> wrapping group satisfies by coincidence. Same shape as the #864 and #801
+> sightings: a test whose setup re-establishes the condition it claims to test.
+>
+> **e2e swept:** ~40 tests across ~20 specs — 3× the ticket's estimate, because
+> `fixtures/app.ts`'s `showTerminal()` and `launchDirectToolTurn`'s Direct probe
+> carried the dependency far past the six files the ticket names. `showTerminal`
+> is deleted; no spec imports it.
+>
+> **Verified:** typecheck **0**, lint **0**, unit **8,527 passing** (1 failure,
+> see below), e2e **349 passed** on the full sweep.
+>
+> ⚠️ **THE REVIEW CAUGHT TWO REAL DEFECTS, and the first would have shipped a
+> log line that lied.** The v1→v2 note counted `pty` sessions in the file
+> *before* the version dispatch, independently of which migration actually ran.
+> So a workspace already on v2 holding a `pty` card was told its sessions "now
+> follow the Direct default" while the card stayed on the PTY — **on every
+> launch, for ever** — and a file from a newer build claimed a migration while
+> being read-only and never written. It now measures the DIFFERENCE across the
+> dispatch, so it is silent exactly when nothing moved. Two of my three tests
+> used `version: 1` and could not see it; a v2-file case is what would have.
+> Second defect: a **half-applied re-point** — one `.xterm` assertion survived in
+> a test whose other three references were converted, so it waited 25s for a
+> terminal that can never appear. Both fixed; `presentation.spec.ts` now passes.
+>
+> **The review also found copy I had wrongly filed as unreachable** — the handoff
+> bar, the model/attachment/MCP notices, `01-getting-started.md`'s four-tab list
+> — plus ~12 source comments using "only the Terminal panel is `keepMounted`" as
+> the *reason* some machinery exists, now inverted since nothing is. Swept.
+>
+> ⚠️ **TWO KNOWN-RED ITEMS, neither caused by this change:**
+> - `git-service.test.ts`'s 2600 ms budget, under full-suite load: **two
+>   sightings today**, 2608 ms and 2914 ms. Passes **74/74 in isolation**, and
+>   this branch's only `src/main/` files are `workspace/store.ts`,
+>   `store.test.ts` and `providers/fake.test.ts` — **no git code**, checked
+>   rather than assumed. Both logged on #835.
+> - `popout-new-session.spec.ts:128` (`Mod+N` in a popped-out window) fails
+>   locally, twice. **Not #705** — that spec guards focus and SKIPS when the
+>   window manager refuses; it failed past the guard, so the blurApp signature
+>   does not apply and I was wrong to reach for it first. Not caused by this
+>   change either: the spec imports only `LaunchedApp`, `launchApp`,
+>   `skipPopoutOnLinux` and `tempProjectFolder` from the fixture — none of which
+>   this branch touches — and every helper it uses is local to the file. It is
+>   **green on main's CI**, including #874's merge. CI is the arbiter.
+>
+> **Follow-up not done here:** the "a card remembered on the removed tab falls
+> back to Session" claim is proved against a faithful *copy* of the resolver in
+> `points.test.ts`, not the real one. An e2e seeding a stale view id into the ui
+> blob would prove it end to end.
+>
+> **Next:** commit, PR, merge on green CI.
+
 > # ✅ MERGED — 2026-09-19: **#864** — the main window comes back to the monitor it was on
 >
 > **PR #871, squashed to `d5c2db8`.** Issue closed by `Closes #864`; **#835 and

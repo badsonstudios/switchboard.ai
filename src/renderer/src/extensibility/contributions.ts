@@ -232,8 +232,11 @@ export interface PanelContribution {
   badge?(ctx: PanelContext): number | null;
   /**
    * Keep the panel mounted and hidden when another tab is active, instead of
-   * unmounting it. Terminal needs this — unmounting throws away the xterm
-   * view. Everything else mounts on demand.
+   * unmounting it. Terminal needed this — unmounting threw away its xterm view
+   * — and it was the only panel that ever claimed it. #873 removed that panel,
+   * so today every panel mounts on demand and nothing sets this flag, which
+   * `points.test.ts` pins. The contract stays for the next panel that owns live
+   * state it cannot rebuild.
    */
   keepMounted?: boolean;
   render(ctx: PanelContext): React.ReactNode;

@@ -101,7 +101,6 @@ back to the first.
 |---|---|
 | `Ctrl+N` | New session — opens the folder picker, in whichever window you press it (see [pop-out windows](07-workspace.md#pop-out-windows)) |
 | `Ctrl+W` | Close the focused session (asks first) |
-| ``Ctrl+` `` | Switch the focused session between its Session and Terminal views |
 | `Ctrl+Shift+O` | Pop the focused session out into its own window, or dock it back |
 | `Ctrl+Shift+↓` | Show less of the focused session — one rung down |
 | `Ctrl+Shift+↑` | Show more of the focused session — one rung up |
@@ -113,7 +112,7 @@ back to the first.
 | `Ctrl+Shift+P` | Open the command palette |
 | `Ctrl+Space` | Go to the next session that needs you |
 | `Ctrl+E` | Show or hide the Events drawer |
-| `Ctrl+O` | Open a file in a document tab (also **File › Open File…**). Works while you're typing a prompt — but inside the **Terminal** the key belongs to Claude Code, which uses it for its own transcript view |
+| `Ctrl+O` | Open a file in a document tab (also **File › Open File…**). Works while you're typing a prompt |
 
 `Ctrl+W` asks before it closes, because closing a session ends it and removes
 its card — the same confirmation you get from the tab's **✕**.
@@ -134,12 +133,6 @@ shortcut stops at the one above it rather than pushing past — see
 [Putting sessions in the order you want](02-sessions.md#putting-sessions-in-the-order-you-want).
 Note the modifier: `Ctrl+Shift+↑`/`↓` above resize the *card*, `Ctrl+Alt+↑`/`↓`
 move the *row*.
-
-``Ctrl+` `` is a toggle: press it once to look at the Terminal, press it again
-to go straight back to the Session view. On a session in
-[Direct mode](12-direct-mode.md) — how new sessions start — the Terminal tab is
-there but says there's no terminal, so the toggle still works and there is
-simply nothing to see.
 
 `Ctrl+Shift+↓` and `Ctrl+Shift+↑` walk the focused session down and up the
 four-rung ladder — full card, slim row, tab, gone. None of them stops the
@@ -296,8 +289,8 @@ currently on is announced as the current one.
 
 ### The tabs on a card
 
-**Session**, **Changes**, **History** and **Terminal** are a proper tab strip,
-which means one `Tab` press gets you to it and the arrows move inside it:
+**Session**, **Changes** and **History** are a proper tab strip, which means one
+`Tab` press gets you to it and the arrows move inside it:
 
 | Key | What it does |
 |---|---|
@@ -355,30 +348,9 @@ away from the text box first, and the shortcuts come back. The one exception is
 `Ctrl+Shift+P`, the command palette — it's how you reach everything else, and
 it isn't a key you'd ever mean as text.
 
-**The Terminal tab is the CLI's, with exactly two exceptions.** (Only on a
-session in Terminal mode — a [Direct mode](12-direct-mode.md) session has no
-terminal, so none of this applies and every shortcut keeps working normally.)
-Everything you press in the Terminal goes to the real Claude Code — that's the point of it, and
-`Ctrl+1`, `Ctrl+B`, `Ctrl+W` and the rest all stand down there.
-
-The two exceptions are the ones you'd otherwise be stranded without:
-
-| Shortcut | Works in the Terminal |
-|---|---|
-| `Ctrl+Shift+P` | Open the command palette |
-| `Ctrl+Space` | Go to the next session that needs you |
-
-Both work from a popped-out session's terminal too. They were picked because
-Claude Code doesn't use either one — `Ctrl+Shift+P` never even reaches a
-terminal program, and `Ctrl+Space` is a keystroke Claude Code ignores — so
-nothing is being taken away from the session you're in. Everything else,
-including keys Claude Code does use like `Ctrl+R`, `Ctrl+C` and `Escape`, goes
-straight through untouched.
-
-The list is deliberately two long and isn't going to grow much: every shortcut
-switchboard claims here is one Claude Code can never receive again. The palette
-is on the list precisely so nothing else has to be — from it you can reach every
-command, including the ones with no shortcut of their own.
+There used to be a second rule here, about the Terminal tab owning every key
+inside it. That tab has been removed, so every shortcut on this page now works
+everywhere in the window except where you are typing.
 
 The **▸ commands** button in the title bar still opens the palette with the
 mouse, from anywhere.
@@ -403,9 +375,9 @@ mouse, from anywhere.
 ## If something goes wrong
 
 - **A shortcut does nothing** — check where your cursor is. If it's in the
-  prompt box or the Terminal, switchboard is deliberately staying out of the
-  way; click on the session's header or a tab first. The two that always work
-  are `Ctrl+Shift+P` and `Ctrl+Space`.
+  prompt box, switchboard is deliberately staying out of the way; click on the
+  session's header or a tab first. The two that always work are
+  `Ctrl+Shift+P` and `Ctrl+Space`.
 - **`Ctrl+1` went to the wrong session** — the numbers follow the Sessions list
   from the top, including sessions nested inside groups (even collapsed ones),
   not the order the tabs happen to sit in.
@@ -416,8 +388,4 @@ mouse, from anywhere.
 - **`Ctrl+Space` didn't move** — most likely nothing is waiting on you: check
   the count on the status bar (bottom right), and if it says none, there's
   nowhere to go. It also stands down while you're typing in the prompt box, so
-  you don't get yanked away mid-sentence — click out of the box first. It *does*
-  work from the Terminal.
-- **A shortcut works in the Terminal but you expected it not to (or the other
-  way round)** — only `Ctrl+Shift+P` and `Ctrl+Space` work there. Everything
-  else belongs to Claude Code.
+  you don't get yanked away mid-sentence — click out of the box first.

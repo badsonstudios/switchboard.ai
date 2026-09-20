@@ -60,11 +60,10 @@ Two things the list will tell you rather than hide:
 Renaming a conversation, filtering by branch, and reading one without opening it
 are not here yet.
 
-Every new session starts in [**Direct mode**](12-direct-mode.md): switchboard
-talks to Claude Code without a terminal, so permission requests are answered
-here in the card instead of escaping into a terminal prompt. The trade is that
-there's no Terminal tab to use — if a particular session needs one, switch that
-session to Terminal mode from its **⋯** menu and the choice sticks.
+Sessions run in [**Direct mode**](12-direct-mode.md): switchboard talks to
+Claude Code without a terminal, so permission requests are answered here in the
+card instead of escaping into a terminal prompt. There is no Terminal tab and no
+way to switch one on — both were removed, and Direct is simply how sessions run.
 
 ## Naming and labelling
 
@@ -384,17 +383,16 @@ A few details keep that Enter honest:
   next Enter.
 - If what you typed is a **slash command** (like `/compact`), the command goes
   on its own and the messages stay waiting.
-- Messages can't contain hidden control characters — the kind that could type
-  extra keys into a Terminal-mode session or make text display differently from
-  what is actually sent. A session that tries is told to send plain text.
+- Messages can't contain hidden control characters — the kind that could make
+  text display differently from what is actually sent. A session that tries is
+  told to send plain text.
 
 ### How you know one is waiting
 
 You don't have to be looking at a session to find out it has a message.
 
 - **The sessions list on the left** shows a small number on that session's row —
-  whether the session is open, collapsed, hidden, or showing its Terminal or
-  Changes tab.
+  whether the session is open, collapsed, hidden, or showing its Changes tab.
 - **The group heading** shows a "waiting" count too, so a collapsed group still
   tells you there's something inside it.
 - **The session's own Session tab** shows the same number when the session is
@@ -423,8 +421,6 @@ every session until you turn it on, and it stays on across restarts.
 
 Even when it's on, a message is held for you instead of sent when:
 
-- the session is in **Terminal mode** — switchboard doesn't type into a terminal
-  on its own, in case something on screen would take the keystrokes;
 - the session is **waiting on you** — asking a question or wanting a permission;
 - it has already taken **5 messages in the last 10 minutes** — so two sessions
   that both have it turned on can't keep messaging each other in a loop.

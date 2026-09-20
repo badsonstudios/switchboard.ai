@@ -74,7 +74,15 @@ async function mountFeed(over: Partial<PanelContext>): Promise<HTMLElement> {
 const bar = (host: HTMLElement): HTMLElement | null =>
   host.querySelector<HTMLElement>('[data-handoff]');
 
-/** the bar's only affordance — a dead button is the user-visible half of #261 */
+/**
+ * The bar's old affordance, kept as a PROBE rather than deleted.
+ *
+ * Since #873 the Session panel passes no `onJumpToTerminal` — the Terminal tab
+ * was this button's only destination — and `TerminalHandoffBar` renders no
+ * button without one. So this must now find NOTHING on every branch, including
+ * the PTY ones. A button that came back would be a door to a tab that does not
+ * exist, which is the dead-affordance half of issue 261 all over again.
+ */
 const openTerminalButton = (host: HTMLElement): HTMLElement | undefined =>
   Array.from(host.querySelectorAll('button')).find((b) => b.textContent === 'Open Terminal');
 
@@ -123,11 +131,14 @@ describe('the Session panel threads transport through to the handoff bar (issue 
   // The other half, and the reason this file cannot just assert "never shows".
   // A fix that silenced the bar everywhere would satisfy the two tests above
   // and delete a working feature.
-  it('a Terminal session is UNCHANGED — the bar and its button are still there', async () => {
+  it('a Terminal session still gets its BAR — silencing it everywhere would delete a feature', async () => {
     const host = await mountFeed({ transport: 'pty', status: 'needs-permission' });
     expect(bar(host)?.getAttribute('data-handoff')).toBe('permission');
     expect(host.textContent).toContain('Claude is asking permission in the terminal');
-    expect(openTerminalButton(host)).toBeDefined();
+    // ...but no BUTTON any more (#873). Saying where the decision lives is the
+    // P7 obligation and it is still met; offering to take you there is what
+    // stopped being possible when the tab went.
+    expect(openTerminalButton(host)).toBeUndefined();
   });
 
   it('a Terminal session waiting on an answer still gets the input bar', async () => {
@@ -142,7 +153,8 @@ describe('the Session panel threads transport through to the handoff bar (issue 
   it('an unknown transport keeps the bar — the boot gap is not a Direct session', async () => {
     const host = await mountFeed({ transport: undefined, status: 'needs-permission' });
     expect(bar(host)?.getAttribute('data-handoff')).toBe('permission');
-    expect(openTerminalButton(host)).toBeDefined();
+    // the bar, yes; the button, never again (#873) — see the probe's note
+    expect(openTerminalButton(host)).toBeUndefined();
   });
 
   // The `startingLong` branch, and the reason it is asserted HERE and not in
@@ -170,7 +182,8 @@ describe('the Session panel threads transport through to the handoff bar (issue 
       // bar, so the silence above is the transport and not a dead branch.
       expect(pty.textContent).toContain('Claude is showing a start-up dialog');
       expect(bar(pty)?.getAttribute('data-handoff')).toBe('input');
-      expect(openTerminalButton(pty)).toBeDefined();
+      // the bar, but no button (#873) — see the probe's note at the top
+      expect(openTerminalButton(pty)).toBeUndefined();
     } finally {
       vi.useRealTimers();
     }

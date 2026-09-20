@@ -426,9 +426,6 @@ beats the global one. All of it is remembered across restarts.
   permission or has asked you a question, its card stays where it is when you
   type at it — the one card that needs you is the one card this never takes
   away.
-- **It only sees prompts you send from the composer.** If you type directly into
-  a session's Terminal tab, that's between you and the CLI — switchboard isn't
-  reading your keystrokes, so it can't know you submitted anything.
 - **It isn't triggered by the ⋯ menu.** Running `/compact` or `/clear` from the
   session controls isn't "submitting a prompt", and the workspace folding away
   because you picked a menu item would be baffling.

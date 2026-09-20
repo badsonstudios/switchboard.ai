@@ -3,17 +3,14 @@
 // composer or the CLI (xterm) should get.
 //
 // TRANSPORT SCOPE (P2-E18-18, #404): the registry and the dispatcher are
-// transport-independent and most of this file is untagged for that reason. Two
-// tests read a live `.xterm` and are tagged `[pty]`: the one about the terminal
-// swallowing bindings (there is no surface to swallow them on Direct) and the
-// Ctrl+` toggle, which proves "the Terminal view" by looking for a terminal.
-// A Direct card's Terminal tab holds the P2-E18-08b notice instead — that
-// landing pane IS covered, by `stream-transport.spec.ts` → "says there is no
-// terminal instead of showing an empty black pane"; what has no spec is the Ctrl+`
-// toggle reaching it. See `launchApp` in `fixtures/app.ts` for the tag.
+// transport-independent, and since #873 every test here is untagged. Two used
+// to be `[pty]` and read a live `.xterm` — "the terminal swallows every OTHER
+// binding" and the Ctrl+` toggle. Both went with the Terminal tab: the binding
+// was retired with it, and no xterm is mounted anywhere any more for a key to
+// be swallowed by. See `launchApp` in `fixtures/app.ts` for the tag convention.
 import { test, expect, Page } from '@playwright/test';
 import path from 'path';
-import { launchApp, LaunchedApp, showTerminal, tempProjectFolder } from './fixtures/app';
+import { launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';
 
 // 'Mod' in the registry is Ctrl everywhere but macOS
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -92,28 +89,12 @@ test.describe('keyboard commands (E9-01)', () => {
     await expect(activeTab(w)).toContainText(second);
   });
 
-  // NOTE (#90): two chords — the palette and the attention jump — are now
-  // claimed in the BROWSER process, above the renderer, so they do work from a
-  // terminal. Nothing else is, which is what this test guards: Ctrl+1 and every
-  // other accelerator still belong to the CLI once focus is in an xterm.
-  test('[pty] the terminal swallows every OTHER binding — the CLI owns its keys', async () => {
-    const { w, first, second } = await twoSessions();
-    await w.keyboard.press(`${MOD}+2`);
-    await expect(activeTab(w)).toContainText(second);
-
-    await showTerminal(w);
-    await w.locator('.xterm-screen').first().click();
-    await expect(w.locator('.xterm-screen').first()).toBeVisible({ timeout: 15_000 });
-
-    // a jump binding pressed inside the terminal must NOT jump...
-    await w.keyboard.press(`${MOD}+1`);
-    await expect(activeTab(w)).toContainText(second);
-    await expect(activeTab(w)).not.toContainText(first);
-    // ...and the terminal is still a live PTY afterwards
-    await w.keyboard.type('echo E9_TERMINAL_ALIVE');
-    await w.keyboard.press('Enter');
-    await expect(w.getByText(/E9_TERMINAL_ALIVE/).first()).toBeVisible({ timeout: 15_000 });
-  });
+  // "[pty] the terminal swallows every OTHER binding — the CLI owns its keys"
+  // stood here. It proved the other half of this file's hard rule: once focus
+  // was inside an xterm, Ctrl+1 and every other accelerator belonged to the CLI
+  // rather than to us. No xterm is mounted anywhere since #873, so there is no
+  // surface left to swallow a key — the rule is unreachable rather than broken,
+  // and the composer half of it is still proved by the tests above.
 
   test('Ctrl+B hides and shows the sessions rail (and the chip agrees)', async () => {
     const folder = tempProjectFolder();
@@ -209,21 +190,8 @@ test.describe('keyboard commands (E9-01)', () => {
     // src/main/app-menu.test.ts covers that side (no menu item claims it).
   });
 
-  test('[pty] Ctrl+` toggles the focused card between the Session and Terminal views', async () => {
-    const folder = tempProjectFolder();
-    a = await launchApp({ seedFolder: folder });
-    const w = a.window;
-    await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
-    // Session is the default view (the terminal stays MOUNTED but hidden, so
-    // its scrollback survives tab switches — assert visibility, not presence)
-    await expect(w.locator('.xterm-screen').first()).toBeHidden();
-
-    await w.keyboard.press(`${MOD}+\``);
-    await expect(w.locator('.xterm-screen').first()).toBeVisible({ timeout: 15_000 });
-    // pressing it again returns to the Session view rather than sticking
-    await w.keyboard.press(`${MOD}+\``);
-    await expect(
-      w.getByText('No conversation yet')
-    ).toBeVisible();
-  });
+  // "[pty] Ctrl+` toggles the focused card between the Session and Terminal
+  // views" stood here. The binding (`view.terminal`) was retired with the tab
+  // it selected (#873) — a shortcut whose only job is to reach a removed panel
+  // would resolve to the Session tab and read as a dead key.
 });

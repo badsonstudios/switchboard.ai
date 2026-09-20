@@ -125,10 +125,12 @@ test.describe('Direct-mode permissions (P2-E18-14)', () => {
     const w = a.window;
     await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
 
-    // park somewhere else first, and confirm this really is a Direct session
-    // while we are there
-    await w.getByRole('tab', { name: 'Terminal' }).first().click();
-    await expect(w.getByText('No terminal for this session')).toBeVisible({ timeout: 30_000 });
+    // Park somewhere other than Session, so "the Session tab surfaced itself"
+    // means something. This used to park on the Terminal tab and confirm Direct
+    // at the same time; both went with the tab (#873). Changes is the surviving
+    // non-default tab, and the transport is already SELECTED by `DIRECT` above
+    // rather than merely observed here.
+    await w.getByRole('tab', { name: 'Changes' }).first().click();
 
     // Prompted through the session's own IPC rather than the composer: the
     // composer belongs to the Session tab, and the whole point is that the user

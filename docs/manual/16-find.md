@@ -21,9 +21,6 @@ On a Mac, use **⌘** everywhere this page says **Ctrl**.
 5. The count next to the box tells you where you are — **`3 of 14`**.
 6. **`Esc`** closes the bar and puts your cursor back where it was.
 
-One `Ctrl+F` searches **both** the conversation and the session's terminal —
-see [Two places, two counts](#two-places-two-counts) below.
-
 The box has two toggles beside it: **`Aa`** matches case, and **`ab|`** matches
 whole words only. Both stay on until you turn them off.
 
@@ -75,46 +72,16 @@ on screen to scroll to. You can still read the match and its surrounding text
 right there in the list. Being able to reach hits that no longer exist on
 screen is the whole reason the list exists.
 
-Jumping works the same whichever mode the session is in — **Direct** or
-**Terminal**.
+## One place, one count
 
-## Two places, two counts
+A session has one searchable record: the **conversation**, which switchboard
+reads from the session's transcript file — everything, from the first prompt
+onward. The `3 of 14` beside the box is your position in it.
 
-A session has two records of itself and they are **not the same depth**:
-
-- the **conversation**, which switchboard reads from the session's transcript
-  file — that's everything, from the first prompt onward;
-- the **terminal**, which is the last **5,000 lines** the program printed. It's
-  a scrollback buffer, so older output has already fallen out of it.
-
-One `Ctrl+F` searches both, and the bar reports them **separately**:
-
-```
-12 in Session · 3 in Terminal (scrollback only)
-```
-
-The words *scrollback only* are there on purpose. If the terminal group says
-**0**, that means *not in the last 5,000 lines* — it does **not** mean the text
-was never printed. Adding the two numbers together would produce a total that
-isn't true of either place, so the bar never shows one. The `3 of 14` count
-beside the box is your position **inside one group**; step past the end of a
-group with `Enter` and it restarts at `1 of` the next group's own total. The
-group you're currently in is the bold one.
-
-The results list is grouped the same way, with a heading over each run of
-matches, so a snippet is never attributed to the wrong place.
-
-**A group that can't be searched isn't listed at all**, rather than listed with
-a zero. A session in **Direct mode** has no terminal, so it has no Terminal
-group — there is nothing there to count.
-
-**You do not have to open the Terminal tab first.** switchboard records
-everything the program prints whether or not you are looking at the tab, and the
-search reads that recording, so a session whose Terminal you have never opened
-still gets a real count. The one thing those matches can't do is take you to
-themselves: there is nothing drawn on screen to scroll, so the bar shows them in
-the list, says *open the Terminal tab if you want to scroll to them*, and leaves
-it at that. Open the tab and search again and they become steppable.
+A session used to have a second, much shallower record as well — the last 5,000
+lines the terminal had printed — reported as its own group beside the
+conversation. The Terminal tab has been removed, so there is nothing else to
+count and the bar shows a single number.
 
 ## Other tabs
 
@@ -122,8 +89,7 @@ it at that. Open the tab and search again and they become steppable.
 can. The tab you're on decides two things: where it starts, and whether it
 hands off entirely.
 
-- **Session** and **Terminal** — the grouped search described above, starting
-  in whichever of the two you're looking at.
+- **Session** — the conversation search described above.
 - **Changes** — hands you straight to the diff editor's own find, which is the
   full-featured one (regular expressions, replace, match marks down the
   scrollbar). Our bar gets out of the way rather than putting a second, worse
@@ -140,42 +106,13 @@ the highlights with it.
 Two things are different, and both follow from a document not being a session:
 
 - **Only the document is searched.** There's no session behind a document tab —
-  it's a file on disk — so there is no Session or Terminal group, just the one
-  count.
+  it's a file on disk — so there is no Session group, just the one count.
 - **Source view hands off**, like the Changes tab does. Any file that isn't
   Markdown opens in the editor, and so does Markdown when you press **Source**;
   `Ctrl+F` there opens the editor's own find box.
 
 This works in a popped-out document window too — the bar opens in that window,
 where the document is.
-
-### Finding things in the terminal
-
-A match in the terminal is **highlighted in place** and selected; `Enter` and
-`Shift+Enter` scroll the terminal to the next and previous one, reaching back
-through the whole scrollback, not just the visible screen.
-
-That's when the Terminal tab is the one on screen. When it isn't — you're on
-Session, or you never opened Terminal at all — the count comes from the
-recording switchboard keeps behind the tab, which is capped by **size** rather
-than by line count. On a very noisy session that recording can hold slightly
-less than an open terminal does, so a count can grow a little when you open the
-tab; either way it's the last few thousand lines and never the whole session.
-The matches are read-only until you open the tab, and the bar tells you so.
-
-One catch worth knowing: **`Ctrl+F` pressed while your cursor is inside the
-terminal goes to the program running there, not to switchboard.** That's
-deliberate — `Ctrl+F` is a real key in the CLI (it pages down), and switchboard
-does not take keys away from the program it's hosting. To search from there,
-either press `Ctrl+Shift+P` and choose **Find in session**, or click the tab
-strip (or the conversation) first and then press `Ctrl+F`. Either way the
-terminal's scrollback is searched.
-
-The **whole word** toggle is slightly less thorough in the terminal than in the
-conversation: on a line where a partial match comes before a whole-word one
-(`needles` before `needle`), the terminal search can miss the later one. This is
-a bug in the terminal component we use, not in the search itself; plain and
-match-case searches are exact.
 
 ## Good to know
 
@@ -203,18 +140,7 @@ match-case searches are exact.
 ## If something goes wrong
 
 - **`Ctrl+F` does nothing** — check that a session card actually has focus
-  (click it), and that your cursor isn't inside the terminal. The terminal gets
-  every key it can see, by design, so `Ctrl+F` there goes to the program
-  running in it. `Ctrl+Shift+P` → **Find in session** always works.
-- **There's no Terminal group** — the session is in **Direct mode**, which has
-  no terminal at all. Every session that does have one is searchable, opened or
-  not.
-- **The terminal group says 0 and you're sure it printed that** — it was more
-  than 5,000 lines ago. That's all the terminal keeps, and the Session count is
-  the one that sees everything.
-- **The terminal matches won't step** — the Terminal tab isn't the one on
-  screen, so there's nothing rendered to scroll to. Read them in the list (`▸`),
-  or open the tab and search again.
+  (click it). `Ctrl+Shift+P` → **Find in session** always works.
 - **"Nothing to search yet"** — the session hasn't written anything down. That
   happens before the first prompt; ask it something and try again.
 - **"This match is earlier than the conversation on screen"** — that one match

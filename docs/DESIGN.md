@@ -1306,18 +1306,45 @@ separate features:
   present when opened.
 - **Terminal** — the real CLI, always present, **last in the strip**
   (2026-07-22 reversal of the one-day hide-by-default experiment).
+  **REMOVED 2026-09-19 — see the amendment below.**
 
-Rules: active tab is per-session and remembered across restarts (§5.25) — the
-Terminal's shown/hidden state included. Any
+Rules: active tab is per-session and remembered across restarts (§5.25). Any
 tab can be **split** beside the Session view instead of stacked behind it (Dockview
 panes — e.g. terminal left + diff right, as in the maximized mockup); tabs and
 splits are the same views in two presentations. On small grid cards the strip
 degrades to an icon row; the two-gesture rule holds — any view of any session
 is ≤ 2 gestures away. Litmus: pure chrome — every tab renders data the CLI or
-git already owns (host check), and Terminal-only remains a valid presentation
-(escape hatch). *Mockup note:* the Control Room export predates this spec (it
-shows only a `Diff | Files | Feed` side-panel mini-strip on the maximized
-card); the next mockup pass should show the full strip.
+git already owns (host check). *Mockup note:* the Control Room export predates
+this spec (it shows only a `Diff | Files | Feed` side-panel mini-strip on the
+maximized card); the next mockup pass should show the full strip.
+
+> **AMENDMENT 2026-09-19 (#873) — the Terminal tab is gone, and so is the
+> ⋯-menu transport switch.** Owner: *"we don't need the Terminal tab anymore,
+> and we don't need the option to switch to Terminal in the menu. Remove the tab
+> and the menu item — leave the code behind."*
+>
+> **What changed.** The strip ships three tabs: **Session**, **Changes**,
+> **History**. Gone with the tab: the `panel-terminal` contribution,
+> `StreamTerminalNotice`, the `view.terminal` command and its Ctrl+backtick
+> binding, and the registration of the Terminal find provider. Cards holding a
+> stored `transport: 'pty'` are migrated onto the Direct default on next start
+> (workspace schema v1 → v2) — otherwise they would spawn a CLI with no surface
+> anywhere in the app that could show it.
+>
+> **What did NOT change.** This is a UI-level removal and **not** §5.2's
+> cutover: `TerminalPane`, `terminal-attach`, `PtyService` and `node-pty` all
+> remain, still work, and are still reachable with `SWITCHBOARD_TRANSPORT=pty`.
+> E18-16's condition — Direct mode tested in real use — is still what governs
+> deleting any of it.
+>
+> **Two clauses above are retired by this, and one of them matters.** "The
+> Terminal's shown/hidden state included" describes state that no longer exists.
+> More importantly, **"Terminal-only remains a valid presentation (escape
+> hatch)"** is no longer true: there is no escape hatch inside the app, and the
+> honest fallback is now running `claude` yourself in the project folder. P7 is
+> untouched — the CLI still does the deciding, and we still say plainly where a
+> decision it kept actually lives. What we no longer do is offer to take you
+> there, because there is nowhere in the app left to go.
 
 ### 5.11 Session identity kit
 

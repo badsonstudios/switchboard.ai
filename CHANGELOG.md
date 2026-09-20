@@ -96,6 +96,20 @@ on the floor, and say so in your PR.
 
 ## 0.8.92 — unreleased
 
+### Changed
+
+- **The Terminal tab is gone, and so is the option to switch a session to it.**
+  Every session now talks to Claude Code directly, which is how they have all
+  been running for a while — permission requests arrive in the card instead of
+  escaping into a terminal prompt, and `/model` and `/mcp` have panels of their
+  own. If you had a session set to Terminal mode it moves across on the next
+  start; its conversation and history are untouched. What genuinely goes with
+  the tab is **Ctrl-R history search** and **vim mode** — for those, run
+  `claude` yourself in a terminal on the same folder. The `` Ctrl+` `` shortcut
+  that toggled the tab is retired, and the folder-trust chip in the title bar
+  now explains plainly that nothing can ask any more, rather than pointing at a
+  menu item that no longer exists.
+
 ### Fixed
 
 - **The main window comes back to the monitor it was on.** When your monitors

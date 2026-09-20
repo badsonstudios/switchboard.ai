@@ -81,12 +81,21 @@ test.describe('the trust setting is honest about its reach (#397)', () => {
   // HALF ONE: the wiring. `aria-disabled` and not `disabled`, because the chip
   // stays findable while it is inert (`components/chrome.tsx`).
   //
-  // One test and not two, because the TRANSITION is the assertion that cannot
-  // be faked: a hard-coded `true` fails the first half, a hard-coded `false`
-  // fails the second, and a chip wired to anything other than the live card
-  // list fails the second even so — `sessions:setTransport` is what announces
-  // the change (`cardsChanged`), and nothing else in this test moves.
-  test('the trust chip is inert on an all-Direct workspace and wakes when a card goes to Terminal', async () => {
+  // ⚠️ THIS TEST LOST ITS STRONGEST PROPERTY (#873). It used to assert the
+  // TRANSITION — inert on an all-Direct workspace, awake the moment a card was
+  // switched to Terminal from its ⋯ menu — and it was deliberately one test and
+  // not two, because the transition is the half that cannot be faked: a
+  // hard-coded `true` failed the first assertion, a hard-coded `false` the
+  // second, and a chip wired to anything other than the live card list failed
+  // the second even so.
+  //
+  // The ⋯ switch is gone, so there is no way to move a card between transports
+  // while the app is running and nothing left to stage a transition with. What
+  // is asserted below is the inert state only. A chip hard-coded to
+  // `aria-disabled="true"` would now pass this test; `lib/trust-reach.test.ts`
+  // is what still pins the rule underneath it, including that a `pty` card
+  // makes it reach.
+  test('the trust chip is inert on an all-Direct workspace, and says why', async () => {
     const folder = tempProjectFolder();
     // the dual-capable fake so the card really is on Direct — with the PTY-only
     // fake the session runs on a terminal by refusal, and this test is about
@@ -101,21 +110,11 @@ test.describe('the trust setting is honest about its reach (#397)', () => {
     });
     const chip = w.getByTestId('auto-trust');
     await expect(chip).toHaveAttribute('aria-disabled', 'true', { timeout: 15_000 });
-    // ...and it says WHY, which is the whole point of leaving it on screen
-    await expect(chip).toHaveAttribute(
-      'title',
-      /only ever asks about folder trust in Terminal mode/
-    );
-
-    // The manual's escape hatch, walked: switch the card to Terminal from its
-    // ⋯ menu. NO restart — the chip has to wake on the CHOICE, because the
-    // spawn that would read the setting is the one that comes after it.
-    await w.getByRole('button', { name: '⋯' }).first().click();
-    await w.getByRole('button', { name: /switch to Terminal/i }).click();
-    await w.keyboard.press('Escape'); // the menu stays open on the pending notice
-
-    await expect(chip).not.toHaveAttribute('aria-disabled', 'true', { timeout: 15_000 });
-    await expect(chip).toHaveAttribute('title', /Whether a folder you open is trusted for you/);
+    // ...and it says WHY, which is the whole point of leaving it on screen. The
+    // wording changed with #873: it used to name the way out ("switch one to
+    // Terminal from its ⋯ menu"), and there is no way out left to name, so it
+    // explains the permanently-empty set instead.
+    await expect(chip).toHaveAttribute('title', /nothing can ask/i);
   });
 
   // HALF TWO, Direct lane: the folder is left alone.

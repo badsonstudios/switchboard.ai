@@ -181,8 +181,11 @@ test.describe('[pty] inline approval bar (E10-04)', () => {
         }),
       }).then((r) => r.text());
 
-    // park the card on the TERMINAL tab, then hold twice in quick succession
-    await w.getByRole('tab', { name: 'Terminal' }).click();
+    // Park the card on a tab that is NOT Session, then hold twice in quick
+    // succession — otherwise "the Session tab auto-surfaces" asserts nothing.
+    // This used to park on the Terminal tab, which went with #873; Changes is
+    // the surviving non-default tab.
+    await w.getByRole('tab', { name: 'Changes' }).click();
     const p1 = hold('C:/one.ts');
     const p2 = hold('C:/two.ts');
     // the Session tab auto-surfaces with the bar + queue badge
@@ -365,8 +368,11 @@ test.describe('[pty] inline approval bar (E10-04)', () => {
     const winHeight = await w.evaluate(() => window.innerHeight);
     expect(barBox.y).toBeGreaterThan(winHeight / 2);
 
-    // one click reaches the real prompt
-    await bar.getByRole('button', { name: 'Open Terminal' }).click();
-    await expect(w.locator('.xterm')).toBeVisible({ timeout: 10_000 });
+    // The bar used to carry an [Open Terminal] button, and one click reached
+    // the real prompt. The button is gone (#873): its only destination was the
+    // Terminal tab, and `FeedView` now omits it rather than offering a door to
+    // nowhere. The bar still SAYS where the decision lives, which is the P7
+    // obligation — what it can no longer do is take you there.
+    await expect(bar.getByRole('button', { name: 'Open Terminal' })).toHaveCount(0);
   });
 });

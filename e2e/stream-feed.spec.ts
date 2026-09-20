@@ -327,25 +327,17 @@ test.describe('Clear conversation on a Direct session', () => {
 
   const CLEARED = 'Conversation cleared — context starts fresh';
 
-  /**
-   * It really IS Direct — the probe `launchDirectToolTurn` calls load-bearing.
-   * Without it a test here could quietly become a transcript test that happens
-   * to pass, and the two transports reach the cleared marker by different
-   * paths, so which one this is decides what the assertions mean.
-   */
-  const assertDirect = async (w: Page): Promise<void> => {
-    await w.getByRole('tab', { name: 'Terminal' }).first().click();
-    await expect(w.getByText('No terminal for this session')).toBeVisible({ timeout: 30_000 });
-    await w.getByRole('tab', { name: 'Session', exact: true }).first().click();
-  };
+  // `assertDirect` stood here: a Terminal-tab round trip proving the session
+  // really was Direct, because the two transports reach the cleared marker by
+  // different paths. The tab is gone (#873), so the claim now rests on
+  // `SWITCHBOARD_FAKE_PROVIDER: 'stream'` SELECTING the transport at spawn
+  // rather than on a witness read back off the screen.
 
   test('wipes the conversation, and the next turn survives', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
     const w = a.window;
     await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
-    await assertDirect(w);
-
     const box = w.getByPlaceholder(/Prompt this session/);
     await box.click();
     await box.fill('SFEED_CLEAR_BEFORE');
@@ -407,8 +399,6 @@ test.describe('Clear conversation on a Direct session', () => {
     const first = a;
     const w = first.window;
     await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
-    await assertDirect(w);
-
     const box = w.getByPlaceholder(/Prompt this session/);
     await box.click();
     await box.fill('SFEED_RESUMED_HISTORY');

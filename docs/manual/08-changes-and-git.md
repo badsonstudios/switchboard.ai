@@ -24,8 +24,8 @@ to your files: a list of changed files with a badge for each —
 
 Click a file to see it before and after.
 
-**It remembers where you were.** Leave the Changes tab for the conversation or
-the terminal and come back, and it reopens on the same file, at the same line —
+**It remembers where you were.** Leave the Changes tab for the conversation and
+come back, and it reopens on the same file, at the same line —
 you do not have to find your place again. If that file has stopped being a
 change while you were away, because you committed or discarded it, the tab
 opens clean instead of showing you a blank comparison. This lasts for as long
@@ -81,8 +81,7 @@ light colours and the other three give it dark ones. A palette tuned to
 ## Good to know
 
 - switchboard **shows** you changes — it doesn't commit, push, stage, or revert
-  anything. Git is yours to drive, in the Terminal or wherever you normally do
-  it.
+  anything. Git is yours to drive, wherever you normally do it.
 - The diff reflects what's on disk right now, including changes you made
   yourself outside the app.
 - **switchboard ignores instructions a project leaves for it to run a program.**

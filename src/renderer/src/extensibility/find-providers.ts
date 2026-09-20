@@ -492,10 +492,16 @@ export const documentFindProvider: FindProviderContribution = {
   },
 };
 
+// `terminalFindProvider` is NOT registered since #873. It is keyed
+// `panelId: 'terminal'`, and find dispatches to the focused PANEL's provider —
+// with the Terminal tab gone there is no panel that could ever focus it, and
+// `TerminalPane` never mounts to publish a surface for it to read. Registering
+// it would add a permanently-unavailable "Terminal (scrollback only)" group to
+// every Ctrl+F. The provider itself stays exported and intact, with the rest of
+// the PTY code, for the day E18-16 settles the transport's fate.
 export const findProviders: FindProviderContribution[] = [
   sessionFindProvider,
   changesFindProvider,
-  terminalFindProvider,
   documentFindProvider,
 ];
 

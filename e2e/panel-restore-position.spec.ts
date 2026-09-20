@@ -12,10 +12,12 @@
 //      container on the way through, firing nothing. The fix is a signal: hear
 //      the dockview event and re-apply the position you still have.
 //
-//   B. A REAL UNMOUNT. Only the Terminal panel is `keepMounted`, so switching a
-//      card's tab destroys the outgoing panel and every piece of state in it.
-//      No signal can help — there is no component left to tell — so the fix is
-//      memory that outlives the component.
+//   B. A REAL UNMOUNT. Switching a card's tab destroys the outgoing panel and
+//      every piece of state in it. (The Terminal panel used to be the one
+//      exception, as the only `keepMounted` panel. #873 removed it, and nothing
+//      claims the flag now — so this is true of every tab rather than most of
+//      them.) No signal can help — there is no component left to tell — so the
+//      fix is memory that outlives the component.
 //
 // MEASURED, and the numbers are in the assertions rather than in a comment so a
 // panel that changes its mind fails here:
@@ -25,7 +27,7 @@
 //   | conversation (#555)  | fixed in #555          | re-mounts at the tail    |
 //   | Changes tab (Monaco) | IMMUNE — line 66 -> 66 | LOST — no file selected  |
 //   | document viewer      | LOST — 722 -> 0        | n/a (never unmounts)     |
-//   | Terminal (xterm)     | UNRESOLVED*            | keepMounted, n/a         |
+//   | Terminal (xterm)     | UNRESOLVED* (gone #873)| was keepMounted, n/a     |
 //
 //   * the xterm viewport IS a native scroller and the move DOES detach it
 //     (measured, MutationObserver) — but the fake CLI never produces enough

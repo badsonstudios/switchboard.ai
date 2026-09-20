@@ -7,12 +7,12 @@
 // card and reveal it — and check the two things a user would notice if the
 // state had been lost: the wrong tab, and the wrong place.
 //
-// TRANSPORT SCOPE (P2-E18-18, #404): "the wrong tab" is proved by parking the
-// card on the Terminal and asserting a live `.xterm` when it comes back — which
-// only a PTY session has, so the two tab-restore tests are tagged `[pty]`. The
-// presentation store itself is transport-independent, and the two slot/close
-// tests below are untagged because they never look at a terminal. See
-// `launchApp` in `fixtures/app.ts` for the tag.
+// TRANSPORT SCOPE (P2-E18-18, #404): none — every test here is untagged. "The
+// wrong tab" used to be proved by parking the card on the Terminal and
+// asserting a live `.xterm` when it came back, which only a PTY session had,
+// and that is what made the two tab-restore tests `[pty]`. #873 removed the
+// tab, so they park on Changes and read `aria-selected` — the tablist's own
+// answer about which tab is current, and transport-independent.
 import { test, expect, Page } from '@playwright/test';
 import path from 'path';
 import { launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';
@@ -50,7 +50,7 @@ test.describe('presentation state (P2-E15-08)', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
 
-  test('[pty] a hidden card keeps its session, and comes back on the tab it left', async () => {
+  test('a hidden card keeps its session, and comes back on the tab it left', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
@@ -59,9 +59,10 @@ test.describe('presentation state (P2-E15-08)', () => {
     await expect(tabs(w)).toHaveCount(1);
 
     // put it on a NON-default tab: the default would pass even if the state
-    // were lost entirely
-    await w.getByRole('tab', { name: 'Terminal', exact: true }).click();
-    await expect(w.locator('.xterm')).toBeVisible();
+    // were lost entirely. That was the Terminal tab until #873 removed it.
+    const changes = w.getByRole('tab', { name: 'Changes', exact: true });
+    await changes.click();
+    await expect(changes).toHaveAttribute('aria-selected', 'true');
     expect(await liveCount(w)).toBe(1);
 
     await hideActive(w);
@@ -78,10 +79,10 @@ test.describe('presentation state (P2-E15-08)', () => {
     await expect(tabs(w)).toHaveCount(1, { timeout: 25_000 });
 
     // the tab it was on, not the default
-    await expect(w.locator('.xterm')).toBeVisible({ timeout: 25_000 });
-    await expect(w.getByRole('tab', { name: 'Terminal', exact: true })).toHaveCSS(
-      'font-weight',
-      '650'
+    await expect(w.getByRole('tab', { name: 'Changes', exact: true })).toHaveAttribute(
+      'aria-selected',
+      'true',
+      { timeout: 25_000 }
     );
     // and ONE session for the card, not two: revealing remounts the card over a
     // session that is still running, and create() must adopt it rather than
@@ -138,7 +139,7 @@ test.describe('presentation state (P2-E15-08)', () => {
     expect(await liveCount(w)).toBe(0);
   });
 
-  test('[pty] hidden survives a relaunch — and so does the tab it was on', async () => {
+  test('hidden survives a relaunch — and so does the tab it was on', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });
     const title = path.basename(folder);
@@ -149,7 +150,7 @@ test.describe('presentation state (P2-E15-08)', () => {
     // two cards are mounted, so scope to the one on screen: `.first()` picks by
     // DOM order and would silently drive the OTHER card's tab strip
     await a.window
-      .getByRole('tab', { name: 'Terminal', exact: true })
+      .getByRole('tab', { name: 'Changes', exact: true })
       .filter({ visible: true })
       .click();
     await hideActive(a.window);
@@ -168,6 +169,14 @@ test.describe('presentation state (P2-E15-08)', () => {
 
     await row(w, second).click();
     await expect(tabs(w)).toHaveCount(2, { timeout: 25_000 });
-    await expect(w.locator('.xterm')).toBeVisible({ timeout: 25_000 });
+    // ...and it comes back on the tab it was left on, not the default. This was
+    // a live `.xterm` until #873; `aria-selected` is what the tablist itself
+    // says is current, and it reads the POST-fallback resolution, so a card
+    // whose remembered tab no longer exists would show Session here.
+    await expect(w.getByRole('tab', { name: 'Changes', exact: true })).toHaveAttribute(
+      'aria-selected',
+      'true',
+      { timeout: 25_000 }
+    );
   });
 });

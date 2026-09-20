@@ -44,7 +44,7 @@ same result, no dialog.
 - **Sessions** (left) — every session you have open, with a colored status dot.
   Click one to jump to it.
 - **The grid** (middle) — the session cards themselves. Each has its own tabs:
-  Session, Terminal, Changes, History.
+  Session, Changes, History.
 - **Events** (right) — what needs you right now. Empty is good; it says
   "Nothing needs you right now".
 - **Status bar** (bottom) — how many sessions are open, total tokens and
@@ -62,8 +62,7 @@ same result, no dialog.
   keeps running; nothing restarts.
 - Nothing leaves your machine. There's no cloud sync, no telemetry, no login.
 - If switchboard itself breaks, your sessions keep running — the real `claude`
-  is doing the work, not us. On a session you've put in **Terminal mode** you
-  can drop into its **Terminal** tab and work exactly as you would without
-  switchboard; sessions in [Direct mode](12-direct-mode.md), which is how new
-  ones start, have no terminal to drop into, so the fallback there is to switch
-  that session to Terminal mode from its **⋯** menu.
+  is doing the work, not us. Sessions talk to it in
+  [Direct mode](12-direct-mode.md) and there is no terminal inside the app to
+  drop into, so the fallback is a terminal of your own: run `claude` in the same
+  project folder. It is the same CLI, with the same conversation history.

@@ -109,8 +109,12 @@ describe('the trust chip', () => {
       const chip = trustChip(await bar({ autoTrust: true, trustReaches: false }));
       expect(chip.getAttribute('aria-disabled')).toBe('true');
       expect(chip.getAttribute('title')).toBe(en.titlebar.trustInert);
-      // the reason names the transport and the way out, not just "unavailable"
-      expect(en.titlebar.trustInert).toMatch(/Terminal/);
+      // The reason EXPLAINS, rather than just saying "unavailable". It used to
+      // name the way out ("switch a session to Terminal"); since #873 there is
+      // no way out to name, so what it owes the user instead is why the set is
+      // permanently empty — and that their stored choice was not touched.
+      expect(en.titlebar.trustInert).toMatch(/nothing can ask/i);
+      expect(en.titlebar.trustInert).toMatch(/kept/i);
     });
 
     it('stays reachable from the keyboard', async () => {

@@ -240,16 +240,20 @@ export function FindBar(props: {
     }
   }, [bar.openNonce, unavailableKey]);
 
-  // Clearing is per GROUP, not per focused panel: a search that highlighted a
-  // terminal AND revealed a feed block has to undo both, and the terminal's
-  // panel is `keepMounted` so it is still there holding decorations long after
-  // the user switched tabs.
+  // Clearing is per GROUP, not per focused panel: a search that painted two
+  // surfaces has to undo both, and a surface can go on holding decorations long
+  // after the user switched tabs. (The case this was written for was the
+  // `keepMounted` Terminal panel, which stayed in the tree holding highlights.
+  // #873 removed it and nothing is keepMounted now — but the rule is still the
+  // right one for any surface that outlives the focused panel, and narrowing it
+  // to "the focused panel" would be re-introducing the bug it fixed.)
   const clearAll = React.useCallback(() => {
     // The UNION of what is registered now and what the last query actually ran
-    // against. Neither list alone is enough: the current one is empty on the
-    // Changes tab (where the terminal is still holding the highlights we
-    // painted), and the searched one is empty before the first query (where
-    // clearing is a harmless no-op that keeps "close always tidies up" true).
+    // against. Neither list alone is enough: the current one is empty on a
+    // DELEGATING tab like Changes (while a bar-mode surface may still be
+    // holding the highlights we painted), and the searched one is empty before
+    // the first query (where clearing is a harmless no-op that keeps "close
+    // always tidies up" true).
     // Live context wins where both have an entry — a panel may have
     // re-published, and it is the live surface that is holding the paint.
     const byId = new Map(searchedRef.current.map((e) => [e.p.manifest.id, e]));

@@ -15,8 +15,10 @@
 // the fix: it is a REGRESSION GUARD on that fact, not the repro.
 //
 // What DOES lose it, and what the other two tests pin, is any real remount:
-//   1. switching the card to the Terminal tab and back — `panel-terminal` is
-//      the only `keepMounted` panel, so the Session panel is torn down;
+//   1. switching the card to another tab and back — the Session panel is torn
+//      down. (This used the Terminal tab, which was then the only
+//      `keepMounted` panel; #873 removed it and nothing claims the flag now,
+//      so Changes tears the panel down just the same.)
 //   2. quitting and relaunching.
 // Both failed against the unfixed build. The same fix covers the third route
 // the owner most plausibly hit — the stranded-popout rescue (#292), which
@@ -30,7 +32,6 @@ import path from 'path';
 import {
   launchApp,
   LaunchedApp,
-  showTerminal,
   skipPopoutOnLinux,
   tempProjectFolder,
 } from './fixtures/app';
@@ -52,16 +53,16 @@ test.describe('the composer draft survives (#485)', () => {
 
   test('it survives the view tab going away and coming back', async () => {
     // The cheapest real remount in the app, and the one a user hits daily:
-    // `panel-terminal` is the only keepMounted panel, so leaving the Session
-    // tab tears its whole tree down. This test FAILS against the unfixed build
-    // (verified), which the pop-out one does not.
+    // leaving the Session tab tears its whole tree down. This used to switch to
+    // the Terminal tab, which was then the only `keepMounted` panel; since #873
+    // removed it nothing is kept mounted, so Changes does the same job.
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
     await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
 
     await typeDraft(w, DRAFT);
-    await showTerminal(w);
+    await w.getByRole('tab', { name: 'Changes' }).click();
     await expect(composer(w)).toHaveCount(0, { timeout: 20_000 }); // genuinely gone
     await w.getByRole('tab', { name: 'Session' }).click();
     await expect(composer(w)).toHaveValue(DRAFT, { timeout: 20_000 });
@@ -232,7 +233,7 @@ test.describe('the composer draft keeps its attachments too (#546)', () => {
     await expect(composer(w)).toHaveValue(''); // the picture IS the whole prompt
     await composer(w).blur();
 
-    await showTerminal(w);
+    await w.getByRole('tab', { name: 'Changes' }).click();
     await expect(composer(w)).toHaveCount(0, { timeout: 20_000 }); // genuinely gone
     await w.getByRole('tab', { name: 'Session' }).click();
 

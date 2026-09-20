@@ -7,7 +7,6 @@ import path from 'path';
 import {
   launchApp,
   LaunchedApp,
-  showTerminal,
   tempProjectFolder,
   hookPoster,
   openEventsDrawer,
@@ -143,25 +142,16 @@ test.describe('attention queue (E9-03)', () => {
     await expect(eventRows(w)).toHaveCount(0);
   });
 
-  test('the RENDERER never claims Ctrl+Space in a terminal (the hard rule)', async () => {
-    // The terminal branch of classifyTarget is the one NO scope can override,
-    // and it is a different code path from the text-input branch below.
-    //
-    // #90 did not loosen it: the chord now works from a terminal because the
-    // BROWSER process claims it before the page ever sees it (covered in
-    // terminal-accelerators.spec.ts). Playwright injects over CDP, which never
-    // reaches before-input-event, so what this test drives is the renderer path
-    // alone — which must still stand down. If it ever starts jumping here, the
-    // hard rule has been bent instead of stepped over.
-    const { w, titles } = await threeWaitingSessions();
-    await w.keyboard.press(`${MOD}+1`);
-    await expect(activeTab(w)).toContainText(titles.done);
-
-    await showTerminal(w);
-    await w.locator('.xterm-screen').first().click();
-    await w.keyboard.press(`${MOD}+Space`);
-    await expect(activeTab(w)).toContainText(titles.done); // never jumped
-  });
+  // "the RENDERER never claims Ctrl+Space in a terminal (the hard rule)" stood
+  // here. It drove the terminal branch of `classifyTarget` — the one branch no
+  // scope can override — by putting focus inside an xterm and pressing the
+  // chord over CDP, which never reaches `before-input-event` and so exercised
+  // the renderer path alone.
+  //
+  // No xterm is mounted anywhere since #873, so that branch has no reachable
+  // surface and cannot be staged. The branch is still live code; what is gone
+  // is the end-to-end proof that it stands down. The text-input half of the
+  // same rule is still covered by the composer test below.
 
   test('the composer owns Ctrl+Space too — a text input keeps its keys', async () => {
     const { w, titles } = await threeWaitingSessions();

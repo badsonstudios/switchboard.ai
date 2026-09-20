@@ -2,8 +2,8 @@
 
 > Status: draft
 
-Each card has four tabs: **Session**, **Terminal**, **Changes**, and
-**History**. Session is the one you'll live in.
+Each card has three tabs: **Session**, **Changes**, and **History**. Session is
+the one you'll live in.
 
 ## The Session tab
 
@@ -54,11 +54,8 @@ From the keyboard it's one `Tab` from the conversation (press `Esc` first if
 you're walking the boxes) and one `Shift+Tab` from the prompt box — see
 [Reading the conversation with the keyboard](06-keyboard.md#reading-the-conversation-with-the-keyboard).
 
-**In [Direct mode](12-direct-mode.md), replies stream in a word at a time**,
-with a small block cursor on the end while Claude is still writing. In Terminal
-mode the view waits for each finished message instead, so replies arrive in
-chunks a moment behind. The blocks themselves are identical either way — only
-how quickly they fill in differs.
+**Replies stream in a word at a time**, with a small block cursor on the end
+while Claude is still writing — see [Direct mode](12-direct-mode.md).
 
 **A reply is formatted while it arrives, not after it finishes.** Headings,
 bold, bullet lists, tables and code blocks all appear as Claude writes them, so
@@ -157,15 +154,12 @@ is rather than leaving you guessing:
   a moment.
 - **"Couldn't find this session's transcript"** — shown in red, and the only
   one that means something is actually wrong. It tells you where it looked and
-  what it found. **Your session is unaffected** either way, and the last line
-  says where it still is — which depends on the mode the session is in:
-  - **Terminal mode** — the **Terminal** tab shows the session exactly as
-    Claude Code renders it, so go and read it there.
-  - **[Direct mode](12-direct-mode.md)** — there is no terminal to go to, and
-    you don't need one: a Direct session's replies come straight into this
-    window rather than being read out of that file. The status on the card
-    header tells you what it's doing. The missing file only costs you usage
-    totals and picking the conversation back up next time you open switchboard.
+  what it found. **Your session is unaffected**, and you don't need to go
+  anywhere to keep working: its replies come straight into this window
+  ([Direct mode](12-direct-mode.md)) rather than being read out of that file,
+  and the status on the card header tells you what it's doing. The missing file
+  only costs you usage totals and picking the conversation back up next time you
+  open switchboard.
 
   See [Troubleshooting](11-troubleshooting.md).
 
@@ -225,7 +219,7 @@ cycle) and the **model** it's running — click that to switch it, or see
 [Choosing a model](18-model.md).
 
 **A prompt you haven't sent yet is kept.** Start writing, then switch that card
-to the Terminal tab and back, pop it out into its own window, dock it back, or
+to the Changes tab and back, pop it out into its own window, dock it back, or
 quit switchboard entirely — the words are still in the box when you return to
 it. Each session keeps its own; sending clears it. If you empty the box, nothing
 is kept, and a draft is forgotten when you close the session for good. A session
@@ -251,10 +245,7 @@ same chip described below.
 **Right-click text you've selected in the conversation** — or in a document —
 for **Copy**. There is no Cut or Paste there: it isn't text you can edit.
 
-The menus work in popped-out session windows too. Right-clicking in the
-**Terminal** tab does nothing, deliberately: the terminal belongs to the CLI
-and has its own habits, so switchboard.ai stays out of it. Use the Terminal's
-own keys, or the Session tab, to move text around there.
+The menus work in popped-out session windows too.
 
 ### Attaching files: paste a picture, or drag anything in
 
@@ -340,7 +331,6 @@ It tells you, under the box, rather than failing quietly:
 | Attached a type Claude can't read — a video, an `.exe`, a `.zip` | It names what does work, and tells you to put the file's full path in the prompt instead, which Claude can then open itself |
 | Dropped a **folder** on the prompt box | "Folders cannot be attached to a prompt." Drop it outside the prompt box to open it as a session, or drop the files inside it |
 | Attached an empty file | It says there is nothing to send |
-| Attached to a **Terminal mode** session | Files can only be sent by a session in **Direct mode** (see [Direct mode](12-direct-mode.md)). In Terminal mode, use the Terminal tab instead |
 | Quit with files attached | "Not restored: …", naming them. Your typed words are still there; attach the files again |
 
 If a prompt with an attachment can't be sent — the session stopped, say —
@@ -390,8 +380,7 @@ up when there's an actual clash.
 
 **Two things worth knowing:**
 
-- Sessions in **Direct mode** don't show sub-agent work in the conversation at
-  all yet — that's still to come. In **Terminal mode** it's all there.
+- Sub-agent work doesn't appear in the conversation yet — that's still to come.
 - A conversation recorded by an older version of Claude Code may show the
   indented work with a plain **Subagent** caption and no name. There is nothing
   wrong; that recording simply doesn't say who was speaking.
@@ -445,9 +434,10 @@ Two things worth knowing:
   write its accounting out until it exits, so there's no way to get the real
   number mid-session — a session you leave open keeps showing the estimate
   indefinitely, and that's expected rather than a fault. It also has to be
-  Claude Code's own decision to stop: typing `/exit` in the **Terminal** tab
-  gets you the exact figure, but restarting or closing the session from
-  switchboard shuts the transcript down first and leaves the estimate standing.
+  Claude Code's own decision to stop, and switchboard has no way to ask it to —
+  there is no longer a terminal to type `/exit` into. Restarting or closing the
+  session from switchboard shuts the transcript down first and leaves the
+  estimate standing.
 - **You are billed by your subscription, not per token.** The dollar figure is
   there to give the token counts a sense of scale and to let you compare
   sessions against each other — it is not a bill.
@@ -458,44 +448,20 @@ finished puts the `~` estimate back as soon as it does any more work — the exa
 figure it was showing was the total as of last time, and it stops being the
 whole story the moment the session spends again.
 
-## The Terminal tab
+## What happened to the Terminal tab
 
-The real Claude Code interface, available as the last tab on a session running
-in **Terminal mode**. It's the same session — not a copy — so
-anything switchboard can't handle finishes here. You'll be sent here on purpose
-for things like the model picker.
+Cards used to have a fourth tab showing the real Claude Code terminal. **It has
+been removed.** Sessions talk to Claude Code directly — see
+[Direct mode](12-direct-mode.md) — and the things that used to send you to the
+terminal now happen where you already are: permission requests arrive as a bar
+in the Session tab, and `/model` and `/mcp` have panels of their own.
 
-On a session running in [**Direct mode**](12-direct-mode.md) — which is how new
-sessions start — there is no terminal at all, and the tab says so: *"No terminal
-for this session."* Nothing else in the window will offer to open one. Put the
-session on Terminal mode from the ⋯ menu if you want the tab back.
+If you had a session set to Terminal mode, it moves to Direct the next time
+switchboard starts. Your conversation and its history are untouched.
 
-**When something can only be answered in the terminal, the Session tab says
-so** — a coloured bar across the bottom, in the same place the approval bar
-appears, with an **Open Terminal** button.
-
-> **Terminal mode only.** A session on [Direct mode](12-direct-mode.md) has no
-> terminal, so it never shows this bar and never offers an **Open Terminal**
-> button. Claude hands those decisions to switchboard properly there, and you
-> answer them right here in the approval bar.
-
-You'll see it in three situations:
-
-- **"Claude is asking permission in the terminal."** Some decisions Claude Code
-  always keeps for itself — most commonly edits inside a project's own
-  `.claude` folder. switchboard isn't allowed to answer those on your behalf,
-  and won't pretend it can.
-- **"Claude is waiting for your answer."** A question with a numbered list of
-  choices, the kind you pick with the arrow keys.
-- **"Claude is showing a start-up dialog."** Trusting a folder, or picking a
-  conversation to resume.
-
-For the first two the session also marks itself **needs input** or **needs
-permission** and raises an entry in Events, so you can tell at a glance that
-it's stopped and waiting rather than still working. (A session still starting
-up doesn't raise an Events entry — it hasn't got going yet.) Answer it in the
-Terminal and the session carries on. Answering these inside the Session view is
-planned, not built — and in Direct mode the first of the three already is.
+What genuinely went with it: **Ctrl-R history search**, **vim mode**, and
+anything else that only exists as a full-screen terminal interface. If you rely
+on those, run `claude` yourself in a terminal for that piece of work.
 
 ## Changes and History
 

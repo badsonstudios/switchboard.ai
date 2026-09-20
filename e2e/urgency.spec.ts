@@ -13,7 +13,6 @@ import path from 'path';
 import {
   launchApp,
   LaunchedApp,
-  showTerminal,
   skipPopoutOnLinux,
   tempProjectFolder,
   hookPoster,
@@ -230,9 +229,9 @@ test.describe('urgency strip (E9-04)', () => {
     await w.keyboard.press(`${MOD}+B`);
     await expect(w.locator('nav')).toHaveCount(1);
 
-    // the card showing its Terminal instead of the Session view
-    await showTerminal(w);
-    await expect(w.locator('.xterm-screen').first()).toBeVisible({ timeout: 15_000 });
+    // the card showing another tab instead of the Session view (this was the
+    // Terminal tab until #873 removed it)
+    await w.getByRole('tab', { name: 'Changes' }).click();
     await expect(strip(w)).toBeVisible();
 
     // the card taken OUT of the workspace entirely (§5.8's ladder): "the

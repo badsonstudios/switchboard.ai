@@ -17,7 +17,7 @@
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
-import { launchApp, LaunchedApp, retype, showTerminal, tempProjectFolder } from './fixtures/app';
+import { launchApp, LaunchedApp, retype, tempProjectFolder } from './fixtures/app';
 
 function findFile(root: string, name: string, depth = 6): string | null {
   if (depth < 0) return null;
@@ -141,11 +141,12 @@ test.describe('composer slash commands (E10-07)', () => {
     await box.press('Enter');
     await expect(box).toHaveValue('/hello ');
 
-    // a second Enter submits to the real PTY — the shell echoes the text
+    // a second Enter submits. That it REACHED the CLI used to be read off the
+    // shell's echo in the Terminal tab; with no terminal surface (#873) the
+    // composer emptying is what is left, which proves the submit happened but
+    // not that anything received it.
     await box.press('Enter');
     await expect(box).toHaveValue('');
-    await showTerminal(w);
-    await expect(w.getByText(/\/hello/).first()).toBeVisible({ timeout: 15_000 });
   });
 
   // #163 hand-test, 2026-08-02. Dan, on the Direct-mode PR: "/usage does not
@@ -157,11 +158,12 @@ test.describe('composer slash commands (E10-07)', () => {
   // ran nothing. The first Enter looked like a no-op because the text it
   // produced was the text already on screen.
   //
-  // Not transport-specific, and tested here on the PTY for that reason — but
-  // the PROOF is, so it carries the tag: "it really sent" is read off the
-  // shell's echo in the Terminal tab, which a Direct session has nothing to
-  // show in.
-  test('[pty] a command typed IN FULL submits on the first Enter (#163)', async () => {
+  // Not transport-specific, and no longer tagged: the tag existed only because
+  // the PROOF was — "it really sent" was read off the shell's echo in the
+  // Terminal tab. That surface is gone (#873), and the load-bearing assertion
+  // never needed it: an empty composer rather than one sitting on `/hello ` is
+  // exactly the difference #163 broke, and it is transport-independent.
+  test('a command typed IN FULL submits on the first Enter (#163)', async () => {
     const folder = tempProjectFolder();
     seedProjectCommands(folder);
     a = await launchApp({ seedFolder: folder });
@@ -181,8 +183,6 @@ test.describe('composer slash commands (E10-07)', () => {
 
     // ONE Enter sent it: the composer is empty, not sitting on `/hello `
     await expect(box).toHaveValue('');
-    await showTerminal(w);
-    await expect(w.getByText(/\/hello/).first()).toBeVisible({ timeout: 15_000 });
   });
 
   test('Tab still COMPLETES a fully typed command instead of sending it', async () => {
@@ -224,7 +224,7 @@ test.describe('composer slash commands (E10-07)', () => {
     await expect(box).toHaveValue('/'); // the draft survives the dismiss
   });
 
-  test('[pty] ⋯ menu: Clear conversation confirms, then types /clear into the PTY', async () => {
+  test('⋯ menu: Clear conversation locks while starting, then confirms', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
@@ -243,8 +243,11 @@ test.describe('composer slash commands (E10-07)', () => {
     await expect(w.getByText(/Clear this conversation\?/)).toBeVisible();
     await w.getByRole('button', { name: 'Clear', exact: true }).click();
 
-    await showTerminal(w);
-    await expect(w.getByText(/\/clear/).first()).toBeVisible({ timeout: 15_000 });
+    // That the confirm went on to type `/clear` into the PTY was read off the
+    // Terminal tab's scrollback, and that surface is gone (#873). The Direct
+    // half of this claim is covered end to end by `stream-feed.spec.ts` →
+    // "wipes the conversation, and the next turn survives".
+    await expect(w.getByText(/Clear this conversation\?/)).toHaveCount(0);
   });
 
   // `[pty]`: the wipe rides the transcript watcher's rebind on a new native id,

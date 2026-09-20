@@ -32,41 +32,20 @@ import {
   workspaceJsonPath,
 } from './fixtures/app';
 
-test.describe('[pty] real claude end-to-end (opt-in)', () => {
-  test.skip(process.env.SWITCHBOARD_REAL_E2E !== '1', 'set SWITCHBOARD_REAL_E2E=1 (needs a logged-in claude)');
-  let a: LaunchedApp;
-  test.afterEach(async () => a?.cleanup());
-
-  test('composer prompt -> real claude -> rendered response in the Session tab', async () => {
-    test.setTimeout(180_000); // a real model turn takes what it takes
-    const folder = tempProjectFolder();
-    // Pinned to the PTY (#381 made Direct the default): the assertion at the
-    // bottom of this test reads TERMINAL text, so a Direct session would have
-    // nothing to read. The Direct half of the same journey is the test below —
-    // this one stays as the PTY's own coverage rather than being rewritten,
-    // because both transports ship and both are somebody's daily driver.
-    a = await launchApp({ seedFolder: folder, realClaude: true, env: { SWITCHBOARD_TRANSPORT: 'pty' } });
-    const w = a.window;
-    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 30_000 });
-
-    // wait for the CLI to be READY (SessionStart hook -> idle pill) before
-    // prompting — keystrokes into a booting TUI go nowhere
-    await expect(w.getByText('idle', { exact: true }).first()).toBeVisible({ timeout: 60_000 });
-
-    const box = w.getByPlaceholder(/Prompt this session/);
-    await box.fill('Reply with exactly: REAL_E2E_OK and nothing else, no tools.');
-    await box.press('Enter');
-
-    // the composer wrote to the real TUI and the model answered — assert via
-    // the Terminal (PTY text). KNOWN ANOMALY (2026-07-23, tracked in
-    // PROGRESS): claude 2.1.218 does not write conversation .jsonl files
-    // under an isolated temp home (session-env/memory appear, transcript
-    // doesn't), so Session-view block assertions are deferred until that's
-    // understood — real-home usage writes transcripts normally.
-    await w.getByRole('tab', { name: 'Terminal' }).click();
-    await expect(w.getByText(/REAL_E2E_OK/).first()).toBeVisible({ timeout: 120_000 });
-  });
-});
+// THE PTY HALF OF THIS FILE IS GONE (#873), and it is worth saying why rather
+// than leaving a shorter file behind.
+//
+// "[pty] real claude end-to-end (opt-in)" drove a real model turn on a real PTY
+// and read the reply back as TERMINAL text, because of a known anomaly recorded
+// with it: claude 2.1.218 writes no conversation .jsonl under an isolated temp
+// home, so the Session view had nothing to assert against and the terminal's
+// own text was the only witness available.
+//
+// The Terminal tab was that witness, and there is no longer any surface that
+// renders PTY output — so a real-CLI turn on the PTY cannot be observed from a
+// test at all. The transport still works and still ships; what is gone is the
+// ability to watch it from outside. The Direct half below is unaffected, and it
+// is the path a new session actually takes (#381).
 
 // #384 — the DEFAULT transport, against the real CLI.
 //
@@ -102,13 +81,13 @@ test.describe('real claude on the DEFAULT transport (#384, opt-in)', () => {
     const w = a.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 30_000 });
 
-    // It really IS Direct. Without this the whole test would pass just as well
-    // against a PTY session that happened to render its reply, and the default
-    // could silently revert with nothing here to notice.
-    await w.getByRole('tab', { name: 'Terminal' }).first().click();
-    await expect(w.getByText('No terminal for this session')).toBeVisible({ timeout: 30_000 });
-    await w.getByRole('tab', { name: 'Session', exact: true }).first().click();
-
+    // The "it really IS Direct" probe read the Terminal tab's notice, and went
+    // with the tab (#873). Worth being honest about what that costs: this test
+    // would now also pass against a PTY session that happened to render its
+    // reply, so it no longer guards the DEFAULT on its own. That claim lives in
+    // `stream-trust.spec.ts`, which decides it on disk rather than on screen —
+    // a Direct spawn writes no trust acceptance, a PTY spawn does.
+    //
     // NO readiness wait, unlike the PTY test above, and that is a real
     // difference rather than an omission: a Direct prompt is a line on stdin,
     // which the OS buffers until the CLI reads it. Measured against

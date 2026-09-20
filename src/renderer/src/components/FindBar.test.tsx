@@ -213,14 +213,12 @@ describe('a panel with no provider', () => {
     expect(search).not.toHaveBeenCalled();
   });
 
-  it('a Terminal tab with no terminal (a Direct session) says THAT, not "no provider"', async () => {
-    // P2-E17-03: a stream session renders a notice instead of an xterm and
-    // never publishes a surface, so the reason has to name the missing
-    // terminal rather than report a confident 0 in the scrollback group.
-    const host = await mount(bar('terminal', 'grid.viewTerminal'));
-    expect(q<HTMLInputElement>(host, 'find-input')!.disabled).toBe(true);
-    expect(q(host, 'find-unavailable')!.textContent).toBe(en.find.unavailable.noTerminal);
-  });
+  // "a Terminal tab with no terminal (a Direct session) says THAT, not 'no
+  // provider'" lived here (P2-E17-03). Both halves of its premise are gone
+  // since #873: there is no Terminal tab to focus and `terminalFindProvider` is
+  // no longer registered, so the case it described cannot arise. The greyed-bar
+  // behaviour it shared with the other panels is still covered above (History)
+  // and by the keyboard test below.
 });
 
 describe('the §5.31 v1 boundary, rendered', () => {
@@ -304,7 +302,9 @@ describe('the greyed bar is still operable from the keyboard', () => {
     // The input is disabled, and focusing a disabled element is a silent
     // no-op — which would leave focus outside the bar entirely and make the
     // mouse the only way out of a panel that cannot even search.
-    const host = await mount(bar('terminal', 'grid.viewTerminal'));
+    // History: shown, never selectable, and so always greyed — the same shape
+    // the Terminal tab used to provide here before #873 removed it.
+    const host = await mount(bar('history', 'grid.viewHistory'));
     const close = q<HTMLElement>(host, 'find-close')!;
     expect(document.activeElement).toBe(close);
 
@@ -449,130 +449,28 @@ describe('the a11y contract (§5.32, one surface later)', () => {
 // P2-E17-03 — one Ctrl+F, results GROUPED BY VIEW (§5.31's first decision)
 // ---------------------------------------------------------------------------
 
-/**
- * Publish a fake terminal surface holding `matches` copies of a line.
- *
- * `live` is #517's seam: `true` means the answer came from the pane ON SCREEN
- * (highlighted, jumpable), `false` that it came from an off-screen replay of
- * main's ring buffer (real counts for a tab that was never opened, nothing
- * rendered to scroll). `search` resolves rather than returns, because on the
- * second path it genuinely crosses to main.
- */
-function publishTerminal(
-  rows: number[],
-  total = rows.length,
-  live = true
-): ReturnType<typeof vi.fn> {
-  const reveal = vi.fn().mockReturnValue(true);
-  publishFindSurface(findSurfaceKey('card-1', 'terminal'), {
-    kind: 'terminal',
-    search: () =>
-      Promise.resolve({
-        matches: rows.map((row) => ({
-          row,
-          col: 2,
-          length: 6,
-          line: `row ${row} NEEDLE`,
-          offset: 6,
-        })),
-        total,
-        truncated: total > rows.length,
-        live,
-      }),
-    reveal,
-    clear: () => {},
-  } as unknown as FindSurface);
-  return reveal;
-}
-
-describe('grouped results (P2-E17-03)', () => {
-  it('searches EVERY registrant on the card and labels each group — including the zeros', async () => {
-    search.mockResolvedValue(searchResult([hit(4, 'a'), hit(5, 'b')]));
-    publishTerminal([]); // nothing in the scrollback
-    const host = await mount(bar());
-    await act(async () => setFindTerm('NEEDLE'));
-    await settle();
-
-    const groups = q(host, 'find-groups')!;
-    // "0 in Terminal (scrollback only)" is a DIFFERENT statement from silence,
-    // and only one of them is true — the terminal saw 5,000 lines, not the
-    // session
-    expect(groups.textContent).toContain('2 in Session');
-    expect(groups.textContent).toContain(`0 in ${en.find.group.terminal}`);
-    expect(en.find.group.terminal).toContain('scrollback only');
-  });
-
-  it('a term only in the TRANSCRIPT still shows its Session count from the Terminal tab', async () => {
-    // The item's third done-when. The Session group does not need a mounted
-    // feed to be searched — the engine reads the file in main — so switching
-    // to the Terminal tab must not zero it.
-    search.mockResolvedValue(searchResult([hit(4, 'a'), hit(5, 'b'), hit(6, 'c')]));
-    publishTerminal([]);
-    const host = await mount(bar('terminal', 'grid.viewTerminal'));
-    await act(async () => setFindTerm('ONLY_IN_TRANSCRIPT'));
-    await settle();
-
-    expect(q(host, 'find-unavailable')).toBeNull();
-    expect(q(host, 'find-groups')!.textContent).toContain('3 in Session');
-    expect(q(host, 'find-count')!.textContent).toBe('1 of 3');
-  });
-
-  it('the count is a position INSIDE one group, never a running total across two', async () => {
-    search.mockResolvedValue(searchResult([hit(4, 'a'), hit(5, 'b')]));
-    publishTerminal([10, 20]);
-    const host = await mount(bar());
-    await act(async () => setFindTerm('NEEDLE'));
-    await settle();
-
-    expect(q(host, 'find-count')!.textContent).toBe('1 of 2'); // in Session
-    await act(async () => {
-      q<HTMLElement>(host, 'find-next')!.click();
-    });
-    expect(q(host, 'find-count')!.textContent).toBe('2 of 2');
-    await act(async () => {
-      q<HTMLElement>(host, 'find-next')!.click();
-    });
-    // …into the terminal's group, which restarts at 1 of ITS own total —
-    // "3 of 4" would be one number over two depths
-    expect(q(host, 'find-count')!.textContent).toBe('1 of 2');
-  });
-
-  it('starts in the panel the user is LOOKING at', async () => {
-    search.mockResolvedValue(searchResult([hit(4, 'a')]));
-    const revealTerminal = publishTerminal([10, 20]);
-    await mount(bar('terminal', 'grid.viewTerminal'));
-    await act(async () => setFindTerm('NEEDLE'));
-    await settle();
-    // the session group sorts first, but the terminal is what is on screen
-    expect(revealTerminal).toHaveBeenCalledTimes(1);
-    expect(jumpTo).not.toHaveBeenCalled();
-  });
-
-  it('heads each run of rows in the results list with its group', async () => {
-    search.mockResolvedValue(searchResult([hit(4, 'a')]));
-    publishTerminal([10]);
-    const host = await mount(bar());
-    await act(async () => setFindTerm('NEEDLE'));
-    await settle();
-    await act(async () => {
-      q<HTMLElement>(host, 'find-results-toggle')!.click();
-    });
-    const heads = Array.from(host.querySelectorAll('[data-testid="find-group-header"]')).map(
-      (e) => e.textContent,
-    );
-    expect(heads).toEqual([en.grid.viewSession, en.find.group.terminal]);
-  });
-
-  it('a group that fails costs its own group and nothing else', async () => {
-    search.mockRejectedValue(new Error('main is gone'));
-    publishTerminal([10, 20]);
-    const host = await mount(bar());
-    await act(async () => setFindTerm('NEEDLE'));
-    await settle();
-    expect(q(host, 'find-groups')!.textContent).toContain(`2 in ${en.find.group.terminal}`);
-    expect(q(host, 'find-notice')!.textContent).toContain(en.find.notice.failed);
-  });
-
+// WHAT WENT FROM THIS BLOCK, AND WHY IT IS A REAL LOSS (#873).
+//
+// Grouping needed TWO `bar` registrants to be observable, and `find-groups.ts`
+// names the pair it was built for: the transcript engine and the terminal's
+// scrollback. `find-terminal` is no longer registered — there is no Terminal
+// panel left to focus — and of the survivors `find-changes` DELEGATES to Monaco
+// rather than reporting a group, while `find-document` serves a tab with no
+// session behind it. So a session card now has exactly one bar-mode group, and
+// every test here that proved multi-group behaviour was describing a state the
+// app can no longer reach.
+//
+// The arithmetic itself is untouched and still covered: `lib/find-groups.test.ts`
+// builds group inputs directly and never goes through the registry, so labels,
+// per-group counts, floors, cross-group stepping and id namespacing all stay
+// pinned. What is genuinely gone is the INTEGRATION proof that the bar drives
+// two real providers at once. That returns with the next `bar` registrant.
+//
+// One of the deleted tests was already passing for the wrong reason: "the count
+// is a position INSIDE one group" stepped 1-of-2 → 2-of-2 → 1-of-2, which a
+// single wrapping group satisfies by coincidence. It asserted nothing once the
+// second group went, which is the shape PROGRESS.md keeps warning about.
+describe('one searchable surface (P2-E17-03, after #873)', () => {
   it('does NOT group when there is only one searchable surface', async () => {
     // a Direct session: no terminal, so no second group and no line of noise
     search.mockResolvedValue(searchResult([hit(4, 'a')]));
@@ -582,101 +480,6 @@ describe('grouped results (P2-E17-03)', () => {
     expect(q(host, 'find-groups')).toBeNull();
     expect(host.querySelector('[data-testid="find-group-header"]')).toBeNull();
     expect(q(host, 'find-count')!.textContent).toBe('1 of 1');
-  });
-
-  it('a terminal that has never been SHOWN is a group with a REAL count (#517)', async () => {
-    // The inversion of #516's blocker, and the point of #517.
-    //
-    // The Terminal panel is `keepMounted` and mounts with the card, but S-07
-    // says a hidden pane is ingest-only — the renderer's xterm is fed only
-    // while its tab is showing. #516 could only search that xterm, so on a card
-    // whose Terminal had never been opened it withheld the group rather than
-    // print "0 in Terminal (scrollback only)" about a buffer with no lines.
-    // The scrollback was in MAIN the whole time; the surface now reads it, and
-    // answers `live: false` to say the count is real but nothing is on screen
-    // to scroll to.
-    search.mockResolvedValue(searchResult([hit(4, 'a')]));
-    publishTerminal([12, 44], 2, false);
-    const host = await mount(bar());
-    await act(async () => setFindTerm('NEEDLE'));
-    await settle();
-
-    expect(q(host, 'find-groups')!.textContent).toContain(`2 in ${en.find.group.terminal}`);
-    // and the bar says why they cannot be stepped to, rather than offering a
-    // jump that would do nothing
-    expect(q(host, 'find-notice')!.textContent).toContain(en.find.notice.terminalNotShown);
-  });
-
-  it('…and those hits are readable, not jumpable', async () => {
-    search.mockResolvedValue(searchResult([]));
-    const reveal = publishTerminal([12], 1, false);
-    const host = await mount(bar());
-    await act(async () => setFindTerm('NEEDLE'));
-    await settle();
-    await act(async () => {
-      q<HTMLElement>(host, 'find-results-toggle')!.click();
-    });
-    const row = host.querySelector<HTMLElement>('[data-find-hit]')!;
-    // a plain element with the reason on it, never a button (`renderHit`)
-    expect(row.tagName).not.toBe('BUTTON');
-    expect(row.getAttribute('title')).toBe(en.find.cannotJumpTitle);
-    await act(async () => row.click());
-    expect(reveal).not.toHaveBeenCalled();
-  });
-
-  it('says "could not search" rather than 0 when the scrollback cannot be READ', async () => {
-    // `null` from the surface: the PTY is gone, or the read failed. "We could
-    // not look" is not "we looked and found none" — the failure this whole
-    // group is careful about, one layer further down.
-    search.mockResolvedValue(searchResult([hit(4, 'a')]));
-    publishFindSurface(findSurfaceKey('card-1', 'terminal'), {
-      kind: 'terminal',
-      search: () => Promise.resolve(null),
-      reveal: () => true,
-      clear: () => {},
-    } as unknown as FindSurface);
-    const host = await mount(bar());
-    await act(async () => setFindTerm('NEEDLE'));
-    await settle();
-    expect(q(host, 'find-notice')!.textContent).toContain(en.find.notice.failed);
-    // and the group shows an em dash where the digit goes, NOT a zero: this is
-    // the line the whole item is about, and a `0` here would say "not in the
-    // last 5,000 lines" about lines nobody managed to read
-    expect(q(host, 'find-groups')!.textContent).not.toContain(`0 in ${en.find.group.terminal}`);
-    expect(q(host, 'find-groups')!.textContent).toContain(`— in ${en.find.group.terminal}`);
-  });
-
-  it('the bar is NOT greyed on a Terminal tab that was never opened (#517)', async () => {
-    // It used to be: `ready()` was false for a pane that had never attached,
-    // and the reason text said "open the Terminal tab". There is no such reason
-    // any more — the group is searchable from main's buffer — so the input is
-    // live and the user can type.
-    publishTerminal([7], 1, false);
-    const host = await mount(bar('terminal', 'grid.viewTerminal'));
-    expect(q(host, 'find-unavailable')).toBeNull();
-    expect(q<HTMLInputElement>(host, 'find-input')!.disabled).toBe(false);
-  });
-
-  it('renders a floor as "N+" rather than presenting a ceiling as a count', async () => {
-    search.mockResolvedValue(searchResult([hit(4, 'a')]));
-    publishFindSurface(findSurfaceKey('card-1', 'terminal'), {
-      kind: 'terminal',
-      search: () =>
-        Promise.resolve({
-          matches: [{ row: 1, col: 0, length: 6, line: 'NEEDLE here', offset: 0 }],
-          total: 1000,
-          truncated: true,
-          totalIsFloor: true,
-          live: true,
-        }),
-      reveal: () => true,
-      clear: () => {},
-    } as unknown as FindSurface);
-    const host = await mount(bar('terminal', 'grid.viewTerminal'));
-    await act(async () => setFindTerm('NEEDLE'));
-    await settle();
-    expect(q(host, 'find-groups')!.textContent).toContain(`1000+ in ${en.find.group.terminal}`);
-    expect(q(host, 'find-count')!.textContent).toBe('1 of 1 shown (1000+ found)');
   });
 
   it('says nothing rather than "No results" when every group FAILED', async () => {
@@ -691,17 +494,9 @@ describe('grouped results (P2-E17-03)', () => {
   });
 
   it('undoes what it painted when the searchable set EMPTIES under it', async () => {
-    // switch to Changes mid-search: the terminal is `keepMounted` and would sit
-    // there holding decorations with nobody left holding a reference to it
+    // switch to Changes mid-search: the feed would otherwise sit there holding
+    // decorations with nobody left holding a reference to it
     search.mockResolvedValue(searchResult([hit(4, 'a')]));
-    const clearTerminal = vi.fn();
-    publishFindSurface(findSurfaceKey('card-1', 'terminal'), {
-      kind: 'terminal',
-      search: () =>
-        Promise.resolve({ matches: [], total: 0, truncated: false, totalIsFloor: false, live: true }),
-      reveal: () => true,
-      clear: clearTerminal,
-    } as unknown as FindSurface);
     publishFindSurface(findSurfaceKey('card-1', 'diff'), {
       kind: 'monaco',
       ready: () => true,
@@ -716,25 +511,16 @@ describe('grouped results (P2-E17-03)', () => {
     await settle();
     // (clearing is idempotent and also runs when the bar opens, so this counts
     // the DELTA rather than asserting nothing has happened yet)
-    const before = clearTerminal.mock.calls.length;
     const beforeFeed = clearFeed.mock.calls.length;
 
     // the same bar, now told the focused panel is Changes (a delegated
     // provider), which empties the bar-mode set
     await act(async () => root!.render(bar('diff', 'grid.viewDiff')));
-    expect(clearTerminal.mock.calls.length).toBeGreaterThan(before);
     expect(clearFeed.mock.calls.length).toBeGreaterThan(beforeFeed);
   });
 
-  it('clearing on close reaches EVERY group, not just the focused one', async () => {
+  it('clearing on close reaches the searchable group', async () => {
     search.mockResolvedValue(searchResult([hit(4, 'a')]));
-    const clearTerminal = vi.fn();
-    publishFindSurface(findSurfaceKey('card-1', 'terminal'), {
-      kind: 'terminal',
-      search: () => Promise.resolve({ matches: [], total: 0, truncated: false, live: true }),
-      reveal: () => true,
-      clear: clearTerminal,
-    } as unknown as FindSurface);
     const host = await mount(bar());
     await act(async () => setFindTerm('NEEDLE'));
     await settle();
@@ -742,7 +528,6 @@ describe('grouped results (P2-E17-03)', () => {
       q<HTMLElement>(host, 'find-close')!.click();
     });
     expect(clearFeed).toHaveBeenCalled();
-    expect(clearTerminal).toHaveBeenCalled();
   });
 });
 

@@ -4,7 +4,6 @@ import {
   launchApp,
   LaunchedApp,
   registeredPopouts,
-  showTerminal,
   skipPopoutOnLinux,
   tempProjectFolder,
 } from './fixtures/app';
@@ -74,7 +73,7 @@ test.describe('a session card', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
 
-  test('spawns with a live terminal and the usage strip (E3-02 / E7-01)', async () => {
+  test('spawns with its card and the usage strip (E3-02 / E7-01)', async () => {
     const folder = tempProjectFolder();
     const name = path.basename(folder);
     a = await launchApp({ seedFolder: folder });
@@ -96,14 +95,11 @@ test.describe('a session card', () => {
     // used to — and this assertion is the only one in the file that goes red.
     await expect(window.getByTestId('card-announcer')).toBeEmpty();
 
-    // Session is the default view; the Terminal is hidden until shown (E10-01)
-    await showTerminal(window);
-    // the terminal is a REAL pty (fake provider spawns the OS shell): typing a
-    // command produces output — proves input -> pty -> render end to end
-    await window.locator('.xterm-screen').first().click();
-    await window.keyboard.type('echo E2E_MARKER_123');
-    await window.keyboard.press('Enter');
-    await expect(window.getByText(/E2E_MARKER_123/).first()).toBeVisible({ timeout: 15_000 });
+    // A `showTerminal` + `echo E2E_MARKER_123` round trip stood here, and it was
+    // the suite's only end-to-end proof of input -> pty -> render. The Terminal
+    // tab was the one surface that rendered a PTY, and it is gone (#873), so
+    // there is nothing left to type into. The transport is still exercised
+    // below the UI by the `check:pty` harness and the PTY adapter's own tests.
 
     // #347, riding this launch rather than paying for another: a sessions call
     // main REFUSES comes back as an answer, not as a rejection nobody is
@@ -234,23 +230,28 @@ test.describe('a session card', () => {
     // the two panels apart (a code off a real process, not the invented `-1`
     // #355 removed) was never read from anything that exited.
     //
-    // THE KILL MECHANISM, and why it needs no test hook: under the fake
-    // provider the session IS the OS shell in a real PTY (`main/providers/
-    // fake.ts` — `cmd.exe` on Windows, `sh` elsewhere) and the Terminal tab is
-    // that PTY's real surface. So this spec does exactly what the hand-test
-    // step does — type `exit` at the prompt — and every step after the
-    // keystroke is the product's: node-pty reports the status, `SessionManager`
-    // calls it crashed because nobody asked for the kill, the renderer paints
-    // what it was told. Nothing test-only is reachable here, in this launch or
-    // any other.
+    // THE KILL MECHANISM — and it changed with #873. It used to be the
+    // product's own all the way down: under the PTY fake the session IS the OS
+    // shell in a real PTY, the Terminal tab was that PTY's real surface, and
+    // this spec typed `exit 3` at the prompt exactly as the hand-test step
+    // does. That surface is gone, so there is nothing left to type into.
     //
-    // `exit 3` rather than a bare `exit` so the assertion names a number THIS
-    // SPEC chose: a renderer that invents a code cannot invent 3 by accident,
-    // and a clean 0 exit would take the other copy branch. `exit <n>` is the
-    // same syntax in both shells.
+    // The kill now goes through the COMPOSER instead: `!exit <code>` in the
+    // stream fake (`fake-stream-protocol.ts`) exits the child with a code this
+    // spec chose. **Be honest about what that costs** — the old route reached a
+    // real process through the product's own input path, and this one is a
+    // fake-provider command, so the "nothing test-only is reachable here"
+    // property no longer holds for the kill itself. Every step AFTER the exit
+    // is still entirely the product's: the service reports the status,
+    // `SessionManager` calls it crashed because nobody asked for the kill, and
+    // the renderer paints what it was told.
+    //
+    // Code 3 rather than 0 so the assertion names a number this spec chose: a
+    // renderer that invents a code cannot invent 3 by accident, and a clean 0
+    // exit would take the other copy branch.
     const folder = tempProjectFolder();
     const name = path.basename(folder);
-    a = await launchApp({ seedFolder: folder });
+    a = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
     const { window } = a;
 
     await expect(window.getByText(name).first()).toBeVisible({ timeout: 25_000 });
@@ -260,27 +261,17 @@ test.describe('a session card', () => {
     const announcer = window.getByTestId('card-announcer');
     await expect(announcer).toBeEmpty();
 
-    await showTerminal(window);
-    await expect(window.locator('.xterm-screen').first()).toBeVisible({ timeout: 15_000 });
-    await window.locator('.xterm-screen').first().click();
-    // Not a proof that the session ran — the surface ECHOES what is typed, so
-    // this matches either way. It is a readiness gate: the keystrokes below
-    // have to reach a PTY through a focused xterm, and this is the cheapest
-    // evidence that they will. What proves the session ran is the exit STATUS
-    // asserted below: only a live shell can be told `exit 3` and answer 3.
-    await window.keyboard.type('echo E2E_ALIVE_366');
-    await window.keyboard.press('Enter');
-    await expect(window.getByText(/E2E_ALIVE_366/).first()).toBeVisible({ timeout: 15_000 });
-
-    // Read the live id only now. The tab is drawn from the card before the
-    // spawn has answered, so this is racy at the top of the test and settled
-    // here — a shell rendering its own output is a session main knows about.
+    // Read the live id before the kill, so the Restart assertion at the end has
+    // something to compare against. Settled rather than racy: the card has
+    // rendered, so the spawn has answered.
     const firstLiveId = await soleCardLiveId(window);
     expect(firstLiveId).toBeTruthy();
 
-    // ...and now it DIES, from the keyboard, the way a user kills one
-    await window.keyboard.type('exit 3');
-    await window.keyboard.press('Enter');
+    // ...and now it DIES, with the code this spec chose
+    const box = window.getByPlaceholder(/Prompt this session/);
+    await box.click();
+    await box.fill('!exit 3');
+    await box.press('Enter');
 
     // scoped to the PANEL, like the never-started test above: the announcer
     // carries the same words and an sr-only element is 1×1 and clipped, which
@@ -411,13 +402,12 @@ test.describe('a session card', () => {
     // click the SAME control in the popped-out window to dock it back IN
     await popout.getByTitle('Pop back into the main window').click();
     await expect.poll(() => app.windows().length, { timeout: 15_000 }).toBe(1);
-    // docked back ALIVE (button toggle, not a window-close): the terminal types
-    await showTerminal(window); // Terminal hidden by default (E10-01)
-    await expect(window.locator('.xterm-screen').first()).toBeVisible({ timeout: 15_000 });
-    await window.locator('.xterm-screen').first().click();
-    await window.keyboard.type('echo TOGGLE_OK_789');
-    await window.keyboard.press('Enter');
-    await expect(window.getByText(/TOGGLE_OK_789/).first()).toBeVisible({ timeout: 15_000 });
+    // Docked back ALIVE (button toggle, not a window-close). The proof used to
+    // be typing into the card's terminal; with no terminal surface left (#873)
+    // the witness is the card being INTERACTIVE — a session that came back
+    // suspended or ended covers itself with an overlay and has no composer.
+    await expect(window.getByTestId('card-overlay')).toHaveCount(0, { timeout: 15_000 });
+    await expect(window.getByPlaceholder(/Prompt this session/)).toBeVisible({ timeout: 15_000 });
   });
 
   test('closing a popout OS window suspends the session (E8-04)', async () => {
@@ -443,8 +433,11 @@ test.describe('a session card', () => {
     // the suspension is reported rather than merely drawn.
     await expect(window.getByTestId('card-announcer')).toContainText('Session suspended');
     await window.getByRole('button', { name: 'Resume' }).click();
-    await showTerminal(window); // Terminal hidden by default (E10-01)
-    await expect(window.locator('.xterm-screen').first()).toBeVisible({ timeout: 15_000 });
+    // Resume brings the session back. The old witness was the terminal
+    // reappearing; with no terminal surface (#873) it is the overlay clearing
+    // and the card becoming interactive again.
+    await expect(window.getByTestId('card-overlay')).toHaveCount(0, { timeout: 15_000 });
+    await expect(window.getByPlaceholder(/Prompt this session/)).toBeVisible({ timeout: 15_000 });
   });
 
   // #292. The test above is that same event arriving properly; this is it going
@@ -504,10 +497,12 @@ test.describe('a session card', () => {
     // otherwise the next launch would faithfully reopen an empty popout
     await expect.poll(() => registeredPopouts(a), { timeout: 15_000 }).toBe(0);
     expect(app.windows().length, 'a window came back from the dead').toBe(1);
-    // and it is a working card again, not a headstone
+    // and it is a working card again, not a headstone. The terminal used to be
+    // the proof of that; since #873 it is the overlay clearing and the composer
+    // coming back, which is the same claim through the surface that survived.
     await window.getByRole('button', { name: 'Resume' }).click();
-    await showTerminal(window); // Terminal hidden by default (E10-01)
-    await expect(window.locator('.xterm-screen').first()).toBeVisible({ timeout: 15_000 });
+    await expect(window.getByTestId('card-overlay')).toHaveCount(0, { timeout: 15_000 });
+    await expect(window.getByPlaceholder(/Prompt this session/)).toBeVisible({ timeout: 15_000 });
   });
 
   test('a new session opens in the main window, not the active popout (E8-04)', async () => {
@@ -726,7 +721,7 @@ test.describe('a session card', () => {
     await expect(cardFor(window, path.basename(folder2))).toBeVisible();
   });
 
-  test('strip is Session·Changes·History·Terminal, Terminal LAST and always present (2026-07-22)', async () => {
+  test('strip is Session·Changes·History, and switching between them leaves each usable', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });
     const { window } = a;
@@ -734,13 +729,20 @@ test.describe('a session card', () => {
     await expect(window.getByRole('tab', { name: 'Session', exact: true })).toBeVisible();
     await expect(window.getByRole('tab', { name: 'Changes' })).toBeVisible();
     await expect(window.getByText('History', { exact: true })).toBeVisible(); // "soon" tab
-    await expect(window.getByRole('tab', { name: 'Terminal' })).toBeVisible();
-    // switching Terminal -> Changes -> Terminal leaves it usable
-    await window.getByRole('tab', { name: 'Terminal' }).click();
-    await expect(window.locator('.xterm-screen').first()).toBeVisible({ timeout: 10_000 });
+    // Terminal was a fourth, deliberately LAST (owner call 2026-07-22), and it
+    // is gone (#873). Asserted as ABSENT rather than simply dropped from the
+    // list: a strip that quietly grew it back would otherwise go unnoticed.
+    await expect(window.getByRole('tab', { name: 'Terminal' })).toHaveCount(0);
+
+    // switching Session -> Changes -> Session leaves each usable
     await window.getByRole('tab', { name: 'Changes' }).click();
-    await window.getByRole('tab', { name: 'Terminal' }).click();
-    await expect(window.locator('.xterm-screen').first()).toBeVisible({ timeout: 10_000 });
+    await expect(window.getByRole('tab', { name: 'Changes' })).toHaveAttribute(
+      'aria-selected',
+      'true',
+      { timeout: 10_000 }
+    );
+    await window.getByRole('tab', { name: 'Session', exact: true }).click();
+    await expect(window.getByText('No conversation yet')).toBeVisible({ timeout: 10_000 });
   });
 
   // #250. The header read dockview's `props.api.title`, and dockview is told a

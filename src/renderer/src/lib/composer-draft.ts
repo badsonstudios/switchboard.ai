@@ -2,9 +2,10 @@
 //
 // Typed-but-unsent composer text was bare React state, which meant it lived
 // exactly as long as the component did — and the component dies more often than
-// anyone expects: switching a card to the Terminal or Changes tab unmounts the
-// Session panel (only `panel-terminal` is `keepMounted`), the stranded-popout
-// rescue rebuilds the card from its record, and quitting obviously ends it. Two
+// anyone expects: switching a card to another tab unmounts the Session panel
+// (nothing is `keepMounted` since #873 took the Terminal panel), the
+// stranded-popout rescue rebuilds the card from its record, and quitting
+// obviously ends it. Two
 // sentences of a half-written prompt is a real thing to lose, and the user has
 // no way to get it back.
 //

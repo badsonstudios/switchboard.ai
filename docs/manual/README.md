@@ -32,7 +32,7 @@ no page is an unfinished work item.
 | [09 — Notifications & events](09-notifications.md) | Sounds, the Events drawer, the lamp strip, when you get told what | draft |
 | [10 — Settings](10-settings.md) | Theme, language, notification preferences, trust | draft |
 | [11 — Troubleshooting](11-troubleshooting.md) | When a session won't start, hangs, or vanishes | draft |
-| [12 — Direct mode (beta)](12-direct-mode.md) | How sessions now talk to Claude by default: fixes the `.claude` double-prompt, costs you the terminal | draft |
+| [12 — Direct mode](12-direct-mode.md) | How sessions talk to Claude: fixes the `.claude` double-prompt, costs you the terminal | draft |
 | [13 — Updates](13-updates.md) | When it checks for a new version, what the release box offers, what Skip means | draft |
 | [14 — Is it me or is it them?](14-provider-status.md) | The status dot, provider incidents, and the "several sessions just hit errors" strip | draft |
 | [15 — Reading files in the app](15-document-viewer.md) | Opening a file, rendered Markdown, source view, find, what won't be shown | draft |

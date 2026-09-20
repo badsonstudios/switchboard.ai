@@ -121,13 +121,14 @@ test.describe('[pty] transcript binding transparency (E15-10)', () => {
     // it tried, plus the thing the user most needs to hear: the CLI is fine.
     await expect(w.locator('[data-binding="unbound"]')).toBeVisible({ timeout: 15_000 });
     await expect(w.getByText("Couldn't find this session's transcript")).toBeVisible();
+    // The fallback no longer names the Terminal tab (#873) — it named a place
+    // the user could go, and there is no such place now, so it says what is
+    // still true instead: the CLI is fine, only this view of it is missing.
     await expect(
-      w.getByText('The Terminal tab is unaffected — your session is still running there.')
+      w.getByText('Your session is unaffected — it is still running')
     ).toBeVisible();
-    // ...and NOT the Direct wording (#447). A PTY session told "there is no
-    // terminal, watch the card header instead" would be denying a terminal
-    // that is sitting in the next tab with the CLI running in it — the same
-    // composition failure as the bug, pointed the other way.
+    // ...and NOT the Direct wording (#447), which makes a claim about where the
+    // conversation comes FROM and is still transport-specific.
     await expect(
       w.getByText('in Direct mode the conversation arrives in this window', { exact: false })
     ).toHaveCount(0);
@@ -176,7 +177,7 @@ test.describe('transcript binding transparency on Direct (#447)', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
 
-  test('an unbound Direct session is not sent to a Terminal tab it does not have', async () => {
+  test('an unbound Direct session gets the wording that is true of it', async () => {
     const folder = tempProjectFolder();
     // Same 6s give-up as the PTY sibling, and the same reason: `searching` has
     // to exist for longer than one loaded CI runner's hiccup.
@@ -215,9 +216,10 @@ test.describe('transcript binding transparency on Direct (#447)', () => {
       w.getByText('in Direct mode the conversation arrives in this window', { exact: false })
     ).toBeVisible();
 
-    // The other half of the composition, in the same window, in the same run —
-    // the sentence the old fallback was sending the user to go and read.
-    await w.getByRole('tab', { name: 'Terminal' }).first().click();
-    await expect(w.getByText('No terminal for this session')).toBeVisible({ timeout: 15_000 });
+    // The other half of the composition used to be checked here by opening the
+    // Terminal tab and reading "No terminal for this session" — the sentence
+    // the old fallback was sending the user to go and read. Neither the tab nor
+    // that notice exists since #873, so the contradiction #447 was about can no
+    // longer be constructed at all.
   });
 });

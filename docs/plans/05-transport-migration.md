@@ -529,6 +529,29 @@ on 2026-08-02 (see the decision block at the top of this file). This item flips
 the default and deletes `TerminalPane.tsx`, `terminal-attach.ts`,
 `shared/ipc/pty.ts`, the #117 epoch protocol, `PtyService` and `node-pty`.
 
+> **PARTIALLY EXECUTED — the UI half shipped as #873 (2026-09-19), and the rest
+> of this item is still open.** The owner's words were *"we don't need the
+> Terminal tab anymore, and we don't need the option to switch to Terminal in
+> the menu. Remove the tab and the menu item — **leave the code behind**"*, so
+> #873 removed the `panel-terminal` contribution, the ⋯ transport switch, the
+> `view.terminal` command and its Ctrl+backtick binding, and unregistered the
+> Terminal find provider — and migrated stored `transport: 'pty'` cards onto the
+> Direct default (workspace schema v1 → v2).
+>
+> **Nothing on the deletion list above was touched.** `TerminalPane.tsx`,
+> `terminal-attach.ts`, `shared/ipc/pty.ts`, `PtyService` and `node-pty` are all
+> still in the tree and still working, reachable with
+> `SWITCHBOARD_TRANSPORT=pty`, because the condition below has not been met.
+> What changed is that PTY is no longer reachable from the UI, which means **the
+> fallback is now a developer fallback rather than a user one** — worth knowing
+> before leaning on the paragraph below.
+>
+> The cost was in coverage, not in code: removing the only surface that rendered
+> a PTY removed the only witness several e2e tests had. The losses are listed in
+> the specs themselves and in PROGRESS.md — chiefly input→pty→render, the CLI
+> owning every key inside a terminal, grouped find over two surfaces, and the
+> proof that a session restarted *into* Direct has a live hook channel.
+
 **The one condition, and it is the whole gate: Direct mode tested and working.**
 Not "shipped" — *used*, by the person who has to live in it. Until then PTY mode
 stays entirely functional, because it is the fallback while Direct mode is being
