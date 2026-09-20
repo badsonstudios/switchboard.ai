@@ -1851,25 +1851,30 @@ export function App(): React.JSX.Element {
             .then((on) => setExperimentalFork(took(on)));
         }}
         autoLabels={autoLabels}
-        onToggleAutoLabels={() => {
-          const next = !autoLabels;
-          setAutoLabels(next); // optimistic: the chip must move on the click…
-          // …and main answers with what it actually stored, which is also what
-          // re-publishes every visible label under the new setting. `took`
-          // (#440) so a refusal — nothing was stored — reads as off rather than
-          // as a truthy object, the same convention as the card's own
-          // notify-when-done toggle.
-          void bridge.settings?.setAutoLabels?.(next).then((on) => setAutoLabels(took(on)));
-        }}
         aiLabels={aiLabels}
-        onToggleAiLabels={() => {
-          const next = !aiLabels;
-          setAiLabels(next); // optimistic, like every other chip…
-          // …and main answers with what it actually STORED. `took` (#440) so a
-          // refusal reads as off — the safe direction for a switch that
-          // authorises spending, where the failure to avoid is a chip claiming
-          // ON while main never agreed.
-          void bridge.settings?.setAiLabels?.(next).then((on) => setAiLabels(took(on)));
+        onCycleLabels={() => {
+          // auto → AI → off → auto, mapped onto the two booleans that already
+          // exist, so nothing in main, the store or the IPC changes shape.
+          // Cheap first, spending second, hidden last: the state that bills the
+          // owner is never the one a stray click lands on from the default.
+          //
+          // ⚠️ THE SCREEN-SHARE STATE IS NOW TWO CLICKS from the default rather
+          // than one (§5.11, litmus #4), and that is the real cost of folding
+          // two chips into one. Accepted deliberately: the bar cannot take
+          // another control (#879 — 675px of overflow at the CI width), and the
+          // chip says which state it is in, so the second click is informed
+          // rather than hunted for.
+          const next = !autoLabels ? 'auto' : aiLabels ? 'off' : 'ai';
+          const wantAuto = next !== 'off';
+          const wantAi = next === 'ai';
+          setAutoLabels(wantAuto); // optimistic: the chip must move on the click…
+          setAiLabels(wantAi);
+          // …and main answers with what it actually STORED, for both halves —
+          // the first also re-publishes every visible label under the new
+          // setting. `took` (#440) so a refusal reads as OFF, which is the safe
+          // direction and matters most for the half that authorises spending.
+          void bridge.settings?.setAutoLabels?.(wantAuto).then((on) => setAutoLabels(took(on)));
+          void bridge.settings?.setAiLabels?.(wantAi).then((on) => setAiLabels(took(on)));
         }}
         railHidden={railHidden}
         onToggleRail={toggleRail}

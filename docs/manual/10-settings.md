@@ -127,14 +127,17 @@ turning it back on restores everything instantly.
 
 ## AI task labels
 
-**✨ AI labels** is the only setting in switchboard that spends your Claude
-subscription, so it is **off until you turn it on** — and it stays off after an
-update, and after moving to a new machine.
+The labels chip has a third setting, **✨ AI labels**, and it is the only
+setting in switchboard that spends your Claude subscription — so it is **off
+until you choose it**, and it stays off after an update and after moving to a
+new machine.
 
-With it on, switchboard asks Claude to read what each session has recently been
-doing and write a short label for it, refreshing it as the work moves on. The
-setting above shows the name Claude gave the *conversation*, which describes how
-a session started; this one describes what it is doing **now**.
+Click the chip once from its default and it reads **✨ AI labels**: switchboard
+asks Claude to read what each session has recently been doing and write a short
+label for it, refreshing it as the work moves on. The default setting shows the
+name Claude gave the *conversation*, which describes how a session started; this
+one describes what it is doing **now**. Clicking once more hides labels
+altogether and stops the spending.
 
 It only asks when a session finishes a turn, only when the conversation has
 actually grown, at most once every ten minutes per session, and never more than

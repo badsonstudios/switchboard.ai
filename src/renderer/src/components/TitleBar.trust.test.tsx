@@ -71,7 +71,7 @@ async function bar(opts: {
       trustReaches={opts.trustReaches}
       onToggleTrust={opts.onToggleTrust ?? noop}
       autoLabels={true}
-      onToggleAutoLabels={noop}
+      onCycleLabels={noop}
       soundsOn={false}
       onToggleSounds={noop}
       speakOn={false}

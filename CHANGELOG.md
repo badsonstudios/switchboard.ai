@@ -101,10 +101,12 @@ on the floor, and say so in your PR.
 - **Claude can write your task labels, and keep them up to date.** Sessions
   already borrow the name Claude gives the conversation, but that describes how
   a session *started* — not much help by the afternoon, when the one that began
-  as "fix the login redirect" is three jobs further on. Turn on **✨ AI labels**
-  in the title bar and switchboard asks Claude to read what each session has
+  as "fix the login redirect" is three jobs further on. The **🏷 auto labels**
+  chip in the title bar now has a third setting: click it once and it reads
+  **✨ AI labels**, and switchboard asks Claude to read what each session has
   actually been doing and write a short label for it, then write a new one as
-  the work moves on. **It is off until you switch it on, because it is the one
+  the work moves on. (A click after that hides labels entirely, as before.)
+  **It is off until you choose it, because it is the one
   thing in switchboard that spends your Claude subscription** — and it is
   careful about when: only when a session finishes a turn, only when the
   conversation has actually grown, at most once every ten minutes per session,

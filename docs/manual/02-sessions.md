@@ -120,9 +120,17 @@ describes how the session **started**. That is fine for an hour and less useful
 by the afternoon, when a session that began as "fix the login redirect" is three
 jobs further on.
 
-Turn on **✨ AI labels** in the title bar and switchboard will ask Claude to read
-what the session has actually been doing and write a short label for it — then
-write a new one as the work moves on.
+The **🏷 auto labels** chip in the title bar has three settings, and clicking it
+moves to the next one:
+
+| The chip says | What you get |
+|---|---|
+| **🏷 auto labels** | The title Claude gave the conversation. Free. *(the default)* |
+| **✨ AI labels** | Claude reads what the session has actually been doing and writes a short label for it, then writes a new one as the work moves on. **Costs tokens.** |
+| **🏷 labels off** | No labels at all — see *Turning it off* below |
+
+So one click from the default turns the AI labels on, and a second click hides
+labels entirely.
 
 **This one costs you tokens, which is why it is off until you switch it on.**
 Everything else about labels is free; this runs a small background check against
@@ -146,11 +154,11 @@ Things worth knowing:
   run commands, edit files, or reach your other sessions. It reads the recent
   conversation and answers with one line.
 - **It uses a small, cheap model.** A six-word label does not need a big one.
-- **Turning it off stops the spending immediately.** The last label it wrote
-  stays on the card, because a label is a label — clear the box yourself if you
-  don't want it.
-- **The 🏷 labels switch still rules.** If auto labels are hidden (see below),
-  no AI labels are written either — there would be nothing to see for the money.
+- **Clicking on past it stops the spending immediately.** The last label it
+  wrote stays on the card, because a label is a label — clear the box yourself
+  if you don't want it.
+- **Hiding labels stops it too.** In the **🏷 labels off** setting nothing new
+  is written, because there would be nothing on screen to show for the money.
 
 ### Turning it off (screen-sharing)
 

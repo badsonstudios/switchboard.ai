@@ -68,6 +68,58 @@
 > its six exit paths, that the `kill-tree` extraction is byte-identical, and that
 > the `EXEMPT` change is strictly stronger than what it replaced.
 >
+> ---
+>
+> ## ⚠️ THEN CI WENT RED TWICE, AND THE REAL CAUSE WAS THE TITLE BAR BEING FULL
+>
+> Two CI runs, two DIFFERENT `e2e windows-latest` failures, neither reproducible
+> on this machine even at the same window size. Unit jobs and both ubuntu jobs
+> green throughout.
+>
+> - **Run 1 (`b24de68`):** `feed.spec.ts` "a bar docking on its own gives the
+>   composer its room back (#716)" — conversation 48.66px against a required
+>   >52px, failing on the initial run AND the retry. Diagnosed as a squeezed chip
+>   WRAPPING its label and growing the bar past `minBlockSize: 34`, which in a
+>   460px-tall window comes straight out of the feed. Fixed with
+>   `whiteSpace: 'nowrap'` on `Chip` + two source guards, and the guard was
+>   **mutation-checked** (deleting the rule fails it).
+> - **Run 2 (`6c3084e`):** `split.spec.ts` "the seam shows a border on BOTH
+>   sides" — `page.screenshot: Clipped area is either empty or outside the
+>   resulting image`. It clicks **soft contrast**, which sits in the off-screen
+>   tail; Playwright scrolls the document sideways to reach it, and the clip then
+>   lands outside the captured image. **Isolated to the nowrap commit**: run 1's
+>   artifacts contain the `seam-both-sides.png` that test writes before its
+>   assertions, so the screenshot succeeded on `b24de68`.
+>
+> **THEN I MEASURED INSTEAD OF THEORISING, and it overturned the diagnosis.** At
+> the 1024px CI uses, the title bar's content is **1684px in a 1009px bar — 675px
+> of overflow**, with the last control **660px off-screen** and
+> `document.scrollWidth > innerWidth`. Chips are 31–83px each. **My chip was ~95px
+> of a 675px problem**: shortening its label could never have fixed it, and
+> deleting it entirely still leaves ~580px. The bar has been badly over-wide on
+> that runner all along; #758 only moved a fragile thing far enough to tip two
+> marginal geometry specs. Filed as **#879** with the numbers.
+>
+> **Dan's call (2026-09-20), asked because it changes the UI he had already
+> picked:** fold the setting back into the existing chip as **three states on one
+> control** — `🏷 auto labels → ✨ AI labels → 🏷 labels off` — which adds ZERO
+> width and is what the ticket itself offered as the alternative ("a mode on the
+> existing auto-labels switch"). He also chose to file #879 rather than absorb it
+> here.
+>
+> **The trade-off, recorded rather than buried:** the screen-share state is now
+> TWO clicks from the default instead of one, and §5.11 litmus #4 treats that as
+> the urgent path. Accepted because the bar cannot take another control and the
+> chip states which mode it is in. `task-label.spec.ts`'s switch test follows the
+> cycle now — **its assertions are unchanged**; only the number of clicks moved.
+>
+> The three states map onto the two booleans that already existed, so **main, the
+> store and the IPC are untouched** by the fold — it is renderer-only.
+>
+> **Still unproven and honest about it:** neither CI failure reproduces locally,
+> so the fold is reasoned from the measurement rather than demonstrated here. CI
+> is the arbiter.
+>
 > **Built so far:** `sessions/ai-label.ts` (the pure decision — when to spend,
 > what to do with the answer, 26 tests) · `providers/claude-oneshot.ts` (the
 > contained run, 15 tests) · `transport/kill-tree.ts` (extracted from

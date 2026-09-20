@@ -73,7 +73,7 @@ function bar(autonomy: string): React.JSX.Element {
       trustReaches={false}
       onToggleTrust={noop}
       autoLabels={true}
-      onToggleAutoLabels={noop}
+      onCycleLabels={noop}
       experimentalFork={false}
       onToggleExperimentalFork={noop}
       soundsOn={false}
