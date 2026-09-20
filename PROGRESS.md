@@ -3,6 +3,71 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ MERGED — 2026-09-20: **#883** — the card names itself the instant you prompt it, and AI labels default ON
+>
+> **PR #884, squashed to `700c201`.** Issue closed by the PR body's keyword;
+> **#877, #879, #885, #886 and #835 were all checked immediately afterwards
+> against a pre-merge baseline and are still open** — the closing-keyword trap
+> did not fire.
+> ⚠️ **NOT RELEASED** — v0.8.92 is still Latest, so this sits in
+> `0.8.93 — unreleased` and is in no installed build.
+>
+> **Owner feedback on #758 after using v0.8.92** — he had turned AI labels on,
+> sent a prompt, and the card stayed blank: *"I think they should immediately
+> update when you put a prompt in for the first time"* and *"AI labels should be
+> on by default unless the user turns them off."*
+>
+> **What shipped:** a free label from the prompt the instant it is sent (the AI
+> pass supersedes it when the turn ends); `aiLabels` default ON, reversing
+> #758's opt-in on his instruction; the chip reordered to
+> `✨ AI labels → 🏷 auto labels → 🏷 labels off` so the default reads first; all
+> three tooltips rewritten, since each described what the NEXT click does under
+> the old order.
+>
+> **The instant label only ever FILLS A BLANK**, which is what keeps three auto
+> sources (prompt, CLI title, AI) from fighting — and it **refuses** a turn that
+> leads with another session's injected context (#798 puts it before your words)
+> rather than labelling a card "Context from @other". Finding where the user's
+> text resumes is #830's job.
+>
+> ⚠️ **CI CAUGHT A REAL BUG, and it is one no unit test was ever going to
+> find.** `stream-feed.spec`'s `/clear` test went red on BOTH platforms — four
+> tests, identical counts, which is the signature of a regression rather than the
+> single-platform flakiness of the last two days. Clearing a conversation left
+> the card describing the conversation that had just been wiped — and because the
+> instant label only fills a blank, **that stale label was unrecoverable**: it
+> would sit there permanently and no later prompt could rename the card. A reset
+> now drops an auto label and the throttle memory with it. Wired BEFORE the
+> stream gate, because the label belongs to the CARD rather than to whichever
+> transport built its conversation, and a mis-bind correction invalidates it
+> exactly as a clear does. **A label the user typed survives** — clearing a
+> conversation is not a request to forget what they called the card.
+>
+> **THREE E2E LOCATORS NARROWED AND NOT ONE ASSERTION WEAKENED.** `stream.spec`
+> and `stream-resume.spec` count how many times a prompt appears, to catch the
+> feed replaying a turn twice. Those words are now legitimately in the card
+> header and the rail, so a window-wide locator counted three and said nothing
+> about the feed. Each is scoped to `[data-feed-region]` with the reason written
+> in; a feed that renders a block twice still fails every one of them.
+>
+> **DESIGN §5.11 amended rather than contradicted.** It rejected prompt-derived
+> labels on 2026-07-30 because "the CLI already writes a title" — a premise now
+> measurably false (five newest transcripts here: **zero** `ai-title` lines). The
+> old reasoning is kept: it was sound given what was believed then, and what
+> changed is the transcripts, not the argument.
+>
+> **Filed out of this item:** **#886** (a card whose RESUME was refused keeps a
+> label it can never shed — the third instance of the same pattern, left out
+> deliberately because that path fires no reset event and needs the start path)
+> and **#885** (a real settings surface, at Dan's request — there is none, and
+> `DESIGN.md` specifies none, which is why three set-it-once dialogs now exist
+> independently). **#877 was re-scoped** on his instruction from two label lines
+> to three, on both surfaces, with longer labels and a size setting.
+>
+> **Verified:** lint 0, typecheck 0, full unit suite **8,598 passing**, and all
+> four previously-red e2e tests green locally before the push. CI: all four jobs
+> green on the re-run.
+
 > # 🚢 RELEASED — 2026-09-20: **v0.8.92** — Claude writes the task labels, and the Terminal tab is gone
 >
 > **Published 18:11 UTC**, `switchboard-Setup-0.8.92.exe` (97 MB) + its
