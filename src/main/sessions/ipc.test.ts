@@ -82,12 +82,15 @@ function harness(
     /** auto task labels (P2-E7-06) — defaults ON, which is the shipped default */
     autoLabels?: boolean;
     /**
-     * AI-written task labels (#758) — defaults OFF, matching the shipped
-     * default. A harness that defaulted it ON would let every "it did not
-     * spend anything" assertion pass for the wrong reason, and would stop
-     * covering the state every user starts in.
+     * AI-written task labels — defaults **ON** as of #883, matching the shipped
+     * default after the owner reversed #758's opt-in. A test that cares about
+     * the off state now says so explicitly, which is clearer than it used to be:
+     * the interesting assertion is no longer "the default costs nothing" but
+     * "turning it off costs nothing".
      */
     aiLabels?: boolean;
+    /** make `submitPrompt` refuse, the way a PTY session or a dead handle does */
+    submitAccepts?: boolean;
     /** what the injected one-shot answers; absent = a plain successful label */
     oneShotResult?: { ok: true; text: string } | { ok: false; failure: string };
     /** transcript size the watcher reports, for the staleness gates (#758) */
@@ -196,8 +199,8 @@ function harness(
     ...(opts.otherCards ?? []).map((c) => ({ ...c })),
   ];
   let autoLabels = opts.autoLabels ?? true;
-  // #758. OFF by default, like the shipped setting — see the option's note.
-  let aiLabels = opts.aiLabels ?? false;
+  // ON by default as of #883, like the shipped setting — see the option's note.
+  let aiLabels = opts.aiLabels ?? true;
   // OFF by default — the state nearly every user is in, and the one the
   // refusal path depends on.
   const experimentalFork = opts.experimentalFork ?? false;
@@ -306,6 +309,8 @@ function harness(
   const statusListeners: Array<(c: { sessionId: string; to: string }) => void> = [];
   /** every contained one-shot the label path asked for, in order (#758) */
   const oneShotCalls: Array<{ prompt: string; cwd: string }> = [];
+  /** every prompt handed to the manager, in order (#883) */
+  const submitted: Array<{ id: string; text: string }> = [];
   /** the Session Bus wiring (P2-E11-03), in call order */
   const busAttached: string[] = [];
   const busReleased: string[] = [];
@@ -322,6 +327,19 @@ function harness(
       },
       onStatusChange: (l: (c: { sessionId: string; to: string }) => void) => {
         statusListeners.push(l);
+      },
+      /**
+       * A prompt going out (#883's instant label reads the text here).
+       *
+       * ANOTHER PRE-EXISTING HOLE IN THIS STUB: nothing in this file drove
+       * `sessions:submitPrompt` before, so a missing method cost nothing. It
+       * answers a BOOLEAN like the real one, and `submitAccepts` can make it
+       * refuse — the real one does exactly that for a PTY session, whose prompt
+       * never travels this path.
+       */
+      submitPrompt: (id: string, text: string) => {
+        submitted.push({ id, text });
+        return opts.submitAccepts ?? true;
       },
       onSessionExit: (l: (e: { sessionId: string; code: number; crashed: boolean }) => void) => {
         exitListeners.push(l);
@@ -4642,14 +4660,54 @@ describe('AI task labels — the cadence (#758, §5.11)', () => {
   /** Let the injected run's `.then` chain actually run before asserting. */
   const settle = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
 
-  it('SPENDS NOTHING while the switch is off, which is every default install', () => {
-    // The first assertion of the feature, and the one that matters most: the
-    // shipped state must cost the owner nothing at all. `maybeAiLabel` runs
-    // synchronously as far as the injected call, so an empty list here is a
-    // fact and not a race.
-    const h = streamSession();
+  it('SPENDS NOTHING once the owner switches it off', () => {
+    // Since #883 the shipped default is ON, so the interesting claim moved: not
+    // "the default is free" but "turning it off really stops the spending".
+    // `maybeAiLabel` runs synchronously as far as the injected call, so an empty
+    // list here is a fact and not a race.
+    const h = streamSession({ aiLabels: false });
     h.fireStatus('live-1', 'done');
     expect(h.oneShotCalls).toEqual([]);
+  });
+
+  it('THE FIRST PROMPT NAMES THE CARD IMMEDIATELY, and costs nothing (#883)', () => {
+    // The owner's report on v0.8.92: first prompt sent, card still blank. The AI
+    // pass is ~14 s away and the CLI's own title may never arrive at all, so the
+    // card could stay empty through the whole first turn.
+    const h = streamSession();
+    h.call('sessions:submitPrompt', 'live-1', 'fix the login redirect');
+
+    expect(stored(h).taskLabel).toBe('fix the login redirect');
+    expect(stored(h).labelSource).toBe('auto'); // an auto label, so the AI pass supersedes it
+    expect(labels(h).at(-1)).toEqual({ cardId: 'card-1', label: 'fix the login redirect' });
+    // …and it is FREE: no model call was made to produce it.
+    expect(h.oneShotCalls).toEqual([]);
+  });
+
+  it('the instant label only ever fills a BLANK', () => {
+    // Three auto sources exist now (prompt, CLI title, AI). This one may replace
+    // nothing but nothing — otherwise it would clobber a better label every time
+    // the user sent another prompt.
+    const h = streamSession({ prior: { ...card(), taskLabel: 'a better label', labelSource: 'auto' } });
+    h.call('sessions:submitPrompt', 'live-1', 'fix the login redirect');
+    expect(stored(h).taskLabel).toBe('a better label');
+  });
+
+  it('never touches a label the user typed', () => {
+    const h = streamSession({ prior: { ...card(), taskLabel: 'mine, thanks', labelSource: 'user' } });
+    h.call('sessions:submitPrompt', 'live-1', 'fix the login redirect');
+    expect(stored(h).taskLabel).toBe('mine, thanks');
+    expect(stored(h).labelSource).toBe('user');
+  });
+
+  it('writes nothing when the send was REFUSED', () => {
+    // `submitPrompt` answers false for a refused send and for a PTY session,
+    // whose prompt does not travel this path at all. Labelling either would
+    // describe work nobody started.
+    const h = streamSession({ submitAccepts: false });
+    h.call('sessions:submitPrompt', 'live-1', 'fix the login redirect');
+    expect(stored(h).taskLabel).toBeUndefined();
+    expect(labels(h)).toEqual([]);
   });
 
   it('labels the card when a turn ENDS, from the recent conversation', async () => {
@@ -4795,14 +4853,48 @@ describe('AI task labels — the cadence (#758, §5.11)', () => {
     expect(labels(h)).toEqual([]);
   });
 
-  it('the switch is readable and writable over IPC, and starts off', () => {
+  it('a CLEARED conversation drops its auto label, so the next prompt can name the card', () => {
+    // ⚠️ FOUND BY `stream-feed.spec`'s /clear test, not by reasoning. Two things
+    // went wrong without this, and the second is the worse one: the card kept
+    // describing a conversation the user had just wiped, and — because the
+    // instant label only ever fills a BLANK — it could never recover. The stale
+    // label would sit there permanently and no later prompt could rename it.
+    const h = streamSession();
+    h.call('sessions:submitPrompt', 'live-1', 'the old conversation');
+    expect(stored(h).taskLabel).toBe('the old conversation');
+
+    for (const l of h.resets) l('live-1', 'clear');
+
+    expect(stored(h).taskLabel).toBeUndefined();
+    expect(labels(h).at(-1)).toEqual({ cardId: 'card-1', label: undefined });
+
+    // …and the card is nameable again, which is the half that was unrecoverable
+    h.call('sessions:submitPrompt', 'live-1', 'the new conversation');
+    expect(stored(h).taskLabel).toBe('the new conversation');
+  });
+
+  it('a cleared conversation does NOT drop a label the user typed', () => {
+    // Clearing a conversation is not a request to forget what they called the
+    // card. Their words survive every reset, as they survive everything else.
+    const h = streamSession({ prior: { ...card(), taskLabel: 'mine, thanks', labelSource: 'user' } });
+    for (const l of h.resets) l('live-1', 'clear');
+    expect(stored(h).taskLabel).toBe('mine, thanks');
+    expect(stored(h).labelSource).toBe('user');
+  });
+
+  it('the switch is readable and writable over IPC, and starts ON (#883)', () => {
     // Both handlers are SYNCHRONOUS, like `settings:getAutoLabels` beside them,
     // so the harness hands back the value itself rather than a promise — using
     // `.resolves` here fails with "you must provide a Promise to expect()".
+    //
+    // This asserted `false` until #883. FLIPPED, not relaxed: the owner reversed
+    // #758's opt-in after using it, so ON is now the shipped default and the
+    // interesting assertion is that turning it OFF sticks.
     const h = harness(claudeLike, dir, { prior: card() });
+    expect(h.call('settings:getAiLabels')).toBe(true);
+    expect(h.call('settings:setAiLabels', false)).toBe(false);
     expect(h.call('settings:getAiLabels')).toBe(false);
     expect(h.call('settings:setAiLabels', true)).toBe(true);
-    expect(h.call('settings:getAiLabels')).toBe(true);
     // …and only a real `true` turns it on, like the store behind it
     expect(h.call('settings:setAiLabels', 'yes')).toBe(false);
   });

@@ -127,17 +127,20 @@ turning it back on restores everything instantly.
 
 ## AI task labels
 
-The labels chip has a third setting, **✨ AI labels**, and it is the only
-setting in switchboard that spends your Claude subscription — so it is **off
-until you choose it**, and it stays off after an update and after moving to a
-new machine.
+**✨ AI labels** is the labels chip's **default** setting: switchboard asks
+Claude to read what each session has recently been doing and write its task
+label, refreshing it as the work moves on. It is the only setting in switchboard
+that spends your Claude subscription, and it is careful about when — only when a
+session finishes a turn, only when the conversation has actually grown, at most
+once every ten minutes per session. **An idle session costs you nothing.**
 
-Click the chip once from its default and it reads **✨ AI labels**: switchboard
-asks Claude to read what each session has recently been doing and write a short
-label for it, refreshing it as the work moves on. The default setting shows the
-name Claude gave the *conversation*, which describes how a session started; this
-one describes what it is doing **now**. Clicking once more hides labels
-altogether and stops the spending.
+Naming a card costs nothing at all: the instant you send a prompt, the label
+becomes your own words, tidied. Claude's version replaces it when the turn ends.
+
+Clicking the chip steps to **🏷 auto labels** — the free title Claude gives the
+conversation, which describes how a session *started* rather than what it is
+doing now — and clicking again hides labels altogether. Either of those stops
+the spending immediately.
 
 It only asks when a session finishes a turn, only when the conversation has
 actually grown, at most once every ten minutes per session, and never more than

@@ -120,16 +120,23 @@ describes how the session **started**. That is fine for an hour and less useful
 by the afternoon, when a session that began as "fix the login redirect" is three
 jobs further on.
 
-The **🏷 auto labels** chip in the title bar has three settings, and clicking it
-moves to the next one:
+**The moment you send your first prompt, the card takes its name from what you
+typed.** That costs nothing and happens instantly — it is just your own words,
+tidied. A session opened with a slash command is named after the command.
+
+Then Claude replaces it with something better once the turn finishes, and keeps
+it up to date as the work moves on.
+
+The labels chip in the title bar has three settings, and clicking it moves to
+the next:
 
 | The chip says | What you get |
 |---|---|
-| **🏷 auto labels** | The title Claude gave the conversation. Free. *(the default)* |
-| **✨ AI labels** | Claude reads what the session has actually been doing and writes a short label for it, then writes a new one as the work moves on. **Costs tokens.** |
+| **✨ AI labels** | Claude reads what the session has been doing and writes the label, rewriting it as the work changes. **Costs tokens.** *(the default)* |
+| **🏷 auto labels** | Only the title Claude gives the conversation. Free, but it describes how a session *started* rather than what it is doing now |
 | **🏷 labels off** | No labels at all — see *Turning it off* below |
 
-So one click from the default turns the AI labels on, and a second click hides
+So one click from the default drops back to the free label, and a second hides
 labels entirely.
 
 **This one costs you tokens, which is why it is off until you switch it on.**

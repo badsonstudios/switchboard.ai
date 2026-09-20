@@ -81,6 +81,7 @@ import {
   acceptAiLabel,
   buildExcerpt,
   buildLabelPrompt,
+  provisionalLabel,
   shouldRelabel,
   type AiLabelState,
 } from './ai-label';
@@ -614,6 +615,37 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   const aiLabelState = new Map<string, AiLabelState>();
 
   /**
+   * The prompt just went — put something true on the card NOW (#883).
+   *
+   * The owner's report on v0.8.92: first prompt sent, card still blank. The AI
+   * pass is ~14 s away by design and the CLI's own title may never arrive (the
+   * five newest transcripts here carry none), so the card could sit empty
+   * through the whole first turn. This costs nothing: it is the user's own
+   * prompt, cleaned.
+   *
+   * IT ONLY EVER FILLS A BLANK, which is what keeps three auto sources from
+   * fighting. Any label already present — the user's, a CLI title, or an earlier
+   * AI one — is left exactly alone, so this can never overwrite something
+   * better; it can only replace nothing. The AI pass then supersedes it on the
+   * ordinary `nextAutoLabel`/`acceptAiLabel` path.
+   *
+   * Published through `visibleTaskLabel` for the screen-share switch's sake,
+   * the same as the AI path: stored either way, shown only when labels are.
+   */
+  const noteProvisionalLabel = (liveId: string, text: string): void => {
+    const cardId = cardOfLive.get(liveId);
+    if (!cardId) return;
+    const card = deps.persist.list().find((s) => s.id === cardId);
+    if (!card) return;
+    if (card.taskLabel) return; // fills a blank, never replaces
+    if (labelSourceOf(card) === 'user') return; // belt and braces; a user label is never blank-but-owned
+    const label = provisionalLabel(text);
+    if (!label) return;
+    deps.persist.upsert({ ...card, taskLabel: label, labelSource: 'auto' });
+    publishLabel(cardId, visibleTaskLabel({ taskLabel: label, labelSource: 'auto' }, deps.autoLabels()));
+  };
+
+  /**
    * A turn just ended on `liveId` — should we ask a model what it is doing now?
    *
    * THE TRIGGER IS THE TURN, NOT A CLOCK. An idle session costs exactly
@@ -626,6 +658,36 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
    * outcome here ends in "leave the label alone", and nothing on this path can
    * touch the session it is describing.
    */
+  /**
+   * A conversation was wiped or rebound — so an AUTO label describing it is now
+   * a lie (#883, found by `stream-feed.spec`'s `/clear` test).
+   *
+   * Two things go wrong without this, and the second is the worse one:
+   *
+   *   1. The card keeps describing a conversation the user just cleared.
+   *   2. **It can never recover**, because the instant label only ever fills a
+   *      BLANK. A stale label from the wiped conversation would sit there
+   *      permanently, and the next prompt could not name the card.
+   *
+   * So the auto label goes and the next prompt names it again. The throttle
+   * memory goes with it — it recorded line counts for a transcript that no
+   * longer exists, and keeping it would suppress the first AI label of the new
+   * conversation.
+   *
+   * A LABEL THE USER TYPED IS THEIRS AND STAYS. Clearing a conversation is not
+   * a request to forget what they called the card.
+   */
+  const clearAutoLabelOnReset = (liveId: string): void => {
+    const cardId = cardOfLive.get(liveId);
+    if (!cardId) return;
+    const card = deps.persist.list().find((s) => s.id === cardId);
+    if (!card?.taskLabel) return;
+    if (labelSourceOf(card) === 'user') return;
+    deps.persist.upsert({ ...card, taskLabel: undefined, labelSource: 'auto' });
+    aiLabelState.delete(cardId);
+    publishLabel(cardId, undefined);
+  };
+
   const maybeAiLabel = (liveId: string): void => {
     const runOneShot = deps.runOneShot;
     if (!runOneShot) return; // a wiring without one simply has no AI labels
@@ -981,7 +1043,12 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     if (typeof sessionId !== 'string' || typeof text !== 'string') return false;
     const clean = sanitizePromptAttachments(attachments);
     if (clean === null) return false;
-    return manager.submitPrompt(sessionId, text, clean);
+    const sent = manager.submitPrompt(sessionId, text, clean);
+    // Only once the prompt actually WENT (#883). `submitPrompt` answers false
+    // for a refused send and for a PTY session, whose prompt does not travel
+    // this way at all — labelling either would describe work nobody started.
+    if (sent) noteProvisionalLabel(sessionId, text);
+    return sent;
   });
   // Interrupt the running turn (#154). Returns false for a PTY session, whose
   // interrupt is an Esc keystroke — the renderer falls back, exactly as it does
@@ -1085,10 +1152,17 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   // built, with nothing to replay it from. A stream session's resets come off
   // its own `system:init` instead.
   transcripts.onReset((sessionId, cause) => {
+    // BEFORE the stream gate: the label belongs to the CARD, not to whichever
+    // transport built its conversation, and a mis-bind correction invalidates it
+    // exactly as a `/clear` does (#883).
+    clearAutoLabelOnReset(sessionId);
     if (isStream(sessionId)) return;
     send('sessions:feedReset', { sessionId, cause });
   });
-  deps.streamFeed?.onReset((sessionId, cause) => send('sessions:feedReset', { sessionId, cause }));
+  deps.streamFeed?.onReset((sessionId, cause) => {
+    clearAutoLabelOnReset(sessionId);
+    send('sessions:feedReset', { sessionId, cause });
+  });
   broker.handle('transcripts:blocks', (_e, liveId: string) => {
     if (typeof liveId !== 'string') return [];
     return isStream(liveId) && deps.streamFeed

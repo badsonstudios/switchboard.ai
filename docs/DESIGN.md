@@ -1378,6 +1378,17 @@ Every session carries an identity that renders IDENTICALLY everywhere it appears
   Both halves are now wrong. The CLI already writes a title, so deriving our own
   is redundant, and compressing it with an LLM of ours would spend the user's
   subscription tokens on chrome — the exact P7 move §5.11 has no business making.)*
+  *(⚠️ **AMENDED AGAIN 2026-09-20, #883 — BOTH HALVES OF THAT REVISION ARE NOW
+  BACK, and the reason is evidence rather than taste.** The LLM half returned as
+  #758, which the owner asked for directly. The prompt-derived half returned
+  because **the premise of rejecting it turned out to be false**: "the CLI
+  already writes a title" does not hold — measured 2026-09-20, the five newest
+  transcripts in this repo carry **zero** `ai-title` lines, and the owner hit
+  exactly that in v0.8.92 (first prompt sent, card still blank). So a label
+  derived from the prompt is now the INSTANT placeholder, free and non-LLM, and
+  the AI pass supersedes it when the turn ends. The 2026-07-30 reasoning is kept
+  above rather than deleted: it was sound given what was believed then, and the
+  thing that changed is the transcripts, not the argument.)*
 - **Plan-as-progress chip** (research v2: Cascade's in-conversation Todo lists,
   Antigravity's Artifacts): when the agent maintains a todo/plan in its transcript
   (TodoWrite events), render it as a live progress indicator — "step 3/7: running

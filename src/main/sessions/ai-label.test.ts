@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest';
 import {
   acceptAiLabel,
   cleanAiLabel,
+  provisionalLabel,
   shouldRelabel,
   DEFAULT_MIN_GAP_MS,
   DEFAULT_MIN_NEW_LINES,
@@ -206,6 +207,54 @@ describe('what the model said is untrusted text (cleanAiLabel)', () => {
     expect(cleanAiLabel('')).toBeNull();
     expect(cleanAiLabel('   \n\t  ')).toBeNull();
     expect(cleanAiLabel('""')).toBeNull();
+  });
+});
+
+describe('the instant label from the prompt (provisionalLabel, #883)', () => {
+  it('uses the first line of what the user typed', () => {
+    expect(provisionalLabel('fix the login redirect')).toBe('fix the login redirect');
+    expect(provisionalLabel('fix the login redirect\nand the cookie bug')).toBe(
+      'fix the login redirect'
+    );
+  });
+
+  it('REFUSES a turn that leads with another session\'s output', () => {
+    // #798 injects a mention's context BEFORE the user's words, so the first
+    // line is the other session's header. Finding where the user's text resumes
+    // is #830's job; until then a label reading "Context from @other" is worse
+    // than no label for the few seconds before the AI pass lands. Refused rather
+    // than guessed.
+    expect(provisionalLabel('# Context from @TradingApp\n\nsome output\n\nnow fix mine')).toBeNull();
+  });
+
+  it('renders a slash command as a person writes it, never as markup', () => {
+    // #846's lesson, inherited by reusing its helper rather than writing a
+    // second one. NOTE the common case at submit time is the plain text the
+    // user typed (`/clear`), which needs no special handling — this branch is
+    // for the expanded form, so markup can never reach a card.
+    expect(provisionalLabel('<command-name>/next-item</command-name><command-args>818</command-args>')).toBe(
+      '/next-item 818'
+    );
+    expect(provisionalLabel('/clear')).toBe('/clear');
+  });
+
+  it('does NOT apply the markup refusal that guards model output', () => {
+    // The deliberate difference from `cleanAiLabel`. That refusal exists because
+    // model output is untrusted and steerable by a transcript; this is the
+    // user's own typing, and they may already type a label by hand. Rejecting a
+    // prompt that opens with a bracket would also reject every slash command.
+    expect(provisionalLabel('<div> rendering is broken')).toBe('<div> rendering is broken');
+  });
+
+  it('tidies and caps like any other label', () => {
+    expect(provisionalLabel('  fix   the\tlogin  ')).toBe('fix the login');
+    expect(provisionalLabel(`bad${String.fromCharCode(7)} char`)).toBe('bad char');
+    expect(provisionalLabel('x'.repeat(500))).toHaveLength(120);
+  });
+
+  it('answers null when there is nothing to say', () => {
+    expect(provisionalLabel('')).toBeNull();
+    expect(provisionalLabel('   \n\t  ')).toBeNull();
   });
 });
 

@@ -38,6 +38,10 @@
 // "the user typed while it was in flight" is a real race with a wide window,
 // not a theoretical one.
 import { labelSourceOf, MAX_LABEL_LENGTH, type LabelledCard } from './auto-label';
+// #846's pair, reused rather than reimplemented: a slash command must render as
+// a person writes it (`/next-item 818`) and never as raw `<command-name>`
+// markup, which is the bug the history picker shipped before that item.
+import { commandInvocation, isCommandPlumbing } from '../../shared/command-invocation';
 
 /**
  * What we remember about a card between labeling runs.
@@ -256,6 +260,74 @@ function isStrippable(code: number): boolean {
   if (code >= 0x202a && code <= 0x202e) return true; // bidi embedding/override
   if (code >= 0x2066 && code <= 0x2069) return true; // bidi isolates
   return code === 0xfeff; // BOM / zero-width no-break space
+}
+
+/**
+ * The header every injected context block opens with — `context-drop.ts` and
+ * `context-package.ts` both write it, and #830 is the ticket for recognising
+ * these inside a sent turn properly.
+ */
+const INJECTED_CONTEXT_HEADER = '# Context from @';
+
+/**
+ * First non-empty line, tidied and capped — the PROVISIONAL path's cleaning.
+ *
+ * `cleanAiLabel` deliberately keeps its own: it also unquotes, and it refuses
+ * markup-ish output, and the order of those steps is pinned by its tests. Two
+ * short functions beat one that has to be told which caller it is serving.
+ */
+function tidyOneLine(raw: string): string | null {
+  const first = raw
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .find((l) => l.length > 0);
+  if (!first) return null;
+  const flat = stripControl(first).replace(/\s+/g, ' ').trim();
+  if (!flat) return null;
+  const capped = flat.slice(0, MAX_LABEL_LENGTH).trim();
+  return capped.length > 0 ? capped : null;
+}
+
+/**
+ * A label for the instant the user hits send — from their own prompt, free.
+ *
+ * ⚠️ WHY THIS EXISTS AT ALL, given §5.11 rejected prompt-derived labels on
+ * 2026-07-30. That rejection's stated reason was "the CLI already writes a
+ * title, so deriving our own is redundant" — and the premise turned out to be
+ * false: the five newest transcripts in this repo carry **zero** `ai-title`
+ * lines. Dan hit exactly that in v0.8.92 (#883): first prompt sent, nothing on
+ * the card. So this is a decision whose evidence changed, not one being
+ * re-litigated.
+ *
+ * It is a PLACEHOLDER and nothing more. The AI pass replaces it when the turn
+ * ends, the CLI's own title replaces it if one ever arrives, and neither may
+ * touch a label the user typed. Its whole job is that the card says something
+ * true within a keystroke instead of staying blank for fourteen seconds.
+ *
+ * TWO CASES IT HANDLES AND ONE IT REFUSES:
+ *
+ *   - **A slash command** is not prose (#846): `commandInvocation` renders it
+ *     the way a person writes it (`/next-item 818`), which is what the history
+ *     picker learned to do after showing raw `<command-name>` markup instead.
+ *   - **Ordinary prose** becomes its first line, tidied.
+ *   - **A turn that leads with another session's output** (an `@mention` since
+ *     #798 injects that BEFORE your words) answers `null` — REFUSED RATHER THAN
+ *     GUESSED. Finding where the user's own text resumes is #830's job, and a
+ *     label reading "Context from @other-session" is worse than no label for
+ *     the few seconds until the AI pass lands.
+ *
+ * NOTE THE MARKUP REFUSAL IN `cleanAiLabel` IS DELIBERATELY NOT APPLIED HERE.
+ * That guard exists because model output is untrusted and may be steered by a
+ * transcript; this text is what the user typed into their own composer, and they
+ * are already allowed to type a label directly. Applying it would also reject
+ * every slash command, since they open with `/`.
+ */
+export function provisionalLabel(text: string): string | null {
+  const t = text.trim();
+  if (!t) return null;
+  if (isCommandPlumbing(t)) return tidyOneLine(commandInvocation(t) ?? '');
+  if (t.startsWith(INJECTED_CONTEXT_HEADER)) return null;
+  return tidyOneLine(t);
 }
 
 /**
