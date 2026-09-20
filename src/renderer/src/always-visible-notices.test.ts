@@ -406,6 +406,53 @@ const popoutColumnRules = [...POPOUT.matchAll(/^ {6}body\[data-sb-banner\] > ([^
   (m) => m[1]
 );
 
+// The same promise one level down: a bar cannot keep its height if the controls
+// INSIDE it are free to grow taller (#758).
+describe('a chip label never wraps', () => {
+  it('Chip carries white-space: nowrap', () => {
+    // WHY THIS IS A HEIGHT GUARD AND NOT A TYPOGRAPHY PREFERENCE. The title bar
+    // is one nowrap flex row carrying 21 controls, and at the 1024px the
+    // windows-latest runner uses it is far over-wide — so flex COMPRESSES the
+    // chips. A compressed `<button>` with no white-space rule wraps its label to
+    // a second line, and a two-line chip is taller than `barStyle`'s
+    // `minBlockSize: 34`. In a short window the shell column has no spare
+    // pixels (see this file's header), so the extra height comes straight out of
+    // the conversation — the only flexible item left.
+    //
+    // Observed exactly once, and only on CI: `feed.spec.ts`'s "a bar docking on
+    // its own gives the composer its room back" wanted the feed above 52px and
+    // measured 48.66px, on a branch whose only renderer change was adding one
+    // more chip to this row. It does NOT reproduce on a dev machine even at the
+    // same window size, because whether a label wraps at a given width is a
+    // question about the runner's font metrics rather than its pixel count —
+    // which is precisely why the witness here is the source text, exactly as
+    // this file's header argues for the roster above.
+    const block = styleBlock(
+      read('components/chrome.tsx'),
+      'components/chrome.tsx',
+      "        background: props.selected ? 'var(--chip)' : 'transparent',",
+      '\n      }}'
+    );
+    expect(block, 'Chip lost `whiteSpace: nowrap` — a squeezed chip can wrap and grow the bar').toMatch(
+      /^\s*whiteSpace:\s*'nowrap',/m
+    );
+  });
+
+  it('…and does NOT reach for flexShrink: 0 instead', () => {
+    // The tempting alternative, and the wrong one: chips that refuse to
+    // compress push the row's tail off screen instead of squeezing, and several
+    // e2e specs assert particular chips are in the viewport. `nowrap` keeps each
+    // chip one line while still letting the row compress.
+    const block = styleBlock(
+      read('components/chrome.tsx'),
+      'components/chrome.tsx',
+      "        background: props.selected ? 'var(--chip)' : 'transparent',",
+      '\n      }}'
+    );
+    expect(block).not.toMatch(INLINE_GUARD);
+  });
+});
+
 describe("the popout window's notice keeps its height", () => {
   it.each(POPOUT_NOTICES)('$selector declares the shrink guard', (n) => {
     expect(

@@ -425,6 +425,30 @@ export function Chip(props: {
         cursor: props.disabled ? 'default' : 'pointer',
         fontFamily: 'var(--font-ui)',
         fontSize: 11,
+        /**
+         * A CHIP LABEL NEVER WRAPS, and this is a height promise rather than a
+         * typographic preference (#274's rule, one level down).
+         *
+         * The bar is a single nowrap flex row that now carries 21 controls, and
+         * at the 1024px the windows-latest runner uses it is far over-wide — so
+         * flex COMPRESSES the chips. A compressed button with no `white-space`
+         * rule wraps its text to a second line, and a two-line chip makes the
+         * bar taller than the `minBlockSize: 34` floor above. In a short window
+         * the shell column has no spare pixels, so those go straight out of the
+         * conversation, which is the only flexible item left.
+         *
+         * That is the shape of the CI failure on #758: `feed.spec.ts`'s "a bar
+         * docking on its own gives the composer its room back" wanted the feed
+         * above 52px and measured 48.66px, on a run whose only renderer change
+         * was one more chip in this row. Not reproducible on a dev machine,
+         * because whether a label wraps at a given width is a question about the
+         * runner's font metrics, not just its pixels.
+         *
+         * `nowrap` alone, deliberately — NOT `flexShrink: 0`. Letting the chips
+         * refuse to compress would push the row's tail off screen instead, and
+         * several specs assert that chips are in the viewport.
+         */
+        whiteSpace: 'nowrap',
       }}
     >
       {props.children}
