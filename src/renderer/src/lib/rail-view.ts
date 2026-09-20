@@ -70,20 +70,49 @@ export interface StatusPresentation {
   glyphKey?: string;
   /** i18n key for the sub-label: the ASK when it needs you, else the state */
   labelKey: string;
+  /**
+   * i18n key for the ONE SHORT WORD the row shows beside the name (#877).
+   *
+   * ⚠️ NOT DERIVABLE FROM `token`, and a CI failure proved it. `token` is the
+   * COLOUR RAMP stem, and the ramp deliberately collapses states that share a
+   * hue: `suspended` and `not-started` both paint `idle`, and `starting` paints
+   * `working`. The row's first attempt at this read `status.${token}`, which
+   * silently renamed a suspended session "idle" — the state the rail exists to
+   * distinguish. So the short word is its own column, keyed by STATE.
+   *
+   * The `status.*` namespace, which is the card header's pill vocabulary
+   * (`SessionGrid`'s `StatusPill`): §5.11 says a session's identity renders the
+   * same on every surface, so two surfaces must not have two words for one
+   * state.
+   */
+  shortKey: string;
 }
 
 // A session "needs you" when a human is the only thing that can move it on.
 // 'done' is in the set deliberately (§5.8's completed-unreviewed state): the
 // work finished and nobody has looked at it yet.
 const PRESENTATION: Record<RailStatusName, StatusPresentation> = {
-  starting: { token: 'working', needsYou: false, spinner: true, labelKey: 'railStatus.starting' },
-  working: { token: 'working', needsYou: false, spinner: true, labelKey: 'railStatus.working' },
+  starting: {
+    token: 'working',
+    needsYou: false,
+    spinner: true,
+    labelKey: 'railStatus.starting',
+    shortKey: 'status.starting',
+  },
+  working: {
+    token: 'working',
+    needsYou: false,
+    spinner: true,
+    labelKey: 'railStatus.working',
+    shortKey: 'status.working',
+  },
   'needs-input': {
     token: 'needs-input',
     needsYou: true,
     spinner: false,
     glyphKey: 'railStatus.glyphInput',
     labelKey: 'railStatus.askInput',
+    shortKey: 'status.needs-input',
   },
   'needs-permission': {
     token: 'needs-permission',
@@ -91,6 +120,7 @@ const PRESENTATION: Record<RailStatusName, StatusPresentation> = {
     spinner: false,
     glyphKey: 'railStatus.glyphPermission',
     labelKey: 'railStatus.askPermission',
+    shortKey: 'status.needs-permission',
   },
   done: {
     token: 'done',
@@ -98,6 +128,7 @@ const PRESENTATION: Record<RailStatusName, StatusPresentation> = {
     spinner: false,
     glyphKey: 'railStatus.glyphDone',
     labelKey: 'railStatus.askDone',
+    shortKey: 'status.done',
   },
   crashed: {
     token: 'crashed',
@@ -105,6 +136,7 @@ const PRESENTATION: Record<RailStatusName, StatusPresentation> = {
     spinner: false,
     glyphKey: 'railStatus.glyphCrashed',
     labelKey: 'railStatus.askCrashed',
+    shortKey: 'status.crashed',
   },
   idle: {
     token: 'idle',
@@ -112,6 +144,7 @@ const PRESENTATION: Record<RailStatusName, StatusPresentation> = {
     spinner: false,
     glyphKey: 'railStatus.glyphIdle',
     labelKey: 'railStatus.idle',
+    shortKey: 'status.idle',
   },
   suspended: {
     token: 'idle',
@@ -119,6 +152,7 @@ const PRESENTATION: Record<RailStatusName, StatusPresentation> = {
     spinner: false,
     glyphKey: 'railStatus.glyphIdle',
     labelKey: 'railStatus.suspended',
+    shortKey: 'status.suspended',
   },
   // #687: the card is on screen and nothing ever ran in it — `sessions:create`
   // was refused, so main has no record of it and this row exists only because
@@ -140,6 +174,7 @@ const PRESENTATION: Record<RailStatusName, StatusPresentation> = {
     spinner: false,
     glyphKey: 'railStatus.glyphIdle',
     labelKey: 'railStatus.notStarted',
+    shortKey: 'status.notStarted',
   },
 };
 

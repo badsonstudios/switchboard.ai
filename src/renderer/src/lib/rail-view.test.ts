@@ -193,3 +193,42 @@ describe('railWidthAtPointer', () => {
     }
   });
 });
+
+describe("the row's short state word (#877)", () => {
+  // ⚠️ EVERY ASSERTION HERE EXISTS BECAUSE CI CAUGHT THE ALTERNATIVE. The row
+  // first read `status.${token}`, and `token` is the COLOUR RAMP stem — so
+  // three pairs of genuinely different states were given one word each, and a
+  // suspended session read "idle". These are the three pairs.
+  it('does not confuse a suspended session with an idle one', () => {
+    expect(presentStatus('suspended').shortKey).not.toBe(presentStatus('idle').shortKey);
+    // …which is exactly what sharing the ramp would have done
+    expect(presentStatus('suspended').token).toBe(presentStatus('idle').token);
+  });
+
+  it('does not confuse a starting session with a working one', () => {
+    expect(presentStatus('starting').shortKey).not.toBe(presentStatus('working').shortKey);
+    expect(presentStatus('starting').token).toBe(presentStatus('working').token);
+  });
+
+  it('does not confuse a session that never started with a suspended one', () => {
+    expect(presentStatus('not-started').shortKey).not.toBe(presentStatus('suspended').shortKey);
+    expect(presentStatus('not-started').token).toBe(presentStatus('suspended').token);
+  });
+
+  it('speaks the card header pill vocabulary, so one state is one word', () => {
+    // `status.*` and not `railStatus.*`: §5.11 says a session's identity renders
+    // the same everywhere, and the pill (`SessionGrid`'s `StatusPill`) resolves
+    // `status.${status}`. A second namespace here would be a second word for
+    // one state.
+    for (const s of ['starting', 'working', 'needs-input', 'needs-permission', 'idle', 'done', 'crashed', 'suspended', 'not-started']) {
+      expect(presentStatus(s).shortKey, s).toMatch(/^status\./);
+    }
+  });
+
+  it('gives an unknown status the idle word, never a blank', () => {
+    // Same fail-open rule as the rest of this table: our blind spot must not
+    // render an empty space where the state goes.
+    expect(presentStatus('nonsense').shortKey).toBe(presentStatus('idle').shortKey);
+    expect(presentStatus(undefined).shortKey).toBe(presentStatus('idle').shortKey);
+  });
+});

@@ -72,6 +72,45 @@
 > **DESIGN.md §5.11 amended** — the "one-line" task label is now "up to three
 > lines", with the reasoning that "one-line" was an unexamined inheritance from
 > the six-word prompt rather than a layout constraint that earned its keep.
+>
+> ### ⚠️ CI ROUND 1 FAILED ON BOTH PLATFORMS — three tests, and ONE WAS A REAL BUG
+>
+> **`gh pr checks --watch` exited 0 while reporting two failed jobs.** The trap
+> fired again; the authority is a fresh `gh pr checks`, never the exit status.
+>
+> **1–2. `rail.spec.ts` ×2 — a stale test, correctly failing.** It asserted the
+> LONG ask (`Wants permission to run`) was VISIBLE on the row, with a comment
+> reading "the row now SPELLS OUT the ask instead of showing a status word". That
+> was true and it is exactly what this item reverses — the long ask and the task
+> label were competing for one line, which is WHY a session that needed you lost
+> its label. Rewritten to assert the short word is visible **and** the full ask
+> is in the row button's accessible name: stronger than before, because it proves
+> the ask was relocated rather than dropped.
+>
+> **3. `urgency.spec.ts:309` — MY BUG, and the one worth remembering.** The row's
+> state word was written as `` t(`status.${p.token}`) ``. **`token` is the COLOUR
+> RAMP stem, not the state name**, and the ramp deliberately collapses states
+> that share a hue: `suspended` → `idle`, `not-started` → `idle`, `starting` →
+> `working`. So three pairs of genuinely different states were given ONE WORD
+> each, and a **suspended session read "idle"** — the distinction the rail exists
+> to draw. Fixed by giving `StatusPresentation` its own `shortKey` column, keyed
+> by STATE, in the `status.*` namespace the card header's pill already resolves
+> (§5.11: one identity, same word on every surface). Five tests pin all three
+> collapsed pairs, and each also asserts the pair still SHARES a token — so the
+> test records why the shortcut was tempting. **Mutation-checked:** putting
+> `suspended`'s short word back to `status.idle` fails exactly that test.
+>
+> **The mechanism behind all three is one thing: structural e2e locators.** The
+> specs read this row through `[data-rail-open] > span` and through the ask's
+> WORDS, so a layout change surfaced as failures about mismatched strings with
+> nothing to do with what the tests were named after. The row now carries
+> `data-rail-title`, `data-rail-state` and `data-rail-label`, and the four
+> helpers were moved onto them.
+>
+> **After the fix — the FULL e2e suite was run locally rather than another
+> subset**, because two rounds of surprises had earned it: **352 passed, 2
+> skipped, 11.4m**, including both specs that failed on CI. Unit 8631 passed with
+> only #835 (sighting 9, 74/74 isolated); typecheck, lint and build clean.
 
 > # ✅ MERGED — 2026-09-20: **#883** — the card names itself the instant you prompt it, and AI labels default ON
 >

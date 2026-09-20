@@ -1066,9 +1066,19 @@ export function SessionsRail(props: {
                   The row used to show EITHER the label or the status on line 2,
                   never both, so a session that needed you lost its task label
                   entirely — at the one moment you most want to know which piece
-                  of work is asking. The short word is the same vocabulary the
-                  card header's pill uses (`status.*`), so two surfaces cannot
-                  describe one session differently; the longer ask ("Wants
+                  of work is asking. The short word is
+                  `presentStatus().shortKey` — the same `status.*` vocabulary the
+                  card header's pill uses, so two surfaces cannot describe one
+                  session differently.
+
+                  ⚠️ IT IS NOT DERIVED FROM `token`, which is what this first
+                  did. `token` is the COLOUR RAMP stem and the ramp collapses
+                  states that share a hue, so that spelling renamed a SUSPENDED
+                  session "idle" — the very distinction the rail exists to draw.
+                  CI caught it on Windows; `rail-view.test.ts` pins all three
+                  collapsed pairs now.
+
+                  The longer ask ("Wants
                   permission to run") leaves the visible row and stays in the
                   row button's accessible name, where nothing is lost to a
                   screen reader. */}
@@ -1097,6 +1107,11 @@ export function SessionsRail(props: {
                   {s.title}
                 </span>
                 <span
+                  // Named, like the title and the label beside it: the visible
+                  // state moved from the long ask on line 2 to this short word
+                  // (#877), and a spec that looks for it by its words is a spec
+                  // that breaks the next time the vocabulary is reworded.
+                  data-rail-state={s.id}
                   style={{
                     flexShrink: 0,
                     fontFamily: 'var(--font-ui)',
@@ -1109,7 +1124,7 @@ export function SessionsRail(props: {
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {t(`status.${p.token}`)}
+                  {t(p.shortKey)}
                 </span>
               </div>
               {/* LINES 2…N — the task label, in its own space.
