@@ -3,6 +3,43 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ MERGED — 2026-09-20: **#877** closed out, and it turned out to be a BUG FIX
+>
+> **PR #888, squashed to `2e71bf2`** (36 files). Only **#877** closed; **#879,
+> #885, #733, #886 and #835 were all checked against a baseline taken BEFORE the
+> merge and are still open** — the closing-keyword trap did not fire. All four CI
+> jobs verified `pass` against `9a84159`, **the exact SHA that was merged**.
+>
+> ⚠️ **NOT RELEASED.** It lands in `0.8.93 — unreleased`. Dan cannot see any of it
+> yet, which matters more than usual — see the bug below.
+>
+> **IT WAS NOT JUST A LAYOUT ITEM.** While it was in CI Dan reported from
+> v0.8.92: *"the AI label is set to 'Building the Global Settings screen', but on
+> the left there's nothing set."* Diagnosed rather than guessed, and it is the
+> defect #877 was already fixing — filed **before** the report. v0.8.92's row
+> renders `p.needsYou ? t(p.labelKey) : (s.taskLabel ?? …)`, substituting the
+> state/ask for the label whenever a session needs you — and `done` (finished,
+> unreviewed) is in that set deliberately, which is the state a session sits in
+> the moment it stops typing. So the row read *Finished — review changes* where he
+> expected the label. The `aria-label` had the same condition, so it was lost to a
+> screen reader too. **A data bug was ruled out by deduction, not by trying
+> things:** the row and the card header read the same `taskLabel` off the same
+> store, so a genuinely blank line is unreachable there.
+>
+> **CI cost three rounds, and two were my own fault.** Round 1 failed on both
+> platforms with three e2e failures (two stale `rail.spec.ts` assertions, one real
+> bug — the state word was read off `token`, the COLOUR RAMP stem, so `suspended`
+> and `not-started` both rendered "idle"). Rounds 2 and 3 were **cancelled by my
+> own pushes**: a docs commit landing mid-run supersedes the run, and
+> `gh run watch --exit-status` **exits 0 on a cancelled run**, so a destroyed
+> round can read as a pass. Written to memory as `pushing-cancels-inflight-ci`.
+> **Batch every commit for an item, push once, then watch** — and confirm the
+> jobs say `pass` against the head SHA being merged, not merely that a green table
+> exists.
+>
+> **Seven fixes mutation-checked** across the item, each killing exactly its own
+> test. Full local Windows e2e before the final push: **352 passed, 2 skipped**.
+
 > # 🗺 THE QUEUE — owner's order, set 2026-09-20
 >
 > **#877 (merging) → #885 settings → #733 multi-question panel → RELEASE.**
@@ -34,7 +71,7 @@
 >   optional: #873's seven steps, #864 on the real dual-monitor rig, and #758's
 >   drift step. ⚠️ Four user-facing features will be stacked unverified by then.
 
-> # 🔄 IN FLIGHT — 2026-09-20: **#877** — task labels get three lines, and a size setting
+> # ✅ MERGED — 2026-09-20: **#877** — task labels get three lines, and a size setting
 >
 > **Branch `feature/877-label-lines-and-size`, rebased on `68f0257`. PR open,
 > merging on green CI.** Filed out of #758 and then WIDENED by Dan twice while
