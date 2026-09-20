@@ -236,6 +236,22 @@ export interface WorkspaceState {
    */
   autoLabels: boolean;
   /**
+   * AI-written task labels (#758, §5.11) — OFF BY DEFAULT, and the default is
+   * the whole point.
+   *
+   * `autoLabels` above costs nothing: the CLI already wrote a title into its
+   * own transcript and we read a line out of it. This one SPENDS THE OWNER'S
+   * SUBSCRIPTION — a contained `claude -p` pass over the recent transcript,
+   * measured at ~14 s and a few hundred tokens a time. A feature that quietly
+   * bills the user is one they must switch on themselves, so this takes the
+   * `experimentalFork` shape (`=== true`) rather than `autoLabels`'.
+   *
+   * It is a SECOND SOURCE, not a replacement: with both on, the AI label wins
+   * because it follows the work; with this off, the CLI's own title still
+   * fills a blank label exactly as it does today.
+   */
+  aiLabels: boolean;
+  /**
    * §5.5 Level 3 — fork adoption, EXPERIMENTAL and OFF BY DEFAULT (P2-E11-12).
    *
    * The only pref in this file whose default is `false`, and the reason is the
@@ -405,7 +421,10 @@ const EMPTY: WorkspaceState = {
   rules: [],
   autoTrust: true,
   autoLabels: true,
-  // the one default-OFF pref here — see the field's note
+  // the default-OFF prefs — see each field's note. `aiLabels` spends the
+  // owner's subscription and `experimentalFork` leans on undocumented CLI
+  // behaviour; neither may arrive switched on.
+  aiLabels: false,
   experimentalFork: false,
   updates: { autoCheck: true },
   health: { poll: true },
@@ -691,6 +710,9 @@ export class WorkspaceStore {
       if (wrongType(raw, 'autoLabels', 'boolean'))
         note('the auto-label setting in the workspace file was not true or false — leaving it on');
 
+      if (wrongType(raw, 'aiLabels', 'boolean'))
+        note('the AI-label setting in the workspace file was not true or false — leaving it off');
+
       this.state = {
         version: CURRENT_VERSION,
         sessions,
@@ -703,10 +725,15 @@ export class WorkspaceStore {
         autoTrust: raw.autoTrust !== false, // default on
         autoLabels: raw.autoLabels !== false, // default on — same shape, same reason
         // ⚠️ THE OPPOSITE SHAPE ON PURPOSE: `=== true`, not `!== false`. The two
-        // above read "on unless explicitly off"; an experiment must read "off
+        // above read "on unless explicitly off"; these two must read "off
         // unless explicitly on", so a missing key, a hand-edited string, or a
         // file written by an older build all land OFF rather than silently
         // enabling a feature nobody asked for.
+        //
+        // For `aiLabels` (#758) that is not just tidiness: it spends the
+        // owner's subscription on every run, and a workspace file from a build
+        // that predates it must never be read as consent.
+        aiLabels: raw.aiLabels === true,
         experimentalFork: raw.experimentalFork === true,
         updates: updates.value,
         health: health.value,
@@ -1334,6 +1361,15 @@ export class WorkspaceStore {
 
   setAutoLabels(on: boolean): void {
     this.state.autoLabels = on;
+    this.saveSoon();
+  }
+
+  getAiLabels(): boolean {
+    return this.state.aiLabels;
+  }
+
+  setAiLabels(on: boolean): void {
+    this.state.aiLabels = on;
     this.saveSoon();
   }
 

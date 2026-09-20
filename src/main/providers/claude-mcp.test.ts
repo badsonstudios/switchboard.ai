@@ -16,7 +16,19 @@ import {
   resetCliPathCache,
   writeSessionMcpConfig,
 } from './claude';
+import { CONTAINED_ARGS } from './claude-oneshot';
 import type { McpAttachmentHost, SpawnOptions } from '../extensibility/contributions';
+
+/**
+ * Where each exempt file lives, relative to this one. Explicit rather than
+ * searched: an entry added without a home fails the allowlist test, which is
+ * the friction wanted — the question "should this file really be exempt?" is
+ * worth asking once per entry, by hand.
+ */
+const EXEMPT_HOME: Record<string, string> = {
+  'mcp-attach-check.ts': '../bus',
+  'claude-oneshot.ts': '.',
+};
 
 let tmp: string;
 let origPath: string | undefined;
@@ -288,11 +300,29 @@ function flagOffenders(root: string): string[] {
       // AN EXPLICIT ALLOWLIST, not a `-check.ts` suffix rule. The suffix version
       // silently exempted any future production file that happened to be named
       // `*-check.ts` — a preflight, a health check — which review flagged as an
-      // exemption nobody had bounded. These two are local check harnesses: test
-      // code that lives under `src/` only so the same build compiles it, and
-      // `mcp-attach-check.ts` ASSERTS the flag's absence, so it has to be able
-      // to name it exactly as a `.test.ts` does. Neither spawns a user session.
-      if (EXEMPT.includes(e.name)) continue;
+      // exemption nobody had bounded.
+      //
+      // `mcp-attach-check.ts` is a local check harness: test code living under
+      // `src/` only so the same build compiles it, and it ASSERTS the flag's
+      // absence, so it has to name it exactly as a `.test.ts` does.
+      //
+      // `claude-oneshot.ts` (#758) is the one exemption that is SHIPPING code,
+      // and it is the opposite case rather than a relaxation of this one. The
+      // rule above protects a USER'S SESSION from silently losing the MCP
+      // servers they configured. That module runs no user session: it is a
+      // contained one-shot label pass which must hold NONE of the user's tools,
+      // because #760 measured what a headless `-p` run does when it does — it
+      // read the user's transcripts and messaged six sessions across four
+      // unrelated projects. For it, eviction is the entire point. The exemption
+      // is earned by `CONTAINED_ARGS`, and asserted below rather than trusted.
+      // Exempt by PATH, not by basename. `EXEMPT.includes(e.name)` skipped any
+      // file of that name ANYWHERE under `src/`, so a future
+      // `src/main/anywhere/claude-oneshot.ts` would have been silently exempt —
+      // the same unbounded-exemption shape the paragraph above is proud of
+      // having closed, reintroduced one line down. Caught in review.
+      const exemptAt = EXEMPT_HOME[e.name];
+      if (exemptAt !== undefined && path.resolve(full) === path.resolve(__dirname, exemptAt, e.name))
+        continue;
       for (const line of fs.readFileSync(full, 'utf8').split('\n')) {
         if (!line.includes('--strict-mcp-config')) continue;
         // Prose may name it — the reason we never pass it has to be writable
@@ -307,7 +337,7 @@ function flagOffenders(root: string): string[] {
   return offenders;
 }
 
-const EXEMPT = ['mcp-attach-check.ts'];
+const EXEMPT = ['mcp-attach-check.ts', 'claude-oneshot.ts'];
 
 describe('the --strict-mcp-config source guard (P2-E11-03)', () => {
   it('the flag appears in no shipping source file', () => {
@@ -347,11 +377,38 @@ describe('the --strict-mcp-config source guard (P2-E11-03)', () => {
     // An exemption nobody bounds is how a guard dies. `providers/claude.ts` is
     // the file that actually builds the argv a user's session runs with.
     expect(EXEMPT).not.toContain('claude.ts');
-    // And the allowlist is not vacuous — it names something that really exists,
-    // so a rename that orphans the entry shows up here rather than silently
+    // And the allowlist is not vacuous — every entry names something that really
+    // exists, so a rename that orphans one shows up here rather than silently
     // re-arming the guard against a file that legitimately names the flag.
+    //
+    // WHERE each one lives is part of the claim. This used to join every name
+    // onto `../bus` because both exempt files happened to sit there; #758's
+    // entry is in `providers/`, and a hard-coded directory would have made the
+    // check pass vacuously for anything outside it — the exact shape of a test
+    // that re-establishes its own precondition.
     for (const name of EXEMPT) {
-      expect(fs.existsSync(path.join(__dirname, '..', 'bus', name))).toBe(true);
+      const dir = EXEMPT_HOME[name];
+      expect(dir, `${name} has no recorded home — add one`).toBeDefined();
+      expect(fs.existsSync(path.join(__dirname, dir, name)), name).toBe(true);
     }
+  });
+
+  it('the one SHIPPING exemption is earned by what it actually passes', () => {
+    // `claude-oneshot.ts` is the only exempt file that is not a check harness,
+    // so it is the only one where "why is this allowed" needs an answer in
+    // code. The answer: it runs no user session, and it holds NONE of the
+    // user's tools — which is the opposite of the failure this guard prevents.
+    //
+    // Measured (`spike/findings/758-label-containment.md`, claude 2.1.272):
+    // `--restricted` ALONE leaves 34 tools and the user's MCP server, keeping
+    // Read/Glob/Grep and SendMessage/ListAgents — the #760 surface itself. The
+    // eviction is the point here, and it only happens with BOTH flags.
+    expect(EXEMPT).toContain('claude-oneshot.ts');
+    expect(CONTAINED_ARGS).toContain('--strict-mcp-config');
+    const i = CONTAINED_ARGS.indexOf('--tools');
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(CONTAINED_ARGS[i + 1]).toBe('');
+    // …and it must never be reachable with the mode #760 ran under.
+    expect(CONTAINED_ARGS).not.toContain('bypassPermissions');
   });
 });

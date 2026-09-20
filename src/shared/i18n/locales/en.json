@@ -15,7 +15,9 @@
     "trustInert": "Unavailable: Claude Code only ever asks about folder trust inside its own terminal interface, and switchboard no longer runs sessions there — so nothing can ask, and this setting changes nothing. Your choice is kept exactly as you left it.",
     "autoLabelsOn": "🏷 auto labels",
     "autoLabelsOff": "🏷 labels off",
-    "autoLabelsHint": "Fill a blank task label with the title the agent gives the conversation. Turn it off to keep those words off screen — labels you type yourself always stay.",
+    "autoLabelsHint": "Showing the title Claude gives each conversation, in blank task labels. Costs nothing. Click to let Claude WRITE the labels instead — that one spends your subscription.",
+    "aiLabelsOn": "✨ AI labels",
+    "aiLabelsHint": "Claude reads what each session has been doing and writes its task label, refreshing it as the work moves on. THIS SPENDS YOUR SUBSCRIPTION — a short background check when a turn finishes; idle sessions cost nothing. Labels you type yourself are never touched. Click to hide labels entirely.",
     "forkOn": "⑂ fork sessions on",
     "forkOff": "⑂ fork sessions off",
     "forkHint": "Experimental. Adds \"Fork into a new session\" to a session's ⋯ menu, which starts a second session already carrying that conversation's whole history. The original is never touched. It relies on Claude Code behaviour that isn't documented — measured, not guessed — so if an update ever breaks it, switch it off here and nothing else changes.",
@@ -31,7 +33,8 @@
     "palette": "▸ commands",
     "paletteHint": "Show every command, with its shortcut ({binding})",
     "buildLabel": "Version and build — click for details",
-    "buildHint": "Branch {branch} · built {builtAt} — click for the full build details"
+    "buildHint": "Branch {branch} · built {builtAt} — click for the full build details",
+    "labelsOffHint": "Task labels are hidden — nothing derived from your prompts is on the cards, the sessions list or desktop notifications. Labels you typed yourself still show. Click to go back to the title Claude gives the conversation."
   },
   "about": {
     "title": "About this build",

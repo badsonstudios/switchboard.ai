@@ -113,6 +113,53 @@ Things worth knowing:
 - **Other tools may not have it.** This works for any CLI that writes a title of
   its own. One that doesn't simply has no auto label — nothing breaks.
 
+### Letting Claude write the label instead (and keep it up to date)
+
+The label above is the name Claude gave the *conversation*, and it usually
+describes how the session **started**. That is fine for an hour and less useful
+by the afternoon, when a session that began as "fix the login redirect" is three
+jobs further on.
+
+The **🏷 auto labels** chip in the title bar has three settings, and clicking it
+moves to the next one:
+
+| The chip says | What you get |
+|---|---|
+| **🏷 auto labels** | The title Claude gave the conversation. Free. *(the default)* |
+| **✨ AI labels** | Claude reads what the session has actually been doing and writes a short label for it, then writes a new one as the work moves on. **Costs tokens.** |
+| **🏷 labels off** | No labels at all — see *Turning it off* below |
+
+So one click from the default turns the AI labels on, and a second click hides
+labels entirely.
+
+**This one costs you tokens, which is why it is off until you switch it on.**
+Everything else about labels is free; this runs a small background check against
+your Claude subscription. So it is deliberately careful about when it bothers:
+
+- **Only when a session finishes a turn.** A session sitting idle never costs
+  you anything, however long it sits there.
+- **Only when something actually happened.** If the conversation hasn't grown
+  since the last time, there is nothing new to describe and it doesn't ask.
+- **Not more than once every ten minutes per session**, however busy it is.
+- **One at a time per session**, so a chatty session can't stack them up.
+- **Anything you type still wins.** If you type a label while it is thinking,
+  your words are kept and its answer is thrown away.
+
+Things worth knowing:
+
+- **It takes a few seconds and happens in the background.** Nothing waits for
+  it, and nothing in your session pauses or slows down. If it fails — no
+  network, a rate limit — the label you already had simply stays.
+- **It can't touch anything.** The check runs with no tools at all: it cannot
+  run commands, edit files, or reach your other sessions. It reads the recent
+  conversation and answers with one line.
+- **It uses a small, cheap model.** A six-word label does not need a big one.
+- **Clicking on past it stops the spending immediately.** The last label it
+  wrote stays on the card, because a label is a label — clear the box yourself
+  if you don't want it.
+- **Hiding labels stops it too.** In the **🏷 labels off** setting nothing new
+  is written, because there would be nothing on screen to show for the money.
+
 ### Turning it off (screen-sharing)
 
 The label is derived from your conversation, so it can put a phrase from your

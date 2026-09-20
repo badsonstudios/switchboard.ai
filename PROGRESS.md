@@ -3,6 +3,203 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔨 IN PROGRESS — 2026-09-20: **#758** — AI-generated task labels that follow the session
+>
+> Branch `feature/758-ai-task-labels`. Planning posted to the issue; probes run
+> and written up; built, reviewed, and **all review findings fixed**. Remaining:
+> the mutation check below, then commit + PR.
+>
+> ⚠️ **THE REVIEW CAUGHT A BLOCKER THAT WOULD HAVE SHIPPED A FEATURE THAT NEVER
+> RAN ONCE — and my own tests were hiding it.** `maybeAiLabel` read the excerpt
+> from `transcripts.blocks()` unconditionally. A **stream** session is watched
+> with `deriveFeed: false`, so the watcher derives no blocks and hands back an
+> empty list — while `snapshot.lines` still counts, so `shouldRelabel` correctly
+> answered "run". **Every session ships as stream since #873**, so the labeler
+> decided to spend, found nothing, and returned one line later **with no log
+> line at all**. The user would turn the chip on and nothing would ever happen,
+> for ever. Fixed by routing on transport exactly as `transcripts:blocks` does,
+> plus a `log.debug` so that branch can never be silent again.
+>
+> **The reason it survived my tests is the pattern this project keeps hitting:**
+> the `ipc.test.ts` harness leaves `transport` at its `pty` default — and its own
+> comment warns "do not read a transport claim about the real app out of a test
+> that leaves this at its default". Every cadence test was built on the one
+> transport the app no longer uses. They now run on a real `StreamFeed`, assert
+> on text that ONLY comes from the stream, and a separate test pins the pty
+> branch.
+>
+> **Second finding, narrower but real:** the `.then` published the label without
+> re-reading the auto-labels switch. A run takes ~14 s, and the reason the owner
+> reaches for 🏷 is that someone just started watching — so a phrase derived from
+> their transcript could land back on the card *after* the screen-share sweep
+> blanked it. Now published through `visibleTaskLabel`; stored either way,
+> because hiding is not deleting.
+>
+> **Three of my tests asserted nothing**, all now real: `toContain('-p')` on a
+> joined command line passes on `--permission-mode`; the "KILLS THE TREE" test
+> asserted only that it timed out, so deleting the `killTree` call left it green
+> while a 230 MB `claude.exe` was orphaned holding a model call; and two negative
+> tests awaited a condition the previous line had just asserted, so they could
+> pass purely because the `.then` had not run yet.
+>
+> ⚠️ **THE ARGV ASSERTION TOOK THREE ATTEMPTS, and the lesson is the session's
+> own.** A substring match was vacuous; a quote-boundary regex then failed
+> because `escapeForCmd` turns every `"` into `^"`, so the character after `-p`
+> is a CARET; and a quoted-token regex would have failed the other way, since
+> `execSpec` only wraps for a `.cmd` on win32 and passes argv through on Linux —
+> so it would pass on one CI leg and fail on the other. It now TOKENISES back to
+> real arguments, which asserts the same claim on both and additionally proves
+> the empty `--tools ""` argument survives the shim. **I guessed the escaping
+> twice instead of reading it; reading it took one grep.**
+>
+> Also from review: the `--strict-mcp-config` source guard skipped by BASENAME,
+> so a future `src/main/anywhere/claude-oneshot.ts` would have been silently
+> exempt — now matched by resolved path; bidi and zero-width characters are
+> stripped from labels (display spoofing, model output, adversarial transcript);
+> the throttle memory is dropped when a card closes, so a reused card id cannot
+> inherit a stale timestamp; and two comments plus this file claimed the write
+> "goes through `nextAutoLabel`", which it does not — `acceptAiLabel` re-checks
+> ownership at the landing, and the clause the tidier sentence papered over was
+> exactly the screen-share one above.
+>
+> The reviewer confirmed as sound: the in-flight concurrency (no `await` between
+> the verdict and the flag, so two `done` transitions cannot interleave), the
+> card-removed-mid-run path, that `runContainedPrompt` never rejects on any of
+> its six exit paths, that the `kill-tree` extraction is byte-identical, and that
+> the `EXEMPT` change is strictly stronger than what it replaced.
+>
+> ---
+>
+> ## ⚠️ THEN CI WENT RED TWICE, AND THE REAL CAUSE WAS THE TITLE BAR BEING FULL
+>
+> Two CI runs, two DIFFERENT `e2e windows-latest` failures, neither reproducible
+> on this machine even at the same window size. Unit jobs and both ubuntu jobs
+> green throughout.
+>
+> - **Run 1 (`b24de68`):** `feed.spec.ts` "a bar docking on its own gives the
+>   composer its room back (#716)" — conversation 48.66px against a required
+>   >52px, failing on the initial run AND the retry. Diagnosed as a squeezed chip
+>   WRAPPING its label and growing the bar past `minBlockSize: 34`, which in a
+>   460px-tall window comes straight out of the feed. Fixed with
+>   `whiteSpace: 'nowrap'` on `Chip` + two source guards, and the guard was
+>   **mutation-checked** (deleting the rule fails it).
+> - **Run 2 (`6c3084e`):** `split.spec.ts` "the seam shows a border on BOTH
+>   sides" — `page.screenshot: Clipped area is either empty or outside the
+>   resulting image`. It clicks **soft contrast**, which sits in the off-screen
+>   tail; Playwright scrolls the document sideways to reach it, and the clip then
+>   lands outside the captured image. **Isolated to the nowrap commit**: run 1's
+>   artifacts contain the `seam-both-sides.png` that test writes before its
+>   assertions, so the screenshot succeeded on `b24de68`.
+>
+> **THEN I MEASURED INSTEAD OF THEORISING, and it overturned the diagnosis.** At
+> the 1024px CI uses, the title bar's content is **1684px in a 1009px bar — 675px
+> of overflow**, with the last control **660px off-screen** and
+> `document.scrollWidth > innerWidth`. Chips are 31–83px each. **My chip was ~95px
+> of a 675px problem**: shortening its label could never have fixed it, and
+> deleting it entirely still leaves ~580px. The bar has been badly over-wide on
+> that runner all along; #758 only moved a fragile thing far enough to tip two
+> marginal geometry specs. Filed as **#879** with the numbers.
+>
+> **Dan's call (2026-09-20), asked because it changes the UI he had already
+> picked:** fold the setting back into the existing chip as **three states on one
+> control** — `🏷 auto labels → ✨ AI labels → 🏷 labels off` — which adds ZERO
+> width and is what the ticket itself offered as the alternative ("a mode on the
+> existing auto-labels switch"). He also chose to file #879 rather than absorb it
+> here.
+>
+> **The trade-off, recorded rather than buried:** the screen-share state is now
+> TWO clicks from the default instead of one, and §5.11 litmus #4 treats that as
+> the urgent path. Accepted because the bar cannot take another control and the
+> chip states which mode it is in. `task-label.spec.ts`'s switch test follows the
+> cycle now — **its assertions are unchanged**; only the number of clicks moved.
+>
+> The three states map onto the two booleans that already existed, so **main, the
+> store and the IPC are untouched** by the fold — it is renderer-only.
+>
+> **Still unproven and honest about it:** neither CI failure reproduces locally,
+> so the fold is reasoned from the measurement rather than demonstrated here. CI
+> is the arbiter.
+>
+> **Built so far:** `sessions/ai-label.ts` (the pure decision — when to spend,
+> what to do with the answer, 26 tests) · `providers/claude-oneshot.ts` (the
+> contained run, 15 tests) · `transport/kill-tree.ts` (extracted from
+> `git-service.ts` rather than copied — see below) · the `aiLabels` workspace
+> setting, OFF by default on the `experimentalFork` shape · the IPC pair, the
+> preload bridge, the capability entries · the **✨ AI labels** title-bar chip ·
+> the cadence hook on `manager.onStatusChange` when a turn reaches `done` ·
+> manual pages, CHANGELOG, dogfood row.
+>
+> ⚠️ **IT TOUCHES ONE GIT FILE, AND THAT IS WORTH KNOWING BEFORE READING CI.**
+> `killTree` was private to `git-service.ts` and the one-shot runner needs it too
+> (through the `.cmd` shim we hold cmd.exe and the 230 MB `claude.exe` is its
+> child, so `kill()` would orphan a model call). It is now
+> `transport/kill-tree.ts`, imported by both, rather than a second shipping copy
+> — the thing `env.ts` exists to prevent. **So if #835 reddens on this branch it
+> is NOT automatically "not ours" this time**; `git-service.test.ts` was run in
+> isolation and passed **74/74**.
+>
+> **The owner made four decisions in planning (2026-09-20) — do not re-litigate:**
+>
+> 1. **The rail row redesign is NOT in this item.** He asked for it in the same
+>    breath (status beside the name, task label on two lines) and chose to have it
+>    filed on its own: **#877**. This item generates the label text; that one
+>    displays it. He picked the layout off a mockup
+>    (`.claude/work_files/rail-mockup.html`, three columns): **status as one short
+>    word** beside the name, label on two lines, and the longer ask sentence
+>    ("Wants permission to run") kept for screen readers only. The variant that
+>    gave needy rows their full sentence on its own line was rejected as less
+>    scannable.
+> 2. **Containment: no tools AND evict MCP servers.**
+> 3. **Measure first** — a committed probe under `spike/probes/758/`, because the
+>    flags' real behaviour is exactly what bit #760.
+>
+> ⚠️ **THE LANDMINE THAT SHAPED THIS ITEM, and it is already recorded in our own
+> source.** `sessions/context-package.ts` says a headless `claude -p` pass was
+> **considered and rejected** for the neighbouring feature, citing #760: a `-p`
+> probe run in a temp cwd with `--permission-mode bypassPermissions` enumerated
+> the machine's other live sessions, read the user's transcripts, and **sent
+> messages to six sessions across four unrelated projects**. The recorded lesson
+> is **"a cwd is not a sandbox"**, and that finding says in as many words that
+> anything running a headless pass over a transcript inherits the question. This
+> item inherits it. The answer the finding itself gives is not to referee the
+> turn but to give it nothing to act with: `--tools ""` (no built-in tools at
+> all), `--restricted`, `--strict-mcp-config` with no `--mcp-config` (so no
+> Session Bus and none of the user's own servers), `--permission-mode default`,
+> and a short timeout.
+>
+> ⚠️ **THIS DELIBERATELY INVERTS A STANDING RULE IN OUR SOURCE, and the inversion
+> is the interesting part.** `providers/claude.ts` documents that
+> `--strict-mcp-config` is **never** passed, because for a user's session it
+> silently evicts every MCP server they configured (measured in #760, three runs:
+> with both flags, "ours only — DeepWiki gone"). A guard in `claude-mcp.test.ts`
+> enforces it with a source walk over the whole of `src/`, a bounded `EXEMPT`
+> allowlist, and a further test asserting the exemption does **not** cover the
+> session-spawn file. For a six-word labeler, eviction is the *point* — it is not
+> a user session and has no business holding the user's tools. So the labeler
+> module joins `EXEMPT` **with its own positive test** (it always passes
+> `--tools ""` and `--strict-mcp-config`, and never spawns a user session) rather
+> than the guard being widened. The guard keeps meaning what it was written to
+> mean.
+>
+> **Cadence is the design problem, not summarization.** Trigger is an **ending
+> turn**, not a clock: gate on the `working` → `idle`/`done` transition the app
+> already computes, skip when the transcript has not grown, a minimum gap per
+> session, one run in flight per session, and discard the result if the user typed
+> a label while it was in flight. An idle session therefore costs nothing with no
+> timer running. Opt-in, **off by default**, on the `experimentalFork` shape
+> (`=== true`, so a missing key or an older workspace file lands OFF). The write
+> goes **through `nextAutoLabel`**, never straight to `taskLabel`, so every
+> P2-E7-06 ownership rule carries over untouched.
+>
+> **Measured, not assumed:** `--max-turns` **no longer exists** on the installed
+> CLI (2.1.272) — checked against `--help`, so the turn bound is print mode plus a
+> timeout. `--tools ""` ("use \"\" to disable all tools") and `--restricted` are
+> what the probe exists to verify.
+>
+> **Leaves a seam for #722** (activity report): there is no production "run the
+> CLI once and hand me stdout" helper today, so this adds the one composing module
+> instead of a second spelling of it.
+
 > # ✅ MERGED — 2026-09-19: **#873** — the Terminal tab and the ⋯ transport switch are removed
 >
 > **PR #875, squashed to `b67f95d`** (72 files, +1,228 / −2,582). The issue was

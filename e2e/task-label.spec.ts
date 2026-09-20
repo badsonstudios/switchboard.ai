@@ -115,11 +115,18 @@ test.describe('auto task labels (E7-06)', () => {
     writeTranscript(a.home, folder, [REVISED.lines[1][1]]);
     await expect(cardLabel(w)).toHaveText(SETTLED_TITLE);
 
-    await w.getByTestId('auto-labels').click();
+    // THREE STATES ON ONE CHIP as of #758: auto → AI → off → auto. Reaching
+    // the screen-share state is two clicks from the default now, not one —
+    // the cost of the bar having no room for a second chip (#879). The
+    // assertions are unchanged: what is being tested is that the phrase leaves
+    // the screen and comes back, not how many clicks it takes.
+    await w.getByTestId('auto-labels').click(); // auto → AI (still showing)
+    await expect(cardLabel(w)).toHaveText(SETTLED_TITLE);
+    await w.getByTestId('auto-labels').click(); // AI → off
     await expect(cardLabel(w)).toHaveText('+ task label');
     await expect(railRow(w, SETTLED_TITLE)).toHaveCount(0); // and off the rail
 
-    await w.getByTestId('auto-labels').click();
+    await w.getByTestId('auto-labels').click(); // off → auto
     await expect(cardLabel(w)).toHaveText(SETTLED_TITLE);
   });
 

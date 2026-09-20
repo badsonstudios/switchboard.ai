@@ -73,7 +73,24 @@ import { EventFeed } from '../events/feed';
 import { HistoryRepair } from './history-repair-log';
 import { planSessionStart } from './start-plan';
 import { recordNativeId, resumeCandidates } from './lineage';
-import { nextAutoLabel, typedLabel, visibleTaskLabel } from './auto-label';
+import { labelSourceOf, nextAutoLabel, typedLabel, visibleTaskLabel } from './auto-label';
+// AI-written task labels (#758). The DECISIONS are pure and live next door; the
+// contained CLI run is a provider concern. This file owns only the joining-up:
+// which card, which transcript, and when.
+import {
+  acceptAiLabel,
+  buildExcerpt,
+  buildLabelPrompt,
+  shouldRelabel,
+  type AiLabelState,
+} from './ai-label';
+// TYPE-ONLY, and deliberately so: the contained run is INJECTED (`runOneShot`
+// below) rather than imported and called. This file's tests drive every other
+// collaborator through `deps`, with no module mocking anywhere in the suite, and
+// a hard import here would have made the one path that spends the owner's
+// subscription the one path no test could reach.
+import type { OneShotRequest, OneShotResult } from '../providers/claude-oneshot';
+import { renderBlock } from './transcript-blocks';
 import { PersistedSession } from '../workspace/store';
 import { commandsFromCli, SlashCommand } from '../../shared/slash-commands';
 import { DEFAULT_SESSION_TRANSPORT } from '../transport/transport';
@@ -122,6 +139,32 @@ export interface SessionIpcDeps {
    *  to the session title — the screen-share switch. */
   autoLabels: () => boolean;
   setAutoLabels: (on: boolean) => void;
+  /**
+   * AI-written task labels (#758, §5.11) — OFF by default.
+   *
+   * A thunk, and read at the moment a turn ENDS rather than cached: unlike
+   * `autoLabels`, which costs nothing, this one authorises a contained
+   * `claude -p` pass that spends the owner's subscription. A value captured at
+   * wiring time could keep spending after the owner switched it off.
+   *
+   * Optional so a wiring without it — the unit harness, a host that cannot run
+   * one-shots — simply never labels, rather than failing to start.
+   */
+  aiLabels?: () => boolean;
+  setAiLabels?: (on: boolean) => void;
+  /**
+   * Run one CONTAINED `claude -p` and hand back what it said (#758).
+   *
+   * Injected for two reasons. The obvious one is testability — see the
+   * type-only import above. The other is that containment is a PROVIDER
+   * concern: `providers/claude-oneshot.ts` owns which flags make a turn
+   * harmless (measured in `spike/findings/758-label-containment.md`), and this
+   * module has no business assembling an argv.
+   *
+   * Absent = no AI labels, silently. A wiring that cannot run one-shots is not
+   * broken; it is a wiring where this feature does not exist.
+   */
+  runOneShot?: (req: OneShotRequest) => Promise<OneShotResult>;
   /**
    * §5.5 Level 3 — fork adoption, experimental and OFF by default (P2-E11-12).
    *
@@ -560,9 +603,118 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     tearDownStep(liveId, 'unbindLive', () => unbindLive(liveId));
   };
 
+  /**
+   * What we remember per card between AI-label runs (#758) — in memory only.
+   *
+   * Every field is an optimisation for NOT spending tokens, so losing it on a
+   * restart costs one extra label per session at worst. Persisting it would put
+   * a value in the workspace file that can silently suppress a feature the
+   * owner just switched on, which is a far worse failure than one extra run.
+   */
+  const aiLabelState = new Map<string, AiLabelState>();
+
+  /**
+   * A turn just ended on `liveId` — should we ask a model what it is doing now?
+   *
+   * THE TRIGGER IS THE TURN, NOT A CLOCK. An idle session costs exactly
+   * nothing, for ever, with no timer running — which no debounce interval can
+   * achieve, because a timer that fires on an idle session has already paid for
+   * itself in wakeups. Everything else (has it grown, how long since, is one
+   * already out) is `shouldRelabel`, where it can be tested.
+   *
+   * Fail-open is structural (P6): `runContainedPrompt` never rejects, every
+   * outcome here ends in "leave the label alone", and nothing on this path can
+   * touch the session it is describing.
+   */
+  const maybeAiLabel = (liveId: string): void => {
+    const runOneShot = deps.runOneShot;
+    if (!runOneShot) return; // a wiring without one simply has no AI labels
+    const cardId = cardOfLive.get(liveId);
+    if (!cardId) return;
+    const card = deps.persist.list().find((s) => s.id === cardId);
+    if (!card) return;
+
+    const snap = transcripts.snapshot(liveId);
+    const state = aiLabelState.get(cardId) ?? {};
+    const verdict = shouldRelabel({
+      // BOTH switches. `aiLabels` is consent to spend; `autoLabels` being off
+      // means auto labels are hidden (the screen-share switch), and generating
+      // a phrase nobody can see is the one way to waste the owner's
+      // subscription outright rather than merely often.
+      enabled: deps.aiLabels?.() === true && deps.autoLabels(),
+      card,
+      lines: snap?.lines ?? 0,
+      state,
+      now: Date.now(),
+    });
+    if (!verdict.run) return;
+
+    // ⚠️ ROUTED BY TRANSPORT, exactly as `transcripts:blocks` is. The first cut
+    // read `transcripts.blocks()` unconditionally and **the feature never ran
+    // once in the shipped configuration**: a stream session is watched with
+    // `deriveFeed: false`, so the watcher derives no blocks and hands back an
+    // empty list — while `snapshot.lines` still counts, so `shouldRelabel`
+    // happily said "run". Every session ships as `stream` since #873, so the
+    // labeler decided to spend, found nothing, and returned one line later.
+    // Caught in review; the cadence tests missed it because the harness leaves
+    // `transport` at its `pty` default.
+    const blocks =
+      isStream(liveId) && deps.streamFeed ? deps.streamFeed.blocks(liveId) : transcripts.blocks(liveId);
+    const excerpt = buildExcerpt(blocks.map(renderBlock));
+    if (!excerpt) {
+      // The one branch that used to be silent, and the reason that defect could
+      // have shipped: "decided to run, then did nothing" must leave a trace.
+      log.debug('ai label skipped: nothing readable in the conversation yet', { cardId, liveId });
+      return;
+    }
+
+    // Sampled BEFORE the run so the last-writer rule has something to compare
+    // against ~14 seconds later, which is plenty of time for the owner to type
+    // a label of their own.
+    const ownerAtStart = labelSourceOf(card);
+    const startedLines = snap?.lines ?? 0;
+    aiLabelState.set(cardId, { lastRunAt: Date.now(), lastLines: startedLines, inFlight: true });
+
+    void runOneShot({ prompt: buildLabelPrompt(excerpt), cwd: card.identity.folder })
+      .then((res) => {
+        // Re-read the card: the whole point of `acceptAiLabel` is that it may
+        // have become the user's while we were waiting.
+        const fresh = deps.persist.list().find((s) => s.id === cardId);
+        if (!fresh) return;
+        const label = res.ok ? acceptAiLabel(fresh, res.text, ownerAtStart) : null;
+        if (label === null) return;
+        deps.persist.upsert({ ...fresh, taskLabel: label, labelSource: 'auto' });
+        // ⚠️ THE SCREEN-SHARE SWITCH IS RE-READ HERE, and it has to be. A run
+        // takes ~14 seconds; the owner can hit 🏷 inside that window precisely
+        // BECAUSE someone started watching, and `setAutoLabels` has already
+        // swept every card blank by the time this resolves. Publishing the raw
+        // string would push a freshly-generated phrase from their transcript
+        // straight back onto the card — the exact case §5.11's switch exists
+        // for. STORING it is right (it is an ordinary auto label, and the
+        // switch hides rather than deletes); SHOWING it is not ours to decide
+        // here, so the answer goes through the same rule every other label
+        // does.
+        publishLabel(cardId, visibleTaskLabel({ taskLabel: label, labelSource: 'auto' }, deps.autoLabels()));
+      })
+      .catch((err: unknown) => {
+        // `runContainedPrompt` is documented never to reject, so this is the
+        // belt on top of the braces: a throw from the persist/publish half must
+        // not become an unhandled rejection in Electron main.
+        log.warn('ai label failed after the run', { cardId, error: String(err) });
+      })
+      .finally(() => {
+        const s = aiLabelState.get(cardId);
+        if (s) aiLabelState.set(cardId, { ...s, inFlight: false });
+      });
+  };
+
   manager.onStatusChange((change) => {
     send('sessions:status', change);
     deps.feed.ingest(change);
+    // A finished turn is the one moment the work has demonstrably moved on
+    // (#758). `done` is `transition()`'s answer to both stream `result` and the
+    // `Stop` hook, so this fires once per real turn on either transport.
+    if (change.to === 'done') maybeAiLabel(change.sessionId);
     // A turn is running, so a transcript exists or is about to (P2-E15-10).
     // This is the ONLY honest "a conversation started" signal available: the
     // watcher sees hook traffic from `SessionStart` at launch too, and a
@@ -2002,6 +2154,13 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   broker.handle('sessions:closeCard', (_e, cardId: string) => {
     dropLiveForCard(cardId);
     deps.persist.remove(cardId);
+    // #758's throttle memory dies with the card. Card ids are reused by the
+    // renderer, so leaving it would hand a brand-new card the closed one's
+    // `lastRunAt` and silently suppress its first label for up to ten minutes.
+    // A run still in flight re-creates the entry in its own `.finally`; that is
+    // harmless (the `.then` already bails on a card that no longer exists) and
+    // the next close clears it again.
+    aiLabelState.delete(cardId);
   });
 
   // drop only the live session (restart): keep the record so it can respawn
@@ -2107,6 +2266,24 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
       publishLabel(card.id, visibleTaskLabel(card, enabled));
     }
     return enabled;
+  });
+
+  // The AI-label switch (#758). Beside the one above because they govern the
+  // same field, but they are NOT the same kind of switch and the difference is
+  // the whole reason this one exists separately: `autoLabels` decides whether a
+  // phrase we already have is SHOWN, and costs nothing either way; this decides
+  // whether the app may SPEND the owner's subscription to write a new one.
+  //
+  // So there is no re-publish sweep here. Turning it on makes no label appear
+  // until a turn ends — nothing has been generated yet — and turning it off
+  // takes nothing off screen, because a label already written is a perfectly
+  // good auto label and the screen-share switch above is what hides those.
+  broker.handle('settings:getAiLabels', () => deps.aiLabels?.() ?? false);
+  broker.handle('settings:setAiLabels', (_e, on: boolean) => {
+    // A wiring with no setter answers "still off" rather than pretending, which
+    // is what `took()` on the renderer side reads as a refusal (#440).
+    deps.setAiLabels?.(on === true);
+    return deps.aiLabels?.() ?? false;
   });
 
   // rename a card by cardId (works for suspended cards too) — updates the

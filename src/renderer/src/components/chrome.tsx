@@ -68,10 +68,30 @@ export function TitleBar(props: {
   /** whether the trust setting can change what any session does (#397) — false
    *  greys the chip out, because Direct-mode sessions are never asked */
   trustReaches: boolean;
-  /** §5.11's auto task labels (P2-E7-06) — off hides every label the CLI filled
-   *  in, on the card, in the rail and in OS toasts */
+  /**
+   * Task labels, as THREE STATES ON ONE CHIP (P2-E7-06 + #758, §5.11):
+   *
+   *   auto  `autoLabels` on, `aiLabels` off — show the title the CLI already
+   *         wrote into its transcript. Costs nothing.
+   *   AI    both on — also let Claude WRITE the label from what the session has
+   *         been doing, refreshed as the work drifts. Spends the subscription.
+   *   off   both off — the screen-share state (§5.11, litmus #4).
+   *
+   * ⚠️ ONE CHIP RATHER THAN TWO, AND IT IS NOT A STYLE CALL. The bar has no
+   * room: measured at the 1024px CI uses, it already overflows by **675px**
+   * with ~11 controls off screen (#879, pre-existing). Adding a tenth chip for
+   * #758 destabilised two geometry specs on two different CI runs — a wrapped
+   * chip stealing the conversation's pixels, then an off-screen control
+   * scrolling the page under a screenshot. Folding the state back into this
+   * chip adds ZERO width, which is what the ticket itself proposed as the
+   * alternative ("a mode on the existing auto-labels switch").
+   *
+   * `aiLabels` is optional so a render test that predates #758 still compiles
+   * and reads as the `auto` state, which is the truth for it.
+   */
   autoLabels: boolean;
-  onToggleAutoLabels: () => void;
+  aiLabels?: boolean;
+  onCycleLabels: () => void;
   /**
    * §5.5 Level 3 — fork adoption (P2-E11-12). EXPERIMENTAL, off by default.
    *
@@ -149,13 +169,28 @@ export function TitleBar(props: {
           phrase derived from what you asked the agent, rendered on every card
           and pushed into OS toasts — so the person who needs it off needs it
           off NOW, mid screen-share, without hunting. */}
+      {/* Three states, one chip — see the prop's note for why it is not two.
+          The label states which one is current IN WORDS (§5.32), never colour
+          alone, and the tooltip says what the next click does. Cheap → spends →
+          neither, so the expensive state is never the one you land on by
+          accident. */}
       <Chip
         selected={props.autoLabels}
-        onClick={props.onToggleAutoLabels}
-        title={t('titlebar.autoLabelsHint')}
+        onClick={props.onCycleLabels}
+        title={t(
+          !props.autoLabels
+            ? 'titlebar.labelsOffHint'
+            : props.aiLabels
+              ? 'titlebar.aiLabelsHint'
+              : 'titlebar.autoLabelsHint'
+        )}
         testId="auto-labels"
       >
-        {props.autoLabels ? t('titlebar.autoLabelsOn') : t('titlebar.autoLabelsOff')}
+        {!props.autoLabels
+          ? t('titlebar.autoLabelsOff')
+          : props.aiLabels
+            ? t('titlebar.aiLabelsOn')
+            : t('titlebar.autoLabelsOn')}
       </Chip>
       {/* The two audio channels (P2-E14-05a, §5.9). Chips, beside the labels
           chip and for the same reason: what they govern is NOISE in a shared
@@ -398,6 +433,30 @@ export function Chip(props: {
         cursor: props.disabled ? 'default' : 'pointer',
         fontFamily: 'var(--font-ui)',
         fontSize: 11,
+        /**
+         * A CHIP LABEL NEVER WRAPS, and this is a height promise rather than a
+         * typographic preference (#274's rule, one level down).
+         *
+         * The bar is a single nowrap flex row that now carries 21 controls, and
+         * at the 1024px the windows-latest runner uses it is far over-wide — so
+         * flex COMPRESSES the chips. A compressed button with no `white-space`
+         * rule wraps its text to a second line, and a two-line chip makes the
+         * bar taller than the `minBlockSize: 34` floor above. In a short window
+         * the shell column has no spare pixels, so those go straight out of the
+         * conversation, which is the only flexible item left.
+         *
+         * That is the shape of the CI failure on #758: `feed.spec.ts`'s "a bar
+         * docking on its own gives the composer its room back" wanted the feed
+         * above 52px and measured 48.66px, on a run whose only renderer change
+         * was one more chip in this row. Not reproducible on a dev machine,
+         * because whether a label wraps at a given width is a question about the
+         * runner's font metrics, not just its pixels.
+         *
+         * `nowrap` alone, deliberately — NOT `flexShrink: 0`. Letting the chips
+         * refuse to compress would push the row's tail off screen instead, and
+         * several specs assert that chips are in the viewport.
+         */
+        whiteSpace: 'nowrap',
       }}
     >
       {props.children}

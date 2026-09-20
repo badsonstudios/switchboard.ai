@@ -358,6 +358,11 @@ export const CHANNEL_CAPABILITIES = {
   'sessions:contextOffer': 'transcripts.read',
   'settings:getAutoLabels': 'settings.read',
   'settings:setAutoLabels': 'settings.write',
+  // AI-written task labels (#758). An ordinary preference pair: the switch
+  // decides whether a contained one-shot may run, and nothing on this channel
+  // can start, reach or read a session.
+  'settings:getAiLabels': 'settings.read',
+  'settings:setAiLabels': 'settings.write',
   'settings:getAutoTrust': 'settings.read',
   'settings:setAutoTrust': 'settings.write',
   // §5.5 Level 3, behind its experimental flag (P2-E11-12). An ordinary

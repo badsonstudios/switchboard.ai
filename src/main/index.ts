@@ -32,6 +32,10 @@ import { HookListener } from './hooks/hook-listener';
 import { TranscriptWatcher } from './transcripts/watcher';
 import { HistoryRepairLog } from './sessions/history-repair-log';
 import { registerSessionIpc, SessionIpcHandle } from './sessions/ipc';
+// The contained one-shot behind AI task labels (#758). Wired in here rather
+// than imported by `sessions/ipc.ts`, so the argv that makes a turn harmless
+// stays a provider concern and the label path stays injectable.
+import { runContainedPrompt } from './providers/claude-oneshot';
 import { registerGroupIpc } from './workspace/group-ipc';
 import { registerMcpIpc } from './mcp/ipc';
 import { samePath } from './mcp/config';
@@ -2217,6 +2221,22 @@ app
       autoTrust: () => workspace.getAutoTrust(),
       autoLabels: () => workspace.getAutoLabels(),
       setAutoLabels: (on) => workspace.setAutoLabels(on),
+      // AI-written task labels (#758). A thunk for `experimentalFork`'s reason
+      // and one more: this one SPENDS the owner's subscription, so the value
+      // read at the moment a turn ends is the only one that may authorise a
+      // run — never a copy taken when the app started.
+      aiLabels: () => workspace.getAiLabels(),
+      setAiLabels: (on) => workspace.setAiLabels(on),
+      // Its own log subsystem, not `ipc`: a labeler that starts failing (a rate
+      // limit, a CLI upgrade that renames a flag) should be findable without
+      // reading every IPC line, and this is the one path that spends money.
+      runOneShot: ((): ((req: Parameters<typeof runContainedPrompt>[0]) => ReturnType<typeof runContainedPrompt>) => {
+        // Built ONCE, not per call: a label run happens on every finished turn
+        // across every open session, and minting a logger each time is pure
+        // churn for the life of the app.
+        const aiLabelLog = createLogger(sink, 'ai-label');
+        return (req) => runContainedPrompt(req, { log: aiLabelLog });
+      })(),
       // §5.5 Level 3 (P2-E11-12). A thunk, not a snapshot: the flag can be
       // turned off while cards are open, and the next fork request must see
       // that rather than a value read at wiring time.

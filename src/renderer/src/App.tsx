@@ -558,6 +558,11 @@ export function App(): React.JSX.Element {
   // measurement behind it are in `lib/trust-reach.ts`.
   const trustReaches = trustSettingReaches(sessions);
   const [autoLabels, setAutoLabels] = useState(true);
+  // AI-written task labels (#758). Starts OFF here as well as in the store, for
+  // `experimentalFork`'s reason below and one more: this is what the bar draws
+  // for the instant before main answers, and a chip that flickered ON would say
+  // the app was spending the owner's subscription when it was not.
+  const [aiLabels, setAiLabels] = useState(false);
   // §5.5 Level 3 — fork adoption (P2-E11-12). The one chip that starts OFF, and
   // it starts off here as well as in the store: this initial value is what the
   // bar draws for the instant before main answers, and an experiment that
@@ -646,6 +651,11 @@ export function App(): React.JSX.Element {
     // the honest default for a setting we could not read is off.
     void bridge.settings?.getAutoTrust?.().then((on) => setAutoTrust(took(on)));
     void bridge.settings?.getAutoLabels?.().then((on) => setAutoLabels(took(on)));
+    // #758: `took` is doing real work here too. A refusal must read as OFF,
+    // because off is what main assumes — and this is the one setting where a
+    // chip wrongly showing ON would claim the app is spending the owner's
+    // subscription when it is not.
+    void bridge.settings?.getAiLabels?.().then((on) => setAiLabels(took(on)));
     // `took` matters more here than anywhere else in this block: a refusal must
     // read as OFF, and off is also what main assumes — so a setting we could not
     // read can never leave the bar advertising a gesture main will refuse.
@@ -1841,15 +1851,30 @@ export function App(): React.JSX.Element {
             .then((on) => setExperimentalFork(took(on)));
         }}
         autoLabels={autoLabels}
-        onToggleAutoLabels={() => {
-          const next = !autoLabels;
-          setAutoLabels(next); // optimistic: the chip must move on the click…
-          // …and main answers with what it actually stored, which is also what
-          // re-publishes every visible label under the new setting. `took`
-          // (#440) so a refusal — nothing was stored — reads as off rather than
-          // as a truthy object, the same convention as the card's own
-          // notify-when-done toggle.
-          void bridge.settings?.setAutoLabels?.(next).then((on) => setAutoLabels(took(on)));
+        aiLabels={aiLabels}
+        onCycleLabels={() => {
+          // auto → AI → off → auto, mapped onto the two booleans that already
+          // exist, so nothing in main, the store or the IPC changes shape.
+          // Cheap first, spending second, hidden last: the state that bills the
+          // owner is never the one a stray click lands on from the default.
+          //
+          // ⚠️ THE SCREEN-SHARE STATE IS NOW TWO CLICKS from the default rather
+          // than one (§5.11, litmus #4), and that is the real cost of folding
+          // two chips into one. Accepted deliberately: the bar cannot take
+          // another control (#879 — 675px of overflow at the CI width), and the
+          // chip says which state it is in, so the second click is informed
+          // rather than hunted for.
+          const next = !autoLabels ? 'auto' : aiLabels ? 'off' : 'ai';
+          const wantAuto = next !== 'off';
+          const wantAi = next === 'ai';
+          setAutoLabels(wantAuto); // optimistic: the chip must move on the click…
+          setAiLabels(wantAi);
+          // …and main answers with what it actually STORED, for both halves —
+          // the first also re-publishes every visible label under the new
+          // setting. `took` (#440) so a refusal reads as OFF, which is the safe
+          // direction and matters most for the half that authorises spending.
+          void bridge.settings?.setAutoLabels?.(wantAuto).then((on) => setAutoLabels(took(on)));
+          void bridge.settings?.setAiLabels?.(wantAi).then((on) => setAiLabels(took(on)));
         }}
         railHidden={railHidden}
         onToggleRail={toggleRail}
