@@ -3,6 +3,37 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🗺 THE QUEUE — owner's order, set 2026-09-20
+>
+> **#877 (merging) → #885 settings → #733 multi-question panel → RELEASE.**
+> Dan's words: *"once we finish the settings, next I want to work on the ticket
+> where we're going to do some updates to how a question is asked, when there are
+> multiple questions… and that's the one we're going to do next before we do a
+> release."*
+>
+> - **#885 — settings modal.** All six decisions are recorded as a comment on the
+>   issue. Shape: a MODAL. Absorbs quiet hours + push (their files go away);
+>   **does NOT absorb the MCP manager** — it is session-scoped and read-only, an
+>   inspector rather than a preference, and putting it in a global modal would
+>   make it lie about its scope. **Theme (5) + language (2) leave the title bar**;
+>   the fast off-switches (labels, sounds, speak, auto-trust, notifications) stay,
+>   because "needs it off NOW" is the test that earns a chip. Global defaults
+>   only — per-session overrides stay on the card's ⋯ menu. Defaults taken on the
+>   last two: `Ctrl+,` plus the palette, and no search box at ~15 preferences.
+>   **#879 should close with this item** and the residual overflow re-measured at
+>   1024px rather than declared fixed. `TaskLabelSizeDialog.tsx` is absorbed too,
+>   so #877's stopgap does not outlive its reason.
+> - **#733 — the multi-question panel.** Dan's own dogfood feedback (2026-08-30),
+>   two parts: single-select answers **auto-advance to the next UNANSWERED tab**
+>   (checkbox questions stay put; ticking *Other* must not advance, because it
+>   opens a text field to type in), and the **`line-through` on skipped tabs**,
+>   which he read as a rendering glitch — the affordance failed its legibility
+>   test on the person it was built for, so it needs a redesign rather than a
+>   wontfix.
+> - **THEN the release**, which is also when the v0.8.92 hand-tests stop being
+>   optional: #873's seven steps, #864 on the real dual-monitor rig, and #758's
+>   drift step. ⚠️ Four user-facing features will be stacked unverified by then.
+
 > # 🔄 IN FLIGHT — 2026-09-20: **#877** — task labels get three lines, and a size setting
 >
 > **Branch `feature/877-label-lines-and-size`, rebased on `68f0257`. PR open,
