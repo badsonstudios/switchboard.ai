@@ -805,24 +805,30 @@ describe('update prefs (P2-E19-03)', () => {
     expect(b.getAutoLabels()).toBe(false);
   });
 
-  it('AI labels default OFF, and only a literal true turns them on (#758)', () => {
-    // ⚠️ THE OPPOSITE DEFAULT FROM EVERY OTHER PREF IN THIS FILE, and the one
-    // that must not drift. `autoLabels` reads a line the CLI already wrote and
-    // costs nothing; this one runs a contained `claude -p` over the transcript
-    // and SPENDS THE OWNER'S SUBSCRIPTION. A workspace file written before the
-    // feature existed cannot have consented to that, so absent must mean off.
+  it('AI labels default ON, and only an explicit false turns them off (#883)', () => {
+    // ⚠️ THIS ASSERTION WAS THE EXACT OPPOSITE UNTIL #883, and it is flipped
+    // rather than relaxed. #758 shipped the feature opt-in, reasoning that
+    // anything spending the owner's subscription should be switched on by hand;
+    // having used it in v0.8.92 he asked for the reverse. So absent now means
+    // ON — including for a workspace file written before the feature existed.
     const st = makeStore(file);
     st.load();
-    expect(st.getAiLabels()).toBe(false);
+    expect(st.getAiLabels()).toBe(true);
 
-    // …and the `=== true` shape, not `!== false`: a hand-edited string or a
-    // number is not consent either.
-    for (const junk of ['true', 1, {}, null]) {
+    // The `!== false` shape: junk is not a choice, so it lands on the default
+    // like every other pref in this file rather than silently disabling.
+    for (const junk of ['false', 0, {}, null]) {
       fs.writeFileSync(file, JSON.stringify({ version: 1, aiLabels: junk }));
       const s = makeStore(file);
       s.load();
-      expect(s.getAiLabels(), `aiLabels: ${JSON.stringify(junk)}`).toBe(false);
+      expect(s.getAiLabels(), `aiLabels: ${JSON.stringify(junk)}`).toBe(true);
     }
+
+    // …and an explicit `false` IS a choice, and is honoured.
+    fs.writeFileSync(file, JSON.stringify({ version: 1, aiLabels: false }));
+    const off = makeStore(file);
+    off.load();
+    expect(off.getAiLabels()).toBe(false);
   });
 
   it('the AI-label switch survives a reload once it is turned on (#758)', () => {
@@ -1581,14 +1587,14 @@ describe('load-time repairs are audible (#344)', () => {
       expect(warns[0].msg).toMatch(/auto-label .* leaving it on/);
     });
 
-    it('a non-boolean AI-label setting says it stayed OFF (#758)', () => {
-      // The opposite direction from every other repair note in this block, and
-      // deliberately so: this setting spends the owner's subscription, so junk
-      // in the file must never be read as consent to start spending.
+    it('a non-boolean AI-label setting says it stayed ON (#883)', () => {
+      // Flipped with the default: junk is not a choice either way, so it lands
+      // on the default like every other repair note in this block. Until #883
+      // this said "off", for the opt-in reasoning the owner has since reversed.
       write({ version: 1, aiLabels: 'yes please' });
       const warns = loadWarns();
       expect(warns).toHaveLength(1);
-      expect(warns[0].msg).toMatch(/AI-label .* leaving it off/);
+      expect(warns[0].msg).toMatch(/AI-label .* leaving it on/);
     });
   });
 

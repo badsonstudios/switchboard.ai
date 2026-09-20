@@ -81,6 +81,7 @@ import {
   acceptAiLabel,
   buildExcerpt,
   buildLabelPrompt,
+  provisionalLabel,
   shouldRelabel,
   type AiLabelState,
 } from './ai-label';
@@ -614,6 +615,37 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   const aiLabelState = new Map<string, AiLabelState>();
 
   /**
+   * The prompt just went — put something true on the card NOW (#883).
+   *
+   * The owner's report on v0.8.92: first prompt sent, card still blank. The AI
+   * pass is ~14 s away by design and the CLI's own title may never arrive (the
+   * five newest transcripts here carry none), so the card could sit empty
+   * through the whole first turn. This costs nothing: it is the user's own
+   * prompt, cleaned.
+   *
+   * IT ONLY EVER FILLS A BLANK, which is what keeps three auto sources from
+   * fighting. Any label already present — the user's, a CLI title, or an earlier
+   * AI one — is left exactly alone, so this can never overwrite something
+   * better; it can only replace nothing. The AI pass then supersedes it on the
+   * ordinary `nextAutoLabel`/`acceptAiLabel` path.
+   *
+   * Published through `visibleTaskLabel` for the screen-share switch's sake,
+   * the same as the AI path: stored either way, shown only when labels are.
+   */
+  const noteProvisionalLabel = (liveId: string, text: string): void => {
+    const cardId = cardOfLive.get(liveId);
+    if (!cardId) return;
+    const card = deps.persist.list().find((s) => s.id === cardId);
+    if (!card) return;
+    if (card.taskLabel) return; // fills a blank, never replaces
+    if (labelSourceOf(card) === 'user') return; // belt and braces; a user label is never blank-but-owned
+    const label = provisionalLabel(text);
+    if (!label) return;
+    deps.persist.upsert({ ...card, taskLabel: label, labelSource: 'auto' });
+    publishLabel(cardId, visibleTaskLabel({ taskLabel: label, labelSource: 'auto' }, deps.autoLabels()));
+  };
+
+  /**
    * A turn just ended on `liveId` — should we ask a model what it is doing now?
    *
    * THE TRIGGER IS THE TURN, NOT A CLOCK. An idle session costs exactly
@@ -981,7 +1013,12 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     if (typeof sessionId !== 'string' || typeof text !== 'string') return false;
     const clean = sanitizePromptAttachments(attachments);
     if (clean === null) return false;
-    return manager.submitPrompt(sessionId, text, clean);
+    const sent = manager.submitPrompt(sessionId, text, clean);
+    // Only once the prompt actually WENT (#883). `submitPrompt` answers false
+    // for a refused send and for a PTY session, whose prompt does not travel
+    // this way at all — labelling either would describe work nobody started.
+    if (sent) noteProvisionalLabel(sessionId, text);
+    return sent;
   });
   // Interrupt the running turn (#154). Returns false for a PTY session, whose
   // interrupt is an Esc keystroke — the renderer falls back, exactly as it does

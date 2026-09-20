@@ -558,11 +558,14 @@ export function App(): React.JSX.Element {
   // measurement behind it are in `lib/trust-reach.ts`.
   const trustReaches = trustSettingReaches(sessions);
   const [autoLabels, setAutoLabels] = useState(true);
-  // AI-written task labels (#758). Starts OFF here as well as in the store, for
-  // `experimentalFork`'s reason below and one more: this is what the bar draws
-  // for the instant before main answers, and a chip that flickered ON would say
-  // the app was spending the owner's subscription when it was not.
-  const [aiLabels, setAiLabels] = useState(false);
+  // AI-written task labels (#758) — ON as of #883, matching the store.
+  //
+  // The flicker argument that put this at `false` has INVERTED with the default:
+  // this value is what the bar draws for the instant before main answers, and
+  // starting it off would now flash the wrong state on every launch. `took`
+  // below still resolves a REFUSAL to off, which is the safe direction when main
+  // declines to say.
+  const [aiLabels, setAiLabels] = useState(true);
   // §5.5 Level 3 — fork adoption (P2-E11-12). The one chip that starts OFF, and
   // it starts off here as well as in the store: this initial value is what the
   // bar draws for the instant before main answers, and an experiment that
@@ -1864,7 +1867,10 @@ export function App(): React.JSX.Element {
           // another control (#879 — 675px of overflow at the CI width), and the
           // chip says which state it is in, so the second click is informed
           // rather than hunted for.
-          const next = !autoLabels ? 'auto' : aiLabels ? 'off' : 'ai';
+          // ✨ AI labels → 🏷 auto labels → 🏷 labels off → ✨ AI labels (#883).
+          // The DEFAULT state reads first, and the screen-share state stays two
+          // clicks away from it exactly as it was before the reorder.
+          const next = !autoLabels ? 'ai' : aiLabels ? 'auto' : 'off';
           const wantAuto = next !== 'off';
           const wantAi = next === 'ai';
           setAutoLabels(wantAuto); // optimistic: the chip must move on the click…

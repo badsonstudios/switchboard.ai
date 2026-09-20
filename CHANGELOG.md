@@ -96,6 +96,20 @@ on the floor, and say so in your PR.
 
 ## 0.8.93 — unreleased
 
+### Changed
+
+- **Task labels now name themselves the moment you send your first prompt, and
+  Claude's labels are on by default.** Previously a new session sat blank until
+  the AI label arrived — and if you had not switched AI labels on, potentially
+  for ever. Now the card takes its name from your prompt straight away (free, no
+  model call), and Claude replaces it with a better one when the turn finishes
+  and keeps it up to date as the work moves on. **The ✨ AI labels setting is on
+  by default now**, so the labels chip starts there and clicking it steps to the
+  free conversation title, then to labels off. A session opened with a slash
+  command is named after the command rather than showing markup. As before,
+  **anything you type yourself is never overwritten**, and an existing label is
+  never replaced by the instant one — it only ever fills a blank.
+
 ## 0.8.92 — 2026-09-20
 
 ### Added

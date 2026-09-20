@@ -236,15 +236,21 @@ export interface WorkspaceState {
    */
   autoLabels: boolean;
   /**
-   * AI-written task labels (#758, §5.11) — OFF BY DEFAULT, and the default is
-   * the whole point.
+   * AI-written task labels (#758, §5.11) — **ON by default as of #883**.
    *
-   * `autoLabels` above costs nothing: the CLI already wrote a title into its
-   * own transcript and we read a line out of it. This one SPENDS THE OWNER'S
-   * SUBSCRIPTION — a contained `claude -p` pass over the recent transcript,
-   * measured at ~14 s and a few hundred tokens a time. A feature that quietly
-   * bills the user is one they must switch on themselves, so this takes the
-   * `experimentalFork` shape (`=== true`) rather than `autoLabels`'.
+   * ⚠️ THIS REVERSES #758, DELIBERATELY AND ON THE OWNER'S INSTRUCTION
+   * (2026-09-20). That item shipped it opt-in with the argument that a feature
+   * spending the user's subscription is one they should switch on themselves —
+   * and the owner, having then used it in v0.8.92, asked for the opposite:
+   * "AI labels should be on by default unless the user turns them off." He is
+   * better placed to weigh that than the note he wrote before trying it, so the
+   * default moved and the old reasoning is recorded here rather than deleted.
+   *
+   * It still SPENDS: a contained `claude -p` over the recent transcript, ~14 s
+   * and a few hundred tokens, when a turn ends and the work has moved on. What
+   * makes that acceptable as a default is the cadence, not the price — an idle
+   * session costs nothing at all, and `sessions/ai-label.ts` is almost entirely
+   * about refusing to run.
    *
    * It is a SECOND SOURCE, not a replacement: with both on, the AI label wins
    * because it follows the work; with this off, the CLI's own title still
@@ -421,10 +427,11 @@ const EMPTY: WorkspaceState = {
   rules: [],
   autoTrust: true,
   autoLabels: true,
-  // the default-OFF prefs — see each field's note. `aiLabels` spends the
-  // owner's subscription and `experimentalFork` leans on undocumented CLI
-  // behaviour; neither may arrive switched on.
-  aiLabels: false,
+  // ON as of #883 (owner, 2026-09-20), reversing #758's opt-in. See the field's
+  // note for why he changed it after using it.
+  aiLabels: true,
+  // the one default-OFF pref left — an experiment leaning on undocumented CLI
+  // behaviour may not arrive switched on.
   experimentalFork: false,
   updates: { autoCheck: true },
   health: { poll: true },
@@ -711,7 +718,7 @@ export class WorkspaceStore {
         note('the auto-label setting in the workspace file was not true or false — leaving it on');
 
       if (wrongType(raw, 'aiLabels', 'boolean'))
-        note('the AI-label setting in the workspace file was not true or false — leaving it off');
+        note('the AI-label setting in the workspace file was not true or false — leaving it on');
 
       this.state = {
         version: CURRENT_VERSION,
@@ -724,16 +731,16 @@ export class WorkspaceStore {
         rules,
         autoTrust: raw.autoTrust !== false, // default on
         autoLabels: raw.autoLabels !== false, // default on — same shape, same reason
-        // ⚠️ THE OPPOSITE SHAPE ON PURPOSE: `=== true`, not `!== false`. The two
-        // above read "on unless explicitly off"; these two must read "off
-        // unless explicitly on", so a missing key, a hand-edited string, or a
-        // file written by an older build all land OFF rather than silently
-        // enabling a feature nobody asked for.
-        //
-        // For `aiLabels` (#758) that is not just tidiness: it spends the
-        // owner's subscription on every run, and a workspace file from a build
-        // that predates it must never be read as consent.
-        aiLabels: raw.aiLabels === true,
+        // `aiLabels` reads "on unless explicitly off" as of #883 — the owner
+        // reversed #758's opt-in after using it, so a workspace file that
+        // predates the feature (and every fresh install) gets it ON. A file
+        // that says `false` is a choice and is honoured.
+        aiLabels: raw.aiLabels !== false,
+        // ⚠️ THE OPPOSITE SHAPE, AND THE LAST ONE LIKE IT: `=== true`, not
+        // `!== false`. An experiment must read "off unless explicitly on", so a
+        // missing key, a hand-edited string, or a file written by an older
+        // build all land OFF rather than silently enabling something nobody
+        // asked for.
         experimentalFork: raw.experimentalFork === true,
         updates: updates.value,
         health: health.value,
