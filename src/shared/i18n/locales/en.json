@@ -878,7 +878,8 @@
       "urgent": "This session when it needs you: never jump, just light its lamp",
       "none": "This session when it needs you: never jump, and keep it out of the queue",
       "default": "This session when it needs you: follow the default"
-    }
+    },
+    "taskLabelSize": "Task label size… — how many lines a session's label may use"
   },
   "palette": {
     "label": "Command palette",
@@ -1163,5 +1164,17 @@
         "too-long": "That is too long."
       }
     }
+  },
+  "taskLabelSize": {
+    "title": "Task label size",
+    "open": "Task label size…",
+    "blurb": "How much of each session’s task label to show, on the cards and in the sessions list. Longer labels say more; shorter ones fit more sessions on screen.",
+    "full": "Full",
+    "fullNote": "Up to three lines. The default — Claude is asked for a phrase, and this is the room to read it.",
+    "medium": "Medium",
+    "mediumNote": "Up to two lines. A compromise when you are running a lot of sessions.",
+    "compact": "Compact",
+    "compactNote": "One line, trimmed with an ellipsis — exactly how labels looked before this setting existed.",
+    "close": "Done"
   }
 }

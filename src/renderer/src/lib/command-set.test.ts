@@ -56,6 +56,7 @@ function deps(): CommandDeps & DepMocks {
     closeAllDocuments: vi.fn(),
     openPushSetup: vi.fn(),
     openQuietHours: vi.fn(),
+    openTaskLabelSize: vi.fn(),
     openMcpManager: vi.fn(),
   };
 }

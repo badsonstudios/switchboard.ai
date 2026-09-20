@@ -19,6 +19,7 @@ import 'dockview-react/dist/styles/dockview.css';
 import '../theme/dockview-tokens.css';
 import { rendererRegistry } from '../extensibility/registry-instance';
 import { sessionStore } from '../store/session-store';
+import { LABEL_LINES } from '../../../shared/task-label-size';
 import { DEFAULT_PANEL_ID, PanelContext, PanelId } from '../extensibility/contributions';
 import { listPanels, panelBadge, panelEnabled } from '../extensibility/panels';
 import { ContributionBoundary } from '../extensibility/boundary';
@@ -442,6 +443,17 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   } | null>(null);
   const [plan, setPlan] = React.useState<{ total: number; completed: number; inProgress: number } | null>(null);
   const [taskLabel, setTaskLabel] = React.useState<string>('');
+  /**
+   * How many lines that label may take (#877).
+   *
+   * Through the STORE rather than as a panel param: dockview fixes a panel's
+   * params when it is created, so a preference the owner can change while cards
+   * are open could never reach an existing card that way. `LABEL_LINES` is the
+   * shared table, so this and the rail cannot disagree about what "full" means.
+   */
+  const labelLines = React.useSyncExternalStore(subscribeStore, () =>
+    LABEL_LINES[sessionStore.getTaskLabelSize()]
+  );
   const [editingLabel, setEditingLabel] = React.useState(false);
   // which view tab the keyboard is on, when it is not the selected one (#197).
   // `null` = focus is outside the strip, so the roving stop sits on the
@@ -1683,11 +1695,23 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 style={{
                   cursor: 'text',
                   fontSize: 11,
+                  lineHeight: 1.35,
                   color: taskLabel ? 'var(--muted)' : 'var(--faint)',
                   fontFamily: 'var(--font-ui)',
+                  // #877: up to `labelLines`, not one ellipsised line. A longer
+                  // label is the point now — the model is asked for a phrase
+                  // rather than six words — and a header that shows only the
+                  // first forty characters of it is the old problem with more
+                  // words behind it.
+                  //
+                  // ⚠️ THIS CAN MAKE THE HEADER TALLER, which pushes the card's
+                  // content down. That is the cost of the owner's "both
+                  // surfaces" call, and `compact` restores exactly the old
+                  // single-line behaviour for anyone who does not want it.
+                  display: '-webkit-box',
+                  WebkitLineClamp: labelLines,
+                  WebkitBoxOrient: 'vertical',
                   overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
                 }}
               >
                 {taskLabel || t('grid.taskLabelEmpty')}

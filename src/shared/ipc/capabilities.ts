@@ -363,6 +363,10 @@ export const CHANNEL_CAPABILITIES = {
   // can start, reach or read a session.
   'settings:getAiLabels': 'settings.read',
   'settings:setAiLabels': 'settings.write',
+  // How much task label is shown (#877) — a rendering preference; nothing on
+  // this channel can start, reach or read a session.
+  'settings:getTaskLabelSize': 'settings.read',
+  'settings:setTaskLabelSize': 'settings.write',
   'settings:getAutoTrust': 'settings.read',
   'settings:setAutoTrust': 'settings.write',
   // §5.5 Level 3, behind its experimental flag (P2-E11-12). An ordinary

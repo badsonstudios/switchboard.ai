@@ -5,6 +5,7 @@ import type { MentionPrompt } from '../shared/mention-prompt';
 import type { ContextOffer } from '../shared/context-drop';
 import type { ConversationHistory, ConversationHistoryRequest } from '../shared/session-history';
 import type { PromptAttachment } from '../shared/prompt-attachments';
+import type { TaskLabelSize } from '../shared/task-label-size';
 import type { SiblingAck, SiblingMessage } from '../shared/sibling-message';
 import type { PtyAttachment, PtyChunk, PtySnapshot } from '../shared/ipc/pty';
 import type {
@@ -797,6 +798,18 @@ const api = {
     getAiLabels: (): Promise<boolean> => ipcRenderer.invoke('settings:getAiLabels'),
     setAiLabels: (on: boolean): Promise<boolean> =>
       ipcRenderer.invoke('settings:setAiLabels', on),
+    /**
+     * How much task label to show (#877) — `full` (3 lines), `medium` (2) or
+     * `compact` (1, the pre-#877 behaviour).
+     *
+     * Main answers with what it actually STORED, so a refused or unrecognised
+     * size comes back as the value still in force rather than as the one the
+     * renderer hoped for.
+     */
+    getTaskLabelSize: (): Promise<TaskLabelSize> =>
+      ipcRenderer.invoke('settings:getTaskLabelSize'),
+    setTaskLabelSize: (size: TaskLabelSize): Promise<TaskLabelSize> =>
+      ipcRenderer.invoke('settings:setTaskLabelSize', size),
     /**
      * §5.5 Level 3 — fork adoption (P2-E11-12). EXPERIMENTAL, off by default.
      *

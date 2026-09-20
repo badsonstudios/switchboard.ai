@@ -1371,7 +1371,27 @@ Every session carries an identity that renders IDENTICALLY everywhere it appears
   `Cargo.toml`→Rust, `pyproject.toml`→Python, …); emoji/icon picker to override.
   Provider badge (Claude/Codex/…) shown alongside.
 - **Git context line**: branch · dirty-file count · ahead/behind.
-- **Task label**: one-line "what am I doing", shown under the title. User-typed,
+- **Task label**: ~~one-line~~ **up to three lines** of "what am I doing", shown
+  under the title. *(⚠️ **AMENDED 2026-09-20, #877, on the owner's direct
+  instruction: "at least three lines max", then "default to the full width and
+  fill the space, but have options to make it smaller in our options
+  settings".** "One-line" was never a layout constraint that earned its keep —
+  it was an unexamined inheritance from the six-word prompt this section used to
+  specify, and it made the model's answer the wrong shape for the space it had.
+  The line budget is now a THREE-VALUE VOCABULARY in `shared/task-label-size.ts`
+  — `full` (3) / `medium` (2) / `compact` (1), default `full` — shared by both
+  surfaces so they cannot disagree about what "full" means, and the prompt was
+  widened to match the room. The clamp is presentation only: the stored label is
+  never truncated, the edit box always holds the whole of it, and a screen
+  reader is read the whole of it. Compact is byte-for-byte the pre-#877
+  appearance, so nobody who preferred the density lost it.
+  ⚠️ **The rail row was restructured in the same item**, and that is the part
+  with teeth: the row used to show EITHER the label or the state on line 2 and
+  never both, so a session that needed you lost its task label at the one moment
+  you most want to know which piece of work is asking. The state now sits beside
+  the NAME as one short word from the same `status.*` vocabulary the card
+  header's pill uses; the longer ask stays in the row's accessible name, where
+  nothing is lost.)* User-typed,
   and **auto-filled from the CLI's own session title when the user has not set
   one** — see "Auto task labels" below. *(Revised 2026-07-30: this bullet used to
   read "derived from the last user prompt, optionally LLM-compressed to ≤6 words".

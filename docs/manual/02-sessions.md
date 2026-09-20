@@ -139,8 +139,8 @@ the next:
 So one click from the default drops back to the free label, and a second hides
 labels entirely.
 
-**This one costs you tokens, which is why it is off until you switch it on.**
-Everything else about labels is free; this runs a small background check against
+**This one costs you tokens** — everything else about labels is free, and this
+runs a small background check against
 your Claude subscription. So it is deliberately careful about when it bothers:
 
 - **Only when a session finishes a turn.** A session sitting idle never costs
@@ -160,12 +160,29 @@ Things worth knowing:
 - **It can't touch anything.** The check runs with no tools at all: it cannot
   run commands, edit files, or reach your other sessions. It reads the recent
   conversation and answers with one line.
-- **It uses a small, cheap model.** A six-word label does not need a big one.
+- **It uses a small, cheap model.** A one-line label does not need a big one.
 - **Clicking on past it stops the spending immediately.** The last label it
   wrote stays on the card, because a label is a label — clear the box yourself
   if you don't want it.
 - **Hiding labels stops it too.** In the **🏷 labels off** setting nothing new
   is written, because there would be nothing on screen to show for the money.
+
+### How much of the label you see
+
+Labels get **up to three lines** — on the card header and in the sessions list
+— and Claude is asked for a phrase that fills them rather than a handful of
+words.
+
+If you run a lot of sessions and would rather have the density back, open the
+command palette (**`Ctrl+Shift+P`**) and pick **Task label size…**, or use the
+button in the **About** panel. Three choices: **Full** (three lines, the
+default), **Medium** (two) and **Compact** (one line, trimmed with an `…` —
+exactly how labels looked before this setting existed).
+
+Nothing is lost at the smaller sizes. The label is still there in full, still
+shown in full in Events, and still read out in full to a screen reader; you are
+only choosing how many lines of it are drawn. Sessions that are already open
+change as soon as you pick.
 
 ### Turning it off (screen-sharing)
 

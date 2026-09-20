@@ -19,6 +19,7 @@ import { Logger } from '../log/logger';
 import { SlashCommand } from '../../shared/slash-commands';
 import { readAiTitle } from '../providers/claude';
 import type { TransportKind } from '../../shared/transport';
+import { DEFAULT_TASK_LABEL_SIZE, type TaskLabelSize } from '../../shared/task-label-size';
 import { REPEAT_HEAVY, REVISED, titlesOf } from '../transcripts/fixtures/ai-title';
 import {
   conversationExists,
@@ -201,6 +202,7 @@ function harness(
   let autoLabels = opts.autoLabels ?? true;
   // ON by default as of #883, like the shipped setting — see the option's note.
   let aiLabels = opts.aiLabels ?? true;
+  let taskLabelSize: TaskLabelSize = DEFAULT_TASK_LABEL_SIZE;
   // OFF by default — the state nearly every user is in, and the one the
   // refusal path depends on.
   const experimentalFork = opts.experimentalFork ?? false;
@@ -568,6 +570,13 @@ function harness(
     aiLabels: () => aiLabels,
     setAiLabels: (on: boolean) => {
       aiLabels = on;
+    },
+    // How much label is shown (#877) — also a write-through, for the reason the
+    // two above are: a stub that always answered the default would let a broken
+    // setter pass.
+    taskLabelSize: () => taskLabelSize,
+    setTaskLabelSize: (size: TaskLabelSize) => {
+      taskLabelSize = size;
     },
     // The contained one-shot, INJECTED. Records what it was asked and answers
     // whatever the test wants — so "did this spend anything?" is a length check
@@ -4897,6 +4906,31 @@ describe('AI task labels — the cadence (#758, §5.11)', () => {
     expect(h.call('settings:setAiLabels', true)).toBe(true);
     // …and only a real `true` turns it on, like the store behind it
     expect(h.call('settings:setAiLabels', 'yes')).toBe(false);
+  });
+
+  it('the label size is readable and writable over IPC, and starts full (#877)', () => {
+    // Synchronous, like the switch above — `.resolves` on these fails with
+    // "you must provide a Promise to expect()".
+    const h = harness(claudeLike, dir, { prior: card() });
+    expect(h.call('settings:getTaskLabelSize')).toBe('full');
+    expect(h.call('settings:setTaskLabelSize', 'compact')).toBe('compact');
+    expect(h.call('settings:getTaskLabelSize')).toBe('compact');
+    expect(h.call('settings:setTaskLabelSize', 'medium')).toBe('medium');
+  });
+
+  it('a size outside the vocabulary leaves the stored one alone (#877)', () => {
+    // The §5.29 half: the renderer is untrusted, so a value the shared guard
+    // does not recognise must not reach the store. The interesting part is what
+    // the handler ANSWERS — it reports what is actually stored, so a renderer
+    // that sent junk sees its optimistic update corrected rather than keeping a
+    // size main never accepted.
+    const h = harness(claudeLike, dir, { prior: card() });
+    expect(h.call('settings:setTaskLabelSize', 'medium')).toBe('medium');
+    for (const junk of ['FULL', 'tiny', '', 2, null, undefined, {}]) {
+      expect(h.call('settings:setTaskLabelSize', junk), `size: ${JSON.stringify(junk)}`).toBe(
+        'medium'
+      );
+    }
   });
 });
 

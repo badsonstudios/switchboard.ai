@@ -3,6 +3,76 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔄 IN FLIGHT — 2026-09-20: **#877** — task labels get three lines, and a size setting
+>
+> **Branch `feature/877-label-lines-and-size`, rebased on `68f0257`. PR open,
+> merging on green CI.** Filed out of #758 and then WIDENED by Dan twice while
+> #883 was in flight: first "I would like it to be at least three lines max",
+> then the decision that settled the shape — **"default to the full width and
+> fill the space, but have options to make it smaller in our options settings"**,
+> applied to **both** the rail and the card header.
+>
+> **What shipped, in four pieces:**
+>
+> 1. **A shared size vocabulary** — `src/shared/task-label-size.ts`:
+>    `full` (3 lines) / `medium` (2) / `compact` (1), default **full**, with
+>    `isTaskLabelSize` as the §5.29 guard and `taskLabelSizeOf` as the total
+>    normaliser. ONE table, imported by the rail, the card header, the store and
+>    the dialog — so no two surfaces can disagree about what "full" means.
+> 2. **The rail row, relaid out** (the shape Dan picked off a mockup): the state
+>    is now ONE SHORT WORD to the right of the name, from the same `status.*`
+>    vocabulary the card header's pill uses, and the task label has lines of its
+>    own below it. ⚠️ **This fixed a real regression nobody had filed:** the row
+>    used to show EITHER the label or the state and never both, so a session that
+>    needed you lost its task label at the one moment you most want to know which
+>    piece of work is asking. The longer ask stays in the row's accessible name.
+> 3. **The setting** — `TaskLabelSizeDialog`, reached by the palette
+>    (`view.taskLabelSize`, under **View** beside `toggleTabRows`) and by a button
+>    in the About panel, following `QuietHoursDialog`'s conventions exactly. No
+>    Save button: one control, a closed vocabulary, and the rail behind the dialog
+>    reflows on the click. **No twelfth chip** — the bar overflowed once over this
+>    very feature (#879).
+> 4. **The prompt widened to match the room** — "in at most fifteen words" rather
+>    than six. The six-word cap was never a design decision; it was the shape the
+>    old one-line layout forced.
+>
+> **THE ONE THAT WOULD HAVE SHIPPED BROKEN.** A dockview panel's params are fixed
+> when the panel is created, so a card that is already open can only be reached
+> through `sessionStore` — a version that passed the size as a param would look
+> right in every screenshot and change nothing until you closed and reopened the
+> card. The e2e test measures the **computed clamp on the card header**, not just
+> on the rail (the rail takes an ordinary prop and would stay green either way),
+> and that assertion was **mutation-checked**: removing the one
+> `sessionStore.setTaskLabelSize(next)` line fails exactly that test and nothing
+> else.
+>
+> **The layout change broke three e2e tests, and the reason is worth keeping.**
+> Four specs read the rail's order through `[data-rail-open] > span` — the title
+> was the row button's first direct-child span until this row grew a flex
+> wrapper, at which point that selector silently started returning the TASK
+> LABEL. Three tests then failed on a mismatched string with nothing to do with
+> ordering. Fixed by giving the title its own `data-rail-title` hook and moving
+> both helpers onto it, rather than by writing a longer structural selector.
+>
+> **Verification:** typecheck 0, lint 0, build 0. Unit **8631 passed / 1 failed**
+> — the failure is `git-service.test.ts`'s timing guard at **2819ms vs 2600ms**,
+> which is **#835, sighting 8**, and it passes **74/74 in isolation** (32.5s).
+> e2e: task-label 5/5 (including the new size test), rail-reorder + pinning 6/6,
+> and a 49-test sweep over a11y-keyboard, focus-policy, session,
+> stream-attention, about, palette and chrome — all green.
+> **Six unit fixes mutation-checked**, each killing exactly its own test: the
+> rail's clamp reading the SETTING rather than a constant, the aria-label
+> carrying the label on a row that needs you, the main store's sanitiser, the IPC
+> guard, the renderer store's sanitiser, and the dialog checking the STORED size.
+>
+> **Also corrected in passing:** two manual pages and the dogfood tracker still
+> said AI labels ship OFF, which #883 reversed; `10-settings.md`'s "what's
+> remembered" list said the setting "stays off until you turn it on".
+>
+> **DESIGN.md §5.11 amended** — the "one-line" task label is now "up to three
+> lines", with the reasoning that "one-line" was an unexamined inheritance from
+> the six-word prompt rather than a layout constraint that earned its keep.
+
 > # ✅ MERGED — 2026-09-20: **#883** — the card names itself the instant you prompt it, and AI labels default ON
 >
 > **PR #884, squashed to `700c201`.** Issue closed by the PR body's keyword;

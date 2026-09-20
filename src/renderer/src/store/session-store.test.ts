@@ -1626,3 +1626,42 @@ describe('SessionStore — not-started cards (#687)', () => {
     expect(order.bucketOf.get('ghost')).toBe('g1');
   });
 });
+
+describe('the task label size (#877)', () => {
+  let store: SessionStore;
+  beforeEach(() => {
+    store = new SessionStore();
+  });
+
+  it('starts at the default, so a card mounted before main answers shows the most', () => {
+    expect(store.getTaskLabelSize()).toBe('full');
+  });
+
+  it('takes a size from the shared vocabulary and publishes the change', () => {
+    // Every card header reads this through `useSyncExternalStore`: dockview
+    // fixes a panel's params at creation, so an already-open card can ONLY be
+    // reached by a notification from here.
+    let ticks = 0;
+    store.subscribe(() => ticks++);
+    store.setTaskLabelSize('compact');
+    expect(store.getTaskLabelSize()).toBe('compact');
+    expect(ticks).toBe(1);
+  });
+
+  it('resolves anything outside the vocabulary to the default', () => {
+    store.setTaskLabelSize('medium');
+    for (const junk of ['MEDIUM', 'tiny', '', 2, null, undefined, {}]) {
+      store.setTaskLabelSize(junk);
+      expect(store.getTaskLabelSize(), `size: ${JSON.stringify(junk)}`).toBe('full');
+      store.setTaskLabelSize('medium');
+    }
+  });
+
+  it('is idempotent by value — re-setting the same size notifies nobody', () => {
+    store.setTaskLabelSize('medium');
+    let ticks = 0;
+    store.subscribe(() => ticks++);
+    store.setTaskLabelSize('medium');
+    expect(ticks).toBe(0);
+  });
+});
