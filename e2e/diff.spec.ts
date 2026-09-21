@@ -45,7 +45,7 @@ import { execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { launchApp, LaunchedApp, registerTempDir, skipPopoutOnLinux } from './fixtures/app';
+import { launchApp, LaunchedApp, registerTempDir, skipPopoutOnLinux, setTheme } from './fixtures/app';
 
 /** Committed at HEAD. Multi-line and non-empty — see the trap above. */
 const COMMITTED = [
@@ -337,7 +337,7 @@ test.describe('Changes tab (Monaco diff pane)', () => {
     await expect(diffEditor(w)).toContainText("'howdy'", { timeout: 15_000 });
 
     for (const theme of ['daylight', 'nordic'] as const) {
-      await w.getByRole('button', { name: theme, exact: true }).click();
+      await setTheme(w, theme);
       await expect(w.locator('html')).toHaveAttribute('data-theme', theme);
       // the diff is still there, still the same file, still tokenized
       await expect(diffEditor(w)).toContainText("'howdy'", { timeout: 15_000 });

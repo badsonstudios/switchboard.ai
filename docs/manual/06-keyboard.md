@@ -110,6 +110,7 @@ back to the first.
 | `Ctrl+Alt+↓` | Move the focused session down in its group |
 | `Ctrl+Shift+L` | Switch the whole workspace to the next layout: Grid → Focus → Queue |
 | `Ctrl+Shift+P` | Open the command palette |
+| `Ctrl+,` | Open Settings — theme, language, quiet hours, phone push |
 | `Ctrl+Space` | Go to the next session that needs you |
 | `Ctrl+E` | Show or hide the Events drawer |
 | `Ctrl+O` | Open a file in a document tab (also **File › Open File…**). Works while you're typing a prompt |

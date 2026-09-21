@@ -24,7 +24,7 @@
 // a value typed into Arguments always will. That is a choice the user can now
 // actually make.
 //
-// The values are `type="password"` for the reason `PushSetupDialog` gives: the
+// The values are `type="password"` for the reason `settings/PushSection.tsx` gives: the
 // person setting a credential up is often sharing their screen while they do it.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
@@ -369,7 +369,7 @@ function PairEditor(props: {
   );
 }
 
-/** The dialog button shape `PushSetupDialog` established. Duplicated rather
+/** The dialog button shape `settings/controls.tsx` carries. Duplicated rather
  *  than extracted: pulling it into a shared component touches five overlays
  *  and is a change of its own, not a side effect of this one. */
 function Btn(props: {

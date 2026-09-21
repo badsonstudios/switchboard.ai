@@ -50,11 +50,6 @@ async function bar(opts: {
       version="0.0.0-test"
       identity={UNKNOWN_BUILD_IDENTITY}
       onOpenAbout={noop}
-      pref="system"
-      themes={[]}
-      onTheme={noop}
-      lang="en"
-      onLang={noop}
       notifEnabled={false}
       onToggleNotif={noop}
       autonomy="ask"
@@ -65,8 +60,6 @@ async function bar(opts: {
       layoutMaximized={false}
       onCycleLayoutMode={noop}
       layoutBinding="Ctrl+Alt+L"
-      experimentalFork={false}
-      onToggleExperimentalFork={noop}
       autoTrust={opts.autoTrust}
       trustReaches={opts.trustReaches}
       onToggleTrust={opts.onToggleTrust ?? noop}

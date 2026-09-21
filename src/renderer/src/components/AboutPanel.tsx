@@ -23,44 +23,22 @@ export function AboutPanel(props: {
   identity: BuildIdentity;
   platform: string;
   /**
-   * Update checking (P2-E19-03). Optional so the panel still renders in a test
-   * that only cares about build identity — and so a broken preload bridge
-   * costs the About panel nothing, which is the fail-open rule this whole
-   * feature is built on.
+   * Check for updates NOW (P2-E19-03). An ACTION against the build you are
+   * looking at, which is this panel's own question — so it stays here while
+   * the *preference* (check automatically) went to Settings with everything
+   * else you set once (#885).
+   *
+   * Optional so the panel still renders in a test that only cares about build
+   * identity — and so a broken preload bridge costs the About panel nothing,
+   * which is the fail-open rule this whole feature is built on.
    */
   onCheckForUpdates?: () => void;
-  autoCheck?: boolean;
-  onToggleAutoCheck?: (on: boolean) => void;
   /**
-   * Provider status polling (P2-E14-07, §5.14). It lives beside the update
-   * toggle for one reason: those two are the only outbound network calls this
-   * app makes, and a user who wants to know that — or wants them off — should
-   * find both in the same place rather than one here and one nowhere.
-   * Optional, like the update pair, so a broken bridge costs the panel nothing.
+   * The mouse path to Settings (#885). It replaces the three rows this panel
+   * used to carry — phone push, quiet hours, task label size — which were here
+   * because there was nowhere else, and said so. Optional, like the rest.
    */
-  statusPolling?: boolean;
-  onToggleStatusPolling?: (on: boolean) => void;
-  /**
-   * Phone push + webhooks (P2-E14-06). The mouse path to that dialog, and it
-   * is here for the reason the status-polling toggle above it is: this panel
-   * has become the one place that collects everything this app sends or
-   * fetches over the network, and a user looking for "what leaves my machine?"
-   * should find all of it together. Optional, like the pair above.
-   */
-  onOpenPushSetup?: () => void;
-  /**
-   * Quiet hours (P2-E14-05b). The mouse path to that dialog. Here rather than
-   * as a twelfth title-bar chip: the bar is full, and a window you type once
-   * and forget for a year is not chip-shaped. Optional, like the rest.
-   */
-  onOpenQuietHours?: () => void;
-  /**
-   * Task label size (#877). The mouse path to that dialog. Here for the reason
-   * quiet hours is — set-it-once, and the title bar already overflowed once
-   * over this feature (#879). Optional, like the rest. When the settings screen
-   * lands (#885) this row and its neighbours move into it.
-   */
-  onOpenTaskLabelSize?: () => void;
+  onOpenSettings?: () => void;
   /**
    * Another modal is stacked ON TOP of this one (the update dialog, which is
    * reachable from here). Two nested `aria-modal="true"` regions is a case
@@ -243,75 +221,29 @@ export function AboutPanel(props: {
             {t('about.branchNote', { branch: props.identity.branch })}
           </p>
         )}
-        {/* Update checking lives here because About is already the "which
-            build am I on?" surface, and "is there a newer one?" is the very
-            next question (P2-E19-03). The toggle sits beside the button rather
-            than in a settings screen that does not exist. */}
+        {/* "Is there a newer one?" is the very next question after "which
+            build am I on?", so the CHECK stays here (P2-E19-03). Whether to
+            check automatically is a preference and went to Settings (#885),
+            which is where the tick box now is. */}
         {props.onCheckForUpdates && (
           <div
             style={{
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'space-between',
+              justifyContent: 'flex-end',
               gap: 10,
               padding: '10px 14px',
               borderBlockStart: '1px solid var(--border)',
             }}
           >
-            <label
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                fontSize: 11.5,
-                color: 'var(--muted)',
-                cursor: props.onToggleAutoCheck ? 'pointer' : 'default',
-              }}
-            >
-              <input
-                type="checkbox"
-                data-about-field="autoCheck"
-                checked={props.autoCheck !== false}
-                disabled={!props.onToggleAutoCheck}
-                onChange={(e) => props.onToggleAutoCheck?.(e.target.checked)}
-              />
-              {t('about.autoCheck')}
-            </label>
             <AboutButton onClick={props.onCheckForUpdates}>{t('about.checkForUpdates')}</AboutButton>
           </div>
         )}
-        {props.onToggleStatusPolling && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              padding: '10px 14px',
-              borderBlockStart: '1px solid var(--border)',
-            }}
-          >
-            <label
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                fontSize: 11.5,
-                color: 'var(--muted)',
-                cursor: 'pointer',
-              }}
-              title={t('health.settingHint')}
-            >
-              <input
-                type="checkbox"
-                data-about-field="statusPolling"
-                checked={props.statusPolling !== false}
-                onChange={(e) => props.onToggleStatusPolling?.(e.target.checked)}
-              />
-              {t('health.setting')}
-            </label>
-          </div>
-        )}
-        {props.onOpenPushSetup && (
+        {/* ONE row where there used to be three (#885). Push, quiet hours and
+            task label size each got a row here because the title bar was full
+            and there was nowhere else; all three are sections of Settings now,
+            and this is the mouse path to it. */}
+        {props.onOpenSettings && (
           <div
             style={{
               display: 'flex',
@@ -322,45 +254,8 @@ export function AboutPanel(props: {
               borderBlockStart: '1px solid var(--border)',
             }}
           >
-            <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{t('push.sectionPush')}</span>
-            <AboutButton onClick={props.onOpenPushSetup}>{t('push.open')}</AboutButton>
-          </div>
-        )}
-        {/* Quiet hours (E14-05b). Beside the push row rather than in a chip:
-            the title bar is full, and this is a set-it-once control. */}
-        {props.onOpenQuietHours && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 10,
-              padding: '10px 14px',
-              borderBlockStart: '1px solid var(--border)',
-            }}
-          >
-            <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{t('quiet.title')}</span>
-            <AboutButton onClick={props.onOpenQuietHours}>{t('quiet.open')}</AboutButton>
-          </div>
-        )}
-        {/* Task label size (#877). Same row shape, same reason. */}
-        {props.onOpenTaskLabelSize && (
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 10,
-              padding: '10px 14px',
-              borderBlockStart: '1px solid var(--border)',
-            }}
-          >
-            <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>
-              {t('taskLabelSize.title')}
-            </span>
-            <AboutButton onClick={props.onOpenTaskLabelSize}>
-              {t('taskLabelSize.open')}
-            </AboutButton>
+            <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{t('settings.title')}</span>
+            <AboutButton onClick={props.onOpenSettings}>{t('settings.open')}</AboutButton>
           </div>
         )}
         <div

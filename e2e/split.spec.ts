@@ -21,6 +21,7 @@ import {
   persistedLayout,
   readWorkspaceFile,
   writeWorkspaceFile,
+  setTheme,
 } from './fixtures/app';
 import { decodePng, rowLuminance } from './fixtures/png';
 
@@ -104,7 +105,7 @@ test.describe('two docked groups (#102 rider)', () => {
     a = await twoGroups();
     const w = a.window;
     // soft contrast: a light frame on a near-black surface, the case Dan hit
-    await w.getByRole('button', { name: 'soft contrast', exact: true }).click();
+    await setTheme(w, 'soft contrast');
     await w.waitForTimeout(300);
 
     const b = (await w.locator('.dv-groupview').first().boundingBox())!;

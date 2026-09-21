@@ -2967,6 +2967,87 @@ word, and the collision is unresolved. The **activity report (#722)** summarises
 what happened across sessions in a date range; it shares this section's transcript
 scan and should build on it rather than growing a second one.
 
+### 5.34 Settings — one place, and the rule for what stays out of it
+
+*Added 2026-09-20 (issue #885, which also closes #879).*
+
+**This section did not exist until the app had run out of room without it, and
+that is the point of writing it down.** There was no settings surface and no
+specification for one, so preferences landed wherever the last person could put
+them: eleven chips became nineteen controls on the title bar, and three separate
+modals appeared — quiet hours, phone push, task label size — each carrying a
+comment saying it was a stopgap for the screen this section now describes. At
+the 1024px CI uses the bar held 1577px of content in a 1009px row and **overflowed
+by 568px**, scrolling the whole document sideways (#879). The absence of this
+section *was* the bug.
+
+**Shape: one modal.** Consistent with the six dialogs already in the app, and
+what `QuietHoursDialog`'s own header anticipated. Reached by `Ctrl+,`, by the
+command palette, and by a button in the About panel. **No Save button** — every
+control writes through on the interaction, and the surface behind reflows as you
+watch. A Save button over controls that all write through immediately would be a
+state to forget to press.
+
+#### The organising rule, which is the whole design
+
+A control earns a place on the **title bar** when *the person who needs it off
+needs it off NOW* — mid screen-share, without hunting (§5.11 litmus #4).
+Everything else is a set-it-once preference and belongs in Settings.
+
+That rule is not a tidiness preference; it is what stops this section from
+becoming the next dump. Applied:
+
+| Stays on the bar | Why |
+|---|---|
+| task labels, session sounds, speak announcements | they govern what a room full of people can see and hear |
+| notifications | the same, one level up |
+| auto-trust | a security answer, and a stored one you must be able to read |
+| autonomy, presentation policy, layout mode | they answer "why does the window look like this?", which has to be answerable by looking up |
+
+| Moved into Settings | Why |
+|---|---|
+| theme (5), language (2) | nobody changes either hourly, and they were 410px of the bar |
+| experimental fork | an experiment, not a fast switch — see the caveat below |
+| quiet hours, phone push, task label size | set-it-once, and each had grown its own modal |
+| automatic update checks, provider status polling | preferences that had been living on the About panel because there was nowhere else |
+
+**⚠️ Eight controls, not seven, and the eighth was arithmetic.** Theme and
+language alone leave ~86px still overflowing — a real reduction that does not
+fix the bug. `⑂ fork sessions` is 106px and the widest control on the bar; with
+it the content lands at ~983px inside a 1009px bar. **The measurement decided
+the scope**, which is why #879 closes here and carries a guard test
+(`e2e/chrome.spec.ts`) rather than being declared fixed.
+
+The fork chip's own comment argued the opposite — an experiment leaning on
+undocumented CLI behaviour "has to be somewhere the user can reach in one click
+on the day it stops working, not behind a page that does not exist." The page
+exists now and `Ctrl+,` is one keystroke. The premise changed, not the reasoning.
+
+#### What Settings deliberately does NOT absorb
+
+- **The MCP manager.** It is **session-scoped and read-only** — an inspector
+  (§5.19), not a preference. A global settings modal would misstate its scope,
+  and absorbing it would strand `/mcp` typed in the composer (#633).
+- **Per-session overrides.** Autonomy, sound and notify-when-done stay on a
+  card's ⋯ menu. Settings holds the global defaults; a per-session control
+  belongs next to the session it acts on.
+- **Actions.** *Check for updates…* stays in About: it acts on the build you are
+  looking at, which is About's own question. The *preference* moved.
+- **A search box.** At ~15 preferences it is furniture. Revisit at ~30.
+
+#### Standing consequences
+
+- **The absorbed dialogs' invariants are not renegotiable in a move.** Quiet
+  hours' one-shot draft seeding that never eats a keystroke, its shared
+  `isUsableQuietWindow` validator, and "a control that refuses silently is the
+  thing this is least allowed to be"; push never reading a credential back.
+  Their tests move with them, re-pointed rather than rewritten.
+- **The bar has ~26px of slack and that is the whole budget.** The next control
+  added has to displace one, or go here.
+- **Moving a control must not change what it does.** Theme and language are
+  live-switching surfaces with contrast tests across all four themes and an RTL
+  path; `theme/tokens.drift.test.ts` and `e2e/theme.spec.ts` are the check.
+
 ## 6. Tech Stack — Decision
 
 **Chosen: Electron + TypeScript + xterm.js + node-pty + Monaco + React.**

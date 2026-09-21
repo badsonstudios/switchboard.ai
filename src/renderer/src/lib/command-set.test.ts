@@ -54,9 +54,7 @@ function deps(): CommandDeps & DepMocks {
     openFile: vi.fn(),
     reportProblem: vi.fn(),
     closeAllDocuments: vi.fn(),
-    openPushSetup: vi.fn(),
-    openQuietHours: vi.fn(),
-    openTaskLabelSize: vi.fn(),
+    openSettings: vi.fn<CommandDeps['openSettings']>(),
     openMcpManager: vi.fn(),
   };
 }
@@ -76,6 +74,42 @@ const ctxWith = (
 const byId = (cmds: Command[], id: string): Command => cmds.find((c) => c.id === id)!;
 
 describe('seed command set (E9-01)', () => {
+  // ── Settings, and the three aliases onto it (#885) ───────────────────────
+  //
+  // These four are one dep with four doors, and WHICH SECTION each door lands
+  // on is the entire claim the item makes about muscle memory: `Ctrl+Shift+P` →
+  // *quiet hours* has been the way in for six weeks and must not become a
+  // screen you then have to search. Nothing else can see this — the e2e specs
+  // assert the modal is visible, never where it scrolled to — so an alias wired
+  // to the wrong section would be green everywhere.
+  it('Settings is bound to Mod+, and opens at no section in particular', () => {
+    const d = deps();
+    const cmds = buildCommands(d);
+    const settings = byId(cmds, 'view.settings');
+    expect(settings.binding).toBe('Mod+,');
+    // scope 'app', so a session terminal keeps the key — the CLI owns every key
+    // it can see, and the palette is the door from there
+    expect(settings.scope).toBe('app');
+    settings.run(ctxWith([]));
+    expect(d.openSettings).toHaveBeenCalledWith(null);
+  });
+
+  it.each([
+    ['attention.quietHours', 'attention'],
+    ['attention.pushSetup', 'attention'],
+    ['view.taskLabelSize', 'appearance'],
+  ])('%s still works, and lands on the %s section', (id, section) => {
+    const d = deps();
+    const cmds = buildCommands(d);
+    const cmd = byId(cmds, id);
+    // the alias keeps its own title, so typing "quiet" in the palette still
+    // finds something — folding these into one `Settings…` entry would leave
+    // anyone who searches by what they WANT with an empty list
+    expect(cmd.titleKey).not.toBe('commands.settings');
+    cmd.run(ctxWith([]));
+    expect(d.openSettings).toHaveBeenCalledWith(section);
+  });
+
   it('binds Ctrl+1..9 to the first nine sessions in rail order', () => {
     const d = deps();
     const cmds = buildCommands(d);

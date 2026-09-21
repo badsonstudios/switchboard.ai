@@ -3,7 +3,7 @@
 // dropdown. A session host must not bury the sessions.
 import { test, expect, Page } from '@playwright/test';
 import path from 'path';
-import { launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';
+import { launchApp, LaunchedApp, tempProjectFolder, setTheme } from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
@@ -143,7 +143,7 @@ test.describe('tab strip (#84)', () => {
     await expect(w.locator('nav [draggable="true"]')).toHaveCount(1, { timeout: 25_000 });
 
     for (const theme of ['daylight', 'nordic']) {
-      await w.getByRole('button', { name: theme, exact: true }).click();
+      await setTheme(w, theme);
       await w.waitForTimeout(200);
 
       const m = await w.evaluate(() => {
@@ -230,7 +230,7 @@ test.describe('tab strip (#84)', () => {
     // it painted in dockview's DEFAULT dark theme and the rows vanished into the
     // background. Theme-dependent — so check BOTH.
     for (const theme of ['daylight', 'nordic']) {
-      await w.getByRole('button', { name: theme, exact: true }).click();
+      await setTheme(w, theme);
       await w.waitForTimeout(200);
       await control.click();
       const rows = w.locator('.dv-tabs-overflow-container .dv-tab');
@@ -279,7 +279,7 @@ test.describe('tab strip (#84)', () => {
     a = await launchApp({ seedFolder: tempProjectFolder() });
     const w = a.window;
     await expect(w.locator('nav [draggable="true"]')).toHaveCount(1, { timeout: 25_000 });
-    await w.getByRole('button', { name: 'nordic', exact: true }).click();
+    await setTheme(w, 'nordic');
 
     await w.getByTitle('Pop out into its own window').click();
     await expect.poll(() => a.app.windows().length, { timeout: 15_000 }).toBe(2);
@@ -294,7 +294,7 @@ test.describe('tab strip (#84)', () => {
     expect(await popout.evaluate(() => document.documentElement.dataset.tabRows)).toBe('wrap');
 
     // and a theme switch in the main window follows it across
-    await w.getByRole('button', { name: 'daylight', exact: true }).click();
+    await setTheme(w, 'daylight');
     await expect
       .poll(() => popout.evaluate(() => document.documentElement.dataset.theme), { timeout: 10_000 })
       .toBe('daylight');

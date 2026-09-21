@@ -54,11 +54,6 @@ function bar(autonomy: string): React.JSX.Element {
       version="0.0.0-test"
       identity={UNKNOWN_BUILD_IDENTITY}
       onOpenAbout={noop}
-      pref="system"
-      themes={[]}
-      onTheme={noop}
-      lang="en"
-      onLang={noop}
       notifEnabled={false}
       onToggleNotif={noop}
       autonomy={autonomy}
@@ -74,8 +69,6 @@ function bar(autonomy: string): React.JSX.Element {
       onToggleTrust={noop}
       autoLabels={true}
       onCycleLabels={noop}
-      experimentalFork={false}
-      onToggleExperimentalFork={noop}
       soundsOn={false}
       onToggleSounds={noop}
       speakOn={false}

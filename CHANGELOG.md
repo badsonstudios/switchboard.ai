@@ -102,11 +102,38 @@ on the floor, and say so in your PR.
   to **three lines** now, on the cards and in the sessions list, and Claude is
   asked for a fuller phrase to fill them — a session no longer has to explain
   itself in six words trimmed with an ellipsis. If you run a lot of sessions and
-  want the density back, **Task label size…** (the command palette, or the
-  About panel) offers Full (three lines, the default), Medium (two) and Compact
-  (one line, exactly how labels looked before).
+  want the density back, **Settings ▸ Appearance ▸ Task label size** offers Full
+  (three lines, the default), Medium (two) and Compact (one line, exactly how
+  labels looked before).
+
+- **A Settings window — `Ctrl+,`.** Everything you set once and forget is in one
+  place now: theme, language, task label size, quiet hours, phone push and
+  webhooks, the experimental fork switch, and the two automatic checks (updates
+  and Anthropic's status page). It is one scrolling window in three sections,
+  with no Save button — every control takes effect the moment you touch it, and
+  you can watch the window behind change as you do. The separate Quiet hours,
+  Phone push and Task label size dialogs are gone; the palette commands that
+  used to open them now open Settings scrolled to the right part of it, so
+  `Ctrl+Shift+P` → *quiet hours* still works.
 
 ### Changed
+
+- **The title bar fits again.** At a 1024-wide window it was overflowing badly
+  enough that the whole page scrolled sideways and about eleven controls were
+  off screen. Eight of them moved into the new Settings window — the five theme
+  buttons, the two language buttons, and **⑂ fork sessions** — and the row now
+  fits with room to spare.
+
+  **The fast off-switches deliberately stayed on the bar**: task labels, session
+  sounds, spoken announcements, notifications and folder trust. Those are the
+  ones you need to turn off *right now*, mid screen-share, without opening a
+  window to find them.
+
+- **The About panel is shorter.** Its three "there was nowhere else to put this"
+  rows — phone push, quiet hours, task label size — are one **Settings…**
+  button, and the two tick boxes (automatic update checks, Anthropic status
+  checks) moved to Settings ▸ Advanced. **Check for updates…** stays in About:
+  that one acts on the build you are looking at, which is what About is for.
 
 - **A session's state now sits beside its name in the sessions list, so the
   task label keeps its own space.** The row used to show either the label or

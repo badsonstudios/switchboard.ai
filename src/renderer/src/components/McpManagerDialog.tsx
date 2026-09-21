@@ -12,7 +12,7 @@
 // command line.
 //
 // The dialog shape — scrim, click-away, focus capture, Escape — is
-// `QuietHoursDialog.tsx`'s, which is `PushSetupDialog.tsx`'s, which is
+// `SettingsDialog.tsx`'s, which is `settings/PushSection.tsx`'s, which is
 // `AboutPanel.tsx`'s. Two modals that behave differently is a bug report
 // waiting to happen.
 //
@@ -585,7 +585,7 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
   /**
    * Where focus goes when this closes — the house rule six other overlays keep
    * (`AboutPanel`, `CommandPalette`, `EventsDrawer`, `FindBar`,
-   * `PushSetupDialog`, `QuietHoursDialog`).
+   * `settings/PushSection`, `settings/QuietHoursSection`).
    *
    * It matters more here than in any of them, because `/mcp` means focus was in
    * the COMPOSER a second ago: without this, Escape drops the user on `<body>`
@@ -1789,7 +1789,7 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
               </span>
             )}
           </span>
-          {/* A VISIBLE WAY OUT, like `QuietHoursDialog` and `PushSetupDialog`.
+          {/* A VISIBLE WAY OUT, like `SettingsDialog` and `AboutPanel`.
               Escape and click-away are not enough on their own: they are the
               two exits nothing on screen advertises. */}
           <button

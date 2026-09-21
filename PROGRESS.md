@@ -3,6 +3,58 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🚢 PR OPEN — 2026-09-20: **#885** the settings modal (closes **#879** too)
+>
+> Branch `feature/885-settings` off `8c1112b`. Merging on green CI.
+>
+> **ONE modal where there were three.** `Ctrl+,`, the palette, or an About
+> button. It absorbs `QuietHoursDialog`, `PushSetupDialog` and
+> `TaskLabelSizeDialog` — all three files DELETED, their bodies now section
+> components under `components/settings/`, their tests moved and **re-pointed
+> rather than rewritten** so no invariant is dropped in the move. The MCP
+> manager is deliberately NOT absorbed: session-scoped and read-only, an
+> inspector (§5.19) not a preference.
+>
+> **#879 IS CLOSED BY ARITHMETIC, AND THE ARITHMETIC WAS THE SCOPE.** Theme +
+> language is 410px against 568px of overflow — a real reduction that does not
+> fix the bug. The eighth control, `⑂ fork sessions` at 106px, is what lands it.
+> Measured on the built app at the CI width: **header content 995px in a 995px
+> bar, 11 buttons, height 34.67px, no document scroll.** Guard test in
+> `e2e/chrome.spec.ts`.
+>
+> **THE REVIEW FOUND A BLOCKER AND IT WAS A GOOD ONE.** `PushSection`'s
+> focus-rescue effect has no dependency list, so it also ran on the FIRST
+> commit — where `document.activeElement` is `<body>` on the two commonest ways
+> in (`Ctrl+,`, and the palette, which deliberately restores focus to nothing).
+> React flushes child effects before the parent's, so it beat
+> `SettingsDialog.focus()`, and `focus()` scrolls its element into view inside
+> the nearest scroller — **the modal opened scrolled down to the credential
+> fields.** jsdom has no layout so no unit test could see it, and the three
+> palette aliases papered over it because their own `scrollIntoView` runs
+> afterwards. Fixed with a mounted-guard + `preventScroll`, and
+> **mutation-checked**: reverting it fails exactly the new e2e guard and nothing
+> else (4 passed, 1 failed).
+>
+> **One more real find, from the same review:** the theme and language buttons
+> announced their selection by **colour alone** — every title-bar chip says its
+> state in words, these two never did, and that is a §5.32 violation on a screen
+> whose whole job is "show me what is stored". They carry `aria-pressed` now.
+> Not `role="radio"`: that owes the user arrow-key navigation it would not have.
+>
+> **A second measurement changed a test, not the code.** The first #879 guard
+> failed at `scrollWidth 1254 > innerWidth 1010` — and the bar was already
+> correct in that same frame. It was **dockview** still holding its pre-resize
+> width (a 956px grid at x=298) and settling a moment later. Polled, with the
+> measurement written into the comment so nobody re-derives it.
+>
+> **Verification:** typecheck 0, lint 0, unit **8677 passed / 3 skipped**, full
+> local Windows e2e **354 passed / 2 skipped** — every exit code captured to a
+> file and read back, never taken from the harness.
+>
+> **DESIGN.md gained §5.34**, which it never had. That absence is the root cause
+> here: with no section for settings, preferences landed wherever the last
+> person could put them.
+
 > # ✅ MERGED — 2026-09-20: **#877** closed out, and it turned out to be a BUG FIX
 >
 > **PR #888, squashed to `2e71bf2`** (36 files). Only **#877** closed; **#879,

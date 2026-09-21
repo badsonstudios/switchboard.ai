@@ -12,6 +12,7 @@ import type { Ladder } from './presentation';
 import { POLICY_ORDER, PresentationPolicy } from './presentation-policy';
 import { FOCUS_POLICY_ORDER, FocusPolicy } from './focus-policy';
 import { LAYOUT_MODES, LayoutMode } from './layout-mode';
+import type { SettingsSection } from './settings-sections';
 
 export interface CommandDeps {
   /** focus the session card with this card id */
@@ -78,12 +79,16 @@ export interface CommandDeps {
   reportProblem: () => void;
   /** close every docked §5.30 viewer at once, sparing popped-out ones (#543) */
   closeAllDocuments: () => void;
-  /** set up phone push / webhooks — the credential surface (E14-06, §5.29) */
-  openPushSetup: () => void;
-  /** set the quiet-hours window — when nothing person-facing fires (E14-05b) */
-  openQuietHours: () => void;
-  /** how many lines a session's task label may use (#877) */
-  openTaskLabelSize: () => void;
+  /**
+   * Open Settings (#885), optionally scrolled to one section.
+   *
+   * ONE dep for four commands. Push, quiet hours and task label size each had
+   * their own dialog and their own opener until this item; they are sections
+   * now, and the commands that named them are aliases that land on the right
+   * part of the same screen — so `Ctrl+Shift+P` → *quiet hours* still works for
+   * anyone whose fingers already know it.
+   */
+  openSettings: (section?: SettingsSection | null) => void;
   /** the MCP servers the ACTIVE session can see (§5.17, #632) — also where a
    *  typed `/mcp` lands, since its CLI picker has no terminal in Direct mode */
   openMcpManager: () => void;
@@ -225,39 +230,64 @@ export function buildCommands(deps: CommandDeps): Command[] {
       run: () => deps.jumpToNextAttention(),
     },
     {
-      // Phone push + webhooks (E14-06). Filed under Attention rather than Help
-      // because that is the question it answers — "how does a session reach
-      // me?" — and palette-only, unbound, like About: it is a setup gesture
-      // done once, not something to give a chord to. The About panel carries
-      // the mouse path, beside the app's other outbound-network switches.
+      // Settings (#885) — the one place every set-it-once preference lives.
+      //
+      // BOUND, unlike the three dialogs it absorbed. Those were each a gesture
+      // you make once and forget; this is a surface people open repeatedly
+      // while they are learning what the app can do, and `Mod+,` is what every
+      // other desktop app on the machine has trained them to press. Under VIEW
+      // rather than Help, beside the other commands that change what you are
+      // looking at.
+      //
+      // Scope 'app', so a session terminal keeps the key — the hard rule is
+      // that the CLI owns every key it can see. From a terminal, Settings is
+      // reached through the palette, which is the door quiet hours has always
+      // had.
+      id: 'view.settings',
+      titleKey: 'commands.settings',
+      categoryKey: CATEGORY_VIEW,
+      binding: 'Mod+,',
+      scope: 'app',
+      run: () => deps.openSettings(null),
+    },
+    {
+      // ── the three aliases ────────────────────────────────────────────────
+      //
+      // Phone push, quiet hours and task label size are SECTIONS of Settings
+      // now, not dialogs. Their commands keep their ids, their titles and their
+      // categories, and open Settings at the right part of it.
+      //
+      // WHY KEEP THEM AT ALL, rather than letting one `Settings…` entry stand
+      // for everything. Two reasons, and neither is nostalgia: a palette is
+      // searched by typing what you want, and someone who types "quiet" must
+      // not get an empty list because the answer is now filed under a word they
+      // did not think of; and the muscle memory is real — these have been the
+      // way in for six weeks.
+      //
+      // Filed under Attention rather than Help because that is the question it
+      // answers: "how does a session reach me?"
       id: 'attention.pushSetup',
       titleKey: 'commands.pushSetup',
       categoryKey: CATEGORY_ATTENTION,
       scope: 'app',
-      run: () => deps.openPushSetup(),
+      run: () => deps.openSettings('attention'),
     },
     {
-      // Quiet hours (E14-05b). Under Attention beside push for the same reason
-      // — it answers "how, and when, does a session reach me?" — and
-      // palette-only, unbound: a window you set once does not earn a chord, and
-      // the title bar's eleven chips are not getting a twelfth.
       id: 'attention.quietHours',
       titleKey: 'commands.quietHours',
       categoryKey: CATEGORY_ATTENTION,
       scope: 'app',
-      run: () => deps.openQuietHours(),
+      run: () => deps.openSettings('attention'),
     },
     {
-      // Task label size (#877). Under VIEW, not Attention: it changes how much
-      // of the rail and the card headers a label may occupy, which is the same
-      // question `toggleTabRows` answers. Palette-only and unbound, for the
-      // reason quiet hours is — the title bar's chip row already overflowed
-      // once over this feature (#879) and is not growing again.
+      // Under VIEW, not Attention: it changes how much of the rail and the card
+      // headers a label may occupy, which is the same question `toggleTabRows`
+      // answers.
       id: 'view.taskLabelSize',
       titleKey: 'commands.taskLabelSize',
       categoryKey: CATEGORY_VIEW,
       scope: 'app',
-      run: () => deps.openTaskLabelSize(),
+      run: () => deps.openSettings('appearance'),
     },
     {
       // The MCP Manager (§5.17, #632). Under SESSION and not Attention: it

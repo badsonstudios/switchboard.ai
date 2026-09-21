@@ -691,8 +691,8 @@ Object.freeze(MARKED_OPTIONS);
  *    `position:fixed` scrim and `aria-modal="true"`.
  *
  *    WHICH WORDS COME FIRST IS TREE ORDER, NOT "CONTENT WINS", and the first
- *    draft of this block had it backwards. `App.tsx` renders `PushSetupDialog`,
- *    `QuietHoursDialog`, `UpdateDialog` and `CommandPalette` BEFORE
+ *    draft of this block had it backwards. `App.tsx` renders `SettingsDialog`,
+ *    `UpdateDialog` and `CommandPalette` BEFORE
  *    `SessionGrid`, and nothing here is portalled (the renderer's only
  *    `createPortal` is `WorkspaceNoticeBanner`). So against the FEED and the
  *    VIEWER the app's own label is earlier and content's words are appended,

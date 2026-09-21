@@ -76,7 +76,7 @@ const submitButton = (): HTMLButtonElement =>
 
 async function type(el: HTMLInputElement | HTMLTextAreaElement, value: string): Promise<void> {
   await act(async () => {
-    // The DESCRIPTOR, as in PushSetupDialog.test.tsx: pulling `set` into a
+    // The DESCRIPTOR, as in settings/PushSection.test.tsx: pulling `set` into a
     // variable is `unbound-method`.
     const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement : HTMLInputElement;
     const valueProp = Object.getOwnPropertyDescriptor(proto.prototype, 'value');

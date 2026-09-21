@@ -3,7 +3,7 @@
 // In `shared/` because BOTH processes need it and for different jobs: main
 // evaluates it against the clock on every attention event (`events/rules.ts`),
 // and the renderer validates what the user types before writing it
-// (`QuietHoursDialog.tsx`). A second, looser copy of `isQuietTime` in the
+// (`settings/QuietHoursSection.tsx`). A second, looser copy of `isQuietTime` in the
 // renderer would accept `99:99`, write it, and have main silently drop it —
 // leaving a field that reverts with nothing on screen to say why. One
 // predicate, one meaning.

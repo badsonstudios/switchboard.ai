@@ -3,8 +3,6 @@
 // in ./SessionsRail.tsx (design_handoff_sessions_rail).
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { ThemePreference } from '../theme/theme';
-import { LanguageChoice } from '../i18n';
 import { rendererRegistry } from '../extensibility/registry-instance';
 import { listStatusBarItems } from '../extensibility/status-bar-items';
 import { ContributionBoundary } from '../extensibility/boundary';
@@ -43,13 +41,6 @@ export function TitleBar(props: {
   identity: BuildIdentity;
   /** open the About panel — the full build identity */
   onOpenAbout: () => void;
-  pref: ThemePreference;
-  /** what the app resolved from — the picker must not offer a theme the
-   *  resolver cannot find, or the chip lights on a theme nobody painted */
-  themes: readonly ThemeDefinition[];
-  onTheme: (p: ThemePreference) => void;
-  lang: LanguageChoice;
-  onLang: (l: LanguageChoice) => void;
   notifEnabled: boolean;
   onToggleNotif: () => void;
   autonomy: string;
@@ -92,17 +83,6 @@ export function TitleBar(props: {
   autoLabels: boolean;
   aiLabels?: boolean;
   onCycleLabels: () => void;
-  /**
-   * §5.5 Level 3 — fork adoption (P2-E11-12). EXPERIMENTAL, off by default.
-   *
-   * The only experiment switch in the app, and it is a chip for the reason
-   * there is no alternative rather than because a chip is ideal: there is no
-   * settings page, and a feature the user must be able to turn OFF the moment
-   * it misbehaves cannot live somewhere they have to go hunting for. It sits
-   * last among the preference chips because it is the one nobody needs daily.
-   */
-  experimentalFork: boolean;
-  onToggleExperimentalFork: () => void;
   /** §5.9's per-session cues (P2-E14-05a) — on, each card rings its own sound
    *  instead of everything sharing one beep */
   soundsOn: boolean;
@@ -213,26 +193,6 @@ export function TitleBar(props: {
       >
         {props.speakOn ? t('titlebar.speakOn') : t('titlebar.speakOff')}
       </Chip>
-      {/* Fork adoption (P2-E11-12, §5.5 Level 3). EXPERIMENTAL, off by default
-          — the only default-off preference in this bar.
-
-          A chip rather than a buried setting for a different reason from the
-          three above it: those govern noise, this governs a feature that leans
-          on undocumented CLI behaviour. It was measured rather than guessed
-          (claude 2.1.272), but a measurement against one version is exactly the
-          drift DESIGN §5.2 describes — so the off switch has to be somewhere
-          the user can reach in one click on the day it stops working, not
-          behind a page that does not exist.
-
-          States the word ON or OFF, never colour alone (§5.32), like the rest. */}
-      <Chip
-        selected={props.experimentalFork}
-        onClick={props.onToggleExperimentalFork}
-        title={t('titlebar.forkHint')}
-        testId="experimental-fork"
-      >
-        {props.experimentalFork ? t('titlebar.forkOn') : t('titlebar.forkOff')}
-      </Chip>
       {/* The autonomy chip (E6-01). Its TOOLTIP carries what the mode actually
           does (#534) — the names alone never told anyone that full-auto is the
           CLI's bypassPermissions and not a gentler cousin of it, and the copy
@@ -283,21 +243,14 @@ export function TitleBar(props: {
       <Chip selected={props.notifEnabled} onClick={props.onToggleNotif}>
         {props.notifEnabled ? t('titlebar.notifOn') : t('titlebar.notifOff')}
       </Chip>
-      {/* 'system' is not a theme — it is the absence of a choice, so it is not
-          a contribution either and stays hard-coded here (§5.20 OS sync). */}
-      <Chip selected={props.pref === 'system'} onClick={() => props.onTheme('system')}>
-        {t('theme.system')}
-      </Chip>
-      {props.themes.map((th) => (
-        <Chip key={th.id} selected={th.id === props.pref} onClick={() => props.onTheme(th.id)}>
-          {t(th.nameKey)}
-        </Chip>
-      ))}
-      {(['en', 'pseudo'] as const).map((l) => (
-        <Chip key={l} selected={l === props.lang} onClick={() => props.onLang(l)}>
-          {t(`language.${l}`)}
-        </Chip>
-      ))}
+      {/* ⚠️ NO SETTINGS CHIP, and that is arithmetic rather than taste (#885 /
+          #879). Eight controls left this row — five theme, two language, and
+          `⑂ fork sessions` — which is 516px of control plus eight 10px gaps,
+          and it takes the content from 1577px to ~983px inside the 1009px bar
+          the CI width gives us. One chip back is ~80px with its gap, and the
+          row overflows again. Settings is reached from the palette (`Ctrl+,`,
+          or `▸ commands` for the mouse) and from the About panel, which the
+          build stamp on the left opens. */}
     </header>
   );
 }
@@ -415,12 +368,39 @@ export function Chip(props: {
   disabled?: boolean;
   /** a stable e2e handle for a chip whose LABEL is the thing under test */
   testId?: string;
+  /**
+   * Announce `selected` to assistive tech as well as painting it (#885).
+   *
+   * OPT-IN, and the reason is §5.32 rather than tidiness. Every chip on the
+   * title bar states its state IN WORDS — `🏷 labels off`, `⑂ fork OFF` — so
+   * `selected` there is a second, redundant signal and needs no name. The
+   * theme and language pickers never did: their labels are `daylight` and
+   * `pseudo`, and which one is ON is carried by the background alone. That was
+   * survivable on a bar nobody reads twice; on a screen whose entire job is
+   * "show me what is stored" it means a screen-reader user cannot tell which
+   * theme is active.
+   *
+   * `aria-pressed` and NOT `role="radio"`, though the choice really is one-of-N.
+   * Two reasons, and the first is the one that matters:
+   *
+   *  - a `role="radio"` group owes the user ARROW-KEY navigation and a roving
+   *    tabindex (APG), and a radio group that does not move on ← → is worse to
+   *    drive than the plain buttons it replaced. These Tab and activate, which
+   *    is exactly what they look like they do;
+   *  - it keeps the computed role `button`, so the fifteen
+   *    `getByRole('button', { name: 'daylight' })` assertions across the e2e
+   *    suite go on naming the same control.
+   *
+   * The one-of-N-ness is carried by the labelled `role="group"` around them.
+   */
+  pressed?: boolean;
 }): React.JSX.Element {
   return (
     <button
       onClick={() => {
         if (!props.disabled) props.onClick();
       }}
+      aria-pressed={props.pressed ? props.selected : undefined}
       aria-disabled={props.disabled ? true : undefined}
       title={props.title}
       data-testid={props.testId}
@@ -437,13 +417,17 @@ export function Chip(props: {
          * A CHIP LABEL NEVER WRAPS, and this is a height promise rather than a
          * typographic preference (#274's rule, one level down).
          *
-         * The bar is a single nowrap flex row that now carries 21 controls, and
-         * at the 1024px the windows-latest runner uses it is far over-wide — so
-         * flex COMPRESSES the chips. A compressed button with no `white-space`
-         * rule wraps its text to a second line, and a two-line chip makes the
-         * bar taller than the `minBlockSize: 34` floor above. In a short window
-         * the shell column has no spare pixels, so those go straight out of the
-         * conversation, which is the only flexible item left.
+         * The bar is a single nowrap flex row. It carried 19 controls and
+         * overflowed by 568px at the 1024px the windows-latest runner uses,
+         * until #885 took eight of them into the settings modal — so it FITS
+         * now, with about 26px to spare, and `e2e/chrome.spec.ts` holds it
+         * there. This rule stays anyway: 26px is not much, a longer translation
+         * or one more chip eats it, and the failure mode is the nasty one
+         * below. A compressed button with no `white-space` rule wraps its text
+         * to a second line, and a two-line chip makes the bar taller than the
+         * `minBlockSize: 34` floor above. In a short window the shell column
+         * has no spare pixels, so those go straight out of the conversation,
+         * which is the only flexible item left.
          *
          * That is the shape of the CI failure on #758: `feed.spec.ts`'s "a bar
          * docking on its own gives the composer its room back" wanted the feed

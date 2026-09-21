@@ -12,7 +12,7 @@
 import { test, expect, Page } from '@playwright/test';
 import http from 'http';
 import { AddressInfo } from 'net';
-import { launchApp, LaunchedApp, openEventsDrawer } from './fixtures/app';
+import { launchApp, LaunchedApp, openEventsDrawer, openSettings, closeSettings } from './fixtures/app';
 
 /** The shell is mounted and listening (the reason is in about.spec.ts). */
 const stamp = (w: Page) =>
@@ -164,16 +164,19 @@ test.describe('provider service health (E14-07)', () => {
     await expect(dot(w)).toHaveAttribute('data-state', 'unknown');
   });
 
-  test('turning the check off in About stops it and says so', async () => {
+  test('turning the check off in Settings stops it and says so', async () => {
     a = await launch();
     const w = a.window;
     await expect(stamp(w)).toBeVisible();
     await expect(dot(w)).toHaveAttribute('data-state', 'operational');
 
-    await stamp(w).click();
-    const box = w.locator('[data-about-field="statusPolling"]');
+    // #885 moved this preference off the About panel and into Settings ▸
+    // Advanced, beside the other outbound-network switch.
+    await openSettings(w);
+    const box = w.locator('[data-settings-field="status-polling"]');
     await expect(box).toBeChecked();
     await box.uncheck();
+    await closeSettings(w);
     // the dot goes to "unknown", and the tooltip says why in the app's words
     await expect(dot(w)).toHaveAttribute('data-state', 'unknown');
     await expect(dot(w)).toHaveAttribute('title', /turned off/);
