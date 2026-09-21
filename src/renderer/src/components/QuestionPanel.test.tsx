@@ -22,7 +22,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
-import { forgetQuestionDraft, QuestionPanel } from './QuestionPanel';
+import { forgetQuestionDraft, nextUnanswered, QuestionPanel } from './QuestionPanel';
 import { parseAskUserQuestion } from '../../../shared/ask-user-question';
 
 declare global {
@@ -338,6 +338,7 @@ describe('submit is gated on ONE answer, not all of them (#567)', () => {
     await click(optionRow(host, 0, 'Red'));
     expect(submitButton(host).disabled).toBe(false);
 
+    await openTab(host, 0); // the answer walked the panel on to Languages (#733)
     await click(optionRow(host, 0, 'Red')); // pick-one un-ticks on a re-click
     expect(submitButton(host).disabled).toBe(true);
   });
@@ -628,22 +629,43 @@ describe('an unanswered question is VISIBLY skipped, not merely un-ticked (#567)
     host.querySelector<HTMLElement>('[data-testid="question-remaining"]');
   const skipNote = (host: HTMLElement): HTMLElement | null =>
     host.querySelector<HTMLElement>('[data-testid="question-skip-note"]');
+  const skipWord = (t: HTMLElement): HTMLElement | null =>
+    t.querySelector<HTMLElement>('[data-question-tab-skip-word]');
 
-  it('marks the unanswered TAB as skipping — attribute, name and strike', async () => {
+  it('marks the unanswered TAB as skipping — attribute, name and a WORD', async () => {
     const host = await mountPanel(REAL_INPUT);
     // nothing answered: nothing is being skipped, because nothing can be sent
     expect(tab(host, 1).getAttribute('data-question-tab-skipping')).toBe('false');
+    expect(skipWord(tab(host, 1))).toBeNull();
 
     await click(optionRow(host, 0, 'Red'));
 
     expect(tab(host, 0).getAttribute('data-question-tab-skipping')).toBe('false');
     expect(tab(host, 1).getAttribute('data-question-tab-skipping')).toBe('true');
     expect(tab(host, 1).getAttribute('aria-label')).toContain('will be sent as skipped');
-    // and to the EYE as well as to a screen reader: struck through, in a shape
-    // rather than a hue (§5.32)
-    const label = tab(host, 1).querySelector<HTMLElement>('span:not([aria-hidden])');
-    expect(label?.style.textDecoration).toBe('line-through');
-    expect(tab(host, 1).style.border).toContain('dashed');
+    // and to the EYE as well as to a screen reader — in a literal word since
+    // #733, because the strikethrough it replaced read as a rendering glitch.
+    // Still shape rather than hue (§5.32): a word is not a colour.
+    expect(skipWord(tab(host, 1))?.textContent).toBe('skipped');
+    expect(skipWord(tab(host, 0))).toBeNull(); // answered: nothing to warn about
+  });
+
+  it('never strikes anything through, and never dashes a tab, in ANY state (#733)', async () => {
+    // The owner read the #567 strike + dash as a glitch. This pins that neither
+    // comes back — and settles the issue's "is line-through leaking into
+    // answered or active tabs?" question for every state at once, not one.
+    const host = await mountPanel(REAL_INPUT);
+    const noDecoration = (): void => {
+      for (const el of Array.from(host.querySelectorAll<HTMLElement>('*'))) {
+        expect(el.style.textDecoration).not.toContain('line-through');
+        expect(el.style.border).not.toContain('dashed');
+      }
+    };
+    noDecoration(); // nothing answered
+    await click(optionRow(host, 0, 'Red'));
+    noDecoration(); // skipping
+    await click(optionRow(host, 1, 'Go'));
+    noDecoration(); // complete
   });
 
   it('stops marking anything once every question is answered', async () => {
@@ -667,6 +689,11 @@ describe('an unanswered question is VISIBLY skipped, not merely un-ticked (#567)
     expect(skipNote(host)).toBeNull(); // nothing sendable, nothing skipped
 
     await click(optionRow(host, 0, 'Red'));
+    // the answer walked the panel on to Languages (#733), which is unanswered
+    expect(blockOf(host, 1)).not.toBeNull();
+    expect(skipNote(host)?.textContent).toBe('Not answered — will be sent as skipped');
+
+    await openTab(host, 0);
     expect(skipNote(host)).toBeNull(); // this one IS answered
 
     await openTab(host, 1);
@@ -748,6 +775,9 @@ describe('the tab strip is keyboard-complete (§5.32, #566)', () => {
     await press(tab(host, 1), 'Home');
     expect(tab(host, 0).getAttribute('aria-selected')).toBe('true');
   });
+  // (the Left/Right test above is also the guard that ONLY an advance moves
+  // focus into the options: a strip walk must leave focus on the tab it
+  // reached, and a focus-on-every-tab-change would fail it)
 
   it('keeps ONE tab stop, on the selected tab — the roving stop a tablist owes', async () => {
     const host = await mountPanel(REAL_INPUT);
@@ -771,5 +801,289 @@ describe('the tab strip is keyboard-complete (§5.32, #566)', () => {
     await press(optionRow(host, 0, 'Green'), 'ArrowUp');
     expect(document.activeElement).toBe(red);
     expect(tab(host, 0).getAttribute('aria-selected')).toBe('true');
+  });
+});
+
+// ── #733: the panel walks you through a multi-question call ─────────────────
+/** three pick-ones — enough to tell "next unanswered" from "i + 1" */
+const THREE_RADIO = {
+  questions: [
+    REAL_INPUT.questions[0],
+    {
+      question: 'Which size?',
+      header: 'Size',
+      options: [{ label: 'S' }, { label: 'M' }, { label: 'L' }],
+      multiSelect: false,
+    },
+    {
+      question: 'Which shape?',
+      header: 'Shape',
+      options: [{ label: 'Circle' }, { label: 'Square' }],
+      multiSelect: false,
+    },
+  ],
+};
+
+const selected = (host: HTMLElement): number =>
+  Array.from(host.querySelectorAll('[role="tab"]')).findIndex(
+    (t) => t.getAttribute('aria-selected') === 'true'
+  );
+
+const nextButton = (host: HTMLElement): HTMLButtonElement | null =>
+  host.querySelector<HTMLButtonElement>('[data-testid="question-next"]');
+
+describe('nextUnanswered — the one rule both advance triggers read (#733)', () => {
+  const sel = (answered: boolean) => ({ labels: answered ? ['x'] : [], other: false, otherText: '' });
+
+  it('finds the next UNANSWERED question, not the next question', () => {
+    expect(nextUnanswered([sel(true), sel(true), sel(false)], 0)).toBe(2);
+  });
+
+  it('wraps past the end, still skipping answered ones', () => {
+    expect(nextUnanswered([sel(true), sel(false), sel(false)], 2)).toBe(1);
+  });
+
+  it('never returns where you already are — that is "nowhere to go"', () => {
+    expect(nextUnanswered([sel(true), sel(false), sel(true)], 1)).toBe(-1);
+  });
+
+  it('has nowhere to go when everything is answered, or there is one question', () => {
+    expect(nextUnanswered([sel(true), sel(true)], 0)).toBe(-1);
+    expect(nextUnanswered([sel(false)], 0)).toBe(-1);
+  });
+
+  it('an Other ticked with nothing typed is still unanswered — still a destination', () => {
+    const emptyOther = { labels: [], other: true, otherText: '  ' };
+    expect(nextUnanswered([sel(true), emptyOther], 0)).toBe(1);
+  });
+});
+
+describe('a pick-one answer moves on to the next unanswered question (#733)', () => {
+  it('opens the next question and puts focus on its first option', async () => {
+    const host = await mountPanel(REAL_INPUT);
+    await click(optionRow(host, 0, 'Red'));
+
+    expect(selected(host)).toBe(1);
+    expect(blockOf(host, 1)).not.toBeNull();
+    expect(blockOf(host, 0)).toBeNull();
+    // the block that held focus just unmounted — focus is PLACED, not dropped
+    // on <body>, and it lands on the new question rather than on the strip
+    expect(document.activeElement).toBe(optionRow(host, 1, 'TypeScript'));
+    // and the roving tab stop followed the selection, as a tablist owes
+    expect(tab(host, 1).tabIndex).toBe(0);
+    expect(tab(host, 0).tabIndex).toBe(-1);
+  });
+
+  it('goes to the next UNANSWERED question, not blindly to i + 1', async () => {
+    const host = await mountPanel(THREE_RADIO);
+    await openTab(host, 1);
+    await click(optionRow(host, 1, 'M'));
+    expect(selected(host)).toBe(2);
+
+    await openTab(host, 0);
+    await click(optionRow(host, 0, 'Red'));
+    expect(selected(host)).toBe(2); // not 1 — that one is done
+  });
+
+  it("a RE-answer moves on too — the issue's own example, Q1 of 3 with Q2 done", async () => {
+    // Changing your mind on an answered radio is still an answer, so it walks
+    // on; what it must not do is walk to the next TAB, which is already done.
+    const host = await mountPanel(THREE_RADIO);
+    await click(optionRow(host, 0, 'Red')); // → Size
+    await click(optionRow(host, 1, 'M')); // → Shape
+    await openTab(host, 0);
+
+    await click(optionRow(host, 0, 'Blue')); // re-answer: Red → Blue
+    expect(selected(host)).toBe(2);
+    await openTab(host, 0);
+    expect(optionRow(host, 0, 'Blue').getAttribute('aria-checked')).toBe('true');
+    expect(optionRow(host, 0, 'Red').getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('a destination with Other ticked and nothing typed focuses the FIELD', async () => {
+    // unanswered, so a real destination — and the text box is the one thing
+    // that question is waiting for
+    const host = await mountPanel(REAL_INPUT);
+    await openTab(host, 1);
+    await click(optionRow(host, 1, '__other__'));
+    await openTab(host, 0);
+
+    await click(optionRow(host, 0, 'Red'));
+    expect(selected(host)).toBe(1);
+    expect(document.activeElement).toBe(
+      host.querySelector<HTMLInputElement>('[data-question-other-input="1"]')
+    );
+  });
+
+  it('wraps back to an earlier unanswered question, skipping answered ones', async () => {
+    const host = await mountPanel(THREE_RADIO);
+    await click(optionRow(host, 0, 'Red')); // → Size
+    await openTab(host, 2);
+    await click(optionRow(host, 2, 'Circle'));
+    // past the end and round: Colour is done, so Size — not Colour
+    expect(selected(host)).toBe(1);
+    expect(document.activeElement).toBe(optionRow(host, 1, 'S'));
+  });
+
+  it('answering the LAST unanswered question stays put — and does not send', async () => {
+    const calls: Decision[] = [];
+    const host = await mountPanel(REAL_INPUT, calls);
+    await openTab(host, 1);
+    await click(optionRow(host, 1, 'Go'));
+    await openTab(host, 0);
+    await click(optionRow(host, 0, 'Red'));
+
+    expect(selected(host)).toBe(0);
+    expect(optionRow(host, 0, 'Red').getAttribute('aria-checked')).toBe('true');
+    // Send answer is the whole story now, and pressing it is the user's call
+    expect(submitButton(host).disabled).toBe(false);
+    expect(calls).toEqual([]);
+  });
+
+  it('a re-click that DESELECTS the radio stays put', async () => {
+    const host = await mountPanel(REAL_INPUT);
+    await click(optionRow(host, 0, 'Red'));
+    await openTab(host, 0);
+
+    await click(optionRow(host, 0, 'Red')); // un-ticks: the question is open again
+    expect(optionRow(host, 0, 'Red').getAttribute('aria-checked')).toBe('false');
+    expect(selected(host)).toBe(0);
+  });
+
+  it('ticking Other does NOT advance — the field it opens keeps the caret', async () => {
+    const host = await mountPanel(REAL_INPUT);
+    await click(optionRow(host, 0, '__other__'));
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0)); // pickOther focuses after the commit
+    });
+
+    expect(selected(host)).toBe(0);
+    const field = host.querySelector<HTMLInputElement>('[data-question-other-input="0"]')!;
+    expect(document.activeElement).toBe(field);
+
+    // and typing, which DOES make it an answer, does not yank the tab either
+    await type(field, 'teal');
+    expect(selected(host)).toBe(0);
+    expect(document.activeElement).toBe(field);
+  });
+
+  it('a checkbox tick stays put — more ticks may follow', async () => {
+    const host = await mountPanel(REAL_INPUT);
+    await openTab(host, 1);
+    await click(optionRow(host, 1, 'Go'));
+    await click(optionRow(host, 1, 'Rust'));
+
+    expect(selected(host)).toBe(1);
+    expect(optionRow(host, 1, 'Rust').getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('Space and Enter on a radio advance exactly like a click', async () => {
+    const host = await mountPanel(THREE_RADIO);
+    optionRow(host, 0, 'Red').focus();
+
+    await press(optionRow(host, 0, 'Red'), ' ');
+    expect(selected(host)).toBe(1);
+    expect(document.activeElement).toBe(optionRow(host, 1, 'S'));
+
+    await press(optionRow(host, 1, 'S'), 'Enter');
+    expect(selected(host)).toBe(2);
+    expect(document.activeElement).toBe(optionRow(host, 2, 'Circle'));
+  });
+
+  it('a single question never moves anything — focus included', async () => {
+    const host = await mountPanel(ONE_INPUT);
+    const red = optionRow(host, 0, 'Red');
+    red.focus();
+    await press(red, ' ');
+    expect(red.getAttribute('aria-checked')).toBe('true');
+    expect(document.activeElement).toBe(red);
+    expect(host.querySelectorAll('[role="tab"]')).toHaveLength(0);
+  });
+});
+
+describe('the Next question button (#733)', () => {
+  it('is not there at all on a single-question panel (#563, untouched)', async () => {
+    const host = await mountPanel(ONE_INPUT);
+    expect(nextButton(host)).toBeNull();
+  });
+
+  it("sits first, in the order the owner listed: Next · Send · Don't answer", async () => {
+    const host = await mountPanel(REAL_INPUT);
+    const order = Array.from(host.querySelectorAll('button:not([role="tab"])')).map((b) =>
+      b.getAttribute('data-testid')
+    );
+    expect(order).toEqual(['question-next', 'question-submit', 'question-dismiss']);
+    expect(nextButton(host)?.textContent).toBe('Next question');
+  });
+
+  it('moves to the next unanswered question and focuses its first option', async () => {
+    const calls: Decision[] = [];
+    const host = await mountPanel(REAL_INPUT, calls);
+    expect(nextButton(host)?.disabled).toBe(false); // skipping ahead unanswered is fine
+
+    await click(nextButton(host)!);
+    expect(selected(host)).toBe(1);
+    expect(document.activeElement).toBe(optionRow(host, 1, 'TypeScript'));
+    expect(calls).toEqual([]); // walking is not answering
+  });
+
+  it('is the way OFF a checkbox question', async () => {
+    const host = await mountPanel(REAL_INPUT);
+    await openTab(host, 1);
+    await click(optionRow(host, 1, 'Go'));
+    expect(selected(host)).toBe(1); // the tick stayed put…
+
+    await click(nextButton(host)!); // …and the button moves on
+    expect(selected(host)).toBe(0);
+    expect(document.activeElement).toBe(optionRow(host, 0, 'Red'));
+  });
+
+  it('uses the same routing as the auto-advance — next UNANSWERED, wrapping', async () => {
+    const host = await mountPanel(THREE_RADIO);
+    await openTab(host, 1);
+    await click(optionRow(host, 1, 'M')); // → Shape
+    await openTab(host, 0);
+    await click(nextButton(host)!);
+    expect(selected(host)).toBe(2); // Size is done
+  });
+
+  it('is disabled, and says why, when the only unanswered question is this one', async () => {
+    const host = await mountPanel(REAL_INPUT);
+    await click(optionRow(host, 0, 'Red')); // → Languages, the only one left
+
+    expect(nextButton(host)?.disabled).toBe(true);
+    // a button that wrapped you back to an ANSWERED tab would read as a bug —
+    // the disabled state is the assertion; `advance`'s own -1 guard is pinned
+    // by the nextUnanswered cases above
+    expect(nextButton(host)?.title).toBe('Every other question is already answered');
+  });
+
+  it('is disabled once everything is answered, on every tab', async () => {
+    const host = await mountPanel(REAL_INPUT);
+    await click(optionRow(host, 0, 'Red'));
+    await click(optionRow(host, 1, 'Go'));
+    expect(nextButton(host)?.disabled).toBe(true);
+    await openTab(host, 0);
+    expect(nextButton(host)?.disabled).toBe(true);
+  });
+
+  it('is live on an answered tab while another is still open', async () => {
+    const host = await mountPanel(REAL_INPUT);
+    await click(optionRow(host, 0, 'Red'));
+    await openTab(host, 0);
+    expect(nextButton(host)?.disabled).toBe(false);
+    expect(nextButton(host)?.title).toBe('');
+
+    await click(nextButton(host)!);
+    expect(selected(host)).toBe(1);
+  });
+
+  it("leaves Send answer and Don't answer exactly as they were", async () => {
+    const calls: Decision[] = [];
+    const host = await mountPanel(REAL_INPUT, calls);
+    await click(nextButton(host)!);
+    expect(submitButton(host).disabled).toBe(true); // #567: still gated on one answer
+    await click(host.querySelector<HTMLElement>('[data-testid="question-dismiss"]')!);
+    expect(calls).toEqual([{ decision: 'deny', allowAll: false, updatedInput: undefined }]);
   });
 });

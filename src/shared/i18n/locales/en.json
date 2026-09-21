@@ -345,6 +345,9 @@
     "tabAnswered": "{label} — answered",
     "tabUnanswered": "{label} — not answered yet",
     "tabSkipped": "{label} — not answered, will be sent as skipped",
+    "tabSkippedWord": "skipped",
+    "next": "Next question",
+    "nextHint": "Every other question is already answered",
     "stillToAnswer": "Still to answer: {headers}",
     "willSkip": "Sending now skips: {headers}",
     "willSkipThis": "Not answered — will be sent as skipped"

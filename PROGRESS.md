@@ -3,6 +3,54 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ DONE — 2026-09-21: **#733** the multi-question panel walks itself
+>
+> Branch `feature/733-question-panel-advance`, merged on green CI (this entry
+> rides in the same PR — code, docs, tracker and PROGRESS pushed ONCE, so no
+> push cancelled in-flight CI). The merge SHA is recorded by the v0.8.93
+> release PR that follows.
+>
+> ⚠️ **NOT RELEASED** until v0.8.93 is cut — which is the very next thing.
+>
+> **Three parts, one advance function.** `nextUnanswered(selections, from)`
+> never returns `from`, so "the only unanswered one is where you are" and
+> "everything is answered" are both `-1` by construction — and that one value
+> is what the radio auto-advance stays put on AND what disables the new **Next
+> question** button (row: Next · Send · Don't answer, tabbed panels only).
+> No advance on Other, on a deselect, on a checkbox, or after the last
+> unanswered question; never auto-sends. Immediate, not the extension's 300ms.
+> **Focus is PLACED** on the new question's first option by a one-shot ref in a
+> dependency-less layout effect (the block holding focus just unmounted), or on
+> its Other FIELD if Other is ticked and empty. The strikethrough + dashed
+> border are gone; unanswered tabs say ***skipped*** in words.
+>
+> **Mutation-checked, 10 mutants, all killed** — i+1 routing (11 fail),
+> advancing on Other, dropping the focus move (6), Next always live, checkbox
+> advancing, deselect advancing, strike coming back, no Other-field
+> preference, re-answer not advancing. One survivor in round 1 was an
+> EQUIVALENT mutant (passing post-click selections to `advance` was dead
+> weight — `nextUnanswered` never reads `from`), so the parameter was removed
+> rather than defended.
+>
+> **Review (code-reviewer): no blockers.** Taken: Other-field focus preference,
+> a real re-answer test (the old one never re-answered), the manual's wrong
+> Enter-in-Other sentence (pre-#567 text), the effect's dependency list removed
+> so an armed ref can never survive to hijack a strip arrow-walk.
+>
+> **Verification:** typecheck 0, lint 0, unit **8703 passed / 3 skipped**,
+> full local Windows e2e run alone: **352 passed / 2 failed / 2 skipped**, and
+> ⚠️ **the background-task notification said "exit code 0" over a captured 1**
+> (third time now). Both failures sit outside this change (feed #716
+> precondition, rail #641 context menu) and went **6/6 green in isolation** —
+> logged as flake sighting **#893**, not chased. Exit codes captured to files
+> and read back. Visually checked in a real window: the word reads as a label, not a
+> glitch. Button row is `flex-wrap` on tabbed panels only; no title-bar or
+> fixed-width row changed, so the Linux font-width trap does not apply.
+>
+> **Next up: cut v0.8.93** (#877, #883, #885/#879, #733). Still waiting on
+> Dan, not chased: v0.8.92 hand-tests (#873 seven steps; #864 needs the real
+> dual-monitor rig with the monitor POWERED OFF, not locked).
+
 > # ✅ MERGED — 2026-09-20: **#885** the settings modal, and **#879** with it
 >
 > **PR #890, squashed to `6cffe58`** (54 files). **#885 and #879 both closed,

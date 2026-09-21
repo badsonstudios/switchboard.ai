@@ -76,6 +76,24 @@ you are in:
 - **It opens where the work is.** The panel starts on the first unanswered
   question — including when you come back to it after looking at something else.
 
+**The panel walks you through the questions.** When you pick an answer on a
+round-button (pick one) question, the panel moves straight on to the next
+question you **haven't answered yet** — one click per question. It skips over
+ones you've already done, and wraps back round to an earlier one when there's
+none left after it. It deliberately does *not* move when:
+
+- you tick **Other** — you're about to type, so the text box stays put;
+- you click an answer again to un-pick it — that question is open again;
+- the question is a square-box (pick several) one — you might want more boxes;
+- that was the last unanswered question — it stays where it is, and sending is
+  up to you. It never presses **Send answer** for you.
+
+To move on yourself — for example after ticking boxes — use **Next question**,
+the first of the three buttons (**Next question**, **Send answer**, **Don't
+answer**). It goes to the next unanswered question the same way, and it's greyed
+out when every other question already has an answer. Either way, the keyboard
+focus lands on the first answer of the question you've moved to.
+
 ### Answering only some of the questions
 
 You can send an answer with questions still blank. It is a normal thing to do —
@@ -87,8 +105,10 @@ and usually offers to ask that one again.
 Because that's easy to do by accident with a question hidden behind a tab, the
 panel makes the skipping obvious *before* you send:
 
-- the tab of any unanswered question goes **dashed and struck through**, and
-  reads *"Languages — not answered, will be sent as skipped"* to a screen reader;
+- the tab of any unanswered question gains the word ***skipped*** after its
+  name, and reads *"Languages — not answered, will be sent as skipped"* to a
+  screen reader. It's a warning about what sending now would do, not an error —
+  answer the question and the word goes away;
 - the question itself, when you're looking at it, says **"Not answered — will be
   sent as skipped"** where its tick would go;
 - the line beside the button changes to **"Sending now skips: Languages"**, and
@@ -99,8 +119,8 @@ answer. The panel's only job is to make sure you can see what you are choosing
 not to say. (You do have to answer at least one; sending a completely blank
 answer is what **Don't answer** is for.)
 
-A single question — which is what you'll usually get — has no tabs at all. It
-looks exactly as it always did.
+A single question — which is what you'll usually get — has no tabs and no
+**Next question** button. It looks exactly as it always did.
 
 **Don't answer** sends your refusal back. That's a real answer and a safe one:
 Claude is told you declined, and it will usually just ask again in ordinary
@@ -117,9 +137,11 @@ anything you typed are still there.
 ### Everything works from the keyboard
 
 Tab into the list, **Up** and **Down** move between the answers of one question,
-**Space** or **Enter** picks the one you're on. Tab moves on to the buttons. If
-you're typing in an "Other" box, **Enter** sends the whole thing once everything
-is answered.
+**Space** or **Enter** picks the one you're on (and on a pick-one question with
+more to answer, moves you on to the next, just like a click). Tab moves on to
+the buttons. If you're typing in an "Other" box, **Enter** is the same as
+**Send answer**: it sends what you've answered so far, and any question still
+blank goes back as skipped.
 
 When there's more than one question, Tab also reaches the **tab strip**, and
 there **Left** and **Right** move between the questions (**Home** and **End**
