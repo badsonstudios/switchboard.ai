@@ -3,9 +3,15 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🚢 PR OPEN — 2026-09-20: **#885** the settings modal (closes **#879** too)
+> # ✅ MERGED — 2026-09-20: **#885** the settings modal, and **#879** with it
 >
-> Branch `feature/885-settings` off `8c1112b`. Merging on green CI.
+> **PR #890, squashed to `6cffe58`** (54 files). **#885 and #879 both closed,
+> and NOTHING ELSE** — checked against an issue-list baseline taken before the
+> merge; the closing-keyword trap did not fire. All four CI jobs verified
+> `pass` against **`fd399fb`, the exact SHA that was merged**.
+>
+> ⚠️ **NOT RELEASED.** It lands in `0.8.93 — unreleased`, alongside #877 and
+> #883. Dan cannot see any of it yet.
 >
 > **ONE modal where there were three.** `Ctrl+,`, the palette, or an About
 > button. It absorbs `QuietHoursDialog`, `PushSetupDialog` and
@@ -133,7 +139,7 @@
 
 > # 🗺 THE QUEUE — owner's order, set 2026-09-20
 >
-> **#877 (merging) → #885 settings → #733 multi-question panel → RELEASE.**
+> **#877 ✅ → #885 ✅ (and #879 with it) → #733 multi-question panel → RELEASE.**
 > Dan's words: *"once we finish the settings, next I want to work on the ticket
 > where we're going to do some updates to how a question is asked, when there are
 > multiple questions… and that's the one we're going to do next before we do a
