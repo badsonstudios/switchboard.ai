@@ -411,9 +411,18 @@ should go:
 
 | Choice | What happens |
 |---|---|
-| **Create a GitHub issue** | Files it straight away and tells you the issue number. |
+| **Create a GitHub issue** | Files it straight away and opens the new issue in your browser. |
 | **Open an email** | Opens your mail app with the address already filled in. |
 | **Just build the zip** | Writes the file and shows it to you. Send it however you like. |
+
+Press **Send report** (it stays greyed out until you've typed a subject). **When
+the report goes through, the dialog closes by itself** — the issue opening in
+your browser, your mail app, or the folder with the zip is your confirmation.
+**If something goes wrong** — no GitHub sign-in, no network, GitHub refusing
+it, your mail app not opening —
+the dialog stays open with the reason written next to the button, and
+everything you typed is still there, so you can pick another option and send
+again.
 
 **Whichever you choose, the zip is always written and always shown to you in
 Explorer.** It contains your log files, your workspace file, and a short summary

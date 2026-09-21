@@ -48,6 +48,7 @@ const PROBLEM_KEY: Record<ReportProblem, string> = {
   'rate-limited': 'rateLimited',
   network: 'network',
   'bundle-failed': 'bundleFailed',
+  'mail-failed': 'mailFailed',
   unavailable: 'unavailable',
 };
 
@@ -61,6 +62,20 @@ const HINT: Record<ReportDestination, string> = {
   email: 'toEmailHint',
   zip: 'toZipHint',
 };
+
+/**
+ * What went wrong with a send, or null if nothing did.
+ *
+ * `ok: false` is a failure even with no `problem` attached — main's zip-only
+ * path reports a zip it could not write as exactly that, and reading "no
+ * problem" as success told the user "the zip is ready" about a zip that did not
+ * exist.
+ */
+function reportProblem(r: ReportResult): ReportProblem | null {
+  if (r.problem) return r.problem;
+  if (r.ok) return null;
+  return r.bundle.ok ? 'unavailable' : 'bundle-failed';
+}
 
 export function ReportProblemDialog(props: ReportProblemDialogProps): React.JSX.Element | null {
   const { t } = useTranslation();
@@ -76,9 +91,18 @@ export function ReportProblemDialog(props: ReportProblemDialogProps): React.JSX.
   /** set when the store REFUSED the token — an empty field would otherwise read as success */
   const [tokenRefused, setTokenRefused] = React.useState(false);
   const [result, setResult] = React.useState<ReportResult | null>(null);
+  /**
+   * Which send is the CURRENT one. Bumped by every send and every re-open, and
+   * checked when a send settles: a report still in flight when the dialog was
+   * closed and re-opened must not reach into the fresh one — closing it,
+   * printing an old error in it, or clearing `busy` under a second send, which
+   * would re-arm the button and let a third press file a duplicate issue.
+   */
+  const attempt = React.useRef(0);
 
   React.useEffect(() => {
     if (!props.open) return;
+    attempt.current += 1;
     // A re-open starts clean. A half-typed token left in the box from last time
     // is a credential on screen for no reason, and a stale success line would
     // claim something was filed that was not.
@@ -105,12 +129,47 @@ export function ReportProblemDialog(props: ReportProblemDialogProps): React.JSX.
 
   const submit = (): void => {
     if (!filable) return;
+    const mine = ++attempt.current;
     setBusy(true);
     setResult(null);
     void props
       .onSubmit({ subject, description, destination })
-      .then((r) => setResult(r))
-      .finally(() => setBusy(false));
+      // `.catch` here rather than trusting the caller never to reject — the
+      // same stance `saveToken` takes below
+      .catch((): ReportResult => ({
+        ok: false,
+        destination,
+        url: null,
+        number: null,
+        bundle: { ok: false, path: null, bytes: 0, skipped: [] },
+        problem: 'unavailable',
+      }))
+      .then((r) => {
+        if (attempt.current !== mine) {
+          // A send from an earlier opening. The issue it filed is real, so it
+          // may still open; this dialog, though, is no longer its business.
+          if (reportProblem(r) === null && r.url) props.onOpenIssue?.(r.url);
+          return;
+        }
+        // A SEND THAT WORKED CLOSES THE DIALOG. Leaving it open with a success
+        // line at the foot of a scrolling form read, to the owner, as a button
+        // that did nothing. Every successful destination already shows its own
+        // proof outside this window — the zip's folder is revealed, the mail app
+        // opens — and a filed issue is opened in the browser here, which is the
+        // one confirmation nobody can miss. Only a FAILURE keeps the dialog, so
+        // the user can switch destination or try again with their words intact.
+        if (reportProblem(r) === null) {
+          // close FIRST: a browser hand-off that throws must not strand the
+          // dialog open over a report that was, in fact, sent
+          close();
+          if (r.url) props.onOpenIssue?.(r.url);
+          return;
+        }
+        setResult(r);
+      })
+      .finally(() => {
+        if (attempt.current === mine) setBusy(false);
+      });
   };
 
   const saveToken = (): void => {
@@ -140,17 +199,24 @@ export function ReportProblemDialog(props: ReportProblemDialogProps): React.JSX.
     fontFamily: 'var(--font-ui)',
     fontSize: 12,
     inlineSize: '100%',
+    // padding and border INSIDE the 100%, or every field is 18px wider than the
+    // dialog and the whole form scrolls sideways
+    boxSizing: 'border-box',
   } as const;
-  // AN ACCENT IS A FIELD, NEVER A WORD (§5.11). A primary button paints its
-  // BACKGROUND with the accent and takes `--accent-ink-on-fill` for its text —
-  // the one accent-named token allowed to be a `color:`, because being one is
-  // its entire job.
+  // THE APP'S PRIMARY BUTTON, not a session accent. This used `--accent`, which
+  // only exists INSIDE a session card (each card sets its own identity hue);
+  // this dialog renders at the root, where it is undefined — so the fill fell
+  // away and left a transparent button with near-black `--accent-ink-on-fill`
+  // text, which the owner read as disabled. `--btn-primary-*` is theme-level,
+  // defined everywhere, and what every other Send button uses.
   //
   // Written as two whole objects rather than one with ternaries in the colour
   // declarations, which is not cosmetic: the theme drift test reads a ternary
   // on a colour as an offender, and it is right to. That is exactly how a hue
   // ends up on words by accident.
   const buttonBase: React.CSSProperties = {
+    flexShrink: 0,
+    whiteSpace: 'nowrap',
     border: '1px solid var(--border)',
     borderRadius: 6,
     padding: '5px 12px',
@@ -165,8 +231,8 @@ export function ReportProblemDialog(props: ReportProblemDialogProps): React.JSX.
   };
   const primaryButton: React.CSSProperties = {
     ...buttonBase,
-    background: 'var(--accent)',
-    color: 'var(--accent-ink-on-fill)',
+    background: 'var(--btn-primary-bg)',
+    color: 'var(--btn-primary-text)',
     cursor: filable ? 'pointer' : 'default',
     opacity: filable ? 1 : 0.5,
   };
@@ -340,63 +406,47 @@ export function ReportProblemDialog(props: ReportProblemDialogProps): React.JSX.
             <p style={{ margin: 0, ...label }}>{t('report.bundleNote')}</p>
           )}
 
-          {result !== null && (
-            <p
-              data-report-result
-              // ANNOUNCED. Everything this line ever says — filed as #42, rate
-              // limited, could not reach GitHub, the zip is still ready — is the
-              // answer to a button the user just pressed. Without a live region
-              // a screen-reader user presses Send and hears nothing at all.
-              role="status"
-              aria-live="polite"
-              style={{ margin: 0, fontSize: 12 }}
-            >
-              {result.problem
-                ? t(`report.problem.${PROBLEM_KEY[result.problem]}`)
-                : result.destination === 'github'
-                  ? result.number !== null
-                    ? t('report.okGithub', { number: result.number })
-                    : t('report.okGithubNoLink')
-                  : result.destination === 'email'
-                    ? t('report.okEmail')
-                    : t('report.okZip')}
-              {result.url && props.onOpenIssue && (
-                <>
-                  {' '}
-                  <button
-                    type="button"
-                    data-report-open-issue
-                    onClick={() => props.onOpenIssue?.(result.url as string)}
-                    style={{
-                      background: 'none',
-                      border: 0,
-                      padding: 0,
-                      // NOT the accent: these are words, and the underline is
-                      // what says "this is a link" without spending a hue on it.
-                      color: 'var(--text)',
-                      cursor: 'pointer',
-                      font: 'inherit',
-                      textDecoration: 'underline',
-                    }}
-                  >
-                    {t('report.openIssue')}
-                  </button>
-                </>
-              )}
-            </p>
-          )}
         </section>
 
         <div
           style={{
             display: 'flex',
             justifyContent: 'flex-end',
+            alignItems: 'center',
             gap: 8,
             padding: '10px 14px',
             borderBlockStart: '1px solid var(--border)',
+            // pinned to the bottom of the dialog's scroller, so the buttons AND
+            // the line that answers them are on screen however long the form is
+            position: 'sticky',
+            insetBlockEnd: 0,
+            background: 'var(--panel)',
           }}
         >
-          <button type="button" onClick={close} style={button(false)}>
+          {/* WHY A SEND FAILED, beside the button that was pressed. It used to
+              sit at the foot of the form, below a six-line description box —
+              off screen in a short window, so a failed send looked like a dead
+              button. Only failures reach here: a success closes the dialog.
+              ANNOUNCED: it is the answer to a button the user just pressed, and
+              without a live region a screen-reader user hears nothing. The
+              region is ALWAYS mounted and only its text changes — many screen
+              readers skip a live region that arrives with its words already in
+              it. It takes the slack in the row and wraps; the buttons never
+              shrink, so a long reason cannot fold "Send report" in two. */}
+          <p
+            role="status"
+            aria-live="polite"
+            style={{ margin: 0, marginInlineEnd: 'auto', flex: '1 1 auto', minInlineSize: 0, fontSize: 12 }}
+          >
+            {result !== null && (
+              <span data-report-result>
+                {/* `?? 'unavailable'` is unreachable — `result` is only ever
+                    set on a failure — and is here for the type, not a case */}
+                {t(`report.problem.${PROBLEM_KEY[reportProblem(result) ?? 'unavailable']}`)}
+              </span>
+            )}
+          </p>
+          <button type="button" data-report-cancel onClick={close} style={button(false)}>
             {t('report.cancel')}
           </button>
           <button
@@ -404,6 +454,8 @@ export function ReportProblemDialog(props: ReportProblemDialogProps): React.JSX.
             data-report-submit
             onClick={submit}
             disabled={!filable}
+            // a dead button says why — the subject is the one required field
+            title={subject.trim().length === 0 ? t('report.problem.emptySubject') : undefined}
             style={button(true)}
           >
             {busy ? t('report.working') : t('report.submit')}

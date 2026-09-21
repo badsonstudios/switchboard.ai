@@ -774,11 +774,6 @@
     "tokenSave": "Save token",
     "tokenForget": "Forget it",
     "tokenUnavailable": "This machine cannot store secrets, so a token cannot be saved here.",
-    "okGithub": "Filed as issue #{number}.",
-    "okGithubNoLink": "The issue was created.",
-    "okEmail": "Your mail app should be open. Remember to attach the zip.",
-    "okZip": "The zip is ready and shown in your folder.",
-    "openIssue": "Open the issue",
     "problem": {
       "emptySubject": "Give it a subject first — even a few words.",
       "noToken": "No GitHub sign-in was found on this machine, so nothing was filed. Your zip is still ready.",
@@ -787,6 +782,7 @@
       "rateLimited": "GitHub is rate-limiting right now. Try again shortly — your zip is still ready.",
       "network": "Could not reach GitHub. Your zip is still ready to send another way.",
       "bundleFailed": "The zip could not be written. There may be no room left on the disk.",
+      "mailFailed": "Your mail app could not be opened. Your zip is still ready — send it another way.",
       "unavailable": "This copy of switchboard could not collect a report. Nothing was sent."
     }
   },

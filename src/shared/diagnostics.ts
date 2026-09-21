@@ -66,6 +66,12 @@ export type ReportProblem =
   /** the user gave us nothing to file */
   | 'empty-subject'
   /**
+   * the mail app could not be opened. A failure, not a shrug: a successful send
+   * closes the dialog, and a "success" here would close it on words that went
+   * nowhere (#896)
+   */
+  | 'mail-failed'
+  /**
    * main could not be asked at all — no `diagnostics` bridge namespace, or the
    * call was refused. Its own name rather than borrowing `network`: nothing was
    * attempted, so telling the user GitHub was unreachable would be a guess
