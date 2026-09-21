@@ -188,6 +188,9 @@ export function registerReportIpc(deps: ReportIpcDeps): void {
         await sh.openExternal(mailtoFor(subject, bundle.path));
       } catch (err) {
         log.warn('could not open the mail client', { error: String(err) });
+        // Reported, not swallowed (#896): the dialog closes on success, so a
+        // mail app that never opened would take the user's words with it.
+        return { ok: false, destination, url: null, number: null, bundle, problem: 'mail-failed' };
       }
       return { ok: true, destination, url: null, number: null, bundle };
     }

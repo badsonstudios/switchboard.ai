@@ -50,6 +50,7 @@ const handlers = {
     status: status(),
     ok: true,
   })),
+  onOpenIssue: vi.fn<(url: string) => void>(),
 };
 
 function status(over: Partial<ReportStatus> = {}): ReportStatus {
@@ -204,42 +205,158 @@ describe('the credential', () => {
   });
 });
 
-describe('what it says afterwards', () => {
-  it('names the issue it filed', async () => {
-    handlers.onSubmit.mockImplementation(async () => ok({ number: 42, url: 'https://x/42' }));
+describe('what happens when Send report is pressed', () => {
+  // The owner pressed Send and the dialog stayed open with nothing visibly
+  // changed — so it read as a dead button. A send that WORKED now closes the
+  // dialog; only a failure keeps it, with the reason beside the button.
+  async function send(dest?: string): Promise<void> {
     await render(true);
     await type(field('subject')!, 's');
+    if (dest) await click(destination(dest)!);
     await click(submitButton());
-    expect(resultText()).toContain('42');
+  }
+
+  it('a filed issue closes the dialog and opens the issue in the browser', async () => {
+    handlers.onSubmit.mockImplementation(async () => ok({ number: 42, url: 'https://x/42' }));
+    await send();
+    expect(handlers.onOpenIssue).toHaveBeenCalledWith('https://x/42');
+    expect(handlers.onClose).toHaveBeenCalledTimes(1);
+    expect(host.querySelector('[data-report-result]')).toBeNull();
   });
 
-  it('reports a refusal in its own words rather than as a success', async () => {
+  it('an email or a plain zip closes the dialog too, and opens nothing else', async () => {
+    handlers.onSubmit.mockImplementation(async () => ok({ destination: 'email' }));
+    await send('email');
+    expect(handlers.onClose).toHaveBeenCalledTimes(1);
+
+    handlers.onSubmit.mockImplementation(async () => ok({ destination: 'zip' }));
+    await send('zip');
+    expect(handlers.onClose).toHaveBeenCalledTimes(2);
+    expect(handlers.onOpenIssue).not.toHaveBeenCalled();
+  });
+
+  it('a refusal STAYS OPEN and says why, in its own words', async () => {
     handlers.onSubmit.mockImplementation(async () =>
       ok({ ok: false, problem: 'no-token', destination: 'github' })
     );
-    await render(true);
-    await type(field('subject')!, 's');
-    await click(submitButton());
+    await send();
+    expect(handlers.onClose).not.toHaveBeenCalled();
     expect(resultText()).toContain('No GitHub sign-in was found');
+    // the user's words survive, so switching destination is one click
+    expect(field('subject')?.value).toBe('s');
   });
 
-  it('tells the user the zip survived a failed post', async () => {
-    // The fail-open promise, on screen: the evidence is still on disk.
+  it('puts the reason BESIDE the button, not at the foot of the form', async () => {
+    // At the foot of a scrolling form it was off screen in a short window,
+    // which is how a failed send came to look like a button that did nothing.
     handlers.onSubmit.mockImplementation(async () =>
       ok({ ok: false, problem: 'network', destination: 'github' })
     );
-    await render(true);
-    await type(field('subject')!, 's');
-    await click(submitButton());
+    await send();
+    const region = host.querySelector('[data-report-result]')!.closest('[role="status"]')!;
+    expect(region.parentElement).toBe(submitButton().parentElement);
+    expect(region.getAttribute('aria-live')).toBe('polite');
+    // the fail-open promise, on screen: the evidence is still on disk
     expect(resultText()).toContain('zip is still ready');
   });
 
-  it('confirms the plain zip without mentioning GitHub', async () => {
-    handlers.onSubmit.mockImplementation(async () => ok({ destination: 'zip' }));
+  it('never calls a zip that could not be written "ready"', async () => {
+    // main reports this as ok:false with NO problem attached — which used to
+    // fall through to the success sentence
+    handlers.onSubmit.mockImplementation(async () =>
+      ok({
+        ok: false,
+        destination: 'zip',
+        bundle: { ok: false, path: null, bytes: 0, skipped: [] },
+      })
+    );
+    await send('zip');
+    expect(handlers.onClose).not.toHaveBeenCalled();
+    expect(resultText()).toContain('could not be written');
+    expect(resultText()).not.toContain('ready');
+  });
+});
+
+describe('a send still in flight when the dialog is closed and re-opened', () => {
+  // The dialog stays MOUNTED while closed, so without a guard the old send's
+  // settlement lands in the fresh dialog: closing it, printing an old error,
+  // or clearing `busy` under a second send — re-arming the button and letting a
+  // third press file a duplicate issue.
+  function deferred(): { promise: Promise<ReportResult>; resolve: (r: ReportResult) => void } {
+    let resolve!: (r: ReportResult) => void;
+    const promise = new Promise<ReportResult>((r) => (resolve = r));
+    return { promise, resolve };
+  }
+
+  it('an old SUCCESS does not close the re-opened dialog', async () => {
+    const first = deferred();
+    handlers.onSubmit.mockImplementationOnce(() => first.promise);
+    await render(true);
+    await type(field('subject')!, 'first');
+    await click(submitButton());
+    await render(false);
+    await render(true);
+    await type(field('subject')!, 'second');
+
+    await act(async () => first.resolve(ok({ url: 'https://x/1' })));
+
+    expect(handlers.onClose).not.toHaveBeenCalled();
+    expect(field('subject')?.value).toBe('second');
+    // the issue it filed is real, so it may still open
+    expect(handlers.onOpenIssue).toHaveBeenCalledWith('https://x/1');
+  });
+
+  it('an old FAILURE neither shows its error nor re-arms a second send', async () => {
+    const first = deferred();
+    const second = deferred();
+    handlers.onSubmit
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise);
+    await render(true);
+    await type(field('subject')!, 'first');
+    await click(submitButton());
+    await render(false);
+    await render(true);
+    await type(field('subject')!, 'second');
+    await click(submitButton()); // the second send is now in flight
+    expect(submitButton().disabled).toBe(true);
+
+    await act(async () => first.resolve(ok({ ok: false, problem: 'network' })));
+
+    expect(host.querySelector('[data-report-result]')).toBeNull();
+    expect(submitButton().disabled).toBe(true); // still busy with the SECOND send
+    expect(handlers.onSubmit).toHaveBeenCalledTimes(2);
+  });
+
+  it('a caller that rejects is a failure on screen, not a stuck button', async () => {
+    handlers.onSubmit.mockImplementation(async () => {
+      throw new Error('bridge gone');
+    });
     await render(true);
     await type(field('subject')!, 's');
-    await click(destination('zip')!);
     await click(submitButton());
-    expect(resultText()).toContain('zip is ready');
+    expect(handlers.onClose).not.toHaveBeenCalled();
+    expect(resultText()).toContain('could not collect a report');
+    expect(submitButton().disabled).toBe(false);
+  });
+});
+
+describe('the Send report button', () => {
+  it('is painted with the app primary colours, never a session accent', async () => {
+    // `--accent` exists only inside a session card. At the root, where this
+    // dialog renders, it is undefined: the button drew as a transparent box
+    // with near-black text and read as disabled.
+    await render(true);
+    await type(field('subject')!, 's');
+    expect(submitButton().style.background).toBe('var(--btn-primary-bg)');
+    expect(submitButton().style.color).toBe('var(--btn-primary-text)');
+    expect(submitButton().getAttribute('style')).not.toMatch(/var\(--accent/);
+  });
+
+  it('says why it is dead while there is no subject', async () => {
+    await render(true);
+    expect(submitButton().title).toBe('Give it a subject first — even a few words.');
+    await type(field('subject')!, 's');
+    expect(submitButton().title).toBe('');
   });
 });

@@ -3,7 +3,44 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🚀 RELEASE — 2026-09-21: **v0.8.93** cut
+> # 🔧 FIX — 2026-09-21: **#896** Report a problem's Send button (Dan, v0.8.92)
+>
+> Dan: *"the send request button is all black … looks like it's disabled …
+> when I click it, it doesn't close the dialog."* Diagnosed, not guessed:
+> **`--accent` is only defined inside a session card**; the dialog renders at
+> the root, so the fill computed to transparent and left near-black
+> `--accent-ink-on-fill` text. And the result line sat below a six-line
+> textarea, off screen, so every send looked like a dead click. No issue
+> appeared on the repo, so his click filed nothing.
+>
+> Fix (branch `fix/report-dialog-send`, lands in **0.8.94**): `--btn-primary-*`;
+> **success closes the dialog** (a filed issue opens in the browser — the
+> confirmation that survives the close); failure stays open with the reason in
+> a sticky footer beside the button; fields `border-box` (the form scrolled
+> sideways); `ok:false` with no `problem` (main's unwritten zip) is no longer
+> rendered as "the zip is ready". New `e2e/report-problem.spec.ts` measures
+> the real computed fill and the overflow; each half proven red on the old code.
+>
+> **The review found a real race and it is fixed:** the dialog stays MOUNTED
+> while closed, so a send still in flight when it was closed and re-opened
+> could close the fresh dialog, print an old error in it, or clear `busy` under
+> a second send (re-arming the button → a duplicate issue). An `attempt` ref
+> fences each send to the opening it came from; mutation-checked (then-guard,
+> finally-guard and the new `.catch` each caught). Also taken: a mail app that
+> will not open is now `mail-failed` rather than `ok: true` (the dialog closes on
+> success, so a false success would lose the user's words); buttons never
+> shrink beside a long reason; the status region is always mounted.
+>
+> **Verification:** typecheck 0, lint 0, unit **8710 passed / 3 skipped**, full
+> local Windows e2e alone **355 passed / 2 skipped, captured exit 0**.
+>
+> **Next up:** merge #896 on green CI, then cut **v0.8.94** so Dan can re-test.
+
+> # 🚀 RELEASE — 2026-09-21: **v0.8.93** cut — tag `v0.8.93` pushed on `4ed4ede`
+>
+> The first tag attempt never ran (the tool call was cut off mid-session), so
+> nothing was published until the tag went up at 13:40Z; `release.yml` run
+> `35607162337` fired from it.
 >
 > Carries **#877** (three-line task labels + size setting), **#883** (instant
 > labels, AI labels on by default), **#885/#879** (the Settings window; the

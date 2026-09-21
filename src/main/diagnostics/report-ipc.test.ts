@@ -191,6 +191,18 @@ describe('diag:submit — destinations', () => {
     expect(url).toContain(encodeURIComponent('Logs for you'));
   });
 
+  it('email: a mail app that will not open is a FAILURE, not a quiet success (#896)', async () => {
+    // The dialog closes on success, so reporting ok here would close it on
+    // words that went nowhere.
+    const h = harness();
+    h.openExternal.mockImplementationOnce(() => Promise.reject(new Error('no mail handler')));
+    const r = await h.submit({ subject: 's', description: 'd', destination: 'email' });
+    expect(r.ok).toBe(false);
+    expect(r.problem).toBe('mail-failed');
+    // and the zip is still on disk and shown — the fail-open half
+    expect(h.showItemInFolder).toHaveBeenCalled();
+  });
+
   it('zip: builds and reveals, and calls nothing out', async () => {
     const h = harness();
     const r = await h.submit({ subject: 's', description: 'd', destination: 'zip' });

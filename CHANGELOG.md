@@ -96,6 +96,17 @@ on the floor, and say so in your PR.
 
 ## 0.8.94 — unreleased
 
+### Fixed
+
+- **Report a problem: the Send report button looks like a button again, and
+  sending closes the dialog.** It was drawing as a black outline with black
+  text, which looked disabled, and pressing it left the dialog open with any
+  result line hidden below the form. It is now the usual green button. A report
+  that goes through closes the dialog (a GitHub issue also opens in your
+  browser). One that fails stays open with the reason next to the button. The
+  form also no longer scrolls sideways, and a zip that could not be written is
+  no longer described as "ready".
+
 ## 0.8.93 — 2026-09-21
 
 ### Added
