@@ -34,8 +34,14 @@ A check you asked for always tells you the answer, even when the answer is
 ## The "there's a new release" box
 
 When there's something newer, you get a small box naming the version and
-showing that release's notes — the actual "what changed" text, read here in the
+showing the release notes — the actual "what changed" text, read here in the
 app rather than on a web page. Long notes scroll inside the box.
+
+**If you've missed a release or two, you see all of them.** The notes cover
+every release newer than the version you're running, newest first, each under
+its own version number — so jumping from 0.8.92 straight to 0.8.94 also shows
+what 0.8.93 added. (The update installs all of it either way; this is just
+about being told.)
 
 Three buttons:
 
@@ -69,17 +75,24 @@ Four steps, all in the app, all of them visible:
 2. **Checking the download.** Every release publishes a checksum — a
    fingerprint of the installer file. switchboard.ai works out the fingerprint
    of what it just downloaded and compares the two.
-3. **Installing.** The installer runs silently — no wizard, no clicking Next,
-   and no Windows "do you want to allow this app to make changes" prompt
+3. **Installing.** switchboard.ai closes, and a small **"Installing, please
+   wait…"** window with a moving bar takes its place while the new version goes
+   in — usually well under a minute. There's no wizard, no clicking Next, and no
+   Windows "do you want to allow this app to make changes" prompt
    (switchboard.ai installs into your own user folder, so it doesn't need one).
-   switchboard.ai closes.
+   You don't need to do anything; the window closes on its own.
+
+   *Rarely*, if Windows is still holding one of the old files, the installer may
+   ask **"switchboard cannot be closed… Retry / Cancel"**. Press **Retry**, not
+   Cancel — Cancel stops halfway. If the app doesn't come back afterwards, start
+   it from the Start menu; if it won't start, run the update again.
 4. **Back on the new version.** The installer reopens the app when it's done,
    and the tab at the right edge picks up a dot. Open the Events drawer (click
    the tab, or `Ctrl+E`) and you'll see **"You're now on v0.3.0"**. That's the
    app confirming the update actually landed, not just that it tried.
 
-The window coming back on its own is the installer's doing, and it takes a few
-seconds — the app is fully closed for that moment, which is normal. If it ever
+The window coming back on its own is the installer's doing — the app is fully
+closed while the "Installing" window is up, which is normal. If it ever
 *doesn't* come back, the update is still installed: start switchboard.ai from
 the Start menu or the desktop shortcut as usual and you'll be on the new
 version. Nothing is lost either way; your sessions and settings are untouched

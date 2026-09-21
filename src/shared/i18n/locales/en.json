@@ -78,7 +78,7 @@
     "downloading": "Downloading v{version}…",
     "downloadingPercent": "Downloading v{version} — {percent}%",
     "verifying": "Checking the download…",
-    "launching": "Installing. switchboard.ai will close and reopen on the new version.",
+    "launching": "switchboard.ai will close now. A small “Installing” window shows the progress, and the app reopens on the new version by itself — usually within a minute.",
     "cancel": "Cancel",
     "openReleasePage": "Open the release page",
     "installFailedTitle": "That update could not be installed",

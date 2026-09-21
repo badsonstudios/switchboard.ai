@@ -96,6 +96,23 @@ on the floor, and say so in your PR.
 
 ## 0.8.95 — unreleased
 
+### Changed
+
+- **The update box tells you everything you missed, not just the newest
+  release.** If you skip a release — say, going from 0.8.92 straight to 0.8.94
+  — the notes now cover every version newer than yours, newest first, each
+  under its own heading. Before, you only saw the newest one's notes, even
+  though the update installed all of it.
+
+- **Installing an update shows a progress window.** After you press
+  **Update**, switchboard.ai closes and a small **"Installing, please wait…"**
+  window appears until the new version reopens — instead of half a minute with
+  nothing on screen. Still no wizard and nothing to click.
+
+  Both of these take effect from the update *after* this one: they change how
+  the version you are running handles an update, so the first update that
+  shows them is the one you install while already on 0.8.95.
+
 ## 0.8.94 — 2026-09-21
 
 ### Fixed
