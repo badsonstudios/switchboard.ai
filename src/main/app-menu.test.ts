@@ -124,7 +124,11 @@ describe('Help ▸ Check for Updates… (P2-E19-03)', () => {
 // ── #569 — the File menu ────────────────────────────────────────────────────
 describe('the File menu (#569)', () => {
   const withFile = (platform: NodeJS.Platform) =>
-    buildMenuTemplate(platform, { openFile: () => {}, checkForUpdates: () => {} });
+    buildMenuTemplate(platform, {
+      openFile: () => {},
+      settings: () => {},
+      checkForUpdates: () => {},
+    });
   const labels = (t: MenuItemConstructorOptions[]) => t.map((i) => i.label ?? String(i.role ?? ''));
   const fileMenu = (t: MenuItemConstructorOptions[]) =>
     (t.find((i) => i.label === 'File')?.submenu ?? []) as MenuItemConstructorOptions[];
@@ -153,7 +157,7 @@ describe('the File menu (#569)', () => {
   it('has NO Exit on macOS, where Quit belongs to the app menu', () => {
     const items = fileMenu(withFile('darwin'));
     expect(items.map((i) => i.role)).not.toContain('quit');
-    expect(items.map((i) => i.label)).toEqual(['Open File…']);
+    expect(items.map((i) => i.label)).toEqual(['Open File…', 'Settings…']);
   });
 
   it('follows the macOS order: App, File, Edit, View…', () => {
@@ -195,5 +199,50 @@ describe('the File menu (#569)', () => {
     const win = { id: 7 };
     item.click({}, win, {});
     expect(seen).toEqual([win]);
+  });
+});
+
+// ── #908 — File ▸ Settings… ────────────────────────────────────────────────
+describe('File ▸ Settings… (#908)', () => {
+  const fileMenu = (t: MenuItemConstructorOptions[]) =>
+    (t.find((i) => i.label === 'File')?.submenu ?? []) as MenuItemConstructorOptions[];
+  const settingsItem = (t: MenuItemConstructorOptions[]) =>
+    fileMenu(t).find((i) => i.label === 'Settings…')!;
+
+  it('sits under Open File…, above the separator and Exit — the owner-decided order', () => {
+    const items = fileMenu(buildMenuTemplate('win32', { openFile: () => {}, settings: () => {} }));
+    expect(items.map((i) => i.label ?? i.type)).toEqual([
+      'Open File…',
+      'Settings…',
+      'separator',
+      'Exit',
+    ]);
+  });
+
+  it('SHOWS Ctrl+, without claiming it — the registry owns Mod+,', () => {
+    const item = settingsItem(buildMenuTemplate('win32', { settings: () => {} }));
+    expect(item.accelerator).toBe('CommandOrControl+,');
+    expect(item.registerAccelerator).toBe(false);
+  });
+
+  it('fires the action with the window the click came from', () => {
+    const seen: unknown[] = [];
+    const t = buildMenuTemplate('win32', { settings: (from) => seen.push(from) });
+    const item = settingsItem(t) as unknown as {
+      click: (i: unknown, w: unknown, e: unknown) => void;
+    };
+    const win = { id: 3 };
+    item.click({}, win, {});
+    expect(seen).toEqual([win]);
+  });
+
+  it('keeps the File menu when only Settings is wired — not gated on Open File', () => {
+    const items = fileMenu(buildMenuTemplate('win32', { settings: () => {} }));
+    expect(items.map((i) => i.label ?? i.type)).toEqual(['Settings…', 'separator', 'Exit']);
+  });
+
+  it('stays in File on macOS too (no custom items in role:appMenu)', () => {
+    const items = fileMenu(buildMenuTemplate('darwin', { openFile: () => {}, settings: () => {} }));
+    expect(items.map((i) => i.label)).toEqual(['Open File…', 'Settings…']);
   });
 });

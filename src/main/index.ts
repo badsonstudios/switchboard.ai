@@ -1653,10 +1653,6 @@ app
           // (#90). So the menu item and the palette entry are the same command
           // — one dialog, one read-scope grant, one placement rule — rather
           // than a second copy of the sequence living up here.
-          //
-          // `fromPopout: false`: the click came from the application menu,
-          // which belongs to the main window, so running it must not raise a
-          // popout the user was not looking at.
           openFile: (from) => {
             // THROUGH THE SAME GATE THE CHORDS USE, not around it (#569 review).
             // `deliver` refuses until the renderer has actually subscribed
@@ -1675,6 +1671,16 @@ app
               // Not a crash and not silence: a menu item that did nothing is
               // exactly what someone greps for afterwards.
               log.app.warn('menu open-file could not reach the renderer', { fromPopout });
+            }
+          },
+          // File > Settings… (#908): `openFile`'s path. Settings lives in the
+          // MAIN renderer (a popout runs no app code of its own), so it always
+          // opens there; `fromPopout` only decides whether that window is
+          // brought forward, as the palette's Settings… does.
+          settings: (from) => {
+            const fromPopout = !!from && from !== currentWindow;
+            if (!acceleratorDeps(fromPopout).deliver('view.settings')) {
+              log.app.warn('menu settings could not reach the renderer', { fromPopout });
             }
           },
           checkForUpdates: () =>

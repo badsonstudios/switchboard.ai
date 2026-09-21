@@ -87,9 +87,9 @@ describe('seed command set (E9-01)', () => {
     const cmds = buildCommands(d);
     const settings = byId(cmds, 'view.settings');
     expect(settings.binding).toBe('Mod+,');
-    // scope 'app', so a session terminal keeps the key — the CLI owns every key
-    // it can see, and the palette is the door from there
-    expect(settings.scope).toBe('app');
+    // `typing-ok` so the File menu's click works with the composer focused
+    // (#908); a terminal still keeps the key, which no scope overrides
+    expect(settings.scope).toBe('typing-ok');
     settings.run(ctxWith([]));
     expect(d.openSettings).toHaveBeenCalledWith(null);
   });
@@ -312,7 +312,7 @@ describe('seed command set (E9-01)', () => {
     expect(d.openFind).toHaveBeenCalledWith('doc-3');
   });
 
-  it('exactly FOUR commands may fire while the user is typing, and they are named', () => {
+  it('exactly FIVE commands may fire while the user is typing, and they are named', () => {
     // The rule is *never steal a keystroke a text surface should get*, and the
     // list of chords that qualify is short and closed. `palette.open` (E9-02)
     // is the fail-open route to everything else; `find.open` (P2-E17-02,
@@ -335,6 +335,11 @@ describe('seed command set (E9-01)', () => {
     // composer they are focused on. It claims NO binding at all, so the "is this
     // a text-editing key?" question never arises for it.
     //
+    // `view.settings` joined them in #908, for `view.openFile`'s reasons: File ▸
+    // Settings… rides the same accelerator channel, a menu click is not typing,
+    // and Mod+, is not a text-editing key. Proven by `e2e/file-menu.spec.ts`'s
+    // Settings test, which fails without the scope.
+    //
     // Anything else in this list is a bug — and NO scope whatsoever fires inside
     // a terminal (proven in commands.test.ts), which is what leaves the hosted
     // CLI's own `ctrl+o` alone.
@@ -344,6 +349,7 @@ describe('seed command set (E9-01)', () => {
       'find.open',
       'palette.open',
       'view.openFile',
+      'view.settings',
     ]);
   });
 

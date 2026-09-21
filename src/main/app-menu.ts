@@ -56,6 +56,13 @@ export interface MenuActions {
    * passes; the caller narrows.
    */
   openFile?: (from?: BaseWindow) => void;
+  /**
+   * File > Settings… (#908). The `openFile` arrangement exactly: the renderer
+   * owns the Settings window (`view.settings`), so this delivers that command
+   * id and takes the window the click came from for the same shared-menu
+   * reason.
+   */
+  settings?: (from?: BaseWindow) => void;
 }
 
 export function buildMenuTemplate(
@@ -74,26 +81,51 @@ export function buildMenuTemplate(
   // where thirty years of desktop apps have put it (#569). §5.8 promises
   // capability is never out of reach: `Open file…` was in the palette all
   // along and nobody could find it, which is half of what #521 reports.
+  //
+  // BUILT FROM WHATEVER IS WIRED (#908), the Help menu's rule: gated on
+  // `openFile` alone, a build that wired only Settings would lose it silently.
+  const file: MenuItemConstructorOptions[] = [];
   if (actions.openFile) {
+    file.push({
+      label: 'Open File…',
+      // SHOWN, NOT CLAIMED. `registerAccelerator: false` draws "Ctrl+O"
+      // beside the item without the browser process taking the chord — the
+      // renderer's command registry owns it instead (`view.openFile`).
+      //
+      // This is not a style choice. An application-menu accelerator is
+      // consumed ahead of the page, and the hosted CLI binds `ctrl+o`
+      // itself (`app:toggleTranscript`; it prints "ctrl+o to see" in its own
+      // notices). Claiming it here would have switchboard answer the CLI's
+      // own instruction with a file dialog — P7 broken in one keystroke, on
+      // the one platform where it reaches the PTY.
+      accelerator: 'CommandOrControl+O',
+      registerAccelerator: false,
+      click: (_item, from) => actions.openFile?.(from ?? undefined),
+    });
+  }
+  if (actions.settings) {
+    // The owner looked for Settings in the menu bar and it wasn't there (#908):
+    // Ctrl+, and the palette can't be found by browsing.
+    //
+    // SHOWN, NOT CLAIMED, for Open File's reason: `Mod+,` belongs to the
+    // registry (`view.settings`), which leaves it to a focused terminal.
+    //
+    // macOS convention puts Settings in the app menu. It stays HERE on every
+    // platform: `role: 'appMenu'` takes no custom items, so honouring the
+    // convention means hand-building that whole menu, and macOS is not a
+    // shipped target yet. Revisit with the first mac build.
+    file.push({
+      label: 'Settings…',
+      accelerator: 'CommandOrControl+,',
+      registerAccelerator: false,
+      click: (_item, from) => actions.settings?.(from ?? undefined),
+    });
+  }
+  if (file.length > 0) {
     template.push({
       label: 'File',
       submenu: [
-        {
-          label: 'Open File…',
-          // SHOWN, NOT CLAIMED. `registerAccelerator: false` draws "Ctrl+O"
-          // beside the item without the browser process taking the chord — the
-          // renderer's command registry owns it instead (`view.openFile`).
-          //
-          // This is not a style choice. An application-menu accelerator is
-          // consumed ahead of the page, and the hosted CLI binds `ctrl+o`
-          // itself (`app:toggleTranscript`; it prints "ctrl+o to see" in its own
-          // notices). Claiming it here would have switchboard answer the CLI's
-          // own instruction with a file dialog — P7 broken in one keystroke, on
-          // the one platform where it reaches the PTY.
-          accelerator: 'CommandOrControl+O',
-          registerAccelerator: false,
-          click: (_item, from) => actions.openFile?.(from ?? undefined),
-        },
+        ...file,
         // NO Exit on macOS: Quit lives in the app menu there, on Cmd+Q, and a
         // second one in File is a duplicate the platform does not have.
         ...(isMac

@@ -239,15 +239,19 @@ export function buildCommands(deps: CommandDeps): Command[] {
       // rather than Help, beside the other commands that change what you are
       // looking at.
       //
-      // Scope 'app', so a session terminal keeps the key — the hard rule is
-      // that the CLI owns every key it can see. From a terminal, Settings is
-      // reached through the palette, which is the door quiet hours has always
-      // had.
+      // A session terminal keeps the key — the hard rule is that the CLI owns
+      // every key it can see, and no scope overrides a terminal target. From a
+      // terminal, Settings is reached through the palette or File ▸ Settings….
+      //
+      // `typing-ok` since #908, for `view.openFile`'s reason: the File menu's
+      // click rides this command, a menu click is not typing, and gated on
+      // focus it did nothing with the composer focused. Ctrl+, has no meaning
+      // in our text fields, so the chord firing there takes nothing away.
       id: 'view.settings',
       titleKey: 'commands.settings',
       categoryKey: CATEGORY_VIEW,
       binding: 'Mod+,',
-      scope: 'app',
+      scope: 'typing-ok',
       run: () => deps.openSettings(null),
     },
     {
