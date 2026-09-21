@@ -12,6 +12,7 @@ import {
   openEventsDrawer,
   tempProjectFolder,
   hookPoster,
+  setTheme,
 } from './fixtures/app';
 
 const rail = (w: Page) => w.locator('nav');
@@ -434,8 +435,8 @@ test.describe('sessions rail', () => {
     const { w } = await oneSessionInAGroup();
     const name = w.getByText('New group', { exact: true });
 
-    for (const theme of ['Daylight', 'Nordic'] as const) {
-      await w.getByRole('button', { name: theme }).click();
+    for (const theme of ['daylight', 'nordic'] as const) {
+      await setTheme(w, theme);
       const ratio = await name.evaluate((el) => {
         const lum = (c: string): number => {
           // two shapes come back here: rgb()/rgba() in 0-255, and — for
@@ -484,7 +485,7 @@ test.describe('sessions rail', () => {
     await expect(w.locator('nav [draggable="true"]')).toHaveCount(1, { timeout: 25_000 });
 
     for (const theme of ['daylight', 'nordic']) {
-      await w.getByRole('button', { name: theme, exact: true }).click();
+      await setTheme(w, theme);
       await w.waitForTimeout(200);
       const ratios = await w.evaluate(() => {
         const root = getComputedStyle(document.documentElement);

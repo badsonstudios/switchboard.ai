@@ -1,5 +1,11 @@
 // Phone push + webhook setup (P2-E14-06, §5.9 + §5.29).
 //
+// This was `PushSetupDialog.tsx` until #885, and that file said what would
+// happen to it: "it is not a settings screen … when the settings screen lands,
+// these controls move into it and this file goes away." It has. The modal
+// chrome is `SettingsDialog.tsx`'s now; what is here is the control and the
+// promises it makes about credentials.
+//
 // The one surface where a user hands the app a credential, so it is worth
 // saying what it deliberately does NOT do:
 //
@@ -8,15 +14,6 @@
 //   saved slot reads "set". Changing one means pasting the new value; there is
 //   nothing to edit in place. That is the cost of keeping the secret out of the
 //   renderer, and it is the right one.
-// - **It is not a settings screen.** E14 has no settings story yet, and this
-//   item is not the place to invent one — this is a modal reached from the
-//   command palette and from the About panel (which already collects the app's
-//   outbound-network switches). When the settings screen lands, these controls
-//   move into it and this file goes away.
-//
-// The dialog shape — scrim, click-away, focus capture, Escape, `dialogAbove` —
-// is `AboutPanel.tsx`'s, on purpose: two modals that behave differently is a
-// bug report waiting to happen.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -24,11 +21,12 @@ import {
   PushSecretKey,
   PushSendResult,
   PushService,
-} from '../../../shared/push';
+} from '../../../../shared/push';
+import { SettingItem, SettingsButton, itemListStyle } from './controls';
 
-export interface PushSetupDialogProps {
+export interface PushSectionProps {
+  /** whether the settings modal is open — the section only mounts while it is */
   open: boolean;
-  onClose: () => void;
   /**
    * null only for the frame before main answers. A bridge that CANNOT answer
    * sends `unavailablePushConfig()` instead, so "we have not asked yet" and
@@ -37,7 +35,7 @@ export interface PushSetupDialogProps {
    */
   config: PushConfig | null;
   /**
-   * The last write main refused, and which field it was aimed at. The dialog
+   * The last write main refused, and which field it was aimed at. The section
    * cannot read a credential back, so a refusal it did not render would leave
    * the user with an empty box and no idea whether the paste landed.
    */
@@ -48,17 +46,16 @@ export interface PushSetupDialogProps {
   onTest: (channel: 'push' | 'webhook') => Promise<PushSendResult>;
 }
 
-export function PushSetupDialog(props: PushSetupDialogProps): React.JSX.Element | null {
+export function PushSection(props: PushSectionProps): React.JSX.Element | null {
   const { t } = useTranslation();
-  const returnFocusTo = React.useRef<HTMLElement | null>(null);
-  const dialog = React.useRef<HTMLDivElement | null>(null);
+  const container = React.useRef<HTMLDivElement | null>(null);
   const [drafts, setDrafts] = React.useState<Record<string, string>>({});
   const [testing, setTesting] = React.useState<'push' | 'webhook' | null>(null);
   const [results, setResults] = React.useState<Record<string, PushSendResult>>({});
 
   /**
-   * The prefix for every `id` in this dialog (#654). A HOOK, so it lives up here
-   * with the others and above the `props.open` early return.
+   * The prefix for every `id` in this section (#654). A HOOK, so it lives up
+   * here with the others and above the `props.open` early return.
    *
    * These fields used to be `id="push-field-ntfy.topic"` and friends — LITERAL,
    * STABLE and therefore GUESSABLE, which is only a problem because this app
@@ -72,7 +69,7 @@ export function PushSetupDialog(props: PushSetupDialogProps): React.JSX.Element 
    *    accessible name. `markdown.tsx` forbids `<label>` at the profile, which
    *    is where that half is settled, for every surface at once.
    *  - THE HALF A TAG LIST CANNOT SETTLE: content planting the SAME id EARLIER
-   *    IN TREE ORDER takes this dialog's own label away from its own field.
+   *    IN TREE ORDER takes this section's own label away from its own field.
    *    `<label for>` binds to the FIRST element with that id, and a
    *    `<span id="push-field-…">` is not labelable — so the association
    *    silently becomes NOTHING and the credential field loses its accessible
@@ -81,19 +78,19 @@ export function PushSetupDialog(props: PushSetupDialogProps): React.JSX.Element 
    *
    * WHAT THAT SECOND BULLET IS WORTH HERE, stated rather than implied because
    * "earlier in tree order" is a real condition and not a formality: `App.tsx`
-   * renders THIS DIALOG BEFORE `SessionGrid`, so feed and viewer content is
-   * always LATER and never captured these ids. This change is prophylaxis
-   * against a reorder, not the fix for a live capture — the one live pairing in
-   * the app is `UpdateDialog` ahead of `CommandPalette`, and it is `markdown.tsx`
-   * that carries the full argument.
+   * renders THE SETTINGS MODAL BEFORE `SessionGrid`, so feed and viewer content
+   * is always LATER and never captured these ids. This is prophylaxis against a
+   * reorder, not the fix for a live capture — the one live pairing in the app is
+   * `UpdateDialog` ahead of `CommandPalette`, and it is `markdown.tsx` that
+   * carries the full argument.
    *
    * `React.useId()` is what the rest of the renderer already uses (QuestionPanel,
    * EventsPanel, FindBar). Alone it is NOT a secret — React 19 numbers client
    * ids from a module-global counter — so what it removes is a STABLE,
    * PUBLISHED name, not the possibility of a collision; since #673 the root's
-   * per-launch `identifierPrefix` closes that half too. `data-push-field` stays as it is: it is
-   * the test hook, it is not an `id`, and content cannot emit a `data-*`
-   * attribute at all (`ALLOW_DATA_ATTR: false`).
+   * per-launch `identifierPrefix` closes that half too. `data-push-field` stays
+   * as it is: it is the test hook, it is not an `id`, and content cannot emit a
+   * `data-*` attribute at all (`ALLOW_DATA_ATTR: false`).
    */
   const fieldId = React.useId();
 
@@ -103,33 +100,51 @@ export function PushSetupDialog(props: PushSetupDialogProps): React.JSX.Element 
     // is a token on screen for no reason.
     setDrafts({});
     setResults({});
-    returnFocusTo.current = document.activeElement as HTMLElement | null;
-    dialog.current?.focus();
   }, [props.open]);
 
   /**
-   * Keep focus inside the dialog when a control DISABLES itself under the
+   * Keep focus inside the modal when a control DISABLES itself under the
    * user's cursor — Save empties its own field, Send test greys out while it
    * sends. The browser strands focus on `<body>` when that happens, and from
-   * there Escape reaches nothing: the key handler is on the container, and
-   * `<body>` is outside it. Found by the e2e, not by reading the code.
+   * there Escape reaches nothing: the key handler is on the modal container,
+   * and `<body>` is outside it. Found by the e2e, not by reading the code.
    *
-   * Deliberately narrow — it acts only when focus is on `body` (or gone), never
-   * when it is on something real.
+   * RESCUED TO THIS SECTION rather than to the modal, which is where the
+   * equivalent effect lived while this was its own dialog. It has to be: the
+   * disabling is driven by state local to THIS component, so a parent effect
+   * with no dependency list would not re-run at all — the parent does not
+   * re-render. Focus inside the section is inside the modal, and keydown
+   * bubbles, so Escape still reaches the container that handles it.
+   *
+   * Deliberately narrow, in THREE ways, and the second and third were bought
+   * with a bug found in review:
+   *
+   *  - it acts only when focus is on `body` (or gone), never when it is on
+   *    something real;
+   *  - **never on the first commit.** `<body>` is exactly where focus IS when
+   *    the modal mounts from the palette (`CommandPalette` deliberately does not
+   *    restore focus — "the command decides where focus belongs") or from
+   *    `Mod+,`. React flushes child effects before the parent's, so this ran
+   *    BEFORE `SettingsDialog` had focused itself, won the race, and the modal
+   *    opened scrolled down to the credential fields. Measured, not reasoned
+   *    about: the focus events arrive `["push", "dialog"]`. The three palette
+   *    aliases hid it, because their `scrollIntoView` runs afterwards and papers
+   *    over it — so the two most common ways in were the two that broke;
+   *  - **`preventScroll`.** `focus()` scrolls its element into view inside the
+   *    nearest scroller, and the nearest scroller here is the whole modal. The
+   *    rescue's job is to keep Escape working, not to move the page.
    */
+  const rescued = React.useRef(false);
   React.useEffect(() => {
     if (!props.open) return;
+    const first = !rescued.current;
+    rescued.current = true;
+    if (first) return;
     const active = document.activeElement;
-    if (!active || active === document.body) dialog.current?.focus();
+    if (!active || active === document.body) container.current?.focus({ preventScroll: true });
   });
 
   if (!props.open) return null;
-
-  const close = (): void => {
-    props.onClose();
-    const el = returnFocusTo.current;
-    requestAnimationFrame(() => el?.focus?.());
-  };
 
   const cfg = props.config;
   const prefs = cfg?.prefs;
@@ -197,11 +212,13 @@ export function PushSetupDialog(props: PushSetupDialogProps): React.JSX.Element 
             fontSize: 11.5,
           }}
         />
-        <DialogButton onClick={() => save(key)} disabled={!available || !(drafts[key] ?? '').trim()}>
+        <SettingsButton onClick={() => save(key)} disabled={!available || !(drafts[key] ?? '').trim()}>
           {t('push.save')}
-        </DialogButton>
+        </SettingsButton>
         {isSet(key) && (
-          <DialogButton onClick={() => props.onSetSecret(key, '')}>{t('push.forget')}</DialogButton>
+          <SettingsButton onClick={() => props.onSetSecret(key, '')}>
+            {t('push.forget')}
+          </SettingsButton>
         )}
       </div>
       {props.write?.key === key && (
@@ -220,9 +237,9 @@ export function PushSetupDialog(props: PushSetupDialogProps): React.JSX.Element 
     const r = results[channel];
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <DialogButton onClick={() => runTest(channel)} disabled={!available || testing !== null}>
+        <SettingsButton onClick={() => runTest(channel)} disabled={!available || testing !== null}>
           {testing === channel ? t('push.testing') : t('push.sendTest')}
-        </DialogButton>
+        </SettingsButton>
         {r && (
           <span
             data-push-result={channel}
@@ -248,76 +265,24 @@ export function PushSetupDialog(props: PushSetupDialogProps): React.JSX.Element 
 
   return (
     <div
-      onMouseDown={close}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 51,
-        background: 'var(--scrim)',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'flex-start',
-        paddingBlockStart: '10vh',
-      }}
+      ref={container}
+      data-settings-block="push"
+      // Focusable for the rescue above, not as a control — see that effect.
+      tabIndex={-1}
+      style={{ ...itemListStyle, outline: 'none' }}
     >
-      <div
-        ref={dialog}
-        role="dialog"
-        aria-modal="true"
-        aria-label={t('push.title')}
-        tabIndex={-1}
-        onMouseDown={(e) => e.stopPropagation()}
-        onKeyDown={(e) => {
-          e.stopPropagation();
-          if (e.key === 'Escape') {
-            e.preventDefault();
-            close();
-          }
-        }}
-        style={{
-          inlineSize: 'min(520px, 94vw)',
-          maxBlockSize: '80vh',
-          overflowY: 'auto',
-          background: 'var(--panel)',
-          border: '1px solid var(--border)',
-          borderRadius: 10,
-          boxShadow: 'var(--tab-lift)',
-          fontFamily: 'var(--font-ui)',
-          color: 'var(--text)',
-          outline: 'none',
-        }}
-      >
-        <div
-          style={{
-            padding: '11px 14px',
-            borderBlockEnd: '1px solid var(--border)',
-            background: 'var(--panel2)',
-            fontSize: 13,
-            fontWeight: 600,
-          }}
+      {!available && (
+        <p
+          data-push-field="unavailable"
+          style={{ margin: 0, fontSize: 11.5, color: 'var(--status-needs-input-ink)' }}
         >
-          {t('push.title')}
-        </div>
-        <p style={{ margin: 0, padding: '10px 14px 0', fontSize: 11.5, color: 'var(--muted)' }}>
-          {t('push.intro')}
+          {t('push.unavailable')}
         </p>
-        {!available && (
-          <p
-            data-push-field="unavailable"
-            style={{
-              margin: 0,
-              padding: '8px 14px 0',
-              fontSize: 11.5,
-              color: 'var(--status-needs-input-ink)',
-            }}
-          >
-            {t('push.unavailable')}
-          </p>
-        )}
+      )}
 
-        {/* ── phone push ───────────────────────────────────────────────── */}
-        <section style={{ display: 'grid', gap: 9, padding: '12px 14px' }}>
-          <h2 style={{ margin: 0, fontSize: 12, fontWeight: 600 }}>{t('push.sectionPush')}</h2>
+      {/* ── phone push ───────────────────────────────────────────────── */}
+      <SettingItem item="push" label={t('push.sectionPush')} blurb={t('push.intro')}>
+        <div style={{ display: 'grid', gap: 9 }}>
           <div role="radiogroup" aria-label={t('push.service')} style={{ display: 'flex', gap: 12 }}>
             {(['ntfy', 'pushover'] as const).map((s) => (
               <label
@@ -402,18 +367,12 @@ export function PushSetupDialog(props: PushSetupDialogProps): React.JSX.Element 
           </label>
           <span style={{ fontSize: 11, color: 'var(--faint)' }}>{t('push.enablePushHint')}</span>
           {testRow('push')}
-        </section>
+        </div>
+      </SettingItem>
 
-        {/* ── webhook ──────────────────────────────────────────────────── */}
-        <section
-          style={{
-            display: 'grid',
-            gap: 9,
-            padding: '12px 14px',
-            borderBlockStart: '1px solid var(--border)',
-          }}
-        >
-          <h2 style={{ margin: 0, fontSize: 12, fontWeight: 600 }}>{t('push.sectionWebhook')}</h2>
+      {/* ── webhook ──────────────────────────────────────────────────── */}
+      <SettingItem item="webhook" label={t('push.sectionWebhook')}>
+        <div style={{ display: 'grid', gap: 9 }}>
           {secretRow('webhook.url', t('push.webhookUrl'), t('push.webhookUrlHint'))}
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5 }}>
             <input
@@ -427,48 +386,10 @@ export function PushSetupDialog(props: PushSetupDialogProps): React.JSX.Element 
           </label>
           <span style={{ fontSize: 11, color: 'var(--faint)' }}>{t('push.enableWebhookHint')}</span>
           {testRow('webhook')}
-        </section>
-
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: 8,
-            padding: '10px 14px',
-            borderBlockStart: '1px solid var(--border)',
-          }}
-        >
-          <span style={{ fontSize: 11, color: 'var(--faint)' }}>{t('push.secretNote')}</span>
-          <DialogButton onClick={close}>{t('push.close')}</DialogButton>
         </div>
-      </div>
-    </div>
-  );
-}
+      </SettingItem>
 
-function DialogButton(props: {
-  onClick: () => void;
-  disabled?: boolean;
-  children: React.ReactNode;
-}): React.JSX.Element {
-  return (
-    <button
-      onClick={props.onClick}
-      disabled={props.disabled}
-      style={{
-        background: 'var(--chip)',
-        color: 'var(--text)',
-        border: '1px solid var(--border)',
-        borderRadius: 'var(--radius-chip)',
-        padding: '4px 12px',
-        cursor: props.disabled ? 'default' : 'pointer',
-        opacity: props.disabled ? 0.55 : 1,
-        fontFamily: 'var(--font-ui)',
-        fontSize: 11.5,
-      }}
-    >
-      {props.children}
-    </button>
+      <span style={{ fontSize: 11, color: 'var(--faint)' }}>{t('push.secretNote')}</span>
+    </div>
   );
 }

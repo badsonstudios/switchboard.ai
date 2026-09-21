@@ -61,12 +61,20 @@ class StubHook {
   }
 }
 
-const dialog = (w: Page) => w.getByRole('dialog', { name: 'Phone push & webhooks' });
+// #885 folded this dialog into the settings modal as its phone-push section.
+// Every `data-push-field` hook is unchanged; the surface around them is not.
+const dialog = (w: Page) => w.getByRole('dialog', { name: 'Settings' });
 const field = (w: Page, name: string) => w.locator(`[data-push-field="${name}"]`);
 const statusOf = (w: Page, key: string) => w.locator(`[data-push-status="${key}"]`);
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
-/** Open the setup dialog the way a user with no chord for it would. */
+/**
+ * Open the push controls the way a user with no chord for them would.
+ *
+ * `attention.pushSetup` is an ALIAS since #885: same id, same title, same
+ * category, and it now opens Settings at its Attention section. Driving it from
+ * the palette is the assertion that the alias still works.
+ */
 async function openSetup(w: Page): Promise<void> {
   await w.keyboard.press(`${MOD}+Shift+P`);
   await w.getByPlaceholder('Type a command or a session name…').fill('phone push');
@@ -183,14 +191,16 @@ test.describe('phone push & webhooks (P2-E14-06)', () => {
     expect(logs).not.toContain(stub.url);
   });
 
-  test('the dialog is reachable from About, and a fresh app is configured with nothing', async () => {
+  test('it is reachable from About, and a fresh app is configured with nothing', async () => {
     a = await launchApp();
     const w = a.window;
     await expect(
       w.getByRole('button', { name: 'Version and build — click for details' })
     ).toBeVisible({ timeout: 25_000 });
     await w.getByRole('button', { name: 'Version and build — click for details' }).click();
-    await w.getByRole('button', { name: 'Phone push & webhooks…' }).click();
+    // About used to carry three rows — push, quiet hours, task label size —
+    // because there was nowhere else to put them. It carries ONE now (#885).
+    await w.getByRole('button', { name: 'Settings…' }).click();
     await expect(dialog(w)).toBeVisible();
 
     // The resting state: both switches off, no credential set, and no file

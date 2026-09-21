@@ -1171,6 +1171,82 @@ export async function setPresentationPolicy(window: Page, label: string): Promis
 }
 
 /**
+ * Open the settings modal (#885) and wait for it.
+ *
+ * `Ctrl+,` rather than the palette: it is one keystroke, it is the path most
+ * people will use, and a spec that only wants to change the theme should not
+ * have to know that Settings has a palette command as well. `openViaPalette`
+ * in `quiet-hours.spec.ts` covers the other door on purpose.
+ */
+export async function openSettings(window: Page): Promise<Locator> {
+  const dialog = window.getByRole('dialog', { name: 'Settings' });
+  if (!(await dialog.isVisible().catch(() => false))) {
+    // Blur whatever holds focus FIRST, and do it without the mouse. `Mod+,` is
+    // scope 'app', so it is ignored while focus is in a composer or a terminal
+    // — which is exactly where a spec that just typed a prompt left it. Using a
+    // click to move focus would also move the POINTER, and several specs
+    // measure hover state.
+    await window.evaluate(() => (document.activeElement as HTMLElement | null)?.blur?.());
+    // `Mod` is Meta on macOS. Hard-coding Control here would press a chord
+    // bound to nothing and then time out 15s later in the wait below — and
+    // `setTheme` is called from eight specs, so that is the whole suite.
+    await window.keyboard.press(`${process.platform === 'darwin' ? 'Meta' : 'Control'}+,`);
+  }
+  await dialog.waitFor({ state: 'visible', timeout: 15_000 });
+  return dialog;
+}
+
+/** …and close it, returning focus to whatever opened it. */
+export async function closeSettings(window: Page): Promise<void> {
+  await window.keyboard.press('Escape');
+  await window.getByRole('dialog', { name: 'Settings' }).waitFor({ state: 'hidden', timeout: 15_000 });
+  await parkPointer(window);
+}
+
+/**
+ * Move the mouse somewhere harmless.
+ *
+ * The settings modal sits over the MIDDLE of the window, so a click inside it
+ * leaves the pointer over whatever the modal was covering — a session card, a
+ * lamp, a tab. Before #885 the same click landed on a title-bar chip in the top
+ * right, which was hovering nothing anybody measures. `urgency.spec.ts` audits
+ * lamp colours "off the pointer" and would read a hover as a bug in the theme.
+ */
+async function parkPointer(window: Page): Promise<void> {
+  await window.mouse.move(2, 2);
+}
+
+/**
+ * Pick a theme (#885 moved the buttons off the title bar and into Settings).
+ *
+ * ONE helper rather than fifteen hand-edits. Nine specs clicked a theme chip
+ * directly in the title bar, and the next time a control moves, this is the one
+ * place that has to change — which is the whole reason the edit was worth doing
+ * as a helper.
+ *
+ * The button's ACCESSIBLE NAME is unchanged ('daylight', 'high contrast', …):
+ * it is the same `Chip` rendering the same `theme.*` string. Only where you
+ * find it moved, which is what this hides.
+ */
+export async function setTheme(window: Page, name: string): Promise<void> {
+  const dialog = await openSettings(window);
+  await dialog.getByRole('button', { name, exact: true }).click();
+  await closeSettings(window);
+}
+
+/** The same, for the language buttons — 'en' or 'pseudo'. */
+export async function setUiLanguage(window: Page, name: string): Promise<void> {
+  const dialog = await openSettings(window);
+  await dialog.getByRole('button', { name, exact: true }).click();
+  // ⚠️ NOT `closeSettings`, which waits for a dialog named 'Settings': in
+  // pseudo every string is mangled, so the accessible name is no longer that
+  // word. Escape and wait for the ROLE to go instead.
+  await window.keyboard.press('Escape');
+  await window.getByRole('dialog').waitFor({ state: 'hidden', timeout: 15_000 });
+  await parkPointer(window);
+}
+
+/**
  * The workspace store inside a launched app's isolated home.
  *
  * Electron puts userData somewhere different on each OS, and hard-coding the

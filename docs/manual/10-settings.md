@@ -1,22 +1,57 @@
 # Settings
 
-> Status: draft
+> Status: current
 
-Everything lives as chips in the title bar. There's no settings window yet.
+There are two places a setting lives, and which one it is in is a decision
+rather than an accident.
+
+## The Settings window
+
+Press **`Ctrl+,`**, or open the command palette (**`Ctrl+Shift+P`**) and pick
+**Settings…**, or click the version number in the title bar and press
+**Settings…** in the About panel.
+
+Everything in it is something you set once and forget. There is **no Save
+button** — every control takes effect the moment you touch it, and you can watch
+the window behind change as you do. Close it with **Done**, **Escape**, or a
+click outside.
+
+| Section | Holds |
+|---|---|
+| **Appearance** | Theme, language, task label size |
+| **Attention** | Quiet hours, phone push & webhooks |
+| **Advanced** | Fork sessions (experimental), automatic update checks, Anthropic status checks |
+
+Muscle memory still works: **`Ctrl+Shift+P` → *quiet hours*** (or *phone push*,
+or *task label size*) opens Settings scrolled to the right part of it.
+
+## The chips that stayed in the title bar
+
+Five settings did **not** move, and the rule is the same one for all of them:
+*the person who needs it off needs it off **now***, mid screen-share, without
+hunting through a window.
 
 | Chip | Does |
 |---|---|
+| **🔔 on / 🔕 off** | All notifications |
+| **🏷 auto labels / ✨ AI labels / 🏷 labels off** | Whether task labels are written from your prompts — see below |
+| **🔊 session sounds / 🔊 one beep** | Whether each session gets its own sound |
+| **🗣 announce / 🗣 silent** | Whether switchboard says out loud which session needs you |
 | **🔓 auto-trust / 🔒 ask trust** | Whether new folders are trusted automatically. Greyed out, because nothing can ask any more — see below |
-| **🏷 auto labels / 🏷 labels off** | Whether a blank task label fills itself from the title Claude gives the conversation. Turn it off before a screen-share — see below |
+
+Three more chips are on the bar because they answer "why does the window look
+like this?", and you need to be able to answer that by looking up rather than by
+opening a window:
+
+| Chip | Does |
+|---|---|
 | **🛡 ask / plan / auto-edit / full-auto** | The autonomy mode *new* sessions start at — click to cycle |
 | **⬍ Keep visible / Collapse on submit / Hide on submit** | What happens to a session's card when you send it a prompt — click to cycle. See below |
-| **🔔 on / 🔕 off** | All notifications |
-| **system · nordic · daylight · high contrast · soft contrast** | Theme — see below |
-| **en · pseudo** | Language. `pseudo` is a development aid that stretches every label to test the layout — you probably want `en` |
+| **▦ Grid / Focus / Queue** | How the whole workspace is arranged |
 
 ## Language
 
-One chip, two choices for now: **en** (English) and **pseudo**.
+**Settings ▸ Appearance.** Two choices for now: **en** (English) and **pseudo**.
 
 `pseudo` is not a translation. It takes every English word and mangles it into
 accented look-alikes wrapped in `⟦ ⟧` — so anything that comes out plain is a
@@ -32,7 +67,7 @@ came from Claude Code or from you — a command, a file path, a session name. Se
 
 ## Themes
 
-Four chips, and they are the whole picker:
+**Settings ▸ Appearance.** Five buttons, and they are the whole picker:
 
 - **system** — follow whatever your OS is set to, and change when it changes.
 - **nordic** — the dark theme, and the default on a dark OS.
@@ -153,8 +188,7 @@ Turn it off and the spending stops at once. The full walk-through is in
 
 ## Task label size
 
-How much of each label you see. Reachable with **`Ctrl+Shift+P`** → *task label
-size*, or from the **About** panel.
+**Settings ▸ Appearance.** How much of each label you see.
 
 | Setting | What you get |
 |---|---|
@@ -178,8 +212,7 @@ level, and window position all persist across restarts, stored on your machine.
 
 ## Quiet hours
 
-Reachable with **`Ctrl+Shift+P`** → *quiet hours*, or from the **About** panel.
-Off until you set a window. Two times on your machine's clock, between which
+**Settings ▸ Attention.** Off until you set a window. Two times on your machine's clock, between which
 nothing pops up, beeps, speaks or reaches your phone — webhooks keep going,
 deliberately. Full walk-through in
 [Notifications](09-notifications.md#quiet-hours).
@@ -188,14 +221,33 @@ Stored with your workspace, so it survives restarts like everything above.
 
 ## Phone push & webhooks
 
-Reachable with **`Ctrl+Shift+P`** → *phone push*, or from the **About** panel.
-Off until you set it up. Full walk-through in
+**Settings ▸ Attention.** Off until you set it up. Full walk-through in
 [Notifications](09-notifications.md#getting-told-on-your-phone).
 
 Anything you paste in there — an ntfy topic, Pushover keys, a webhook URL —
 goes into your operating system's credential store, never into a switchboard
 file, so it is **not** part of "what's remembered" above and does not travel
 with your workspace.
+
+## Advanced
+
+Three switches you will probably never touch, together at the bottom of the
+Settings window.
+
+- **Fork sessions** — experimental, off by default. Turning it on adds
+  **Fork into a new session** to a session's **⋯** menu, which starts a second
+  session already carrying the whole conversation. It leans on Claude Code
+  behaviour that isn't documented, so if an update ever breaks it, switch it off
+  here and nothing else changes.
+- **Check for updates automatically** — on by default. Off, switchboard never
+  reaches the release host on its own; the **Check for updates…** button in the
+  About panel still works whenever you ask it to. See [Updates](13-updates.md).
+- **Check Anthropic's status page** — on by default. It is what colours the dot
+  in the status bar. Off, the dot goes grey and says why. See
+  [Provider status](14-provider-status.md).
+
+Those last two are the **only** two things switchboard sends over the network
+without being asked, which is why they sit together.
 
 ## Good to know
 
@@ -205,8 +257,5 @@ with your workspace.
   The only credentials switchboard holds are the phone-push / webhook ones you
   choose to give it, and those live in the OS credential store.
 
-TODO: a proper settings screen is planned. Until it lands, the settings that
-have no chip live behind palette commands and the About panel — quiet hours and
-phone push are both reached that way, and they will move into it when it exists.
 TODO: a notification-rules editor (which would replace hand-editing the
 `quietHours` override) is not built yet.

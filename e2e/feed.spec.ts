@@ -22,6 +22,7 @@ import {
   LaunchedApp,
   tabFromFeedToComposer,
   tempProjectFolder,
+  setTheme,
 } from './fixtures/app';
 
 function slugForCwd(cwd: string): string {
@@ -450,12 +451,12 @@ test.describe('[pty] Feed view (E12-06)', () => {
       });
     // pinned explicitly: the app boots on `system`, which follows the OS, so
     // "whatever it started as" is not one of the two themes we mean to check
-    await w.getByRole('button', { name: 'nordic', exact: true }).click();
+    await setTheme(w, 'nordic');
     await expect(w.locator('html')).toHaveAttribute('data-theme-id', 'nordic');
     const dark = await edges();
     expect(dark.border).not.toBe(dark.fill);
 
-    await w.getByRole('button', { name: 'daylight', exact: true }).click();
+    await setTheme(w, 'daylight');
     await expect(w.locator('html')).toHaveAttribute('data-theme-id', 'daylight');
     await expect.poll(async () => (await edges()).fill).not.toBe(dark.fill);
     const light = await edges();

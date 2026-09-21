@@ -93,10 +93,20 @@ function toastLines(home: string): number {
 }
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
-const quietDialog = (w: Page) => w.getByRole('dialog', { name: 'Quiet hours' });
+// #885 folded quiet hours and phone push into ONE modal as sections. The
+// controls did not change and neither did their `data-*` hooks — only the
+// surface they sit on, and its accessible name.
+const settingsDialog = (w: Page) => w.getByRole('dialog', { name: 'Settings' });
 const quietField = (w: Page, name: string) => w.locator(`[data-quiet-field="${name}"]`);
 
-/** Open a palette-only dialog the way a user with no chord for it would. */
+/**
+ * Open Settings the way a user with no chord for it would.
+ *
+ * `attention.quietHours` and `attention.pushSetup` are ALIASES now: they keep
+ * their ids, their titles and their categories, and they land on the Attention
+ * section of the one screen. Driving them from the palette here is the point —
+ * it is the assertion that muscle memory still works.
+ */
 async function openFromPalette(w: Page, filter: string, commandId: string): Promise<void> {
   await w.keyboard.press(`${MOD}+Shift+P`);
   await w.getByPlaceholder('Type a command or a session name…').fill(filter);
@@ -138,7 +148,7 @@ test.describe('quiet hours (P2-E14-05b)', () => {
 
     // ── the webhook half: point it at the loopback stub ──────────────────────
     await openFromPalette(w, 'phone push', 'attention.pushSetup');
-    await expect(w.getByRole('dialog', { name: 'Phone push & webhooks' })).toBeVisible();
+    await expect(settingsDialog(w)).toBeVisible();
     const url = w.locator('[data-push-field="webhook.url"]');
     // Whether this machine can keep a secret is an ENVIRONMENT fact (#421's
     // `shown` lesson). Windows always has DPAPI, so there the skip below is not
@@ -157,6 +167,11 @@ test.describe('quiet hours (P2-E14-05b)', () => {
     await w.locator('[data-push-field="enable-webhook"]').click();
     await expect(w.locator('[data-push-field="enable-webhook"]')).toBeChecked();
     await w.keyboard.press('Escape');
+    // WAIT FOR IT TO GO before reaching for the palette. The modal's keydown
+    // handler calls `stopPropagation` unconditionally, so a `Ctrl+Shift+P` that
+    // arrives while it still holds focus is swallowed — and the failure would
+    // surface 30s later as a timeout on a placeholder, naming nothing.
+    await expect(settingsDialog(w)).toHaveCount(0);
 
     // ── the toast half: switch OS toasts on ─────────────────────────────────
     await w.evaluate(() =>
@@ -166,7 +181,7 @@ test.describe('quiet hours (P2-E14-05b)', () => {
     // ── the window: two hours wide, centred on right now ────────────────────
     const win = await windowAroundNow(w);
     await openFromPalette(w, 'quiet hours', 'attention.quietHours');
-    await expect(quietDialog(w)).toBeVisible();
+    await expect(settingsDialog(w)).toBeVisible();
     // Wait for MAIN's answer before typing. The dialog seeds its fields from it
     // once, and while it says "cannot tell" that answer has not landed — typing
     // first is a race in the spec, not in the product (the dialog will not
@@ -186,7 +201,7 @@ test.describe('quiet hours (P2-E14-05b)', () => {
       timeout: 10_000,
     });
     await w.keyboard.press('Escape');
-    await expect(quietDialog(w)).toHaveCount(0);
+    await expect(settingsDialog(w)).toHaveCount(0);
 
     // The user looks away, so the toast rule's visibility condition is met and
     // the ONLY thing left that could hold it is quiet hours. `blurApp` proves

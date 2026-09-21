@@ -7,7 +7,15 @@
 import { test, expect, Page } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
-import { launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';
+import {
+  launchApp,
+  LaunchedApp,
+  tempProjectFolder,
+  setTheme,
+  setUiLanguage,
+  openSettings,
+  closeSettings,
+} from './fixtures/app';
 // the ramp itself, not a copy of it: a seventh status added to the app would
 // otherwise drop out of the sweep in silence (#246)
 import { STATUS_TOKENS } from '../src/renderer/src/lib/rail-view';
@@ -280,14 +288,22 @@ test.describe('themes (P2-E15-05)', () => {
     const w = a.window;
     const html = w.locator('html');
 
+    // The picker offers every shipped theme. It is inside Settings since #885
+    // rather than in the title bar; what it OFFERS did not change, which is
+    // exactly what this loop is for — a theme added to the registry and missed
+    // by the picker is a theme nobody can choose.
+    const settings = await openSettings(w);
     for (const [label] of THEMES) {
-      await expect(w.getByRole('button', { name: label, exact: true })).toBeVisible();
+      await expect(settings.getByRole('button', { name: label, exact: true })).toBeVisible();
     }
+    // …and 'system', which is not a theme but is the absence of a choice
+    await expect(settings.getByRole('button', { name: 'system', exact: true })).toBeVisible();
+    await closeSettings(w);
 
-    await w.getByRole('button', { name: 'daylight', exact: true }).click();
+    await setTheme(w, 'daylight');
     const light = await token(w, '--bg');
 
-    await w.getByRole('button', { name: 'high contrast', exact: true }).click();
+    await setTheme(w, 'high contrast');
     // the id is the theme; data-theme stays on the PRESET it builds on, which
     // is what lets an overlay inherit the rest of a dark palette
     await expect(html).toHaveAttribute('data-theme-id', 'high-contrast');
@@ -300,7 +316,7 @@ test.describe('themes (P2-E15-05)', () => {
     expect(hc).toMatch(/^(#000000|rgb\(0, 0, 0\))$/);
 
     // and switching away leaves nothing of it behind
-    await w.getByRole('button', { name: 'daylight', exact: true }).click();
+    await setTheme(w, 'daylight');
     expect(await token(w, '--bg')).toBe(light);
   });
 
@@ -315,7 +331,7 @@ test.describe('themes (P2-E15-05)', () => {
     a = await launchApp();
     const w = a.window;
     for (const [label, id] of THEMES) {
-      await w.getByRole('button', { name: label, exact: true }).click();
+      await setTheme(w, label);
       // the chip must actually have switched — otherwise this loop could pass
       // three times over the theme it booted in
       await expect(w.locator('html')).toHaveAttribute('data-theme-id', id);
@@ -347,7 +363,7 @@ test.describe('themes (P2-E15-05)', () => {
     await expect(pill).toBeVisible({ timeout: 25_000 });
 
     for (const [label, id] of THEMES) {
-      await w.getByRole('button', { name: label, exact: true }).click();
+      await setTheme(w, label);
       await expect(w.locator('html')).toHaveAttribute('data-theme-id', id);
 
       const seen = await w.evaluate(auditWords, { ramp: [...STATUS_TOKENS], only: '.status-pill' });
@@ -409,7 +425,7 @@ test.describe('themes (P2-E15-05)', () => {
     });
 
     for (const [label, id] of THEMES) {
-      await w.getByRole('button', { name: label, exact: true }).click();
+      await setTheme(w, label);
       await expect(w.locator('html')).toHaveAttribute('data-theme-id', id);
 
       const seen = await w.evaluate(auditWords, {
@@ -518,7 +534,7 @@ test.describe('themes (P2-E15-05)', () => {
 
     const distinguishable = new Set<string>();
     for (const [label, id] of THEMES) {
-      await w.getByRole('button', { name: label, exact: true }).click();
+      await setTheme(w, label);
       await expect(w.locator('html')).toHaveAttribute('data-theme-id', id);
 
       const seen = await w.evaluate(auditWords, { ramp: [...STATUS_TOKENS] });
@@ -565,9 +581,9 @@ test.describe('themes (P2-E15-05)', () => {
     // stable origin and would have passed throughout the bug.
     a = await launchApp();
     const first = a;
-    await first.window.getByRole('button', { name: 'high contrast', exact: true }).click();
+    await setTheme(first.window, 'high contrast');
     await expect(first.window.locator('html')).toHaveAttribute('data-theme-id', 'high-contrast');
-    await first.window.getByRole('button', { name: 'pseudo', exact: true }).click();
+    await setUiLanguage(first.window, 'pseudo');
     await expect(first.window.getByText(/⟦.+⟧/).first()).toBeVisible();
     await first.close();
 
@@ -593,7 +609,7 @@ test.describe('themes (P2-E15-05)', () => {
     const popout = a.app.windows().find((p) => p.url().includes('popout.html'))!;
     expect(popout, 'no popout page').toBeTruthy();
 
-    await w.getByRole('button', { name: 'high contrast', exact: true }).click();
+    await setTheme(w, 'high contrast');
 
     // the popout shares the stylesheet but not our <html>: without the overlay
     // copy it would sit on the nordic PRESET with every override missing —
@@ -604,7 +620,7 @@ test.describe('themes (P2-E15-05)', () => {
     await expect(popout.locator('html')).toHaveAttribute('data-theme-id', 'high-contrast');
 
     // and back: a stale override in the popout is the same bug in reverse
-    await w.getByRole('button', { name: 'nordic', exact: true }).click();
+    await setTheme(w, 'nordic');
     await expect
       .poll(() => token(popout, '--bg'), { timeout: 10_000 })
       .toBe(await token(w, '--bg'));

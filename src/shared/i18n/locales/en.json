@@ -532,7 +532,6 @@
   },
   "quiet": {
     "title": "Quiet hours",
-    "open": "Quiet hours…",
     "intro": "Hours of the day when switchboard will not make a noise at you. Sessions keep running and everything still lands in the Events panel — you just are not told about it until the window is over.",
     "enable": "Keep quiet between these times",
     "start": "From",
@@ -550,12 +549,10 @@
       "off": "Quiet hours are off.",
       "active": "Quiet hours are on right now · {count, plural, =0 {nothing held yet} one {# notification held so far} other {# notifications held so far}}",
       "idle": "Not quiet at the moment · {count, plural, =0 {nothing held yet} one {# notification held so far} other {# notifications held so far}}"
-    },
-    "close": "Close"
+    }
   },
   "push": {
     "title": "Phone push & webhooks",
-    "open": "Phone push & webhooks…",
     "intro": "Have a session reach you when you are away from the machine, or tell another program about it. Both are off until you set one up, and neither can hold a session up.",
     "unavailable": "This machine has no credential store available, so nothing can be saved here. On Linux that usually means no keyring (gnome-keyring or kwallet) is running.",
     "sectionPush": "Phone push",
@@ -597,8 +594,7 @@
       "not-stored": "Not saved — this machine's credential store would not take it.",
       "refused": "Not saved."
     },
-    "secretNote": "Saved in your operating system's credential store, never in a switchboard file.",
-    "close": "Close"
+    "secretNote": "Saved in your operating system's credential store, never in a switchboard file."
   },
   "binding": {
     "awaitingPrompt": "No conversation yet",
@@ -830,6 +826,7 @@
     "jumpAttention": "Go to the next session that needs you",
     "pushSetup": "Phone push & webhooks… — reach me when I'm away from the machine",
     "quietHours": "Quiet hours… — the times of day nothing may make a noise",
+    "settings": "Settings… — theme, language, quiet hours, phone push, and the rest",
     "mcpServers": "MCP servers…",
     "about": "About this build — version, commit, branch",
     "category": {
@@ -1167,14 +1164,30 @@
   },
   "taskLabelSize": {
     "title": "Task label size",
-    "open": "Task label size…",
     "blurb": "How much of each session’s task label to show, on the cards and in the sessions list. Longer labels say more; shorter ones fit more sessions on screen.",
     "full": "Full",
     "fullNote": "Up to three lines. The default — Claude is asked for a phrase, and this is the room to read it.",
     "medium": "Medium",
     "mediumNote": "Up to two lines. A compromise when you are running a lot of sessions.",
     "compact": "Compact",
-    "compactNote": "One line, trimmed with an ellipsis — exactly how labels looked before this setting existed.",
-    "close": "Done"
+    "compactNote": "One line, trimmed with an ellipsis — exactly how labels looked before this setting existed."
+  },
+  "settings": {
+    "title": "Settings",
+    "open": "Settings…",
+    "close": "Done",
+    "intro": "Everything you set once and forget. Most of this takes effect the moment you change it, with nothing to save — the exception is the credential boxes under Phone push, which have their own Save because the value goes straight to your operating system's credential store.",
+    "section": {
+      "appearance": "Appearance",
+      "attention": "Attention",
+      "advanced": "Advanced"
+    },
+    "theme": "Theme",
+    "themeBlurb": "How the whole window is painted. Pick system to follow whatever your computer is set to, and change when it changes.",
+    "language": "Language",
+    "languageBlurb": "The language of the app, the desktop pop-ups, and anything sent to your phone. pseudo is a development aid that mangles every word to show up text nobody made translatable — you probably want en.",
+    "experimentalFork": "Fork sessions",
+    "updates": "Updates",
+    "providerStatus": "Anthropic status"
   }
 }

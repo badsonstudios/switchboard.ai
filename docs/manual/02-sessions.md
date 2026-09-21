@@ -173,9 +173,8 @@ Labels get **up to three lines** — on the card header and in the sessions list
 — and Claude is asked for a phrase that fills them rather than a handful of
 words.
 
-If you run a lot of sessions and would rather have the density back, open the
-command palette (**`Ctrl+Shift+P`**) and pick **Task label size…**, or use the
-button in the **About** panel. Three choices: **Full** (three lines, the
+If you run a lot of sessions and would rather have the density back, press
+**`Ctrl+,`** for Settings and look under **Appearance**. Three choices: **Full** (three lines, the
 default), **Medium** (two) and **Compact** (one line, trimmed with an `…` —
 exactly how labels looked before this setting existed).
 
@@ -603,8 +602,9 @@ word — and then the two carry on independently.
 It's off until you turn it on. When it's off there's nothing to click: the menu
 entry isn't there at all, rather than being there and greyed out.
 
-To use it, turn on **Fork sessions** in the title bar, then open a session's
-**⋯** menu and choose **Fork into a new session**. A new session opens that
+To use it, press **`Ctrl+,`** for Settings, turn on **Fork sessions** under
+**Advanced**, then open a session's **⋯** menu and choose **Fork into a new
+session**. A new session opens that
 already knows everything the first one does.
 
 A few things worth knowing:

@@ -6,14 +6,14 @@
 // - **It never shows a stored credential.** There is no channel that can read
 //   one back (`main/diagnostics/report-ipc.ts`), so the GitHub token field is
 //   empty on open and a saved one reads "in use". That is the same contract
-//   `PushSetupDialog` keeps, for the same reason.
+//   `settings/PushSection.tsx` keeps, for the same reason.
 // - **It does not promise to attach the zip.** GitHub's API cannot attach a
 //   file to an issue — only its web form can — so the dialog says where the zip
 //   is and that it must be dragged on. A button implying otherwise would drop
 //   the evidence this feature exists to move.
 //
 // The dialog shape — scrim, click-away, focus capture, Escape, focus restore —
-// is `QuietHoursDialog.tsx`'s, on purpose: two modals that behave differently
+// is `SettingsDialog.tsx`'s, on purpose: two modals that behave differently
 // is a bug report waiting to happen.
 import React from 'react';
 import { useTranslation } from 'react-i18next';

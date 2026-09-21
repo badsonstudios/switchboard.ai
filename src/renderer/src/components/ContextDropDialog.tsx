@@ -15,7 +15,7 @@
 //
 // The dialog SHAPE — scrim, click-away, Escape, focus capture and restore, a
 // radiogroup, Cancel/OK commit semantics — is `ModelPickerDialog`'s, which is
-// `McpManagerDialog`'s, which is `QuietHoursDialog`'s. Two modals that behave
+// `McpManagerDialog`'s, which is `SettingsDialog`'s. Two modals that behave
 // differently is a bug report waiting to happen.
 import React from 'react';
 import { useTranslation } from 'react-i18next';

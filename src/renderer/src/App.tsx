@@ -46,9 +46,8 @@ import { DEFAULT_SOUND } from '../../shared/sounds';
 // #440: a refused call RESOLVES a truthy object — read every bridge answer
 // through one of these, never as a bare boolean. See shared/ipc/refusal.ts.
 import { answered, took } from '../../shared/ipc/refusal';
-import { PushSetupDialog } from './components/PushSetupDialog';
-import { QuietHoursDialog } from './components/QuietHoursDialog';
-import { TaskLabelSizeDialog } from './components/TaskLabelSizeDialog';
+import { SettingsDialog } from './components/SettingsDialog';
+import type { SettingsSection } from './lib/settings-sections';
 import { ReportProblemDialog } from './components/ReportProblemDialog';
 import {
   unavailableReport,
@@ -253,19 +252,19 @@ export function App(): React.JSX.Element {
   // than at mount: it is two booleans and four "is it set" flags that nothing
   // else on screen reads, and asking main for them on every launch would be a
   // read of the credential store nobody asked for.
-  const [pushOpen, setPushOpen] = useState(false);
+  // ── settings (#885) ──────────────────────────────────────────────────────
+  //
+  // ONE modal where there were three. It is open-or-not plus the section to
+  // scroll to, and opening it is what fetches the two on-demand values below —
+  // push config and the quiet window — for the reason each of them gives: they
+  // are read by nothing else on screen, and asking main for them at every
+  // launch would be a read of the credential store nobody asked for.
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
   const [pushConfig, setPushConfig] = useState<PushConfig | null>(null);
   // The last write main REFUSED, for the field it was aimed at. Cleared on the
   // next successful write and on every re-open.
   const [pushWrite, setPushWrite] = useState<{ key: string; problem: string } | null>(null);
-  // Quiet hours (E14-05b) — the same on-demand shape as push above: nothing
-  // else on screen reads the window, so it is fetched when the dialog opens
-  // rather than held at mount.
-  const [quietOpen, setQuietOpen] = useState(false);
-  // Task label size (#877). Unlike push and quiet hours this needs NO on-open
-  // fetch: the value is already held at mount (the rail and every card header
-  // draw from it), so the dialog only has to render it.
-  const [labelSizeOpen, setLabelSizeOpen] = useState(false);
   // The MCP Manager (§5.17, #632). Read-only in PR 1.
   const [mcpOpen, setMcpOpen] = useState(false);
   // Help ▸ Report a problem… (#815). `null` status means "main has not said
@@ -834,8 +833,7 @@ export function App(): React.JSX.Element {
   // fields disabled rather than throwing out of an event handler. #444's lesson
   // (a notification nicety must never be able to white-screen the shell), and
   // the reason the whole family is written this way.
-  const openPushSetup = React.useCallback(() => {
-    setPushOpen(true);
+  const refreshPush = React.useCallback(() => {
     setPushWrite(null);
     const answer = bridge.push?.getConfig?.();
     // No `push` namespace at all: show the dialog as UNREACHABLE rather than as
@@ -886,20 +884,35 @@ export function App(): React.JSX.Element {
   }, []);
   const openReportProblem = React.useCallback(() => {
     // Cleared FIRST, so the dialog cannot show last time's answer while this
-    // one is in flight — the `openQuietHours` rule, for its reason.
+    // one is in flight — the `openSettings` rule, for its reason.
     setReportStatus(null);
     setReportOpen(true);
     refreshReportStatus();
   }, [refreshReportStatus]);
-  const openQuietHours = React.useCallback(() => {
-    // Cleared FIRST, so the dialog's one-shot seeding cannot take a stale
-    // answer from the last time it was open: null means "main has not said
-    // yet", and the dialog waits for the real one rather than showing default
-    // times over somebody's configured window.
-    setQuietState(null);
-    setQuietOpen(true);
-    refreshQuiet();
-  }, [refreshQuiet]);
+  /**
+   * Open Settings, optionally at a section (#885).
+   *
+   * THE CLEAR-THEN-FETCH IS LOAD-BEARING and it is quiet hours' rule, kept
+   * exactly: `setQuietState(null)` FIRST, so the section's one-shot seeding
+   * cannot take a stale answer from the last time the screen was open. `null`
+   * means "main has not said yet", and the section waits for the real answer
+   * rather than showing default times over somebody's configured window.
+   *
+   * Both on-demand values are fetched on every opening, not just the section
+   * you asked for: the screen shows all of them at once now, so fetching only
+   * the one you navigated to would leave the others rendering last week's
+   * answer a scroll away.
+   */
+  const openSettings = React.useCallback(
+    (section: SettingsSection | null = null) => {
+      setQuietState(null);
+      setSettingsSection(section);
+      setSettingsOpen(true);
+      refreshQuiet();
+      refreshPush();
+    },
+    [refreshQuiet, refreshPush]
+  );
   /**
    * Store a new task label size (#877) and put it on screen at once.
    *
@@ -1326,9 +1339,7 @@ export function App(): React.JSX.Element {
       paletteOpen ||
       aboutOpen ||
       updateOpen ||
-      pushOpen ||
-      quietOpen ||
-      labelSizeOpen ||
+      settingsOpen ||
       mcpOpen ||
       reportOpen ||
       modelFor !== null;
@@ -1475,11 +1486,9 @@ export function App(): React.JSX.Element {
           },
           jumpToNextAttention,
           openAbout: () => setAboutOpen(true),
-          openPushSetup,
-          openQuietHours,
-          // #877. A thunk over a `useState` setter, which is stable — so, like
-          // `openMcpManager` below, it needs no entry in the dependency list.
-          openTaskLabelSize: () => setLabelSizeOpen(true),
+          // #885. ONE dep where push, quiet hours and task label size each had
+          // their own; the three commands that named them are aliases onto it.
+          openSettings,
           // §5.17's manager (#632). An inline thunk over a `useState` setter,
           // which is stable — so it needs no entry in the dependency list below.
           openMcpManager: () => setMcpOpen(true),
@@ -1530,8 +1539,7 @@ export function App(): React.JSX.Element {
       togglePin,
       reorderSession,
       checkForUpdates,
-      openPushSetup,
-      openQuietHours,
+      openSettings,
     ], // other deps read live state through refs; grid.current is stable
   );
   // chips advertise their own binding, derived from the registry so a tooltip
@@ -1827,17 +1835,6 @@ export function App(): React.JSX.Element {
         version={bridge.appVersion}
         identity={BUILD_IDENTITY}
         onOpenAbout={() => setAboutOpen(true)}
-        pref={pref}
-        themes={themes}
-        onTheme={(p) => {
-          setPref(p);
-          setTheme(applyPreference(p, themes));
-        }}
-        lang={lang}
-        onLang={(l) => {
-          setLang(l);
-          void setLanguage(l);
-        }}
         notifEnabled={notifEnabled}
         onToggleNotif={() => {
           const next = !notifEnabled;
@@ -1899,18 +1896,6 @@ export function App(): React.JSX.Element {
             if (on) sharedAnnouncer().say(sample);
           });
         }}
-        experimentalFork={experimentalFork}
-        onToggleExperimentalFork={() => {
-          const next = !experimentalFork;
-          setExperimentalFork(next); // optimistic: the chip must move on the click…
-          // …and main answers with what it actually STORED. `took` (#440) so a
-          // refusal reads as off rather than as a truthy object — the same
-          // convention as auto-trust and auto-labels, and the direction that
-          // matters most for an experiment nobody has switched on yet.
-          void bridge.settings
-            ?.setExperimentalFork?.(next)
-            .then((on) => setExperimentalFork(took(on)));
-        }}
         autoLabels={autoLabels}
         aiLabels={aiLabels}
         onCycleLabels={() => {
@@ -1953,8 +1938,60 @@ export function App(): React.JSX.Element {
         identity={BUILD_IDENTITY}
         platform={bridge.platform}
         onCheckForUpdates={checkForUpdates}
-        autoCheck={autoCheckUpdates}
-        onToggleAutoCheck={(on) => {
+        // a second dialog is above this one: two stacked `aria-modal` regions
+        // is a thing screen readers disagree about, so only the top one claims it
+        dialogAbove={
+          updateOpen || settingsOpen || mcpOpen || reportOpen || modelFor !== null
+        }
+        onOpenSettings={() => openSettings(null)}
+      />
+      {/* Settings (#885) — the one modal that absorbed quiet hours, phone push
+          and task label size, and took eight controls off the title bar with
+          them. Rendered BEFORE `SessionGrid`, like the dialogs it replaced, so
+          the ids inside it are never later in tree order than feed or viewer
+          content (#654 — `PushSection.tsx` carries the argument). */}
+      <SettingsDialog
+        open={settingsOpen}
+        section={settingsSection}
+        onClose={() => setSettingsOpen(false)}
+        pref={pref}
+        themes={themes}
+        onTheme={(p) => {
+          setPref(p);
+          setTheme(applyPreference(p, themes));
+        }}
+        lang={lang}
+        onLang={(l) => {
+          setLang(l);
+          void setLanguage(l);
+        }}
+        taskLabelSize={taskLabelSize}
+        onSetTaskLabelSize={applyTaskLabelSize}
+        quiet={quietState}
+        onSetQuietWindow={setQuietWindow}
+        push={pushConfig}
+        pushWrite={pushWrite}
+        onSetPushPrefs={(p) =>
+          applyPushAnswer(p.ntfyServer !== undefined ? 'ntfyServer' : 'prefs', bridge.push?.setPrefs?.(p))
+        }
+        onSetPushSecret={(key: PushSecretKey, value: string) =>
+          applyPushAnswer(key, bridge.push?.setSecret?.(key, value))
+        }
+        onTestPush={testPush}
+        experimentalFork={experimentalFork}
+        onToggleExperimentalFork={() => {
+          const next = !experimentalFork;
+          setExperimentalFork(next); // optimistic: the box must move on the click…
+          // …and main answers with what it actually STORED. `took` (#440) so a
+          // refusal reads as off rather than as a truthy object — the same
+          // convention as auto-trust and auto-labels, and the direction that
+          // matters most for an experiment nobody has switched on yet.
+          void bridge.settings
+            ?.setExperimentalFork?.(next)
+            .then((on) => setExperimentalFork(took(on)));
+        }}
+        autoCheckUpdates={autoCheckUpdates}
+        onToggleAutoCheckUpdates={(on) => {
           setAutoCheckUpdates(on); // optimistic, so the tick moves at once…
           void bridge.update
             ?.setPrefs?.({ autoCheck: on })
@@ -1980,33 +2017,6 @@ export function App(): React.JSX.Element {
             })
             .catch(() => {});
         }}
-        // a second dialog is above this one: two stacked `aria-modal` regions
-        // is a thing screen readers disagree about, so only the top one claims it
-        dialogAbove={
-          updateOpen ||
-          pushOpen ||
-          quietOpen ||
-          labelSizeOpen ||
-          mcpOpen ||
-          reportOpen ||
-          modelFor !== null
-        }
-        onOpenPushSetup={openPushSetup}
-        onOpenQuietHours={openQuietHours}
-        onOpenTaskLabelSize={() => setLabelSizeOpen(true)}
-      />
-      <PushSetupDialog
-        open={pushOpen}
-        onClose={() => setPushOpen(false)}
-        config={pushConfig}
-        write={pushWrite}
-        onSetPrefs={(p) =>
-          applyPushAnswer(p.ntfyServer !== undefined ? 'ntfyServer' : 'prefs', bridge.push?.setPrefs?.(p))
-        }
-        onSetSecret={(key: PushSecretKey, value: string) =>
-          applyPushAnswer(key, bridge.push?.setSecret?.(key, value))
-        }
-        onTest={testPush}
       />
       <McpManagerDialog
         open={mcpOpen}
@@ -2073,18 +2083,6 @@ export function App(): React.JSX.Element {
         // exactly that, so this needs no door of its own — and opening one
         // would be a second, weaker path to the browser.
         onOpenIssue={(url) => void bridge.update?.openExternal?.(url)?.catch(() => {})}
-      />
-      <QuietHoursDialog
-        open={quietOpen}
-        onClose={() => setQuietOpen(false)}
-        state={quietState}
-        onSet={setQuietWindow}
-      />
-      <TaskLabelSizeDialog
-        open={labelSizeOpen}
-        onClose={() => setLabelSizeOpen(false)}
-        size={taskLabelSize}
-        onSet={applyTaskLabelSize}
       />
       <UpdateDialog
         open={updateOpen}

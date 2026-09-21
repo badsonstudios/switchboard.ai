@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { launchApp, LaunchedApp, registerTempDir, sweepTempDirs, workspaceJsonPath } from './fixtures/app';
+import { launchApp, LaunchedApp, registerTempDir, sweepTempDirs, workspaceJsonPath, setTheme } from './fixtures/app';
 
 // #207 — a workspace write that FAILS at runtime used to be a log line and
 // nothing else: the same silent-loss shape #168 fixed for read-only mode, one
@@ -63,7 +63,7 @@ test.describe('a workspace that cannot be written', () => {
 
     // Something that definitely wants saving. The theme round-trips through the
     // same file as everything else on the workspace page.
-    await w.getByRole('button', { name: 'daylight', exact: true }).click();
+    await setTheme(w, 'daylight');
 
     // The threshold is what keeps this from being noise, so it costs a few
     // seconds of retries before anything appears — deliberately.
@@ -99,7 +99,7 @@ test.describe('a workspace that cannot be written', () => {
   test('is absent for a workspace that saves normally', async () => {
     a = await launchApp();
     await expect(a.window.getByRole('button', { name: '+ session' })).toBeVisible();
-    await a.window.getByRole('button', { name: 'daylight', exact: true }).click();
+    await setTheme(a.window, 'daylight');
     // long enough that the threshold's three backed-off retries would have
     // elapsed — an instant check would pass even for a banner that always shows
     await a.window.waitForTimeout(5_000);

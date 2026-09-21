@@ -1,5 +1,10 @@
 // @vitest-environment jsdom
-// The phone-push / webhook setup dialog (P2-E14-06, §5.29).
+// The phone-push / webhook SECTION of the settings modal (P2-E14-06, §5.29).
+//
+// `PushSetupDialog.test.tsx` re-pointed, not rewritten (#885). The modal
+// contract it used to assert — Escape, click-away, aria-modal — is
+// `SettingsDialog.test.tsx`'s now: one modal, pinned once. Everything the
+// CREDENTIAL surface promises stayed here, in the same words.
 //
 // What is worth pinning here is not the layout — it is the promises the dialog
 // makes about credentials:
@@ -8,16 +13,16 @@
 //  • the typed value leaves component state the moment it is handed over;
 //  • a machine with no credential store says so and disables everything, rather
 //    than accepting a token it cannot keep;
-//  • the app works with none of it configured — which here means the dialog
+//  • the app works with none of it configured — which here means the section
 //    renders and behaves with a bridge that answered nothing at all.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import React, { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
-import { initI18nForTests } from '../i18n/test-i18n';
-import en from '../../../shared/i18n/locales/en.json';
-import { PushSetupDialog } from './PushSetupDialog';
-import { unavailablePushConfig } from '../../../shared/push';
-import type { PushConfig } from '../../../shared/push';
+import { initI18nForTests } from '../../i18n/test-i18n';
+import en from '../../../../shared/i18n/locales/en.json';
+import { PushSection } from './PushSection';
+import { unavailablePushConfig } from '../../../../shared/push';
+import type { PushConfig } from '../../../../shared/push';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -28,7 +33,6 @@ let host: HTMLElement;
 const TOPIC = 'topic-9f3a-SECRET';
 
 const handlers = {
-  onClose: vi.fn(),
   onSetPrefs: vi.fn(),
   onSetSecret: vi.fn(),
   onTest: vi.fn(async () => ({ ok: true })),
@@ -54,11 +58,12 @@ async function render(
   write: { key: string; problem: string } | null = null
 ): Promise<void> {
   await act(async () => {
-    root!.render(<PushSetupDialog open={open} config={cfg} write={write} {...handlers} />);
+    root!.render(<PushSection open={open} config={cfg} write={write} {...handlers} />);
   });
 }
 
-const dialog = (): HTMLElement | null => host.querySelector<HTMLElement>('[role="dialog"]');
+const block = (): HTMLElement | null =>
+  host.querySelector<HTMLElement>('[data-settings-block="push"]');
 const field = (name: string): HTMLInputElement | null =>
   host.querySelector<HTMLInputElement>(`[data-push-field="${name}"]`);
 const statusOf = (key: string): string =>
@@ -103,15 +108,15 @@ afterEach(async () => {
   }
 });
 
-describe('the setup dialog', () => {
+describe('the setup section', () => {
   it('renders nothing when closed', async () => {
     await render(false);
-    expect(dialog()).toBeNull();
+    expect(block()).toBeNull();
   });
 
   it('opens with the ntfy fields and both switches off', async () => {
     await render(true);
-    expect(dialog()).not.toBeNull();
+    expect(block()).not.toBeNull();
     expect(field('ntfy.topic')).not.toBeNull();
     expect(field('pushover.token')).toBeNull(); // the other service is not shown
     expect(field('enable-push')?.checked).toBe(false);
@@ -124,7 +129,7 @@ describe('the setup dialog', () => {
   // user a Save button that silently does nothing (review finding).
   it('renders while it waits for main, without claiming anything', async () => {
     await render(true, null);
-    expect(dialog()).not.toBeNull();
+    expect(block()).not.toBeNull();
     expect(field('enable-push')?.checked).toBe(false);
   });
 
@@ -287,7 +292,13 @@ describe('Send test', () => {
     (document.activeElement as HTMLElement).blur(); // jsdom does not blur a disabling control; do what a browser does
     await click(send);
     expect(document.activeElement).not.toBe(document.body);
-    expect(dialog()!.contains(document.activeElement)).toBe(true);
+    // Rescued into THIS SECTION rather than onto the modal container, which is
+    // where the equivalent effect pointed while this was its own dialog. It has
+    // to be: the disabling is driven by state local to this component, so an
+    // effect on the parent would not re-run at all. Focus inside the section is
+    // inside the modal, and keydown bubbles, so Escape still reaches the
+    // container that handles it.
+    expect(block()!.contains(document.activeElement)).toBe(true);
   });
 
   it('a rejected call is a failure, not an unhandled rejection', async () => {
@@ -312,38 +323,15 @@ describe('the switches', () => {
   });
 });
 
-describe('the modal contract it shares with About', () => {
-  it('closes on Escape', async () => {
-    await render(true);
-    await act(async () => {
-      dialog()!.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
-      );
-    });
-    expect(handlers.onClose).toHaveBeenCalled();
-  });
-
-  it('closes on a click outside, and not on a click inside', async () => {
-    await render(true);
-    await act(async () => {
-      dialog()!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-    });
-    expect(handlers.onClose).not.toHaveBeenCalled();
-    await act(async () => {
-      host
-        .querySelector('div')!
-        .dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-    });
-    expect(handlers.onClose).toHaveBeenCalled();
-  });
-
-  it('is labelled, so a screen reader announces what opened', async () => {
-    await render(true);
-    expect(dialog()?.getAttribute('aria-label')).toBe(en.push.title);
-    expect(dialog()?.getAttribute('aria-modal')).toBe('true');
-  });
-
+// Escape, click-away and the accessible name moved to
+// `SettingsDialog.test.tsx` with the modal that implements them. What is left
+// here is the one #654 assertion, which is about THESE fields.
+describe('the ids these fields carry', () => {
   it('its fields carry no id rendered content could name (#654)', async () => {
+    // (Kept verbatim from the dialog this section was carved out of: the
+    // mechanism and the fix are the same, and the argument is the whole point
+    // of the assertion.)
+    //
     // These fields were `id="push-field-ntfy.topic"` and friends: LITERAL,
     // stable, and therefore a NAME a document or a reply could address. `id`
     // survives the markdown sanitizer profile, and every IDREF in the DOM
@@ -355,9 +343,9 @@ describe('the modal contract it shares with About', () => {
     // click to the field and joined the field's announced name. `markdown.tsx`
     // forbids the `<label>` TAG for the second half; this is the first.
     //
-    // "PLACED FIRST" IS A CONDITION THIS DIALOG ALREADY MET: `App.tsx` renders
-    // it BEFORE `SessionGrid`, so feed and viewer content is always later and
-    // never captured these ids. This is prophylaxis against a reorder, not the
+    // "PLACED FIRST" IS A CONDITION THIS SECTION ALREADY MEETS: `App.tsx`
+    // renders the settings modal BEFORE `SessionGrid`, so feed and viewer
+    // content is always later and never captured these ids. This is prophylaxis against a reorder, not the
     // fix for a live capture — `CommandPalette` is the one that was live.
     //
     // WHAT THIS BUYS, AND WHAT IT DOES NOT, stated exactly because the first
@@ -372,6 +360,10 @@ describe('the modal contract it shares with About', () => {
     // panels are open and how many sessions are running. So this is
     // defence-in-depth, not the closure. THE CLOSURE IS THE TAG: `markdown.tsx`
     // forbids `<label>`, and that does not depend on a name at all.
+    //
+    // ⚠️ AND IT IS WORTH MORE NOW, NOT LESS: every id on this screen is drawn
+    // from the same tree as the four other sections beside it, so the composed
+    // string moves whenever any of them changes shape.
     //
     // The rule is scanned across the whole renderer in `markdown.test.tsx`.
     // What is here is the RUNTIME half, and the label assertion is the one that
@@ -396,7 +388,7 @@ describe('the modal contract it shares with About', () => {
       root!.render(
         <>
           <Ahead />
-          <PushSetupDialog open config={config()} write={null} {...handlers} />
+          <PushSection open config={config()} write={null} {...handlers} />
         </>
       );
     });

@@ -55,10 +55,11 @@ common" becomes the better explanation.
 
 ## Turning the check off
 
-Click the version stamp at the top left to open **About this build**. Under the
-update controls there's a checkbox:
+Press **`Ctrl+,`** for Settings and look under **Advanced**:
 
-- **Check provider status** — on by default.
+- **Check provider status** — on by default, beside the update check. Those two
+  are the only things switchboard fetches over the network without being asked,
+  which is why they sit together.
 
 Unticking it stops switchboard from contacting the status page at all. The dot
 goes hollow and its tooltip says the check is off.

@@ -24,7 +24,18 @@ import {
   sweepTempDirs,
   workspaceJsonPath,
   openEventsDrawer,
+  openSettings,
+  closeSettings,
 } from './fixtures/app';
+
+/** Set "check for updates automatically", which lives in Settings since #885. */
+async function setAutoCheck(w: Page, on: boolean): Promise<void> {
+  const settings = await openSettings(w);
+  const box = settings.locator('[data-settings-field="auto-check-updates"]');
+  await expect(box).toBeChecked({ checked: !on }); // it really is changing something
+  await box.setChecked(on);
+  await closeSettings(w);
+}
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 /** The name `electron-builder.js` produces, which is what the picker looks for. */
@@ -296,15 +307,17 @@ test.describe('update check (E19-03)', () => {
     await shellReady(w);
     await checkCompleted(a);
 
-    await stamp(w).click();
-    const about = w.getByRole('dialog', { name: 'About this build' });
-    await expect(about).toBeVisible();
-    const toggle = about.locator('[data-about-field="autoCheck"]');
-    await expect(toggle).toBeChecked(); // default ON
-    await toggle.uncheck();
+    // #885 SPLIT THIS ROW IN TWO, on purpose. "Check for updates…" is an
+    // ACTION against the build you are looking at, so it stayed on About, which
+    // is the surface that answers "which build am I on?". Whether to check
+    // AUTOMATICALLY is a preference and went to Settings with the rest of them.
+    await setAutoCheck(w, false);
     await poll(() => (updatePrefs(home)?.autoCheck === false ? true : null));
 
     // the manual check still works with automatic checks turned off
+    await stamp(w).click();
+    const about = w.getByRole('dialog', { name: 'About this build' });
+    await expect(about).toBeVisible();
     await about.getByRole('button', { name: 'Check for updates…' }).click();
     await expect(dialog(w)).toBeVisible();
     await w.keyboard.press('Escape');
@@ -314,9 +327,12 @@ test.describe('update check (E19-03)', () => {
     const before = feed.hits;
     a = await launch(home);
     await shellReady(a.window);
+    const settings = await openSettings(a.window);
+    await expect(settings.locator('[data-settings-field="auto-check-updates"]')).not.toBeChecked();
+    await closeSettings(a.window);
     await stamp(a.window).click();
     const about2 = a.window.getByRole('dialog', { name: 'About this build' });
-    await expect(about2.locator('[data-about-field="autoCheck"]')).not.toBeChecked();
+    await expect(about2).toBeVisible();
     // A positive barrier, not a sleep: the manual check below proves the feed
     // is reachable and that a call from this run REGISTERS — so the +1 (rather
     // than +2) is what proves the startup check genuinely did not fire.

@@ -1,8 +1,13 @@
 // @vitest-environment jsdom
-// The quiet-hours dialog (P2-E14-05b, §5.9).
+// The quiet-hours SECTION of the settings modal (P2-E14-05b, §5.9).
+//
+// This was `QuietHoursDialog.test.tsx` until #885. It moved with the control
+// and it was RE-POINTED, not rewritten: every invariant the dialog promised is
+// still asserted here, in the same words, because "we folded three dialogs into
+// one screen" is exactly the kind of change that loses one quietly.
 //
 // The evaluator's matrix is unit-tested in main (`rules.quiet.test.ts`); what
-// is worth pinning here is what the DIALOG promises:
+// is worth pinning here is what the CONTROL promises:
 //
 //  • both ends go together — half a window is not a window, so the write is
 //    one call carrying both, or a null that clears both;
@@ -12,12 +17,15 @@
 //    including "cannot tell" when the bridge answered nothing at all;
 //  • it says the webhook keeps going, because that is the surprising half of
 //    the decision and the user should not have to find out from a dashboard.
+//
+// The MODAL contract it used to carry — aria-modal, Escape, click-away — is
+// `SettingsDialog.test.tsx`'s now. One modal, one place it is pinned.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import React, { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
-import { initI18nForTests } from '../i18n/test-i18n';
-import { QuietHoursDialog } from './QuietHoursDialog';
-import type { QuietState } from '../../../shared/quiet-hours';
+import { initI18nForTests } from '../../i18n/test-i18n';
+import { QuietHoursSection } from './QuietHoursSection';
+import type { QuietState } from '../../../../shared/quiet-hours';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -26,7 +34,7 @@ declare global {
 let root: Root | null = null;
 let host: HTMLElement;
 
-const handlers = { onClose: vi.fn(), onSet: vi.fn() };
+const handlers = { onSet: vi.fn() };
 
 const state = (over: Partial<QuietState> = {}): QuietState => ({
   window: { start: '22:00', end: '07:00' },
@@ -37,11 +45,12 @@ const state = (over: Partial<QuietState> = {}): QuietState => ({
 
 async function render(open: boolean, s: QuietState | null = state()): Promise<void> {
   await act(async () => {
-    root!.render(<QuietHoursDialog open={open} state={s} {...handlers} />);
+    root!.render(<QuietHoursSection open={open} state={s} {...handlers} />);
   });
 }
 
-const dialog = (): HTMLElement | null => host.querySelector<HTMLElement>('[role="dialog"]');
+const block = (): HTMLElement | null =>
+  host.querySelector<HTMLElement>('[data-settings-block="quiet-hours"]');
 const field = (name: string): HTMLInputElement =>
   host.querySelector<HTMLInputElement>(`[data-quiet-field="${name}"]`)!;
 const status = (): string =>
@@ -81,10 +90,10 @@ afterEach(async () => {
   }
 });
 
-describe('the quiet-hours dialog', () => {
+describe('the quiet-hours section', () => {
   it('renders nothing when closed', async () => {
     await render(false);
-    expect(dialog()).toBeNull();
+    expect(block()).toBeNull();
   });
 
   it('opens seeded with the configured window', async () => {
@@ -220,8 +229,8 @@ describe('the quiet-hours dialog', () => {
 
   it('names the webhook exception, which is the surprising half of the decision', async () => {
     await render(true);
-    expect(dialog()!.textContent).toMatch(/webhook/i);
-    expect(dialog()!.textContent).toMatch(/phone push/i);
+    expect(block()!.textContent).toMatch(/webhook/i);
+    expect(block()!.textContent).toMatch(/phone push/i);
   });
 
   it('its fields carry no id rendered content could name (#654)', async () => {
@@ -249,7 +258,7 @@ describe('the quiet-hours dialog', () => {
       root!.render(
         <>
           <Ahead />
-          <QuietHoursDialog open state={state()} {...handlers} />
+          <QuietHoursSection open state={state()} {...handlers} />
         </>
       );
     });
@@ -258,14 +267,9 @@ describe('the quiet-hours dialog', () => {
     expect(shifted.filter((id) => ids.includes(id))).toEqual([]);
   });
 
-  it('is a modal a keyboard can leave', async () => {
-    await render(true);
-    expect(dialog()!.getAttribute('aria-modal')).toBe('true');
-    await act(async () => {
-      dialog()!.dispatchEvent(
-        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
-      );
-    });
-    expect(handlers.onClose).toHaveBeenCalled();
-  });
+  // "is a modal a keyboard can leave" USED TO BE HERE and is now in
+  // `SettingsDialog.test.tsx`. That is not a dropped assertion: quiet hours is
+  // a section of one modal now, and the modal contract — `aria-modal`, Escape,
+  // click-away, focus capture — is asserted once against the thing that
+  // actually implements it, instead of three times against three copies.
 });

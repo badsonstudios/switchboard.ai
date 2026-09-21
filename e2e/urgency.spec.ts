@@ -16,6 +16,7 @@ import {
   skipPopoutOnLinux,
   tempProjectFolder,
   hookPoster,
+  setTheme,
 } from './fixtures/app';
 // the ramp itself, not a copy of it (the csp spec sets the precedent for
 // importing from src/): a seventh status must be measured by #267's audit
@@ -351,10 +352,12 @@ test.describe('urgency strip (E9-04)', () => {
 
     const walk = { statuses: [...STATUS_TOKENS], states: LAMP_STATES };
     for (const [label, id] of THEMES) {
-      await w.getByRole('button', { name: label, exact: true }).click();
+      await setTheme(w, label);
       await expect(w.locator('html')).toHaveAttribute('data-theme-id', id);
 
-      // no pointer on the lamp — the theme button just took it
+      // no pointer on the lamp. It used to be the theme chip in the title bar
+      // that held it; since #885 the picker is inside a centred modal, so
+      // `setTheme` parks the pointer in the top-left corner on the way out.
       const off = await el.evaluate(auditLampStates, walk);
       assertLamp(id, 'off the pointer', off, false);
 

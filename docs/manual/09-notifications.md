@@ -409,15 +409,8 @@ destination yourself.
 
 ### Where the setup lives
 
-There's no settings screen yet, so setup lives in a dialog you can reach two
-ways:
-
-- press **`Ctrl+Shift+P`** and type *phone push*; or
-- open the **About** panel (click the version in the title bar) and press
-  **Phone push & webhooks…**
-
-*This placement is temporary and will move into Settings when that screen
-exists.*
+**Settings ▸ Attention.** Press **`Ctrl+,`**, or press **`Ctrl+Shift+P`** and
+type *phone push*, which opens Settings scrolled straight to it.
 
 ### Setting up ntfy (the easy one)
 
@@ -522,10 +515,10 @@ and a program isn't asleep — a log with a hole in it every night from 22:00 to
 
 Hours of the day when switchboard won't make a noise at you.
 
-Open it with **Ctrl+Shift+P → "Quiet hours…"**, or from the **About** panel
-(the same place the phone-push button lives). Tick **Keep quiet between these
-times**, set a **From** and an **Until**, and close the dialog. That's the whole
-setting.
+**Settings ▸ Attention** — press **`Ctrl+,`**, or **`Ctrl+Shift+P`** and type
+*quiet hours*, which opens Settings scrolled straight to it. Tick **Keep quiet
+between these times**, set a **From** and an **Until**, and close the window.
+That's the whole setting.
 
 - **Times are your machine's clock**, and they mean the numbers on the clock on
   the wall. They follow you if you change timezone, and they need no special

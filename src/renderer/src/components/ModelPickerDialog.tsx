@@ -11,7 +11,7 @@
 // surface that drives the real mechanism is legitimate; faking one is not.
 //
 // The dialog shape — scrim, click-away, focus capture and restore, Escape — is
-// `McpManagerDialog`'s, which is `QuietHoursDialog`'s, which is
+// `McpManagerDialog`'s, which is `SettingsDialog`'s, which is
 // `AboutPanel`'s. Two modals that behave differently is a bug report waiting to
 // happen.
 //
@@ -563,7 +563,7 @@ export function ModelPickerDialog(props: ModelPickerDialogProps): React.JSX.Elem
               disabled={!dirty || busy !== null || held}
               onClick={apply}
               style={{
-                // The house BUTTON shape (`QuietHoursDialog`'s Close, which is
+                // The house BUTTON shape (`settings/controls.tsx`'s, which is
                 // the nearest thing to a precedent — no dialog here has had a
                 // confirm before): a chip fill and ordinary ink, with weight
                 // rather than colour carrying the emphasis. NOT

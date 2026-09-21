@@ -187,10 +187,10 @@ const NOT_A_NOTICE: Readonly<Record<string, string>> = {
     'a modal — returns null when closed and is `position: fixed` when open, so it is never an in-flow flex child',
   UpdateDialog: 'a modal, same as AboutPanel',
   CommandPalette: 'a modal, same as AboutPanel',
-  PushSetupDialog: 'a modal, same as AboutPanel (P2-E14-06)',
   ReportProblemDialog: 'a modal, same as AboutPanel (#815)',
-  QuietHoursDialog: 'a modal, same as AboutPanel (P2-E14-05b)',
-  TaskLabelSizeDialog: 'a modal, same as AboutPanel (#877)',
+  // #885 absorbed three entries that used to be here — PushSetupDialog,
+  // QuietHoursDialog and TaskLabelSizeDialog — into this one.
+  SettingsDialog: 'a modal, same as AboutPanel (#885)',
   McpManagerDialog: 'a modal, same as AboutPanel (§5.17, #632)',
   ModelPickerDialog: 'a modal, same as AboutPanel (#721)',
   div: 'the workspace itself — `flex: 1` with a basis of 0. It is the thing that is SUPPOSED to give way; that is the whole mechanism',

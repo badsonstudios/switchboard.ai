@@ -39,8 +39,11 @@ same result, no dialog.
 - **Title bar** (top) — the version and build code on the left (click it to see
   exactly which build you're running — see
   [Troubleshooting](11-troubleshooting.md#which-version-am-i-running)), then
-  app-wide switches: trust, the autonomy mode new sessions start in,
-  notifications, theme, language.
+  app-wide switches: trust, task labels, sounds, spoken announcements,
+  notifications, the autonomy mode new sessions start in, and how the
+  workspace is arranged. Everything you set once and forget — theme, language,
+  quiet hours, phone push — is in the Settings window instead: press
+  **`Ctrl+,`**. See [Settings](10-settings.md).
 - **Sessions** (left) — every session you have open, with a colored status dot.
   Click one to jump to it.
 - **The grid** (middle) — the session cards themselves. Each has its own tabs:

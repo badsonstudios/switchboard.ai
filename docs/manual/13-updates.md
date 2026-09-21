@@ -153,10 +153,13 @@ switchboard.ai.
 
 ## Turning automatic checks off
 
-Click the version chip to open **About this build** and untick **Check for
-updates automatically**. That switches off the startup check and the daily one.
-The **Check for updates…** button next to it keeps working — turning off the
-automatic check doesn't take the manual one away.
+Press **`Ctrl+,`** for Settings and untick **Check for updates automatically**
+under **Advanced**. That switches off the startup check and the daily one.
+
+The **Check for updates…** button in the **About** panel keeps working — turning
+off the automatic check doesn't take the manual one away. That is why the two
+are in different places: one is a preference, the other is something you do to
+the build you are looking at.
 
 ## If it can't check
 

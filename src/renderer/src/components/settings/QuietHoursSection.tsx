@@ -1,29 +1,36 @@
 // Quiet hours (P2-E14-05b, §5.9) — the one surface that sets the window.
 //
-// **Why a modal and not a chip.** The title bar already carries eleven chips;
-// a twelfth would be a settings screen assembled one control at a time by
-// whoever shipped last, which is how a title bar becomes a toolbar nobody can
-// read. Quiet hours are also the wrong shape for a chip: a chip is a toggle you
-// flip while working, and this is two times you type once and then forget for a
-// year. So it lives where the other set-it-once surface lives — a palette
-// command and a button in the About panel, exactly like `PushSetupDialog`. When
-// the real settings screen lands (#528 may relocate it), these controls move
-// into it and this file goes away.
+// This was `QuietHoursDialog.tsx` until #885, and that file's own header said
+// what would happen to it: "when the real settings screen lands, these controls
+// move into it and this file goes away." It has. What moved is the CONTROL and
+// every invariant it carries; the modal chrome around it — scrim, click-away,
+// focus capture, Escape — is now `SettingsDialog.tsx`'s, once, for the whole
+// screen, instead of three near-copies.
 //
-// The dialog shape — scrim, click-away, focus capture, Escape — is
-// `PushSetupDialog.tsx`'s, which is `AboutPanel.tsx`'s: two modals that behave
-// differently is a bug report waiting to happen.
+// The three invariants this section is NOT allowed to lose in the move, each
+// pinned by a test that moved with it:
+//
+//  1. one-shot draft seeding that never eats a keystroke;
+//  2. the SHARED `isUsableQuietWindow` validator, never a looser local copy;
+//  3. "a control that refuses silently is the thing this is least allowed to
+//     be" — every refusal puts a reason on screen.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { QuietState, isQuietTime, isUsableQuietWindow } from '../../../shared/quiet-hours';
+import { QuietState, isQuietTime, isUsableQuietWindow } from '../../../../shared/quiet-hours';
+import { SettingItem, itemListStyle } from './controls';
 
-export interface QuietHoursDialogProps {
+export interface QuietHoursSectionProps {
+  /**
+   * Whether the settings modal is open. The section is only mounted while it
+   * is, so this is `true` in every live render — it is a prop anyway because
+   * the seeding rules below are stated in terms of an OPENING, and a test that
+   * exercises "re-seeds on the next opening" has to be able to say so.
+   */
   open: boolean;
-  onClose: () => void;
   /**
    * null only for the frame before main answers. Main owns the clock the rules
    * are evaluated against, so `active` is asked rather than computed here — a
-   * dialog that worked out its own "on right now" would be free to disagree
+   * section that worked out its own "on right now" would be free to disagree
    * with the engine about whether it is 07:00 yet.
    */
   state: QuietState | null;
@@ -43,10 +50,8 @@ const isTime = isQuietTime;
 const DEFAULT_START = '22:00';
 const DEFAULT_END = '07:00';
 
-export function QuietHoursDialog(props: QuietHoursDialogProps): React.JSX.Element | null {
+export function QuietHoursSection(props: QuietHoursSectionProps): React.JSX.Element | null {
   const { t } = useTranslation();
-  const returnFocusTo = React.useRef<HTMLElement | null>(null);
-  const dialog = React.useRef<HTMLDivElement | null>(null);
   const configured = props.state?.window ?? null;
   // Drafts, so a half-typed "2" in the hours box does not write `02:00` to the
   // store and re-render the field out from under the user's next keystroke.
@@ -57,15 +62,14 @@ export function QuietHoursDialog(props: QuietHoursDialogProps): React.JSX.Elemen
   /** …or has the user already typed, making the answer no longer theirs to take? */
   const touched = React.useRef(false);
   /**
-   * The prefix for every `id` in this dialog (#654). A HOOK, so it sits with the
-   * others and above the `props.open` early return. Same argument as
-   * `PushSetupDialog.tsx`, which carries it in full: a LITERAL `id` is a name
-   * rendered content can address, `id` survives the sanitizer profile, and
-   * `<label for>` binds to the FIRST element in tree order with that id — so a
-   * `quiet-field-start` planted EARLIER than this dialog would take this label
-   * away from this field.
+   * The prefix for every `id` in this section (#654). A HOOK, so it sits with
+   * the others and above the `props.open` early return. `PushSection.tsx`
+   * carries the argument in full: a LITERAL `id` is a name rendered content can
+   * address, `id` survives the sanitizer profile, and `<label for>` binds to the
+   * FIRST element in tree order with that id — so a `quiet-field-start` planted
+   * EARLIER than this section would take this label away from this field.
    *
-   * "EARLIER" IS A REAL CONDITION: `App.tsx` renders this dialog before
+   * "EARLIER" IS A REAL CONDITION: `App.tsx` renders the settings modal before
    * `SessionGrid`, so feed and viewer content is always later and never
    * captured these ids. Prophylaxis against a reorder, not a live fix — and
    * `React.useId()` alone is not a secret either (React numbers client ids
@@ -77,13 +81,9 @@ export function QuietHoursDialog(props: QuietHoursDialogProps): React.JSX.Elemen
   const fieldId = React.useId();
 
   React.useEffect(() => {
-    if (!props.open) {
-      seeded.current = false;
-      touched.current = false;
-      return;
-    }
-    returnFocusTo.current = document.activeElement as HTMLElement | null;
-    dialog.current?.focus();
+    if (props.open) return;
+    seeded.current = false;
+    touched.current = false;
   }, [props.open]);
 
   /**
@@ -93,7 +93,7 @@ export function QuietHoursDialog(props: QuietHoursDialogProps): React.JSX.Elemen
    * Both halves of that matter, and getting either wrong is a data-loss bug
    * rather than a cosmetic one:
    *
-   * - **Not on `open` alone.** `App` fetches the state when the dialog opens,
+   * - **Not on `open` alone.** `App` fetches the state when the modal opens,
    *   so `props.state` is null on the first render. Seeding then would show
    *   22:00–07:00 to someone whose window is 23:00–06:00 — and the moment they
    *   nudged one field, the write-through below would send the OTHER field's
@@ -103,7 +103,7 @@ export function QuietHoursDialog(props: QuietHoursDialogProps): React.JSX.Elemen
    *   previous keystroke landed.
    * - **And never over a keystroke.** The answer is one IPC round trip away,
    *   which is not long — but it is long enough for someone who opened this
-   *   dialog to change one number and started typing immediately, and a form
+   *   screen to change one number and started typing immediately, and a form
    *   that eats the first thing you type is a form you stop trusting. Once the
    *   user has touched a field, the drafts are theirs and the answer only ever
    *   feeds the status line.
@@ -117,16 +117,10 @@ export function QuietHoursDialog(props: QuietHoursDialogProps): React.JSX.Elemen
 
   if (!props.open) return null;
 
-  const close = (): void => {
-    props.onClose();
-    const el = returnFocusTo.current;
-    requestAnimationFrame(() => el?.focus?.());
-  };
-
   const on = configured !== null;
   // Why the pair is unusable, if it is — `null` when it is fine. Both branches
   // put a REASON on screen: a control that refuses silently is the thing this
-  // dialog is least allowed to be, since its whole subject is a feature you
+  // section is least allowed to be, since its whole subject is a feature you
   // cannot see working. (An `<input type="time">` can be cleared to `''`, which
   // is how `missing` happens.)
   const problem: 'same' | 'missing' | null =
@@ -178,62 +172,9 @@ export function QuietHoursDialog(props: QuietHoursDialogProps): React.JSX.Elemen
   );
 
   return (
-    <div
-      onMouseDown={close}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 51,
-        background: 'var(--scrim)',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'flex-start',
-        paddingBlockStart: '10vh',
-      }}
-    >
-      <div
-        ref={dialog}
-        role="dialog"
-        aria-modal="true"
-        aria-label={t('quiet.title')}
-        tabIndex={-1}
-        onMouseDown={(e) => e.stopPropagation()}
-        onKeyDown={(e) => {
-          e.stopPropagation();
-          if (e.key === 'Escape') {
-            e.preventDefault();
-            close();
-          }
-        }}
-        style={{
-          inlineSize: 'min(460px, 94vw)',
-          maxBlockSize: '80vh',
-          overflowY: 'auto',
-          background: 'var(--panel)',
-          border: '1px solid var(--border)',
-          borderRadius: 10,
-          boxShadow: 'var(--tab-lift)',
-          fontFamily: 'var(--font-ui)',
-          color: 'var(--text)',
-          outline: 'none',
-        }}
-      >
-        <div
-          style={{
-            padding: '11px 14px',
-            borderBlockEnd: '1px solid var(--border)',
-            background: 'var(--panel2)',
-            fontSize: 13,
-            fontWeight: 600,
-          }}
-        >
-          {t('quiet.title')}
-        </div>
-        <p style={{ margin: 0, padding: '10px 14px 0', fontSize: 11.5, color: 'var(--muted)' }}>
-          {t('quiet.intro')}
-        </p>
-
-        <section style={{ display: 'grid', gap: 10, padding: '12px 14px' }}>
+    <div data-settings-block="quiet-hours" style={itemListStyle}>
+      <SettingItem item="quiet-hours" label={t('quiet.title')} blurb={t('quiet.intro')}>
+        <div style={{ display: 'grid', gap: 10 }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5 }}>
             <input
               type="checkbox"
@@ -259,34 +200,16 @@ export function QuietHoursDialog(props: QuietHoursDialogProps): React.JSX.Elemen
             </span>
           )}
           <span style={{ fontSize: 11, color: 'var(--faint)' }}>{t('quiet.overnightHint')}</span>
-        </section>
+        </div>
+      </SettingItem>
 
-        {/* ── what it does, and what it deliberately does not ─────────────── */}
-        <section
-          style={{
-            display: 'grid',
-            gap: 6,
-            padding: '12px 14px',
-            borderBlockStart: '1px solid var(--border)',
-          }}
-        >
-          <h2 style={{ margin: 0, fontSize: 12, fontWeight: 600 }}>{t('quiet.whatHappens')}</h2>
+      {/* ── what it does, and what it deliberately does not ─────────────── */}
+      <SettingItem item="quiet-hours-effect" label={t('quiet.whatHappens')}>
+        <div style={{ display: 'grid', gap: 6 }}>
           <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{t('quiet.personFacing')}</span>
           <span style={{ fontSize: 11.5, color: 'var(--muted)' }}>{t('quiet.machineFacing')}</span>
-        </section>
-
-        {/* A feature whose whole job is to do nothing is one the user cannot
-            tell is working. These two lines are the proof it is. */}
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: 8,
-            padding: '10px 14px',
-            borderBlockStart: '1px solid var(--border)',
-          }}
-        >
+          {/* A feature whose whole job is to do nothing is one the user cannot
+              tell is working. This line is the proof it is. */}
           <span data-quiet-status style={{ fontSize: 11, color: 'var(--faint)' }}>
             {!props.state
               ? t('quiet.status.unknown')
@@ -296,23 +219,8 @@ export function QuietHoursDialog(props: QuietHoursDialogProps): React.JSX.Elemen
                   ? t('quiet.status.idle', { count: props.state.heldCount })
                   : t('quiet.status.off')}
           </span>
-          <button
-            onClick={close}
-            style={{
-              background: 'var(--chip)',
-              color: 'var(--text)',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-chip)',
-              padding: '4px 12px',
-              cursor: 'pointer',
-              fontFamily: 'var(--font-ui)',
-              fontSize: 11.5,
-            }}
-          >
-            {t('quiet.close')}
-          </button>
         </div>
-      </div>
+      </SettingItem>
     </div>
   );
 }

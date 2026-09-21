@@ -168,7 +168,9 @@ test.describe('auto task labels (E7-06)', () => {
     await w.keyboard.press('Control+Shift+P');
     await w.getByPlaceholder('Type a command or a session name…').fill('task label size');
     await w.keyboard.press('Enter');
-    const dialog = w.getByRole('dialog', { name: 'Task label size' });
+    // #885: `view.taskLabelSize` is an alias now — it opens Settings at its
+    // Appearance section, where the radio group lives.
+    const dialog = w.getByRole('dialog', { name: 'Settings' });
     await expect(dialog).toBeVisible();
 
     await dialog.locator('[data-task-label-size="compact"]').click();
