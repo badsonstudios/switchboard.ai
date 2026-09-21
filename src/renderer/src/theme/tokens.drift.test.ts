@@ -887,6 +887,62 @@ describe.each(builtinThemes.map((t) => [t.id, t] as const))(
   }
 );
 
+// --- Words on the IDENTITY WASH, in EVERY shipped theme (#905) -------------
+//
+// The open tab and its card header are washed in the session's accent
+// (`identityWash()`), and the accent is a FIELD there as it is on the badge.
+// The words on that wash are `--text` — the header's label and buttons, and the
+// open tab's title in every group — so that is the pair measured here, for all
+// eight accents in all four themes, at the strength tokens.css actually ships.
+//
+// `--muted` is deliberately NOT measured, because it is deliberately not
+// written on the wash: it measures 2.87:1 on nordic at 24%, and no strength
+// saves it (bare `--panel2` is already only 4.55:1). The header's secondary
+// chips carry their own `--panel2` field instead, which e2e/tab-header.spec.ts
+// measures as Chromium paints it.
+
+/** the wash strength, READ from tokens.css — tuning it re-runs this guard */
+const IDENTITY_WASH = (() => {
+  const v = declaredValues(block(':root {\n  /* status machine'))['--identity-wash'];
+  const m = /^([\d.]+)%$/.exec(v ?? '');
+  return m ? Number(m[1]) / 100 : NaN;
+})();
+
+it('has an identity wash to measure', () => {
+  // a renamed or reformatted token would make every ratio below NaN-and-pass
+  expect(IDENTITY_WASH).toBeGreaterThan(0);
+  expect(IDENTITY_WASH).toBeLessThan(1);
+});
+
+describe.each(builtinThemes.map((t) => [t.id, t] as const))(
+  '%s: words on the identity wash',
+  (id, theme) => {
+    const tokens = resolved(theme);
+    it.each(ACCENT_TOKENS)('--text on the %s wash clears 4.5:1', (accent) => {
+      const wash = mix(tokens[accent], tokens['--panel2'], IDENTITY_WASH);
+      expect(
+        ratio(tokens['--text'], wash),
+        `${id}: --text on ${accent} at ${IDENTITY_WASH * 100}% over --panel2 (${tokens['--text']} on ${wash})`
+      ).toBeGreaterThanOrEqual(4.5);
+    });
+  }
+);
+
+// Every tab painted with the wash must be written in `--text`. The open tab in
+// the focused group always was; #905 washed the open tab in the OTHER groups
+// too, whose ink used to be `--muted`.
+describe('the washed tabs are written in --text', () => {
+  const dv = fs
+    .readFileSync(path.join(__dirname, 'dockview-tokens.css'), 'utf8')
+    .replace(/\r\n/g, '\n');
+  it.each([
+    '--dv-activegroup-visiblepanel-tab-color',
+    '--dv-inactivegroup-visiblepanel-tab-color',
+  ])('%s', (token) => {
+    expect(new RegExp(`^\\s*${token}:\\s*var\\(--text\\);`, 'm').test(dv)).toBe(true);
+  });
+});
+
 // --- The urgency lamp's STATE MODEL, in EVERY shipped theme (#267) ----------
 //
 // The pill above is one rule with one fill. The lamp is a state MATRIX, and

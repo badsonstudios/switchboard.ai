@@ -30,10 +30,14 @@
   /* --- surfaces --------------------------------------------------------- */
   --dv-group-view-background-color: var(--card-bg);
   --dv-tabs-and-actions-container-background-color: var(--panel2);
+  /* The OPEN tab's fill is painted by our tab content, not by these (#905 —
+     see ".identity-tab" below, which also covers the drag ghost). Unselected
+     tabs are transparent on the strip so the open one is the only filled
+     shape. */
   --dv-activegroup-visiblepanel-tab-background-color: var(--panel);
-  --dv-activegroup-hiddenpanel-tab-background-color: var(--panel2);
+  --dv-activegroup-hiddenpanel-tab-background-color: transparent;
   --dv-inactivegroup-visiblepanel-tab-background-color: var(--panel);
-  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--panel2);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: transparent;
   /* NOT transparent: dockview reuses this for the tab focus ring
      (.dv-tab:focus-within::after). The gap already separates tabs, so the
      divider is hidden further down instead — a keyboard user keeps a ring. */
@@ -43,7 +47,10 @@
   /* dropdown rows get an explicit color further down; these drive the strip */
   --dv-activegroup-visiblepanel-tab-color: var(--text);
   --dv-activegroup-hiddenpanel-tab-color: var(--muted);
-  --dv-inactivegroup-visiblepanel-tab-color: var(--muted);
+  /* `--text`, not `--muted` (#905): every group's open tab is washed in its
+     accent, and `--muted` on that wash is 2.87:1 on nordic. What still marks
+     the FOCUSED group's tab is bold, below, plus the group's accent frame. */
+  --dv-inactivegroup-visiblepanel-tab-color: var(--text);
   --dv-inactivegroup-hiddenpanel-tab-color: var(--muted);
 
   /* --- lines, scrollbars, overlays -------------------------------------- */
@@ -116,6 +123,67 @@
   border-start-end-radius: var(--dv-tab-border-radius);
   border-end-start-radius: 0;
   border-end-end-radius: 0;
+}
+
+/*
+ * WHICH TAB IS OPEN (#905, the owner's "style B").
+ *
+ * The open tab used to differ from the rest by one fill step (`--panel` against
+ * `--panel2`), and the card header right under it was `--panel2` — the colour
+ * of the UNSELECTED tabs, so the open tab did not even look joined to its own
+ * card. Now the open tab and its header are washed in the session's identity
+ * accent (`identityWash()`, one formula for both), the rest are transparent on
+ * the strip in `--muted`, and the open tab's words are `--text`.
+ *
+ * The wash is painted by `.identity-tab`, our content box, because its value is
+ * set on that element and custom properties only flow down. So dockview's own
+ * padding moves onto it (block here; inline is `IdentityTab`'s inline 16px,
+ * which is dockview's 0.5rem plus the 8px it always had — the same tab width
+ * as before) and the tab clips it to its rounded top.
+ *
+ * SPLIT LAYOUTS: every group's open tab is washed — it is what that group shows
+ * — and only the FOCUSED group's is bold. With the group's accent frame, "which
+ * one am I in" still has one answer. Not hue alone (§5.32): bold, and the
+ * `--text`/`--muted` step, are both luminance cues.
+ */
+.dv-tabs-container > .dv-tab {
+  padding: 0;
+  overflow: hidden;
+  font-weight: 500;
+}
+.dv-tabs-container > .dv-tab .identity-tab {
+  padding-block: 0.25rem;
+  box-sizing: border-box;
+}
+.dv-tabs-container > .dv-tab.dv-active-tab .identity-tab {
+  background: var(--tab-wash, var(--panel));
+}
+.dv-groupview.dv-active-group > .dv-tabs-and-actions-container .dv-tab.dv-active-tab {
+  font-weight: 700;
+}
+/* The drag ghost: dockview clones `.dv-tab` with its COMPUTED style inlined
+   (tab.js `_buildGhostElement`) and parks it outside the strip, where the rules
+   above no longer match its content — and an unselected tab's computed fill is
+   transparent now. Painting the wash here gives every dragged tab its
+   session's colour, whichever tab it was. */
+.dv-tab-ghost-drag .identity-tab {
+  background: var(--tab-wash, var(--panel));
+}
+/* The overflow dropdown's rows are not in `.dv-tabs-container`, so they keep
+   the one weight the chip title used to hard-code before it inherited. */
+.dv-tabs-overflow-container .dv-tab {
+  font-weight: 600;
+}
+/* Reserve the BOLD width, so opening a tab does not shove the ones after it.
+   Zero-height and hidden: it sizes the title's box and paints nothing, and a
+   hidden pseudo-element is in neither textContent nor the accessible name. */
+.identity-chip-title::after {
+  content: attr(data-title);
+  display: block;
+  block-size: 0;
+  overflow: hidden;
+  visibility: hidden;
+  font-weight: 700;
 }
 
 /* The tab-overflow dropdown (single-row mode): our panel, our text, our border,

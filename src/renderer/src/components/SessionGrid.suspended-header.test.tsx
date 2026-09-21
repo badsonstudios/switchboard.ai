@@ -188,13 +188,21 @@ describe('a suspended card still has a header', () => {
     expect(created).toBe(0);
   });
 
-  it('carries the card identity — name, badge and accent (§5.11)', async () => {
+  it('carries the card identity — badge and accent (§5.11)', async () => {
     await mountCard();
-    expect(host.querySelector('[data-testid="card-header-name"]')?.textContent).toBe('acme');
     expect(host.querySelector('[data-testid="identity-badge"]')?.textContent).toBe('ts');
     // the accent is the card record's, not a grey fallback — the same field the
     // card TAB and the live header read
     expect(header()!.style.borderInlineStart).toContain('var(--accent-teal)');
+    // ...and washes the header the way it washes the open tab above (#905)
+    expect(header()!.getAttribute('style')).toContain(
+      'color-mix(in srgb, var(--accent-teal) var(--identity-wash), var(--panel2))'
+    );
+  });
+
+  it('leaves the name to the tab above it (#905)', async () => {
+    await mountCard();
+    expect(header()!.textContent).not.toContain('acme');
   });
 
   it('falls back to the neutral accent before the card list has landed', async () => {
@@ -206,6 +214,8 @@ describe('a suspended card still has a header', () => {
     await mountCard();
     expect(header()).not.toBeNull();
     expect(header()!.style.borderInlineStart).toContain('var(--faint)');
+    // no accent, no wash: the plain surface an accent-less open tab paints
+    expect(header()!.getAttribute('style')).toContain('background: var(--panel)');
     expect(host.querySelector('[data-testid="identity-badge"]')).toBeNull();
   });
 

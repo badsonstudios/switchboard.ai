@@ -101,6 +101,22 @@ export function identityBadgeStyle(accent?: string): React.CSSProperties {
   };
 }
 
+/**
+ * The identity WASH (#905) — the open tab and its card header, washed in the
+ * session's accent so the tab visibly joins the card under it. One definition,
+ * two render sites, for the reason `identityBadgeStyle` is one: two copies of a
+ * colour formula are one edit away from being two identities.
+ *
+ * The strength is `--identity-wash` in tokens.css, where the contrast budget it
+ * spends is written down and measured. NO ACCENT is `--panel`: plain, and the
+ * same surface an accent-less open tab (a document, a Changes tab) paints.
+ */
+export function identityWash(accent?: string): string {
+  return accent
+    ? `color-mix(in srgb, ${accent} var(--identity-wash), var(--panel2))`
+    : 'var(--panel)';
+}
+
 export function IdentityChip(props: {
   title: string;
   accent?: string;
@@ -119,11 +135,19 @@ export function IdentityChip(props: {
           flexShrink: 0,
         }}
       />
+      {/* colour and weight are INHERITED (#905): the tab strip says which tab
+          is open — `--text` and bold for the focused group's, `--muted` for the
+          rest — and a fixed ink here would overrule it. `data-title` feeds
+          `.identity-chip-title::after` in dockview-tokens.css, which reserves
+          the BOLD width so opening a tab does not shove its neighbours. */}
       <span
+        className="identity-chip-title"
+        data-title={props.title}
         style={{
+          display: 'inline-block',
           fontSize: props.compact ? 11 : 12,
-          fontWeight: 600,
-          color: 'var(--text)',
+          fontWeight: 'inherit',
+          color: 'inherit',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',

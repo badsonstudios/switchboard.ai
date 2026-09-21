@@ -5,6 +5,30 @@
 Each card has three tabs: **Session**, **Changes**, and **History**. Session is
 the one you'll live in.
 
+## Which session is open
+
+When several sessions are docked together, each one has a tab along the top
+with its name on it. **The open tab is shaded in that session's own colour**
+(the same colour as its badge), and so is the bar right under it, the **card
+header**. The two read as one piece. The open tab's name is bold. The other
+tabs have no shading and lighter text.
+
+If you've split the window into side-by-side groups, each group's open tab is
+shaded, because that's what the group is showing. Only the group you're
+working in has its tab name in bold, and that group also has a blue frame
+around it.
+
+The card header doesn't repeat the session's name, because the tab right above
+it already shows it. The header shows:
+
+- the session's **badge**, filled in its colour;
+- its **task label**, or **+ task label** if it doesn't have one yet (click it
+  to type one);
+- its status, and the card's buttons, over on the right.
+
+Double-click an empty part of the header to maximize the session. Double-click
+again to put the layout back.
+
 ## The Session tab
 
 This is the conversation, rendered to be read rather than scrolled past:

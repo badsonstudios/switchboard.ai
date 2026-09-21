@@ -1,4 +1,4 @@
-// The card header's name, and where it comes from (#250).
+// A card's name, and where it comes from (#250).
 //
 // The shipped bug was ORDER: the header read dockview's `props.api.title`,
 // which is set once at `addPanel` and never again, so a session renamed from
@@ -19,8 +19,7 @@ describe('cardHeaderTitle (issue 250)', () => {
   });
 
   it('falls back to the folder when nothing has named the card', () => {
-    // its LAST SEGMENT: the header's name span is nowrap, and an absolute path
-    // would push the status pill and the window controls out of the row
+    // its LAST SEGMENT: an absolute path is a poor name on a tab or in the rail
     expect(cardHeaderTitle(undefined, undefined, 'C:\\Projects\\acme')).toBe('acme');
     expect(cardHeaderTitle(undefined, undefined, '/home/dan/acme/')).toBe('acme');
     expect(cardHeaderTitle(undefined, undefined, 'acme')).toBe('acme');

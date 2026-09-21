@@ -201,7 +201,10 @@ test.describe('a session card', () => {
     // that is not running.
     const header = window.getByTestId('card-header');
     await expect(header).toBeVisible();
-    await expect(header.getByTestId('card-header-name')).toHaveText(path.basename(gone));
+    // #905: the name is the TAB's, right above, and the header no longer
+    // repeats it — the announcer above is what still says it to a reader
+    await expect(window.locator('.dv-tab.dv-active-tab')).toContainText(path.basename(gone));
+    await expect(header).not.toContainText(path.basename(gone));
     await expect(header.locator('.status-pill')).toHaveText('not started');
     // Try again and Close are the PANEL's, two centimetres below; a header copy
     // of them would be a second way to do the same thing on the smallest
@@ -538,9 +541,14 @@ test.describe('a session card', () => {
   // for a card, 1.33px for a viewer — while `toBeVisible()` passes on both.
   // Width is what actually goes wrong, so width is what is asserted.
 
-  /** the card whose header says `title`, in this window */
+  /** the card whose OPEN TAB says `title`, in this window — by its tab, since
+   *  #905 took the name out of the header */
   const cardFor = (w: Page, title: string): Locator =>
-    w.getByTestId('card-header').filter({ hasText: title });
+    w
+      .locator('.dv-groupview')
+      .filter({ has: w.locator('.dv-tab.dv-active-tab', { hasText: title }) })
+      .getByTestId('card-header')
+      .filter({ visible: true });
 
   /**
    * On screen at a size a human could use it — MEASURED, not `toBeVisible`.
@@ -750,7 +758,12 @@ test.describe('a session card', () => {
   // `setTitle`. So the rail renamed, the record renamed, and the card went on
   // announcing the name it was born with. The header now reads the session
   // store, which is where the rename actually lands.
+  //
+  // #905 took the name out of the header — the tab right above it says it, and
+  // the header said it twice. The tab reads the same store (#264), so these
+  // tests follow the NAME to where it is on screen now: the open tab.
   const cardHeaderIn = (p: Page): Locator => p.getByTestId('card-header').filter({ visible: true });
+  const openTabIn = (p: Page): Locator => p.locator('.dv-tabs-container .dv-tab.dv-active-tab');
 
   /** rename the one session from the rail, the way a user does */
   async function renameFromRail(w: Page, to: string): Promise<void> {
@@ -761,28 +774,31 @@ test.describe('a session card', () => {
     await field.press('Enter');
   }
 
-  test('the card header follows a rename from the rail (#250)', async () => {
+  test('the card follows a rename from the rail (#250)', async () => {
     const folder = tempProjectFolder();
     const name = path.basename(folder);
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
-    const header = cardHeaderIn(w);
-    await expect(header.getByText(name, { exact: true })).toBeVisible({ timeout: 25_000 });
+    const tab = openTabIn(w);
+    await expect(tab.getByText(name, { exact: true })).toBeVisible({ timeout: 25_000 });
 
     await renameFromRail(w, 'renamed-card');
 
-    await expect(header.getByText('renamed-card', { exact: true })).toBeVisible({
+    await expect(tab.getByText('renamed-card', { exact: true })).toBeVisible({
       timeout: 10_000,
     });
-    await expect(header.getByText(name, { exact: true })).toHaveCount(0);
+    await expect(tab.getByText(name, { exact: true })).toHaveCount(0);
+    // and the header, which no longer shows a name, did not grow one back
+    await expect(cardHeaderIn(w)).not.toContainText('renamed-card');
   });
 
-  // A popout has no rail and no tab strip, so its header is the ONLY thing in
-  // the window that says which session it is — and the rename it has to follow
-  // arrives from a different OS window. dockview ADOPTS the group's DOM rather
-  // than re-rendering it, so this is really asserting nothing about the header
+  // A popout has no rail, so its tab is the only thing in the window that says
+  // which session it is (it DOES have a tab strip — this comment said otherwise
+  // until #905 looked) — and the rename it has to follow arrives from a
+  // different OS window. dockview ADOPTS the group's DOM rather than
+  // re-rendering it, so this is really asserting nothing about the name
   // depended on living in the main window.
-  test('a popped-out card header follows a rename too (#250)', async () => {
+  test('a popped-out card follows a rename too (#250)', async () => {
     skipPopoutOnLinux();
     const folder = tempProjectFolder();
     const name = path.basename(folder);
@@ -801,15 +817,15 @@ test.describe('a session card', () => {
       .toBe(1);
     const popout = app.windows().find((p) => p.url().includes('popout.html'))!;
     await popout.waitForLoadState('domcontentloaded');
-    const header = cardHeaderIn(popout);
-    await expect(header.getByText(name, { exact: true })).toBeVisible({ timeout: 15_000 });
+    const tab = openTabIn(popout);
+    await expect(tab.getByText(name, { exact: true })).toBeVisible({ timeout: 15_000 });
 
     await renameFromRail(w, 'popped-and-renamed');
-    await expect(header.getByText('popped-and-renamed', { exact: true })).toBeVisible({
+    await expect(tab.getByText('popped-and-renamed', { exact: true })).toBeVisible({
       timeout: 15_000,
     });
     // the adopted DOM must not end up carrying BOTH names
-    await expect(header.getByText(name, { exact: true })).toHaveCount(0);
+    await expect(tab.getByText(name, { exact: true })).toHaveCount(0);
 
     // hand the second OS window back before teardown rather than leaving it to
     // the tree-kill: a live popout has outlived cleanup on CI before
@@ -821,35 +837,36 @@ test.describe('a session card', () => {
   // so `''` was a legal title), and the header's name span used to be `nowrap`
   // with no floor, so the OTHER thing a title can be — 120 characters — grew
   // the header past its card and carried the status pill and the window buttons
-  // off the end with it.
-  test('a name cannot be erased, and a pathological one clips instead of the controls (#294)', async () => {
+  // off the end with it. #905 took the name out of the header, so the second
+  // half now holds that a pathological name cannot reach the header at all.
+  test('a name cannot be erased, and a pathological one never costs the header its controls (#294)', async () => {
     const folder = tempProjectFolder();
     const name = path.basename(folder);
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
     const header = cardHeaderIn(w);
+    const tab = openTabIn(w);
     const row = w.locator('nav .rail-row').first();
-    await expect(header.getByText(name, { exact: true })).toBeVisible({ timeout: 25_000 });
+    await expect(tab.getByText(name, { exact: true })).toBeVisible({ timeout: 25_000 });
     await expect(row).toContainText(name, { timeout: 15_000 });
 
     // erasing it commits nothing: the edit ends and the name stands, in the
-    // rail row as well as the header — the row is the one place you would go
+    // rail row as well as the tab — the row is the one place you would go
     // to put a name back, and it renders the raw title
     await renameFromRail(w, '');
     await expect(w.locator('nav .rail-row input')).toHaveCount(0);
     await expect(row).toContainText(name);
-    await expect(header.getByText(name, { exact: true })).toBeVisible();
+    await expect(tab.getByText(name, { exact: true })).toBeVisible();
 
     // 120 chars with no space in it: main's cap, and the worst case for a row
     // that wants to break at one
     const long = 'W'.repeat(120);
     await renameFromRail(w, long);
-    const nameSpan = header.getByTestId('card-header-name');
-    await expect(nameSpan).toHaveText(long, { timeout: 10_000 });
+    await expect(tab).toContainText(long, { timeout: 10_000 });
 
-    // the name is what gave way...
-    expect(await nameSpan.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
-    // ...and the row still fits inside its own card
+    // the name is the tab's, and never reaches the header...
+    await expect(header).not.toContainText(long);
+    // ...so the row still fits inside its own card
     expect(await header.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
 
     // the controls that were being pushed off are still inside the header box

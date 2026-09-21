@@ -306,8 +306,13 @@ test.describe('layout modes (E9-07)', () => {
 
     // BY NAME rather than by `cardHeader`: a card handed back by a closed
     // popout does not always land in the group it left, so "the visible header"
-    // can legitimately be two of them here.
-    const suspendedHeader = w.getByTestId('card-header').filter({ hasText: first });
+    // can legitimately be two of them here. By its group's OPEN TAB, because
+    // #905 took the name out of the header itself.
+    const suspendedHeader = w
+      .locator('.dv-groupview')
+      .filter({ has: w.locator('.dv-tab.dv-active-tab', { hasText: first }) })
+      .getByTestId('card-header')
+      .filter({ visible: true });
     await expect(suspendedHeader).toBeVisible({ timeout: 15_000 });
     await suspendedHeader.dblclick({ position: { x: 4, y: 4 } });
 

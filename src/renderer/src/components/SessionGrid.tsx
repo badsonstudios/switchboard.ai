@@ -23,7 +23,7 @@ import { LABEL_LINES } from '../../../shared/task-label-size';
 import { DEFAULT_PANEL_ID, PanelContext, PanelId } from '../extensibility/contributions';
 import { listPanels, panelBadge, panelEnabled } from '../extensibility/panels';
 import { ContributionBoundary } from '../extensibility/boundary';
-import { IdentityChip, identityBadgeStyle } from './IdentityChip';
+import { IdentityChip, identityBadgeStyle, identityWash } from './IdentityChip';
 import { DiffPane } from './DiffPane';
 import { DocumentViewer } from './DocumentViewer';
 import { SessionHistoryDialog } from './SessionHistoryDialog';
@@ -387,7 +387,24 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
       ? 'grid.closeDocumentTab'
       : 'grid.closeDerivedTab';
   return (
-    <div style={{ paddingInline: 8, display: 'flex', alignItems: 'center', gap: 4, blockSize: '100%' }}>
+    // `--tab-wash` rides on THIS element because a custom property only flows
+    // down: `.dv-tab` is dockview's, above us, and cannot read a value set here.
+    // So the open tab's wash is painted by this box (dockview-tokens.css, #905)
+    // and dockview's own padding moves onto it: 16 = its 0.5rem plus the 8 this
+    // box always had, so a tab is exactly as wide as before.
+    <div
+      className="identity-tab"
+      style={
+        {
+          '--tab-wash': identityWash(accent),
+          paddingInline: 16,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 4,
+          blockSize: '100%',
+        } as React.CSSProperties
+      }
+    >
       {/* undefined accent/badge are passed through as undefined on purpose: the
           chip's own fallbacks (grey dot, no badge) stay the behaviour for a
           derived tab and for a card the store has not answered for yet. */}
@@ -408,7 +425,9 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
         style={{
           background: 'transparent',
           border: 'none',
-          color: 'var(--faint)',
+          // the tab's own ink (#905): `--faint` on the open tab's wash measured
+          // 1.58:1 on nordic — a control nobody could find
+          color: 'inherit',
           cursor: 'pointer',
           fontSize: 10,
           lineHeight: 1,
@@ -907,9 +926,9 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       if (cardId) {
         sessionStore.markCardNotStarted({
           id: cardId,
-          // THE HEADER'S OWN FUNCTION, so the row and the card cannot disagree
+          // THE CARD'S OWN FUNCTION, so the row and the card cannot disagree
           // about what this session is called: `props.api.title ?? folder`
-          // would put a whole path in the rail where the header shows a
+          // would put a whole path in the rail where the tab shows a
           // basename, and would let `''` through as a title. The store slot is
           // deliberately `undefined` — it is the row we are about to write.
           title: cardHeaderTitle(undefined, props.api.title, folder),
@@ -1655,9 +1674,11 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 {headerBadge}
               </span>
             )}
-            <span data-testid="card-header-name" style={cheadName}>
-              {headerTitle}
-            </span>
+            {/* NO NAME HERE (#905, the owner's call): the tab right above says
+                it, and the header said it again. It has left the screen, not
+                the accessibility tree: the tab above is in the tree and names
+                the session, the conversation landmark carries the card title,
+                and the card announcer names it whenever it speaks. */}
             {editingLabel ? (
               <input
                 autoFocus
@@ -1696,8 +1717,10 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                   cursor: 'text',
                   fontSize: 11,
                   lineHeight: 1.35,
-                  color: taskLabel ? 'var(--muted)' : 'var(--faint)',
                   fontFamily: 'var(--font-ui)',
+                  // #905: the label sits on the identity wash, where only
+                  // `--text` is AA; the empty prompt gets its own field instead
+                  ...(taskLabel ? { color: 'var(--text)' } : cheadPrompt),
                   // #877: up to `labelLines`, not one ellipsised line. A longer
                   // label is the point now — the model is asked for a phrase
                   // rather than six words — and a header that shows only the
@@ -1727,6 +1750,8 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                   // -ink, not the raw hue: this is 9.5px TEXT on --panel2, where
                   // the hue measures 3.1:1 on daylight (#221)
                   color: live.autonomy === 'full-auto' ? 'var(--status-crashed-ink)' : 'var(--muted)',
+                  // its own field (#905): neither ink is AA on the identity wash
+                  background: 'var(--panel2)',
                   border: '1px solid var(--border)',
                   borderRadius: 4,
                   paddingInline: 5,
@@ -1789,6 +1814,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 fontSize: 9.5,
                 fontFamily: 'var(--font-mono)',
                 color: 'var(--muted)',
+                background: 'var(--panel2)', // its own field on the wash (#905)
                 border: '1px solid var(--border)',
                 borderRadius: 'var(--radius-chip)',
                 paddingInline: 5,
@@ -1857,7 +1883,14 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                   <span
                     role="status"
                     data-testid="card-new-session-error"
-                    style={{ color: 'var(--status-crashed-ink)', fontSize: 10 }}
+                    style={{
+                      color: 'var(--status-crashed-ink)',
+                      // its own field (#905): the ink is 3.31:1 on nordic's wash
+                      background: 'var(--panel2)',
+                      borderRadius: 'var(--radius-chip)',
+                      paddingInline: 5,
+                      fontSize: 10,
+                    }}
                   >
                     {cardError}
                   </span>
@@ -2297,7 +2330,8 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               going away.
 
               The SUSPENDED-APPROPRIATE SUBSET of the live header, and nothing
-              else: identity (accent, badge, name — §5.11's one identity), the
+              else: identity (accent and badge — §5.11's one identity; the name
+              is the tab's since #905), the
               state in a word, and the maximize gesture. Deliberately NOT the
               controls: the collapse/pop-out/⋯ buttons act on a running session,
               and the two things this card genuinely offers — Resume and Close —
@@ -2322,9 +2356,6 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 {headerBadge}
               </span>
             )}
-            <span data-testid="card-header-name" style={cheadName}>
-              {headerTitle}
-            </span>
             <span style={{ flex: 1, minInlineSize: 8 }} />
             <StatusPill status="suspended" label={t('status.suspended')} />
           </div>
@@ -2357,8 +2388,8 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               (SessionGrid.test's #687 block holds both halves of that).
 
               Deliberately the SAME subset as the suspended header, through the
-              same three module-scope pieces (`cheadStyle`, `cheadName`,
-              `maximizeOnDoubleClick`): identity, the state in a word, and the
+              same module-scope pieces (`cheadStyle`, `maximizeOnDoubleClick`):
+              identity, the state in a word, and the
               maximize target — and no controls. Restart/Try again and Close are
               the overlay's own buttons a couple of centimetres below, and a
               header copy of them would be a second way to do the same thing on
@@ -2374,9 +2405,6 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                 {headerBadge}
               </span>
             )}
-            <span data-testid="card-header-name" style={cheadName}>
-              {headerTitle}
-            </span>
             <span style={{ flex: 1, minInlineSize: 8 }} />
             {pill && <StatusPill status={pill.status} label={t(pill.labelKey)} />}
           </div>
@@ -2435,7 +2463,10 @@ function cheadStyle(accent?: string): React.CSSProperties {
     paddingBlock: 7,
     borderBlockEnd: '1px solid var(--border)',
     borderInlineStart: `3px solid ${accent ?? 'var(--faint)'}`,
-    background: 'var(--panel2)',
+    // #905: the same wash as the open tab above, so the two read as one piece.
+    // Words on it are `--text`, or sit on their own `--panel2` field (the
+    // status pill, the chips, the prompt) — `--muted` is not AA on the wash.
+    background: identityWash(accent),
   };
 }
 
@@ -2449,30 +2480,27 @@ const cardColumn: React.CSSProperties = {
   position: 'relative',
 };
 
-/** The session name in a card header. */
-const cheadName: React.CSSProperties = {
-  fontWeight: 650,
-  fontSize: 13,
-  color: 'var(--text)',
-  fontFamily: 'var(--font-ui)',
-  whiteSpace: 'nowrap',
-  // #294. `nowrap` alone made the row a promise it could not keep: a flex
-  // item's automatic minimum size is its own content until its inline-axis
-  // `overflow` stops being `visible` (CSS Sizing 3 §5.2), so a 120-character
-  // title — main's cap — grew the header past its card and carried the status
-  // pill and the window buttons off the end with it. The controls, not the
-  // name, were what got lost. Measured, not assumed: with these two the header
-  // overflows its card by 0px; without them, by 1170px at a 1280-wide window.
-  // This is the pair IdentityChip and the rail rows already truncate with — no
-  // `min-inline-size` needed, and none used there either.
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
+/**
+ * The "+ task label" prompt, on a header that has no label yet (#905).
+ *
+ * It used to be `--faint` text straight on the header — already under AA
+ * (2.50:1 on nordic's `--panel2`), and 1.58:1 once the header took the identity
+ * wash. Its own opaque `--panel2` field puts it back on the surface `--muted`
+ * is measured against, and the dashed edge says what it is: a place to type.
+ */
+const cheadPrompt: React.CSSProperties = {
+  color: 'var(--muted)',
+  background: 'var(--panel2)',
+  border: '1px dashed var(--border)',
+  borderRadius: 'var(--radius-chip)',
+  paddingInline: 6,
 };
 
 const cheadBtn: React.CSSProperties = {
   background: 'transparent',
   border: 'none',
-  color: 'var(--muted)',
+  // `--text`, not `--muted` (#905): these sit straight on the identity wash
+  color: 'var(--text)',
   cursor: 'pointer',
   fontSize: 15,
   lineHeight: 1,

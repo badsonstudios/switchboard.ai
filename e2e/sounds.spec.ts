@@ -51,8 +51,13 @@ function lines<T>(home: string, msg: string): T[] {
 const cues = (home: string): CueLine[] => lines<CueLine>(home, 'sound rule fired');
 const spoken = (home: string): SpeakLine[] => lines<SpeakLine>(home, 'speak rule fired');
 
+// By the group whose OPEN TAB names it: #905 took the name out of the header.
 const card = (w: Page, title: string): Locator =>
-  w.locator('[data-testid="card-header"]').filter({ hasText: title });
+  w
+    .locator('.dv-groupview')
+    .filter({ has: w.locator('.dv-tab.dv-active-tab', { hasText: title }) })
+    .locator('[data-testid="card-header"]')
+    .filter({ visible: true });
 
 const soundEntry = (scope: Locator): Locator => scope.locator('[data-testid="card-sound"]');
 

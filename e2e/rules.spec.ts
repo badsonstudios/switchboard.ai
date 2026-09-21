@@ -47,8 +47,13 @@ function toasts(home: string): ToastLine[] {
 }
 
 /** the header of the card whose title contains `title` — menus are inside it */
+// By the group whose OPEN TAB names it: #905 took the name out of the header.
 const card = (w: Page, title: string): Locator =>
-  w.locator('[data-testid="card-header"]').filter({ hasText: title });
+  w
+    .locator('.dv-groupview')
+    .filter({ has: w.locator('.dv-tab.dv-active-tab', { hasText: title }) })
+    .locator('[data-testid="card-header"]')
+    .filter({ visible: true });
 
 /**
  * The entry is a TOGGLE BUTTON (`aria-pressed`), not a `menuitemcheckbox`: the
