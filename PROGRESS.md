@@ -3,14 +3,30 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ✅ DONE — 2026-09-21: **#733** the multi-question panel walks itself
+> # 🚀 RELEASE — 2026-09-21: **v0.8.93** cut
 >
-> Branch `feature/733-question-panel-advance`, merged on green CI (this entry
-> rides in the same PR — code, docs, tracker and PROGRESS pushed ONCE, so no
-> push cancelled in-flight CI). The merge SHA is recorded by the v0.8.93
-> release PR that follows.
+> Carries **#877** (three-line task labels + size setting), **#883** (instant
+> labels, AI labels on by default), **#885/#879** (the Settings window; the
+> title bar fits) and **#733** (below). Release PR bumps `package.json`, the
+> lock and CHANGELOG together, and opens `0.8.94 — unreleased`; the tag
+> `v0.8.93` is pushed on the squash commit after it merges, which fires
+> `release.yml`. **Verify `gh release list` shows v0.8.93 before telling Dan he
+> has it** — merged is not released.
 >
-> ⚠️ **NOT RELEASED** until v0.8.93 is cut — which is the very next thing.
+> **The hand-tests stop being optional here:** four user-facing changes were
+> stacked unverified. The dogfood tracker's four "In v0.8.93" rows are the
+> list. Still outstanding from v0.8.92, not chased: #873's seven steps, and
+> #864 on the real dual-monitor rig with the monitor POWERED OFF (not locked).
+>
+> **Next up:** nothing nominated.
+
+> # ✅ MERGED — 2026-09-21: **#733** the multi-question panel walks itself
+>
+> **PR #894, squashed to `07a5ae8`.** All four CI jobs verified `pass` against
+> `8389811`, the exact head SHA merged (`--match-head-commit`). **Only #733
+> closed** — diffed against an open-issue baseline taken before the merge.
+> Code, docs, tracker and PROGRESS went up in ONE push, so nothing cancelled
+> in-flight CI.
 >
 > **Three parts, one advance function.** `nextUnanswered(selections, from)`
 > never returns `from`, so "the only unanswered one is where you are" and
@@ -47,9 +63,7 @@
 > glitch. Button row is `flex-wrap` on tabbed panels only; no title-bar or
 > fixed-width row changed, so the Linux font-width trap does not apply.
 >
-> **Next up: cut v0.8.93** (#877, #883, #885/#879, #733). Still waiting on
-> Dan, not chased: v0.8.92 hand-tests (#873 seven steps; #864 needs the real
-> dual-monitor rig with the monitor POWERED OFF, not locked).
+> Released in v0.8.93 — see the release block above.
 
 > # ✅ MERGED — 2026-09-20: **#885** the settings modal, and **#879** with it
 >
