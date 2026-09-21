@@ -1624,8 +1624,9 @@ export function SessionsRail(props: {
                 // is set (CSS Sizing 3 5.2). At ~150px against ~70px of room it
                 // has always overflowed the header; the card's
                 // `overflow: hidden` was hiding it, and that clip had to go so
-                // the pinned block could stick. Same pair `cheadName` carries
-                // for the same reason - and it matters more here, because
+                // the pinned block could stick. Same reason the card header's
+                // name carried this pair until #905 took the name out of the
+                // header - and it matters more here, because
                 // `.rail-scroll` sets only `overflow-y`, which makes the x axis
                 // `auto`: an overflowing header is a horizontal scrollbar on
                 // the whole rail.

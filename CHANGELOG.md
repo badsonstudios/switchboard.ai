@@ -96,6 +96,20 @@ on the floor, and say so in your PR.
 
 ## 0.8.96 — unreleased
 
+### Changed
+
+- **You can tell which tab is open at a glance.** With several sessions
+  docked side by side as tabs, the open one and the bar right under it are now
+  shaded in that session's own colour and read as one piece. The open tab's
+  name is bold, and the other tabs fade back into the strip. With a split
+  layout, every group's open tab is shaded, and the one you're working in is
+  also bold.
+
+- **The session's name is no longer repeated in the bar under its tab.** The
+  tab already says it. The bar now shows the session's badge and its task
+  label, or **+ task label** if it doesn't have one yet (click it to type
+  one).
+
 ## 0.8.95 — 2026-09-21
 
 ### Changed

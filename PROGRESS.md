@@ -3,6 +3,47 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ MERGED — 2026-09-21: **#905** tinted open tab + card header, name out of the header
+>
+> Branch `feature/905-tinted-tab-header`; code, docs, tracker and this block
+> went up in ONE push. The open tab and its card header share one wash,
+> `identityWash()` = `color-mix(accent var(--identity-wash) 24%, --panel2)`.
+> Unselected tabs are transparent in `--muted`. Only the focused group's open
+> tab is bold. The name is gone from all three header branches.
+>
+> **Measured, and it shaped the design:** at 24%, `--text` is AA everywhere
+> (worst nordic 5.91:1). `--muted` is NOT (nordic 2.87:1), and no percentage
+> fixes it. So words on the wash are `--text`, or they sit on their own
+> `--panel2` field: the context chip, the autonomy badge, the popout error and
+> the "+ task label" prompt (now a dashed chip in `--muted`; the old `--faint`
+> was already under AA). High contrast gets no extra outline: bold plus the
+> ink step covers §5.32.
+>
+> **Review** (code-reviewer): no blockers. Taken:
+> - the e2e could pass with no accent at all; it now compares against plain
+>   `--panel` and asserts each theme really switched;
+> - tabs had lost 8px a side; the inline padding is now 16, the same width as
+>   before;
+> - the drag ghost dropped its fill; `.dv-tab-ghost-drag` now paints the wash;
+> - overflow dropdown rows keep weight 600;
+> - stale "header shows the name" comments fixed.
+>
+> Specs that found a header BY NAME (`session`, `layout-modes`, `rules`,
+> `sounds`) now go through the group's open tab. The claim that popouts have
+> no tab strip was wrong: they have one, and it is washed.
+>
+> **Verification:**
+> - typecheck 0, lint 0.
+> - Unit 8753 passed + 1 known flake (#835's budget guard, 74/74 isolated).
+> - Full local e2e alone: 357 passed / 1 failed / 2 skipped, captured exit 1.
+>   The failure is the feed composer-room test, a known #893 flake: 6/6
+>   isolated, 17/17 as a file, sighting logged on #893.
+> - Mutations: e2e 4/4 and drift 2/2 caught.
+>
+> **Dan's hand-test list:** the #905 row in the dogfood tracker. It ships in
+> 0.8.96 (unreleased). **Next up:** nothing nominated; #893 is still the flake
+> worth fixing.
+
 > # 🚀 RELEASE — 2026-09-21: **v0.8.95** cut (carries #899)
 >
 > #899 merged as PR #900 → `13d5826`; all four CI jobs `pass` on `4cdc03a`, the

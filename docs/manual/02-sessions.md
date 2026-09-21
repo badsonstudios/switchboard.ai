@@ -104,9 +104,9 @@ Things worth knowing:
   the label goes back to filling itself in. (Leaving it blank on purpose is not
   the same as never having typed in it — that is why clearing is the way back
   rather than "is it empty?")
-- **No title, no label.** If Claude never names the conversation, the card looks
-  exactly as it did before this existed: the folder name, and **+ task label**
-  waiting for you.
+- **No title, no label.** If Claude never names the conversation, the card
+  header shows **+ task label**, waiting for you to type one. The session's name
+  is on its tab, just above.
 - **It costs nothing.** switchboard is already reading the transcript file; it
   reads one more line out of it. Nothing is sent anywhere, and it does not spend
   a single token of your plan.
@@ -196,8 +196,9 @@ typed yourself are never hidden** — those are your words, not Claude's. Click
 the chip again and the auto labels come straight back; nothing was thrown away.
 - Each session also gets a color and a short badge automatically, so you can
   recognize it without reading. The color is the stripe down the left edge of
-  the card header, the dot in the sessions list — and the dot on the card's own
-  **tab**. The badge is a two- or three-letter note of what the project is
+  the card header, the dot in the sessions list, and the dot on the card's own
+  **tab**. When the tab is open, the tab and the card header under it are
+  also shaded in that color. The badge is a two- or three-letter note of what the project is
   written in (`TS`, `Py`, `Rs`), and it sits next to the name in those same
   places — **filled in the session's own color, with dark lettering on top**, so
   it is a second place the color shows up rather than a second thing to read.

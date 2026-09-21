@@ -1,4 +1,5 @@
-// The name a session card shows in its own header (#250).
+// The name a session card goes by — on its tab, in its announcer, in the rail
+// (#250). It was also the card header's name until #905 left that to the tab.
 
 /**
  * Pick a card's header name from the three sources, most-current first.
@@ -16,8 +17,8 @@
  * rather than the folder — a path is a poor thing to hear read aloud, which is
  * not a reason to blank the screen.
  *
- * The folder is reduced to its LAST SEGMENT: it arrives here absolute, and the
- * header's name span is `nowrap` with nothing else in the row able to give way.
+ * The folder is reduced to its LAST SEGMENT: it arrives here absolute, and a
+ * whole path is a poor name on a tab, in a rail row, or read aloud.
  */
 export function cardHeaderTitle(
   storeTitle: string | undefined,

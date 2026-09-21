@@ -235,6 +235,24 @@
      light fill" is one idea in this palette, not two. */
   --accent-ink-on-fill: #20252e;
 
+  /* How much of a session's accent washes its OPEN tab and its card header
+     (#905, the owner's "style B"): `color-mix(in srgb, <accent> <this>,
+     var(--panel2))`, built by `identityWash()` in IdentityChip.tsx for both, so
+     the tab visibly joins the card under it.
+
+     The accent is a FIELD here too, never ink (§5.11), and the price of that
+     field is paid by the words on it. Measured at 24%: `--text` clears AA on
+     all eight accents in all four themes (nordic worst, 5.91:1). `--muted` does
+     NOT — 2.87:1 on nordic, and no percentage rescues it, because it is only
+     4.55:1 on bare `--panel2` and any accent lightens that dark field. So on
+     the wash, words are `--text`, or they sit on their own opaque `--panel2`
+     field the way the status pill already does. tokens.drift.test.ts reads
+     THIS value and measures the pair, so tuning it is one line and re-checked.
+
+     Not themeable: an accent is theme-independent, and a theme that could
+     deepen the wash could only break the ratio above. */
+  --identity-wash: 24%;
+
   /* typography */
   --font-ui: 'IBM Plex Sans', system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', monospace;

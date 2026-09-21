@@ -200,11 +200,22 @@ describe('an ended card still has a header (#606)', () => {
     expect(created).toBe(1);
   });
 
-  it('carries the card identity — name, badge and accent (§5.11)', async () => {
+  it('carries the card identity — badge and accent (§5.11)', async () => {
     await mountCard();
-    expect(host.querySelector('[data-testid="card-header-name"]')?.textContent).toBe('acme');
     expect(host.querySelector('[data-testid="identity-badge"]')?.textContent).toBe('ts');
     expect(header()!.style.borderInlineStart).toContain('var(--accent-teal)');
+    // the same wash as the open tab above it (#905)
+    expect(header()!.getAttribute('style')).toContain(
+      'color-mix(in srgb, var(--accent-teal) var(--identity-wash), var(--panel2))'
+    );
+  });
+
+  it('takes the name off the screen but not out of the accessibility tree (#905)', async () => {
+    await mountCard();
+    // the tab above names the session; the header no longer repeats it...
+    expect(header()!.textContent).not.toContain('acme');
+    // ...and the card's live region still says whose session did not start
+    expect(host.querySelector('[data-testid="card-announcer"]')?.textContent).toContain('acme');
   });
 
   it('falls back to the neutral accent before the card list has landed', async () => {

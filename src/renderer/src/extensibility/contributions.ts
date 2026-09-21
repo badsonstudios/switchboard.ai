@@ -109,7 +109,7 @@ export interface PanelContext {
   /** durable key for per-card preferences */
   cardId?: string;
   /**
-   * The session's title, as the card header shows it (#196). On the context
+   * The session's title, as the card's tab shows it (#196). On the context
    * rather than inside one panel because it describes the SESSION: any panel
    * that names a landmark needs it, and several cards are visible at once, so
    * a panel-level landmark with a fixed name is N identical entries in a
