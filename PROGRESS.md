@@ -3,6 +3,18 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🚀 RELEASE — 2026-09-21: **v0.8.96** cut (carries #905)
+>
+> Owner asked for it straight after #905 merged. #905 merged as PR #906 →
+> `63bca42`; all four CI jobs `pass` on `aea87c1`, the exact head; only #905
+> closed. Release PR bumps version + lock + CHANGELOG and opens
+> `0.8.97 — unreleased`; tag `v0.8.96` goes on the squash commit after merge.
+> **Verify `gh release list` shows v0.8.96 before telling Dan he has it.**
+> ⚠️ This is the first update installed FROM 0.8.95, so it is also the first
+> real run of #899's "Installing, please wait…" window and missed-release notes.
+> Dan's hand-test list: the #905 row and the #899 row in the dogfood tracker.
+> He isn't sure which v0.8.93/94 rows he covered, so those stay UNTESTED.
+
 > # ✅ MERGED — 2026-09-21: **#905** tinted open tab + card header, name out of the header
 >
 > Branch `feature/905-tinted-tab-header`; code, docs, tracker and this block
