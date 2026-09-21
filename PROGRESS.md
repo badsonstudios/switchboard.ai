@@ -54,6 +54,45 @@
 > **DESIGN.md gained §5.34**, which it never had. That absence is the root cause
 > here: with no section for settings, preferences landed wherever the last
 > person could put them.
+>
+> ### ⚠️ CI ROUND 1: 3 OF 4 GREEN, AND THE ONE FAILURE WAS MY OWN NEW GUARD
+>
+> **`e2e ubuntu-latest` only.** Windows e2e passed, both unit/build jobs passed.
+> The #879 guard failed with the document **38px wider than the window** — with
+> the title bar showing the right 11 buttons. So the eight controls came off
+> correctly and the row STILL did not fit on Linux.
+>
+> **Measured rather than guessed, and the number is the point.** The bar's
+> natural width has to be summed from its children — `scrollWidth` equals
+> `clientWidth` whenever a flex row fits, so it cannot show you the headroom.
+> On Windows: content 991px in a 1010px bar, i.e. **19px of slack**. Linux
+> needs ~57px more across eleven chips (~5% wider fonts), which is 38px past
+> the edge. 19px was never a margin; it was a rounding error, and #885 shipped
+> it believing it was a fix.
+>
+> **The pixels came out of the WHITESPACE, not out of another control.** Twelve
+> 10px gaps is 120px — 12% of the bar — in a row that is now deliberately dense.
+> `gap: 10 → 6` and `paddingInline: 12 → 10` reclaim 52px: Windows headroom
+> **19px → 71px**, and the Linux figure lands inside the bar instead of outside
+> it. Removing a ninth control was the alternative and was not mine to take —
+> every remaining chip is one the owner's decision protects.
+>
+> **The guard now names the culprit.** Round 1 reported "38" and nothing else,
+> which is equally consistent with the bar, the rail, the preflight banner (CI
+> has no `claude`, so that strip renders and this machine never sees it) or a
+> missing font. It now reports innerWidth, docScrollWidth, bar content vs bar
+> width, button count, bar height, whether the preflight banner is showing, and
+> **the widest overflowing element**. A number with no subject costs a whole CI
+> round to turn into a diagnosis; this one did.
+>
+> ⚠️ **`gh pr checks --watch` exited 0 over a FAILED job.** Again. The authority
+> is the job table, never the exit status.
+>
+> **FLAKE SIGHTING (not a defect in this item):** the second full local e2e had
+> `layout-modes.spec.ts` "double-clicking a card header maximizes it" fail at
+> its FIRST assertion — the seeded session's tab never appeared at all (0 after
+> 25s), which is a seeding failure under full-suite load, not geometry. **5/5
+> green in isolation.** Same class as #835 and #768.
 
 > # ✅ MERGED — 2026-09-20: **#877** closed out, and it turned out to be a BUG FIX
 >

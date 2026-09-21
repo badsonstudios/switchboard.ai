@@ -21,8 +21,30 @@ const barStyle: React.CSSProperties = {
   borderBlockEnd: '1px solid var(--border)',
   display: 'flex',
   alignItems: 'center',
-  gap: 10,
-  paddingInline: 12,
+  /**
+   * 6, not 10, and 10 rather than 12 of inset — MEASURED, not tightened by eye.
+   *
+   * #885 took eight controls off this row and it fit on Windows with **19px to
+   * spare**: natural content 991px in a 1010px bar (`header` children summed,
+   * not `scrollWidth`, which equals `clientWidth` whenever a flex row fits and
+   * so cannot show you the headroom). 19px is not a margin, it is a rounding
+   * error — and the first CI run proved it, failing on **ubuntu-latest only**
+   * with the document 38px wider than the window and the same 11 buttons on
+   * screen. The runner's fonts are ~5% wider than this machine's, which is
+   * about 57px across eleven chips, and no amount of removing controls makes a
+   * row safe when it is one font substitution from overflowing.
+   *
+   * So the pixels come out of the WHITESPACE rather than out of another
+   * control: twelve 10px gaps is 120px, 12% of the bar, in a row that is now
+   * deliberately dense. 6px gaps plus the 4px of inset reclaim 52px, which puts
+   * the Linux figure inside the bar instead of 38px outside it.
+   *
+   * `e2e/chrome.spec.ts` measures this every run and names the widest
+   * overflowing element when it fails, so the next person does not have to
+   * infer a subject from a bare number the way this line's author did.
+   */
+  gap: 6,
+  paddingInline: 10,
   fontSize: 12,
   // Never give up height (#274). The window is a 100vh flex COLUMN whose main
   // area is `flex: 1` with a basis of 0, so every pixel of negative free space

@@ -116,6 +116,17 @@ test.describe('the title bar fits the window CI uses (#879)', () => {
       .poll(async () => w.evaluate(() => window.innerWidth), { timeout: 10_000 })
       .toBeLessThanOrEqual(1024);
 
+    /**
+     * Everything the failure needs to be actionable, INCLUDING WHO IS AT FAULT.
+     *
+     * The `worst` element is not garnish. The first version of this test
+     * reported only `scrollWidth - innerWidth`, and the first CI run failed
+     * with "38" on Linux and nothing else — which is consistent with the title
+     * bar, the rail, the preflight banner (CI has no `claude`, so that strip
+     * renders and a dev machine never sees it) or a font this machine does not
+     * have. A number with no subject costs a whole CI round to turn into a
+     * diagnosis.
+     */
     const measure = (): Promise<{
       docScroll: number;
       inner: number;
@@ -123,45 +134,79 @@ test.describe('the title bar fits the window CI uses (#879)', () => {
       barClient: number;
       barHeight: number;
       controls: number;
+      preflight: boolean;
+      worst: string | null;
     } | null> =>
       w.evaluate(() => {
         const bar = document.querySelector('header');
         if (!bar) return null;
+        const iw = window.innerWidth;
+        let worst: { right: number; what: string } | null = null;
+        for (const el of Array.from(document.querySelectorAll('*'))) {
+          const r = el.getBoundingClientRect();
+          if (r.width <= 0 || r.right <= iw + 0.5) continue;
+          if (worst && r.right <= worst.right) continue;
+          const cls =
+            typeof el.className === 'string' && el.className.trim()
+              ? '.' + el.className.trim().split(/\s+/).join('.')
+              : '';
+          worst = {
+            right: r.right,
+            what:
+              `${el.tagName}${cls} ${Math.round(r.left)}..${Math.round(r.right)} ` +
+              `"${(el.textContent ?? '').slice(0, 40)}"`,
+          };
+        }
         return {
           docScroll: document.documentElement.scrollWidth,
-          inner: window.innerWidth,
+          inner: iw,
           barScroll: bar.scrollWidth,
           barClient: bar.clientWidth,
           barHeight: Math.round(bar.getBoundingClientRect().height),
           controls: bar.querySelectorAll('button').length,
+          preflight: !!document.querySelector('.preflight-banner'),
+          worst: worst ? worst.what : null,
         };
       });
 
-    // 1. THE DOCUMENT DOES NOT SCROLL SIDEWAYS. The bug, in one line.
+    // SETTLE, then assert once with everything in hand.
     //
-    // POLLED, and that is not defensive padding — it was measured. Sampling
-    // once right after `innerWidth` reports 1010 catches dockview mid-reflow:
-    // it still holds the pre-resize width (measured: a 956px grid at x=298, so
+    // The settle is not defensive padding — it was measured. Sampling once
+    // right after `innerWidth` reports 1010 catches dockview mid-reflow: it
+    // still holds its pre-resize width (measured: a 956px grid at x=298, so
     // scrollWidth 1254 in a 1010px window) and settles a moment later. The
     // TITLE BAR was already correct in that same frame — 995px of content in a
-    // 995px bar — so a single sample would have failed this test for a reason
-    // that has nothing to do with what it is guarding.
-    await expect
-      .poll(async () => {
-        const s = await measure();
-        return s ? s.docScroll - s.inner : null;
-      }, { timeout: 15_000 })
-      .toBeLessThanOrEqual(0);
-
-    const m = await measure();
+    // 995px bar — so a single sample would have failed for a reason that has
+    // nothing to do with what this guards.
+    //
+    // A hand-rolled loop rather than `expect.poll`, so the FINAL measurement is
+    // the one that gets reported. `expect.poll` prints only the polled value.
+    let m = await measure();
     expect(m, 'no <header> on screen — the bar itself is missing').not.toBeNull();
+    const deadline = Date.now() + 15_000;
+    while (m && m.docScroll > m.inner && Date.now() < deadline) {
+      await w.waitForTimeout(250);
+      m = await measure();
+    }
+
+    const detail =
+      `innerWidth=${m!.inner} docScrollWidth=${m!.docScroll} · ` +
+      `bar content=${m!.barScroll} in ${m!.barClient} (${m!.controls} buttons, ` +
+      `${m!.barHeight}px tall) · preflight banner ${m!.preflight ? 'SHOWING' : 'absent'} · ` +
+      `widest overflow: ${m!.worst ?? 'none'}`;
+
+    // 1. THE DOCUMENT DOES NOT SCROLL SIDEWAYS. The bug, in one line.
+    expect(
+      m!.docScroll,
+      `the page scrolls sideways again. ${detail}`
+    ).toBeLessThanOrEqual(m!.inner);
 
     // 2. …and the bar's own content fits inside the bar, which is the same
     //    claim one level down and survives a future ancestor that clips.
     expect(
       m!.barScroll,
-      `the title bar's content (${m!.barScroll}px) is wider than the bar ` +
-        `(${m!.barClient}px), so controls are off screen`
+      `the title bar's content is wider than the bar, so controls are off ` +
+        `screen. ${detail}`
     ).toBeLessThanOrEqual(m!.barClient);
 
     // 3. the bar kept its height — nothing wrapped to a second line. The
@@ -170,7 +215,8 @@ test.describe('the title bar fits the window CI uses (#879)', () => {
     expect(
       m!.barHeight,
       `the title bar is ${m!.barHeight}px tall, so a chip label wrapped to a ` +
-        `second line. That height comes out of the conversation in a short window`
+        `second line. That height comes out of the conversation in a short ` +
+        `window. ${detail}`
     ).toBeLessThanOrEqual(40);
   });
 });
