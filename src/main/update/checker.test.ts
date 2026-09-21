@@ -5,7 +5,7 @@
 // Every test here injects its own `fetch`. No test in this file makes a
 // network call, and none of them reaches for a real token.
 import { describe, it, expect, vi } from 'vitest';
-import { checkForUpdate, pickLatest, statusReason, RELEASES_ENDPOINT } from './checker';
+import { checkForUpdate, notesSince, pickLatest, statusReason, RELEASES_ENDPOINT } from './checker';
 import type { TokenSource } from './token';
 
 const token: TokenSource[] = [{ id: 'test', resolve: async () => 'ghp_test' }];
@@ -356,5 +356,72 @@ describe('the installer asset (E19-04)', () => {
     });
     expect(r.state).toBe('up-to-date');
     expect(r.download).toBeUndefined();
+  });
+});
+
+describe('the notes cover EVERY release since the running one (0.8.95)', () => {
+  // The owner went from 0.8.92 to 0.8.94 and saw one bug fix: each release
+  // carries only its own section, and the dialog showed the newest one alone.
+  // The four features 0.8.93 shipped were in the installer and nowhere on screen.
+  it('shows each skipped release under its own heading, newest first', async () => {
+    const r = await checkForUpdate({
+      currentVersion: '0.8.92',
+      // GitHub lists by creation date; the order here is deliberately scrambled
+      fetchImpl: respond(200, [release('v0.8.93'), release('v0.8.94'), release('v0.8.92'), release('v0.8.91')]),
+      tokenSources: token,
+    });
+    expect(r.latestVersion).toBe('0.8.94');
+    expect(r.notes).toBe(
+      ['## v0.8.94', 'notes for v0.8.94', '## v0.8.93', 'notes for v0.8.93'].join('\n\n')
+    );
+    // nothing the running build already has
+    expect(r.notes).not.toContain('0.8.92');
+    expect(r.notes).not.toContain('0.8.91');
+  });
+
+  it('one release reads exactly as before — no heading repeating the version', () => {
+    expect(notesSince([release('v0.2.0') as never], '0.1.0')).toBe('notes for v0.2.0');
+  });
+
+  it('never describes a release it would not offer — drafts and pre-releases are out', () => {
+    const notes = notesSince(
+      [
+        release('v0.4.0', { draft: true }),
+        release('v0.3.1', { prerelease: true }),
+        release('v0.3.0'),
+        release('v0.2.0'),
+      ] as never,
+      '0.1.0'
+    );
+    expect(notes).toBe(['## v0.3.0', 'notes for v0.3.0', '## v0.2.0', 'notes for v0.2.0'].join('\n\n'));
+  });
+
+  it('a release with no notes adds no empty heading', () => {
+    const notes = notesSince([release('v0.3.0'), release('v0.2.0', { body: '  ' })] as never, '0.1.0');
+    expect(notes).toBe('## v0.3.0\n\nnotes for v0.3.0');
+  });
+
+  it("never shows an older release's notes UNLABELLED under the newer version", () => {
+    // newest has no notes: its heading-less shortcut must not hand the dialog
+    // v0.2.0's text as though it described v0.3.0
+    const notes = notesSince([release('v0.3.0', { body: '' }), release('v0.2.0')] as never, '0.1.0');
+    expect(notes).toBe('## v0.2.0\n\nnotes for v0.2.0');
+  });
+
+  it('one heading per version, even when a tag appears with and without its v', () => {
+    const notes = notesSince([release('v0.3.0'), release('0.3.0'), release('v0.2.0')] as never, '0.1.0');
+    expect(notes.match(/## v0\.3\.0/g)).toHaveLength(1);
+  });
+
+  it('stays bounded — whole sections while they fit, then an ellipsis', () => {
+    const big = 'x'.repeat(12_000);
+    const notes = notesSince(
+      [release('v0.4.0', { body: big }), release('v0.3.0', { body: big }), release('v0.2.0')] as never,
+      '0.1.0'
+    );
+    expect(notes.startsWith('## v0.4.0')).toBe(true);
+    expect(notes).not.toContain('## v0.3.0'); // it did not fit, so it is not half-shown
+    expect(notes.endsWith('…')).toBe(true);
+    expect(notes.length).toBeLessThan(20_100);
   });
 });

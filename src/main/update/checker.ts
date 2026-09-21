@@ -205,7 +205,7 @@ function decide(
     state: 'available',
     currentVersion,
     latestVersion,
-    notes: notesOf(best),
+    notes: notesSince(body, currentVersion),
     url: typeof best.html_url === 'string' ? best.html_url : undefined,
     publishedAt: typeof best.published_at === 'string' ? best.published_at : undefined,
     checkedAt,
@@ -264,8 +264,77 @@ export function pickLatest(
   return best;
 }
 
-function notesOf(r: GithubRelease): string {
-  const body = typeof r.body === 'string' ? r.body.trim() : '';
-  if (!body) return '';
-  return body.length > MAX_NOTES_CHARS ? `${body.slice(0, MAX_NOTES_CHARS)}\n\n…` : body;
+/** One release's own notes, trimmed; '' when it has none. */
+function bodyOf(r: GithubRelease): string {
+  return typeof r.body === 'string' ? r.body.trim() : '';
+}
+
+/**
+ * EVERYTHING that changed since the running version — not just the newest
+ * release's notes.
+ *
+ * Each release carries only its own changelog section (a published version is
+ * never rolled into the next one — `scripts/release-notes.js`). So an install
+ * that skips a release, which is every install that is not updated the same
+ * hour, used to be shown the newest release's notes alone: the owner went from
+ * 0.8.92 to 0.8.94 and saw one bug fix, while the four features 0.8.93 shipped
+ * were in the installer and nowhere in the dialog.
+ *
+ * Every offerable release newer than the running build, NEWEST first, each
+ * under its own version heading. One release reads exactly as before — no
+ * heading, just its notes — because a heading repeating the version the dialog
+ * already names is noise. Same eligibility as `pickLatest` (no drafts, no
+ * pre-releases, readable tags), so the notes can never describe a release we
+ * would not install. A release with no notes adds nothing rather than an empty
+ * heading.
+ *
+ * Bounded by MAX_NOTES_CHARS in total: whole sections are added newest-first
+ * while they fit, and the first one that does not ends the list with `…`. The
+ * newest section alone is cut at the cap, as before. The endpoint's page of 30
+ * also bounds how far back this can reach — a machine 30 releases behind has
+ * bigger news than the oldest notes.
+ *
+ * Exported for its own unit tests.
+ */
+export function notesSince(releases: GithubRelease[], currentVersion: string): string {
+  const newer = releases
+    .filter(
+      (r): r is GithubRelease & { tag_name: string } =>
+        !!r &&
+        typeof r === 'object' &&
+        r.draft !== true &&
+        r.prerelease !== true &&
+        typeof r.tag_name === 'string' &&
+        parseVersion(r.tag_name) !== null &&
+        isNewerVersion(r.tag_name, currentVersion)
+    )
+    .sort((a, b) => (isNewerVersion(a.tag_name, b.tag_name) ? -1 : isNewerVersion(b.tag_name, a.tag_name) ? 1 : 0))
+    // one entry per VERSION: `v0.8.94` and `0.8.94` are the same release to
+    // the user, and two headings saying so would be noise
+    .filter((r, i, all) => i === 0 || normalizeVersion(r.tag_name) !== normalizeVersion(all[i - 1].tag_name));
+
+  // The no-heading shortcut is decided on the releases BEFORE the bodyless ones
+  // are dropped: otherwise a newest release with no notes and an older one with
+  // some would show the OLDER notes, unlabelled, under the newer version's name.
+  if (newer.length === 1) {
+    const only = bodyOf(newer[0]);
+    return only.length > MAX_NOTES_CHARS ? `${only.slice(0, MAX_NOTES_CHARS)}\n\n…` : only;
+  }
+  const withNotes = newer.filter((r) => bodyOf(r) !== '');
+  if (withNotes.length === 0) return '';
+
+  const parts: string[] = [];
+  let used = 0;
+  for (const r of withNotes) {
+    const section = `## v${normalizeVersion(r.tag_name)}\n\n${bodyOf(r)}`;
+    const cost = section.length + (parts.length ? 2 : 0);
+    if (used + cost > MAX_NOTES_CHARS) {
+      if (parts.length === 0) return `${section.slice(0, MAX_NOTES_CHARS)}\n\n…`;
+      parts.push('…');
+      break;
+    }
+    parts.push(section);
+    used += cost;
+  }
+  return parts.join('\n\n');
 }

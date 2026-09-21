@@ -3,6 +3,37 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ DONE — 2026-09-21: **#899** update notes + install feedback (Dan)
+>
+> Merged on green CI (this entry rides in the same PR — one push). **Next: cut
+> v0.8.95.** Review (code-reviewer): no blockers; taken — an unlabelled older
+> release's notes could appear under the newer version's name (the heading-less
+> shortcut was decided AFTER bodyless releases were dropped; fixed + test,
+> mutation-caught), one heading per version, a false shortcuts claim removed
+> from the comment, `Object.freeze` on the args, and the manual now says to
+> press **Retry** on the one NSIS box that can still appear (file copy failing
+> 5×). Icon on the banner is unconfirmed (no `installerHeaderIcon.ico`) — the
+> docs no longer promise it; Dan's hand-test notes which one shows.
+> Verification: typecheck 0, lint 0, unit 8716 passed + 1 known flake (#835's
+> sibling guard; 3/3 green isolated, sighting logged on #835), mutation 8/8.
+>
+> Dan went 0.8.92 → 0.8.94 and saw only the report-dialog note — 0.8.93's four
+> features were installed but never described. Root cause: each release carries
+> only its own section, and the checker showed the newest one's notes alone.
+> Fix: `notesSince` — every offerable release newer than the running build,
+> newest first, `## vX` headings (one release: unchanged).
+>
+> Also Dan: *"the app closes out, and then nothing happens for about 30
+> seconds."* The installer ran `/S` + `windowsHide: true`. Now `--updated
+> --force-run`, visible: oneClick non-silent shows only electron-builder's
+> SpiderBanner "Installing, please wait…" (read in the NSIS templates, not
+> assumed); `--updated` stops the "app is running, click OK" box.
+>
+> ⚠️ **Both only take effect on the update installed FROM a fixed build** — the
+> running version launches the installer and reads the notes. And the banner
+> can't be exercised on this machine: running the installer would replace the
+> live install. Branch `fix/update-notes-and-install-feedback`.
+
 > # 🚀 RELEASE — 2026-09-21: **v0.8.94** cut (carries #896)
 >
 > Release PR bumps `package.json`, the lock and CHANGELOG together and opens

@@ -39,7 +39,7 @@ describe('what may be executed', () => {
 });
 
 describe('the launch', () => {
-  it('runs it SILENTLY, detached, with no shell — and asks it to relaunch us', () => {
+  it('runs it VISIBLY, detached, with no shell — and asks it to relaunch us', () => {
     const child = { unref: vi.fn() };
     const spawnImpl = vi.fn(() => child);
     expect(launchInstaller(GOOD, { updateDir: DIR, spawnImpl: spawnImpl as never, platform: 'win32' })).toBe(true);
@@ -50,17 +50,24 @@ describe('the launch', () => {
       Record<string, unknown>,
     ];
     expect(file).toBe(GOOD);
-    // `/S` is NSIS's silent switch — without it the user gets a wizard they
-    // did not ask for from an app that just told them it was updating.
+    // NO `/S` (0.8.95): silent meant thirty seconds with the app gone and no
+    // window at all. The oneClick build shows no wizard either way — only its
+    // "Installing…" banner, which is the point.
+    //
+    // `--updated` is what lets it run unattended: without it a non-silent
+    // installer that finds the app still closing asks "switchboard is running,
+    // click OK" instead of waiting for it.
     //
     // `--force-run` is the fix for #525 and is pinned here BY NAME because the
     // bug was invisible in code review: electron-builder's oneClick relaunch is
-    // guarded by `${ifNot} ${Silent} ${orIf} ${isForceRun}`, so `/S` alone
-    // installs the update and never brings the app back. Delete this argument
-    // and the app quits for good on every update — with no failing behaviour
-    // anywhere else to catch you. That is what this assertion is for.
-    expect(args).toEqual(['/S', '--force-run']);
-    expect(options).toMatchObject({ detached: true, stdio: 'ignore', shell: false });
+    // guarded by `${ifNot} ${Silent} ${orIf} ${isForceRun}`. Non-silent now
+    // satisfies the first arm, but should `/S` ever come back, this is the
+    // argument that keeps the app from quitting for good on every update.
+    expect(args).toEqual(['--updated', '--force-run']);
+    expect(args).not.toContain('/S');
+    // windowsHide FALSE: libuv maps it to SW_HIDE, which Windows applies to a
+    // GUI process's first window — it would hide the banner itself
+    expect(options).toMatchObject({ detached: true, stdio: 'ignore', shell: false, windowsHide: false });
     // Detached AND unref'd: the caller quits next, and a child in our process
     // group would be killed by the very quit it is meant to survive.
     expect(child.unref).toHaveBeenCalled();
