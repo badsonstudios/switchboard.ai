@@ -97,6 +97,13 @@ test.describe("the CLI's own questions (#563)", () => {
     await expect(w.getByTestId('question-submit')).toBeDisabled();
     await option(w, 0, 'Red').click();
     await expect(w.getByTestId('question-submit')).toBeEnabled();
+    // A PICK-ONE ANSWER WALKS THE PANEL ON (#733) — to the next unanswered
+    // question, with real focus on its first option. jsdom can place focus;
+    // only a real window proves the old block unmounting did not drop it.
+    await expect(qtab(w, 1)).toHaveAttribute('aria-selected', 'true');
+    await expect(option(w, 1, 'TypeScript')).toBeFocused();
+    // …and Next question has nowhere honest to go: this is the last one left
+    await expect(w.getByTestId('question-next')).toBeDisabled();
     // the tab now says so — unmistakably, and in its accessible name rather
     // than only as a glyph (#566)
     await expect(qtab(w, 0)).toHaveAttribute('data-question-tab-answered', 'true');
@@ -108,6 +115,9 @@ test.describe("the CLI's own questions (#563)", () => {
       'aria-label',
       'Languages — not answered, will be sent as skipped'
     );
+    // and to the eye, in a WORD (#733) — the strikethrough it replaced read as
+    // a rendering glitch to the person it was built for
+    await expect(qtab(w, 1).locator('[data-question-tab-skip-word]')).toHaveText('skipped');
     // still naming the one that IS missing, and no longer the one that is not —
     // asserted in that order, so a line that vanished entirely cannot pass the
     // negative half by simply not being there
@@ -190,6 +200,14 @@ test.describe("the CLI's own questions (#563)", () => {
     await box.press('Enter');
 
     await expect(panel(w)).toBeVisible({ timeout: 30_000 });
+    // Next question (#733) walks the panel without answering anything — first
+    // in the row, and it takes focus to the question it opened
+    await w.getByTestId('question-next').click();
+    await expect(qtab(w, 1)).toHaveAttribute('aria-selected', 'true');
+    await expect(option(w, 1, 'TypeScript')).toBeFocused();
+    await expect(w.getByTestId('question-submit')).toBeDisabled();
+    await qtab(w, 0).click();
+
     await option(w, 0, 'Red').click();
     await expect(w.getByTestId('question-submit')).toBeEnabled();
 

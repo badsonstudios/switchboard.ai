@@ -66,8 +66,9 @@
 // through the front door. So an unanswered question, from the moment sending is
 // possible, is not merely un-ticked anywhere it appears:
 //
-//  • **its tab** goes dashed and struck through, and its accessible name stops
-//    saying "not answered yet" and starts saying "will be sent as skipped";
+//  • **its tab** carries the literal word "skipped", and its accessible name
+//    stops saying "not answered yet" and starts saying "will be sent as
+//    skipped" (a dashed border + strikethrough until #733 — see the tab);
 //  • **the question in front of you** replaces its grey dot with those words;
 //  • **the sentence beside the button** changes from "Still to answer: X" —
 //    which explains a dead button — to "Sending now skips: X", which explains a
@@ -77,10 +78,29 @@
 // here nags, blocks or confirms: skipping is a legitimate answer, and the panel
 // only has to make it a visible one.
 //
-// NOT taken from the extension: the 300ms auto-advance after a pick-one.
-// Pleasant when it guesses right, and a small theft when you wanted to change
-// the answer you just gave. Ship without it; add it if the panel ever feels
-// slow.
+// THE PANEL WALKS YOU THROUGH IT (#733)
+// -------------------------------------
+// #566 shipped without the extension's auto-advance, on the grounds that it is
+// a small theft when you wanted to change the answer you just gave. The owner
+// used the panel in anger and asked for it: one click per pick-one question,
+// and the strip walks itself. So:
+//
+//  • **A pick-one answer moves to the next UNANSWERED question** — not `i + 1`:
+//    re-answering question 1 of 3 with 2 already done lands on 3, and the walk
+//    wraps. Only when the click leaves the question ANSWERED (a radio re-click
+//    deselects), never for Other (that click is a promise to type, and the field
+//    it opens has the caret), never for a checkbox (a tick is not a complete
+//    answer), and never past the last unanswered one — that is Send answer's
+//    moment, and the panel does not press it for you. Immediate rather than the
+//    extension's 300ms: the ✓ on the tab you just left is the confirmation, and
+//    a timer is a race with the second click it was meant to allow.
+//  • **A Next question button** is the same move on demand — how you get OFF a
+//    checkbox question, and a walk that needs no aim at the strip. ONE function
+//    (`advance`) behind both, and it is disabled exactly when that function has
+//    nowhere to go: a button that wraps you to an answered tab reads as a bug.
+//  • **Focus goes with the move**, to the new question's first option. The
+//    block that held it has just unmounted, and a focus left to fall to <body>
+//    is a keyboard user dropped out of the panel.
 //
 // ONE QUESTION IS NOT A TAB STRIP. The overwhelmingly common call carries one
 // question, and it renders with no tab furniture at all — same panel #563
@@ -189,6 +209,26 @@ function firstUnanswered(selections: readonly AskSelection[]): number {
   return i === -1 ? 0 : i;
 }
 
+/**
+ * Where an advance goes (#733): the next UNANSWERED question after `from`,
+ * wrapping past the end — or -1 when there is nowhere honest to go.
+ *
+ * `from` itself is never a destination, so "the only unanswered question is the
+ * one you are on" and "everything is answered" both come out -1 by
+ * construction. That one value is what BOTH triggers read: the auto-advance
+ * stays put on it, and the Next question button is disabled by it. Two copies
+ * of this rule would drift the first time one of them was tuned.
+ */
+export function nextUnanswered(selections: readonly AskSelection[], from: number): number {
+  const n = selections.length;
+  for (let k = 1; k < n; k++) {
+    const j = (from + k) % n;
+    const sel = selections[j];
+    if (sel && !questionAnswered(sel)) return j;
+  }
+  return -1;
+}
+
 export function QuestionPanel({
   requestId,
   questions,
@@ -220,12 +260,20 @@ export function QuestionPanel({
   // that comes back from a remount half-answered opens on the half that is
   // still missing (see `firstUnanswered`).
   const [active, setActive] = React.useState<number>(() => firstUnanswered(selections));
+  // The question an ADVANCE just opened, whose first option should get focus
+  // once it is in the DOM (#733). A ref and not state: it is a one-shot
+  // instruction to the next commit, and it must not itself cause a render.
+  // Null for every other way the tab changes — clicking a tab or arrowing the
+  // strip already put focus where the user wanted it.
+  const focusOnArrival = React.useRef<number | null>(null);
   React.useEffect(() => {
     const next = drafts.get(requestId) ?? emptySelections(questions);
     setSelections(next);
     setActive(firstUnanswered(next));
+    focusOnArrival.current = null;
   }, [requestId, questions]);
   const otherRefs = React.useRef<Array<HTMLInputElement | null>>([]);
+  const panelRef = React.useRef<HTMLDivElement | null>(null);
   // The effect above resets `active` when the questions change, but it runs
   // AFTER the render that saw the new list — so a call that shrank from three
   // questions to one would index past the end once, on that render, with
@@ -274,25 +322,81 @@ export function QuestionPanel({
       return nextAll;
     });
 
+  // After the commit that mounted the question an advance opened: put focus on
+  // its first option. A LAYOUT effect so it lands before paint — the block that
+  // held focus unmounted in this same commit, and a passive effect would leave
+  // one frame where focus sits on <body> for a screen reader to announce.
+  // Scoped to this panel's own DOM, so a popped-out card focuses in its own
+  // window (the #573 lesson the strip and the option list both obey).
+  //
+  // One exception to "first option": a destination with Other ticked and
+  // nothing typed (unanswered, so a real destination) focuses the FIELD — the
+  // only thing that question is waiting for, and the same promise-to-type
+  // `pickOther` keeps. A checked option cannot be the target otherwise: the
+  // destination is unanswered by definition.
+  //
+  // NO dependency list, deliberately: every commit consumes the one-shot ref.
+  // Keyed on the active index instead, an advance that ever failed to change it
+  // would leave the ref armed, and the next arrow-walk of the strip would yank
+  // focus off the tab it reached — breaking the strip's own contract silently.
+  React.useLayoutEffect(() => {
+    const to = focusOnArrival.current;
+    if (to === null) return;
+    focusOnArrival.current = null;
+    const block = panelRef.current?.querySelector(`[data-question-index="${to}"]`);
+    const target =
+      block?.querySelector<HTMLElement>('[data-question-other-input]') ??
+      block?.querySelector<HTMLElement>('[role="radio"],[role="checkbox"]');
+    target?.focus();
+  });
+
+  /**
+   * THE move (#733), for both triggers: the auto-advance after a pick-one
+   * answer, and the Next question button. Reading the closure's selections is
+   * safe even mid-click, when they predate the answer being committed: the only
+   * slot that answer changes is `from`, and `nextUnanswered` never looks there.
+   */
+  const advance = (from: number): void => {
+    const to = nextUnanswered(selections, from);
+    if (to === -1) return;
+    focusOnArrival.current = to;
+    setActive(to);
+  };
+  // Nowhere honest to go — the button's disabled state is the same -1 the
+  // auto-advance stays put on, never a second rule.
+  const canAdvance = tabbed && nextUnanswered(selections, activeIndex) !== -1;
+
   const pick = (i: number, label: string): void => {
     const sel = selections[i];
-    if (!sel) return;
-    update(i, toggleOption(questions[i], sel, label));
+    const q = questions[i];
+    if (!sel || !q) return;
+    const next = toggleOption(q, sel, label);
+    update(i, next);
+    // A pick-one answer is a COMPLETE answer, so the panel moves on. Not for a
+    // checkbox (more ticks may follow — Next question is the way off), and
+    // not for a re-click that DESELECTED the radio: that leaves the question
+    // unanswered, and walking away from it would hide the very thing just
+    // undone. One question has nowhere to go, so `advance` is a no-op there.
+    if (!q.multiSelect && questionAnswered(next)) advance(i);
   };
 
   const pickOther = (i: number): void => {
     const sel = selections[i];
-    if (!sel) return;
-    const next = toggleOther(questions[i], sel);
+    const q = questions[i];
+    if (!sel || !q) return;
+    const next = toggleOther(q, sel);
     update(i, next);
     // Ticking Other is a statement of intent to type; the field it opens should
     // already have the caret. After the state lands, or the input is not there
-    // yet to focus.
+    // yet to focus. And it NEVER advances (#733), not even on a pick-one: the
+    // question is not answered until something is typed, and yanking the tab
+    // away would take the field with it.
     if (next.other) window.setTimeout(() => otherRefs.current[i]?.focus(), 0);
   };
 
   return (
     <div
+      ref={panelRef}
       data-testid="question-panel"
       role="group"
       aria-label={t('question.title')}
@@ -379,7 +483,38 @@ export function QuestionPanel({
           </div>
         );
       })}
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+      {/* Wraps only when tabbed: three buttons and a sentence can outgrow a
+          narrow card, and a single-question panel keeps #563's row exactly. */}
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: tabbed ? 'wrap' : undefined }}>
+        {/* NEXT QUESTION (#733), first in the row because that is the order
+            the owner listed: Next question · Send answer · Don't answer. The
+            same `advance` the pick-one auto-advance uses, on demand — the way
+            off a checkbox question, and a walk through the panel that needs no
+            aim at the strip. Neutral, not primary: Send is still the button
+            that finishes the job. */}
+        {tabbed && (
+          <button
+            type="button"
+            data-testid="question-next"
+            onClick={() => advance(activeIndex)}
+            disabled={!canAdvance}
+            // a dead button says why, the same idiom Send answer uses
+            title={canAdvance ? undefined : t('question.nextHint')}
+            style={{
+              background: 'var(--panel)',
+              color: canAdvance ? 'var(--text)' : 'var(--muted)',
+              border: '1px solid var(--border)',
+              borderRadius: 'var(--radius-chip)',
+              padding: '4px 14px',
+              cursor: canAdvance ? 'pointer' : 'not-allowed',
+              fontFamily: 'var(--font-ui)',
+              fontSize: 12,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {t('question.next')}
+          </button>
+        )}
         <button
           type="button"
           data-testid="question-submit"
@@ -611,11 +746,11 @@ function QuestionTabs({
               maxInlineSize: 160,
               background: on ? 'var(--panel)' : 'transparent',
               color: on ? 'var(--text)' : 'var(--muted)',
-              // DASHED once this tab would be sent as skipped (#567). A border
-              // style, not a hue and not a fourth colour to learn: dashed is
-              // already how everything reads "provisional / not filled in", and
-              // it survives high-contrast and daylight without being tuned.
-              border: `1px ${willSkip ? 'dashed' : 'solid'} ${on ? 'var(--status-needs-input)' : 'var(--border)'}`,
+              // Solid in every state. #567 dashed it (and struck the label
+              // through) when the tab would be sent as skipped; on an 11px chip
+              // the pair read as a rendering glitch to the person it was built
+              // for (#733), so the state is now said in a WORD — see below.
+              border: `1px solid ${on ? 'var(--status-needs-input)' : 'var(--border)'}`,
               borderRadius: 'var(--radius-chip)',
               padding: '2px 8px',
               cursor: 'pointer',
@@ -639,18 +774,30 @@ function QuestionTabs({
             >
               {done ? '✓' : '○'}
             </span>
-            {/* STRUCK THROUGH when it is about to be left out — the plainest
-                "this is not going" a label can be, and it is a shape rather
-                than a colour, so it reads the same in every theme (§5.32). */}
-            <span
-              style={{
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                textDecoration: willSkip ? 'line-through' : undefined,
-              }}
-            >
-              {text}
-            </span>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{text}</span>
+            {/* "skipped", LITERALLY, when a click on Send answer would leave
+                this question out (#733). It replaced a strikethrough + dashed
+                border that the owner reported as a rendering glitch: a
+                decoration you have to already know the meaning of had failed
+                the only legibility test that counts. A word cannot be misread
+                as a glitch, and it is still not hue alone (§5.32). It never
+                shrinks — a long header ellipsises, the warning does not.
+                aria-hidden because the tab's accessible NAME already says
+                "will be sent as skipped", and in a full sentence. */}
+            {willSkip && (
+              <span
+                aria-hidden
+                data-question-tab-skip-word
+                style={{
+                  flexShrink: 0,
+                  fontSize: 9.5,
+                  fontStyle: 'italic',
+                  color: 'var(--status-needs-input-ink)',
+                }}
+              >
+                {t('question.tabSkippedWord')}
+              </span>
+            )}
           </button>
         );
       })}

@@ -116,7 +116,21 @@ on the floor, and say so in your PR.
   used to open them now open Settings scrolled to the right part of it, so
   `Ctrl+Shift+P` → *quiet hours* still works.
 
+- **When Claude asks several questions at once, the panel walks you through
+  them.** Picking an answer on a pick-one question moves straight on to the next
+  question you haven't answered — one click each — and puts the keyboard focus
+  there too. It stays put when you tick **Other** (so you can type), when you
+  tick boxes on a pick-several question, and after the last one (it never sends
+  for you). A new **Next question** button, first in the row before **Send
+  answer** and **Don't answer**, does the same move on demand. A single question
+  looks exactly as before.
+
 ### Changed
+
+- **A question you're about to skip says "skipped" instead of being crossed
+  out.** On a multi-question panel, once you've answered one, the tabs of the
+  unanswered ones used to go dashed with a line through the name — which looked
+  like a display glitch. They now simply show the word *skipped* after the name.
 
 - **The title bar fits again.** At a 1024-wide window it was overflowing badly
   enough that the whole page scrolled sideways and about eleven controls were
