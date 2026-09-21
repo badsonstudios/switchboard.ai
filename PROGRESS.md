@@ -3,10 +3,20 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ✅ DONE — 2026-09-21: **#899** update notes + install feedback (Dan)
+> # 🚀 RELEASE — 2026-09-21: **v0.8.95** cut (carries #899)
 >
-> Merged on green CI (this entry rides in the same PR — one push). **Next: cut
-> v0.8.95.** Review (code-reviewer): no blockers; taken — an unlabelled older
+> #899 merged as PR #900 → `13d5826`; all four CI jobs `pass` on `4cdc03a`, the
+> exact head; only #899 closed. Release PR bumps version + lock + CHANGELOG and
+> opens `0.8.96 — unreleased`; tag `v0.8.95` on the squash commit after merge.
+> ⚠️ **#899 shows on the update AFTER this one** — 0.8.95 is the first build
+> whose updater shows every missed release and a visible "Installing" window.
+> Full local e2e: 354 passed / 1 failed (rail #641 — **#893, now 1-in-5 even
+> isolated**, logged) / 2 skipped. **Next up:** nothing nominated; #893 is the
+> flake worth fixing first.
+
+> # ✅ MERGED — 2026-09-21: **#899** update notes + install feedback (Dan)
+>
+> Review (code-reviewer): no blockers; taken — an unlabelled older
 > release's notes could appear under the newer version's name (the heading-less
 > shortcut was decided AFTER bodyless releases were dropped; fixed + test,
 > mutation-caught), one heading per version, a false shortcuts claim removed
