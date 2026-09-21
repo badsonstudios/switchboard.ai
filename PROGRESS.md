@@ -3,7 +3,21 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔧 FIX — 2026-09-21: **#896** Report a problem's Send button (Dan, v0.8.92)
+> # 🚀 RELEASE — 2026-09-21: **v0.8.94** cut (carries #896)
+>
+> Release PR bumps `package.json`, the lock and CHANGELOG together and opens
+> `0.8.95 — unreleased`; tag `v0.8.94` goes on the squash commit after merge.
+> **v0.8.93 is PUBLISHED** (`gh release list`: Latest, 13:49Z) — confirmed, not
+> assumed. #896 merged as PR #897 → `f48e069`; all four CI jobs `pass` on
+> `cd73160`, the exact head merged; only #896 closed (baseline diff).
+>
+> **Dan's hand-test list:** the four "In v0.8.93" rows and the #896 RE-TEST row
+> in the dogfood tracker. Still outstanding from v0.8.92, not chased: #873's
+> seven steps; #864 on the dual-monitor rig with the monitor POWERED OFF.
+>
+> **Next up:** nothing nominated.
+
+> # ✅ MERGED — 2026-09-21: **#896** Report a problem's Send button (Dan, v0.8.92)
 >
 > Dan: *"the send request button is all black … looks like it's disabled …
 > when I click it, it doesn't close the dialog."* Diagnosed, not guessed:
@@ -34,7 +48,7 @@
 > **Verification:** typecheck 0, lint 0, unit **8710 passed / 3 skipped**, full
 > local Windows e2e alone **355 passed / 2 skipped, captured exit 0**.
 >
-> **Next up:** merge #896 on green CI, then cut **v0.8.94** so Dan can re-test.
+> Released in v0.8.94 — see the release block above.
 
 > # 🚀 RELEASE — 2026-09-21: **v0.8.93** cut — tag `v0.8.93` pushed on `4ed4ede`
 >
