@@ -150,6 +150,10 @@ export const CHANNEL_CAPABILITIES = {
   // menu it names is built from Electron ROLES, so a caller cannot smuggle an
   // action in through a label.
   'app:contextMenuLabels': 'app.window',
+  // A renderer dialog closed; main re-seats keyboard focus (#909). It can
+  // only blur+focus a window of ours that ALREADY has focus, so it moves
+  // nothing and raises nothing.
+  'app:refocusAfterDialog': 'app.window',
   'app:movePopout': 'app.window',
   'app:raisePopout': 'app.window',
   'app:workAreas': 'app.window',

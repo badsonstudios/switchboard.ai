@@ -188,6 +188,13 @@ const api = {
    */
   setContextMenuLabels: (labels: ContextMenuLabels): void =>
     ipcRenderer.send('app:contextMenuLabels', labels),
+  /**
+   * A `window.confirm` / `window.alert` just closed: have main put the keyboard
+   * back (#909). On Windows the page otherwise takes clicks but no keys until
+   * you switch apps. Fire-and-forget; main acts only on a focused window of
+   * ours. Callers go through `lib/native-dialog.ts`, never this directly.
+   */
+  refocusAfterDialog: (): void => ipcRenderer.send('app:refocusAfterDialog'),
   /** display work areas, for popout-position rescue on restore (E8-02) */
   workAreas: (): Promise<Array<{ x: number; y: number; width: number; height: number }>> =>
     ipcRenderer.invoke('app:workAreas'),

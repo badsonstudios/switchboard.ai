@@ -17,6 +17,7 @@ import 'dockview-react/dist/styles/dockview.css';
 // AFTER dockview's own sheet: binds every --dv-* variable to our tokens so the
 // shell, popups and popout windows can't fall back to a foreign theme (#84)
 import '../theme/dockview-tokens.css';
+import { nativeAlert, nativeConfirm } from '../lib/native-dialog';
 import { rendererRegistry } from '../extensibility/registry-instance';
 import { sessionStore } from '../store/session-store';
 import { LABEL_LINES } from '../../../shared/task-label-size';
@@ -416,7 +417,7 @@ export function IdentityTab(props: IDockviewPanelProps<CardParams>): React.JSX.E
           // CONFIRMS first (Dan 2026-07-22); derived tabs (diff) just close
           e.stopPropagation();
           if (cardId) {
-            if (!window.confirm(t('grid.closeConfirm', { title }))) return;
+            if (!nativeConfirm(t('grid.closeConfirm', { title }))) return;
           }
           props.api.close();
         }}
@@ -5209,7 +5210,7 @@ export function SessionGrid(props: {
           panel?.title,
           (panel?.params as CardParams | undefined)?.folder
         );
-        if (!window.confirm(t('grid.closeConfirm', { title }))) return;
+        if (!nativeConfirm(t('grid.closeConfirm', { title }))) return;
         // the confirm belongs to the gesture; retireCard (E9-09) does what
         // main's inline removePanel/by-hand branch did, for both call sites
         retireCard(cardId);
@@ -5228,10 +5229,10 @@ export function SessionGrid(props: {
         if (doomed.length === 0) {
           // every session is pinned: say so rather than opening a confirm for
           // an empty list, which reads as the command being broken
-          window.alert(t('grid.closeAllNothing', { count: spared }));
+          nativeAlert(t('grid.closeAllNothing', { count: spared }));
           return;
         }
-        if (!window.confirm(t('grid.closeAllConfirm', { count: doomed.length, spared }))) return;
+        if (!nativeConfirm(t('grid.closeAllConfirm', { count: doomed.length, spared }))) return;
         for (const cardId of doomed) retireCard(cardId);
       },
       closableDocumentCount: () => closableDocumentIds(apiRef.current).length,

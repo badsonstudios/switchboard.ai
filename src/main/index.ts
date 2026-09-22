@@ -115,6 +115,7 @@ import {
 import { dialog } from 'electron';
 import { buildIdentity, isReleaseBuild, windowTitle } from '../shared/build-identity';
 import { acquireInstanceLock, focusRunningWindow, sleepSync } from './single-instance';
+import { refocusAfterDialog } from './dialog-refocus';
 
 /* ---- ONE switchboard per user profile (#289) -------------------------------
  *
@@ -948,6 +949,19 @@ app
     // nothing is taken from the page
     broker.on('app:acceleratorReady', (e) => {
       acceleratorReadyFor = e.sender.id;
+    });
+    // A renderer confirm/alert closed (#909): without this, Windows leaves the
+    // page taking clicks but no keys. Ours = the main window and every popout,
+    // and only the one that already has focus is touched.
+    broker.on('app:refocusAfterDialog', () => {
+      const ours = [currentWindow, ...popoutWindows.map((p) => p.win)].filter(
+        (w): w is BrowserWindow => !!w
+      );
+      const outcome = refocusAfterDialog(process.platform, BrowserWindow.getFocusedWindow(), ours);
+      // `lost` means blur() handed the foreground away and Windows refused to
+      // give it back: exactly the case someone will grep for
+      if (outcome === 'lost') log.ui.warn('refocus after dialog: focus did not come back');
+      else log.ui.debug('refocus after dialog', { outcome });
     });
     // The four right-click labels, already translated (#526). Main has no
     // i18n; the renderer publishes them at boot and on every language change.

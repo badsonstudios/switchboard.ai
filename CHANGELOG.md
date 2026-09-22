@@ -103,6 +103,14 @@ on the floor, and say so in your PR.
   find it by browsing the menu bar. It works even while you're typing in a
   prompt box.
 
+### Fixed
+
+- **Typing works again after you cancel a "close this session?" question.**
+  On Windows, answering one of the app's pop-up questions (closing a session,
+  closing all sessions) could leave the prompt box taking clicks and paste but
+  not typing, until you switched to another program and back. The keyboard now
+  comes straight back when the question closes.
+
 ## 0.8.96 — 2026-09-21
 
 ### Changed
