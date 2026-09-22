@@ -1517,6 +1517,17 @@ Consequences worth designing for, not discovering:
 >   ("answer these 3 questions"), the item should expand into a small list
 >   the operator can come back to — spec'd when E14 lands.
 >
+> **Shipped in P2-E14-02 (2026-09-22).** *Needed* is the attention queue's
+> own predicate (`queueable`), so it hides the reviewed tail and nothing else.
+> *By session* is rail order: the feed is already one item per session, so
+> "group by session" can only mean listing rows where you'd look for that
+> session. A needs-permission row carries **Allow · Allow all · Deny**,
+> answering from the renderer's held-request ledger. **Allow all** is the card
+> bar's standing grant, plus an allow for everything that session already
+> holds. The questions list is **read-only**, with an "Answer in session"
+> jump: an allow with no `answers` discards a question (#563), so a blind
+> answer is not offered.
+>
 > A full history/audit view (the original "operator's log") may return later
 > as a separate surface; the Events panel itself stays a to-do list.
 

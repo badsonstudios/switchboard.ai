@@ -37,6 +37,8 @@ import { CollapsedStrip } from './components/CollapsedStrip';
 import { BatchApprovalBar } from './components/BatchApprovalBar';
 import { memberViews } from './lib/permission-batches';
 import type { PermissionRequestDto } from '../../shared/ipc/permissions';
+import { ledgerAdmits } from './lib/held-permissions';
+import type { EventsFilter } from './lib/events-v2';
 import { WorkspaceNoticeBanner } from './components/WorkspaceNoticeBanner';
 import { PreflightBanner } from './components/PreflightBanner';
 import { ServiceHealthBanner } from './components/ServiceHealthBanner';
@@ -406,15 +408,12 @@ export function App(): React.JSX.Element {
     () => (permissionBatch ? memberViews(permissionBatch, sessions) : []),
     [permissionBatch, sessions]
   );
-  const decideBatch = React.useCallback(
-    (requestIds: readonly string[], decision: 'allow' | 'deny') => {
-      // One call PER REQUEST, on the same channel the card's own bar uses
-      // (E10-04) — there is no batch verb in main and there must not be: each
-      // held request is a separate CLI blocked on a separate answer, and main
-      // routing them one by one is what keeps a partly-failed batch honest.
-      // Deliberately NOT `allowAllSession`: see BatchApprovalBar's header.
-      for (const requestId of requestIds) {
-        void bridge.sessions
+  // Answer ONE held request from a surface that is not its card — the grouped
+  // card (P2-E9-11) and the Events rows (P2-E14-02). One function, so the two
+  // cannot disagree about what a `false`, a refusal or a rejection means.
+  const decideHeld = React.useCallback(
+    (requestId: string, decision: 'allow' | 'deny') => {
+      void bridge.sessions
           ?.decidePermission?.(requestId, decision)
           // FALSE means main never had it — released, timed out, or resolved by
           // something else, and no `permissionResolved` is coming for it. Self-
@@ -438,17 +437,16 @@ export function App(): React.JSX.Element {
           // Leaving it in the ledger keeps it on screen; dropping it would take
           // a live question off every surface on a guess.
           .catch(() => {});
-      }
       // Note what is NOT here: an optimistic drop from the ledger.
       //
       // The per-card bar pops its queue on click, and has to — it is the only
-      // thing holding the request. This card is not: main is, and main's
+      // thing holding the request. These surfaces are not: main is, and main's
       // `permissionResolved` reaches the shell and every card in one push, so
-      // letting it do the clearing keeps the grouped card and the cards'
-      // own bars in step. Dropping optimistically here would take the group
-      // down a whole IPC round trip before the cards heard, and for that round
-      // trip a mounted card would draw its own review bar over a question that
-      // was answered before the user let go of the mouse.
+      // letting it do the clearing keeps the grouped card, the Events row and
+      // the cards' own bars in step. Dropping optimistically here would take
+      // the group down a whole IPC round trip before the cards heard, and for
+      // that round trip a mounted card would draw its own review bar over a
+      // question that was answered before the user let go of the mouse.
       //
       // The cost is that these buttons stay live until the answers land. That
       // is safe: `sessions:decidePermission` is keyed by request id, and a
@@ -457,6 +455,50 @@ export function App(): React.JSX.Element {
     },
     [bridge]
   );
+  const decideBatch = React.useCallback(
+    (requestIds: readonly string[], decision: 'allow' | 'deny') => {
+      // One call PER REQUEST, on the same channel the card's own bar uses
+      // (E10-04) — there is no batch verb in main and there must not be: each
+      // held request is a separate CLI blocked on a separate answer, and main
+      // routing them one by one is what keeps a partly-failed batch honest.
+      // Deliberately NOT `allowAllSession`: see BatchApprovalBar's header.
+      for (const requestId of requestIds) decideHeld(requestId, decision);
+    },
+    [decideHeld]
+  );
+  // An Events row's "Allow all" (P2-E14-02): the card bar's "Allow all (this
+  // session)", from outside the card. The same two writes the card makes, in
+  // the same order: the renderer's grant first, so a request already in
+  // flight is auto-allowed by the card's intake when it lands, then main's, so
+  // future ones are answered at the server with no bar, event or beep.
+  //
+  // Then EVERY request the session is already holding, not only the one on the
+  // row. The card's bar only has to answer its head, because its queue shows
+  // the rest one by one; the row shows one and a "+N more", and an "Allow all"
+  // that left the other N parked would be a lie told in the button's own name.
+  // Questions are not in `requestIds` (`heldFor` keeps them out): a standing
+  // grant does not answer a question (#563).
+  //
+  // One session only, which is what separates this from the grouped card's
+  // refusal to offer it: that card would write N grants from one click.
+  const allowAllFromEvents = React.useCallback(
+    (liveId: string, requestIds: readonly string[]) => {
+      sessionStore.setAllowAll(liveId);
+      void bridge.sessions?.allowAllSession?.(liveId)?.catch(() => {});
+      for (const requestId of requestIds) decideHeld(requestId, 'allow');
+    },
+    [bridge, decideHeld]
+  );
+  // The whole ledger, for the Events rows to join by live id (P2-E14-02).
+  const heldPermissions = useSyncExternalStore(
+    subscribeStore,
+    () => sessionStore.getState().pendingPermissions
+  );
+  // §5.12's filters. Here, not in the panel, because the drawer unmounts the
+  // panel whenever it shuts and a choice that reset on every open would not be
+  // a choice. Not persisted: it is a view of right now.
+  const [eventsFilter, setEventsFilter] = React.useState<EventsFilter>('all');
+  const railCardIds = React.useMemo(() => railFlat.map((s) => s.id), [railFlat]);
   // The one subscription behind the ledger. Deliberately the same three
   // primitives the cards use — a live push, a resolution, and the replay for
   // whatever arrived before we subscribed (E10-04 review P0#3: a missed push
@@ -464,11 +506,10 @@ export function App(): React.JSX.Element {
   // dead session's question leaves the group the moment the renderer knows,
   // without waiting on main's best-effort release (#239).
   useEffect(() => {
-    // An allow-all session is answered without a bar, at the server for PTY and
-    // by the card for stream. Its requests must never reach a group, or a
-    // session the user took out of the loop would flash into a prompt and be
-    // counted in "2 sessions want…".
-    const groupable = (r: PermissionRequestDto): boolean => !sessionStore.isAllowAll(r.sessionId);
+    // Not an allow-all session's requests, except its questions — the rule and
+    // its reasons are `ledgerAdmits` (lib/held-permissions).
+    const groupable = (r: PermissionRequestDto): boolean =>
+      ledgerAdmits(r, (id) => sessionStore.isAllowAll(id));
     const take = (r: PermissionRequestDto): void => {
       if (groupable(r)) sessionStore.addPendingPermission(r);
     };
@@ -2273,6 +2314,12 @@ export function App(): React.JSX.Element {
           queueBinding={queueBindingLabel}
           onFocus={(id) => focusSession(id)}
           onVisit={(eventId) => sessionStore.visit(eventId)}
+          held={heldPermissions}
+          onDecidePermission={decideHeld}
+          onAllowAllSession={allowAllFromEvents}
+          filter={eventsFilter}
+          onFilterChange={setEventsFilter}
+          railOrder={railCardIds}
           reconnectOffer={reconnectOffer}
           onRestoreLayout={() => {
             grid.current?.restoreRescuedPopouts();

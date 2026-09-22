@@ -103,6 +103,26 @@ export function enqueueHeld(
 }
 
 /**
+ * Does the shell's whole-fleet ledger (P2-E9-11) take this request?
+ *
+ * Not from an allow-all session: that session is answered without a bar, at
+ * the server for PTY and by the card for stream, so its requests must never
+ * reach a group. A session the user took out of the loop would otherwise flash
+ * into a prompt and be counted in "2 sessions want…".
+ *
+ * A QUESTION is the exception (P2-E14-02). A standing grant never answers one
+ * (#563: main and `intakePermission` both exempt it), so an allow-all session
+ * asking a question really is waiting, and the Events row that lists it reads
+ * this ledger. It still never reaches a group: `chooseBatch` skips questions.
+ */
+export function ledgerAdmits(
+  r: Pick<PermissionRequestDto, 'tool' | 'sessionId'>,
+  isAllowAll: (sessionId: string) => boolean
+): boolean {
+  return r.tool === ASK_USER_QUESTION_TOOL || !isAllowAll(r.sessionId);
+}
+
+/**
  * Take ONE answered request out of the card's queue, by id.
  *
  * By id and never by position, and P2-E9-11 is why. The bar used to render

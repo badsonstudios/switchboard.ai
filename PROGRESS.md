@@ -3,6 +3,15 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔨 IN PROGRESS — 2026-09-22: **#420** P2-E14-02 Events v2 (filters, inline permission decisions, questions list)
+>
+> Branch `feature/420-events-v2`. Plan posted on the issue: Events rows join the
+> renderer's existing held-request ledger by live id; Allow / Allow all / Deny
+> inline; questions render as an expandable read-only list; filters All ·
+> Needed · By session (rail order). Picked over #255 (umbrella, waits on #670),
+> #256 (epic tracker — every child closed, should be closed) and #323 (Dan's
+> prettier decision).
+
 > # ✅ MERGED — 2026-09-22: **#719** graceful session kill + quit drain + process census (issue stays OPEN)
 >
 > PR #913 squashed to `ae7ce3d`, all four CI jobs green; #719 verified still OPEN after the merge.

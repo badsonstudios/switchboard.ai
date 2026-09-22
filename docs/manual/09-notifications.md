@@ -119,6 +119,54 @@ its entries still appear in the drawer — the drawer is the log — but it is n
 marked **next** and `Ctrl+Space` walks straight past it. That's the difference
 between the log and the to-do list.
 
+### Answering a permission without leaving the drawer
+
+When a session is waiting for your permission, its entry shows what it wants to
+do (the tool, and the command or file it's about) plus three buttons:
+
+- **Allow** — let it run this one thing.
+- **Allow all** — let it run this, and anything else it asks for, until the
+  session restarts. This is the same as **Allow all (this session)** on the
+  session's own approval bar.
+- **Deny** — refuse. Claude is told no and carries on without it.
+
+Nothing else moves when you press one. The session isn't brought forward,
+whichever session you were working in stays where it was, and the drawer stays
+open. That's the point: you can clear three waiting sessions from here without
+losing your place.
+
+Each entry's buttons answer only its own session. Denying one session leaves
+another session's request waiting for you. If a session is waiting on more than
+one thing, the entry shows the oldest and says **+1 more** (or however many).
+**Allow** and **Deny** work through them one at a time. **Allow all** answers
+all of them at once.
+
+### When a session has asked you questions
+
+Sometimes Claude doesn't need permission, it needs an answer: "which colour?",
+"which of these files?". The entry then says **2 questions waiting** (or
+however many). Click that to expand the list and read what was asked, with the
+choices offered. Nothing is answered by reading it, so you can come back later.
+
+To answer, press **Answer in session**. That opens the session, where the
+question panel lets you pick. The drawer doesn't answer questions itself: a
+question needs your actual choice, not just a yes.
+
+### Showing less: All · Needed · By session
+
+The three buttons under the drawer's heading change what's listed:
+
+- **All** — everything, in to-do order (the list described above).
+- **Needed** — only the entries still waiting on you. Sessions you've already
+  looked at (**Ready**) are hidden, unless one still has a question or
+  permission open, in which case it stays so its buttons stay in reach.
+- **By session** — everything, but in the same order as your Sessions list
+  (pinned first, groups together) instead of by urgency. Use it when you're
+  looking for a particular session rather than for the next job.
+
+Your choice sticks while the app is open, even when you close and reopen the
+drawer. The app starts on **All** each time you launch it.
+
 ## The lamp strip
 
 Across the top of the window, under the title bar, there's a thin row of

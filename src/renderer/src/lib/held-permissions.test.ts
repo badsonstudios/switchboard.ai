@@ -5,6 +5,7 @@ import {
   enqueueHeld,
   IncomingPermission,
   intakePermission,
+  ledgerAdmits,
 } from './held-permissions';
 import { terminalHandoff } from './terminal-handoff';
 
@@ -362,5 +363,24 @@ describe('a standing allow-all does not answer the CLI own questions (#563)', ()
 
     expect(calls.decided).toEqual([{ requestId: 'r-write', decision: 'allow' }]);
     expect(calls.queued).toEqual([]);
+  });
+});
+
+// P2-E14-02: what the shell's whole-fleet ledger takes in. The Events rows and
+// the grouped card both read it, so the rule is pinned here rather than left
+// inline in App's effect.
+describe('ledgerAdmits', () => {
+  const allowAll = (id: string): boolean => id === 'granted';
+
+  it('takes an ordinary request from an ordinary session', () => {
+    expect(ledgerAdmits({ tool: 'Bash', sessionId: 'plain' }, allowAll)).toBe(true);
+  });
+
+  it("keeps an allow-all session's permissions OUT: that session is answered without a bar", () => {
+    expect(ledgerAdmits({ tool: 'Bash', sessionId: 'granted' }, allowAll)).toBe(false);
+  });
+
+  it("takes an allow-all session's QUESTION: a standing grant never answers one (#563)", () => {
+    expect(ledgerAdmits({ tool: 'AskUserQuestion', sessionId: 'granted' }, allowAll)).toBe(true);
   });
 });
