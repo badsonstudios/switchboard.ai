@@ -3,14 +3,50 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔨 IN PROGRESS — 2026-09-22: **#420** P2-E14-02 Events v2 (filters, inline permission decisions, questions list)
+> # ✅ MERGED — 2026-09-22: **#420** P2-E14-02 Events v2 (inline permission decisions, questions list, filters)
 >
-> Branch `feature/420-events-v2`. Plan posted on the issue: Events rows join the
-> renderer's existing held-request ledger by live id; Allow / Allow all / Deny
-> inline; questions render as an expandable read-only list; filters All ·
-> Needed · By session (rail order). Picked over #255 (umbrella, waits on #670),
-> #256 (epic tracker — every child closed, should be closed) and #323 (Dan's
-> prettier decision).
+> PR #915 squashed to `ed98107`; all four CI jobs green on `110870e`, the exact
+> head. The Windows unit job went green on a re-run: its first run timed out
+> two transcript tests at 5 s, unrelated to this change, filed as #916. Only
+> #420 closed. **Not released**: it is in 0.8.98's unreleased CHANGELOG section,
+> alongside #719, which merged with NO CHANGELOG entry (the 0.8.98 section was
+> empty before this item). The next release cut should add a #719 line. The
+> dogfood row is UNTESTED.
+>
+> Events rows join the renderer's held-request ledger by live id. Allow / Allow
+> all / Deny sit inline and never focus the card. A held AskUserQuestion
+> renders as a read-only expandable list with "Answer in session". The filters
+> are All · Needed (queueable, plus rows still holding a request) · By session
+> (rail order). No main or IPC change.
+>
+> **Judgment calls:**
+> - By session means rail order, with no group headings.
+> - Questions are not answerable from the drawer (#563's empty-allow discard).
+> - Allow all also allows everything the session already holds, where the card
+>   bar only answers its head.
+> - `ledgerAdmits`: questions from allow-all sessions now enter the ledger.
+> - A double-click guard: 400 ms re-arm after a new request shows, 5 s
+>   fail-open ceiling.
+> - The filter lives in App state and is not persisted.
+>
+> **Review** (code-reviewer): no blockers. Every should-fix and most nits were
+> taken. Reviewer follow-up worth a hand-test: a card on screen might briefly
+> show the terminal-handoff bar when its request is answered from Events (it
+> gets no `noteDecided` window). That was already possible via the grouped
+> card; it is dogfood step 6.
+>
+> **Verification:**
+> - typecheck and lint are clean.
+> - Unit: 8828 passed. The one failure was the known flaky git-service budget
+>   test, which passes on its own.
+> - e2e: events-v2 3/3, plus 56/56 across the drawer, approval, batch, stream,
+>   a11y, question and feed specs.
+> - The allow-all e2e was mutation-verified red.
+>
+> **Tracker hygiene spotted:** #256 (E19 epic) is still open, and every child
+> through #260 is closed; its own comment says it closes with #260. **Next up:**
+> nothing nominated. #255 is an umbrella waiting on #670, #323 needs Dan's
+> prettier decision, and the next plain feature item is #483.
 
 > # ✅ MERGED — 2026-09-22: **#719** graceful session kill + quit drain + process census (issue stays OPEN)
 >
