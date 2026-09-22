@@ -3,9 +3,11 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔧 IN PROGRESS — 2026-09-22: **#719** leaked MCP helpers — graceful kill + process census
+> # ✅ MERGED — 2026-09-22: **#719** graceful session kill + quit drain + process census (issue stays OPEN)
 >
-> Branch `feature/719-stream-kill-tree`. Owner switched straight to #719.
+> PR #913 squashed to `ae7ce3d`, all four CI jobs green; #719 verified still OPEN after the merge.
+> **Not released** — needs a version bump. Dogfood row added (UNTESTED, laptop). Next for #719:
+> wait for the laptop log to show where `node.exe` climbs (mid-session = CLI give-up; at closes = us). Owner switched straight to #719.
 > **The ticket's last diagnosis was mostly disproved** by probing the real CLI
 > (`spike/probes/719-kill-tree/`). The claim was that `StreamSession.kill()`
 > strands MCP servers on every close. It doesn't: the CLI reaps its helpers
