@@ -94,7 +94,9 @@ on the floor, and say so in your PR.
 
 ---
 
-## 0.8.98 — unreleased
+## 0.8.99 — unreleased
+
+## 0.8.98 — 2026-09-22
 
 ### Added
 
@@ -109,6 +111,16 @@ on the floor, and say so in your PR.
 - **Filter the Events drawer.** **All**, **Needed** (only what's still waiting
   on you) and **By session** (the same order as your Sessions list) sit under
   the drawer's heading.
+
+### Changed
+
+- **Sessions shut down more gently.** Closing or restarting a session now asks
+  Claude to finish up before stopping it, instead of cutting it off. Quitting
+  switchboard does the same for every open session, which can add up to about
+  three seconds to closing the app while a session is mid-answer.
+- **The log keeps count of leftover programs.** Once a minute, switchboard's
+  log now records how many programs are running on the machine and which ones
+  are most common. If something starts piling up, the log will say what it is.
 
 ## 0.8.97 — 2026-09-21
 
