@@ -91,8 +91,11 @@ export interface CpuHeartbeatDeps {
    * raises, and a burn figure with no load beside it cannot answer it. Optional
    * and fail-open: a counter that throws must never cost us the CPU line, which
    * is the part we came for.
+   *
+   * Values are not only numbers: the #719 process census carries a name →
+   * count map (`sysTop`) and the app's own children by kind.
    */
-  counters?: () => Record<string, number>;
+  counters?: () => Record<string, unknown>;
 }
 
 /** what one beat found, returned so tests assert on values rather than log text */

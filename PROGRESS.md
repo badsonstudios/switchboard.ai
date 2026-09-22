@@ -3,6 +3,34 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔧 IN PROGRESS — 2026-09-22: **#719** leaked MCP helpers — graceful kill + process census
+>
+> Branch `feature/719-stream-kill-tree`. Owner switched straight to #719.
+> **The ticket's last diagnosis was mostly disproved** by probing the real CLI
+> (`spike/probes/719-kill-tree/`). The claim was that `StreamSession.kill()`
+> strands MCP servers on every close. It doesn't: the CLI reaps its helpers
+> itself on every normal kill. What DID reproduce: when the CLI gives up on a
+> slow MCP server behind a `cmd /c` layer, it kills only that cmd.exe. The
+> wrapper under it is orphaned, then starts the server anyway, and the pair
+> lives on while the session is still alive. That is CLI-side, and no kill of
+> ours can reach it. Owner chose: a graceful kill (close stdin → 3 s grace →
+> `killTree`; measured exit in ~170 ms idle and ~210 ms mid-turn, code 1 as
+> before) plus a process census on the heartbeat (system count, enum latency,
+> top image names, our own live children). The census is how the next laptop
+> incident names the leaker. Not a fix claim; the issue stays open.
+>
+> **Handoff note (another session's reference-impl read, 12:03 UTC)** asked
+> for the same shape plus a **quit drain**, which is now in: `will-quit` holds,
+> `StreamService.shutdownAll` closes every stdin (removed-but-dying sessions
+> included), waits the grace, tree-kills survivors and waits for taskkill.
+> taskkill is our own child and dies with the app (libuv's kill-on-close job).
+> **Trap found in e2e:** `preventDefault` + an immediate `app.quit()` is
+> silently dropped, and the app hangs with no windows. Hence no hold when
+> nothing is live, and a fresh-tick re-quit. Verified: quit-confirm e2e,
+> `stream*.spec.ts` (33 live-session quits drained in ~70 ms, 35/35 completed),
+> 8,798 unit tests. The handoff note's "root cause found" is contradicted by
+> the probe (`spike/findings/719-kill-tree.md`).
+
 > # 🚀 RELEASE — 2026-09-21: **v0.8.97** cut (carries #908 + #909)
 >
 > Owner asked for it straight after both merged. #908 merged as PR #910 →

@@ -28,6 +28,10 @@ import { ChildProcess, spawn } from 'child_process';
  *     Windows, so `execSpec` hands us **cmd.exe** and the 230 MB `claude.exe`
  *     is its child. A one-shot label run that has to be abandoned must not
  *     leave that child holding a model call.
+ *   - **the interactive stream session** (#719). The same `cmd.exe` →
+ *     `claude.exe` shape, held for the whole life of a session. It uses this
+ *     only as a backstop, after stdin EOF has had a chance to end the CLI
+ *     cleanly (see `StreamSession.kill`).
  *
  * `taskkill /T` takes the tree.
  *
@@ -36,7 +40,22 @@ import { ChildProcess, spawn } from 'child_process';
  * hook, a clean filter — which is #776's subject: those should not be running
  * at all.
  */
-export function killTree(child: ChildProcess): void {
+export function killTree(child: ChildProcess, onDone?: () => void): void {
+  // `onDone` fires once, when the kill has been carried out or has failed over
+  // to the fallback. App quit needs it (#719). `taskkill` is our own child, and
+  // libuv puts every child in a kill-on-close job object, so an app that exits
+  // straight after spawning it can take the killer down before it has killed
+  // anything.
+  let doneFired = false;
+  const done = (): void => {
+    if (doneFired) return;
+    doneFired = true;
+    try {
+      onDone?.();
+    } catch {
+      /* the caller's problem; this may be running in a timer callback */
+    }
+  };
   if (process.platform === 'win32' && child.pid !== undefined) {
     // EVERY failure of the tree kill falls back to killing the one process we
     // hold — the launcher at least goes, as it did before — and none of them
@@ -50,7 +69,11 @@ export function killTree(child: ChildProcess): void {
     // later, and Node may have reaped it in between. Narrowing that would mean
     // matching image names, for odds that are very small.
     const fallback = (): void => {
-      if (child.exitCode === null && child.signalCode === null) child.kill();
+      try {
+        if (child.exitCode === null && child.signalCode === null) child.kill();
+      } finally {
+        done();
+      }
     };
     try {
       const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], {
@@ -60,11 +83,16 @@ export function killTree(child: ChildProcess): void {
       killer.on('error', fallback);
       killer.on('exit', (code) => {
         if (code !== 0) fallback();
+        else done();
       });
     } catch {
       fallback();
     }
     return;
   }
-  child.kill();
+  try {
+    child.kill();
+  } finally {
+    done();
+  }
 }

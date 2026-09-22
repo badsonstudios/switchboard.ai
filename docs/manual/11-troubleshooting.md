@@ -394,6 +394,23 @@ Two things on that line are worth knowing how to read:
   in thousandths of a second. A small number is normal and always present. A
   number in the thousands means it genuinely froze.
 
+The same line also counts **programs**, because a pile of leftover background
+programs can slow a computer down just as badly as one busy one:
+
+- **`children`** is how many programs switchboard itself has running right now,
+  sorted by what started them: `stream` for your sessions, `git` for the
+  changes pane, `oneshot` for small background jobs such as naming a session.
+- **`sysProcs`** is how many programs are running on the whole machine, and
+  **`sysTop`** lists the most common ones by name, for example
+  `"node.exe": 122`. If that number climbs over a day, something is leaving
+  programs behind. If `children` stays small while it climbs, the leftovers
+  aren't switchboard's own.
+- **`sysEnumMs`** is how long counting took, in thousandths of a second. On a
+  healthy machine that's well under a second. If it's many seconds, starting
+  any program on the machine has become slow, which usually means antivirus or
+  the disk is struggling. If a count is still running when the next line is
+  written, the line says so with `sysEnumPendingMs`.
+
 Busy minutes are recorded as warnings, so they stand out when you read back
 through the file, and the first line covers the minute from launch onwards —
 including startup, which is usually the busiest minute of a run.
