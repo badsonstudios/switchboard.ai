@@ -21,6 +21,8 @@ import { PtyService } from './pty/pty-service';
 import { StreamService } from './transport/stream-service';
 import { createDiagnosticLogger } from './transport/diagnostics';
 import { CpuHeartbeat } from './diagnostics/cpu-heartbeat';
+import { ProcessCensus } from './diagnostics/process-census';
+import { liveChildren } from './diagnostics/live-children';
 import { registerReportIpc } from './diagnostics/report-ipc';
 import { parsePreferredTransport, TRANSPORT_ENV_VAR } from './transport/preferred-transport';
 import { StreamPermissions } from './sessions/stream-permissions';
@@ -1538,6 +1540,7 @@ app
     // `percentCPUUsage` is a share of the WHOLE MACHINE (measured — probe 719),
     // so the service converts to cores' worth; `cores` goes on every line so the
     // laptop's numbers and this desktop's can be read against each other.
+    const processCensus = new ProcessCensus();
     const cpuHeartbeat = new CpuHeartbeat({
       getMetrics: () =>
         app.getAppMetrics().map((m) => {
@@ -1561,8 +1564,16 @@ app
         windows: BrowserWindow.getAllWindows().length,
         ptys: ptys.list().length,
         streams: streams.list().length,
+        // #719, 2026-09-22: 122 `node.exe` sat on the laptop at idle and nobody
+        // could say whose they were. `children` is what WE have running, by
+        // who started it. The census is the whole machine, with the most
+        // common image names and how long counting them took. Ours small and
+        // the machine's huge means someone else is spawning.
+        children: liveChildren(),
+        ...processCensus.fields(),
       }),
     });
+    processCensus.start();
     cpuHeartbeat.start();
     // The lag gauge cannot tell a SUSPENDED machine from a WEDGED one — both
     // look like "no timer fired for hours" — so the OS is asked rather than
@@ -2312,6 +2323,31 @@ app
     // …and the permission half a toast needs to name and answer a hold
     // (P2-E14-04). Same late binding, same reason.
     sessionIpcRef = sessionIpc;
+    // #719: hold the quit until every Direct session's CLI has shut down.
+    // Closing stdin lets the CLI end itself and reap its own MCP servers
+    // (~200 ms, measured). One that hangs is tree-killed after the grace. Both
+    // need the app still ALIVE: `kill()`'s backstop is a timer, and the tree
+    // kill is a child of ours that dies with us. `will-quit` fires after every
+    // window has closed, so this adds up to ~3 s of wait behind a window that
+    // is already gone, and only when a session was still running.
+    //
+    // Two things measured the hard way (e2e quit-confirm). Nothing to wait for
+    // means no preventDefault at all: the quit is not delayed. And the second
+    // `app.quit()` is issued on a fresh TICK. Called from a promise continuation
+    // straight after `will-quit`, Electron dropped it silently, with no second
+    // `will-quit` and no `quit`, and the app hung for ever with no windows.
+    let streamsDrained = false;
+    app.on('will-quit', (e) => {
+      if (streamsDrained || !streams.hasLive()) return;
+      streamsDrained = true;
+      e.preventDefault();
+      streams
+        .shutdownAll()
+        .catch(() => {
+          /* never rejects; and a quit must not stall on its own cleanup */
+        })
+        .finally(() => setTimeout(() => app.quit(), 0));
+    });
     app.on('quit', () => {
       // A toast offering Allow for a session that is being torn down is a
       // button that can only disappoint. Take them down with the app.
@@ -2328,6 +2364,7 @@ app
       updates.stop(); // kills the daily timer; a check in flight becomes a no-op
       health.stop(); // same, for the status-page poll
       cpuHeartbeat.stop(); // the #719 per-process CPU line, and its lag gauge
+      processCensus.stop(); // …and the machine-wide process count it carries
       staticServer?.close();
       scheduleForcedExit();
     });

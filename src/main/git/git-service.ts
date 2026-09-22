@@ -14,6 +14,7 @@ import path from 'path';
 // Shared with the one-shot CLI runner (#758) rather than copied into it — see
 // that module's header for the second measured launcher case.
 import { killTree } from '../transport/kill-tree';
+import { trackChild } from '../diagnostics/live-children';
 import {
   CONFIG_LIST_SCOPED,
   EMPTY_TREE,
@@ -212,6 +213,7 @@ function git(
           resolve({ ok: !err && !abandoned, out: stdout ?? '', err: stderr ?? '', failure });
         }
       );
+      trackChild('git', child); // the #719 heartbeat's own-children count
     } catch {
       // ⚠️ **`execFile` CAN THROW RATHER THAN CALL BACK, AND LINUX IS WHERE IT
       // DOES (#785, found by CI).** Handing it a `cwd` that is a FILE raises

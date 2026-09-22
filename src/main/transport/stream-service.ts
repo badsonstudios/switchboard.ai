@@ -12,6 +12,8 @@
 // PtyService); it is also driven directly by unit tests and `fake-stream-check`.
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import { buildEnv } from './env';
+import { killTree } from './kill-tree';
+import { trackChild } from '../diagnostics/live-children';
 import { MessageRing } from './message-ring';
 import { NdjsonDecoder, encodeFrame } from './ndjson';
 import { SessionTransport, TransportSpawnOptions } from './transport';
@@ -32,7 +34,16 @@ export interface StreamSpawnOptions extends TransportSpawnOptions {
    * per-session override the tests and `fake-stream-check` use.
    */
   onDiagnostic?: (d: StreamDiagnostic) => void;
+  /** How long `kill()` waits for a graceful exit before the tree kill. */
+  killGraceMs?: number;
 }
+
+/**
+ * `kill()`'s grace before the tree kill (#719). The real CLI exits on stdin
+ * EOF in ~200 ms, so this is ~15x that. It is short enough that a Restart
+ * never has two live CLIs writing one transcript for long.
+ */
+export const KILL_GRACE_MS = 3_000;
 
 export interface StreamDiagnostic {
   sessionId: string;
@@ -100,11 +111,15 @@ export class StreamSession {
    *  own, deliberately; see `detach` */
   private readonly onStdout: (chunk: string) => void;
   private detached = false;
+  private readonly killGraceMs: number;
+  /** the pending tree kill `kill()` arms; cleared by `settle` */
+  private killTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(opts: StreamSpawnOptions) {
     this.id = opts.id;
     this.messages = new MessageRing<StreamMessage>(opts.ringCapacity ?? 2000);
     this.onDiagnostic = opts.onDiagnostic;
+    this.killGraceMs = opts.killGraceMs ?? KILL_GRACE_MS;
 
     const { file, argv } = launchSpec(opts.command, opts.args);
     this.proc = spawn(file, argv, {
@@ -116,6 +131,7 @@ export class StreamSession {
       // over eight hours. Every spawn on Windows needs it.
       windowsHide: true,
     });
+    trackChild('stream', this.proc); // the #719 heartbeat's own-children count
 
     // setEncoding, NOT `chunk.toString('utf8')` per chunk. The S-10 probes do
     // the latter and it is subtly wrong: a multi-byte character straddling a
@@ -156,6 +172,8 @@ export class StreamSession {
       // whichever lands first wins and the other is ignored.
       if (this.exitCode !== null) return;
       this.exitCode = code;
+      if (this.killTimer) clearTimeout(this.killTimer);
+      this.killTimer = null;
       // Before the fan-out: a listener is free to tear the session down, and
       // the last thing this session ever noticed should not depend on what a
       // subscriber does with the news.
@@ -216,9 +234,10 @@ export class StreamSession {
    *
    * **Silence when there is nothing to say.** No stderr, clean framing, no
    * partial line ⇒ no line at all. Without that gate every ordinary session
-   * close would log a warning: `kill()` settles as code 1 (no exit code from a
-   * signalled child), so "nonzero exit" is the normal way a user-closed
-   * session ends and would be a warning on every card the user shuts.
+   * close would log a warning: `kill()` settles as code 1 (the real CLI's exit
+   * on stdin EOF, measured in #719, and a tree-killed or signalled child's
+   * code too), so "nonzero exit" is the normal way a user-closed session ends
+   * and would be a warning on every card the user shuts.
    *
    * **Snapshot, not a guarantee of completeness.** stdio `data` can arrive
    * after `exit`, so a byte written in the child's last breath may miss this
@@ -315,11 +334,64 @@ export class StreamSession {
     }
   }
 
+  /**
+   * End the session: close stdin, and take the whole tree only if that fails
+   * (#719).
+   *
+   * THE CLI'S OWN SHUTDOWN COMES FIRST, because it is the one that knows what
+   * it started. Measured against the real CLI (`spike/probes/719-kill-tree/`):
+   * on stdin EOF it exits in ~170 ms idle and ~210 ms mid-turn (it abandons the
+   * turn), with exit code 1, and it reaps its MCP servers on the way out. So the
+   * normal path costs nothing, and the exit code is the same as the old
+   * signal's.
+   *
+   * THE TREE KILL IS THE BACKSTOP for a CLI that does not exit. It is not a
+   * `proc.kill()`: on Windows `proc` is the `cmd.exe` launcher (see
+   * `launchSpec`), and killing it alone leaves a hung `claude.exe`, plus
+   * everything IT started, running with nobody holding a handle. `killTree`
+   * takes the tree while it is still a tree. Only after the grace, because
+   * `/F` gives the CLI no shutdown: no SessionEnd hooks, no final transcript
+   * write.
+   *
+   * What neither step can reach, and why #719 stays open: an MCP server the
+   * CLI ITSELF orphaned mid-session, when it gave up on a slow server behind a
+   * `cmd /c` layer. Measured with a stand-in. That process left the tree before
+   * we ever came to kill it.
+   *
+   * Idempotent. The timer is unref'd, so a quit never waits on it; the app
+   * dying closes the pipes, and that is the same EOF.
+   */
   kill(): void {
+    if (this.exitCode !== null || this.killTimer) return;
     try {
-      this.proc.kill();
+      this.proc.stdin.end();
     } catch {
-      /* already dead */
+      /* the pipe is already gone — the backstop below still runs */
+    }
+    this.killTimer = setTimeout(() => this.killNow(), this.killGraceMs);
+    this.killTimer.unref?.();
+  }
+
+  /**
+   * The tree kill, now, with no grace. `kill()`'s backstop, and what app quit
+   * uses on a CLI that has outlived the grace (`StreamService.shutdownAll`).
+   * `onDone` fires once the kill has been carried out (see `killTree`), or at
+   * once if there is nothing left to kill. Never throws.
+   */
+  killNow(onDone?: () => void): void {
+    if (this.killTimer) clearTimeout(this.killTimer);
+    this.killTimer = null;
+    if (this.exitCode !== null) {
+      onDone?.();
+      return;
+    }
+    try {
+      killTree(this.proc, onDone);
+    } catch {
+      // A timer callback in Electron main must not throw (P6). `killTree`
+      // catches its own failures, so this is defence, and it must still
+      // release a caller that is waiting on `onDone`.
+      onDone?.();
     }
   }
 
@@ -412,14 +484,24 @@ export interface StreamServiceOptions {
    * `fake-stream-check` can watch one session without a logger.
    */
   onDiagnostic?: (d: StreamDiagnostic) => void;
+  /**
+   * `kill()`'s grace for every session this service spawns. It is on the
+   * service for the same reason as `onDiagnostic`. Tests shorten it; the app
+   * leaves the default.
+   */
+  killGraceMs?: number;
 }
 
 export class StreamService implements SessionTransport {
   private readonly sessions = new Map<string, StreamSession>();
+  /** removed from `sessions` by `remove()`, still inside `kill()`'s grace */
+  private readonly dying = new Set<StreamSession>();
   private readonly onDiagnostic?: (d: StreamDiagnostic) => void;
+  private readonly killGraceMs?: number;
 
   constructor(opts: StreamServiceOptions = {}) {
     this.onDiagnostic = opts.onDiagnostic;
+    this.killGraceMs = opts.killGraceMs;
   }
 
   spawn(opts: StreamSpawnOptions): StreamSession {
@@ -429,7 +511,11 @@ export class StreamService implements SessionTransport {
     // `??`, so an explicit `onDiagnostic: undefined` reads as "didn't say" and
     // still reaches the service's sink. Silence is the bug #449 fixed; a caller
     // that genuinely wants none can pass `() => {}` and say so.
-    const s = new StreamSession({ ...opts, onDiagnostic: opts.onDiagnostic ?? this.onDiagnostic });
+    const s = new StreamSession({
+      ...opts,
+      onDiagnostic: opts.onDiagnostic ?? this.onDiagnostic,
+      killGraceMs: opts.killGraceMs ?? this.killGraceMs,
+    });
     this.sessions.set(opts.id, s);
     return s;
   }
@@ -459,6 +545,11 @@ export class StreamService implements SessionTransport {
     // mute. A future transport should not read this as a required step.
     s?.detach();
     this.sessions.delete(id);
+    // Killed but not yet exited: still ours to finish off at quit (#719).
+    if (s && s.exitCode === null) {
+      this.dying.add(s);
+      s.onExit(() => this.dying.delete(s));
+    }
   }
 
   list(): Array<{ id: string; pid: number; exitCode: number | null }> {
@@ -471,5 +562,51 @@ export class StreamService implements SessionTransport {
 
   killAll(): void {
     for (const s of this.sessions.values()) s.kill();
+  }
+
+  /** Every child not yet exited, including removed-but-dying ones (#719). */
+  private live(): StreamSession[] {
+    return [...this.sessions.values(), ...this.dying].filter((s) => s.exitCode === null);
+  }
+
+  /** Is there anything for `shutdownAll` to wait on? App quit asks first. */
+  hasLive(): boolean {
+    return this.live().length > 0;
+  }
+
+  /**
+   * App quit (#719): let every CLI shut down, and wait for it.
+   *
+   * `killAll` alone is not enough at quit. `kill()`'s backstop is a timer, and
+   * an exiting app never runs it, so a CLI that hangs on EOF would outlive the
+   * app with nothing left to end it. So this closes every stdin, waits up to
+   * `graceMs` for the exits, tree-kills whatever is still alive, and resolves
+   * once those kills have been carried out (bounded by `killWaitMs`). The wait
+   * is not optional: `taskkill` is our own child, so an app that exits
+   * straight after spawning it takes the killer down with it (libuv's
+   * kill-on-close job object).
+   *
+   * It covers `dying` too. A card closed a moment before quit is already out
+   * of the map but still inside its own grace, and its timer is exactly what
+   * an exiting app cancels.
+   *
+   * Always resolves and never rejects: a quit must not hang on its cleanup.
+   */
+  async shutdownAll(graceMs = KILL_GRACE_MS, killWaitMs = 2_000): Promise<void> {
+    const live = this.live();
+    if (live.length === 0) return;
+    for (const s of live) s.kill();
+
+    const deadline = Date.now() + graceMs;
+    while (live.some((s) => s.exitCode === null) && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 25));
+    }
+
+    const survivors = live.filter((s) => s.exitCode === null);
+    if (survivors.length === 0) return;
+    await Promise.race([
+      Promise.all(survivors.map((s) => new Promise<void>((r) => s.killNow(r)))),
+      new Promise<void>((r) => setTimeout(r, killWaitMs)),
+    ]);
   }
 }

@@ -50,6 +50,7 @@ import { resolveCliPath } from './claude';
 import { execSpec } from '../transport/win-cmd';
 import { buildEnv } from '../transport/env';
 import { killTree } from '../transport/kill-tree';
+import { trackChild } from '../diagnostics/live-children';
 import type { Logger } from '../log/logger';
 
 /**
@@ -181,6 +182,7 @@ export function runContainedPrompt(
       resolve({ ok: false, failure: 'spawn-failed', ms: ms(), detail: String(err) });
       return;
     }
+    trackChild('oneshot', child); // the #719 heartbeat's own-children count
 
     let out = '';
     let err = '';

@@ -139,7 +139,10 @@ afterAll(async () => {
   cleanupTempDirs();
 }, 20_000);
 beforeEach(() => {
-  svc = new StreamService();
+  // A short kill grace (#719). Most children here never read stdin, so the
+  // graceful half of `kill()` cannot end them and every kill rides the
+  // backstop. At the 3 s default, each of those is 3 s of nothing.
+  svc = new StreamService({ killGraceMs: 200 });
   diagnostics.length = 0;
 });
 
@@ -686,4 +689,221 @@ describe('the exit summary (#593)', () => {
   });
   // Every case spawns a real child; same ceiling and same reason as the suites
   // above (#512).
+}, 30_000);
+
+// #719: `kill()` closes stdin and waits, and only then takes the whole tree.
+// The real CLI exits on EOF in ~200 ms and reaps its own MCP servers
+// (`spike/probes/719-kill-tree/`). The tree kill is the backstop for one that
+// does not exit. Each case below fails against the old `proc.kill()`.
+describe('kill(): graceful first, the tree after a grace (#719)', () => {
+  /** alive by PID, which is all a stranded grandchild leaves us to ask about */
+  const alive = (pid: number): boolean => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  it('closes stdin first, so a child that exits on EOF exits in its own way', async () => {
+    // A long grace, so the only thing that can end this child in time is the
+    // EOF. Code 7 proves it was the child's own exit. A signal reads as 1.
+    svc = new StreamService({ killGraceMs: 30_000 });
+    const s = run(`
+      process.stdin.on('end', () => process.exit(7));
+      process.stdin.resume();
+      setInterval(() => {}, 1000);
+    `);
+    await until(() => s.pid > 0);
+
+    s.kill();
+
+    await until(() => s.exitCode !== null);
+    expect(s.exitCode).toBe(7);
+  });
+
+  it('force-ends a child that ignores EOF, and not before the grace', async () => {
+    svc = new StreamService({ killGraceMs: 400 });
+    const s = run(`setInterval(() => {}, 1000);`); // never reads stdin
+    await until(() => s.pid > 0);
+
+    const t0 = Date.now();
+    s.kill();
+    await new Promise((r) => setTimeout(r, 200));
+    expect(s.exitCode).toBeNull(); // still inside the grace
+
+    await until(() => s.exitCode !== null);
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(400);
+    expect(s.exitCode).toBe(1); // what the #593 summary gate expects of a kill
+  });
+
+  it('is idempotent, and a no-op on a child that already exited', async () => {
+    const s = run(`setInterval(() => {}, 1000);`);
+    await until(() => s.pid > 0);
+    expect(() => {
+      s.kill();
+      s.kill(); // must not re-arm or double the backstop
+    }).not.toThrow();
+    await until(() => s.exitCode !== null);
+
+    const done = run(`process.exit(0);`, 'done');
+    await until(() => done.exitCode !== null);
+    expect(() => done.kill()).not.toThrow();
+    expect(done.exitCode).toBe(0);
+  });
+
+  // The launcher case, built the way the app builds it. The stream transport
+  // runs `claude.cmd` as `cmd.exe /c claude.cmd`, so the handle we hold is
+  // cmd.exe and the CLI is its CHILD. A hung CLI must not outlive the kill.
+  //
+  // It has to be a real .cmd launcher, not node → node. libuv puts every child
+  // it spawns in a kill-on-close job object, so a node grandchild dies with its
+  // node parent whatever we do. The first version of this test passed against a
+  // plain `proc.kill()` for exactly that reason. cmd.exe is not a libuv process,
+  // and that is the gap the tree kill covers. POSIX has no launcher layer, and
+  // `killTree` is a plain kill there, so this is Windows only.
+  it.runIf(process.platform === 'win32')(
+    'the backstop takes the process behind a cmd.exe launcher, not just the launcher',
+    async () => {
+      const got: { worker?: number }[] = [];
+      const worker = script(`
+        process.stdout.write(JSON.stringify({ worker: process.pid }) + '\\n');
+        setInterval(() => {}, 1000); // ignores EOF: only the backstop ends it
+      `);
+      const launcher = path.join(dir, `l${Math.random().toString(36).slice(2)}.cmd`);
+      fs.writeFileSync(launcher, `@"${process.execPath}" "${worker}"\r\n`);
+      const s = spawnTracked({
+        id: 'launched',
+        command: launcher,
+        args: [],
+        cwd: dir,
+        onDiagnostic: (d) => diagnostics.push(d),
+      });
+      s.onMessage((m) => got.push(m));
+      await until(() => got.length === 1);
+      const pid = got[0].worker!;
+      try {
+        expect(pid).not.toBe(s.pid); // it really is behind a launcher
+
+        s.kill();
+
+        await until(() => s.exitCode !== null);
+        await until(() => !alive(pid), 5_000);
+      } finally {
+        // never leave one on the machine, whatever the assertions said
+        if (alive(pid)) process.kill(pid);
+      }
+    },
+    20_000
+  );
+}, 30_000);
+
+// #719: app quit. `kill()`'s backstop is a timer that an exiting app never
+// runs, so `shutdownAll` waits the grace out itself and finishes the job.
+describe('shutdownAll: what app quit waits on (#719)', () => {
+  const alive = (pid: number): boolean => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const exitsOnEof = `
+    process.stdin.on('end', () => process.exit(0));
+    process.stdin.resume();
+    setInterval(() => {}, 1000);
+  `;
+
+  it('hasLive: what quit asks before holding the app, removed-but-dying included', async () => {
+    // Quit holds the app only when this says yes. A false yes would delay every
+    // quit, and a false no would skip the drain.
+    svc = new StreamService({ killGraceMs: 30_000 });
+    expect(svc.hasLive()).toBe(false);
+    const s = run(`setInterval(() => {}, 1000);`, 'h');
+    await until(() => s.pid > 0);
+    expect(svc.hasLive()).toBe(true);
+    svc.remove('h'); // out of the map, still inside its grace
+    expect(svc.hasLive()).toBe(true);
+    s.killNow();
+    await until(() => s.exitCode !== null);
+    expect(svc.hasLive()).toBe(false);
+  });
+
+  it('resolves at once with nothing running', async () => {
+    const t0 = Date.now();
+    await svc.shutdownAll(5_000);
+    expect(Date.now() - t0).toBeLessThan(500);
+  });
+
+  it('lets CLIs that honour EOF end themselves, without waiting out the grace', async () => {
+    const a = run(exitsOnEof, 'a');
+    const b = run(exitsOnEof, 'b');
+    await until(() => a.pid > 0 && b.pid > 0);
+
+    const t0 = Date.now();
+    await svc.shutdownAll(10_000);
+
+    expect(Date.now() - t0).toBeLessThan(5_000);
+    expect(a.exitCode).toBe(0); // their own exit, not a kill
+    expect(b.exitCode).toBe(0);
+  }, 20_000);
+
+  it('ends one that ignores EOF once the grace is up', async () => {
+    // A 30 s session grace stands in for the app exiting: kill()'s own timer
+    // never fires, so only shutdownAll can end this child.
+    svc = new StreamService({ killGraceMs: 30_000 });
+    const s = run(`setInterval(() => {}, 1000);`);
+    await until(() => s.pid > 0);
+
+    await svc.shutdownAll(300);
+
+    await until(() => s.exitCode !== null, 2_000);
+  });
+
+  it('also finishes a session removed a moment before quit, still inside its grace', async () => {
+    // A 30 s kill grace: left to its own timer this child would outlive the
+    // test. Only `shutdownAll` knowing about removed-but-dying sessions ends it.
+    svc = new StreamService({ killGraceMs: 30_000 });
+    const s = run(`setInterval(() => {}, 1000);`, 'closed');
+    await until(() => s.pid > 0);
+    svc.remove('closed');
+
+    await svc.shutdownAll(300);
+
+    await until(() => s.exitCode !== null, 2_000);
+  });
+
+  // Windows: the survivor sits behind a cmd.exe launcher, as a real CLI does,
+  // and by the time shutdownAll resolves, the tree kill has been CARRIED OUT,
+  // not just started. That is the property quit depends on, because the
+  // killer dies with the app.
+  it.runIf(process.platform === 'win32')(
+    'has taken the process behind the launcher by the time it resolves',
+    async () => {
+      // A 30 s session grace stands in for the app exiting: kill()'s own
+      // timer never fires, so only shutdownAll can end this child.
+      svc = new StreamService({ killGraceMs: 30_000 });
+      const got: { worker?: number }[] = [];
+      const worker = script(`
+        process.stdout.write(JSON.stringify({ worker: process.pid }) + '\\n');
+        setInterval(() => {}, 1000);
+      `);
+      const launcher = path.join(dir, `q${Math.random().toString(36).slice(2)}.cmd`);
+      fs.writeFileSync(launcher, `@"${process.execPath}" "${worker}"\r\n`);
+      const s = spawnTracked({ id: 'quit', command: launcher, args: [], cwd: dir });
+      s.onMessage((m) => got.push(m));
+      await until(() => got.length === 1);
+      const pid = got[0].worker!;
+      try {
+        await svc.shutdownAll(300);
+        // a few ms for the kernel to finish tearing down what taskkill ended
+        await until(() => !alive(pid), 1_000);
+      } finally {
+        if (alive(pid)) process.kill(pid);
+      }
+    },
+    20_000
+  );
 }, 30_000);
