@@ -3,6 +3,16 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🚀 RELEASE — 2026-09-21: **v0.8.97** cut (carries #908 + #909)
+>
+> Owner asked for it straight after both merged. #908 merged as PR #910 →
+> `1b83e2e`; #909 merged as PR #911 → `d3f728c`; all four CI jobs passed on
+> each, and only those two issues closed. Release PR bumps version + lock +
+> CHANGELOG and opens `0.8.98 — unreleased`; tag `v0.8.97` goes on the squash
+> commit after merge. **Verify `gh release list` shows v0.8.97 before telling
+> Dan he has it.** Dan's hand-test list: the #908 row (UNTESTED) and the #909
+> row (RE-TEST) in the dogfood tracker.
+
 > # ✅ MERGED — 2026-09-21: **#909** typing lost after a native confirm (Windows)
 >
 > Branch `feature/909-refocus-after-native-dialog`. **Reproduced**, with real
