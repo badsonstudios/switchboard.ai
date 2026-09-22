@@ -3,6 +3,16 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🚀 RELEASE — 2026-09-22: **v0.8.98** cut (carries #420 + #719)
+>
+> The owner asked for it after #420 merged. #719 merged as PR #913 →
+> `ae7ce3d`, and #420 merged as PR #915 → `ed98107`. The release PR bumps the
+> version, the lock and the CHANGELOG, and opens `0.8.99 — unreleased`. It also
+> writes the #719 CHANGELOG lines its PR had skipped. Tag `v0.8.98` goes on the
+> squash commit after merge. **Verify `gh release list` shows v0.8.98 before
+> telling Dan he has it.** Dan's hand-test list: the #420 and #719 rows in the
+> dogfood tracker, #719 on the laptop.
+
 > # ✅ MERGED — 2026-09-22: **#420** P2-E14-02 Events v2 (inline permission decisions, questions list, filters)
 >
 > PR #915 squashed to `ed98107`; all four CI jobs green on `110870e`, the exact
