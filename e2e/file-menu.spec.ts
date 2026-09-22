@@ -49,6 +49,17 @@ const clickOpenFile = (a: LaunchedApp): Promise<boolean> =>
     return true;
   });
 
+/** Fire File › Settings… (#908), the way the OS would. */
+const clickSettings = (a: LaunchedApp): Promise<boolean> =>
+  a.app.evaluate(({ Menu }) => {
+    const file = Menu.getApplicationMenu()?.items.find((i) => i.label === 'File');
+    const item = file?.submenu?.items.find((i) => i.label.startsWith('Settings'));
+    if (!item) return false;
+    const fire = item.click as unknown as () => void;
+    fire();
+    return true;
+  });
+
 /** Which dockview group each panel is in, so "beside, not inside" is assertable. */
 const groupsOf = (w: Page): Promise<Array<{ id: string; panels: string[] }>> =>
   w.evaluate(() =>
@@ -263,5 +274,29 @@ test.describe('the File menu (#569)', () => {
     // SECOND time: where you actually browsed to, which beats the session's
     // folder once you have been somewhere.
     expect(seen[1]).toBe(nested);
+  });
+
+  // #908. The click rides the accelerator channel like Open File…, so the same
+  // two claims: something is listening at the far end, and a focused composer
+  // (the most likely place the caret is) does not swallow it.
+  test('Settings… opens Settings, even with the composer focused', async () => {
+    test.setTimeout(180_000);
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder, env: DIRECT });
+    const w = a.window;
+    await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
+
+    const box = w.getByPlaceholder(/Prompt this session/);
+    await box.click();
+    await box.fill('half a prompt');
+    await expect(box).toBeFocused();
+
+    expect(await clickSettings(a), 'the File menu should carry a Settings item').toBe(true);
+    const dialog = w.getByRole('dialog', { name: 'Settings' });
+    await expect(dialog).toBeVisible({ timeout: 15_000 });
+    await w.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    // ...and what was being typed is untouched
+    await expect(box).toHaveValue('half a prompt');
   });
 });

@@ -3,6 +3,30 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ MERGED — 2026-09-21: **#908** File ▸ Settings… (Ctrl+,) under Open File…
+>
+> Branch `feature/908-file-menu-settings`. File menu is now built from whatever
+> is wired (Help's rule): Open File… · Settings… · separator · Exit. Settings…
+> SHOWS `Ctrl+,` with `registerAccelerator: false` and delivers `view.settings`
+> down the accelerator channel. The hosted CLI binds no `ctrl+,` (reviewer
+> grepped claude 2.1.272).
+>
+> **Judgment calls:** `view.settings` scope `app` → `typing-ok`. Without that,
+> the menu click did nothing with the composer focused (#569's B2 again; the
+> e2e proves it by mutation). Terminals still keep Ctrl+,. On macOS, Settings
+> stays in File: `role: 'appMenu'` takes no custom items, and mac isn't shipped.
+> A click from a popout opens Settings in the MAIN window, which comes forward.
+>
+> **Review** (code-reviewer): no blockers. Taken: the popout expectation in the
+> tracker was wrong, the stale "`fromPopout: false`" comment was removed, the
+> typing-ok allowlist test was renamed FIVE with a #908 paragraph, and the e2e
+> now closes Settings and checks the draft survives.
+>
+> **Verification:** typecheck 0, lint 0. Unit: 8758 passed + 1 known flake
+> (#835's git-service budget guard, green isolated). file-menu e2e 6/6. The
+> scope mutation turns the new e2e red.
+> Dan's hand-test list: the #908 row in the dogfood tracker. **Next up:** #909.
+
 > # 🚀 RELEASE — 2026-09-21: **v0.8.96** cut (carries #905)
 >
 > Owner asked for it straight after #905 merged. #905 merged as PR #906 →

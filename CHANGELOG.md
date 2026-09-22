@@ -96,6 +96,13 @@ on the floor, and say so in your PR.
 
 ## 0.8.97 — unreleased
 
+### Added
+
+- **Settings is in the File menu.** **File ▸ Settings…** sits right under
+  **Open File…** and opens the same Settings window as **Ctrl+,**, so you can
+  find it by browsing the menu bar. It works even while you're typing in a
+  prompt box.
+
 ## 0.8.96 — 2026-09-21
 
 ### Changed

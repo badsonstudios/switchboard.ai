@@ -7,9 +7,12 @@ rather than an accident.
 
 ## The Settings window
 
-Press **`Ctrl+,`**, or open the command palette (**`Ctrl+Shift+P`**) and pick
-**Settings…**, or click the version number in the title bar and press
-**Settings…** in the About panel.
+Choose **File ▸ Settings…** from the menu bar, or press **`Ctrl+,`**, or open
+the command palette (**`Ctrl+Shift+P`**) and pick **Settings…**, or click the
+version number in the title bar and press **Settings…** in the About panel.
+
+`Ctrl+,` works everywhere except inside a session's terminal, where the key
+belongs to Claude. From there, use the menu or the palette.
 
 Everything in it is something you set once and forget. There is **no Save
 button** — every control takes effect the moment you touch it, and you can watch
