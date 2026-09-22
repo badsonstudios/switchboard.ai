@@ -96,6 +96,20 @@ on the floor, and say so in your PR.
 
 ## 0.8.98 — unreleased
 
+### Added
+
+- **Answer permissions straight from the Events drawer.** A session waiting
+  for permission now shows **Allow**, **Allow all** and **Deny** right on its
+  entry, so you can clear several waiting sessions without opening any of
+  them. Your place in the session you're working in doesn't move.
+- **See a session's questions in the Events drawer.** When Claude has asked a
+  session one or more questions, its entry says how many are waiting and
+  expands to show them with their choices. **Answer in session** takes you to
+  the session to pick.
+- **Filter the Events drawer.** **All**, **Needed** (only what's still waiting
+  on you) and **By session** (the same order as your Sessions list) sit under
+  the drawer's heading.
+
 ## 0.8.97 — 2026-09-21
 
 ### Added

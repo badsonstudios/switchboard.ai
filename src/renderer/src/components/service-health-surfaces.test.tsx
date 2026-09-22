@@ -13,6 +13,7 @@ import { ServiceHealthStatus } from '../../../shared/service-health';
 import { statusBarItems } from '../extensibility/status-bar-items';
 import { StatusBarContext } from '../extensibility/contributions';
 import { EventsPanel } from './EventsPanel';
+import { V2 } from './events-panel-test-props';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -125,6 +126,7 @@ describe('the status-bar dot', () => {
 describe('the incident notice in the Events panel', () => {
   const panel = (incidents?: { id: string; name: string; status: string }[]) => (
     <EventsPanel
+      {...V2}
       sessions={[]}
       events={[]}
       queueEvents={[]}

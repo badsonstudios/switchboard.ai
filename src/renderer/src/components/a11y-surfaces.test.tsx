@@ -30,6 +30,7 @@ import { DEFAULT_FOCUS_BOOK } from '../lib/focus-policy';
 import { uiDelete } from '../lib/ui-state';
 import { RailGroup, RailSession, EventDto } from '../model/types';
 import { NO_ORDER } from '../lib/rail-order';
+import { V2 } from './events-panel-test-props';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -108,6 +109,7 @@ const events: EventDto[] = [
 async function mountEvents(): Promise<HTMLElement> {
   return mount(
     <EventsPanel
+      {...V2}
       sessions={[
         { ...sessions[0], liveId: 'live-1' },
         { ...sessions[2], liveId: 'live-3' },
@@ -560,6 +562,7 @@ describe('events panel rows (issue 197)', () => {
     const visited: number[] = [];
     await mount(
       <EventsPanel
+        {...V2}
         sessions={[{ ...sessions[0], liveId: 'live-1' }]}
         events={[events[0]]}
         queueEvents={[events[0]]}
@@ -591,6 +594,7 @@ describe('events panel notices (issue 314)', () => {
   it('announces the reconnect offer, on the message rather than the buttons', async () => {
     const host = await mount(
       <EventsPanel
+        {...V2}
         sessions={[]}
         events={[]}
         queueEvents={[]}
@@ -617,6 +621,7 @@ describe('events panel notices (issue 314)', () => {
     it(`gives the ${kind} update notice the same pair`, async () => {
       const host = await mount(
         <EventsPanel
+          {...V2}
           sessions={[]}
           events={[]}
           queueEvents={[]}

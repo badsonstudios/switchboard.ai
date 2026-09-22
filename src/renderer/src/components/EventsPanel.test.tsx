@@ -18,6 +18,9 @@ import en from '../../../shared/i18n/locales/en.json';
 import { EventsPanel } from './EventsPanel';
 import type { EventDto } from '../model/types';
 import type { HistoryRepairNotice } from '../../../shared/history-repair';
+import type { PermissionRequestDto } from '../../../shared/ipc/permissions';
+import type { EventsFilter } from '../lib/events-v2';
+import { V2 } from './events-panel-test-props';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -44,6 +47,7 @@ async function render(
         onFocus={() => {}}
         onVisit={() => {}}
         queueBinding="Ctrl+Space"
+        {...V2}
         updateNotice={notice}
         {...handlers}
       />
@@ -153,6 +157,7 @@ describe('the history-repair notice (#539)', () => {
           onFocus={() => {}}
           onVisit={() => {}}
           queueBinding="Ctrl+Space"
+          {...V2}
           historyRepairs={repairs}
           onDismissHistoryRepair={onDismiss}
         />
@@ -250,6 +255,7 @@ describe('a reviewed row recedes by token, never by opacity', () => {
           onFocus={() => {}}
           onVisit={() => {}}
           queueBinding="Ctrl+Space"
+          {...V2}
           {...handlers}
         />
       );
@@ -317,5 +323,223 @@ describe('a reviewed row recedes by token, never by opacity', () => {
       expect(row.style.background).toBe('');
       expect(row.style.backgroundColor).toBe('');
     }
+  });
+});
+
+// P2-E14-02: a row that can ANSWER, and the filters above the rows.
+describe('Events v2: inline decisions, questions, filters', () => {
+  const ALPHA = { id: 'card-a', liveId: 'live-a', title: 'alpha' };
+  const BETA = { id: 'card-b', liveId: 'live-b', title: 'beta' };
+  const perm = (requestId: string, sessionId: string, command = 'npm test'): PermissionRequestDto => ({
+    requestId,
+    sessionId,
+    tool: 'Bash',
+    input: { command },
+  });
+  const question = (requestId: string, sessionId: string): PermissionRequestDto => ({
+    requestId,
+    sessionId,
+    tool: 'AskUserQuestion',
+    input: {
+      questions: [
+        {
+          question: 'Which colour?',
+          header: 'Colour',
+          options: [{ label: 'Red' }, { label: 'Blue' }],
+          multiSelect: false,
+        },
+        { question: 'Which size?', options: [{ label: 'S' }, { label: 'L' }], multiSelect: false },
+      ],
+    },
+  });
+  const onDecide = vi.fn();
+  const onAllowAll = vi.fn();
+  const onFocus = vi.fn();
+  const onFilter = vi.fn();
+
+  beforeEach(() => {
+    for (const f of [onDecide, onAllowAll, onFocus, onFilter]) f.mockReset();
+    // the row's open gesture acks the event; nothing here is about that
+    (window as unknown as { switchboard: unknown }).switchboard = {
+      events: { ack: vi.fn(() => Promise.resolve()), dismiss: vi.fn(() => Promise.resolve()) },
+    };
+  });
+
+  async function show(
+    events: EventDto[],
+    held: PermissionRequestDto[],
+    filter: EventsFilter = 'all',
+    railOrder: string[] = ['card-a', 'card-b']
+  ): Promise<void> {
+    await act(async () => {
+      root!.render(
+        <EventsPanel
+          sessions={[ALPHA, BETA]}
+          events={events}
+          queueEvents={events}
+          visited={new Set<number>()}
+          onFocus={onFocus}
+          onVisit={() => {}}
+          queueBinding="Ctrl+Space"
+          held={held}
+          onDecidePermission={onDecide}
+          onAllowAllSession={onAllowAll}
+          filter={filter}
+          onFilterChange={onFilter}
+          railOrder={railOrder}
+        />
+      );
+    });
+  }
+  const e = (id: number, sessionId: string, kind: EventDto['kind']): EventDto => ({
+    id,
+    sessionId,
+    kind,
+    at: `2026-09-22T10:0${id}:00.000Z`,
+  });
+  const q = <T extends Element = HTMLElement>(sel: string): T => {
+    const el = host.querySelector<T>(sel);
+    if (!el) throw new Error(`nothing matches ${sel}`);
+    return el;
+  };
+
+  it('Allow and Deny answer THAT request, and never open the card', async () => {
+    await show([e(1, 'live-a', 'needs-permission')], [perm('r1', 'live-a')]);
+    expect(q('[data-event-permission="r1"]').textContent).toContain('npm test');
+    await click(q('[data-event-deny="r1"]'));
+    expect(onDecide).toHaveBeenCalledWith('r1', 'deny');
+    // the done-when: answered "with the card never focused"
+    expect(onFocus).not.toHaveBeenCalled();
+    // …and a click on the box between the buttons does not fall through either
+    await click(q('[data-event-held="live-a"]'));
+    expect(onFocus).not.toHaveBeenCalled();
+  });
+
+  it('a click disarms the row until a DIFFERENT request has been showing for a beat', async () => {
+    vi.useFakeTimers();
+    try {
+      await show([e(1, 'live-a', 'needs-permission')], [perm('r1', 'live-a'), perm('r2', 'live-a', 'git push')]);
+      await click(q('[data-event-allow="r1"]'));
+      expect(onDecide.mock.calls).toEqual([['r1', 'allow']]);
+      // the double-click: swallowed, because nothing has resolved yet
+      await click(q('[data-event-allow="r1"]'));
+      expect(onDecide).toHaveBeenCalledTimes(1);
+
+      // r1 resolves and r2 slides in UNDER THE POINTER — still disarmed
+      await show([e(1, 'live-a', 'needs-permission')], [perm('r2', 'live-a', 'git push')]);
+      expect(q<HTMLButtonElement>('[data-event-allow="r2"]').disabled).toBe(true);
+      await click(q('[data-event-allow="r2"]'));
+      expect(onDecide).toHaveBeenCalledTimes(1);
+
+      // …and armed once it has been on screen long enough to read
+      await act(async () => {
+        vi.advanceTimersByTime(400);
+      });
+      expect(q<HTMLButtonElement>('[data-event-allow="r2"]').disabled).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('an answer that never lands re-arms the buttons rather than leaving them dead', async () => {
+    vi.useFakeTimers();
+    try {
+      await show([e(1, 'live-a', 'needs-permission')], [perm('r1', 'live-a')]);
+      await click(q('[data-event-allow="r1"]'));
+      expect(q<HTMLButtonElement>('[data-event-allow="r1"]').disabled).toBe(true);
+      await act(async () => {
+        vi.advanceTimersByTime(5_000);
+      });
+      expect(q<HTMLButtonElement>('[data-event-allow="r1"]').disabled).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('each row answers only its own session: denying beta leaves alpha alone', async () => {
+    await show(
+      [e(1, 'live-a', 'needs-permission'), e(2, 'live-b', 'needs-permission')],
+      [perm('ra', 'live-a'), perm('rb', 'live-b', 'rm -rf build')]
+    );
+    await click(q('[data-event-deny="rb"]'));
+    expect(onDecide.mock.calls).toEqual([['rb', 'deny']]);
+    // named per session, so a screen reader can tell the two rows' Denies apart
+    expect(q('[data-event-deny="ra"]').getAttribute('aria-label')).toBe('Deny Bash in alpha');
+    expect(q('[data-event-deny="rb"]').getAttribute('aria-label')).toBe('Deny Bash in beta');
+    // WCAG 2.5.3: every spoken name starts with the words on the button
+    for (const b of host.querySelectorAll<HTMLButtonElement>('[data-event-held] button')) {
+      expect((b.getAttribute('aria-label') ?? '').startsWith(b.textContent ?? '')).toBe(true);
+    }
+  });
+
+  it('Allow all hands over the live id and EVERY permission it holds, and says how many more', async () => {
+    await show(
+      [e(1, 'live-a', 'needs-permission')],
+      [perm('r1', 'live-a'), perm('r2', 'live-a', 'git status'), question('q1', 'live-a')]
+    );
+    expect(host.textContent).toContain('+1 more');
+    await click(q('[data-event-allow-all="live-a"]'));
+    // the question is NOT in the list: a standing grant does not answer one
+    expect(onAllowAll).toHaveBeenCalledWith('live-a', ['r1', 'r2']);
+    expect(onFocus).not.toHaveBeenCalled();
+  });
+
+  it('a question row expands into the list of what was asked, with no blind answer on offer', async () => {
+    await show([e(1, 'live-a', 'needs-permission')], [question('q1', 'live-a')]);
+    // no Allow/Deny: an allow with no answers is "the user did not answer"
+    expect(host.querySelector('[data-event-allow]')).toBeNull();
+    const toggle = q<HTMLButtonElement>('[data-event-questions="live-a"]');
+    expect(toggle.textContent).toContain('2 questions waiting');
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    expect(host.querySelector('[data-testid="event-question-list"]')).toBeNull();
+
+    await click(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    const list = q('[data-testid="event-question-list"]');
+    expect(toggle.getAttribute('aria-controls')).toBe(list.id);
+    expect(list.textContent).toContain('Colour:');
+    expect(list.textContent).toContain('Which colour?');
+    expect(list.textContent).toContain('Red · Blue');
+    expect(list.textContent).toContain('Which size?');
+    // expanding is not opening
+    expect(onFocus).not.toHaveBeenCalled();
+
+    // "Answer in session" IS opening — that is where a question gets answered
+    await click(q('[data-event-answer]'));
+    expect(onFocus).toHaveBeenCalledWith('card-a');
+  });
+
+  it('a row with nothing held is the row it always was', async () => {
+    await show([e(1, 'live-a', 'done')], [perm('rb', 'live-b')]);
+    expect(host.querySelector('[data-event-held]')).toBeNull();
+  });
+
+  it('renders the three filters with the current one pressed, and reports a pick', async () => {
+    await show([e(1, 'live-a', 'done')], [], 'needed');
+    const buttons = [...host.querySelectorAll<HTMLButtonElement>('[data-events-filter]')];
+    expect(buttons.map((b) => b.textContent)).toEqual(['All', 'Needed', 'By session']);
+    expect(buttons.map((b) => b.getAttribute('aria-pressed'))).toEqual(['false', 'true', 'false']);
+    await click(buttons[2]);
+    expect(onFilter).toHaveBeenCalledWith('by-session');
+  });
+
+  it('Needed with only reviewed rows says the VIEW is empty, not that nothing ever happened', async () => {
+    await show([e(1, 'live-a', 'ready')], [], 'needed');
+    expect(host.querySelectorAll('[role="listitem"]')).toHaveLength(0);
+    expect(host.querySelector('[data-testid="events-filter-empty"]')).not.toBeNull();
+    expect(host.textContent).not.toContain(en.events.empty);
+  });
+
+  it('By session lists the rows in rail order', async () => {
+    const events = [e(1, 'live-a', 'done'), e(2, 'live-b', 'needs-permission')];
+    await show(events, [], 'by-session', ['card-a', 'card-b']);
+    const titles = (): string[] =>
+      [...host.querySelectorAll('[role="listitem"]')].map((r) =>
+        r.textContent?.includes('alpha') ? 'alpha' : 'beta'
+      );
+    expect(titles()).toEqual(['alpha', 'beta']);
+    // …where All still leads with the one that is blocked
+    await show(events, [], 'all');
+    expect(titles()).toEqual(['beta', 'alpha']);
   });
 });

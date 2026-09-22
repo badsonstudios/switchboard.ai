@@ -22,6 +22,7 @@ import type { RailSession } from './SessionsRail';
 import type { HistoryRepairNotice } from '../../../shared/history-repair';
 import fs from 'fs';
 import path from 'path';
+import { V2 } from './events-panel-test-props';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -69,6 +70,7 @@ async function render(o: Options = {}): Promise<void> {
         onFocus={() => {}}
         onVisit={() => {}}
         queueBinding="Ctrl+Space"
+        {...V2}
         reconnectOffer={o.reconnectOffer}
         onRestoreLayout={() => {}}
         onDismissOffer={() => {}}

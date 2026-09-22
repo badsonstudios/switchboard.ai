@@ -16,12 +16,31 @@
 // session grid, and the drawer above it owns the edge, the shadow and the
 // open/close. App still owns the subscription and the cursor — the drawer is a
 // shape, not a new home for state.
+//
+// P2-E14-02 (Events v2): the rows can now ANSWER as well as point. A row whose
+// session is holding a permission carries Allow · Allow all · Deny, and one
+// holding a question carries an expandable list of what it asked. The row is
+// still one session's latest state; the held requests come from the store's
+// whole-fleet ledger (see `lib/events-v2`), not from the event. Above the rows,
+// the three filters §5.12 names: All · Needed · By session.
 import type { HistoryRepairNotice } from '../../../shared/history-repair';
+import type { PermissionRequestDto } from '../../../shared/ipc/permissions';
+import type { AskQuestion } from '../../../shared/ask-user-question';
 import { EventDto } from '../model/types';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { RailSession } from './SessionsRail';
-import { panelOrder, nextInQueue } from '../lib/queue';
+import { nextInQueue } from '../lib/queue';
+import {
+  EVENTS_FILTERS,
+  EventsFilter,
+  heldFor,
+  HeldForSession,
+  rowArgument,
+  visibleEvents,
+} from '../lib/events-v2';
+import { argumentDetail } from '../lib/permission-batches';
 
 export type { EventDto } from '../model/types';
 
@@ -170,6 +189,27 @@ export interface EventsPanelProps {
   historyRepairs?: readonly HistoryRepairNotice[];
   /** the notice's one control: I have read this. */
   onDismissHistoryRepair?: (id: string) => void;
+  /**
+   * Every request main is holding, fleet-wide: the store's ledger (P2-E9-11),
+   * which is what a row's inline buttons answer from (P2-E14-02).
+   *
+   * REQUIRED, for `queueEvents`' reason: a mount that forgot it would render a
+   * needs-permission row with no buttons, and nothing would say why.
+   */
+  held: readonly PermissionRequestDto[];
+  /** answer ONE held request, on the same channel the card's bar uses */
+  onDecidePermission: (requestId: string, decision: 'allow' | 'deny') => void;
+  /**
+   * The card bar's "Allow all (this session)", from a row: write the standing
+   * grant for this LIVE session, then allow what it is already holding.
+   */
+  onAllowAllSession: (liveSessionId: string, heldRequestIds: readonly string[]) => void;
+  /** which of §5.12's three views is showing. App owns it, because the drawer
+   *  unmounts this panel when it shuts and the choice has to survive that. */
+  filter: EventsFilter;
+  onFilterChange: (filter: EventsFilter) => void;
+  /** the rail's order, as card ids — what "By session" sorts by */
+  railOrder: readonly string[];
 }
 
 export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
@@ -177,7 +217,6 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
   // the panel's heading doubles as the list's label — one "Events", not two
   const eyebrowId = React.useId();
   const events = props.events;
-  const ordered = panelOrder(events);
   // Where the hotkey will actually take you next — the same function the
   // hotkey itself calls, fed the same cursor. Anything cheaper (say, always
   // the head of the queue) would be a lie from the second press onward.
@@ -190,6 +229,20 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
     byId.set(s.id, s);
     if (s.liveId) byId.set(s.liveId, s);
   }
+  const railPos = new Map(props.railOrder.map((id, i) => [id, i]));
+  const holdingIds = new Set(props.held.map((r) => r.sessionId));
+  const ordered = visibleEvents(
+    events,
+    props.filter,
+    (sid) => {
+      const s = byId.get(sid);
+      return s ? railPos.get(s.id) : undefined;
+    },
+    (sid) => holdingIds.has(sid)
+  );
+  // "Nothing needs you" is only true of the WHOLE list. Under Needed with only
+  // reviewed rows left, the honest line is that this filter is empty.
+  const filteredEmpty = events.length > 0 && ordered.length === 0;
 
   return (
     <aside
@@ -315,6 +368,43 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
             {t('events.drawer.closeIcon')}
           </button>
         )}
+      </div>
+      {/* §5.12's three views (P2-E14-02). Toggle buttons rather than tabs: the
+          list below is the same list either way, re-ordered or narrowed, not a
+          different panel per choice. `aria-pressed` is what tells a screen
+          reader which one is on. */}
+      <div
+        role="group"
+        aria-label={t('events.filter.label')}
+        data-testid="events-filters"
+        style={{ display: 'flex', gap: 4, marginBlockEnd: 6 }}
+      >
+        {EVENTS_FILTERS.map((f) => {
+          const on = props.filter === f;
+          return (
+            <button
+              key={f}
+              type="button"
+              className="events-btn"
+              data-events-filter={f}
+              aria-pressed={on}
+              onClick={() => props.onFilterChange(f)}
+              style={{
+                background: on ? 'var(--chip)' : 'transparent',
+                color: on ? 'var(--text)' : 'var(--muted)',
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius-chip)',
+                padding: '1px 8px',
+                cursor: 'pointer',
+                fontSize: 10,
+                fontWeight: on ? 600 : 400,
+                fontFamily: 'var(--font-ui)',
+              }}
+            >
+              {t(`events.filter.${f}`)}
+            </button>
+          );
+        })}
       </div>
       {head !== null && props.queueBinding && (
         <div
@@ -556,6 +646,11 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
         !props.historyRepairs?.length && (
         <div style={{ color: 'var(--muted)', fontSize: 11 }}>{t('events.empty')}</div>
       )}
+      {filteredEmpty && (
+        <div data-testid="events-filter-empty" style={{ color: 'var(--muted)', fontSize: 11 }}>
+          {t('events.filter.empty')}
+        </div>
+      )}
       {/* A real list, so the rows read as a set and their count is announced
           (#197). Only the rows are inside it — the eyebrow, the hotkey hint and
           the reconnect offer are not list items and would inflate that count. */}
@@ -615,136 +710,154 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
                   the dismiss from a screen reader. So the readable body is the
                   button, the row div stays a role-less mouse convenience that
                   duplicates it, and its accessible name is the whole event: which
-                  session, when, what it is doing, and what state it is in. */}
-              <button
-                type="button"
-                className="event-open"
-                data-event-open={e.id}
-                onClick={(ev) => {
-                  ev.stopPropagation(); // the row below would otherwise re-run it
-                  open();
-                }}
-                style={{
-                  display: 'block',
-                  inlineSize: '100%',
-                  textAlign: 'start',
-                  background: 'transparent',
-                  border: 'none',
-                  padding: 0,
-                  margin: 0,
-                  font: 'inherit',
-                  fontSize: 11,
-                  color: 'inherit',
-                  cursor: 'pointer',
-                }}
-              >
-                <span style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
+                  session, when, what it is doing, and what state it is in.
+
+                  P2-E14-02 wraps it and Dismiss in a positioned box of their
+                  own, so Dismiss keeps its corner of the SUMMARY when a row
+                  grows answer buttons underneath it: anchored to the row, it
+                  would ride down onto them. */}
+              <div style={{ position: 'relative' }}>
+                <button
+                  type="button"
+                  className="event-open"
+                  data-event-open={e.id}
+                  onClick={(ev) => {
+                    ev.stopPropagation(); // the row below would otherwise re-run it
+                    open();
+                  }}
+                  style={{
+                    display: 'block',
+                    inlineSize: '100%',
+                    textAlign: 'start',
+                    background: 'transparent',
+                    border: 'none',
+                    padding: 0,
+                    margin: 0,
+                    font: 'inherit',
+                    fontSize: 11,
+                    color: 'inherit',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <span style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
+                    <span
+                      style={{
+                        fontWeight: 600,
+                        // the ROW's colour, so the reviewed step down the neutral
+                        // ladder is one declaration in tokens.css rather than a
+                        // ternary here (#268)
+                        color: 'inherit',
+                        flex: 1,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {s?.title ?? t('events.unknownSession')}
+                    </span>
+                    <span style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)', fontSize: 9 }}>
+                      {new Date(e.at).toLocaleTimeString()}
+                    </span>
+                  </span>
+                  {/* always rendered so every item is the SAME height (Dan round 4) */}
                   <span
                     style={{
-                      fontWeight: 600,
-                      // the ROW's colour, so the reviewed step down the neutral
-                      // ladder is one declaration in tokens.css rather than a
-                      // ternary here (#268)
-                      color: 'inherit',
-                      flex: 1,
+                      display: 'block',
+                      // The task label — the text #268 was actually filed over
+                      // (4.55:1 on nordic at full strength, 3.61:1 once the old
+                      // group opacity was folded in). It stays an explicit token
+                      // rather than inheriting, because on a LIVE row it is the
+                      // step below the title and inheriting would flatten that.
+                      // The consequence to know: it is covered by the drift test
+                      // only because `.event-row[data-reviewed='true']` happens
+                      // to name this same token, so retuning that rule's `color`
+                      // means retuning this with it.
+                      color: 'var(--muted)',
+                      fontSize: 10,
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    {s?.title ?? t('events.unknownSession')}
+                    {s?.taskLabel ?? ' '}
                   </span>
-                  <span style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)', fontSize: 9 }}>
-                    {new Date(e.at).toLocaleTimeString()}
+                  {/* the status line reserves the corner Dismiss sits in, so a long
+                      status can never run underneath it */}
+                  <span
+                    style={{
+                      display: 'block',
+                      color: KIND_INK[e.kind],
+                      marginBlockStart: 1,
+                      // width AND height: Dismiss is out of flow now, so this
+                      // line is the only thing holding the row tall enough for
+                      // it. Without the min height its button rides up into the
+                      // task label above, which has no gutter of its own.
+                      paddingInlineEnd: DISMISS_GUTTER,
+                      minBlockSize: 16,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {t(`events.kind.${e.kind}`)}
+                    {isNext && (
+                      <span
+                        title={t('events.nextUpHint')}
+                        style={{
+                          marginInlineStart: 6,
+                          fontSize: 9,
+                          letterSpacing: 0.6,
+                          textTransform: 'uppercase',
+                          color: 'var(--faint)',
+                          fontFamily: 'var(--font-mono)',
+                        }}
+                      >
+                        {t('events.nextUp')}
+                      </span>
+                    )}
                   </span>
-                </span>
-                {/* always rendered so every item is the SAME height (Dan round 4) */}
-                <span
+                </button>
+                {/* Dismiss keeps the bottom-right corner it has always had — out of
+                    the click path of the row you are trying to OPEN (Dan
+                    2026-07-26) — but it is a SIBLING of the open button now:
+                    nested inside, it would have been unreachable by keyboard. */}
+                <button
+                  onClick={(ev) => {
+                    ev.stopPropagation(); // dismiss, don't focus
+                    void window.switchboard.events.dismiss(e.sessionId);
+                  }}
+                  type="button"
+                  className="event-dismiss"
+                  title={t('events.dismissHint')}
                   style={{
-                    display: 'block',
-                    // The task label — the text #268 was actually filed over
-                    // (4.55:1 on nordic at full strength, 3.61:1 once the old
-                    // group opacity was folded in). It stays an explicit token
-                    // rather than inheriting, because on a LIVE row it is the
-                    // step below the title and inheriting would flatten that.
-                    // The consequence to know: it is covered by the drift test
-                    // only because `.event-row[data-reviewed='true']` happens
-                    // to name this same token, so retuning that rule's `color`
-                    // means retuning this with it.
+                    position: 'absolute',
+                    // 0/0 rather than the row's 6/9: this box sits INSIDE the
+                    // row's padding now, so the old offsets are already applied
+                    insetBlockEnd: 0,
+                    insetInlineEnd: 0,
+                    background: 'var(--chip)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 'var(--radius-chip)',
                     color: 'var(--muted)',
-                    fontSize: 10,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
+                    cursor: 'pointer',
+                    fontSize: 9.5,
+                    lineHeight: 1.4,
+                    padding: '0 7px',
+                    fontFamily: 'var(--font-ui)',
                   }}
                 >
-                  {s?.taskLabel ?? ' '}
-                </span>
-                {/* the status line reserves the corner Dismiss sits in, so a long
-                    status can never run underneath it */}
-                <span
-                  style={{
-                    display: 'block',
-                    color: KIND_INK[e.kind],
-                    marginBlockStart: 1,
-                    // width AND height: Dismiss is out of flow now, so this
-                    // line is the only thing holding the row tall enough for
-                    // it. Without the min height its button rides up into the
-                    // task label above, which has no gutter of its own.
-                    paddingInlineEnd: DISMISS_GUTTER,
-                    minBlockSize: 16,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {t(`events.kind.${e.kind}`)}
-                  {isNext && (
-                    <span
-                      title={t('events.nextUpHint')}
-                      style={{
-                        marginInlineStart: 6,
-                        fontSize: 9,
-                        letterSpacing: 0.6,
-                        textTransform: 'uppercase',
-                        color: 'var(--faint)',
-                        fontFamily: 'var(--font-mono)',
-                      }}
-                    >
-                      {t('events.nextUp')}
-                    </span>
-                  )}
-                </span>
-              </button>
-              {/* Dismiss keeps the bottom-right corner it has always had — out of
-                  the click path of the row you are trying to OPEN (Dan
-                  2026-07-26) — but it is a SIBLING of the open button now:
-                  nested inside, it would have been unreachable by keyboard. */}
-              <button
-                onClick={(ev) => {
-                  ev.stopPropagation(); // dismiss, don't focus
-                  void window.switchboard.events.dismiss(e.sessionId);
-                }}
-                type="button"
-                className="event-dismiss"
-                title={t('events.dismissHint')}
-                style={{
-                  position: 'absolute',
-                  insetBlockEnd: 6,
-                  insetInlineEnd: 9,
-                  background: 'var(--chip)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--radius-chip)',
-                  color: 'var(--muted)',
-                  cursor: 'pointer',
-                  fontSize: 9.5,
-                  lineHeight: 1.4,
-                  padding: '0 7px',
-                  fontFamily: 'var(--font-ui)',
-                }}
-              >
-                {t('events.dismiss')}
-              </button>
+                  {t('events.dismiss')}
+                </button>
+              </div>
+              <HeldActions
+                held={heldFor(props.held, e.sessionId)}
+                who={s?.title ?? t('events.unknownSession')}
+                liveSessionId={e.sessionId}
+                onDecide={props.onDecidePermission}
+                onAllowAll={props.onAllowAllSession}
+                onAnswer={open}
+                t={t}
+              />
             </div>
           );
         })}
@@ -752,3 +865,239 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
     </aside>
   );
 }
+
+/**
+ * What a row can do about the request its session is blocked on (P2-E14-02).
+ *
+ * Renders nothing when the session is holding nothing, so every other row is
+ * exactly the row it was.
+ *
+ * Every click in here STOPS at this box. The row around it is a mouse
+ * convenience that opens (focuses) the card, and the done-when is that a
+ * permission is answered "with the card never focused". A click that landed
+ * between two buttons would otherwise do the one thing this surface promises
+ * not to.
+ *
+ * The buttons DO NOT pop anything locally. Main's `permissionResolved` clears
+ * the ledger, the card's bar and the grouped card in one push, and the row
+ * leaves when its session's status moves on (§5.12's resolved-means-gone). The
+ * grouped card makes the same choice and gives the reason at length in App's
+ * `decideHeld`.
+ */
+function HeldActions(props: {
+  held: HeldForSession;
+  /** the session's name, for button names a screen reader can tell apart */
+  who: string;
+  liveSessionId: string;
+  onDecide: (requestId: string, decision: 'allow' | 'deny') => void;
+  onAllowAll: (liveSessionId: string, heldRequestIds: readonly string[]) => void;
+  /** questions are answered on the card: open it */
+  onAnswer: () => void;
+  t: TFunction;
+}): React.JSX.Element | null {
+  const { held, t, who } = props;
+  const [expanded, setExpanded] = React.useState(false);
+  const listId = React.useId();
+  const perm = held.permission;
+  const shownId = perm?.requestId ?? null;
+  // THE DOUBLE-CLICK GUARD. Nothing pops locally (see above), so when the
+  // answer lands the row swaps in the NEXT held request under the same
+  // pointer, and a second click, or a double-click, would answer a request
+  // nobody read. So a click disarms the buttons, and they re-arm only a beat
+  // AFTER a different request is showing. The ceiling is the fail-open: if the
+  // answer never lands (the channel died), the buttons come back rather than
+  // staying dead on a question that is still open.
+  const [disarmed, setDisarmed] = React.useState(false);
+  React.useEffect(() => {
+    if (!disarmed) return;
+    const ceiling = setTimeout(() => setDisarmed(false), REARM_CEILING_MS);
+    return () => clearTimeout(ceiling);
+  }, [disarmed]);
+  const answeredId = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (!disarmed || shownId === answeredId.current) return;
+    const rearm = setTimeout(() => setDisarmed(false), REARM_MS);
+    return () => clearTimeout(rearm);
+  }, [disarmed, shownId]);
+  if (!perm && held.questions.length === 0) return null;
+  const more = held.permissionIds.length - 1;
+  const tool = perm ? (perm.displayName ?? perm.tool) : '';
+  const answer = (act: () => void): void => {
+    if (disarmed) return;
+    answeredId.current = shownId;
+    setDisarmed(true);
+    act();
+  };
+  return (
+    <div
+      data-event-held={props.liveSessionId}
+      onClick={(ev) => ev.stopPropagation()}
+      // An EMPTY title, on purpose: it stops the row's own tooltip ("Already
+      // seen" on a reviewed row) from showing over these buttons, which are
+      // not already seen at all.
+      title=""
+      style={{ marginBlockStart: 5, cursor: 'default' }}
+    >
+      {perm && (
+        <>
+          <div
+            data-event-permission={perm.requestId}
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: 10,
+              color: 'var(--text)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              marginBlockEnd: 4,
+            }}
+            // the full argument on hover — the line is cut to fit 300px (from the
+            // front, for a path: see `rowArgument`)
+            title={`${perm.tool} ${argumentDetail(perm.input)}`}
+          >
+            <span style={{ fontWeight: 600, marginInlineEnd: 5 }}>{tool}</span>
+            <span style={{ color: 'var(--muted)' }}>{rowArgument(perm.input)}</span>
+          </div>
+          <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className="events-btn"
+              data-event-allow={perm.requestId}
+              aria-label={t('events.held.allowOne', { tool, session: who })}
+              disabled={disarmed}
+              onClick={() => answer(() => props.onDecide(perm.requestId, 'allow'))}
+              style={actionBtn(true)}
+            >
+              {t('events.held.allow')}
+            </button>
+            <button
+              type="button"
+              className="events-btn"
+              data-event-allow-all={props.liveSessionId}
+              aria-label={t('events.held.allowAllOne', { session: who })}
+              title={t('events.held.allowAllHint')}
+              disabled={disarmed}
+              onClick={() => answer(() => props.onAllowAll(props.liveSessionId, held.permissionIds))}
+              style={actionBtn(false)}
+            >
+              {t('events.held.allowAll')}
+            </button>
+            <button
+              type="button"
+              className="events-btn"
+              data-event-deny={perm.requestId}
+              aria-label={t('events.held.denyOne', { tool, session: who })}
+              disabled={disarmed}
+              onClick={() => answer(() => props.onDecide(perm.requestId, 'deny'))}
+              style={actionBtn(false)}
+            >
+              {t('events.held.deny')}
+            </button>
+            {more > 0 && (
+              <span style={{ fontSize: 10, color: 'var(--muted)' }}>
+                {t('events.held.more', { count: more })}
+              </span>
+            )}
+          </div>
+        </>
+      )}
+      {held.questions.length > 0 && (
+        <div style={{ marginBlockStart: perm ? 5 : 0 }}>
+          <button
+            type="button"
+            className="events-btn"
+            data-event-questions={props.liveSessionId}
+            aria-label={t('events.held.questionsIn', { count: held.questions.length, session: who })}
+            aria-expanded={expanded}
+            // only while the list exists: an id that points at nothing is a
+            // reference a checker rightly flags
+            aria-controls={expanded ? listId : undefined}
+            onClick={() => setExpanded((v) => !v)}
+            style={{
+              ...actionBtn(false),
+              display: 'inline-flex',
+              gap: 4,
+            }}
+          >
+            <span aria-hidden>{expanded ? t('events.held.collapseIcon') : t('events.held.expandIcon')}</span>
+            {t('events.held.questions', { count: held.questions.length })}
+          </button>
+          {expanded && (
+            <QuestionList
+              id={listId}
+              questions={held.questions}
+              who={who}
+              onAnswer={props.onAnswer}
+              t={t}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The questions-queue placeholder (§5.12): what the session asked, to come back
+ * to. Read-only on purpose. Answering needs the card's own panel, because a
+ * blind "allow" on a question discards it (see `lib/events-v2`'s `heldFor`).
+ */
+function QuestionList(props: {
+  id: string;
+  questions: readonly AskQuestion[];
+  who: string;
+  onAnswer: () => void;
+  t: TFunction;
+}): React.JSX.Element {
+  const { t } = props;
+  return (
+    <div id={props.id} data-testid="event-question-list" style={{ marginBlockStart: 4 }}>
+      <ol style={{ margin: 0, paddingInlineStart: 16, fontSize: 10.5, color: 'var(--text)' }}>
+        {props.questions.map((q, i) => (
+          <li key={i} style={{ marginBlockEnd: 4 }}>
+            {q.header && (
+              <span style={{ fontWeight: 600, marginInlineEnd: 4 }}>
+                {t('events.held.questionHeader', { header: q.header })}
+              </span>
+            )}
+            {q.question}
+            {q.options.length > 0 && (
+              <div style={{ color: 'var(--muted)', fontSize: 10 }}>
+                {q.options.map((o) => o.label).join(t('events.held.optionSeparator'))}
+              </div>
+            )}
+          </li>
+        ))}
+      </ol>
+      <button
+        type="button"
+        className="events-btn"
+        data-event-answer
+        aria-label={t('events.held.answerIn', { session: props.who })}
+        onClick={props.onAnswer}
+        style={actionBtn(true)}
+      >
+        {t('events.held.answer')}
+      </button>
+    </div>
+  );
+}
+
+/** how long after a NEW request shows before its buttons take a click */
+const REARM_MS = 400;
+/** the longest a click can leave the buttons disarmed if no answer lands */
+const REARM_CEILING_MS = 5_000;
+
+// The grouped card's secondary fill (`BatchApprovalBar`'s `btn`), so an
+// approval button looks the same on every surface that offers one.
+const actionBtn = (primary: boolean): React.CSSProperties => ({
+  background: primary ? 'var(--btn-primary-bg)' : 'var(--panel)',
+  color: primary ? 'var(--btn-primary-text)' : 'var(--text)',
+  border: '1px solid var(--border)',
+  borderRadius: 'var(--radius-chip)',
+  padding: '1px 8px',
+  cursor: 'pointer',
+  fontSize: 10.5,
+  fontFamily: 'var(--font-ui)',
+});
+// (a disarmed button keeps Chromium's own disabled look: no token to add)

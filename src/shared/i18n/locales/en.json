@@ -489,6 +489,31 @@
     "nextUp": "next",
     "nextUpHint": "Next stop for the go-to-next-session shortcut",
     "reviewed": "Already seen",
+    "filter": {
+      "label": "Show",
+      "all": "All",
+      "needed": "Needed",
+      "by-session": "By session",
+      "empty": "Nothing in this view — everything here has already been seen"
+    },
+    "held": {
+      "allow": "Allow",
+      "allowAll": "Allow all",
+      "allowAllHint": "Allow this and everything else this session asks, until it restarts — same as “Allow all (this session)” on the session's own bar",
+      "deny": "Deny",
+      "allowOne": "Allow {tool} in {session}",
+      "allowAllOne": "Allow all in {session} (until it restarts)",
+      "denyOne": "Deny {tool} in {session}",
+      "more": "+{count} more",
+      "questions": "{count, plural, one {# question} other {# questions}} waiting",
+      "questionHeader": "{header}:",
+      "optionSeparator": " · ",
+      "expandIcon": "▸",
+      "collapseIcon": "▾",
+      "answer": "Answer in session",
+      "answerIn": "Answer in session: {session}",
+      "questionsIn": "{count, plural, one {# question} other {# questions}} waiting in {session}"
+    },
     "drawer": {
       "label": "Events",
       "waiting": "{count, plural, =0 {nothing waiting} one {# session waiting} other {# sessions waiting}}",
