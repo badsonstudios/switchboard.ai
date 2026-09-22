@@ -3,6 +3,42 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ MERGED — 2026-09-21: **#909** typing lost after a native confirm (Windows)
+>
+> Branch `feature/909-refocus-after-native-dialog`. **Reproduced**, with real
+> OS input (`spike/probes/909/`, findings `spike/findings/909-dialog-keyboard-
+> focus.md`). A renderer `window.confirm`, dismissed with a real Esc, breaks
+> typing EVERY time. In that state every focus signal reads true
+> (`document.hasFocus()`, `isFocused()`, `webContents.isFocused()`,
+> `getFocusedWindow()`), so the issue's `!hasFocus()` guard would never fire.
+> Only main-side `blur()` + `focus()` repairs it. `webContents.focus()` and
+> `win.focus()` alone don't. Main `dialog.showMessageBox` never breaks it.
+> Triggers 3 (popout close) and 4 (updater relaunch) not measured.
+>
+> **Fix:** renderer `lib/native-dialog.ts` (`nativeConfirm`/`nativeAlert`) →
+> IPC `app:refocusAfterDialog` → `main/dialog-refocus.ts`. It is win32 only and
+> acts only on the OS-focused window when that window is ours. It logs a warn
+> if focus doesn't come back. A unit guard forbids bare
+> `confirm/alert/prompt` in the renderer.
+>
+> **Judgment call:** kept the renderer dialogs and repaired after them,
+> rather than moving confirms to main (`showMessageBox`). The move would have
+> meant rewriting 8 e2e specs that drive the dialog event. The move is the
+> fallback if blur's brief hand-off ever misbehaves.
+>
+> **Review** (code-reviewer): no blockers. Taken: win32-only (blur lowers the
+> window on mac/X11); a `lost` outcome logged at warn; the guard regex now
+> catches any receiver and the bare global, with comments stripped; popout ✕
+> added to the hand-test list (a confirm from a popout is modal to MAIN, so
+> the popout itself isn't repaired, and that case is unmeasured).
+>
+> **Verification:** typecheck 0, lint 0. Unit: 8771 passed + 1 known flake
+> (#835's git-service budget guard). The 8 dialog-driven e2e specs: 72/72. The
+> real-input probe passes through the tab ✕ path twice; disabling the handler
+> brings the bug back (mutation). The guard catches a reintroduced
+> `window.alert`. Dan's hand-test list: the #909 RE-TEST row in the tracker.
+> **Next up:** nothing nominated; #893 is still the flake worth fixing.
+
 > # ✅ MERGED — 2026-09-21: **#908** File ▸ Settings… (Ctrl+,) under Open File…
 >
 > Branch `feature/908-file-menu-settings`. File menu is now built from whatever
@@ -25,7 +61,7 @@
 > **Verification:** typecheck 0, lint 0. Unit: 8758 passed + 1 known flake
 > (#835's git-service budget guard, green isolated). file-menu e2e 6/6. The
 > scope mutation turns the new e2e red.
-> Dan's hand-test list: the #908 row in the dogfood tracker. **Next up:** #909.
+> Dan's hand-test list: the #908 row in the dogfood tracker.
 
 > # 🚀 RELEASE — 2026-09-21: **v0.8.96** cut (carries #905)
 >
