@@ -3,7 +3,18 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔄 IN PROGRESS — 2026-09-23: **#483** P2-E14-05c missed-events digest
+> # ✅ MERGED — 2026-09-23: **#483** P2-E14-05c missed-events digest
+>
+> PR #921 squashed to `d12c4ec`; all four CI jobs green. #483 closed (#423, its
+> parent, was already closed). **NOT RELEASED** — needs a version bump, so there
+> is nothing installable to hand-test yet. Dogfood row added as UNTESTED with the
+> note that v0.8.98's #420 and #719 rows come first, since those ARE installed.
+>
+> **Next up: nothing nominated.** #256 is still flagged for the owner (tracker
+> hygiene, his call). #255 waits on #670, #323 needs his prettier decision.
+> Candidates in the milestone: #904 (responsiveness measurement), #903 (Clear /
+> Compact buttons), #886 (stale task label on a failed resume).
+>
 >
 > Branch `feature/483-missed-events-digest`. Owner said "do it" after #916.
 > Deps verified closed: #482 (the record), #481, #407 (the render gate).
