@@ -12,12 +12,13 @@
 // `fixtures/session-transcript.jsonl`: a transcript opens with metadata lines
 // carrying no `cwd` at all, `isMeta` user lines are plumbing rather than
 // prompts, and `ai-title` arrives a dozen lines in.
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import { clearHistoryCache, listHistory, MAX_HISTORY_DIRS } from './history';
-import { slugForCwd } from './paths';
-import { tempDir } from '../../test-temp-dirs';
+import { slugForCwd, MAX_LISTED_CONVERSATIONS } from './paths';
+import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
+import { reportsConversationCount, reportsProjectDirs } from './test-big-dir';
 
 /** The provider's `titles` capability, as the Claude adapter implements it. */
 const readTitle = (line: Record<string, unknown>): string | undefined =>
@@ -74,6 +75,19 @@ const ok = (a: ReturnType<typeof listHistory>) => {
 beforeEach(() => {
   root = tempDir('sb-history-');
   clearHistoryCache();
+});
+
+// `restoreMocks` is not on in `vitest.config.ts`, so a spy set mid-file answers
+// for every test after it. The three `readdirSync` spies below sit in the middle
+// of this file, which makes that the difference between a fake directory listing
+// and thirty unrelated failures.
+//
+// Mocks first: cleanup calls the real fs, and `rmSync(recursive)` goes through
+// the public `fs.readdirSync` — so a surviving spy really can reach the
+// teardown and strand the directory it was still answering for.
+afterEach(() => {
+  vi.restoreAllMocks();
+  cleanupTempDirs();
 });
 
 describe('listHistory — one folder', () => {
@@ -194,12 +208,14 @@ describe('listHistory — one folder', () => {
 
   it('passes `listConversations` refusals straight through rather than showing an empty folder', () => {
     // §5.33: reported as unscannable, never silently truncated.
+    // Reported, not written — 501 real files timed this test out at 6.9 s on the
+    // Windows CI runner (#916). `test-big-dir.ts` has the measurements.
     const dir = path.join(root, slugForCwd('C:/work/big').toLowerCase());
     fs.mkdirSync(dir, { recursive: true });
-    for (let i = 0; i < 501; i++) fs.writeFileSync(path.join(dir, `c-${i}.jsonl`), '{}\n');
+    reportsConversationCount(dir, MAX_LISTED_CONVERSATIONS + 1);
     const a = listHistory({ scope: 'folder', folder: 'C:/work/big' }, deps());
     expect(a.status).toBe('unknown');
-    if (a.status === 'unknown') expect(a.reason).toContain('past the 500');
+    if (a.status === 'unknown') expect(a.reason).toContain(`past the ${MAX_LISTED_CONVERSATIONS}`);
   });
 
   it('refuses the folder scope without a folder rather than listing the machine', () => {
@@ -274,11 +290,20 @@ describe('listHistory — every project', () => {
     // the history of every other one.
     const big = path.join(root, 'c--work-big');
     fs.mkdirSync(big, { recursive: true });
-    for (let i = 0; i < 501; i++) fs.writeFileSync(path.join(big, `c-${i}.jsonl`), '{}\n');
     seed('C:/work/app', 'small', [...preamble, userLine('C:/work/app', 'still listed')]);
+    // Reported, not written (#916). Only `big` is faked, so the small project is
+    // still listed off the real filesystem — which is the half this asserts.
+    reportsConversationCount(big, MAX_LISTED_CONVERSATIONS + 1);
+    const stat = vi.spyOn(fs, 'statSync');
     const a = ok(listHistory({ scope: 'all' }, deps()));
     expect(a.rows.map((r) => r.nativeId)).toEqual(['small']);
     expect(a.truncated).toBe(true);
+    // The cap must SKIP the directory, not merely report it. Without this, an
+    // `everyProject` that kept `truncated = true` and lost its `continue` is
+    // green: the entries it then scans are all absent, so the rows come out the
+    // same. `big` ITSELF is still stat'd — that is the mtime sort — so this
+    // asks only that nothing INSIDE it was.
+    expect(stat.mock.calls.filter(([p]) => String(p).startsWith(path.join(big, 'c-')))).toEqual([]);
   });
 
   it('a root that will not read is unknown — not "you have no history"', () => {
@@ -287,9 +312,11 @@ describe('listHistory — every project', () => {
   });
 
   it(`enumerates at most ${MAX_HISTORY_DIRS} project directories, and says when it stopped`, () => {
-    for (let i = 0; i < MAX_HISTORY_DIRS + 5; i++) {
-      fs.mkdirSync(path.join(root, `proj-${i}`), { recursive: true });
-    }
+    // Reported, not created (#916) — and STRONGER for it, not weaker. 405 real
+    // directories made this green with the cap deleted, because `truncated` was
+    // equally satisfied by the failed-readdir branch; reported directories that
+    // list empty leave the cap as its only source. See `test-big-dir.ts`.
+    reportsProjectDirs(root, MAX_HISTORY_DIRS + 5);
     expect(ok(listHistory({ scope: 'all' }, deps())).truncated).toBe(true);
   });
 });

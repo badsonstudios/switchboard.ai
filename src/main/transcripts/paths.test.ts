@@ -5,7 +5,6 @@
 // DECLINE a resume; only one of them is allowed to be permanent, and that
 // decision cannot be made by a caller that was never told which it got.
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -15,21 +14,28 @@ import {
   locateConversation,
   slugForCwd,
 } from './paths';
+import { reportsConversationCount } from './test-big-dir';
+import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 
 let root: string;
 let folder: string;
 let dir: string;
 
 beforeEach(() => {
-  root = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-paths-'));
+  // #213 via tempDir, not a bare mkdtempSync: the old `fs.rmSync` below is
+  // skipped by whichever assertion throws above it, so this file leaked a temp
+  // directory on exactly the runs where it failed — including #916's.
+  root = tempDir('sb-paths-');
   folder = 'C:/tmp/sb-paths-project';
   dir = path.join(root, slugForCwd(folder).toLowerCase());
   fs.mkdirSync(dir, { recursive: true });
 });
 
 afterEach(() => {
+  // mocks first: cleanup calls the real fs, and a spied readdirSync must not
+  // still be answering for the directory being deleted.
   vi.restoreAllMocks();
-  fs.rmSync(root, { recursive: true, force: true });
+  cleanupTempDirs();
 });
 
 const seed = (id: string, body = '{}\n'): string => {
@@ -187,10 +193,29 @@ describe('listConversations (the repair sweep\u2019s evidence)', () => {
     // folder of thousands is also the folder where "the newest one" is least
     // likely to be the card's. `unknown` means "do not guess", which is right
     // for both reasons.
-    for (let i = 0; i <= MAX_LISTED_CONVERSATIONS; i++) seed(`conv-${i}`);
+    //
+    // The count is reported rather than written: 501 real files cost 6.3 s on
+    // the Windows CI runner and timed this test out (#916), and not one of them
+    // was ever read.
+    reportsConversationCount(dir, MAX_LISTED_CONVERSATIONS + 1);
+    // ...and the refusal must be free, which is the other half of the cap's
+    // purpose and was pinned by nothing: with the check moved BELOW the stat
+    // loop the status is still `unknown` (the absent files ENOENT-drop as
+    // "vanished mid-listing"), so only the absence of the stats can tell a cap
+    // that saves the work from one that pays for it first and reports anyway.
+    const stat = vi.spyOn(fs, 'statSync');
     const got = listConversations(root, folder);
     expect(got.status).toBe('unknown');
     expect(got.status === 'unknown' && got.reason).toMatch(/past the/);
+    expect(stat).not.toHaveBeenCalled();
+  });
+
+  it('still scans a directory sitting exactly ON the cap — the refusal is PAST it', () => {
+    // The `>` in `names.length > MAX_LISTED_CONVERSATIONS` was pinned by
+    // nothing: flipping it to `>=` was green across the whole suite. Cheap to
+    // hold now that the count no longer costs 500 files to produce.
+    reportsConversationCount(dir, MAX_LISTED_CONVERSATIONS);
+    expect(listConversations(root, folder).status).toBe('ok');
   });
 
   it('a directory it could not read is UNKNOWN, never an empty list', () => {
