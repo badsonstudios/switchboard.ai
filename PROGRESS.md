@@ -3,10 +3,18 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔄 IN PROGRESS — 2026-09-23: **#916** transcript test flake (501-file setups on the Windows runner)
+> # ✅ MERGED — 2026-09-23: **#916** transcript test flake (501-file setups on the Windows runner)
 >
-> Branch `feature/916-transcript-flake-timeouts`. Owner nominated it as the
-> next item over #483, to stop it costing CI re-runs.
+> PR #919 squashed to `71e51e1`; **all four CI jobs green, and the
+> windows-latest unit job — the one this issue is about — passed first time**
+> (8m9s). #916 closed; #835 and #256 verified still OPEN after the merge.
+> **Not released** — needs a version bump, and there is nothing user-facing in
+> it to release. No dogfood row: internal, nothing to click.
+>
+> **Next up: #483** (P2-E14-05c, the missed-events digest), the next ordinary
+> feature item. Owner nominated it for after this one.
+>
+> Owner nominated #916 as the next item over #483, to stop it costing CI re-runs.
 >
 > **Not the fix the issue suggested.** It proposed a per-test timeout "the way
 > other disk-bound tests here do" — there are none: no per-test override and no
@@ -54,7 +62,20 @@
 > already in memory — subagents do not inherit it. Mutations were re-run in
 > place with backups instead of in a worktree.
 >
-> No production code touched. Typecheck and lint clean.
+> No production code touched. Typecheck and lint clean. Full suite 8,829
+> passed / 3 skipped / 1 failed — that failure is `git-service.test.ts`, green
+> 74/74 in isolation, and the **third distinct test in that file** to redden
+> under full-suite load across three runs today (54,689 ms for the file in one
+> of them). Logged on #835 with a suggested reframing: budget the FILE, not the
+> named tests, because the culprit keeps changing. Unlike #916 those tests wait
+> on real `git`/`taskkill` subprocesses, so there is no "stop doing the
+> expensive thing" move available.
+>
+> **Left for the owner:** #256 (E19 epic, every child through #260 closed, its
+> own comment says it closes with #260) — flagged, not touched, his call.
+> #255 waits on #670 and #323 needs his prettier decision; both skipped at his
+> instruction. v0.8.98's #420 and #719 rows remain UNTESTED in the dogfood
+> tracker.
 
 > # 🚀 RELEASE — 2026-09-22: **v0.8.98** cut (carries #420 + #719)
 >
