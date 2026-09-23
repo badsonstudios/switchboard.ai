@@ -5,9 +5,19 @@
 
 > # ✅ MERGED — 2026-09-23: **#923** P2-E21-01 diagnostics capture + a Settings switch
 >
-> Branch `feature/923-diagnostics-capture`. Plan posted to the issue before
-> implementation. Review pass done — see below; it found two blockers and both
-> are fixed and mutation-verified.
+> PR #925 squashed to `45540c7`; all four CI jobs green. Issue closed. Plan was
+> posted to the issue before implementation. Review pass done — see below; it
+> found two blockers and both are fixed and mutation-verified.
+>
+> **NOT RELEASED** — the version bump is manual, so there is nothing installable
+> to hand-test yet. Dogfood row added as UNTESTED.
+>
+> **Next up is DAN'S, not a coding item: P2-E21-02.** He turns the capture on,
+> works a normal day on the laptop with 3+ sessions, and sends the file. The whole
+> epic is blocked on that file existing — E21-03 (findings note, budgets, one
+> ticket per offender) reads it, and E21-04 (feed virtualisation, issue #740)
+> waits on E21-03 to confirm the feed is still the top offender. Nothing else in
+> E21 can start first, by design.
 >
 > **The design decision the whole item turns on: instrument from OUTSIDE React.**
 > The owner's rule 2 is *"off must mean genuinely ABSENT, not a flag checked on
