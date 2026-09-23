@@ -59,6 +59,7 @@ import type {
   PushWriteResult,
 } from '../shared/push';
 import type { QuietState } from '../shared/quiet-hours';
+import type { ClearSuppressedResult, SuppressedEvent } from '../shared/suppressed';
 import type { AudioChannelName, AudioPlayCue, AudioSpeakCue, CardSound } from '../shared/sounds';
 import { AUDIO_FAILED_CHANNEL, AUDIO_PLAY_CHANNEL, AUDIO_SPEAK_CHANNEL } from '../shared/sounds';
 
@@ -972,6 +973,30 @@ const api = {
      * would be free to disagree with the engine about whether it is 07:00 yet.
      */
     quietState: (): Promise<QuietState> => ipcRenderer.invoke('notifications:quietState'),
+    /**
+     * The missed-events digest's list (P2-E14-05c) — what quiet hours held.
+     *
+     * The rows `quietState` only counts. Read at mount, because a digest's whole
+     * job is to be true about a night the window was not open for.
+     */
+    listSuppressed: (): Promise<SuppressedEvent[]> =>
+      ipcRenderer.invoke('notifications:listSuppressed'),
+    /**
+     * Mark held events reviewed, BY ID.
+     *
+     * The ids the digest drew, never "all": a clear is pressed against a list
+     * the user has read, and an event held between the render and the click is
+     * not one of them. Answers what is left, so the renderer never has to guess
+     * at its own state after a refusal.
+     */
+    clearSuppressed: (ids: readonly string[]): Promise<ClearSuppressedResult> =>
+      ipcRenderer.invoke('notifications:clearSuppressed', ids),
+    /** main: quiet hours just held another one, while this window was open */
+    onSuppressed: (cb: (e: SuppressedEvent) => void): (() => void) => {
+      const h = (_e: unknown, rec: SuppressedEvent): void => cb(rec);
+      ipcRenderer.on('notifications:suppressed', h);
+      return () => ipcRenderer.removeListener('notifications:suppressed', h);
+    },
   },
   /**
    * Per-session sounds and spoken announcements (P2-E14-05a, §5.9 + §5.11).

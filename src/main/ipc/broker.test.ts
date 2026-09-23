@@ -111,6 +111,10 @@ describe('the IPC capability map (the done-when: no channel is untagged)', () =>
       // the report dialog's three channels (#815)
       'src/main/diagnostics/report-ipc.ts',
       'src/main/events/sound-ipc.ts',
+      // the missed-events digest's two readers (P2-E14-05c). Its outbound
+      // `notifications:suppressed` push is sent from `index.ts` above, beside
+      // the record it pushes.
+      'src/main/events/digest-ipc.ts',
       'src/main/mcp/ipc.ts',
       // the three inbound `send_to_session` channels AND the outbound push,
       // which is sent from the same file (#765)

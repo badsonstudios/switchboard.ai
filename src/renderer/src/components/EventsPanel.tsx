@@ -24,6 +24,7 @@
 // whole-fleet ledger (see `lib/events-v2`), not from the event. Above the rows,
 // the three filters §5.12 names: All · Needed · By session.
 import type { HistoryRepairNotice } from '../../../shared/history-repair';
+import type { Digest } from '../lib/digest';
 import type { PermissionRequestDto } from '../../../shared/ipc/permissions';
 import type { AskQuestion } from '../../../shared/ask-user-question';
 import { EventDto } from '../model/types';
@@ -189,6 +190,23 @@ export interface EventsPanelProps {
   historyRepairs?: readonly HistoryRepairNotice[];
   /** the notice's one control: I have read this. */
   onDismissHistoryRepair?: (id: string) => void;
+  /**
+   * The missed-events digest (P2-E14-05c) — what quiet hours held while nobody
+   * was told, already ordered and summarised by `lib/digest.ts`.
+   *
+   * The FIFTH tenant of this slot, and the only one that is a deliberate
+   * REPLAY: an incident is live, an update is waiting, a repair just happened,
+   * but this is last night. It sits above the live rows for exactly that reason
+   * — it is the thing you did not see, and the rows below are the things you
+   * still can.
+   *
+   * Absent (or empty) when nothing was held, which is the ordinary case and the
+   * one the calm check cares about: a night where the window silenced nothing
+   * renders nothing at all.
+   */
+  digest?: Digest | null;
+  /** review it: clears by the ids the digest drew, never "everything". */
+  onClearDigest?: (ids: readonly string[]) => void;
   /**
    * Every request main is holding, fleet-wide: the store's ledger (P2-E9-11),
    * which is what a row's inline buttons answer from (P2-E14-02).
@@ -580,6 +598,101 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
           </div>
         </div>
       )}
+      {!!props.digest?.total && (
+        <div
+          data-events-notice="digest"
+          data-digest-total={props.digest.total}
+          style={{
+            background: 'var(--panel2)',
+            // `--border` weight, like the update and history-repair notices:
+            // this is news about a night that is over, not a thing waiting on
+            // the user. A status hue here would make last night compete with the
+            // live rows underneath it, which is the wall of stale toasts this
+            // replaces.
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-chip)',
+            padding: '7px 9px',
+            marginBlockEnd: 6,
+            fontSize: 11,
+          }}
+        >
+          <div
+            // #314's pair, and this tenant needs it most of all: the digest is
+            // ALREADY TRUE when the window mounts — it is about events that
+            // happened before this renderer existed — so there is no later
+            // event for a screen reader to notice it by. `polite`, because a
+            // summary of last night can wait for the end of a sentence.
+            role="status"
+            aria-live="polite"
+            style={{ color: 'var(--text)' }}
+          >
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBlockEnd: 4 }}>
+              <span style={{ flex: 1, minInlineSize: 0, fontWeight: 600 }}>
+                {t('events.digest.heading', { count: props.digest.total })}
+              </span>
+              <button
+                className="events-btn"
+                onClick={() => props.onClearDigest?.(props.digest?.ids ?? [])}
+                // Named with the count, not just "Clear": this button destroys
+                // the only record of a night nobody watched, and a control that
+                // says how much it is about to take is the difference between a
+                // review and an accident (§5.32).
+                aria-label={t('events.digest.clearLabel', { count: props.digest.total })}
+                style={{
+                  background: 'transparent',
+                  color: 'var(--muted)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-chip)',
+                  padding: '2px 10px',
+                  cursor: 'pointer',
+                  fontSize: 11,
+                  fontFamily: 'var(--font-ui)',
+                  flexShrink: 0,
+                }}
+              >
+                {t('events.digest.clear')}
+              </button>
+            </div>
+            {props.digest.sessions > 1 && (
+              <div style={{ color: 'var(--muted)', marginBlockEnd: 4 }}>
+                {t('events.digest.sessions', { count: props.digest.sessions })}
+              </div>
+            )}
+            {props.digest.rows.map((r) => (
+              <div
+                key={r.id}
+                data-digest-row={r.kind}
+                style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginBlockEnd: 2 }}
+              >
+                <span style={{ flex: 1, minInlineSize: 0 }}>
+                  {/* The title is #482's CAPTURE, never a live lookup: the card
+                      may have been renamed, closed or re-labelled since 03:00,
+                      and a digest that re-derived its text would report last
+                      night's event under this morning's name. */}
+                  {t('events.digest.row', { title: r.title, kind: t(`events.kind.${r.kind}`) })}
+                </span>
+                <span style={{ color: 'var(--muted)', flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+                  {/* The DATE as well, for anything not from today. The cap is
+                      200 records and a long weekend is what that is for, so a
+                      bare "03:14" on a list spanning midnight names no night at
+                      all — in a feature whose entire subject is which night. */}
+                  {r.earlierDay
+                    ? `${new Date(r.at).toLocaleDateString(undefined, {
+                        month: 'short',
+                        day: 'numeric',
+                      })} ${new Date(r.at).toLocaleTimeString()}`
+                    : new Date(r.at).toLocaleTimeString()}
+                </span>
+              </div>
+            ))}
+            {props.digest.overflow > 0 && (
+              <div style={{ color: 'var(--muted)', marginBlockStart: 2 }}>
+                {t('events.digest.more', { count: props.digest.overflow })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       {props.reconnectOffer && (
         <div
           style={{
@@ -643,7 +756,8 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
         !props.reconnectOffer &&
         !props.updateNotice &&
         !props.incidents?.length &&
-        !props.historyRepairs?.length && (
+        !props.historyRepairs?.length &&
+        !props.digest?.total && (
         <div style={{ color: 'var(--muted)', fontSize: 11 }}>{t('events.empty')}</div>
       )}
       {filteredEmpty && (

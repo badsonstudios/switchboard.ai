@@ -613,11 +613,42 @@ pop-up at 3am for the one session whose crash is worth waking up for.
 Sessions keep running, and everything still lands in the **Events panel** —
 you're just not told about it until the window is over. Anything the window
 holds back is **written down**: what happened, when, which session, and which
-channels were held. That list survives closing the app, and a *missed-events
-digest* that shows it to you on return is the next item on this page's roadmap.
+channels were held. That list survives closing the app.
 
 The list is capped at the **200 most recent** held events; past that, the oldest
 drop off.
+
+### The missed-events digest — what happened while you were away
+
+When you come back, open the **Events** drawer. If quiet hours held anything,
+the top of the drawer says so:
+
+> **3 notifications were held while it was quiet**
+> across 2 sessions
+> TradingApp — needs permission     03:14
+> Switchboard.ai — Done.            04:02
+> TradingApp — needs input          06:41
+
+It shows the six most recent by name and counts the rest ("and 12 more"), so a
+long weekend is a few lines rather than a screen you have to scroll. Each line
+is the session's name **as it was at the time** — if you've since renamed or
+closed that session, the digest still reports the night correctly rather than
+relabelling it with this morning's name.
+
+The digest only appears when something was actually held. A night where nothing
+needed you shows nothing at all.
+
+**Press Clear when you've read it.** That's the only thing that removes it —
+opening the drawer doesn't, so you can't lose last night's digest by glancing in
+to check something else. Clear takes everything the digest is reporting,
+including the lines it summarised rather than named.
+
+The count in the heading is live: if quiet hours hold something else while the
+drawer is open, the digest grows and the heading says so, so what Clear takes is
+always what the heading just told you.
+
+Clearing is permanent: it's the record being marked read, not archived. The
+events themselves are still in the Events list underneath, as they always were.
 
 ### Telling that it's working
 
@@ -668,4 +699,3 @@ Consequences worth knowing:
 
 TODO: there is no rules *editor* yet — the per-session checkbox is the only rule
 you can write from the UI, so the `quietHours` override is a hand-edit for now.
-TODO: the missed-events digest that reads the held list is not built yet.

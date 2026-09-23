@@ -3,6 +3,90 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔄 IN PROGRESS — 2026-09-23: **#483** P2-E14-05c missed-events digest
+>
+> Branch `feature/483-missed-events-digest`. Owner said "do it" after #916.
+> Deps verified closed: #482 (the record), #481, #407 (the render gate).
+>
+> **#482's worker left a handoff section written for this item**
+> (`.claude/work_files/orchestrator/482.md` → "The record #483 consumes").
+> `WorkspaceStore.clearSuppressed(ids?)` had been sitting there with NO caller
+> on purpose, because "clears on review" is this item's done-when. So the input
+> side needed nothing.
+>
+> **Scope call: quiet-hours only, NO `away` reason.** The issue says "quiet
+> hours or app unfocused/closed"; the second half is deliberately not built.
+> Events while merely unfocused are not suppressed at all — `WHEN_AWAY` is
+> exactly when the toast/push/TTS DO fire — and they already hold an Events
+> row, so digesting them would re-report what reached the user on the surface
+> already listing it. `reason` stays a named field for a future holder.
+>
+> **Shape:** fifth tenant of the Events drawer's notice slot (no twelfth chip,
+> per #482's design-pressure note + the #407 gate), following `historyRepairs`
+> exactly — main owns the persisted list, renderer catches up at mount, later
+> holds arrive by push, clearing is durable. Clearing is an EXPLICIT button and
+> clears BY ID, never "all": opening the drawer for something else must not
+> erase an unread digest. The IPC refuses a missing id list rather than reading
+> it as "everything". **Review caught that I had over-promised this** in four
+> places — the ids buy "takes exactly what was asked for", NOT "a late arrival
+> survives the click"; the heading is derived from the same list it sends, so
+> the prose now says that instead.
+>
+> **Review (code-reviewer): no blockers, 6 should-fixes, ALL taken.** It earned
+> its keep twice over:
+> - **It caught me over-promising in four places** (manual, DESIGN, PROGRESS, a
+>   code comment): I claimed an event held after the digest rendered survives a
+>   Clear. It does not — `digest` is re-derived on every push, so the click
+>   sends whatever is current. Chose to KEEP the simple behaviour (Clear takes
+>   what the notice is showing; the heading is derived from the same list, so
+>   button and sentence cannot disagree) and corrected all four claims. A
+>   render-time snapshot would leave a row on screen after Clear, which reads
+>   as broken.
+> - **It found the 9th mutation.** The heading count and the Clear button's
+>   aria-label count were pinned by NOTHING — deleting the heading outright left
+>   133 tests green, and `total` → `rows.length` said "6 held" for a 40-event
+>   night. That count is the one thing telling the user how much Clear takes.
+>   Now asserted; both mutations verified red.
+> - **A real divergence:** the push sent the engine's record, but the store can
+>   refuse it (duplicate id, unloadable) or keep a CLAMPED copy — so the drawer
+>   could show a row the file does not hold, disagreeing with `heldCount`.
+>   `recordSuppressed` now returns what it stored (was `void`) and main pushes
+>   that, or nothing.
+> - A refusal or rejected invoke left the optimistic clear standing; now
+>   re-reads. The drawer's "all four notices together" test silently still
+>   tested four; now five. Dropped an unused i18n key, and dropped `span` and
+>   `actions` from the row (computed, never rendered).
+> - **A real UX defect it spotted:** rows showed bare clock times, so a digest
+>   spanning midnight named no night at all — in a feature whose whole subject is
+>   which night. Rows from an earlier day now carry a date.
+>
+> **Eleven mutations verified RED** (harness in `.claude/work_files/`, scratch):
+> oldest-first ordering · ids missing the overflow · unresolved cards counted
+> per-row · missing arg clearing all · refusal losing the list · digest not
+> counted as a badge tenant · notice rendering when empty · clear sending only
+> the drawn rows · heading counting rows instead of the night · heading deleted
+> outright · earlier-day flag forced false.
+>
+> **Second self-inflicted near-miss:** a mutation restore chained as
+> `git checkout -- <file> || cp /tmp/x.bak` reverted 40 minutes of work — the
+> file was UNTRACKED so git could not restore it, the `||` fired, and the
+> backup predated a large rewrite. It printed "restored". Caught by grepping
+> for a string only the new version had. Saved to memory; restores are now
+> verified by content, never by exit code.
+>
+> **Trap I walked into TWICE in this item:** a Set sentinel written as a
+> backslash-u-0000 escape landed as a REAL NUL byte via Write — `grep` reported
+> the source file binary — and then writing THIS note about it put one into
+> PROGRESS.md the same way. `check-nul` in lint catches it; `grep` calling a
+> file "binary" is the tell. Fix: the code no longer uses a sentinel at all
+> (unresolved cards are counted with a separate flag), and prose about the
+> escape must never spell it literally.
+>
+> Typecheck + lint clean; 22 new unit tests green plus 52 in the touched
+> renderer files. Manual page's `TODO: the missed-events digest … is not built
+> yet` deleted and replaced with a real section; CHANGELOG `Added`; DESIGN §5.9
+> carries the four shipped decisions. Full unit + e2e running.
+
 > # ✅ MERGED — 2026-09-23: **#916** transcript test flake (501-file setups on the Windows runner)
 >
 > PR #919 squashed to `71e51e1`; **all four CI jobs green, and the

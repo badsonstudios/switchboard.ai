@@ -252,6 +252,14 @@ export const CHANNEL_CAPABILITIES = {
   // (P2-E14-05b). Reads settings plus a count of the app's own held list —
   // nothing a `notifications:getPrefs` plus a clock would not already tell you.
   'notifications:quietState': 'settings.read',
+  // The missed-events digest (P2-E14-05c). The list #482's `heldCount` counts,
+  // and the review that empties it. `settings.read`/`settings.write` by the same
+  // reading `rules:*` takes below: a held notification is a notification
+  // preference's consequence, and clearing one changes no more than the toast
+  // toggle beside it does. Reading it tells a caller nothing
+  // `notifications:quietState` did not already admit to holding.
+  'notifications:listSuppressed': 'settings.read',
+  'notifications:clearSuppressed': 'settings.write',
   'notifications:setPrefs': 'settings.write',
   'preflight:check': 'environment.probe',
   // Phone push + webhook (P2-E14-06, §5.9 + §5.29). Three capabilities for four
@@ -434,6 +442,11 @@ export const CHANNEL_CAPABILITIES = {
   'audio:play': 'settings.read',
   'audio:speak': 'settings.read',
   'events:changed': 'events.read',
+  // quiet hours just held another one (P2-E14-05c). The same fact
+  // `notifications:listSuppressed` answers, for the digest that is already on
+  // screen when the next event is held — so a drawer open at 03:00 does not
+  // have to poll to stay true.
+  'notifications:suppressed': 'settings.read',
   // a watched file moved, or went away (P2-E16-04). Same capability as asking
   // for the watch, and as the read the viewer answers it with.
   'fs:changed': 'fs.read',

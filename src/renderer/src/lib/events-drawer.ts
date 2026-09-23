@@ -24,11 +24,11 @@
 import { AttentionEvent, attentionQueue } from './queue';
 
 /**
- * The notice slot's FOUR tenants (the #425 coordination note), as the badge
+ * The notice slot's FIVE tenants (the #425 coordination note), as the badge
  * sees them — which is only whether each is up.
  *
  * Spelled out as named fields rather than a count the caller adds up:
- * they rehomed into this drawer together and a fourth tenant has to be a
+ * they rehomed into this drawer together and a fifth tenant has to be a
  * visible edit here, not an invisible one at a call site. Deliberately widened
  * to `unknown` where the badge does not care about the payload — this module
  * has no business knowing a version string or an incident's shape.
@@ -42,6 +42,15 @@ export interface DrawerNotices {
   incidents?: readonly unknown[];
   /** #539's "we changed which conversation this card is in" notices */
   historyRepairs?: readonly unknown[];
+  /**
+   * P2-E14-05c's missed-events digest — what quiet hours held.
+   *
+   * Narrowed to the one field the badge has any business reading, the way
+   * `updateNotice` is: `total` is what decides whether the slot is occupied,
+   * and a `Digest` satisfies this structurally, so the panel's props keep
+   * duck-typing into `badgeState` with no adapter in between.
+   */
+  digest?: { total: number } | null;
 }
 
 export interface DrawerBadge {
@@ -53,7 +62,7 @@ export interface DrawerBadge {
    * on the list — which is what the tab is tinted with.
    */
   hottest: AttentionEvent['kind'] | null;
-  /** how many of the four notice tenants are up right now */
+  /** how many of the five notice tenants are up right now */
   notices: number;
 }
 
@@ -69,7 +78,10 @@ export function liveNotices(n: DrawerNotices): number {
     (n.incidents?.length ? 1 : 0) +
     // ONE, however many cards were repaired: the tenant is the slot's occupant,
     // not its rows — the same reading `incidents` already gets.
-    (n.historyRepairs?.length ? 1 : 0)
+    (n.historyRepairs?.length ? 1 : 0) +
+    // and the same again for a digest of forty held notifications: one slot is
+    // occupied, and the forty are the digest's own summary line to make.
+    (n.digest?.total ? 1 : 0)
   );
 }
 

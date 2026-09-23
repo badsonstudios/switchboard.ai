@@ -39,6 +39,8 @@ import { memberViews } from './lib/permission-batches';
 import type { PermissionRequestDto } from '../../shared/ipc/permissions';
 import { ledgerAdmits } from './lib/held-permissions';
 import type { EventsFilter } from './lib/events-v2';
+import type { SuppressedEvent } from '../../shared/suppressed';
+import { buildDigest } from './lib/digest';
 import { WorkspaceNoticeBanner } from './components/WorkspaceNoticeBanner';
 import { PreflightBanner } from './components/PreflightBanner';
 import { ServiceHealthBanner } from './components/ServiceHealthBanner';
@@ -1219,6 +1221,74 @@ export function App(): React.JSX.Element {
     return () => off?.();
   }, []);
 
+  // WHAT QUIET HOURS HELD WHILE NOBODY WAS TOLD (P2-E14-05c) — the missed-events
+  // digest, read from the durable list #482 writes.
+  //
+  // The same straddle as the repairs above, and more so: almost every record in
+  // this list was written while no window existed at all, which is the whole
+  // point of a digest. So it is ASKED FOR at mount, and SUBSCRIBED TO for the
+  // case that looks odd until you have seen it — a drawer left open at 03:00
+  // while the window is still holding things.
+  const [held, setHeld] = useState<SuppressedEvent[]>([]);
+  useEffect(() => {
+    void bridge.notifications
+      ?.listSuppressed?.()
+      // `answered` before `??` (#440), as the repairs do
+      .then((list) => setHeld(answered(list) ?? []))
+      // A digest that cannot be read is a digest that is not shown. It is never
+      // an unhandled rejection and never a reason the panel below it fails to
+      // render — "digest breakage never blocks or delays live events" (#483).
+      .catch(() => undefined);
+    const off = bridge.notifications?.onSuppressed?.((rec) =>
+      // de-duplicated by id, for the push-races-the-read reason above. The ids
+      // are unique across restarts precisely so this comparison is sound.
+      setHeld((prev) => (prev.some((e) => e.id === rec.id) ? prev : [...prev, rec]))
+    );
+    return () => off?.();
+  }, []);
+
+  const digest = React.useMemo(() => buildDigest(held), [held]);
+
+  /**
+   * Review the digest: clear exactly the ids it accounted for.
+   *
+   * Optimistic, then reconciled with main's answer. The optimism is what keeps
+   * a 200-row clear from feeling broken; the reconciliation is what makes a
+   * REFUSED clear correct — main answers with the list that survived, so a
+   * malformed ask puts the digest straight back rather than leaving the UI
+   * asserting an emptiness the store never agreed to.
+   */
+  const reloadHeld = React.useCallback(() => {
+    void bridge.notifications
+      ?.listSuppressed?.()
+      .then((list) => setHeld(answered(list) ?? []))
+      .catch(() => undefined);
+  }, []);
+
+  const clearDigest = React.useCallback(
+    (ids: readonly string[]) => {
+      if (ids.length === 0) return;
+      const drop = new Set(ids);
+      setHeld((prev) => prev.filter((e) => !drop.has(e.id)));
+      void bridge.notifications
+        ?.clearSuppressed?.(ids)
+        .then((res) => {
+          const answer = answered(res);
+          if (answer) setHeld(answer.remaining);
+          // A REFUSAL is not an answer (#440: `answered` gives `undefined` for
+          // one), and neither is a channel that is not there. The optimistic
+          // drop has already happened, so doing nothing here would leave the UI
+          // asserting an emptiness the store never agreed to — the exact failure
+          // the reconcile exists to prevent. Re-read instead.
+          else reloadHeld();
+        })
+        // Same for a rejected invoke. Never an unhandled rejection, and never a
+        // digest silently blanked by a call that did not land.
+        .catch(() => reloadHeld());
+    },
+    [reloadHeld]
+  );
+
   // grid drags change membership in the main process (E12-04) — re-read
   useEffect(() => {
     const h = (): void => {
@@ -2340,6 +2410,8 @@ export function App(): React.JSX.Element {
             bridge.sessions?.dismissHistoryRepair?.(id);
             setHistoryRepairs((prev) => prev.filter((n) => n.id !== id));
           }}
+          digest={digest}
+          onClearDigest={clearDigest}
         />
       </div>
       <StatusBar

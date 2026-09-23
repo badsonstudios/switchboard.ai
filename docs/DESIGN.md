@@ -1076,6 +1076,33 @@ or sits idle awaiting input, and `Stop` when it finishes. On top:
   card/which channels/why, with the title and body captured at the time rather
   than re-derived later. That list is P2-E14-05c's input. UI: a palette command
   and an About-panel button, deliberately not a twelfth title-bar chip.)*
+  *(The missed-events digest shipped P2-E14-05c. Four decisions worth
+  recording. **The digest is the suppression record's reader and nothing else
+  — there is no `away` reason.** The issue asked for "quiet hours OR app
+  unfocused/closed", and the second half was deliberately not built: events
+  that happen while the app is merely unfocused are not suppressed at all
+  (`WHEN_AWAY` is precisely when the toast, push and TTS DO fire) and they
+  already occupy a row in the Events list, so digesting them would re-report
+  what reached the user, on the surface already listing it. `reason` stays a
+  named field, so a future channel that genuinely holds events adds a member
+  rather than reshaping the row. **It renders in the Events drawer's notice
+  slot as its fifth tenant**, per #482's design-pressure note and the #407
+  gate — no twelfth chip — following `historyRepairs`' shape exactly, because
+  that is the same problem already solved: main owns a persisted list, the
+  renderer catches up at mount, later entries arrive by push, dismissal is
+  durable. **"Clears on review" is an explicit gesture, not sight.** Auto-
+  clearing on open would mean checking the drawer for something unrelated
+  erases a digest that was never read; so it is a Clear button, and it clears
+  BY ID — the ids the digest is accounting for — which is why `clearSuppressed`
+  was written id-based and left with no caller. The ids buy that a clear takes
+  exactly the rows asked for and cannot take one it was not; they are NOT a
+  promise about the render-to-click window, and the notice's heading is derived
+  from the same list it sends, so the button and the sentence above it cannot
+  disagree about how much is going. **The IPC refuses a missing id list rather than reading it as
+  "all"**, even though the store's own signature accepts `undefined` for that:
+  across a channel, one dropped parameter would erase a night nobody read, and
+  a refusal answers with the surviving list so the renderer can put the digest
+  straight back.)*
 - **Per-session "notify when done" (owner request 2026-07-22):** a checkbox on
   the session card — done-toasts only for sessions the user opted into (long
   tasks), because a toast for every short turn is noise.
