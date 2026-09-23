@@ -3,6 +3,50 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🗺️ PLANNED — 2026-09-23: **E21 Responsiveness** — the perf family folded into one epic
+>
+> Owner asked for the four performance tickets to become one epic, diagnostics
+> first. Written into `docs/plans/04-phase-2-switchboard.md` → **E21**.
+> **Next up: #923 (P2-E21-01).**
+>
+> **Order:** 01 diagnostics + Settings switch (#923, filed) → 02 `[user]` Dan
+> captures a working day on the laptop → 03 findings note + budgets + one ticket
+> per offender → 04 feed virtualisation (#740, **L — split before work starts**).
+> #716 stays open as the symptom ticket and the epic's acceptance bar.
+>
+> **Owner decision — two tiers, one switch.** He asked for a Settings toggle;
+> #904 argued measurement should be cheap enough to be always on. Both ship:
+> always-on reads long tasks, input-to-paint and event-loop delay (the platform
+> measures these already); the Settings switch adds per-keystroke sampling,
+> render counts, layout-read detection and block counts. **"Off" must mean
+> genuinely absent, not a flag checked per keystroke** — we are instrumenting
+> the exact path that is slow. Also agreed: targeted, not an open-ended
+> framework (#741's four measurements are the list).
+>
+> **The fact that justified the epic:** his laptop is on **v0.8.98, the latest**,
+> and still bogs down at 3+ sessions — so PR #739's composer fix did NOT resolve
+> it, and #740's thesis (the feed, not the composer) is better supported. The
+> desktop is on 0.8.97, one version behind, so the gap is hardware/environment,
+> **not a version regression**. Desktop: i9-13900K, 24c/32t, 64 GB.
+>
+> **#741 CLOSED as absorbed** into #923 — it was the composer-specific subset of
+> #904's Phase 1, and two tickets for one recorder means building it twice.
+> **No epic tracker issue filed, deliberately:** the plan file is the epic.
+> #256 sat open seven weeks after its last child closed and made
+> `gh issue list --milestone` overstate what remained.
+>
+> **Answered and recorded so it is not re-asked:** CPU affinity cannot give a
+> session its own core — Windows affinity only RESTRICTS a process to a subset,
+> never reserves one, and pinning would be worse than the scheduler. A `claude`
+> session is network-bound (the model runs server-side); the felt cost is the
+> renderer's SINGLE main thread drawing every feed, which already occupies one
+> core. Process priority is the only real scheduling lever and is a band-aid
+> over 01–04, so it is out of scope.
+>
+> **#256 CLOSED** the same day — tracker hygiene, confirmed with the owner. All
+> four children (#257–#260) closed back in August; the release/auto-update system
+> is live and shipped v0.8.98 to him.
+
 > # ✅ MERGED — 2026-09-23: **#483** P2-E14-05c missed-events digest
 >
 > PR #921 squashed to `d12c4ec`; all four CI jobs green. #483 closed (#423, its

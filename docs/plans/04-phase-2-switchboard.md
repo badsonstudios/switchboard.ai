@@ -1624,6 +1624,147 @@ defines that tab as the folder's *git log*, not transcripts, and that collision
 should be settled on its own · the **activity report (#722)**, a different
 feature over the same transcript scan.
 
+## E21 — Responsiveness: measure it on the real machine, then fix it (milestone: Phase 2; added 2026-09-23, owner request)
+
+*Goal: close the gap between doing something and seeing it happen — on the
+machine where it actually hurts. Gathers a family that was already four separate
+issues describing one problem: #716 (typing lags, severe on the work laptop,
+mild on the dev desktop), #740 (any layout change re-lays-out the whole feed),
+#741 (a laptop-capturable keystroke diagnostic) and #904 (measure responsiveness,
+then fix the worst offenders). Governing constraint: **local-first — this is
+instrumentation, not telemetry.** Nothing leaves the machine; durations and
+interaction names only, never prompt text, file names or session content.*
+
+**Why this is an epic and not four tickets.** All four are blocked on the same
+missing thing, and #741 says it plainly: *"Every performance number on #716 and
+#740 was measured on the dev desktop under a synthetic 4x CPU throttle — a proxy
+for the work laptop, never the laptop."* Decisions were already **taken** against
+that proxy, including reverting the `content-visibility` feed half and ruling out
+`contain` in every form. We have been optimising partly blind, and the fix is one
+instrument used on one real machine, not four parallel investigations.
+
+**Owner decisions (2026-09-23).**
+
+1. **Two tiers, one switch** — settled after the owner asked for a Settings
+   toggle and #904 argued for always-on. Both were right about different things:
+   - **Always on:** long tasks (>50 ms), input-to-next-paint, main-process
+     event-loop delay. The platform already measures these; we only read them.
+   - **Switch on in Settings:** per-keystroke sampling, render counts,
+     layout-read detection, rendered-block counts at sample time.
+2. **"Off" means genuinely absent, not a flag checked per keystroke.** We are
+   instrumenting the exact path that is slow, so sloppy instrumentation would
+   distort the measurement on the only machine that matters.
+3. **Targeted, not an open-ended framework.** #741's four measurements are the
+   list. The failure mode here is a week spent on a measurement framework that
+   still cannot say why typing lags.
+4. **#741 is absorbed into 01** rather than built beside it — it is the
+   composer-specific subset of #904's Phase 1, and building both is building the
+   same recorder twice.
+5. **No epic tracker ISSUE.** The plan file is the epic. #256 sat open for seven
+   weeks after its last child closed and made `gh issue list` overstate what
+   remained; a tracker issue whose only job is to be closed later is a tracker
+   issue nobody closes.
+
+**Measured, not assumed — and the reason this epic exists (2026-09-23).** The
+owner's laptop is on **v0.8.98, the latest**, and still bogs down at three or
+more sessions. That build carries PR #739's composer fix, so **#739 did not
+resolve it** and the remaining cost is elsewhere — which is #740's thesis (the
+feed, not the composer). The dev desktop is on 0.8.97, one version behind, so the
+desktop-vs-laptop gap is hardware and environment, **not a version regression**.
+Desktop for reference: i9-13900K, 24 physical / 32 logical cores, 64 GB.
+
+**Ruled out already — do not re-spend this (from #740).** Every form of CSS
+containment is worthless here (`contain: layout` on scroller, content div and
+per-block all measure ~160 ms/key against a 152 ms baseline; `contain: layout
+style paint` is **worse** at 176). Containment isolates a subtree from changes
+made *inside* it, and this invalidation arrives from *outside*. Only **skipping**
+helps. And naive `content-visibility: auto` was built, shipped to CI and
+**reverted**: with a guessed `contain-intrinsic-size`, `scrollHeight` read +85%
+at 60 blocks and +127% at 400, breaking the pixel-exact scroll-restore contract
+(#442 tail pin, #555, and the owner's own 2026-07-26 reading-position bug) on
+Linux CI while passing on Windows.
+
+**Not a scheduling problem (asked and answered 2026-09-23).** The owner asked
+whether sessions could be pinned to their own CPU cores. They cannot, and it
+would not help: Windows affinity only *restricts* a process to a subset of cores,
+never reserves one, and the scheduler already places work better than a static
+pin. More to the point, a `claude` session is network-bound — the model runs
+server-side — while the cost that is actually felt is the renderer's **single**
+main thread drawing every feed. A single hot thread already occupies one core.
+The one real scheduling lever is process *priority* (dropping background
+sessions below normal so the UI wins under saturation); it is a band-aid over
+01–04 and is deliberately not in this epic.
+
+Work items:
+
+- **P2-E21-01 · Diagnostics capture + a Settings switch — M (§5.9 local-first).**
+  *(no deps)* The two-tier recorder above, a **Diagnostics** section in Settings
+  (the `QuietHoursSection` / `ThemeSection` pattern), and a palette command
+  **"Show performance summary"** reporting p50/p95 per interaction plus long-task
+  count, so the owner can read the numbers without opening a log. Builds on what
+  exists — `diagnostics/cpu-heartbeat.ts`, `process-census.ts` and the report
+  bundle (#815) — rather than starting fresh, and the detailed tier writes one
+  local file the owner can attach to an issue. Renderer instruments via
+  `PerformanceObserver` (longtask, event timing) and `performance.mark`/`measure`
+  around named interactions; main uses `perf_hooks.monitorEventLoopDelay`.
+  Latency is reported as **percentiles, never a mean** — the complaint is
+  *bursts*, and a mean is precisely the statistic that hides them.
+  *Done when:* the always-on tier records long tasks, input-to-paint and event
+  loop delay with no measurable cost (shown with a before/after number); the
+  Settings switch turns the detailed tier on and off and survives a restart;
+  **with the switch off the detailed instrumentation is absent, not skipped** —
+  asserted, not asserted-by-comment; the detailed tier captures #741's four
+  (input-to-paint distribution, long-task count and duration, conversation length
+  and rendered block count at sample time, layout reads during a keystroke); the
+  palette command shows the summary; one local file is attachable and contains no
+  prompt text, file names or session content; `docs/manual/` page before the PR;
+  dogfood tracker row on merge.
+
+- **P2-E21-02 · `[user]` Capture a real working day on the laptop.** *(depends:
+  01)* The owner flips the switch, works normally with three or more sessions on
+  the machine that actually struggles, and attaches the file. **This is the step
+  the whole epic exists to reach** — every prior number came from a synthetic
+  throttle on the wrong machine.
+
+- **P2-E21-03 · Findings note, budgets, and one ticket per offender — S.**
+  *(depends: 02)* A findings note in `spike/findings/` ranking interactions by
+  felt impact against budgets — typing under 16 ms to paint and never over 50,
+  clicks and switches under 100 ms, opening a view under 200 ms — with one
+  follow-up issue per interaction that misses. Likely suspects to **check, not
+  assume**: re-renders per streamed token, the feed rendering a whole long
+  transcript, synchronous IPC or `fs` on the main thread, dockview layout thrash
+  on a session switch.
+  *Done when:* the note ranks the offenders with real laptop numbers; every miss
+  has a ticket carrying its measurement; #740's standing thesis is either
+  confirmed as the top offender or demoted with evidence.
+
+- **P2-E21-04 · Feed virtualisation with exact heights — L, SPLIT BEFORE WORK
+  STARTS.** *(depends: 03; issue #740)* Already fully specced in #740 and
+  evidence-backed (152 ms/key at 400 turns against 56 ms with the feed skipped,
+  0 long tasks instead of 43) — but measured under the proxy this epic exists to
+  stop trusting, so it waits for 03 to confirm it is still the top offender.
+  Intrinsic size must be **real, not guessed**: measure each block once, pin its
+  own height, re-measure when it changes (a tool row expanding, a verbosity
+  switch, a streamed block updated in place). That is a small virtualiser with
+  its own correctness surface, which is why it is not a CSS line at the end of
+  #716. `scrollHeight` exact within a pixel or two at 60 and 400 blocks, asserted
+  — that is the invariant the reverted attempt broke — and the whole feed spec
+  family green **on Linux CI**, since the reverted attempt was green on Windows
+  and red on Linux.
+
+**#716 stays open as the symptom ticket and this epic's acceptance bar**:
+keystroke-by-keystroke echo with no visible batching under a long draft, an
+actively streaming session in the same card, and weak hardware — validated on the
+laptop rather than a throttle. It closes when E21 does.
+
+**Out of scope, and why:** CPU affinity and process priority (see above) ·
+anything that sends a measurement off the machine — local-first is a hard
+constraint, and "instrumentation, not telemetry" is the line · GPU/compositor
+work, until 03 names it · the laptop's antivirus (recorded as VIPRE against the
+desktop's Defender, taxing every spawn and file read), which is real, is part of
+the gap, and is not something this codebase can optimise away — worth confirming
+in 03's note so it is not mistaken for our cost.
+
 ## Exit criteria (Phase 2 ships when)
 0. **(added 2026-07-26)** The seams are real: a second provider adapter could
    be written without editing `sessions/ipc.ts`, renderer contributions resolve
