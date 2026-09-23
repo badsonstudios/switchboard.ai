@@ -3,6 +3,59 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔄 IN PROGRESS — 2026-09-23: **#916** transcript test flake (501-file setups on the Windows runner)
+>
+> Branch `feature/916-transcript-flake-timeouts`. Owner nominated it as the
+> next item over #483, to stop it costing CI re-runs.
+>
+> **Not the fix the issue suggested.** It proposed a per-test timeout "the way
+> other disk-bound tests here do" — there are none: no per-test override and no
+> `testTimeout` anywhere, all 8,828 tests run on the 5 s default. And a bump
+> stops the red without stopping the ~7 s cost, which was the point.
+>
+> **Real cause:** three tests set up by writing `MAX_LISTED_CONVERSATIONS + 1`
+> (501) real files to make a *count* large. The cap is `names.length` off
+> `readdirSync`, checked before any stat — nothing read those files. 207/119 ms
+> here, 6,326/6,912 ms on the runner. New helper `test-big-dir.ts` spies the
+> readdir so a directory REPORTS N entries; the three tests drop to 1-2 ms.
+> A fourth (405 real dirs, `MAX_HISTORY_DIRS`) is left slow on purpose —
+> faking it would satisfy the assertion with the cap deleted.
+>
+> **Mutation testing corrected a claim of mine:** faking the listing does NOT
+> pin the "checked BEFORE the stat loop" property (moving the cap below the
+> loop stayed green — absent files ENOENT-drop and the later check still says
+> `unknown`). Added a `statSync` not-called assertion, which does pin it.
+> Also swapped `paths.test.ts` off a bare `mkdtempSync` (#213: its `rmSync`
+> teardown is skipped by a throwing assertion, so it leaked on exactly the
+> failing runs) and gave `history.test.ts` the `afterEach` it never had.
+>
+> **Review (code-reviewer): no blockers, 3 should-fixes, all taken.** It found
+> the gap my own reasoning missed — `everyProject`'s cap had no equivalent
+> assertion, so a version that reports `truncated` but loses its `continue` was
+> green. It also showed the first fake broke under a behaviour-PRESERVING
+> refactor (rewriting the readdir as `withFileTypes`), now fixed by answering
+> both call shapes for the matched directory. And it disproved my reason for
+> leaving the 405-directory test slow: reporting directories that list EMPTY
+> closes the hole I was worried about, so that one is fast too (72 ms → 10 ms)
+> and now catches a cap deletion the real-directory version did not.
+>
+> **Five mutations, all verified RED, and M2/M4/M5 were GREEN before this item:**
+> cap removed · cap moved below the stat loop · `>` → `>=` (an unpinned
+> boundary, now held) · `truncated` set without the skip · directory cap
+> removed. Net: 40 → 41 tests, every slow setup gone, three
+> previously-undetectable regressions now caught. (The harness was scratch in
+> `.claude/work_files/`, git-ignored and not committed; the five mutations are
+> spelled out above and in the issue so they can be re-derived.)
+>
+> **⚠️ The code-reviewer subagent's worktree cleanup WIPED the primary tree's
+> `node_modules`** (0 entries; `npx vitest` then failed with a misleading
+> `Cannot find module 'vitest/config'` out of the npx cache). `npm ci` restored
+> it in 57 s; tracked source was untouched. This is the junction trap that was
+> already in memory — subagents do not inherit it. Mutations were re-run in
+> place with backups instead of in a worktree.
+>
+> No production code touched. Typecheck and lint clean.
+
 > # 🚀 RELEASE — 2026-09-22: **v0.8.98** cut (carries #420 + #719)
 >
 > The owner asked for it after #420 merged. #719 merged as PR #913 →
