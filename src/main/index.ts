@@ -11,6 +11,7 @@ import {
   shell,
 } from 'electron';
 import path from 'path';
+import fs from 'fs';
 import { ArrangementMemories, planDisplayRestore, windowOptionsFrom, WindowState } from './window-state';
 import { WorkspaceStore, displayFingerprint } from './workspace/store';
 import os from 'os';
@@ -24,6 +25,9 @@ import { CpuHeartbeat } from './diagnostics/cpu-heartbeat';
 import { ProcessCensus } from './diagnostics/process-census';
 import { liveChildren } from './diagnostics/live-children';
 import { registerReportIpc } from './diagnostics/report-ipc';
+import { EventLoopDelay } from './diagnostics/event-loop';
+import { PerfCapture } from './diagnostics/perf-capture';
+import type { PerfBatch } from '../shared/perf';
 import { parsePreferredTransport, TRANSPORT_ENV_VAR } from './transport/preferred-transport';
 import { StreamPermissions } from './sessions/stream-permissions';
 import { StreamCommands } from './sessions/stream-commands';
@@ -1542,6 +1546,18 @@ app
     // so the service converts to cores' worth; `cores` goes on every line so the
     // laptop's numbers and this desktop's can be read against each other.
     const processCensus = new ProcessCensus();
+    // E21 tier 1 (#923). A blocked MAIN process makes every window feel
+    // sluggish at once, which is a different symptom from a slow renderer and
+    // has to be told apart from it — the renderer can only ever report on
+    // itself. It rides the heartbeat below rather than owning a timer.
+    const eventLoop = new EventLoopDelay();
+    eventLoop.start();
+    const perfCapture = new PerfCapture({
+      dir: app.getPath('userData'),
+      version: app.getVersion(),
+      log: createLogger(sink, 'perf'),
+    });
+    perfCapture.setEnabled(workspace.getPerfCapture());
     const cpuHeartbeat = new CpuHeartbeat({
       getMetrics: () =>
         app.getAppMetrics().map((m) => {
@@ -1572,8 +1588,25 @@ app
         // the machine's huge means someone else is spawning.
         children: liveChildren(),
         ...processCensus.fields(),
+        // E21 (#923). The heartbeat already wakes once a minute and already
+        // writes one line; adding a second timer to report on SCHEDULING would
+        // be a diagnostic that costs a wakeup to say the machine is busy.
+        // Reading resets the window, so each line describes its own minute —
+        // which is the only shape that can show a burst.
+        ...(loopFields() ?? {}),
       }),
     });
+    /**
+     * Read main's event-loop delay for the heartbeat, and copy it into the
+     * capture file on the way past. One read, two consumers: reading twice
+     * would reset the histogram under the other one.
+     */
+    function loopFields(): Record<string, number> | null {
+      const fields = eventLoop.fields();
+      const latest = eventLoop.latest();
+      if (latest) perfCapture.recordLoop(latest);
+      return fields as unknown as Record<string, number> | null;
+    }
     processCensus.start();
     cpuHeartbeat.start();
     // The lag gauge cannot tell a SUSPENDED machine from a WEDGED one — both
@@ -1582,6 +1615,23 @@ app
     // claiming the app hung all night, and the laptop is the only machine that
     // has ever shown #719.
     powerMonitor.on('resume', () => cpuHeartbeat.clockJumped());
+    // ── E21's capture channel (#923) ──────────────────────────────────────
+    //
+    // `on`, not `handle`: a flush is fire-and-forget. Making the renderer await
+    // main's acknowledgement would put an IPC round trip on the process we are
+    // trying to time, which is the failure this whole item exists to avoid.
+    broker.on('perf:record', (_e, batch: PerfBatch) => {
+      perfCapture.record(batch);
+    });
+    broker.handle('perf:mainStats', () => eventLoop.latest());
+    broker.handle('perf:hasCapture', () => fs.existsSync(perfCapture.path()));
+    broker.handle('perf:reveal', () => {
+      // The file is the deliverable of E21-02 — he has to be able to find it to
+      // attach it. Nothing to reveal until the switch has been on at least once.
+      if (!fs.existsSync(perfCapture.path())) return false;
+      shell.showItemInFolder(perfCapture.path());
+      return true;
+    });
     broker.handle('update:check', (_e, opts: { manual?: boolean } = {}) =>
       // `push: false` — this caller gets the answer as the return value, and
       // pushing as well would open the dialog twice.
@@ -2252,6 +2302,18 @@ app
       workspace.setExperimentalFork(on === true);
       return workspace.getExperimentalFork();
     });
+    // Detailed performance capture (#923), same `=== true` coercion and the
+    // same "answer with what was stored" contract.
+    broker.handle('settings:getPerfCapture', () => workspace.getPerfCapture());
+    broker.handle('settings:setPerfCapture', (_e, on: boolean) => {
+      workspace.setPerfCapture(on === true);
+      const now = workspace.getPerfCapture();
+      // The file follows the switch immediately rather than at the next launch:
+      // the owner flips this on BECAUSE something is slow right now, and a
+      // capture that only starts after a restart misses exactly that.
+      perfCapture.setEnabled(now);
+      return now;
+    });
     const sessionIpc: SessionIpcHandle = registerSessionIpc({
       manager,
       ptys,
@@ -2390,6 +2452,7 @@ app
       updates.stop(); // kills the daily timer; a check in flight becomes a no-op
       health.stop(); // same, for the status-page poll
       cpuHeartbeat.stop(); // the #719 per-process CPU line, and its lag gauge
+      eventLoop.stop(); // E21's event-loop histogram (#923)
       processCensus.stop(); // …and the machine-wide process count it carries
       staticServer?.close();
       scheduleForcedExit();

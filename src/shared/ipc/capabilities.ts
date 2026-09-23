@@ -109,6 +109,15 @@ export const CAPABILITIES = [
   // that `update.check` already talks to the same host is not
   // a reason to share its word — that one reads a version
   // number, this one creates something.
+  'diagnostics.perf', // appends timings to the LOCAL performance capture file
+  // (#923). Its own word, and it is the weakest of this
+  // family on purpose: it writes durations and interaction
+  // names to one file on this machine and can reach nothing
+  // else. Deliberately NOT folded into `diagnostics.report`,
+  // because that one SENDS — and the whole point of E21 is
+  // that measurement is instrumentation, not telemetry. A
+  // future consumer allowed to time the UI must not thereby
+  // acquire the ability to post what it timed.
   'diagnostics.credential', // stores the GitHub token that makes the above
   // possible (#815). Split from `diagnostics.report` by
   // exactly the argument `push.write` makes: depositing a
@@ -167,6 +176,13 @@ export const CHANNEL_CAPABILITIES = {
   // would let a consumer granted only the send power learn credential state for
   // free, while one granted only the credential power could not ask whether the
   // store it writes to even works.
+  // E21's capture (#923). `record` appends to the local file; `mainStats` reads
+  // main's own event-loop delay so the summary can tell a blocked MAIN process
+  // apart from a slow renderer — a distinction the renderer cannot make alone.
+  'perf:record': 'diagnostics.perf',
+  'perf:mainStats': 'diagnostics.perf',
+  'perf:hasCapture': 'diagnostics.perf',
+  'perf:reveal': 'shell.openPath',
   'diag:reportStatus': 'diagnostics.credential',
   'diag:submit': 'diagnostics.report',
   'diag:setGitHubToken': 'diagnostics.credential',
@@ -386,6 +402,12 @@ export const CHANNEL_CAPABILITIES = {
   // drawn; nothing here can start, fork or reach a session.
   'settings:getExperimentalFork': 'settings.read',
   'settings:setExperimentalFork': 'settings.write',
+  // Detailed performance capture (#923). An ordinary preference pair: it
+  // decides whether the renderer loads its tier-2 instrumentation and whether
+  // main opens a capture file. Nothing on this channel reads a session, and the
+  // capture itself carries durations and interaction names only.
+  'settings:getPerfCapture': 'settings.read',
+  'settings:setPerfCapture': 'settings.write',
   'transcripts:binding': 'transcripts.read',
   'update:cancelInstall': 'update.install',
   'update:check': 'update.check',

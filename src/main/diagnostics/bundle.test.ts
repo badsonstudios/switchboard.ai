@@ -4,10 +4,13 @@ import path from 'path';
 import { buildBundle, bundleName, bundleInfo, type BundleDeps } from './bundle';
 import { UNKNOWN_BUILD_IDENTITY } from '../../shared/build-identity';
 import { tempDir, cleanupTempDirs } from '../../test-temp-dirs';
+import { CAPTURE_FILE } from './perf-capture';
 
 afterEach(() => cleanupTempDirs());
 
-function harness(opts: { logs?: Record<string, string>; workspace?: string } = {}): BundleDeps {
+function harness(
+  opts: { logs?: Record<string, string>; workspace?: string; capture?: string } = {}
+): BundleDeps {
   const root = tempDir('sb-bundle-');
   const logsDir = path.join(root, 'logs');
   fs.mkdirSync(logsDir, { recursive: true });
@@ -16,6 +19,9 @@ function harness(opts: { logs?: Record<string, string>; workspace?: string } = {
   }
   if (opts.workspace !== undefined) {
     fs.writeFileSync(path.join(root, 'workspace.json'), opts.workspace);
+  }
+  if (opts.capture !== undefined) {
+    fs.writeFileSync(path.join(root, CAPTURE_FILE), opts.capture);
   }
   return {
     logsDir,
@@ -86,6 +92,22 @@ describe('buildBundle', () => {
     const without = await buildBundle(harness());
     expect(without.ok).toBe(true); // still a bundle — this is not a failure
     expect(without.skipped).toContainEqual({ name: 'workspace.json', reason: 'not present' });
+  });
+
+  it('includes the performance capture when one exists (#923)', async () => {
+    // A report about the app feeling slow is far more useful with the timings
+    // attached than with a description of them.
+    const withIt = await buildBundle(harness({ capture: '{"kind":"run"}\n' }));
+    expect(withIt.skipped.map((s) => s.name)).not.toContain(CAPTURE_FILE);
+  });
+
+  it('says a missing capture was never switched on, not that it failed (#923)', async () => {
+    // The ordinary case — the detailed tier is off by default — so the word
+    // "could not" would read as a failure of something that never ran.
+    const without = await buildBundle(harness());
+    expect(without.ok).toBe(true);
+    const entry = without.skipped.find((s) => s.name === CAPTURE_FILE);
+    expect(entry?.reason).toMatch(/never been on/);
   });
 
   it('survives a missing logs directory instead of throwing', async () => {

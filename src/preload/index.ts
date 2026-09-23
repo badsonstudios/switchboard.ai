@@ -46,6 +46,7 @@ import type {
   ReportStatus,
   ReportWriteResult,
 } from '../shared/diagnostics';
+import type { PerfBatch, PerfLoopDelay } from '../shared/perf';
 import type { ControlVerdict } from '../shared/control';
 import type { NotificationPrefs } from '../shared/notifications';
 import type { WorkspaceSaveState } from '../shared/workspace';
@@ -829,6 +830,17 @@ const api = {
       ipcRenderer.invoke('settings:getExperimentalFork'),
     setExperimentalFork: (on: boolean): Promise<boolean> =>
       ipcRenderer.invoke('settings:setExperimentalFork', on),
+    /**
+     * Detailed performance capture — E21 tier 2 (#923). Off by default.
+     *
+     * Read once at renderer boot, and again on every change: OFF must mean the
+     * tier-2 module was never imported, so this answer is what decides whether
+     * a dynamic `import()` happens at all rather than what a hot path branches
+     * on. Main answers with what it STORED, not what was asked for.
+     */
+    getPerfCapture: (): Promise<boolean> => ipcRenderer.invoke('settings:getPerfCapture'),
+    setPerfCapture: (on: boolean): Promise<boolean> =>
+      ipcRenderer.invoke('settings:setPerfCapture', on),
   },
   preflight: {
     check: (): Promise<{
@@ -1094,6 +1106,25 @@ const api = {
    * reach the internet at all (`connect-src 'self'`), so the window's whole job
    * is to collect a subject and a description.
    */
+  /**
+   * E21's local performance capture (#923).
+   *
+   * Separate from `diagnostics` above, and the separation is the point: that
+   * one SENDS a report to GitHub, this one appends durations to a file on this
+   * machine and can reach nothing else. `record` is fire-and-forget — a flush
+   * that main refused must never make the renderer wait, because the renderer
+   * is the thing being timed.
+   */
+  perf: {
+    record: (batch: PerfBatch): void => {
+      ipcRenderer.send('perf:record', batch);
+    },
+    mainStats: (): Promise<PerfLoopDelay | null> => ipcRenderer.invoke('perf:mainStats'),
+    /** is there a file to show yet? Answers the Settings button's enabled state. */
+    hasCapture: (): Promise<boolean> => ipcRenderer.invoke('perf:hasCapture'),
+    /** show the capture file in the OS file manager, so it can be attached */
+    reveal: (): Promise<boolean> => ipcRenderer.invoke('perf:reveal'),
+  },
   diagnostics: {
     reportStatus: (): Promise<ReportStatus> => ipcRenderer.invoke('diag:reportStatus'),
     submit: (draft: ReportDraft): Promise<ReportResult> => ipcRenderer.invoke('diag:submit', draft),

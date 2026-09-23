@@ -276,9 +276,9 @@ export interface WorkspaceState {
   /**
    * §5.5 Level 3 — fork adoption, EXPERIMENTAL and OFF BY DEFAULT (P2-E11-12).
    *
-   * The only pref in this file whose default is `false`, and the reason is the
-   * one §5.5 gives: Level 3 leans on CLI behaviour that no documentation
-   * promises. It is measured (`spike/findings/e11-801-fork-adoption.md`, claude
+   * One of the two prefs in this file whose default is `false` (`perfCapture`
+   * is the other), and the reason is the one §5.5 gives: Level 3 leans on CLI
+   * behaviour that no documentation promises. It is measured (`spike/findings/e11-801-fork-adoption.md`, claude
    * 2.1.272) rather than guessed, but "measured against one version" is exactly
    * the drift class DESIGN §5.2 describes, and an off switch is what makes that
    * honest instead of optimistic.
@@ -289,6 +289,21 @@ export interface WorkspaceState {
    * "yes, but not really".
    */
   experimentalFork: boolean;
+  /**
+   * Detailed performance capture — E21's tier 2, OFF BY DEFAULT (P2-E21-01).
+   *
+   * A top-level TYPED field rather than a key in the opaque `ui` blob because
+   * MAIN is a reader: main owns the capture file, and it has to know at boot
+   * whether to open one at all. The renderer rewrites `ui` wholesale, which
+   * would clobber that.
+   *
+   * OFF MEANS THE INSTRUMENTATION IS ABSENT, NOT SKIPPED — the done-when, and
+   * the whole point. This tier measures the keystroke path, so a build that
+   * merely branches per keystroke would be measuring itself. Off, the tier-2
+   * module is never imported, no listener is attached and no prototype is
+   * patched; `perf-detail.ts` is the enforcement and its test is the proof.
+   */
+  perfCapture: boolean;
   /**
    * Update-check preferences (P2-E19-03). A top-level TYPED field rather than
    * a key in the opaque `ui` blob, because MAIN is the reader: the daily timer
@@ -449,9 +464,11 @@ const EMPTY: WorkspaceState = {
   // #877: the owner asked for the space filled by default, with smaller sizes
   // available for anyone who wants the rail dense instead.
   taskLabelSize: DEFAULT_TASK_LABEL_SIZE,
-  // the one default-OFF pref left — an experiment leaning on undocumented CLI
-  // behaviour may not arrive switched on.
+  // the two default-OFF prefs — an experiment leaning on undocumented CLI
+  // behaviour may not arrive switched on, and neither may instrumentation that
+  // costs something to run.
   experimentalFork: false,
+  perfCapture: false,
   updates: { autoCheck: true },
   health: { poll: true },
   push: { ...DEFAULT_PUSH_PREFS },
@@ -739,6 +756,14 @@ export class WorkspaceStore {
       if (wrongType(raw, 'aiLabels', 'boolean'))
         note('the AI-label setting in the workspace file was not true or false — leaving it on');
 
+      // #923. Audible for the same reason as the three above (#344), but the
+      // sentence ends the other way: this one defaults OFF, so the repair the
+      // user needs told about is that their capture is NOT running.
+      if (wrongType(raw, 'perfCapture', 'boolean'))
+        note(
+          'the detailed performance capture setting in the workspace file was not true or false — leaving it off'
+        );
+
       this.state = {
         version: CURRENT_VERSION,
         sessions,
@@ -758,12 +783,16 @@ export class WorkspaceStore {
         // Tolerant by design: an unreadable size is one nobody chose, so it
         // lands on the default rather than on the smallest. See the helper.
         taskLabelSize: taskLabelSizeOf(raw.taskLabelSize),
-        // ⚠️ THE OPPOSITE SHAPE, AND THE LAST ONE LIKE IT: `=== true`, not
-        // `!== false`. An experiment must read "off unless explicitly on", so a
-        // missing key, a hand-edited string, or a file written by an older
-        // build all land OFF rather than silently enabling something nobody
-        // asked for.
+        // ⚠️ THE OPPOSITE SHAPE — `=== true`, not `!== false`. An experiment
+        // must read "off unless explicitly on", so a missing key, a hand-edited
+        // string, or a file written by an older build all land OFF rather than
+        // silently enabling something nobody asked for.
         experimentalFork: raw.experimentalFork === true,
+        // Same shape, same reason (#923). This one is stricter than an
+        // experiment: tier-2 instrumentation costs main-thread time on the very
+        // path E21 exists to measure, so an unreadable value must never be the
+        // thing that turns it on.
+        perfCapture: raw.perfCapture === true,
         updates: updates.value,
         health: health.value,
         push: push.value,
@@ -1435,6 +1464,15 @@ export class WorkspaceStore {
 
   setExperimentalFork(on: boolean): void {
     this.state.experimentalFork = on;
+    this.saveSoon();
+  }
+
+  getPerfCapture(): boolean {
+    return this.state.perfCapture;
+  }
+
+  setPerfCapture(on: boolean): void {
+    this.state.perfCapture = on;
     this.saveSoon();
   }
 

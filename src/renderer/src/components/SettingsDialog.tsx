@@ -45,6 +45,7 @@ import { TaskLabelSizeSection } from './settings/TaskLabelSizeSection';
 import { QuietHoursSection } from './settings/QuietHoursSection';
 import { PushSection } from './settings/PushSection';
 import { AdvancedSection } from './settings/AdvancedSection';
+import { DiagnosticsSection } from './settings/DiagnosticsSection';
 
 export interface SettingsDialogProps {
   open: boolean;
@@ -88,6 +89,13 @@ export interface SettingsDialogProps {
   onToggleAutoCheckUpdates?: (on: boolean) => void;
   statusPolling?: boolean;
   onToggleStatusPolling?: (on: boolean) => void;
+
+  // ── Diagnostics (#923) ───────────────────────────────────────
+  perfCapture: boolean;
+  onTogglePerfCapture: (on: boolean) => void;
+  /** optional for the fail-open reason the two switches above give */
+  onRevealCapture?: () => void;
+  hasCapture?: boolean;
 }
 
 export function SettingsDialog(props: SettingsDialogProps): React.JSX.Element | null {
@@ -277,6 +285,18 @@ export function SettingsDialog(props: SettingsDialogProps): React.JSX.Element | 
               {...(props.onToggleStatusPolling
                 ? { onToggleStatusPolling: props.onToggleStatusPolling }
                 : {})}
+            />
+          </div>
+        )}
+
+        {heading(
+          'diagnostics',
+          <div style={{ display: 'grid', gap: 16, padding: '14px 16px' }}>
+            <DiagnosticsSection
+              perfCapture={props.perfCapture}
+              onTogglePerfCapture={props.onTogglePerfCapture}
+              {...(props.onRevealCapture ? { onRevealCapture: props.onRevealCapture } : {})}
+              {...(props.hasCapture !== undefined ? { hasCapture: props.hasCapture } : {})}
             />
           </div>
         )}

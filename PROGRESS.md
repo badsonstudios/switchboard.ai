@@ -3,6 +3,138 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ MERGED — 2026-09-23: **#923** P2-E21-01 diagnostics capture + a Settings switch
+>
+> Branch `feature/923-diagnostics-capture`. Plan posted to the issue before
+> implementation. Review pass done — see below; it found two blockers and both
+> are fixed and mutation-verified.
+>
+> **The design decision the whole item turns on: instrument from OUTSIDE React.**
+> The owner's rule 2 is *"off must mean genuinely ABSENT, not a flag checked on
+> every keystroke"*, and the only way to mean that literally is for the composer
+> to contain no perf code at all — not even a null check. So tier 2 attaches a
+> single capture-phase `keydown` listener on `document` filtered to
+> `.composer-box`, patches the layout-forcing accessors once at enable, and reads
+> the two numbers it needs (`blocks`, `rendered`) off **`data-perf-*` attributes**
+> on the feed's root rather than through a hook, a context or a registry — all
+> three of which would be code in the render path whether or not anyone was
+> measuring. `perf-detail.ts` is reached ONLY by a dynamic `import()`, so with the
+> switch off it is never evaluated in the renderer.
+>
+> **`perf.absent.test.ts` is the load-bearing test** and pins that three ways:
+> the module is not loaded; the layout accessors are the browser's own objects
+> **by identity** after a switch-off round trip (a restored-as-a-fresh-wrapper
+> implementation would still tax every layout read for the session); and
+> `FeedView.tsx` imports nothing from the perf family — asserted against the
+> SOURCE, because "someone adds `recordKeystroke()` to `onChange` in six months"
+> is the failure every runtime assertion would sail past.
+>
+> **DROPPED, deliberately, and it is the one scope cut worth arguing about:**
+> `prompt-first-token`. #904's menu lists it, but the only place to start and stop
+> it is inside the composer and the feed — the two files the boundary above makes
+> off-limits. It is NOT in this item's done-when (#741's four are). Recorded as a
+> note in `shared/perf.ts` with the honest way to get it later: main-side
+> timestamps on the send and the first stream frame. **React render counts are
+> likewise not measured** — counting them is impossible from outside the tree, so
+> it would mean a hook or a `<Profiler>` in the render path. `blockedMs` and
+> `layoutReads` per keystroke answer #716's suspicion instead.
+>
+> **Two bugs the work found in itself, both of which would have shipped a
+> silently-dead instrument:**
+> - **`getComputedStyle` is an ACCESSOR in jsdom and a METHOD in Chromium**, and
+>   it is not an own property of `window` — it lives up the prototype chain. The
+>   first patcher checked `descriptor.value` on the instance and therefore patched
+>   nothing, while every runtime assertion still passed. That is the worst
+>   possible shape: a test asserting that an uninstalled probe counts no layout
+>   reads. Fixed with a prototype-chain walk plus a patcher that handles both.
+> - **The cost probe measured vsync, not work.** Every phase came out at
+>   16.68–16.70 ms/key — 60 Hz to three decimals — because the loop is paced by
+>   `requestAnimationFrame`, which hides any cost under one frame, i.e. exactly
+>   the range in question. And run in sequence rather than interleaved, warm-up
+>   dominated: tier 2 appeared to make typing *faster* than no tier 2.
+>
+> **The before/after number the done-when asks for** —
+> `spike/findings/e21-923-instrument-cost.md`, real app, real Chromium, 400 keys
+> × 5 interleaved rounds: capture OFF 0.688 ms/key median, ON 0.660 ms/key. ON
+> measured nominally FASTER, which is not a result — it is the difference being
+> smaller than the run-to-run spread. The honest claim is **"under 0.05 ms per
+> keystroke"**, not zero. A forced layout costs ~7.5 µs and the patched accessor
+> wrapper does not survive five rounds inside it. **Caveat stated in the note and
+> worth repeating: dev desktop, empty conversation — the machine and workload E21
+> exists because we stopped trusting.**
+>
+> **Local-only is asserted, not promised.** `stringLeaves()` walks every string in
+> a real capture line (keys as well as values — `{"/home/dan/x.ts": 3}` is the
+> shape a well-meaning per-file metric would take) against an allowlist. The draft
+> is recorded as a LENGTH; there is no field a character of it could reach.
+>
+> **Also touched:** `diagnostics.perf` is a NEW capability, deliberately not
+> folded into `diagnostics.report` — that one SENDS, and E21's premise is that
+> measurement is instrumentation, not telemetry. The capture joins the Report-a-
+> problem zip. Main's event-loop delay rides the #719 CPU heartbeat rather than
+> owning a timer. `app.perfSummary` is the sixth `typing-ok` command (the moment
+> you want it is the moment typing feels slow).
+>
+> **Working-copy gotcha, recorded because it cost time:** rewriting files with
+> Python on Windows converted them to CRLF, which broke `native-dialog.test.ts` —
+> its comment-stripping regex cannot match past a ``. `.gitattributes`
+> normalises to LF in the repo so the committed diff was always clean; only the
+> working copy was wrong, so it would have passed CI and failed locally forever.
+>
+> **Review (code-reviewer): TWO BLOCKERS, both real, both fixed.** It earned its
+> keep — each one attacked a promise the item exists to keep:
+> - **The switch could be raced into the state it forbids.** Turning ON awaits a
+>   dynamic import while turning OFF is synchronous, and nothing chained them. A
+>   mis-click (tick, then untick) left the off-path looking at a still-`null`
+>   `detail`, so it uninstalled nothing — then the import resolved and installed
+>   the listener and the prototype patches for the life of the renderer, while
+>   the checkbox, `workspace.json` and `getPerfCapture()` all said OFF. The
+>   on/off/on ordering was worse: tier 2 installed TWICE, the first source was
+>   orphaned with its listener attached, and the second captured the
+>   already-patched accessors as its "originals" — so switching off restored
+>   them to the orphan's wrapper, an unremovable per-layout-read tax. Fixed with
+>   a generation counter; both orderings now have tests, both verified red.
+> - **A stranded frame wedged the recorder AND cried wolf.** Chromium throttles
+>   `requestAnimationFrame` to nothing on a minimised window, so "type a
+>   character, then Alt-Tab" left `sampling` true forever: the overlap guard then
+>   dropped every later keystroke, so one Alt-Tab would have cost the whole
+>   working day E21-02 exists to capture. Worse, `layoutReads` kept counting
+>   app-wide while hidden, so the stale sample would land with a huge `ms` and a
+>   large read count — turning the summary amber with *"layout was measured while
+>   you typed"*, which is the line the dogfood tracker tells the owner to stop and
+>   report. **A false #739 regression is the worst possible output of this
+>   instrument.** Fixed with a watchdog, a `visibilitychange` abort and a sanity
+>   ceiling; both failure modes have tests, both verified red.
+>
+> **Should-fixes taken:** `sanitizeBatch` now REBUILDS every batch field-by-field
+> at the IPC boundary (the broker launders the `any` but explicitly does not
+> validate — and this file gets attached to a GitHub issue, so local-only rested
+> on the renderer behaving); the reveal button re-reads `hasCapture` after the
+> toggle instead of staying greyed all session; the rotated `.1` sibling joins the
+> report zip; rotation no longer `rm`s before `rename` (which destroyed the
+> previous capture and then failed) and stops retrying once broken; a
+> `measureToPaint` sample resolving while hidden is discarded — `session-switch`
+> could hit that deliberately, since focusing a popout raises another OS window.
+>
+> **A test I had to correct rather than defend.** The reviewer showed that
+> dropping `if (sampling)` from the patched accessors left the whole suite green.
+> My first replacement test claimed to pin that guard and did not — so it is
+> rewritten to pin what is actually true: the counter reset and the sampling flag
+> are TWO mechanisms delivering one property, and **either alone is sufficient**.
+> Verified by mutation: removing either is green, removing both is red. Stated in
+> the test and in `perf-detail.ts` rather than papered over.
+>
+> **Known blind spot, recorded rather than fixed: a popped-out session is not
+> measured.** A popout is its own document with its own `Element.prototype`, so
+> the capture-phase listener never sees it and no sample is recorded — silently,
+> which is indistinguishable from "did not type". `subscribePopoutWindows` exists
+> and would be the fix, but this item is scoped to #741's four. It is in the
+> manual, the findings note and the code so the owner does not spend a working day
+> typing into a popout and conclude the instrument is broken.
+>
+> **Full suite: 8967 passed, 1 failed** — `git-service.test.ts`'s wall-clock
+> budget test, which passes in isolation (74/74). Known contention, not a defect.
+
 > # 🗺️ PLANNED — 2026-09-23: **E21 Responsiveness** — the perf family folded into one epic
 >
 > Owner asked for the four performance tickets to become one epic, diagnostics

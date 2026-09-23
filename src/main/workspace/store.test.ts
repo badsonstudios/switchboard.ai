@@ -831,6 +831,30 @@ describe('update prefs (P2-E19-03)', () => {
     expect(off.getAiLabels()).toBe(false);
   });
 
+  it('detailed performance capture defaults OFF, and only an explicit true turns it on (#923)', () => {
+    // The `=== true` shape, and the strict direction is the point. E21 exists
+    // because every performance number we hold was measured on the wrong
+    // machine; tier 2 instruments the keystroke path itself, so a corrupt file
+    // that silently switched it on would be a file that quietly changed the
+    // measurement. Junk lands OFF.
+    const st = makeStore(file);
+    st.load();
+    expect(st.getPerfCapture()).toBe(false);
+
+    for (const junk of ['true', 1, {}, null, 'yes']) {
+      fs.writeFileSync(file, JSON.stringify({ version: 1, perfCapture: junk }));
+      const s = makeStore(file);
+      s.load();
+      expect(s.getPerfCapture(), `perfCapture: ${JSON.stringify(junk)}`).toBe(false);
+    }
+
+    // …and an explicit `true` IS a choice, and is honoured.
+    fs.writeFileSync(file, JSON.stringify({ version: 1, perfCapture: true }));
+    const on = makeStore(file);
+    on.load();
+    expect(on.getPerfCapture()).toBe(true);
+  });
+
   it('the task label size defaults to full and rejects anything else (#877)', () => {
     // NOT the `!== false` shape the switch above uses, because this is not a
     // boolean: it is a closed vocabulary, so the load path resolves anything
@@ -1629,6 +1653,17 @@ describe('load-time repairs are audible (#344)', () => {
       const warns = loadWarns();
       expect(warns).toHaveLength(1);
       expect(warns[0].msg).toMatch(/AI-label .* leaving it on/);
+    });
+
+    it('a non-boolean performance-capture setting says it stayed OFF (#923)', () => {
+      // The one repair note in this block whose sentence ends the other way,
+      // because the pref defaults off. The user has to be told the capture is
+      // NOT running — a silent off is how someone works a whole day on the
+      // laptop and then finds the file empty.
+      write({ version: 1, perfCapture: 'on please' });
+      const warns = loadWarns();
+      expect(warns).toHaveLength(1);
+      expect(warns[0].msg).toMatch(/performance capture .* leaving it off/);
     });
   });
 

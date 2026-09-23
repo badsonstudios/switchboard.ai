@@ -819,7 +819,34 @@
       "unavailable": "This copy of switchboard could not collect a report. Nothing was sent."
     }
   },
+  "perf": {
+    "title": "Performance summary",
+    "intro": "How long things took in this window since it opened. These are percentiles, not averages: half of everything was faster than the p50 figure, and 19 times out of 20 it was faster than p95. The worst column is the single slowest one, which is usually the one you noticed.",
+    "interaction": "Action",
+    "count": "Times",
+    "p50": "p50",
+    "p95": "p95",
+    "worst": "Worst",
+    "ms": "{ms} ms",
+    "nothing": "Nothing has been measured in this window yet. Use the app for a minute and open this again.",
+    "longTasks": "The app was too busy to redraw {count} times, for {total} ms in total. The longest single stall was {worst} ms.",
+    "longTasksNone": "The app was never too busy to redraw.",
+    "loop": "Background work delayed the app by {p50} ms typically and {p99} ms at its worst 1-in-100 moment, peaking at {max} ms.",
+    "loopNone": "Background delay has not been measured yet — it is read once a minute.",
+    "detailOff": "Detailed capture is off, so keystrokes and layout work were not measured. Turn it on in Settings under Diagnostics.",
+    "detailOn": "Detailed capture recorded {count} keystrokes. The largest conversation sampled held {blocks} blocks with {rendered} on screen.",
+    "layoutClean": "No layout measuring happened while you typed, which is what should happen.",
+    "layoutDirty": "Layout was measured {count} times while you were typing. That should be zero — it is the cost that made typing lag.",
+    "names": {
+      "cold-start": "Starting up",
+      "keystroke": "Typing a character",
+      "session-switch": "Switching session",
+      "palette-open": "Opening the command list",
+      "settings-open": "Opening Settings"
+    }
+  },
   "commands": {
+    "perfSummary": "Show performance summary",
     "reportProblem": "Report a problem…",
     "jumpTo": "Go to session {n}",
     "nextSession": "Next session",
@@ -1212,8 +1239,16 @@
     "section": {
       "appearance": "Appearance",
       "attention": "Attention",
-      "advanced": "Advanced"
+      "advanced": "Advanced",
+      "diagnostics": "Diagnostics"
     },
+    "perfCapture": "Detailed performance capture",
+    "perfCaptureBlurb": "Records how long each keystroke takes to appear, how much of the conversation was on screen at the time, and what blocked the app while you waited. Off by default because it costs a little speed to run. It stays on this computer: it stores durations and the names of actions only, never anything you typed, any file name, or anything from a conversation.",
+    "perfCaptureOn": "On — recording timings",
+    "perfCaptureOff": "Off",
+    "perfCaptureFile": "The capture file",
+    "perfCaptureFileBlurb": "Everything recorded goes into one file you can attach to a bug report. It keeps roughly a working day and then starts overwriting the oldest part.",
+    "perfCaptureReveal": "Show the file",
     "theme": "Theme",
     "themeBlurb": "How the whole window is painted. Pick system to follow whatever your computer is set to, and change when it changes.",
     "language": "Language",

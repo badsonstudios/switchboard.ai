@@ -7,8 +7,14 @@
 // this is one more, and it keeps the arrow pointing the way the others do —
 // components import from lib, never the reverse.
 
-/** In render order, which is also the order they appear in the modal. */
-export const SETTINGS_SECTIONS = ['appearance', 'attention', 'advanced'] as const;
+/**
+ * In render order, which is also the order they appear in the modal.
+ *
+ * `diagnostics` is LAST on purpose (#923): it is the only section nobody should
+ * need, and putting an off-by-default instrument above the update and status
+ * switches would advertise it as ordinary.
+ */
+export const SETTINGS_SECTIONS = ['appearance', 'attention', 'advanced', 'diagnostics'] as const;
 
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
