@@ -3,9 +3,31 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔧 IN FLIGHT — 2026-09-23: **#927** P2-E21-05 Report a problem carries the performance numbers
+> # 🚀 RELEASE — 2026-09-23: **v0.8.99** cut (the digest + the whole E21 instrument)
 >
-> Branch `feature/927-report-carries-perf`. Owner asked for the diagnostics to be
+> Tag `v0.8.99` on `30d1d23`. Carries **#483** (missed-events digest), **#923**
+> (the performance instrument) and **#927** (the report integration). Patch bump,
+> confirmed with the owner; next unreleased section opened as `0.8.100`.
+>
+> **The CHANGELOG was missed on BOTH performance items and only caught because
+> the owner asked about releasing.** `docs/plans/00-process.md` is explicit that
+> every user-facing item files its entry before the PR opens, and the reason is
+> not tidiness: the in-app update dialog shows this file verbatim, so a blank
+> section is what a user reads after updating. It went past me twice in a row —
+> exactly the "three consecutive items sailed past it" failure the note was
+> written about. Three entries filed before the cut. **Worth a habit change: the
+> CHANGELOG belongs in the same breath as the manual page, not at release time.**
+>
+> **Nothing in this release has been hand-tested.** #483, #923 and #927 are all
+> UNTESTED rows. The #923 and #927 rows are the ones to run first — #923 because
+> P2-E21-02 is blocked on it, and #927 step 4 because it is a privacy check on a
+> PUBLIC issue body, which is the one path in the app where this data leaves the
+> machine.
+
+> # ✅ MERGED — 2026-09-23: **#927** P2-E21-05 Report a problem carries the performance numbers
+>
+> PR #928 squashed to `2fa04eb`; all four CI jobs green. Issue closed. **Released
+> in v0.8.99.** Owner asked for the diagnostics to be
 > sendable — "either to GitHub or over to my main PC for analysis."
 >
 > **Two thirds of the ask was already done by #923** and it is worth saying so
