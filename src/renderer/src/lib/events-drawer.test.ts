@@ -66,7 +66,7 @@ describe('the tint is the hottest thing waiting', () => {
   });
 });
 
-describe('the notice marker speaks for all three tenants', () => {
+describe('the notice marker speaks for all five tenants', () => {
   // The #425 coordination note: the update notice, the reconnect offer and the
   // incidents card share one slot and rehomed into this drawer together. Behind
   // a collapsed tab all three are invisible, so all three have to raise the
@@ -89,6 +89,14 @@ describe('the notice marker speaks for all three tenants', () => {
     expect(liveNotices({ historyRepairs: [{ id: 'r1' }] })).toBe(1);
   });
 
+  it('is raised by the missed-events digest (P2-E14-05c)', () => {
+    expect(liveNotices({ digest: { total: 1 } })).toBe(1);
+  });
+
+  it('counts a digest of forty as ONE tenant, like every other slot occupant', () => {
+    expect(liveNotices({ digest: { total: 40 } })).toBe(1);
+  });
+
   it('counts them, so the accessible name can say how many', () => {
     expect(
       liveNotices({
@@ -96,8 +104,9 @@ describe('the notice marker speaks for all three tenants', () => {
         reconnectOffer: true,
         incidents: [{ id: 'i1' }, { id: 'i2' }],
         historyRepairs: [{ id: 'r1' }, { id: 'r2' }],
+        digest: { total: 12 },
       })
-    ).toBe(4); // four TENANTS, not six notices — a slot's rows are one card
+    ).toBe(5); // five TENANTS, not eighteen notices — a slot's rows are one card
   });
 
   it('stays down for the empty shapes each tenant actually sends', () => {
@@ -105,8 +114,17 @@ describe('the notice marker speaks for all three tenants', () => {
     // offer, and the empty array `serviceHealth.incidents` is when all is well
     expect(liveNotices({})).toBe(0);
     expect(
-      liveNotices({ updateNotice: null, reconnectOffer: false, incidents: [], historyRepairs: [] })
+      liveNotices({
+        updateNotice: null,
+        reconnectOffer: false,
+        incidents: [],
+        historyRepairs: [],
+        // the digest's own empty shapes: absent, null, and the zero-total one
+        // `buildDigest([])` returns on the ordinary night
+        digest: null,
+      })
     ).toBe(0);
+    expect(liveNotices({ digest: { total: 0 } })).toBe(0);
   });
 
   it('is independent of the queue — a notice with an empty queue still marks', () => {

@@ -1302,17 +1302,35 @@ export class WorkspaceStore {
    * `saveSoon`, never a synchronous write: this runs on the event path, which
    * an overnight batch of them must not slow down.
    */
-  recordSuppressed(e: SuppressedEvent): void {
-    if (!isSaneSuppressedEvent(e)) return; // an unloadable record is not worth writing
-    // Ids must stay unique because #483 CLEARS BY ID — a duplicate would take
-    // the wrong digest row with it. The engine's counter makes that true in the
-    // ordinary case; this covers the ones it cannot see (a clock stepped
+  /**
+   * Returns WHAT WAS STORED, or null when nothing was (P2-E14-05c).
+   *
+   * Originally `void`, which was right while the digest only ever read the list
+   * back. It does not: `notifications:suppressed` pushes a held record to a
+   * drawer that is already open, and three of the paths below mean the record
+   * the caller handed over is not the row this store now holds — it can be
+   * dropped outright (unloadable, or a duplicate id), or kept as a CLAMPED copy
+   * with shorter text. A push of the caller's object would put a row on screen
+   * that the file does not contain, or one whose text is longer than what
+   * persists, and `countSuppressed` would disagree with what the user can see.
+   * So the caller pushes this, not its own argument.
+   */
+  recordSuppressed(e: SuppressedEvent): SuppressedEvent | null {
+    if (!isSaneSuppressedEvent(e)) return null; // an unloadable record is not worth writing
+    // Ids must stay unique because the digest CLEARS BY ID — a duplicate would
+    // take the wrong digest row with it. The engine's counter makes that true in
+    // the ordinary case; this covers the ones it cannot see (a clock stepped
     // backwards, a record replayed).
-    if (this.state.suppressed.some((s) => s.id === e.id)) return;
-    this.state.suppressed.push(clampSuppressed(e));
+    if (this.state.suppressed.some((s) => s.id === e.id)) return null;
+    const stored = clampSuppressed(e);
+    this.state.suppressed.push(stored);
     if (this.state.suppressed.length > SUPPRESSED_CAP)
       this.state.suppressed.splice(0, this.state.suppressed.length - SUPPRESSED_CAP);
     this.saveSoon();
+    // Evicted by its own arrival — only reachable if the cap were ever 0, but
+    // answering "stored" about a row that is already gone is exactly the lie
+    // this return value exists to stop telling.
+    return this.state.suppressed.includes(stored) ? { ...stored } : null;
   }
 
   /** The held list, oldest first. Copies out — #483 renders it, never mutates it. */

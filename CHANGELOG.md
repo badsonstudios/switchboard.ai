@@ -96,6 +96,17 @@ on the floor, and say so in your PR.
 
 ## 0.8.99 — unreleased
 
+### Added
+
+- **See what you missed while it was quiet.** When quiet hours hold
+  notifications back, the Events drawer now opens with a summary of them: how
+  many were held, across how many sessions, and the most recent few by name and
+  time. Each line names the session as it was called at the time, so a session
+  you've since renamed or closed still reports last night correctly. Press
+  **Clear** when you've read it — just opening the drawer doesn't clear it, so
+  you can't lose the digest by glancing in for something else. It appears only
+  when something was actually held.
+
 ## 0.8.98 — 2026-09-22
 
 ### Added

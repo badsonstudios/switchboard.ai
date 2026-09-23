@@ -73,6 +73,7 @@ import { createMainI18n } from './i18n';
 import { languageFromUi } from '../shared/i18n';
 import { APP_USER_MODEL_ID } from '../shared/app-identity';
 import { registerRulesIpc } from './events/rules-ipc';
+import { registerDigestIpc } from './events/digest-ipc';
 import { DEFAULT_SOUND } from '../shared/sounds';
 import { SoundActions } from './events/sound-actions';
 import { createRendererAudioSink } from './events/audio-sink';
@@ -1964,9 +1965,31 @@ app
       // `rules.ts` (`quietHolds`), where a table test can reach it.
       getQuietWindow: () => quietWindowOf(workspace.getNotificationPrefs()),
       now: clock,
-      // Held events are written down for #483's missed-events digest. Bounded
-      // FIFO in the store; the engine only hands over the record.
-      onSuppressed: (record) => workspace.recordSuppressed(record),
+      // Held events are written down for the missed-events digest (P2-E14-05c).
+      // Bounded FIFO in the store; the engine only hands over the record.
+      //
+      // RECORDING WINS. The push that follows is for a digest already on screen
+      // — a drawer open at 03:00 while the window holds another one — and it is
+      // wrapped because #483's done-when is that digest breakage never blocks or
+      // delays a live event. A dead renderer, a window mid-teardown, a
+      // serialization fault: none of them may cost the record that is already
+      // safely in the store.
+      onSuppressed: (record) => {
+        // The STORED row is what gets pushed, never the argument: the store can
+        // refuse this record (unloadable, duplicate id) or keep a clamped copy,
+        // and a renderer shown something the file does not hold would disagree
+        // with `quietState.heldCount` until the next mount.
+        const stored = workspace.recordSuppressed(record);
+        if (!stored) return;
+        try {
+          pushToRenderer?.(currentWindow, 'notifications:suppressed', stored);
+        } catch (err) {
+          rulesLog.warn('suppressed push failed; the record is still held', {
+            id: record.id,
+            error: String(err),
+          });
+        }
+      },
       // The built-ins are synthesized per event from the switches, push and
       // webhook included — so turning the phone on in the setup dialog takes
       // effect on the next event with nothing to persist and no rule to write.
@@ -2022,6 +2045,9 @@ app
       knownCard: (cardId) => workspace.listSessions().some((s) => s.id === cardId),
       onUnplayable: (channel) => soundActions.unplayable(channel),
     });
+    // The digest's read half (P2-E14-05c) — the list `notifications:quietState`
+    // only counts, and the review that empties it.
+    registerDigestIpc({ broker, log: rulesLog, store: workspace });
     registerPushIpc({
       broker,
       log: pushLog,

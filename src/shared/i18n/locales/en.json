@@ -524,6 +524,14 @@
       "closeHint": "Close the events drawer (Esc)",
       "closeIcon": "✕"
     },
+    "digest": {
+      "heading": "{count, plural, one {# notification was held} other {# notifications were held}} while it was quiet",
+      "sessions": "{count, plural, one {across # session} other {across # sessions}}",
+      "more": "and {count, plural, one {# more} other {# more}}",
+      "clear": "Clear",
+      "clearLabel": "Clear the missed-events digest — {count, plural, one {# held notification} other {# held notifications}}",
+      "row": "{title} — {kind}"
+    },
     "kind": {
       "done": "Done.",
       "ready": "Ready",

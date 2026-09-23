@@ -29,6 +29,7 @@ import {
   hookPoster,
   launchApp,
   LaunchedApp,
+  openEventsDrawer,
   poll,
   tempProjectFolder,
   workspaceJsonPath,
@@ -257,6 +258,31 @@ test.describe('quiet hours (P2-E14-05b)', () => {
     await expect(w.locator('[data-quiet-status]')).toContainText('1 notification held', {
       timeout: 10_000,
     });
+    await w.keyboard.press('Escape');
+    await expect(settingsDialog(w)).toHaveCount(0);
+
+    // ── and the DIGEST shows it on return, then clears on review (#483) ──────
+    //
+    // The whole point of the record, end to end: the event that nobody was told
+    // about at 03:00 is the thing the drawer opens with. Named by the title
+    // captured at hold time, not looked up now.
+    await openEventsDrawer(w);
+    const digest = w.locator('[data-events-notice="digest"]');
+    await expect(digest).toHaveCount(1, { timeout: 15_000 });
+    await expect(digest).toContainText('1 notification was held');
+    await expect(digest.locator('[data-digest-row]')).toHaveCount(1);
+    await expect(digest.locator('[data-digest-row="needs-permission"]')).toContainText(name);
+
+    // Review it. The notice goes, and — the half a rendered assertion cannot
+    // see — so does the durable record underneath it, which is what makes this
+    // a review rather than a hidden row that comes back next launch.
+    await digest.locator('button').click();
+    await expect(digest).toHaveCount(0, { timeout: 10_000 });
+    await w.waitForTimeout(900); // the store's debounced save, again
+    const after = JSON.parse(fs.readFileSync(workspaceJsonPath(a.home), 'utf8')) as {
+      suppressed?: unknown[];
+    };
+    expect(after.suppressed ?? []).toHaveLength(0);
   });
 
   test('outside the window the toast fires normally', async () => {

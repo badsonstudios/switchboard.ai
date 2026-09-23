@@ -69,6 +69,20 @@ export type SuppressionReason = 'quiet-hours';
 
 export const SUPPRESSION_REASONS: readonly SuppressionReason[] = ['quiet-hours'];
 
+/**
+ * What clearing a digest answers (P2-E14-05c).
+ *
+ * In `shared/` for the same reason the record is: main produces it, the
+ * renderer consumes it, and neither may import the other. It carries the list
+ * that SURVIVED as well as the count that went, so a renderer never has to
+ * reconstruct its own state from a number — including after a refusal, where
+ * `cleared: 0` and a full list is the honest answer.
+ */
+export interface ClearSuppressedResult {
+  cleared: number;
+  remaining: SuppressedEvent[];
+}
+
 /** How many held events are kept. Oldest dropped first — see the file header. */
 export const SUPPRESSED_CAP = 200;
 

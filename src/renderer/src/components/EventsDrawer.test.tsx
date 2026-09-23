@@ -23,6 +23,8 @@ import type { HistoryRepairNotice } from '../../../shared/history-repair';
 import fs from 'fs';
 import path from 'path';
 import { V2 } from './events-panel-test-props';
+import { buildDigest } from '../lib/digest';
+import type { Digest } from '../lib/digest';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -49,6 +51,7 @@ interface Options {
   updateNotice?: { kind: 'installed' | 'available'; version: string } | null;
   incidents?: readonly { id: string; name: string; status: string }[];
   historyRepairs?: readonly HistoryRepairNotice[];
+  digest?: Digest | null;
 }
 
 const onOpen = vi.fn();
@@ -80,6 +83,8 @@ async function render(o: Options = {}): Promise<void> {
         incidents={o.incidents}
         historyRepairs={o.historyRepairs}
         onDismissHistoryRepair={() => {}}
+        digest={o.digest}
+        onClearDigest={() => {}}
       />
     );
   });
@@ -261,7 +266,7 @@ describe('opening and closing', () => {
     expect(host.querySelectorAll('[data-event-kind]')).toHaveLength(1);
   });
 
-  it('all four notices render in the open drawer, together', async () => {
+  it('all five notices render in the open drawer, together', async () => {
     await render({
       open: true,
       updateNotice: { kind: 'available', version: '0.6.0' },
@@ -276,15 +281,29 @@ describe('opening and closing', () => {
           nativeSessionId: 'conv',
         },
       ],
+      digest: buildDigest([
+        {
+          id: 's1',
+          at: Date.now(),
+          kind: 'needs-permission',
+          cardId: 'c',
+          title: 'TradingApp',
+          body: 'needs permission',
+          actions: ['os-toast'],
+          ruleIds: ['built-in:toast'],
+          reason: 'quiet-hours',
+        },
+      ]),
     });
     expect(host.querySelector('[data-events-notice="incident"]')).not.toBeNull();
     expect(host.querySelector('[data-events-notice="available"]')).not.toBeNull();
     expect(host.querySelector('[data-events-notice="history-repair"]')).not.toBeNull();
+    expect(host.querySelector('[data-events-notice="digest"]')).not.toBeNull();
     // the reconnect offer has no data attribute of its own; its live region is
     // the witness, and there are three of them only when all three are up.
     // Scoped to the BODY: the drawer keeps one live region of its own, always
     // mounted, which is what announces a notice while it is shut.
-    expect(body()!.querySelectorAll('[role="status"]').length).toBe(4);
+    expect(body()!.querySelectorAll('[role="status"]').length).toBe(5);
   });
 
   it('points aria-controls at the body only while there is one', async () => {

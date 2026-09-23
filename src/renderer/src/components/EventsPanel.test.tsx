@@ -21,6 +21,8 @@ import type { HistoryRepairNotice } from '../../../shared/history-repair';
 import type { PermissionRequestDto } from '../../../shared/ipc/permissions';
 import type { EventsFilter } from '../lib/events-v2';
 import { V2 } from './events-panel-test-props';
+import type { SuppressedEvent } from '../../../shared/suppressed';
+import { buildDigest, DIGEST_ROWS } from '../lib/digest';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -541,5 +543,133 @@ describe('Events v2: inline decisions, questions, filters', () => {
     // …where All still leads with the one that is blocked
     await show(events, [], 'all');
     expect(titles()).toEqual(['beta', 'alpha']);
+  });
+});
+
+describe('the missed-events digest (P2-E14-05c)', () => {
+  const onClear = vi.fn();
+  const rec = (id: string, at: number, over: Partial<SuppressedEvent> = {}): SuppressedEvent => ({
+    id,
+    at,
+    kind: 'needs-permission',
+    cardId: 'card-a',
+    title: 'TradingApp',
+    body: 'needs permission',
+    actions: ['os-toast', 'sound'],
+    ruleIds: ['built-in:toast'],
+    reason: 'quiet-hours',
+    ...over,
+  });
+
+  async function show(held: SuppressedEvent[]): Promise<void> {
+    await act(async () => {
+      root!.render(
+        <EventsPanel
+          sessions={[]}
+          events={[]}
+          queueEvents={[]}
+          visited={new Set<number>()}
+          onFocus={() => {}}
+          onVisit={() => {}}
+          queueBinding="Ctrl+Space"
+          {...V2}
+          digest={buildDigest(held)}
+          onClearDigest={onClear}
+        />
+      );
+    });
+  }
+
+  const notice = (): HTMLElement | null =>
+    host.querySelector<HTMLElement>('[data-events-notice="digest"]');
+  const rows = (): HTMLElement[] => [...host.querySelectorAll<HTMLElement>('[data-digest-row]')];
+
+  beforeEach(() => onClear.mockReset());
+
+  it('renders NOTHING when quiet hours held nothing — the ordinary night', async () => {
+    // the calm check: a feature whose job is to do nothing must look like it
+    await show([]);
+    expect(notice()).toBeNull();
+    expect(host.textContent).toContain(en.events.empty);
+  });
+
+  it('names each held event by the title captured at the time', async () => {
+    await show([rec('a', 1_700_000_000_000, { title: 'the name it had at 03:00' })]);
+    expect(notice()).not.toBeNull();
+    expect(rows()).toHaveLength(1);
+    expect(rows()[0].getAttribute('data-digest-row')).toBe('needs-permission');
+    expect(rows()[0].textContent).toContain('the name it had at 03:00');
+  });
+
+  it('leads with the newest, not the store’s append order', async () => {
+    await show([rec('early', 100, { title: 'first' }), rec('late', 300, { title: 'last' })]);
+    expect(rows()[0].textContent).toContain('last');
+  });
+
+  it('summarises the ones it does not name', async () => {
+    const many = Array.from({ length: DIGEST_ROWS + 3 }, (_, i) =>
+      rec(`e${i}`, 1000 + i, { title: `card ${i}` })
+    );
+    await show(many);
+    expect(rows()).toHaveLength(DIGEST_ROWS);
+    expect(notice()!.getAttribute('data-digest-total')).toBe(String(DIGEST_ROWS + 3));
+    expect(notice()!.textContent).toContain('3 more');
+    // THE HEADING COUNTS THE WHOLE NIGHT, not the rows it drew. Unpinned until
+    // review deleted the heading outright and 133 tests stayed green — and the
+    // count is the one thing that tells the user how much Clear is about to take.
+    expect(notice()!.textContent).toContain(`${DIGEST_ROWS + 3} notifications were held`);
+    // …and so does the button that destroys them
+    expect(notice()!.querySelector('button')!.getAttribute('aria-label')).toContain(
+      String(DIGEST_ROWS + 3)
+    );
+  });
+
+  it('dates a row from an earlier day, and leaves today bare', async () => {
+    // a digest spanning midnight must say WHICH night; "03:14" alone does not
+    const today = new Date();
+    const earlier = new Date(today.getTime() - 3 * 24 * 60 * 60 * 1000);
+    await show([rec('old', earlier.getTime(), { title: 'from the weekend' })]);
+    const expected = earlier.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    expect(rows()[0].textContent).toContain(expected);
+    await show([rec('now', today.getTime(), { title: 'this morning' })]);
+    const todayStr = today.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+    expect(rows()[0].textContent).not.toContain(todayStr);
+  });
+
+  it('announces itself — it is already true when the window mounts', async () => {
+    // the strongest case for #314's pair in this slot: every row predates the
+    // renderer, so there is no later event to notice it by
+    await show([rec('a', 1)]);
+    const live = notice()!.querySelector('[role="status"]');
+    expect(live).not.toBeNull();
+    expect(live!.getAttribute('aria-live')).toBe('polite');
+  });
+
+  it('clears with EVERY id it accounted for, including the unnamed overflow', async () => {
+    const many = Array.from({ length: DIGEST_ROWS + 4 }, (_, i) => rec(`e${i}`, 1000 + i));
+    await show(many);
+    await click(host.querySelector<HTMLElement>('[data-events-notice="digest"] button')!);
+    expect(onClear).toHaveBeenCalledTimes(1);
+    expect(onClear.mock.calls[0][0]).toHaveLength(DIGEST_ROWS + 4);
+  });
+
+  it('names its count on the clear button, not just "Clear"', async () => {
+    // it destroys the only record of a night nobody watched (§5.32)
+    await show([rec('a', 1), rec('b', 2)]);
+    const btn = notice()!.querySelector('button')!;
+    expect(btn.getAttribute('aria-label')).toContain('2');
+  });
+
+  it('says how many SESSIONS only when more than one is involved', async () => {
+    await show([rec('a', 1, { cardId: 'card-a' })]);
+    expect(notice()!.textContent).not.toContain('across');
+    await show([rec('a', 1, { cardId: 'card-a' }), rec('b', 2, { cardId: 'card-b' })]);
+    expect(notice()!.textContent).toContain('across 2 sessions');
+  });
+
+  it('does not suppress the empty state when it is the only thing absent', async () => {
+    // guards the empty-state condition this tenant had to join
+    await show([rec('a', 1)]);
+    expect(host.textContent).not.toContain(en.events.empty);
   });
 });
