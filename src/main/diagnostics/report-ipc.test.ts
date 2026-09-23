@@ -173,6 +173,54 @@ describe('diag:submit — destinations', () => {
     expect(arg.body).toContain('not attached');
   });
 
+  it('github: the performance numbers reach the issue body (#927)', async () => {
+    const h = harness();
+    await h.submit({
+      subject: 's',
+      description: 'd',
+      destination: 'github',
+      perf: {
+        interactions: [{ name: 'keystroke', count: 20, p50: 8, p95: 400, worst: 400 }],
+        longTasks: { count: 3, totalMs: 295, worstMs: 180 },
+        detail: null,
+        loop: { p50: 1.2, p99: 48, maxMs: 310 },
+      },
+    });
+    const body = h.fileIssue.mock.calls[0][0].body;
+    expect(body).toContain('### Responsiveness');
+    expect(body).toContain('keystroke');
+  });
+
+  it('github: a hostile perf payload is REBUILT, not posted (#927)', async () => {
+    // The one path in the app where local data leaves the machine on purpose,
+    // so the draft crosses the same trust boundary as everything else the
+    // renderer sends. `sanitizeSummary` rebuilds field by field.
+    const h = harness();
+    await h.submit({
+      subject: 's',
+      description: 'd',
+      destination: 'github',
+      perf: {
+        prompt: 'the secret project plan',
+        interactions: [
+          { name: '/home/dan/secret-project.ts', count: 1, p50: 1, p95: 1, worst: 1 },
+        ],
+      },
+    });
+    const body = h.fileIssue.mock.calls[0][0].body;
+    expect(body).not.toContain('secret');
+    expect(body).not.toContain('project plan');
+  });
+
+  it('github: a report with NO perf still files, and says the section is missing (#927)', async () => {
+    // Fail-open. A report about the app feeling slow is the last thing that
+    // should be lost to a failure in the code that measures slowness.
+    const h = harness();
+    const r = await h.submit({ subject: 's', description: 'd', destination: 'github' });
+    expect(r.ok).toBe(true);
+    expect(h.fileIssue.mock.calls[0][0].body).toMatch(/Not collected/);
+  });
+
   it('github: a refusal is reported WITH the bundle still on disk', async () => {
     const h = harness({ issue: { ok: false, url: null, number: null, problem: 'no-token' } });
     const r = await h.submit({ subject: 's', description: 'd', destination: 'github' });

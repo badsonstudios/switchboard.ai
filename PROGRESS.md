@@ -3,6 +3,61 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔧 IN FLIGHT — 2026-09-23: **#927** P2-E21-05 Report a problem carries the performance numbers
+>
+> Branch `feature/927-report-carries-perf`. Owner asked for the diagnostics to be
+> sendable — "either to GitHub or over to my main PC for analysis."
+>
+> **Two thirds of the ask was already done by #923** and it is worth saying so
+> rather than re-building it: the capture file AND its rotated `.1` sibling
+> already go into the report zip, and the zip is already revealed in the file
+> manager, so moving it to the desktop was already a drag. This item is only the
+> missing third.
+>
+> **The gap, and it was a real one.** The always-on tier lived in renderer memory
+> and was only ever written to a file when the DETAILED switch was on — which is
+> off by default. So the ordinary case, "something felt slow, let me report it",
+> filed a report with **no performance data in it at all**. And the issue BODY
+> said nothing about responsiveness, which matters more than it sounds: GitHub's
+> API cannot attach the zip, so the body is the only part of a report that
+> travels by itself. A report about slowness needed the reader to ask for a file
+> before they could say anything.
+>
+> **Shape: the summary rides on the `ReportDraft`.** The Report dialog is in the
+> renderer and so is `perfSummary()`, so the numbers are attached in App's
+> `onSubmit` rather than main reaching back into a window to ask. No new
+> main→renderer request channel, and the "which window?" question never arises.
+> The dialog itself is untouched — its job is a subject and a description.
+>
+> **`summaryAsText` lives in `shared/perf.ts`** because two places need the same
+> words: the issue body, and `performance-summary.txt` inside the zip. One
+> renderer means the report read in a browser and the file opened on the desktop
+> cannot describe the same capture differently. Deliberately NOT translated, the
+> same call `AboutPanel` makes about its clipboard block.
+>
+> **`sanitizeSummary` is the twin of `sanitizeBatch`, and the sharper of the
+> two:** the capture file stays on disk until someone moves it, but this value
+> goes into a **public GitHub issue**. Rebuilt field by field — a validator that
+> checked the known fields and passed the original object through would let an
+> extra property ride along, which is exactly the shape a leak takes.
+>
+> **A bug my own test caught:** `sanitizeSummary([])` returned a summary of
+> all-zeroes rather than `null`, because an array IS `typeof 'object'`. That would
+> have posted a confident, fabricated "nothing was slow" into an issue. Now
+> `Array.isArray` is checked too.
+>
+> **Also:** `bundle-info.txt` now distinguishes three outcomes that were
+> previously one — the tier was never on, it was on and the file is here, or it
+> should have been here and could not be read. The first is the default; the last
+> is a bug; a reader must not have to guess which they are looking at.
+>
+> **Local-only asserted the same way as before:** a walk over every WORD of the
+> rendered report text against an allowlist, plus a check that the section carries
+> no Windows path, no POSIX path, no `.ts`, and not even the draft length.
+>
+> **Full suite: 8989 passed, 1 failed** — `git-service.test.ts`'s wall-clock
+> budget test again. Known contention, passes in isolation.
+
 > # ✅ MERGED — 2026-09-23: **#923** P2-E21-01 diagnostics capture + a Settings switch
 >
 > PR #925 squashed to `45540c7`; all four CI jobs green. Issue closed. Plan was

@@ -115,8 +115,29 @@ name with `.1` on the end and a fresh one starts, so it cannot quietly fill your
 disk — and the day you were about to report on is not thrown away. If you are
 sending it by hand and a `.1` file is sitting beside it, send both.
 
-**Help ▸ Report a problem** picks up both automatically, so that is the easier
-route. If you have never switched capture on, the report simply says so.
+### The easier route: Report a problem
+
+**Help ▸ Report a problem** is the one gesture that packages all of this up, and
+it works whether or not detailed capture has ever been on:
+
+- **The report itself carries the numbers.** Whichever way you send it, the
+  performance summary — the same table you see on screen, plus the long-task and
+  background-delay figures — is written into the report in plain text. So
+  someone reading it can tell what happened without opening anything.
+- **The zip carries them too**, as a readable text file of its own, plus the
+  detailed capture file and its `.1` sibling if they exist. That matters if the
+  zip is what you are moving: drop it on the other computer and it explains
+  itself, with no app needed to read it.
+- **Sending it to GitHub** files an issue with the numbers already in it. The
+  zip cannot be attached automatically — GitHub only accepts attachments through
+  its web form — so the issue tells you where the file is and you drag it on.
+- **Sending it to yourself** (choose the email or zip option) leaves the zip on
+  your disk and opens the folder with it selected, ready to copy to the other
+  machine.
+
+If detailed capture has never been on, the report says exactly that rather than
+leaving a gap — so a reader can tell "it was off" from "we could not collect
+it".
 
 ## A reasonable routine
 

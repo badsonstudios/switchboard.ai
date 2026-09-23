@@ -27,6 +27,7 @@ import { ZipFile } from 'yazl';
 import type { BundleResult, SkippedEntry } from '../../shared/diagnostics';
 import type { BuildIdentity } from '../../shared/build-identity';
 import { CAPTURE_FILE } from './perf-capture';
+import { summaryAsText, type PerfSummary } from '../../shared/perf';
 
 export interface BundleDeps {
   /** `app.getPath('logs')` */
@@ -40,6 +41,13 @@ export interface BundleDeps {
   /** app uptime in ms, for bundle-info */
   uptimeMs: number;
   now?: () => Date;
+  /**
+   * E21's responsiveness numbers (#927), written into the zip as its own text
+   * file so the zip STANDS ALONE. The owner's stated use is moving it from the
+   * laptop to the desktop for analysis, and a zip whose performance data is
+   * only legible inside the app it came from does not survive that trip.
+   */
+  perf?: PerfSummary;
 }
 
 /**
@@ -58,7 +66,12 @@ export function bundleName(version: string, at: Date): string {
 }
 
 /** The generated `bundle-info.txt`. Plain text on purpose — it gets pasted. */
-export function bundleInfo(deps: BundleDeps, at: Date, skipped: SkippedEntry[]): string {
+export function bundleInfo(
+  deps: BundleDeps,
+  at: Date,
+  skipped: SkippedEntry[],
+  captured = false
+): string {
   const id = deps.identity;
   const lines = [
     `switchboard.ai diagnostic bundle`,
@@ -79,6 +92,15 @@ export function bundleInfo(deps: BundleDeps, at: Date, skipped: SkippedEntry[]):
   // Stated in the bundle itself, not only in the code: whoever opens this must
   // be able to tell "there was no log" from "we chose not to include it".
   lines.push('', 'transcripts are deliberately NOT included (conversation content)');
+  // #927. Three outcomes, and they are not interchangeable: the detailed tier
+  // was never switched on, it was on and the file is here, or it should have
+  // been here and could not be read. The last one is a bug; the first is the
+  // default. A reader must not have to guess which they are looking at.
+  lines.push(
+    captured
+      ? 'the detailed performance capture IS included (durations and action names only)'
+      : 'no detailed performance capture — the switch in Settings has never been on'
+  );
   if (skipped.length > 0) {
     lines.push('', 'files that could not be included:');
     for (const s of skipped) lines.push(`  - ${s.name}: ${s.reason}`);
@@ -151,9 +173,13 @@ export async function buildBundle(deps: BundleDeps): Promise<BundleResult> {
   // being reported on sat in `.1`, untouched — which is the one scenario where
   // the capture is most worth having.
   const capture = path.join(deps.userDataDir, CAPTURE_FILE);
+  let captured = false;
   if (fs.existsSync(capture)) {
     const buf = readOrSkip(capture, CAPTURE_FILE, skipped);
-    if (buf) zip.addBuffer(buf, CAPTURE_FILE);
+    if (buf) {
+      zip.addBuffer(buf, CAPTURE_FILE);
+      captured = true;
+    }
   } else {
     skipped.push({ name: CAPTURE_FILE, reason: 'not present (detailed capture has never been on)' });
   }
@@ -163,8 +189,21 @@ export async function buildBundle(deps: BundleDeps): Promise<BundleResult> {
     if (buf) zip.addBuffer(buf, `${CAPTURE_FILE}.1`);
   }
 
+  // #927. Plain text rather than JSON: the capture file beside it is already
+  // the machine-readable record, and this one exists to be READ by whoever the
+  // zip was sent to.
+  if (deps.perf) {
+    zip.addBuffer(
+      Buffer.from(`${summaryAsText(deps.perf)}
+`, 'utf8'),
+      'performance-summary.txt'
+    );
+  } else {
+    skipped.push({ name: 'performance-summary.txt', reason: 'the app could not read its own counters' });
+  }
+
   // LAST, so it can report what the walk above could not collect.
-  zip.addBuffer(Buffer.from(bundleInfo(deps, at, skipped), 'utf8'), 'bundle-info.txt');
+  zip.addBuffer(Buffer.from(bundleInfo(deps, at, skipped, captured), 'utf8'), 'bundle-info.txt');
   zip.end();
 
   const out = path.join(deps.outDir, bundleName(deps.version, at));

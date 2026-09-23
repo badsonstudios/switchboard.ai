@@ -106,6 +106,26 @@ on the floor, and say so in your PR.
   **Clear** when you've read it — just opening the drawer doesn't clear it, so
   you can't lose the digest by glancing in for something else. It appears only
   when something was actually held.
+- **Find out why it feels slow.** Press `Ctrl+Shift+P` and pick **Show
+  performance summary** for how long typing, switching sessions and opening
+  things actually took — as p50, p95 and the single worst one, because an
+  average hides exactly the stutters you noticed. Underneath: how often the app
+  was too busy to redraw, and whether background work was blocking it. It is
+  measured all the time and costs nothing worth mentioning.
+- **Record the detail when you want it.** **Settings ▸ Diagnostics ▸ Detailed
+  performance capture**, off by default, additionally records every keystroke:
+  how long the character took to appear, how big the conversation was, and
+  whether anything measured the page layout while you typed (that should always
+  be zero). It writes one file you can send on. Everything stays on your
+  computer — durations and the names of actions only, never what you typed, any
+  file name, or anything from a conversation. One thing it does not see yet: a
+  session in its own pop-out window.
+- **Send the numbers with a bug report.** **Help ▸ Report a problem** now
+  carries the performance summary in the report itself, so a report about
+  sluggishness is useful the moment it arrives instead of after someone asks for
+  a file. The zip carries a readable copy of its own, plus the detailed capture
+  if you have been recording one — so it explains itself on another computer
+  with no app needed.
 
 ## 0.8.98 — 2026-09-22
 

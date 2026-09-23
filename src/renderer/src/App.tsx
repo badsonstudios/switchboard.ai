@@ -65,6 +65,7 @@ import { ReportProblemDialog } from './components/ReportProblemDialog';
 import {
   unavailableReport,
   unknownReportStatus,
+  type ReportDraft,
   type ReportStatus,
   type ReportWriteResult,
 } from '../../shared/diagnostics';
@@ -2263,11 +2264,27 @@ export function App(): React.JSX.Element {
         open={reportOpen}
         onClose={() => setReportOpen(false)}
         status={reportStatus}
-        onSubmit={(draft) => {
-          const answer = bridge.diagnostics?.submit?.(draft);
+        onSubmit={async (draft) => {
+          // E21's numbers join the report HERE rather than in the dialog (#927).
+          // The dialog's job is a subject and a description; it does not need to
+          // know this feature exists, and the bridge call is already here.
+          //
+          // Swallowed on failure, deliberately: a report about the app feeling
+          // slow is the last thing that should be lost to a failure in the code
+          // that measures slowness. Main prints "not collected" rather than
+          // nothing, so an absent section is still a stated fact.
+          let perf: PerfSummary | undefined;
+          try {
+            perf = await perfSummary();
+          } catch {
+            perf = undefined;
+          }
+          const full: ReportDraft = { ...draft, ...(perf ? { perf } : {}) };
+
+          const answer = bridge.diagnostics?.submit?.(full);
           // No namespace, or a refusal: a real result saying nothing was sent,
           // rather than a rejected promise the dialog would have to catch.
-          if (!answer) return Promise.resolve(unavailableReport(draft.destination));
+          if (!answer) return unavailableReport(draft.destination);
           return answer
             .then((r) => answered(r) ?? unavailableReport(draft.destination))
             .catch(() => unavailableReport(draft.destination));

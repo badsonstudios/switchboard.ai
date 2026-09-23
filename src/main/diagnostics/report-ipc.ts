@@ -21,6 +21,7 @@ import { IpcBroker } from '../ipc/broker';
 import type { Logger } from '../log/logger';
 import { buildBundle, type BundleDeps } from './bundle';
 import { composeIssueBody } from './report-body';
+import { sanitizeSummary } from '../../shared/perf';
 import { createIssue, type CreateIssueResult } from './github-issue';
 import { credentialStoreTokenFrom, ghCliToken, type TokenSource } from '../update/token';
 import type { SecretStore } from '../secrets/store';
@@ -159,7 +160,14 @@ export function registerReportIpc(deps: ReportIpcDeps): void {
       return { ok: false, destination, url: null, number: null, bundle: empty, problem: 'empty-subject' };
     }
 
-    const bundleDeps = deps.bundleDeps();
+    // E21's numbers ride in on the DRAFT (#927), so they cross the same trust
+    // boundary as everything else the renderer sends. Rebuilt rather than
+    // trusted, for the reason the capture file's own sanitizer gives: this one
+    // ends up in a GitHub issue body, which is the single point in the app
+    // where local data genuinely leaves the machine.
+    const perf = sanitizeSummary(draft?.perf);
+
+    const bundleDeps = { ...deps.bundleDeps(), ...(perf ? { perf } : {}) };
     const bundle = await buildBundle(bundleDeps);
     if (!bundle.ok) {
       // NOT a stop. A report with no zip is still worth filing — the inline
@@ -202,6 +210,7 @@ export function registerReportIpc(deps: ReportIpcDeps): void {
       logsDir: bundleDeps.logsDir,
       bundlePath: bundle.path,
       uptimeMs: bundleDeps.uptimeMs,
+      ...(perf ? { perf } : {}),
     });
 
     const filed: CreateIssueResult = await fileIssue({
