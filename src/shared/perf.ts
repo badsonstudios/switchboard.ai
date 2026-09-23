@@ -324,3 +324,164 @@ export function stringLeaves(value: unknown): string[] {
   walk(value);
   return found;
 }
+
+/**
+ * A `PerfSummary` as plain text, for a filed issue and for the zip (#927).
+ *
+ * ## Why this lives in `shared/` and not beside either consumer
+ *
+ * Two places need the same words: the GitHub issue body, composed in main, and
+ * the `performance-summary.txt` written into the diagnostic bundle, also
+ * composed in main but read on a different machine with no app around it. One
+ * renderer means the report someone reads in a browser and the file someone
+ * opens on the desktop cannot describe the same capture differently.
+ *
+ * ## Deliberately NOT translated
+ *
+ * Every other user-facing string in this feature goes through i18n; this one
+ * does not, and it is the same call `AboutPanel` makes about its copy-to-
+ * clipboard block. The destination is a bug report read by whoever maintains
+ * the app, and a report that arrives in a language the reader cannot search is
+ * a report that has to be translated before it can be acted on.
+ *
+ * ## Local-only
+ *
+ * Every line below is built from numbers and from names in `PERF_INTERACTIONS`.
+ * There is no interpolation of anything that came from a session, a file or a
+ * prompt — asserted in `perf.test.ts` by walking the output for any token that
+ * is not a number, a unit or a declared name, because this is the one path in
+ * the whole feature where the data genuinely leaves the machine.
+ */
+export function summaryAsText(summary: PerfSummary): string {
+  const out: string[] = [];
+  const ms = (n: number): string => `${n} ms`;
+
+  out.push('Responsiveness (this window, since it opened)');
+  out.push('');
+
+  if (summary.interactions.length === 0) {
+    // "Nothing was measured" and "everything was instant" must not read alike.
+    out.push('  No interactions were measured.');
+  } else {
+    // Percentiles, never a mean — and `worst` beside them because p95 of twenty
+    // samples is the nineteenth, so one rare stall does not move it.
+    out.push('  action                 count      p50      p95    worst');
+    for (const row of summary.interactions) {
+      out.push(
+        `  ${row.name.padEnd(20)} ${String(row.count).padStart(6)} ` +
+          `${ms(row.p50).padStart(8)} ${ms(row.p95).padStart(8)} ${ms(row.worst).padStart(8)}`
+      );
+    }
+  }
+
+  out.push('');
+  out.push(
+    summary.longTasks.count === 0
+      ? '  Long tasks: none — the app was never too busy to redraw.'
+      : `  Long tasks: ${summary.longTasks.count}, ${ms(summary.longTasks.totalMs)} total, ` +
+          `worst ${ms(summary.longTasks.worstMs)}.`
+  );
+
+  out.push(
+    summary.loop === null
+      ? '  Main-process event-loop delay: not measured yet (read once a minute).'
+      : `  Main-process event-loop delay: p50 ${ms(summary.loop.p50)}, ` +
+          `p99 ${ms(summary.loop.p99)}, max ${ms(summary.loop.maxMs)}.`
+  );
+
+  out.push('');
+  if (summary.detail === null) {
+    // The distinction that decides whether the reader should ask for more. A
+    // report with the switch off is not a report that found nothing.
+    out.push('  Detailed capture was OFF, so keystrokes and layout work were not measured.');
+  } else {
+    out.push(
+      `  Detailed capture was ON: ${summary.detail.keystrokes} keystrokes sampled, ` +
+        `largest conversation ${summary.detail.maxBlocks} blocks ` +
+        `(${summary.detail.maxRendered} rendered), ` +
+        `blocked p95 ${ms(summary.detail.blockedP95)}.`
+    );
+    // The line with a contract behind it: PR #739's guarantee is that typing
+    // reads no layout, so any number here is that fix having regressed — which
+    // is the single most actionable thing a report about slowness can carry.
+    out.push(
+      summary.detail.layoutReads === 0
+        ? '  Layout reads while typing: 0 (as expected).'
+        : `  Layout reads while typing: ${summary.detail.layoutReads} — EXPECTED 0. ` +
+            'This is PR #739 having regressed.'
+    );
+  }
+
+  return out.join('\n');
+}
+
+/**
+ * Rebuild a `PerfSummary` arriving from the renderer, or answer `null` (#927).
+ *
+ * The twin of `sanitizeBatch` in `main/diagnostics/perf-capture.ts`, and it
+ * exists for a sharper reason than that one does. The capture file stays on
+ * disk until someone chooses to move it; this value goes into a **GitHub issue
+ * body**, which is the one place in the whole app where local data leaves the
+ * machine on purpose. So it is rebuilt field by field rather than checked in
+ * place: a validator that inspected the known fields and passed the original
+ * object through would let an extra property ride along into a public issue,
+ * and an extra property is exactly the shape a leak takes.
+ *
+ * Every value that survives is a number or a member of `PERF_INTERACTIONS`.
+ */
+export function sanitizeSummary(raw: unknown): PerfSummary | null {
+  // `Array.isArray` as well as the `typeof` check: an array IS an object, so
+  // without it `[]` produces a summary of all-zeroes rather than a refusal —
+  // which would put a confident, fabricated "nothing was slow" into an issue.
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const r = raw as Record<string, unknown>;
+
+  const n = (v: unknown): number | null =>
+    typeof v === 'number' && Number.isFinite(v) ? v : null;
+
+  const interactions: PerfStat[] = [];
+  for (const item of Array.isArray(r.interactions) ? r.interactions : []) {
+    if (item === null || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    const count = n(row.count);
+    const p50 = n(row.p50);
+    const p95 = n(row.p95);
+    const worst = n(row.worst);
+    if (!isPerfInteraction(row.name)) continue;
+    if (count === null || p50 === null || p95 === null || worst === null) continue;
+    interactions.push({ name: row.name, count, p50, p95, worst });
+  }
+
+  const lt = (r.longTasks ?? {}) as Record<string, unknown>;
+  const longTasks = {
+    count: n(lt.count) ?? 0,
+    totalMs: n(lt.totalMs) ?? 0,
+    worstMs: n(lt.worstMs) ?? 0,
+  };
+
+  // `null` survives as `null` — "the switch was off" and "it was on and found
+  // nothing" are different sentences and the report says different things
+  // about them.
+  let detail: PerfDetailSummary | null = null;
+  if (r.detail !== null && typeof r.detail === 'object') {
+    const d = r.detail as Record<string, unknown>;
+    detail = {
+      keystrokes: n(d.keystrokes) ?? 0,
+      layoutReads: n(d.layoutReads) ?? 0,
+      blockedP95: n(d.blockedP95) ?? 0,
+      maxBlocks: n(d.maxBlocks) ?? 0,
+      maxRendered: n(d.maxRendered) ?? 0,
+    };
+  }
+
+  let loop: PerfLoopDelay | null = null;
+  if (r.loop !== null && typeof r.loop === 'object') {
+    const l = r.loop as Record<string, unknown>;
+    const p50 = n(l.p50);
+    const p99 = n(l.p99);
+    const maxMs = n(l.maxMs);
+    if (p50 !== null && p99 !== null && maxMs !== null) loop = { p50, p99, maxMs };
+  }
+
+  return { interactions, longTasks, detail, loop };
+}

@@ -442,15 +442,25 @@ everything you typed is still there, so you can pick another option and send
 again.
 
 **Whichever you choose, the zip is always written and always shown to you in
-Explorer.** It contains your log files, your workspace file, and a short summary
-of your build and machine. It deliberately does **not** contain your
-conversations.
+Explorer.** It contains your log files, your workspace file, a short summary of
+your build and machine, and — if the app has been recording them — the
+performance timings described in
+[When it feels slow](19-performance.md). It deliberately does **not** contain
+your conversations.
+
+**Reports about speed carry their numbers in the text**, not only in the zip: how
+long typing and switching sessions actually took, how often the app was too busy
+to redraw, and whether anything measured the page layout while you typed. That
+means a report about sluggishness is useful the moment it arrives, without
+anyone having to ask for the file first. If the detailed recording has never
+been switched on, the report says so rather than leaving a gap.
 
 **The zip is never attached for you.** GitHub only accepts file attachments
 through its website, and email programs cannot be handed an attachment from
 outside either. So the report carries the useful details as text — your
-description, the version and system information, and any recent minutes where
-the app was working unusually hard — and the zip waits in your folder. If
+description, the version and system information, any recent minutes where the
+app was working unusually hard, and the performance summary — and the zip waits
+in your folder. If
 someone asks for it, drag it onto the issue or into your email.
 
 ### Filing to GitHub

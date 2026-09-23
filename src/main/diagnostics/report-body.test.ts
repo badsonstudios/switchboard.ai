@@ -4,6 +4,7 @@ import path from 'path';
 import { composeIssueBody, recentBusyMinutes, MAX_HEARTBEAT_LINES } from './report-body';
 import { UNKNOWN_BUILD_IDENTITY } from '../../shared/build-identity';
 import { tempDir, cleanupTempDirs } from '../../test-temp-dirs';
+import { summarise } from '../../shared/perf';
 
 afterEach(() => cleanupTempDirs());
 
@@ -106,5 +107,67 @@ describe('composeIssueBody', () => {
     const body = composeIssueBody(deps({ logsDir: logsWith([beat('warn', 3)]) }));
     expect(body).toContain('"msg":"cpu heartbeat"');
     expect(body).toContain('```json');
+  });
+});
+
+describe('the Responsiveness section (#927)', () => {
+  const summary = () =>
+    summarise({
+      interactions: [
+        { name: 'keystroke', ms: 41, at: 1 },
+        { name: 'session-switch', ms: 140, at: 2 },
+      ],
+      longTasks: [{ at: 1, ms: 90 }],
+      keystrokes: [
+        {
+          at: 1,
+          ms: 41,
+          blockedMs: 90,
+          layoutReads: 0,
+          blocks: 412,
+          rendered: 120,
+          draftLength: 2048,
+        },
+      ],
+      loop: { p50: 1.2, p99: 48, maxMs: 310 },
+    });
+
+  it('travels in the BODY, because the zip cannot be attached', () => {
+    // GitHub's API cannot attach a file, so the body is the only part of a
+    // report that arrives by itself — and "it feels slow" is the report this
+    // project most wants to receive.
+    const body = composeIssueBody(deps({ perf: summary() }));
+    expect(body).toContain('### Responsiveness');
+    expect(body).toContain('keystroke');
+    expect(body).toContain('session-switch');
+  });
+
+  it('says so when the numbers could not be collected, rather than omitting the section', () => {
+    // "We failed to look" and "nothing was slow" are different facts, and a
+    // silent omission reads as the second.
+    const body = composeIssueBody(deps());
+    expect(body).toContain('### Responsiveness');
+    expect(body).toMatch(/Not collected/);
+  });
+
+  it('sits above the bundle section, so the numbers are read before the file is fetched', () => {
+    const body = composeIssueBody(deps({ perf: summary() }));
+    expect(body.indexOf('### Responsiveness')).toBeLessThan(body.indexOf('### Diagnostic bundle'));
+  });
+
+  it('keeps the user’s own words first, ahead of everything we added', () => {
+    const body = composeIssueBody(deps({ perf: summary() }));
+    expect(body.indexOf('the fans spun up')).toBeLessThan(body.indexOf('### Responsiveness'));
+  });
+
+  it('THE LOCAL-ONLY ASSERTION: the section leaks no path, prompt or session name', () => {
+    // The whole body, not just the section: this is the one artefact in the app
+    // that is posted to a public repository.
+    const body = composeIssueBody(deps({ description: 'it froze', perf: summary() }));
+    const section = body.slice(body.indexOf('### Responsiveness'), body.indexOf('### Diagnostic bundle'));
+    expect(section).not.toContain(':\\'); // a Windows path
+    expect(section).not.toMatch(/\/(home|Users)\//); // a POSIX path
+    expect(section).not.toContain('.ts');
+    expect(section).not.toContain('2048'); // the draft LENGTH is not reported either
   });
 });

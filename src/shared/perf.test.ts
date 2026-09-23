@@ -6,7 +6,9 @@ import {
   isPerfInteraction,
   percentile,
   stringLeaves,
+  sanitizeSummary,
   summarise,
+  summaryAsText,
   type PerfKeystroke,
   type PerfLongTask,
   type PerfSample,
@@ -259,5 +261,200 @@ describe('stringLeaves — the local-only assertion (#923)', () => {
     const k = keystroke({ draftLength: 2048 });
     expect(typeof k.draftLength).toBe('number');
     expect(stringLeaves(k).filter((s) => s === 'draftLength')).toHaveLength(1);
+  });
+});
+
+describe('summaryAsText — what a filed issue and the zip both read (#927)', () => {
+  const full = (): Parameters<typeof summaryAsText>[0] =>
+    summarise({
+      interactions: [sample('keystroke', 41), sample('session-switch', 140)],
+      longTasks: [{ at: 1, ms: 90 }],
+      keystrokes: [keystroke({ blocks: 412, rendered: 120, layoutReads: 0 })],
+      loop: { p50: 1.2, p99: 48, maxMs: 310 },
+    });
+
+  it('carries percentiles and the worst, and still offers no mean', () => {
+    const text = summaryAsText(full());
+    expect(text).toContain('p50');
+    expect(text).toContain('p95');
+    expect(text).toContain('worst');
+    expect(text.toLowerCase()).not.toContain('mean');
+    expect(text.toLowerCase()).not.toContain('average');
+  });
+
+  it('says "nothing measured" rather than printing an empty table', () => {
+    const text = summaryAsText(
+      summarise({ interactions: [], longTasks: [], keystrokes: null, loop: null })
+    );
+    expect(text).toMatch(/No interactions were measured/);
+  });
+
+  it('distinguishes the switch being OFF from it finding nothing', () => {
+    // The sentence that decides whether the reader should ask for more. A
+    // report filed with the switch off is not a report that found nothing.
+    expect(summaryAsText(summarise({ interactions: [], longTasks: [], keystrokes: null, loop: null })))
+      .toMatch(/Detailed capture was OFF/);
+    expect(summaryAsText(summarise({ interactions: [], longTasks: [], keystrokes: [], loop: null })))
+      .toMatch(/Detailed capture was ON/);
+  });
+
+  it('shouts when layout was read while typing, and is quiet when it was not', () => {
+    // The one line with a contract behind it: PR #739 guarantees zero, so any
+    // number is that fix having regressed — the most actionable thing a report
+    // about slowness can carry.
+    expect(summaryAsText(full())).toMatch(/Layout reads while typing: 0/);
+
+    const bad = summarise({
+      interactions: [],
+      longTasks: [],
+      keystrokes: [keystroke({ layoutReads: 7 })],
+      loop: null,
+    });
+    expect(summaryAsText(bad)).toMatch(/EXPECTED 0/);
+    expect(summaryAsText(bad)).toMatch(/#739/);
+  });
+
+  it('says main was not measured yet rather than printing zeros', () => {
+    const text = summaryAsText(
+      summarise({ interactions: [], longTasks: [], keystrokes: null, loop: null })
+    );
+    expect(text).toMatch(/not measured yet/);
+  });
+
+  it('THE LOCAL-ONLY ASSERTION: every word is ours, a number, or a unit', () => {
+    // This text goes into a GITHUB ISSUE — the one place in the app where local
+    // data leaves the machine on purpose. So the check is a walk over the
+    // rendered output rather than a read-through: the dangerous field is the one
+    // someone adds in six months, and this goes red when it appears.
+    const text = summaryAsText(full());
+    const allowed = new Set<string>([
+      ...PERF_INTERACTIONS,
+      'Responsiveness',
+      'this',
+      'window',
+      'since',
+      'it',
+      'opened',
+      'action',
+      'count',
+      'p50',
+      'p95',
+      'p99',
+      'max',
+      'worst',
+      'ms',
+      'No',
+      'interactions',
+      'were',
+      'measured',
+      'Long',
+      'tasks',
+      'none',
+      'the',
+      'app',
+      'was',
+      'never',
+      'too',
+      'busy',
+      'to',
+      'redraw',
+      'total',
+      'Main-process',
+      'event-loop',
+      'delay',
+      'not',
+      'yet',
+      'read',
+      'once',
+      'a',
+      'minute',
+      'Detailed',
+      'capture',
+      'OFF',
+      'ON',
+      'so',
+      'keystrokes',
+      'and',
+      'layout',
+      'Layout',
+      'work',
+      'sampled',
+      'largest',
+      'conversation',
+      'blocks',
+      'rendered',
+      'blocked',
+      'reads',
+      'while',
+      'typing',
+      'as',
+      'expected',
+      'EXPECTED',
+      'This',
+      'is',
+      'PR',
+      '#739',
+      'having',
+      'regressed',
+    ]);
+    const words = text
+      .replace(/[(),.:]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length > 0)
+      .filter((w) => !/^-?\d+(\.\d+)?$/.test(w));
+    for (const w of words)
+      expect(allowed.has(w), `unexpected word in a report body: ${JSON.stringify(w)}`).toBe(true);
+  });
+});
+
+describe('sanitizeSummary — the boundary the issue body sits behind (#927)', () => {
+  it('refuses anything that is not a summary', () => {
+    for (const junk of [null, undefined, 'text', 7, []])
+      expect(sanitizeSummary(junk), JSON.stringify(junk)).toBeNull();
+  });
+
+  it('REBUILDS — an extra property cannot ride along into a public issue', () => {
+    const out = sanitizeSummary({
+      prompt: 'the secret project plan',
+      interactions: [
+        { name: 'keystroke', count: 1, p50: 1, p95: 1, worst: 1, file: '/home/dan/x.ts' },
+      ],
+      longTasks: { count: 0, totalMs: 0, worstMs: 0 },
+      detail: null,
+      loop: null,
+    });
+    expect(JSON.stringify(out)).not.toContain('secret');
+    expect(JSON.stringify(out)).not.toContain('/home/dan');
+    expect(Object.keys(out!.interactions[0]).sort()).toEqual([
+      'count',
+      'name',
+      'p50',
+      'p95',
+      'worst',
+    ]);
+  });
+
+  it('drops a row whose interaction name we never declared', () => {
+    const out = sanitizeSummary({
+      interactions: [
+        { name: 'keystroke', count: 1, p50: 1, p95: 1, worst: 1 },
+        { name: 'my project name', count: 1, p50: 1, p95: 1, worst: 1 },
+      ],
+    });
+    expect(out?.interactions).toHaveLength(1);
+  });
+
+  it('keeps null detail as null — off and empty are different reports', () => {
+    expect(sanitizeSummary({ detail: null })?.detail).toBeNull();
+    expect(sanitizeSummary({ detail: { keystrokes: 3 } })?.detail?.keystrokes).toBe(3);
+  });
+
+  it('rejects NaN and Infinity, which JSON writes as null', () => {
+    const out = sanitizeSummary({
+      loop: { p50: Number.NaN, p99: 1, maxMs: 1 },
+      longTasks: { count: Number.POSITIVE_INFINITY, totalMs: 1, worstMs: 1 },
+    });
+    expect(out?.loop).toBeNull();
+    expect(out?.longTasks.count).toBe(0);
   });
 });

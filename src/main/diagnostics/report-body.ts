@@ -25,6 +25,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import type { BuildIdentity } from '../../shared/build-identity';
+import { summaryAsText, type PerfSummary } from '../../shared/perf';
 
 /** how many warn-level heartbeats to carry; enough to show a shape, not a wall */
 export const MAX_HEARTBEAT_LINES = 12;
@@ -55,6 +56,11 @@ export interface ReportBodyDeps {
   uptimeMs: number;
   now?: () => Date;
   maxHeartbeats?: number;
+  /**
+   * E21's responsiveness numbers, off the draft (#927). Absent when the bridge
+   * could not supply them, which prints a sentence rather than nothing.
+   */
+  perf?: PerfSummary;
 }
 
 /**
@@ -110,6 +116,30 @@ export function composeIssueBody(deps: ReportBodyDeps): string {
     out.push('```json');
     out.push(...busy);
     out.push('```');
+  }
+
+  // ── Responsiveness (#927) ───────────────────────────────────────────────
+  //
+  // ABOVE the bundle section on purpose. The zip cannot be attached through the
+  // API, so the body is the only part of a report that travels by itself — and
+  // for the report this project most wants to receive ("it feels slow"), these
+  // numbers are the whole point. Making the reader fetch a file before they can
+  // say anything at all is what this section exists to stop.
+  //
+  // Safe to inline by construction, and by a different argument from the
+  // heartbeat lines above: every value is a duration or a count, and every name
+  // comes from the closed `PERF_INTERACTIONS` tuple. There is no field here
+  // that a path, a prompt or a session title could reach — `report-body.test`
+  // asserts that by walking the rendered text, not by reading it.
+  out.push('', '### Responsiveness', '');
+  if (deps.perf) {
+    out.push('```');
+    out.push(summaryAsText(deps.perf));
+    out.push('```');
+  } else {
+    // Said out loud: "we could not collect them" is a different fact from
+    // "nothing was slow", and a silent omission reads as the second.
+    out.push('_Not collected — the app could not read its own performance counters._');
   }
 
   out.push('', '### Diagnostic bundle', '');

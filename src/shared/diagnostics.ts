@@ -7,6 +7,8 @@
 // window's whole job is to collect a subject and a description; resolving a
 // token and posting to GitHub happens in main. These types are the seam.
 
+import type { PerfSummary } from './perf';
+
 /** Where a finished report goes. */
 export type ReportDestination =
   /** POST a new issue to the project's GitHub repo */
@@ -47,6 +49,22 @@ export interface ReportDraft {
   /** free text; becomes the issue body above the auto-collected diagnostics */
   description: string;
   destination: ReportDestination;
+  /**
+   * E21's responsiveness numbers, as the renderer sees them (#927).
+   *
+   * Carried ON THE DRAFT rather than fetched by main, because the recorder's
+   * buffers live in the renderer and the Report dialog is already there. Main
+   * reaching back into a window to ask would need a new request channel and
+   * would immediately raise "which window?" — a question this shape never has
+   * to answer.
+   *
+   * OPTIONAL, and that is load-bearing: a broken preload bridge, or a renderer
+   * whose observers the platform refused, must cost the report its performance
+   * section and nothing else. Fail-open is a hard constraint, and a report about
+   * slowness is exactly the wrong thing to lose to a failure in the code that
+   * measures slowness.
+   */
+  perf?: PerfSummary;
 }
 
 /** Why a report could not be filed. Each one gets its own sentence on screen. */

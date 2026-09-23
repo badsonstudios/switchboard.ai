@@ -5,6 +5,7 @@ import { buildBundle, bundleName, bundleInfo, type BundleDeps } from './bundle';
 import { UNKNOWN_BUILD_IDENTITY } from '../../shared/build-identity';
 import { tempDir, cleanupTempDirs } from '../../test-temp-dirs';
 import { CAPTURE_FILE } from './perf-capture';
+import { summarise } from '../../shared/perf';
 
 afterEach(() => cleanupTempDirs());
 
@@ -63,6 +64,17 @@ describe('bundleInfo', () => {
     expect(info).toContain('logs/x.log: EBUSY');
   });
 
+  it('distinguishes "never switched on" from "included" for the capture (#927)', () => {
+    // Three outcomes and they are not interchangeable. A reader must not have to
+    // guess whether the detailed tier was off or whether we failed to collect it.
+    expect(bundleInfo(harness(), new Date(), [], false)).toMatch(
+      /no detailed performance capture — the switch in Settings has never been on/
+    );
+    expect(bundleInfo(harness(), new Date(), [], true)).toMatch(
+      /the detailed performance capture IS included/
+    );
+  });
+
   it('carries the version and core count', () => {
     const info = bundleInfo(harness(), new Date(), []);
     expect(info).toContain('version:       0.8.90');
@@ -108,6 +120,28 @@ describe('buildBundle', () => {
     expect(without.ok).toBe(true);
     const entry = without.skipped.find((s) => s.name === CAPTURE_FILE);
     expect(entry?.reason).toMatch(/never been on/);
+  });
+
+  it('writes a readable performance summary, so the zip stands alone (#927)', async () => {
+    // The owner's stated use is moving this zip from the laptop to the desktop
+    // for analysis. A zip whose performance data is only legible inside the app
+    // it came from does not survive that trip.
+    const perf = summarise({
+      interactions: [{ name: 'keystroke', ms: 41, at: 1 }],
+      longTasks: [],
+      keystrokes: null,
+      loop: null,
+    });
+    const r = await buildBundle({ ...harness(), perf });
+    expect(r.ok).toBe(true);
+    expect(r.skipped.map((s) => s.name)).not.toContain('performance-summary.txt');
+  });
+
+  it('says the summary is missing rather than omitting it silently (#927)', async () => {
+    const r = await buildBundle(harness());
+    expect(r.skipped.find((s) => s.name === 'performance-summary.txt')?.reason).toMatch(
+      /could not read its own counters/
+    );
   });
 
   it('survives a missing logs directory instead of throwing', async () => {
