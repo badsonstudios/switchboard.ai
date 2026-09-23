@@ -24,6 +24,7 @@ click outside.
 | **Appearance** | Theme, language, task label size |
 | **Attention** | Quiet hours, phone push & webhooks |
 | **Advanced** | Fork sessions (experimental), automatic update checks, Anthropic status checks |
+| **Diagnostics** | Detailed performance capture, and the file it writes — see [When it feels slow](19-performance.md) |
 
 Muscle memory still works: **`Ctrl+Shift+P` → *quiet hours*** (or *phone push*,
 or *task label size*) opens Settings scrolled to the right part of it.

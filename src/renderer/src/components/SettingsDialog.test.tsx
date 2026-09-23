@@ -47,6 +47,8 @@ const handlers = {
   onToggleExperimentalFork: vi.fn(),
   onToggleAutoCheckUpdates: vi.fn(),
   onToggleStatusPolling: vi.fn(),
+  onTogglePerfCapture: vi.fn(),
+  onRevealCapture: vi.fn(),
 };
 
 const quiet: QuietState = {
@@ -82,6 +84,7 @@ async function render(open = true, over: Record<string, unknown> = {}): Promise<
         experimentalFork={false}
         autoCheckUpdates
         statusPolling
+        perfCapture={false}
         {...handlers}
         {...over}
       />
@@ -324,5 +327,47 @@ describe('every absorbed control is wired', () => {
     expect(settingsField('status-polling')).toBeNull();
     // …and the section is still there, because the fork switch is not optional
     expect(section('advanced')).not.toBeNull();
+  });
+
+  it('the performance capture switch — reads the stored value and writes through (#923)', async () => {
+    await render(true, { perfCapture: true });
+    expect(settingsField('perf-capture')?.checked).toBe(true);
+    await act(async () => {
+      settingsField('perf-capture')!.click();
+    });
+    expect(handlers.onTogglePerfCapture).toHaveBeenCalledWith(false);
+  });
+
+  it('the capture switch is OFF by default (#923)', async () => {
+    // An instrument that costs speed to run may not arrive switched on, and
+    // this is the assertion that the default did not drift.
+    await render(true);
+    expect(settingsField('perf-capture')?.checked).toBe(false);
+  });
+
+  it('says the word ON or OFF, never colour alone (§5.32, #923)', async () => {
+    await render(true, { perfCapture: false });
+    expect(item('perf-capture')?.textContent ?? '').toMatch(/Off/);
+    await render(true, { perfCapture: true });
+    expect(item('perf-capture')?.textContent ?? '').toMatch(/On/);
+  });
+
+  it('omits the reveal button entirely when the bridge cannot show a file (#923)', async () => {
+    // Same fail-open rule as the network preferences above.
+    await render(true, { onRevealCapture: undefined });
+    expect(item('perf-capture-file')).toBeNull();
+    // …and the section survives, because the switch itself is not optional.
+    expect(section('diagnostics')).not.toBeNull();
+  });
+
+  it('greys the reveal button until a capture exists (#923)', async () => {
+    // Unlike a switch, a button that opens a folder genuinely has nothing to do
+    // before the first capture — a state worth showing rather than hiding.
+    await render(true, { hasCapture: false });
+    const button = item('perf-capture-file')?.querySelector('button');
+    expect(button?.disabled).toBe(true);
+
+    await render(true, { hasCapture: true });
+    expect(item('perf-capture-file')?.querySelector('button')?.disabled).toBe(false);
   });
 });

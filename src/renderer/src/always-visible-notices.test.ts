@@ -193,6 +193,7 @@ const NOT_A_NOTICE: Readonly<Record<string, string>> = {
   SettingsDialog: 'a modal, same as AboutPanel (#885)',
   McpManagerDialog: 'a modal, same as AboutPanel (§5.17, #632)',
   ModelPickerDialog: 'a modal, same as AboutPanel (#721)',
+  PerfSummaryPanel: 'a modal, same as AboutPanel (E21 #923)',
   div: 'the workspace itself — `flex: 1` with a basis of 0. It is the thing that is SUPPOSED to give way; that is the whole mechanism',
 };
 

@@ -77,6 +77,8 @@ export interface CommandDeps {
   openFile: () => void;
   /** Help ▸ Report a problem… — opens the report dialog (#815) */
   reportProblem: () => void;
+  /** E21's on-screen reading: p50/p95 per interaction plus long tasks (#923) */
+  showPerfSummary: () => void;
   /** close every docked §5.30 viewer at once, sparing popped-out ones (#543) */
   closeAllDocuments: () => void;
   /**
@@ -746,6 +748,20 @@ export function buildCommands(deps: CommandDeps): Command[] {
       categoryKey: CATEGORY_HELP,
       scope: 'typing-ok',
       run: () => deps.reportProblem(),
+    },
+    {
+      // "Is it better?" answered without opening a log file (#923).
+      //
+      // `typing-ok` for exactly the reason the row above gives, and more
+      // sharply: the moment you want this is the moment typing feels slow, and
+      // a command you cannot reach from the composer you are complaining about
+      // is a command you reach for after the moment has passed. No binding —
+      // it is a once-in-a-while reading, and the registry's keys are spoken for.
+      id: 'app.perfSummary',
+      titleKey: 'commands.perfSummary',
+      categoryKey: CATEGORY_HELP,
+      scope: 'typing-ok',
+      run: () => deps.showPerfSummary(),
     },
     {
       // The answer to accretion #530 left open (#543). Removing the peek slot

@@ -823,7 +823,23 @@ export function FeedView(props: {
   // walked is not the part worth changing blind.
   const agentHeads = agentRunHeads(visibleBlocks, blocks);
   return (
-    <div style={{ blockSize: '100%', display: 'flex', flexDirection: 'column', background: 'var(--card-bg)' }}>
+    // `data-perf-*`: how big this conversation is, and how much of it is on
+    // screen, published for E21's detailed capture (#923). The whole premise of
+    // #716/#740 is that typing cost scales with these two numbers, so a
+    // keystroke sample without them cannot be ranked against another.
+    //
+    // ATTRIBUTES rather than a hook, a context or a registry, and the reason is
+    // the owner's rule that "off means genuinely absent". React writes an
+    // attribute only when its value changes, so when the capture switch is off
+    // this costs zero JavaScript — whereas any of the other three would be code
+    // running in the render path whether or not anyone was measuring. The
+    // recorder reads them with `closest()` and this component never learns it
+    // exists. Nothing but counts: no id, no title, no path.
+    <div
+      data-perf-blocks={blocks.length}
+      data-perf-rendered={visibleBlocks.length}
+      style={{ blockSize: '100%', display: 'flex', flexDirection: 'column', background: 'var(--card-bg)' }}
+    >
       <div
         style={{
           display: 'flex',

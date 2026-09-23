@@ -26,6 +26,7 @@ import os from 'os';
 import { ZipFile } from 'yazl';
 import type { BundleResult, SkippedEntry } from '../../shared/diagnostics';
 import type { BuildIdentity } from '../../shared/build-identity';
+import { CAPTURE_FILE } from './perf-capture';
 
 export interface BundleDeps {
   /** `app.getPath('logs')` */
@@ -137,6 +138,29 @@ export async function buildBundle(deps: BundleDeps): Promise<BundleResult> {
     if (buf) zip.addBuffer(buf, 'workspace.json');
   } else {
     skipped.push({ name: 'workspace.json', reason: 'not present' });
+  }
+
+  // E21's performance capture (#923), when one exists. Included for the same
+  // reason the logs are: a report about the app feeling slow is far more useful
+  // with the timings attached than with a description of them. Absent is the
+  // ordinary case — the detailed tier is off by default — so its absence is
+  // recorded without the word "could not", which would read as a failure.
+  //
+  // BOTH the live file and its rotated sibling. A rotation an hour before the
+  // report is filed would otherwise attach a nearly-empty file while the day
+  // being reported on sat in `.1`, untouched — which is the one scenario where
+  // the capture is most worth having.
+  const capture = path.join(deps.userDataDir, CAPTURE_FILE);
+  if (fs.existsSync(capture)) {
+    const buf = readOrSkip(capture, CAPTURE_FILE, skipped);
+    if (buf) zip.addBuffer(buf, CAPTURE_FILE);
+  } else {
+    skipped.push({ name: CAPTURE_FILE, reason: 'not present (detailed capture has never been on)' });
+  }
+  const rotated = `${capture}.1`;
+  if (fs.existsSync(rotated)) {
+    const buf = readOrSkip(rotated, `${CAPTURE_FILE}.1`, skipped);
+    if (buf) zip.addBuffer(buf, `${CAPTURE_FILE}.1`);
   }
 
   // LAST, so it can report what the walk above could not collect.

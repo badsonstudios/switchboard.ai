@@ -39,6 +39,7 @@ no page is an unfinished work item.
 | [16 — Finding something](16-find.md) | `Ctrl+F` over a session: the find bar, the results list, what it searches that you can't see | draft |
 | [17 — MCP servers](17-mcp-servers.md) | `/mcp`: what tools a session is wired to, which scope each comes from, adding and removing them, and why one is waiting on you | current |
 | [18 — Choosing a model](18-model.md) | Switching a session between Opus, Sonnet and Haiku mid-conversation — the one-click menu on the model name and the fuller `/model` picker — and why the tick is sometimes missing | draft |
+| [19 — When it feels slow](19-performance.md) | The performance summary (`Ctrl+Shift+P`), the detailed capture switch in Settings, what it records and what it never touches, and how to send the file | current |
 
 Backfilled 2026-07-24 from the shipped app (Phase 1 + Phase 2 epics E7, E8,
 E10, E12) — written against the actual UI strings and behavior, not from

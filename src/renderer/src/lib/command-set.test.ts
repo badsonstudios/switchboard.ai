@@ -53,6 +53,7 @@ function deps(): CommandDeps & DepMocks {
     checkForUpdates: vi.fn(),
     openFile: vi.fn(),
     reportProblem: vi.fn(),
+  showPerfSummary: vi.fn(),
     closeAllDocuments: vi.fn(),
     openSettings: vi.fn<CommandDeps['openSettings']>(),
     openMcpManager: vi.fn(),
@@ -312,7 +313,7 @@ describe('seed command set (E9-01)', () => {
     expect(d.openFind).toHaveBeenCalledWith('doc-3');
   });
 
-  it('exactly FIVE commands may fire while the user is typing, and they are named', () => {
+  it('exactly SIX commands may fire while the user is typing, and they are named', () => {
     // The rule is *never steal a keystroke a text surface should get*, and the
     // list of chords that qualify is short and closed. `palette.open` (E9-02)
     // is the fail-open route to everything else; `find.open` (P2-E17-02,
@@ -340,11 +341,19 @@ describe('seed command set (E9-01)', () => {
     // and Mod+, is not a text-editing key. Proven by `e2e/file-menu.spec.ts`'s
     // Settings test, which fails without the scope.
     //
+    // `app.perfSummary` joined them in #923, for `app.reportProblem`'s reasons
+    // and one sharper one: it reports on responsiveness, and the moment anyone
+    // wants it is the moment typing feels slow — i.e. with the composer
+    // focused. A reading you cannot take from the surface you are complaining
+    // about is a reading taken after the moment has passed. It claims no
+    // binding either.
+    //
     // Anything else in this list is a bug — and NO scope whatsoever fires inside
     // a terminal (proven in commands.test.ts), which is what leaves the hosted
     // CLI's own `ctrl+o` alone.
     const typingOk = buildCommands(deps()).filter((c) => c.scope === 'typing-ok');
     expect(typingOk.map((c) => c.id).sort()).toEqual([
+      'app.perfSummary',
       'app.reportProblem',
       'find.open',
       'palette.open',

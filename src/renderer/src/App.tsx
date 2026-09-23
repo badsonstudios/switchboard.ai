@@ -30,6 +30,15 @@ import { focusedElementIn } from './lib/focus-target';
 import { sessionStore } from './store/session-store';
 import { CommandPalette } from './components/CommandPalette';
 import { AboutPanel } from './components/AboutPanel';
+import { PerfSummaryPanel } from './components/PerfSummaryPanel';
+import {
+  installPerf,
+  measureToPaint,
+  perfSummary,
+  recordColdStart,
+  setDetailEnabled,
+} from './lib/perf';
+import type { PerfSummary } from '../../shared/perf';
 import { UpdateDialog } from './components/UpdateDialog';
 import type { UpdateInstallStatus, UpdateStatus } from '../../shared/update';
 import { UrgencyStrip } from './components/UrgencyStrip';
@@ -630,6 +639,17 @@ export function App(): React.JSX.Element {
   // flickered ON during that frame would be the one place the UI overstated
   // what the app does.
   const [experimentalFork, setExperimentalFork] = useState(false);
+  // E21's detailed capture (#923). Off is both the default and what a refusal
+  // must read as — the tier-2 module is only ever loaded on a `true` we got an
+  // answer for, so a broken bridge leaves the instrumentation absent rather
+  // than half-installed.
+  const [perfCapture, setPerfCapture] = useState(false);
+  const [perfSummaryOpen, setPerfSummaryOpen] = useState(false);
+  // Whether a capture file exists yet — the reveal button's enabled state.
+  // Unlike a switch, a button that opens a folder genuinely has nothing to do
+  // before the first capture, and greying it says so.
+  const [hasCapture, setHasCapture] = useState(false);
+  const [perfSummaryData, setPerfSummaryData] = useState<PerfSummary | null>(null);
   const [usageByLive, setUsageByLive] = useState<
     Map<string, { usage: Usage; model?: string; cliCost?: CliCost }>
   >(new Map());
@@ -739,6 +759,20 @@ export function App(): React.JSX.Element {
     void bridge.settings
       ?.getExperimentalFork?.()
       .then((on) => setExperimentalFork(took(on)));
+    // #923. Tier 1 is installed unconditionally (it only reads what the
+    // platform already measured); tier 2 is reached ONLY through this answer,
+    // and only when it is literally `true`.
+    installPerf({
+      record: (batch) => bridge.perf?.record?.(batch),
+      mainStats: async () => answered(await bridge.perf?.mainStats?.()) ?? null,
+    });
+    recordColdStart();
+    void bridge.settings?.getPerfCapture?.().then((on) => {
+      const enabled = took(on);
+      setPerfCapture(enabled);
+      void setDetailEnabled(enabled);
+    });
+    void bridge.perf?.hasCapture?.().then((yes) => setHasCapture(took(yes)));
     void bridge.preflight?.check?.().then((answer) => {
       // Same as above (#650): `r.ok` off a refusal is `undefined`, which would
       // paint the CLI as BROKEN on the strength of a call we were not allowed
@@ -909,6 +943,19 @@ export function App(): React.JSX.Element {
     void answer.then((s) => setQuietState(answered(s) ?? null)).catch(() => setQuietState(null));
     // eslint's exhaustive-deps plugin isn't installed; bridge is stable
   }, []);
+  // ── the performance summary (#923) ──────────────────────────────
+  //
+  // Opened blank and filled when the numbers arrive, rather than awaited before
+  // opening: `perfSummary` asks MAIN for its event-loop figures, and a palette
+  // command that appeared to do nothing for a round trip would be a
+  // responsiveness feature that felt unresponsive.
+  const openPerfSummary = React.useCallback(() => {
+    setPerfSummaryData(null);
+    setPerfSummaryOpen(true);
+    void perfSummary()
+      .then(setPerfSummaryData)
+      .catch(() => setPerfSummaryData(null));
+  }, []);
   // ── report a problem (#815) ──────────────────────────────────────────────
   //
   // Optional-chained and swallowed like the push family above, for the same
@@ -948,6 +995,9 @@ export function App(): React.JSX.Element {
    */
   const openSettings = React.useCallback(
     (section: SettingsSection | null = null) => {
+      // #923. One mark per open, resolved at the next paint — nothing per
+      // keystroke, nothing in a render path.
+      measureToPaint('settings-open');
       setQuietState(null);
       setSettingsSection(section);
       setSettingsOpen(true);
@@ -1453,6 +1503,7 @@ export function App(): React.JSX.Element {
       settingsOpen ||
       mcpOpen ||
       reportOpen ||
+      perfSummaryOpen ||
       modelFor !== null;
   });
 
@@ -1462,6 +1513,9 @@ export function App(): React.JSX.Element {
   // very session you asked for.
   const raisedOtherWindowRef = React.useRef(false);
   const focusSession = React.useCallback((sessionId: string): boolean => {
+    // #923. Click in the rail to the card painted — #904's second named
+    // interaction, and the one the owner notices after typing.
+    measureToPaint('session-switch');
     const raised = grid.current?.focusSession(sessionId) ?? false;
     if (raised) raisedOtherWindowRef.current = true;
     return raised;
@@ -1551,7 +1605,10 @@ export function App(): React.JSX.Element {
           // A toggle, not an open: the same chord that shows the queue puts it
           // away again, which is what every other view toggle in this set does.
           toggleEventsDrawer: () => setEventsOpen((v) => !v),
-          openPalette: () => setPaletteOpen(true),
+          openPalette: () => {
+            measureToPaint('palette-open'); // #923
+            setPaletteOpen(true);
+          },
           // The bar itself is rendered by the CARD (SessionGrid) — this only
           // publishes which card is asking, because a keydown handler has no
           // way into another dockview panel's tree (§5.31, lib/find-bar-state).
@@ -1606,6 +1663,7 @@ export function App(): React.JSX.Element {
           // #815. The Help menu delivers `app.reportProblem` to this same
           // command, so the menu and the palette are one implementation.
           reportProblem: openReportProblem,
+          showPerfSummary: openPerfSummary,
           checkForUpdates,
           // §5.30's `Open file…`. Picking a file in the native dialog is also
           // what GRANTS it: main widens the `fs.read` scope with the chosen
@@ -2039,8 +2097,22 @@ export function App(): React.JSX.Element {
         railHidden={railHidden}
         onToggleRail={toggleRail}
         railBinding={railBindingLabel}
-        onOpenPalette={() => setPaletteOpen(true)}
+        onOpenPalette={() => {
+          measureToPaint('palette-open'); // #923
+          setPaletteOpen(true);
+        }}
         paletteBinding={paletteBindingLabel}
+      />
+      {/* E21's on-screen reading (#923). Read-only, no live updates: it is a
+          snapshot of what this window has measured, which is the question
+          "is it better than before?" and not a dashboard. */}
+      <PerfSummaryPanel
+        open={perfSummaryOpen}
+        onClose={() => setPerfSummaryOpen(false)}
+        summary={perfSummaryData}
+        // two stacked `aria-modal` regions is a thing screen readers disagree
+        // about, so only the top one claims it — as every other dialog here does
+        dialogAbove={settingsOpen || mcpOpen || reportOpen || modelFor !== null}
       />
       <AboutPanel
         open={aboutOpen}
@@ -2052,7 +2124,12 @@ export function App(): React.JSX.Element {
         // a second dialog is above this one: two stacked `aria-modal` regions
         // is a thing screen readers disagree about, so only the top one claims it
         dialogAbove={
-          updateOpen || settingsOpen || mcpOpen || reportOpen || modelFor !== null
+          updateOpen ||
+          settingsOpen ||
+          mcpOpen ||
+          reportOpen ||
+          perfSummaryOpen ||
+          modelFor !== null
         }
         onOpenSettings={() => openSettings(null)}
       />
@@ -2128,6 +2205,38 @@ export function App(): React.JSX.Element {
             })
             .catch(() => {});
         }}
+        perfCapture={perfCapture}
+        onTogglePerfCapture={(on) => {
+          // NOT optimistic about the INSTRUMENTATION, only about the tick box.
+          // Main is the authority on what it stored, and the tier-2 module is
+          // loaded or unloaded on that answer rather than on the click —
+          // switching on something that patches prototypes because a write we
+          // have not confirmed probably succeeded is the wrong way round.
+          setPerfCapture(on);
+          void bridge.settings
+            ?.setPerfCapture?.(on)
+            .then((stored) => {
+              const enabled = took(stored);
+              setPerfCapture(enabled);
+              return setDetailEnabled(enabled);
+            })
+            // Main writes the run header the instant the switch flips, so the
+            // file exists NOW. Without this re-read, "Show the file" stays
+            // greyed out for the rest of the session after you turn capture on
+            // — and the only thing that refreshes it is a click on the button
+            // being greyed out.
+            .then(() => bridge.perf?.hasCapture?.())
+            .then((yes) => setHasCapture(took(yes)))
+            .catch(() => {});
+        }}
+        {...(bridge.perf?.reveal
+          ? {
+              onRevealCapture: () => {
+                void bridge.perf?.reveal?.().then((ok) => setHasCapture(took(ok)));
+              },
+            }
+          : {})}
+        hasCapture={hasCapture}
       />
       <McpManagerDialog
         open={mcpOpen}
