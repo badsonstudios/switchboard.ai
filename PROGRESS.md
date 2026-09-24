@@ -3,7 +3,17 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔧 IN PROGRESS — 2026-09-23: **#886** a card that fails to resume keeps a task label it can never shed
+> # ✅ MERGED — 2026-09-23: **#886** a card that fails to resume keeps a task label it can never shed
+>
+> PR #931 squashed to `48ec82a`; all four CI jobs green. Issue closed. Plan was
+> posted to the issue before implementation. **NOT RELEASED** — the version bump
+> is manual, so there is nothing installable to hand-test yet. Dogfood row added
+> as UNTESTED. CHANGELOG entry filed under `0.8.100 — unreleased`, in the same
+> breath as the manual page rather than at release time (the habit change the
+> v0.8.99 cut asked for).
+>
+> **Next up:** still **P2-E21-02**, which is Dan's, not a coding item. Nothing in
+> the queue is blocked on us.
 >
 > Branch `feature/886-stale-label-refused-resume`. Picked deliberately over the
 > rest of the open queue: the owner is about to install v0.8.99 on the laptop and
