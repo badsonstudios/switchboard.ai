@@ -758,6 +758,12 @@
       "user-skill": "skill · user"
     },
     "mentionExited": "exited",
+    "completion": {
+      "commandListLabel": "Slash commands",
+      "sessionListLabel": "Sessions you can mention",
+      "commandListOpen": "Slash commands, {count} available",
+      "sessionListOpen": "Sessions you can mention, {count} available"
+    },
     "mention": {
       "refused": "Not sent, and nothing has been cleared. {reasons}",
       "lookupFailed": "Sent as you typed it. switchboard.ai couldn't look up the sessions you mentioned, so none of their recent work went with it."

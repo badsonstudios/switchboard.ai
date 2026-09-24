@@ -29,6 +29,12 @@ A `/` typed mid-sentence is just a slash; the list only opens at the start of a
 line. While it's open it won't submit a *half-typed* command out from under
 you — only a complete one, which is what you asked for by typing it in full.
 
+**With a screen reader,** you're told when the list opens and how many commands
+are in it, and each ↑ / ↓ reads out the command you've moved to. Your cursor
+stays in the prompt box the whole time — the list never takes it — so you can
+keep typing to narrow the list down, and Tab or Enter still does what it does
+above. The same is true of the **`@`** list of sessions.
+
 ## Where the list comes from
 
 In the normal mode, switchboard builds the list itself: a built-in catalogue of

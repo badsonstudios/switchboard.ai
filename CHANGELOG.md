@@ -107,6 +107,11 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **The prompt box's autocomplete now talks to screen readers.** Typing `/` or
+  `@` opens a list that says which list it is and how many entries it has, then
+  reads out each row as you arrow through it. Before, the highlight was a colour
+  and nothing else, so the list existed only for people who could see it. Your
+  cursor still stays in the prompt box throughout, exactly as before.
 - **A saved GitHub token now switches update checking back on.** If you paste a
   token into Help ▸ Report a problem… on a machine without the GitHub
   command-line tool, update checks and downloads use it too — previously the
