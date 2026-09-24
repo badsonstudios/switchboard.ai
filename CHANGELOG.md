@@ -107,6 +107,14 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **Background jobs no longer report back as if you had typed it.** When work
+  Claude left running in the background finishes or has something to report, the
+  conversation used to show a **New prompt** divider over a block of raw code
+  nobody wrote. Those now get their own compact **Background task** row: the job's
+  own one-line summary, a word saying how it went (completed, failed, stopped, or
+  event), and click-to-expand for everything it actually sent. The turn markers you
+  scan a long session by now only ever sit above things you really said. **quiet**
+  hides these rows along with tool activity; `Ctrl+F` still finds them.
 - **The prompt box's autocomplete now talks to screen readers.** Typing `/` or
   `@` opens a list that says which list it is and how many entries it has, then
   reads out each row as you arrow through it. Before, the highlight was a colour

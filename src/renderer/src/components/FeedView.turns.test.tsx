@@ -187,6 +187,41 @@ describe('the turn boundary (#640)', () => {
     expect(ruled.getAttribute('data-feed-seq')).toBe('3');
   });
 
+  // #704. A background task reporting an event arrives with `role: user`, so it
+  // WAS a `user` block and it WAS getting this divider — over raw XML nobody
+  // typed, in the loud treatment #640 gave the real boundaries. The fix is in
+  // the derivation (`main/feed/injected.ts`); this is the assertion that says
+  // what the user stopped seeing.
+  //
+  // BEFORE the `quiet` case below, deliberately: that one clicks the verbosity
+  // chip, and the choice survives into the next mount through the UI store — a
+  // notice is hidden in `quiet` on purpose, so this case run after it would
+  // fail for a reason that has nothing to do with dividers.
+  it('does NOT rule off a turn the harness injected', async () => {
+    BLOCKS = [
+      { seq: 1, kind: 'user', text: 'run CI', sidechain: false },
+      {
+        seq: 2,
+        kind: 'notice',
+        sidechain: false,
+        notice: {
+          source: 'task-notification',
+          summary: 'Monitor event: "CI on PR 53"',
+          status: 'event',
+          raw: '<task-notification>\n<summary>Monitor event: "CI on PR 53"</summary>\n</task-notification>',
+        },
+      },
+      { seq: 3, kind: 'user', text: 'ship it', sidechain: false },
+    ];
+    const host = await mountFeed();
+    expect(kinds(host)).toEqual(['user', 'notice', 'user']);
+    // one divider, above the human's second prompt — not above the notification
+    expect(precedes(host)).toEqual(['user']);
+    const ruled = host.querySelector<HTMLElement>('.turn-divider')!
+      .nextElementSibling as HTMLElement;
+    expect(ruled.getAttribute('data-feed-seq')).toBe('3');
+  });
+
   it('follows the FILTERED conversation, not the raw one', async () => {
     // `quiet` drops the tool box, so turn one becomes prompt + prose. The
     // boundaries must still be the two prompts and not, say, the block that

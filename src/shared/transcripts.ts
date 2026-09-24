@@ -131,7 +131,7 @@ export interface TranscriptHit {
    * confidently, and this is a feature whose whole value is not doing that.
    */
   earlierThanLoaded: boolean;
-  kind: 'user' | 'assistant' | 'thinking' | 'tool' | 'todos';
+  kind: 'user' | 'assistant' | 'thinking' | 'tool' | 'todos' | 'notice';
   /** which part of the block matched — `text`, `tool.out`, `tool.input`, … */
   field: string;
   /** context around the match, for the results list */

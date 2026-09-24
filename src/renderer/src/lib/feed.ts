@@ -2,7 +2,7 @@
 // the FeedView component applies these; tests pin the preset semantics.
 export interface FeedBlockDto {
   seq: number;
-  kind: 'user' | 'assistant' | 'thinking' | 'tool' | 'todos';
+  kind: 'user' | 'assistant' | 'thinking' | 'tool' | 'todos' | 'notice';
   text?: string;
   tool?: {
     name: string;
@@ -18,6 +18,21 @@ export interface FeedBlockDto {
     out?: string;
   };
   todos?: Array<{ content: string; status: string }>;
+  /**
+   * notice: a turn the HARNESS injected, summarised (#704) — a background task
+   * reporting an event or an ending. Nobody typed it, which is why it is not a
+   * `user` block: it used to be one, and so it arrived with a NEW PROMPT
+   * divider over raw XML. `raw` is the whole payload, and the expander's job.
+   * The main-side shape and the recognition rule are `main/feed/injected.ts`.
+   */
+  notice?: {
+    source: 'task-notification';
+    summary: string;
+    status?: string;
+    raw: string;
+    taskId?: string;
+    outputFile?: string;
+  };
   /**
    * user: what rode with this prompt (#491), counted off the message that was
    * actually sent. Absent — never `{images: 0, documents: 0}` — for a prompt
@@ -81,10 +96,17 @@ export function showsTimelineDot(kind: FeedBlockDto['kind']): boolean {
 
 export type Verbosity = 'quiet' | 'normal' | 'firehose';
 
-/** quiet = prose only · normal = prose + tools, no thinking · firehose = everything. */
+/**
+ * quiet = prose only · normal = prose + tools, no thinking · firehose = everything.
+ *
+ * A `notice` needs no arm of its own and that is the point (#704): it is an
+ * EVENT, like a tool row, so it falls through `quiet`'s prose-only test and is
+ * shown by `normal`. Somebody who turned the feed down to "just the
+ * conversation" did not ask to be told a background command exited.
+ */
 export function blockVisible(b: FeedBlockDto, v: Verbosity): boolean {
   if (v === 'firehose') return true;
   if (b.kind === 'thinking') return false;
   if (v === 'quiet') return (b.kind === 'user' || b.kind === 'assistant') && !b.sidechain;
-  return true; // normal (tools + todos included)
+  return true; // normal (tools + todos + notices included)
 }

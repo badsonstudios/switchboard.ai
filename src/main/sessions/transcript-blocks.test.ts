@@ -82,3 +82,48 @@ describe('renderBlock names the agent', () => {
     );
   });
 });
+
+// #704. THE SAME MISATTRIBUTION THE `[subagent]` TAG ABOVE EXISTS TO PREVENT,
+// and it was worse: a background-task notification reached the reading model as
+// `User: ` followed by raw XML, so a sibling agent handed this window would have
+// read "If this event is something the user would act on now, send a
+// PushNotification" as an instruction the HUMAN had typed to it.
+describe('renderBlock labels a harness-injected turn (#704)', () => {
+  const notice = {
+    source: 'task-notification' as const,
+    summary: 'Monitor event: "CI on PR 53"',
+    status: 'event',
+    raw: '<task-notification>\n<summary>Monitor event: "CI on PR 53"</summary>\n</task-notification>',
+  };
+
+  it('says what it is, and says the status', () => {
+    expect(renderBlock({ seq: 0, kind: 'notice', notice, sidechain: false })).toBe(
+      '[background task] (event) Monitor event: "CI on PR 53"'
+    );
+  });
+
+  // The SUMMARY, not the payload: what is left of the payload is a task id and a
+  // temp-file path on a machine the recipient cannot read.
+  it('hands over the summary rather than the raw payload', () => {
+    const line = renderBlock({ seq: 0, kind: 'notice', notice, sidechain: false });
+    expect(line).not.toContain('<task-notification>');
+    // and it is not labelled as a person speaking
+    expect(line).not.toContain('User:');
+  });
+
+  it('drops the parenthesis when there was no status', () => {
+    // Built rather than destructured-minus-`status`: the field is ABSENT here,
+    // and `{ ...notice, status: undefined }` is a different object — it has the
+    // own key, which is the distinction `originOf` in `blocks.ts` spells out.
+    const rest = { source: notice.source, summary: notice.summary, raw: notice.raw };
+    expect(renderBlock({ seq: 0, kind: 'notice', notice: rest, sidechain: false })).toBe(
+      '[background task] Monitor event: "CI on PR 53"'
+    );
+  });
+
+  it('still wears the subagent tag when one ran inside a subagent', () => {
+    expect(
+      renderBlock({ seq: 0, kind: 'notice', notice, sidechain: true, agentName: 'Explore' })
+    ).toBe('[subagent: Explore] [background task] (event) Monitor event: "CI on PR 53"');
+  });
+});

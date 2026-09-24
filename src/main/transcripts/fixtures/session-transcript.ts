@@ -66,6 +66,24 @@ export const SESSION_TRANSCRIPT_FACTS = {
   blocks: 1579,
   toolResults: 1235,
   contentItems: 3356,
+  /**
+   * Turns the HARNESS injected, not the human (#704) — background tasks
+   * reporting an event or an ending.
+   *
+   * This file is what made #704 answerable without guessing. All **9** are
+   * `type: 'user'` lines carrying `origin: { kind: 'task-notification' }`, all 9
+   * also open with the `<task-notification>` tag, and **no user line opens with
+   * that tag without that origin** — which is why `injected.ts` reads the origin
+   * first and the text only as a fallback. The other 27 origins in the file are
+   * `{ kind: 'human' }`. (The same payloads appear on `queue-operation` lines
+   * too, which derive nothing and are not counted here.)
+   *
+   * It is deliberately NOT subtracted from `blocks`: each of these lines still
+   * derives exactly one block, just a `notice` rather than a `user`. The search
+   * engine's ordinals are only in step with the Feed's `seq` while that stays
+   * true, so a change that moved the total would be a defect this number names.
+   */
+  notices: 9,
 } as const;
 
 /** The raw lines, for a test that needs to build a variant of the file. */

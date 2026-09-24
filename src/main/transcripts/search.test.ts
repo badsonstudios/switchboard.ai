@@ -96,14 +96,24 @@ describe('the captured real transcript', () => {
     expect(lines).toHaveLength(SESSION_TRANSCRIPT_FACTS.lines);
     let blocks = 0;
     let results = 0;
+    let notices = 0;
     for (const line of lines) {
       for (const intent of deriveIntents(JSON.parse(line) as Record<string, unknown>)) {
-        if (intent.t === 'block') blocks++;
-        else results++;
+        if (intent.t !== 'block') {
+          results++;
+          continue;
+        }
+        blocks++;
+        if (intent.block.kind === 'notice') notices++;
       }
     }
     expect(blocks).toBe(SESSION_TRANSCRIPT_FACTS.blocks);
     expect(results).toBe(SESSION_TRANSCRIPT_FACTS.toolResults);
+    // #704: nine of those blocks are turns the harness injected, and the TOTAL
+    // is unchanged by classifying them — one line, one block, a different kind.
+    // The search engine's ordinals only line up with the Feed's `seq` while
+    // that holds, so this pair is the assertion, not the 9 on its own.
+    expect(notices).toBe(SESSION_TRANSCRIPT_FACTS.notices);
     // The premise of the whole epic: the Feed cannot hold this session.
     expect(blocks).toBeGreaterThan(BLOCK_CAP);
     expect(feedOf(lines)).toHaveLength(BLOCK_CAP);
@@ -506,6 +516,51 @@ describe('what it searches', () => {
     // ...and it is anchored to the TOOL block, not to the user line that
     // carried the result — the block the Feed renders that output inside.
     expect(r.hits[0].blockIndex).toBe(1);
+  });
+
+  // #704. The payload MOVED FIELDS in that change — it used to be `block.text`,
+  // which this engine collects, and it is now `notice.raw`, which it had to be
+  // taught. §5.31's promise is that a find searches everything the view is
+  // hiding, and the collapsed row hides most of a notification by design: the
+  // task id and the output-file path are only ever behind the expander.
+  it('finds a term inside a background-task notification (#704)', async () => {
+    const payload =
+      '<task-notification>\n<task-id>bzz9marker</task-id>\n<summary>Monitor event: "CI on PR 53"</summary>\n<event>ubuntu-latest: pass</event>\n</task-notification>';
+    const file = transcript('notice.jsonl', [
+      { type: 'user', origin: { kind: 'human' }, message: { role: 'user', content: 'watch CI' } },
+      {
+        type: 'user',
+        origin: { kind: 'task-notification' },
+        message: { role: 'user', content: payload },
+      },
+    ]);
+    // the block really is a notice, or the assertions below prove nothing
+    expect(
+      deriveIntents({
+        type: 'user',
+        origin: { kind: 'task-notification' },
+        message: { role: 'user', content: payload },
+      })[0]
+    ).toMatchObject({ block: { kind: 'notice' } });
+
+    // a term the SUMMARY shows
+    const shown = await search([{ sessionId: 's', file }], {
+      sessionIds: ['s'],
+      query: { term: 'Monitor event' },
+    });
+    expect(shown.total).toBe(1);
+    expect(shown.hits[0].field).toBe('notice');
+    expect(shown.hits[0].kind).toBe('notice');
+
+    // ...and one only the EXPANDER shows, which is the half that matters
+    const hidden = await search([{ sessionId: 's', file }], {
+      sessionIds: ['s'],
+      query: { term: 'bzz9marker' },
+    });
+    expect(hidden.total).toBe(1);
+    expect(hidden.hits[0].field).toBe('notice');
+    // block 2 of 2 — the ordinals are 1-based, and the prompt above is block 1
+    expect(hidden.hits[0].blockIndex).toBe(2);
   });
 
   it('searches a tool call by what the user reads, not by its JSON escapes', async () => {

@@ -234,6 +234,20 @@ export type { PromptAttachment };
  * is, and the second only ever RE-DERIVES the same `{kind:"human"}` we are now
  * stating outright — and from a field described as "@internal … Injected
  * server[-side]", which a local stdin frame does not carry anyway.
+ *
+ * ⚠️ **THE "ABSENCE MEANS HUMAN" READING ABOVE IS 2.1.233's AND HAS SINCE BEEN
+ * REVERSED** (#704, PATH binary re-read 2026-09-24). The origin union's own
+ * description now says the opposite outright: "A host wrapping keyboard input
+ * must stamp {kind:'human'} explicitly — absent origin is treated as
+ * unattributed and fails closed at strict isHuman() trust gates." The three
+ * predicates quoted above are still in the binary, so both readings are real
+ * and they are about different gates; what changed is which one the schema
+ * leads with. NOTHING HERE NEEDS TO CHANGE — this module already sends `human`
+ * explicitly, which is the behaviour the newer wording requires, and the case
+ * for sending it is now the stronger one. `feed/injected.ts` reads the SAME
+ * field from the other end and takes the newer reading deliberately: it treats
+ * an absent origin as no evidence rather than as a person, and lets the text
+ * decide.
  */
 export function userMessage(
   text: string,

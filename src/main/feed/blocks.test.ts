@@ -315,6 +315,99 @@ describe('attachments that rode with a prompt (#491)', () => {
   });
 });
 
+// #704. A background task that emits an event or ends makes the CLI write a
+// turn into the conversation to re-invoke the model. It has `role: user`, so
+// the Feed gave it a NEW PROMPT divider over raw XML. The recognition rule and
+// its measurements are `injected.ts`; this is what the derivation does with it.
+describe('harness-injected turns are notices, not prompts (#704)', () => {
+  const PAYLOAD = `<task-notification>
+<task-id>bvhh1kfa7</task-id>
+<summary>Monitor event: "CI matrix result for PR #36"</summary>
+<event>ubuntu-latest: pass</event>
+If this event is something the user would act on now, send a PushNotification.
+</task-notification>`;
+  const TN = { origin: { kind: 'task-notification' } };
+
+  it('a string-content notification becomes one notice block', () => {
+    const b = blocks(deriveIntents({ type: 'user', ...TN, message: { content: PAYLOAD } }));
+    expect(b).toHaveLength(1);
+    expect(b[0].block.kind).toBe('notice');
+    expect(b[0].block.notice).toMatchObject({
+      source: 'task-notification',
+      summary: 'Monitor event: "CI matrix result for PR #36"',
+      status: 'event',
+      taskId: 'bvhh1kfa7',
+    });
+  });
+
+  // NOT `text`, and this is the assertion that pins the fix rather than the
+  // rendering of it. Every prose reader in the app keys off `text` —
+  // `search.ts` collects it, `transcript-blocks.ts` labels it `User:`, the
+  // fallback renderer sets it as markdown. Leaving the payload there would
+  // leave it classified as a person's words everywhere except the one renderer
+  // that was taught otherwise.
+  it('carries the payload on `notice.raw` and NOT on `text`', () => {
+    const b = blocks(deriveIntents({ type: 'user', ...TN, message: { content: PAYLOAD } }));
+    expect(b[0].block.text).toBeUndefined();
+    expect(b[0].block.notice?.raw).toBe(PAYLOAD);
+    // the harness's instruction to the model is in the payload and nowhere else
+    expect(b[0].block.notice?.raw).toContain('send a PushNotification');
+    expect(b[0].block.notice?.summary).not.toContain('PushNotification');
+  });
+
+  // The transcript writes these as a plain string; the stream's user messages
+  // carry text ITEMS. One rule, both shapes — or the same notification renders
+  // correctly on one transport and as raw XML on the other.
+  it('reads the same turn when it arrives as a text item', () => {
+    const b = blocks(
+      deriveIntents({ type: 'user', ...TN, message: { content: [{ type: 'text', text: PAYLOAD }] } })
+    );
+    expect(b).toHaveLength(1);
+    expect(b[0].block.kind).toBe('notice');
+    // the content index survives, because a stream delta is addressed by it
+    expect(b[0].index).toBe(0);
+  });
+
+  it('a person quoting one still gets their prompt', () => {
+    const quoted = `why does this render as a prompt?\n${PAYLOAD}`;
+    const b = blocks(deriveIntents({ type: 'user', message: { content: quoted } }));
+    expect(b[0].block.kind).toBe('user');
+    expect(b[0].block.text).toBe(quoted);
+    // ...and one who OPENS with it, when the CLI tagged the turn human
+    const opened = blocks(
+      deriveIntents({ type: 'user', origin: { kind: 'human' }, message: { content: PAYLOAD } })
+    );
+    expect(opened[0].block.kind).toBe('user');
+  });
+
+  // Fail-open. An unreadable body costs the summary, not the block — and NOT by
+  // falling back to a user prompt, which is the defect.
+  it('a body it cannot read is still a notice, holding everything', () => {
+    const junk = '<task-notification>\n{"shape":"new"}\n</task-notification>';
+    const b = blocks(deriveIntents({ type: 'user', message: { content: junk } }));
+    expect(b[0].block.kind).toBe('notice');
+    expect(b[0].block.notice?.summary).toBe('{"shape":"new"}');
+    expect(b[0].block.notice?.raw).toBe(junk);
+  });
+
+  // One block in, one block out: the search engine derives every line to keep
+  // its ordinals in step with the Feed's `seq`, so a kind change must not be a
+  // COUNT change. `SESSION_TRANSCRIPT_FACTS.blocks` is the same 1579 it was.
+  it('survives an identity-only derivation as one block', () => {
+    const b = blocks(
+      deriveIntents({ type: 'user', ...TN, message: { content: PAYLOAD } }, IDENTITY_ONLY_CAPS)
+    );
+    expect(b).toHaveLength(1);
+    expect(b[0].block.kind).toBe('notice');
+  });
+
+  it('an isMeta notification is still nothing at all', () => {
+    expect(
+      deriveIntents({ type: 'user', ...TN, isMeta: true, message: { content: PAYLOAD } })
+    ).toHaveLength(0);
+  });
+});
+
 describe('touchedPath — which key names a file (#766)', () => {
   // Shared with `watcher.ts`'s `filesTouched` so the session card and #766's
   // handoff cannot describe the same session differently. Each case below is a

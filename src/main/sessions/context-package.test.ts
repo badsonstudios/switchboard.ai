@@ -820,6 +820,10 @@ describe('no model runs on the default path', () => {
     'transcript-blocks.ts',
     'queries.ts',
     '../feed/blocks.ts',
+    // #704: `blocks.ts` asks it whether a user-role turn is the harness rather
+    // than the person. Pure string work over one line — a set membership test
+    // and five regexes.
+    '../feed/injected.ts',
     // #788: `transcript-blocks.ts` reads it to name a subagent's turn. Pure
     // string work over one line plus `node:path`.
     '../feed/agent-attribution.ts',
@@ -846,6 +850,9 @@ describe('no model runs on the default path', () => {
     'context-drop.ts',
     'transcript-blocks.ts',
     '../feed/agent-attribution.ts',
+    // #704: it opens nothing. It is handed a string and a plain object and
+    // answers a question about them.
+    '../feed/injected.ts',
   ] as const;
 
   const read = (name: string) => {
