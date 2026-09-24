@@ -229,6 +229,12 @@ there are several conversations, so jumping between regions announces
 "Conversation" — you can tell which session you've landed in without reading
 anything in it. Rename a session and its conversation is renamed with it.
 
+**The prompt box's autocomplete is announced too.** When typing `/` or `@`
+opens the list, a screen reader says which list it is and how many entries are
+in it — "Slash commands, 12 available" — and then reads out each row as ↑ / ↓
+move through it. Your cursor never leaves the prompt box, so you can keep
+typing to narrow the list down while it's open.
+
 ## Working the rest of the window with the keyboard
 
 Everything outside the conversation works from the keyboard too — the Sessions

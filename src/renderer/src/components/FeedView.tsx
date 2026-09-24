@@ -1519,6 +1519,19 @@ function roomForBox(own: HTMLElement | null, el: HTMLElement): number | undefine
 }
 
 /**
+ * Visually hidden, still announced — the same shape `ComposerAttachments` uses
+ * for its paste notice. Not `display: none`, which removes the node from the
+ * accessibility tree and takes the live region with it.
+ */
+const COMPLETION_ANNOUNCE_STYLE: React.CSSProperties = {
+  position: 'absolute',
+  inlineSize: 1,
+  blockSize: 1,
+  overflow: 'hidden',
+  clipPath: 'inset(50%)',
+};
+
+/**
  * Prompt composer (P2-E10-02, Â§5.10): an INPUT ROUTE to the real CLI â€” the
  * text is written to the session's PTY exactly as if typed in the terminal
  * (multiline goes as a bracketed paste so the TUI treats it as one prompt).
@@ -2305,6 +2318,50 @@ function Composer({
   React.useEffect(() => {
     selectedRow.current?.scrollIntoView({ block: 'nearest' });
   }, [selected, completionKey]);
+  /**
+   * The id namespace for the completion popup (#828), and it is `useId` for the
+   * reason `CommandPalette.tsx` spells out at length (#654).
+   *
+   * `aria-activedescendant` and `aria-controls` are IDREFs, and an IDREF
+   * resolves to the **first** element in tree order carrying that id. `id`
+   * survives the sanitizer profile (`markdown.tsx`), and this composer sits
+   * BELOW the feed's rendered transcript in document order — so a reply
+   * containing `<div id="completion-opt-0">rm -rf</div>` would capture the
+   * relation and tell a screen-reader user the highlighted completion is
+   * whatever the transcript said, while Enter still inserts the real one.
+   * That is the #509 harm — a lie the sighted reader cannot see — reached
+   * through a name. `FeedView.forgery.test.tsx` holds the proof.
+   *
+   * Since #673 the root's per-launch `identifierPrefix` (`lib/root-identity.ts`)
+   * makes the composed id unguessable rather than merely unpublished.
+   */
+  const completionId = React.useId();
+  /**
+   * THE highlighted row — one value, used by all five things that need it.
+   *
+   * There were four independent readings of `selected` before this item
+   * (the `aria-` relation, `aria-selected`, the scroll ref, the background, and
+   * Enter's pick) and only two of them clamped. For one commit after a
+   * keystroke NARROWS the list — the render happens before the effect that
+   * resets `selected` to 0 — the unclamped readings point past the end, so the
+   * relation would name row 0 while no row was marked or highlighted. A screen
+   * reader and the screen disagreeing is precisely the bug class this item
+   * exists to close (review). One value, one invariant.
+   *
+   * `-1` when there is no popup, so `i === activeIndex` is false for every row
+   * without a second condition at each site.
+   */
+  const activeIndex = popupOpen ? Math.min(selected, popup.length - 1) : -1;
+  /**
+   * The option id, built from the INDEX.
+   *
+   * Not a security property — `CommandPalette` composes a content-derived
+   * suffix (`${paletteId}row-${row.id}`) and is just as safe, because the
+   * unguessability comes entirely from the `useId` namespace above. The index
+   * is simply the stabler choice: it survives a row key changing shape, and
+   * there is nothing to sanitise.
+   */
+  const activeOptionId = activeIndex >= 0 ? `${completionId}opt-${activeIndex}` : undefined;
 
   // Placing the caret after an insert has to wait for React to COMMIT the new
   // draft: the textarea is controlled, so its DOM value is written during the
@@ -2740,8 +2797,54 @@ function Composer({
           {t(dragContext ? 'feedView.context.dropHint' : 'feedView.attach.dropHint')}
         </div>
       )}
+      {/* "A list just opened", said out loud (#828).
+
+          This is the job `role="combobox"` + `aria-expanded` was supposed to do
+          and could not — see the textarea's note. A polite live region says it
+          instead, which needs no role on the input, breaks no ARIA-in-HTML
+          rule, and is the idiom `ComposerAttachments` and `FindBar` already
+          use here.
+
+          MOUNTED EMPTY on the first frame, the rule #222 set for `FindBar`'s
+          count: a live region that arrives already holding its text is
+          announced by almost nothing. So this element always exists and only
+          its content changes — and it is visually hidden always, because the
+          count is already on screen as the list itself. It says the COUNT and
+          not the highlighted row: the row is carried by
+          `aria-activedescendant`, and saying it twice would talk over every
+          arrow key. */}
+      <div
+        role="status"
+        aria-live="polite"
+        data-completion-announce=""
+        style={COMPLETION_ANNOUNCE_STYLE}
+      >
+        {popupOpen
+          ? t(
+              popup[0]?.kind === 'mention'
+                ? 'feedView.completion.sessionListOpen'
+                : 'feedView.completion.commandListOpen',
+              { count: popup.length }
+            )
+          : ''}
+      </div>
       {popupOpen && (
         <div
+          // `data-completion-list` is the TEST HOOK, and it is a `data-*` for
+          // the same reason the palette's are (#654): content cannot emit one
+          // at all (`ALLOW_DATA_ATTR: false`), so a hook is not a second
+          // guessable name the way an id would be.
+          data-completion-list={popup[0]?.kind}
+          id={`${completionId}list`}
+          role="listbox"
+          // Named by WHICH list it is. "Suggestions" for both would put two
+          // indistinguishable listboxes in the same document the moment two
+          // cards are on screen — the #196 failure, one level down.
+          aria-label={t(
+            popup[0]?.kind === 'mention'
+              ? 'feedView.completion.sessionListLabel'
+              : 'feedView.completion.commandListLabel'
+          )}
           style={{
             position: 'absolute',
             insetBlockEnd: '100%',
@@ -2765,7 +2868,20 @@ function Composer({
               // which list the row came from — a stable hook for tests and e2e,
               // so neither has to find a row by its styling
               data-completion-row={row.kind}
-              ref={i === selected ? selectedRow : undefined}
+              id={`${completionId}opt-${i}`}
+              role="option"
+              // The highlight was `background: var(--chip)` and NOTHING ELSE
+              // until #828 — visual only, so arrowing down the list was silent.
+              // This is the half that makes the move audible; the id above is
+              // the half that makes it findable.
+              //
+              // Written as `false` on the other rows rather than omitted.
+              // ARIA 1.2's default for `aria-selected` on an option IS false,
+              // so omitting it would be legal — but AT support for the default
+              // is patchier than for the attribute, and `CommandPalette` writes
+              // it explicitly for the same reason.
+              aria-selected={i === activeIndex}
+              ref={i === activeIndex ? selectedRow : undefined}
               onMouseDown={(e) => e.preventDefault() /* keep the textarea focused */}
               onClick={() => pick(row)}
               onMouseEnter={() => {
@@ -2779,7 +2895,7 @@ function Composer({
                 padding: '3px 8px',
                 borderRadius: 5,
                 cursor: 'pointer',
-                background: i === selected ? 'var(--chip)' : 'transparent',
+                background: i === activeIndex ? 'var(--chip)' : 'transparent',
               }}
             >
               {row.accent !== undefined && (
@@ -2851,6 +2967,44 @@ function Composer({
       <textarea
         ref={box}
         value={draft}
+        // The SAME string as the placeholder, on purpose. The accessible name
+        // fell through to `placeholder` before this item, which works but is a
+        // browser courtesy rather than an authored name — and naming it
+        // anything shorter would DEMOTE "Enter to send, Shift+Enter for a new
+        // line" from the name to a description, which is a thing many users
+        // have switched off. Same words, said deliberately (review, #828).
+        aria-label={t('feedView.composerPlaceholder')}
+        // ── the completion relations (#828) ────────────────────────────────
+        //
+        // NO `role="combobox"`, and this is the decision in this item.
+        //
+        // The first cut put `role="combobox"` + `aria-expanded` on the textarea
+        // while the popup was open, because `aria-expanded` is not valid on a
+        // textbox. Review killed it on two counts, both right: **ARIA in HTML
+        // permits no `role` on `<textarea>` at all** (its implicit role is
+        // `textbox`; axe-core's `aria-allowed-role` flags exactly this), and
+        // **ARIA says roles SHOULD NOT change over time** — AT caches the role
+        // at focus time and routinely drops a mutation on the focused node. So
+        // the announcement the role was added FOR was the thing least likely to
+        // happen.
+        //
+        // The honest shape, and it turns out to be simpler: ARIA 1.2's
+        // `textbox` role SUPPORTS `aria-activedescendant` and
+        // `aria-autocomplete` natively, and `aria-controls` is global. Three of
+        // the four relations were always valid here. Only `aria-expanded`
+        // needed a role it could not have — so the "a list just opened"
+        // announcement moves to a polite live region below, which is the idiom
+        // `ComposerAttachments` and `FindBar` already use and which works
+        // regardless of role and regardless of AT.
+        {...(popupOpen
+          ? {
+              'aria-controls': `${completionId}list`,
+              'aria-activedescendant': activeOptionId,
+              // The list is a set of suggestions, not the only permitted
+              // values — the box takes free text and always did.
+              'aria-autocomplete': 'list' as const,
+            }
+          : {})}
         onPaste={onPaste}
         onChange={(e) => {
           setDraft(e.target.value);

@@ -37,6 +37,15 @@
 //     fetched from GitHub with no decoration pass to add one to. This file's row
 //     for it is `nor a media player, nor an image-map hot spot`.
 //
+//     THE COMPOSER'S COMPLETION IDS ARE THE SAME CLASS THROUGH A DIFFERENT
+//     DOOR (#828, 2026-09-24), and they live in
+//     `FeedView.completion-a11y.test.tsx` rather than here only because that
+//     file already has the harness for opening a popup. `aria-activedescendant`
+//     is an IDREF and `id` is NOT stripped by the profile the way `data-*` is —
+//     so a reply planting the popup's row id would be what a screen reader
+//     reads as the highlighted completion while Enter inserts the real one.
+//     Closed the `CommandPalette` way: `useId` + the root's per-launch prefix.
+//
 //     THE `<a href>` HALF IS NOT, and it is not a bug to be fixed here: GFM
 //     emits `<a href>` for every link an agent writes, so a link is content's
 //     own and a link is focusable. That is why "#174 — the conversation is one

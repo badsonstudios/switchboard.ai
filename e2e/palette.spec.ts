@@ -56,7 +56,11 @@ test.describe('command palette (E9-02)', () => {
 
     await w.keyboard.press(`${MOD}+Shift+P`);
     await expect(palette(w)).toBeVisible();
-    const rows = w.getByRole('option');
+    // SCOPED to the palette's own rows. Since #828 the composer's completion
+    // popup is a listbox too, so there are two sources of `role="option"` in
+    // this document; an unscoped query is safe only for as long as no test
+    // happens to leave a `/` in a prompt box first.
+    const rows = w.locator('[data-palette-rows]').getByRole('option');
     const count = await rows.count();
     expect(count).toBeGreaterThan(3);
     for (let i = 0; i < count; i++) {
