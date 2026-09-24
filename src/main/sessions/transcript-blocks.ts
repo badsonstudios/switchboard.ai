@@ -73,6 +73,18 @@ export function renderBlock(block: FeedBlock): string {
   if (block.kind === 'todos' && block.todos) {
     return tag + block.todos.map((t) => `- [${t.status}] ${t.content}`).join('\n');
   }
+  // A harness-injected turn, labelled as one (#704). This is the SAME
+  // misattribution the `[subagent]` tag above exists to prevent, and it was
+  // worse: a task notification reached the reading model as `User: ` followed
+  // by raw XML — so a sibling agent handed this window would have read "send a
+  // PushNotification if the user would act on this" as an instruction the human
+  // had typed to it. The summary rather than the payload, because the payload's
+  // remaining content is a task id and a temp-file path on a machine the
+  // recipient cannot read.
+  if (block.kind === 'notice' && block.notice) {
+    const status = block.notice.status ? ` (${block.notice.status})` : '';
+    return `${tag}[background task]${status} ${block.notice.summary}`;
+  }
   const text = block.text ?? '';
   if (!text) return '';
   const label = block.kind === 'user' ? 'User' : block.kind === 'thinking' ? 'Thinking' : 'Claude';

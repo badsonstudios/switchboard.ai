@@ -416,6 +416,37 @@ up when there's an actual clash.
 Set the detail level to **quiet** if you'd rather not see helper chatter at
 all — it hides their work along with the captions.
 
+## When a background job reports back
+
+Claude can start work that carries on in the background — watching a build,
+running a long command, keeping an eye on something. When that work produces a
+result or finishes, Claude Code has to hand it back, and the way it does that
+looks, underneath, exactly like somebody typing a message.
+
+You'll see those as their own compact row:
+
+> ▸ **Background task**  Monitor event: "CI on PR 53"  · event
+
+Click it to see everything the job actually reported — the full text, the job's
+id, and the file its output was written to.
+
+The row also carries a word on the right saying how it went: **completed**,
+**failed**, **stopped**, or **event** when the job is reporting something that
+happened rather than ending. **failed** and **killed** are shown in red.
+
+**Why this has its own row.** These are not messages from you, and until now
+they looked like they were: each one arrived under a **New prompt** line, in
+the tinted box your own prompts use, showing the raw code the job sent. That
+made a long session hard to read back — the turn markers you scan for were
+landing on things you never said.
+
+Two things follow from that:
+
+- **quiet** hides these, the same way it hides tool activity. They're a record
+  of something the session did, not part of the conversation.
+- `Ctrl+F` still finds them, including the part of the text the row keeps
+  folded away.
+
 ## Tokens and cost
 
 Along the right-hand end of the card header, beside the branch name, a session

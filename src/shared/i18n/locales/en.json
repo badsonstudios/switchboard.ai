@@ -655,6 +655,17 @@
     "jump": "Open Terminal"
   },
   "feedView": {
+    "notice": {
+      "backgroundTask": "Background task",
+      "status": {
+        "completed": "completed",
+        "failed": "failed",
+        "stopped": "stopped",
+        "killed": "killed",
+        "paused": "paused",
+        "event": "event"
+      }
+    },
     "thinking": "thinking…",
     "thoughtFor": "Thought for {s}s",
     "editStats": "+{added} / -{removed} lines",
@@ -1040,8 +1051,8 @@
     "earlier": "earlier than the loaded view",
     "earlierTitle": "This match is further back in the session than the part currently loaded, so there is nothing on screen to scroll to. The snippet is all of it we can show.",
     "cannotJumpTitle": "This match can't be scrolled to — the snippet is all of it we can show.",
-    "hitMeta": "{kind, select, user {your prompt} assistant {reply} thinking {thinking} tool {tool} todos {plan} other {block}} · {time}",
-    "hitMetaNoTime": "{kind, select, user {your prompt} assistant {reply} thinking {thinking} tool {tool} todos {plan} other {block}}",
+    "hitMeta": "{kind, select, user {your prompt} assistant {reply} thinking {thinking} tool {tool} todos {plan} notice {background task} other {block}} · {time}",
+    "hitMetaNoTime": "{kind, select, user {your prompt} assistant {reply} thinking {thinking} tool {tool} todos {plan} notice {background task} other {block}}",
     "hitMetaTerminal": "terminal · line {line}",
     "unavailable": {
       "noProvider": "Find doesn't work on the {view} tab yet.",

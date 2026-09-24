@@ -433,6 +433,131 @@ function TodosBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
   );
 }
 
+/**
+ * A turn the harness injected, as a row rather than as a prompt (#704).
+ *
+ * WHAT IT REPLACES. A background task that emits an event or ends makes the CLI
+ * write a turn into the conversation to re-invoke the model. It arrives with
+ * `role: user`, so the feed gave it the full prompt treatment: a NEW PROMPT
+ * divider — louder since #640 — over a pill of raw XML that the person reading
+ * had never typed. Every block here is the same furniture the tool rows already
+ * use, deliberately: this is an event the session had, and it should read as one.
+ *
+ * THE COLLAPSED ROW IS THE SUMMARY AND NOTHING ELSE. The payload also carries
+ * the harness's instruction to the model ("If this event is something the user
+ * would act on now, send a PushNotification…"), and that sentence in the row
+ * would read as the app telling its user what to do. It is in the expansion,
+ * with the task id and the output-file path — which is also what keeps the
+ * summary checkable rather than a claim.
+ */
+function NoticeBlock({ b }: { b: FeedBlockDto }): React.JSX.Element {
+  const { t } = useTranslation();
+  const [expanded, setExpanded] = React.useState(false);
+  // find jumped here — the payload unfolds (§5.31). The summary is a fifth of
+  // what the block holds, and the task id someone searched for is in the rest.
+  const revealed = useRevealed(b.seq);
+  const open = expanded || revealed;
+  const rawId = React.useId();
+  const toggle = (): void => setExpanded(!open);
+  const notice = b.notice;
+  // `completed` and `failed` are the CLI's own words and are translated; an
+  // `<event>` payload has no such word, so `injected.ts` hands over `event`.
+  // ANYTHING ELSE IS SHOWN VERBATIM rather than dropped — a status the CLI grows
+  // tomorrow is still the truest thing we have to put in the chip, and hiding it
+  // because we had no translation for it would be losing the one field that says
+  // whether the thing worked.
+  const statusKey = `feedView.notice.status.${notice?.status ?? ''}`;
+  const status = notice?.status
+    ? t(statusKey, { defaultValue: notice.status })
+    : undefined;
+  // `killed` and `stopped` are the CLI's other two ENDED-BADLY words (its own
+  // enums are `["completed","failed","stopped"]` and `["pending","running",
+  // "completed","failed","killed","paused"]`). A task the user killed is not a
+  // failure, but neither is it the quiet "it finished" the faint ink promises —
+  // both are things that did not run to the end, and the row is the only place
+  // that is ever said.
+  const wrong = notice?.status === 'failed' || notice?.status === 'killed';
+  return (
+    <ToolBox kind="notice" onToggle={toggle}>
+      <div style={{ fontSize: 11 }}>
+        <FeedExpander
+          open={open}
+          onToggle={toggle}
+          controls={open ? rawId : undefined}
+          style={{ display: 'flex', gap: 6, alignItems: 'baseline', inlineSize: '100%' }}
+        >
+          <span style={{ fontSize: 8, color: 'var(--faint)', flexShrink: 0 }}>
+            {open ? t('feedView.expandedIcon') : t('feedView.collapsedIcon')}
+          </span>
+          {/* The kind of thing this is, said in words. The row is otherwise a
+              sentence from a background process, and without this the reader
+              has no way to tell it from the session's own prose. */}
+          <span style={{ fontWeight: 700, color: 'var(--text)', flexShrink: 0 }}>
+            {t('feedView.notice.backgroundTask')}
+          </span>
+          <span
+            style={{
+              color: 'var(--muted)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              minInlineSize: 0,
+            }}
+          >
+            {notice?.summary}
+          </span>
+          {status && (
+            // -ink on the failure arm for the same reason every other status
+            // word in the feed uses it (#246): this is 9.5px text on the tool
+            // box's --panel2, where the raw hue does not carry in daylight.
+            <span
+              data-notice-status={notice?.status}
+              style={{
+                fontSize: 9.5,
+                fontFamily: 'var(--font-ui)',
+                color: wrong ? 'var(--status-crashed-ink)' : 'var(--faint)',
+                // ELLIPSISED, not `flexShrink: 0`. A status is whatever word
+                // the CLI wrote, capped at the summary budget rather than at a
+                // chip's width — an unshrinkable one would push the summary it
+                // is annotating off the row.
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                minInlineSize: 0,
+                maxInlineSize: '8em',
+              }}
+            >
+              {status}
+            </span>
+          )}
+        </FeedExpander>
+        {open && (
+          <pre
+            id={rawId}
+            {...NO_TOGGLE}
+            style={{
+              margin: '2px 0 4px 14px',
+              padding: 6,
+              background: 'var(--panel)',
+              border: '1px solid var(--border)',
+              borderRadius: 4,
+              fontSize: 10,
+              fontFamily: 'var(--font-mono)',
+              color: 'var(--muted)',
+              maxBlockSize: 240,
+              overflow: 'auto',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-all',
+            }}
+          >
+            {notice?.raw}
+          </pre>
+        )}
+      </div>
+    </ToolBox>
+  );
+}
+
 function ToolRow({ b }: { b: FeedBlockDto }): React.JSX.Element {
   const [expanded, setExpanded] = React.useState(false);
   // find jumped here — the detail unfolds (§5.31). See lib/feed-reveal.
@@ -806,6 +931,16 @@ export const feedBlockRenderers: FeedBlockRendererContribution[] = [
     order: 50,
     matches: (b) => b.kind === 'thinking',
     render: (b) => <ThinkingRow b={b} />,
+  },
+  {
+    // BEFORE the user pill, and the order is documentation rather than
+    // mechanism: the kinds are disjoint, so nothing depends on it — but this
+    // block used to BE a user pill, and a reader chasing that bug should meet
+    // the two renderers next to each other (#704).
+    manifest: manifest('feed-block-notice', 'Harness notification row'),
+    order: 55,
+    matches: (b) => b.kind === 'notice',
+    render: (b) => <NoticeBlock b={b} />,
   },
   {
     manifest: manifest('feed-block-user', 'User prompt pill'),

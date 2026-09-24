@@ -18,6 +18,7 @@
 // numbers, the block cap, tool-result stitching — is `FeedBuffer`'s job.
 import { asDisplayString } from '../../shared/display-string';
 import { ToolCategory, toolCategory } from '../../shared/tool-taxonomy';
+import { classifyInjected, describeInjectedTurn } from './injected';
 
 /**
  * What rode along with a prompt (#491, P2-E10-09/10).
@@ -50,7 +51,7 @@ export interface FeedAttachments {
  */
 export interface FeedBlock {
   seq: number;
-  kind: 'user' | 'assistant' | 'thinking' | 'tool' | 'todos';
+  kind: 'user' | 'assistant' | 'thinking' | 'tool' | 'todos' | 'notice';
   /** user/assistant/thinking prose */
   text?: string;
   tool?: {
@@ -71,6 +72,29 @@ export interface FeedBlock {
   };
   /** TodoWrite checklist (E10-06) */
   todos?: Array<{ content: string; status: string }>;
+  /**
+   * `notice`: a turn the HARNESS injected, summarised (#704). See `injected.ts`
+   * for how one is recognised and why `origin` rather than the text decides it.
+   *
+   * `raw` is the whole payload and is never omitted — the collapsed row shows a
+   * summary, and a summary the user cannot check against the thing it summarises
+   * is a claim rather than a report. It is what the expander shows, and it is
+   * where the harness's own instruction to the model ("send a PushNotification
+   * if…") stays: that sentence is the CLI talking to Claude, and putting it in
+   * the one-line row would read as something the user was being told.
+   */
+  notice?: {
+    /** which injected wrapper this was — the renderer dispatches on this */
+    source: 'task-notification';
+    /** the `<summary>` line, or the first useful line when there was none */
+    summary: string;
+    /** `completed` / `failed` from `<status>`, or `event` for an `<event>` */
+    status?: string;
+    /** the payload, verbatim and capped like any other prose */
+    raw: string;
+    taskId?: string;
+    outputFile?: string;
+  };
   /**
    * user: the attachments this prompt carried, when it carried any (#491).
    *
@@ -414,7 +438,7 @@ export function deriveIntents(
   const message = entry.message as { content?: unknown; role?: string; id?: unknown } | undefined;
   if (!message) return [];
 
-  if (entry.type === 'user') return userIntents(message, ts, caps);
+  if (entry.type === 'user') return userIntents(entry, message, ts, caps);
   if (entry.type === 'assistant' && Array.isArray(message.content)) {
     // The API message's own id, and the reason it is read HERE rather than by
     // either caller: it is the one field a prose block can be identified by
@@ -464,7 +488,48 @@ function countAttachments(
   return images > 0 || documents > 0 ? { images, documents } : undefined;
 }
 
+/**
+ * A user-role turn the harness wrote, as a block (#704).
+ *
+ * `null` when this text is a person speaking, which is the overwhelmingly
+ * common answer and the safe one: the decision lives in `injected.ts`, with the
+ * measurements behind it.
+ *
+ * NO `text` FIELD, deliberately. The payload rides on `notice.raw` instead, and
+ * the difference is not cosmetic — `text` is what every prose reader in the app
+ * treats as words a person or the model produced (`search.ts` collects it,
+ * `transcript-blocks.ts` labels it, the markdown fallback renderer would set it
+ * as HTML). Leaving the XML in `text` would keep it classified as prose
+ * everywhere except the one renderer that was taught otherwise, which is the
+ * shape of the bug rather than the fix. Each of those readers is given a
+ * `notice` branch instead.
+ */
+function noticeIntent(
+  entry: Record<string, unknown>,
+  text: string,
+  ts: string | undefined,
+  caps: DerivationCaps,
+  index?: number
+): EmitIntent | null {
+  const source = classifyInjected(entry, text);
+  if (source === null) return null;
+  const payload = text.trim();
+  return {
+    t: 'block',
+    block: {
+      kind: 'notice',
+      notice: {
+        ...describeInjectedTurn(source, payload, caps.summary),
+        raw: payload.slice(0, caps.text),
+      },
+      ts,
+    },
+    ...(index === undefined ? {} : { index }),
+  };
+}
+
 function userIntents(
+  entry: Record<string, unknown>,
   message: { content?: unknown },
   ts: string | undefined,
   caps: DerivationCaps
@@ -478,6 +543,14 @@ function userIntents(
   // above, with the wrapper stripped.
   if (typeof message.content === 'string' && message.content.trim()) {
     if (isPlumbing(message.content)) return out;
+    // A harness-injected turn is not a prompt (#704). Tested BEFORE the prompt
+    // block is built, and after `isPlumbing`, which keeps the three injected
+    // shapes in one order: `isMeta` (dropped whole, in `deriveIntents`),
+    // `<local-command-*>` (dropped here), then this one — which is SHOWN,
+    // because unlike the other two it is content the user wants, wearing the
+    // wrong clothes.
+    const notice = noticeIntent(entry, message.content, ts, caps);
+    if (notice) return [notice];
     out.push({ t: 'block', block: { kind: 'user', text: message.content.slice(0, caps.text), ts } });
     return out;
   }
@@ -497,6 +570,21 @@ function userIntents(
   let marked = false;
   for (const [index, c] of items.entries()) {
     if (c?.type === 'text' && c.text?.trim() && !isPlumbing(c.text)) {
+      // The same test the string branch makes, because the same turn can arrive
+      // either way: the transcript writes these as a plain string (9 of 9 in the
+      // real fixture) and the stream's user messages carry text ITEMS. One rule,
+      // both shapes — the alternative is a notification that renders correctly
+      // on one transport and as raw XML on the other, which is precisely what
+      // "both sources, one renderer" exists to prevent.
+      //
+      // It does NOT take the attachment mark. A harness turn did not attach
+      // anything; if a message somehow carried both, the pictures stay with the
+      // fallback block below rather than being claimed by the notification.
+      const notice = noticeIntent(entry, c.text, ts, caps, index);
+      if (notice) {
+        out.push(notice);
+        continue;
+      }
       const mark = attachments !== undefined && !marked ? { attachments } : {};
       marked = true;
       out.push({

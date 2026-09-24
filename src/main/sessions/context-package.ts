@@ -364,6 +364,13 @@ function filesTouched(entries: readonly Record<string, unknown>[]): Map<string, 
  */
 function derivationCut(block: FeedBlock): boolean {
   if ((block.text?.length ?? 0) >= PACKAGE_CAPS.text) return true;
+  // `notice.summary` (#704) — the SUMMARY, not `notice.raw`, and review caught
+  // the first version getting this exactly backwards. `renderBlock` draws a
+  // notification as its summary line; `raw` is never printed. Flagging on `raw`
+  // would repeat the `tool.detail` mistake this function's own rule above was
+  // written about: a monitor emitting a long `<event>` body would report the
+  // whole section truncated over text no reader ever sees.
+  if ((block.notice?.summary.length ?? 0) >= PACKAGE_CAPS.summary) return true;
   if ((block.todos?.length ?? 0) >= PACKAGE_CAPS.todos) return true;
   const tool = block.tool;
   if (!tool) return false;

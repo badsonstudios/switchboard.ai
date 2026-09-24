@@ -737,6 +737,11 @@ async function scanOne(
         // would report one match several times.
         collect(anchor, 'tool.input', toolInputText(b.tool.detail));
       }
+      // `notice.raw` and nothing else (#704) — the same rule `tool.input`
+      // follows above. The summary, status, task id and output file are all
+      // PARSED OUT of this string, so collecting them separately would report
+      // one match two or three times over.
+      if (b.notice) collect(anchor, 'notice', b.notice.raw);
       if (b.todos?.length) {
         // NEWLINE-separated, and that is the prefilter's rule showing through
         // rather than a formatting choice: the fast path is only sound because
