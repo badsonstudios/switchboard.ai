@@ -3,6 +3,103 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ MERGED — 2026-09-24: **#704** a background task's report is a row, not a prompt you never typed
+>
+> PR #939 squashed to `083a5e5`; all four CI jobs green. Issue closed. Plan was
+> posted to the issue before implementation. **NOT RELEASED** — FIVE items now
+> sit on `main` with nothing installable (#886, #903, #856, #828, #704).
+> CHANGELOG entry filed under `0.8.100 — unreleased`. Dogfood row added as
+> UNTESTED, six steps.
+>
+> **Next up:** still **P2-E21-02**, which is the owner's and not a coding item —
+> install v0.8.99 on the laptop, Diagnostics ▸ detailed capture ON, a normal day
+> at 3+ sessions, send the file. **Nothing in the queue is blocked on us.** Every
+> one of the small user-facing items the owner named is now done (#903, #856,
+> #828, #704). Pick the next Phase 2 item on merit.
+>
+> ---
+>
+> **THE FEED CLASSIFIED BY ROLE, AND THE HARNESS WRITES IN THE USER'S VOICE.**
+> When a background job reports back, the CLI re-invokes the model by writing a
+> turn into the conversation as `role: user`. So each one arrived with the full
+> prompt treatment — a NEW PROMPT divider (louder since #640), the tinted pill,
+> and raw `<task-notification>` XML shown as a sentence somebody wrote. The turn
+> markers the owner scans a long session by were landing on things nobody said.
+>
+> ---
+>
+> **THE ISSUE PROPOSED A TEXT SNIFF; THE FIXTURE HAD A BETTER SIGNAL AND IT IS
+> THE CLI'S OWN.** The real transcript carries a top-level
+> `origin: {kind:'task-notification'}`. Measured rather than assumed: **9 lines
+> carry it, all 9 are `type: user`, all 9 also open with the tag, and NO user
+> line opens with the tag without it**; the other 27 origins in the file are
+> `human`. We already SEND `origin:{kind:'human'}` ourselves, and
+> `StreamFeed.onMessage` spreads the whole envelope into `deriveIntents` — so the
+> field is readable on both transports with no new plumbing. Origin decides; the
+> text is the fallback. That protects more than the issue asked for: a bug report
+> that OPENS with a pasted payload — which is how #704 itself was filed — keeps
+> its prompt.
+>
+> ---
+>
+> **REVIEW NARROWED IT AGAINST THE BINARY, AND THE FIXTURE COULD NEVER HAVE.**
+> The CLI's zod schema gives that origin arm an optional `subkind`, and two of
+> its three values are not background tasks at all: `scheduled-trigger` is a
+> routine's fired prompt — the session's actual instruction — and
+> `peer-send-message` is another of the owner's own sessions talking, which is
+> §5.4's subject matter. Either one collapsed into a "Background task" row would
+> be a confident mislabel. **All 9 fixture lines carry no subkind**, so no amount
+> of measuring the transcript could have found this; only reading the schema did.
+> An unqualified origin is taken at face value, a qualified one falls through to
+> the text test.
+>
+> **THE VETO LIST INVERTED IN THE SAME PASS.** It was "every origin the CLI is
+> known to stamp, minus the injected ones" — built by grepping constructed
+> literals out of the binary, so it was both incomplete AND padded with arms of
+> other unions, and it read `unclassified` as a person when the schema says in as
+> many words: *"Injected turn whose ingress classification found no provenance …
+> never presumed human."* Now only `human` vetoes — the one arm the schema says a
+> host must stamp explicitly, and the one we stamp ourselves.
+>
+> ---
+>
+> **THE PAYLOAD MOVED OFF `text` ONTO `notice.raw`, AND THAT IS THE FIX RATHER
+> THAN A DETAIL.** `text` is what every prose reader in the app treats as words a
+> person or the model produced. Leaving the XML there would have left it
+> classified as prose everywhere except the one renderer that was taught
+> otherwise — the shape of the bug, not the fix. Each reader got a `notice` branch
+> instead: `search.ts` collects `notice.raw` (one field, like `tool.input`, since
+> everything else is parsed out of it), `transcript-blocks.ts` labels it
+> `[background task]` instead of `User:`, and the find bar's hit rows name it
+> rather than calling it "block".
+>
+> **TWO BONUS FIXES FALL OUT OF THE KIND CHANGE ALONE.** `promptText` and the
+> history picker both gate on `kind === 'user'`, so a task notification can no
+> longer be offered as a session's GOAL in a context package handed to another
+> agent, nor as a conversation's description in the history list.
+>
+> ---
+>
+> **ONE BLOCK IN, ONE BLOCK OUT.** `SESSION_TRANSCRIPT_FACTS.blocks` is the same
+> **1579** — which is what keeps the search engine's ordinals in step with the
+> Feed's `seq`, so a change that moved the total would be a defect. `notices: 9`
+> is asserted beside it, and the pair is the assertion rather than the 9 alone.
+>
+> **A TEST THE SUITE CAUGHT US WITH, working exactly as designed.**
+> `context-package.test.ts` derives the import graph of the context package's
+> default path and asserts the scanned-module list matches it, so a NEW module
+> there fails rather than quietly going unscanned. `injected.ts` was that module.
+> Its sibling scan then rejected a `RegExp.exec(` in the tag reader — a false
+> positive for "nothing down here can run a program", answered by spelling it
+> `String.match` rather than by loosening a rule worth keeping.
+>
+> **ONE FLAKE, AGAIN, NOT OURS.** `git-service.test.ts`'s "SPENDS THE SAME
+> BUDGET" wall-clock assertion reddened on all three local full runs and was
+> green in isolation twice (74/74). On the first full run a SECOND test in the
+> same file went red beside it, green everywhere after — so it is the file under
+> load, not that one assertion. Third sighting logged on #835 with that new
+> detail. CI was green on all four jobs.
+
 > # ✅ MERGED — 2026-09-24: **#828** the composer's completion popup is a listbox a screen reader can read
 >
 > PR #937 squashed to `2a579af`; all four CI jobs green. Issue closed. Plan was
