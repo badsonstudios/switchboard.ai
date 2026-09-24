@@ -3,6 +3,102 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ MERGED — 2026-09-24: **#856** a token pasted into the report dialog switches update checks back on
+>
+> PR #935 squashed to `1276884`; all four CI jobs green. Issue closed. Plan was
+> posted to the issue before implementation. **NOT RELEASED** — the version bump
+> is manual, so #886, #903 and now #856 all sit on `main` with nothing
+> installable. CHANGELOG entry filed under `0.8.100 — unreleased`. Dogfood row
+> added as UNTESTED, seven steps.
+>
+> **Next up:** still **P2-E21-02**, which is the owner's and not a coding item —
+> install v0.8.99 on the laptop, Diagnostics ▸ detailed capture ON, a normal day
+> at 3+ sessions, send the file. **Nothing in the queue is blocked on us.** Of
+> the three small user-facing items the owner named, **#828** and **#704**
+> remain.
+>
+> ---
+>
+> **THE BUG WAS THREE CONSUMERS AND ONE OF THEM COULD SEE THE STORE.** #815
+> filled `update/token.ts`'s credential-store slot and wired it into the report
+> dialog. `UpdateService` (via `checker.ts`) and `UpdateInstaller` went on
+> resolving `DEFAULT_TOKEN_SOURCES`, whose credential-store entry was the
+> documented no-op. So on a machine without `gh`: paste a token into Help ▸
+> Report a problem…, file an issue with it successfully, and update checks stay
+> silently disabled. One token, two subsystems, opposite answers.
+>
+> **THE ISSUE'S SCOPE WAS ONE LINE SHORT.** It names the check; `install.ts:208`
+> resolves a token for the DOWNLOAD and had the same bug one step later. Wiring
+> only the check would offer a release to a machine whose only credential is a
+> pasted token and then fail to fetch it — worse than the honest "no
+> credentials" it replaced, because it puts a dialog on screen first. Both
+> halves are wired.
+>
+> **THE ISSUE'S "pass it at construction, `secretStore` is already in scope" WAS
+> NOT TRUE YET.** The store was built at `index.ts:1917`; the update block runs
+> at 1477/1524 — 440 lines earlier. The store is **hoisted above both
+> consumers** rather than reached through a lazy thunk: its constructor does no
+> I/O (`secrets.json` opens on the first `get`), and a thunk would have made
+> `tokenSources` an array in `checker.ts`/`install.ts` and a function in
+> `service.ts` — a fourth spelling of the idea whose multiplication caused this.
+>
+> **ONE STORE INSTANCE IS LOAD-BEARING, NOT TIDINESS.** `SecretStore.get()`
+> caches a MISS for the life of the object and only `set()` on that same object
+> repairs it. A second store built for the update side would go on reading the
+> miss it had already cached — and #856 would survive its own fix in a shape
+> much harder to see, with every unit test still green. A textual test pins the
+> single assignment for exactly that reason.
+>
+> **THE NO-OP IS DELETED**; `DEFAULT_TOKEN_SOURCES` is `gh` alone. A default
+> chain that *looked* like it consulted the store and structurally could not is
+> worse than a visibly short one.
+>
+> ---
+>
+> **REVIEW: no blocker, and the best finding was that the fix was about to add a
+> SECOND spelling of the chain rather than remove one.** `report-ipc.ts` already
+> had `[credentialStoreTokenFrom(secrets), ghCliToken]` as an array literal and
+> `index.ts` was about to gain its own copy — while `token.ts`'s new comment
+> argued that the absence of a third spelling is what stops a future call site
+> getting the no-op again. The order now lives in `tokenSourcesFor(secrets)`,
+> next to the comment that explains it, and both call sites ask for it.
+>
+> **A COMMENT THAT NAMED A MECHANISM THAT DOES NOT EXIST.** The `skipToken`
+> note claimed spread order made the flag win over an injected chain. The two
+> spreads write **disjoint keys** — order is irrelevant. The real guard is
+> `checker.ts`'s `if (!deps.skipToken)`, which returns before
+> `resolveUpdateToken` is called at all. The test asserting it was a tautology
+> too (it passed with the chain removed entirely). Fixed at the source:
+> `checker.test.ts` now asserts the sources are never even **CONSULTED** under
+> `skipToken`, which is what the whole e2e suite's "no test touches a real
+> keyring on this machine" actually rests on.
+>
+> **THE INSTALLER'S `skipToken` NOW READS ANY OVERRIDE, NOT JUST A URL ONE.**
+> With `SWITCHBOARD_UPDATE_FEED=off` — every e2e spec but `update.spec.ts` —
+> `feedUrlOverride` is undefined, so the installer was *configured* to resolve
+> the real chain, which since this item reaches the real keyring. Unreachable
+> today (`update:install` needs an offer and `off` never produces one), but that
+> made "no test touches a real credential" rest on a guard in a different file.
+> One word makes the property local.
+>
+> **THE TEXTUAL WIRING TEST'S SLICE COULD HAVE PASSED FALSELY.**
+> `slice(start, indexOf(…))` returns everything to EOF when the needle is
+> missing, because `indexOf` answers `-1` and `slice(start, -1)` is not an
+> error — so a re-indent of the bootstrap would have let the `UpdateInstaller`
+> case pass on `UpdateService`'s text fifty lines below. Now guarded.
+>
+> **`wiring.test.ts` EXISTS BECAUSE #856 WAS NEVER A BUG IN A MODULE.** Every
+> module behaved exactly as written; `index.ts` did not pass the argument, and
+> `index.ts` cannot be imported under vitest (`app.enableSandbox()` at module
+> scope). Same trick and same reason as `single-instance.test.ts`. Both
+> mutations verified: dropping either `tokenSources:` reddens it.
+>
+> **One flake seen and recorded, not ours:** `git-service.test.ts`'s
+> "THE GUARD SPENDS THE SAME BUDGET" wall-clock assertion reddened once under
+> full-suite load (3038ms vs a 2600ms budget), green in isolation immediately
+> after and green on the next full run. Logged as a second sighting on **#835**,
+> which is the same file and the same shape.
+
 > # ✅ MERGED — 2026-09-24: **#903** Clear and Compact buttons on the composer's options row
 >
 > PR #933 squashed to `560b11b`; all four CI jobs green. Issue closed. Plan was
