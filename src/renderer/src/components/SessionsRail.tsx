@@ -64,7 +64,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { RailGroup, RailSession } from '../model/types';
 import { railOrder } from '../lib/groups';
-import { canStep, LOOSE_BUCKET, ManualOrder, planReorder } from '../lib/rail-order';
+import { bucketLabel, canStep, LOOSE_BUCKET, ManualOrder, planReorder } from '../lib/rail-order';
 import {
   presentStatus,
   needCount,
@@ -774,16 +774,11 @@ export function SessionsRail(props: {
     return clientY < box.top + box.height / 2 ? 'before' : 'after';
   };
 
-  /** what to call this bucket in a sentence a screen reader will read */
-  const bucketName = (bucket: string): string => {
-    const g = props.groups.find((x) => x.id === bucket);
-    if (g) return g.name;
-    if (bucket.startsWith('auto:'))
-      // the same trim the auto-group's own header does, so the words in the
-      // announcement are the words on the card
-      return bucket.slice(5).replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? bucket;
-    return t('rail.ungrouped');
-  };
+  /** what to call this bucket in a sentence a screen reader will read.
+   *  The rules moved to `lib/rail-order` when #581 gave the reorder CHORD a voice
+   *  of its own — see `bucketLabel` for why two copies could not stay. */
+  const bucketName = (bucket: string): string =>
+    bucketLabel(bucket, props.groups, t('rail.ungrouped'));
 
   /** Move one row a step, from the keyboard (§5.32) — the SAME write the drop
    *  makes, and the same rule deciding whether it may happen at all. */

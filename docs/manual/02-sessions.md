@@ -290,7 +290,9 @@ you put it.
   focused) and choose **Move up** or **Move down**, under *Order in this group*.
   Or press **`Ctrl+Alt+↑`** / **`Ctrl+Alt+↓`** while you're in the session —
   the same two commands are in the command palette as *Move session up/down in
-  its group*.
+  its group*. Either way, the new position is
+  [read out](06-keyboard.md#shortcuts-that-move-things-say-what-they-did) —
+  *"trading-app is now 2 of 5 in Backend"*.
 
 The order is saved with your workspace, so it's still there next time you open
 switchboard. It's also what `Ctrl+1`…`Ctrl+9` counts against, so arranging the

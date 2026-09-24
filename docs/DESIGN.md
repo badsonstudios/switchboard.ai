@@ -2957,6 +2957,83 @@ a pointer where they left.)*
   > then. Destinations the drop refuses (auto-groups, whose membership is
   > computed) are absent from the menu for the same reason they refuse drops:
   > an offer that does nothing wastes more time than a missing one.
+  >
+  > **A sixth rule, added by #581 (2026-09-24): *a chord that rearranges the
+  > window says what it did, through the app's own live region.*** Rule (b) above
+  > was read for three items as a rule about MENU equivalents, and on that
+  > reading it was discharged: the rail owns a region and announces a menu-driven
+  > move from it. The three CHORDS that do the same work — `Mod+Alt+P` (§5.8's
+  > pin), `Mod+Shift+Arrow` (the presentation ladder) and `Mod+Alt+Arrow`
+  > (#559's rail order) — were left deliberately silent, and `lib/command-set`
+  > wrote down both the reasoning and the escape clause: *"a chord is not the
+  > accessible path, it is the fast one … if that ever changes, it should change
+  > for all three at once."*
+  >
+  > The reasoning was wrong in one word. A chord is **somebody's** accessible
+  > path — the only one that does not cost a menu walk — and a gesture whose
+  > entire confirmation is visual is not a fast path for that person, it is no
+  > path. So rule (b) now binds every equivalent, not only the menu, and four
+  > things came out of applying it to all three at once:
+  >
+  > 1. **The region belongs to the APP, not to a surface.** Every region before
+  >    this one wrapped content some panel owned; a window-scoped command acts on
+  >    the active card from wherever the keyboard happens to be, so it has no
+  >    surface to speak from. `lib/live-region` is a per-window announcer and
+  >    `components/LiveRegion` is its DOM — mounted once at the app root and the
+  >    place any future surface-less gesture goes.
+  > 2. **TWO regions, alternating.** A live region announces on MUTATION, so the
+  >    same sentence written twice into one region is read once — and the same
+  >    sentence twice is the *normal* case at the end of a list. Each
+  >    announcement goes into whichever region is empty and clears the other.
+  > 3. **Say the OUTCOME the command reached, never the one the key asked for.**
+  >    Two of the three families write synchronously and can be read back at once;
+  >    the ladder is a round trip that can be refused mid-flight (`laddering`) or
+  >    land elsewhere (`toTabbed`), so it waits. A region that lies is worse than a
+  >    silent one, and a *predicted* rung is a lie.
+  >
+  >    **It waits on the COMMAND'S PROMISE, not on the store, and review had to
+  >    correct that.** The first implementation subscribed to `sessionStore` and
+  >    announced when the rung changed — #253's `pendingMove` pattern, which is
+  >    right for a move whose only failure is "it never happened". A ladder step
+  >    has a second failure: it can END without writing a rung at all, and then the
+  >    listener stays armed and attributes the *next* rung change — the strip row,
+  >    the card header, an E9-07 layout sweep moving a dozen cards — to a keypress
+  >    minutes earlier. **A wait needs a definite end, and "the transition
+  >    finished" is one while "the value changed" is not.** `stepCardLadder` is
+  >    therefore awaitable where `setCardLadder` beside it stays fire-and-forget.
+  > 4. **A refusal is announced too, and this is where a chord differs from a
+  >    menu.** The menu can dim an unavailable step and let a screen reader read
+  >    it as unavailable; a chord has no such affordance, so silence at the top
+  >    of a list is indistinguishable from a binding that has stopped working.
+  >    Each family answers a no-op with where the session still is, in the same
+  >    sentence shape as a success.
+  >
+  > The words themselves live in `lib/session-voice` and the reorder sentence is
+  > the rail's own `rail.reordered` — rule (a)'s "never a parallel path that can
+  > drift" applies to what is said as much as to what is written, which is also
+  > why `bucketLabel` moved out of the rail into `lib/rail-order`.
+  >
+  > **Two things the sixth rule deliberately does NOT extend to, written down so
+  > the next reader does not have to re-derive them:**
+  >
+  > - **Rule (c), focus restore, is discharged by construction here rather than by
+  >   code.** (c) exists because a group MOVE re-parents the row into another
+  >   card's body, detaching the node focus was on. None of these three chords does
+  >   that: a reorder and a pin both re-sort a bucket's rows *inside the same
+  >   container*, so React moves keyed nodes and focus survives — the #559 menu
+  >   comment relies on exactly this ("a reorder keeps the same keyed row … the
+  >   button the menu was opened from is still mounted"). The ladder does remove a
+  >   panel, and focus inside that card goes to `<body>`; that is §5.8's existing
+  >   behaviour on every ladder path (header button, palette, layout mode), not
+  >   something a chord introduced, and the reveal triggers are the way back.
+  > - **A chord that is UNAVAILABLE is still silent, and that is a separate
+  >   question.** `lib/commands` drops a matched binding whose command is disabled,
+  >   so `Mod+Alt+P` with no active card produces nothing — which is the same
+  >   "silence reads as a dead binding" problem stated above. It is not fixed here
+  >   because the fix is not about these three: every command in the registry
+  >   carries a `disabledReasonKey`, and giving that branch a voice would make
+  >   *every* disabled chord in the app speak. That is a decision about the
+  >   dispatcher, and it is filed rather than smuggled in.
 
 ### 5.33 Session history — opening a past conversation
 

@@ -235,6 +235,41 @@ in it — "Slash commands, 12 available" — and then reads out each row as ↑ 
 move through it. Your cursor never leaves the prompt box, so you can keep
 typing to narrow the list down while it's open.
 
+## Shortcuts that move things say what they did
+
+Three shortcuts rearrange the window rather than taking you somewhere, and all
+three are confirmed only by what you can see: the row hops, the card folds away,
+a pin appears. Each one is now read out as well, so you don't have to look to
+know it worked.
+
+| What you press | What you hear |
+|---|---|
+| `Ctrl+Alt+P` | *"trading-app pinned"*, or *"trading-app unpinned"* |
+| `Ctrl+Shift+↓` / `Ctrl+Shift+↑` | how much of it is showing now — *"trading-app collapsed to the strip"*, *"…stacked with the tabbed sessions"*, *"…expanded"*, *"…hidden"* |
+| `Ctrl+Alt+↑` / `Ctrl+Alt+↓` | where the session sits in its group — *"trading-app is now 2 of 5 in Backend"* |
+
+Three things about these that are deliberate:
+
+- **You hear where it ended up, not what you asked for.** Press `Ctrl+Shift+↑`
+  and you're told the size the session actually reached. If something else moved
+  it in the same instant, what you hear is where it really is.
+- **A shortcut that couldn't do anything says so.** At the top of a group,
+  `Ctrl+Alt+↑` answers *"trading-app is still 1 of 5 in Backend"*; on a session
+  already at full size, `Ctrl+Shift+↑` answers *"trading-app is already
+  expanded"*. Silence would be indistinguishable from a shortcut that has stopped
+  working, which is the one thing worse than a shortcut that does nothing.
+- **These act on the session you're in, so a session that has left the
+  workspace is out of their reach.** Once `Ctrl+Shift+↓` has collapsed a session
+  to a strip row, it isn't the session you're in any more and the shortcuts stop
+  applying to it — nothing is announced because nothing was asked. Bring it back
+  by clicking its row in the strip, its row in the Sessions list, or
+  `Ctrl+1`…`Ctrl+9`, and the shortcuts reach it again. That isn't new; it's
+  [how the ladder has always worked](#working-with-the-focused-session).
+
+Using these from a **popped-out session window** is the exception: the shortcut
+is handed back to the main window and acts there, so the announcement happens in
+the main window too.
+
 ## Working the rest of the window with the keyboard
 
 Everything outside the conversation works from the keyboard too — the Sessions

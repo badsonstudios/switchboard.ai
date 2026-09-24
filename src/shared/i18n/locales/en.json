@@ -128,6 +128,9 @@
     "menuMoveUp": "Move up",
     "menuMoveDown": "Move down",
     "reordered": "{title} is now {position} of {count} in {group}",
+    "announceReorderUnchanged": "{title} is still {position} of {count} in {group}",
+    "announcePinned": "{title} pinned",
+    "announceUnpinned": "{title} unpinned",
     "menuMove": "Move to group",
     "movedTo": "{title} moved to {group}",
     "movedOut": "{title} is no longer in a group",
@@ -165,6 +168,14 @@
     "calm": "all calm"
   },
   "ladder": {
+    "announceRung": "{title} {rung}",
+    "announceRungUnchanged": "{title} is already {rung}",
+    "rung": {
+      "expanded": "expanded",
+      "collapsed": "collapsed to the strip",
+      "tabbed": "stacked with the tabbed sessions",
+      "hidden": "hidden"
+    },
     "stripLabel": "Collapsed",
     "rowTitle": "{title} — {state} — click to expand",
     "collapse": "Collapse this session to a strip",
