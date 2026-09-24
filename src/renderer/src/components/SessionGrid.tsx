@@ -98,7 +98,12 @@ import { pruneAttachmentDrafts } from '../lib/composer-attachment-draft';
 import { setDraggedCard } from '../lib/drag-context';
 import { findBarState, subscribeFindBar } from '../lib/find-bar-state';
 import { FindBar } from './FindBar';
-import { sendSessionCommand } from '../lib/composer';
+import {
+  clearConversation,
+  compactConversation,
+  lockReasonKey,
+  sessionControlLock,
+} from '../lib/session-controls';
 import { type TransportKind } from '../../../shared/transport';
 import type { AutonomyMode, SessionStatus } from '../../../shared/sessions';
 import { srOnly } from './sr-only';
@@ -801,9 +806,13 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         /* leave the optimistic value: the next menu open re-reads the truth */
       });
   };
-  // locked while starting (§5.10 startup-dialog rule) or once the live
-  // session is gone — a PTY write to a dead session is a silent no-op
-  const controlsLocked = status === 'starting' || status === 'crashed' || ended !== null;
+  // Locked while starting (§5.10 startup-dialog rule) or once the live session
+  // is gone — a PTY write to a dead session is a silent no-op. The RULE lives
+  // in `lib/session-controls` because the composer's buttons (#903) obey the
+  // same one; it is computed HERE because `ended` is the card's own record and
+  // no panel can see it.
+  const controlsLock = sessionControlLock(status, ended);
+  const controlsLocked = controlsLock !== null;
   const spawning = React.useRef(false);
   const folder = props.params?.folder;
   // What the card CALLS itself, on screen (#250). The store's copy first, so a
@@ -1506,6 +1515,10 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     folder,
     ...docTheme(),
     status,
+    // Why the session controls are locked, or null (#903). NOT derivable from
+    // `status` alone — see `sessionControlLock` — so the card computes it and
+    // every panel that offers those controls obeys the card's answer.
+    controlsLock,
     transport: live?.transport,
     autonomy: cardAutonomy,
     // The picker's answer FIRST, the transcript's as the fallback (#746).
@@ -1940,6 +1953,13 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                     style={{ position: 'fixed', inset: 0, zIndex: 30 }}
                   />
                   <div
+                    // NAMES this menu (#903). Its Clear and Compact entries now
+                    // share their accessible names with the composer's buttons
+                    // one row down, which is the point — they are the same two
+                    // actions — but it leaves "the button called Clear
+                    // conversation" ambiguous to a test. A spec that means the
+                    // MENU one scopes to this.
+                    data-testid="card-menu"
                     style={{
                       position: 'absolute',
                       insetBlockStart: '100%',
@@ -1972,7 +1992,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                         <div style={{ display: 'flex', gap: 6 }}>
                           <button
                             onClick={() => {
-                              void sendSessionCommand(live.id, '/clear');
+                              void clearConversation(live.id);
                               setMenuOpen(false);
                               setConfirmClear(false);
                             }}
@@ -2126,13 +2146,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                         )}
                         <button
                           disabled={controlsLocked}
-                          title={
-                            !controlsLocked
-                              ? t('grid.menuClearHint')
-                              : status === 'starting'
-                                ? t('grid.menuStarting')
-                                : t('grid.menuDead')
-                          }
+                          title={t(lockReasonKey(controlsLock) ?? 'grid.menuClearHint')}
                           onClick={() => setConfirmClear(true)}
                           style={menuItemStyle(controlsLocked)}
                         >
@@ -2140,15 +2154,9 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                         </button>
                         <button
                           disabled={controlsLocked}
-                          title={
-                            !controlsLocked
-                              ? t('grid.menuCompactHint')
-                              : status === 'starting'
-                                ? t('grid.menuStarting')
-                                : t('grid.menuDead')
-                          }
+                          title={t(lockReasonKey(controlsLock) ?? 'grid.menuCompactHint')}
                           onClick={() => {
-                            void sendSessionCommand(live.id, '/compact');
+                            void compactConversation(live.id);
                             setMenuOpen(false);
                           }}
                           style={menuItemStyle(controlsLocked)}

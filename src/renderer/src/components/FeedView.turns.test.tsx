@@ -74,6 +74,7 @@ function ctx(): PanelContext {
     theme: 'nordic',
     colorScheme: 'dark',
     changed: 0,
+    controlsLock: null,
     setView: () => {},
   };
 }

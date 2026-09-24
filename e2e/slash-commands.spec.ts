@@ -232,7 +232,9 @@ test.describe('composer slash commands (E10-07)', () => {
 
     // controls are LOCKED while 'starting' (§5.10 startup-dialog rule)
     await w.getByTitle('Session menu').click();
-    const clear = w.getByRole('button', { name: 'Clear conversation' });
+    // scoped to the menu: since #903 the composer's own row carries a button
+    // with the same accessible name, and it is the same action by design
+    const clear = w.getByTestId('card-menu').getByRole('button', { name: 'Clear conversation' });
     await expect(clear).toBeDisabled();
 
     // the session reports ready — play the CLI: SessionStart over real hooks.
@@ -241,7 +243,9 @@ test.describe('composer slash commands (E10-07)', () => {
     await expect(clear).toBeEnabled({ timeout: 10_000 });
     await clear.click();
     await expect(w.getByText(/Clear this conversation\?/)).toBeVisible();
-    await w.getByRole('button', { name: 'Clear', exact: true }).click();
+    // scoped for the same reason the locator above is: the row's controls sit
+    // a few pixels below this menu and answer to similar names (#903)
+    await w.getByTestId('card-menu').getByRole('button', { name: 'Clear', exact: true }).click();
 
     // That the confirm went on to type `/clear` into the PTY was read off the
     // Terminal tab's scrollback, and that surface is gone (#873). The Direct

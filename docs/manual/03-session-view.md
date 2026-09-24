@@ -240,7 +240,11 @@ The box at the bottom sends straight to the real Claude Code session:
 
 Under the box is a row showing this session's **autonomy mode** (click to
 cycle) and the **model** it's running — click that to switch it, or see
-[Choosing a model](18-model.md).
+[Choosing a model](18-model.md). Beside them are **Compact** and **Clear**,
+which summarize or restart this session's conversation — Clear asks you to
+confirm first, right there in the row. Both are also in the card's **⋯** menu
+under their full names; see
+[Clearing and compacting](05-slash-commands.md#clearing-and-compacting).
 
 **A prompt you haven't sent yet is kept.** Start writing, then switch that card
 to the Changes tab and back, pop it out into its own window, dock it back, or

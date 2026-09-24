@@ -20,6 +20,7 @@ import type { CapabilityManifest } from '../../../shared/extensibility/registry'
 import type { BindingDiagnostics, BindingState } from '../../../shared/transcripts';
 import type { Command } from '../lib/commands';
 import type { CommandDeps } from '../lib/command-set';
+import type { SessionControlLock } from '../lib/session-controls';
 import type { FeedBlockDto } from '../lib/feed';
 import type { ThemeDefinition, ThemeId } from '../theme/theme';
 import type { ServiceHealthStatus } from '../../../shared/service-health';
@@ -157,6 +158,18 @@ export interface PanelContext {
    */
   transport?: TransportKind;
   status?: string;
+  /**
+   * Whether this session's controls (clear/compact) are usable, and why not
+   * (#903). The card computes it once; a panel must not re-derive it from
+   * `status`, which cannot see that a cleanly-exited session is gone.
+   *
+   * REQUIRED, not optional, and the `null` inside `SessionControlLock` is why:
+   * optional would add a fourth state nobody checks for, and a context builder
+   * that forgot the field would compile clean and ship two permanently disabled
+   * buttons whose tooltip still described what they would do. That is the #261
+   * defect exactly, and one `?` is the whole distance to it.
+   */
+  controlsLock: SessionControlLock;
   autonomy?: string;
   model?: string;
   /** transcript binding state and what the watcher observed getting there

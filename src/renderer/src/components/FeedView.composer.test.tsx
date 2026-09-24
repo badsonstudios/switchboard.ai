@@ -83,6 +83,7 @@ async function mountComposer(): Promise<HTMLTextAreaElement> {
     theme: 'nordic',
     colorScheme: 'dark',
     changed: 0,
+    controlsLock: null,
     setView: () => {},
   };
   await act(async () => {

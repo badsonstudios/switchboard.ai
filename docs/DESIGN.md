@@ -1147,7 +1147,11 @@ Each session offers two synchronized views of the same underlying session:
   stream events — assistant text, tool calls, diffs, subagent sidechains — as
   styled blocks, with a **prompt composer** docked at the bottom (Enter
   submits to the CLI over the session's transport; options row for autonomy/
-  model context; typing
+  model context, plus **Compact and Clear** (#903, owner request 2026-09-21 —
+  the two session controls that were previously only in the card's ⋯ menu; they
+  stay in the menu too, because the options row exists only on the Session tab
+  and the note under §5.9's "notify when done" is the standing reason a control
+  that must be reachable from every view cannot live here alone); typing
   `/` pops a slash-command autocomplete — CLI built-ins + the §5.19
   registry's skills/commands — owner request 2026-07-22). In-app
   approvals (§5.16) render inline here as a review bar.

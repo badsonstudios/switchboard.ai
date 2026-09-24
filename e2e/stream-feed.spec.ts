@@ -315,14 +315,16 @@ test.describe('Clear conversation on a Direct session', () => {
   /** ⋯ → Clear conversation → confirm, the way a user does it. */
   const clearFromMenu = async (w: Page): Promise<void> => {
     await w.getByTitle('Session menu').click();
-    const clear = w.getByRole('button', { name: 'Clear conversation' });
+    // scoped to the menu: since #903 the composer's own row carries a button
+    // with the same accessible name, and it is the same action by design
+    const clear = w.getByTestId('card-menu').getByRole('button', { name: 'Clear conversation' });
     // A Direct session is `idle` the moment its transport is up
     // (`transport-ready`), so this is live without waiting for a turn — which
     // is what makes the resumed case below reachable at all.
     await expect(clear).toBeEnabled({ timeout: 15_000 });
     await clear.click();
     await expect(w.getByText(/Clear this conversation\?/)).toBeVisible();
-    await w.getByRole('button', { name: 'Clear', exact: true }).click();
+    await w.getByTestId('card-menu').getByRole('button', { name: 'Clear', exact: true }).click();
   };
 
   const CLEARED = 'Conversation cleared — context starts fresh';
@@ -427,5 +429,63 @@ test.describe('Clear conversation on a Direct session', () => {
     await expect(w2.getByText('FAKE-REPLY: SFEED_RESUMED_HISTORY')).toHaveCount(0);
     await expect(w2.getByText('SFEED_RESUMED_HISTORY', { exact: true })).toHaveCount(0);
     await expect(w2.getByText(CLEARED)).toHaveCount(1);
+  });
+});
+
+// The composer's OWN Clear and Compact (#903) — the second entry point to the
+// two actions the ⋯ menu above already offers.
+//
+// Here rather than in `feed.spec.ts` because that file is `[pty]` and these
+// buttons are about the DEFAULT transport. The unit tests own the lock table,
+// the confirmation and the two commands; what only a real engine can answer is
+// whether the button reaches the CLI from where it now sits.
+//
+// THE ROW'S WIDTH IS GUARDED IN `split.spec.ts`, not here, and that is a
+// finding rather than a filing decision. A single card cannot be made narrow
+// enough to wrap: the app's window minimum is 800px, which leaves the row
+// ~443px against ~297px of content even with the confirmation open — measured,
+// after a first attempt at this width passed with `flexWrap` DELETED. A card
+// only gets narrow when the workspace is split, so that is where the guard
+// lives.
+test.describe('Clear and Compact on the composer row (issue 903)', () => {
+  test.describe.configure({ mode: 'default' });
+
+  let a: LaunchedApp | undefined;
+  test.afterEach(async () => {
+    const launched = a;
+    a = undefined;
+    await teardown(launched);
+  });
+
+  const CLEARED_MARKER = 'Conversation cleared — context starts fresh';
+
+  // The button is wired to the real CLI, from the composer and not only from
+  // the menu. Same end-to-end claim `wipes the conversation` makes about the ⋯
+  // route, through the new door.
+  test('Clear on the row asks first, then wipes the conversation', async () => {
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
+    const w = a.window;
+    await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
+    const box = w.getByPlaceholder(/Prompt this session/);
+    await box.click();
+    await box.fill('SFEED_ROW_CLEAR');
+    await box.press('Enter');
+    await expect(w.getByText('FAKE-REPLY: SFEED_ROW_CLEAR')).toBeVisible({ timeout: 30_000 });
+
+    // one click is a QUESTION, never a wipe
+    await w.getByTestId('composer-clear').click();
+    await expect(w.getByTestId('composer-clear-go')).toBeVisible();
+    await expect(w.getByText('FAKE-REPLY: SFEED_ROW_CLEAR')).toBeVisible();
+
+    // …and backing out leaves the conversation exactly where it was
+    await w.getByTestId('composer-clear-cancel').click();
+    await expect(w.getByTestId('composer-clear-go')).toHaveCount(0);
+    await expect(w.getByText('FAKE-REPLY: SFEED_ROW_CLEAR')).toBeVisible();
+
+    await w.getByTestId('composer-clear').click();
+    await w.getByTestId('composer-clear-go').click();
+    await expect(w.getByText(CLEARED_MARKER)).toBeVisible({ timeout: 15_000 });
+    await expect(w.getByText('FAKE-REPLY: SFEED_ROW_CLEAR')).toHaveCount(0);
   });
 });

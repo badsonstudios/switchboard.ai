@@ -30,7 +30,9 @@ export function writePromptToPty(sessionId: string, text: string): void {
  * renderer completely ignorant of transports — it has no session record to
  * consult and no need of one.
  *
- * This is what the ⋯ session-controls menu uses for `/clear` and `/compact`.
+ * This is what the session controls use for `/clear` and `/compact` — the
+ * card's ⋯ menu and, since #903, the composer's own buttons, both through
+ * `lib/session-controls`.
  * Those two called `writePromptToPty` directly until #381, which was survivable
  * only while Direct mode was opt-in: a stream session has no PTY, so
  * `ptys.get(id)?.write()` dropped the command and the menu item did nothing at

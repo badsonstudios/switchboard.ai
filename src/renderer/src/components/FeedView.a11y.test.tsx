@@ -48,6 +48,7 @@ function ctx(title?: string): PanelContext {
     theme: 'nordic',
     colorScheme: 'dark',
     changed: 0,
+    controlsLock: null,
     setView: () => {},
   };
 }

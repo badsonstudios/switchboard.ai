@@ -3,6 +3,111 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔨 IN PROGRESS — 2026-09-24: **#903** Clear and Compact buttons on the composer's options row
+>
+> Branch `feature/903-clear-compact-buttons`. Picked by the owner from the three
+> options offered at session start — he has not captured the laptop day yet, so
+> **P2-E21-02 is still his and still open**, and #903 is user-facing, small, and
+> judgeable by eye.
+>
+> The earlier "don't touch the composer or the feed, it moves the perf baseline"
+> rule is **retired** (owner, 2026-09-24): he is capturing on v0.8.99, so nothing
+> merged after that tag can reach the build he measures.
+>
+> Plan posted to the issue before implementation.
+>
+> **The shape: `lib/session-controls.ts` is the one implementation**, and the
+> interesting part of it is not the two commands — it is the LOCK. The rule
+> (`starting || crashed || ended !== null`) was an expression inlined in
+> `SessionGrid`, and the second surface could only have copied it, at which
+> point "the same enabled/disabled rules as the menu" is a promise nothing
+> enforces.
+>
+> **The lock is computed by the CARD and handed down `PanelContext` ->
+> `FeedView` -> `Composer`, never re-derived from `status`.** A session that
+> exits CLEANLY is just as gone as a crashed one and its status word is not
+> `crashed`; only the card holds `ended`. A composer that read `status` alone
+> would have offered a live Clear on a session there is nothing left to clear —
+> and every other test would still have passed. `panels.tsx` threading is the
+> #261/#208 failure class, so the mutation was run: dropping
+> `controlsLock={ctx.controlsLock}` takes 9 of the 12 component tests red.
+>
+> **Clear's confirmation is an IN-ROW SWAP, not a popover** — which is how
+> done-when 6 (popped-out cards) is satisfied by construction rather than by
+> care: no positioned layer means no `ownerDocument` question to get wrong
+> (#573), and the focus return is to a ref in whichever document drew it.
+>
+> **Compact sits FIRST and Clear last**, so the destructive one is not beside
+> the model chip (the control on that row people actually click) and is nowhere
+> under the Send button.
+>
+> **The row WRAPS** rather than collapsing to icons at a measured width: icons
+> need a ResizeObserver in the composer and a second visual language for two
+> controls; wrapping cannot overflow by construction. The e2e measures by
+> SUMMING THE CHILDREN, not `scrollWidth` — #885's rule, and the issue repeats it.
+>
+> **A collision worth knowing about:** the row's buttons now share accessible
+> names with the ⋯ menu's entries (deliberately — same actions), which made
+> `getByRole('button', { name: 'Clear conversation' })` ambiguous in two
+> existing e2e specs. The menu gained `data-testid="card-menu"` and both specs
+> now scope to it.
+>
+> ---
+>
+> **REVIEW ROUND 1: one blocker, and it was the accessibility path.** Asking the
+> question UNMOUNTED the focused button, so focus fell to `body` — from there
+> the Escape handler (a React synthetic listener on the group) was unreachable,
+> and the confirm carried `aria-label="Clear conversation"`, **byte-identical to
+> the trigger's**. A screen-reader user therefore heard nothing happen, tabbed
+> forward, heard the same three words again, and wiped the conversation. Focus
+> now moves to CANCEL on open (the safe answer, and landing in the labelled
+> group is what gets the full sentence announced) and back to Clear on close;
+> the confirm is "Yes, clear this conversation". The tests that pass on the fixed
+> code would all have passed on the broken code too, except the two written for
+> this — one of which dispatches Escape at `document.activeElement` rather than
+> at a hand-picked element, because picking one is what hid the bug.
+>
+> **A WRAPPING ROW BROKE THE COMPOSER'S HEIGHT MATHS, and that is #406 arriving
+> through a third door.** `roomForBox` counts the options row as chrome, and
+> until this item that row was `nowrap` and therefore invariant — so it was safe
+> for the ResizeObserver to watch only the box's width and the panel's height. A
+> wrap changes neither. The row is now observed too, with its height in the
+> change guard, and `confirmClear` is in the layout effect so the measure lands
+> in the same commit rather than a frame late.
+>
+> **`controlsLock` is REQUIRED on `PanelContext`, not optional.** `null` is
+> already a state, so `?` added a silent fourth one: a context builder that
+> forgot the field would have compiled clean and shipped two permanently
+> disabled buttons whose tooltip still described what they would do. Cost: one
+> line in each of 15 test fixtures, and the compiler now enforces what one test
+> was enforcing for one call site.
+>
+> **A `title` on a `disabled` button never renders** — Chromium does not
+> hit-test disabled controls — which is exactly the state where the reason
+> matters. It moved to a wrapping span.
+>
+> **Compact has a busy guard, and the ref is not redundant with the state:**
+> React has not re-rendered when a second click in the same tick runs, so
+> `disabled` cannot be the guard. Clear leaves a divider; Compact leaves nothing,
+> so a double send was invisible.
+>
+> **THE WIDTH GUARD WAS THROWN AWAY AND REBUILT, and the measurement is the
+> deliverable.** The first version summed the row's children including the
+> `flex: 1` spacer — which GROWS to fill its line, so the sum always said "it
+> fits" and the assertion could not fail. Fixing the sum was not enough:
+> **mutation-verified, the test still passed with `flexWrap` deleted**, because
+> the row is nowhere near overflow. Measured: a full-width card gives the row
+> 443px for 297px of content (confirmation open); one card of a two-way split at
+> the app's 800px window floor gives 219px for 157px. There is no window size
+> that reaches a wrap — 800px is a hard `minWidth` and `setContentSize` clamps
+> to it. So the e2e now asserts the thing that CAN fail — nothing hangs off the
+> end, from child rects, on the narrowest card the suite can build — the numbers
+> are recorded in the test so the next person does not re-derive them, and the
+> wrap *capability* is pinned in a unit test instead.
+>
+> **Done-when 6 gained a machine check** rather than staying human-only: the
+> question and the focus land in the popped-out window's own document.
+
 > # ✅ MERGED — 2026-09-23: **#886** a card that fails to resume keeps a task label it can never shed
 >
 > PR #931 squashed to `48ec82a`; all four CI jobs green. Issue closed. Plan was

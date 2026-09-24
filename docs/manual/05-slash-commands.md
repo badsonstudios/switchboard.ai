@@ -54,13 +54,18 @@ already open on screen doesn't change under you.)
 
 ## Clearing and compacting
 
-The **⋯** menu in the card header has two shortcuts:
+There are two shortcuts for this, and they do exactly the same thing:
 
 - **Clear conversation** — starts the context over. It asks first, since this
   can't be undone. Afterwards the Session tab shows a
   **"Conversation cleared — context starts fresh"** divider so you know it took.
 - **Compact conversation** — has Claude summarize the conversation so far to
   free up context.
+
+You'll find both on the row just under the prompt box, beside the autonomy and
+model chips, as **Compact** and **Clear** — and in the **⋯** menu in the card
+header under their full names. **Clear** asks you to confirm either way; on the
+row the question appears in the row itself, and you answer it there.
 
 Both simply send the real `/clear` and `/compact` to the session — the same
 thing you'd do by hand, and they work the same in either mode.
@@ -75,7 +80,11 @@ thing you'd do by hand, and they work the same in either mode.
   panel for is sent to Claude Code exactly as you typed it, and Claude Code
   answers it however it normally would. Commands it answers itself — `/usage`,
   `/cost`, `/context` — show their output in the Session view.
-- The ⋯ menu is greyed out while a session is still starting, or once it has
-  ended — with a note saying which.
+- **Clear and Compact are greyed out while a session is still starting, or
+  once it has ended** — with a note saying which. That's true of both the
+  buttons and the ⋯ menu; they're the same two actions, so they're unavailable
+  at the same times and for the same reasons.
+- On a narrow card the row wraps onto a second line rather than pushing
+  anything off the end.
 - `/clear` gives no visible reply from Claude Code itself. That's expected; the
   divider in the Session tab is your confirmation.

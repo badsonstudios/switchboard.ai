@@ -107,6 +107,7 @@ async function composerHost(autonomy: string): Promise<HTMLElement> {
     theme: 'nordic',
     colorScheme: 'dark',
     changed: 0,
+    controlsLock: null,
     setView: () => {},
     autonomy,
     onCycleAutonomy: noop,

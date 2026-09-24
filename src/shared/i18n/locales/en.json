@@ -666,6 +666,12 @@
     "todoPending": "[ ]",
     "you": "you",
     "composerPlaceholder": "Prompt this session — Enter to send, Shift+Enter for a new line",
+    "clear": "Clear",
+    "compact": "Compact",
+    "clearConfirmShort": "Clear conversation?",
+    "clearConfirmGo": "Yes, clear this conversation",
+    "clearConfirmCancel": "No, keep this conversation",
+    "controlLocked": "{name} — {reason}",
     "attach": {
       "label": "Attached to this prompt",
       "remove": "Remove {name}",
