@@ -3,6 +3,89 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ MERGED — 2026-09-24: **#828** the composer's completion popup is a listbox a screen reader can read
+>
+> PR #937 squashed to `2a579af`; all four CI jobs green. Issue closed. Plan was
+> posted to the issue before implementation. **NOT RELEASED** — four items now
+> sit on `main` with nothing installable (#886, #903, #856, #828). CHANGELOG
+> entry filed under `0.8.100 — unreleased`. Dogfood row added as UNTESTED,
+> seven steps, and it is the first row on this page that **requires a screen
+> reader running** to answer at all.
+>
+> **Next up:** still **P2-E21-02**, which is the owner's and not a coding item —
+> install v0.8.99 on the laptop, Diagnostics ▸ detailed capture ON, a normal day
+> at 3+ sessions, send the file. **Nothing in the queue is blocked on us.** Of
+> the three small user-facing items the owner named, **#704** remains.
+>
+> ---
+>
+> **THE POPUP WAS VISIBLE TO EXACTLY ONE SENSE.** `/` and `@` opened a `<div>`
+> of `<div>`s whose highlight was `background: var(--chip)` and nothing else —
+> no `role`, no `aria-selected`, no `aria-activedescendant`. A screen-reader
+> user was not told a list had opened, not told which row ArrowDown had reached,
+> and not told Enter would complete rather than send. One renderer serves both
+> popups, so one fix covers both.
+>
+> ---
+>
+> **REVIEW KILLED THE FIRST DESIGN AND WAS RIGHT, AND THIS IS THE ITEM'S REAL
+> CONTENT.** The first cut put `role="combobox"` + `aria-expanded` on the
+> textarea while the popup was open, reasoning that `aria-expanded` is not valid
+> on a textbox so the announcement needed the role. Both halves were wrong:
+>
+> - **ARIA-in-HTML permits NO `role` on `<textarea>` at all.** Its implicit role
+>   is `textbox` and axe-core's `aria-allowed-role` flags exactly this. Chromium
+>   *computes* combobox, but that is outside the conformance envelope the
+>   expectation was built on.
+> - **ARIA says roles SHOULD NOT change over time.** AT caches the role at focus
+>   time and routinely coalesces or drops a mutation on the focused node — so
+>   the announcement the role had been added FOR was the thing least likely to
+>   fire. The manual page and the CHANGELOG entry written alongside it promised
+>   "the list is announced when it opens", which nobody had measured. That is
+>   the PHILOSOPHY rule, and it nearly shipped.
+>
+> **The honest shape turned out simpler.** ARIA 1.2's `textbox` SUPPORTS
+> `aria-activedescendant` and `aria-autocomplete` natively, and `aria-controls`
+> is global — **three of the four relations were always valid on the element as
+> the browser already types it.** Only `aria-expanded` needed a role it could
+> not have. So the "a list just opened" announcement moved to a `role="status"`
+> polite live region: no role on the input, no ARIA-in-HTML violation, and it
+> works the same on every AT. It is the idiom `ComposerAttachments` and
+> `FindBar` already use three hundred lines away, mounted empty on the first
+> frame (#222's rule — a live region that arrives holding its text is announced
+> by almost nothing). It says the COUNT, not the row: the row is
+> `aria-activedescendant`'s job and saying both would talk over every arrow key.
+>
+> **ONE `activeIndex`, and the honest claim about it.** There were five readings
+> of `selected` and only two clamped, so for one commit after a keystroke
+> narrowed the list the relation named row 0 while NO row was marked and NO row
+> was highlighted. The single value removes that structurally — but the window
+> closes inside the same `act()`, and the mutation proves it: putting
+> `aria-selected={i === selected}` back leaves the file 20/20 green. **Written
+> into the test rather than implied**, because a test that cannot fail on the
+> bug it names is worse than no test.
+>
+> **A DRIVE-BY THAT MADE THINGS WORSE, caught in review.** Adding
+> `aria-label="Prompt this session"` looked like a free improvement over relying
+> on the placeholder fallback. It DEMOTED "Enter to send, Shift+Enter for a new
+> line" from the accessible name to a description — which many users switch off
+> — and is a soft WCAG 2.5.3 (Label in Name) miss besides. The label is now the
+> same string as the placeholder, said deliberately.
+>
+> **THE FORGERY ASSERTION WAS NEARLY VACUOUS.** It rejected ids matching
+> `^completion-(list|opt)`; the real ids are `_r_N_opt-0`, so `feed-opt-0` would
+> have sailed through. Reframed to say what it actually pins — a literal
+> namespace coming back in the spellings someone reaches for, which
+> `markdown.test.tsx`'s source scan cannot see because that scan matches inline
+> `id="…"` in JSX and a `const NS = 'completion-'` passes it (verified by
+> mutation). The property that matters is the next test's: two composers in one
+> document produce different ids.
+>
+> **A LATENT E2E BREAK, FIXED BECAUSE THIS ITEM CAUSED IT.**
+> `e2e/palette.spec.ts` did an unscoped `getByRole('option')`. Safe until now;
+> there are two sources of that role in one document since this merged. Scoped
+> to `[data-palette-rows]`.
+
 > # ✅ MERGED — 2026-09-24: **#856** a token pasted into the report dialog switches update checks back on
 >
 > PR #935 squashed to `1276884`; all four CI jobs green. Issue closed. Plan was
