@@ -107,6 +107,12 @@ Things worth knowing:
 - **No title, no label.** If Claude never names the conversation, the card
   header shows **+ task label**, waiting for you to type one. The session's name
   is on its tab, just above.
+- **The label belongs to the conversation, so it goes when the conversation
+  does.** Run `/clear`, or reopen switchboard to find the conversation gone from
+  disk and the session starting fresh, and the card goes back to **+ task
+  label** rather than keeping a name for something that no longer exists. Your
+  next prompt names it again. A label *you* typed is untouched by any of this —
+  it is yours until you change it.
 - **It costs nothing.** switchboard is already reading the transcript file; it
   reads one more line out of it. Nothing is sent anywhere, and it does not spend
   a single token of your plan.

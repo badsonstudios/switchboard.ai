@@ -1334,8 +1334,15 @@ export interface PersistedWorkspaceFile {
   layout?: PersistedLayout;
   ui?: PersistedUi;
   state?: { layout?: PersistedLayout; ui?: PersistedUi };
-  /** the cards; `nativeSessionId` is the `--resume` identity #404 pins */
-  sessions?: Array<{ id?: string; nativeSessionId?: string; transport?: string }>;
+  /** the cards; `nativeSessionId` is the `--resume` identity #404 pins, and
+   *  `taskLabel` is the card's name — absent once its conversation is gone
+   *  (#886), which is the whole assertion in `stream-resume.spec.ts` */
+  sessions?: Array<{
+    id?: string;
+    nativeSessionId?: string;
+    transport?: string;
+    taskLabel?: string;
+  }>;
 }
 
 /** The workspace file for a launched app's home, parsed. */

@@ -202,19 +202,50 @@ test.describe('a resumed Direct session replays its history (#395)', () => {
     const w2 = a.window;
     await expect(w2.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
 
+    // THE LABEL GOES WITH THE CONVERSATION (#886).
+    //
+    // This comment used to say the opposite — that the words "survive only in
+    // the card's task label", which "persists in the workspace file". They did,
+    // and that was the bug: since #883 the instant label only ever fills a
+    // BLANK, so a card left wearing a name from a conversation that no longer
+    // exists could never be renamed by any later prompt.
+    //
+    // Asserted against the WORKSPACE FILE first, and that order matters: a
+    // count-0 locator passes instantly, including a tenth of a second before
+    // the label it is looking for would have appeared. The file settling is the
+    // event; the screen is then checked against it.
+    await expect(() => {
+      const card = readWorkspaceFile(first.home).sessions?.[0];
+      // The card must be proved WRITTEN AT ALL first: `sessions?.[0]` optional-
+      // chains, so a file momentarily without one would satisfy an
+      // `undefined` label on the first poll and pass for the wrong reason.
+      //
+      // Its EXISTENCE and not its `nativeSessionId`, which the assertion before
+      // the relaunch can pin and this one cannot: the fake claims one id per
+      // spawn (#603) and the marker directory outlives a `projects/` wipe, so
+      // the fresh session announces `fakeSessionId(1)` and the card's head
+      // moves off `FAKE_SESSION_ID` while this loop is polling.
+      expect(card).toBeDefined();
+      expect(card?.taskLabel).toBeUndefined();
+    }).toPass({ timeout: 15_000 });
+    await expect(w2.getByText('this history is about to be deleted', { exact: true })).toHaveCount(0);
+
     // the card is alive and takes a prompt; there is simply no history to show
     const box2 = w2.getByPlaceholder(/Prompt this session/);
     await box2.click();
     await box2.fill('still works');
     await box2.press('Enter');
     await expect(w2.getByText('FAKE-REPLY: still works')).toBeVisible({ timeout: 30_000 });
-    // Scoped to the conversation (#883). The claim is that there is no HISTORY
-    // to show — and there is not. The words survive only in the card's task
-    // label, which was seeded from that prompt on the first run and persists in
-    // the workspace file. A window-wide locator now counts that label and says
-    // nothing about the feed.
+    // Scoped to the conversation (#883), and still scoped now that the label is
+    // gone: the claim here is about the FEED — there is no history to show —
+    // and a window-wide locator would be making a second claim by accident.
     await expect(
       w2.locator('[data-feed-region]').getByText('this history is about to be deleted', { exact: true })
     ).toHaveCount(0);
+    // …and the card is nameable again, which is the half that was unrecoverable.
+    await expect(() => {
+      const named = readWorkspaceFile(first.home).sessions?.[0];
+      expect(named?.taskLabel).toBe('still works');
+    }).toPass({ timeout: 15_000 });
   });
 });
