@@ -476,3 +476,8 @@ it, save an empty box.
 If a machine cannot store secrets at all, the app says so plainly rather than
 accepting a token it would have to throw away — the other two options still
 work.
+
+A token you save here is also what update checking uses, so a machine without
+the GitHub command-line tool gets both from one paste. Updates won't notice
+until the next check, so go to **Help ▸ Check for updates…** once after saving
+and you'll see the real answer instead of "no credentials".

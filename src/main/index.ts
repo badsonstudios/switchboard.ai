@@ -103,6 +103,7 @@ import { buildMenuTemplate } from './app-menu';
 import { UpdateService, FEED_ENV, isAllowedReleaseUrl } from './update/service';
 import { UpdateInstaller, UPDATE_DIR_NAME, resolveHandshake, resolveOffer } from './update/install';
 import { launchInstaller } from './update/installer';
+import { tokenSourcesFor } from './update/token';
 import type { UpdateHandshake, UpdateInstallStatus } from '../shared/update';
 import { ServiceHealthService } from './health/service';
 import { SERVICE_STATUS_FEED_ENV } from './health/statuspage';
@@ -1445,6 +1446,41 @@ app
     // allowed to talk to (see `allowLoopback` below).
     const feedUrlOverride = feedOverride && feedOverride.trim() !== 'off' ? feedOverride : undefined;
     const updateLog = createLogger(sink, 'updates');
+    // ── the OS credential store (P2-E14-06, §5.29) ───────────────────────────
+    //
+    // Assembled here, above the update block, because THREE subsystems read the
+    // same GitHub token out of it and #856 is what happens when they do not:
+    // the report dialog (Help ▸ Report a problem…) stored a pasted token and
+    // filed issues with it, while update checks and the installer resolved a
+    // chain whose credential-store entry was a no-op — one token, two
+    // subsystems, opposite answers, and nothing on screen connecting them.
+    //
+    // ONE INSTANCE, and that is load-bearing. `SecretStore.get()` caches a MISS
+    // for the life of the object and only `set()` on the same object repairs
+    // it, so a token pasted mid-session is visible to the next update check
+    // through *this* store and no other; a second one built for the update side
+    // would go on reading the miss it had already cached.
+    //
+    // It is built here rather than beside the push actions it used to live with
+    // (~450 lines below) only because of that ordering. It still belongs in
+    // this file either way: `safeStorage` is an electron singleton and this is
+    // where those are assembled. Nothing is read at construction —
+    // `secrets.json` is opened lazily on the first `get` — so moving it up
+    // costs the bootstrap nothing. Its logger is its own, not the
+    // push channel it used to borrow: a store serving push, reports and updates
+    // should not file its lines under one of the three.
+    const secretStore = new SecretStore({
+      dir: app.getPath('userData'),
+      crypto: safeStorage,
+      log: createLogger(sink, 'secrets'),
+    });
+    // The credential chain for everything that talks to the release feed. The
+    // ORDER is `token.ts`'s and is written down exactly once, there — the whole
+    // of #856 was that decision living in two heads. Both the CHECK and the
+    // DOWNLOAD get it: wiring only the check would offer an update that then
+    // failed to fetch, which is worse than the honest "no credentials" it
+    // replaced, because it puts a dialog on screen first.
+    const updateTokenSources = tokenSourcesFor(secretStore);
     // ── the post-update handshake (E19-04) ───────────────────────────────
     //
     // FIRST, before anything else in this block: it reads and clears a flag the
@@ -1488,7 +1524,17 @@ app
       // shipped app downloads over https from the API host only, with a
       // locally-resolved token, exactly as §E19 requires.
       allowLoopback: !!feedUrlOverride,
-      skipToken: !!feedUrlOverride,
+      // `feedOverride`, not `feedUrlOverride` — the two are deliberately
+      // different here (review, #856). Loopback is widened only by a URL. But
+      // `off` also means "no update traffic this run", and since this chain now
+      // reaches the machine's REAL credential store, an `off` run configured to
+      // resolve it would leave "no test touches a real credential" resting on a
+      // guard in another file — `update:install` needs an offer, and `off`
+      // never produces one. True today, and nothing re-checks it. Making the
+      // property local costs one word.
+      skipToken: !!feedOverride,
+      // #856 — the download half, wired for the runs that are NOT overridden.
+      tokenSources: updateTokenSources,
       quitAndRun: (file) => {
         // An update is a quit, so it asks the same question the X button asks
         // — a mid-task session deserves the same warning either way. Answering
@@ -1532,6 +1578,9 @@ app
       // Dev/test only. A packaged build has no environment variable that can
       // move its update feed (the P2-E15-10 rule for SWITCHBOARD_BIND_GIVEUP_MS).
       feedOverride,
+      // #856 — the check half. Without this the service resolved
+      // `DEFAULT_TOKEN_SOURCES` (`gh` alone) and a pasted token was invisible.
+      tokenSources: updateTokenSources,
       installBusy: () => installer.busy(),
     });
     updates.start();
@@ -1904,9 +1953,10 @@ app
     // ── the two channels that leave the machine (P2-E14-06, §5.9 + §5.29) ──
     //
     // Assembled here for the same reason the toast is: this file owns the
-    // electron singletons, and `safeStorage` is one. Everything below it —
-    // the store, the senders, the deciding — is plain TypeScript that a unit
-    // test drives with a fake crypto and a fake `fetch`.
+    // electron singletons. (The `safeStorage` half of that went up to the
+    // credential store's new site in the update block — see #856.) Everything
+    // hung off them — the store, the senders, the deciding — is plain
+    // TypeScript that a unit test drives with a fake crypto and a fake `fetch`.
     //
     // Both actions are registered UNCONDITIONALLY, configured or not: an
     // unregistered type is logged as "this build has no handler for it" on
@@ -1914,11 +1964,8 @@ app
     // resolve to "not configured" in silence, which is the truth about the
     // machine.
     const pushLog = createLogger(sink, 'push');
-    const secretStore = new SecretStore({
-      dir: app.getPath('userData'),
-      crypto: safeStorage,
-      log: pushLog,
-    });
+    // `secretStore` is built up in the update block, not here — three
+    // subsystems share the one instance and the update block runs first (#856).
     const pushActions = new PushActions({
       secrets: secretStore,
       getPrefs: () => workspace.getPushPrefs(),

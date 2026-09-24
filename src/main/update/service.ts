@@ -7,6 +7,7 @@
 // record. Nothing here can block a session, and nothing here throws.
 import { UpdateCheckResult, UpdatePrefs, UpdateStatus } from '../../shared/update';
 import { checkForUpdate, CheckDeps } from './checker';
+import type { TokenSource } from './token';
 
 /** The daily cadence the item asks for. */
 export const DAILY_MS = 24 * 60 * 60 * 1000;
@@ -59,6 +60,18 @@ export interface UpdateServiceDeps {
   };
   /** `process.env[FEED_ENV]` in a non-packaged build; undefined otherwise */
   feedOverride?: string;
+  /**
+   * The credential chain (#856). Omitted, the checker falls back to
+   * `DEFAULT_TOKEN_SOURCES` — `gh auth token` and nothing else.
+   *
+   * `index.ts` passes `[credentialStoreTokenFrom(secretStore), ghCliToken]`,
+   * which is the whole of #856: without it, a token the user pasted into
+   * Help ▸ Report a problem… filed issues successfully while update checks went
+   * on reporting that this machine has no credentials for the release list.
+   *
+   * It is also the seam that keeps a unit test off the machine's real `gh`.
+   */
+  tokenSources?: TokenSource[];
   /**
    * A download/verify/install is in flight (E19-04).
    *
@@ -194,6 +207,17 @@ export class UpdateService {
     const deps: CheckDeps = {
       currentVersion: this.deps.currentVersion,
       log: (msg, meta) => this.deps.log.debug(msg, meta),
+      // Read fresh on EVERY check, not captured at construction: the sources
+      // are closures over a live `SecretStore`, so a token pasted into the
+      // report dialog after the app started is picked up by the next check
+      // with nothing to invalidate (#856).
+      ...(this.deps.tokenSources ? { tokenSources: this.deps.tokenSources } : {}),
+      // A feed override names a stub that wants no credentials, so the chain
+      // above must not be reached. **Order is not what does that** — these two
+      // spreads write disjoint keys, so `skipToken: true` lands either way. The
+      // guard is `checker.ts`'s `if (!deps.skipToken)`, which returns before
+      // `resolveUpdateToken` is called at all, and `checker.test.ts` asserts
+      // that the sources are never even consulted.
       ...(feed ? { endpoint: feed, skipToken: true } : {}),
     };
     const impl = this.deps.checkImpl ?? checkForUpdate;

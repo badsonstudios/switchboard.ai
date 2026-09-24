@@ -8,11 +8,12 @@
 // The resolution order is an ORDERED SEAM, deliberately, so that adding a
 // source later is one entry in the array and not a rewrite:
 //
-//   1. the OS credential store — DESIGN.md §5.29's home for credentials.
-//      **A documented no-op today.** There is no credential-store subsystem in
-//      this codebase yet, and building one for an update checker would be the
-//      tail wagging the dog (orchestrator call, recorded in the #259 hand-off).
-//      When §5.29's store lands, this slot is where it plugs in.
+//   1. the OS credential store — DESIGN.md §5.29's home for credentials, and
+//      where a token pasted into Help ▸ Report a problem… lands. Built by
+//      `credentialStoreTokenFrom(store)`, which means it is INJECTED at every
+//      call site rather than sitting in a module-scope default: the source
+//      needs a `SecretStore` instance, and there is nothing sensible to read
+//      at module scope (see `DEFAULT_TOKEN_SOURCES` below).
 //   2. `gh auth token` — zero setup on Dan's machines, and the CLI already
 //      holds exactly the scope this needs. `gh` may not be installed: that is
 //      an ordinary outcome, not an error.
@@ -42,22 +43,32 @@ export interface SecretReader {
 }
 
 /**
- * DESIGN.md §5.29's OS credential store — **the slot, now filled (#815).**
+ * DESIGN.md §5.29's OS credential store — the slot, filled in #815 and wired to
+ * every consumer in **#856**.
  *
  * This was a documented no-op for two items, because there was no credential
  * store to read and building one for an update checker would have been the tail
  * wagging the dog. `secrets/store.ts` now exists (safeStorage, ciphertext at
  * `<userData>/secrets.json`), so the slot can finally be filled.
  *
- * **WHO ACTUALLY USES IT, stated plainly because the obvious reading is wrong:**
- * only the #815 report path (`diagnostics/report-ipc.ts`) passes this in.
- * `UpdateService` still resolves `DEFAULT_TOKEN_SOURCES` below, whose
- * credential-store entry is the no-op — so a token pasted into the report
- * dialog does NOT yet switch update checks back on. That is a real
- * inconsistency for a user who does it, and it is written down rather than left
- * silent: see **#856**. Wiring it means threading `tokenSources` through
- * `UpdateService`, which is release-critical code and did not belong in the
- * diff that filled this slot.
+ * **WHO USES IT — all three, and #856 is the item that made that true.** For
+ * one release it was the report path alone (`diagnostics/report-ipc.ts`), while
+ * `UpdateService` and `UpdateInstaller` fell through to `DEFAULT_TOKEN_SOURCES`
+ * and its no-op entry. One token, two subsystems, opposite answers: a user
+ * pasted a token into Help ▸ Report a problem…, filed an issue successfully,
+ * and update checks stayed silently disabled. All three now inject this source.
+ *
+ * **ONE `SecretStore` INSTANCE, SHARED — that is load-bearing, not tidiness.**
+ * `SecretStore.get()` caches a MISS for the life of the object, and only
+ * `set()`/`clear()` on that same object repair it. So a token pasted at 14:02
+ * is visible to a check at 14:03 through *that* store and no other: a second
+ * one constructed for the update side would go on reading the miss it had
+ * already cached, and #856 would survive its own fix in a shape much harder to
+ * see. `index.ts` builds the store once, above both consumers.
+ *
+ * The honest limit of that: a token written into `secrets.json` by something
+ * other than the running app is invisible until the app restarts. Every way the
+ * app offers to save one goes through `set()`, so no shipped flow hits it.
  *
  * A factory rather than a const because the store is constructed in
  * `index.ts` with the app's paths; there is nothing sensible to read at module
@@ -78,16 +89,6 @@ export function credentialStoreTokenFrom(secrets: SecretReader): TokenSource {
     },
   };
 }
-
-/**
- * The unconfigured form, kept so `DEFAULT_TOKEN_SOURCES` still resolves without
- * a store wired in (tests, and any caller that has no `SecretStore` to hand).
- * Prefer `credentialStoreTokenFrom` wherever the store exists.
- */
-export const credentialStoreToken: TokenSource = {
-  id: 'credential-store',
-  resolve: () => Promise.resolve(null),
-};
 
 /**
  * `gh auth token`.
@@ -125,8 +126,41 @@ export const ghCliToken: TokenSource = {
     }),
 };
 
-/** The order decided in §E19. Exported so a test can substitute the whole set. */
-export const DEFAULT_TOKEN_SOURCES: TokenSource[] = [credentialStoreToken, ghCliToken];
+/**
+ * **The chain, in one place.** Every consumer in the app calls this rather than
+ * writing the array out: the update check, the update download, and the problem
+ * reporter.
+ *
+ * It exists because #856 was not really a missing argument — it was the *order*
+ * living in two heads. The report path spelled the array out in
+ * `report-ipc.ts`; the update path never spelled it at all and inherited a
+ * default with a no-op in slot 1. Two spellings is how you get two subsystems
+ * with opposite answers about one token, and a third call site written next
+ * year would have had to notice a decision documented in a file it does not
+ * import.
+ *
+ * So the ordering decision — **a token the user deliberately pasted beats
+ * whatever `gh` happens to be signed in as** — now lives next to the comment
+ * that explains it, and adding a source later is one edit rather than a search.
+ */
+export function tokenSourcesFor(secrets: SecretReader): TokenSource[] {
+  return [credentialStoreTokenFrom(secrets), ghCliToken];
+}
+
+/**
+ * The fallback chain for a caller with no store to hand — and it is `gh` ALONE.
+ *
+ * It used to carry a `credentialStoreToken` no-op in slot 1, which was honest
+ * while there was no store and became a lie once there was one: a default chain
+ * that *looks* like it consults the credential store and structurally cannot.
+ * #856 deleted it. A source that reads the store needs a `SecretStore`
+ * instance, so the only way to get one is to inject it — which is now what
+ * every consumer in the app does, and the absence of a third spelling is what
+ * stops a future call site from quietly getting the no-op again.
+ *
+ * Exported so a test can substitute the whole set.
+ */
+export const DEFAULT_TOKEN_SOURCES: TokenSource[] = [ghCliToken];
 
 export interface ResolvedToken {
   token: string | null;

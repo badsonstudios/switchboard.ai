@@ -249,6 +249,24 @@ describe('the refusals — every one of them fail-open', () => {
     expect(h.download).not.toHaveBeenCalled();
   });
 
+  it('downloads with the token the credential store answered (#856)', async () => {
+    // The DOWNLOAD half, and the reason #856 was not "one line in service.ts":
+    // wiring the check alone would offer a release to a machine whose only
+    // credential is a pasted token, and then fail to fetch it — a worse outcome
+    // than the honest "no credentials" it replaced, because it puts a dialog on
+    // screen first.
+    const h = make({
+      skipToken: false,
+      tokenSources: [
+        { id: 'credential-store', resolve: async () => 'ghp_pasted' },
+        { id: 'gh-cli', resolve: async () => null },
+      ],
+    });
+    const final = await h.installer.install(offer());
+    expect(final.reason).toBeUndefined();
+    expect(h.download).toHaveBeenCalledWith(expect.objectContaining({ token: 'ghp_pasted' }));
+  });
+
   it('a declined quit rolls the pending version back — nothing was replaced', async () => {
     // The user answered "cancel" to the mid-task quit question. A pending
     // version left behind would warn on the next launch about an install that

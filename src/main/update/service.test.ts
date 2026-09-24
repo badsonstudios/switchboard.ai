@@ -11,6 +11,8 @@ import {
   UpdateService,
 } from './service';
 import type { UpdateCheckResult, UpdatePrefs } from '../../shared/update';
+import type { TokenSource } from './token';
+import type { CheckDeps } from './checker';
 
 const CURRENT = '0.1.0';
 
@@ -35,12 +37,19 @@ function harness(
     feedOverride?: string;
     now?: () => number;
     installBusy?: () => boolean;
+    tokenSources?: TokenSource[];
   } = {}
 ) {
   let prefs: UpdatePrefs = { autoCheck: true, ...opts.prefs };
   const pushed: unknown[] = [];
   const results = [...(opts.results ?? [result()])];
-  const checkImpl = vi.fn(async () => results.shift() ?? result());
+  // The signature is on `vi.fn<…>` rather than on the implementation, which
+  // ignores its argument: inferred from a zero-parameter body the mock's call
+  // tuple is `[]`, and `mock.calls[0][0]` becomes a type error — so the #856
+  // tests below could not read the `CheckDeps` the service actually built.
+  const checkImpl = vi.fn<(deps: CheckDeps) => Promise<UpdateCheckResult>>(
+    async () => results.shift() ?? result()
+  );
   const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
   const service = new UpdateService({
     currentVersion: CURRENT,
@@ -51,6 +60,7 @@ function harness(
     push: (s) => pushed.push(s),
     log,
     feedOverride: opts.feedOverride,
+    ...(opts.tokenSources ? { tokenSources: opts.tokenSources } : {}),
     installBusy: opts.installBusy,
     checkImpl,
     now: opts.now,
@@ -188,6 +198,69 @@ describe('UpdateService — the feed override (dev/test only)', () => {
     expect(h.checkImpl).toHaveBeenCalledWith(
       expect.objectContaining({ endpoint: 'http://127.0.0.1:4321/releases', skipToken: true })
     );
+  });
+
+  it('sets `skipToken` even when a real chain was injected — the stub wants no credentials', async () => {
+    // Deliberately NOT asserted as a precedence rule: the two spreads in `run()`
+    // write disjoint keys, so `skipToken: true` lands whatever the order. The
+    // credential is protected by `checker.ts`'s `if (!deps.skipToken)`, and the
+    // assertion that the sources are never CONSULTED lives beside that guard in
+    // `checker.test.ts` — here, where the checker is a mock, it could only ever
+    // be a tautology. This pins the flag alone, which is all this file can see.
+    const h = harness({
+      feedOverride: 'http://127.0.0.1:4321/releases',
+      tokenSources: [{ id: 'credential-store', resolve: async () => 'ghp_pasted' }],
+    });
+    await h.service.check(true);
+    expect(h.checkImpl).toHaveBeenCalledWith(expect.objectContaining({ skipToken: true }));
+  });
+});
+
+describe('UpdateService — the credential chain (#856)', () => {
+  /** The chain a machine with a pasted token and no `gh` would have. */
+  const stored: TokenSource[] = [
+    { id: 'credential-store', resolve: async () => 'ghp_pasted' },
+    { id: 'gh-cli', resolve: async () => null },
+  ];
+
+  it('hands the injected sources to the checker', async () => {
+    // #856 itself: `index.ts` passes `[credentialStoreTokenFrom(store), gh]`,
+    // and if the service drops it on the floor a token pasted into
+    // Help ▸ Report a problem… files issues while update checks stay disabled.
+    const h = harness({ tokenSources: stored });
+    await h.service.check(true);
+    expect(h.checkImpl).toHaveBeenCalledWith(expect.objectContaining({ tokenSources: stored }));
+  });
+
+  it('omits the key entirely when none were given, so the checker keeps its own default', async () => {
+    // Not `tokenSources: undefined` — `resolveUpdateToken` defaults on the
+    // PARAMETER, and an explicit undefined would be the same thing today and a
+    // different thing the moment anyone writes `deps.tokenSources ?? []`.
+    const h = harness();
+    await h.service.check(true);
+    const deps = h.checkImpl.mock.calls[0][0];
+    expect('tokenSources' in deps).toBe(false);
+  });
+
+  it('passes SOURCES, not a resolved token — so a paste mid-session is picked up', async () => {
+    // What "fresh" actually means here, stated honestly: the service hands the
+    // checker the same ARRAY every time and the lateness lives in each source's
+    // closure over the live `SecretStore`. That is enough — it is what makes
+    // "paste a token, then Check for updates…" work without a restart — but the
+    // property being pinned is that nothing is resolved and cached up front. A
+    // service that stored a `string | null` at construction would fail this.
+    let pasted: string | null = null;
+    const live: TokenSource[] = [{ id: 'credential-store', resolve: async () => pasted }];
+    const h = harness({ tokenSources: live });
+
+    await h.service.check(true);
+    const first = h.checkImpl.mock.calls[0][0].tokenSources ?? [];
+    expect(await first[0].resolve()).toBeNull();
+
+    pasted = 'ghp_pasted_just_now';
+    await h.service.check(true);
+    const second = h.checkImpl.mock.calls[1][0].tokenSources ?? [];
+    expect(await second[0].resolve()).toBe('ghp_pasted_just_now');
   });
 });
 

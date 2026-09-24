@@ -149,6 +149,23 @@ describe('checkForUpdate — the happy path', () => {
     };
     expect(init.headers.authorization).toBeUndefined();
   });
+
+  it('does not even CONSULT the sources when skipped — the credential is never read', async () => {
+    // The stronger half, and the one that matters since #856 gave this app a
+    // chain that reaches the real OS credential store. A missing header proves
+    // the token was not SENT; this proves it was not READ. Every e2e spec runs
+    // with a feed override, so the whole suite depends on `skipToken` stopping
+    // short of the keyring on the machine the tests are running on.
+    const resolve = vi.fn(async () => 'ghp_must_not_be_read');
+    await checkForUpdate({
+      currentVersion: '0.1.0',
+      fetchImpl: respond(200, []),
+      endpoint: 'http://127.0.0.1:9/stub',
+      skipToken: true,
+      tokenSources: [{ id: 'credential-store', resolve }],
+    });
+    expect(resolve).not.toHaveBeenCalled();
+  });
 });
 
 describe('checkForUpdate — fail-open, always a record', () => {
