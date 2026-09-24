@@ -8,6 +8,12 @@ import { useTranslation } from 'react-i18next';
 import { blockVisible, FeedBlockDto, showsTimelineDot, upsertBlock, Verbosity } from '../lib/feed';
 import { agentRunHeads, type AgentRunHead } from '../lib/feed-groups';
 import { autonomyTooltip } from '../lib/autonomy';
+import {
+  clearConversation,
+  compactConversation,
+  lockReasonKey,
+  type SessionControlLock,
+} from '../lib/session-controls';
 import { feedKeyAction, FEED_STOP_SELECTOR } from '../lib/feed-keys';
 import {
   FeedReveal,
@@ -296,6 +302,12 @@ export function FeedView(props: {
   dockEpoch?: number;
   /** current session status â€” drives the working banner and the handoff bar */
   status?: string;
+  /** Whether this session's Clear/Compact buttons work, and why not (#903).
+   *  Computed by the CARD and never re-derived here: `status` alone cannot tell
+   *  a cleanly-exited session from an idle one. Required for the reason
+   *  `PanelContext` gives — `null` is already a state, so optional would add a
+   *  silent fourth one. */
+  controlsLock: SessionControlLock;
   /** an approval was answered moments ago and the status has not caught up
    *  (P2 #125) â€” suppresses the handoff bar so clicking Allow never flashes
    *  "switchboard can't answer this" where the button just was */
@@ -1151,6 +1163,7 @@ export function FeedView(props: {
         autonomy={props.autonomy}
         model={props.model}
         status={props.status}
+        controlsLock={props.controlsLock}
         transport={props.transport}
         onCycleAutonomy={props.onCycleAutonomy}
         // Everything ELSE docked in this column, as one value (#716 review).
@@ -1424,6 +1437,54 @@ function blockEdge(cs: CSSStyleDeclaration, part: 'padding' | 'border'): number 
 const MIN_FEED_PX = 60;
 
 /**
+ * The tinted fill a destructive control wears: the crashed hue at 14% over the
+ * panel, carrying its own ink and border (#221's shape, #246's edge rule). One
+ * constant because the stop button and Clear's confirm must not drift apart --
+ * they are the same warning in two places.
+ */
+const CRASHED_WASH = 'color-mix(in srgb, var(--status-crashed) 14%, var(--panel))';
+
+/**
+ * The accessible name for a session control (#903): the full action name, plus
+ * the reason when it is locked.
+ *
+ * The reason is folded into the NAME rather than left in the tooltip, which is
+ * where the card's menu leaves it -- a tooltip is a mouse affordance, so a
+ * keyboard or screen-reader user meets a dead button and no explanation at all.
+ */
+function controlName(
+  t: (k: string, o?: Record<string, string>) => string,
+  nameKey: string,
+  lock: SessionControlLock
+): string {
+  const reason = lockReasonKey(lock);
+  return reason ? t('feedView.controlLocked', { name: t(nameKey), reason: t(reason) }) : t(nameKey);
+}
+
+/**
+ * The options row's chip treatment, shared by the Clear/Compact buttons (#903)
+ * so they read as the same kind of thing as the autonomy chip beside them. A
+ * control that looks like a label does not get clicked, which is the lesson
+ * #747 taught the model chip one door along.
+ *
+ * Locked state is the `disabled` attribute plus this dimmer ink and the tooltip
+ * that says why, never colour on its own (DESIGN 5.32).
+ */
+function controlChip(locked: boolean): React.CSSProperties {
+  return {
+    background: 'transparent',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius-chip)',
+    color: locked ? 'var(--faint)' : 'var(--muted)',
+    fontSize: 10,
+    fontFamily: 'var(--font-ui)',
+    padding: '1px 8px',
+    cursor: locked ? 'default' : 'pointer',
+    whiteSpace: 'nowrap',
+  };
+}
+
+/**
  * The tallest the composer's textarea may grow to without pushing anything off
  * the panel â€” see `ComposerMetrics.available` for why a line cap alone is not
  * enough. Undefined when there is no layout to measure (a hidden panel), which
@@ -1468,6 +1529,7 @@ function Composer({
   autonomy,
   model,
   status,
+  controlsLock,
   transport,
   onCycleAutonomy,
   dockedChrome,
@@ -1478,6 +1540,9 @@ function Composer({
   autonomy?: string;
   model?: string;
   status?: string;
+  /** #903: null means the Clear/Compact buttons work; otherwise it says why
+   *  they do not. The CARD's answer, never re-derived from `status`. */
+  controlsLock: SessionControlLock;
   /** P2-E10-09: only a typed-message transport can carry a pasted image */
   transport?: TransportKind;
   onCycleAutonomy?: () => void;
@@ -1507,6 +1572,68 @@ function Composer({
   const box = React.useRef<HTMLTextAreaElement | null>(null);
   /** the composer's own root â€” the auto-grow measures the panel through it */
   const root = React.useRef<HTMLDivElement | null>(null);
+  /** the options row, whose height stopped being invariant when it learned to
+   *  wrap (#903) -- see the ResizeObserver below */
+  const optionsRow = React.useRef<HTMLDivElement | null>(null);
+
+  // Clear's confirmation, in the row itself (#903). It is never skipped and
+  // never remembered: a fresh Composer asks again.
+  const [confirmClear, setConfirmClear] = React.useState(false);
+  const clearBtn = React.useRef<HTMLButtonElement | null>(null);
+  const cancelBtn = React.useRef<HTMLButtonElement | null>(null);
+  /** a confirmation has been opened at least once, so the close owes a focus */
+  const returnFocus = React.useRef(false);
+  /**
+   * A `/compact` is on the wire (#903 review).
+   *
+   * TWO of them, and the ref is not redundant: the state is what greys the
+   * button, but React has not re-rendered by the time a second click in the
+   * same tick runs its handler, so `disabled` cannot be the guard. The ref
+   * refuses synchronously; the state says so on screen.
+   */
+  const compactInFlight = React.useRef(false);
+  const [compactBusy, setCompactBusy] = React.useState(false);
+  /**
+   * FOCUS FOLLOWS THE QUESTION, IN BOTH DIRECTIONS, and this is the part the
+   * first cut of #903 got wrong.
+   *
+   * Opening the confirmation UNMOUNTS the button that was focused, which drops
+   * focus on `document.body`. Three things break at once: the keyboard user who
+   * pressed Enter on Clear has to tab back from the top of the document to
+   * answer their own question; the Escape handler on the group is a React
+   * synthetic listener and so is unreachable from outside the subtree; and a
+   * screen reader is told nothing at all, because nothing moved and there is no
+   * live region -- so the next control they find, named "Clear conversation",
+   * is the one that WIPES.
+   *
+   * So focus goes to CANCEL, not to the confirm: a destructive question puts
+   * the caret on the safe answer, and landing inside the labelled group is what
+   * makes the whole sentence ("Clear this conversation? The session's context
+   * starts over.") get announced. On close it goes back to the button that
+   * asked. Both are refs, so both resolve in whichever document drew the card
+   * -- a popped-out window included (#573).
+   */
+  React.useEffect(() => {
+    if (confirmClear) {
+      returnFocus.current = true;
+      cancelBtn.current?.focus();
+      return;
+    }
+    if (!returnFocus.current) return;
+    returnFocus.current = false;
+    clearBtn.current?.focus();
+  }, [confirmClear]);
+  // A session that dies mid-question takes the question with it: leaving it
+  // open would put a live "Clear" in front of a session that cannot be cleared,
+  // and re-open it if the card ever came back. The focus return above would
+  // land on a button that is now disabled, which is a silent no-op -- so it
+  // goes to the prompt box instead, the one thing here that is never locked.
+  React.useEffect(() => {
+    if (controlsLock === null || !confirmClear) return;
+    returnFocus.current = false;
+    box.current?.focus();
+    setConfirmClear(false);
+  }, [controlsLock, confirmClear]);
 
   // Pasted images (P2-E10-09, Â§5.10). The clipboard RULES are in
   // `lib/composer-attachments.ts`; this end only reacts to a paste event and
@@ -2279,7 +2406,18 @@ function Composer({
   // re-measuring on every keystroke; this is the explicit replacement.
   //
   // `draft` is deliberately NOT a dependency. That is the fix, not an omission.
-  React.useLayoutEffect(remeasure, [attachments, attachNotice, dockedChrome, remeasure]);
+  //
+  // `confirmClear` is the same argument again, and it is here as well as in the
+  // ResizeObserver below on purpose: the observer is asynchronous, so measuring
+  // in the same commit is what stops a one-frame overhang the moment the
+  // confirmation swaps in and takes the row onto a second line (#903).
+  React.useLayoutEffect(remeasure, [
+    attachments,
+    attachNotice,
+    dockedChrome,
+    confirmClear,
+    remeasure,
+  ]);
   // A SHORTER panel has less to spare â€” dragging a splitter or resizing the
   // window re-renders nothing, so without this a long draft keeps a cap its
   // panel no longer has and overhangs its own options row.
@@ -2288,25 +2426,40 @@ function Composer({
   // problem: a width change is the cheapest signal that the panel's chrome has
   // been re-laid-out, and the guard below means an unchanged panel costs
   // nothing. Neither trigger can loop â€” see the dedupe in `remeasure`.
+  //
+  // THE OPTIONS ROW IS WATCHED TOO, and that is new with #903. Until this item
+  // that row was `nowrap` and therefore a fixed height, so it could be treated
+  // as invariant chrome. It wraps now -- and a wrap changes neither the box's
+  // width nor the panel's height, so neither of the two signals above sees it.
+  // The concrete miss: a narrow card with a full draft, click Clear, the
+  // confirmation is wider than the two chips it replaced, the row takes a
+  // second line, and the box keeps a cap its panel no longer has. That is
+  // #406's overhang through a third door, and the model chip changing to a
+  // longer name would open it just as well.
   React.useEffect(() => {
     const el = box.current;
     const panel = root.current?.parentElement;
     if (!el) return;
+    const rowHeight = (): number => optionsRow.current?.offsetHeight ?? 0;
     let lastWidth = el.getBoundingClientRect().width;
     let lastRoom = panel?.clientHeight ?? 0;
+    let lastOptions = rowHeight();
     const ro = new ResizeObserver(() => {
       const width = el.getBoundingClientRect().width;
       // a collapsed panel measures 0 and would cap the box at nothing; it comes
       // back at full size, and that tick does the work
       if (width === 0) return;
       const room = panel?.clientHeight ?? 0;
-      if (width === lastWidth && room === lastRoom) return;
+      const options = rowHeight();
+      if (width === lastWidth && room === lastRoom && options === lastOptions) return;
       lastWidth = width;
       lastRoom = room;
+      lastOptions = options;
       remeasure();
     });
     ro.observe(el);
     if (panel) ro.observe(panel);
+    if (optionsRow.current) ro.observe(optionsRow.current);
     return () => ro.disconnect();
   }, [remeasure]);
 
@@ -2824,7 +2977,7 @@ function Composer({
             // is TEXT on a 14% wash of its own hue, which measured 2.84:1 on
             // daylight and 3.37:1 on nordic. The ink clears 5.21:1 everywhere.
             // The border keeps the hue â€” an edge is not a word (#246).
-            background: 'color-mix(in srgb, var(--status-crashed) 14%, var(--panel))',
+            background: CRASHED_WASH,
             color: 'var(--status-crashed-ink)',
             border: '1px solid var(--status-crashed)',
             borderRadius: 8,
@@ -2859,7 +3012,24 @@ function Composer({
       </button>
       </div>
       {/* options row (E10-05): the extension-style affordances under the box */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div
+        ref={optionsRow}
+        data-testid="composer-options"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          // IT WRAPS (#903). The row gained two more controls and a card can be
+          // narrow; the alternative was collapsing them to icons at some
+          // measured width, which needs a ResizeObserver in the composer and a
+          // second visual language for two controls. Wrapping cannot overflow
+          // by construction, which is the only guarantee worth having here --
+          // #885 was a flex row whose headroom looked fine on Windows and was
+          // 38px short on Linux CI, where text renders about 5% wider.
+          flexWrap: 'wrap',
+          rowGap: 4,
+        }}
+      >
         {/* This session's autonomy (E10-05). The tooltip is the shared one
             (#534) â€” it says what the MODE does, then what THIS control does
             with it, which is the question a chip that applies on next resume
@@ -2985,6 +3155,133 @@ function Composer({
             onBusyChange={noteModelBusy}
           />
         )}
+        {/* Clear and Compact (#903). The SAME two actions the card's menu
+            offers, through the same module -- what gets sent is still `/clear`
+            and `/compact` typed into the real CLI, and the menu entries stay.
+
+            COMPACT SITS FIRST, and Clear last, on purpose: Clear is the
+            destructive one, and this order keeps it away from the model chip,
+            which is the control on this row people actually click. The
+            confirmation is the real guard; the order is just not making it
+            work harder than it has to.
+
+            The confirmation is an IN-ROW SWAP rather than a popover, which is
+            also how it satisfies a popped-out card: there is no positioned
+            layer, so there is no owning-document question to get wrong (#573),
+            and the focus return below lands in whichever window drew it. */}
+        <span
+          style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape' && confirmClear) {
+              e.stopPropagation();
+              setConfirmClear(false);
+            }
+          }}
+        >
+          {confirmClear && controlsLock === null ? (
+            <span
+              role="group"
+              // The WHOLE sentence, for anyone who cannot read the row: the
+              // visible question is short because the row is, but "the
+              // session's context starts over" is the part that decides it.
+              // Focus lands inside this group when it opens, which is what
+              // gets the sentence announced.
+              aria-label={t('grid.menuClearConfirm')}
+              style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+            >
+              <span
+                title={t('grid.menuClearConfirm')}
+                style={{
+                  fontSize: 10,
+                  fontFamily: 'var(--font-ui)',
+                  color: 'var(--text)',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {t('feedView.clearConfirmShort')}
+              </span>
+              <button
+                data-testid="composer-clear-go"
+                onClick={() => {
+                  setConfirmClear(false);
+                  void clearConversation(sessionId);
+                }}
+                title={t('grid.menuClearHint')}
+                // DELIBERATELY NOT `grid.menuClear`. Naming this the same as
+                // the button that OPENED the question is how a screen-reader
+                // user tabs onto "Clear conversation" a second time, hears the
+                // identical words, and wipes the session believing nothing has
+                // happened yet. The answer has to be audibly an answer.
+                aria-label={t('feedView.clearConfirmGo')}
+                style={{
+                  ...controlChip(false),
+                  // the destructive confirm wears the crashed hue as INK on its
+                  // own wash, the tinted-fill shape #221 settled on -- the
+                  // border keeps the hue, and an edge is not a word (#246)
+                  background: CRASHED_WASH,
+                  color: 'var(--status-crashed-ink)',
+                  border: '1px solid var(--status-crashed)',
+                }}
+              >
+                {t('grid.menuClearGo')}
+              </button>
+              <button
+                ref={cancelBtn}
+                data-testid="composer-clear-cancel"
+                aria-label={t('feedView.clearConfirmCancel')}
+                onClick={() => setConfirmClear(false)}
+                style={controlChip(false)}
+              >
+                {t('grid.menuClearCancel')}
+              </button>
+            </span>
+          ) : (
+            <>
+              {/* THE TOOLTIP LIVES ON THE WRAPPER, not on the button, and only
+                  because of the one state that matters: Chromium does not
+                  hit-test a `disabled` control, so a `title` on a greyed-out
+                  button never appears -- which is exactly when a mouse user
+                  needs to be told why. The accessible name carries the reason
+                  too, for everyone not using a mouse. */}
+              <span title={t(lockReasonKey(controlsLock) ?? 'grid.menuCompactHint')}>
+                <button
+                  data-testid="composer-compact"
+                  // Dead while a `/compact` is on the wire. Unlike Clear this
+                  // leaves no marker in the conversation, so a double-click
+                  // would type the command twice with nothing on screen to say
+                  // so -- the same reason the model chip next door has a busy
+                  // state.
+                  disabled={controlsLock !== null || compactBusy}
+                  aria-label={controlName(t, 'grid.menuCompact', controlsLock)}
+                  onClick={() => {
+                    if (compactInFlight.current) return;
+                    compactInFlight.current = true;
+                    setCompactBusy(true);
+                    void compactConversation(sessionId).finally(() => {
+                      compactInFlight.current = false;
+                      setCompactBusy(false);
+                    });
+                  }}
+                  style={controlChip(controlsLock !== null || compactBusy)}
+                >
+                  {t('feedView.compact')}
+                </button>
+              </span>
+              <span title={t(lockReasonKey(controlsLock) ?? 'grid.menuClearHint')}>
+                <button
+                  ref={clearBtn}
+                  data-testid="composer-clear"
+                  disabled={controlsLock !== null}
+                  aria-label={controlName(t, 'grid.menuClear', controlsLock)}
+                  onClick={() => setConfirmClear(true)}
+                  style={controlChip(controlsLock !== null)}
+                >
+                  {t('feedView.clear')}
+                </button>
+              </span>
+            </>
+          )}
+        </span>
         <span style={{ flex: 1 }} />
         {status === 'working' && (
           <span

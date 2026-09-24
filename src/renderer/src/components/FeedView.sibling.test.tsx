@@ -109,6 +109,7 @@ async function mount(transport: TransportKind = 'stream'): Promise<HTMLElement> 
     colorScheme: 'dark',
     changed: 0,
     transport,
+    controlsLock: null,
     setView: () => {},
   };
   await act(async () => {

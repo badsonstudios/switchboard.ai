@@ -25,7 +25,7 @@ no page is an unfinished work item.
 | [02 — Sessions](02-sessions.md) | Creating, resuming, opening a conversation you had before, suspending, closing sessions, and how sessions read each other's work and send each other messages | draft |
 | [03 — The session view](03-session-view.md) | Reading the conversation, the prompt box, detail levels | draft |
 | [04 — Approvals & autonomy](04-approvals-and-autonomy.md) | Allowing/denying tool use, answering Claude's questions, the four autonomy modes | draft |
-| [05 — Slash commands](05-slash-commands.md) | `/clear`, `/compact`, autocomplete, the ⋯ menu | draft |
+| [05 — Slash commands](05-slash-commands.md) | `/clear`, `/compact`, autocomplete, the Clear and Compact buttons, the ⋯ menu | draft |
 | [06 — Keyboard & commands](06-keyboard.md) | Shortcuts, the command list, the palette | draft |
 | [07 — Organizing your workspace](07-workspace.md) | The sidebar, groups, pop-out windows, layout | draft |
 | [08 — Changes & git](08-changes-and-git.md) | The Changes tab, diffs, syntax colouring, branch info | draft |

@@ -63,6 +63,11 @@ export const sessionPanels: PanelContribution[] = [
         // to hear that dockview moved its DOM out from under it (#555)
         dockEpoch={ctx.dockEpoch}
         status={ctx.status}
+        // #903's buttons are dead without this — and #261 is the standing
+        // lesson about a guard that only exists if THIS render site threads it
+        // through. Without it the composer would offer a live Clear on a
+        // session that has already exited.
+        controlsLock={ctx.controlsLock}
         binding={ctx.binding}
         bindingDiag={ctx.bindingDiag}
         recentlyDecided={ctx.recentlyDecided}

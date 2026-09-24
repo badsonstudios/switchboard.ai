@@ -27,6 +27,7 @@ function ctx(over: Partial<PanelContext> = {}): PanelContext {
     theme: 'nordic',
     colorScheme: 'dark',
     changed: 0,
+    controlsLock: null,
     setView: () => {},
     ...over,
   };

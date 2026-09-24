@@ -71,6 +71,7 @@ async function mount(over: Partial<PanelContext>): Promise<void> {
     theme: 'nordic',
     colorScheme: 'dark',
     changed: 0,
+    controlsLock: null,
     setView: () => {},
     ...over,
   };

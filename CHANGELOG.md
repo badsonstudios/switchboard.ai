@@ -96,6 +96,15 @@ on the floor, and say so in your PR.
 
 ## 0.8.100 — unreleased
 
+### Added
+
+- **Clear and Compact are one click away.** The row under the prompt box — the
+  one with the autonomy and model chips — now has **Compact** and **Clear**
+  buttons, so restarting or summarizing a session's conversation no longer
+  means opening the card's **⋯** menu first. Clear still asks you to confirm,
+  and the question now appears in the row itself. The menu entries stay exactly
+  where they were.
+
 ### Fixed
 
 - A session card no longer keeps a task label describing a conversation it

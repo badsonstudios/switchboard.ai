@@ -646,6 +646,59 @@ test.describe('[pty] Feed view (E12-06)', () => {
     await popout.evaluate(() => window.close());
   });
 
+  // #903's done-when 6, and the cheapest possible cover for it. The whole
+  // claim is that Clear's confirmation and its focus belong to the POPOUT's
+  // own document — the #573 rule — so the only thing worth asserting from a
+  // machine is that the question appears in that window and takes focus with
+  // it. Whether it LOOKS right there is a hand-test line in the tracker.
+  test("the composer's Clear asks its question in the popout's own window (#903)", async () => {
+    test.skip(
+      process.platform === 'linux',
+      'popout opens a 2nd OS window — unreliable under headless xvfb'
+    );
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    const title = folder.split(/[\\/]/).pop()!;
+    await expect(w.locator('nav [draggable="true"]')).toHaveCount(1, { timeout: 25_000 });
+
+    // The session controls are LOCKED while 'starting' (§5.10's startup-dialog
+    // rule), and the fake provider stays there until the CLI says otherwise —
+    // so play the CLI, the way `slash-commands.spec.ts` does for the ⋯ menu.
+    const post = await hookPoster(a);
+    await post(title, { hook_event_name: 'SessionStart', source: 'startup' });
+
+    await w.getByTitle('Pop out into its own window').click();
+    await expect
+      .poll(() => a.app.windows().filter((p) => p.url().includes('popout.html')).length, {
+        timeout: 15_000,
+      })
+      .toBe(1);
+    const popout = a.app.windows().find((p) => p.url().includes('popout.html'))!;
+    await popout.waitForLoadState('domcontentloaded');
+
+    const clear = popout.getByTestId('composer-clear');
+    await expect(clear).toBeEnabled({ timeout: 25_000 });
+    await clear.click();
+
+    // the question is HERE, not in the window the card came from
+    await expect(popout.getByTestId('composer-clear-go')).toBeVisible();
+    await expect(w.getByTestId('composer-clear-go')).toHaveCount(0);
+    // …and so is the focus, on the safe answer
+    expect(await popout.evaluate(() => document.activeElement?.getAttribute('data-testid'))).toBe(
+      'composer-clear-cancel'
+    );
+
+    // back out: nothing is cleared, and focus returns to the button that asked
+    await popout.getByTestId('composer-clear-cancel').click();
+    await expect(popout.getByTestId('composer-clear-go')).toHaveCount(0);
+    expect(await popout.evaluate(() => document.activeElement?.getAttribute('data-testid'))).toBe(
+      'composer-clear'
+    );
+
+    await popout.evaluate(() => window.close());
+  });
+
   // #527. The one thing only the real app can settle: a click on a link in a
   // reply reaches `shell.openExternal` IN MAIN — across the preload bridge,
   // through the IPC broker's capability check, past main's scheme allowlist.
