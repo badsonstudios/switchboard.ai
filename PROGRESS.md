@@ -3,18 +3,27 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔨 IN PROGRESS — 2026-09-24: **#903** Clear and Compact buttons on the composer's options row
+> # ✅ MERGED — 2026-09-24: **#903** Clear and Compact buttons on the composer's options row
 >
-> Branch `feature/903-clear-compact-buttons`. Picked by the owner from the three
-> options offered at session start — he has not captured the laptop day yet, so
-> **P2-E21-02 is still his and still open**, and #903 is user-facing, small, and
-> judgeable by eye.
+> PR #933 squashed to `560b11b`; all four CI jobs green. Issue closed. Plan was
+> posted to the issue before implementation. **NOT RELEASED** — the version bump
+> is manual, so there is nothing installable to hand-test yet. CHANGELOG entry
+> filed under `0.8.100 — unreleased`, in the same breath as the manual page.
+> Dogfood row added as UNTESTED, nine steps.
+>
+> **Next up:** still **P2-E21-02**, which is the owner's and not a coding item —
+> install v0.8.99 on the laptop, Diagnostics ▸ detailed capture ON, a normal day
+> at 3+ sessions, send the file. **Nothing in the queue is blocked on us.** The
+> small user-facing items the owner named alongside #903 are **#856**, **#828**
+> and **#704**.
+>
+> Picked by the owner from the three options offered at session start — he has
+> not captured the laptop day yet, so #903 was the user-facing, self-contained,
+> judge-it-by-eye choice.
 >
 > The earlier "don't touch the composer or the feed, it moves the perf baseline"
 > rule is **retired** (owner, 2026-09-24): he is capturing on v0.8.99, so nothing
 > merged after that tag can reach the build he measures.
->
-> Plan posted to the issue before implementation.
 >
 > **The shape: `lib/session-controls.ts` is the one implementation**, and the
 > interesting part of it is not the two commands — it is the LOCK. The rule
