@@ -201,6 +201,20 @@ Right now the releases live in a private place, so the check needs credentials
 that are already on your machine. If it can't find any, checking is simply
 switched off — quietly, with no setup to do and no error to dismiss.
 
+It looks in two places, in this order:
+
+1. **A GitHub token you saved yourself**, in the box on Help ▸ Report a
+   problem…. Yours beats anything else on the machine, because you typed it in
+   on purpose.
+2. **The GitHub command-line tool**, if it is installed and signed in. Nothing
+   to set up — if you already use `gh`, checking just works.
+
+So if you ever saved a token to file a problem report, update checking and
+downloading use the same one. You do not need to enter it twice, and you do not
+need to restart the app — but the check that is already on screen won't change
+its mind on its own. Ask for a fresh one with **Check for updates…** and you'll
+get a real answer.
+
 Those credentials are used **only** to ask GitHub for the release, and only on
 GitHub's own address. The actual file comes from a storage server GitHub
 redirects to, and your credentials are deliberately not sent there — they

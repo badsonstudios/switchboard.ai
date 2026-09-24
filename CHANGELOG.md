@@ -107,6 +107,12 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **A saved GitHub token now switches update checking back on.** If you paste a
+  token into Help ▸ Report a problem… on a machine without the GitHub
+  command-line tool, update checks and downloads use it too — previously the
+  token filed problem reports perfectly well while updates went on saying this
+  machine had no credentials for the release list. Use **Check for updates…**
+  once after saving; the next automatic check picks it up on its own.
 - A session card no longer keeps a task label describing a conversation it
   could not reopen. If the conversation is gone from disk and the session has
   to start fresh, the card goes back to **+ task label** and your next prompt

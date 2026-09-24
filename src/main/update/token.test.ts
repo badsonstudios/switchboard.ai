@@ -13,7 +13,7 @@ vi.mock('child_process', async (importOriginal) => {
 });
 
 import {
-  credentialStoreToken,
+  DEFAULT_TOKEN_SOURCES,
   credentialStoreTokenFrom,
   ghCliToken,
   resolveUpdateToken,
@@ -75,16 +75,23 @@ describe('credentialStoreTokenFrom — the slot, filled (#815)', () => {
   });
 });
 
-describe('the credential-store slot', () => {
-  it('is a documented NO-OP today, and still a real entry in the order', async () => {
-    // The UNCONFIGURED export, which is what `DEFAULT_TOKEN_SOURCES` still
-    // holds: the store itself now exists (`secrets/store.ts`) and
-    // `credentialStoreTokenFrom` above reads it, but only the #815 report path
-    // passes that in. The update checker still resolves this no-op, which is
-    // why a token pasted into the report dialog does not yet switch update
-    // checks back on — recorded in `token.ts` as a follow-up, not a mystery.
-    expect(await credentialStoreToken.resolve()).toBeNull();
-    expect(credentialStoreToken.id).toBe('credential-store');
+describe('DEFAULT_TOKEN_SOURCES — the fallback, with the no-op deleted (#856)', () => {
+  it('is `gh` ALONE: there is no module-scope spelling of the credential store', async () => {
+    // This is the assertion that keeps #856 fixed. The default used to carry a
+    // `credentialStoreToken` no-op in slot 1 — honest while there was no store,
+    // a lie once `secrets/store.ts` existed, because the chain LOOKED like it
+    // consulted the store and structurally could not. Deleting it means a call
+    // site that forgets to inject gets a chain that is visibly short, rather
+    // than one that silently answers null from a source named after the store.
+    expect(DEFAULT_TOKEN_SOURCES.map((s) => s.id)).toEqual(['gh-cli']);
+    expect(DEFAULT_TOKEN_SOURCES).not.toContainEqual(
+      expect.objectContaining({ id: 'credential-store' })
+    );
+  });
+
+  it('still resolves for a caller with no store to hand', async () => {
+    ghAnswers(null, 'gho_default\n');
+    expect(await resolveUpdateToken()).toEqual({ token: 'gho_default', source: 'gh-cli' });
   });
 });
 

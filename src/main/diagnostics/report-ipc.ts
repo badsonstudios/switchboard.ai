@@ -23,7 +23,7 @@ import { buildBundle, type BundleDeps } from './bundle';
 import { composeIssueBody } from './report-body';
 import { sanitizeSummary } from '../../shared/perf';
 import { createIssue, type CreateIssueResult } from './github-issue';
-import { credentialStoreTokenFrom, ghCliToken, type TokenSource } from '../update/token';
+import { tokenSourcesFor, type TokenSource } from '../update/token';
 import type { SecretStore } from '../secrets/store';
 import {
   GITHUB_TOKEN_SECRET_KEY,
@@ -101,14 +101,15 @@ export function registerReportIpc(deps: ReportIpcDeps): void {
   const fileIssue = deps.fileIssue ?? createIssue;
 
   /**
-   * The chain, with the credential store's slot FILLED (#815).
+   * The chain, with the credential store's slot FILLED (#815) — and built by
+   * `token.ts`'s own factory rather than spelled out here (#856).
    *
-   * `gh` first would be wrong: a token the user deliberately pasted is a
-   * stronger statement of intent than whatever `gh` happens to be logged in as,
-   * and this is the order `update/token.ts` already declares.
+   * It used to be an array literal in this file, which was fine right up until
+   * the update path needed the same chain and got a different one. The order —
+   * a token the user deliberately pasted beats whatever `gh` happens to be
+   * logged in as — is a decision, and it now has exactly one home.
    */
-  const tokenSources =
-    deps.tokenSources ?? ((): TokenSource[] => [credentialStoreTokenFrom(secrets), ghCliToken]);
+  const tokenSources = deps.tokenSources ?? ((): TokenSource[] => tokenSourcesFor(secrets));
 
   const status = async (): Promise<ReportStatus> => {
     let canFileIssue = false;

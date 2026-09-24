@@ -167,9 +167,9 @@ export function App(): React.JSX.Element {
   //
   // `getLayout` is a deliberately empty entry, not a forgotten `await`: the
   // contract is the RETURN TYPE, so `Promise.resolve` satisfies it without the
-  // `async` that `require-await` reads as a mistake (same call T1 made for
-  // `credentialStoreToken.resolve`). Put `async` back the day it has a body
-  // with an `await` in it.
+  // `async` that `require-await` reads as a mistake (the same call T1 made in
+  // `update/token.ts`, where `credentialStoreTokenFrom` still resolves this
+  // way). Put `async` back the day it has a body with an `await` in it.
   const bridge: ShellBridge =
     window.switchboard ??
     ({
