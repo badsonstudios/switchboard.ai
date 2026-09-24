@@ -4891,6 +4891,138 @@ describe('AI task labels — the cadence (#758, §5.11)', () => {
     expect(stored(h).labelSource).toBe('user');
   });
 
+  // ── #886: the THIRD path that invalidates a conversation ──────────────────
+  //
+  // `/clear` and a mis-bind correction both fire a reset, and the two tests
+  // above cover them. A refused resume fires NOTHING: the decision is made in
+  // `planSessionStart` and the card just starts fresh, wearing the old
+  // conversation's label. Because the instant label only ever fills a blank
+  // (#883), that label is not merely wrong — it is permanent.
+  describe('a card whose resume was refused (#886)', () => {
+    /** The adapter answers resume however the test needs; everything else is
+     *  the Claude shape the block already uses. A REAL root, so the resumed
+     *  case's history replay reads a directory that exists and finds nothing
+     *  in it rather than depending on a missing-path code path. */
+    const resumingCaps = (resumes: boolean): ProviderCapabilities => ({
+      transcripts: { projectsRoot: () => dir },
+      resume: { canResume: () => resumes },
+    });
+
+    /** A card that HAS a conversation, so the plan has something to decline. */
+    const withConversation = (over: Partial<PersistedSession> = {}): PersistedSession => ({
+      ...card(),
+      nativeSessionId: 'conv-gone',
+      taskLabel: 'this history is about to be deleted',
+      labelSource: 'auto',
+      ...over,
+    });
+
+    /** `start` is `sessions:create`, and its REPLY is half of what the card
+     *  shows — so it is handed back rather than dropped. */
+    const startCard = (resumes: boolean, prior: PersistedSession) => {
+      const streamFeed = new StreamFeed();
+      const h = harness(resumingCaps(resumes), dir, { prior, transport: 'stream', streamFeed });
+      const reply = start(h) as { taskLabel?: string };
+      return { ...h, reply };
+    };
+
+    it('drops the stale label, and the next prompt can name the card again', () => {
+      // The reproduction from the ticket: quit, delete `~/.claude/projects`,
+      // relaunch. `canResume` says no, the session starts fresh, and there is no
+      // history to replay — but the card still reads "this history is about to
+      // be deleted", describing a conversation that no longer exists.
+      const h = startCard(false, withConversation());
+
+      expect(stored(h).taskLabel).toBeUndefined();
+      expect(labels(h).at(-1)).toEqual({ cardId: 'card-1', label: undefined });
+
+      // …and THIS is the half that was unrecoverable before the fix.
+      h.call('sessions:submitPrompt', 'live-1', 'the new conversation');
+      expect(stored(h).taskLabel).toBe('the new conversation');
+    });
+
+    it('does not hand the stale label back in the CREATE REPLY either', () => {
+      // ⚠️ THE ONE THE STORAGE ASSERTION ABOVE CANNOT SEE, and the bug found in
+      // review. `sessions:create` seeds the card's header from its reply, and
+      // that reply was built from the `prior` snapshot taken before any of this
+      // ran — so `SessionGrid`'s `if (record.taskLabel) setTaskLabel(...)` put
+      // the dead conversation's name straight back after the push had cleared
+      // it. Workspace file blank, sessions rail blank, card header still lying,
+      // for the whole session unless another label happened to arrive.
+      const h = startCard(false, withConversation());
+      expect(h.reply.taskLabel).toBeUndefined();
+    });
+
+    it('does not undo what the start itself just decided', () => {
+      // The clear RE-READS the card so it picks up the record `sessions:create`
+      // wrote a few lines earlier. If it ever regressed to spreading the
+      // captured `prior`, it would silently revert that upsert's decisions —
+      // and every other test here would still pass, because their fixtures have
+      // `prior` and the new record agreeing. A field the start is what sets is
+      // the only thing that can tell the two apart.
+      const streamFeed = new StreamFeed();
+      const h = harness(resumingCaps(false), dir, {
+        prior: withConversation(),
+        transport: 'stream',
+        streamFeed,
+      });
+      h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 't', groupId: 'group-7' });
+
+      expect(stored(h).taskLabel).toBeUndefined();
+      expect(stored(h).groupId).toBe('group-7');
+    });
+
+    it('keeps the label when the resume SUCCEEDS', () => {
+      // The guard against over-clearing, and the test that fails if the
+      // condition is wrong: an ordinary relaunch resumes, so the conversation
+      // the label describes is the one on screen and the label is still true.
+      const h = startCard(true, withConversation());
+      expect(stored(h).taskLabel).toBe('this history is about to be deleted');
+      expect(labels(h).filter((l) => l.label === undefined)).toEqual([]);
+    });
+
+    it('drops it when the card ADOPTS a different conversation instead', () => {
+      // The case the first cut of the gate missed (found in review). Adoption
+      // fires exactly when the card's own candidates all failed and the
+      // provider found some OTHER unclaimed conversation lying in the folder —
+      // so a resume id IS set, and a gate that only asked "did anything
+      // resume?" would skip. The card is in a different conversation from the
+      // one its label names, which is #886's done-when word for word: it could
+      // not reopen the conversation the label describes. The on-screen adoption
+      // notice is what says why, and the next prompt renames the card.
+      const streamFeed = new StreamFeed();
+      const h = harness(
+        {
+          transcripts: { projectsRoot: () => dir },
+          resume: { canResume: () => false, findOrphaned: () => 'conv-somebody-elses' },
+        },
+        dir,
+        { prior: withConversation(), transport: 'stream', streamFeed }
+      );
+      const reply = start(h) as { taskLabel?: string };
+
+      expect(stored(h).taskLabel).toBeUndefined();
+      expect(reply.taskLabel).toBeUndefined();
+      expect(labels(h).at(-1)).toEqual({ cardId: 'card-1', label: undefined });
+    });
+
+    it('does NOT drop a label the user typed — that rule is unconditional', () => {
+      const h = startCard(false, withConversation({ taskLabel: 'mine, thanks', labelSource: 'user' }));
+      expect(stored(h).taskLabel).toBe('mine, thanks');
+      expect(stored(h).labelSource).toBe('user');
+    });
+
+    it('leaves a card with no conversation in its chain alone', () => {
+      // The gate is `resumeCandidates(prior)`, not "this start did not resume".
+      // A card that never had a conversation declined nothing, so there is
+      // nothing stale about its label — and an ordinary first start must not
+      // push a clear at all.
+      const h = startCard(false, { ...card(), taskLabel: 'an older label', labelSource: 'auto' });
+      expect(stored(h).taskLabel).toBe('an older label');
+      expect(labels(h)).toEqual([]);
+    });
+  });
+
   it('the switch is readable and writable over IPC, and starts ON (#883)', () => {
     // Both handlers are SYNCHRONOUS, like `settings:getAutoLabels` beside them,
     // so the harness hands back the value itself rather than a promise — using

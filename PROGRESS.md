@@ -3,6 +3,74 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔧 IN PROGRESS — 2026-09-23: **#886** a card that fails to resume keeps a task label it can never shed
+>
+> Branch `feature/886-stale-label-refused-resume`. Picked deliberately over the
+> rest of the open queue: the owner is about to install v0.8.99 on the laptop and
+> capture a working day for **P2-E21-02**, and #886 is the only ready item that
+> touches neither the composer nor the feed — so nothing landing here moves the
+> perf baseline he is measuring.
+>
+> **E21 is NOT blocked on us.** P2-E21-02 is the owner's: install v0.8.99,
+> Settings ▸ Diagnostics ▸ detailed performance capture ON, a normal day at 3+
+> sessions, send the file. E21-03 (findings note + budgets + one ticket per
+> offender) starts the moment that file exists, and #740's feed-virtualisation
+> thesis is confirmed or demoted there.
+>
+> **The bug:** since #883 the instant task label only ever fills a BLANK, so a
+> stale auto label is unrecoverable — no later prompt can replace it. `/clear`
+> and a mis-bind correction both drop the auto label through
+> `clearAutoLabelOnReset` on the reset event. **A refused resume does not fire a
+> reset**, so the third path leaves the card named after a conversation that no
+> longer exists, for ever.
+>
+> **Shape chosen: the issue's option 2 (clear at `sessions:create`), not option
+> 1 (mint a reset event).** A reset is routed to the renderer as
+> `sessions:feedReset` and its causes mean "the blocks you are showing are
+> gone" — at create time the renderer has no blocks yet, so a synthetic reset
+> would be a signal with no subscriber and one wrong-looking marker. Recorded on
+> the issue so the road not taken is findable.
+>
+> **The fix:** `clearAutoLabelOnReset(liveId)` split into a card-keyed
+> `clearAutoLabel(cardId, why)` plus the live-id wrapper — the two #883 paths
+> arrive holding a live id, the third fires where the invalidated conversation
+> has no live session at all, because it is the one that could not be started.
+> The gate is `(!ownConversationId || plan.resumedVia === 'adopted') &&
+> resumeCandidates(prior).length > 0`, placed AFTER the final `persist.upsert`
+> because that upsert spreads `prior` and would write a stale label straight
+> back.
+>
+> **REVIEW ROUND 1 FOUND A BLOCKER, and it is the interesting part of this
+> item.** The storage was right and the screen was not. `sessions:create`
+> returns the card's label so the header can seed itself, and that reply was
+> built from the `prior` snapshot taken before any of this ran — so the push
+> cleared the header and the reply put the dead conversation's name straight
+> back one tick later. Workspace file blank, sessions rail blank, **card header
+> still lying, for the whole session.** Exactly the bug the ticket describes,
+> surviving a fix that looked complete and had four green tests over it. The
+> reply now re-reads the record the upsert just wrote — which is what its own
+> comment had always claimed it did.
+>
+> **ROUND 2 FOUND THE ADOPTION GAP.** `resumedVia === 'adopted'` fires exactly
+> when the card's own candidates ALL failed and the provider found some other
+> unclaimed conversation in the folder — so a resume id is set and the plain
+> gate skipped, while the card is demonstrably in a different conversation from
+> the one its label names. That is #886's done-when word for word, so the gate
+> widened. Kept narrow elsewhere: a FORK continues the conversation its label
+> describes and keeps it.
+>
+> **The `#484` trade is deliberately inverted for the label**, and the comment
+> says so out loud: a declined resume must never sever the conversation link
+> (a `readdir` that failed for a second is indistinguishable from a deleted
+> transcript), but the label goes anyway — the card is showing an empty fresh
+> session either way, and an auto label costs one prompt to regenerate where an
+> id costs a conversation.
+>
+> **`e2e/stream-resume.spec.ts` was documenting the bug as intended
+> behaviour** — "the words survive only in the card's task label, which
+> persists in the workspace file". They did, and that was the bug. Rewritten,
+> and it now asserts the file and the screen; mutation-verified red.
+
 > # 🚀 RELEASE — 2026-09-23: **v0.8.99** cut (the digest + the whole E21 instrument)
 >
 > Tag `v0.8.99` on `30d1d23`. Carries **#483** (missed-events digest), **#923**

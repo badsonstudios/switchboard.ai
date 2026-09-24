@@ -96,6 +96,14 @@ on the floor, and say so in your PR.
 
 ## 0.8.100 — unreleased
 
+### Fixed
+
+- A session card no longer keeps a task label describing a conversation it
+  could not reopen. If the conversation is gone from disk and the session has
+  to start fresh, the card goes back to **+ task label** and your next prompt
+  names it again — previously it wore the old name permanently, and nothing you
+  typed afterwards could change it. A label you typed yourself is untouched.
+
 ## 0.8.99 — 2026-09-23
 
 ### Added

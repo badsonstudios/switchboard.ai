@@ -674,8 +674,9 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
    * touch the session it is describing.
    */
   /**
-   * A conversation was wiped or rebound — so an AUTO label describing it is now
-   * a lie (#883, found by `stream-feed.spec`'s `/clear` test).
+   * A conversation was wiped, rebound, or could not be reopened — so an AUTO
+   * label describing it is now a lie (#883, found by `stream-feed.spec`'s
+   * `/clear` test; #886 for the third path).
    *
    * Two things go wrong without this, and the second is the worse one:
    *
@@ -691,16 +692,31 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
    *
    * A LABEL THE USER TYPED IS THEIRS AND STAYS. Clearing a conversation is not
    * a request to forget what they called the card.
+   *
+   * KEYED BY THE CARD, not by a live session (#886). Two of the three callers
+   * arrive holding a live id and go through the wrapper below; the third fires
+   * at `sessions:create`, where the invalidated conversation has no live
+   * session at all — it is the one that could not be started.
    */
-  const clearAutoLabelOnReset = (liveId: string): void => {
-    const cardId = cardOfLive.get(liveId);
-    if (!cardId) return;
+  const clearAutoLabel = (cardId: string, why: string): void => {
     const card = deps.persist.list().find((s) => s.id === cardId);
     if (!card?.taskLabel) return;
     if (labelSourceOf(card) === 'user') return;
     deps.persist.upsert({ ...card, taskLabel: undefined, labelSource: 'auto' });
     aiLabelState.delete(cardId);
     publishLabel(cardId, undefined);
+    // INSIDE the guards, so the line means a label really went. A caller that
+    // logged before calling would announce a drop on every user-labelled card
+    // it declined to touch — misleading in exactly the log someone reads while
+    // chasing the next label bug.
+    log.info('auto label dropped', { cardId, why });
+  };
+
+  /** ...by the live session whose conversation was invalidated. */
+  const clearAutoLabelOnReset = (liveId: string): void => {
+    const cardId = cardOfLive.get(liveId);
+    if (!cardId) return;
+    clearAutoLabel(cardId, 'the conversation was cleared or rebound');
   };
 
   const maybeAiLabel = (liveId: string): void => {
@@ -1485,6 +1501,9 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         const running = runningRecord(liveId);
         if (!running) continue;
         log.info('session already live for card, adopting', { sessionId: liveId, cardId: opts.cardId });
+        // `prior` and not a re-read, unlike the reply at the bottom of this
+        // handler (#886): nothing has written this card yet — the reap above
+        // only tears live sessions down — so the snapshot cannot be stale here.
         return {
           ...running,
           cardId: opts.cardId,
@@ -1909,6 +1928,64 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         // an existing card keeps its membership; a new card takes the caller's
         groupId: prior?.groupId ?? (typeof opts.groupId === 'string' ? opts.groupId : undefined),
       });
+      // THE CARD HAD A CONVERSATION AND THIS START IS NOT IN IT (#886).
+      //
+      // The third path that invalidates a conversation, and the one nothing was
+      // watching. `/clear` and a mis-bind correction both fire a reset, which
+      // `clearAutoLabelOnReset` is wired to; a refused resume fires nothing —
+      // the decision was made up in `planSessionStart` and the card simply
+      // starts fresh, with the old conversation's label still on it. Since #883
+      // the instant label only ever fills a BLANK, so that label is not merely
+      // wrong, it is PERMANENT: no later prompt can replace it.
+      //
+      // Reproduced by deleting `~/.claude/projects` between runs — the user
+      // pruning their transcripts, which is the case `stream-resume.spec.ts`
+      // exists for.
+      //
+      // AFTER the upsert above, and that order is load-bearing: the upsert
+      // spreads `prior`, so a clear placed before it would be written straight
+      // back from the stale copy.
+      //
+      // `ownConversationId` rather than `resumeSessionId`, because a FORK
+      // continues the conversation its label describes and keeps it — the
+      // source id is for argv, the fork's own id is the card's conversation.
+      //
+      // `resumeCandidates(prior)` rather than `prior.nativeSessionId`, because
+      // that chain is exactly the set the plan just considered and declined,
+      // ancestors included. A brand-new card has an empty one and is never
+      // touched here, which is what keeps an ordinary first start silent.
+      //
+      // ⚠️ AN ADOPTION COUNTS AS "NOT IN IT", and it is the one case the gate
+      // would otherwise miss (found in review). `resumedVia === 'adopted'` fires
+      // EXACTLY when the card's own candidates all failed and the provider
+      // found some other unclaimed conversation lying in the folder — so
+      // `ownConversationId` is set and the plain gate would skip, while the card
+      // is demonstrably in a DIFFERENT conversation from the one its label
+      // describes. #886's done-when is "a card whose resume was refused does not
+      // keep a label describing the conversation it could not reopen", and the
+      // adopted card could not reopen it either. The label goes; the adoption
+      // notice on screen is what tells the user why, and one prompt renames it.
+      // `'picked'` needs no clause — the plan only honours a pick for a card
+      // with no conversation of its own, so the second half is already false.
+      //
+      // ⚠️ THIS FIRES ON A TRANSIENT FAILURE TOO, and that is deliberate — read
+      // it next to the `THE LINK IS NEVER DESTROYED HERE (#484)` note in the
+      // upsert above, which is emphatic that a declined resume must NOT sever
+      // the conversation link, because a `readdir` that failed for a second is
+      // indistinguishable from a deleted transcript. The LABEL makes the
+      // opposite trade on purpose: the card is showing an empty fresh session
+      // either way, so the label is wrong right now whichever reason it was, and
+      // an auto label costs one prompt to regenerate where an id costs a
+      // conversation. Losing it to a one-second `readdir` failure is a fair
+      // price for never wearing a permanent lie.
+      if ((!ownConversationId || plan.resumedVia === 'adopted') && resumeCandidates(prior).length > 0) {
+        clearAutoLabel(
+          opts.cardId,
+          plan.resumedVia === 'adopted'
+            ? 'the card adopted a different conversation'
+            : 'the conversation could not be reopened'
+        );
+      }
       log.info('session started for card', {
         sessionId: record.id,
         cardId: opts.cardId,
@@ -1942,6 +2019,25 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
       }
       // seed the card's display from the persisted record so nothing reads
       // empty while resuming
+      //
+      // ⚠️ RE-READ, rather than `prior` (#886). `prior` is the snapshot taken
+      // before any of this ran, and the store hands out deep copies — so it
+      // still carries the label `clearAutoLabel` just dropped, and returning it
+      // would put the dead conversation's name straight back on the card.
+      //
+      // AND THE REPLY IS THE ONE THAT HAS TO BE RIGHT, rather than the push. A
+      // first cut of this reasoned about ordering — the `sessions:taskLabel`
+      // push goes out synchronously inside the handler, so the renderer clears
+      // the header before this reply lands and `SessionGrid`'s
+      // `if (record.taskLabel)` re-seeds it. True, but it is the weaker claim:
+      // Electron does not document ordering between a `send` and an `invoke`
+      // reply, and a card whose subscription mounts after this call misses the
+      // push outright. A truthful reply needs neither guarantee.
+      //
+      // Reading the record the upsert just wrote is also what the line above
+      // has always claimed to do; `prior` was a near-miss of it that nothing
+      // could tell apart until a label started changing inside this handler.
+      const shown = deps.persist.list().find((s) => s.id === opts.cardId);
       return {
         ...record,
         cardId: opts.cardId,
@@ -1949,7 +2045,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         priorModel: prior?.model,
         priorCliCost: prior?.cliCost,
         autonomy,
-        taskLabel: prior && visibleTaskLabel(prior, deps.autoLabels()),
+        taskLabel: shown && visibleTaskLabel(shown, deps.autoLabels()),
       };
     }
   );
