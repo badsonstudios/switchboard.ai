@@ -3,6 +3,63 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ DONE — 2026-09-25: **#953 — the approval bar says what the call would DO** (PR #955, merged)
+>
+> Filed this morning, fixed this afternoon. The bar previewed a held tool call with
+> **two branches** — `command`, and `old_string` + `new_string` — while the default
+> `ask` autonomy gates all of `MUTATING`. A held **`Write` rendered the file path and
+> nothing else**, and so did `MultiEdit` and `NotebookEdit`. Allow on a `Write` was a
+> blind signature, on the setting the owner actually runs.
+>
+> **One `ToolInputPreview`, rendered by BOTH bars.** The issue traced the grouped
+> band; the per-card bar in `FeedView` had the identical two branches and is the one
+> a single-session `ask` user meets every day, so fixing only the traced half would
+> have fixed the rarer half. Shared rather than copied because `permission-batches`
+> already writes the rule down for the summary line: §5.16 is ONE question in two
+> placements, and two bodies that differ have shown the user two things and called
+> them the same.
+>
+> **The default branch is the load-bearing part, and two measurements against the
+> PATH CLI make its case in OPPOSITE directions — neither guessed:**
+>
+> - **`NotebookEdit` keys its path `notebook_path`, not `file_path`** (the binary's
+>   own tool→input map). So `argumentSummary` returned empty for it: it was the one
+>   gated tool showing **neither** a path nor content — a notch worse than the issue
+>   said, and found only because the standing rule sent us to the CLI instead of to
+>   an assumption.
+> - **`MultiEdit` has VANISHED from the published `sdk-tools.d.ts` by claude
+>   2.1.280** while still being listed in the binary's own edit set. Tools arrive,
+>   leave, and rename their keys. **A permission surface may never depend on a list
+>   of names being complete** — which is the whole argument for a default branch,
+>   made from the direction nobody expects.
+>
+> **The review earned its round trip — six should-fixes, all applied.** The one worth
+> remembering: each pane pair capped its own height, but four stacked is ~440px
+> inside a band that declares `flexShrink: 0` above the only column member willing to
+> give. Unbounded, a four-change edit **pushes Allow and Deny off a short window with
+> no scroller to reach them** — the approval surface made unusable by the approval
+> detail. The list now scrolls as a whole. Also: a malformed edit entry now costs
+> only itself (the all-or-nothing version threw six legible changes away to print a
+> third of a JSON blob — this bug one layer down), `lineCount` stopped counting a
+> trailing newline as another line, and `inputFallback` drops the heading's field by
+> **key** rather than by value.
+>
+> **⚠️ A SECOND 5-SECOND-TIMEOUT TEST JOINED THE LOAD-FLAKE CLUB, AND IT IS NOT THE
+> USUAL ONE.** CI's `windows-latest` unit job went red on
+> `src/main/update/install.test.ts` → "cancel" — *Test timed out in 5000ms* — while
+> the same local run went red on `git-service.test.ts`'s "SPENDS THE SAME BUDGET"
+> (#835, sixth sighting) and **passed `install.test.ts`**. Both green in isolation,
+> both untouched by this change. So the pattern on #835 is not really about that
+> file: **a 5s budget is not survivable under full-suite load on a loaded runner**,
+> and which test draws the short straw is luck. Re-ran the failed job; four jobs
+> green; merged. Worth a ticket if a third file shows up.
+>
+> **Not in scope, still the owner's call:** the 1500-char clip and the short scroll
+> boxes (that is the Monaco item), and the other four §5.16 gaps.
+>
+> **Next up:** **#946** (E13-01, role templates) — the start of Dispatch v1, the only
+> epic between Phase 2 and its exit bar.
+
 > # 📋 FILED — 2026-09-25: **E13 (#946–#951), the PTY deletion (#952), and a blind-approval bug (#953)**
 >
 > The audit below produced three owner answers, and all three turned into issues the
