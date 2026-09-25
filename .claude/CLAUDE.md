@@ -22,12 +22,14 @@ actually stand.
 
 **As of the 2026-09-25 feature audit:** thirteen Phase 2 epics are closed (E7–E12,
 E14–E20). **E21** (responsiveness) is in flight and blocked on the owner's laptop
-capture. **E13 (Dispatch v1) has never been filed and is Phase 2's exit criterion
-5** — it is the next real work, and the open-issue queue cannot tell you that,
-because an unfiled epic contributes nothing to it. Five more §8 Phase 2 items are
-also unfiled; DESIGN §8 carries the table. *(This line said "currently E11, the
-Session Bus" for six days after E11 finished — hence the audit, and hence the
-warning: **never read the current item off this file.**)*
+capture. **E13 (Dispatch v1) carries Phase 2's exit criterion 5** — the audit found
+it had never been filed despite that, because an unfiled epic contributes nothing
+to an open-issue count; it was filed the same day (#946–#951) and **#946, the role
+template model, merged 2026-09-25**. Five more §8 Phase 2 items are still unfiled;
+DESIGN §8 carries the table. *(This line said "currently E11, the Session Bus" for
+six days after E11 finished, and then said E13 "has never been filed" for a day
+after it was — hence the audit, and hence the warning: **never read the current
+item off this file. Read `PROGRESS.md`.**)*
 
 **Design docs (the source of truth for what to build):**
 

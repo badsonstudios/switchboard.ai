@@ -3,19 +3,75 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔄 IN PROGRESS — started 2026-09-25: **#946 — E13-01, role templates (the saved dispatch target)**
+> # ✅ DONE — 2026-09-25: **#946 — E13-01, role templates (the saved dispatch target)** (PR #957, merged)
 >
-> The first item of **E13 — Dispatch v1**, the only epic between Phase 2 and its exit
-> bar, and the one every other item in the epic reads. Pure model + persistence: no UI
-> and no spawning (those are #948 and #947).
+> **Dispatch v1 has started.** The first item of E13 — the only epic between Phase 2
+> and its exit bar — and the one every other item in the epic reads. Model +
+> persistence only: no UI, no spawning, no IPC. All four CI jobs green.
 >
-> Scope: the `RoleTemplate` shape, a closed `ContextPolicy` union
-> (`clean-room | briefed | full`) with ONE place mapping it to a context source, a
-> closed `WorkspacePolicy` union that ships `same-folder` and **refuses** the other
-> two with a reason, the three built-in templates as CODE rather than workspace data,
-> and user templates persisted in `workspace.json` alongside the E14 rules.
+> **`shared/dispatch.ts` is the model.** Both policy unions are closed `const` arrays
+> with the type derived from them (the `AUTONOMY_MODES` pattern), and **`CONTEXT_SOURCE`
+> is THE ONE PLACE a context policy becomes a context source**, total by
+> `Record<ContextPolicy, …>`. That record is the entire reason this was a separate item:
+> #947 builds against it, so the dispatch gesture never grows three context code paths.
+> A template's autonomy is the app's own `AutonomyMode` — not a second vocabulary.
 >
-> **Next up after this:** #947 (clean-room + briefed context policies), then #948.
+> **The built-ins are code, and "the built-in is not mutated" is structural, in two
+> halves.** `isSaneRoleTemplate` refuses the whole `builtin:` id NAMESPACE — a prefix,
+> not the three known ids, so a build shipping a fourth built-in cannot find a user
+> template squatting on its id — which means no sequence of store calls can put a user
+> template where a built-in resolves. The review found the other half: `readonly
+> RoleTemplate[]` freezes the SLOTS, not the objects, and `templateById` hands the
+> constants out by reference, so one `templateById(id, user)!.autonomy = 'full-auto'` in
+> a later item would have changed the built-in for the rest of the process. They are
+> `Object.freeze`d; under ESM strict mode that assignment now throws, and a test pins it.
+>
+> **Four things §5.15 names that v1 declares and REFUSES with a reason** rather than
+> half-building or silently degrading: `fresh-worktree`, `fresh-clone`, the `full`
+> context amount, and (in #948) triggers 2 and 3. The `full` refusal was NOT in the
+> issue — added because it is the identical trap one union over: falling back to
+> `briefed` hands a continuation session a summary and lets it believe it had the
+> conversation, which is §5.5's honesty rule from the other end.
+>
+> **Refusals return i18n catalogue keys, not sentences.** The first draft put the
+> English in `shared/` — where the same file refuses to mint a "(copy)" suffix on
+> exactly those §5.21 grounds, two hundred lines later. Keys now; English in `en.json`
+> under `dispatch.refusal.*`; shape follows `NOTIFICATION_KIND_KEYS`.
+>
+> **⚠️ ONE DEFAULT IS A GUESS AND IS MARKED AS ONE, IN THREE PLACES.** Code Reviewer
+> runs at `plan`, for the CLI's own write block that §5.16 says nothing in-app may Allow
+> past. But **exiting plan mode is an approval the CLI keeps** — so a plan-mode reviewer
+> may park waiting for a human who by definition is not watching. **#948 must MEASURE
+> that, not assume it** (standing rule); if it parks, the default becomes `ask` plus a
+> deny-writes story, and learning it before #950 builds the round-trip is far cheaper.
+> Recorded in the code, in DESIGN §5.15's as-built note, and as a comment on #948.
+>
+> **The §5.11 accent palette moved to `shared/accents.ts`** — `shared/` cannot import
+> `main/`, and the alternative was a second copy of eight hex values. `identity.ts` does
+> NOT re-export it (one import path; `identity.test.ts` was repointed), and
+> `tokens.drift.test.ts` now fails if the palette and `tokens.css` are retuned apart.
+> That drift is invisible otherwise: a session is painted with the value that was
+> PERSISTED, so a retuned token repaints new sessions only.
+>
+> **Two rounds of review, no blockers, six should-fixes applied.** Round 2 caught the
+> one defect the fixes themselves introduced: the accents header still described the
+> re-export the same commit had deleted — a comment claiming a second home exists, in
+> the header arguing that two homes can disagree.
+>
+> **Deliberately not done, and both were confirmed right:** no duplicate-id dedupe on
+> load (all five persisted lists share the hole, only a hand-edited file produces one,
+> and remove filters every row with that id — fixing one of five would be the
+> inconsistency the file's own comments complain about; the real cost is a React `key`
+> collision, noted on #948), and no cap on template COUNT (every individual field IS
+> capped, and `rules` is uncapped for the same reason).
+>
+> **#835's flake, seventh sighting, and it was the usual file this time:** the full
+> suite went red on `git-service.test.ts` → "SPENDS THE SAME BUDGET" on two separate
+> runs and green in isolation both times. Nothing in this diff touches git.
+>
+> **Next up:** **#947** (E13-02, clean-room and briefed context policies) — the
+> machinery behind `CONTEXT_SOURCE`'s first two entries. Then #948 → #949 → #950
+> (**Phase 2 exit criterion 5**) → #951.
 
 > # ✅ DONE — 2026-09-25: **#953 — the approval bar says what the call would DO** (PR #955, merged)
 >
