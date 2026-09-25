@@ -1845,6 +1845,45 @@ session does work; Dispatch is how work moves between sessions. No competitor in
 the 2026-07 research expresses this workflow — it composes Session Bus + context
 transfer + role templates, all already in the design.
 
+> **As built — E13-01 (#946), the model only.** The role template is real
+> (`shared/dispatch.ts`), persisted (`workspace.json` → `dispatchTemplates`), and
+> the three built-ins are CODE rather than user data, so they improve on upgrade
+> and editing one yields a copy. Both policy unions are closed and complete; the
+> **context policy has one place that maps it to a context source**
+> (`CONTEXT_SOURCE`), which is what #947 builds against. Nothing dispatches yet.
+>
+> **Four things this section says that v1 declares and REFUSES with a reason**,
+> rather than half-building or silently degrading:
+>
+> - **`fresh-worktree` and `fresh-clone`** — worktree create/merge-back is Phase 3
+>   (#949's scope call). Telling a reviewer it has an isolated checkout while it
+>   runs tests in the author's live tree is the surprise §5.7's isolation caveat
+>   exists to prevent, so the refusal is explicit.
+> - **The `full` context policy** — it needs §5.5 L3 fork adoption (#801), which is
+>   experimental and off by default. Falling back to `briefed` would hand a
+>   continuation session a summary and let it believe it had the conversation,
+>   which is §5.5's own honesty rule from the other end. One table entry is the
+>   only line that changes when a later item wires it.
+> - **Triggers 2 and 3** (agent-initiated `spawn_session`, rules-engine
+>   auto-dispatch) are Dispatch v2 — #948's scope call.
+>
+> **Two things this section names that the model deliberately does NOT carry**, so
+> the later item that owns them is free to shape them: **ephemerality** (the
+> lifecycle paragraph is #951's) and **an icon**. There is no icon vocabulary for a
+> session in this app — the one badge slot a card has is §5.11's project-type badge
+> — and overwriting it with a role glyph would make one badge mean two things.
+> Colour is what the rail paints, so colour is what a template carries; the §5.11
+> palette moved to `shared/accents.ts` so that a template could name one without a
+> second copy of the hex values.
+>
+> ⚠️ **One default is a guess and is marked as one in the code**: the built-in Code
+> Reviewer runs at `plan`, chosen for the CLI's own write block (§5.16's plan-mode
+> rule says nothing in-app may Allow past it). But exiting plan mode is an approval
+> the CLI keeps, so a plan-mode reviewer may park waiting for a human who by
+> definition is not watching. **#948 must measure that rather than assume it**; if
+> it parks, the default becomes `ask` plus a deny-writes story, and learning it
+> before #950 builds the round-trip is much cheaper.
+
 ### 5.16 Approval surfaces — rich edit review
 
 Pain point (owner, VS Code extension): edit approvals are a tiny checkbox on an

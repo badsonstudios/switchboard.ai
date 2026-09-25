@@ -56,6 +56,7 @@ import {
   isSaneSuppressedEvent,
 } from '../../shared/suppressed';
 import { Rule, isSaneRule } from '../events/rules';
+import { RoleTemplate, isSaneRoleTemplate } from '../../shared/dispatch';
 import { isUsableQuietWindow } from '../../shared/quiet-hours';
 import type { AutonomyMode } from '../../shared/sessions';
 import type { TransportKind } from '../../shared/transport';
@@ -225,6 +226,24 @@ export interface WorkspaceState {
    * flipping a pref never has to rewrite anyone's data.
    */
   rules: Rule[];
+  /**
+   * The user's dispatch role templates (P2-E13-01, §5.15).
+   *
+   * **The three built-ins are NOT in here.** They are code
+   * (`shared/dispatch.ts` → `BUILT_IN_TEMPLATES`), for the same reason
+   * `defaultRules` is: a built-in synthesized from the build improves for
+   * everybody on upgrade, while a built-in copied into everyone's
+   * `workspace.json` on first launch improves only for installs created
+   * afterwards. Editing a built-in produces a user template here
+   * (`copyOfBuiltIn`); the built-in itself has no mutation path, and
+   * `isSaneRoleTemplate` refuses a `builtin:` id so nothing can be stored where
+   * one would resolve.
+   *
+   * A top-level TYPED field for the `rules` reason: MAIN is the reader — #948
+   * spawns from a template with no renderer involved — and the renderer rewrites
+   * the opaque `ui` blob wholesale.
+   */
+  dispatchTemplates: RoleTemplate[];
   /** auto-trust a folder on session open (picking a folder = trusting it) */
   autoTrust: boolean;
   /**
@@ -456,6 +475,9 @@ const EMPTY: WorkspaceState = {
   // "quit -> relaunch reproduces exactly" round-trip on the first launch.
   notifications: { enabled: true, osToasts: false, sounds: false, speak: false },
   rules: [],
+  // Empty is the correct FIRST LAUNCH state, not a missing default: the three
+  // §5.15 built-ins are code, so a fresh install already has them (#946).
+  dispatchTemplates: [],
   autoTrust: true,
   autoLabels: true,
   // ON as of #883 (owner, 2026-09-20), reversing #758's opt-in. See the field's
@@ -491,6 +513,7 @@ function emptyState(): WorkspaceState {
     sessions: [],
     groups: [],
     rules: [],
+    dispatchTemplates: [],
     suppressed: [],
     historyRepairs: [],
     notifications: { ...EMPTY.notifications },
@@ -726,6 +749,17 @@ export class WorkspaceStore {
       // rule would fire the wrong channel at the wrong moment, which is worse
       // than not firing (P6 fail-open cuts this way for notifications).
       const rules = keepSane(raw.rules, isSaneRule, 'rule', note);
+      // A template this build cannot read is dropped for a blunter reason than a
+      // rule is: it names an autonomy and a context amount, and a half-understood
+      // one would dispatch a session with the wrong amount of the author's work
+      // at the wrong autonomy. The built-in three are unaffected — they are code
+      // and are never in this list (#946).
+      const dispatchTemplates = keepSane(
+        raw.dispatchTemplates,
+        isSaneRoleTemplate,
+        'dispatch template',
+        note
+      );
       // Trimmed on the way IN as well as on the way out: a hand-edited or
       // older-build file could carry more than the cap, and the digest is not
       // the place to discover that the workspace file grew unbounded.
@@ -773,6 +807,7 @@ export class WorkspaceStore {
         ui: raw.ui ?? null,
         notifications: notifications.value,
         rules,
+        dispatchTemplates,
         autoTrust: raw.autoTrust !== false, // default on
         autoLabels: raw.autoLabels !== false, // default on — same shape, same reason
         // `aiLabels` reads "on unless explicitly off" as of #883 — the owner
@@ -1322,6 +1357,42 @@ export class WorkspaceStore {
   }
 
   /**
+   * The USER's dispatch templates (P2-E13-01). The built-in three are NOT in
+   * here — see the field. `shared/dispatch.ts` → `allTemplates` is what joins
+   * them for a caller that wants everything on offer.
+   */
+  listDispatchTemplates(): RoleTemplate[] {
+    return this.state.dispatchTemplates.map((t) => JSON.parse(JSON.stringify(t)) as RoleTemplate);
+  }
+
+  /**
+   * Add or replace a template by id.
+   *
+   * Refuses one this build could not load back — including one carrying a
+   * `builtin:` id, which is where "a user who edits a built-in gets a copy, the
+   * built-in is not mutated" stops being a UI convention and becomes a property
+   * of the store (`isSaneRoleTemplate`).
+   */
+  upsertDispatchTemplate(template: RoleTemplate): boolean {
+    if (!isSaneRoleTemplate(template)) return false;
+    const copy = JSON.parse(JSON.stringify(template)) as RoleTemplate; // no shared refs with callers
+    const i = this.state.dispatchTemplates.findIndex((t) => t.id === template.id);
+    if (i >= 0) this.state.dispatchTemplates[i] = copy;
+    else this.state.dispatchTemplates.push(copy);
+    this.saveSoon();
+    return true;
+  }
+
+  /** Remove a template by id. `false` = there was nothing by that id. */
+  removeDispatchTemplate(id: string): boolean {
+    const before = this.state.dispatchTemplates.length;
+    this.state.dispatchTemplates = this.state.dispatchTemplates.filter((t) => t.id !== id);
+    if (this.state.dispatchTemplates.length === before) return false;
+    this.saveSoon();
+    return true;
+  }
+
+  /**
    * Write down one attention event quiet hours held (P2-E14-05b).
    *
    * FIFO at `SUPPRESSED_CAP`: append, drop from the front. Silently — a digest
@@ -1853,12 +1924,22 @@ const MAX_HELD_POST_MORTEM_BYTES = 4 * 1024 * 1024;
 const MAX_LISTED_ERRORS = 3;
 
 /** What each list costs the user when entries in it cannot be read. */
-type SaneList = 'session' | 'group' | 'rule' | 'held notification' | 'history repair notice';
+type SaneList =
+  | 'session'
+  | 'group'
+  | 'rule'
+  | 'dispatch template'
+  | 'held notification'
+  | 'history repair notice';
 
 const LOST: Record<SaneList, string> = {
   session: 'those cards do not come back',
   group: 'any sessions in them load ungrouped',
   rule: 'those notifications stop firing',
+  // Names the floor rather than the loss, because there IS a floor: the three
+  // built-ins are code, so a user who loses every template of their own can
+  // still dispatch (#946).
+  'dispatch template': 'those dispatch targets go back to the built-in three',
   'held notification': 'they will not appear in the missed-events digest',
   'history repair notice':
     'you will not be told which card had its conversation changed — the change itself stands',

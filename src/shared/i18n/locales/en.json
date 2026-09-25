@@ -1274,6 +1274,13 @@
     "compact": "Compact",
     "compactNote": "One line, trimmed with an ellipsis — exactly how labels looked before this setting existed."
   },
+  "dispatch": {
+    "refusal": {
+      "freshWorktree": "Dispatching into a fresh worktree is not available yet — separate checkouts arrive with the git work in a later release. Use the same folder, or make the checkout yourself and open a session on it.",
+      "freshClone": "Dispatching into a fresh clone is not available yet. Use the same folder, or clone it yourself and open a session on it.",
+      "fullContext": "Handing over the whole conversation is not available yet — it needs session forking, which is still experimental. Use Briefed, which sends the goal, the decisions and the files touched."
+    }
+  },
   "settings": {
     "title": "Settings",
     "open": "Settings…",

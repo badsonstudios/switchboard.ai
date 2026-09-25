@@ -1,7 +1,9 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { assignAccent, detectProjectType, ACCENTS } from './identity';
+import { assignAccent, detectProjectType } from './identity';
+// The palette lives in `shared/` as of #946 — one home, one import path.
+import { ACCENTS } from '../../shared/accents';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 
 // The two `detectProjectType` tests below each make a throwaway project dir

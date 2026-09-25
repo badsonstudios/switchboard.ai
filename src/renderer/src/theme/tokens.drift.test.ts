@@ -31,6 +31,8 @@ import { builtinThemes } from './builtin-themes';
 // pill's ratio is measured for the pair the app really substitutes, not for one
 // spelled out again here
 import { statusVars, STATUS_TOKENS, type StatusToken } from '../lib/rail-view';
+// #946: the §5.11 palette's other home. See the drift assertion further down.
+import { ACCENTS } from '../../../shared/accents';
 
 const cssPath = path.join(__dirname, 'tokens.css');
 // normalized: a selector spanning two lines would never match against CRLF.
@@ -849,6 +851,24 @@ it('has an accent palette to measure', () => {
   // case below would pass by not existing. Once, at module scope — inside the
   // per-theme describe it was the same assertion four times.
   expect(ACCENT_TOKENS.length).toBeGreaterThan(4);
+});
+
+// #946: the palette has a SECOND home, and it always did — `shared/accents.ts`
+// is what main assigns a new session from, and now what a §5.15 role template
+// names its colour from. Two files holding eight hex values is a pair that can
+// drift, and the way it drifts is invisible: a re-tuned `--accent-teal` leaves
+// every existing session painted with the old one, because the old one is what
+// was persisted. So the two are compared, here, where the CSS is already parsed.
+it('agrees with the palette main assigns from (shared/accents.ts)', () => {
+  const declared = declaredValues(block(':root {\n  /* status machine'));
+  expect(
+    ACCENTS.map((a) => [`--accent-${a.name}`, a.value]),
+    'shared/accents.ts and tokens.css must hold the same eight colours — a session ' +
+      'is painted with the value that was PERSISTED, so a token retuned on one side ' +
+      'only changes new sessions and nothing on screen explains why'
+  ).toEqual(ACCENTS.map((a) => [`--accent-${a.name}`, declared[`--accent-${a.name}`]]));
+  // and the CSS declares no accent the palette has never heard of
+  expect([...ACCENT_TOKENS].sort()).toEqual(ACCENTS.map((a) => `--accent-${a.name}`).sort());
 });
 
 describe.each(builtinThemes.map((t) => [t.id, t] as const))(

@@ -3,18 +3,12 @@
 // different colors) and project-type detection for the lang badge.
 import fs from 'fs';
 import path from 'path';
-
-/** §5.11 accent palette — token names match theme/tokens.css. */
-export const ACCENTS = [
-  { name: 'amber', value: '#e3b341' },
-  { name: 'teal', value: '#39c5bb' },
-  { name: 'violet', value: '#a78bfa' },
-  { name: 'green', value: '#3fb950' },
-  { name: 'blue', value: '#58a6ff' },
-  { name: 'coral', value: '#f0776b' },
-  { name: 'pink', value: '#db61a2' },
-  { name: 'orange', value: '#f0883e' },
-] as const;
+// The palette itself moved to `shared/accents.ts` in #946 so the §5.15 role
+// templates can name an accent without a second copy of the hex values; see that
+// file's header. NOT re-exported from here: the whole point of the move is that
+// there is one home for it, and a re-export would leave two import paths for one
+// constant — the shape `shared/sessions.ts` spends a header warning about.
+import { ACCENTS } from '../../shared/accents';
 
 export function assignAccent(inUse: string[]): string {
   const counts = new Map<string, number>(ACCENTS.map((a) => [a.value, 0]));
