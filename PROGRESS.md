@@ -3,6 +3,117 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔍 AUDIT — 2026-09-25: **every DESIGN §5 section checked against the code**
+>
+> Owner asked for it in as many words: *"make sure that our features are all
+> there."* All **34** sections (§5.1–§5.34) read and verified against the tree, not
+> against the tracker. Docs-only change; no code touched.
+>
+> **THE HEADLINE: SIX §8 PHASE 2 ITEMS WERE NEVER FILED, AND THE QUEUE COULD NOT
+> HAVE SHOWN THAT.** The milestone read 344 closed / 56 open and every one of the
+> 56 was a bug, flake, polish item or design sitting. An unfiled epic contributes
+> nothing to an issue count, so "the queue is nearly empty" and "the phase is
+> nearly done" had quietly stopped meaning the same thing.
+>
+> **#1, and it is the one that matters: E13 — Dispatch v1 (§5.15) is Phase 2 exit
+> criterion 5 and has no issues at all.** Nothing of it is in the tree — no role
+> templates, no clean-room/briefed policy, no round-trip, no lineage nesting. Both
+> prerequisites the plan named (#765 delivery into a sibling's composer, #766
+> context packages) merged on 2026-09-08. The plan said *"file these when E11-05
+> and E11-09 are merged"* and **nothing fired the trigger**. That is the whole
+> failure: not broken, never ticketed.
+>
+> ---
+>
+> **§5.16 IS THE SECTION THE APP IS FURTHEST BEHIND, AND IT IS THE "CROWN JEWEL"
+> EPIC.** Approvals are unblocked but not yet *reviewable*. Four things the section
+> specifies do not exist and none was tracked:
+> **the diff is not Monaco** (two `<pre>` panes truncated at 1500 chars — fine for
+> a one-line edit, useless for the multi-file change the card exists for, and
+> Monaco is already in the bundle diffing the Changes tab) · **no deny-with-
+> feedback** (the wire is `'allow' | 'deny'` with no message field, so the agent is
+> told no and never told why) · **no "approve all in this file"** (both ends of the
+> ladder ship, the middle rung does not) · **no review queue pane**. Exit criterion
+> 3 is still honestly met — a real permission IS answered in-app — which is why
+> this never showed up as a failure.
+>
+> ---
+>
+> **THREE §5.7 FEATURES ARE IN NO PHASE AT ALL** — not late, never scheduled, and
+> §8 does not mention them, so no amount of working the queue would have reached
+> them. **Editable diff + commit-from-diff** and **one-click squash-merge /
+> update-from-main** are both flagged *in that section* as table-stakes competitors
+> already ship, and **port/resource conflict warnings** are the mitigation §5.7's
+> own worktree-isolation caveat promises. Together they are the WRITE half of git;
+> everything shipped so far is the read half. Moved to Phase 3 to be planned with
+> the worktree flows, for the reason §8 already gives about the file tree — two
+> commit paths built separately would disagree.
+>
+> ---
+>
+> **TWO OPEN QUESTIONS CLOSED BY REALITY RATHER THAN BY A DECISION.** OQ #1
+> (composer vs typing in the terminal) stopped being a question when the terminal
+> left — the composer is now the only input line there is, so "optional per
+> session" is moot. OQ #9 (merge-conflict endgame) was billed as *"an empirical
+> spike embedded in Phase 2"* gated on *"once parallel worktree use is real"* —
+> and worktree flows are Phase 3, so **the gate could never open inside Phase 2**
+> and the spike never ran. Mis-sequenced, not late; moved to Phase 3 as the thing
+> the worktree flows should be designed FROM.
+>
+> ---
+>
+> **§5.4 TIER 1 NEEDS RE-SCOPING, NOT BUILDING**, which is why it never became an
+> item. Of four draggable objects: the "last response" chip shipped as the better
+> gesture (the context chip, #799); a terminal text selection is **moot** (no
+> terminal since #873); a file from the file tree is **blocked** (no tree until
+> Phase 3); a diff hunk is genuinely unbuilt and is the one piece with no
+> substitute today. §5.5 Level 1 rests entirely on this tier, so the honest choice
+> is to demote Level 1 or build the hunk drag — not to leave both specified and
+> silent.
+>
+> ---
+>
+> **E18's LAST ITEM HAS NO TICKET AND NOBODY WATCHING IT.** Deleting the PTY stack
+> (E18-11) is gated on *"Direct mode used in real life"* — an owner judgement with
+> no issue and no date, findable only by reading `05-transport-migration.md`. Two
+> things have changed since that gate was written and both cut the same way: #873
+> made the fallback **developer-only** (`SWITCHBOARD_TRANSPORT=pty`), so a user
+> hitting a Direct-mode wall cannot fall back at all; and the e2e coverage the gate
+> was protecting is **already gone** with the surface that rendered it. The code
+> sits in the tree with its tests thinned — the worst of both states. **One narrow
+> question for the owner:** has Direct mode been your daily driver long enough that
+> you would not miss the PTY?
+>
+> ---
+>
+> **SMALLER, ALL RECORDED AS AS-BUILT NOTES RATHER THAN FILED:** §5.13's engine and
+> per-card readout ship while the four fleet-level surfaces are Phase 3 — **and
+> `estimateCostUsd` still defaults an unknown model to Sonnet rates, which §5.13
+> forbids in as many words** ("must show tokens with no cost"), live in the app
+> today · §5.9's rules engine has every ACTION but no authoring surface, so its
+> generality currently pays for nothing (trigger to build the editor: a second rule
+> someone actually wants) · §5.5's agent-written and `claude -p` generator rungs are
+> unbuilt, so a handoff carries *later prompts* where a reader expects *decisions* ·
+> §8's "complete keyboard vocabulary (spawn/focus/archive/review/merge)" cannot
+> complete in Phase 2 — archive is §5.25 and review/merge are worktree flows, all
+> Phase 3.
+>
+> ---
+>
+> **DRIFT FIXED AT THE SOURCE.** `.claude/CLAUDE.md` said **"29 feature sections"**
+> (34) and **"currently E11, the Session Bus"** — stale for six days after E11
+> closed, and the reason the audit was worth running at all. Both corrected, with a
+> standing warning added: **never read the current item off that file.** §5.10's
+> Terminal *view* bullet still described the tab as "always present" six days after
+> #873 removed it (the tab-strip list below it had been annotated and that one was
+> missed); §5.10's Changes tab claimed editable-diff + commit. `project-info.md`
+> carried the same 29.
+>
+> **Next up:** **file E13** — it is the only epic between Phase 2 and its exit bar
+> and it is unblocked. Then the five other unfiled §8 items, of which the review
+> queue pane is the only other one bearing on a criterion. E21 remains blocked on
+> the owner (E21-02).
+
 > # ✅ MERGED — 2026-09-24: **#581** the three keyboard chords say what they did
 >
 > PR #943 squashed to `19ee51d`; all four CI jobs green. Issue closed. Plan was

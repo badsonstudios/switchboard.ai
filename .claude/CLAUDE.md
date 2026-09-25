@@ -17,14 +17,23 @@ attention routing, inter-session communication, per-session git/diff panes,
 approvals, and usage tracking.
 
 **Status:** Spike 01 and Phase 1 complete; **Phase 2 (The Switchboard) in
-flight** — currently E11, the Session Bus. Shipping as v0.8.x. `PROGRESS.md` is
-the authority on where things actually stand.
+flight**. Shipping as v0.8.x. `PROGRESS.md` is the authority on where things
+actually stand.
+
+**As of the 2026-09-25 feature audit:** thirteen Phase 2 epics are closed (E7–E12,
+E14–E20). **E21** (responsiveness) is in flight and blocked on the owner's laptop
+capture. **E13 (Dispatch v1) has never been filed and is Phase 2's exit criterion
+5** — it is the next real work, and the open-issue queue cannot tell you that,
+because an unfiled epic contributes nothing to it. Five more §8 Phase 2 items are
+also unfiled; DESIGN §8 carries the table. *(This line said "currently E11, the
+Session Bus" for six days after E11 finished — hence the audit, and hence the
+warning: **never read the current item off this file.**)*
 
 **Design docs (the source of truth for what to build):**
 
 | Doc | Contents |
 |---|---|
-| `docs/DESIGN.md` | The design record — 29 feature sections, roadmap, open questions, competitive research |
+| `docs/DESIGN.md` | The design record — **34** feature sections (§5.1–§5.34), roadmap, open questions, competitive research. §8's Phase 2 block carries the 2026-09-25 audit: which features shipped, which were never filed, and why the issue queue could not show the difference |
 | `docs/PHILOSOPHY.md` | The constitution — principles + the feature litmus test **every feature must pass** |
 | `docs/extensibility.md` | Internal contributor guide — contribution points, capability manifests, the bootstrap rule (§5.23 seams; NOT a public plugin API) |
 | `docs/reference-implementations.md` | **When a CLI contract is unclear, read this first.** Two sources on this machine: the unpacked Claude Code VS Code extension (a known-correct consumer — the embedded Agent SDK, the stream-json protocol, the full `settings.json` schema) and the PATH `claude` binary itself, greppable, embedding its zod schemas and message loop (§2.1 — shows what the CLI *does*, not just what a client sends). Navigation recipes and the rules for using both |
