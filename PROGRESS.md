@@ -3,6 +3,64 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 📋 FILED — 2026-09-25: **E13 (#946–#951), the PTY deletion (#952), and a blind-approval bug (#953)**
+>
+> The audit below produced three owner answers, and all three turned into issues the
+> same day. Docs-only change alongside them; no code.
+>
+> **E13 — Dispatch v1 is filed: #946 → #951.** Owner said go. Six items following
+> the plan's provisional shape almost exactly, because E11's findings did not move
+> the ground under it as that note predicted. **#950 is Phase 2 exit criterion 5**
+> ("a dispatched clean-room review round-trips its findings back to the author").
+> **#946 is the next real work.**
+>
+> Two scope calls made at filing time rather than discovered later: **`fresh-worktree`
+> cannot ship in Phase 2** (#949 declares and *refuses* it with a reason — silently
+> degrading to `same-folder` would tell a reviewer it has an isolated checkout while
+> it runs tests in the author's live tree), and **dispatch triggers 2 and 3 stay
+> out** (#948 — agent-initiated and rules-driven dispatch are v2, and checkpoints
+> land before auto-dispatch loops because autonomy without seatbelts inverts the risk
+> order). One thing #950 must MEASURE rather than design: what a real clean-room
+> review session actually leaves as its last turn, since "the result" is a transcript
+> and not a structured object.
+>
+> ---
+>
+> **THE PTY GATE IS ANSWERED AFTER SEVEN WEEKS. #952 files the deletion.** Owner,
+> asked directly: *"Yeah, I've been using direct mode all along. I'm not missing the
+> terminal at all."* That is the exact condition E18-11 has been parked on since
+> 2026-08-02 — and the answer was probably already yes for most of those seven weeks.
+> Nobody asked, because **the gate lived in a paragraph in a plan file and not in a
+> ticket.** Same failure as E13 sitting unfiled: *never park work on a condition
+> without also parking a ticket on it.* Closing #952 closes E18.
+>
+> ---
+>
+> **⚠️ THE SHARPEST FINDING WASN'T IN THE AUDIT — IT CAME OUT OF THE OWNER ASKING
+> "WHAT ARE THE APPROVAL GAPS?" #953, filed as a BUG.**
+>
+> The approval bar previews the tool input with exactly two branches — `command`, and
+> `old_string` + `new_string`. The default `ask` autonomy gates all of
+> `MUTATING = ['Write','Edit','MultiEdit','NotebookEdit','WebFetch']`. So a held
+> **`Write` shows the file path and nothing else**, and so does a `MultiEdit`.
+> `Write` is how an agent creates a file and how it rewrites one wholesale, which
+> makes **Allow on a Write a blind signature.** `argumentDetail`'s key/value fallback
+> exists and the bar never reaches it. Identical on both transports — Direct passes
+> the CLI's own `input` straight through.
+>
+> **This reframes the other four §5.16 gaps.** No Monaco diff, no deny-reason, no
+> per-file rung, no review queue all make the answer *less good*. This one makes it
+> *uninformed* — and an uninformed prompt teaches the user to turn autonomy up to
+> escape the friction, which is the opposite of what the epic is for. The fix needs
+> no Monaco: a branch per tool shape plus a **default** branch, so the next mutating
+> tool the CLI invents degrades to a key/value dump rather than to silence.
+>
+> **Still unfiled, awaiting the owner's call:** the review queue pane (the only one
+> of these bearing on an exit criterion), Monaco in the approval card,
+> approve-all-in-this-file, deny-with-feedback, and the §5.4 Tier 1 re-scope.
+>
+> **Next up:** **#946** (E13-01, role templates). E21 remains blocked on the owner.
+
 > # 🔍 AUDIT — 2026-09-25: **every DESIGN §5 section checked against the code**
 >
 > Owner asked for it in as many words: *"make sure that our features are all

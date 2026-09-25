@@ -1946,6 +1946,34 @@ reads) get simpler cards — command + cwd + allow/deny — same banner, same ke
 > is everything that makes the answer INFORMED — a real diff to read, a reason to
 > send back, a per-file rung, and one place to work through a queue of them. The
 > honest summary is: approvals are unblocked, not yet reviewable.
+>
+> **⚠️ AND A FIFTH THING, FOUND WHEN THE OWNER ASKED WHAT THE GAPS ACTUALLY WERE
+> (2026-09-25) — THIS ONE IS A DEFECT, NOT A MISSING FEATURE. Filed as #953.**
+>
+> The bar previews the tool input with exactly two branches: `command` (a `<pre>`)
+> and `old_string` + `new_string` (the pane pair). But the default `ask` autonomy
+> gates all of `MUTATING = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit',
+> 'WebFetch']`, so:
+>
+> | Held tool | What the user is shown |
+> |---|---|
+> | `Bash` | the command — fine |
+> | `Edit` | old and new text, ~6 lines visible, truncated at 1500 chars each |
+> | `WebFetch` | the URL — fine |
+> | **`Write`** | **the file path. Nothing else.** |
+> | **`MultiEdit`** | **the file path. Nothing else.** |
+> | **`NotebookEdit`** | **the path. Nothing else.** |
+>
+> `Write` is how an agent creates a file and how it replaces one wholesale, so
+> **Allow on a `Write` is a blind signature.** `argumentDetail`'s key/value fallback
+> exists and the bar never reaches it. Identical on both transports — Direct passes
+> the CLI's own `input` straight through.
+>
+> This reframes the four gaps above. Those make the answer *less good*; this one
+> makes it *uninformed*, and an uninformed prompt teaches the user to turn autonomy
+> up to escape the friction — the exact opposite of what this section is for. The
+> fix needs no Monaco: a branch per tool shape plus a default branch, so the next
+> mutating tool the CLI invents degrades to a key/value dump rather than silence.
 
 ### 5.17 MCP Manager & slash-command surfaces
 
@@ -3619,6 +3647,21 @@ context transfer, and the attention queue work across monitors.
 > Everything else on this list is built. The audit also found three §5.7 features
 > in **no phase at all** (see §5.7's own note) and settled two open questions
 > that reality had already answered (§9, OQ 1 and 9).
+>
+> **FILED THE SAME DAY, once the owner had read the above:** Dispatch v1 as
+> **#946–#951** (E13, six items) · **#952**, deleting the PTY stack — its
+> seven-week-old gate answered *"I've been using direct mode all along, I'm not
+> missing the terminal at all"* · **#953**, filed as a **bug** rather than a
+> feature because the audit's sharpest finding was not on the table above: the
+> approval bar previews only `command` and `old_string`/`new_string`, so a
+> **`Write` or `MultiEdit` shows the file path and nothing else**. Under the
+> default `ask` autonomy that is a blind signature on file content, and it is the
+> difference between an answer that is *less informed* than §5.16 wants and one
+> that is *uninformed*.
+>
+> Still unfiled and awaiting a decision: the review queue pane, Monaco in the
+> approval card, approve-all-in-this-file, deny-with-feedback, and the §5.4 Tier 1
+> re-scope.
 
 - Session Bus MCP server + `list/get/send/publish` tools
 - @-references in prompt composer

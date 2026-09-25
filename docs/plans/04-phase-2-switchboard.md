@@ -1086,27 +1086,47 @@ to read, and a relaunch puts you exactly where you left off. Litmus
 
 ---
 
-## E13 — Dispatch v1 (⛔ UNBLOCKED AND UNFILED — outline restored 2026-07-21)
+## E13 — Dispatch v1 (✅ FILED 2026-09-25 — #946–#951; outline restored 2026-07-21)
 
-> **STATUS 2026-09-25: this is the only epic standing between Phase 2 and its own
-> exit bar, and it has no issues.** Found by the feature audit the owner asked
-> for, not by working the queue — which is the lesson worth keeping: **the queue
-> could never have surfaced this, because an unfiled epic contributes nothing to
-> it.** The milestone read 344 closed / 56 open and every one of those 56 was a
-> bug, flake, polish item or design sitting.
+> **HOW THIS WAS FOUND, kept because the mechanism will repeat.** E13 sat unfiled
+> from 2026-07-21 to 2026-09-25 while being **Phase 2 exit criterion 5**. Both
+> prerequisites the sequencing note named — **E11-05** (#765) and **E11-09** (#766)
+> — merged on 2026-09-08, and the instruction *"file these when E11-05 and E11-09
+> are merged"* was correct and **nothing fired it**. The milestone read 344 closed
+> / 56 open with every one of those 56 a bug, flake, polish item or design sitting,
+> so the queue looked finished. **An unfiled epic contributes nothing to an issue
+> count**; it took the owner asking for a feature audit against the code to surface
+> it. Same lesson as E18-11's ungated condition: never park work on a trigger
+> without also parking a ticket on it.
 >
-> **Both named prerequisites are merged.** The sequencing note below says E13
-> needs exactly two E11 items — **E11-05** (#765, delivery into a sibling's
-> composer) and **E11-09** (#766, context packages) — and both closed on
-> 2026-09-08. The instruction *"file these when E11-05 and E11-09 are merged"*
-> was correct and nothing fired it. **File these items.**
+> **Items as filed**, and they follow the provisional shape below almost exactly —
+> E11's findings did not move the ground under it, as the note predicted:
 >
-> It is Phase 2 **exit criterion 5** ("a clean-room review dispatched from a
-> session round-trips its findings back to the author"), and nothing of it exists
-> in the tree: no role templates, no clean-room/briefed policy, no workspace
-> policy, no round-trip, no lineage nesting. The provisional item shape at the end
-> of this section is still the right starting point; E11's findings did not move
-> the ground under it.
+> | # | Item | Size | Depends |
+> |---|---|---|---|
+> | #946 | E13-01 Role templates (model + store; built-in three, user-defined first-class) | M | — |
+> | #947 | E13-02 Clean-room and briefed context policies | M | #946, #766, #764 |
+> | #948 | E13-03 Manual dispatch from the card and the palette | L | #946, #947 |
+> | #949 | E13-04 Workspace policy — `same-folder` ships, worktree refused | S | #946 |
+> | #950 | E13-05 Results round-trip + one-click inject — **closes exit criterion 5** | M | #948, #765 |
+> | #951 | E13-06 Lineage nesting in the rail, ephemeral by default | M | #948, #950 |
+>
+> **Two scope calls made at filing time**, both recorded in the issues:
+>
+> - **`fresh-worktree` cannot ship in Phase 2** (#949). Worktree create/merge-back
+>   is Phase 3, and half-building it here would grow a second worktree code path
+>   for that epic to reconcile. It is declared and **refused with a reason** rather
+>   than silently degrading to `same-folder` — a reviewer told it has an isolated
+>   checkout while running tests in the author's live tree is exactly the surprise
+>   §5.7's isolation caveat is about.
+> - **Triggers 2 and 3 stay out** (#948). Agent-initiated `spawn_session` and
+>   rules-engine auto-dispatch are Dispatch v2 (§8), and `03-later-phases.md` puts
+>   checkpoints before auto-dispatch loops — autonomy without seatbelts inverts the
+>   risk order. v1 is human-triggered only.
+>
+> One thing #950 must **measure rather than design**: what a real clean-room review
+> session actually leaves as its last turn, since "the result" is a transcript and
+> not a structured object. Findings note + probe, per the standing rule.
 
 Session-to-session handoff with deliberate context amounts (§5.15): role
 templates (built-in Code Reviewer / Doc Writer / PR Author + user-defined
@@ -1803,7 +1823,7 @@ in 03's note so it is not mistaken for our cost.
 > | 2 | Pop-out to a second monitor + rescue (E8) | ✅ |
 > | 3 | In-app approvals, no TUI drop | ⚠️ met, but see §5.16's as-built note |
 > | 4 | Two sessions exchange context via the bus (E11 00–05) | ✅ |
-> | 5 | A dispatched clean-room review round-trips its findings | ⛔ **E13 unfiled** |
+> | 5 | A dispatched clean-room review round-trips its findings | 🔨 **E13 filed 2026-09-25 (#946–#951); #950 is the criterion** |
 > | 6 | A rule routes a needs-permission event; an actionable toast answers it (E14) | ✅ |
 > | 7 | A markdown file read *rendered* in-app (E16) | ✅ |
 > | 8 | Litmus test passes on everything shipped | ✅ applied per item |
@@ -1856,12 +1876,17 @@ path, neither of which the bus owns.
 > the laptop, detailed capture on, a normal day at 3+ sessions, send the file).
 > Never filed: **E13**, which is exit criterion 5.
 >
-> So the queue is not the thing to read for "what next" any more — the 56 open
-> milestone issues are all bugs, flakes, polish and design sittings. **The next
-> real work is filing E13**, and after that the six unfiled §8 items in DESIGN's
-> audit block. The project-context line that said "currently E11, the Session Bus"
-> was stale for six days before this audit caught it; treat `PROGRESS.md` as the
-> authority and this block as its epic-level summary.
+> **Updated the same day the audit landed:** E13 is now filed (**#946–#951**), and
+> so are the two things its findings unblocked — **#952** (delete the PTY stack;
+> the owner answered its seven-week-old gate) and **#953** (the approval bar shows
+> nothing at all for a `Write` or `MultiEdit`, filed as a bug because it asks the
+> user to sign for content they cannot see). **The next real work is #946.**
+>
+> Still unfiled from DESIGN §8's audit table: the review queue pane, Monaco in the
+> approval card, approve-all-in-this-file, deny-with-feedback, and the §5.4 Tier 1
+> re-scope. Of those only the review queue pane bears on an exit criterion. Treat
+> `PROGRESS.md` as the authority for what is in flight and this block as its
+> epic-level summary.
 
 **Three items added 2026-07-30**, all user-facing, none blocking anything:
 **E7-06** (auto task labels), **E16** (document viewer) and **E17** (session

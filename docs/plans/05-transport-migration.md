@@ -580,6 +580,24 @@ tested, and a broken fallback turns a bad week into a stopped one.
 > `PtyService` and `node-pty`. A no is fine and costs nothing except leaving this
 > note accurate. What should not happen is a third state where nobody asks.
 
+> ## ✅ THE GATE IS MET — owner, 2026-09-25
+>
+> Asked directly, answered directly: *"Yeah, I've been using direct mode all along.
+> I'm not missing the terminal at all."*
+>
+> That is the condition this item has been parked on since 2026-08-02, and it is
+> the only thing that was blocking it. **E18-11 is filed as #952.** Closing it
+> closes E18.
+>
+> Worth recording how long the gap was: the condition was written on 2026-08-02,
+> Direct became the default on 2026-08-09 (#381), the UI half went on 2026-09-19
+> (#873), and the question was not put to the owner until **2026-09-25** — seven
+> weeks in which the answer was probably already yes and nobody asked, because the
+> gate lived in a paragraph in this file and not in a ticket. That is the same
+> failure mode the 2026-09-25 feature audit found six times over in §8, and it is
+> the argument for **never parking work on a condition without also parking a
+> ticket on it.**
+
 What is lost, and must be stated plainly in the user manual rather than quietly
 dropped: **Ctrl-R history, vim mode, and the `/resume` · `/rewind` ·
 `--from-pr` pickers**, plus whatever E18-11 finds is CLI-kept. Each is either
