@@ -86,6 +86,7 @@ import {
   type ComposerBounds,
 } from '../lib/composer-size';
 import { argumentSummary } from '../lib/permission-batches';
+import { ToolInputPreview } from './ToolInputPreview';
 import {
   filterCommands,
   insertCommand,
@@ -1289,19 +1290,6 @@ function ApprovalBar({
     fontFamily: 'var(--font-ui)',
     fontSize: 12,
   });
-  const pane = (background: string): React.CSSProperties => ({
-    flex: 1,
-    margin: 0,
-    padding: 6,
-    background,
-    border: '1px solid var(--border)',
-    borderRadius: 4,
-    fontSize: 10,
-    fontFamily: 'var(--font-mono)',
-    whiteSpace: 'pre-wrap',
-    wordBreak: 'break-all',
-    minInlineSize: 0,
-  });
   return (
     <div
       style={{
@@ -1361,29 +1349,15 @@ function ApprovalBar({
           {approval.reason}
         </div>
       )}
-      {typeof approval.input.old_string === 'string' && typeof approval.input.new_string === 'string' && (
-        <div style={{ display: 'flex', gap: 6, marginBlockEnd: 6, maxBlockSize: 120, overflow: 'auto' }}>
-          <pre style={pane('var(--diff-removed-bg)')}>{approval.input.old_string.slice(0, 1500)}</pre>
-          <pre style={pane('var(--diff-added-bg)')}>{approval.input.new_string.slice(0, 1500)}</pre>
-        </div>
-      )}
-      {typeof approval.input.command === 'string' && (
-        <pre
-          style={{
-            margin: '0 0 6px',
-            padding: 6,
-            background: 'var(--panel)',
-            border: '1px solid var(--border)',
-            borderRadius: 4,
-            fontSize: 10.5,
-            maxBlockSize: 90,
-            overflow: 'auto',
-            whiteSpace: 'pre-wrap',
-          }}
-        >
-          {approval.input.command.slice(0, 1500)}
-        </pre>
-      )}
+      {/* What the call would DO, shared with the grouped band (#953). These
+          were two inline branches, `old_string`/`new_string` and `command`, so
+          the tools the default autonomy gates most often — Write, MultiEdit,
+          NotebookEdit — rendered the heading and then nothing, and Allow on
+          them was a signature on an unread page. Shared rather than copied for
+          the reason the summary line above is shared: §5.16 is ONE question,
+          and two placements that answer "what am I agreeing to" differently
+          have shown the user two things and called them the same. */}
+      <ToolInputPreview input={approval.input} />
       <div style={{ display: 'flex', gap: 6 }}>
         <button onClick={() => onDecide('allow')} style={btn(true)}>
           {t('approval.allow')}

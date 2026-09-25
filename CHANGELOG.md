@@ -107,6 +107,19 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **The permission bar now shows you what a file write would actually put on
+  disk.** When Claude asked to write a whole file, edit several places in one
+  go, or change a notebook, the bar named the file and stopped there — so
+  **Allow** on the most far-reaching kind of request was the one you could see
+  the least about. Those now show their contents: a whole-file write shows what
+  it would write and how many lines that is, a multi-part edit shows each
+  before-and-after with a count, a notebook change shows the new cell. A request
+  switchboard has no layout for — including any tool added after your copy was
+  built — now lists its settings one per line instead of showing nothing at all.
+  Content too long to fit is cut off with a **…** so you can tell the difference
+  between a short file and the first page of a long one. Both places that ask
+  you — the bar inside the card and the band that appears when several sessions
+  ask at once — show the same thing.
 - **Three shortcuts that rearrange the window now say what they did.**
   `Ctrl+Alt+P` (pin), `Ctrl+Shift+↑`/`↓` (how much of a session is on screen)
   and `Ctrl+Alt+↑`/`↓` (a session's place in its group) were confirmed only by

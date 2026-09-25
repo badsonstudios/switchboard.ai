@@ -342,6 +342,15 @@
     "deny": "Deny",
     "more": "+{n} more waiting"
   },
+  "approvalPreview": {
+    "write": "New contents — {count, plural, one {# line} other {# lines}}",
+    "writeEmpty": "New contents — empty",
+    "multiEdit": "{count, plural, one {# change} other {# changes}}",
+    "moreEdits": "+{count, plural, one {# more change} other {# more changes}} not shown",
+    "unreadableEdits": "{count, plural, one {# change} other {# changes}} switchboard could not read",
+    "notebookCell": "New source for cell {cell}",
+    "notebookNewCell": "New source for a new cell"
+  },
   "question": {
     "title": "Claude is asking you a question",
     "submit": "Send answer",

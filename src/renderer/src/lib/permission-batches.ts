@@ -271,7 +271,91 @@ export function argumentSummary(input: Record<string, unknown>): string {
   // (`FeedView`) renders this string straight and shows nothing at all. A
   // blank line beside a tool name is a worse answer than a dump and a better
   // one than punctuation the user cannot act on.
-  return asDisplayString(input.file_path ?? input.command ?? input.url);
+  //
+  // `notebook_path` is in the list because `NotebookEdit` does not key its path
+  // `file_path` — the CLI's own tool→input map reads
+  // `NotebookEdit:{input:"notebook_path"}`, measured against claude 2.1.280.
+  // Without it a held notebook edit came back EMPTY here, so the per-card bar
+  // showed a blank beside the tool name and the grouped card dropped to its
+  // dump: the one gated tool that named nothing at all (#953).
+  const key = summaryKey(input);
+  return key === null ? '' : asDisplayString(input[key]);
+}
+
+/**
+ * In field ORDER, the fields `argumentSummary` is willing to speak for.
+ *
+ * A list rather than a `??` chain so that `inputFallback` can ask *which* field
+ * the heading used. The order is the precedence and must not be sorted.
+ */
+const SUMMARY_KEYS = ['file_path', 'notebook_path', 'command', 'url'] as const;
+
+/**
+ * Which field the summary line is speaking for, or `null` for none.
+ *
+ * Matches the old `??` chain exactly, including its two edge cases: a field
+ * that is present but `null`/`undefined` is skipped, while a field that is
+ * present and MALFORMED is chosen and then renders empty — an input whose
+ * `file_path` is an object has a path, and saying nothing is the honest
+ * answer to "what does it touch", not a reason to go and read its `command`.
+ */
+function summaryKey(input: Record<string, unknown>): (typeof SUMMARY_KEYS)[number] | null {
+  for (const key of SUMMARY_KEYS) {
+    const value = input[key];
+    if (value !== undefined && value !== null) return key;
+  }
+  return null;
+}
+
+/**
+ * Every field of an input, one `key=value` per line — what the preview shows
+ * for a tool it has no branch for (#953).
+ *
+ * Distinct from `argumentDetail` in two ways that both follow from where it is
+ * rendered. `argumentDetail` fills ONE LINE in a heading, so it joins with
+ * spaces, truncates hard at 300 and returns the summary unchanged when there is
+ * one. This fills a scroll box in the BODY, so it goes one field per line, and
+ * it must not simply echo the heading — the field the summary already named is
+ * dropped, because a body whose only content repeats the line above it reads as
+ * "there is nothing more to show", which is the exact impression this whole
+ * change exists to stop giving falsely.
+ *
+ * Dropped by KEY and never by value. Filtering on "this field equals the string
+ * in the heading" also deletes any OTHER field that happens to hold the same
+ * text — `{file_path, path}` pointing at one file would lose both — and a dump
+ * that silently omits a field of the payload being approved is the bug again,
+ * wearing the fix's clothes.
+ */
+export function inputFallback(input: Record<string, unknown>): string {
+  // only when the heading actually PRINTED something: a malformed `file_path`
+  // summarises to the empty string, and then the dump is the only place the
+  // user will ever see it
+  const heading = argumentSummary(input) === '' ? null : summaryKey(input);
+  return Object.entries(input)
+    .filter(([k]) => k !== heading)
+    .map(([k, v]) => `${k}=${clipText(stringify(v))}`)
+    .join('\n');
+}
+
+/**
+ * `JSON.stringify`, fail-open (P6).
+ *
+ * It throws on a cycle and on a `BigInt`. Neither is reachable through an
+ * `input` that arrived as parsed JSON over IPC — but this is a RENDER path
+ * now, and a throw here does not degrade the preview, it takes the whole
+ * approval bar down and leaves a blocked session with no buttons. Our breakage
+ * never blocks a session.
+ */
+function stringify(value: unknown): string {
+  try {
+    return JSON.stringify(value) ?? 'undefined';
+  } catch {
+    return '…';
+  }
+}
+
+function clipText(text: string): string {
+  return text.length > 300 ? text.slice(0, 300) + '…' : text;
 }
 
 /**
@@ -292,6 +376,9 @@ export function argumentDetail(input: Record<string, unknown>): string {
   if (summary) return summary;
   const entries = Object.entries(input);
   if (entries.length === 0) return '';
-  const line = entries.map(([k, v]) => `${k}=${JSON.stringify(v) ?? 'undefined'}`).join('  ');
-  return line.length > 300 ? line.slice(0, 300) + '…' : line;
+  // `stringify` and not raw `JSON.stringify` for the reason given on it: this
+  // one is rendered into the heading of both bars, so a throw here is a bar
+  // that does not paint above a session that cannot move
+  const line = entries.map(([k, v]) => `${k}=${stringify(v)}`).join('  ');
+  return clipText(line);
 }
