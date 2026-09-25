@@ -3,15 +3,95 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔨 IN PROGRESS — started 2026-09-25: **#947 — E13-02, clean-room and briefed context policies**
+> # ✅ DONE — 2026-09-25: **#947 — E13-02, clean-room and briefed context policies** (PR #959, merged)
 >
-> The machinery behind `CONTEXT_SOURCE`'s entries: what a dispatched session is
-> actually handed. Clean-room assembles an artifact bundle (diff + task statement,
-> **provably no assistant prose**); briefed delegates to #766's package generator
-> and adds nothing; full becomes a fork instruction gated on the experimental flag
-> and same-provider.
+> What a dispatched session is actually handed. Three sources, chosen by #946's
+> `CONTEXT_SOURCE` and by nothing else — with a **runtime floor** under the
+> exhaustive switch, because `req.policy` is a `ContextPolicy` only by
+> declaration and an out-of-union value resolved `undefined` into every caller's
+> `got.ok`. All four CI jobs green.
 >
-> **Branch:** `feature/947-dispatch-context`. Plan posted on the issue.
+> **Clean-room is a SUBTRACTION and is built as one.** `clean-room.ts` is a pure
+> function of an artifact — the diff (from `get_session_diff`'s own answer, #764,
+> not a second git call), the task statement, optional criteria. No transcript, no
+> blocks, no package, asserted against the module's **source text and its import
+> specifier list** as well as behaviourally: the obvious implementation (#766's
+> generator with a flag) puts the withholding one boolean away inside a generator
+> whose whole job is carrying reasoning forward. Only the OPENING prompt is the
+> task statement — later user turns pass any "no assistant text" filter and are
+> exactly the author's framing.
+>
+> **Briefed is a caller** — `sessionContextFor(id, 'package')`, every field copied,
+> asserted **byte-identical** to what `get_session_context` returns.
+>
+> **`full` IS NOW REACHABLE, which reverses a line #946 wrote.** #801 shipped and
+> DESIGN §5.15 had already named that table entry as the line a later item would
+> change. `contextPolicyRefusalKey` takes optional gates; **omitted still means
+> refused**, so no existing caller changed meaning. A fork returns an INSTRUCTION,
+> not a document, and `ok` is explicitly not a promise it will succeed.
+>
+> **⚠️ THREE REVIEW ROUNDS, AND ROUNDS 2 AND 3 EACH FOUND A DEFECT THE PREVIOUS
+> ROUND'S FIXES INTRODUCED.** Worth remembering as a pattern, not just as bugs:
+>
+> - **A COMPACTION SUMMARY IS MODEL-WRITTEN PROSE ON A `user` LINE** — not
+>   `isMeta`, not sidechain, not command plumbing — so every filter `promptText`
+>   applies let it through, into the one document built to withhold exactly that.
+>   **This repo's own fixture holds one, 14,452 characters, at line 3,885**; it
+>   escaped notice only by sitting past the head window. Round 2 then found the
+>   fix covered only the HEAD read (`sessionContext` calls it only when the tail
+>   was cut), so big transcripts were filtered and small ones were not — and
+>   "resumed after a compaction, then ran six turns" is small and is *exactly* the
+>   shape that opens with one. Now filtered at the entry boundary in both readers,
+>   which also fixes **#766's** package printing it under **Goal** or among the
+>   user's own instructions. Round 3 then found that dropping it silently let the
+>   package claim "covers the whole conversation" over a Goal reading "this session
+>   has not been given a prompt yet" — false, since it *was* given one. A
+>   compaction now counts as partial coverage.
+> - **A DIFF CAN CLOSE ITS OWN CODE FENCE.** A patch of this repo touches files
+>   full of backticks; after that line the rest is markdown, and a `+## The change`
+>   forges a section of a document the preamble has just told the reader to trust.
+>   The fence is sized to the content — **and to the FINAL bytes**: the first fix
+>   sized it before a `stripUnsafeControls` that DELETES characters, so a
+>   zero-width space merged two runs into a valid closer and the forgery came back
+>   *through its own fix*. The general rule, worth keeping: **a structural decision
+>   taken on bytes that are about to change is not a decision.**
+> - **Sanitising at the door then left three inputs raw** — session name, folder
+>   and provider, which the trailing strip I had just removed was silently
+>   covering. `name` appeared twice in one document with two treatments. Also:
+>   `empty` claimed "nothing to hand over" for a git FAILURE (the opposite claim
+>   from what the document said), and a malformed conversation id got the "this
+>   session has not had a turn" sentence, whose remedy cannot work.
+>
+> **Every fix is mutation-checked** — reverting it fails a named test. One of my
+> own tests was vacuous and caught before review: it filtered candidate leaks
+> against the bundle itself, so anything that leaked was removed from the sample
+> *by the fact that it had leaked*.
+>
+> **Judgment calls** (no gate to surface them at): reversed #946's `full` refusal;
+> fixed #766's package as well as #947's bundle, because the same misattribution
+> lived in both and half a fix is one rule with two answers; did NOT add a
+> `canFork` capability dep (it is a question about a specific transcript in a
+> specific folder, and a cached answer goes stale between the call and the spawn);
+> left the task statement and criteria interpolated raw as a **stated** limitation
+> — both are the user's own text, so attacker and victim are the same person.
+>
+> **Measured and filed on #948:** the task statement for a session started from a
+> slash command is `"do it."` — correct, honest, and nearly useless, because the
+> real brief is command plumbing and an `isMeta` line. Not fixable here without
+> making `taskStatement` disagree with the package's Goal about the same fact, so
+> it is a design input for the dispatch gesture.
+>
+> **#835's flake, eighth and ninth sightings, and neither file is touched by this
+> diff:** `git-service.test.ts` → "SPENDS THE SAME BUDGET" *and*
+> `win-cmd.test.ts` → "round-trips byte-exact" both went red on every full local
+> run and green in isolation every time. It is the 5-second budget under parallel
+> load, not the files.
+>
+> **Next up:** **#948** (E13-03, manual dispatch from the card and the palette) —
+> the gesture, and the item carrying two things it must MEASURE rather than
+> assume: whether a `plan`-mode reviewer can finish unattended at all (#946's
+> flagged guess), and whether the dispatch gesture should let the user state the
+> task. Then #949 → #950 (**Phase 2 exit criterion 5**) → #951.
 
 > # ✅ DONE — 2026-09-25: **#946 — E13-01, role templates (the saved dispatch target)** (PR #957, merged)
 >
