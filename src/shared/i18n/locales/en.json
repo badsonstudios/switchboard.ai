@@ -1278,7 +1278,9 @@
     "refusal": {
       "freshWorktree": "Dispatching into a fresh worktree is not available yet — separate checkouts arrive with the git work in a later release. Use the same folder, or make the checkout yourself and open a session on it.",
       "freshClone": "Dispatching into a fresh clone is not available yet. Use the same folder, or clone it yourself and open a session on it.",
-      "fullContext": "Handing over the whole conversation is not available yet — it needs session forking, which is still experimental. Use Briefed, which sends the goal, the decisions and the files touched."
+      "fullContext": "Handing over the whole conversation needs session forking, which is switched off. Turn on “Fork sessions” in Settings → Advanced to use it, or use Briefed, which sends the goal, the decisions and the files touched.",
+      "crossProviderFork": "The whole conversation can only be handed to a session running on the same AI tool — transcripts are not interchangeable between them. Use Briefed instead: it writes the handoff in plain text that any of them can read.",
+      "noConversation": "There is no conversation to hand over yet — this session has not had a turn. Give it something to do first, or use Clean-room, which sends the change rather than the conversation."
     }
   },
   "settings": {

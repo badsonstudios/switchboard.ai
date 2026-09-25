@@ -49,7 +49,9 @@ import { accentByName } from './accents';
  * - `briefed` — the Level-2 handoff package (§5.5): goal, decisions, files
  *   touched. The default for docs and PR authoring.
  * - `full` — fork-session adoption (§5.5 L3). Rare, for continuation work, and
- *   **refused in v1** — see `contextPolicyRefusalKey`.
+ *   **refused unless the experimental fork flag is on** (#947) — see
+ *   `contextPolicyRefusalKey`, and note that it can still be refused after that
+ *   for reasons this module cannot see.
  */
 export const CONTEXT_POLICIES = ['clean-room', 'briefed', 'full'] as const;
 export type ContextPolicy = (typeof CONTEXT_POLICIES)[number];
@@ -419,23 +421,71 @@ const WORKSPACE_POLICY_REFUSAL_KEYS: Readonly<Partial<Record<WorkspacePolicy, st
 };
 
 /**
+ * Facts a refusal depends on that a SHARED module cannot know for itself.
+ *
+ * Deliberately tiny, and it will stay tiny: this is not a place to accumulate
+ * dispatch state. A gate belongs here only when the answer is "the user can turn
+ * this on", because that is the case a menu needs to know about BEFORE anyone
+ * clicks — every other refusal wants a provider, a record or a folder, and those
+ * are settled at the moment of dispatch by `main/sessions/dispatch-context.ts`,
+ * which is the only thing that has them.
+ */
+export interface DispatchGates {
+  /**
+   * §5.5 Level 3 fork adoption is switched on (Settings → Advanced).
+   *
+   * OFF WHEN OMITTED, which is what keeps this change safe: a caller written
+   * before the gate existed still gets the refusal it was written against, and a
+   * caller that forgets to pass the flag fails toward "not available" rather
+   * than toward a fork nobody enabled.
+   *
+   * ⚠️ **READ IT AT RENDER TIME, FROM THE SAME ACCESSOR MAIN READS.** This value
+   * and `DispatchContextDeps.experimentalFork` are two independent readings of
+   * one setting (`workspace.getExperimentalFork`), and the failure mode is not
+   * the omitted direction — it is a menu that passes a CACHED `true` and offers
+   * a row that refuses the moment it is clicked. Fail-closed on absence is free;
+   * a stale `true` is not.
+   */
+  forkEnabled?: boolean;
+}
+
+/**
  * The catalogue key for why this context amount cannot be supplied, or
  * `undefined` if it can.
  *
- * The issue only asked for the workspace half to be declared-and-refused. This
- * half gets the same treatment because it is the identical trap one union over:
- * Dispatch v1 builds `clean-room` and `briefed` (#947) and does not build
- * `full`, so a `full` template that fell back to `briefed` would hand a
+ * The issue for #946 only asked for the workspace half to be declared-and-
+ * refused. This half gets the same treatment because it is the identical trap
+ * one union over: a `full` template that fell back to `briefed` would hand a
  * continuation session a summary and let it believe it had the conversation.
  * §5.5's own honesty rule — "a briefed continuation, never a resumption" — is the
  * same sentence from the other end.
  *
- * `full` needs #801's fork adoption, which is experimental, capability-gated and
- * off by default. **If a later item wires it up, this table's one entry is the
- * line that changes** — no type, no predicate, no stored template.
+ * ⚠️ **`full` IS CONDITIONAL AS OF #947, AND THAT REVERSES ONE LINE #946 WROTE.**
+ * #946 refused it outright on the grounds that Dispatch v1 would not build it.
+ * #947's done-when says the opposite — *"Full is reachable only with the
+ * experimental flag on"* — and it is right: #801 shipped the fork, the flag is a
+ * real setting, and this section's own as-built note in DESIGN §5.15 said "one
+ * table entry is the only line that changes when a later item wires it". This is
+ * that line. **What has NOT changed is the default**: with no gates passed, or
+ * with the flag off, `full` is refused exactly as before.
+ *
+ * ⚠️ IT IS NOT THE ONLY REFUSAL `full` CAN HIT. A fork is also refused across
+ * providers (§5.5: transcript formats are not interchangeable) and for a session
+ * that has no conversation yet — both need facts this module does not have, so
+ * `undefined` here means "no reason to grey the row out", not "this will work".
  */
-export function contextPolicyRefusalKey(p: ContextPolicy): string | undefined {
-  return CONTEXT_POLICY_REFUSAL_KEYS[p];
+export function contextPolicyRefusalKey(
+  p: ContextPolicy,
+  gates?: DispatchGates
+): string | undefined {
+  const key = CONTEXT_POLICY_REFUSAL_KEYS[p];
+  if (key === undefined) return undefined;
+  // The one entry in that table a SETTING can lift. Written as a check against
+  // the member rather than as a second table, because a gate table with one row
+  // is machinery standing in for a sentence — and the moment there are two, the
+  // table earns itself and this becomes it.
+  if (p === 'full' && gates?.forkEnabled === true) return undefined;
+  return key;
 }
 
 const CONTEXT_POLICY_REFUSAL_KEYS: Readonly<Partial<Record<ContextPolicy, string>>> = {
@@ -451,9 +501,16 @@ const CONTEXT_POLICY_REFUSAL_KEYS: Readonly<Partial<Record<ContextPolicy, string
  * a menu row has space for one sentence, and the context amount is the half the
  * user actually chose the template for. The second reason surfaces once the first
  * is fixed.
+ *
+ * `gates` is forwarded, not interpreted — see `contextPolicyRefusalKey`, and
+ * note that `undefined` from this function means "nothing to say up front",
+ * never "this dispatch will succeed".
  */
-export function templateRefusalKey(t: RoleTemplate): string | undefined {
-  return contextPolicyRefusalKey(t.contextPolicy) ?? workspacePolicyRefusalKey(t.workspacePolicy);
+export function templateRefusalKey(t: RoleTemplate, gates?: DispatchGates): string | undefined {
+  return (
+    contextPolicyRefusalKey(t.contextPolicy, gates) ??
+    workspacePolicyRefusalKey(t.workspacePolicy)
+  );
 }
 
 /**

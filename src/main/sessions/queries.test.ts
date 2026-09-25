@@ -343,6 +343,63 @@ describe('sessionOutput', () => {
   });
 });
 
+describe('taskStatement (#947)', () => {
+  it('answers the OPENING prompt, not the most recent one', () => {
+    const r = make([
+      userLine('Raise the commission rate from 5% to 7%.'),
+      assistantLine('Done — one constant changed.'),
+      userLine('now also update the docs'),
+    ]).taskStatement('TradingApp');
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.value.text).toBe('Raise the commission rate from 5% to 7%.');
+  });
+
+  it('can only ever return something the USER typed', () => {
+    // LOAD-BEARING for the clean-room bundle, which is defined by withholding
+    // exactly the two things this must never return: assistant prose, and a
+    // subagent's brief. `promptText` is the shared predicate that guarantees it,
+    // and pinning it here means a change to that predicate fails next to the
+    // reason rather than three modules away.
+    const r = make([
+      assistantLine('I think the bug is in the reducer.'),
+      JSON.stringify({
+        type: 'user',
+        isSidechain: true,
+        message: { role: 'user', content: 'You are a subagent. Go and read the tests.' },
+      }),
+      // ⚠️ THE ONE THAT NEEDED A SECOND FILTER. A compaction summary is
+      // model-written prose on an ordinary non-meta, non-sidechain `user` line,
+      // so `promptText` alone lets it straight through — and it summarises the
+      // author's whole conversation, which is precisely what the clean-room
+      // bundle exists to withhold. A claim with no case behind it is how this
+      // was missed the first time.
+      JSON.stringify({
+        type: 'user',
+        isCompactSummary: true,
+        message: {
+          role: 'user',
+          content: 'This session is being continued… Summary: I decided the reducer was wrong.',
+        },
+      }),
+      userLine('Fix the rounding bug.'),
+    ]).taskStatement('TradingApp');
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.value.text).toBe('Fix the rounding bug.');
+  });
+
+  it('is fail-open for a session with no transcript, and refuses a bad reference', () => {
+    const none = make([]).taskStatement('TradingApp');
+    if (!none.ok) throw new Error(none.reason);
+    // No text rather than a refusal: a card that has not started is a normal
+    // state, and the bundle prints a sentence about it.
+    expect(none.value.text).toBeUndefined();
+    expect(none.value.session.id).toBe('sess-1');
+
+    // A bad REFERENCE still refuses — this module's header's own distinction.
+    expect(make([]).taskStatement('@nobody').ok).toBe(false);
+  });
+});
+
 describe('sessionDiff', () => {
   it('returns the unified diff text for the session’s folder', async () => {
     const asked: string[] = [];
