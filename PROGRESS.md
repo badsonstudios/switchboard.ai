@@ -3,27 +3,124 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔨 IN PROGRESS — 2026-09-24: **#581** the keyboard chords say what they did
+> # ✅ MERGED — 2026-09-24: **#581** the three keyboard chords say what they did
 >
-> Picked **on merit** from the Phase 2 queue, not off a numeric order: the owner
-> cleared every small user-facing item he had named (#903, #856, #828, #704) and
-> said to choose. This one continues #828's thread while the accessibility half
-> of the app is fresh, it is unblocked, and it fixes **three shipped chord
-> families in one pass** rather than one — `Mod+Alt+P` (pin), `Mod+Shift+Arrow`
-> (the §5.8 ladder) and `Mod+Alt+Arrow` (#559's rail reorder) are all silent to
-> a screen reader today.
+> PR #943 squashed to `19ee51d`; all four CI jobs green. Issue closed. Plan was
+> posted to the issue before implementation, and the review outcome after it.
+> **NOT RELEASED** — **SIX** items now sit on `main` with nothing installable
+> (#886, #903, #856, #828, #704, #581). CHANGELOG entry filed under
+> `0.8.100 — unreleased`. Dogfood row added as UNTESTED, seven steps, and it is
+> the SECOND row that cannot be answered at all without a screen reader running
+> (#828 was the first).
 >
-> **The gap, stated the way `command-set.ts` already states it.** §5.32's rule
-> (b) — say what happened, because a move is confirmed by the eye and nothing
-> else — is discharged on each surface by its MENU, which owns a live region and
-> announces from it. The chords are deliberately outside that: the comment above
-> `session.reorder.*` says in as many words that giving them a voice "would mean
-> a second announcer outside the surface", and that **if it ever changes it
-> should change for all three at once**. That is this item.
+> **Picked on merit**, which is what the owner asked for: every small
+> user-facing item he had named was done (#903, #856, #828, #704), so this one
+> was chosen because it continues #828's thread while that half of the app is
+> fresh, it is unblocked, and it fixes **three shipped chord families in one
+> pass** rather than one.
 >
-> **Next up:** still **P2-E21-02**, the owner's own (v0.8.99 on the laptop,
-> detailed capture ON, a normal day at 3+ sessions, send the file). Nothing in
-> the queue is blocked on us.
+> **Next up:** still **P2-E21-02**, the owner's own and not a coding item —
+> install v0.8.99 on the laptop, Diagnostics ▸ detailed capture ON, a normal day
+> at 3+ sessions, send the file. **Nothing in the queue is blocked on us.**
+>
+> ---
+>
+> **THE ESCAPE CLAUSE WAS ALREADY WRITTEN, AND IT SAID TO DO ALL THREE AT ONCE.**
+> §5.32's rule (b) — say what happened, because a move is confirmed by the eye and
+> nothing else — was read for three items as a rule about MENU equivalents, and on
+> that reading it was discharged: each surface owns a live region and announces its
+> own menu-driven move. `lib/command-set` wrote down both the reasoning for leaving
+> the CHORDS silent and the way out: *"a chord is not the accessible path, it is
+> the fast one … if that ever changes, it should change for all three at once."*
+>
+> **The reasoning was wrong in one word.** A chord is SOMEBODY'S accessible path —
+> the only one that does not cost a menu walk — and a gesture whose entire
+> confirmation is visual is not a fast path for that person, it is no path. So
+> §5.32 gains a **sixth rule** and `Mod+Alt+P`, `Mod+Shift+Arrow` and
+> `Mod+Alt+Arrow` all gained a voice in one pass.
+>
+> ---
+>
+> **THE BLOCKER, AND IT IS THE ONE LESSON WORTH CARRYING FORWARD: A WAIT NEEDS A
+> DEFINITE END.** The ladder is the one family whose outcome is not known when the
+> command returns. The first implementation watched the STORE and announced when
+> the card's rung changed — #253's `pendingMove` pattern, which is right for a move
+> whose only failure is "it never happened".
+>
+> A ladder step has a second failure. `moveCardToRung` bails without writing a rung
+> when a transition is already in flight for that card, and `toTabbed` abandons the
+> move when the card's panel record vanishes under it — **and neither removes the
+> session, so the "did the card go away" guard does not fire either.** The listener
+> therefore stayed armed forever, and the NEXT rung change from anywhere at all —
+> the collapsed-strip row, the card header's ▁, the palette, an E9-07 layout sweep
+> moving a dozen cards — was announced as the outcome of a keypress minutes
+> earlier. On a sweep it would name one arbitrary card out of twelve. Exactly the
+> lie §5.32 calls worse than silence, sitting in the half of the item the tests
+> covered most heavily.
+>
+> **The fix removed the mechanism rather than bounding it.** `moveCardToRung`
+> already returns a promise, so `stepCardLadder` hands it back — awaitable, where
+> `setCardLadder` beside it stays fire-and-forget, which is the "one
+> implementation, two doors" that file's own header already promised for E9-07.
+> **"The transition finished" is a definite end; "the value changed" is not.** No
+> listener, no deadline, no supersede bookkeeping, and a dead transition now simply
+> resolves and says the card did not move.
+>
+> ---
+>
+> **TWO REGIONS, AND THE SECOND IS NOT DECORATION.** A live region announces on
+> MUTATION, so the same sentence written twice into one region is read once — and
+> the same sentence twice is the NORMAL case here, not a corner: every refusal at
+> the end of a list repeats verbatim. Announcements alternate between two regions
+> so each write is a genuine empty → text change.
+>
+> **AND THEY QUEUE, because round two found the smaller version of the same bug.**
+> Draining the queue with a value computed from a render-scope snapshot discards
+> anything enqueued earlier in the same batch — unreachable today only because this
+> component is the first child of the app root, so its effect runs before any
+> sibling's. An ordering invariant nothing stated and no test held. Queue and slots
+> are now one piece of state behind one functional update.
+>
+> ---
+>
+> **A REFUSAL IS ANNOUNCED TOO, and that is where a chord genuinely differs from a
+> menu.** The menu can dim an unavailable step and have a screen reader read it as
+> unavailable (#559 gives it `aria-disabled` rather than `disabled` precisely so it
+> stays focusable). A chord has no such affordance, so silence at the top of a list
+> is indistinguishable from a binding that has stopped working.
+>
+> **THE REORDER SENTENCE IS THE RAIL'S OWN `rail.reordered`, VERBATIM.** Rule (a)'s
+> "never a parallel path that can drift" applies to what is SAID as much as to what
+> is written — which is also why `bucketLabel` moved out of `SessionsRail` into
+> `lib/rail-order`. Extracting it found a pre-existing bug on the way: a session
+> opened at a DRIVE ROOT has no folder leaf, `pop()` returns the empty string
+> rather than undefined, and the `?? bucket` fallback never fired — so that move
+> was announced as going into nothing at all.
+>
+> ---
+>
+> **TWO FINDINGS RECORDED IN §5.32 AS DECISIONS RATHER THAN FIXED.** Rule (c),
+> focus restore, is discharged **by construction**: it exists because a group MOVE
+> re-parents a row into another card's body, and no chord here does that — a
+> reorder and a pin re-sort a bucket inside the same container, so React moves
+> keyed nodes and focus survives, which is what #559's own menu comment already
+> relies on. And a chord whose command is **DISABLED** is still silent; that fix is
+> one `if` in the dispatcher and would make every disabled chord in the app speak,
+> so it is **#942** rather than something smuggled in here.
+>
+> **THE E2E TAUGHT SOMETHING THE UNIT TESTS COULD NOT.** A collapsed card has no
+> dockview panel, so it is no card's `activeCardId` and every card-scoped chord
+> goes inert until a reveal brings it back. The first draft of the spec assumed it
+> could step back up, and the first draft of the manual page promised outcomes that
+> cannot happen. Both corrected; §5.8 said this all along ("the only rung you
+> cannot reach from here is up, from a card that isn't in the workspace").
+>
+> **FOLLOW-UPS FILED:** **#941** (the palette's four named-rung commands go through
+> `setLadder`, not `stepLadder`, so they did not inherit the voice) and **#942**
+> (above). **#835 logged a fourth sighting** — `git-service.test.ts`'s budget
+> assertion reddened on every full run here and was 74/74 in isolation; second
+> session running where a DIFFERENT test in that file went red beside it, which
+> keeps pointing at the FILE under load rather than the assertion.
 
 > # ✅ MERGED — 2026-09-24: **#704** a background task's report is a row, not a prompt you never typed
 >
