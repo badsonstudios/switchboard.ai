@@ -557,6 +557,29 @@ Not "shipped" — *used*, by the person who has to live in it. Until then PTY mo
 stays entirely functional, because it is the fallback while Direct mode is being
 tested, and a broken fallback turns a bad week into a stopped one.
 
+> **AUDIT NOTE 2026-09-25 — this gate has no ticket, no date, and nobody watching
+> it.** It is the only open item in E18 and the only way to find it is to read this
+> file, which nothing prompts anyone to do. Two things have changed since it was
+> written and both cut the same way:
+>
+> 1. **The fallback is now developer-only.** #873 removed every UI route to the
+>    PTY, so "PTY mode stays entirely functional" is true but reachable only via
+>    `SWITCHBOARD_TRANSPORT=pty`. A user hitting a Direct-mode wall cannot fall
+>    back; only someone who knows the env var can. That weakens the argument for
+>    keeping the code, not strengthens it.
+> 2. **The e2e coverage it was protecting is already gone.** Removing the only
+>    surface that rendered a PTY removed the witness for input→pty→render, the CLI
+>    owning keys inside a terminal, grouped find over two surfaces, and a session
+>    restarted *into* Direct having a live hook channel. So the code sits in the
+>    tree with its tests thinned — the worst of both states.
+>
+> **This is an owner decision and it is the only thing blocking E18's exit.** The
+> question to put to him is narrow: *has Direct mode been your daily driver long
+> enough that you would not miss the PTY?* A yes files E18-11 and deletes
+> `TerminalPane`, `terminal-attach`, `shared/ipc/pty.ts`, the #117 epoch protocol,
+> `PtyService` and `node-pty`. A no is fine and costs nothing except leaving this
+> note accurate. What should not happen is a third state where nobody asks.
+
 What is lost, and must be stated plainly in the user manual rather than quietly
 dropped: **Ctrl-R history, vim mode, and the `/resume` · `/rewind` ·
 `--from-pr` pickers**, plus whatever E18-11 finds is CLI-kept. Each is either

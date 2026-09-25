@@ -374,6 +374,31 @@ hunk, a session's "last response" chip. Drop targets: another session's terminal
 as absolute paths (agents can read across folders) — with an option to copy into the
 target folder instead.
 
+> **As built (audited 2026-09-25) — this tier needs RE-SCOPING, not just
+> building, and that is why it never became a work item.** Of the four draggable
+> objects named above, exactly one shipped, and the other three are in three
+> different states:
+>
+> | Draggable | State |
+> |---|---|
+> | a session's "last response" chip | **Shipped** as the **context chip** (E11-10, #799) — §5.5 Level 2 rather than a raw excerpt, which is the better gesture and is what the owner actually uses. |
+> | a terminal text selection | **Moot.** The terminal was retired from the UI on 2026-09-19 (#873) after the owner's 2026-08-20 decision. There is no terminal to select in. |
+> | a file from a session's file tree | **Blocked.** There is no file tree — the **Files** tab is Phase 3 (§5.7, §5.30 v2). Nothing to drag from. |
+> | a diff hunk | **Unbuilt and unfiled.** The Changes tab has the hunks; nothing makes them a drag source. |
+>
+> The DROP side is in better shape than the drag side: OS files land in a
+> composer as attachments (E10-10) and a context chip lands on a feed (E11-10).
+> What is missing is a switchboard-internal drag that carries *text*.
+>
+> **Both surviving items point at the same question**, which is why this is a
+> scope decision and not a backlog entry: with `@`-references (Tier 2) and the
+> context chip both shipped, is dragging raw text between sessions still worth a
+> gesture? §5.5 Level 1 ("excerpt injection") rests entirely on this tier, so
+> answering "no" means demoting Level 1 rather than leaving it specified and
+> unbuilt. The diff-hunk drag is the one piece with no substitute today — a
+> reviewer wanting to say *"fix this hunk"* to another session must copy, switch
+> and paste.
+
 **Tier 2 — @-references in prompts (user-driven, app-resolved).**
 A prompt composer bar per session supports `@session` tokens:
 `"Take @TradingApp's last output and apply the same fix here"`.
@@ -644,7 +669,11 @@ structure, tool-call pairing, unsupported format). So context transfer = getting
 content into B's conversation as input, at a chosen fidelity:
 
 - **Level 1 — Excerpt injection.** Drag A's last response / text selection / file into
-  B's composer. (Same mechanism as Tier 1 drag-and-drop.)
+  B's composer. (Same mechanism as Tier 1 drag-and-drop.) **Unbuilt as of
+  2026-09-25, and it inherits Tier 1's scope question rather than being a separate
+  gap — read §5.4's Tier 1 as-built note before planning this.** The "last
+  response" half effectively shipped as Level 2's context chip, which is a better
+  gesture; the text-selection half has no terminal to select in any more.
 - **Level 2 — Context package handoff (default).** Drag A's *context chip* onto B →
   switchboard.ai generates a structured handoff (goal, decisions, files touched, current
   state, key snippets) and injects it into B with a "Context from @A:" header.
@@ -714,6 +743,17 @@ instead is the nearest thing that IS a fact — **the user's own later prompts**
 is where a course correction is actually recorded — under its own name. The
 agent-written and `claude -p` variants layer onto the same package shape and are
 where a real "Decisions" section comes from.
+
+**Neither of those two variants is built, and neither is filed** (audited
+2026-09-25). So Level 2 ships at the deterministic rung only, and the "Generation
+options (a)/(b)" sentence above describes one option today. This is the intended
+order rather than a slip — the fallback rung had to exist first, and it is the only
+one a test suite can hold — but it does mean a handoff currently carries *later
+prompts* where a reader of this section would expect *decisions*. Filing either
+variant is cheap (the package shape and the injection path both exist); what it
+needs first is a judgement on whether an LLM-written handoff is worth the tokens
+and the non-determinism, which is a question for whoever has been living with the
+mechanical one.
 
 Two further properties, both recorded because a later reader will otherwise assume
 the easier thing was done: the package reads **two bounded windows, not the whole
@@ -880,6 +920,36 @@ parent's — not into the parent's transcript (corrected 2026-09-15, #807; see
 - **Worktree isolation caveat**: worktrees separate directories, not resources —
   no protection for shared ports, dev databases, or .env collisions. Surface
   port/resource conflicts between sessions as Feed warnings.
+
+> **As built (audited 2026-09-25), and THREE OF THESE BULLETS ARE IN NO PHASE AT
+> ALL.** That is the finding worth recording: they are not late, they were never
+> scheduled, and §8 does not mention them — so no amount of working the queue
+> would ever have reached them.
+>
+> Shipped: **GitService** shelling out to the system `git` (P1-E5), the **Monaco
+> diff viewer** with side-by-side/inline as a per-workspace choice (#532), and the
+> **History** tab's read-only log.
+>
+> Scheduled, Phase 3 (§8): the **file tree** with VCS decorations (as one epic
+> with document viewer v2 — they are the same surface), **worktree create /
+> merge-back flows**, **cross-session same-repo conflict warnings**, and the
+> **cross-session review dashboard**.
+>
+> **Unscheduled, and two of the three are flagged in this very section as
+> table-stakes that competitors already ship:**
+>
+> - **Editable diff + commit-from-diff** — "table-stakes: Crystal shipped it".
+>   The diff pane is read-only and there is no commit path anywhere in the app.
+> - **One-click squash-merge to main + update-from-main** — "table-stakes across
+>   Crystal / Claude Squad / Conductor / parallel-code". Neither exists.
+> - **Port/resource conflict Feed warnings** — the mitigation the isolation caveat
+>   directly above promises. No detector, no event.
+>
+> The first two are the ones to weigh deliberately: they are the *write* half of
+> the git story, and everything shipped so far is the read half. They also sit
+> next to the worktree flows in Phase 3 and would be cheaper planned with them
+> than bolted on after — the same argument §8 already makes for the file tree.
+> The third is small and belongs with the worktree work for the same reason.
 
 ### 5.8 Attention-driven layout
 
@@ -1120,6 +1190,22 @@ or sits idle awaiting input, and `Stop` when it finishes. On top:
   Settings/Options switch (`osToasts`; stored in notification prefs today,
   settings UI ships with E14's rules engine).
 
+> **As built (E14, audited 2026-09-25): every ACTION in the list above ships; the
+> `when → then` model has no authoring surface.** Sounds, TTS, taskbar flash,
+> window focus, OS toast, phone push and webhook are all real and all reachable
+> from the engine (`main/events/rules-engine.ts` + `rules-ipc.ts`). What does not
+> exist is a place for the user to WRITE a rule: E14-03 shipped the engine as a
+> "minimal core" whose only consumer is the per-session **notify when done**
+> checkbox, and the built-in visibility conditions.
+>
+> That is not a broken promise — §8's Phase 2 line says "rules engine", and the
+> engine is what shipped. It is recorded here because this section reads like a
+> user-facing feature and is currently an internal one, and because E14-06's own
+> note already anticipates the editor ("hands a future rules editor a slot NAME to
+> reference rather than a value to copy"). **The trigger to build it is a second
+> rule someone actually wants**; until then the engine's generality is paying for
+> nothing, and a rules editor with one available rule would be furniture.
+
 **Reducing prompts at the source (autonomy profiles):** per-session spawn profile =
 `--permission-mode` + allowed tools + extra dirs, presented as a slider:
 Plan / Ask / Auto-edit / Full-auto. Plus a frequent-prompt learner: recurring
@@ -1164,6 +1250,16 @@ Each session offers two synchronized views of the same underlying session:
   has nothing to show. It must say so in one sentence and offer no dead
   controls — E18-08 — rather than render an empty black pane. Whether the tab
   survives at all is E18-16's call, on evidence; see the §6 amendment.)*
+  **REMOVED 2026-09-19 (#873) — E18-16's call was made.** The tab, the ⋯
+  transport switch, the `view.terminal` command and its `Ctrl+backtick` binding
+  are all gone, and stored `transport: 'pty'` cards were migrated onto the Direct
+  default. The CODE is still in the tree (`TerminalPane`, `terminal-attach`,
+  `PtyService`, `node-pty`), reachable only with `SWITCHBOARD_TRANSPORT=pty`, so
+  the fallback is now a **developer** fallback rather than a user-facing one. The
+  deletion is E18-11 and waits on its own condition; see
+  `docs/plans/05-transport-migration.md`. *(This bullet kept describing the tab as
+  "always present" for six days after it was removed — the tab-strip list below
+  was annotated and this one was missed.)*
 
 **Block presentation (v2 — modeled on the Claude Code VS Code extension;
 owner screenshot 2026-07-21).** The reference look: a clean timeline with a
@@ -1328,6 +1424,10 @@ separate features:
   default view** for every session; renamed from "Feed" 2026-07-21).
 - **Changes** — source control for the session's folder: file tree with VCS
   decorations, Monaco diff, editable-diff + commit (§5.7 mechanics as a tab).
+  *(As built, audited 2026-09-25: the Monaco diff ships with a side-by-side/inline
+  choice (#532); the **file tree and the editable-diff + commit half do not** —
+  see §5.7's as-built note, where the tree is Phase 3 and editing is in no phase
+  at all. The tab is a read-only diff over a flat file list today.)*
 - **History** — the checkout's recent commits/branch state (read-only GitService
   log view; §5.7).
 - **Files** — the session folder's file tree (§5.7 decorations); clicking a file
@@ -1657,6 +1757,32 @@ Surfaces in switchboard.ai:
   this per session.
 - Mockup v2 note: add usage bars to the sessions rail.
 
+> **As built (audited 2026-09-25) — the ENGINE is done and one of the five
+> surfaces is.** The split is worth stating because #715 was filed against this
+> section as though the whole thing were missing, and it is not.
+>
+> Shipped: the transcript ledger (`main/transcripts/usage-ledger.ts`,
+> `cost-state.ts`) implementing the counting rule measured above — one
+> contribution per `message.id`, later copy replaces earlier, subagent files
+> folded in — plus the **per-card usage readout** (`UsageStrip`, E7-01 #787),
+> which shows tokens as the exact primary signal and names which cost source it
+> is quoting (our estimate while running, the CLI's own number once ended).
+>
+> Not built, and all Phase 3 per §8: **sessions-rail usage bars**, the
+> **burn-rate threshold highlight + "high usage" Feed event**, the **status-bar
+> plan meter**, and **sort-by-usage**. That is the fleet-level half, and it
+> shares plumbing with the mission-control and review dashboards — which is why
+> §8 and `03-later-phases.md` both say to plan those three together rather than
+> shipping the rail bar alone.
+>
+> ⚠️ **One shipped behaviour still contradicts this section.**
+> `renderer/src/lib/usage.ts`'s `estimateCostUsd` lives in the renderer's UI
+> layer and **defaults an unknown model to Sonnet rates** — it invents a number,
+> which the rule above forbids in as many words ("an unknown version must show
+> tokens with **no cost**"). Recorded in `03-later-phases.md` since 2026-07-29 as
+> a thing to fix when usage work is scheduled; recorded here because it is a
+> spec violation that is live in the app today, not a plan note.
+
 ### 5.14 Provider service status
 
 - Poll Anthropic's Statuspage JSON (`status.anthropic.com/api/v2/status.json`,
@@ -1784,6 +1910,42 @@ returned as the denial message so the agent knows why).
 **Grouping.** Multi-file logical changes group into one card: file list +
 per-file diffs; approve the batch or cherry-pick. Non-edit permissions (Bash,
 reads) get simpler cards — command + cwd + allow/deny — same banner, same keys.
+
+> **As built (E10, audited 2026-09-25) — this section is the one the app is
+> furthest behind, and it is the epic the plan called "the crown jewel."**
+>
+> What ships and works: the `PreToolUse` hold and decision round-trip (E10-03),
+> the inline bar on the Session tab (E10-04), **session-flip** as the placement
+> mode, batch grouping across sessions with per-member and approve-all buttons
+> (E9-11's `BatchApprovalBar`), always-allow-for-this-session, and deny. A real
+> permission is answered in-app without touching a TUI — exit criterion 3 is
+> genuinely met.
+>
+> **Four things in the paragraphs above do not exist**, and none of them is
+> tracked by an issue as of this audit:
+>
+> - **The diff is not Monaco.** It is two `<pre>` panes tinted with the diff
+>   tokens and **truncated at 1500 characters each**. For a one-line edit that is
+>   honest and fast; for the multi-file change this card exists to review it is
+>   not a review surface at all. Monaco is already in the bundle and already
+>   diffing in the Changes tab, so this is wiring, not new capability.
+> - **"Deny with feedback" is absent.** The decision wire is
+>   `'allow' | 'deny'` with no message field, so the objection text this section
+>   promises has nowhere to go. The agent learns it was refused and never learns
+>   why — which is the difference between a correction and a wall.
+> - **"Approve all in this file" is absent.** The two ends of the ladder ship
+>   (approve this one, always allow this session); the middle rung, which is the
+>   one that matches how a human actually reviews a file, does not.
+> - **Review queue pane (mode 2) and floating approval window (mode 3) are
+>   absent.** Only session-flip exists, so "placement modes (user preference)"
+>   describes a preference with one value. Mode 2 is on §8's Phase 2 list and is
+>   a genuine gap; mode 3 is not, and should be treated as Phase 3 or dropped.
+>
+> **Why this matters more than the item count suggests.** The owner's stated #1
+> pain was TUI approvals, and the *interception* half solved it. What is missing
+> is everything that makes the answer INFORMED — a real diff to read, a reason to
+> send back, a per-file rung, and one place to work through a queue of them. The
+> honest summary is: approvals are unblocked, not yet reviewable.
 
 ### 5.17 MCP Manager & slash-command surfaces
 
@@ -3421,6 +3583,43 @@ context transfer, and the attention queue work across monitors.
 - Windows first, but built on cross-platform stack; mac/linux CI builds from day one
 
 **Phase 2 — the switchboard**
+
+> **AUDIT 2026-09-25 — what this list actually delivered, checked line by line
+> against the code rather than against the issue tracker.** Asked for by the
+> owner: *"make sure our features are all there."* The tracker said Phase 2 was
+> nearly done; the tracker was counting issues, and **six items on this list have
+> no issue to count.** They are marked ⛔ below. Nothing here is a regression —
+> every one of them was never filed, which is a different and quieter failure: a
+> feature does not get forgotten by being broken, it gets forgotten by never
+> acquiring a ticket.
+>
+> **Epics closed:** E7, E8, E9, E10, E11 (all 13 items), E12, E14, E15, E16,
+> E17, E18 (all 15), E19, E20. **In flight:** E21, blocked on the owner's
+> capture (E21-02). **Never filed:** E13. Milestone stood at 344 closed / 56
+> open, and all 56 open were bugs, flakes, polish or design sittings — no epic
+> item among them, which is exactly why the gap was invisible from the queue.
+>
+> The six, and the honest reason each one is still missing:
+>
+> | ⛔ | Where it is specified | Why it slipped |
+> |---|---|---|
+> | **Dispatch v1 (all of it)** | §5.15, epic E13, **exit criterion 5** | The plan said "file these when E11-05 and E11-09 are merged". Both merged 2026-09-08/13. No trigger fired, so nothing was filed. |
+> | **Review queue pane** | §5.16 placement mode 2 | E10 shipped twelve items and this was not one of them; the attention queue (§5.8) covers *noticing*, not *arrowing through pending diffs*. |
+> | **Deny with feedback** | §5.16 button row | The wire carries `'allow' \| 'deny'` and no message. The agent is told no and never told why. |
+> | **Monaco diff in the approval card** | §5.16, and this list's own wording | Ships as two `<pre>` panes truncated at 1500 characters. Readable for a one-line edit, useless for the multi-file change the card exists to review. |
+> | **"Approve all in this file"** | §5.16 button row | Approve-one and always-allow-this-session both ship; the middle rung does not. |
+> | **Drag text between sessions** | §5.4 Tier 1, §5.5 Level 1 | See §5.4's as-built note: of four draggable objects, one shipped, one is moot (the terminal is gone) and two are blocked on the Phase 3 file tree. This line needs re-scoping, not just building. |
+>
+> **And one line that was never Phase 2's to keep:** "complete keyboard
+> vocabulary … spawn / focus / archive / review / merge". Spawn, focus and close
+> ship. **Archive is §5.25 and review/merge are worktree flows — all three are
+> Phase 3**, so the vocabulary cannot complete here and this list should not have
+> implied it could.
+>
+> Everything else on this list is built. The audit also found three §5.7 features
+> in **no phase at all** (see §5.7's own note) and settled two open questions
+> that reality had already answered (§9, OQ 1 and 9).
+
 - Session Bus MCP server + `list/get/send/publish` tools
 - @-references in prompt composer
 - Drag-and-drop: text + files between sessions
@@ -3529,11 +3728,16 @@ mode + session archive v1; fleet snapshots + layout DSL.)*
 
 ## 9. Open Questions
 
-1. **Prompt composer vs typing directly in the terminal.** The composer enables
-   @-references and drag-drop targets, but duplicates the CLI's own input line.
-   Proposal: composer is optional per session; it forwards to the session's stdin
-   (the PTY, or the stream-json pipe — §6 amendment 2026-08-01). Validate
-   this feels right early in Phase 2.
+1. ~~Prompt composer vs typing directly in the terminal~~ — **RESOLVED by events,
+   not by a decision, and closed in the 2026-09-25 audit.** The question was
+   whether the composer duplicates the CLI's own input line and should therefore be
+   optional per session. It stopped being a question when the terminal left: the
+   owner's 2026-08-20 call (*"we're not using terminals anymore within the app"*)
+   and #873's removal of the tab mean **the composer is the only input line there
+   is**, on every session. It forwards to the stream-json pipe (§6 amendment
+   2026-08-01) and the "optional per session" proposal is moot — there is no second
+   place to type. The composer was validated in Phase 2 exactly as this asked, just
+   by becoming the only answer rather than by winning a comparison.
 2. ~~Hook injection etiquette~~ — **RESOLVED** (Spike 01 / S-02, CLI 2.1.215):
    `claude --settings <abs-file-path>` at spawn. Hooks fire, merge with
    user/project settings is additive (both sources' hooks run for the same
@@ -3587,6 +3791,12 @@ mode + session archive v1; fleet snapshots + layout DSL.)*
    — including merge-queue/merge-train/stacked-diff tooling as applied to a local
    single-dev fleet. Reclassified: requires an EMPIRICAL SPIKE (run 7-8 real agent
    branches against one main; design from what breaks), not more literature search.
+   **MOVED TO PHASE 3 in the 2026-09-25 audit.** `03-later-phases.md` had it as
+   "an empirical spike embedded in Phase 2", gated on *"once parallel worktree use
+   is real"* — and worktree flows are themselves Phase 3, so the gate could never
+   open inside Phase 2 and the spike never ran. It is not late; it was
+   mis-sequenced. Schedule it WITH the worktree create/merge-back flows, since
+   those are what make 7-8 real branches exist to experiment on.
 10. ~~PreToolUse decision semantics~~ — **RESOLVED** (Spike 01 / S-03, CLI
     2.1.215): **Approval surfaces use the HOOK PATH.** allow/deny/ask all work
     end-to-end (headless + interactive TUI, observed); deny carries a feedback

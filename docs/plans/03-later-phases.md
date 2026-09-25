@@ -27,6 +27,30 @@ Planning notes for when this gets broken out:
 ## Phase 3 — The IDE
 *Theme: review, safety, and fleet-level surfaces.*
 
+> **ADDED BY THE 2026-09-25 FEATURE AUDIT — four things this phase now owns that
+> it did not before.** The audit read all 34 of DESIGN §5's sections against the
+> code. Three §5.7 bullets turned out to be in **no phase at all**, and one open
+> question was mis-sequenced into Phase 2 where its gate could never open.
+>
+> - **Editable diff + commit-from-diff** (§5.7). Flagged in that section as
+>   "table-stakes: Crystal shipped it". The diff pane is read-only and there is no
+>   commit path anywhere in the app.
+> - **One-click squash-merge to main + update-from-main** (§5.7). Flagged as
+>   table-stakes across Crystal / Claude Squad / Conductor / parallel-code.
+> - **Port/resource conflict Feed warnings** (§5.7). The mitigation that section's
+>   own worktree-isolation caveat promises; no detector, no event.
+> - **OQ #9, the merge-conflict endgame spike.** `03-later-phases.md` billed this
+>   as "an empirical spike embedded in Phase 2" gated on *"once parallel worktree
+>   use is real"* — but worktree flows are Phase 3, so the gate could never open
+>   inside Phase 2 and the spike never ran. Not late; mis-sequenced.
+>
+> **Plan all four WITH the worktree create/merge-back flows**, for the reason this
+> file already gives about the file tree: they are the same surface and the same
+> git-write story. Everything shipped so far is the READ half of git (status, diff,
+> log); these are the write half, and building them piecemeal would grow two
+> commit paths that disagree. The OQ #9 spike is what the worktree flows should be
+> designed FROM — run 7-8 real branches first, then decide the endgame.
+
 Planning notes:
 - **`utilityProcess` offload — plan it WITH the plugin host, not after**
   (added 2026-07-26, architecture review AR-P2-14). `src/main/index.ts` is a

@@ -1086,7 +1086,27 @@ to read, and a relaunch puts you exactly where you left off. Litmus
 
 ---
 
-## E13 — Dispatch v1 (outline — restored 2026-07-21)
+## E13 — Dispatch v1 (⛔ UNBLOCKED AND UNFILED — outline restored 2026-07-21)
+
+> **STATUS 2026-09-25: this is the only epic standing between Phase 2 and its own
+> exit bar, and it has no issues.** Found by the feature audit the owner asked
+> for, not by working the queue — which is the lesson worth keeping: **the queue
+> could never have surfaced this, because an unfiled epic contributes nothing to
+> it.** The milestone read 344 closed / 56 open and every one of those 56 was a
+> bug, flake, polish item or design sitting.
+>
+> **Both named prerequisites are merged.** The sequencing note below says E13
+> needs exactly two E11 items — **E11-05** (#765, delivery into a sibling's
+> composer) and **E11-09** (#766, context packages) — and both closed on
+> 2026-09-08. The instruction *"file these when E11-05 and E11-09 are merged"*
+> was correct and nothing fired it. **File these items.**
+>
+> It is Phase 2 **exit criterion 5** ("a clean-room review dispatched from a
+> session round-trips its findings back to the author"), and nothing of it exists
+> in the tree: no role templates, no clean-room/briefed policy, no workspace
+> policy, no round-trip, no lineage nesting. The provisional item shape at the end
+> of this section is still the right starting point; E11's findings did not move
+> the ground under it.
 
 Session-to-session handoff with deliberate context amounts (§5.15): role
 templates (built-in Code Reviewer / Doc Writer / PR Author + user-defined
@@ -1766,6 +1786,33 @@ the gap, and is not something this codebase can optimise away — worth confirmi
 in 03's note so it is not mistaken for our cost.
 
 ## Exit criteria (Phase 2 ships when)
+
+> **SCOREBOARD, audited against the code 2026-09-25 — 7 of 9 met, and the two
+> that are not have different shapes.** Criterion **5 is not started and not
+> filed** (E13, above). Criterion **3 is met but thinner than §5.16 specifies** —
+> a real permission is answered in-app, which is what the criterion asks, while
+> the diff it is answered against is two truncated `<pre>` panes rather than
+> Monaco and there is no deny-with-feedback or review queue. Criterion **8 (the
+> litmus test) is the standing per-item gate** and has been applied per PR, so it
+> is not a separate piece of work.
+>
+> | # | Criterion | State |
+> |---|---|---|
+> | 0 | The seams are real (E15) | ✅ 4+ dissimilar consumers; see `docs/extensibility.md` |
+> | 1 | The 7–8 session experience (E7 + E9) | ✅ |
+> | 2 | Pop-out to a second monitor + rescue (E8) | ✅ |
+> | 3 | In-app approvals, no TUI drop | ⚠️ met, but see §5.16's as-built note |
+> | 4 | Two sessions exchange context via the bus (E11 00–05) | ✅ |
+> | 5 | A dispatched clean-room review round-trips its findings | ⛔ **E13 unfiled** |
+> | 6 | A rule routes a needs-permission event; an actionable toast answers it (E14) | ✅ |
+> | 7 | A markdown file read *rendered* in-app (E16) | ✅ |
+> | 8 | Litmus test passes on everything shipped | ✅ applied per item |
+>
+> **Also outstanding, and neither is an exit criterion**: E21 (responsiveness) is
+> in flight and blocked on the owner's laptop capture (E21-02), and six items on
+> §8's Phase 2 feature list were never filed — see DESIGN §8's audit block for the
+> table. Of those six, only E13 and the review queue pane bear on a criterion.
+
 0. **(added 2026-07-26)** The seams are real: a second provider adapter could
    be written without editing `sessions/ipc.ts`, renderer contributions resolve
    through a registry with 4+ dissimilar consumers, every IPC channel carries a
@@ -1800,6 +1847,21 @@ E9 (actionable-toast slice pairs with E10's approval bar).
 session history next, coming back to **#799, #800, #796, #801** afterwards. E20
 has no dependency on the rest of E11 — it reads transcripts and uses the resume
 path, neither of which the bus owns.
+*(**E11 RESUMED AND FINISHED** — #796, #799, #800 and #801 all merged by
+2026-09-19. All thirteen E11 items are closed; the pause cost nothing.)*
+
+> **WHERE THE ORDER ACTUALLY STANDS, 2026-09-25.** Everything above is history now.
+> Closed epics: **E7, E8, E9, E10, E11, E12, E14, E15, E16, E17, E18, E19, E20.**
+> In flight: **E21**, and it is blocked on the owner (E21-02 — install v0.8.99 on
+> the laptop, detailed capture on, a normal day at 3+ sessions, send the file).
+> Never filed: **E13**, which is exit criterion 5.
+>
+> So the queue is not the thing to read for "what next" any more — the 56 open
+> milestone issues are all bugs, flakes, polish and design sittings. **The next
+> real work is filing E13**, and after that the six unfiled §8 items in DESIGN's
+> audit block. The project-context line that said "currently E11, the Session Bus"
+> was stale for six days before this audit caught it; treat `PROGRESS.md` as the
+> authority and this block as its epic-level summary.
 
 **Three items added 2026-07-30**, all user-facing, none blocking anything:
 **E7-06** (auto task labels), **E16** (document viewer) and **E17** (session
