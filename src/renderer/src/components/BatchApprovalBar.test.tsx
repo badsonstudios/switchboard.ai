@@ -143,6 +143,22 @@ describe('the grouped prompt renders one question for several sessions', () => {
     expect(text).toContain('query="switchboard release notes"');
   });
 
+  it('shows what a Write would put on disk, not only where (#953)', async () => {
+    // this card is the one that CANNOT fall back to "the conversation is right
+    // there" — it answers for N sessions at once, from a band above the
+    // workspace — so a Write that showed only its path made the one click with
+    // the largest blast radius the least informed
+    const input = { file_path: 'C:/Projects/app/.env', content: 'TOKEN=abc123\n' };
+    const host = await mountBatch([
+      req('r1', 'live-A', { tool: 'Write', input }),
+      req('r2', 'live-B', { tool: 'Write', input }),
+    ]);
+    const bar = host.querySelector<HTMLElement>('[data-testid="batch-approval"]')!;
+    expect(bar.textContent).toContain('2 sessions want to run Write');
+    expect(bar.querySelector('[data-preview="content"]')).not.toBeNull();
+    expect(bar.textContent).toContain('TOKEN=abc123');
+  });
+
   it('lists one row per HELD REQUEST, so a doubled session is answered twice', async () => {
     // live-A is asking the same thing twice; a card that listed it once would
     // leave one of its two questions held with nothing on screen saying so

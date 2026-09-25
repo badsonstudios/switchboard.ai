@@ -8,6 +8,7 @@ import { describe, it, expect } from 'vitest';
 import {
   argumentDetail,
   argumentSummary,
+  inputFallback,
   batchKey,
   chooseBatch,
   memberViews,
@@ -294,6 +295,16 @@ describe('argumentSummary — the one line both bars show', () => {
     expect(argumentSummary({ url: 'https://example.test' })).toBe('https://example.test');
   });
 
+  it('names a notebook, which does not key its path file_path (#953)', () => {
+    // the CLI's own tool→input map reads `NotebookEdit:{input:"notebook_path"}`
+    // (claude 2.1.280). Without this branch a held notebook edit summarised to
+    // the empty string, so the per-card bar showed a blank beside the tool name
+    // — the one gated tool that named nothing at all.
+    expect(argumentSummary({ notebook_path: 'n.ipynb', new_source: 'x = 1' })).toBe('n.ipynb');
+    // …and it stays BEHIND file_path, so nothing that already worked moves
+    expect(argumentSummary({ file_path: 'a.ts', notebook_path: 'n.ipynb' })).toBe('a.ts');
+  });
+
   it('says nothing rather than "undefined" for a tool with none of them', () => {
     expect(argumentSummary({ pattern: '*.ts' })).toBe('');
   });
@@ -336,6 +347,55 @@ describe('argumentDetail — what the GROUPED card shows when there is no summar
     // fallback runs, so a malformed `file_path` is READ rather than shown as
     // punctuation.
     expect(argumentDetail({ file_path: { path: 'x.ts' } })).toBe('file_path={"path":"x.ts"}');
+  });
+});
+
+describe('inputFallback — what the BODY shows for a tool it has no branch for (#953)', () => {
+  it('puts one field per line, because it fills a box and not a heading', () => {
+    expect(inputFallback({ pattern: '*.ts', limit: 20 })).toBe('pattern="*.ts"\nlimit=20');
+  });
+
+  it('does not echo the field the heading already printed', () => {
+    // a body whose only content repeats the line above it reads as "there is
+    // nothing more to show" — the exact false impression #953 exists to stop
+    expect(inputFallback({ file_path: 'a.ts', strategy: 'in-place' })).toBe('strategy="in-place"');
+  });
+
+  it('drops the heading by KEY, so a field that merely matches it survives', () => {
+    // filtering on "equals the heading text" also deletes any OTHER field
+    // holding the same string — two keys naming one file would lose both, and
+    // a dump that silently omits part of the payload is #953 wearing the fix's
+    // clothes
+    expect(inputFallback({ file_path: 'a.ts', path: 'a.ts' })).toBe('path="a.ts"');
+    expect(inputFallback({ file_path: 'a.ts', other_path: 'b.ts' })).toBe('other_path="b.ts"');
+  });
+
+  it('keeps a malformed heading field, which the heading itself could not print', () => {
+    // a non-primitive `file_path` summarises to '' (#255), so the dump is the
+    // ONLY place the user will ever see it
+    expect(inputFallback({ file_path: { path: 'a.ts' } })).toBe('file_path={"path":"a.ts"}');
+  });
+
+  it('degrades a field it cannot stringify instead of taking the bar down', () => {
+    // fail-open: a throw on this path does not spoil the preview, it unmounts
+    // the buttons a blocked session is waiting behind
+    const cyclic: Record<string, unknown> = { note: 'hi' };
+    cyclic.self = cyclic;
+    expect(inputFallback(cyclic)).toBe('note="hi"\nself=…');
+  });
+
+  it('shows everything when there was no heading to duplicate', () => {
+    expect(inputFallback({ pattern: '*.ts' })).toBe('pattern="*.ts"');
+  });
+
+  it('clips a huge field rather than paging a whole payload into a band', () => {
+    const line = inputFallback({ blob: 'x'.repeat(2000) });
+    expect(line.length).toBeLessThanOrEqual(310);
+    expect(line.endsWith('…')).toBe(true);
+  });
+
+  it('is empty for a tool that takes no arguments at all', () => {
+    expect(inputFallback({})).toBe('');
   });
 });
 

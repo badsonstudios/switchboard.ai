@@ -42,6 +42,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { argumentDetail, BatchMemberView, PermissionBatch } from '../lib/permission-batches';
+import { ToolInputPreview } from './ToolInputPreview';
 
 export function BatchApprovalBar(props: {
   /** the group on screen, from the store's derive; null renders nothing */
@@ -130,15 +131,13 @@ export function BatchApprovalBar(props: {
           {batch.reason}
         </div>
       )}
-      {typeof batch.input.command === 'string' && (
-        <pre style={block}>{batch.input.command.slice(0, 1500)}</pre>
-      )}
-      {typeof batch.input.old_string === 'string' && typeof batch.input.new_string === 'string' && (
-        <div style={{ display: 'flex', gap: 6, marginBlockEnd: 5, maxBlockSize: 96, overflow: 'auto' }}>
-          <pre style={pane('var(--diff-removed-bg)')}>{batch.input.old_string.slice(0, 1500)}</pre>
-          <pre style={pane('var(--diff-added-bg)')}>{batch.input.new_string.slice(0, 1500)}</pre>
-        </div>
-      )}
+      {/* What the call would DO, shared with the per-card bar (#953). It used
+          to be two inline branches here — `command`, and old/new — which meant
+          a held `Write` rendered the path in the line above and nothing else,
+          and this card is the one that cannot fall back to "the conversation
+          is right there". `dense`, because a band above the workspace pays for
+          its height in somebody's editor. */}
+      <ToolInputPreview input={batch.input} dense />
       {/* One row per HELD REQUEST, not per session: a session that happens to
           be asking the same thing twice is waiting on two answers, and a card
           that listed it once would leave one of them held with nothing on
@@ -269,28 +268,3 @@ const rowBtn: React.CSSProperties = {
   fontSize: 11,
 };
 
-const block: React.CSSProperties = {
-  margin: '0 0 5px',
-  padding: 6,
-  background: 'var(--panel)',
-  border: '1px solid var(--border)',
-  borderRadius: 4,
-  fontSize: 10.5,
-  maxBlockSize: 72,
-  overflow: 'auto',
-  whiteSpace: 'pre-wrap',
-};
-
-const pane = (background: string): React.CSSProperties => ({
-  flex: 1,
-  margin: 0,
-  padding: 6,
-  background,
-  border: '1px solid var(--border)',
-  borderRadius: 4,
-  fontSize: 10,
-  fontFamily: 'var(--font-mono)',
-  whiteSpace: 'pre-wrap',
-  wordBreak: 'break-all',
-  minInlineSize: 0,
-});

@@ -8,8 +8,28 @@ terminal is blinking.
 
 ## Answering a request
 
-A review bar appears just above the prompt box: **Allow \<tool\>?**, with what
-it wants to do — the command, or the before-and-after of a file edit.
+A review bar appears just above the prompt box: **Allow \<tool\>?**, with the
+file or command it names, and underneath it **what the request would actually
+do**:
+
+- **A shell command** — the command itself.
+- **An edit to part of a file** — the before and the after, side by side.
+- **Writing a whole file** — the contents it would put there, with a note of
+  how many lines that is. If it's writing an empty file, it says so rather than
+  showing you a blank box.
+- **Several changes to one file at once** — each before-and-after in turn, with
+  a count at the top. If there are more than a handful it shows the first few
+  and tells you how many it didn't show, so you always know the size of what
+  you're agreeing to.
+- **A change to a notebook** — the new contents of the cell, and which cell.
+- **Anything else** — every setting in the request, listed one per line. You
+  will see this for tools switchboard doesn't have a special layout for,
+  including new ones added after your copy of switchboard was built. It's plain,
+  but it's never blank.
+
+Long content is cut off with a **…** so a single request can't take over the
+window. The **…** is the signal that there is more than you can see — if it
+isn't there, you are looking at the whole thing.
 
 Three buttons:
 

@@ -1974,6 +1974,28 @@ reads) get simpler cards — command + cwd + allow/deny — same banner, same ke
 > up to escape the friction — the exact opposite of what this section is for. The
 > fix needs no Monaco: a branch per tool shape plus a default branch, so the next
 > mutating tool the CLI invents degrades to a key/value dump rather than silence.
+>
+> **✅ FIXED the same day (#953).** One `ToolInputPreview` rendered by BOTH bars
+> — the card's own and the grouped band — because a body that differed between
+> them would show the user two things and call them one question, which is the
+> rule `permission-batches` already writes down for the summary line. A branch
+> per shape (`command`, `edits[]`, old/new, `content`, `new_source`) and then a
+> **default** branch, which is the load-bearing one.
+>
+> **Two measurements made the default's case, in both directions, and neither
+> was guessed — both came off the CLI on PATH rather than out of a client.**
+> `NotebookEdit` keys its path **`notebook_path`**, not `file_path` (the
+> binary's own tool→input map), so it had been slipping past `argumentSummary`
+> for months: it was the one gated tool that named nothing *and* showed
+> nothing. And **`MultiEdit` has disappeared from the published
+> `sdk-tools.d.ts` by claude 2.1.280** while still being listed in the binary's
+> own `["Write","Edit","MultiEdit","NotebookEdit"]` edit set. Tools arrive,
+> tools leave, and tools rename their keys — so a list of names is not
+> something a permission surface may depend on being complete.
+>
+> The 1500-character clip and the short scroll boxes are untouched and remain
+> the Monaco item's question. What changed is that a clip now SAYS it clipped —
+> a first page that looks like a whole file is this same bug one size down.
 
 ### 5.17 MCP Manager & slash-command surfaces
 
