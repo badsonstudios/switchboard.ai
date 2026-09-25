@@ -3,6 +3,20 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔄 IN PROGRESS — started 2026-09-25: **#946 — E13-01, role templates (the saved dispatch target)**
+>
+> The first item of **E13 — Dispatch v1**, the only epic between Phase 2 and its exit
+> bar, and the one every other item in the epic reads. Pure model + persistence: no UI
+> and no spawning (those are #948 and #947).
+>
+> Scope: the `RoleTemplate` shape, a closed `ContextPolicy` union
+> (`clean-room | briefed | full`) with ONE place mapping it to a context source, a
+> closed `WorkspacePolicy` union that ships `same-folder` and **refuses** the other
+> two with a reason, the three built-in templates as CODE rather than workspace data,
+> and user templates persisted in `workspace.json` alongside the E14 rules.
+>
+> **Next up after this:** #947 (clean-room + briefed context policies), then #948.
+
 > # ✅ DONE — 2026-09-25: **#953 — the approval bar says what the call would DO** (PR #955, merged)
 >
 > Filed this morning, fixed this afternoon. The bar previewed a held tool call with

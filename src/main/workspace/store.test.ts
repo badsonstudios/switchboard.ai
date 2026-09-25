@@ -25,6 +25,14 @@ import { Logger } from '../log/logger';
 import { SOUND_IDS } from '../../shared/sounds';
 import { SUPPRESSED_CAP, SuppressedEvent } from '../../shared/suppressed';
 import { MAX_HISTORY_REPAIR_NOTICES } from '../../shared/history-repair';
+import {
+  BUILT_IN_ID_PREFIX,
+  BUILT_IN_TEMPLATES,
+  RoleTemplate,
+  allTemplates,
+  copyOfBuiltIn,
+  templateById,
+} from '../../shared/dispatch';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import type { TransportKind } from '../../shared/transport';
 
@@ -453,6 +461,168 @@ describe('notification rules (P2-E14-03, §5.9)', () => {
     fs.writeFileSync(file, JSON.stringify({ version: 1, sessions: [sess('a')], window: null }));
     const st = makeStore(file);
     expect(st.load().rules).toEqual([]);
+  });
+});
+
+describe('dispatch role templates (P2-E13-01, §5.15)', () => {
+  const tmpl = (id: string, over: Partial<RoleTemplate> = {}): RoleTemplate => ({
+    id,
+    name: `Template ${id}`,
+    rolePrompt: 'Do the thing.',
+    autonomy: 'ask',
+    contextPolicy: 'clean-room',
+    workspacePolicy: 'same-folder',
+    ...over,
+  });
+
+  /** Load `file` with a capturing logger and hand back what it warned about. */
+  const loadWarns = (): Line[] => {
+    const warns: Line[] = [];
+    makeStore(file, fakeLogger(warns)).load();
+    return warns;
+  };
+
+  it('a template round-trips a save/load — the done-when’s first half', () => {
+    const a = makeStore(file);
+    a.load();
+    expect(a.upsertDispatchTemplate(tmpl('t1'))).toBe(true);
+    a.save();
+    const b = makeStore(file);
+    expect(b.load().dispatchTemplates).toEqual([tmpl('t1')]);
+    expect(b.listDispatchTemplates()).toHaveLength(1);
+  });
+
+  it('the built-in three are never written to the file — the done-when’s other half', () => {
+    // ⚠️ THE POINT. They are CODE (`shared/dispatch.ts`), so improving one
+    // improves it for everybody on upgrade; copied into each install's
+    // workspace.json on first launch, it would improve only for installs made
+    // afterwards. A fresh workspace must therefore carry none of them.
+    const st = makeStore(file);
+    st.load();
+    st.upsertDispatchTemplate(tmpl('t1'));
+    st.save();
+    const written = fs.readFileSync(file, 'utf8');
+    expect(written).toContain('t1');
+    expect(written).not.toContain(BUILT_IN_ID_PREFIX);
+    for (const b of BUILT_IN_TEMPLATES) expect(written).not.toContain(b.name);
+    expect(st.snapshot().dispatchTemplates.map((t) => t.id)).toEqual(['t1']);
+  });
+
+  it('a fresh workspace still HAS the three — they just are not stored', () => {
+    const st = makeStore(file);
+    st.load();
+    expect(st.listDispatchTemplates()).toEqual([]);
+    expect(allTemplates(st.listDispatchTemplates())).toHaveLength(BUILT_IN_TEMPLATES.length);
+  });
+
+  it('upsert replaces by id; remove answers whether there was anything to remove', () => {
+    const st = makeStore(file);
+    st.load();
+    st.upsertDispatchTemplate(tmpl('t1'));
+    st.upsertDispatchTemplate(tmpl('t1', { name: 'Renamed' }));
+    expect(st.listDispatchTemplates()).toHaveLength(1);
+    expect(st.listDispatchTemplates()[0].name).toBe('Renamed');
+    expect(st.removeDispatchTemplate('t1')).toBe(true);
+    expect(st.removeDispatchTemplate('t1')).toBe(false);
+    expect(st.listDispatchTemplates()).toEqual([]);
+  });
+
+  it('refuses to store a template it could not load back', () => {
+    const st = makeStore(file);
+    st.load();
+    expect(st.upsertDispatchTemplate({ ...tmpl('t1'), autonomy: 'yolo' as AutonomyMode })).toBe(
+      false
+    );
+    expect(st.upsertDispatchTemplate(tmpl(''))).toBe(false);
+    expect(st.listDispatchTemplates()).toEqual([]);
+  });
+
+  it('refuses to store anything over a built-in’s id — the built-in cannot be mutated', () => {
+    // The structural half of "a user who edits one gets a copy": there is no
+    // sequence of store calls that puts a user template where a built-in's id
+    // resolves, so `templateById` answers from code and can never be shadowed.
+    const st = makeStore(file);
+    st.load();
+    for (const b of BUILT_IN_TEMPLATES) {
+      expect(st.upsertDispatchTemplate(tmpl(b.id, { name: 'Hijacked' }))).toBe(false);
+    }
+    expect(st.listDispatchTemplates()).toEqual([]);
+    // The supported route: a copy under an id of the user's own.
+    const copy = copyOfBuiltIn(BUILT_IN_TEMPLATES[0].id, { id: 'mine', name: 'My reviewer' })!;
+    expect(st.upsertDispatchTemplate(copy)).toBe(true);
+    expect(templateById(BUILT_IN_TEMPLATES[0].id, st.listDispatchTemplates())).toEqual(
+      BUILT_IN_TEMPLATES[0]
+    );
+  });
+
+  it('hands out copies — a caller cannot mutate the store through its answer', () => {
+    const st = makeStore(file);
+    st.load();
+    st.upsertDispatchTemplate(tmpl('t1'));
+    st.listDispatchTemplates()[0].rolePrompt = 'something else';
+    expect(st.listDispatchTemplates()[0].rolePrompt).toBe('Do the thing.');
+  });
+
+  it('a policy v1 refuses still round-trips — storable is not dispatchable', () => {
+    // #949 declares `fresh-worktree` and refuses it with a reason. Refusing to
+    // STORE it as well would mean this item's type has to change when Phase 3
+    // builds it, which is the thing the scope call was avoiding.
+    const a = makeStore(file);
+    a.load();
+    expect(a.upsertDispatchTemplate(tmpl('t1', { workspacePolicy: 'fresh-worktree' }))).toBe(true);
+    a.save();
+    expect(makeStore(file).load().dispatchTemplates[0].workspacePolicy).toBe('fresh-worktree');
+  });
+
+  it('load drops templates this build cannot use, keeps the rest, and says so', () => {
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        version: 1,
+        sessions: [],
+        window: null,
+        dispatchTemplates: [
+          tmpl('t1'),
+          { id: 7 },
+          'nope',
+          null,
+          { ...tmpl('t2'), contextPolicy: 'telepathy' },
+          // a build that shipped a fourth built-in, loaded here: its id is in
+          // the reserved namespace, so it is not this build's user data
+          tmpl(`${BUILT_IN_ID_PREFIX}test-writer`),
+        ],
+      })
+    );
+    const warns = loadWarns();
+    expect(warns).toHaveLength(1);
+    expect(warns[0].msg).toMatch(/dispatch template entries .* were unusable/i);
+    // #344: the line says what it cost — and there IS a floor here, because the
+    // built-in three are code.
+    expect(warns[0].msg).toMatch(/built-in three/);
+    expect(warns[0].fields).toMatchObject({ dropped: 5, kept: 1 });
+    expect(makeStore(file).load().dispatchTemplates.map((t) => t.id)).toEqual(['t1']);
+  });
+
+  it('a templates field that is not a list costs the templates, not the workspace', () => {
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        version: 1,
+        sessions: [sess('a')],
+        window: null,
+        dispatchTemplates: 'all of them',
+      })
+    );
+    const st = makeStore(file);
+    const s = st.load();
+    expect(s.dispatchTemplates).toEqual([]);
+    expect(s.sessions).toHaveLength(1);
+  });
+
+  it('a file written before templates existed loads with none, silently', () => {
+    fs.writeFileSync(file, JSON.stringify({ version: 1, sessions: [sess('a')], window: null }));
+    expect(loadWarns()).toEqual([]);
+    expect(makeStore(file).load().dispatchTemplates).toEqual([]);
   });
 });
 

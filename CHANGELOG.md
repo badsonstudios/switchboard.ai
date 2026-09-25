@@ -158,6 +158,18 @@ on the floor, and say so in your PR.
   names it again — previously it wore the old name permanently, and nothing you
   typed afterwards could change it. A label you typed yourself is untouched.
 
+### Internal
+
+- **Groundwork for handing a job to a fresh session.** switchboard now knows what
+  a *role* is: a saved target you will later be able to hand work to — a name, the
+  instruction it starts with, how much freedom it runs with, its own colour, and,
+  the part that matters, **how much of your work it is told about**. Three come
+  built in — Code Reviewer, Doc Writer, PR Author — and they live in the app
+  rather than in your settings file, so they improve when you update and editing
+  one gives you your own copy instead of overwriting it. Roles you write yourself
+  are saved with your workspace and are in every way equal to the built-in three.
+  Nothing to click yet; the button that uses them comes next.
+
 ## 0.8.99 — 2026-09-23
 
 ### Added
