@@ -4235,15 +4235,26 @@ export function setCardLadder(
  * The current rung is read HERE rather than in the command, which keeps
  * lib/command-set free of presentation state: it knows what the app can do, not
  * what the app is currently doing.
+ *
+ * AWAITABLE, unlike `setCardLadder` beside it, and #581 is why: the chord has to
+ * SAY what rung the card reached, and the only honest moment to read that is when
+ * the transition is over — including when it bailed without writing anything
+ * (`toTabbed`'s vanished record, `revealCardPanel`'s in-flight guard). Handing
+ * back `moveCardToRung`'s own promise is the whole mechanism; the first attempt
+ * watched the store instead and left a listener armed after a failed move, which
+ * then announced the NEXT rung change as if this keypress had caused it.
+ *
+ * `moveCardToRung` directly rather than through `setCardLadder`, so this is one
+ * more door onto the same implementation rather than a second `void`-ing of it.
  */
 export function stepCardLadder(
   api: DockviewApi | null,
   cardId: string,
   dir: 'down' | 'up'
-): void {
-  if (!api || !cardId) return;
+): Promise<void> {
+  if (!api || !cardId) return Promise.resolve();
   const cur = sessionStore.getPresentation(cardId).ladder;
-  setCardLadder(api, cardId, dir === 'down' ? stepDown(cur) : stepUp(cur));
+  return moveCardToRung(api, cardId, dir === 'down' ? stepDown(cur) : stepUp(cur), true, 'command');
 }
 
 // ── §5.8's layout modes (P2-E9-07) ──────────────────────────────────────────
@@ -4878,8 +4889,10 @@ export interface GridController {
    * Safe on a card with no panel — that is most of the point.
    */
   setLadder: (cardId: string, rung: Ladder) => void;
-  /** step the card one rung down (collapse) or up (expand) — the two bindings */
-  stepLadder: (cardId: string, dir: 'down' | 'up') => void;
+  /** Step the card one rung down (collapse) or up (expand) — the two bindings.
+   *  Resolves when the transition is OVER, which is the moment #581's
+   *  announcement may read the rung it actually reached (see `stepCardLadder`). */
+  stepLadder: (cardId: string, dir: 'down' | 'up') => Promise<void>;
   // ── §5.8's layout modes (P2-E9-07) ──────────────────────────────────────
   /** put the workspace in a named mode — grid · focus · queue */
   setLayoutMode: (mode: LayoutMode) => void;

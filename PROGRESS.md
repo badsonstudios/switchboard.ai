@@ -3,6 +3,28 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔨 IN PROGRESS — 2026-09-24: **#581** the keyboard chords say what they did
+>
+> Picked **on merit** from the Phase 2 queue, not off a numeric order: the owner
+> cleared every small user-facing item he had named (#903, #856, #828, #704) and
+> said to choose. This one continues #828's thread while the accessibility half
+> of the app is fresh, it is unblocked, and it fixes **three shipped chord
+> families in one pass** rather than one — `Mod+Alt+P` (pin), `Mod+Shift+Arrow`
+> (the §5.8 ladder) and `Mod+Alt+Arrow` (#559's rail reorder) are all silent to
+> a screen reader today.
+>
+> **The gap, stated the way `command-set.ts` already states it.** §5.32's rule
+> (b) — say what happened, because a move is confirmed by the eye and nothing
+> else — is discharged on each surface by its MENU, which owns a live region and
+> announces from it. The chords are deliberately outside that: the comment above
+> `session.reorder.*` says in as many words that giving them a voice "would mean
+> a second announcer outside the surface", and that **if it ever changes it
+> should change for all three at once**. That is this item.
+>
+> **Next up:** still **P2-E21-02**, the owner's own (v0.8.99 on the laptop,
+> detailed capture ON, a normal day at 3+ sessions, send the file). Nothing in
+> the queue is blocked on us.
+
 > # ✅ MERGED — 2026-09-24: **#704** a background task's report is a row, not a prompt you never typed
 >
 > PR #939 squashed to `083a5e5`; all four CI jobs green. Issue closed. Plan was

@@ -390,14 +390,25 @@ export function buildCommands(deps: CommandDeps): Command[] {
     // menu's Pin item — one keystroke instead of a menu walk, for the gesture
     // you repeat while arranging a workspace.
     //
-    // NOTE ON THE LIVE REGION. §5.32's rule (b) — say what happened, because a
-    // drop is confirmed by the eye and nothing else — is discharged by the MENU
-    // path, which is the equivalent the rule is about; the rail owns that region
-    // and announces the new position from it. These CHORDS are silent, like
-    // `session.pin`'s and the ladder's beside them: a chord is not the
-    // accessible path, it is the fast one, and giving it a voice would mean a
-    // second announcer outside the surface that knows what the list looks
-    // like. If that ever changes, it should change for all three at once.
+    // NOTE ON THE LIVE REGION — SETTLED BY #581, AND THE PREDICTION HELD.
+    //
+    // This read: §5.32's rule (b) is discharged by the MENU path, the chord is
+    // the fast path rather than the accessible one, and giving it a voice "would
+    // mean a second announcer outside the surface that knows what the list looks
+    // like — if that ever changes, it should change for all three at once."
+    //
+    // It changed, and it changed for all three at once. There IS a second
+    // announcer now (`lib/live-region`, mounted by `components/LiveRegion` at the
+    // app root) because the rest of the sentence turned out to be the weak part:
+    // a chord IS somebody's accessible path — it is the only one that does not
+    // cost a menu walk — and a gesture confirmed by nothing but the eye is not
+    // "fast", it is unusable. The words are in `lib/session-voice`, which reads
+    // the list out of the store rather than out of a surface, and the reorder
+    // sentence is the rail's own `rail.reordered` so the two paths cannot drift.
+    //
+    // The commands stay untouched here on purpose: the voice is wrapped around
+    // the DEPS in `App`, so this file still knows what the app can do and not
+    // what the app is currently doing.
     ...(['up', 'down'] as const).map((dir) => ({
       id: `session.reorder.${dir}`,
       titleKey: dir === 'up' ? 'commands.reorderUp' : 'commands.reorderDown',

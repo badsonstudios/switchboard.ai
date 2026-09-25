@@ -55,6 +55,10 @@ import { PreflightBanner } from './components/PreflightBanner';
 import { ServiceHealthBanner } from './components/ServiceHealthBanner';
 import type { ServiceHealthStatus } from '../../shared/service-health';
 import { installAnnouncer, setAudioMuted, sharedAnnouncer } from './lib/announcer';
+// ...and its namesake for the OTHER sense (#581): `lib/announcer` is the sound,
+// `LiveRegion` is the words a screen reader reads.
+import { LiveRegion } from './components/LiveRegion';
+import { sayPinToggled, sayReordered, stepLadderAloud } from './lib/session-voice';
 import { DEFAULT_SOUND } from '../../shared/sounds';
 // #440: a refused call RESOLVES a truthy object — read every bridge answer
 // through one of these, never as a bare boolean. See shared/ipc/refusal.ts.
@@ -1587,13 +1591,32 @@ export function App(): React.JSX.Element {
           },
           closeCard: (cardId) => grid.current?.closeCard(cardId),
           closeAllCards: () => grid.current?.closeAllCards(),
-          togglePin,
-          reorderSession,
+          // #581 — the three families that were silent to a screen reader.
+          //
+          // The voice is wrapped around the COMMAND rather than baked into the
+          // callback, and `togglePin` is why: the rail is handed the same function
+          // as `onTogglePin`, and its menu already finishes that errand its own way
+          // — it restores focus to the row, whose accessible name carries "pinned"
+          // (`rail.rowLabelPinned`). Announcing inside the shared callback would
+          // make one menu click produce both, read back to back.
+          togglePin: (cardId) => {
+            togglePin(cardId); // synchronous — the store already holds the answer
+            sayPinToggled(cardId);
+          },
+          reorderSession: (cardId, dir) => {
+            const moved = reorderSession(cardId, dir);
+            sayReordered(cardId, moved);
+            return moved;
+          },
           toggleCardView: (cardId, view) => grid.current?.toggleCardView(cardId, view),
           popOutCard: (cardId) => grid.current?.popOutCard(cardId),
           hideCard: (cardId) => grid.current?.hideCard(cardId),
           setLadder: (cardId, rung) => grid.current?.setLadder(cardId, rung),
-          stepLadder: (cardId, dir) => grid.current?.stepLadder(cardId, dir),
+          // the one family whose outcome arrives after the command returns — the
+          // grid hands back a promise that resolves when the transition is over,
+          // and `stepLadderAloud` reads the rung then rather than predicting it
+          stepLadder: (cardId, dir) =>
+            stepLadderAloud(cardId, dir, () => grid.current?.stepLadder(cardId, dir)),
           setGlobalPolicy,
           setSessionPolicy,
           setGroupPolicy,
@@ -2001,6 +2024,11 @@ export function App(): React.JSX.Element {
 
   return (
     <div style={{ blockSize: '100vh', display: 'flex', flexDirection: 'column' }}>
+      {/* #581 — the app's one live region outside any surface, so the window-scoped
+          chords have somewhere to speak. First child of the root and mounted
+          unconditionally: it has to pre-date the news, and it belongs to no panel
+          that could be collapsed out of the tree the way P2-E14-01's notices were. */}
+      <LiveRegion />
       <TitleBar
         version={bridge.appVersion}
         identity={BUILD_IDENTITY}

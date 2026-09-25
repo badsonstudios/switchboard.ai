@@ -93,7 +93,46 @@ export const LOOSE_BUCKET = 'ungrouped';
 export const groupBucket = (groupId: string): string => groupId;
 
 /** An emergent repo/folder group's bucket key (E12-05). */
-export const autoBucket = (autoKey: string): string => `auto:${autoKey}`;
+const AUTO_PREFIX = 'auto:';
+export const autoBucket = (autoKey: string): string => `${AUTO_PREFIX}${autoKey}`;
+
+/**
+ * What to call a bucket in a sentence somebody is going to read out loud.
+ *
+ * THE INVERSE OF THE THREE BUILDERS ABOVE, and it lives beside them for the same
+ * reason they live together. The rail had this as a local `bucketName`, which was
+ * fine while the rail's own menu was the only thing that spoke; #581 gave the
+ * `Mod+Alt+Arrow` CHORD a voice from outside the rail, and a second copy of "what
+ * is this bucket called" is exactly how two paths for one gesture end up
+ * announcing different words for the same move. §5.32's rule (a) is about that
+ * drift for the state change; this is the same rule applied to the sentence.
+ *
+ * `looseLabel` is passed in rather than resolved here so the module stays free of
+ * i18next — the caller has a `t`, and this has the bucket rules.
+ */
+export function bucketLabel(
+  bucket: string,
+  groups: ReadonlyArray<{ id: string; name: string }>,
+  looseLabel: string
+): string {
+  const g = groups.find((x) => x.id === bucket);
+  if (g) return g.name;
+  if (bucket.startsWith(AUTO_PREFIX)) {
+    // the same trim the auto-group's own header does, so the words in the
+    // announcement are the words on the card
+    const leaf = bucket
+      .slice(AUTO_PREFIX.length)
+      .replace(/[\\/]+$/, '')
+      .split(/[\\/]/)
+      .pop();
+    // `|| bucket` and not `?? bucket`: a session opened at a DRIVE ROOT has no
+    // leaf, and `pop()` hands back the empty string rather than undefined — so
+    // the nullish form would have announced a move into nothing at all. The key
+    // is ugly to read out; silence dressed as a sentence is worse.
+    return leaf || bucket;
+  }
+  return looseLabel;
+}
 
 /**
  * One bucket's members, in the order the user arranged.

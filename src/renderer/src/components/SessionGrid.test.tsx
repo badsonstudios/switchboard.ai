@@ -521,7 +521,10 @@ describe('a missing grid is never a crash', () => {
       applyLayout(null, 'react', { a: 'collapsed' });
       setCardLadder(null, 'a', 'collapsed');
       setCardLadder(noGrid, '', 'collapsed');
-      stepCardLadder(null, 'a', 'down');
+      // awaitable since #581 (the chord announces the rung it reached), and the
+      // no-grid path has to hand back a RESOLVED promise rather than throwing —
+      // `void` here because this case is about the throw, not the value
+      void stepCardLadder(null, 'a', 'down');
       applySubmitPolicy(null, 'a');
       applySubmitPolicy(noGrid, '');
     }).not.toThrow();

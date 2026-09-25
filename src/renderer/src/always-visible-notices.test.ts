@@ -194,6 +194,8 @@ const NOT_A_NOTICE: Readonly<Record<string, string>> = {
   McpManagerDialog: 'a modal, same as AboutPanel (§5.17, #632)',
   ModelPickerDialog: 'a modal, same as AboutPanel (#721)',
   PerfSummaryPanel: 'a modal, same as AboutPanel (E21 #923)',
+  LiveRegion:
+    'not a bar and not a modal — two `role="status"` regions clipped to 1px by `srOnly` (#581). It has no height to lose, so the shrink guard this roster is about does not apply. What it DOES need is to be in the tree before its news arrives, and that is a different rule with a different guard: `e2e/a11y-keyboard.spec.ts` asserts the app renders exactly two of them, empty, before any chord is pressed. NOT pinned by anything in this file — an exemption only exempts, so a future conditional wrap here would go unnoticed unless that spec catches it',
   div: 'the workspace itself — `flex: 1` with a basis of 0. It is the thing that is SUPPOSED to give way; that is the whole mechanism',
 };
 

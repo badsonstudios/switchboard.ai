@@ -10,6 +10,7 @@ import { describe, it, expect } from 'vitest';
 import {
   applyManualOrder,
   autoBucket,
+  bucketLabel,
   canStep,
   groupBucket,
   LOOSE_BUCKET,
@@ -239,5 +240,59 @@ describe('persistence (the ui blob — P2-E15-06, never localStorage)', () => {
     expect(loadManualOrder({ g1: ['a', 'b', 'a'] })).toEqual(order({ g1: ['a', 'b'] }));
     // and a bucket that survives the filter with one id has no order left
     expect(loadManualOrder({ g1: ['a', 42] })).toBe(NO_ORDER);
+  });
+});
+
+describe('bucketLabel — what a bucket is CALLED (#581)', () => {
+  // The rail had these rules inline while its menu was the only thing that spoke.
+  // The reorder CHORD announces from outside the rail now, and two copies of
+  // "what is this bucket called" is how one gesture ends up with two sentences.
+  const groups = [
+    { id: 'g1', name: 'Work' },
+    { id: 'g2', name: 'Side projects' },
+  ];
+
+  it('gives a persistent group its own name', () => {
+    expect(bucketLabel(groupBucket('g2'), groups, 'Ungrouped')).toBe('Side projects');
+  });
+
+  it('gives the loose bucket the caller’s word for it', () => {
+    // passed in rather than resolved here, so this module stays free of i18next
+    expect(bucketLabel(LOOSE_BUCKET, groups, 'Ungrouped')).toBe('Ungrouped');
+    expect(bucketLabel(LOOSE_BUCKET, groups, 'Sans groupe')).toBe('Sans groupe');
+  });
+
+  it('gives an auto-group the LEAF of its folder, not the whole path', () => {
+    // the key is `auto:C:\Projects\x` — reading that out loud is a sentence
+    // nobody can follow, and the card header shows the leaf for the same reason
+    expect(bucketLabel(autoBucket('C:/Projects/shared-repo'), groups, 'Ungrouped')).toBe(
+      'shared-repo'
+    );
+    expect(bucketLabel(autoBucket('C:\\Projects\\shared-repo'), groups, 'Ungrouped')).toBe(
+      'shared-repo'
+    );
+  });
+
+  it('trims a trailing separator before taking the leaf', () => {
+    // a folder recorded with its slash still on would otherwise leaf to '' and be
+    // announced as a session moving into nothing
+    expect(bucketLabel(autoBucket('C:/Projects/shared-repo/'), groups, 'Ungrouped')).toBe(
+      'shared-repo'
+    );
+    expect(bucketLabel(autoBucket('C:\\Projects\\shared-repo\\\\'), groups, 'Ungrouped')).toBe(
+      'shared-repo'
+    );
+  });
+
+  it('falls back to the key rather than to an empty sentence', () => {
+    // a drive root has no leaf at all; the key is ugly but it is not nothing
+    expect(bucketLabel(autoBucket('/'), groups, 'Ungrouped')).toBe('auto:/');
+  });
+
+  it('prefers a group whose id collides with the loose key', () => {
+    // 'ungrouped' is a legal group id, and the lookup runs first on purpose
+    expect(bucketLabel(LOOSE_BUCKET, [{ id: 'ungrouped', name: 'Odds and ends' }], 'Ungrouped')).toBe(
+      'Odds and ends'
+    );
   });
 });

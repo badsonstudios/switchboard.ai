@@ -107,6 +107,19 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **Three shortcuts that rearrange the window now say what they did.**
+  `Ctrl+Alt+P` (pin), `Ctrl+Shift+↑`/`↓` (how much of a session is on screen)
+  and `Ctrl+Alt+↑`/`↓` (a session's place in its group) were confirmed only by
+  what you could see — the row hopped, the card folded, a pin appeared. Each now
+  reads out what happened: *"trading-app pinned"*, *"trading-app collapsed to the
+  strip"*, *"trading-app is now 2 of 5 in Backend"*. You are told where the
+  session actually ended up rather than what the key asked for, and a shortcut
+  with nowhere to go says so — *"trading-app is still 1 of 5 in Backend"* —
+  because silence is indistinguishable from a shortcut that has stopped working.
+  Two things unchanged: these still act on the session you're in, so one that has
+  collapsed out of the workspace is out of their reach until you bring it back;
+  and doing this from inside a popped-out session still acts on the main window,
+  so that is where the announcement lands.
 - **Background jobs no longer report back as if you had typed it.** When work
   Claude left running in the background finishes or has something to report, the
   conversation used to show a **New prompt** divider over a block of raw code

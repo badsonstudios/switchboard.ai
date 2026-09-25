@@ -17,6 +17,8 @@ import {
   openEventsDrawer,
 } from './fixtures/app';
 
+const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
+
 /** what the keyboard is currently on, in the terms these assertions care about */
 async function focused(w: Page): Promise<{
   tag: string;
@@ -295,5 +297,89 @@ test.describe('keyboard paths swept by #197', () => {
     await expect(w.locator('.dv-active-tab')).toContainText(names[0]);
     // the lamps followed, so "you are here" stayed true across the jump
     await expect(w.locator('[data-urgency-lamp][aria-current="true"]')).toHaveCount(1);
+  });
+
+  test('the three chord families announce what they did (#581)', async () => {
+    // What only a real window can prove: the CHORD reaches the command, the
+    // command reaches the global region, and the sentence that lands there is the
+    // one the unit tests hold. Every surface's own region belongs to a surface;
+    // these three chords belong to none, which is exactly why they were silent.
+    //
+    // `[data-live-region]`, not a role query: the rail carries its own
+    // `role="status"` and #828 put a second source of `role="option"` in this
+    // document, so fishing by role is how a spec ends up asserting against
+    // whichever surface happens to come first.
+    const folders = [tempProjectFolder(), tempProjectFolder()];
+    a = await launchApp({ seedFolder: folders[0] });
+    const w = a.window;
+    const names = folders.map((f) => path.basename(f));
+    await expect(w.getByText(names[0]).first()).toBeVisible({ timeout: 25_000 });
+
+    const said = w.locator('[data-live-region]');
+    await expect(said).toHaveCount(2);
+    // both present and both empty before anything happens: one INSERTED already
+    // holding its text is announced by almost nothing (#222, #253)
+    await expect(said.nth(0)).toHaveText('');
+    await expect(said.nth(1)).toHaveText('');
+
+    /** whichever region currently holds the sentence */
+    const spoken = async (): Promise<string> =>
+      (await said.evaluateAll((els) => els.map((e) => e.textContent ?? '').filter(Boolean)))[0] ??
+      '';
+
+    /** stand on a session's rail ROW, so the keyboard is in the app's chrome and
+     *  not in that card's prompt box — §5.31 suppresses every chord while you are
+     *  typing, and where a fresh card leaves the caret is not this test's subject */
+    const standOn = async (name: string): Promise<void> => {
+      await w.locator('nav [draggable="true"]').filter({ hasText: name }).first().click();
+      await expect(w.locator('.dv-active-tab')).toContainText(name);
+    };
+
+    // ── Mod+Alt+P, both ways round ──────────────────────────────────────────
+    await standOn(names[0]);
+    await w.keyboard.press(`${MOD}+Alt+p`);
+    await expect.poll(spoken).toBe(`${names[0]} pinned`);
+    await w.keyboard.press(`${MOD}+Alt+p`);
+    await expect.poll(spoken).toBe(`${names[0]} unpinned`);
+
+    // ── Mod+Alt+Arrow, with nowhere to go ───────────────────────────────────
+    // A lone session is already 1 of 1, and announcing THAT is the whole point:
+    // a chord cannot look unavailable the way the menu's dimmed item does.
+    await w.keyboard.press(`${MOD}+Alt+ArrowUp`);
+    await expect.poll(spoken).toBe(`${names[0]} is still 1 of 1 in Ungrouped`);
+
+    // ...and with somewhere to go. A second session in its own folder, so nothing
+    // auto-groups and both land in the loose bucket.
+    await a.app.evaluate(({ dialog }, d) => {
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [d] });
+    }, folders[1]);
+    await w.getByRole('button', { name: '+ session' }).click();
+    await expect(w.getByText(names[1]).first()).toBeVisible({ timeout: 25_000 });
+
+    await standOn(names[1]);
+
+    // it arrived at the bottom, so up is a real move
+    await w.keyboard.press(`${MOD}+Alt+ArrowUp`);
+    await expect.poll(spoken).toBe(`${names[1]} is now 1 of 2 in Ungrouped`);
+
+    // ── Mod+Shift+Arrow: the rung is the news ───────────────────────────────
+    // UP FIRST, and that ordering is not incidental. An expanded card is at the
+    // top of §5.8's ladder, so this is the refusal case — and it has to be tested
+    // before the collapse, because a collapsed card has no dockview panel, which
+    // makes it no card's `activeCardId` and every card-scoped chord inert. §5.8
+    // says so on purpose: the way back up is a reveal (the strip row, the lamp,
+    // the rail row), never a chord pressed at a card that is not in the
+    // workspace. The round-trip rungs — expanded and tabbed — are covered in
+    // `lib/session-voice.test.ts`, which can drive the store directly.
+    await w.keyboard.press(`${MOD}+Shift+ArrowUp`);
+    await expect.poll(spoken).toBe(`${names[1]} is already expanded`);
+    await w.keyboard.press(`${MOD}+Shift+ArrowDown`);
+    await expect.poll(spoken).toBe(`${names[1]} collapsed to the strip`);
+
+    // EXACTLY ONE sentence is readable at any moment: two regions holding text
+    // would be read as one run-on utterance with a stale half
+    expect(
+      await said.evaluateAll((els) => els.filter((e) => (e.textContent ?? '') !== '').length)
+    ).toBe(1);
   });
 });
