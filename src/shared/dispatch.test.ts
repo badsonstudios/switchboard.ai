@@ -289,10 +289,44 @@ describe('declared and refused, never silently degraded', () => {
     }
   });
 
-  it('refuses the full context amount — it needs forking, which is experimental', () => {
+  it('refuses the full context amount by default — forking is off', () => {
     const key = contextPolicyRefusalKey('full');
     expect(key).toBeTruthy();
     expect(sentence(key!).toLowerCase()).toContain('briefed');
+    // OMITTED GATES MEAN OFF, which is what made #947's change safe: a caller
+    // written before the gate existed gets the refusal it was written against,
+    // and one that forgets the flag fails toward "not available".
+    expect(contextPolicyRefusalKey('full', {})).toBe(key);
+    expect(contextPolicyRefusalKey('full', { forkEnabled: false })).toBe(key);
+  });
+
+  it('lifts the full refusal when the experimental fork flag is on (#947)', () => {
+    // ⚠️ A DELIBERATE REVERSAL of a line #946 wrote. #946 refused `full`
+    // outright because v1 would not build it; #947's done-when says "reachable
+    // only with the experimental flag on", #801 shipped the fork, and DESIGN
+    // §5.15's own as-built note said one table entry is the line that changes.
+    expect(contextPolicyRefusalKey('full', { forkEnabled: true })).toBeUndefined();
+  });
+
+  it('names the setting the user has to turn on, not just that it is off', () => {
+    // A refusal that does not say what to do about it is a dead end. The other
+    // two in this table each name an alternative; this one names a switch.
+    const text = sentence(contextPolicyRefusalKey('full')!);
+    expect(text).toContain('Settings');
+    expect(text).toContain('Fork sessions');
+  });
+
+  it('forwards the gate through templateRefusalKey', () => {
+    const t = { ...BUILT_IN_TEMPLATES[0], contextPolicy: 'full' as const };
+    expect(templateRefusalKey(t)).toBe('dispatch.refusal.fullContext');
+    expect(templateRefusalKey(t, { forkEnabled: true })).toBeUndefined();
+    // ⚠️ AND `undefined` STILL DOES NOT MEAN "THIS WILL WORK". A fork is also
+    // refused across providers and for a session with no conversation — facts
+    // this module cannot see, settled by `main/sessions/dispatch-context.ts`.
+    const worktree = { ...t, workspacePolicy: 'fresh-worktree' as const };
+    expect(templateRefusalKey(worktree, { forkEnabled: true })).toBe(
+      'dispatch.refusal.freshWorktree'
+    );
   });
 
   it('names a catalogue key that resolves, not a hardcoded sentence', () => {
@@ -301,7 +335,13 @@ describe('declared and refused, never silently degraded', () => {
     // the user — which is exactly the class #471 spent an issue removing.
     for (const key of [
       ...WORKSPACE_POLICIES.map(workspacePolicyRefusalKey),
-      ...CONTEXT_POLICIES.map(contextPolicyRefusalKey),
+      // ⚠️ AN ARROW, NOT A POINT-FREE `.map(contextPolicyRefusalKey)`. `map`
+      // passes the INDEX as the second argument, which since #947 is the gates
+      // parameter — and under `strictFunctionTypes` (every tsconfig here is
+      // `strict`) that is a COMPILE ERROR, not a subtle runtime one: `number` is
+      // not assignable to `DispatchGates | undefined`. Written out so the next
+      // person does not "simplify" it and then wonder why `tsc` objects.
+      ...CONTEXT_POLICIES.map((p) => contextPolicyRefusalKey(p)),
     ]) {
       if (key === undefined) continue;
       expect(key).toMatch(/^dispatch\.refusal\./);

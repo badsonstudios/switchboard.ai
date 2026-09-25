@@ -103,7 +103,17 @@ export const PACKAGE_CAPS: DerivationCaps = {
   todos: 100,
 };
 
-/** The task statement's budget — a long opening brief is worth carrying whole. */
+/**
+ * The task statement's budget — a long opening brief is worth carrying whole.
+ *
+ * ⚠️ IT NOW GOVERNS TWO DOCUMENTS. #947's clean-room bundle caps its own "What
+ * it was asked to do" section with this constant, because it is the same fact
+ * under a different heading and two numbers for one budget is how two surfaces
+ * start disagreeing about the same prompt. So tuning it here for package reasons
+ * moves the clean-room briefing with it — which is the intent, and is stated at
+ * the constant rather than only at the consumer, because whoever changes this
+ * line is the one who needs to know.
+ */
 export const GOAL_CHAR_CAP = 2_000;
 
 /** Each later instruction, individually. */
@@ -380,7 +390,14 @@ function derivationCut(block: FeedBlock): boolean {
   );
 }
 
-/** `truncate` that says so in-band, so a model knows it holds a fragment. */
+/**
+ * `truncate` that says so in-band, so a model knows it holds a fragment.
+ *
+ * Re-exported as `capText` (below) because #947's clean-room bundle caps its own
+ * task statement and criteria, and a second truncation helper would be a second
+ * spelling of `…[truncated]` — the marker a reader learns once and should then
+ * recognise in every document this app produces.
+ */
 function cap(text: string, limit: number): { text: string; truncated: boolean } {
   if (text.length <= limit) return { text, truncated: false };
   let kept = text.slice(0, limit);
@@ -394,6 +411,8 @@ function cap(text: string, limit: number): { text: string; truncated: boolean } 
   if (last >= 0xd800 && last <= 0xdbff) kept = kept.slice(0, -1);
   return { text: kept.trimEnd() + ' …[truncated]', truncated: true };
 }
+
+export { cap as capText };
 
 /**
  * What the USER said in this block, if this block is the user saying something.
@@ -447,6 +466,32 @@ export function promptText(block: FeedBlock): string | undefined {
   return parts.length ? `[the user sent ${parts.join(' and ')} with no text]` : undefined;
 }
 
+/**
+ * Is this transcript ENTRY the CLI's own compaction summary? (#947)
+ *
+ * ⚠️ **A COMPACTION SUMMARY IS MODEL-WRITTEN PROSE ON A `user` LINE.** When a
+ * conversation runs out of context the CLI writes the continuation as an
+ * ordinary `type: 'user'` entry — not `isMeta`, not a sidechain, not
+ * `<local-command-*>` plumbing — whose content opens *"This session is being
+ * continued from a previous conversation that ran out of context… Summary:"*.
+ * Every filter `promptText` applies is a filter this line passes, so it arrives
+ * as a plain `kind: 'user'` block and reads as something a person typed.
+ *
+ * MEASURED, not reasoned about: this repo's own fixture holds one, at line 3,885
+ * of `session-transcript.jsonl`, 14,452 characters long. It escaped notice only
+ * because it sits far past the head window that looks for an opening prompt.
+ *
+ * ENTRY-LEVEL RATHER THAN BLOCK-LEVEL, because `FeedBlock` does not carry the
+ * flag (`transcripts/schema.ts` lists `isCompactSummary` among the root keys it
+ * ignores) and giving it one would mean deciding what the FEED does with it —
+ * and the answer there is "show it", since the user watching their own session
+ * should see that a compaction happened. The question is only ever wrong for a
+ * reader asking *what did the user ask for*.
+ */
+export function isCompactSummaryEntry(entry: Record<string, unknown>): boolean {
+  return entry.isCompactSummary === true;
+}
+
 /** Prose the user actually typed, oldest first. */
 function userTexts(blocks: readonly FeedBlock[]): string[] {
   const out: string[] = [];
@@ -475,7 +520,35 @@ function section(
  * planning-only session is a real session.
  */
 export function buildContextPackage(src: PackageSource): ContextPackage {
-  const blocks = blocksFrom(src.entries, PACKAGE_CAPS);
+  // ⚠️ COMPACTION SUMMARIES ARE DROPPED AT THE ENTRY BOUNDARY (#947), and this
+  // is the SECOND half of that fix — the first filtered only `firstPrompt`,
+  // which `sessionContext` calls **only when the tail window was cut**. On an
+  // uncut transcript the goal falls back to `prompts[0]` off this list, so the
+  // filter reached the big transcripts and missed the small ones: "resumed after
+  // a compaction, then ran six turns" is small, and is exactly the shape that
+  // OPENS with a summary. One rule with two answers, measured in review.
+  //
+  // What it costs: a compaction summary no longer appears in Recent activity
+  // either. That is the right trade — the package has no heading that says
+  // "the CLI's own summary of earlier turns", so wherever it surfaced it was
+  // attributed to somebody who did not write it. Under **Goal** it was the
+  // model's summary printed as the task; under "What the user asked for along
+  // the way" it was the model's summary printed as the user's instruction,
+  // which is the misattribution `promptText`'s docstring refuses for subagent
+  // briefs. `coverage` already tells the reader the window may be partial.
+  const entries = src.entries.filter((e) => !isCompactSummaryEntry(e));
+  // ⚠️ AND A COMPACTION IS ITSELF EVIDENCE THE CONVERSATION RUNS BACK FURTHER.
+  // Dropping the summary without saying so produced a document headed "Covers:
+  // the whole conversation" over a Goal section reading "this session has not
+  // been given a prompt yet" — which is FALSE: it was given one, and the
+  // compaction is what removed it. That is the unhedged branch `emptySection`'s
+  // own header calls a confident wrong answer, reached through the fix for a
+  // different confident wrong answer. Measured in review.
+  //
+  // Positive evidence, not an inference from emptiness, so it is right in every
+  // compacted case rather than only the one where the goal came out blank.
+  const compacted = entries.length !== src.entries.length;
+  const blocks = blocksFrom(entries, PACKAGE_CAPS);
   const prompts = userTexts(blocks);
 
   // ── Goal ────────────────────────────────────────────────────────────────
@@ -572,7 +645,13 @@ export function buildContextPackage(src: PackageSource): ContextPackage {
   };
 
   // ── Files touched ───────────────────────────────────────────────────────
-  const files = filesTouched(src.entries);
+  // `entries`, not `src.entries` — the filtered list, for `filesTouched`'s own
+  // stated rule: it skips `isMeta` so that the files list never names a line the
+  // document's prose sections cannot mention. A compaction summary carries no
+  // tool calls today, so this changes nothing; it is written this way so that a
+  // list built from lines the rest of the document has dropped stays impossible
+  // rather than merely unlikely.
+  const files = filesTouched(entries);
   // ── SELECT BY LAST TOUCH, RENDER BY FIRST ────────────────────────────────
   //
   // Two different orders, and conflating them has now been wrong in both
@@ -674,7 +753,11 @@ export function buildContextPackage(src: PackageSource): ContextPackage {
 
   return {
     session: src.session,
-    coverage: src.unreadable ? 'unreadable' : src.cut ? 'recent' : 'whole',
+    // `compacted` counts as `recent` for the reason above: the CLI compacted
+    // this conversation, so there IS older history not included here — which is
+    // exactly what `COVERAGE_LINE.recent` says, and it also switches every
+    // section's empty sentence to its hedged form, which is where the lie was.
+    coverage: src.unreadable ? 'unreadable' : src.cut || compacted ? 'recent' : 'whole',
     sections,
     tokens: sections.reduce((n, s) => n + s.tokens, 0),
   };

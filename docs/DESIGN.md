@@ -1863,7 +1863,8 @@ transfer + role templates, all already in the design.
 >   experimental and off by default. Falling back to `briefed` would hand a
 >   continuation session a summary and let it believe it had the conversation,
 >   which is §5.5's own honesty rule from the other end. One table entry is the
->   only line that changes when a later item wires it.
+>   only line that changes when a later item wires it. **(#947 wired it — see
+>   below. The entry is still there; it is now conditional.)**
 > - **Triggers 2 and 3** (agent-initiated `spawn_session`, rules-engine
 >   auto-dispatch) are Dispatch v2 — #948's scope call.
 >
@@ -1875,6 +1876,64 @@ transfer + role templates, all already in the design.
 > Colour is what the rail paints, so colour is what a template carries; the §5.11
 > palette moved to `shared/accents.ts` so that a template could name one without a
 > second copy of the hex values.
+>
+> **As built — E13-02 (#947), what each policy actually hands over.** The table
+> above is now three implementations, chosen by `CONTEXT_SOURCE` and by nothing
+> else (`main/sessions/dispatch-context.ts`). Still no gesture: the bundle is a
+> value, and #948 is the caller.
+>
+> - **Clean-room is a SUBTRACTION, and it is built as one.** `clean-room.ts` is a
+>   pure function of an *artifact* — a diff (from `get_session_diff`'s own answer,
+>   #764, not a second git call), the task statement, and optional acceptance
+>   criteria. It never sees a transcript, a derived block or a context package, and
+>   the test suite asserts that against the module's SOURCE TEXT as well as
+>   behaviourally, because the obvious implementation — #766's generator with a
+>   "leave the reasoning out" flag — puts the withholding one boolean away inside a
+>   generator whose whole job is carrying reasoning forward.
+> - **Only the OPENING prompt is the task statement.** Later user turns would pass
+>   any "no assistant text" filter — they are prose the user typed — and they are
+>   exactly the author's framing ("no, do it the other way round"). §5.15's table
+>   says *task statement*, so the bundle carries the opening prompt and stops.
+> - **Acceptance criteria are caller-supplied, and absent means it SAYS so.**
+>   Nothing in a transcript is labelled "acceptance criteria"; extracting the
+>   nearest list-shaped prose and printing it under that heading is the same
+>   confident-wrong-answer failure §5.5's "Decisions" section refuses.
+> - **No diff is three sentences, not a blank** — a clean tree, a folder that is
+>   not a repo, and a git that would not answer imply three different next moves,
+>   and a reviewer told "here is the diff" and handed nothing reviews an empty
+>   change.
+> - **Briefed is a CALLER, not a second generator.** It is
+>   `sessionContextFor(id, 'package')` — the same call `get_session_context`
+>   answers with — and every field is copied. The text a briefed dispatch receives
+>   is byte-identical to the text an agent pulling context gets, which is what
+>   makes one honesty rule cover both.
+> - **⚠️ `full` IS NOW REACHABLE, which reverses one line E13-01 wrote.** #946
+>   refused it outright on the grounds that v1 would not build it; #947's spec says
+>   *"reachable only with the experimental flag on"*, and it is right — #801
+>   shipped. `contextPolicyRefusalKey` takes an optional `DispatchGates`, and
+>   **omitted still means refused**, so no caller written before the gate changed
+>   meaning. A `full` dispatch is refused three ways, each naming a different fix:
+>   the flag is off, the target runs on a different provider (§5.5 — transcript
+>   formats are not interchangeable), or the author session has no conversation to
+>   adopt yet. The last two need a provider and a record, so they are settled at
+>   dispatch time and not in `shared/`: `undefined` from `templateRefusalKey` means
+>   "nothing to grey the menu row out for", never "this will work".
+> - **⚠️ A COMPACTION SUMMARY IS NOT THE USER SPEAKING, and fixing that changed
+>   §5.5's package too.** The CLI writes its own out-of-context recap onto an
+>   ordinary non-meta, non-sidechain `type: 'user'` line, so every filter
+>   `promptText` applies let it through — model-written prose summarising the
+>   author's whole conversation, arriving in the one document built to withhold
+>   exactly that. Found in review; the repo's own fixture holds one 14,452
+>   characters long. Compaction entries are now dropped at the entry boundary in
+>   **both** readers, which means the Level-2 package no longer prints one under
+>   **Goal** or among the user's instructions either — it was a misattribution
+>   there as well, and leaving it would have been one rule with two answers.
+> - **A fork returns an INSTRUCTION, not a document** — `{ sourceSessionId,
+>   sourceFolder }`, which is `sessions:create`'s existing `forkFrom` operand. It
+>   is the author's native conversation id and the author's folder, neither of
+>   which is the dispatched session's; `StartPlan.requestedFork` spends a paragraph
+>   on why collapsing them looks right for the same-folder case and silently
+>   answers "no such conversation" for the cross-folder one.
 >
 > ⚠️ **One default is a guess and is marked as one in the code**: the built-in Code
 > Reviewer runs at `plan`, chosen for the CLI's own write block (§5.16's plan-mode

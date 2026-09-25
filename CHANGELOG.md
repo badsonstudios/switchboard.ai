@@ -169,6 +169,29 @@ on the floor, and say so in your PR.
   one gives you your own copy instead of overwriting it. Roles you write yourself
   are saved with your workspace and are in every way equal to the built-in three.
   Nothing to click yet; the button that uses them comes next.
+- **And what each of those roles will actually be told.** The three amounts a role
+  can be given are now real documents. *Clean-room* hands over the change itself
+  and the job it was for — and deliberately nothing else: none of the thinking,
+  the false starts or the back-and-forth, because a reviewer who inherits your
+  framing reviews what you meant instead of what you wrote. If there is no change
+  to show, it says so plainly rather than handing over a blank. *Briefed* sends
+  exactly the handoff you already get when you drag a session's context chip — the
+  goal, the instructions along the way, the plan and the files touched. *Full*
+  hands over the whole conversation, and only works if you have switched on **Fork
+  sessions** in Settings ▸ Advanced and the other session runs on the same AI
+  tool; otherwise it tells you which of those two is in the way. Still nothing to
+  click — the button comes next.
+
+### Fixed
+
+- **A handed-over session summary no longer quotes the AI back to you as if you
+  had said it.** When a conversation runs out of room, Claude writes its own
+  recap of everything so far and the conversation continues from that. Dragging
+  such a session's context chip could put that recap under **Goal** — the AI's
+  summary of your work presented as the thing you asked for — or list it among
+  the instructions you gave along the way. It is now left out of the handoff
+  altogether, so what you hand another session is your words and its actions,
+  and nothing it wrote about itself.
 
 ## 0.8.99 — 2026-09-23
 

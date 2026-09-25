@@ -3,6 +3,16 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔨 IN PROGRESS — started 2026-09-25: **#947 — E13-02, clean-room and briefed context policies**
+>
+> The machinery behind `CONTEXT_SOURCE`'s entries: what a dispatched session is
+> actually handed. Clean-room assembles an artifact bundle (diff + task statement,
+> **provably no assistant prose**); briefed delegates to #766's package generator
+> and adds nothing; full becomes a fork instruction gated on the experimental flag
+> and same-provider.
+>
+> **Branch:** `feature/947-dispatch-context`. Plan posted on the issue.
+
 > # ✅ DONE — 2026-09-25: **#946 — E13-01, role templates (the saved dispatch target)** (PR #957, merged)
 >
 > **Dispatch v1 has started.** The first item of E13 — the only epic between Phase 2

@@ -31,6 +31,7 @@ import {
   STATE_CHAR_CAP,
   buildContextPackage,
   estimateTokens,
+  isCompactSummaryEntry,
   renderPackage,
   type ContextPackage,
   type SectionId,
@@ -109,6 +110,95 @@ beforeEach(() => {
   dir = tempDir('sb-ctxpkg-');
 });
 afterEach(() => cleanupTempDirs());
+
+describe('a compaction summary is not the user speaking (#947)', () => {
+  // ⚠️ THE CLI WRITES ITS OWN SUMMARY ONTO A `user` LINE. When a conversation
+  // runs out of context the continuation arrives as `type: 'user'` with
+  // `isCompactSummary: true` — not `isMeta`, not a sidechain, not
+  // `<local-command-*>` plumbing — so every filter `promptText` applies lets it
+  // through. It is MODEL-WRITTEN PROSE summarising the author's reasoning, and
+  // it reached two headings that both attribute it to somebody who did not write
+  // it: **Goal** (as the task) and "What the user asked for along the way" (as
+  // an instruction). The same misattribution `promptText`'s docstring refuses
+  // for a subagent's brief.
+  //
+  // Found in review of #947, twice: the first fix filtered only the HEAD read,
+  // which `sessionContext` uses only when the tail was cut — so big transcripts
+  // were filtered and small ones were not, and "resumed after a compaction, then
+  // ran six turns" is small and is exactly the shape that opens with one.
+  const SUMMARY =
+    'COMPACT-MARKER This session is being continued from a previous conversation ' +
+    'that ran out of context. Summary: I decided the rate constant was the bug.';
+  const compactionLine = (text: string) =>
+    JSON.stringify({
+      type: 'user',
+      isCompactSummary: true,
+      message: { role: 'user', content: text },
+    });
+
+  it('never becomes the Goal, on an UNCUT transcript', () => {
+    // The uncut path is the one the first fix missed: `goalFromHead` is not even
+    // consulted here, so the goal falls back to `prompts[0]` off the tail.
+    const pkg = build([compactionLine(SUMMARY), userLine('Raise the rate to 7%.')]);
+    expect(sectionOf(pkg, 'goal').text).toBe('Raise the rate to 7%.');
+    expect(renderPackage(pkg)).not.toContain('COMPACT-MARKER');
+  });
+
+  it('never becomes an instruction the user supposedly gave', () => {
+    const pkg = build([
+      userLine('Raise the rate to 7%.'),
+      compactionLine(SUMMARY),
+      userLine('now the docs too'),
+    ]);
+    expect(sectionOf(pkg, 'instructions').text).toContain('now the docs too');
+    expect(sectionOf(pkg, 'instructions').text).not.toContain('COMPACT-MARKER');
+    expect(renderPackage(pkg)).not.toContain('COMPACT-MARKER');
+  });
+
+  it('is gone from the whole document, not just the prose sections', () => {
+    // Including Recent activity — the deliberate cost of filtering at the entry
+    // boundary. The package has no heading that says "the CLI's own summary of
+    // earlier turns", so wherever it surfaced it was attributed to somebody who
+    // did not write it.
+    const pkg = build([
+      userLine('Raise the rate to 7%.'),
+      assistantLine('Done.'),
+      compactionLine(SUMMARY),
+    ]);
+    expect(renderPackage(pkg)).not.toContain('COMPACT-MARKER');
+  });
+
+  it('stops claiming to cover the WHOLE conversation once one has happened', () => {
+    // ⚠️ THE LIE THE FILTER ITSELF INTRODUCED. Dropping the summary without
+    // saying so produced "Covers: the whole conversation" over a Goal reading
+    // "this session has not been given a prompt yet" — false, since it WAS given
+    // one and the compaction is what removed it. A compaction is positive
+    // evidence that the conversation runs back further than this document.
+    const pkg = build([compactionLine(SUMMARY), assistantLine('Carrying on.')]);
+    expect(pkg.coverage).toBe('recent');
+    const doc = renderPackage(pkg);
+    expect(doc).toContain('older history not included here');
+    // And every section's empty sentence switches to its hedged form, which is
+    // where the confident wrong answer actually lived.
+    expect(doc).not.toContain('has not been given a prompt yet');
+    expect(doc).toContain('not in the part of the conversation this covers');
+  });
+
+  it('leaves an uncompacted transcript claiming the whole conversation', () => {
+    // The control: `recent` must mean something, so it cannot be what every
+    // package says.
+    expect(build([userLine('Raise the rate to 7%.')]).coverage).toBe('whole');
+  });
+
+  it('recognises the flag and nothing else', () => {
+    expect(isCompactSummaryEntry({ isCompactSummary: true })).toBe(true);
+    // Not truthiness: the CLI writes a boolean, and a string `"false"` arriving
+    // from a hand-edited file must not silently drop a real prompt.
+    expect(isCompactSummaryEntry({ isCompactSummary: 'true' })).toBe(false);
+    expect(isCompactSummaryEntry({ isCompactSummary: false })).toBe(false);
+    expect(isCompactSummaryEntry({})).toBe(false);
+  });
+});
 
 describe('the sections §5.5 asks for', () => {
   it('takes the goal from the FIRST prompt, not the most recent one', () => {

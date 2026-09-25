@@ -52,6 +52,7 @@ import {
 } from '../feed/history';
 import {
   buildContextPackage,
+  isCompactSummaryEntry,
   PACKAGE_CAPS,
   promptText,
   type ContextPackage,
@@ -209,6 +210,29 @@ export interface SessionContextAnswer {
   empty: boolean;
 }
 
+/**
+ * What a session was ASKED to do — its opening prompt, and nothing else (#947).
+ *
+ * The one fact a clean-room dispatch needs from a transcript, and the reason it
+ * is a query of its own rather than a field on the package: clean-room is
+ * defined by what it WITHHOLDS, so it must not be handed a builder whose whole
+ * job is carrying the author's reasoning forward. This answer can only ever be
+ * something the user typed — see `SessionQueries.taskStatement`.
+ */
+export interface SessionTaskStatement {
+  session: SessionSummary;
+  /**
+   * The opening prompt, or `undefined` when there is not one to report.
+   *
+   * ONE value for two situations, deliberately: a session that has not been
+   * asked anything yet, and a head window that could not be read. Both mean "we
+   * cannot tell you what this was asked", and the sentence the bundle prints
+   * says exactly that — where #766's package distinguishes them, it does so to
+   * avoid claiming a session did no WORK, a claim this answer never makes.
+   */
+  text?: string;
+}
+
 export interface SessionDiff {
   session: SessionSummary;
   isRepo: boolean;
@@ -280,7 +304,22 @@ export const PACKAGE_HEAD_BYTES = 128 * 1024;
  */
 function firstPrompt(file: string): string | undefined {
   const head = readTranscriptHead(file, PACKAGE_HEAD_BYTES);
-  for (const block of blocksFrom(head.entries, PACKAGE_CAPS)) {
+  // ⚠️ COMPACTION SUMMARIES ARE DROPPED BEFORE DERIVATION (#947). The CLI writes
+  // one as an ordinary non-meta, non-sidechain `type: 'user'` line, so every
+  // filter `promptText` applies lets it through — and it is MODEL-WRITTEN PROSE
+  // summarising the author's whole conversation. Returned as "the opening
+  // prompt" it is wrong twice over: the package prints it under **Goal**, and
+  // #947's clean-room bundle prints it under **What it was asked to do**, which
+  // makes it the author's reasoning arriving inside the one document whose
+  // entire purpose is to withhold it.
+  //
+  // FILTERED HERE, AT THE READ, rather than inside `promptText`: the predicate
+  // takes a derived block and the flag lives on the entry, and pushing it into
+  // the derivation would decide the question for the FEED as well — where the
+  // right answer is the opposite one, because a user watching their own session
+  // should see that a compaction happened.
+  const entries = head.entries.filter((e) => !isCompactSummaryEntry(e));
+  for (const block of blocksFrom(entries, PACKAGE_CAPS)) {
     // `promptText`, SHARED with the package's own `userTexts`, and shared
     // because this loop used to be a second copy of that rule that disagreed
     // with it about attachment-only turns — so a session opening with a pasted
@@ -711,6 +750,43 @@ export class SessionQueries {
         empty: option.empty,
       },
     };
+  }
+
+  /**
+   * The conversation's opening prompt — the task statement (#947, §5.15).
+   *
+   * A METHOD RATHER THAN A SECOND EXTRACTOR, which is the only decision in it.
+   * `firstPrompt` below already reads this fact from the head window for #766's
+   * package, and "what was this session asked to do" is precisely the kind of
+   * question that grows two answers that drift — this module's header names that
+   * as the reason it exists at all. Clean-room dispatch reads it here; the
+   * package reads it inline; both are the same window and the same predicate.
+   *
+   * ⚠️ IT CAN ONLY EVER RETURN WHAT THE USER TYPED, and that takes TWO filters,
+   * not one. `promptText` rejects assistant blocks, sidechain (subagent) turns
+   * and `<local-command-*>` plumbing. It does NOT reject a **compaction
+   * summary** — model-written prose the CLI writes onto an ordinary
+   * non-meta, non-sidechain `user` line — so `firstPrompt` drops those at the
+   * entry level before derivation; see `isCompactSummaryEntry`, and note that
+   * this repo's own fixture contains one 14,452 characters long.
+   *
+   * That guarantee is load-bearing for the clean-room bundle, which is defined
+   * by withholding exactly this, so it is asserted in `dispatch-context.test.ts`
+   * against a transcript that opens with a compaction summary — rather than left
+   * as a property of the call chain.
+   *
+   * Fail-open like every other read here: a session with no transcript, and one
+   * whose head window will not read, both answer with no text rather than
+   * refusing. A bad session REFERENCE still refuses — see the header.
+   */
+  taskStatement(ref: string): QueryResult<SessionTaskStatement> {
+    const found = this.resolve(ref);
+    if (!found.ok) return found;
+    const session = found.value;
+    const file = attempt(() => this.deps.transcriptFor(session.id), null);
+    if (!file) return { ok: true, value: { session } };
+    const text = attempt(() => firstPrompt(file), undefined);
+    return { ok: true, value: text === undefined ? { session } : { session, text } };
   }
 
   /**
