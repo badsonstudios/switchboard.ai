@@ -395,6 +395,15 @@ export function App(): React.JSX.Element {
   // the rail RENDERS from it, rail order is DERIVED from it, and the reorder
   // commands read it synchronously from a keydown handler.
   const manualOrder = useSyncExternalStore(subscribeStore, () => sessionStore.getManualOrder());
+  // #951's dispatch lineage. From the store for the same three reasons, and the
+  // rail nests from it — §5.15's "↳ Review of X".
+  const lineage = useSyncExternalStore(subscribeStore, () => sessionStore.getLineage());
+  // §5.15's ephemerality setting (#951). Straight from the store, like the rail
+  // order beside it: the settings screen renders it and the grid's retire effect
+  // reads it synchronously, so there is one value and no local copy to fall behind.
+  const dispatchRetire = useSyncExternalStore(subscribeStore, () =>
+    sessionStore.getDispatchRetire()
+  );
   const reorderBucket = React.useCallback(
     (bucket: string, ids: string[]) => sessionStore.setBucketOrder(bucket, ids),
     []
@@ -2235,6 +2244,8 @@ export function App(): React.JSX.Element {
         }}
         taskLabelSize={taskLabelSize}
         onSetTaskLabelSize={applyTaskLabelSize}
+        dispatchRetire={dispatchRetire}
+        onSetDispatchRetire={(policy) => sessionStore.setDispatchRetire(policy)}
         quiet={quietState}
         onSetQuietWindow={setQuietWindow}
         push={pushConfig}
@@ -2538,6 +2549,7 @@ export function App(): React.JSX.Element {
             pinned={pinned}
             onTogglePin={togglePin}
             manualOrder={manualOrder}
+            lineage={lineage}
             onReorder={reorderBucket}
             onSetSessionPolicy={setSessionPolicy}
             onCycleGroupPolicy={cycleGroupPolicy}

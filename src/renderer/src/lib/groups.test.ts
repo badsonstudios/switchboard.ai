@@ -297,3 +297,131 @@ describe('groupChangeLanded — reading a refusal instead of catching one (issue
     expect(new Set(warned).size).toBe(3);
   });
 });
+
+describe('railOrder — #951 dispatch nesting (§5.15 "↳ Review of X")', () => {
+  const lineage = (entries: Record<string, string>): Map<string, string> =>
+    new Map(Object.entries(entries));
+
+  it('⭐ NESTS A DISPATCHED SESSION UNDER ITS AUTHOR, and `flat` is what Ctrl+1..9 counts', () => {
+    // The done-when asks for this assertion by name — on `railOrder`, not by
+    // inspecting the rendered rail — because a nesting pass BESIDE the derivation
+    // is how the rail and the keyboard end up disagreeing about what is third.
+    const r = railOrder(
+      [{ id: 'author' }, { id: 'other' }, { id: 'reviewer' }],
+      [],
+      undefined,
+      undefined,
+      lineage({ reviewer: 'author' })
+    );
+    expect(r.flat.map((s) => s.id)).toEqual(['author', 'reviewer', 'other']);
+    expect(r.buckets.get('ungrouped')).toEqual(['author', 'reviewer', 'other']);
+    expect(r.depthOf.get('reviewer')).toBe(1);
+    expect(r.depthOf.has('author')).toBe(false);
+  });
+
+  it('nests inside an auto-group, which is where a same-folder dispatch actually lands', () => {
+    // §5.15 v1 is `same-folder` (#949), so the author and its reviewer share an
+    // `autoKey` and emerge as one auto-group. This is the common real shape.
+    const r = railOrder(
+      [
+        { id: 'author', autoKey: 'c:/app' },
+        { id: 'reviewer', autoKey: 'c:/app' },
+      ],
+      [],
+      undefined,
+      undefined,
+      lineage({ reviewer: 'author' })
+    );
+    expect(r.autoGroups[0].members.map((s) => s.id)).toEqual(['author', 'reviewer']);
+    expect(r.depthOf.get('reviewer')).toBe(1);
+  });
+
+  it('⚠️ AN AUTHOR IN ANOTHER BUCKET IS NOT A PARENT — no nesting, and NO DEPTH', () => {
+    // A connector is only ever drawn from `depthOf`, so a child whose author is
+    // in a named group renders top-level rather than as an arrow pointing at a
+    // row that is somewhere else entirely.
+    const r = railOrder(
+      [
+        { id: 'author', groupId: 'g1' },
+        { id: 'reviewer' },
+      ],
+      [{ id: 'g1' }],
+      undefined,
+      undefined,
+      lineage({ reviewer: 'author' })
+    );
+    expect(r.loose.map((s) => s.id)).toEqual(['reviewer']);
+    expect(r.depthOf.size).toBe(0);
+  });
+
+  it('⚠️ THE AUTHOR BEING CLOSED LEAVES AN ORDINARY TOP-LEVEL ROW (the done-when)', () => {
+    const r = railOrder(
+      [{ id: 'reviewer' }, { id: 'other' }],
+      [],
+      undefined,
+      undefined,
+      lineage({ reviewer: 'author-that-is-gone' })
+    );
+    expect(r.flat.map((s) => s.id)).toEqual(['reviewer', 'other']);
+    expect(r.depthOf.size).toBe(0);
+  });
+
+  it('⚠️ §5.8 STILL WINS: nesting never pulls a child across the pinned boundary', () => {
+    // The pin is a POSITION guarantee, so a pinned reviewer stays in the sticky
+    // block even though its author is below it — and reports no depth, because
+    // an indented row with its parent underneath is an arrow pointing the wrong way.
+    const r = railOrder(
+      [{ id: 'author' }, { id: 'reviewer' }, { id: 'other' }],
+      [],
+      new Set(['reviewer']),
+      undefined,
+      lineage({ reviewer: 'author' })
+    );
+    expect(r.flat.map((s) => s.id)).toEqual(['reviewer', 'author', 'other']);
+    expect(r.depthOf.size).toBe(0);
+  });
+
+  it('...and a pinned AUTHOR keeps its pinned child nested inside the pinned block', () => {
+    const r = railOrder(
+      [{ id: 'other' }, { id: 'author' }, { id: 'reviewer' }],
+      [],
+      new Set(['author', 'reviewer']),
+      undefined,
+      lineage({ reviewer: 'author' })
+    );
+    expect(r.flat.map((s) => s.id)).toEqual(['author', 'reviewer', 'other']);
+    expect(r.depthOf.get('reviewer')).toBe(1);
+  });
+
+  it('layers after the manual order: the user arranges the authors, children ride along', () => {
+    const r = railOrder(
+      [{ id: 'a' }, { id: 'b' }, { id: 'kidOfA' }],
+      [],
+      undefined,
+      new Map([['ungrouped', ['b', 'a']]]),
+      lineage({ kidOfA: 'a' })
+    );
+    expect(r.flat.map((s) => s.id)).toEqual(['b', 'a', 'kidOfA']);
+  });
+
+  it('nests a chain, and `bucketOf` still names every row', () => {
+    const r = railOrder(
+      [{ id: 'a' }, { id: 'b' }, { id: 'c' }],
+      [],
+      undefined,
+      undefined,
+      lineage({ b: 'a', c: 'b' })
+    );
+    expect(r.flat.map((s) => s.id)).toEqual(['a', 'b', 'c']);
+    expect([r.depthOf.get('b'), r.depthOf.get('c')]).toEqual([1, 2]);
+    expect([...r.bucketOf.keys()].sort()).toEqual(['a', 'b', 'c']);
+  });
+
+  it('a workspace that has never dispatched is byte-for-byte what it was', () => {
+    const sessions = [{ id: 'a' }, { id: 'b' }];
+    const before = railOrder(sessions, []);
+    const after = railOrder(sessions, [], undefined, undefined, new Map());
+    expect(after.flat.map((s) => s.id)).toEqual(before.flat.map((s) => s.id));
+    expect(after.depthOf.size).toBe(0);
+  });
+});

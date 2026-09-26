@@ -64,7 +64,15 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { RailGroup, RailSession } from '../model/types';
 import { railOrder } from '../lib/groups';
-import { bucketLabel, canStep, LOOSE_BUCKET, ManualOrder, planReorder } from '../lib/rail-order';
+import {
+  bucketLabel,
+  canStep,
+  LOOSE_BUCKET,
+  ManualOrder,
+  planReorder,
+  stepReorder,
+} from '../lib/rail-order';
+import { LineageMap, NO_LINEAGE, railDepthIndent } from '../lib/dispatch-lineage';
 import {
   presentStatus,
   needCount,
@@ -308,6 +316,19 @@ export function SessionsRail(props: {
    * from the main window's.
    */
   manualOrder: ManualOrder;
+  /**
+   * Which session dispatched which (#951, §5.15) — a child card id to its
+   * author's.
+   *
+   * A prop for `manualOrder`'s reason exactly: the rail is a pure function of what
+   * it is handed, so a test can arrange a dispatched workspace without a store.
+   *
+   * OPTIONAL, and the omission reads as "nothing was dispatched" — which is the
+   * truth for every render test that predates this, and is a state the app itself
+   * is in until the first dispatch. Unlike `needing`, forgetting it cannot make
+   * the rail quietly answer a different question: there is simply no nesting.
+   */
+  lineage?: LineageMap;
   /** the whole of one group's new order, after a drag or a Move up/down */
   onReorder: (bucketKey: string, orderedIds: string[]) => void;
 }): React.JSX.Element {
@@ -670,7 +691,11 @@ export function SessionsRail(props: {
   // and the store derives the SAME call for Ctrl+1..9 and both strips (E9-09).
   // `props.manualOrder` joins it for #559 and lands BETWEEN membership and the
   // pin sort — lib/rail-order says why that is the layering.
-  const order = railOrder(props.sessions, props.groups, props.pinned, props.manualOrder);
+  // `props.lineage` joins them for #951 and lands LAST, after the pin sort —
+  // lib/dispatch-lineage says why, and why the depth it reports is a fact about
+  // the PLACEMENT rather than about the lineage.
+  const lineage = props.lineage ?? NO_LINEAGE;
+  const order = railOrder(props.sessions, props.groups, props.pinned, props.manualOrder, lineage);
   const grouped = new Map(order.groups.map((g) => [g.id, g.members]));
 
   /**
@@ -743,7 +768,7 @@ export function SessionsRail(props: {
     if (dragged === rowId) return null;
     if (order.bucketOf.get(dragged) !== bucket) return null;
     const ids = order.buckets.get(bucket) ?? [];
-    return planReorder(ids, dragged, insertIndex(ids, dragged, rowId, edge), props.pinned);
+    return planReorder(ids, dragged, insertIndex(ids, dragged, rowId, edge), props.pinned, lineage);
   };
 
   /**
@@ -781,13 +806,22 @@ export function SessionsRail(props: {
     bucketLabel(bucket, props.groups, t('rail.ungrouped'));
 
   /** Move one row a step, from the keyboard (§5.32) — the SAME write the drop
-   *  makes, and the same rule deciding whether it may happen at all. */
+   *  makes, and the same rule deciding whether it may happen at all.
+   *
+   *  ⚠️ THROUGH `stepReorder`, NOT `planReorder` WITH A HAND-COMPUTED INDEX. This
+   *  called `planReorder(ids, s.id, at + delta, …)` and the menu's disabled state
+   *  asked `canStep` — which is `stepReorder` — so the two computed the STEP
+   *  differently the moment #951's nesting gave a row a subtree to step over
+   *  (`subtreeSpan`). The item was drawn enabled on any session that had
+   *  dispatched one and then did nothing: no write, and no announcement, which
+   *  breaks the invariant the menu asserts about itself ("an item can never be
+   *  offered and then decline"). One function decides both, exactly as
+   *  `SessionStore.reorderSession` already does. */
   const stepRow = (s: RailSession, delta: -1 | 1): boolean => {
     const bucket = order.bucketOf.get(s.id);
     if (!bucket) return false;
     const ids = order.buckets.get(bucket) ?? [];
-    const at = ids.indexOf(s.id);
-    const next = planReorder(ids, s.id, at + delta, props.pinned);
+    const next = stepReorder(ids, s.id, delta, props.pinned, lineage);
     if (!next) return false;
     props.onReorder(bucket, next);
     setMoveSaid(
@@ -809,6 +843,13 @@ export function SessionsRail(props: {
     const selected = s.id === props.selectedId;
     const isPinned = props.pinned.has(s.id);
     const waiting = waitingCounts.get(s.id) ?? 0;
+    // §5.15's "↳ Review of X" (#951). THE ORDER'S OWN ANSWER, not a lineage
+    // lookup: `depthOf` holds a row only if `railOrder` really placed it under the
+    // session that dispatched it, so a connector can never be drawn pointing at a
+    // row that is not above this one — an author closed, an author in another
+    // group, an author on the other side of a pin. See lib/dispatch-lineage.
+    const depth = order.depthOf.get(s.id);
+    const indent = railDepthIndent(depth);
     // a needy session outranks selection: the attention tint is the signal the
     // whole panel exists to carry
     const rowTint = p.needsYou ? tint(hue, 10) : selected ? tint(accent, 10) : 'transparent';
@@ -908,12 +949,22 @@ export function SessionsRail(props: {
             y: kb ? box.bottom : e.clientY,
           });
         }}
+        // #951: how deep the nesting put this row. An attribute because the e2e
+        // has to be able to ask — indentation is a few pixels of padding and
+        // nothing else on the page can be asked whether it is right.
+        data-rail-depth={depth ?? undefined}
         style={{
           position: 'relative',
           display: 'flex',
           alignItems: 'center',
           gap: 9,
-          padding: '8px 8px 8px 13px',
+          // LOGICAL padding, and the inline-start edge carries the nesting indent
+          // (#951). Logical rather than `padding: '8px 8px 8px 13px'` because the
+          // rail is mirrored in RTL and a nested row has to indent toward the
+          // reading direction, not always to the right.
+          paddingBlock: 8,
+          paddingInlineEnd: 8,
+          paddingInlineStart: 13 + indent,
           borderRadius: 7,
           marginBlockEnd: 2,
           background: rowTint,
@@ -951,6 +1002,21 @@ export function SessionsRail(props: {
             background: p.needsYou ? hue : selected ? accent : tint(accent, 45),
           }}
         />
+        {depth !== undefined && (
+          // THE CONNECTOR. `aria-hidden` like every other glyph on the row: the
+          // relationship is already in the card's own TITLE, which
+          // `dispatchedTitle` built as "<role> of <session>" back at #948 and
+          // which the row label reads out. A second spoken "nested under" would
+          // say the same thing twice to the one user who cannot see the indent
+          // doing the work.
+          <span
+            aria-hidden
+            data-rail-lineage={s.id}
+            style={{ fontSize: 11, lineHeight: 1, color: 'var(--faint)', flex: 'none' }}
+          >
+            {t('rail.lineageMark')}
+          </span>
+        )}
         {editing === s.id ? (
           <input
             autoFocus
@@ -2245,7 +2311,7 @@ export function SessionsRail(props: {
                 const ids = bucket ? (order.buckets.get(bucket) ?? []) : [];
                 // the SAME question the move itself asks, through the same
                 // function — an item can never be offered and then decline
-                const can = !!bucket && canStep(ids, menu.session.id, delta, props.pinned);
+                const can = !!bucket && canStep(ids, menu.session.id, delta, props.pinned, lineage);
                 return (
                   <button
                     key={key}

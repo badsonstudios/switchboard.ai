@@ -27,7 +27,7 @@ import type { HistoryRepairNotice } from '../../../shared/history-repair';
 import type { Digest } from '../lib/digest';
 import type { PermissionRequestDto } from '../../../shared/ipc/permissions';
 import type { AskQuestion } from '../../../shared/ask-user-question';
-import type { DispatchResultDto } from '../../../shared/dispatch-result';
+import { offersInject, type DispatchResultDto } from '../../../shared/dispatch-result';
 import { EventDto } from '../model/types';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
@@ -1316,7 +1316,11 @@ function DispatchActions(props: {
         </div>
       )}
       <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
-        {result.chars > 0 && (
+        {/* THROUGH `offersInject` and not an inline `chars > 0` (#951): the same
+            fact now decides whether the reviewer is EPHEMERAL, and the two must
+            not be able to drift. A retire that fired while this button was still
+            offered would throw away a finding nobody had read. */}
+        {offersInject(result) && (
           <button
             type="button"
             className="events-btn"

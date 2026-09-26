@@ -12,6 +12,8 @@ import { FOCUS_POLICY_KEY, loadFocusBook } from './focus-policy';
 import { LAYOUT_KEY, loadLayout } from './layout-mode';
 import { loadPins, PIN_KEY } from './pinning';
 import { loadManualOrder, ORDER_KEY } from './rail-order';
+import { LINEAGE_KEY, loadLineage } from './dispatch-lineage';
+import { DISPATCH_RETIRE_KEY } from './dispatch-ephemeral';
 import { uiAll, uiDelete, uiGet, uiSet } from './ui-state';
 
 export function initPresentation(): void {
@@ -78,6 +80,24 @@ export function initPresentation(): void {
     if (blob) uiSet(ORDER_KEY, blob);
     else uiDelete([ORDER_KEY]);
   });
+  // #951's DISPATCH LINEAGE rides the same edge, and is seeded here for the pin's
+  // reason a third time: the rail's nesting IS rail order, so a parentage that
+  // arrived after the first session list would paint a reviewer at the bottom of
+  // its bucket and slide it under its author a moment later, in front of the user.
+  // The real guarantee is the same one too — the store re-derives rail order on a
+  // `lineage` write as well as on a `sessions` one, so whichever lands second, the
+  // nesting is right.
+  sessionStore.initLineage(loadLineage(uiGet<unknown>(LINEAGE_KEY, null)));
+  sessionStore.setLineagePersister((blob) => {
+    if (blob) uiSet(LINEAGE_KEY, blob);
+    else uiDelete([LINEAGE_KEY]);
+  });
+  // …and #951's EPHEMERALITY setting, which is not derived from and so only needs
+  // to be read before the first `dispatch-result` could arrive. Seeded here anyway
+  // rather than in a second pass, because the cost of the one that got away is a
+  // card closing itself for a user who had chosen `keep`.
+  sessionStore.initDispatchRetire(uiGet<unknown>(DISPATCH_RETIRE_KEY, null));
+  sessionStore.setDispatchRetirePersister((value) => uiSet(DISPATCH_RETIRE_KEY, value));
   if (legacyKeys.length > 0) {
     // WRITE THE NEW HOME FIRST. initPresentation deliberately doesn't persist
     // (it only read the blob), so deleting the legacy keys on their own would

@@ -77,6 +77,25 @@ export function outcomeNeedsYou(outcome: DispatchOutcome): boolean {
 }
 export type DispatchOutcome = (typeof DISPATCH_OUTCOMES)[number];
 
+/**
+ * Is there a report to hand over — i.e. does this row offer the Inject button?
+ *
+ * `chars > 0` and nothing else, which is already what `DispatchResultDto.chars`
+ * documents ("`0` means there is nothing to inject and the row offers no button").
+ * It is a function rather than an inline comparison because #951 gave the same
+ * fact a SECOND reader, and the two must not be able to drift: **a dispatched
+ * session is ephemeral exactly when it owes nothing**, and "owes nothing" is this
+ * predicate negated (`lib/dispatch-ephemeral.ts` carries that rule).
+ *
+ * Getting those two out of step in either direction is a real defect. A retire
+ * that fired while the button was still offered would throw away a finding the
+ * user had not read; a button offered on a row whose reviewer had already been
+ * retired would answer `gone`. One definition, two readers.
+ */
+export function offersInject(dispatch: Pick<DispatchResultDto, 'chars'>): boolean {
+  return dispatch.chars > 0;
+}
+
 /** Is this stored/IPC value an outcome we still recognise? */
 export function isDispatchOutcome(v: unknown): v is DispatchOutcome {
   return typeof v === 'string' && (DISPATCH_OUTCOMES as readonly string[]).includes(v);

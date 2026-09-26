@@ -227,6 +227,28 @@ test.describe('dispatching a Code Reviewer (#948, §5.15)', () => {
     expect(text).toContain('Your instructions');
     expect(text).toContain('You are reviewing a change you did not write');
 
+    // ══ THE LINEAGE (P2-E13-06, #951) — §5.15's "↳ Review of X" ══════════
+    //
+    // WHAT ONLY THIS CAN SEE. The units pin the nesting rule on `railOrder`, the
+    // depth on the row, and the lineage's persistence — each against a map a test
+    // wrote. None of them can see the one step that actually makes the parentage
+    // TRUE: the dispatch gesture resolving the author's CARD id from its live id
+    // and recording it. That join is two lines in `SessionGrid`'s `onDispatch` and
+    // it is the whole feature if it is wrong.
+    const reviewerCard = await pollAsync(async () => {
+      const cards = (await w.evaluate(() => window.switchboard.sessions.cards())) as Array<{
+        cardId: string;
+        liveId?: string;
+      }>;
+      return cards.find((c) => c.liveId === reviewer!.id)?.cardId ?? null;
+    }, 'the reviewer card never reported a live id');
+    const reviewerRow = w
+      .locator(`[data-rail-open="${reviewerCard}"]`)
+      .locator('xpath=ancestor::*[contains(@class,"rail-row")][1]');
+    await expect(reviewerRow).toHaveAttribute('data-rail-depth', '1', { timeout: 30_000 });
+    // ...and the connector is on that row and only that row. The author is a root.
+    await expect(w.locator(`[data-rail-lineage="${reviewerCard}"]`)).toHaveCount(1);
+
     // ══ THE ROUND-TRIP (P2-E13-05, #950) — Phase 2 exit criterion 5 ═══════
     //
     // WHAT ONLY THIS CAN SEE. The units pin the extraction, the feed's second
@@ -347,5 +369,27 @@ test.describe('dispatching a Code Reviewer (#948, §5.15)', () => {
     // that a person reviewed this before letting it through.
     expect(sentText).toContain('The user reviewed it and sent it on to you');
     await expect(held).toHaveCount(0);
+
+    // ══ EPHEMERAL BY DEFAULT (#951) ══════════════════════════
+    //
+    // ⚠️ ASSERTED LAST, AND AGAINST THE REAL DEFAULT. The shipped policy is
+    // `linger` — thirty seconds after the report is handed over — and this is the
+    // only place the timer, the store subscription and dockview's own removal all
+    // run for real, so pinning it against a shortened setting would test a
+    // configuration nobody has. The wait is long, which is why it is at the END:
+    // every assertion above has already spent wall-clock on the same click.
+    //
+    // ORDERING IS THE POINT rather than a detail. The retire is triggered BY the
+    // delivery, so the reviewer was alive while `SiblingDelivery` resolved the
+    // sender — which is why the injected block above says `From @<name>` and not
+    // "(unknown session)". #950's own header left that warning for this item.
+    await expect(w.locator(`[data-rail-open="${reviewerCard}"]`)).toHaveCount(0, {
+      timeout: 60_000,
+    });
+    // ...and it took nothing with it: the author is still here, still a root, and
+    // the findings are in its conversation where step above put them.
+    await expect(w.locator(`[data-rail-open="${authorCard}"]`)).toHaveCount(1);
+    await expect(w.locator('[data-rail-lineage]')).toHaveCount(0);
+    await expect(authorTurns).toHaveCount(1);
   });
 });

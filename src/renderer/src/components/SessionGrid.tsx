@@ -62,6 +62,12 @@ import { hasPanel, slotIsLive, stepDown, stepUp } from '../lib/ladder';
 import { autonomyTooltip, DEFAULT_AUTONOMY, isAutonomy, nextAutonomy } from '../lib/autonomy';
 import { submitTarget } from '../lib/presentation-policy';
 import { bulkClose } from '../lib/pinning';
+import {
+  mayRetire,
+  owesAsAuthor,
+  retirableReviewerCards,
+  retireDelayMs,
+} from '../lib/dispatch-ephemeral';
 import { newSessionHostGroup } from '../lib/new-session-target';
 import { createSweeper, SweepPort, SweepRequest } from '../lib/layout-sweep';
 import { sharedAnnouncer } from '../lib/announcer';
@@ -93,7 +99,7 @@ import { pickAdoptedGroupId } from '../lib/groups';
 import { addPopoutWindow, removePopoutWindow, subscribePopoutWindows } from '../lib/popout-windows';
 import { strandedByGroup } from '../lib/popout-rescue';
 import { uiGet, uiSet } from '../lib/ui-state';
-import { pruneDrafts } from '../lib/composer-draft';
+import { loadDraft, pruneDrafts } from '../lib/composer-draft';
 import { pruneInboxes, useHeldCount } from '../lib/sibling-inbox';
 import { AUTO_ACCEPT_LIMIT, AUTO_ACCEPT_WINDOW_MS } from '../../../shared/sibling-message';
 import { pruneAttachmentDrafts } from '../lib/composer-attachment-draft';
@@ -3081,8 +3087,8 @@ async function addSessionCardTo(
      */
     title?: string;
   } = {}
-): Promise<void> {
-  if (!api) return;
+): Promise<string | null> {
+  if (!api) return null;
   const { groupId, into, resumeConversationId, forkFrom, dispatchId } = opts;
   const title = opts.title ?? (folder.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? folder);
   const cardId = crypto.randomUUID();
@@ -3144,6 +3150,13 @@ async function addSessionCardTo(
     // (dockviewComponent.js `addPanel`, the `center` branch vs the rest).
     position: { referenceGroup: refGroup },
   });
+  // THE NEW CARD'S ID, for a caller that has something to record ABOUT it —
+  // #951's dispatch lineage is the first. It was minted here and thrown away,
+  // which left the dispatch path with no way to name the card it had just made
+  // except by re-deriving it from the panel list a tick later. `null` means no
+  // card was made (no api), which is the one case a caller must not treat as a
+  // card id.
+  return cardId;
 }
 
 /**
@@ -4198,6 +4211,12 @@ export function forgetClosedCard(cardId: string): void {
   // ...and its pin (E9-09), which would otherwise keep protecting — and
   // sorting first — a card that no longer exists
   sessionStore.forgetPin(cardId);
+  // ...and #951's dispatch lineage, in BOTH directions: this card as somebody's
+  // reviewer, and this card as somebody's author. The second is the done-when's
+  // "closing the author leaves the child top-level rather than an orphan with a
+  // dangling ↳" — the nesting pass already paints such a child flat, and this is
+  // the record catching up with the screen.
+  sessionStore.forgetDispatchLineage(cardId);
   // ...and the not-started row, if this was a card main never heard of (#687).
   // The store's half of `state.sessions` is the ONE per-card record `closeCard`
   // below cannot retire for us: main has nothing to forget. Left behind, it is
@@ -5064,7 +5083,13 @@ export function SessionGrid(props: {
   // Add a NEW card in the main window's grid — the drag-drop / rail path,
   // where the folder is already known. `newSession` is the ⊕ gesture.
   const addSessionCard = useCallback(
-    (folder: string, groupId?: string) => addSessionCardTo(apiRef.current, folder, { groupId }),
+    // The card id `addSessionCardTo` now returns (#951) is dropped here on purpose:
+    // `GridController.addSessionCard` is the drag-drop and rail entry point and has
+    // nothing to record about the card, and widening the controller's contract for
+    // one caller that does would put the handle in every call site's way.
+    async (folder: string, groupId?: string): Promise<void> => {
+      await addSessionCardTo(apiRef.current, folder, { groupId });
+    },
     []
   );
 
@@ -5242,6 +5267,133 @@ export function SessionGrid(props: {
     }
     forgetClosedCard(cardId); // the same list onDidRemovePanel runs
   }, []);
+
+  /**
+   * §5.15's EPHEMERAL BY DEFAULT (#951): a dispatched session that owes nothing
+   * retires itself.
+   *
+   * ⚠️ NO NEW IPC, and that is the shape worth noticing. The signal already
+   * arrives: `DispatchResults.inject` raises the author's row again with the
+   * `delivered` outcome the moment the report has been handed over, and the store
+   * holds that row like every other event. So the trigger is a store read, and —
+   * crucially — it happens strictly AFTER `SiblingDelivery` resolved the sender's
+   * name off the reviewer's live id. That ordering is the answer to the warning
+   * `main/sessions/dispatch-results.ts` left for this item: the reviewer is alive
+   * at the one moment attribution is taken, so ephemerality never costs
+   * attribution. `lib/dispatch-ephemeral` carries the full argument.
+   *
+   * ⚠️ AND MAIN COULD NOT DO THIS. A card is a dockview panel, so only the
+   * renderer can close one — the same asymmetry `dispatch-ipc.ts` gives for why
+   * the spawn is two phases.
+   *
+   * The DECISIONS are both pure and both in lib: which cards are candidates
+   * (`retirableReviewerCards`, asked on every store change) and whether one may
+   * really go (`mayRetire`, asked at FIRE time, so a pin or a keystroke inside the
+   * linger spares it).
+   */
+  /**
+   * Retires waiting on a timer, and the verdicts already reached — both keyed by the
+   * `dispatch-result` row that asked the question (`RetireCandidate.eventId`).
+   *
+   * ⚠️ THE `judged` HALF IS NOT TIDINESS, it is the fix for a real defect review
+   * found. A `delivered` row lives in main's feed for as long as the author's card
+   * does, so "is a timer pending" alone is not idempotent across a SPARED card: a
+   * reviewer the user pinned, or typed at, re-entered the candidate list on the next
+   * store notification and was armed again — and would have closed thirty seconds
+   * after the turn the user deliberately continued, taking an unsent draft with it.
+   * Recording the verdict against the row makes each spent report get exactly one
+   * answer; re-raising a result mints a new event id, so a genuinely new report
+   * re-opens the question.
+   *
+   * Lazily allocated: `useRef(new Map())` builds a throwaway on every render of the
+   * grid, which is not free in the component E21 is about.
+   */
+  const retireState = React.useRef<{
+    timers: Map<number, ReturnType<typeof setTimeout>>;
+    judged: Set<number>;
+  } | null>(null);
+  React.useEffect(() => {
+    retireState.current ??= { timers: new Map(), judged: new Set() };
+    const { timers, judged } = retireState.current;
+    const fire = (cardId: string, eventId: number): void => {
+      timers.delete(eventId);
+      // THE VERDICT IS RECORDED WHICHEVER WAY IT GOES. A spared card must not be
+      // re-armed for the same report — see the ref's docblock.
+      judged.add(eventId);
+      const st = sessionStore.getState();
+      const me = st.sessions.find((x) => x.id === cardId);
+      // RE-ASKED HERE, thirty seconds later than the schedule: the user may have
+      // pinned the card (§5.8's protection contract, through `lib/pinning`'s
+      // `closableCards` seam), closed it by hand, typed at it, left a draft in it,
+      // switched the setting to `keep`, or dispatched a session of its own whose
+      // findings are still waiting. Every one of those spares it.
+      const may = mayRetire({
+        cardId,
+        pins: st.pinned,
+        policy: st.dispatchRetire,
+        known: new Set(st.sessions.map((x) => x.id)),
+        // ⚠️ BOTH DIRECTIONS OF "OWES NOTHING" (review). A dispatched session can
+        // have dispatched one of its own; closing it would delete that report and
+        // its row together. `lib/dispatch-ephemeral`'s header has the A → B → C
+        // sequence.
+        owesAsAuthor: owesAsAuthor(st.events, me?.liveId),
+        // §5.6's "the user interacted with it", in the half a status cannot see.
+        hasDraft: loadDraft(cardId).trim() !== '',
+        ...(me?.status === undefined ? {} : { status: me.status }),
+      });
+      if (!may) return;
+      console.log(`[dispatch] ${cardId} retiring — its report has been handed over`);
+      retireCard(cardId);
+    };
+    const tick = (): void => {
+      const st = sessionStore.getState();
+      // TWO CHEAP EXITS BEFORE ANY WALK, and the first is a perf decision rather
+      // than a guard: this runs on EVERY store notification — which is every status
+      // change anywhere in the fleet — and a workspace that has never dispatched
+      // must not pay a pass over its event list for a feature it is not using.
+      // E21's whole subject is work like this.
+      if (st.lineage.size === 0) return;
+      const delay = retireDelayMs(st.dispatchRetire);
+      if (delay === null) {
+        // `keep`. Nothing is scheduled — and anything already counting down is
+        // CANCELLED, so switching back to `linger` later restarts the clock rather
+        // than resuming a stale one. The verdicts are NOT cleared: a report already
+        // judged stays judged. `mayRetire` re-reads the policy as well, which is the
+        // belt for a timer that fires in the same tick the setting changed.
+        for (const t of timers.values()) clearTimeout(t);
+        timers.clear();
+        return;
+      }
+      for (const { cardId, eventId } of retirableReviewerCards({
+        events: st.events,
+        sessions: st.sessions,
+        lineage: st.lineage,
+      })) {
+        // ONE TIMER AND ONE VERDICT PER ROW. The events list is pushed to the window
+        // on every change anywhere in the fleet, so this runs many times for one
+        // spent report; without both guards each push would arm another close.
+        if (timers.has(eventId) || judged.has(eventId)) continue;
+        // ALWAYS THROUGH A TIMER, even for `auto-close`'s zero delay. We are
+        // inside a store notification, which can be raised from the middle of a
+        // component's own update — removing a panel synchronously from here is the
+        // "tearing a panel out from under React" hazard the submit sweep below
+        // spends a paragraph on.
+        timers.set(
+          eventId,
+          setTimeout(() => fire(cardId, eventId), delay)
+        );
+      }
+    };
+    tick();
+    const off = sessionStore.subscribe(tick);
+    return () => {
+      off();
+      // A teardown inside the linger must not call into a disposed dockview api,
+      // exactly as the submit sweep's timers are cancelled below.
+      for (const t of timers.values()) clearTimeout(t);
+      timers.clear();
+    };
+  }, [retireCard]);
 
   // §5.8's auto-minimize on submit (P2-E9-06). Subscribed ONCE, here, rather
   // than per card: the grid is the only thing that owns the dockview api, and a
@@ -5967,6 +6119,12 @@ export function SessionGrid(props: {
               // ...and #559's manual rail order, which names cards the same way
               // and would otherwise keep ranking sessions that no longer exist.
               sessionStore.pruneManualOrder(known);
+              // ...and #951's dispatch lineage, which names TWO cards per record
+              // and so is dropped when either end is gone — a parentage pointing
+              // at nothing is not a weaker version of one, it is a dangling
+              // reference (`lib/dispatch-lineage`'s `pruneLineage` says why that
+              // differs from the manual order's rule).
+              sessionStore.pruneLineage(known);
               // ...and #485's unsent prompts. The same rule, and the one with the
               // biggest payload: a draft is whatever the user pasted.
               pruneDrafts(known);
@@ -6175,14 +6333,47 @@ export function SessionGrid(props: {
             // own lazy-spawn effect is what turns it into a session — so a
             // dispatched card is a card in every other respect, which is §5.15's
             // "a full peer, not a subagent" expressed as one less code path.
-            void addSessionCardTo(apiRef.current, prepared.folder, {
-              into: dispatching.into,
-              dispatchId: prepared.dispatchId,
-              // The role, then whose work it is. Passed as the panel TITLE rather
-              // than derived in main because the connecting word is catalogue text
-              // and main has no `t` (§5.21).
-              title: dispatchedTitle(t, prepared.templateName, dispatching.fromName),
-            });
+            // ⚠️ THE AUTHOR'S **CARD** ID, RESOLVED HERE AND NOT CARRIED IN
+            // `dispatching` (#951). The dialog's whole contract is the author's
+            // LIVE session id — that is what `dispatch:prepare` resolves and what
+            // `@name` and every query answer against — but §5.15's lineage has to
+            // be keyed by card, because a live id churns on every resume and a
+            // nesting that vanished the first time either end restarted would not
+            // survive the relaunch the done-when asks about.
+            //
+            // The rail row is the one place that joins the two, which is the same
+            // sentence the palette's `dispatchFrom` entry point already carries one
+            // screen up. Read at THIS moment rather than at dialog-open: the dialog
+            // can sit open, and the card the row names is the card the lineage means.
+            const authorCard = sessionStore
+              .getState()
+              .sessions.find((s) => s.liveId === dispatching.fromId)?.id;
+            // ⚠️ CAUGHT, not `void`ed with a `.then` hanging off it (review). The
+            // pre-existing `void addSessionCardTo(…)` already had no rejection arm
+            // and `addPanel` can throw; adding a `.then` would have made that two
+            // unhandled promises on the path that starts a session. P4: our
+            // bookkeeping must not cost a card its start, and a failure nobody logs
+            // is the one shape that costs it silently.
+            void (async () => {
+              try {
+                const childCard = await addSessionCardTo(apiRef.current, prepared.folder, {
+                  into: dispatching.into,
+                  dispatchId: prepared.dispatchId,
+                  // The role, then whose work it is. Passed as the panel TITLE rather
+                  // than derived in main because the connecting word is catalogue text
+                  // and main has no `t` (§5.21).
+                  title: dispatchedTitle(t, prepared.templateName, dispatching.fromName),
+                });
+                // FAIL-OPEN ON A MISSING EITHER END (P6): a dispatch whose author
+                // card could not be named still gets its session. The cost is one
+                // un-nested row, and a card that started is worth more than a
+                // connector — which is the same trade `dispatch-ipc.ts` makes about a
+                // stale `dispatchId` losing a briefing rather than a start.
+                if (childCard && authorCard) sessionStore.setDispatchParent(childCard, authorCard);
+              } catch (err) {
+                console.error('[dispatch] the card for a prepared dispatch could not be made', err);
+              }
+            })();
           }}
         />
       )}

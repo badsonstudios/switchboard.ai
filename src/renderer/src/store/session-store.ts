@@ -25,6 +25,20 @@ import {
   type TaskLabelSize,
 } from '../../../shared/task-label-size';
 import { railOrder, RailOrderResult } from '../lib/groups';
+import {
+  LineageMap,
+  NO_LINEAGE,
+  persistableLineage,
+  pruneLineage,
+  withoutCard,
+  withParent,
+} from '../lib/dispatch-lineage';
+import {
+  DEFAULT_DISPATCH_RETIRE,
+  dispatchRetireOf,
+  isDispatchRetirePolicy,
+  type DispatchRetirePolicy,
+} from '../lib/dispatch-ephemeral';
 import { attentionQueue, needingCards, nextInQueue, withVisit } from '../lib/queue';
 import {
   CardPresentation,
@@ -154,6 +168,26 @@ export interface SessionState {
    */
   readonly manualOrder: ManualOrder;
   /**
+   * Which session dispatched which (#951, §5.15) — child card id -> author card
+   * id.
+   *
+   * In `state` for the reason `pinned` and `manualOrder` are, and it is the same
+   * sentence a third time: rail order is DERIVED from it, and derived values here
+   * are recomputed on mutation. The rail's nesting, `Ctrl+1..9`'s numbering and
+   * the reorder commands all read the one derive.
+   */
+  readonly lineage: LineageMap;
+  /**
+   * What happens to a dispatched session that owes nothing (#951, §5.15's
+   * "ephemeral by default").
+   *
+   * In `state` rather than a registry because the retire effect reads it while
+   * deciding what an incoming `dispatch-result` may do — the same requirement
+   * `focusPolicies` has one surface over. Global only: the per-card override is
+   * the PIN, which `lib/dispatch-ephemeral` explains at length.
+   */
+  readonly dispatchRetire: DispatchRetirePolicy;
+  /**
    * Every permission request main is currently holding, ACROSS every session
    * (P2-E9-11, §5.8's batch bullet).
    *
@@ -200,6 +234,8 @@ const EMPTY: SessionState = {
   layout: DEFAULT_LAYOUT,
   pinned: NO_PINS,
   manualOrder: NO_ORDER,
+  lineage: NO_LINEAGE,
+  dispatchRetire: DEFAULT_DISPATCH_RETIRE,
   pendingPermissions: [],
   taskLabelSize: DEFAULT_TASK_LABEL_SIZE,
 };
@@ -328,17 +364,23 @@ export class SessionStore {
     // `manualOrder` joins the condition for the reason `pinned` did: rail order
     // is a function of all four now, and an arrangement that did not re-derive
     // it would be an order the user made and the rail never painted (#559).
+    // `lineage` joins it for the same reason a fifth time (#951): the nesting IS
+    // rail order, so a dispatch whose parentage did not re-derive would leave the
+    // reviewer sitting at the bottom of the bucket until the next status change
+    // happened to recompute it.
     if (
       'sessions' in patch ||
       'groups' in patch ||
       'pinned' in patch ||
-      'manualOrder' in patch
+      'manualOrder' in patch ||
+      'lineage' in patch
     ) {
       this.derivedRail = railOrder(
         this.state.sessions,
         this.state.groups,
         this.state.pinned,
-        this.state.manualOrder
+        this.state.manualOrder,
+        this.state.lineage
       );
     }
     // The queue is derived from the SILENCED-FILTERED feed (P2-E9-10), so it
@@ -1093,7 +1135,7 @@ export class SessionStore {
     const bucket = this.derivedRail.bucketOf.get(cardId);
     if (!bucket) return false;
     const ids = this.derivedRail.buckets.get(bucket) ?? [];
-    const next = stepReorder(ids, cardId, delta, this.state.pinned);
+    const next = stepReorder(ids, cardId, delta, this.state.pinned, this.state.lineage);
     if (!next) return false;
     this.setBucketOrder(bucket, next);
     return true;
@@ -1110,6 +1152,97 @@ export class SessionStore {
     if (next === this.state.manualOrder) return;
     this.set({ manualOrder: next });
     this.persistManualOrder(persistableManualOrder(next));
+  }
+
+  // ── dispatch lineage + ephemerality (#951, §5.15) ────────────────────────
+  // Both ride the ui-blob edge `pinned` and `manualOrder` do, and the lineage is
+  // in `state` for the same reason they are: the rail's NESTING is rail order, so
+  // it has to re-derive on a write.
+
+  private persistLineage: (blob: Record<string, string> | null) => void = () => {};
+
+  setLineagePersister(fn: (blob: Record<string, string> | null) => void): void {
+    this.persistLineage = fn;
+  }
+
+  getLineage(): LineageMap {
+    return this.state.lineage;
+  }
+
+  /** Seed from the ui blob at boot. Does not persist — it just read it. */
+  initLineage(lineage: LineageMap): void {
+    this.set({ lineage });
+  }
+
+  /**
+   * Record that `childCardId` was dispatched by `parentCardId`.
+   *
+   * CARD ids on both sides, which is the whole of why this is persisted state and
+   * not a lookup: the live ids at either end churn on every resume, and §5.15's
+   * nesting has to survive a relaunch.
+   */
+  setDispatchParent(childCardId: string, parentCardId: string): void {
+    this.writeLineage(withParent(this.state.lineage, childCardId, parentCardId));
+  }
+
+  /**
+   * A card went away — forget it as a child AND as a parent.
+   *
+   * Called from `forgetClosedCard`, the one list both close paths run. Forgetting
+   * the parent direction is what makes the done-when's *"the author being closed
+   * first leaves the child as an ordinary top-level session rather than an orphan
+   * with a dangling ↳"* a fact about the DATA as well as about the paint — the
+   * nesting pass already renders such a child flat, so this is the record catching
+   * up with what the user can see.
+   */
+  forgetDispatchLineage(cardId: string): void {
+    const next = withoutCard(this.state.lineage, cardId);
+    if (next) this.writeLineage(next);
+  }
+
+  /** Forget records naming cards that no longer exist. Called from the same boot
+   *  sweep `prunePins` is, and for the same reason. */
+  pruneLineage(knownCardIds: Iterable<string>): void {
+    const next = pruneLineage(this.state.lineage, knownCardIds);
+    if (next) this.writeLineage(next);
+  }
+
+  private writeLineage(next: LineageMap): void {
+    if (next === this.state.lineage) return;
+    this.set({ lineage: next });
+    this.persistLineage(persistableLineage(next));
+  }
+
+  private persistDispatchRetire: (value: DispatchRetirePolicy) => void = () => {};
+
+  setDispatchRetirePersister(fn: (value: DispatchRetirePolicy) => void): void {
+    this.persistDispatchRetire = fn;
+  }
+
+  getDispatchRetire(): DispatchRetirePolicy {
+    return this.state.dispatchRetire;
+  }
+
+  /** Seed from the ui blob at boot. Does not persist — it just read it. */
+  initDispatchRetire(value: unknown): void {
+    this.set({ dispatchRetire: dispatchRetireOf(value) });
+  }
+
+  /**
+   * The setting changed.
+   *
+   * ⚠️ AN UNRECOGNISED VALUE IS IGNORED, NOT DEFAULTED (review). Running it
+   * through `dispatchRetireOf` here would make a bad WRITE overwrite a choice the
+   * user really made — `auto-close` plus one junk call lands on `linger`, which is
+   * a setting they never picked. The default belongs on the READ path, where
+   * `initDispatchRetire` already puts it: there, "we cannot read this" and "nobody
+   * has chosen" genuinely are the same thing.
+   */
+  setDispatchRetire(value: unknown): void {
+    if (!isDispatchRetirePolicy(value)) return;
+    if (value === this.state.dispatchRetire) return;
+    this.set({ dispatchRetire: value });
+    this.persistDispatchRetire(value);
   }
 
   // ── urgency strip (P2-E9-04) ────────────────────────────────────────────

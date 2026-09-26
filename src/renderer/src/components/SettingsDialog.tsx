@@ -45,6 +45,8 @@ import { TaskLabelSizeSection } from './settings/TaskLabelSizeSection';
 import { QuietHoursSection } from './settings/QuietHoursSection';
 import { PushSection } from './settings/PushSection';
 import { AdvancedSection } from './settings/AdvancedSection';
+import { DispatchRetireSection } from './settings/DispatchRetireSection';
+import type { DispatchRetirePolicy } from '../lib/dispatch-ephemeral';
 import { DiagnosticsSection } from './settings/DiagnosticsSection';
 
 export interface SettingsDialogProps {
@@ -85,6 +87,12 @@ export interface SettingsDialogProps {
   // ── Advanced ────────────────────────────────────────────────────────────
   experimentalFork: boolean;
   onToggleExperimentalFork: () => void;
+  /** §5.15's ephemerality (#951). REQUIRED, unlike the two optional switches
+   *  below: the value is renderer state with a default of its own, so there is no
+   *  bridge that can be missing — an omission here would only be a caller that
+   *  forgot, and a missing radio group is a setting the user cannot change. */
+  dispatchRetire: DispatchRetirePolicy;
+  onSetDispatchRetire: (policy: DispatchRetirePolicy) => void;
   autoCheckUpdates?: boolean;
   onToggleAutoCheckUpdates?: (on: boolean) => void;
   statusPolling?: boolean;
@@ -270,6 +278,13 @@ export function SettingsDialog(props: SettingsDialogProps): React.JSX.Element | 
         {heading(
           'advanced',
           <div style={{ display: 'grid', gap: 16, padding: '14px 16px' }}>
+            {/* BEFORE the fork switch and the two network preferences: it is the
+                one control in this section a user changes on purpose rather than
+                once ever. */}
+            <DispatchRetireSection
+              policy={props.dispatchRetire}
+              onSet={props.onSetDispatchRetire}
+            />
             <AdvancedSection
               experimentalFork={props.experimentalFork}
               onToggleExperimentalFork={props.onToggleExperimentalFork}

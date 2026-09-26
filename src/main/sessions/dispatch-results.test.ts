@@ -481,6 +481,34 @@ describe('DispatchResults — the round-trip (P2-E13-05)', () => {
       results.forget('author');
       await expect(results.inject('reviewer')).resolves.toMatchObject({ ok: false });
     });
+
+    // ⚠️ #951 RETIRES THE REVIEWER'S CARD ON ITS OWN INITIATIVE, which makes the
+    // asymmetry above load-bearing rather than merely considered: the forget this
+    // module gets after an auto-retire is a forget of the CHILD, and it must cost
+    // the author nothing. The three assertions are the three things a retire could
+    // have taken — the attribution, the report, and the row.
+    it('⚠️ AN AUTO-RETIRED REVIEWER COSTS THE AUTHOR NEITHER ITS REPORT NOR ITS ROW', async () => {
+      const { results, sends, raised } = held();
+      results.dispatched('reviewer', 'author', about);
+      results.completed('reviewer', 'done');
+      // the inject goes first — which is the ORDERING that answers #950's warning:
+      // `SiblingDelivery` resolves the sender off the live id here, while the
+      // reviewer is still alive, and only the `delivered` row it raises afterwards
+      // tells the renderer it may retire the card
+      const out = await results.inject('reviewer');
+      expect(out).toMatchObject({ ok: true });
+      expect(sends[0].from).toBe('reviewer');
+      const delivered = raised[raised.length - 1];
+      expect(delivered.author).toBe('author');
+      expect(delivered.dto.outcome).toBe('delivered');
+      // ...and NOW the card goes
+      results.forget('reviewer');
+      // the author's own round-trip state is untouched: a second dispatch from the
+      // same author still works, and nothing about the author was forgotten
+      results.dispatched('reviewer2', 'author', about);
+      results.completed('reviewer2', 'done');
+      await expect(results.inject('reviewer2')).resolves.toMatchObject({ ok: true });
+    });
   });
 
 });

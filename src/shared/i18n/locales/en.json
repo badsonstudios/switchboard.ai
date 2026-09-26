@@ -135,6 +135,7 @@
     "movedTo": "{title} moved to {group}",
     "movedOut": "{title} is no longer in a group",
     "pinIcon": "📌",
+    "lineageMark": "↳",
     "pinnedHint": "Pinned — sorts first, and bulk actions skip it",
     "rowLabel": "{title} — {state}",
     "rowLabelPinned": "{title} — pinned, {state}",
@@ -1298,6 +1299,16 @@
     "mediumNote": "Up to two lines. A compromise when you are running a lot of sessions.",
     "compact": "Compact",
     "compactNote": "One line, trimmed with an ellipsis — exactly how labels looked before this setting existed."
+  },
+  "dispatchRetire": {
+    "title": "Finished dispatched sessions",
+    "blurb": "A dispatched session exists to do one job. This is what happens to its card once its findings have been handed over — or once it turns out there were none. Pin a card to keep it whatever you choose here.",
+    "auto-close": "Close it straight away",
+    "auto-closeNote": "The card goes as soon as the report is handed over. Tidiest, and the one that can surprise you — the card disappears in the same moment you click Inject.",
+    "linger": "Close it after half a minute",
+    "lingerNote": "The default. You get thirty seconds to open the card and read the whole review, or to pin it if you want to keep it.",
+    "keep": "Leave it open",
+    "keepNote": "Nothing closes itself. Dispatched sessions are ordinary cards you close when you are done with them."
   },
   "dispatch": {
     "menu": "Dispatch…",

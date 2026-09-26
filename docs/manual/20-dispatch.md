@@ -179,6 +179,57 @@ report is held by the app, so **Inject findings** keeps working. The one thing
 you lose is the name on the block: without the original session around to name,
 it arrives attributed to an unknown session.
 
+That is only ever a cost of closing a card **by hand**. When switchboard closes a
+dispatched session for you (below), it does so *after* the findings have been
+handed over, so the name on the block is always the real one.
+
+## Where it sits in the sessions list, and when it goes away
+
+A dispatched session appears **indented under the session that sent it**, with a
+small ↳ in front of its name. That is the whole of it — it is still an ordinary
+row: you can click it, rename it, drag it, pin it, and jump to it with
+**Ctrl+1–9** exactly as you would any other. The numbering counts the indented
+rows in the order you see them, so what your eye reads as fourth is what Ctrl+4
+opens.
+
+The indent survives a restart. It also **quietly goes away** in the cases where
+drawing it would be a lie: close the sending session and its reviewer simply
+becomes an ordinary top-level row rather than an arrow pointing at nothing. The
+same is true if the two end up in different groups, or if you pin one of them —
+a pinned session always sorts to the top of its group, and switchboard would
+rather drop the indent than break that promise.
+
+### Dispatched sessions clean themselves up
+
+A dispatched session exists to do one job, so by default its card **closes itself
+thirty seconds after you have handed its findings over** — or as soon as it turns
+out there were none to hand over. Thirty seconds is enough to open the card and
+read the whole review if you want to.
+
+Five things keep a card open, whatever the setting says:
+
+- **Findings you have not taken yet.** As long as the row in the Events list is
+  still offering you **Inject findings**, the session that wrote them stays.
+  Nothing throws away a review you have not read — and that includes findings
+  owed to *this* card, if it went on to dispatch a session of its own.
+- **A pin.** Pinning is how you tell switchboard "not this one" everywhere in the
+  app, and this is no exception.
+- **Carrying on the conversation.** If you type at it and send, the card is not
+  closed out from under you.
+- **An unfinished message.** Anything you have typed into its box and not sent
+  keeps the card — closing it would take your words with it.
+- **A crash.** If the session died, its card is the only place the reason is, so
+  it stays until you close it yourself.
+
+You can change all of this in **Settings → Advanced → Finished dispatched
+sessions**: close it straight away, close it after half a minute (the default),
+or leave it open and close cards yourself.
+
+**Closing is closing — there is no archive yet.** A closed session's
+conversation is still on disk and can be re-opened from history, but switchboard
+does not keep a browsable record of dispatched sessions. That arrives with the
+session-archive work in a later release.
+
 ## When Dispatch is greyed out or refuses
 
 - **No **Dispatch…** in the ⋯ menu** — the session hasn't started yet. There's
@@ -198,9 +249,10 @@ it arrives attributed to an unknown session.
 
 - **Nothing re-runs the review after you fix things.** Fix, re-dispatch, read
   again — there's no loop that does the rounds for you.
-- **Dispatched sessions don't nest under the session that sent them** in the
-  sessions list, and they don't clean themselves up. They're ordinary cards, so
-  close them when you're done.
+- **Nothing shows you the chain of a piece of work.** switchboard records which
+  session dispatched which, so a future release can show you "written here,
+  reviewed there, fixed back here". Today the record is only used for the indent
+  in the sessions list.
 - **Nothing dispatches on its own.** There is no rule that sends a review off
   when a session finishes, and a session cannot dispatch another one by itself.
   Every dispatch is a button you pressed.

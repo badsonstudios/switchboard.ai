@@ -1836,7 +1836,11 @@ loop: fix → re-dispatch → until clean or N rounds → attention queue.
 **Lifecycle & lineage.** Dispatched sessions nest under the parent in the sidebar
 ("↳ Review of X"), are ephemeral by default (auto-archive after result delivery;
 linger/pin options like watchers), and lineage is recorded so the Feed can show
-the chain: authored → reviewed → fixed → merged.
+the chain: authored → reviewed → fixed → merged. *(Built by #951 — with
+**auto-archive downgraded to auto-retire**, because §5.25's archive is Phase 3,
+and with "after result delivery" pinned to a precise moment: the `delivered`
+outcome, which is what makes ephemerality cost nothing in attribution. The Feed
+chain is recorded, not yet rendered. See the as-built block below.)*
 
 **Dispatch vs subagents.** A subagent runs inside the parent session and shares
 its fate. A dispatched session is a full peer: own top-level context (the point),
@@ -2228,7 +2232,116 @@ transfer + role templates, all already in the design.
 > live id and falls back to "(unknown session)" rather than guessing, which is its
 > own stated rule. **#951 should read that line before it makes dispatched sessions
 > ephemeral**, because auto-archiving the reviewer is what turns a rare case into
-> the normal one.
+> the normal one. **It did — see below; the answer is the trigger, not a new
+> attribution mechanism.**
+
+> **As built — E13-06 (#951), lineage nesting and ephemerality. E13 is closed.**
+> The lifecycle paragraph above is built, with one word downgraded and said out
+> loud: **v1 auto-RETIRES, it does not auto-archive.** Session archive is §5.25 and
+> is Phase 3, so the ephemeral path is the existing close path
+> (`forgetClosedCard`) and the manual says "closed" rather than implying history is
+> kept. The archive upgrade inherits the policy; what it changes is where the
+> session goes, not when.
+>
+> **⚠️ THE ATTRIBUTION WARNING ONE PARAGRAPH UP IS ANSWERED BY ORDERING, AND THAT
+> IS THE DESIGN.** The obvious reading of "auto-archive after result delivery" is
+> *retire when the reviewer finishes*, which would make `(unknown session)` the
+> normal sender of every injected finding — and the alternative, capturing the
+> name at dispatch and handing it to `SiblingDelivery`, would have put a
+> caller-supplied sender on a channel whose ID-only rule exists because
+> "attribution is the one thing here that must not be approximate".
+>
+> Neither was needed. `DispatchResults.inject` raises the `delivered` row **after**
+> `send()` has returned, i.e. after `sender(callerId)` resolved the reviewer's name
+> off its live id — so triggering the retire on that row means the reviewer is
+> alive at the one moment attribution is taken. Ephemerality and exact attribution
+> are **ordered**, not in tension.
+>
+> Generalised, it is one rule with no special cases: **a dispatched session retires
+> when it OWES NOTHING**, and "owes" is exactly `offersInject(dto)` — the predicate
+> the row's own Inject button is drawn from, now a shared function precisely so the
+> two cannot drift. `delivered` sets `chars: 0`; so does `silent`; so does an
+> `ended` run that wrote nothing. The consequence is stated rather than discovered:
+> **a report the user never injects never retires its reviewer**, because
+> "ephemeral" must not be able to mean "threw away a finding you had not read".
+> It also keeps the teardown safe by construction — the retire closes the CHILD, so
+> `DispatchResults.forget` matches no held report (those are keyed by author) and
+> `EventFeed.forget` drops no row (those are filed under the author).
+>
+> **The nesting went INTO `railOrder`, which is the constraint the issue named
+> first.** Rail order is derived and there is exactly one derivation; `Ctrl+1..9`
+> counts against the same call. So the layering is four deep now — bucket order,
+> manual order (#559), **pinned first** (§5.8), **nesting** — and the new layer is
+> last, applied **per pin block**. §5.8 wins: a child follows its author only where
+> doing so does not cross the pinned/unpinned boundary, which is `planReorder`'s
+> existing rule for a drag reused rather than re-decided, and which is also what
+> keeps `SessionsRail`'s sticky pinned PREFIX contiguous.
+>
+> **⭐ AND THE DEPTH IS A FACT ABOUT THE PLACEMENT, NEVER A LINEAGE LOOKUP.** A row
+> is reported nested only if the pass really put it under its parent's subtree in
+> this bucket and on this side of the pin. Every case where it could not — the
+> author closed first, an author in another group, a cycle out of a hand-edited
+> blob — falls out as depth 0, and the rail draws no `↳` because there is no depth
+> to draw it from. Deriving the connector from `lineage.has(id)` instead would have
+> satisfied the done-when's sentence in the common case and drawn an arrow pointing
+> at a row that is not above it in every other. One pass, one answer.
+>
+> **Persisted, keyed by CARD id**, in the ui blob beside pins, presentation,
+> policies, layout and the manual order — because a live id churns on every resume
+> and because "who dispatched whom" is still true of two cards in a relaunched
+> workspace, neither of which is running. That is the one thing about this surface
+> that is NOT in-memory like the round-trip it follows.
+>
+> **§5.6's words, reused; §5.6's code, not.** Two deliberate departures. `keep`
+> rather than `pin` as the third value, because the per-card pin already means
+> "exempt from every bulk operation" and a setting value also called `pin` that
+> pins nothing is one word meaning two things — which is also why there is no
+> per-session override: the pin is it, and it is one gesture. And **30 seconds, not
+> 10**: a watcher is a read-only panel whose content you have been watching stream,
+> a reviewer's card is a document the Events row has just invited you to go and
+> read.
+>
+> The pin exemption arrives through `lib/pinning`'s `closableCards`, which its own
+> header names "any future auto-eviction" as the seam it was waiting for. It is
+> **re-asked at fire time**, and review turned that from a nicety into the shape the
+> whole surface rests on — **five things spare a card, and three of them were
+> missing from the first draft**: findings it owes *as an author*, an unsent draft,
+> a crash. Plus the two it had: a pin, and a session working again.
+>
+> **⚠️ REVIEW FOUND THREE BLOCKERS, AND EACH ONE IS A GENERAL LESSON RATHER THAN A
+> TYPO.**
+>
+> - **"Owes nothing" had only been asked in one direction.** §5.15's chain and
+>   `MAX_RAIL_DEPTH`'s own comment both contemplate a reviewer dispatching its own
+>   reviewer — so the ephemeral card can BE an author. A dispatches B, B dispatches
+>   C, B's report is injected: B owes nothing as a reviewer and became a candidate
+>   while C's report sat held under author B. Closing B runs
+>   `DispatchResults.forget(B)` and `EventFeed.forget(B)`, which between them delete
+>   that report and its row. C's review would have vanished, unread, with no trace.
+>   `owesAsAuthor` closes it, at fire time, because the grandchild can finish inside
+>   the linger.
+> - **A SPARED card was re-armed.** The `delivered` row lives in main's feed for as
+>   long as the author's card does, so "is a timer pending" is not idempotent across
+>   a sparing: a reviewer the user deliberately typed at was spared, and then armed
+>   again on the very next fleet-wide notification, and would have closed thirty
+>   seconds after the turn finished — taking the draft with it. The verdict is now
+>   recorded against the ROW's event id, which also keeps "spared" from being
+>   permanent: re-raising a result mints a new id, so a genuinely new report re-opens
+>   the question while the judged one stays judged.
+> - **`stepRow` and `canStep` had come apart.** The rail's menu item asked
+>   `canStep` (which is `stepReorder`) while the click ran `planReorder` with a
+>   hand-computed index — identical until #951 gave a row a subtree to step over.
+>   The result was **Move down drawn enabled and doing nothing** on any session that
+>   had dispatched one, breaking the invariant the menu asserts about itself. Both
+>   go through one function now. Nothing covered the menu path with a lineage, which
+>   is exactly why it got through, and that test exists now.
+>
+> Found while wiring the keyboard, and then found again by review from the other
+> side: **a step has to aim at a SIBLING boundary in both directions.** Moving down,
+> the row in the way is your own child; moving up, it is somebody else's — and
+> landing between a parent and its child is a position the nesting pass immediately
+> undoes, i.e. a command greyed out for no reason a user can see. `subtreeSpan` and
+> `rootAbove` are the two halves of that.
 
 ### 5.16 Approval surfaces — rich edit review
 
