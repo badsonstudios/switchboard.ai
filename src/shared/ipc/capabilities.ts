@@ -165,6 +165,10 @@ export const CHANNEL_CAPABILITIES = {
   'app:refocusAfterDialog': 'app.window',
   'app:movePopout': 'app.window',
   'app:raisePopout': 'app.window',
+  // The mirror of the line above (P2-E13-03) — `app.window` for the same reason,
+  // because it is the same power pointed the other way: bring one of this app's own
+  // windows to the front on an explicit request.
+  'app:raiseMain': 'app.window',
   'app:workAreas': 'app.window',
   // The Help ▸ Report a problem dialog (#815). `reportStatus` answers BOOLEANS
   // only — whether a credential can be resolved at all — and never a value;

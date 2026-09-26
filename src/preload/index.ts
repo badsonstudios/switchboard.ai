@@ -224,6 +224,15 @@ const api = {
    */
   raisePopout: (groupId: string): Promise<boolean> =>
     ipcRenderer.invoke('app:raisePopout', groupId),
+  /**
+   * Bring the MAIN window forward (P2-E13-03).
+   *
+   * The mirror of `raisePopout`, and it exists for the same measured reason: a
+   * renderer's own `window.focus()` does not raise a window on Windows (#571), and a
+   * dockview popout shares this renderer's context — so a dialog that renders into
+   * the main window's DOM, asked for from a popout, needs main to do the raising.
+   */
+  raiseMain: (): Promise<boolean> => ipcRenderer.invoke('app:raiseMain'),
   /** a display was (re)connected — new work areas (E8-06 reconnect offer) */
   onDisplaysChanged: (
     cb: (areas: Array<{ x: number; y: number; width: number; height: number }>) => void

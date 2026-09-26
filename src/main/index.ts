@@ -1145,6 +1145,34 @@ app
       win.focus();
       return true;
     });
+    // ...AND THE OTHER DIRECTION, ON AN EXPLICIT REQUEST ONLY (P2-E13-03).
+    //
+    // The note above says "nothing here touches the other direction, deliberately",
+    // and the rule it states is the one that matters: raising is only ever done on
+    // an explicit request, never on window focus. This is such a request, and the
+    // same sentence licenses it — the owner's objection was to popouts being
+    // dropped behind whenever the main window took focus, which nothing here does.
+    //
+    // ⚠️ IT EXISTS BECAUSE `window.focus()` DOES NOT RAISE A WINDOW ON WINDOWS, which
+    // this app measured for #571: `raisePopoutWindow` calls both the DOM `focus()`
+    // and `app:raisePopout`, and the comment there says in as many words that "the
+    // IPC is the one that actually works on the owner's" machine. A dockview popout
+    // shares this renderer's JS context, so `window` inside a handler triggered from
+    // one is the MAIN window's — which is exactly the cross-window case that
+    // measurement covers. The dispatch dialog renders into the main window's DOM, so
+    // without this, `Dispatch…` from a popped-out card would put a modal in a window
+    // the user cannot see and look like it did nothing.
+    broker.handle('app:raiseMain', () => {
+      const win = currentWindow;
+      if (!win || win.isDestroyed()) return false;
+      // Minimized counts as "behind": restore before raising, or `focus()` on a
+      // minimized window is a taskbar flash and nothing else (`app:raisePopout`'s
+      // own lesson, reused rather than re-learned).
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+      return true;
+    });
     broker.handle('app:movePopout',
       (_e, from: { x: number; y: number }, to: { left: number; top: number; width: number; height: number }) => {
         if (

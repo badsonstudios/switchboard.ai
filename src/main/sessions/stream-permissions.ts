@@ -493,7 +493,7 @@ export class StreamPermissions {
       // card carries a `needs-permission` badge for a request that is already
       // answered.
       //
-      // ⚠️ ...UNLESS SOMETHING ELSE IS STILL HELD FOR THIS SESSION. Found in
+      // ⚠️ ...UNLESS THIS ROUTER IS STILL HOLDING SOMETHING ELSE FOR IT. Found in
       // review, and reachable: Claude issues tool calls in parallel, so a
       // dispatched reviewer can have a genuine `Write` held (branch 4 — badge,
       // beep, waiting for a person) and an `ExitPlanMode` in the same turn.
@@ -502,6 +502,13 @@ export class StreamPermissions {
       // deadline denies it — a card claiming to be working while it is not, with
       // no badge to say otherwise. That is #310 pointed the wrong way, and unlike
       // `decide`'s copy of this line it would happen with no user action at all.
+      //
+      // SCOPED TO THIS ROUTER'S OWN HOLDS, which is what the wording above says and
+      // all this code can honestly see: a `HookListener` hold for the same session
+      // is not in `this.pending`. That gap is pre-existing — branches 2 and 3 and
+      // `decide` all apply this unconditionally — and narrowing it would need an
+      // injected probe. What matters here is that the reachable case this branch
+      // introduced, a parallel `Write` held by THIS router, is covered.
       if (![...this.pending.values()].some((p) => p.sessionId === sessionId)) {
         this.applyStatus(sessionId, { kind: 'permission-resolved' });
       }
@@ -1036,14 +1043,17 @@ export class StreamPermissions {
    * Keying by live id only covers the RESTART case; this covers the one that
    * matters more, which is somebody taking the session over.
    *
-   * A HUMAN-TYPED PROMPT IS THE PROOF, which is why `sessions:submitPrompt` is the
-   * caller and not, say, the card gaining focus: looking at a session is not the
-   * same as being there to answer for it, and a glance would lift the mark for a
-   * reviewer still working unattended. Typing is unambiguous.
+   * A HUMAN GESTURE AIMED AT THIS CARD IS THE PROOF, which is why
+   * `sessions:submitPrompt` is the caller and not, say, the card gaining focus:
+   * looking at a session is not the same as being there to answer for it, and a
+   * glance would lift the mark for a reviewer still working unattended.
    *
-   * NOT called for a sibling's automatic send (`delivery.ts` reaches
-   * `SessionManager.submitPrompt` directly, not this channel) — correct, because an
-   * auto-accepted message is precisely a session running with nobody there.
+   * That channel's callers are the composer's Enter and the ⋯ menu's `/clear` and
+   * `/compact` (through `sendSessionCommand`) — all three deliberate, all three
+   * aimed here. NOT a sibling's automatic send: `delivery.ts` reaches
+   * `SessionManager.submitPrompt` directly and never touches the channel, which is
+   * the distinction that makes this proof rather than a guess — an auto-accepted
+   * message is precisely a session running with nobody there.
    */
   clearDispatched(sessionId: string): void {
     if (!this.dispatchedSessions.delete(sessionId)) return;

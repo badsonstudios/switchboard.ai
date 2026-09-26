@@ -5134,14 +5134,25 @@ export function SessionGrid(props: {
       // clicking `Dispatch…` would be: the menu closes, and nothing else happens
       // — with a modal sitting in a window behind the one being looked at.
       //
-      // `/mcp`'s opener makes exactly this move for exactly this reason
-      // (`App.tsx`, `subscribeMcpOpen`), as does the popout key bridge. Harmless
-      // when this window is already frontmost.
+      // ⚠️ AND `window.focus()` ALONE IS NOT ENOUGH ON WINDOWS — review, and this
+      // app measured it for #571. `raisePopoutWindow` in this very file calls BOTH
+      // the DOM `focus()` and `app:raisePopout`, and says why: *"window.focus() on
+      // another window does not raise it on Windows … the IPC is the one that
+      // actually works on the owner's"*. A popout shares this renderer's JS context,
+      // so `window` here IS the main window's — the cross-window case that
+      // measurement covers. `/mcp`'s opener makes the DOM call alone and has the
+      // same gap; copying it would have copied an unverified mechanism.
       //
-      // The new CARD still lands where the ask came from (`opts.into`, #531) —
-      // that rule is about where a session goes, not about where a modal can be
-      // drawn, and the two answers are allowed to differ.
+      // Both, in the same order and for the same reasons as the popout path: the DOM
+      // call is synchronous and costs nothing, the IPC is the one that lands. Neither
+      // is awaited — the dialog does not depend on the raise having finished, and a
+      // wiring with no `app` namespace (the unit harness) simply does the first.
+      //
+      // The new CARD still lands where the ask came from (`opts.into`, #531) — that
+      // rule is about where a session goes, not about where a modal can be drawn,
+      // and the two answers are allowed to differ.
       window.focus();
+      void window.switchboard.raiseMain?.()?.catch?.(() => {});
       // LAUNDERED AT THE BOUNDARY (#346/#440), and the `!options` guard is exactly
       // the shape that rule exists for: a brokered call the capability layer refuses
       // RESOLVES an `IpcRefusal` object, which is TRUTHY — so a refused read would
@@ -5320,10 +5331,26 @@ export function SessionGrid(props: {
         const row = sessionStore.getState().sessions.find((s) => s.id === cardId);
         if (!row?.liveId) return;
         void openDispatch(
-          { id: row.liveId, name: row.title },
+          {
+            id: row.liveId,
+            // THROUGH `cardHeaderTitle`, so this path and the ⋯ menu's give the SAME
+            // answer for the same card. Review caught the raw `row.title`: an empty
+            // stored title is still reachable (`lib/card-title` — "a workspace
+            // written before that fix can still hold one"), and such a card would
+            // have titled its reviewer "Code Reviewer of " here while the menu path
+            // fell back to the folder name.
+            name: cardHeaderTitle(row.title, undefined, row.folder),
+          },
           {
             // A dispatch asked for inside a popped-out window lands its card
             // there (#531) — the same rule the fork control follows.
+            //
+            // DEFENSIVE ON THIS PATH, and review is right that it cannot fire:
+            // `dispatchFrom` has already returned for a non-grid active panel, and
+            // `focusedPopoutGroup` keys off a popout document's own `hasFocus()`,
+            // which cannot be true while the main window's palette is running a
+            // command. Kept rather than hardcoded `null` so the two entry points
+            // read the same and a future keyboard route into a popout inherits it.
             into: apiRef.current ? focusedPopoutGroup(apiRef.current) : null,
             ...(templateId === undefined ? {} : { templateId }),
           }

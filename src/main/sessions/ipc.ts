@@ -1091,12 +1091,19 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     // for a refused send and for a PTY session, whose prompt does not travel
     // this way at all — labelling either would describe work nobody started.
     if (sent) noteProvisionalLabel(sessionId, text);
-    // ⚠️ AND A TYPED PROMPT MEANS SOMEBODY IS WATCHING (P2-E13-03). This channel is
-    // the composer's Enter and nothing else — `delivery.ts`'s automatic sibling send
-    // goes straight to `SessionManager.submitPrompt` and never comes through here,
-    // which is the distinction that makes this proof rather than a guess. A session
-    // dispatched by a button and then taken over by a person stops being unattended,
-    // so its `ExitPlanMode` stops being auto-denied: see `clearDispatched`.
+    // ⚠️ AND A TYPED PROMPT MEANS SOMEBODY IS WATCHING (P2-E13-03). Every caller of
+    // this channel is a HUMAN GESTURE aimed at this card: the composer's Enter, and
+    // the ⋯ menu's / composer row's `/clear` and `/compact` through
+    // `sendSessionCommand`. (An earlier version of this note said "the composer's
+    // Enter and nothing else", which review corrected — the behaviour is the same for
+    // all three, but the claim was not a fact.)
+    //
+    // THE LOAD-BEARING CONTRAST is what does NOT come through here: `delivery.ts`'s
+    // automatic sibling send reaches `SessionManager.submitPrompt` directly, and an
+    // auto-accepted message is precisely a session running with nobody there. So a
+    // session dispatched by a button and then taken over by a person stops being
+    // unattended, and its `ExitPlanMode` stops being auto-denied — see
+    // `clearDispatched`.
     //
     // Unconditional on `sent`, deliberately — a person typed either way, and the
     // one thing that must not happen is a human sitting in front of a session still
@@ -2197,26 +2204,6 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           });
         }
       }
-      // seed the card's display from the persisted record so nothing reads
-      // empty while resuming
-      //
-      // ⚠️ RE-READ, rather than `prior` (#886). `prior` is the snapshot taken
-      // before any of this ran, and the store hands out deep copies — so it
-      // still carries the label `clearAutoLabel` just dropped, and returning it
-      // would put the dead conversation's name straight back on the card.
-      //
-      // AND THE REPLY IS THE ONE THAT HAS TO BE RIGHT, rather than the push. A
-      // first cut of this reasoned about ordering — the `sessions:taskLabel`
-      // push goes out synchronously inside the handler, so the renderer clears
-      // the header before this reply lands and `SessionGrid`'s
-      // `if (record.taskLabel)` re-seeds it. True, but it is the weaker claim:
-      // Electron does not document ordering between a `send` and an `invoke`
-      // reply, and a card whose subscription mounts after this call misses the
-      // push outright. A truthful reply needs neither guarantee.
-      //
-      // Reading the record the upsert just wrote is also what the line above
-      // has always claimed to do; `prior` was a near-miss of it that nothing
-      // could tell apart until a label started changing inside this handler.
       // ── THE DISPATCHED SESSION'S OWN FIRST PROMPT (P2-E13-03, §5.15) ─────
       //
       // The item's done-when: *"the briefing arrives as the session's own first
@@ -2299,6 +2286,26 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           });
         }
       }
+      // seed the card's display from the persisted record so nothing reads
+      // empty while resuming
+      //
+      // ⚠️ RE-READ, rather than `prior` (#886). `prior` is the snapshot taken
+      // before any of this ran, and the store hands out deep copies — so it
+      // still carries the label `clearAutoLabel` just dropped, and returning it
+      // would put the dead conversation's name straight back on the card.
+      //
+      // AND THE REPLY IS THE ONE THAT HAS TO BE RIGHT, rather than the push. A
+      // first cut of this reasoned about ordering — the `sessions:taskLabel`
+      // push goes out synchronously inside the handler, so the renderer clears
+      // the header before this reply lands and `SessionGrid`'s
+      // `if (record.taskLabel)` re-seeds it. True, but it is the weaker claim:
+      // Electron does not document ordering between a `send` and an `invoke`
+      // reply, and a card whose subscription mounts after this call misses the
+      // push outright. A truthful reply needs neither guarantee.
+      //
+      // Reading the record the upsert just wrote is also what the line above
+      // has always claimed to do; `prior` was a near-miss of it that nothing
+      // could tell apart until a label started changing inside this handler.
       const shown = deps.persist.list().find((s) => s.id === opts.cardId);
       return {
         ...record,
