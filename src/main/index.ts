@@ -94,6 +94,7 @@ import { renderOutput } from './bus/bus-tools';
 import { SiblingDelivery } from './sessions/delivery';
 import { Blackboard } from './sessions/blackboard';
 import { pushSiblingMessage, registerDeliveryIpc } from './sessions/delivery-ipc';
+import { registerDispatchIpc } from './sessions/dispatch-ipc';
 import { runPreflight } from './preflight';
 import { startStaticServer, StaticServer } from './static-server';
 import { installCspHeaders } from './csp';
@@ -2361,6 +2362,50 @@ app
       perfCapture.setEnabled(now);
       return now;
     });
+    // ── MANUAL DISPATCH (P2-E13-03, §5.15 Trigger 1) ────────────────────────
+    //
+    // BEFORE `registerSessionIpc`, because the spawn path collects briefings from
+    // the registry this returns — and only the two of them together make a
+    // dispatch: this half composes one, that half runs it.
+    //
+    // Every dependency is the thing the rest of the app already uses for the same
+    // job, which is `SiblingDelivery`'s rule two hundred lines up and matters more
+    // here: the whole premise of #947's briefing is that a dispatched session is
+    // handed the SAME text an agent pulling context would get, so a second
+    // derivation of any of this would be a second answer to one question.
+    //
+    //   * `queries` is `sessionQueries` — the one instance `@Name`, the bus's
+    //     `list_sessions` and `get_session_diff` all resolve through, so `@Beta`
+    //     means one session whether you dispatch to it, read it or write to it.
+    //   * `experimentalFork` is the SAME THUNK `sessions:create` is given below.
+    //     `DispatchGates.forkEnabled` warns that the failure mode is not a missing
+    //     flag but a CACHED `true` — a menu offering a row that refuses the moment
+    //     it is clicked — and one thunk read at both moments is how that stays
+    //     impossible rather than merely unlikely.
+    //   * `conversationIdFor` reads the LIVE record, not the persisted card: a
+    //     fork adopts the conversation this session is in right now, and the
+    //     record is the only thing that knows the CLI's own id for it.
+    //   * `targetProviderId` is `defaultProviderId`, because a dispatched card is
+    //     always brand new and `planSessionStart` gives a card with no prior
+    //     exactly that. Named rather than assumed: `fork-adoption` REFUSES on a
+    //     provider mismatch (§5.5 — transcript formats are not interchangeable),
+    //     and a refusal computed against a guess is worse than no refusal at all.
+    const dispatches = registerDispatchIpc({
+      broker,
+      log: createLogger(sink, 'dispatch'),
+      listTemplates: () => workspace.listDispatchTemplates(),
+      contextDeps: {
+        queries: sessionQueries,
+        experimentalFork: () => workspace.getExperimentalFork(),
+        conversationIdFor: (sessionId) => manager.get(sessionId)?.nativeSessionId ?? null,
+      },
+      taskStatementOf: (sessionId) => {
+        const answer = sessionQueries.taskStatement(sessionId);
+        return answer.ok ? answer.value.text : undefined;
+      },
+      experimentalFork: () => workspace.getExperimentalFork(),
+      targetProviderId: defaultProviderId,
+    });
     const sessionIpc: SessionIpcHandle = registerSessionIpc({
       manager,
       ptys,
@@ -2412,6 +2457,10 @@ app
       // turned off while cards are open, and the next fork request must see
       // that rather than a value read at wiring time.
       experimentalFork: () => workspace.getExperimentalFork(),
+      // Where the spawn path collects a prepared briefing (P2-E13-03). `peek` then
+      // `consume`, and the split is why it is the whole registry rather than one
+      // function — see `DispatchRegistry`.
+      dispatches,
       persist: {
         list: () => workspace.listSessions(),
         upsert: (s) => workspace.upsertSession(s),

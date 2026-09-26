@@ -98,6 +98,35 @@ on the floor, and say so in your PR.
 
 ### Added
 
+- **You can hand a session's work to a fresh session in a role you pick.** A
+  card's **⋯** menu has a new **Dispatch…** entry, and the command palette has
+  one entry per role. It opens a box where you choose who gets the work — **Code
+  Reviewer**, **Doc Writer** or **PR Author** to start with — say in one line what
+  the work was meant to do, and optionally what "done" looks like. A new session
+  appears named after the role, with its first message already written: you don't
+  type anything to start it.
+
+  **A Code Reviewer deliberately does not get your conversation** — only the
+  change itself, the task and your criteria. That is the point of it: a reviewer
+  that has to work out what a change is for notices the thing you both assumed,
+  where one that inherits your reasoning just agrees with you. It also cannot edit
+  your files. Doc Writer and PR Author do get a briefing — the goal, the decisions
+  and the files touched — because you cannot write documentation from a diff alone.
+
+  **Read the task line before you send it.** It is filled in from the first thing
+  you typed in that session, which for a session you started from a slash command
+  is often something like *"do it."* — true, and no use to a reviewer. One sentence
+  of your own is worth more than everything else in the box. The two text boxes
+  appear for Code Reviewer only, because it is the only role that gets nothing but
+  the change itself; the other two are handed what your conversation already
+  recorded, so there is nothing for you to type.
+
+  What a dispatched session is: **an ordinary session**, with its own card, its
+  own conversation and its own permissions. Close the original and it carries on.
+  What it is not, yet: its findings do not come back to the session that sent it
+  automatically (you read them in its own card), it does not nest under its
+  parent in the sessions list, and nothing dispatches on its own — every dispatch
+  is a button you pressed.
 - **Clear and Compact are one click away.** The row under the prompt box — the
   one with the autonomy and model chips — now has **Compact** and **Clear**
   buttons, so restarting or summarizing a session's conversation no longer

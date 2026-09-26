@@ -3,6 +3,11 @@ import type { ContextMenuLabels } from '../shared/context-menu';
 import type { SlashCommand } from '../shared/slash-commands';
 import type { MentionPrompt } from '../shared/mention-prompt';
 import type { ContextOffer } from '../shared/context-drop';
+import type {
+  DispatchOptions,
+  DispatchPrepared,
+  DispatchRequestWire,
+} from '../shared/dispatch-wire';
 import type { ConversationHistory, ConversationHistoryRequest } from '../shared/session-history';
 import type { PromptAttachment } from '../shared/prompt-attachments';
 import type { TaskLabelSize } from '../shared/task-label-size';
@@ -303,6 +308,15 @@ const api = {
        * another card already has it.
        */
       resumeConversationId?: string;
+      /**
+       * A prepared dispatch this card is the target of (P2-E13-03, §5.15).
+       *
+       * Opaque: the briefing it names never leaves main — the renderer carries a
+       * handle, not a document. SINGLE USE, which is what stops a remounted card
+       * being briefed twice, and fail-open when unknown: the card starts as an
+       * ordinary session rather than refusing to start at all.
+       */
+      dispatchId?: string;
       /**
        * Open this card as a FORK of another session's conversation (§5.5
        * Level 3, P2-E11-12) — it starts carrying that conversation's whole
@@ -626,6 +640,29 @@ const api = {
    * "nothing changed"; re-read `list()` and show the truth. Why this shape and
    * not a `.catch()` policy: `main/workspace/group-ipc.ts`, top of file.
    */
+  /**
+   * Manual dispatch — §5.15's Trigger 1 (P2-E13-03).
+   *
+   * TWO CALLS AND NEITHER OF THEM SPAWNS. `options` is what the dialog needs to
+   * offer anything; `prepare` builds the briefing and hands back an opaque handle.
+   * The session itself starts through `sessions.create`, which is the one place a
+   * session starts in this app — the handle rides there as `dispatchId`.
+   *
+   * ⚠️ NOTE WHAT IS NOT HERE: the briefing text, and a role template. The
+   * briefing stays in main (a clean-room bundle is defined by what it withholds,
+   * and a dockview param would put the author's diff into the saved layout on
+   * disk); a template travels inward as an ID only, because
+   * `isSaneRoleTemplate` refuses the `builtin:` namespace and so could not
+   * validate an object describing one of the three built-ins.
+   */
+  dispatch: {
+    /** the templates on offer, plus the task line's default. Never refuses. */
+    options: (sessionId: string): Promise<DispatchOptions> =>
+      ipcRenderer.invoke('dispatch:options', sessionId),
+    /** build the briefing and hold it; `ok: false` carries an i18n `reasonKey` */
+    prepare: (req: DispatchRequestWire): Promise<DispatchPrepared> =>
+      ipcRenderer.invoke('dispatch:prepare', req),
+  },
   groups: {
     list: (): Promise<Array<{ id: string; name: string; color: string; notifyScope?: string }>> =>
       ipcRenderer.invoke('groups:list'),

@@ -1301,3 +1301,168 @@ describe('a question has no deadline while a window is open (#570)', () => {
     }
   });
 });
+
+// ── #948's DENY-WRITES STORY ────────────────────────────────────────────────
+//
+// A dispatched session is one nobody is watching, and `ExitPlanMode` is the one
+// request it cannot usefully be asked. The numbers behind every claim here were
+// measured against claude 2.1.280 on the stream transport and are written up in
+// `spike/findings/e13-948-plan-unattended.md`: a plan-mode review CAN finish
+// unattended, it reaches for `ExitPlanMode` anyway when it decides to write its
+// findings down, it RETRIES after a refusal, an unanswered one parks the CLI
+// indefinitely, and a denial costs the findings nothing.
+describe('a dispatched session and ExitPlanMode (#948, §5.15)', () => {
+  const exitPlanMode = (requestId = 'req-plan') => ({
+    type: 'control_request',
+    request_id: requestId,
+    request: {
+      subtype: 'can_use_tool',
+      tool_name: 'ExitPlanMode',
+      display_name: 'ExitPlanMode',
+      input: { plan: 'Fix the off-by-one in total().' },
+    },
+  });
+
+  it('is denied AT ONCE, rather than held for five minutes and then denied', () => {
+    perms.setDispatched('s1');
+    perms.offer('s1', exitPlanMode());
+
+    // Nothing was held, so nothing was offered to a renderer that is not there.
+    expect(requests).toHaveLength(0);
+    expect(sent).toHaveLength(1);
+    expect(sent[0].msg).toMatchObject({
+      type: 'control_response',
+      response: { request_id: 'req-plan', response: { behavior: 'deny' } },
+    });
+  });
+
+  it('⚠️ DOES NOT TELL THE MODEL TO ASK AGAIN — the probe measured it retrying', () => {
+    // `unavailable()` ends with "Say so and ask again; it will be reviewed then",
+    // which is true for its four callers and false here: nobody is coming. R1
+    // measured a second `ExitPlanMode` 5 s after the first was refused, so the
+    // wrong closing sentence would be encouraging a loop.
+    perms.setDispatched('s1');
+    perms.offer('s1', exitPlanMode());
+    const message = String(
+      (sent[0].msg as { response: { response: { message?: string } } }).response.response.message
+    );
+    expect(message).toContain('Do NOT ask again');
+    expect(message).not.toContain('ask again; it will be reviewed then');
+    // `HookListener.verdict` records a denial that read as infrastructure being
+    // ROUTED AROUND — Claude reached for a second tool, then a third. So it has to
+    // say plainly that nothing is broken, and what to do instead.
+    expect(message).toContain('not a sandbox restriction');
+    expect(message).toMatch(/report what you found/i);
+  });
+
+  it('ends the needs-permission state it was put into a message ago', () => {
+    // `streamStatusEvent` maps `can_use_tool` to `permission-held` one line above
+    // the fan-out that reaches here, so answering is the moment that state ends —
+    // otherwise the card carries the badge for a request already answered.
+    perms.setDispatched('s1');
+    perms.offer('s1', exitPlanMode());
+    expect(applied).toEqual([{ sessionId: 's1', ev: { kind: 'permission-resolved' } }]);
+  });
+
+  it('⚠️ IS NARROW — every OTHER tool from a dispatched session still holds', () => {
+    // A dispatched session held on a Write is a genuine "this needs a human", and
+    // this app's whole premise is that such a session raises its hand. A blanket
+    // auto-deny would turn a Doc Writer into a session that cannot write and
+    // cannot say so.
+    perms.setDispatched('s1');
+    perms.offer('s1', canUseTool());
+    expect(requests).toHaveLength(1);
+    expect(requests[0].tool).toBe('Write');
+    expect(sent).toHaveLength(0); // held, not answered
+  });
+
+  it('⚠️ AND IT IS PER SESSION — an ordinary session’s ExitPlanMode still holds', () => {
+    // The user IS watching that one, and §5.16's plan-mode rule is about what an
+    // in-app Allow may do, not about refusing to show the request.
+    perms.offer('s2', exitPlanMode());
+    expect(requests).toHaveLength(1);
+    expect(requests[0].tool).toBe('ExitPlanMode');
+    expect(sent).toHaveLength(0);
+  });
+
+  it('⚠️ BEATS ALLOW-ALL, because an in-app Allow here is what §5.16 forbids', () => {
+    // §5.16: nothing in-app may ALLOW past plan mode's write block, and
+    // `hook-listener.ts` keeps the same line from the other channel (`GATED.plan =
+    // []`). Allow-all is an in-app allow. So a user who switched a dispatched
+    // reviewer to "Allow all" must not thereby allow the one thing that rule names.
+    perms.setDispatched('s1');
+    perms.setAllowAll('s1');
+    perms.offer('s1', exitPlanMode());
+    expect(sent).toHaveLength(1);
+    expect(sent[0].msg).toMatchObject({
+      response: { response: { behavior: 'deny' } },
+    });
+  });
+
+  it('...while allow-all still answers that session’s other tools with allow', () => {
+    // The narrowness, from the other side: branch 0 takes ExitPlanMode and leaves
+    // allow-all's own behaviour untouched for everything else.
+    perms.setDispatched('s1');
+    perms.setAllowAll('s1');
+    perms.offer('s1', canUseTool());
+    expect(sent).toHaveLength(1);
+    expect(sent[0].msg).toMatchObject({ response: { response: { behavior: 'allow' } } });
+  });
+
+
+  it('⚠️ THE MARK LIFTS WHEN A PERSON TAKES THE SESSION OVER', async () => {
+    // §5.15's premise, and the dialog's own intro: a dispatched session is a full
+    // peer the user can enter and type at. Found in review — without this, a user
+    // who opens the reviewer they just dispatched and asks it to make the fix is
+    // told "nobody is sitting in front of it", while sitting in front of it.
+    perms.setDispatched('s1');
+    perms.clearDispatched('s1');
+    perms.offer('s1', exitPlanMode());
+    expect(requests).toHaveLength(1); // held for the person who is now there
+    expect(sent).toEqual([]);
+  });
+
+  it('clearing a session that was never dispatched is a silent no-op', () => {
+    expect(() => perms.clearDispatched('never-dispatched')).not.toThrow();
+  });
+
+  it('⚠️ DOES NOT WALK THE SESSION TO working WHILE ANOTHER REQUEST IS STILL HELD', async () => {
+    // Found in review, and reachable: Claude issues tool calls in parallel, so a
+    // dispatched reviewer can have a genuine `Write` held — badge, beep, waiting for
+    // a person — and an `ExitPlanMode` in the same turn. Answering the second and
+    // applying `permission-resolved` regardless would HIDE the first until its own
+    // 300 s deadline denied it: a card claiming to be working while the CLI is
+    // blocked, with no badge to say otherwise.
+    perms.setDispatched('s1');
+    perms.offer('s1', canUseTool('req-write'));
+    expect(requests).toHaveLength(1);
+    applied.length = 0;
+
+    perms.offer('s1', exitPlanMode());
+
+    // The exit was answered…
+    expect(sent).toHaveLength(1);
+    expect(sent[0].msg).toMatchObject({ response: { response: { behavior: 'deny' } } });
+    // …and the status was left alone, because the Write is still waiting.
+    expect(applied).toEqual([]);
+  });
+
+  it('...and DOES resolve it once nothing else is outstanding', () => {
+    // The ordinary case, and the one the badge depends on: with no other hold, the
+    // `permission-held` applied a message ago has to end or the card carries a
+    // needs-permission badge for a request that is already answered.
+    perms.setDispatched('s1');
+    perms.offer('s1', exitPlanMode());
+    expect(applied).toEqual([{ sessionId: 's1', ev: { kind: 'permission-resolved' } }]);
+  });
+
+  it('forgets the marking when the live session goes, so a restart is ordinary', () => {
+    // Keyed by LIVE id, like allow-all: a dispatched card whose session crashes and
+    // respawns comes back as a session the user is now looking at — and the
+    // briefing is single-use on the other side too, so both halves expire together.
+    perms.setDispatched('s1');
+    perms.forgetSession('s1', 'card closed');
+    perms.offer('s1', exitPlanMode());
+    expect(requests).toHaveLength(1); // held, like any other session's
+  });
+});

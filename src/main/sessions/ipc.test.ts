@@ -20,6 +20,8 @@ import { SlashCommand } from '../../shared/slash-commands';
 import { readAiTitle } from '../providers/claude';
 import type { TransportKind } from '../../shared/transport';
 import { DEFAULT_TASK_LABEL_SIZE, type TaskLabelSize } from '../../shared/task-label-size';
+import type { PendingDispatch } from './dispatch-ipc';
+import { BUILT_IN_TEMPLATES, type RoleTemplate } from '../../shared/dispatch';
 import { REPEAT_HEAVY, REVISED, titlesOf } from '../transcripts/fixtures/ai-title';
 import {
   conversationExists,
@@ -35,6 +37,9 @@ type Handler = (e: unknown, ...args: unknown[]) => unknown;
  * `unknown`, so that `any` does not spread into the object literal around it —
  * identical object, identical matching, only the static type differs.
  */
+/** The one dispatch id the harness's stand-in registry knows about (#948). */
+const DISPATCH_ID = 'dispatch-1';
+
 const anyString = (): unknown => expect.any(String);
 const stringContaining = (str: string): unknown => expect.stringContaining(str);
 
@@ -169,6 +174,15 @@ function harness(
      *  harness that defaulted it on would let every "fork is refused when the
      *  experiment is off" test pass without exercising the refusal. */
     experimentalFork?: boolean;
+    /**
+     * A prepared dispatch the spawn path should find (P2-E13-03).
+     *
+     * A STAND-IN REGISTRY rather than the real `registerDispatchIpc`, and it
+     * records what was peeked and what was spent — because the two properties this
+     * item turns on are "it is read before the spawn, several times" and "it is
+     * spent exactly once". A registry that only answered could not express either.
+     */
+    dispatch?: PendingDispatch;
   } = {}
 ) {
   const created: Array<{
@@ -313,6 +327,9 @@ function harness(
   const oneShotCalls: Array<{ prompt: string; cwd: string }> = [];
   /** every prompt handed to the manager, in order (#883) */
   const submitted: Array<{ id: string; text: string }> = [];
+  /** every `dispatches.peek` / `dispatches.consume` the spawn path made (#948) */
+  const peeked: unknown[] = [];
+  const spent: unknown[] = [];
   /** the Session Bus wiring (P2-E11-03), in call order */
   const busAttached: string[] = [];
   const busReleased: string[] = [];
@@ -593,6 +610,15 @@ function harness(
     // the state nearly every user is actually in. Tests that need it on flip
     // `experimentalFork` themselves.
     experimentalFork: () => experimentalFork,
+    // The two-method registry (P2-E13-03) — `peek` as often as asked, `consume`
+    // once. Both are recorded: the test's claims are about WHEN each happens.
+    dispatches: {
+      peek: (id: unknown) => {
+        peeked.push(id);
+        return id === DISPATCH_ID && !spent.length ? opts.dispatch : undefined;
+      },
+      consume: (id: unknown) => void spent.push(id),
+    },
     persist: {
       // A store that REMEMBERS. The label loop reads the card back after every
       // write — "has this title already been stored?" is the de-dupe — so a
@@ -677,6 +703,11 @@ function harness(
     call,
     created,
     upserted,
+    /** the dispatch registry's traffic (#948) */
+    peeked,
+    spent,
+    /** every prompt the module submitted into a session — #948's first turn */
+    submitted,
     historyRepairs,
     nativeIdsSet,
     fireNativeId: (liveId: string, nativeId: string, cause?: 'clear') => {
@@ -5506,5 +5537,270 @@ describe('registerSessionIpc — the Session Bus (P2-E11-03)', () => {
 
     // the step AFTER the bus still ran
     expect(h.controlForgot).toHaveBeenCalledWith('live-1');
+  });
+});
+
+// ── §5.15's DISPATCH, ON THE SPAWN PATH (P2-E13-03, #948) ────────────────────
+//
+// The gesture composes a dispatch elsewhere (`dispatch-ipc.ts`); this is where one
+// becomes a session. The claims below are each a claim a plausible wrong
+// implementation gets wrong:
+//
+//  * THE BRIEFING GOES IN AS THE SESSION'S OWN FIRST PROMPT — not as a sibling
+//    message waiting on a keypress. The done-when says so, and §5.4's
+//    never-auto-execute rule is about a session a human is working in.
+//  * IT IS SPENT ONCE, AND ONLY AT THE POINT OF NO RETURN. A dockview param is
+//    re-sent on every remount; consuming early would eat the briefing on every
+//    refusal path between the read and the spawn.
+//  * THE TEMPLATE DECIDES AUTONOMY AND COLOUR, beating the titlebar chip and
+//    `assignAccent` but losing to the card's own stored values.
+//  * A STALE HANDLE IS FAIL-OPEN, because panel params outlive the process.
+//  * A DISPATCH WITHOUT A TYPED-MESSAGE TRANSPORT IS REFUSED BEFORE THE SPAWN, not
+//    started and left silently unbriefed.
+describe('sessions:create carrying a dispatch (P2-E13-03, §5.15)', () => {
+  const dir = process.cwd();
+
+  const template = (over: Partial<RoleTemplate> = {}): RoleTemplate => ({
+    id: 'mine-1',
+    name: 'Security review',
+    rolePrompt: 'Look for injection.',
+    autonomy: 'plan',
+    contextPolicy: 'clean-room',
+    workspacePolicy: 'same-folder',
+    ...over,
+  });
+
+  const pending = (over: Partial<PendingDispatch> = {}): PendingDispatch => ({
+    context: {
+      source: 'artifact-bundle',
+      text: '# Clean-room handoff from @App\n\nthe diff goes here',
+      tokens: 12,
+      empty: false,
+    },
+    template: template(),
+    from: 'live-author',
+    folder: dir,
+    at: Date.now(),
+    ...over,
+  });
+
+  const create = (h: ReturnType<typeof harness>, over: Record<string, unknown> = {}) =>
+    h.call('sessions:create', {
+      cardId: 'card-1',
+      folder: dir,
+      title: 'Security review of App',
+      dispatchId: DISPATCH_ID,
+      ...over,
+    });
+
+  it('SUBMITS THE BRIEFING AS THE SESSION FIRST PROMPT', async () => {
+    const h = harness(undefined, dir, { dispatch: pending() });
+    await create(h);
+
+    expect(h.submitted).toHaveLength(1);
+    expect(h.submitted[0].id).toBe('live-1');
+    // Both halves, in order: the document, then the instruction under its heading.
+    expect(h.submitted[0].text).toContain('# Clean-room handoff from @App');
+    expect(h.submitted[0].text).toContain('## Your instructions');
+    expect(h.submitted[0].text).toContain('Look for injection.');
+  });
+
+  it('an ordinary create submits nothing — the byte-identical pre-#948 start', async () => {
+    const h = harness(undefined, dir);
+    await h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 't' });
+    expect(h.submitted).toEqual([]);
+    // …and nothing was even asked of the registry, so a card that is not a
+    // dispatch costs nothing at all.
+    expect(h.peeked).toEqual([]);
+  });
+
+  it('READS THE HANDLE ONCE AND SPENDS IT ONCE', async () => {
+    const h = harness(undefined, dir, { dispatch: pending() });
+    await create(h);
+    // ONE read, reused by everything that needs it — the fork operand, the
+    // autonomy, the accent, the transport gate. Peeking per consumer would be four
+    // reads of a map that can expire between them.
+    expect(h.peeked).toEqual([DISPATCH_ID]);
+    expect(h.spent).toEqual([DISPATCH_ID]);
+  });
+
+  it('...and the read happens BEFORE the spawn, which is why the template can decide', async () => {
+    // Not a separate mechanism — the proof is that the template's autonomy reached
+    // `manager.create`, which is only possible if the handle was read first. Stated
+    // as its own test because "read early, spend late" is the property, and the
+    // ordering is the half a refactor would break silently.
+    const h = harness(undefined, dir, { dispatch: pending() });
+    await create(h);
+    expect(h.created[0]).toBeTruthy();
+    expect(h.upserted[0].autonomy).toBe('plan');
+  });
+
+  it('a spawn that THROWS spends the briefing and says it is gone', async () => {
+    // The one path where the handle is spent and the session does not exist. Try
+    // again starts an ORDINARY session — there is no briefing left — so it is said
+    // out loud rather than left to be inferred from two lines above it. Re-arming
+    // the entry instead would put back the double-brief hazard single use prevents.
+    const h = harness(undefined, dir, { dispatch: pending(), throwOnSpawn: true });
+    expect(await create(h)).toBeNull();
+    expect(h.spent).toEqual([DISPATCH_ID]);
+    expect(h.logError).toHaveBeenCalledWith(
+      stringContaining('briefing was lost with that failed start'),
+      expect.anything()
+    );
+  });
+
+  it('THE TEMPLATE AUTONOMY BEATS THE TITLEBAR CHIP', async () => {
+    // Dispatching a reviewer while the chip says `full-auto` must not produce a
+    // full-auto reviewer: the chip describes the USER's next session, and this is a
+    // role whose autonomy #946 chose deliberately ("the quiet end of the range").
+    const h = harness(undefined, dir, { dispatch: pending() });
+    await create(h, { autonomy: 'full-auto' });
+    expect(h.upserted[0].autonomy).toBe('plan');
+  });
+
+  it('WEARS THE ROLE COLOUR — the done-when visibly-not-the-author', async () => {
+    const h = harness(undefined, dir, {
+      dispatch: pending({ template: template({ accentColor: '#ff7a59' }) }),
+    });
+    await create(h);
+    expect(h.created[0].identity.accentColor).toBe('#ff7a59');
+  });
+
+  it('...and falls back to the ordinary assignment when the template has no colour', async () => {
+    const h = harness(undefined, dir, { dispatch: pending() });
+    await create(h);
+    // Whatever `assignAccent` gives any new session — a real value, not the
+    // template's absent one leaking through as undefined.
+    expect(h.created[0].identity.accentColor).toBeTruthy();
+  });
+
+  it('A STALE HANDLE STARTS AN ORDINARY SESSION AND SAYS SO (fail-open, P6)', async () => {
+    // Panel params are serialized into the saved layout, so a `dispatchId` written
+    // before the app was last quit arrives with main's map long gone. Refusing
+    // would mean a restored layout could not start its own cards.
+    const h = harness(undefined, dir); // no `dispatch` — the registry answers nothing
+    const answer = await create(h);
+    expect(answer).not.toBeNull();
+    expect(h.submitted).toEqual([]);
+    expect(h.warn).toHaveBeenCalledWith(
+      stringContaining('dispatch briefing was not available'),
+      expect.anything()
+    );
+  });
+
+  it('refuses a dispatchId that is not a string (§5.29)', async () => {
+    const h = harness(undefined, dir, { dispatch: pending() });
+    // THE REFUSAL ITSELF, not merely "nothing was created" — which would also be
+    // true if the handler had broken for an unrelated reason (review). This harness
+    // sees `refuse`'s answer as `null`, the same shape every other refusal on this
+    // channel produces, plus the reason in the log.
+    expect(await create(h, { dispatchId: 42 })).toBeNull();
+    expect(h.created).toEqual([]);
+    expect(h.warn).toHaveBeenCalledWith(
+      stringContaining('dispatchId must be a string'),
+      expect.anything()
+    );
+  });
+
+  it('logs a restarted dispatched card at DEBUG, not as a fault', async () => {
+    // The param is in the saved layout, so a dispatched card re-sends it on every
+    // reveal and every launch for the life of the workspace. A `warn` per remount
+    // would make a genuinely lost briefing indistinguishable from routine noise —
+    // so a card that HAS a record is a restart, and only a first start with an
+    // unrecognised handle is worth the warning.
+    const h = harness(undefined, dir, { prior: priorCard({ folder: dir }) });
+    await create(h);
+    expect(h.warn).not.toHaveBeenCalledWith(
+      stringContaining('dispatch briefing was not available'),
+      expect.anything()
+    );
+  });
+
+  it('a briefing that THROWS does not cost the card its start', async () => {
+    // The last thing on the spawn path, and the session is already live and bound by
+    // the time it runs — so a throw escaping here would have the renderer paint
+    // "never started" over a session that is running (#347's inversion). Provoked
+    // with a template whose `rolePrompt` is not a string, which is what a
+    // hand-mangled `workspace.json` can hold.
+    const h = harness(undefined, dir, {
+      dispatch: pending({
+        template: { ...template(), rolePrompt: undefined as unknown as string },
+      }),
+    });
+    expect(await create(h)).not.toBeNull();
+    expect(h.created).toHaveLength(1);
+    expect(h.logError).toHaveBeenCalledWith(
+      stringContaining('briefing a dispatched session threw'),
+      expect.anything()
+    );
+  });
+
+  it('REFUSES BEFORE THE SPAWN when there is no typed-message transport', async () => {
+    // `submitPrompt` needs a stream handle. Starting the session and finding out
+    // afterwards leaves a live card with a role, a colour and no instruction —
+    // which looks exactly like a dispatch that worked.
+    const h = harness(undefined, dir, {
+      dispatch: pending(),
+      preferredTransport: () => 'pty',
+    });
+    await create(h);
+    expect(h.created).toEqual([]);
+    // And the handle is NOT spent, so the user can fix the transport and retry.
+    expect(h.spent).toEqual([]);
+  });
+
+  it('SAYS SO LOUDLY if a session takes its start but not its briefing', async () => {
+    // Not reachable through the gate above — what is left is an adapter that
+    // answered with a PTY recipe despite being asked for a stream. `error`, because
+    // the card is live, wearing a role, with no instruction in it.
+    const h = harness(undefined, dir, { dispatch: pending(), submitAccepts: false });
+    await create(h);
+    expect(h.logError).toHaveBeenCalledWith(
+      stringContaining('would not take its briefing'),
+      expect.anything()
+    );
+  });
+
+  it('marks the live session as unattended, so ExitPlanMode is refused at once', async () => {
+    const { perms, sent } = streamPerms();
+    const h = harness(undefined, dir, { dispatch: pending(), streamPermissions: perms });
+    await create(h);
+    perms.offer('live-1', {
+      type: 'control_request',
+      request_id: 'req-plan',
+      request: { subtype: 'can_use_tool', tool_name: 'ExitPlanMode', input: {} },
+    });
+    // Answered at the server rather than held for the 300 s deadline — #948's
+    // measured deny-writes story (`spike/findings/e13-948-plan-unattended.md`).
+    expect(sent).toHaveLength(1);
+    expect(sent[0].msg).toMatchObject({ response: { response: { behavior: 'deny' } } });
+  });
+
+  it('...and does NOT mark it when the briefing never landed', async () => {
+    // If the prompt did not go in, the user is going to have to come and look at
+    // this card, and the ordinary hold is what tells them to.
+    const { perms, sent } = streamPerms();
+    const h = harness(undefined, dir, {
+      dispatch: pending(),
+      streamPermissions: perms,
+      submitAccepts: false,
+    });
+    await create(h);
+    perms.offer('live-1', {
+      type: 'control_request',
+      request_id: 'req-plan',
+      request: { subtype: 'can_use_tool', tool_name: 'ExitPlanMode', input: {} },
+    });
+    expect(sent).toEqual([]); // held
+  });
+
+  it('every built-in can be dispatched — a role prompt always reaches the session', async () => {
+    // Generated from the list rather than written out three times, so a fourth
+    // built-in is covered the day it ships.
+    for (const t of BUILT_IN_TEMPLATES) {
+      const h = harness(undefined, dir, { dispatch: pending({ template: t }) });
+      await create(h);
+      expect(h.submitted[0].text, t.name).toContain(t.rolePrompt.split('\n')[0]);
+    }
   });
 });

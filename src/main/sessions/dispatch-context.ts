@@ -188,6 +188,35 @@ export interface DispatchContextRequest {
    * package it gets is the package #766 builds.
    */
   acceptanceCriteria?: string;
+  /**
+   * The task, as the DISPATCHING USER stated it (#948).
+   *
+   * ⚠️ THIS FIELD EXISTS BECAUSE OF A MEASUREMENT, and #947 deliberately did not
+   * add it. Run against this repo's own 7.7 MB transcript fixture,
+   * `SessionQueries.taskStatement` answers **`"do it."`** — correct and honest,
+   * because that really is the first prose the user typed; what precedes it is a
+   * slash command (`isCommandPlumbing` skips it, #846) and an `isMeta` line
+   * carrying the skill body. So a session started from a slash command — most of
+   * the ones this project runs — hands a clean-room reviewer a task statement
+   * with no task in it, and clean-room is defined by withholding everything
+   * else, which makes this the one field that has to carry the job and the field
+   * most likely to be useless.
+   *
+   * That was not fixable in #947: changing what counts as the opening prompt
+   * would make `taskStatement` disagree with #766's package about the same fact,
+   * which is exactly the drift both are shared to prevent. It was left as a
+   * design input for the gesture, and #948's dialog is the caller — one line,
+   * prefilled from what the transcript says, editable before dispatch. A second
+   * field with no caller would have been speculative surface; this one has one.
+   *
+   * ABSENT MEANS READ THE TRANSCRIPT, which is the byte-identical pre-#948
+   * behaviour for every existing caller — and a live branch rather than a
+   * theoretical one: only `artifact-bundle` reads this field, so #948's dialog
+   * offers it only for `clean-room` and omits it entirely for the other two. (The
+   * package generator derives its own Goal section, and a second source for one
+   * fact is exactly the drift both are shared to prevent.)
+   */
+  taskStatement?: string;
 }
 
 /**
@@ -253,15 +282,35 @@ export async function buildDispatchContext(
       // implementations, and the day either grows a cap or a cut the other does
       // not, two surfaces describe the same change differently.
       const diff = await deps.queries.sessionDiff(session.id);
+      // ── WHAT THE BUNDLE IS TOLD THE TASK WAS ─────────────────────────────
+      //
+      // THE CALLER'S OVERRIDE WINS, AND THE TRANSCRIPT IS NOT READ WHEN IT IS
+      // GIVEN. Not "read both and prefer one": a `taskStatement` query opens the
+      // transcript's head window, and doing that to throw the answer away is
+      // work for nothing on the path that spends a subscription turn. The
+      // override is what the user typed into the dispatch dialog, which was
+      // prefilled from this same query — so the read already happened, once,
+      // when the dialog opened.
+      //
+      // A BLANK OVERRIDE IS A CHOICE AND IS HONOURED AS ONE. `''` after trimming
+      // means the user cleared the line, and the bundle then prints `TASK_UNKNOWN`
+      // — "not known" — rather than quietly substituting the `"do it."` the user
+      // had just deleted. `??` and not `||` for exactly that reason.
+      //
       // FAIL-OPEN ON THE TASK STATEMENT, not on the diff's refusal either: both
       // are rendered as sentences inside the document. A reviewer told "the
       // diff could not be read" can say so in its findings; a dispatch that
       // refused outright would leave the user with a toast and no session.
-      const task = deps.queries.taskStatement(session.id);
+      const stated =
+        req.taskStatement ??
+        (() => {
+          const task = deps.queries.taskStatement(session.id);
+          return task.ok ? task.value.text : undefined;
+        })();
       const bundle = buildCleanRoomBundle({
         session,
         diff: asCleanRoomDiff(diff),
-        ...(task.ok && task.value.text !== undefined ? { taskStatement: task.value.text } : {}),
+        ...(stated === undefined ? {} : { taskStatement: stated }),
         ...(req.acceptanceCriteria === undefined
           ? {}
           : { acceptanceCriteria: req.acceptanceCriteria }),

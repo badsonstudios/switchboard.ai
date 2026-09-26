@@ -94,6 +94,31 @@ export interface CommandDeps {
   /** the MCP servers the ACTIVE session can see (§5.17, #632) — also where a
    *  typed `/mcp` lands, since its CLI picker has no terminal in Direct mode */
   openMcpManager: () => void;
+  /**
+   * §5.15's dispatch targets, for the one-entry-per-template rule (P2-E13-03).
+   *
+   * DATA, not a function, and the only data field on this interface — because the
+   * command LIST itself depends on it: §5.15 asks for "Dispatch → <template>" in
+   * the palette, which means one entry per template rather than one entry that
+   * then asks. A palette entry has to say what pressing Enter will do (E9-06's
+   * rule for why the policy commands are named targets and not a cycle).
+   *
+   * Only the id and the name, because that is all a title needs. Whether a
+   * template can actually run is asked FRESH when the dialog opens — a refusal
+   * depends on the fork setting, which the user can change while the palette is
+   * closed, and `DispatchGates.forkEnabled` warns that a cached `true` is the real
+   * failure mode. So these entries are never greyed out for policy: they open the
+   * dialog, and the dialog is where a refusal is read.
+   *
+   * ⚠️ A TEMPLATE ADDED BY HAND-EDITING `workspace.json` GETS NO PALETTE ENTRY
+   * UNTIL RELAUNCH, because App reads this list once. That is the whole cost of
+   * not polling, it is invisible to anyone who has not edited that file by hand,
+   * and the ⋯ menu's `Dispatch…` row — which reads the list every time it opens —
+   * reaches the new template immediately.
+   */
+  dispatchTemplates: ReadonlyArray<{ id: string; name: string }>;
+  /** open the dispatch dialog on the ACTIVE session, with this role preselected */
+  dispatchFrom: (templateId: string) => void;
 }
 
 const CATEGORY_SESSION = 'commands.category.session';
@@ -434,6 +459,41 @@ export function buildCommands(deps: CommandDeps): Command[] {
       disabledReasonKey: 'commands.disabled.noSessions',
       run: () => deps.closeAllCards(),
     },
+    // ── §5.15's DISPATCH (P2-E13-03, Trigger 1) ───────────────────────────
+    //
+    // ONE ENTRY PER TEMPLATE, which is §5.15's own "Dispatch → <template>", and
+    // generated from the list rather than written out — so a fourth template
+    // cannot ship with three of its four entries (the same reason `LAYOUT_MODES`
+    // and `POLICY_ORDER` are mapped over rather than enumerated).
+    //
+    // NO BINDING, deliberately, and for `session.closeAll`'s reason stated the
+    // other way round: that one is unbound because nobody should be able to close
+    // every session by mistyping a chord, and this one because a dispatch SPENDS a
+    // subscription turn and starts a session nobody is watching. The issue says it
+    // in as many words — "a dispatch is deliberate, not a chord".
+    //
+    // ENABLED ON AN ACTIVE CARD ONLY, like every other card-scoped command, with
+    // the same reason key. A card whose session has not started is a narrower case
+    // the palette cannot see from here — `CommandContext.sessions` carries no live
+    // id — and `dispatchFrom` answers it by doing nothing, which is the same shape
+    // `reorderSession` uses for a move that cannot happen.
+    ...deps.dispatchTemplates.map(
+      (template): Command => ({
+        id: `session.dispatch.${template.id}`,
+        titleKey: 'commands.dispatch',
+        // The template's NAME, interpolated — not a catalogue key. #946 is
+        // explicit that a built-in's name is "DATA that happens to be words, an
+        // identity a user can replace by copying", so a user template called
+        // `Security review` reads that way in the palette and is findable by
+        // typing it.
+        titleParams: { name: template.name },
+        categoryKey: CATEGORY_SESSION,
+        scope: 'app' as const,
+        enabled: hasActive,
+        disabledReasonKey: 'commands.disabled.noActiveSession',
+        run: () => deps.dispatchFrom(template.id),
+      })
+    ),
     // ── §5.8's presentation ladder (E9-05) ────────────────────────────────
     //
     // Two BINDINGS that step, and four palette entries that jump straight to a

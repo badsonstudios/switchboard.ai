@@ -119,6 +119,9 @@ describe('the IPC capability map (the done-when: no channel is untagged)', () =>
       // the three inbound `send_to_session` channels AND the outbound push,
       // which is sent from the same file (#765)
       'src/main/sessions/delivery-ipc.ts',
+      // §5.15's two dispatch reads (P2-E13-03). The SPAWN is `sessions:create`
+      // above — nothing here starts a session, which is the point of the split.
+      'src/main/sessions/dispatch-ipc.ts',
       // `audio:play` / `audio:speak` are OUTBOUND and both ends have to agree
       // on the name, so the two literals live in shared as constants and
       // `events/audio-sink.ts` sends them. Listing the file that NAMES them is

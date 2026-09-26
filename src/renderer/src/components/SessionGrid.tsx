@@ -28,6 +28,8 @@ import { IdentityChip, identityBadgeStyle, identityWash } from './IdentityChip';
 import { DiffPane } from './DiffPane';
 import { DocumentViewer } from './DocumentViewer';
 import { SessionHistoryDialog } from './SessionHistoryDialog';
+import { DispatchDialog, dispatchedTitle } from './DispatchDialog';
+import type { DispatchOptions } from '../../../shared/dispatch-wire';
 import { baseName } from '../lib/document-kind';
 import {
   closableDocuments,
@@ -157,6 +159,22 @@ export interface CardParams {
    * different project folder; that is the case the feature exists for.
    */
   forkFrom?: { sourceSessionId: string; sourceFolder: string };
+  /**
+   * A prepared dispatch this card is the target of (§5.15, P2-E13-03).
+   *
+   * OPAQUE: the briefing it names never leaves main. Params rather than state for
+   * `resumeConversationId`'s reason — dockview freezes params into the panel, so
+   * the intent survives a card being hidden and revealed before it is ever visible
+   * enough to spawn.
+   *
+   * ⚠️ AND THAT IS ALSO WHY MAIN SPENDS IT ON FIRST USE. Params are re-sent on
+   * every remount and serialized into the saved layout, so this arrives again when
+   * a card is hidden and revealed, when its session crashes and restarts, and on a
+   * launch days later. Main consumes the entry the first time (`dispatch-ipc.ts`),
+   * which makes a second briefing impossible rather than unlikely; an id that no
+   * longer resolves starts an ordinary session and says so in the log.
+   */
+  dispatchId?: string;
 }
 
 interface Live {
@@ -958,6 +976,24 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         // history picker (P2-E20-01). Absent for every ordinary card, which is
         // the byte-identical pre-E20 start.
         resumeConversationId: props.params?.resumeConversationId,
+        // ⚠️ A PRE-EXISTING BUG, FIXED HERE (found while building #948).
+        //
+        // `forkFrom` has been written into this card's params since #801 — the ⋯
+        // menu's Fork entry sets it — and this call never forwarded it. So every
+        // "fork this conversation" since that item landed has started an ORDINARY
+        // session in the same folder: the card appeared, it worked, and it carried
+        // none of the history the gesture exists for. Main's whole fork path
+        // (`planSessionStart`'s `requestedFork`, `plan.forkUnavailable`, the
+        // source-transcript replay) was unreachable from the UI.
+        //
+        // It is fixed here rather than filed because #948 needs the identical
+        // forwarding one field along for its `full` context policy, and shipping
+        // the new one beside a broken copy of the same line would be one rule with
+        // two answers.
+        forkFrom: props.params?.forkFrom,
+        // §5.15's dispatch (P2-E13-03). Opaque, single-use, and fail-open when it
+        // no longer resolves — see `CardParams.dispatchId`.
+        dispatchId: props.params?.dispatchId,
       })
       .then((answer) => {
         // #440: a refused `sessions:create` resolves a truthy brand, so
@@ -2126,6 +2162,52 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                             toggle — it has eight states, not two — so it says
                             what it is now and what clicking does, the lesson
                             #153 taught the transport entry two items up. */}
+                        {/* §5.15 Trigger 1 — hand this session's work to a fresh
+                            session in a role (P2-E13-03).
+
+                            ONE ROW, not a submenu with a row per template, and
+                            that is the decision this menu makes. §5.15 writes the
+                            gesture as "Dispatch → <template>", which reads like a
+                            submenu — but the dialog behind this row is where the
+                            TASK LINE is, and #947's measurement says the task
+                            statement is `"do it."` for any session started from a
+                            slash command. A submenu would let someone dispatch a
+                            clean-room reviewer past that in one click. The palette
+                            still names each template (`session.dispatch.*`), which
+                            is where "→ <template>" lives; both land in the same
+                            dialog.
+
+                            Gated on a LIVE session, like the fork entry above and
+                            for the same reason one door along: there is nothing to
+                            hand over from a session that does not exist yet, and a
+                            control that looked ready would fail at the far end. Not
+                            gated on `controlsLocked` — that lock is about typing
+                            into THIS session's CLI, and a dispatch writes to a
+                            different session entirely. Dispatching a review of work
+                            a crashed session finished is a reasonable thing to do. */}
+                        {live?.id && (
+                          <button
+                            data-testid="card-dispatch"
+                            onClick={() => {
+                              setMenuOpen(false);
+                              // `headerTitle`, NOT the task label. Found in review:
+                              // the first version passed `cardHeaderTitle(taskLabel,
+                              // …)`, so the dialog header and the new card's title
+                              // read "Code Reviewer of Add keyboard nav to the rail"
+                              // — a mutable auto-generated label rather than the
+                              // session's NAME, and a different answer from the one
+                              // the palette path gives for the same card.
+                              openDispatchDialog?.(
+                                { id: live.id, name: headerTitle },
+                                { into: poppedOut ? props.api.group : null }
+                              );
+                            }}
+                            title={t('dispatch.menuHint')}
+                            style={menuItemStyle(false)}
+                          >
+                            {t('dispatch.menu')}
+                          </button>
+                        )}
                         {soundsApi && cardSound && (
                           <button
                             data-testid="card-sound"
@@ -2986,11 +3068,23 @@ async function addSessionCardTo(
     /** open the new card as a FORK of another session's conversation (§5.5
      *  Level 3, P2-E11-12) — experimental, and main re-checks the flag */
     forkFrom?: { sourceSessionId: string; sourceFolder: string };
+    /** the briefing main is holding for this card (§5.15, P2-E13-03) — opaque
+     *  and single-use; see `CardParams.dispatchId` */
+    dispatchId?: string;
+    /**
+     * Override the card's title.
+     *
+     * The default is the folder's basename, which is right for every ordinary
+     * card and wrong for a dispatched one: a Code Reviewer opened on the author's
+     * own folder would be the second card in the grid called `Switchboard.ai`,
+     * and the done-when asks for one that is "visibly not the author".
+     */
+    title?: string;
   } = {}
 ): Promise<void> {
   if (!api) return;
-  const { groupId, into, resumeConversationId, forkFrom } = opts;
-  const title = folder.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? folder;
+  const { groupId, into, resumeConversationId, forkFrom, dispatchId } = opts;
+  const title = opts.title ?? (folder.replace(/[\\/]+$/, '').split(/[\\/]/).pop() ?? folder);
   const cardId = crypto.randomUUID();
   // A persistent-group member clusters with its siblings (E12-02): reuse the
   // dockview group already holding another member, when one is in the grid.
@@ -3034,7 +3128,15 @@ async function addSessionCardTo(
     id: `session-${cardId}`,
     component: 'sessionCard',
     title,
-    params: { cardId, folder, title, groupId, resumeConversationId, forkFrom } satisfies CardParams,
+    params: {
+      cardId,
+      folder,
+      title,
+      groupId,
+      resumeConversationId,
+      forkFrom,
+      dispatchId,
+    } satisfies CardParams,
     // NO `direction` — `within` (the default) is the only target dockview
     // resolves against the reference group itself. Any of the four directions
     // sends it through `getGridLocation(referenceGroup.element)` against the
@@ -3423,6 +3525,30 @@ const components = {
   diffPane: DiffPanel,
   documentViewer: DocumentViewerPanel,
 };
+
+/**
+ * The grid's dispatch-dialog opener, reachable from a card (P2-E13-03).
+ *
+ * ⚠️ MODULE-LEVEL, AND IT HAS TO BE. `components` above is module-level — dockview
+ * is handed the component map once — so `SessionCardPanel` receives
+ * `IDockviewPanelProps<CardParams>` and nothing else. It cannot see the grid's
+ * state, which is where the dialog lives, and the dialog lives there for the
+ * picker's reason: the card it will create does not exist yet.
+ *
+ * The alternative was a second dialog instance per card, which is a second copy of
+ * the gesture and one dialog per open session in the DOM.
+ *
+ * ONE GRID PER RENDERER makes this safe: a dockview popout is another WINDOW but
+ * the same document and the same module instance, which is the same assumption the
+ * dock-back arms in this file already rest on. Installed and cleared by the grid's
+ * own effect, so a torn-down grid leaves no arm behind.
+ */
+let openDispatchDialog: DispatchOpener | null = null;
+
+type DispatchOpener = (
+  from: { id: string; name: string },
+  opts?: { into?: DockviewApi['groups'][number] | null; templateId?: string }
+) => void;
 
 /** Our dockview theme (#84) — one definition, applied at ready and on switch. */
 function dockviewTheme(colorScheme: 'light' | 'dark'): DockviewTheme {
@@ -4796,6 +4922,19 @@ export interface GridController {
    * dialog could resolve. Answering late would be answering never (#531).
    */
   newSessionTargetsPopout: () => boolean;
+  /**
+   * Open §5.15's dispatch dialog for the ACTIVE card (P2-E13-03).
+   *
+   * `templateId` preselects a role — the palette's `session.dispatch.*` entries
+   * name one, the ⋯ menu's single `Dispatch…` row does not. A no-op when no card
+   * is active, when the active panel is a popped-out card, or when the active
+   * card's session has not started: there is nothing to hand over from a session
+   * that has never had a turn.
+   *
+   * It does NOT dispatch. It opens the dialog, and the dialog is where the task
+   * line is edited and a policy refusal becomes readable — see `DispatchDialog`.
+   */
+  dispatchFrom: (templateId?: string) => void;
   /** move an existing card's PANEL next to its persistent-group siblings
    *  after a rail drop set its membership (E12-04) */
   moveCardToGroup: (cardId: string, groupId: string | null) => void;
@@ -4950,6 +5089,75 @@ export function SessionGrid(props: {
     folder: string;
     into: DockviewApi['groups'][number] | null;
   } | null>(null);
+  /**
+   * §5.15's dispatch gesture, mid-flight (P2-E13-03).
+   *
+   * MOUNTED AT THE GRID, like the `+ session` picker above and for the same
+   * reason: the card it will create does not exist yet, so there is nothing else
+   * for the dialog to hang off. It also means both entry points — the ⋯ menu and
+   * the palette — open one dialog instance rather than one per card.
+   *
+   * `into` is carried for #531: a dispatch asked for from inside a popped-out
+   * window puts its new card in that window, exactly as the fork control does.
+   */
+  const [dispatching, setDispatching] = React.useState<{
+    /** the AUTHOR session's live id — what `dispatch:prepare` resolves */
+    fromId: string;
+    fromName: string;
+    into: DockviewApi['groups'][number] | null;
+    options: DispatchOptions;
+    initialTemplateId?: string;
+  } | null>(null);
+
+  /**
+   * Open the dispatch dialog for a session, reading its options first.
+   *
+   * ASYNC AND SILENT ON FAILURE, deliberately: `dispatch:options` never refuses
+   * (`dispatch-ipc.ts`), so the only way here is the bridge itself being absent —
+   * a renderer unit harness that installed no `dispatch` namespace — and a menu
+   * item that does nothing in a harness is better than one that throws into a
+   * click handler. The real refusals all live on `prepare`, where the dialog is
+   * already open and has somewhere to show them.
+   */
+  const openDispatch = useCallback(
+    async (
+      from: { id: string; name: string },
+      opts: { into?: DockviewApi['groups'][number] | null; templateId?: string } = {}
+    ): Promise<void> => {
+      // ⚠️ RAISE THIS WINDOW FIRST, and it is not politeness — it is the whole
+      // difference between the gesture working and appearing to do nothing.
+      //
+      // A dockview popout is a separate OS window with its own document, but it
+      // shares this React tree, so a ⋯ menu clicked inside one reaches here fine.
+      // The dialog, however, renders into the MAIN window's DOM (it is mounted at
+      // the grid — see `dispatching`), so from a popout the observable result of
+      // clicking `Dispatch…` would be: the menu closes, and nothing else happens
+      // — with a modal sitting in a window behind the one being looked at.
+      //
+      // `/mcp`'s opener makes exactly this move for exactly this reason
+      // (`App.tsx`, `subscribeMcpOpen`), as does the popout key bridge. Harmless
+      // when this window is already frontmost.
+      //
+      // The new CARD still lands where the ask came from (`opts.into`, #531) —
+      // that rule is about where a session goes, not about where a modal can be
+      // drawn, and the two answers are allowed to differ.
+      window.focus();
+      // LAUNDERED AT THE BOUNDARY (#346/#440), and the `!options` guard is exactly
+      // the shape that rule exists for: a brokered call the capability layer refuses
+      // RESOLVES an `IpcRefusal` object, which is TRUTHY — so a refused read would
+      // sail past the guard and open a dialog whose `templates` is `undefined`.
+      const options = answered(await window.switchboard.dispatch?.options(from.id));
+      if (!options) return;
+      setDispatching({
+        fromId: from.id,
+        fromName: from.name,
+        into: opts.into ?? null,
+        options,
+        ...(opts.templateId === undefined ? {} : { initialTemplateId: opts.templateId }),
+      });
+    },
+    []
+  );
   const offerHistory = useCallback(
     async (folder: string, into: DockviewApi['groups'][number] | null): Promise<boolean> => {
       // #440: a refusal resolves TRUTHY, so this must be laundered before it is
@@ -5064,6 +5272,17 @@ export function SessionGrid(props: {
     return () => forgetDockBacks();
   }, []);
 
+  // The arm a card's ⋯ menu reaches the dispatch dialog through (P2-E13-03) — see
+  // `openDispatchDialog` for why it cannot be a prop. Cleared on unmount, like the
+  // dock-back arms above: an arm that outlived its grid would hold a `setState` on
+  // a component React has finished with.
+  React.useEffect(() => {
+    openDispatchDialog = (from, opts) => void openDispatch(from, opts);
+    return () => {
+      openDispatchDialog = null;
+    };
+  }, [openDispatch]);
+
   React.useEffect(() => {
     if (!props.controller) return;
     props.controller.current = {
@@ -5075,6 +5294,40 @@ export function SessionGrid(props: {
       newSessionTargetsPopout: () => {
         const api = apiRef.current;
         return !!api && focusedPopoutGroup(api) !== null;
+      },
+      // §5.15 Trigger 1 from the PALETTE (P2-E13-03). The ⋯ menu calls
+      // `openDispatch` directly — it already knows which session it is on; this
+      // entry point has to work out which session the user means, and the answer
+      // is the same one every other card-scoped command uses: the active card.
+      //
+      // The dialog needs the AUTHOR's live session id, not its card id, because
+      // that is what `@name` and every query resolve against
+      // (`SessionSummary.id`). A card whose session has not started has no live
+      // id and nothing to hand over, so there is nothing to dispatch — the
+      // command is simply inert there, which is the same answer the context chip
+      // gives for a card that has never had a turn.
+      dispatchFrom: (templateId) => {
+        const panel = apiRef.current?.activePanel;
+        // A POPPED-OUT card lives in another OS window; a command typed in this
+        // one must not act on it — `activeCardId`'s own rule, one door over.
+        if (!panel || panel.group.api.location.type !== 'grid') return;
+        const cardId = /^session-(.+)$/.exec(panel.id)?.[1];
+        if (!cardId) return;
+        // THE RAIL'S ROW, because it is the one place that joins a card id to its
+        // live session id and its title. A card with no `liveId` has not started
+        // and has nothing to hand over, so the command is inert — the same answer
+        // the context chip gives for a card that has never had a turn.
+        const row = sessionStore.getState().sessions.find((s) => s.id === cardId);
+        if (!row?.liveId) return;
+        void openDispatch(
+          { id: row.liveId, name: row.title },
+          {
+            // A dispatch asked for inside a popped-out window lands its card
+            // there (#531) — the same rule the fork control follows.
+            into: apiRef.current ? focusedPopoutGroup(apiRef.current) : null,
+            ...(templateId === undefined ? {} : { templateId }),
+          }
+        );
       },
       moveCardToGroup: (cardId, groupId) => void clusterCardWithGroup(apiRef.current, cardId, groupId),
       hideCard,
@@ -5833,6 +6086,76 @@ export function SessionGrid(props: {
           onNewConversation={() => {
             setPicker(null);
             void addSessionCardTo(apiRef.current, picker.folder, { into: picker.into });
+          }}
+        />
+      )}
+      {/* §5.15's dispatch gesture (P2-E13-03). Mounted at the GRID for the
+          picker's reason above — the card it creates does not exist yet — and so
+          that the ⋯ menu and the palette open ONE dialog rather than one per card. */}
+      {dispatching && (
+        <DispatchDialog
+          // KEYED BY THE AUTHOR, so a dialog reopened on a different session is a
+          // fresh component rather than one carrying the previous author's typed
+          // task: `useState` initialisers do not re-run on a prop change, and the
+          // task line is initialised from `options`. Hard to reach through the
+          // scrim; a key makes it impossible rather than unlikely.
+          key={dispatching.fromId}
+          fromName={dispatching.fromName}
+          options={dispatching.options}
+          {...(dispatching.initialTemplateId === undefined
+            ? {}
+            : { initialTemplateId: dispatching.initialTemplateId })}
+          onCancel={() => setDispatching(null)}
+          onPrepare={async (req) => {
+            const raw = await window.switchboard.dispatch.prepare({
+              from: dispatching.fromId,
+              templateId: req.templateId,
+              // TRIMMED HERE, ONCE, so main sees what the user meant rather than
+              // whatever whitespace the field held.
+              //
+              // ABSENT STAYS ABSENT, and EMPTY IS FORWARDED AS EMPTY. Three states,
+              // not two, and `dispatch-context.ts` acts differently on each: the
+              // dialog omits the field entirely for a policy that does not read it
+              // (main then reads the transcript), and sends `''` when the user
+              // cleared the line (main then says "not known" rather than quietly
+              // restoring the `"do it."` they just deleted).
+              ...(req.taskStatement === undefined
+                ? {}
+                : { taskStatement: req.taskStatement.trim() }),
+              // Criteria collapse to two states: absent and empty mean the same
+              // thing, and the bundle's own sentence ("none were given") is better
+              // than an empty heading. The task line is the asymmetric one.
+              ...(req.acceptanceCriteria === undefined || req.acceptanceCriteria.trim() === ''
+                ? {}
+                : { acceptanceCriteria: req.acceptanceCriteria.trim() }),
+            });
+            // LAUNDERED (#346/#440). A brokered refusal is a TRUTHY object with no
+            // `ok`, so returning it unchecked would show the dialog's failure box
+            // with an undefined reason in it — the confident-wrong-answer shape,
+            // about our own plumbing. THROWN rather than returned as a refusal,
+            // because the dialog's `reasonKey` channel is for things the USER can
+            // act on and a capability the broker declined is not one of them: it is
+            // a wiring fault, and its sentence belongs in the same place a rejected
+            // bridge call's does.
+            const answer = answered(raw);
+            if (!answer) throw new Error('switchboard declined the dispatch call');
+            return answer;
+          }}
+          onDispatch={(prepared) => {
+            setDispatching(null);
+            // THE CARD IS MADE THE ORDINARY WAY. `dispatchId` rides the panel
+            // exactly as `forkFrom` and `resumeConversationId` do, and the card's
+            // own lazy-spawn effect is what turns it into a session — so a
+            // dispatched card is a card in every other respect, which is §5.15's
+            // "a full peer, not a subagent" expressed as one less code path.
+            void addSessionCardTo(apiRef.current, prepared.folder, {
+              into: dispatching.into,
+              dispatchId: prepared.dispatchId,
+              // The role, then whose work it is. Passed as the panel TITLE rather
+              // than derived in main because the connecting word is catalogue text
+              // and main has no `t` (§5.21).
+              title: dispatchedTitle(t, prepared.templateName, dispatching.fromName),
+            });
           }}
         />
       )}

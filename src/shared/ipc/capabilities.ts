@@ -186,6 +186,25 @@ export const CHANNEL_CAPABILITIES = {
   'diag:reportStatus': 'diagnostics.credential',
   'diag:submit': 'diagnostics.report',
   'diag:setGitHubToken': 'diagnostics.credential',
+  // ── DISPATCH (P2-E13-03, §5.15) ────────────────────────────────────────
+  //
+  // NO NEW CAPABILITY, and that is a decision rather than an oversight. Neither
+  // channel exercises a power this vocabulary cannot already name:
+  //
+  //  * `dispatch:options` reads the role templates, which are rows in
+  //    `workspace.json` — the same file `workspace:getUi` reads — plus the author
+  //    session's opening prompt. `workspace.read` is the honest grant for a
+  //    workspace-file read, and minting `dispatch.read` for one list would add a
+  //    capability whose whole meaning is "the same as workspace.read".
+  //  * `dispatch:prepare` builds a briefing out of another session's transcript
+  //    and diff, which is `sessions.read` — exactly what `sessions:contextOffer`
+  //    holds for doing the same work through the context chip.
+  //
+  // NOTE WHAT NEITHER OF THEM IS: `sessions.spawn`. Nothing here starts a
+  // session — `sessions:create` does, and it already holds that grant. A surface
+  // with these two and not that one can compose a dispatch and cannot run it.
+  'dispatch:options': 'workspace.read',
+  'dispatch:prepare': 'sessions.read',
   'events:ack': 'events.write',
   'events:dismiss': 'events.write',
   'events:list': 'events.read',
