@@ -1665,3 +1665,96 @@ describe('the task label size (#877)', () => {
     expect(ticks).toBe(0);
   });
 });
+
+describe('SessionStore — dispatch lineage and ephemerality (#951)', () => {
+  let store: SessionStore;
+  let persisted: Array<Record<string, string> | null>;
+  let retire: string[];
+  beforeEach(() => {
+    store = new SessionStore();
+    persisted = [];
+    retire = [];
+    store.setLineagePersister((blob) => persisted.push(blob));
+    store.setDispatchRetirePersister((v) => retire.push(v));
+  });
+
+  it('starts with nothing dispatched and nothing written', () => {
+    expect(store.getLineage().size).toBe(0);
+    expect(persisted).toEqual([]);
+    expect(store.getDispatchRetire()).toBe('linger');
+    expect(retire).toEqual([]);
+  });
+
+  it('init seeds the lineage without writing it back', () => {
+    store.initLineage(new Map([['reviewer', 'author']]));
+    store.setSessions([session('author'), session('reviewer')]);
+    expect(store.getRailOrder().depthOf.get('reviewer')).toBe(1);
+    expect(persisted).toEqual([]); // it just READ the blob
+  });
+
+  it('⭐ RE-DERIVES RAIL ORDER THE MOMENT A PARENT IS RECORDED', () => {
+    // the whole reason `lineage` is in `state` and not a registry: without the
+    // re-derive the reviewer would sit at the bottom of its bucket until the next
+    // status change happened to recompute the order
+    store.setSessions([session('author'), session('other'), session('reviewer')]);
+    expect(store.getRailOrder().flat.map((s) => s.id)).toEqual(['author', 'other', 'reviewer']);
+    store.setDispatchParent('reviewer', 'author');
+    expect(store.getRailOrder().flat.map((s) => s.id)).toEqual(['author', 'reviewer', 'other']);
+    expect(persisted.at(-1)).toEqual({ reviewer: 'author' });
+  });
+
+  it('a no-op write neither persists nor re-renders', () => {
+    store.setDispatchParent('reviewer', 'author');
+    const before = store.getRailOrder();
+    store.setDispatchParent('reviewer', 'author');
+    expect(persisted).toHaveLength(1);
+    expect(store.getRailOrder()).toBe(before);
+  });
+
+  it('forgetting a card drops it as child AND as parent, and writes the result', () => {
+    store.setDispatchParent('r1', 'author');
+    store.setDispatchParent('r2', 'author');
+    store.forgetDispatchLineage('author');
+    expect(store.getLineage().size).toBe(0);
+    expect(persisted.at(-1)).toBeNull(); // an empty lineage deletes the key
+  });
+
+  it('forgetting a card nothing knows about writes nothing', () => {
+    store.setDispatchParent('r1', 'author');
+    persisted.length = 0;
+    store.forgetDispatchLineage('stranger');
+    expect(persisted).toEqual([]);
+  });
+
+  it('prune drops records naming cards that are gone', () => {
+    store.setDispatchParent('reviewer', 'author');
+    store.pruneLineage(['author']);
+    expect(store.getLineage().size).toBe(0);
+  });
+
+  it('the retire policy is sanitised on the way in, both at init and on a set', () => {
+    store.initDispatchRetire('nonsense');
+    expect(store.getDispatchRetire()).toBe('linger');
+    expect(retire).toEqual([]); // init just read the blob
+    store.setDispatchRetire('auto-close');
+    expect(store.getDispatchRetire()).toBe('auto-close');
+    expect(retire).toEqual(['auto-close']);
+    store.setDispatchRetire('auto-close');
+    expect(retire).toEqual(['auto-close']); // a no-op does not rewrite
+    // ⚠️ AN UNRECOGNISED WRITE IS IGNORED, not defaulted: `pin` is §5.6's word and
+    // deliberately not a value here, and running it through the sanitiser would
+    // overwrite the `auto-close` the user really chose with a `linger` they did not.
+    store.setDispatchRetire('pin');
+    expect(store.getDispatchRetire()).toBe('auto-close');
+    expect(retire).toEqual(['auto-close']);
+  });
+
+  it('⚠️ `reorderSession` respects the nesting: a child cannot step out of its author', () => {
+    store.setSessions([session('author'), session('reviewer'), session('other')]);
+    store.setDispatchParent('reviewer', 'author');
+    expect(store.reorderSession('reviewer', 1)).toBe(false);
+    // ...and the author still moves, taking its child with it
+    expect(store.reorderSession('author', 1)).toBe(true);
+    expect(store.getRailOrder().flat.map((s) => s.id)).toEqual(['other', 'author', 'reviewer']);
+  });
+});

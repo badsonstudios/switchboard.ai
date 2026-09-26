@@ -42,6 +42,7 @@ const handlers = {
   onSetTaskLabelSize: vi.fn(),
   onSetQuietWindow: vi.fn(),
   onSetPushPrefs: vi.fn(),
+  onSetDispatchRetire: vi.fn(),
   onSetPushSecret: vi.fn(),
   onTestPush: vi.fn(async () => ({ ok: true })),
   onToggleExperimentalFork: vi.fn(),
@@ -78,6 +79,7 @@ async function render(open = true, over: Record<string, unknown> = {}): Promise<
         themes={builtinThemes}
         lang="en"
         taskLabelSize="full"
+        dispatchRetire="linger"
         quiet={quiet}
         push={push}
         pushWrite={null}

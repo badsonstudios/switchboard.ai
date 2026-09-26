@@ -123,8 +123,8 @@ on the floor, and say so in your PR.
 
   What a dispatched session is: **an ordinary session**, with its own card, its
   own conversation and its own permissions. Close the original and it carries on.
-  What it is not, yet: it does not nest under its parent in the sessions list,
-  and nothing dispatches on its own — every dispatch is a button you pressed.
+  What it is not, yet: nothing dispatches on its own — every dispatch is a button
+  you pressed.
 - **And the findings come back.** When a dispatched session finishes, a row
   appears in **Events** on the card that *sent* it, showing which role finished
   and the first line of what it wrote. **Inject findings** puts the whole report
@@ -149,6 +149,24 @@ on the floor, and say so in your PR.
   Closing the *reviewer's* card is safe: the report is held by the app and the
   button keeps working. Closing the *sending* card takes its waiting findings
   with it, since there is nowhere left to put them.
+- **A dispatched session sits under the one that sent it, and tidies itself up.**
+  In the sessions list it now appears indented with a small ↳ in front of its
+  name, under the session it came from, and the indent survives a restart. It is
+  still an ordinary row — click it, rename it, drag it, pin it, jump to it with
+  **Ctrl+1–9** — and the numbering counts what you see. Close the sending session
+  and its reviewer simply becomes a top-level row rather than an arrow pointing at
+  nothing.
+
+  By default the card also **closes itself thirty seconds after you have taken its
+  findings**, or as soon as it turns out there were none. Five things keep it open
+  regardless: findings you have not taken yet (including any owed to *it*, if it
+  dispatched a session of its own), a pin, carrying on the conversation, an unsent
+  message in its box, and a crash — a session that died keeps its card, because the
+  card is the only place the reason is. **Settings → Advanced → Finished
+  dispatched sessions** offers close straight away, close after half a minute, or
+  leave it open. Closing is closing — the conversation is still
+  re-openable from history, but there is no browsable archive of dispatched
+  sessions yet.
 - **Clear and Compact are one click away.** The row under the prompt box — the
   one with the autonomy and model chips — now has **Compact** and **Clear**
   buttons, so restarting or summarizing a session's conversation no longer

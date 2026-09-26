@@ -22,9 +22,10 @@ import {
   planReorder,
   pruneManualOrder,
   stepReorder,
+  subtreeSpan,
   withBucketOrder,
 } from './rail-order';
-import { PinSet } from './pinning';
+import { NO_PINS, PinSet } from './pinning';
 
 const rows = (...ids: string[]): Array<{ id: string }> => ids.map((id) => ({ id }));
 const ids = (list: Array<{ id: string }>): string[] => list.map((r) => r.id);
@@ -294,5 +295,83 @@ describe('bucketLabel — what a bucket is CALLED (#581)', () => {
     expect(bucketLabel(LOOSE_BUCKET, [{ id: 'ungrouped', name: 'Odds and ends' }], 'Ungrouped')).toBe(
       'Odds and ends'
     );
+  });
+});
+
+describe('planReorder — #951 nesting is re-applied, like the pin sort', () => {
+  const lineage = new Map([['kid', 'author']]);
+
+  it('⚠️ A DRAG THAT WOULD TEAR A CHILD OFF ITS AUTHOR ANSWERS null', () => {
+    // Same answer, same reason, as a drag that pinning would undo: `null` means
+    // no write, no announcement, and (in the rail) no insertion line offering a
+    // drop that would visibly snap back.
+    const painted = ['author', 'kid', 'other'];
+    expect(planReorder(painted, 'kid', 2, NO_PINS, lineage)).toBeNull();
+    expect(planReorder(painted, 'kid', 0, NO_PINS, lineage)).toBeNull();
+  });
+
+  it('...and `canStep` says so, so the menu item is disabled by the rule itself', () => {
+    const painted = ['author', 'kid', 'other'];
+    expect(canStep(painted, 'kid', 1, NO_PINS, lineage)).toBe(false);
+    expect(canStep(painted, 'kid', -1, NO_PINS, lineage)).toBe(false);
+  });
+
+  it('⭐ DRAGGING THE AUTHOR MOVES ITS SUBTREE — what the gesture means', () => {
+    // Dropped BELOW `other`, which in the painted list is index 2.
+    expect(planReorder(['author', 'kid', 'other'], 'author', 2, NO_PINS, lineage)).toEqual([
+      'other',
+      'author',
+      'kid',
+    ]);
+  });
+
+  it('⚠️ AND "MOVE DOWN" STEPS OVER THE SUBTREE, so it is not silently disabled', () => {
+    // The row below an author IS its child, so a naive one-step aims at the
+    // position the author already occupies — which would grey Move down out on
+    // every session that has dispatched one, for no reason a user could see.
+    expect(stepReorder(['author', 'kid', 'other'], 'author', 1, NO_PINS, lineage)).toEqual([
+      'other',
+      'author',
+      'kid',
+    ]);
+    expect(canStep(['author', 'kid', 'other'], 'author', 1, NO_PINS, lineage)).toBe(true);
+  });
+
+  it('...and siblings still reorder among themselves under the same author', () => {
+    const two = new Map([
+      ['kid1', 'author'],
+      ['kid2', 'author'],
+    ]);
+    expect(stepReorder(['author', 'kid1', 'kid2', 'x'], 'kid1', 1, NO_PINS, two)).toEqual([
+      'author',
+      'kid2',
+      'kid1',
+      'x',
+    ]);
+  });
+
+  it('a lone child cannot step out of its author', () => {
+    expect(canStep(['author', 'kid', 'other'], 'kid', 1, NO_PINS, lineage)).toBe(false);
+    expect(canStep(['author', 'kid', 'other'], 'kid', -1, NO_PINS, lineage)).toBe(false);
+  });
+
+  it('subtreeSpan is 1 for an ordinary row, so nothing changes without a lineage', () => {
+    expect(subtreeSpan(['a', 'b'], 'a', new Map())).toBe(1);
+    expect(subtreeSpan(['author', 'kid', 'other'], 'other', lineage)).toBe(1);
+    expect(subtreeSpan(['author', 'kid', 'other'], 'author', lineage)).toBe(2);
+    expect(subtreeSpan(['a'], 'missing', lineage)).toBe(1);
+  });
+
+  it('leaves an unrelated row free to move around a nested pair', () => {
+    expect(planReorder(['author', 'kid', 'other'], 'other', 0, NO_PINS, lineage)).toEqual([
+      'other',
+      'author',
+      'kid',
+    ]);
+  });
+
+  it('is exactly as it was with no lineage — the default changes nothing', () => {
+    expect(planReorder(['a', 'b', 'c'], 'c', 0)).toEqual(['c', 'a', 'b']);
+    expect(planReorder(['a', 'b', 'c'], 'c', 0, NO_PINS, new Map())).toEqual(['c', 'a', 'b']);
   });
 });

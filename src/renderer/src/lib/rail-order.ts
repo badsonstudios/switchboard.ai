@@ -22,6 +22,11 @@
 //   3. PINNED FIRST — unchanged, and still applied LAST (lib/pinning's
 //      `sortPinnedFirst`, called by railOrder).
 //
+// (#951 added a FOURTH, after the pin sort: dispatch nesting, `lib/dispatch-
+// lineage`'s `nestWithin`. It reads as a fourth layer here and as one extra rule
+// in `planReorder` below; that module's header carries the decision and the
+// reason it goes last rather than anywhere else.)
+//
 // Layer 3 last is the whole of the interaction question, so: **§5.8's "a
 // pinned session sorts first in the rail" wins over a manual order.** A pinned
 // session forms a leading block inside its group; you reorder freely among the
@@ -62,6 +67,7 @@
 // the exact bug E15-06 was filed for. Keyed by CARD id, like pins,
 // presentation, policies and layout, because a live session id churns on every
 // resume and an order keyed by one would shuffle itself on restart.
+import { LineageMap, NestedIds, nestWithin, NO_LINEAGE } from './dispatch-lineage';
 import { NO_PINS, PinSet, sortPinnedFirst } from './pinning';
 
 /** bucket key -> the card ids in that bucket, in the order the user left them */
@@ -172,6 +178,81 @@ function pinnedFirstIds(ids: readonly string[], pins: PinSet): string[] {
   ).map((o) => o.id);
 }
 
+/**
+ * LAYER 4 (#951): dispatch nesting, applied so it cannot cross the
+ * pinned/unpinned boundary.
+ *
+ * ⚠️ `ids` MUST ALREADY BE PIN-SORTED. The boundary is found as the first
+ * unpinned id, which is only the boundary in a list `sortPinnedFirst` has been
+ * through — the same precondition `SessionsRail`'s `bucketRows` rests on when it
+ * lifts a bucket's pinned prefix into the sticky block. Both callers here sort
+ * immediately before calling.
+ *
+ * Splitting first and nesting each side separately is what enforces §5.8 rather
+ * than merely hoping for it: `nestWithin` only ever adopts a parent that is IN
+ * THE RUN IT WAS HANDED, so a child on the other side of the boundary is not
+ * found, stays where it is, and — because depth comes out of the placement — is
+ * reported at depth 0 with no connector. There is no second check to keep in
+ * step.
+ *
+ * `lib/groups`' `railOrder` and `planReorder` below both come through here, which
+ * is the property that matters: what the rail paints and what a drag is planned
+ * against are the same function, so a drop can never be offered at a position the
+ * rail would immediately undo.
+ */
+export function nestPinAware(
+  ids: readonly string[],
+  pins: PinSet,
+  lineage: LineageMap
+): NestedIds {
+  if (lineage.size === 0 || ids.length < 2) return { ids, depth: EMPTY_DEPTH };
+  const cut = ids.findIndex((id) => !pins.has(id));
+  // no pinned prefix, or nothing BUT one: there is only one block, so the split
+  // would be a copy of the list and a merge of one map
+  if (cut <= 0) return nestWithin(ids, lineage);
+  const head = nestWithin(ids.slice(0, cut), lineage);
+  const tail = nestWithin(ids.slice(cut), lineage);
+  const depth = new Map(head.depth);
+  for (const [id, d] of tail.depth) depth.set(id, d);
+  return { ids: [...head.ids, ...tail.ids], depth: depth.size > 0 ? depth : EMPTY_DEPTH };
+}
+
+/** Shared for the identity reason `NO_ORDER` is shared. */
+const EMPTY_DEPTH: ReadonlyMap<string, number> = new Map<string, number>();
+
+/**
+ * How many painted rows this row's SUBTREE covers — itself, plus the nested rows
+ * under it (#951). `1` for an ordinary row, which is every row on a workspace
+ * that has never dispatched.
+ *
+ * ⚠️ WHY A STEP NEEDS THIS AT ALL, and it is not an optimisation. The row
+ * immediately below an author is its own child, so "move down one" computed
+ * naively aims at the position the author already occupies — the nesting pass
+ * puts the child straight back underneath — and `planReorder` correctly answers
+ * `null`. The visible symptom would be **Move down greyed out on any session that
+ * has dispatched one**, with no reason a user could see. Stepping over the
+ * subtree is what "down one" means in every tree a human has ever reordered.
+ *
+ * `displayIds` must be the bucket AS PAINTED, `nestPinAware`'s own precondition —
+ * the span is read off the depths that pass computes, so a list in some other
+ * order would measure a run that is not on screen.
+ */
+export function subtreeSpan(
+  displayIds: readonly string[],
+  cardId: string,
+  lineage: LineageMap,
+  pins: PinSet = NO_PINS
+): number {
+  if (lineage.size === 0) return 1;
+  const at = displayIds.indexOf(cardId);
+  if (at < 0) return 1;
+  const { depth } = nestPinAware(displayIds, pins, lineage);
+  const base = depth.get(cardId) ?? 0;
+  let span = 1;
+  while (at + span < displayIds.length && (depth.get(displayIds[at + span]) ?? 0) > base) span++;
+  return span;
+}
+
 /** Do these two id lists say the same thing? */
 function same(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((id, i) => id === b[i]);
@@ -196,20 +277,33 @@ function same(a: readonly string[], b: readonly string[]): boolean {
  * offering it. Because the input was already pin-sorted, re-sorting is
  * idempotent for every move that does not touch the boundary, so this costs
  * nothing except the cases it exists to catch.
+ *
+ * ⚠️ AND THE NESTING IS RE-APPLIED AFTER IT (#951), for exactly the same reason
+ * and with exactly the same consequence. A drag that would tear a dispatched
+ * session off the session that dispatched it settles straight back beside it and
+ * therefore answers `null`: no write, and no insertion line offering a drop that
+ * would visibly snap back. Dragging the PARENT moves its whole subtree, because
+ * the pass rebuilds it under the parent's new position — which is what a user
+ * dragging a row with children under it means by the gesture.
  */
 export function planReorder(
   displayIds: readonly string[],
   cardId: string,
   toIndex: number,
-  pins: PinSet = NO_PINS
+  pins: PinSet = NO_PINS,
+  /** #951's dispatch nesting — see `nestPinAware` */
+  lineage: LineageMap = NO_LINEAGE
 ): string[] | null {
   const from = displayIds.indexOf(cardId);
   if (from < 0) return null;
   const rest = displayIds.filter((id) => id !== cardId);
   const at = Math.max(0, Math.min(rest.length, Math.trunc(toIndex)));
   const moved = [...rest.slice(0, at), cardId, ...rest.slice(at)];
-  const settled = pinnedFirstIds(moved, pins);
-  return same(settled, displayIds) ? null : settled;
+  const settled = nestPinAware(pinnedFirstIds(moved, pins), pins, lineage).ids;
+  // Copied on the way out because `NestedIds.ids` is readonly and a plan is a list
+  // its caller persists: handing back the pass's own array would let a bucket order
+  // be mutated behind the function that computed it.
+  return same(settled, displayIds) ? null : [...settled];
 }
 
 /**
@@ -224,11 +318,50 @@ export function stepReorder(
   displayIds: readonly string[],
   cardId: string,
   delta: -1 | 1,
-  pins: PinSet = NO_PINS
+  pins: PinSet = NO_PINS,
+  lineage: LineageMap = NO_LINEAGE
 ): string[] | null {
   const from = displayIds.indexOf(cardId);
   if (from < 0) return null;
-  return planReorder(displayIds, cardId, from + delta, pins);
+  // ⚠️ BOTH DIRECTIONS NEED THE SUBTREE, and the first draft only adjusted DOWN on
+  // the reasoning that "the rows above a subtree are not inside it" — which is
+  // false, and review caught it. Moving DOWN, the row in the way is your own
+  // child; moving UP, the row in the way is somebody ELSE's child, and landing
+  // between a parent and its child is a position the nesting pass immediately
+  // undoes. Both produce `planReorder` → `null`, i.e. a command greyed out for no
+  // reason a user can see. So a step always aims at a SIBLING boundary:
+  //
+  //   down  past the end of my own subtree
+  //   up    to the top of the subtree immediately above me
+  //
+  // The span is 1 and the walk is a single decrement for every row on a workspace
+  // that has never dispatched, so this is the arithmetic it has always been.
+  const to =
+    delta === 1
+      ? from + subtreeSpan(displayIds, cardId, lineage, pins)
+      : rootAbove(displayIds, from, lineage, pins);
+  return planReorder(displayIds, cardId, to, pins, lineage);
+}
+
+/**
+ * The index of the ROOT of the subtree sitting immediately above `from`.
+ *
+ * `from - 1` when that row is already top-level, which is every row on a
+ * workspace with no lineage. Otherwise it walks back over the nested rows to the
+ * row they belong to, so "move up" lands ABOVE that whole group rather than
+ * inside it.
+ */
+function rootAbove(
+  displayIds: readonly string[],
+  from: number,
+  lineage: LineageMap,
+  pins: PinSet
+): number {
+  if (lineage.size === 0 || from <= 0) return from - 1;
+  const { depth } = nestPinAware(displayIds, pins, lineage);
+  let at = from - 1;
+  while (at > 0 && (depth.get(displayIds[at]) ?? 0) > 0) at--;
+  return at;
 }
 
 /** Can this session move that way at all? What the menu item's disabled state
@@ -237,9 +370,10 @@ export function canStep(
   displayIds: readonly string[],
   cardId: string,
   delta: -1 | 1,
-  pins: PinSet = NO_PINS
+  pins: PinSet = NO_PINS,
+  lineage: LineageMap = NO_LINEAGE
 ): boolean {
-  return stepReorder(displayIds, cardId, delta, pins) !== null;
+  return stepReorder(displayIds, cardId, delta, pins, lineage) !== null;
 }
 
 /**

@@ -235,9 +235,16 @@ with your workspace.
 
 ## Advanced
 
-Three switches you will probably never touch, together at the bottom of the
-Settings window.
+One choice and three switches, together at the bottom of the Settings window.
 
+- **Finished dispatched sessions** — what happens to a dispatched session's card
+  once you have taken its findings, or once it turns out it had none. **Close it
+  after half a minute** is the default: long enough to open the card and read the
+  whole review first. **Close it straight away** is tidier and can startle you,
+  because the card goes in the same moment you click Inject. **Leave it open**
+  means nothing closes itself. Whatever you pick, five things keep a card open:
+  findings you have not taken, a pin, carrying on the conversation, an unsent
+  message, and a crash. See [Dispatch](20-dispatch.md).
 - **Fork sessions** — experimental, off by default. Turning it on adds
   **Fork into a new session** to a session's **⋯** menu, which starts a second
   session already carrying the whole conversation. It leans on Claude Code

@@ -1,3 +1,4 @@
+import { LineageMap, NO_LINEAGE } from './dispatch-lineage';
 import { NO_PINS, PinSet, sortPinnedFirst } from './pinning';
 import {
   applyManualOrder,
@@ -5,6 +6,7 @@ import {
   groupBucket,
   LOOSE_BUCKET,
   ManualOrder,
+  nestPinAware,
   NO_ORDER,
 } from './rail-order';
 
@@ -72,6 +74,18 @@ export interface RailOrderResult<T> {
   buckets: ReadonlyMap<string, string[]>;
   /** card id -> the bucket key its row renders in (#559) */
   bucketOf: ReadonlyMap<string, string>;
+  /**
+   * card id -> how deep this pass NESTED it under the session that dispatched
+   * it (#951, §5.15). Absent means top level.
+   *
+   * ⚠️ IT IS THE PLACEMENT, NOT THE LINEAGE. A row appears here only if
+   * `nestWithin` really put it under its parent's subtree in this bucket and on
+   * this side of the pin boundary — so a card whose author has been closed, or
+   * whose author is in another group, is simply absent and the rail draws no
+   * `↳`. That is what makes "no orphan with a dangling connector" true by
+   * construction; see `lib/dispatch-lineage`'s header.
+   */
+  depthOf: ReadonlyMap<string, number>;
 }
 
 export function railOrder<T extends AutoGroupable>(
@@ -81,7 +95,17 @@ export function railOrder<T extends AutoGroupable>(
   pins: PinSet = NO_PINS,
   /** the order the user arranged by hand (#559) — see lib/rail-order for how
    *  it layers with the pin sort, which still wins */
-  manual: ManualOrder = NO_ORDER
+  manual: ManualOrder = NO_ORDER,
+  /**
+   * Which session dispatched which (#951, §5.15) — the FOURTH layer, applied
+   * after the pin sort and inside each bucket.
+   *
+   * It goes in HERE rather than in a pass of its own beside the rail, and the
+   * issue is explicit about why: rail order is derived, there is exactly one
+   * derivation, and `Ctrl+1..9` counts against this call. A parallel nesting pass
+   * is how the rail and the keyboard end up disagreeing about what is third.
+   */
+  lineage: LineageMap = NO_LINEAGE
 ): RailOrderResult<T> {
   // §5.8's "a pinned session sorts first" is applied PER BUCKET, and applied
   // LAST — after membership and after bucket order are both settled.
@@ -119,8 +143,39 @@ export function railOrder<T extends AutoGroupable>(
   // the decision and why it went that way rather than the other.
   const buckets = new Map<string, string[]>();
   const bucketOf = new Map<string, string>();
+  const depthOf = new Map<string, number>();
   const settle = (key: string, members: T[]): T[] => {
-    const out = sortPinnedFirst(applyManualOrder(members, manual.get(key)), pins);
+    const sorted = sortPinnedFirst(applyManualOrder(members, manual.get(key)), pins);
+    let out = sorted;
+    // #951's layer 4. Re-ordered by IDS and mapped back, because `nestPinAware`
+    // is shared with `planReorder` — which has only ids to work with — and one
+    // function is the whole point: a drop cannot be planned at a position the
+    // paint would immediately undo.
+    //
+    // Skipped outright on a workspace that has never dispatched, which is the
+    // common shape: no map allocation, and `out` stays the very array
+    // `sortPinnedFirst` handed back.
+    //
+    // Precise about what that buys, because the first version of this comment
+    // overstated it: ONCE ANY LINEAGE EXISTS, every bucket of more than one member
+    // is rebuilt by the `map` below even where the nesting changed nothing. That is
+    // deliberately not guarded — `railOrder` recomputes the whole result on every
+    // derive anyway (`flat`, `buckets` and `bucketOf` are fresh each time), so a
+    // `same()` check here would buy one array's identity inside an object that is
+    // new regardless. The store's memoisation is `derivedRail` itself.
+    if (lineage.size > 0 && sorted.length > 1) {
+      const nested = nestPinAware(
+        sorted.map((s) => s.id),
+        pins,
+        lineage
+      );
+      const byIdHere = new Map(sorted.map((s) => [s.id, s]));
+      // `nestPinAware` returns every id it was handed, exactly once — its own
+      // contract, cycles included — so this cannot drop a row, and the `!` is over
+      // that guarantee rather than over a hope.
+      out = nested.ids.map((id) => byIdHere.get(id)!);
+      for (const [id, d] of nested.depth) depthOf.set(id, d);
+    }
     buckets.set(
       key,
       out.map((s) => s.id)
@@ -154,6 +209,7 @@ export function railOrder<T extends AutoGroupable>(
     ],
     buckets,
     bucketOf,
+    depthOf,
   };
 }
 
