@@ -66,8 +66,9 @@ let nativeSessionId: string | undefined = 'conv-a';
 function installBridge(): void {
   (window as unknown as { switchboard: unknown }).switchboard = {
     sessions: {
-      create: () =>
-        Promise.resolve({
+      create: (opts: Record<string, unknown>) => {
+        creates.push(opts);
+        return Promise.resolve({
           id: 'live-1',
           identity: { accentColor: 'var(--faint)', langBadge: 'ts' },
           autonomy: 'ask',
@@ -75,7 +76,8 @@ function installBridge(): void {
           transport: 'stream',
           // §5.5 Level 3: what a fork would be forked FROM.
           nativeSessionId,
-        }),
+        });
+      },
       setTransport: () => Promise.resolve({ ok: true }),
       dropLive: () => Promise.resolve(),
       setAutonomy: () => Promise.resolve(),
@@ -110,7 +112,10 @@ function installBridge(): void {
   };
 }
 
-function panelProps(cardId: string): IDockviewPanelProps<CardParams> {
+function panelProps(
+  cardId: string,
+  extra: Partial<CardParams> = {}
+): IDockviewPanelProps<CardParams> {
   return {
     api: {
       id: `session-${cardId}`,
@@ -123,9 +128,19 @@ function panelProps(cardId: string): IDockviewPanelProps<CardParams> {
       onDidActiveChange: () => disposable,
     },
     containerApi: { getPanel: () => undefined, removePanel: off },
-    params: { cardId, folder: 'C:\\Projects\\acme', title: 'acme' },
+    params: { cardId, folder: 'C:\\Projects\\acme', title: 'acme', ...extra },
   } as unknown as IDockviewPanelProps<CardParams>;
 }
+
+/**
+ * Every `sessions.create` the card made, WITH ITS ARGUMENTS.
+ *
+ * ⚠️ IT IS THE ARGUMENTS THAT MATTER, and their absence is why #801's fork was
+ * broken from the day it shipped: this suite asserted that the menu entry rendered
+ * and never looked at what the spawn was asked for, so the surface was covered and
+ * the wiring was not.
+ */
+const creates: Array<Record<string, unknown>> = [];
 
 let root: Root | null = null;
 let host: HTMLElement;
@@ -149,9 +164,9 @@ async function click(el: HTMLElement): Promise<void> {
   });
 }
 
-async function mountCard(): Promise<void> {
+async function mountCard(extra: Partial<CardParams> = {}): Promise<void> {
   await act(async () => {
-    root!.render(React.createElement(components.sessionCard, panelProps('c1')));
+    root!.render(React.createElement(components.sessionCard, panelProps('c1', extra)));
   });
   await act(async () => {
     await Promise.resolve();
@@ -265,5 +280,47 @@ describe('the fork entry is ABSENT unless the experiment is on', () => {
     await openMenu();
     expect(entry()?.getAttribute('aria-pressed')).toBeNull();
     expect(entry()?.getAttribute('title')).toBe(en.grid.menuForkHint);
+  });
+
+  it('⚠️ FORWARDS `forkFrom` TO sessions.create — the gap that hid #801 for weeks', async () => {
+    // THIS ASSERTION IS THE WHOLE POINT OF THIS TEST, and its absence is why the bug
+    // lived. `forkFrom` has been written into the new panel's params since #801, and
+    // the card's spawn effect never forwarded it — so every "Fork into a new session"
+    // started an ORDINARY session in the same folder. It appeared, it worked, and it
+    // carried none of the history the gesture exists for; main's entire fork path
+    // (`planSessionStart`'s `requestedFork`, `plan.forkUnavailable`, the
+    // source-transcript replay) was unreachable from the UI. Nothing in this suite
+    // looked at what `create` was CALLED with, only at whether the menu entry
+    // rendered — so the surface was covered and the wiring was not.
+    //
+    // Fixed while building #948, which needs the identical forwarding one field
+    // along for its `full` context policy.
+    creates.length = 0;
+    await mountCard({
+      forkFrom: { sourceSessionId: 'ff322375-5bbb-4620-ad84-ca9868c1247a', sourceFolder: 'C:\\Projects\\src' },
+    });
+    expect(creates).toHaveLength(1);
+    expect(creates[0].forkFrom).toEqual({
+      sourceSessionId: 'ff322375-5bbb-4620-ad84-ca9868c1247a',
+      sourceFolder: 'C:\\Projects\\src',
+    });
+  });
+
+  it('...and sends no forkFrom for an ordinary card', async () => {
+    // The other half, so "it forwards the field" cannot be satisfied by a version
+    // that sends a fork on every start.
+    creates.length = 0;
+    await mountCard();
+    expect(creates).toHaveLength(1);
+    expect(creates[0].forkFrom).toBeUndefined();
+  });
+
+  it('forwards a dispatch handle the same way (P2-E13-03)', async () => {
+    // The field #948 added beside it, covered here rather than only in the e2e —
+    // this is the copy of the line that was broken for `forkFrom`, and one test per
+    // field is what stops the next one being added silently.
+    creates.length = 0;
+    await mountCard({ dispatchId: 'dispatch-1' });
+    expect(creates[0].dispatchId).toBe('dispatch-1');
   });
 });

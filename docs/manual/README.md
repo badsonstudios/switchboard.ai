@@ -40,6 +40,7 @@ no page is an unfinished work item.
 | [17 — MCP servers](17-mcp-servers.md) | `/mcp`: what tools a session is wired to, which scope each comes from, adding and removing them, and why one is waiting on you | current |
 | [18 — Choosing a model](18-model.md) | Switching a session between Opus, Sonnet and Haiku mid-conversation — the one-click menu on the model name and the fuller `/model` picker — and why the tick is sometimes missing | draft |
 | [19 — When it feels slow](19-performance.md) | The performance summary (`Ctrl+Shift+P`), the detailed capture switch in Settings, what it records and what it never touches, and how to send the file | current |
+| [20 — Handing work to a fresh session](20-dispatch.md) | Dispatch: ⋯ → Dispatch… and the palette's per-role entries, why a reviewer deliberately does not get your conversation, the task line worth reading before you send it, and what does not happen yet | draft |
 
 Backfilled 2026-07-24 from the shipped app (Phase 1 + Phase 2 epics E7, E8,
 E10, E12) — written against the actual UI strings and behavior, not from

@@ -47,6 +47,8 @@ function noopDeps(): CommandDeps {
     closeAllDocuments: () => {},
     openSettings: () => {},
     openMcpManager: () => {},
+    dispatchTemplates: [],
+    dispatchFrom: () => {},
   };
 }
 

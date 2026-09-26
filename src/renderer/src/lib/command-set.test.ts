@@ -57,6 +57,8 @@ function deps(): CommandDeps & DepMocks {
     closeAllDocuments: vi.fn(),
     openSettings: vi.fn<CommandDeps['openSettings']>(),
     openMcpManager: vi.fn(),
+    dispatchTemplates: [],
+    dispatchFrom: vi.fn(),
   };
 }
 
@@ -593,4 +595,78 @@ describe('seed command set (E9-01)', () => {
       for (const c of cmds) expect(c.scope, c.id).toBe('app');
     });
   });
+
+// ── §5.15's DISPATCH ENTRIES (P2-E13-03, #948) ───────────────────────────────
+//
+// §5.15 writes the gesture as "Dispatch → <template>", so the palette gets one
+// entry per template rather than one entry that then asks — E9-06's rule that a
+// palette entry has to say what pressing Enter will do.
+describe('dispatch entries (P2-E13-03)', () => {
+  const withTemplates = (): ReturnType<typeof deps> => {
+    const d = deps();
+    d.dispatchTemplates = [
+      { id: 'builtin:code-reviewer', name: 'Code Reviewer' },
+      { id: 'mine-1', name: 'Security review' },
+    ];
+    return d;
+  };
+
+  it('offers ONE ENTRY PER TEMPLATE, named after the template', () => {
+    const cmds = buildCommands(withTemplates());
+    expect(byId(cmds, 'session.dispatch.builtin:code-reviewer').titleParams).toEqual({
+      name: 'Code Reviewer',
+    });
+    expect(byId(cmds, 'session.dispatch.mine-1').titleParams).toEqual({
+      name: 'Security review',
+    });
+  });
+
+  it('⚠️ INTERPOLATES THE NAME rather than translating it', () => {
+    // #946 is explicit that a template's name is "DATA that happens to be words, an
+    // identity a user can replace by copying". A `titleKey` built from the name
+    // would be a catalogue lookup that misses, and the palette would show the id.
+    const cmd = byId(buildCommands(withTemplates()), 'session.dispatch.mine-1');
+    expect(cmd.titleKey).toBe('commands.dispatch');
+    expect(cmd.titleParams?.name).toBe('Security review');
+  });
+
+  it('⚠️ CARRIES NO BINDING — a dispatch is deliberate, not a chord', () => {
+    // `session.closeAll`'s reason stated the other way round: that one is unbound
+    // because nobody should close every session by mistyping a chord, and this one
+    // because a dispatch spends a subscription turn and starts a session nobody is
+    // watching.
+    for (const c of buildCommands(withTemplates())) {
+      if (c.id.startsWith('session.dispatch.')) expect(c.binding, c.id).toBeUndefined();
+    }
+  });
+
+  it('is disabled with a reason when no card is active, like every card command', () => {
+    const cmd = byId(buildCommands(withTemplates()), 'session.dispatch.mine-1');
+    expect(cmd.enabled?.(ctxWith(['a'], 'a'))).toBe(true);
+    expect(cmd.enabled?.(ctxWith(['a'], null))).toBe(false);
+    expect(cmd.disabledReasonKey).toBe('commands.disabled.noActiveSession');
+  });
+
+  it('opens the dialog with that role preselected — it does not dispatch', () => {
+    // The command's whole job is to name a target. The task line and the policy
+    // refusals live in the dialog, which is why there is one.
+    const d = withTemplates();
+    byId(buildCommands(d), 'session.dispatch.mine-1').run(ctxWith(['a'], 'a'));
+    expect(d.dispatchFrom).toHaveBeenCalledWith('mine-1');
+  });
+
+  it('contributes NOTHING when there are no templates', () => {
+    // Not an empty entry, not a placeholder: a palette row that cannot name a
+    // target has nothing to say. (Unreachable in the app — the three built-ins are
+    // code — but the list arrives over IPC and starts empty for one frame.)
+    const cmds = buildCommands(deps());
+    expect(cmds.filter((c) => c.id.startsWith('session.dispatch.'))).toEqual([]);
+  });
+
+  it('is scoped `app`, so it never fires while the user is typing', () => {
+    for (const c of buildCommands(withTemplates())) {
+      if (c.id.startsWith('session.dispatch.')) expect(c.scope, c.id).toBe('app');
+    }
+  });
+});
 });

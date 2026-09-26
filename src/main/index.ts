@@ -94,6 +94,7 @@ import { renderOutput } from './bus/bus-tools';
 import { SiblingDelivery } from './sessions/delivery';
 import { Blackboard } from './sessions/blackboard';
 import { pushSiblingMessage, registerDeliveryIpc } from './sessions/delivery-ipc';
+import { registerDispatchIpc } from './sessions/dispatch-ipc';
 import { runPreflight } from './preflight';
 import { startStaticServer, StaticServer } from './static-server';
 import { installCspHeaders } from './csp';
@@ -1139,6 +1140,34 @@ app
       if (!win) return false;
       // minimized counts as "behind": restore before raising, or focus() on a
       // minimized window is a taskbar flash and nothing else
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+      return true;
+    });
+    // ...AND THE OTHER DIRECTION, ON AN EXPLICIT REQUEST ONLY (P2-E13-03).
+    //
+    // The note above says "nothing here touches the other direction, deliberately",
+    // and the rule it states is the one that matters: raising is only ever done on
+    // an explicit request, never on window focus. This is such a request, and the
+    // same sentence licenses it — the owner's objection was to popouts being
+    // dropped behind whenever the main window took focus, which nothing here does.
+    //
+    // ⚠️ IT EXISTS BECAUSE `window.focus()` DOES NOT RAISE A WINDOW ON WINDOWS, which
+    // this app measured for #571: `raisePopoutWindow` calls both the DOM `focus()`
+    // and `app:raisePopout`, and the comment there says in as many words that "the
+    // IPC is the one that actually works on the owner's" machine. A dockview popout
+    // shares this renderer's JS context, so `window` inside a handler triggered from
+    // one is the MAIN window's — which is exactly the cross-window case that
+    // measurement covers. The dispatch dialog renders into the main window's DOM, so
+    // without this, `Dispatch…` from a popped-out card would put a modal in a window
+    // the user cannot see and look like it did nothing.
+    broker.handle('app:raiseMain', () => {
+      const win = currentWindow;
+      if (!win || win.isDestroyed()) return false;
+      // Minimized counts as "behind": restore before raising, or `focus()` on a
+      // minimized window is a taskbar flash and nothing else (`app:raisePopout`'s
+      // own lesson, reused rather than re-learned).
       if (win.isMinimized()) win.restore();
       win.show();
       win.focus();
@@ -2361,6 +2390,50 @@ app
       perfCapture.setEnabled(now);
       return now;
     });
+    // ── MANUAL DISPATCH (P2-E13-03, §5.15 Trigger 1) ────────────────────────
+    //
+    // BEFORE `registerSessionIpc`, because the spawn path collects briefings from
+    // the registry this returns — and only the two of them together make a
+    // dispatch: this half composes one, that half runs it.
+    //
+    // Every dependency is the thing the rest of the app already uses for the same
+    // job, which is `SiblingDelivery`'s rule two hundred lines up and matters more
+    // here: the whole premise of #947's briefing is that a dispatched session is
+    // handed the SAME text an agent pulling context would get, so a second
+    // derivation of any of this would be a second answer to one question.
+    //
+    //   * `queries` is `sessionQueries` — the one instance `@Name`, the bus's
+    //     `list_sessions` and `get_session_diff` all resolve through, so `@Beta`
+    //     means one session whether you dispatch to it, read it or write to it.
+    //   * `experimentalFork` is the SAME THUNK `sessions:create` is given below.
+    //     `DispatchGates.forkEnabled` warns that the failure mode is not a missing
+    //     flag but a CACHED `true` — a menu offering a row that refuses the moment
+    //     it is clicked — and one thunk read at both moments is how that stays
+    //     impossible rather than merely unlikely.
+    //   * `conversationIdFor` reads the LIVE record, not the persisted card: a
+    //     fork adopts the conversation this session is in right now, and the
+    //     record is the only thing that knows the CLI's own id for it.
+    //   * `targetProviderId` is `defaultProviderId`, because a dispatched card is
+    //     always brand new and `planSessionStart` gives a card with no prior
+    //     exactly that. Named rather than assumed: `fork-adoption` REFUSES on a
+    //     provider mismatch (§5.5 — transcript formats are not interchangeable),
+    //     and a refusal computed against a guess is worse than no refusal at all.
+    const dispatches = registerDispatchIpc({
+      broker,
+      log: createLogger(sink, 'dispatch'),
+      listTemplates: () => workspace.listDispatchTemplates(),
+      contextDeps: {
+        queries: sessionQueries,
+        experimentalFork: () => workspace.getExperimentalFork(),
+        conversationIdFor: (sessionId) => manager.get(sessionId)?.nativeSessionId ?? null,
+      },
+      taskStatementOf: (sessionId) => {
+        const answer = sessionQueries.taskStatement(sessionId);
+        return answer.ok ? answer.value.text : undefined;
+      },
+      experimentalFork: () => workspace.getExperimentalFork(),
+      targetProviderId: defaultProviderId,
+    });
     const sessionIpc: SessionIpcHandle = registerSessionIpc({
       manager,
       ptys,
@@ -2412,6 +2485,10 @@ app
       // turned off while cards are open, and the next fork request must see
       // that rather than a value read at wiring time.
       experimentalFork: () => workspace.getExperimentalFork(),
+      // Where the spawn path collects a prepared briefing (P2-E13-03). `peek` then
+      // `consume`, and the split is why it is the whole registry rather than one
+      // function — see `DispatchRegistry`.
+      dispatches,
       persist: {
         list: () => workspace.listSessions(),
         upsert: (s) => workspace.upsertSession(s),

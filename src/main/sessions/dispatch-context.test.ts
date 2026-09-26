@@ -744,3 +744,93 @@ describe('the token estimate', () => {
     expect(got.value.tokens).toBe(estimateTokens(got.value.text));
   });
 });
+
+// ── #948's TASK OVERRIDE ────────────────────────────────────────────────────
+//
+// The field exists because of a measurement, and the measurement is one of these
+// tests: run against the repo's REAL transcript, the opening prompt is `"do it."`.
+// Clean-room withholds everything else, so that field has to carry the job and it
+// is the field most likely to be useless — which is why #948's dialog can replace
+// it.
+describe('the task statement can be overridden by the dispatching user (#948)', () => {
+  it('⚠️ THE MEASUREMENT THIS FIELD EXISTS FOR: a slash-command session says "do it."', () => {
+    // The real fixture, not a synthetic one, and asserted on the head-window read
+    // #947 already ships. If the CLI ever changes what it writes for a slash
+    // command this will fail — and that is the point: the override's whole
+    // justification is this sentence being useless.
+    // THE REAL FIXTURE, read where it lies — the same idiom the clean-room
+    // leak test uses, and for the same reason: copying 7.7 MB into a temp dir
+    // to read its first few lines is work that proves nothing extra.
+    const queries = new SessionQueries({
+      list: () => [session({ id: 'sess-real' })],
+      transcriptFor: () => SESSION_TRANSCRIPT,
+      git: diffSource(),
+    });
+    const got = queries.taskStatement('sess-real');
+    expect(got.ok).toBe(true);
+    if (!got.ok) return;
+    expect(got.value.text?.trim()).toBe('do it.');
+  });
+
+  it('uses the caller’s task instead of the transcript’s', async () => {
+    const STATED = 'Make the session rail keyboard-navigable.';
+    const text = await textOf(
+      depsOver(writeTranscript(reasoningHeavy())),
+      request({ taskStatement: STATED })
+    );
+    expect(text).toContain(STATED);
+    // …and the transcript's own opening prompt is NOT also in there. Printing both
+    // would put two answers to one question under one heading.
+    expect(text).not.toContain(TASK);
+  });
+
+  it('reads the transcript when no override is given — the pre-#948 behaviour', async () => {
+    const text = await textOf(depsOver(writeTranscript(reasoningHeavy())), request());
+    expect(text).toContain(TASK);
+  });
+
+  it('⚠️ AN EMPTY OVERRIDE IS A CHOICE, not an absence', async () => {
+    // The user cleared the line. Putting the transcript's answer back would
+    // silently restore the `"do it."` they had just deleted, so the bundle says
+    // "not known" instead — which is honest, and is what the dialog warns will
+    // happen.
+    const text = await textOf(
+      depsOver(writeTranscript(reasoningHeavy())),
+      request({ taskStatement: '' })
+    );
+    expect(text).toContain(TASK_UNKNOWN);
+    expect(text).not.toContain(TASK);
+  });
+
+  it('caps an override at the same bound as a read one', async () => {
+    const text = await textOf(
+      depsOver(writeTranscript(reasoningHeavy())),
+      request({ taskStatement: 'Z'.repeat(GOAL_CHAR_CAP * 3) })
+    );
+    expect(text).toContain('[truncated]');
+    expect(text.length).toBeLessThan(GOAL_CHAR_CAP * 3);
+  });
+
+  it('is ignored by `briefed`, whose Goal is the package’s own', async () => {
+    // The package derives its own Goal section; a second source for the same fact
+    // is exactly the drift #947 refused to introduce.
+    const text = await textOf(
+      depsOver(writeTranscript(reasoningHeavy())),
+      request({ policy: 'briefed', taskStatement: 'SHOULD-NOT-APPEAR' })
+    );
+    expect(text).not.toContain('SHOULD-NOT-APPEAR');
+  });
+
+  it('does not read the transcript at all when an override is given', async () => {
+    // Not a micro-optimisation: a `taskStatement` query opens the head window, and
+    // doing that to throw the answer away is work on the path that spends a
+    // subscription turn. A transcript that would REFUSE proves the read is skipped
+    // — the override still lands, and no task-unknown sentence appears.
+    const text = await textOf(
+      depsOver(null, {}, diffSource()),
+      request({ taskStatement: 'A stated task.' })
+    );
+    expect(text).toContain('A stated task.');
+    expect(text).not.toContain(TASK_UNKNOWN);
+  });
+});

@@ -81,6 +81,29 @@ function isQuestion(tool: string): boolean {
 }
 
 /**
+ * The tool that asks a human to leave plan mode.
+ *
+ * ⚠️ IT IS THE ONE REQUEST A DISPATCHED SESSION CANNOT USEFULLY BE ASKED, and
+ * #948's probe is why this constant exists. Measured against claude 2.1.280 on the
+ * stream transport (`spike/findings/e13-948-plan-unattended.md`):
+ *
+ *   * a plan-mode review does NOT need to exit plan mode to report — one run
+ *     finished in 19 s with zero control requests;
+ *   * but the same prompt reaches for `ExitPlanMode` anyway when it decides to
+ *     write its findings down, and **it retries after a refusal** — one run asked
+ *     twice, 31.7 s and 36.9 s;
+ *   * an UNANSWERED one parks the CLI indefinitely (120 s, no `result`, nothing
+ *     moving) — which is the same absence of a CLI-side timeout the 300 s deadline
+ *     below is sized against;
+ *   * and a DENIAL costs nothing: both denied runs still produced their full
+ *     findings.
+ *
+ * So for a session nobody is watching, holding this for five minutes buys exactly
+ * the answer it will get at the end of the five minutes.
+ */
+const EXIT_PLAN_MODE_TOOL = 'ExitPlanMode';
+
+/**
  * Is this the `answers` map the CLI actually accepts? (#563)
  *
  * The measured shape and only that: a non-empty plain object whose every value
@@ -222,6 +245,22 @@ export class StreamPermissions {
    * which is where a live id stops existing.
    */
   private readonly allowAllSessions = new Set<string>();
+  /**
+   * LIVE sessions that were DISPATCHED, i.e. that nobody is watching (#948).
+   *
+   * §5.15's point is that a dispatched session is a full peer with its own card
+   * and its own terminal the user can enter — so this is not "a session with no
+   * UI". It is a session that was started by a button rather than by a person
+   * sitting in front of it, and the difference matters for exactly one request:
+   * see `EXIT_PLAN_MODE_TOOL` and branch 0 of `offer`.
+   *
+   * Keyed by LIVE id, like `allowAllSessions`, and cleared in `forgetSession` for
+   * the same reason: a live id is the thing that stops existing. A dispatched card
+   * whose session crashes and respawns comes back with a new live id and is NOT in
+   * this set — correct, because the briefing is single-use too (`dispatch-ipc.ts`),
+   * so the second session is an ordinary one the user is now looking at.
+   */
+  private readonly dispatchedSessions = new Set<string>();
   /**
    * Sessions already warned about having no window to ask — see `offer`.
    * Membership means "warned about the outage we are IN", not "warned once,
@@ -388,6 +427,98 @@ export class StreamPermissions {
         ? (req.permission_suggestions as Array<Record<string, unknown>>)
         : undefined,
     };
+
+    // 0. A DISPATCHED SESSION ASKING TO LEAVE PLAN MODE (#948).
+    //
+    //    FIRST, ahead of allow-all, and the order is the argument. §5.16's
+    //    plan-mode rule is that nothing in-app may ALLOW past plan mode's write
+    //    block — `hooks/hook-listener.ts` keeps the same line from the other
+    //    channel (`GATED.plan = []`, "an in-app Allow returns
+    //    permissionDecision:'allow', which BYPASSES the CLI's permission system").
+    //    Allow-all is an in-app allow. So if it ran first, a user who had switched
+    //    a dispatched reviewer to "Allow all" would be allowing exactly the thing
+    //    §5.16 forbids, and would be doing it to a session nobody is watching.
+    //    Refusing is safe under every autonomy and every allow-all state; allowing
+    //    is not safe under any.
+    //
+    //    WHY REFUSING RATHER THAN HOLDING, given branch 4 would answer this
+    //    identically five minutes later: because the five minutes are SPENT. The
+    //    card sits in `needs-permission` for the whole hold — the app's attention
+    //    state — on behalf of a question whose only legitimate in-app answer is the
+    //    one it is going to get anyway, and #948's probe measured the request being
+    //    RETRIED, so that is up to ten minutes of a review doing nothing.
+    //
+    //    ⚠️ WHAT THIS DOES NOT BUY IS SILENCE, and an earlier version of this
+    //    comment claimed it did (review). `streamStatusEvent` applies
+    //    `permission-held` at the pump, one message before this code runs, so the
+    //    beep and the Events row have already happened by the time we answer;
+    //    `setPermissionHoldSuppressor` is keyed by SESSION alone, so suppressing
+    //    here would also silence the genuine holds this branch deliberately leaves
+    //    alone. The gain is DURATION — milliseconds instead of ten minutes — not
+    //    quiet. Branch 3 reaches the same conclusion about the same trade.
+    //
+    //    NARROW ON PURPOSE — this tool and no other. A dispatched session held on
+    //    a Write or a Bash call is a genuine "this needs a human", and this app's
+    //    whole premise is that such a session raises its hand; a blanket auto-deny
+    //    for dispatched sessions would turn a Doc Writer into a session that
+    //    cannot write and cannot say so. One tool, one measured reason.
+    if (this.dispatchedSessions.has(sessionId) && request.tool === EXIT_PLAN_MODE_TOOL) {
+      // ⚠️ NOT `unavailable()`, AND THE REASON IS ITS LAST SENTENCE. That helper
+      // ends with "Say so and ask again; it will be reviewed then", which is true
+      // for its four callers — a closed window, a missed deadline, an undelivered
+      // answer, an unowned session — and FALSE here: asking again gets this same
+      // refusal, for ever, because nobody is coming. #948's probe measured the
+      // model retrying `ExitPlanMode` 5 s after a denial, so the wrong closing
+      // sentence would be actively encouraging a loop.
+      //
+      // What it keeps from `unavailable` is the part that matters: `verdict`'s
+      // record of a denial that read as infrastructure and got ROUTED AROUND —
+      // Claude announced it was "getting blocked by something called switchboard"
+      // and reached for a second tool, then a third. So this says plainly that
+      // nothing is wrong, names the one thing that would be wrong (finding another
+      // way to write), and gives a next move that actually works.
+      const message =
+        'This session was dispatched by switchboard, so nobody is sitting in front ' +
+        'of it and there is no one to approve leaving plan mode. Nothing is broken ' +
+        'and this is not a sandbox restriction. Do NOT ask again and do not look for ' +
+        'another way to write your work down: plan mode is deliberate here, and the ' +
+        'session that dispatched you is waiting for your ANSWER. Report what you ' +
+        'found as your reply and stop.';
+      const delivered = this.send(
+        sessionId,
+        controlResponse(nativeRequestId, { behavior: 'deny', message })
+      );
+      // The `permission-held` `streamStatusEvent` applied one message ago has to
+      // end, exactly as it does on the two deny branches below — otherwise the
+      // card carries a `needs-permission` badge for a request that is already
+      // answered.
+      //
+      // ⚠️ ...UNLESS THIS ROUTER IS STILL HOLDING SOMETHING ELSE FOR IT. Found in
+      // review, and reachable: Claude issues tool calls in parallel, so a
+      // dispatched reviewer can have a genuine `Write` held (branch 4 — badge,
+      // beep, waiting for a person) and an `ExitPlanMode` in the same turn.
+      // Answering the second and walking the session to `working` regardless would
+      // HIDE the first, which is still blocking the CLI, until its own 300 s
+      // deadline denies it — a card claiming to be working while it is not, with
+      // no badge to say otherwise. That is #310 pointed the wrong way, and unlike
+      // `decide`'s copy of this line it would happen with no user action at all.
+      //
+      // SCOPED TO THIS ROUTER'S OWN HOLDS, which is what the wording above says and
+      // all this code can honestly see: a `HookListener` hold for the same session
+      // is not in `this.pending`. That gap is pre-existing — branches 2 and 3 and
+      // `decide` all apply this unconditionally — and narrowing it would need an
+      // injected probe. What matters here is that the reachable case this branch
+      // introduced, a parallel `Write` held by THIS router, is covered.
+      if (![...this.pending.values()].some((p) => p.sessionId === sessionId)) {
+        this.applyStatus(sessionId, { kind: 'permission-resolved' });
+      }
+      this.log.info('dispatched session asked to leave plan mode — denied at once', {
+        sessionId,
+        requestId,
+        delivered,
+      });
+      return;
+    }
 
     // 1. Allow-all: the user already answered every question this session will
     //    ask. Answer at the server — no pending entry, no listener push, and
@@ -753,6 +884,12 @@ export class StreamPermissions {
     // that replaces this one asks again (#319). Mirrors
     // `HookListener.unregisterSession`.
     this.allowAllSessions.delete(sessionId);
+    // Same rule, same reason (#948): keyed by LIVE id, so a dispatched card whose
+    // session is restarted comes back as an ordinary one. The briefing is
+    // single-use on the other side of this too (`dispatch-ipc.ts`'s `consume`), so
+    // the two halves of "this was a dispatch" expire together rather than one
+    // outliving the other.
+    this.dispatchedSessions.delete(sessionId);
     this.noWindowWarned.delete(sessionId);
     this.unroutableWarned.delete(sessionId);
     for (const [id, p] of [...this.pending]) {
@@ -872,6 +1009,55 @@ export class StreamPermissions {
    *  `permission-held` suppressor asks this — see `offer` step 1.) */
   isAllowAll(sessionId: string): boolean {
     return this.allowAllSessions.has(sessionId);
+  }
+
+  /**
+   * Mark a LIVE session as DISPATCHED — started by a button, with nobody sitting
+   * in front of it (#948, §5.15).
+   *
+   * It changes exactly one thing: an `ExitPlanMode` request is refused at once
+   * instead of being held for five minutes and then refused. See `offer` branch 0
+   * for the argument and `spike/findings/e13-948-plan-unattended.md` for the
+   * measurement. Everything else about the session is unchanged — it is a full
+   * peer with its own card, and a genuine hold on any other tool still raises its
+   * hand the ordinary way.
+   *
+   * Called from the spawn path once, at the moment a dispatch's briefing is
+   * submitted. Not persisted: it is a fact about a live process, and a card the
+   * user opens tomorrow is a card the user is looking at.
+   */
+  setDispatched(sessionId: string): void {
+    this.dispatchedSessions.add(sessionId);
+    this.log.info('session marked as dispatched (unattended)', { sessionId });
+  }
+
+  /**
+   * Somebody IS watching this one after all (#948).
+   *
+   * ⚠️ WITHOUT THIS THE MARK NEVER LIFTS, and that breaks §5.15's own premise —
+   * found in review. A dispatched session is a full peer "the user can enter and
+   * type at", and this dialog's intro says so. So a user who opens the Code Reviewer
+   * they just dispatched, reads its findings and asks it to make the fix would hit
+   * branch 0 and be told *"nobody is sitting in front of it and there is no one to
+   * approve leaving plan mode"* — while sitting in front of it, having just typed.
+   * Keying by live id only covers the RESTART case; this covers the one that
+   * matters more, which is somebody taking the session over.
+   *
+   * A HUMAN GESTURE AIMED AT THIS CARD IS THE PROOF, which is why
+   * `sessions:submitPrompt` is the caller and not, say, the card gaining focus:
+   * looking at a session is not the same as being there to answer for it, and a
+   * glance would lift the mark for a reviewer still working unattended.
+   *
+   * That channel's callers are the composer's Enter and the ⋯ menu's `/clear` and
+   * `/compact` (through `sendSessionCommand`) — all three deliberate, all three
+   * aimed here. NOT a sibling's automatic send: `delivery.ts` reaches
+   * `SessionManager.submitPrompt` directly and never touches the channel, which is
+   * the distinction that makes this proof rather than a guess — an auto-accepted
+   * message is precisely a session running with nobody there.
+   */
+  clearDispatched(sessionId: string): void {
+    if (!this.dispatchedSessions.delete(sessionId)) return;
+    this.log.info('dispatched session taken over by a person', { sessionId });
   }
 
   pendingRequests(): PermissionRequest[] {

@@ -100,6 +100,8 @@ import {
   type TaskLabelSize,
 } from '../../shared/task-label-size';
 import { PersistedSession } from '../workspace/store';
+import type { DispatchRegistry, PendingDispatch } from './dispatch-ipc';
+import { buildDispatchPrompt } from './dispatch-prompt';
 import { commandsFromCli, SlashCommand } from '../../shared/slash-commands';
 import { DEFAULT_SESSION_TRANSPORT } from '../transport/transport';
 import { sanitizePromptAttachments } from '../../shared/prompt-attachments';
@@ -189,6 +191,16 @@ export interface SessionIpcDeps {
    * convenience, not the enforcement. The enforcement is here.
    */
   experimentalFork: () => boolean;
+  /**
+   * The briefings prepared but not yet spawned (P2-E13-03) — `peek`, then
+   * `consume` at the point of no return. `DispatchRegistry` has the argument for
+   * why it is two methods.
+   *
+   * Optional: a wiring with no dispatch surface (the unit harness, the check
+   * scripts) has nothing to hand out, and a `sessions:create` carrying a
+   * `dispatchId` in such a wiring is treated exactly as a stale one — fail open.
+   */
+  dispatches?: DispatchRegistry;
   /** persisted session cards (resume-on-focus across app restarts, §5.25) */
   persist: {
     list: () => PersistedSession[];
@@ -1079,6 +1091,24 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     // for a refused send and for a PTY session, whose prompt does not travel
     // this way at all — labelling either would describe work nobody started.
     if (sent) noteProvisionalLabel(sessionId, text);
+    // ⚠️ AND A TYPED PROMPT MEANS SOMEBODY IS WATCHING (P2-E13-03). Every caller of
+    // this channel is a HUMAN GESTURE aimed at this card: the composer's Enter, and
+    // the ⋯ menu's / composer row's `/clear` and `/compact` through
+    // `sendSessionCommand`. (An earlier version of this note said "the composer's
+    // Enter and nothing else", which review corrected — the behaviour is the same for
+    // all three, but the claim was not a fact.)
+    //
+    // THE LOAD-BEARING CONTRAST is what does NOT come through here: `delivery.ts`'s
+    // automatic sibling send reaches `SessionManager.submitPrompt` directly, and an
+    // auto-accepted message is precisely a session running with nobody there. So a
+    // session dispatched by a button and then taken over by a person stops being
+    // unattended, and its `ExitPlanMode` stops being auto-denied — see
+    // `clearDispatched`.
+    //
+    // Unconditional on `sent`, deliberately — a person typed either way, and the
+    // one thing that must not happen is a human sitting in front of a session still
+    // being told nobody is.
+    deps.streamPermissions?.clearDispatched(sessionId);
     return sent;
   });
   // Interrupt the running turn (#154). Returns false for a PTY session, whose
@@ -1315,6 +1345,18 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
          * live in a different project folder — that is the case this exists for.
          */
         forkFrom?: { sourceSessionId: string; sourceFolder: string };
+        /**
+         * A prepared dispatch this card is the target of (P2-E13-03, §5.15).
+         *
+         * An OPAQUE handle to a briefing main built and is holding — never the
+         * briefing itself, and never a template. `dispatch-ipc.ts`'s header has
+         * the whole argument; the two facts that matter here are that it is
+         * SINGLE USE (a panel param is re-sent on every remount, and briefing a
+         * reviewer twice mid-conversation is the failure that protects against)
+         * and that a stale one is fail-open: the card starts as an ordinary
+         * session and the log says which card lost its briefing.
+         */
+        dispatchId?: string;
       }
     ) => {
       // Validate untrusted renderer input (§5.29). REFUSED, not thrown (#347):
@@ -1371,6 +1413,61 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         });
       }
 
+      // ── A PREPARED DISPATCH (P2-E13-03, §5.15 Trigger 1) ─────────────────
+      //
+      // READ HERE, ABOVE THE FORK BLOCK, because a `full` dispatch IS a fork and
+      // that block needs the operand. Everything this decides — the session's
+      // autonomy, its accent, whether there is a fork at all — is settled before
+      // the spawn, and the briefing itself is submitted after it.
+      //
+      // LOOKED UP, NOT SPENT. Everything between this line and `manager.create` can
+      // still refuse (a fork the provider cannot set up, a transport with no typed
+      // channel), and a refusal that had already eaten the briefing would turn the
+      // card's own "Try again" button into a silently unbriefed session. The spend
+      // happens at the point of no return — see `DispatchRegistry`.
+      //
+      // §5.29 on the shape first, REFUSED rather than ignored for
+      // `resumeConversationId`'s reason: an ignored dispatch starts a plain session
+      // in the right folder, which is indistinguishable — at the moment it happens
+      // — from switchboard having thrown the briefing away.
+      if (opts.dispatchId !== undefined && typeof opts.dispatchId !== 'string') {
+        return refuse('sessions:create', 'dispatchId must be a string', { cardId: opts.cardId });
+      }
+      // But an UNKNOWN id is not a refusal, and that asymmetry is deliberate. Panel
+      // params are serialized into the saved layout, so a `dispatchId` written
+      // before the app was last quit arrives here with main's in-memory map long
+      // gone. Refusing would mean a restored layout could not start its own cards.
+      // So: fail open (P6), start an ordinary session, and say in the log which
+      // card lost what — the one thing that must not happen is silence.
+      let dispatch: PendingDispatch | undefined;
+      if (opts.dispatchId !== undefined) {
+        dispatch = deps.dispatches?.peek(opts.dispatchId);
+        if (!dispatch) {
+          // ⚠️ `debug` FOR A CARD THAT ALREADY EXISTS, `warn` for one that does not,
+          // and the split is what keeps the line worth reading. This param is
+          // serialized into the saved layout, so a dispatched card re-sends it on
+          // every reveal, every restart and every launch for the rest of that
+          // workspace's life — a `warn` would mean a permanent fault-shaped line per
+          // remount, and a genuinely lost briefing would be indistinguishable from
+          // that noise. A card with a `prior` record has started before and its
+          // briefing was spent then, which is the routine case; a card with none is
+          // starting for the first time with a handle nothing recognises, which is
+          // the one worth a warning.
+          //
+          // Read here rather than off `prior`, which is not resolved until below —
+          // this block sits above the fork gate because a `full` dispatch decides
+          // what that gate is asked for, and reordering the handler to share one
+          // lookup would be a real change for a log level.
+          const routine = deps.persist.list().some((s) => s.id === opts.cardId);
+          const where = { cardId: opts.cardId, folder: opts.folder };
+          if (routine) {
+            log.debug('a dispatched card restarted; it was briefed on its first start', where);
+          } else {
+            log.warn('a dispatch briefing was not available; starting an ordinary session', where);
+          }
+        }
+      }
+
       // ── FORK ADOPTION (§5.5 Level 3, P2-E11-12) ──────────────────────────
       //
       // THE FLAG IS ENFORCED HERE, not in the renderer. The surface is absent
@@ -1415,6 +1512,25 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           });
         }
         forkFrom = { sourceSessionId: f.sourceSessionId, sourceFolder: f.sourceFolder as string };
+      }
+
+      // A `full` DISPATCH IS A FORK, and #947 already returns the operand this
+      // path wants: `{ sourceSessionId, sourceFolder }`, which is exactly
+      // `forkFrom`'s shape because that is the path it was built to reuse.
+      //
+      // NOT re-validated through the block above, and that is not laziness. Those
+      // checks exist because `opts.forkFrom` crossed the IPC boundary from an
+      // untrusted renderer (§5.29); this value never left main. It came out of
+      // `buildDispatchContext`, which applied the identical gates and more — the
+      // experimental flag, a provider match (§5.5: transcript formats are not
+      // interchangeable), a conversation that exists, and `isConversationId` on the
+      // id it is about to interpolate. Running them again here would be a second,
+      // weaker copy of a decision already taken with better information.
+      //
+      // The renderer's own `forkFrom` still wins when both are somehow present:
+      // that is the ⋯ menu's explicit fork, and a dispatch never sets it.
+      if (!forkFrom && dispatch?.context.source === 'fork-adoption') {
+        forkFrom = dispatch.context.fork;
       }
 
       const prior = deps.persist.list().find((s) => s.id === opts.cardId);
@@ -1655,7 +1771,22 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         folder: opts.folder,
         providerId: plan.providerId,
         // stable across resumes: reuse the card's assigned accent/badge
-        accentColor: prior?.identity.accentColor ?? assignAccent(manager.list().map((s) => s.identity.accentColor ?? '')),
+        // A DISPATCHED SESSION WEARS ITS ROLE'S COLOUR (P2-E13-03) — the
+        // done-when's "visibly not the author". §5.15 says "icon/colour" and #946
+        // explains why a template carries only the colour: the one badge slot a
+        // card has is §5.11's project-type badge, and a role glyph in it would make
+        // one badge mean two things.
+        //
+        // AFTER `prior`, BEFORE `assignAccent`, and both halves matter. After
+        // `prior` because a card keeps its accent across resumes and a restart must
+        // not repaint it; before `assignAccent` because the whole point is that this
+        // colour was CHOSEN, and the auto-assigner picks the least-used one instead.
+        // A template with no colour falls through to exactly what any new session
+        // gets, which is the right answer for a user template nobody coloured.
+        accentColor:
+          prior?.identity.accentColor ??
+          dispatch?.template.accentColor ??
+          assignAccent(manager.list().map((s) => s.identity.accentColor ?? '')),
         langBadge: prior?.identity.langBadge ?? detectProjectType(opts.folder),
       };
 
@@ -1677,7 +1808,18 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           autonomy: String(opts.autonomy),
         });
       }
-      const autonomy = prior?.autonomy ?? wireAutonomy;
+      // A DISPATCH BEATS THE TITLEBAR CHIP (P2-E13-03), and loses to the card's own
+      // stored value for the reason above it: the chip describes what the USER's
+      // next session should be, and a dispatched session is not the user's next
+      // session — it is a role, and #946 chose that role's autonomy deliberately
+      // ("the quiet end of the range", because nobody is watching). Dispatching a
+      // Code Reviewer while the chip says `full-auto` must not produce a full-auto
+      // reviewer.
+      //
+      // `prior` still wins, so a dispatched card that crashes and restarts keeps
+      // the autonomy it was running at rather than being re-derived from a template
+      // that may since have been edited.
+      const autonomy = prior?.autonomy ?? dispatch?.template.autonomy ?? wireAutonomy;
 
       // WHICH TRANSPORT THIS SPAWN ASKS FOR, most specific first:
       //
@@ -1700,6 +1842,33 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
       // the spawn itself. `sessions:cards` reports the same expression for the
       // same reason (#397).
       const spawnTransport = prior?.transport ?? deps.preferredTransport?.() ?? DEFAULT_SESSION_TRANSPORT;
+
+      // ── A DISPATCH NEEDS A TYPED-MESSAGE TRANSPORT (P2-E13-03) ───────────
+      //
+      // The briefing arrives as the session's own first prompt, and the only way
+      // main can write a prompt into a session is `SessionManager.submitPrompt`,
+      // which needs a stream handle — `handle.send`. On a PTY there is none: the
+      // prompt is keystrokes, and the only thing that can type them is a renderer
+      // with a terminal attached, which is a second delivery path for one message.
+      //
+      // REFUSED BEFORE THE SPAWN rather than after. Starting the session and
+      // finding out afterwards leaves a live card with a role, a colour and no
+      // instruction — which looks exactly like a dispatch that worked and is the
+      // one outcome worth spending a refusal on. The card shows its honest
+      // never-started overlay instead.
+      //
+      // Unreachable on any default configuration: Direct has been the default since
+      // #381, and the only ways here are a card whose stored transport is `pty` or
+      // an app started with `SWITCHBOARD_TRANSPORT=pty` — both of which are
+      // deliberate developer choices, and #952 is the ticket that deletes the PTY
+      // stack outright.
+      if (dispatch && spawnTransport !== 'stream') {
+        return refuse('sessions:create', 'a dispatch needs the Direct transport', {
+          cardId: opts.cardId,
+          templateId: dispatch.template.id,
+          transport: spawnTransport,
+        });
+      }
 
       // Preparing the folder is the PROVIDER's business (§5.9 trust is Claude's
       // `~/.claude.json`); a provider that has never heard of it must not have
@@ -1743,6 +1912,11 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
       // showed a bare "Session ended". `error` and not `warn`, unlike the
       // validation refusals above: those are input we declined, this is a start
       // that should have worked. `error` is what makes it look for the cause.
+      // THE POINT OF NO RETURN, so this is where a dispatch is spent
+      // (`DispatchRegistry`). Every refusal is behind us; the only thing left that
+      // can fail is `manager.create` itself, and its catch says what a briefing
+      // lost there costs.
+      if (dispatch) deps.dispatches?.consume(opts.dispatchId);
       let record: SessionRecord;
       try {
         record = manager.create(identity, {
@@ -1779,6 +1953,19 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           provider: identity.providerId,
           error: String(err),
         });
+        // AND THE BRIEFING WAS ALREADY SPENT, which is worth its own line rather
+        // than being inferred from the two above. The card shows "never started"
+        // with a Try again button, and pressing it starts an ORDINARY session —
+        // there is no briefing left to give it. Re-arming the entry instead would
+        // put back exactly the double-brief hazard single use exists to prevent, on
+        // a path that only a failed spawn reaches. So: say so loudly, and the user
+        // dispatches again, which is one gesture.
+        if (dispatch) {
+          log.error('the dispatch briefing was lost with that failed start — dispatch again', {
+            cardId: opts.cardId,
+            templateId: dispatch.template.id,
+          });
+        }
         return null;
       }
       bindLive(record.id, opts.cardId);
@@ -2013,6 +2200,88 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         } catch (err) {
           log.warn('could not announce an adopted conversation', {
             cardId: opts.cardId,
+            error: String(err),
+          });
+        }
+      }
+      // ── THE DISPATCHED SESSION'S OWN FIRST PROMPT (P2-E13-03, §5.15) ─────
+      //
+      // The item's done-when: *"the briefing arrives as the session's own first
+      // prompt, NOT as a sibling message needing a keypress"*. §5.4's
+      // never-auto-execute rule is about messages arriving at a session a human is
+      // working in; this is a session that does not exist until this call, whose
+      // whole reason for existing is this text, and the human already pressed the
+      // button. So it goes in as a prompt — `delivery.ts`'s hold/submit split is
+      // deliberately not on this path at all.
+      //
+      // LAST, and that ordering is the load-bearing part. Everything above has run:
+      // the transcript watch is armed, the Feed is wired, the record is persisted
+      // and the card is bound. Submitting earlier would race the first assistant
+      // frame against the wiring that is supposed to render it — and the comment on
+      // `replayResumedHistory` above makes the same argument from the other side
+      // ("nothing has yielded to the event loop since the spawn").
+      //
+      // STILL INSIDE THE SYNCHRONOUS STRETCH, so no `await` and no `then`:
+      // `submitPrompt` writes to the stream handle, which exists the moment the
+      // process is spawned, and the CLI queues stdin until it is ready (S-11
+      // watched a mid-turn message picked up 144 s later). There is nothing to wait
+      // for and nothing to poll for — waiting for `system:init` would be a second
+      // readiness model beside the one the transport already has.
+      // ⚠️ ISOLATED, because this is the LAST thing on the spawn path and the
+      // session is already live and bound by the time it runs. `submitPrompt`
+      // writes to a freshly spawned process's stdin; a throw from there — a pipe
+      // that died between the spawn and this line, an adapter that throws — would
+      // leave this handler, the broker would reject `sessions:create`, and the
+      // renderer would paint "Session ended — never started" over a session that
+      // is running. That is the exact inversion this file argues against twice
+      // (#347's note above `manager.create`, and the reap loop's fail-open): a
+      // briefing that could not be delivered must not cost the card its start.
+      if (dispatch) {
+        try {
+          const prompt = buildDispatchPrompt(dispatch.context, dispatch.template);
+          const sent = manager.submitPrompt(record.id, prompt);
+          if (sent) {
+          // The deny-writes story, and it is narrow: an `ExitPlanMode` request from
+          // this session is refused at once rather than held for five minutes and
+          // then refused. Measured, not assumed — #948's probe, written up in
+          // `spike/findings/e13-948-plan-unattended.md`.
+          //
+          // AFTER the submit, so a session that could not be briefed is not marked
+          // as one nobody is watching: if the prompt did not land, the user is going
+          // to have to come and look at this card, and the ordinary hold is what
+          // tells them to.
+            deps.streamPermissions?.setDispatched(record.id);
+            log.info('dispatch briefed', {
+              sessionId: record.id,
+              cardId: opts.cardId,
+              templateId: dispatch.template.id,
+              from: dispatch.from,
+              source: dispatch.context.source,
+            });
+          } else {
+          // NOT REACHABLE THROUGH THE REFUSAL ABOVE, which already turned away any
+          // dispatch whose spawn transport was not `stream`. What is left is an
+          // adapter that ANSWERED with a PTY recipe despite being asked for a
+          // stream — only the fake providers do that today, both behind the
+          // test/e2e gate. `error`, because the card is now live, wearing a role and
+          // a colour, with no instruction in it: the one outcome that looks like a
+          // dispatch which worked.
+            log.error('a dispatched session would not take its briefing', {
+              sessionId: record.id,
+              cardId: opts.cardId,
+              templateId: dispatch.template.id,
+              transport: record.transport,
+            });
+          }
+        } catch (err) {
+          // The card is LIVE and bound; only the briefing failed. `error`, because
+          // the outcome is the same one the `sent === false` branch above reports —
+          // a session wearing a role with no instruction in it — reached a different
+          // way, and nothing else in the app will notice.
+          log.error('briefing a dispatched session threw; the session is live anyway', {
+            sessionId: record.id,
+            cardId: opts.cardId,
+            templateId: dispatch.template.id,
             error: String(err),
           });
         }

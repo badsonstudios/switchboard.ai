@@ -660,6 +660,50 @@ export function App(): React.JSX.Element {
   >(new Map());
   const grid = React.useRef<GridController | null>(null);
 
+  /**
+   * §5.15's dispatch roles, for the palette's one-entry-per-template (P2-E13-03).
+   *
+   * READ ONCE, at mount, and the bound on that is deliberate rather than lazy —
+   * `CommandDeps.dispatchTemplates` states it in full. The short version: the three
+   * built-ins are code and the user's are rows in `workspace.json`, so this list
+   * only moves when somebody hand-edits that file; a poll would spend an IPC call
+   * per interval for the rest of the app's life to notice something that happens
+   * approximately never, and the ⋯ menu's `Dispatch…` row re-reads it every time it
+   * opens anyway.
+   *
+   * `''` as the session argument: `dispatch:options` takes one only to fill the
+   * task line's default, and there is no session in view at mount. It never
+   * refuses, so an empty reference simply comes back without that field.
+   */
+  const [dispatchTemplates, setDispatchTemplates] = useState<
+    ReadonlyArray<{ id: string; name: string }>
+  >([]);
+  useEffect(() => {
+    let live = true;
+    void bridge.dispatch
+      ?.options('')
+      .then((raw) => {
+        // A window can close while an `invoke` is in flight; setting state after
+        // that is a React warning and a leak, not a crash — but it is noise in a
+        // devtools console, which is where real problems are supposed to stand out.
+        if (!live) return;
+        // LAUNDERED AT THE BOUNDARY (#346/#440). A brokered call the capability
+        // layer refuses RESOLVES an `IpcRefusal` object, which is TRUTHY — so
+        // reading `.templates` off it would answer `undefined` and `.map` would
+        // throw inside a `.then`, on the app's boot path. `?? []` is the site's own
+        // empty answer: no palette entries, which is what a refused read honestly
+        // produced.
+        const answer = answered(raw);
+        setDispatchTemplates(answer?.templates.map((x) => ({ id: x.id, name: x.name })) ?? []);
+      })
+      // A palette missing three entries is worse than a console line and better
+      // than a white screen. Fail-open, like every other optional read in App.
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
+
   // §5.30's "opened from wherever a path already appears" (P2-E16-02). The
   // surfaces that show a path — the Changes tab's file list today, a feed block
   // and the §5.7 tree later — reach the dock through this module rather than
@@ -1720,8 +1764,15 @@ export function App(): React.JSX.Element {
               .catch(() => {});
           },
           closeAllDocuments: () => grid.current?.closeAllDocuments(),
+          // §5.15's dispatch targets (P2-E13-03) — one palette entry per role. The
+          // list is DATA rather than a callback because the entries themselves
+          // depend on it; `CommandDeps.dispatchTemplates` has the reasoning and
+          // the one staleness this accepts.
+          dispatchTemplates,
+          dispatchFrom: (templateId) => grid.current?.dispatchFrom(templateId),
       }),
     [
+      dispatchTemplates,
       toggleRail,
       jumpToNextAttention,
       setGlobalPolicy,

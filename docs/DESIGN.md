@@ -1935,13 +1935,122 @@ transfer + role templates, all already in the design.
 >   on why collapsing them looks right for the same-folder case and silently
 >   answers "no such conversation" for the cross-folder one.
 >
-> ⚠️ **One default is a guess and is marked as one in the code**: the built-in Code
+> ⚠️ **One default was a guess and is marked as one in the code**: the built-in Code
 > Reviewer runs at `plan`, chosen for the CLI's own write block (§5.16's plan-mode
 > rule says nothing in-app may Allow past it). But exiting plan mode is an approval
 > the CLI keeps, so a plan-mode reviewer may park waiting for a human who by
 > definition is not watching. **#948 must measure that rather than assume it**; if
 > it parks, the default becomes `ask` plus a deny-writes story, and learning it
-> before #950 builds the round-trip is much cheaper.
+> before #950 builds the round-trip is much cheaper. **#948 measured it — see
+> below.**
+>
+> **As built — E13-03 (#948), the gesture. Trigger 1 is real.** `Dispatch…` on the
+> card's ⋯ menu and one `session.dispatch.<template>` entry per role in the
+> palette, both landing in one dialog; a card whose first turn is the briefing;
+> and the autonomy question settled by measurement rather than by argument.
+>
+> **⚠️ THE `plan` DEFAULT SURVIVES, AND THE FEAR WAS REAL ANYWAY.** Probed against
+> claude 2.1.280 on the stream transport, written up in
+> `spike/findings/e13-948-plan-unattended.md`. Five things, and the fifth is the
+> surprise:
+>
+> - a plan-mode review **finishes unattended** — one run reached `result` in 19 s
+>   with **zero** control requests, because a model asked to *report* reports;
+> - but the same prompt **reaches for `ExitPlanMode` anyway** when it decides to
+>   write its findings down, **and retries after a refusal** — one run asked twice,
+>   31.7 s and 36.9 s apart;
+> - an **unanswered** one parks the CLI indefinitely (120 s, no `result`) — which
+>   in the app means the 300 s `StreamPermissions` deadline, twice, with the
+>   attention machinery ringing for a question whose only in-app answer is the one
+>   it will get anyway;
+> - a **denial costs the findings nothing** — both denied runs produced their full
+>   review;
+> - and **plan mode's write block holds**, measured twice, including a control at
+>   `acceptEdits` that proves the model genuinely tried. **But a plan-mode `Write`
+>   does not fail: the CLI redirects it into `~/.claude/plans/`, named after the
+>   prompt.** The author's tree is untouched, which is the guarantee `plan` was
+>   chosen for — but a dispatched reviewer can leave litter outside anything
+>   switchboard tracks, and **#950 should not expect a findings FILE**.
+>
+> So the fix is the deny-writes story #946 predicted, *underneath* the default
+> rather than instead of it: a dispatched session's `ExitPlanMode` is refused **at
+> once** (`StreamPermissions.setDispatched`), narrowly — every other held tool on a
+> dispatched session is a genuine "this needs a human" and the attention queue is
+> the right answer for it. `ask` was never better: it gates `SHELLISH ∪ MUTATING`
+> in our own hold policy, so an `ask` reviewer reaching for a write parks on OUR
+> hold, having given up the CLI's write block to get there.
+>
+> **And the mark lifts the moment a person types into the session**
+> (`clearDispatched`, called from `sessions:submitPrompt` and from nowhere else).
+> Found in review: without it, §5.15's own premise breaks — a dispatched session is
+> a full peer the user can *enter and type at*, so a user who opens the reviewer
+> they just dispatched and asks it to make the fix would be told "nobody is sitting
+> in front of it" while sitting in front of it. A typed prompt is the proof, and it
+> is proof precisely because `delivery.ts`'s automatic sibling send does **not** come
+> through that channel — an auto-accepted message is a session running with nobody
+> there. Two smaller review findings on the same branch: the gain is **duration, not
+> silence** (the beep has already fired at the pump one message earlier), and the
+> branch must not walk the session back to `working` while a *different* request is
+> still held — parallel tool calls make that reachable, and it would hide a genuine
+> hold behind a card claiming to be working.
+>
+> **⚠️ THERE IS A DIALOG, WHICH §5.15's "Dispatch → <template>" DOES NOT ASK FOR**,
+> and the reason is a second measurement. #947 found that `taskStatement` answers
+> **`"do it."`** for a session started from a slash command — correct, and nearly
+> useless, because what precedes it is command plumbing and an `isMeta` line.
+> Clean-room is defined by withholding everything else, so that one field has to
+> carry the job and it is the field most likely to be empty. A menu row that
+> dispatched in one click would hand a reviewer a review of nothing, and #950's
+> round-trip would be built on it. So the gesture offers a **task line, prefilled
+> and editable**, beside the `acceptanceCriteria` seam #947 already shipped —
+> **and a blank line is honoured as a choice**, printing "not known" rather than
+> quietly restoring the `"do it."` the user just deleted. The dialog is also the
+> only place a refusal that needs a provider or a record (#947's cross-provider
+> fork, its no-conversation case) can be read *before* a turn is spent.
+>
+> **⚠️ BOTH FIELDS ARE OFFERED ONLY FOR `clean-room`, and review is why.** The first
+> cut showed them for every role, which was a promise the code did not keep: the
+> `context-package` branch reads neither (#766's package derives its own Goal, and a
+> second source for one fact is the drift #947 refused), so a user writing a careful
+> task for a PR Author got a PR authored from a package that never saw it — and the
+> copy asserted the effect too. Hiding them keeps ONE answer per fact and teaches
+> something true: clean-room is the policy that needs you to state the task, because
+> it has nothing else. It also makes `taskStatement` a genuine THREE-state field —
+> absent (read the transcript), empty (the user cleared it), stated — with all three
+> reachable from the UI rather than two of them theoretical.
+>
+> **The briefing never crosses to the renderer, and the template never crosses
+> inward.** `dispatch:prepare` builds the document in main and hands back an opaque
+> single-use handle that rides `CardParams` to `sessions:create` — the same path
+> `forkFrom` already travels. Two reasons the text stays put: a clean-room bundle is
+> defined by what it withholds, and panel params are serialized into the saved
+> layout, so a briefing in one would write the author's diff into `workspace.json`
+> for ever. Inward, only an **id** travels, which is #946's contract stated in the
+> type system: `isSaneRoleTemplate` refuses the `builtin:` namespace, so a predicate
+> validating a template object would refuse the three templates a fresh install has.
+>
+> **Single use is the safety property, not tidiness.** A panel param is re-sent on
+> every remount and every restart, so without consuming it a reviewer would be
+> briefed a second time mid-conversation in the voice of a user who typed nothing.
+> A handle that no longer resolves starts an ordinary session and says which card
+> lost its briefing — fail-open (P6), because a restored layout must still start.
+>
+> **What the gesture refuses rather than half-doing:** a dispatch with no
+> typed-message transport is refused **before** the spawn, because `submitPrompt`
+> needs a stream handle and a live card wearing a role with no instruction in it
+> looks exactly like a dispatch that worked.
+>
+> **Found and fixed in passing, on the line dispatch had to touch:**
+> `CardParams.forkFrom` had been written into the panel since #801 and **never
+> forwarded to `sessions:create`** — so every "fork this conversation" from the ⋯
+> menu since that item landed started an ordinary session, and main's whole fork
+> path was unreachable from the UI. Fixed here because #948 needs the identical
+> forwarding one field along.
+>
+> **Still #951's, and deliberately untouched:** lineage nesting ("↳ Review of X")
+> and ephemerality. A dispatched card is titled `<role> of <session>` and is an
+> ordinary card in every other respect; a title that tried to be the nesting would
+> have to be unpicked when the real nesting arrives.
 
 ### 5.16 Approval surfaces — rich edit review
 
