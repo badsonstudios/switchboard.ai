@@ -557,7 +557,30 @@
       "ready": "Ready",
       "needs-input": "needs input",
       "needs-permission": "needs permission",
-      "crashed": "crashed"
+      "crashed": "crashed",
+      "dispatch-result": "finished"
+    },
+    "dispatch": {
+      "reported": "{role} “{session}” finished and reported back",
+      "silent": "{role} “{session}” finished without reporting anything",
+      "ended": "{role} “{session}” stopped before it finished",
+      "delivered": "{role} “{session}” — findings waiting in this session’s message box",
+      "deliveredAuto": "{role} “{session}” — findings sent straight into this session",
+      "inject": "Inject findings",
+      "injectFrom": "Put what {session} wrote into this session's message box",
+      "injectHint": "Puts the report in this session's message box, attributed. You still press Enter.",
+      "openReviewer": "Open it",
+      "openReviewerNamed": "Open {session} and read the whole thing",
+      "truncated": "(report was shortened to fit)",
+      "refused": {
+        "gone": "There's nothing left to hand over — this report has already been used, or the app has restarted since.",
+        "empty": "That session didn't leave anything to send.",
+        "undelivered": "That session couldn't take it just now. Try again, or open it and copy what you need.",
+        "inFlight": "Already handing it over — give it a moment.",
+        "channel": "switchboard couldn't complete that. The report is still on the other session."
+      },
+      "noAnswer": "switchboard did not answer — the report is still on the other session.",
+      "reviewerGone": "(that session has been closed)"
     }
   },
   "health": {
@@ -1013,7 +1036,8 @@
       "ready": "ready",
       "needs-input": "needs input",
       "needs-permission": "needs permission",
-      "crashed": "crashed"
+      "crashed": "crashed",
+      "dispatch-result": "a dispatched session finished"
     },
     "speak": {
       "anonymous": "A session",

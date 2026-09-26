@@ -95,6 +95,7 @@ import { SiblingDelivery } from './sessions/delivery';
 import { Blackboard } from './sessions/blackboard';
 import { pushSiblingMessage, registerDeliveryIpc } from './sessions/delivery-ipc';
 import { registerDispatchIpc } from './sessions/dispatch-ipc';
+import { DispatchResults } from './sessions/dispatch-results';
 import { runPreflight } from './preflight';
 import { startStaticServer, StaticServer } from './static-server';
 import { installCspHeaders } from './csp';
@@ -2434,6 +2435,35 @@ app
       experimentalFork: () => workspace.getExperimentalFork(),
       targetProviderId: defaultProviderId,
     });
+    // ── THE ROUND-TRIP (P2-E13-05, §5.15) — Phase 2 exit criterion 5 ────────
+    //
+    // Here rather than inside `registerSessionIpc` because it is the join of two
+    // things that file does not have together: the reviewer's Feed blocks and
+    // the sibling delivery that carries the report to the author. The session IPC
+    // gets a narrowed `Pick` of it for the three moments only it can see (a
+    // briefing landing, a status ending, a teardown).
+    //
+    //   * `blocks` is `streamFeed.blocks` — THE SAME BLOCKS ON THE REVIEWER'S
+    //     CARD, so what is injected is what the user can read. A dispatch is
+    //     refused before the spawn unless its transport is `stream` (#948), which
+    //     is what makes that source safe to assume.
+    //   * `raise` is `EventFeed.dispatchResult`, which files the row under the
+    //     AUTHOR — the item's first done-when, and the reason the feed grew a
+    //     kind that is not a status.
+    //   * `send` is `siblingDelivery.send`, unchanged and unwrapped: §5.4's
+    //     never-auto-execute rule, #765's auto-accept toggle, the loop breaker
+    //     and the forgery-proof header all apply to an injected finding exactly
+    //     as they apply to anything else one session sends another.
+    const dispatchResults = new DispatchResults({
+      blocks: (sessionId) => streamFeed.blocks(sessionId),
+      raise: (author, dispatch) => feed.dispatchResult(author, dispatch),
+      send: (from, to, text) => siblingDelivery.send(from, to, text),
+      log: createLogger(sink, 'dispatch'),
+    });
+    // The row's one button. A handle in, a receipt out; everything it can refuse
+    // is refused with a reason the row prints, which is #765's "never silently
+    // dropped" applied to the same delivery from the other end.
+    broker.handle('dispatch:inject', (_e, reviewer: unknown) => dispatchResults.inject(reviewer));
     const sessionIpc: SessionIpcHandle = registerSessionIpc({
       manager,
       ptys,
@@ -2489,6 +2519,8 @@ app
       // `consume`, and the split is why it is the whole registry rather than one
       // function — see `DispatchRegistry`.
       dispatches,
+      // ...and where the round-trip is opened, harvested and closed (P2-E13-05).
+      dispatchResults,
       persist: {
         list: () => workspace.listSessions(),
         upsert: (s) => workspace.upsertSession(s),

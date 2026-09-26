@@ -214,3 +214,73 @@ describe('needingCards — what every "N need you" counts (#621)', () => {
     expect(needingCards([], bound({})).size).toBe(0);
   });
 });
+
+describe('dispatch-result in the queue (P2-E13-05)', () => {
+  it('is an outstanding demand — a finding nobody has injected still needs you', () => {
+    expect(queueable(ev('dispatch-result', 'l1', 1))).toBe(true);
+  });
+
+  it('outranks a plain done, and still yields to anything blocked', () => {
+    const events = [
+      ev('done', 'l1', 1),
+      ev('dispatch-result', 'l2', 2),
+      ev('needs-permission', 'l3', 3),
+      ev('crashed', 'l4', 4),
+    ];
+    expect(attentionQueue(events).map((e) => e.kind)).toEqual([
+      'needs-permission',
+      'crashed',
+      'dispatch-result',
+      'done',
+    ]);
+  });
+
+  it('counts its CARD as needing you', () => {
+    const events = [ev('dispatch-result', 'author', 1)];
+    expect([...needingCards(events, (id) => (id === 'author' ? 'c1' : id))]).toEqual(['c1']);
+  });
+
+  it("walks with the rest of the queue rather than beside it", () => {
+    // Two rows on ONE session is new (the author's own status plus a result),
+    // and the walk is keyed by EVENT id, so both are reachable.
+    const events = [ev('dispatch-result', 'author', 1), ev('done', 'author', 2)];
+    const first = nextInQueue(events, new Set());
+    const second = nextInQueue(events, first.visited);
+    expect([first.next!.kind, second.next!.kind]).toEqual(['dispatch-result', 'done']);
+  });
+});
+
+describe('a DELIVERED dispatch result (P2-E13-05)', () => {
+  const delivered = (id: number): AttentionEvent => ({
+    ...ev('dispatch-result', 'author', 5, id),
+    dispatch: { outcome: 'delivered' },
+  });
+
+  // `ready`'s relationship to `done`, one family over: the row stays listed —
+  // it is how the user knows where the findings went — and stops being a demand.
+  it('is not a demand any more, and is not queued', () => {
+    expect(queueable(delivered(1))).toBe(false);
+    expect(attentionQueue([delivered(1)])).toEqual([]);
+  });
+
+  it('still appears in the panel, below the queue', () => {
+    const ordered = panelOrder([delivered(1), ev('done', 'l2', 2)]);
+    expect(ordered.map((e) => e.kind)).toEqual(['done', 'dispatch-result']);
+  });
+
+  it('stops counting its card as needing you', () => {
+    expect([...needingCards([delivered(1)], () => 'c1')]).toEqual([]);
+  });
+
+  // The three that are not `delivered` all still want a human — "your reviewer
+  // died" is news even though its row has no button.
+  it.each(['reported', 'silent', 'ended'] as const)('an %s result is still queued', (outcome) => {
+    const e: AttentionEvent = { ...ev('dispatch-result', 'author', 5), dispatch: { outcome } };
+    expect(queueable(e)).toBe(true);
+  });
+
+  // A row main pushed before this field existed, or one a test hands over bare.
+  it('a result with no outcome on it is queued, not silently dropped', () => {
+    expect(queueable(ev('dispatch-result', 'author', 5))).toBe(true);
+  });
+});

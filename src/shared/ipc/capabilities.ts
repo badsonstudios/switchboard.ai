@@ -209,6 +209,12 @@ export const CHANNEL_CAPABILITIES = {
   // with these two and not that one can compose a dispatch and cannot run it.
   'dispatch:options': 'workspace.read',
   'dispatch:prepare': 'sessions.read',
+  // The round-trip's one button (P2-E13-05): hand a finished dispatch's report
+  // to the author's composer. `sessions.write` because that is what it does —
+  // the same grant `sessions:siblingMessageAck` holds for the other end of the
+  // identical delivery, and a power meaningfully beyond the two reads above.
+  // NOT `events.write`: the event is where the button lives, not what it moves.
+  'dispatch:inject': 'sessions.write',
   'events:ack': 'events.write',
   'events:dismiss': 'events.write',
   'events:list': 'events.read',

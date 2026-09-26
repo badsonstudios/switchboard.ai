@@ -409,8 +409,27 @@ function cap(text: string, limit: number): { text: string; truncated: boolean } 
   // decide about.
   const last = kept.charCodeAt(kept.length - 1);
   if (last >= 0xd800 && last <= 0xdbff) kept = kept.slice(0, -1);
-  return { text: kept.trimEnd() + ' …[truncated]', truncated: true };
+  return { text: kept.trimEnd() + TRUNCATION_MARKER, truncated: true };
 }
+
+/**
+ * The marker `cap` appends, and the reason it is a named constant.
+ *
+ * ⚠️ **`cap(text, n)` CAN RETURN MORE THAN `n` CHARACTERS** — it slices to the
+ * limit and then adds this. For every caller that is building a DOCUMENT that is
+ * harmless: a `…[truncated]` overshoot inside a briefing is thirteen characters
+ * nobody is counting. For a caller whose limit is a HARD one enforced somewhere
+ * else, it is a bug, and #950's review found exactly that: a report capped at
+ * `SIBLING_MESSAGE_CHAR_CAP` came out thirteen characters over it and
+ * `delivery.ts` refused the send with a sentence about shortening text the user
+ * had not written. Such a caller subtracts this length from its budget — see
+ * `REPORT_CHAR_CAP`.
+ *
+ * `.length` is the UTF-16 count `cap` itself measures in, so the two agree even
+ * though the ellipsis is one code unit and reads as three characters.
+ */
+export const TRUNCATION_MARKER = ' …[truncated]';
+export const TRUNCATION_MARKER_LEN = TRUNCATION_MARKER.length;
 
 export { cap as capText };
 

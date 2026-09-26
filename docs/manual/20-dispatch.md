@@ -129,6 +129,56 @@ click you were never going to make.
 knows somebody is there, so from then on it asks you about leaving plan mode like
 any other session would.
 
+## Getting the findings back
+
+When a dispatched session finishes, a row appears in **Events** — on the card
+that *sent* it, not on the new one. Open Events with the tab on the right, or
+press `Ctrl+Space` to jump to whatever is waiting for you.
+
+<!-- screenshot: an Events row reading "Code Reviewer 'Code Reviewer of my-project' finished and reported back", with Inject findings and Open it -->
+
+The row says which role finished, and shows the first line of what it wrote —
+usually the sentence that tells you whether you want to read the rest. It has two
+buttons:
+
+- **Inject findings** puts the whole report into the sending session's message
+  box, marked as coming from the session that wrote it. **It does not send it.**
+  You read it, edit it if you like, and press Enter — exactly as you would with
+  anything one session passes to another. Once you've clicked it the row changes
+  to say where the findings went and the button disappears, so you can't hand the
+  same report over twice. (If you've switched that card to accept messages from
+  other sessions automatically, it goes straight in, and the row says that
+  instead rather than pretending it is waiting.)
+- **Open it** takes you to the session that wrote the report, so you can read the
+  whole conversation instead. If you've already closed that session, the row says
+  so and the Inject button still works — switchboard is holding the report, not
+  the card.
+
+If the hand-over doesn't work — the card was closed, or it already has as many
+messages waiting as it can hold — the row tells you why and **keeps the button**.
+A click that landed badly never costs you the findings.
+
+The report is the reviewer's last reply — the findings themselves, not a summary
+switchboard wrote. If it's very long it's shortened, and the row says so.
+
+**The row does not count the findings.** A review is prose, and different runs
+number their points in different ways — or don't number them at all — so any
+count printed here would sometimes be wrong. You get the reviewer's own opening
+line instead, which is always true.
+
+You'll get a row even when there is nothing to inject. If the session stopped
+before it finished, or finished without writing anything, the row says that
+rather than leaving you waiting for a review that isn't coming. **Dismiss** on
+the row clears just that row; the sending session's own status is untouched.
+
+### One thing to know about closing cards
+
+If you close the *sending* session's card, its waiting findings go with it —
+there's nowhere left to put them. Closing the *reviewer's* card is fine: the
+report is held by the app, so **Inject findings** keeps working. The one thing
+you lose is the name on the block: without the original session around to name,
+it arrives attributed to an unknown session.
+
 ## When Dispatch is greyed out or refuses
 
 - **No **Dispatch…** in the ⋯ menu** — the session hasn't started yet. There's
@@ -146,9 +196,8 @@ any other session would.
 
 ## What doesn't happen yet
 
-- **Findings don't come back to you automatically.** You read them in the new
-  session's own card. Sending them back to the original session with one click is
-  the next piece of work.
+- **Nothing re-runs the review after you fix things.** Fix, re-dispatch, read
+  again — there's no loop that does the rounds for you.
 - **Dispatched sessions don't nest under the session that sent them** in the
   sessions list, and they don't clean themselves up. They're ordinary cards, so
   close them when you're done.
