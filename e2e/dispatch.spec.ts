@@ -71,15 +71,34 @@ test.describe('dispatching a Code Reviewer (#948, §5.15)', () => {
   const dialog = (w: Page) => w.locator('[data-testid="dispatch-dialog"]');
 
   /** every live session the app knows, as the renderer sees them */
-  async function liveSessions(w: Page): Promise<Array<{ id: string; title: string }>> {
+  async function liveSessions(w: Page): Promise<Array<{ id: string; title: string; folder: string }>> {
     return await w.evaluate(async () => {
       const rows = (await window.switchboard.sessions.list()) as Array<{
         id: string;
-        identity: { title: string; accentColor?: string };
+        identity: { title: string; folder: string; accentColor?: string };
       }>;
-      return rows.map((r) => ({ id: r.id, title: r.identity.title }));
+      return rows.map((r) => ({ id: r.id, title: r.identity.title, folder: r.identity.folder }));
     });
   }
+
+  /**
+   * Compare two paths as the same place, not as the same string.
+   *
+   * Belt and braces: main never rewrites a session's folder (`sessions:create`
+   * validates it with `statSync` and stores it verbatim), so both sides of every
+   * comparison below trace back to one `mkdtempSync` return and ought to be
+   * byte-identical. The separator normalisation is for the day one of them goes
+   * through something that does not agree about slashes; the case fold is
+   * WINDOWS-ONLY, because on Linux two paths differing in case are two places
+   * and folding them would only ever hide a bug.
+   */
+  const samePlace = (a: string, b: string): boolean => {
+    const norm = (p: string): string => {
+      const slashed = path.resolve(p).replace(/\\/g, '/');
+      return process.platform === 'win32' ? slashed.toLowerCase() : slashed;
+    };
+    return norm(a) === norm(b);
+  };
 
   test('spawns a peer whose first turn carries the diff, the task and the role', async () => {
     test.setTimeout(240_000);
@@ -118,6 +137,13 @@ test.describe('dispatching a Code Reviewer (#948, §5.15)', () => {
       await w.locator('[data-dispatch-template="builtin:code-reviewer"]').getAttribute('data-selected')
     ).toBe('yes');
 
+    // ── WHERE IT WILL RUN, SAID BEFORE THE TURN IS SPENT (#949) ───────────
+    // Dispatch v1 ships one workspace policy and the dialog names it, with the
+    // real path — main's own resolve, which is the same call that decides where
+    // the card actually lands. The basename rather than the whole string: a temp
+    // dir round-trips through the app and the separators need not survive.
+    await expect(w.getByTestId('dispatch-runs-in')).toContainText(project);
+
     // THE TASK LINE — the reason this dialog exists (#947's measurement: a session
     // started from a slash command reports its task as `"do it."`). Typed here, and
     // asserted below inside the briefing that actually reached the reviewer.
@@ -141,6 +167,14 @@ test.describe('dispatching a Code Reviewer (#948, §5.15)', () => {
     // Not simply "different from the author's title": a basename-titled second card
     // in the same folder would pass that and be indistinguishable on screen.
     expect(reviewer!.title).toContain('Code Reviewer');
+    // ⚠️ AND IT RUNS IN THE AUTHOR'S OWN FOLDER — #949's done-when, and the only
+    // place it can be proved rather than inferred: the unit suites see main's
+    // answer and the renderer's call separately, never the folder a real card
+    // ended up with. `same-folder` is the one workspace policy v1 carries out,
+    // and the reason the other two are refused instead of quietly becoming this.
+    const author = before[0];
+    expect(samePlace(reviewer!.folder, author.folder)).toBe(true);
+    expect(samePlace(reviewer!.folder, folder)).toBe(true);
 
     // ── THE BRIEFING IS ITS FIRST TURN, not a message awaiting a keypress ──
     //

@@ -1292,6 +1292,13 @@
       "briefed": "Briefed — the goal, the decisions and the files touched",
       "full": "The whole conversation, forked"
     },
+    "policySeparator": "·",
+    "workspace": {
+      "same-folder": "in this folder",
+      "fresh-worktree": "wants its own worktree",
+      "fresh-clone": "wants its own clone"
+    },
+    "runsIn": "Runs in {folder} — so anything it runs, it runs on the files you are working in.",
     "noTemplates": "There are no dispatch templates. That should not happen — the three built-in roles are part of the app.",
     "taskLabel": "What was this session asked to do?",
     "taskHint": "Filled in from the first thing you typed in this session, and worth reading before you send it: a session you started from a slash command often records something like “do it.”, which tells a reviewer nothing. One or two sentences is plenty.",

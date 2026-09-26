@@ -231,7 +231,26 @@ describe('dispatch:options', () => {
       const answer = call('dispatch:options', bad) as DispatchOptions;
       expect(answer.templates.length, JSON.stringify(bad)).toBe(4);
       expect(answer.taskStatement, JSON.stringify(bad)).toBeUndefined();
+      // …and the folder goes the same way, for the same reason.
+      expect(answer.folder, JSON.stringify(bad)).toBeUndefined();
     }
+  });
+
+  it('says where a dispatch would run, from the SAME resolve prepare uses (#949)', async () => {
+    // ⚠️ THE POINT IS THAT IT IS ONE ANSWER. The renderer knows a folder for the
+    // card it opened the dialog from; showing that one would be a second
+    // description of a fact `prepare` settles a moment later, and the one on
+    // screen would be the one that spawned nothing. Pinned by comparing the two.
+    const h = harness();
+    expect(h.options().folder).toBe('C:/Projects/TradingApp');
+    expect((await prepared(h)).folder).toBe(h.options().folder);
+  });
+
+  it('omits the folder when the session does not resolve', () => {
+    const { options } = harness({ sessions: [] });
+    expect(options().folder).toBeUndefined();
+    // Still every template, because this channel never refuses.
+    expect(options().templates).toHaveLength(3);
   });
 });
 

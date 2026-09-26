@@ -37,6 +37,23 @@ type.
 A new session appears, named after the role — *Code Reviewer of my-project* — and
 its first message is already there. You don't have to type anything to start it.
 
+## Where the new session works
+
+**In the same folder as the one that sent it.** The box tells you which folder,
+under the list of roles, before you press anything.
+
+That is worth a moment's thought when you ask a dispatched session to run
+something. It is looking at the same files you are, so a test run or a build
+happens in the tree you are working in — not in a copy of it. If you are
+mid-edit, it sees your half-finished edit.
+
+Giving a reviewer its own separate checkout is the obvious fix and it is coming
+with the git work in a later release. Until then switchboard would rather tell
+you where the session is than quietly put it somewhere and let you assume
+otherwise. A role can *ask* for its own checkout — the setting exists — and if
+one does, the box refuses it by name rather than dropping it into your folder
+without saying so.
+
 You can also do this from the command palette (`Ctrl+K`): type *dispatch* and
 you'll see one entry per role. They open the same box with that role already
 chosen. There's no keyboard shortcut for it on purpose — dispatching starts a
@@ -76,7 +93,9 @@ request from a diff alone.
 These three are built into the app, so they improve when you update. You can add
 your own, and a role you write is treated exactly like a built-in one — same
 list, same box, same behaviour. For now that means adding it to your workspace
-file by hand; a proper editor is still to come.
+file by hand; a proper editor is still to come — which is also why there is
+nowhere yet to *pick* a role's folder setting. You can write one into the file,
+and the box will tell you it can't carry it out.
 
 Editing one of the built-in three gives you a copy rather than changing the
 original, so an upgrade can't undo your version and your version can't be undone

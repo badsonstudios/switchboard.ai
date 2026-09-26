@@ -2052,6 +2052,60 @@ transfer + role templates, all already in the design.
 > ordinary card in every other respect; a title that tried to be the nesting would
 > have to be unpicked when the real nesting arrives.
 
+> **As built — E13-04 (#949), the workspace policy. v1 is `same-folder`, and
+> that is now said out loud.** The paragraph above wants a fresh worktree for
+> review. **It is not built and it is not faked.** A dispatched session runs in
+> the author's own folder: `dispatch:prepare` resolves the author session and
+> returns *its* folder, the renderer creates the card at exactly that folder, and
+> `dispatch.spec.ts` asserts the two are the same place end to end — which is the
+> only level at which that can be proved rather than inferred.
+>
+> **Most of this item was already standing when it was picked up**, which is worth
+> recording because the issue queue could not show it: #946 declared the union and
+> the refusal keys, #947 wrote the parallel refusal for `full`, and #948 put the
+> refusal on the template row and on the disabled Dispatch button. What #949 added
+> was the missing half of *declared* and refused, plus the proof.
+>
+> - **A row names both of its policies now.** It said what the role is handed and
+>   never where it runs, which made the refusal unreadable in both directions: a
+>   `fresh-worktree` row showed a red sentence refusing a worktree it had never
+>   said it wanted, and `same-folder` — the policy that ships, and the one whose
+>   consequence a user should know — was invisible.
+> - **The dialog names the actual folder**, from `DispatchOptions.folder`. That is
+>   **main's `queries.resolve`, the same call `prepare` makes**, not the renderer's
+>   copy of the card identity: two descriptions of one folder can disagree, and the
+>   one on screen would be the one that spawned nothing. It sits **below** the role
+>   list and appears only for a role that **will actually run** — the predicate is
+>   the whole refusal, not the workspace half of it. Review caught both: above the
+>   list it shifted every row under the pointer as the selection changed, and a
+>   workspace-only check printed a folder under a `full` role the fork flag had
+>   already refused.
+> - **It matters more than it looks.** A reviewer in the author's folder runs its
+>   tests against the tree the author is editing. That is precisely §5.7's
+>   isolation caveat, and precisely why `fresh-worktree` is refused rather than
+>   silently downgraded to this.
+>
+> **⚠️ THERE IS NO WORKSPACE PICKER, AND THAT IS THE ANSWER TO THE DONE-WHEN, NOT
+> AN OMISSION.** The issue offered two: ship the picker with two options disabled
+> and labelled (§5.32's "announced as unavailable, not absent"), or ship one value
+> and document the gap. Neither is quite available, because **there is no template
+> editor to put a picker in** — #948 declined to build one and said so, and the
+> only way to author a template today is by hand in `workspace.json`. Building an
+> editor to hold a disabled radio button is the half-build this item exists to
+> refuse. So the value is **declared where it is chosen** (all three names are
+> storable and round-trip through `workspace.json` — pinned by a test named
+> "ACCEPTS a policy v1 cannot carry out — storable is not dispatchable") and
+> **refused where it is dispatched**, with the reason on the row. When the editor
+> arrives it gets the picker, and §5.32 applies to it then.
+>
+> **What Phase 3 deletes:** the two rows of `WORKSPACE_POLICY_REFUSAL_KEYS`, their
+> two sentences in `en.json`, and the `same-folder` condition on the dialog's
+> folder line. Everything else — the union, the storage, the DTO field, the row's
+> workspace phrase — is already shaped for three answers, and a test now fails the
+> moment either union grows without its catalogue sentences, because the dialog
+> builds `dispatch.workspace.<policy>` from a union member and i18next renders the
+> raw key when it cannot resolve one.
+
 ### 5.16 Approval surfaces — rich edit review
 
 Pain point (owner, VS Code extension): edit approvals are a tiny checkbox on an
