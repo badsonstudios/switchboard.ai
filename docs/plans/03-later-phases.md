@@ -51,6 +51,37 @@ Planning notes for when this gets broken out:
 > commit paths that disagree. The OQ #9 spike is what the worktree flows should be
 > designed FROM — run 7-8 real branches first, then decide the endgame.
 
+> **ADDED BY THE 2026-09-26 SCOPE CALL — three more, all deferred OUT of Phase 2
+> deliberately rather than missed.** The owner was shown the five §5.16/§5.4 items
+> the 2026-09-25 audit left undecided; three went into Phase 2 as E22 (#972–#974)
+> and these came here. **None of them is blocked on anything Phase 2 owes** — each
+> is here because it shares a surface with work this phase was always going to do,
+> and splitting it would build that surface twice.
+>
+> - **Review queue pane** (§5.16 placement mode 2). Pending approvals from ALL
+>   sessions in one surface: arrow through, Enter to approve, batch-grouped. It was
+>   on §8's Phase 2 list; it is deferred because §5.8's attention queue already
+>   covers *noticing* a pending approval — which is the part exit criterion 3
+>   actually rests on — and the pane is a whole new cross-session surface. **Plan
+>   it with the cross-session review dashboard** (§5.13's group, above): same
+>   fleet-wide "here is every session's pending thing" plumbing, and two
+>   independently-built versions of that would disagree within a release.
+> - **Floating approval window** (§5.16 placement mode 3). §5.16's own as-built
+>   note already said this one is not a Phase 2 gap and should be Phase 3 or
+>   dropped. Kept, not dropped, because §5.6's watcher windows land here too and a
+>   pop-above-everything approval is the same window-management problem — decide
+>   both at once or neither.
+> - **§5.4 Tier 1's two surviving draggables + §5.5 Level 1.** The **file drag**
+>   needs the **Files** tab to drag from, which is already this phase's (document
+>   viewer v2 + §5.7's tree). The **diff-hunk drag** *could* have been built in
+>   Phase 2 against the Changes tab and was deliberately not: it shares a selection
+>   model with **editable diff / commit-from-diff** above, and building it alone
+>   would grow a second hunk-selection path. §5.5 **Level 1 (excerpt injection)**
+>   rests entirely on that tier, so it comes along — with its open question intact
+>   rather than pre-answered: *with `@`-references and the context chip both
+>   shipped, is dragging raw text between sessions still worth a gesture?* Answer
+>   it here, with the dogfooding behind it.
+
 Planning notes:
 - **`utilityProcess` offload — plan it WITH the plugin host, not after**
   (added 2026-07-26, architecture review AR-P2-14). `src/main/index.ts` is a
