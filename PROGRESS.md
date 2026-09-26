@@ -3,6 +3,92 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ DONE — 2026-09-25: **#948 — E13-03, manual dispatch from the card and the palette** (PR #961, merged)
+>
+> **Dispatch v1 is visible.** `Dispatch…` on the card's ⋯ menu, one
+> `session.dispatch.<template>` palette entry per role, both landing in one
+> dialog; a new peer card whose first turn already carries #947's briefing. Size
+> L, and the item #950 (Phase 2 **exit criterion 5**) and #951 both depend on.
+>
+> **⚠️ THE `plan` DEFAULT SURVIVES, AND THE FEAR WAS REAL ANYWAY.** #946 flagged
+> that default as a guess in three places and told this item to measure it.
+> `spike/probes/948/` (two rounds) drove the PATH CLI on the stream transport with
+> #946's real prompt and **nobody answering**;
+> `spike/findings/e13-948-plan-unattended.md` is the write-up. Five things:
+>
+> - a plan-mode review **finishes unattended** — 19 s, `result: success`, **zero**
+>   control requests. Asked to *report*, the model reports;
+> - **but it reaches for `ExitPlanMode` anyway** when it decides to write its
+>   findings down, **and retries after a refusal** — one run asked twice;
+> - an **unanswered** one parks the CLI indefinitely (120 s, no `result`), which in
+>   the app is the 300 s hold deadline **twice**, with the attention machinery
+>   ringing for a question whose only in-app answer is the one it will get anyway;
+> - a **denial costs the findings nothing** — both denied runs produced their full
+>   review. That is what makes the fix cheap;
+> - and **plan mode's write block holds**, measured twice including an
+>   `acceptEdits` control proving the model genuinely tried — **but a plan-mode
+>   `Write` does not FAIL: the CLI redirects it into `~/.claude/plans/`.** The
+>   author's tree is untouched, which is the guarantee `plan` was chosen for, but
+>   **#950 must not expect a findings FILE.**
+>
+> So: keep `plan`, and add the deny-writes story *underneath* it —
+> `StreamPermissions.setDispatched`, narrowly one tool. `ask` was never better: it
+> gates `SHELLISH ∪ MUTATING` in our own hold policy, so an `ask` reviewer
+> reaching for a write parks on OUR hold having given up the CLI's block to get
+> there. And `clearDispatched` lifts the mark the moment a person types, because
+> §5.15's premise is that a dispatched session is a peer you can enter.
+>
+> **THERE IS A DIALOG, which §5.15's "Dispatch → template" does not ask for.**
+> #947's measurement is why: `taskStatement` answers `"do it."` for a session
+> started from a slash command. Clean-room withholds everything else, so that one
+> field carries the job and it is the field most likely to be empty. A one-click
+> menu would have handed a reviewer a review of nothing — and #950 would be built
+> on it. The task line is prefilled, editable, **offered only for `clean-room`**,
+> and a blank is honoured as a choice rather than quietly restored.
+>
+> **⚠️ TWO REVIEW ROUNDS, AND ROUND 2 FOUND THAT ROUND 1'S BLOCKER FIX USED A
+> MECHANISM THIS REPO HAD ALREADY MEASURED AS BROKEN.** Worth keeping as the
+> pattern, not just the bug:
+>
+> - Round 1's blocker: `Dispatch…` from a popped-out card rendered its modal in
+>   the main window's DOM — invisible, looking like nothing happened. The fix
+>   copied `/mcp`'s opener (`window.focus()`). Round 2 pointed at a comment 1,000
+>   lines up in the *same file*: **`window.focus()` does not raise a window on
+>   Windows** (#571), which is why `raisePopoutWindow` calls both the DOM focus
+>   AND an IPC — *"the IPC is the one that actually works on the owner's"*. There
+>   was no mirror for the main window; `app:raiseMain` is it.
+> - **The two task boxes were shown for roles that ignore them** — a promise the
+>   code did not keep, since the `context-package` branch reads neither. Someone
+>   writing a careful task for a PR Author got a PR authored from a package that
+>   never saw it, and the copy asserted the effect too.
+> - **The briefing submit was the one unguarded throw after `manager.create`** — a
+>   throw there would paint "never started" over a session that is running.
+> - Two comments asserting things that were not facts: `sessions:submitPrompt` is
+>   not "the composer's Enter and nothing else" (`/clear` and `/compact` reach it),
+>   and branch 0's hold gate sees only *this* router's holds.
+> - The palette path passed `row.title` raw where the ⋯ path went through
+>   `cardHeaderTitle` — two answers for one card.
+>
+> **FOUND IN PASSING, AND IT IS THE BEST ARGUMENT IN THIS ITEM FOR ASSERTING ON
+> ARGUMENTS:** `CardParams.forkFrom` had been written into the panel since #801
+> and **never forwarded to `sessions:create`** — so every ⋯ → Fork since that item
+> landed started an ORDINARY session carrying none of the history, and main's whole
+> fork path was unreachable from the UI. It survived because
+> `SessionGrid.fork.test.tsx` asserted that the menu ENTRY rendered and never once
+> looked at what `create` was called with. Fixed here (dispatch needs the identical
+> line one field along) and the suite now records the arguments.
+>
+> **Known flakes, tenth sighting, neither file in this diff:** #835's
+> `git-service.test.ts` → "SPENDS THE SAME BUDGET" and #768's `win-cmd.test.ts` →
+> "round-trips byte-exact". Red under full-suite parallel load, green in isolation
+> every time. Separately, **five e2e specs in the notification/toast family fail on
+> this machine and fail identically on `main`** — all in `blurApp` ("a window still
+> reports isFocused()"), so local environment, not this change.
+>
+> **Next up:** **#949** (E13-04, workspace policy — `same-folder` ships,
+> `fresh-worktree` declared and refused), then **#950** (E13-05, the results
+> round-trip — **Phase 2 exit criterion 5**) and **#951** (E13-06, lineage).
+
 > # ✅ DONE — 2026-09-25: **#947 — E13-02, clean-room and briefed context policies** (PR #959, merged)
 >
 > What a dispatched session is actually handed. Three sources, chosen by #946's
