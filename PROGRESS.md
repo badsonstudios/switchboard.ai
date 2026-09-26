@@ -3,6 +3,97 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ DONE — 2026-09-26: **#949 — E13-04, workspace policy** (PR #963, merged)
+>
+> **`same-folder` ships, and now it says so.** A dispatched session runs in the
+> author's own folder; `fresh-worktree` and `fresh-clone` are declared and
+> refused. Size S, and the last item before **#950**, which carries Phase 2
+> **exit criterion 5**.
+>
+> **⚠️ MOST OF THIS ITEM WAS ALREADY STANDING WHEN IT WAS PICKED UP, AND THE
+> AUDIT WAS THE FIRST HALF OF THE WORK.** Four of the five done-when bullets had
+> been satisfied by the three items before it: #946 declared the union and the
+> refusal keys, #947 wrote the parallel refusal for `full`, #948 put the refusal
+> on the template row and on the disabled Dispatch button, and main has enforced
+> it at `dispatch:prepare` since that item. The issue's own comment said as much
+> — *"what is left here is the surface"* — and it was right. Reading the ticket
+> against the code before writing any is what kept this from becoming a duplicate
+> implementation; the audit went on the issue as the plan.
+>
+> **What was actually missing was the other half of DECLARED and refused.** The
+> template row named the CONTEXT policy and never the workspace one, which made
+> the refusal unreadable in both directions: a `fresh-worktree` row showed a red
+> sentence refusing a worktree it had never said it wanted, and `same-folder` —
+> the policy that ships, and the one whose consequence a user should know — was
+> invisible. The row names both now, and the dialog names the actual folder.
+>
+> **THE FOLDER IS MAIN'S ANSWER, FROM THE SAME CALL THE SPAWN USES.** New
+> `DispatchOptions.folder`, resolved by `queries.resolve` in `dispatch:options`
+> — the call `dispatch:prepare` makes a moment later. The renderer has its own
+> copy of the card's folder and using it would have been one line shorter and
+> two descriptions of one fact; the one on screen would be the one that spawned
+> nothing. Absent when the session does not resolve, because that channel never
+> refuses: a bad id costs a line, not the list of three built-in roles.
+>
+> **THERE IS NO WORKSPACE PICKER, AND THAT IS THE ANSWER TO THE DONE-WHEN.** The
+> issue offered a picker with two options disabled (§5.32) or one value and a
+> documented gap. Neither is quite available: **there is no template editor to
+> put a picker in** — #948 declined to build one — and building an editor to hold
+> a disabled radio is the half-build this item exists to refuse. So the value is
+> declared where it is chosen (all three names round-trip through
+> `workspace.json`, pinned by "storable is not dispatchable") and refused where
+> it is dispatched.
+>
+> **⚠️ REVIEW FOUND TWO REAL DEFECTS, AND BOTH ARE THE SAME SHAPE: A COMMENT THAT
+> DESCRIBED SOMETHING THE CODE DID NOT DO.**
+>
+> - The folder line sat **above** the role list, so it appeared and vanished as
+>   the selection changed and yanked every row up and down under the pointer — a
+>   second click after selecting a refused role landed on a different row. Its
+>   own comment, the DESIGN note AND the manual all already said "below the
+>   list". Three sentences agreeing with each other and disagreeing with the JSX.
+> - The show/hide predicate was `workspacePolicy === 'same-folder'` while the
+>   comment beside it justified itself with *"a refused template does not run
+>   anywhere"*. The `full`-with-the-fork-flag-off row is refused for a reason
+>   that is not the workspace — perfectly good `same-folder` policy, dead
+>   Dispatch button — so it printed "Runs in C:/…" directly beneath a red
+>   sentence saying it could not be dispatched at all. The suite's own `refused`
+>   fixture was exactly that square of the matrix and nothing asserted it.
+>
+> Three smaller ones: no exhaustiveness guard on the dynamic
+> `dispatch.workspace.<policy>` key family, so the fourth union member Phase 3
+> adds would have shipped the raw key to the screen (both unions are looped now,
+> which also closed the same latent gap on `dispatch.policy.*`); the separator
+> dot lived inside the phrase's catalogue value where a screen reader reads it
+> out mid-sentence; and a long path had nothing to break on in a 600 px dialog.
+>
+> **The cwd is now PROVED rather than inferred.** `dispatch.spec.ts` asserts the
+> dispatched session's folder is the author's folder end to end — the only level
+> that can see it, since the unit suites see main's answer and the renderer's
+> call separately and never the folder a real card landed in. The assertion was
+> deliberately broken once to confirm it actually runs.
+>
+> **Known flakes, eleventh sighting, neither file in this diff:** #835's
+> `git-service.test.ts` → "SPENDS THE SAME BUDGET" and #768's `win-cmd.test.ts`
+> → "round-trips byte-exact". Red under full-suite parallel load, green in
+> isolation. **A THIRD FILE JOINED THAT CLASS** on the first full run of this
+> item — `scripts/eslint-hex-rule.test.js` → "catches a shorthand with letters",
+> the same 5 s timeout, green alone (829 ms). Same budget, different file, which
+> is the point #835 keeps making.
+>
+> **Next up:** **#950** (E13-05, the results round-trip — **Phase 2 exit
+> criterion 5**), then **#951** (E13-06, lineage).
+>
+> **⚠️ #950 DEPENDS ON SOMETHING #948 MEASURED THAT IS NOT IN ITS ISSUE.**
+> `spike/findings/e13-948-plan-unattended.md`: a plan-mode reviewer's findings do
+> NOT land in a file. Plan mode does not make a `Write` fail — the CLI redirects
+> it into `~/.claude/plans/`, named after the prompt, outside anything
+> switchboard tracks. **So #950's result is a transcript whose last turn is
+> prose**, and #950's own plan note ("must measure rather than design what a real
+> clean-room review leaves as its last turn") is still owed a probe. Also from
+> the same findings: a dispatched session's `ExitPlanMode` is auto-denied, the
+> denial costs the findings nothing, and the mark lifts the moment a human types.
+
 > # ✅ DONE — 2026-09-25: **#948 — E13-03, manual dispatch from the card and the palette** (PR #961, merged)
 >
 > **Dispatch v1 is visible.** `Dispatch…` on the card's ⋯ menu, one
