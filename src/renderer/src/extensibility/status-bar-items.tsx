@@ -97,6 +97,8 @@ const ATTENTION_INK: Record<EventDto['kind'], string> = {
   'needs-input': 'var(--status-needs-input-ink)',
   'needs-permission': 'var(--status-needs-permission-ink)',
   crashed: 'var(--status-crashed-ink)',
+  // A returned dispatch is finished work, so it reads as `done` (P2-E13-05).
+  'dispatch-result': 'var(--status-done-ink)',
 };
 
 function AttentionCount({

@@ -8,6 +8,7 @@ import type {
   DispatchPrepared,
   DispatchRequestWire,
 } from '../shared/dispatch-wire';
+import type { DispatchInjectResult } from '../shared/dispatch-result';
 import type { ConversationHistory, ConversationHistoryRequest } from '../shared/session-history';
 import type { PromptAttachment } from '../shared/prompt-attachments';
 import type { TaskLabelSize } from '../shared/task-label-size';
@@ -671,6 +672,21 @@ const api = {
     /** build the briefing and hold it; `ok: false` carries an i18n `reasonKey` */
     prepare: (req: DispatchRequestWire): Promise<DispatchPrepared> =>
       ipcRenderer.invoke('dispatch:prepare', req),
+    /**
+     * Hand a finished dispatch's report to the author's composer (P2-E13-05).
+     *
+     * The handle is the DISPATCHED session's live id, which is what the Feed row
+     * carries — main holds at most one outstanding report per dispatched session,
+     * so the session is the key and a second opaque id would be a second name for
+     * one thing. The report text is never on this wire in either direction; see
+     * `shared/dispatch-result.ts`.
+     *
+     * `submitted` is true only when the author's card has #765's auto-accept
+     * toggle on. Every other success is a block waiting in the composer for a
+     * person to press Enter, which is §5.4's rule and is not negotiable here.
+     */
+    inject: (reviewerSessionId: string): Promise<DispatchInjectResult> =>
+      ipcRenderer.invoke('dispatch:inject', reviewerSessionId),
   },
   groups: {
     list: (): Promise<Array<{ id: string; name: string; color: string; notifyScope?: string }>> =>
@@ -1106,7 +1122,16 @@ const api = {
   events: {
     list: (): Promise<unknown[]> => ipcRenderer.invoke('events:list'),
     ack: (sessionId: string): Promise<void> => ipcRenderer.invoke('events:ack', sessionId),
-    dismiss: (sessionId: string): Promise<void> => ipcRenderer.invoke('events:dismiss', sessionId),
+    /**
+     * Remove ONE row.
+     *
+     * `eventId` since P2-E13-05: a session can own more than one row now (its
+     * own status, plus a `dispatch-result` for each session it dispatched), so
+     * dismissing by session alone would take the lot. Optional so a caller that
+     * knows only a session keeps the old meaning.
+     */
+    dismiss: (sessionId: string, eventId?: number): Promise<void> =>
+      ipcRenderer.invoke('events:dismiss', sessionId, eventId),
     /** the FULL current list on every change (adds, replacements, removals) */
     onChanged: (cb: (list: unknown[]) => void): (() => void) => {
       const h = (_e: unknown, l: unknown[]) => cb(l);

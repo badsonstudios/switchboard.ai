@@ -123,10 +123,32 @@ on the floor, and say so in your PR.
 
   What a dispatched session is: **an ordinary session**, with its own card, its
   own conversation and its own permissions. Close the original and it carries on.
-  What it is not, yet: its findings do not come back to the session that sent it
-  automatically (you read them in its own card), it does not nest under its
-  parent in the sessions list, and nothing dispatches on its own — every dispatch
-  is a button you pressed.
+  What it is not, yet: it does not nest under its parent in the sessions list,
+  and nothing dispatches on its own — every dispatch is a button you pressed.
+- **And the findings come back.** When a dispatched session finishes, a row
+  appears in **Events** on the card that *sent* it, showing which role finished
+  and the first line of what it wrote. **Inject findings** puts the whole report
+  into that session's message box, marked as coming from the session that wrote
+  it — and **does not send it**: you read it, edit it if you like, and press
+  Enter, exactly as with anything else one session passes to another. **Open it**
+  takes you to the reviewer instead.
+
+  The row does not count the findings, and that is deliberate: a review is prose,
+  different runs enumerate their points differently, and a number printed there
+  would sometimes be wrong. You get the reviewer's own opening line, which is
+  always true. You also get a row when there is nothing to inject — a session
+  that stopped early, or finished without writing anything, says so rather than
+  leaving you waiting for a review that is not coming.
+
+  Once you have used it the row says where the findings went — waiting in your
+  message box, or sent straight in — and the button goes, so the same report
+  cannot be handed over twice. If the hand-over does not work, the row tells you
+  why and **keeps** the button: a click that landed badly never costs you the
+  findings.
+
+  Closing the *reviewer's* card is safe: the report is held by the app and the
+  button keeps working. Closing the *sending* card takes its waiting findings
+  with it, since there is nowhere left to put them.
 - **Clear and Compact are one click away.** The row under the prompt box — the
   one with the autonomy and model chips — now has **Compact** and **Clear**
   buttons, so restarting or summarizing a session's conversation no longer

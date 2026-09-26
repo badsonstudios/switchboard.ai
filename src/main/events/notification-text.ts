@@ -36,6 +36,14 @@ export const NOTIFICATION_KIND_KEYS: Readonly<Record<FeedKind, string>> = {
   'needs-input': 'notification.kind.needs-input',
   'needs-permission': 'notification.kind.needs-permission',
   crashed: 'notification.kind.crashed',
+  // Present so this map stays TOTAL over `FeedKind` — which is the whole reason
+  // it is a `Record` rather than a template string. It is not reached today:
+  // `notifier.ts`'s `isAttention` deliberately leaves `dispatch-result` out, so
+  // no toast, push or webhook is built from one (P2-E13-05 — the reviewer's own
+  // `done` has already beeped one moment earlier, and a second signal for the
+  // same fact is the duplicate #948's review argued against). A key rather than
+  // a placeholder, so the day something does reach it there is a sentence.
+  'dispatch-result': 'notification.kind.dispatch-result',
 };
 
 /**

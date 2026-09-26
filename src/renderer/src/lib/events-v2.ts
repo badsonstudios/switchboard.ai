@@ -56,7 +56,9 @@ export function visibleEvents<T extends AttentionEvent>(
   railIndex: (sessionId: string) => number | undefined,
   holding: (sessionId: string) => boolean
 ): T[] {
-  const ordered = panelOrder(events) as T[];
+  // `panelOrder` is generic since P2-E13-05, so the row type survives the sort
+  // and the cast this line used to need is gone.
+  const ordered = panelOrder(events);
   if (filter === 'needed') return ordered.filter((e) => queueable(e) || holding(e.sessionId));
   if (filter === 'by-session') {
     const pos = new Map(ordered.map((e, i) => [e.id, i]));

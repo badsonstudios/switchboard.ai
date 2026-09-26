@@ -101,6 +101,7 @@ import {
 } from '../../shared/task-label-size';
 import { PersistedSession } from '../workspace/store';
 import type { DispatchRegistry, PendingDispatch } from './dispatch-ipc';
+import type { DispatchResults } from './dispatch-results';
 import { buildDispatchPrompt } from './dispatch-prompt';
 import { commandsFromCli, SlashCommand } from '../../shared/slash-commands';
 import { DEFAULT_SESSION_TRANSPORT } from '../transport/transport';
@@ -201,6 +202,20 @@ export interface SessionIpcDeps {
    * `dispatchId` in such a wiring is treated exactly as a stale one — fail open.
    */
   dispatches?: DispatchRegistry;
+  /**
+   * The round-trip (P2-E13-05) — who owes whom a result, and the report itself.
+   *
+   * Three touch points, all in this file because all three are moments only this
+   * file sees: the briefing landing (a dispatch begins), a status reaching `done`
+   * or `crashed` (it ends), and `tearDownLive` (it ends a different way). The
+   * INJECT is not here — it needs `SiblingDelivery`, which is wired in
+   * `main/index.ts`, and putting a second delivery path in this file is exactly
+   * what §5.4's one-rule discipline is against.
+   *
+   * Optional for `dispatches`' reason: a wiring with no dispatch surface has no
+   * round-trip to make, and every call below is a `?.`.
+   */
+  dispatchResults?: Pick<DispatchResults, 'dispatched' | 'completed' | 'forget'>;
   /** persisted session cards (resume-on-focus across app restarts, §5.25) */
   persist: {
     list: () => PersistedSession[];
@@ -576,8 +591,23 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
    * every one of them shares, not in one caller out of three.
    */
   const tearDownLive = (liveId: string): void => {
+    // A DISPATCHED SESSION GOING AWAY IS NEWS FOR ITS AUTHOR (P2-E13-05), and it
+    // has to be said BEFORE the `feed.forget` below — not because that call
+    // touches the author's row (it does not; a dispatch-result is filed under
+    // the author), but because this is the last moment the reviewer's Feed
+    // blocks are still readable. A reviewer that wrote its findings and was then
+    // closed still hands them over; one that was closed mid-review reaches the
+    // author as an `ended` event rather than as silence, which is the
+    // done-when's third bullet. A no-op once the round-trip has been made.
+    tearDownStep(liveId, 'dispatchResults.completed', () =>
+      deps.dispatchResults?.completed(liveId, 'ended')
+    );
     // its event leaves the Events panel with it
     tearDownStep(liveId, 'feed.forget', () => deps.feed.forget(liveId));
+    // ...and anything keyed to it that can no longer happen. AFTER the harvest
+    // above, which is what turns a live link into a held report; `forget` is
+    // deliberately asymmetric and keeps a report whose REVIEWER has gone.
+    tearDownStep(liveId, 'dispatchResults.forget', () => deps.dispatchResults?.forget(liveId));
     // `feeds` is the PTY live-feed unsubscriber from `pty:attach`, not the
     // Events feed above it — two different things one line apart
     tearDownStep(liveId, 'pty.detach', () => feeds.get(liveId)?.());
@@ -820,6 +850,14 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     // (#758). `done` is `transition()`'s answer to both stream `result` and the
     // `Stop` hook, so this fires once per real turn on either transport.
     if (change.to === 'done') maybeAiLabel(change.sessionId);
+    // A DISPATCHED session finishing is the round-trip (P2-E13-05). Same signal
+    // as the label above and for the same reason — `done` is `transition()`'s
+    // answer to both the stream `result` and the `Stop` hook — and `completed`
+    // spends the link, so a reviewer the user later types at does not raise a
+    // second "your review is ready" on every turn.
+    if (change.to === 'done' || change.to === 'crashed') {
+      deps.dispatchResults?.completed(change.sessionId, change.to === 'crashed' ? 'ended' : 'done');
+    }
     // A turn is running, so a transcript exists or is about to (P2-E15-10).
     // This is the ONLY honest "a conversation started" signal available: the
     // watcher sees hook traffic from `SessionStart` at launch too, and a
@@ -953,7 +991,18 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     if (typeof sessionId === 'string') deps.feed.acknowledge(sessionId);
   });
   // the ✕ on an event item removes it outright (Dan round 4)
-  broker.handle('events:dismiss', (_e, sessionId: string) => {
+  //
+  // BY EVENT ID SINCE P2-E13-05, with the session as the fallback. A session can
+  // now own more than one row — its own status, plus a `dispatch-result` for
+  // each session it dispatched — so `forget(sessionId)` would take the lot, and
+  // dismissing "your reviewer finished" would silently also dismiss the author's
+  // own held permission. The session arm is kept for a caller that knows only a
+  // session, which is what this channel used to be.
+  broker.handle('events:dismiss', (_e, sessionId: unknown, eventId?: unknown) => {
+    if (typeof eventId === 'number' && Number.isFinite(eventId)) {
+      deps.feed.dismiss(eventId);
+      return;
+    }
     if (typeof sessionId === 'string') deps.feed.forget(sessionId);
   });
 
@@ -2251,6 +2300,20 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           // to have to come and look at this card, and the ordinary hold is what
           // tells them to.
             deps.streamPermissions?.setDispatched(record.id);
+            // ...and the other half of "nobody is sitting in front of this": the
+            // author it owes a result to (P2-E13-05). The same moment, because
+            // the same fact starts both — and AFTER the submit for the same
+            // reason, since a session that could not be briefed has nothing to
+            // report and an event promising the author a review would be a lie
+            // this module is in a position to know about.
+            //
+            // `dispatch.from` has been sitting in `PendingDispatch` since #948
+            // labelled "for #951's lineage to pick up later". #950 got here
+            // first; #951 will want it persisted, which is its call to make.
+            deps.dispatchResults?.dispatched(record.id, dispatch.from, {
+              reviewerName: identity.title,
+              templateName: dispatch.template.name,
+            });
             log.info('dispatch briefed', {
               sessionId: record.id,
               cardId: opts.cardId,

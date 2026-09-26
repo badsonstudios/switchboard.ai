@@ -25,7 +25,14 @@ import { execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { launchApp, LaunchedApp, pollAsync, registerTempDir, sessionStatuses } from './fixtures/app';
+import {
+  launchApp,
+  LaunchedApp,
+  openEventsDrawer,
+  pollAsync,
+  registerTempDir,
+  sessionStatuses,
+} from './fixtures/app';
 
 /** The file the fixture edits, and the two versions of it. */
 const FILE = 'total.js';
@@ -219,5 +226,126 @@ test.describe('dispatching a Code Reviewer (#948, §5.15)', () => {
     //    an unclosed fence in a template from swallowing the briefing.
     expect(text).toContain('Your instructions');
     expect(text).toContain('You are reviewing a change you did not write');
+
+    // ══ THE ROUND-TRIP (P2-E13-05, #950) — Phase 2 exit criterion 5 ═══════
+    //
+    // WHAT ONLY THIS CAN SEE. The units pin the extraction, the feed's second
+    // family, the inject's refusals and the row — each against stand-ins. None
+    // of them can see the join: a status change on a real session reaching the
+    // real `DispatchResults`, a real `StreamFeed` answering with the blocks a
+    // real card is showing, a real `SiblingDelivery` putting them in a real
+    // composer. That join is assembled in `main/index.ts`, the file with no
+    // tests of its own, which is the same gap this spec's header is about.
+    await openEventsDrawer(w);
+
+    // The reviewer's turn ends and the row lands on the AUTHOR — which is the
+    // first done-when and the whole point. The handle carries the REVIEWER's
+    // live id, so a row that had been filed on the reviewer's own card, or
+    // built from the wrong session's feed, would not match.
+    const resultRow = w.locator(`[data-event-dispatch="${reviewer!.id}"]`);
+    await expect(resultRow).toBeVisible({ timeout: 90_000 });
+    const authorRow = w.locator(`.event-row[data-event-kind="dispatch-result"]`).first();
+    // ⚠️ THE ROW IS THE AUTHOR'S. The title a row prints is its SESSION's, and
+    // this one's session is the author — so the card named here is the one that
+    // asked for the review, not the one that wrote it.
+    await expect(authorRow).toContainText(author.title);
+    await expect(authorRow).toContainText('Code Reviewer');
+    // §5.15's example row says "3 findings". Four probe runs of one prompt
+    // enumerated four different ways and the one self-reported count in them
+    // pointed at the wrong thing, so the row counts nothing — see
+    // `spike/findings/e13-950-review-last-turn.md`.
+    await expect(authorRow).not.toContainText(/\d+ findings/);
+
+    // ── ONE CLICK, AND IT LANDS IN THE AUTHOR'S COMPOSER ─────────────────
+    await w.locator(`[data-event-inject="${reviewer!.id}"]`).click();
+    // THE ROW ITSELF CARRIES THE OUTCOME, not one surface's component state:
+    // main re-raises it `delivered`, so the button is gone on every Events
+    // surface and the row says where the block went — WAITING, not sent, which
+    // is §5.4's rule read back to the user who just pressed the button.
+    // On the ROW, not on `resultRow` — that handle is the actions box; the
+    // sentence is the row's own status line, one level up.
+    await expect(authorRow).toContainText('waiting in this session', { timeout: 30_000 });
+    await expect(w.locator(`[data-event-inject="${reviewer!.id}"]`)).toHaveCount(0);
+
+    // ⚠️ THE RAIL IS WHERE IT IS VISIBLE FIRST, and that is not a detour. Both
+    // cards are in one folder, so E12-05 auto-groups them into one STACKED
+    // dockview group and only the active tab's panel is mounted — the author's
+    // composer does not exist in the DOM while the reviewer is on top. That is
+    // exactly #765's "a card that is collapsed" case, which is why the ack
+    // carries `shown` at all, and the rail's waiting mark is the app's answer
+    // to it. Asserting it here also makes the next step honest: the block has
+    // to survive being placed on a card nobody is looking at.
+    const authorCard = await pollAsync(async () => {
+      const cards = (await w.evaluate(() => window.switchboard.sessions.cards())) as Array<{
+        cardId: string;
+        liveId?: string;
+      }>;
+      return cards.find((c) => c.liveId === author.id)?.cardId ?? null;
+    }, 'the author card never reported a live id');
+    await expect(w.locator(`[data-rail-waiting="${authorCard}"]`)).toHaveText('1', { timeout: 30_000 });
+
+    // Now go and look, which is what the user does next.
+    await w.locator(`[data-rail-open="${authorCard}"]`).click();
+
+    // §5.4's rule, on the real app: an attributed block WAITING, not a turn that
+    // ran. The fake echoes every submitted turn into the feed, so a submit would
+    // put this text in a user block — and the assertion below that it does not
+    // is the safety property, not a detail.
+    const held = w.locator('[data-sibling-message]');
+    await expect(held).toBeVisible({ timeout: 30_000 });
+    // THE REVIEWER'S OWN WORDS, carried the whole way: the fake answers a prompt
+    // with `FAKE-REPLY: <the prompt>`, so the marker from the real git diff that
+    // went out in the briefing has come back through the reviewer's last turn.
+    // A stub, an empty report or the wrong session's feed all fail here.
+    await expect(held).toContainText(MARKER, { timeout: 30_000 });
+    // Attributed to the session that wrote it — `formatSiblingPrompt`'s header,
+    // unchanged, because an injected finding IS an ordinary sibling message.
+    await expect(held).toContainText('From @');
+
+    // NOTHING RAN. The author's session is still idle and no user turn carries
+    // the report: the human's Enter is still owed, which is the exit criterion's
+    // own last clause.
+    //
+    // SCOPED TO THE AUTHOR'S FEED, which is the one on screen now — the click
+    // above made its panel the active tab of the stacked group, so the
+    // reviewer's briefing turn (which also carries the marker) is no longer in
+    // the DOM to be counted by accident. The fake echoes every submitted turn
+    // into the feed, so a submit would put this text in a user block here.
+    //
+    // COUNTED, NOT MATCHED ON TEXT. A report is thousands of characters, so the
+    // Feed collapses the turn and its body is not in the DOM until it is opened
+    // — the same lesson the briefing assertion above learned. A `hasText` filter
+    // would therefore find nothing whether or not the turn had run, which is a
+    // safety assertion that cannot fail. The author has had no user turn at all
+    // up to this point, so the honest test is the count.
+    await w.waitForTimeout(1_500);
+    const authorFeed = w.locator(`[data-feed-region][aria-label*="${project}"]`);
+    await expect(authorFeed).toHaveCount(1);
+    const authorTurns = authorFeed.locator('[data-feed-block="user"]');
+    await expect(authorTurns).toHaveCount(0);
+    expect((await sessionStatuses(a)).get(project)).toBe('idle');
+
+    // ── AND THE HUMAN'S ENTER IS WHAT SENDS IT ───────────────────────────
+    //
+    // The positive control for the zero above, and the exit criterion's last
+    // clause: the findings reach the author's CONVERSATION, but only because a
+    // person pressed a key. Without this, the zero would also pass on a build
+    // where the block never arrived at all.
+    const box = w
+      .locator('[data-composer-dropzone]', { has: w.locator('[data-sibling-message]') })
+      .locator('textarea');
+    await box.click();
+    await box.press('Enter');
+    await expect(authorTurns).toHaveCount(1, { timeout: 30_000 });
+    const sent = authorTurns.first();
+    const sentExpander = sent.locator('[data-feed-expander]').first();
+    if ((await sentExpander.count()) > 0) await sentExpander.click();
+    const sentText = (await sent.innerText()).replace(/\s+/g, ' ');
+    // The reviewer's words, in the author's conversation.
+    expect(sentText).toContain(MARKER);
+    // …wearing `formatSiblingPrompt`'s header, which tells the author's agent
+    // that a person reviewed this before letting it through.
+    expect(sentText).toContain('The user reviewed it and sent it on to you');
+    await expect(held).toHaveCount(0);
   });
 });

@@ -14,6 +14,7 @@
 // it. Components re-export from here so existing imports keep working.
 import type { RailCardStatus } from '../../../shared/sessions';
 import type { TransportKind } from '../../../shared/transport';
+import type { DispatchResultDto } from '../../../shared/dispatch-result';
 
 /** A session as the rail and the grid see it. */
 export interface RailSession {
@@ -69,10 +70,20 @@ export interface RailGroup {
   color: string;
 }
 
-/** One attention event — the main-process EventFeed's view of a session. */
+/**
+ * One attention event — the main-process EventFeed's view of a session.
+ *
+ * `sessionId` is whose ROW this is, which for every kind but one is the session
+ * the state belongs to. A `dispatch-result` is filed under the **author** that
+ * dispatched the session which produced it (P2-E13-05, §5.15) — see
+ * `main/events/feed.ts`, and note that a session can therefore own more than one
+ * row, which is why Dismiss goes by event id.
+ */
 export interface EventDto {
   id: number;
   sessionId: string;
-  kind: 'done' | 'ready' | 'needs-input' | 'needs-permission' | 'crashed';
+  kind: 'done' | 'ready' | 'needs-input' | 'needs-permission' | 'crashed' | 'dispatch-result';
   at: string;
+  /** set on, and only on, `kind === 'dispatch-result'` */
+  dispatch?: DispatchResultDto;
 }

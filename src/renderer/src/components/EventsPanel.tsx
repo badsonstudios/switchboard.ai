@@ -27,6 +27,7 @@ import type { HistoryRepairNotice } from '../../../shared/history-repair';
 import type { Digest } from '../lib/digest';
 import type { PermissionRequestDto } from '../../../shared/ipc/permissions';
 import type { AskQuestion } from '../../../shared/ask-user-question';
+import type { DispatchResultDto } from '../../../shared/dispatch-result';
 import { EventDto } from '../model/types';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
@@ -42,6 +43,7 @@ import {
   visibleEvents,
 } from '../lib/events-v2';
 import { argumentDetail } from '../lib/permission-batches';
+import { answered } from '../../../shared/ipc/refusal';
 
 export type { EventDto } from '../model/types';
 
@@ -89,6 +91,12 @@ const KIND_HUE: Record<EventDto['kind'], string> = {
   'needs-input': 'var(--status-needs-input)',
   'needs-permission': 'var(--status-needs-permission)',
   crashed: 'var(--status-crashed)',
+  // A finished dispatch IS a finished session, one card over — so it takes the
+  // `done` pair rather than a sixth hue of its own. The measured contrast above
+  // is what makes reuse the safe answer: a new colour here would be a new pair
+  // to measure on two themes, for a row that means the same thing as the one it
+  // would be sitting next to (P2-E13-05).
+  'dispatch-result': 'var(--status-done)',
 };
 const KIND_INK: Record<EventDto['kind'], string> = {
   done: 'var(--status-done-ink)',
@@ -96,6 +104,7 @@ const KIND_INK: Record<EventDto['kind'], string> = {
   'needs-input': 'var(--status-needs-input-ink)',
   'needs-permission': 'var(--status-needs-permission-ink)',
   crashed: 'var(--status-crashed-ink)',
+  'dispatch-result': 'var(--status-done-ink)',
 };
 
 /**
@@ -247,6 +256,18 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
     byId.set(s.id, s);
     if (s.liveId) byId.set(s.liveId, s);
   }
+  /**
+   * "Open it" on a dispatch-result row — focus the session that WROTE the report
+   * (P2-E13-05), which is the one session that row is about and the only one of
+   * its two ids the rest of the row never names.
+   *
+   * Through `byId` for the same reason the row's own open does: `onFocus` wants a
+   * card where there is one, and an event carries a live id.
+   */
+  const dispatchOpen = (reviewer: string, eventId: number) => (): void => {
+    props.onFocus(byId.get(reviewer)?.id ?? reviewer);
+    props.onVisit?.(eventId);
+  };
   const railPos = new Map(props.railOrder.map((id, i) => [id, i]));
   const holdingIds = new Set(props.held.map((r) => r.sessionId));
   const ordered = visibleEvents(
@@ -913,7 +934,16 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    {t(`events.kind.${e.kind}`)}
+                    {/* A dispatch-result's row is on the AUTHOR's card, so the
+                        one word every other kind prints ("Done.") would be a
+                        statement about the wrong session. It names the role and
+                        the session that wore it instead. */}
+                    {e.kind === 'dispatch-result' && e.dispatch
+                      ? t(dispatchRowKey(e.dispatch), {
+                          role: e.dispatch.templateName,
+                          session: e.dispatch.reviewerName,
+                        })
+                      : t(`events.kind.${e.kind}`)}
                     {isNext && (
                       <span
                         title={t('events.nextUpHint')}
@@ -938,7 +968,10 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
                 <button
                   onClick={(ev) => {
                     ev.stopPropagation(); // dismiss, don't focus
-                    void window.switchboard.events.dismiss(e.sessionId);
+                    // BY ID as well as by session (P2-E13-05): a session can own
+                    // a status row AND a dispatch-result row, and dismissing one
+                    // must not take the other.
+                    void window.switchboard.events.dismiss(e.sessionId, e.id);
                   }}
                   type="button"
                   className="event-dismiss"
@@ -963,15 +996,28 @@ export function EventsPanel(props: EventsPanelProps): React.JSX.Element {
                   {t('events.dismiss')}
                 </button>
               </div>
-              <HeldActions
-                held={heldFor(props.held, e.sessionId)}
-                who={s?.title ?? t('events.unknownSession')}
-                liveSessionId={e.sessionId}
-                onDecide={props.onDecidePermission}
-                onAllowAll={props.onAllowAllSession}
-                onAnswer={open}
-                t={t}
-              />
+              {e.kind === 'dispatch-result' && e.dispatch ? (
+                <DispatchActions
+                  result={e.dispatch}
+                  // The rail's own list, which is keyed by live session id — the
+                  // renderer already knows which sessions exist, so the DTO does
+                  // not carry a liveness flag that would be stale the moment it
+                  // crossed.
+                  reviewerLive={byId.has(e.dispatch.reviewer)}
+                  onOpenReviewer={dispatchOpen(e.dispatch.reviewer, e.id)}
+                  t={t}
+                />
+              ) : (
+                <HeldActions
+                  held={heldFor(props.held, e.sessionId)}
+                  who={s?.title ?? t('events.unknownSession')}
+                  liveSessionId={e.sessionId}
+                  onDecide={props.onDecidePermission}
+                  onAllowAll={props.onAllowAllSession}
+                  onAnswer={open}
+                  t={t}
+                />
+              )}
             </div>
           );
         })}
@@ -1145,6 +1191,178 @@ function HeldActions(props: {
               t={t}
             />
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Which sentence a dispatch-result row prints (P2-E13-05).
+ *
+ * One per outcome, plus the split `delivered` needs: §5.4's whole point is that
+ * an injected block WAITS for a keypress unless the author's card accepts
+ * siblings automatically, and "handed to your message box" and "handed over and
+ * already running" are different things to have just done.
+ *
+ * ⚠️ READ OFF THE ROW, NOT OFF THE CLICK. The confirmation used to live in
+ * `DispatchActions`' own state, and it never survived: main re-raises the row to
+ * mark it delivered, which mints a new event id, which changes the React `key`,
+ * which remounts the component with fresh state. A confirmation that vanishes at
+ * the moment it is earned is worse than none, and it also could not be seen from
+ * a second Events surface. Cost one red e2e to learn.
+ */
+function dispatchRowKey(d: DispatchResultDto): string {
+  if (d.outcome !== 'delivered') return `events.dispatch.${d.outcome}`;
+  return d.submitted ? 'events.dispatch.deliveredAuto' : 'events.dispatch.delivered';
+}
+
+/**
+ * What a row can do about a finished dispatch (P2-E13-05, §5.15's round-trip).
+ *
+ * §5.15 asks for *one-click "inject findings into author session"*, and this is
+ * that click. The row it hangs under is the AUTHOR's, so "inject" means "into
+ * this card" — there is no target to choose, which is what makes one button
+ * enough.
+ *
+ * ⚠️ IT DOES NOT SHOW THE FINDINGS. The headline is one line the reviewer wrote,
+ * and it is one line because the report never crosses to the renderer at all
+ * (`shared/dispatch-result.ts` has the two reasons). Reading the review means
+ * opening the session that wrote it, which is the second button.
+ *
+ * Every click STOPS here, for `HeldActions`' reason: the row around it focuses
+ * the author, and a click that landed between two buttons would do the one thing
+ * the user did not ask for.
+ */
+function DispatchActions(props: {
+  result: DispatchResultDto;
+  /** the reviewer is still a session the app knows — see the Open button */
+  reviewerLive: boolean;
+  onOpenReviewer: () => void;
+  t: TFunction;
+}): React.JSX.Element {
+  const { result, t } = props;
+  /**
+   * `idle` → the button is offered; `sending` → it is disarmed; then the outcome.
+   *
+   * A REFUSAL RETURNS TO `idle`-with-a-reason rather than to a dead button.
+   * `delivery.ts` refuses for things that pass — a composer that is momentarily
+   * full, a window that did not confirm in time — and main deliberately does not
+   * spend the held report on a refusal, so the one thing the row must not do is
+   * take the button away after the first click landed badly.
+   *
+   * ⚠️ AND THIS STATE IS A CONVENIENCE, NOT THE GUARD. It disarms one component;
+   * main reserves the report for the duration of the send and drops the ROW once
+   * it has landed, which is what makes a second Events surface — a popped-out
+   * window showing the same list — safe. See `DispatchResults.inject`.
+   */
+  const [state, setState] = React.useState<
+    { at: 'idle'; reason?: string; detail?: string } | { at: 'sending' }
+  >({ at: 'idle' });
+  const inject = (): void => {
+    if (state.at !== 'idle') return;
+    setState({ at: 'sending' });
+    void window.switchboard.dispatch
+      .inject(result.reviewer)
+      .then((raw) => {
+        // LAUNDERED AT THE BOUNDARY (#346/#440/#650). A refused call resolves an
+        // `IpcRefusal`, which read as `raw.ok` is `undefined` — falsy, so the row
+        // would print an empty refusal and look like a bug in main. `answered`
+        // turns it into the absence this site already has a sentence for.
+        const r = answered(raw);
+        if (!r) return setState({ at: 'idle', reason: t('events.dispatch.noAnswer') });
+        // NOTHING TO SET ON SUCCESS. Main re-raises the row `delivered`, which
+        // remounts this component under a new event id — see `dispatchRowKey`.
+        // The row is the confirmation, on every surface rather than this one.
+        if (r.ok) return;
+        // A KEY, NOT A SENTENCE (#950 review). Main's refusals are catalogue keys
+        // precisely so this line does not print English written for an agent;
+        // `detail` is the one thing main knows and we do not, and it rides the
+        // tooltip rather than the row.
+        setState({ at: 'idle', reason: t(`events.dispatch.refused.${r.reasonKey}`), detail: r.detail });
+      })
+      // The channel itself failing is the one case main cannot phrase for us —
+      // and `String(err)` is a stack, not a sentence, so the user gets ours.
+      .catch((err: unknown) => {
+        setState({ at: 'idle', reason: t('events.dispatch.refused.channel'), detail: String(err) });
+      });
+  };
+  return (
+    <div
+      data-event-dispatch={result.reviewer}
+      onClick={(ev) => ev.stopPropagation()}
+      title=""
+      style={{ marginBlockStart: 5, cursor: 'default' }}
+    >
+      {result.headline && (
+        <div
+          data-testid="event-dispatch-headline"
+          // TWO LINES, not one. Everything else on this row is a single
+          // ellipsised line because it is a label; this is the reviewer's own
+          // sentence, and half of "This change is not correct and should not be
+          // merged as written" is worse than none of it. The full text is on the
+          // reviewer's card, which the button below opens.
+          style={{
+            fontSize: 10.5,
+            color: 'var(--text)',
+            marginBlockEnd: 4,
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
+            overflow: 'hidden',
+          }}
+        >
+          {result.headline}
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+        {result.chars > 0 && (
+          <button
+            type="button"
+            className="events-btn"
+            data-event-inject={result.reviewer}
+            aria-label={t('events.dispatch.injectFrom', { session: result.reviewerName })}
+            title={t('events.dispatch.injectHint')}
+            disabled={state.at === 'sending'}
+            onClick={inject}
+            style={actionBtn(true)}
+          >
+            {t('events.dispatch.inject')}
+          </button>
+        )}
+        {/* OFFERED ONLY WHILE THERE IS SOMETHING TO OPEN. The report deliberately
+            outlives the session that wrote it — closing a finished reviewer's
+            card is a documented, ordinary thing to do — so this button's target
+            can be gone while the row is not, and a button that focuses a dead id
+            does nothing visible at all (#950 review). */}
+        {props.reviewerLive ? (
+          <button
+            type="button"
+            className="events-btn"
+            data-event-open-reviewer={result.reviewer}
+            aria-label={t('events.dispatch.openReviewerNamed', { session: result.reviewerName })}
+            onClick={props.onOpenReviewer}
+            style={actionBtn(false)}
+          >
+            {t('events.dispatch.openReviewer')}
+          </button>
+        ) : (
+          <span style={{ fontSize: 10, color: 'var(--muted)' }}>{t('events.dispatch.reviewerGone')}</span>
+        )}
+        {result.truncated && (
+          <span style={{ fontSize: 10, color: 'var(--muted)' }}>{t('events.dispatch.truncated')}</span>
+        )}
+      </div>
+      {state.at === 'idle' && state.reason && (
+        <div
+          data-testid="event-dispatch-refused"
+          role="status"
+          // `detail` is main's own sentence — worth having, written for an agent,
+          // so it hovers rather than speaks.
+          title={state.detail}
+          style={{ fontSize: 10, color: 'var(--status-crashed-ink)', marginBlockStart: 4 }}
+        >
+          {state.reason}
         </div>
       )}
     </div>

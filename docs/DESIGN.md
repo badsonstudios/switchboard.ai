@@ -2106,6 +2106,130 @@ transfer + role templates, all already in the design.
 > builds `dispatch.workspace.<policy>` from a union member and i18next renders the
 > raw key when it cannot resolve one.
 
+> **As built — E13-05 (#950), the round-trip. This closes Phase 2 exit criterion
+> 5.** A dispatched session finishing raises a row on the **author's** card, and
+> one click puts its report in the author's composer as an ordinary sibling
+> message — so §5.4's rule applies unchanged and the human still presses Enter.
+>
+> **WHAT "THE RESULT" IS WAS MEASURED, NOT DESIGNED.** The item's plan note said
+> it had to be, and the issue said why: *do not design the delimiter first and
+> hope the model honours it.* `spike/probes/950/`, written up in
+> `spike/findings/e13-950-review-last-turn.md`, drove the real dispatch prompt
+> through the PATH CLI four times:
+>
+> - **the last assistant turn is the findings, 4/4** — including the run whose
+>   `ExitPlanMode` was refused at 60.4 s. That is the question this probe existed
+>   to ask. #948 reported that a denial "costs the findings nothing", but it
+>   measured a TOTAL across every assistant frame; a shape of *review → ask to
+>   exit → refused → "understood, I'll stop"* would have produced the same total
+>   and made this whole surface deliver an apology to the author. It does not
+>   happen: the model answers a refusal by reporting anyway, in the same turn;
+> - **it is the LAST turn, not all of them.** Every run opened with 63–94
+>   characters of throat-clearing before its first tool call;
+> - and the last turn was **byte-identical to the `result` frame's own `result`
+>   string** in all four runs — a cross-check that the extraction agrees with the
+>   CLI's own answer, and a reason NOT to plumb that frame: `stream-feed.ts` reads
+>   no text off it, and a second source for one fact is the drift §5.15's own
+>   briefed policy already refused.
+>
+> So the result is **the last contiguous run of assistant prose blocks from
+> `StreamFeed.blocks`** — the same blocks on the reviewer's card, so what is
+> injected is what the user can read. A *run* because `assistantIntents` emits one
+> block per content item; `thinking` is transparent to the walk and a `tool`,
+> `user`, `todos` or `notice` block ends it. No file watcher: #948 already
+> established that a plan-mode write is redirected into `~/.claude/plans/`.
+>
+> **⚠️ AND THE PARAGRAPH ABOVE IS WRONG ABOUT ONE THING — "3 findings" CANNOT BE
+> PRODUCED HONESTLY.** Four runs of one prompt on one diff enumerated four
+> different ways (numbered 0/0/4/0, bullets 7/9/4/10, headings 3/0/3/2), and the
+> bullet count is not a finding count in any of them. A regex for a self-reported
+> count fired on exactly one run and matched **"the first two problems"** — a
+> back-reference inside a maintenance bullet — which would have printed "2" for a
+> review that made four. **The row therefore counts nothing.** It names the role
+> and the session, and shows the first line the reviewer wrote, which is true by
+> construction.
+>
+> **⚠️ §5.12's "one item per session" NEEDED A SCOPE, AND THIS ITEM IS WHERE IT
+> GOT ONE.** The rule reads *"the session's LATEST ATTENTION STATE"*, and every
+> word of it is about state. A dispatch-result is not a state of the session it is
+> filed under — it is a report about a session that one dispatched — so
+> `EventFeed.ingest` now replaces only STATUS rows. Without that scope the author's
+> very next status change deletes the finding, and typing is exactly what a user
+> does after being told a review came back. §5.12's own event table has always
+> named rows that belong to no status ("Context handoff A → B", "Subagent
+> finished", "Git: commit created"); this is the first of them built, and the
+> second consequence is that **Dismiss is by event id now** — a session can own two
+> rows, and dismissing the finding must not take its held permission with it.
+>
+> **IT IS IN THE QUEUE AND DELIBERATELY NOT AUDIBLE** — until it is delivered, at
+> which point `outcomeNeedsYou` takes it out. `queueable` takes it, ranked
+> just above `done` because it is finished work with a BUTTON on it rather than an
+> invitation to go and look. `notifier.ts`'s `isAttention` does not: the reviewer's
+> own `done` fired the beep a moment earlier on its own card, and a second signal
+> for one fact is the duplicate #948's review argued against. That split is §5.12's
+> own line — the feed is the log, the queue is the to-do list — with the beep as
+> neither.
+>
+> **The inject is `SiblingDelivery.send`, unwrapped.** Not a path of its own: the
+> hold/submit split, #765's auto-accept toggle, the loop breaker and the
+> forgery-proof `[Message <ref> …]` header all apply to a finding exactly as they
+> apply to anything one session sends another, and a second delivery path would be
+> a second answer to §5.4's one non-negotiable rule. The report is capped at
+> `SIBLING_MESSAGE_CHAR_CAP` **before** the send, because `delivery.ts` refuses an
+> over-cap message rather than cutting it — uncapped, a long review would fail at
+> the click with a sentence about shortening text the user did not write.
+>
+> **⚠️ FOUR REVIEW FINDINGS, AND THE FIRST WOULD HAVE MADE THE FEATURE USELESS ON
+> A REAL BRANCH.** `capText` slices to its limit and *then* appends
+> `…[truncated]`, so a report capped at `SIBLING_MESSAGE_CHAR_CAP` came out
+> **thirteen characters over it** — and `delivery.ts` refuses an over-cap message
+> rather than cutting it. Every review long enough to be shortened would have
+> shown "(report was shortened to fit)", offered the button, and answered *"shorten
+> it and send again"* about text the user had not written: verbatim the outcome the
+> cap's own comment said it existed to prevent. The probe's reviews ran 1,663–3,289
+> characters on a ten-line diff, which is exactly why it was invisible. The old test
+> asserted the marker and the head and never the LENGTH. Three more: a report
+> carrying a control character was permanently unsendable for the same reason
+> (stripped at extraction now, on `stripUnsafeControls`' own "a context drop has no
+> sender" argument); `inject` read-awaited-deleted, so two Events surfaces could
+> deliver one report twice (reserved in main now, released on refusal); and the
+> refusals were forwarded to the screen as **English written for an agent** — "Its
+> earlier output can still be read with get_session_output" — so they are catalogue
+> keys now, with delivery's own sentence kept as the tooltip.
+>
+> **AND THE ROW CARRIES THE OUTCOME, NOT THE COMPONENT.** The first fix for a
+> second finding — a spent button still armed in a re-opened drawer or a popped-out
+> Events window — was to retire the row outright, which took the confirmation with
+> it: the user clicked Inject and watched the row vanish, with nothing anywhere
+> saying where the findings had gone, and the composer they went to is very often
+> on a card that is not the visible one. The answer is a fourth outcome,
+> `delivered`, with `chars: 0` and a `submitted` flag. It is **`ready`'s
+> relationship to `done` one family over** — the row stays listed, says whether the
+> block is waiting or already ran, offers no button on any surface, and
+> `outcomeNeedsYou` takes it out of the queue. A confirmation held in `useState`
+> could not have worked anyway: re-raising the row mints a new event id, React
+> remounts on the `key`, and the state is gone at the moment it is earned. One red
+> e2e to learn.
+>
+> **Never silence, and the failure paths say which failure.** `reported`, `silent`
+> and `ended` are three different facts the author acts on differently; a session
+> that died after writing its findings still hands them over (`ended` with a
+> report), and one that finished with nothing offers no button, because
+> `delivery.ts` refuses an empty message and a button that cannot work must not be
+> offered. An inject that is refused **keeps** the report: a card that was
+> momentarily full or a window that did not confirm must not cost the user a
+> finding on one badly-landed click.
+>
+> **Held in memory, keyed by live session, and asymmetric on teardown.** The link
+> dies with either end; a held REPORT dies only with its author. Closing a finished
+> reviewer's card says nothing about the finding, and holding the report in main is
+> precisely so it can outlive the session that produced it. What a departed
+> reviewer costs is attribution — `SiblingDelivery` resolves the sender from the
+> live id and falls back to "(unknown session)" rather than guessing, which is its
+> own stated rule. **#951 should read that line before it makes dispatched sessions
+> ephemeral**, because auto-archiving the reviewer is what turns a rare case into
+> the normal one.
+
 ### 5.16 Approval surfaces — rich edit review
 
 Pain point (owner, VS Code extension): edit approvals are a tiny checkbox on an

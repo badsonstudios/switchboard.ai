@@ -1823,7 +1823,7 @@ in 03's note so it is not mistaken for our cost.
 > | 2 | Pop-out to a second monitor + rescue (E8) | ✅ |
 > | 3 | In-app approvals, no TUI drop | ⚠️ met, but see §5.16's as-built note |
 > | 4 | Two sessions exchange context via the bus (E11 00–05) | ✅ |
-> | 5 | A dispatched clean-room review round-trips its findings | 🔨 **E13 filed 2026-09-25 (#946–#951); #950 is the criterion** |
+> | 5 | A dispatched clean-room review round-trips its findings | ✅ **#950, 2026-09-26** — the reviewer's last turn returns as a Feed row on the AUTHOR's card, one click puts it in the author's composer, and the human still presses Enter. `dispatch.spec.ts` proves the whole chain. Extraction was MEASURED (`spike/findings/e13-950-review-last-turn.md`), which is also where §5.15's "3 findings" died: reviews are not countable. #951 (lineage, ephemerality) is the epic's last item and carries no criterion. |
 > | 6 | A rule routes a needs-permission event; an actionable toast answers it (E14) | ✅ |
 > | 7 | A markdown file read *rendered* in-app (E16) | ✅ |
 > | 8 | Litmus test passes on everything shipped | ✅ applied per item |
