@@ -209,6 +209,76 @@ describe('the roles on offer', () => {
   });
 });
 
+describe('the workspace policy — declared on the row, refused at the button (#949)', () => {
+  /** A template that wants an isolated checkout Phase 3 has not built. */
+  const worktree: DispatchTemplateDto = {
+    id: 'mine-3',
+    name: 'Isolated reviewer',
+    contextPolicy: 'clean-room',
+    workspacePolicy: 'fresh-worktree',
+    autonomy: 'plan',
+    builtIn: false,
+    refusalKey: 'dispatch.refusal.freshWorktree',
+  };
+
+  it('names WHERE each role runs, not only what it is handed', async () => {
+    await mount();
+    // §5.15 gives a template two policies and until #949 the row showed one, so
+    // the policy that actually ships — and the one with the consequence worth
+    // knowing — was invisible.
+    expect(row('builtin:code-reviewer').textContent).toContain(
+      en.dispatch.workspace['same-folder']
+    );
+  });
+
+  it('⚠️ DECLARES the policy it is about to refuse, on the same row', async () => {
+    await mount({ templates: [reviewer, worktree] }, 'mine-3');
+    const el = row('mine-3');
+    // Both halves, together: what it asked for, and why it cannot have it. A red
+    // sentence refusing a worktree the row never said it wanted is a refusal the
+    // user cannot connect to anything.
+    expect(el.textContent).toContain(en.dispatch.workspace['fresh-worktree']);
+    expect(el.textContent).toContain(en.dispatch.refusal.freshWorktree);
+    expect(go().disabled).toBe(true);
+    await click(go());
+    expect(prepares).toEqual([]);
+  });
+
+  it('says which folder the new session will work in', async () => {
+    await mount({ ...OPTIONS, folder: 'C:/Projects/TradingApp' });
+    expect(byTestId('dispatch-runs-in').textContent).toContain('C:/Projects/TradingApp');
+  });
+
+  it('says nothing about a folder when main could not resolve one', async () => {
+    // `dispatch:options` never refuses — a bad session id costs the task default
+    // and this line, and must not hide three built-in roles.
+    await mount();
+    expect(byTestId('dispatch-runs-in')).toBeNull();
+  });
+
+  it('⚠️ DOES NOT NAME A FOLDER FOR A ROLE THAT WOULD NOT RUN IN ONE', async () => {
+    await mount({ ...OPTIONS, templates: [reviewer, worktree], folder: 'C:/Projects/TradingApp' });
+    expect(byTestId('dispatch-runs-in')).not.toBeNull();
+    await click(row('mine-3'));
+    // The refusal on the row says this role is not getting a workspace.
+    // Printing the author's folder under it would contradict it.
+    expect(byTestId('dispatch-runs-in')).toBeNull();
+  });
+
+  it('⚠️ …INCLUDING A ROLE REFUSED FOR A REASON THAT IS NOT THE WORKSPACE', async () => {
+    // Found in review, and it is the case the first version got wrong: the
+    // `full`-with-the-fork-flag-off row has a perfectly good `same-folder`
+    // policy, so a workspace-only predicate printed "Runs in C:/…" directly
+    // under a red sentence saying it could not be dispatched at all. A
+    // statement about where something runs is only true of something that runs.
+    await mount({ ...OPTIONS, templates: [reviewer, refused], folder: 'C:/Projects/TradingApp' });
+    expect(byTestId('dispatch-runs-in')).not.toBeNull();
+    await click(row('mine-2'));
+    expect(go().disabled).toBe(true);
+    expect(byTestId('dispatch-runs-in')).toBeNull();
+  });
+});
+
 describe('the task line — the reason this dialog exists', () => {
   it('⚠️ IS PREFILLED WITH WHAT THE TRANSCRIPT SAID, warts and all', async () => {
     await mount();

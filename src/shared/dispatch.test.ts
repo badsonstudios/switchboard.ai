@@ -284,9 +284,21 @@ describe('declared and refused, never silently degraded', () => {
     for (const p of ['fresh-worktree', 'fresh-clone'] as const) {
       const key = workspacePolicyRefusalKey(p);
       expect(key).toBeTruthy();
+      const text = sentence(key!).toLowerCase();
       // Says what to do instead, not just that it cannot.
-      expect(sentence(key!).toLowerCase()).toContain('same folder');
+      expect(text).toContain('same folder');
+      // …and that it is WAITING for something rather than never happening —
+      // #949's done-when asks for the reason to name what it is waiting for,
+      // which is the difference between a refusal and a dead end. Phase 3
+      // deletes the table row above; the copy has to be deletable with it.
+      expect(text).toContain('not available yet');
     }
+    // The worktree one names the work it is waiting for by name, because it is
+    // the policy §5.15 explicitly prefers for review — the user who selected it
+    // had a reason, and "later" alone does not tell them whether to wait.
+    expect(sentence(workspacePolicyRefusalKey('fresh-worktree')!).toLowerCase()).toContain(
+      'git work'
+    );
   });
 
   it('refuses the full context amount by default — forking is off', () => {
@@ -346,6 +358,24 @@ describe('declared and refused, never silently degraded', () => {
       if (key === undefined) continue;
       expect(key).toMatch(/^dispatch\.refusal\./);
       expect(sentence(key).length, `${key} is not in en.json`).toBeGreaterThan(20);
+    }
+  });
+
+  it('⚠️ has a SENTENCE FOR EVERY MEMBER of both unions, not just the shipped ones', () => {
+    // The refusal keys above are a PARTIAL table, so a missing entry is a
+    // legitimate answer there. These two are not: `DispatchDialog` builds
+    // `dispatch.policy.<p>` and `dispatch.workspace.<p>` from a union member and
+    // renders the result, and i18next hands back the KEY when it cannot resolve
+    // one. So a fourth member added to either union — which is exactly what
+    // Phase 3 and Dispatch v2 will do — ships `dispatch.workspace.fresh-jail` to
+    // the screen unless someone remembered the catalogue. This test is the
+    // reminder, and it fails at the moment the union grows rather than in a
+    // screenshot. Found in review: the new suite spot-checked two of five keys.
+    for (const p of CONTEXT_POLICIES) {
+      expect(sentence(`dispatch.policy.${p}`).length, p).toBeGreaterThan(0);
+    }
+    for (const p of WORKSPACE_POLICIES) {
+      expect(sentence(`dispatch.workspace.${p}`).length, p).toBeGreaterThan(0);
     }
   });
 

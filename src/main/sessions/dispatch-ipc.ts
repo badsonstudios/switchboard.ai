@@ -228,13 +228,18 @@ export function registerDispatchIpc(deps: DispatchIpcDeps): DispatchRegistry {
     // depend on the session, so a bad `sessionId` costs the caller its task
     // default and nothing else. Refusing would hide three built-ins behind a
     // typo in one field.
-    const task =
-      typeof sessionId === 'string' && sessionId !== ''
-        ? deps.taskStatementOf(sessionId)
-        : undefined;
+    const usable = typeof sessionId === 'string' && sessionId !== '';
+    const task = usable ? deps.taskStatementOf(sessionId) : undefined;
+    // WHERE A DISPATCH FROM HERE WOULD RUN (#949). Resolved HERE rather than
+    // read off the renderer's card, because `prepare` resolves the same
+    // reference the same way — one answer, from one call, so the folder the
+    // dialog shows is the folder the spawn uses. An unresolvable session costs
+    // the line and nothing else; see the "never refuses" note above.
+    const resolved = usable ? deps.contextDeps.queries.resolve(sessionId) : undefined;
     return {
       templates: offered().map(asDto),
       ...(task === undefined || task.trim() === '' ? {} : { taskStatement: task }),
+      ...(resolved?.ok === true ? { folder: resolved.value.folder } : {}),
     };
   });
 

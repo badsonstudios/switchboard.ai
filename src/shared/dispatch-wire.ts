@@ -64,6 +64,27 @@ export interface DispatchOptions {
    * Absent when the transcript has no opening prompt to read.
    */
   taskStatement?: string;
+  /**
+   * Where a dispatch from this session would run — the author's own folder.
+   *
+   * ⚠️ **MAIN'S RESOLVE, NOT THE RENDERER'S COPY OF THE CARD IDENTITY** (#949).
+   * The renderer knows a folder for the card it opened this dialog from, and
+   * showing that one would be a second description of a fact `dispatch:prepare`
+   * settles for itself a moment later — the two could disagree for a card whose
+   * session moved, and the one on screen would be the one that did not spawn
+   * anything. So the dialog is TOLD, by the same `queries.resolve` the prepare
+   * path calls.
+   *
+   * Absent when the session does not resolve. `dispatch:options` never refuses
+   * (a bad id must not hide three built-ins), so this field carries that
+   * failure as an absence and the dialog simply says less.
+   *
+   * v1 has one workspace policy, so there is one answer. When Phase 3 builds
+   * worktrees this becomes a per-template question and this field becomes the
+   * `same-folder` case of it — which is why the dialog reads it alongside a
+   * template's `workspacePolicy` rather than instead of it.
+   */
+  folder?: string;
 }
 
 /** The dispatch the user confirmed. */

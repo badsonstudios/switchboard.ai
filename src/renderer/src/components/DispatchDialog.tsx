@@ -371,7 +371,30 @@ export function DispatchDialog(props: DispatchDialogProps): React.JSX.Element {
                         marginBlockStart: 2,
                       }}
                     >
+                      {/* WHAT IT IS HANDED, THEN WHERE IT RUNS — §5.15's two
+                          per-template policies, and until #949 the row named
+                          only the first. That made "declared and refused" half
+                          true in both directions: a `fresh-worktree` row showed
+                          a red sentence refusing a worktree it had never said
+                          it wanted, and `same-folder` — the one that ships, and
+                          the one with the consequence worth knowing — was
+                          invisible. Three words, because the refusal underneath
+                          is already the paragraph. */}
                       {t(`dispatch.policy.${x.contextPolicy}`)}
+                      <span style={{ color: 'var(--faint)', marginInlineStart: 5 }}>
+                        {/* THE DOT IS A SEPARATE, `aria-hidden` SPAN, and both
+                            halves of that matter. A bare `{' · '}` is a JSX
+                            string literal, which §5.21's lint rule refuses; a
+                            dot folded into the phrase's own catalogue value is
+                            punctuation a screen reader reads out mid-sentence,
+                            which is what `currentMark` above is aria-hidden to
+                            avoid. Every space here is CSS, so no catalogue value
+                            carries whitespace nobody can see in review. */}
+                        <span aria-hidden style={{ marginInlineEnd: 4 }}>
+                          {t('dispatch.policySeparator')}
+                        </span>
+                        {t(`dispatch.workspace.${x.workspacePolicy}`)}
+                      </span>
                     </span>
                     {/* THE REFUSAL IS ON THE ROW, not only on the button. Which
                         row cannot run, and why, are one fact. */}
@@ -408,6 +431,47 @@ export function DispatchDialog(props: DispatchDialogProps): React.JSX.Element {
             })}
           </div>
         )}
+
+        {/* ── WHERE IT WILL RUN (#949) ──────────────────────────────────────
+            Dispatch v1 ships one workspace policy and this is it said out
+            loud, with the actual path, before a turn is spent. It matters more
+            than it looks: a reviewer in the author's own folder runs its tests
+            against the tree the author is editing, which is precisely the
+            surprise §5.7's isolation caveat is about — and the reason
+            `fresh-worktree` is refused rather than silently downgraded.
+
+            ⚠️ SHOWN ONLY WHEN THE ROLE WILL ACTUALLY RUN, and the predicate is
+            the whole refusal rather than the workspace half of it. Review
+            caught the narrower version: the `full`-with-the-fork-flag-off row
+            has a perfectly good `same-folder` policy, so a workspace-only check
+            printed "Runs in C:/…" directly beneath a red sentence saying it
+            could not be dispatched at all. A statement about where something
+            runs is only true of something that runs.
+
+            BELOW THE LIST, NOT ABOVE IT. Also review: above the radiogroup it
+            appeared and disappeared as the selection changed, which yanked
+            every role row up and down under the pointer — a second click after
+            selecting a refused role landed on a different row. The folder
+            itself is MAIN's answer (`DispatchOptions.folder`), not this
+            component's idea of the card. */}
+        {props.options.folder !== undefined &&
+          chosen?.refusalKey === undefined &&
+          chosen?.workspacePolicy === 'same-folder' && (
+            <div
+              data-testid="dispatch-runs-in"
+              style={{
+                padding: '9px 14px',
+                borderBlockEnd: '1px solid var(--border)',
+                fontSize: 10.5,
+                color: 'var(--faint)',
+                // A path has no spaces to break at, and this dialog caps at
+                // 600px — the same reason `FeedView` breaks the paths it renders.
+                overflowWrap: 'anywhere',
+              }}
+            >
+              {t('dispatch.runsIn', { folder: props.options.folder })}
+            </div>
+          )}
 
         {/* ── THE TASK AND THE CRITERIA, which are why this dialog exists ───
 
