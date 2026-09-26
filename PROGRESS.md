@@ -3,6 +3,103 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ DONE — 2026-09-26: **#950 — E13-05, the results round-trip** (PR #968, merged)
+>
+> **PHASE 2 EXIT CRITERION 5 IS MET.** A dispatched session finishing raises a row
+> on the **author's** card, and one click puts its report in the author's composer
+> as an ordinary sibling message — §5.4's rule unchanged, the human still presses
+> Enter. `dispatch.spec.ts` proves the whole chain with a real session at each end.
+> Size M. **#951** (E13-06, lineage nesting + ephemeral by default) closes E13 and
+> carries no criterion.
+>
+> **⚠️ THE PROBE WAS THE FIRST HALF OF THE WORK, AND IT ASKED A QUESTION #948 HAD
+> LEFT OPEN WITHOUT KNOWING IT.** #948 reported that denying `ExitPlanMode` "costs
+> the findings nothing" — but it measured a TOTAL across every assistant frame and
+> never asked which TURN the findings were in. The app now denies a dispatched
+> session's `ExitPlanMode` at once, so a shape of *review → ask to exit → refused →
+> "understood, I'll stop"* would have made this whole surface deliver an apology to
+> the author, and #948's numbers would have looked identical either way.
+>
+> **It does not happen.** `spike/probes/950/` → `spike/findings/e13-950-review-last-turn.md`,
+> four real CLI turns on the stream transport with `buildDispatchPrompt`'s exact
+> message shape: the last assistant turn is the findings **4/4**, including the run
+> refused at 60.4 s — the model answers a refusal by reporting anyway, in the same
+> turn. And that turn is **byte-identical to the `result` frame's own `result`
+> string in all four runs**, which is a cross-check that we agree with the CLI and a
+> reason NOT to plumb that frame (a second source for one fact, with no caller).
+>
+> **⚠️ WHAT DID NOT SURVIVE MEASUREMENT: §5.15's "3 findings".** Four runs of one
+> prompt on one diff enumerated four different ways — numbered 0/0/4/0, bullets
+> 7/9/4/10, headings 3/0/3/2 — and the bullet count is not a finding count in any of
+> them. A regex for a self-reported count fired on exactly one run and matched
+> **"the first two problems"**, a back-reference inside a *maintenance* bullet, which
+> would have printed "2" for a review that made four. **The row counts nothing.** It
+> names the role and the session and shows the first line the reviewer wrote, which
+> is true by construction. DESIGN §5.15 records the correction against its own line.
+>
+> **§5.12's "one item per session" NEEDED A SCOPE AND THIS IS WHERE IT GOT ONE.**
+> The rule is about a session's latest attention STATE; a dispatch-result is a report
+> about a session the author dispatched, so `ingest` replaces only STATUS rows. Without
+> that scope the author's very next status change deletes the finding — and typing is
+> exactly what a user does after being told a review came back. §5.12's own event
+> table has always named rows that belong to no status ("Context handoff A → B",
+> "Subagent finished"); this is the first of them built. Second consequence: **Dismiss
+> is by event id now**, because a session can own two rows.
+>
+> **⚠️ REVIEW FOUND FIVE, AND THE FIRST WOULD HAVE MADE THE FEATURE USELESS ON A REAL
+> BRANCH.** `capText` slices to its limit and THEN appends its truncation marker, so a
+> report capped at `SIBLING_MESSAGE_CHAR_CAP` came out **thirteen characters over
+> it** — and `delivery.ts` refuses an over-cap message rather than cutting it. Every
+> review long enough to be shortened would have shown "(report was shortened to fit)",
+> offered the button, and answered *"shorten it and send again"* about text the user
+> had not written: verbatim the outcome the cap's own comment said it prevented. The
+> probe's reviews ran 1,663–3,289 characters, which is precisely why it was invisible,
+> and **the test asserted the marker and the head and never the LENGTH**.
+>
+> Three more of the same family: a control character in a report made it permanently
+> unsendable (stripped at extraction now, on `stripUnsafeControls`' own "a context
+> drop has no sender" argument); `inject` read-awaited-deleted, so two Events surfaces
+> could deliver one report twice (reserved in main, released on refusal); and the
+> refusals reached the screen as **English written for an agent** — *"Its earlier
+> output can still be read with get_session_output"* — so they are catalogue keys now,
+> with delivery's own sentence kept as the tooltip.
+>
+> **AND THE FIFTH TAUGHT SOMETHING WORTH KEEPING.** A spent button was still armed in
+> a re-opened drawer or a popped-out Events window. The first fix — retire the row —
+> took the confirmation with it: the user clicked Inject and watched the row vanish,
+> with nothing anywhere saying where the findings had gone, and the composer they went
+> to is usually on a card that is not the visible one. **A confirmation held in
+> `useState` could not have worked either**: re-raising a row mints a new event id,
+> React remounts on the `key`, and the state is gone at the moment it is earned. The
+> answer is a fourth outcome, `delivered` — `ready`'s relationship to `done` one family
+> over: the row stays, says whether the block is waiting or already ran, offers no
+> button on any surface, and `outcomeNeedsYou` takes it out of the queue. One red e2e
+> to learn.
+>
+> **⚠️ AND ONE SELF-INFLICTED ONE WORTH RECORDING, BECAUSE THIS FILE PREDICTED IT.**
+> The first attempt at this very close-out rewrote PROGRESS.md with Python in text
+> mode, which silently split a line two hundred entries down — the one whose own
+> subject is "rewriting files with Python on Windows converted them to CRLF". Caught
+> by the `git diff --stat` deletion count being 1 when a new entry is insertions only.
+> Both tracker edits are byte-spliced now.
+>
+> **Known flakes, twelfth sighting, neither file in this diff:** #835's
+> `git-service.test.ts` → "SPENDS THE SAME BUDGET" (2661 ms against a 2600 ms bound)
+> and #768's `win-cmd.test.ts` → "round-trips byte-exact". Red under full-suite
+> parallel load, green in isolation, both confirmed green alone.
+>
+> **Next up:** **#951** (E13-06, lineage nesting in the rail + ephemeral by default),
+> which closes E13.
+>
+> **⚠️ #951 INHERITS ONE THING FROM THIS ITEM THAT IS NOT IN ITS ISSUE.** A held
+> report deliberately outlives the reviewer that wrote it — closing a finished
+> reviewer's card is an ordinary thing to do, and the report is main's, not the
+> card's. What a departed reviewer costs is **attribution**: `SiblingDelivery` resolves
+> the sender from the live id and falls back to "(unknown session)" rather than
+> guessing, which is its own stated rule. That is a rare case today and **#951 makes it
+> the normal one** the moment it auto-archives dispatched sessions. It needs an answer
+> before it ships, not after.
+
 > # ✅ DONE — 2026-09-26: **#949 — E13-04, workspace policy** (PR #963, merged)
 >
 > **`same-folder` ships, and now it says so.** A dispatched session runs in the
