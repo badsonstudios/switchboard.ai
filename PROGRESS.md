@@ -3,6 +3,106 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ DONE — 2026-09-26: **#951 — E13-06, lineage nesting + ephemeral by default** (PR #970, merged)
+>
+> **E13 — Dispatch v1 — IS CLOSED.** A dispatched session renders indented under
+> the session that sent it with a ↳, the nesting survives a relaunch, and its card
+> closes itself thirty seconds after its findings have been handed over. Filed M,
+> landed L. Carries no Phase 2 exit criterion — #950 met criterion 5.
+>
+> **⭐ THE INHERITED QUESTION WAS ANSWERED BY ORDERING, NOT BY A MECHANISM, AND THAT
+> IS THE ONE THING TO REMEMBER FROM THIS ITEM.** #950 warned that making dispatched
+> sessions ephemeral would turn `SiblingDelivery`'s "(unknown session)" fallback from
+> a rare case into the normal one. Both obvious readings were wrong: retiring when
+> the reviewer FINISHES loses the attribution, and capturing the name at dispatch
+> would have put a caller-supplied sender on a channel whose ID-only rule exists
+> precisely because *"attribution is the one thing here that must not be
+> approximate"*. Neither was needed. `DispatchResults.inject` raises the `delivered`
+> row AFTER `send()` has returned, so triggering off that row means the reviewer is
+> alive at the one moment attribution is taken. **Ephemerality and exact attribution
+> are ordered, not in tension.**
+>
+> Generalised to one rule with no special cases: **a dispatched session retires when
+> it OWES NOTHING**, and "owes" is exactly `offersInject(dto)` — the predicate the
+> row's own Inject button is drawn from, now one shared function so the two cannot
+> drift. A report the user never injects never retires its reviewer.
+>
+> **⚠️ REVIEW FOUND THREE BLOCKERS AND EVERY ONE IS A GENERAL LESSON.**
+>
+> 1. **"OWES NOTHING" HAD ONLY BEEN ASKED IN ONE DIRECTION.** §5.15's chain — and
+>    `MAX_RAIL_DEPTH`'s own comment — both contemplate a reviewer dispatching its own
+>    reviewer, so **the ephemeral card can BE an author.** A dispatches B, B
+>    dispatches C; B's report is injected, so B owed nothing as a reviewer and became
+>    a candidate — while C's report sat held under author **B** with an injectable row
+>    on B's card. Closing B runs `DispatchResults.forget(B)` and `EventFeed.forget(B)`,
+>    which between them delete that report and its row: **C's review gone, unread,
+>    with no trace.** The module header had asserted "nothing a retire does can lose a
+>    finding" — true of the case it was reasoning about, false one generation down.
+> 2. **A SPARED CARD WAS RE-ARMED.** The `delivered` row lives in main's feed for as
+>    long as the author's card does, so "is a timer pending" is not idempotent across
+>    a sparing: a reviewer the user deliberately typed at was spared, then armed again
+>    on the very next fleet-wide store notification, and would have closed thirty
+>    seconds after that turn finished — taking the unsent draft with it. The verdict is
+>    recorded against the ROW's event id, which also keeps "spared" from being
+>    permanent: re-raising a result mints a new id and re-opens the question.
+> 3. **`stepRow` AND `canStep` HAD COME APART.** The row menu asked `canStep` (which
+>    is `stepReorder`) while the click ran `planReorder` with a hand-computed index.
+>    Identical until #951 gave a row a subtree to step over — then **Move down was
+>    drawn enabled and did nothing** on any session that had dispatched one, breaking
+>    the invariant the menu asserts about itself in its own comment. Nothing covered
+>    the menu path with a lineage, which is exactly why it got through.
+>
+> **FIVE THINGS SPARE A CARD, AND THREE WERE MISSING FROM THE FIRST DRAFT** — findings
+> it owes as an author, an unsent draft, and a crash (a dead reviewer's card is the
+> only place the reason is). Plus the two it had: a pin, and a session working again.
+> All re-asked at FIRE time, which is what makes any of them work.
+>
+> **THE DEPTH IS A FACT ABOUT THE PLACEMENT, NEVER A LINEAGE LOOKUP,** and that one
+> decision is what makes a dangling ↳ unrepresentable rather than merely guarded
+> against. A row is reported nested only if the pass really placed it under its
+> parent; the author closed, the author in another bucket, the author across a pin
+> boundary and a cycle in a hand-edited blob all fall out as depth 0 with nothing
+> drawn. Deriving it from `lineage.has(id)` would have satisfied the done-when in the
+> common case and drawn an arrow at a row that is not above it in every other.
+>
+> The nesting went **into `railOrder`** (the issue's first constraint): a fourth layer
+> of the one derivation — bucket order → manual order → pinned first → nesting —
+> applied last and per pin block, so §5.8 still wins. §5.6's words reused
+> (`auto-close | linger | keep`), its code not: `keep` rather than `pin` because the
+> per-card pin already means "exempt from every bulk operation" and IS the override;
+> 30 s rather than §5.6's 10 s because a watcher is a panel you have been watching
+> stream and a reviewer's card is a document. **Auto-RETIRE, not auto-archive** —
+> §5.25 is Phase 3, and DESIGN's own line is annotated with the downgrade.
+>
+> **Known flakes, thirteenth and fourteenth sighting, neither file in this diff:**
+> #768's `win-cmd.test.ts` on one full-suite run and #835's `git-service.test.ts` →
+> "SPENDS THE SAME BUDGET" (2751 ms against a 2600 ms bound) on the next. Both
+> confirmed green alone; CI was green on all four jobs first try.
+>
+> **Next up: NOT an implementation — a SCOPE CALL. Run `/pm` and get one from Dan.**
+> Phase 2 is not done and the remaining work is a decision before it is code. DESIGN
+> §8's 2026-09-25 audit block and the exit-criteria scoreboard in
+> `docs/plans/04-phase-2-switchboard.md` carry it. The honest gap is **criterion 3**
+> (in-app approvals): met, but thinner than §5.16 specifies, with four pieces never
+> filed — Monaco diff in the approval card (it ships as two `<pre>` panes truncated at
+> 1500 chars), the review queue pane, deny-with-feedback (the wire is
+> `'allow' | 'deny'` with no message, so the agent is told no and never told why), and
+> "approve all in this file". The implementable queue behind that: **#952** (delete
+> the PTY stack — owner-answered gate, large clean deletion), **#832** (a
+> trust-boundary bug, unlabelled as one), **#967** (feed tail-pin, filed 2026-09-26
+> and not triaged into the milestone). **E21 / #904 is BLOCKED on Dan's laptop capture
+> — `[user]`.** And §5.4's Tier 1 "drag text between sessions" line needs RE-SCOPING
+> rather than building: two of its four objects depend on the Phase 3 file tree.
+>
+> **⚠️ FIVE HAND-TESTS ARE NOW OUTSTANDING AND ALL FIVE NEED A VERSION BUMP FIRST.**
+> They are on `main` in no installed build (`gh release list` is the authority —
+> merged is not released). `docs/plans/dogfood-testing.md` has them and they are one
+> sitting, in this order: #948's dispatch flow, #949's folder line, #950's round-trip,
+> this item's nesting + auto-close, and ⋯ → Fork. Two judgement calls no test can
+> answer: #950's step 3 (does the extracted turn read as the review?) and this item's
+> step 4 (does the auto-close read as a tidy-up, or as a card vanishing on you?). If
+> Dan reports any as broken, that is a bug ticket, not the next item's problem.
+
 > # ✅ DONE — 2026-09-26: **#950 — E13-05, the results round-trip** (PR #968, merged)
 >
 > **PHASE 2 EXIT CRITERION 5 IS MET.** A dispatched session finishing raises a row
