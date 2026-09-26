@@ -1805,6 +1805,109 @@ desktop's Defender, taxing every spawn and file read), which is real, is part of
 the gap, and is not something this codebase can optimise away — worth confirming
 in 03's note so it is not mistaken for our cost.
 
+## E22 — Approval surfaces v2: make the answer INFORMED (milestone: Phase 2; added and filed 2026-09-26 on the owner's scope call — #972–#974)
+
+*Goal: exit criterion 3 is met — a real permission is answered in-app without a
+TUI — and it is the thinnest thing Phase 2 shipped. The interception half solved
+the owner's stated #1 pain; what is missing is everything that makes the answer
+informed: a real diff to read, a reason to send back, and the middle rung of the
+ladder. Governing spec: DESIGN §5.16 and its 2026-09-25 as-built note.*
+
+**Why this epic exists.** The 2026-09-25 feature audit found four §5.16 pieces
+with no issue between them. The owner's 2026-09-26 scope call took **three** into
+Phase 2 and pushed the fourth out: the **review queue pane** (§5.16 placement
+mode 2) is a whole new surface, is L, and §5.8's attention queue already covers
+*noticing* a pending approval — it moves to Phase 3 with the cross-session review
+dashboard it shares plumbing with. **Floating approval window (mode 3)** goes with
+it, as §5.16's own note already recommended. That leaves "placement modes (user
+preference)" as a preference with one value for the rest of Phase 2, and the
+scoreboard says so rather than implying otherwise.
+
+> **ONE THING THE AUDIT GOT WRONG, MEASURED AGAINST THE CODE 2026-09-26 WHILE
+> SIZING THIS EPIC.** DESIGN §8's table and §5.16's note both say deny-with-
+> feedback is absent because *"the decision wire is `'allow' | 'deny'` with no
+> message field, so the objection text has nowhere to go."* **The wire already
+> carries it.** `reason` is an accepted parameter the whole way down —
+> `preload/index.ts` `decidePermission(requestId, decision, reason?, …)` →
+> `StreamPermissions.decide(…, reason?)`, which sends
+> `{ behavior: 'deny', message: reason || 'Denied in switchboard' }` — and the
+> hook path has its own `HookListener.verdict(decision, reason?)`. What is missing
+> is that **no renderer surface ever supplies one**: `App.tsx`'s `decideHeld` is
+> typed `(requestId, decision)` and drops the argument on the floor. So E22-02 is
+> a text field and one threaded parameter, not a protocol change — S, not M. This
+> is the second time in two days that a gap's stated *cause* was wrong while its
+> existence was right, and the lesson is the same one the audit itself was called
+> to teach: **size against the code, never against the note describing the code.**
+
+> **A SECOND FINDING FROM THE SAME SIZING PASS, AND IT IS A LIVE GAP.**
+> "Always allow for this session" **has no revoke surface anywhere.** The grant
+> lives in `StreamPermissions.allowAllSessions` (and the hook twin), is cleared
+> only by `forgetSession`, and nothing in the renderer can take it back — a
+> mis-click on a bar that grants blanket write approval for a live session is a
+> one-way door until the session dies. That is not new to this epic, but E22-03
+> is about to add a *second* kind of standing grant, and shipping a second
+> ungrantable-back grant beside the first would double the problem rather than
+> notice it. **E22-03 therefore owns the revoke surface for BOTH rungs**, which is
+> why it is sized M and not S. Recorded here rather than quietly absorbed.
+
+Work items:
+
+- **P2-E22-01 (#972) · Monaco diff in the approval card — M.** *(no deps)*
+  Replace `ToolInputPreview`'s two `<pre>` panes with the Monaco diff editor the
+  Changes tab already runs, for the tools that have a diff to show
+  (`Edit` / `Write` / `MultiEdit`). This is wiring, not new capability — Monaco
+  is in the bundle and already diffing.
+  *Done when:* an Edit/Write/MultiEdit approval renders a real Monaco diff
+  (original vs proposed) with a side-by-side / inline toggle, themed from the
+  same tokens as the Changes tab; a `MultiEdit` renders its edits as separate
+  hunks in apply order rather than one concatenated blob; the reviewed payload is
+  **no longer clipped at `MAX_CHARS = 1500`**, and where a genuinely huge payload
+  must still be bounded the card **states what it is withholding** (#953's rule:
+  never silently truncate what a user signs for); Monaco is lazy-loaded and a
+  failure to load **falls back to the current panes with the card still
+  answerable** (fail-open, `ContributionBoundary` #594); non-diff tools (Bash,
+  reads) keep the simple preview; no new long task on approval arrival as
+  measured by E21-01's always-on tier; unit tests plus one e2e that answers a real
+  held permission with a Monaco diff on screen; `docs/manual/` page before the PR.
+
+- **P2-E22-02 (#973) · Deny with feedback — S.** *(no deps)*
+  The UI half only — see the measurement above; the wire is already there.
+  *Done when:* the approval bar has a **Deny with feedback** control beside Deny
+  that opens a bounded objection field (focus lands in it, Enter sends, Esc
+  cancels); the text reaches the CLI as the denial `message` on **both**
+  transports, asserted against the outbound payload rather than the call; a bare
+  **Deny** is byte-for-byte unchanged and still sends the default message; the
+  field is length-capped and sanitized on **main's** side of the wire, following
+  the `sanitizeUpdatedInput` precedent (§5.29) — the cap is asserted, not
+  commented; the control is offered on every surface that can already deny a
+  single request (card bar, Events row) and **explicitly NOT on the batch bar**,
+  with the reason written down: one objection text cannot honestly speak for N
+  different requests; `docs/manual/` page before the PR.
+
+- **P2-E22-03 (#974) · "Approve all in this file" + a revoke surface for standing
+  grants — M.** *(no deps; ships after 01 only by convenience, not by need)*
+  The middle rung of §5.16's ladder, plus the door back out of both rungs.
+  *Done when:* an Edit/Write/MultiEdit card offers **Approve all in this file**,
+  which answers the held request and auto-allows later gated calls from the
+  **same live session** whose target path is that file; the grant is scoped
+  exactly like allow-all per §5.16's 2026-07-23 refinement — held in **main**,
+  dies with the live session, a respawn/resume prompts again, and a granted
+  path's calls never hold, never emit `needs-permission` and never beep; path
+  comparison uses the host's own fold rule (the #683 precedent) so a relative and
+  an absolute reference to one file are one grant, not two; **the session's
+  standing grants are visible and revocable** — both the new per-file grants and
+  the existing "Always allow for this session", which has no revoke surface today;
+  only path-bearing tools draw the button; unit tests for the main-side grant plus
+  one e2e proving that after approve-all-in-file a second edit to the SAME file
+  lands with no bar while an edit to a DIFFERENT file still holds;
+  `docs/manual/` page before the PR.
+
+**Out of scope, and why:** the review queue pane and the floating approval window
+(→ Phase 3, above) · batch deny-with-feedback (E22-02's own done-when says why) ·
+re-opening the plan-mode rule, which §5.16 already parks on E18-11 (#952) ·
+anything that changes *when* a permission is intercepted — this epic is about the
+quality of the answer, not the mechanism that asks for it.
+
 ## Exit criteria (Phase 2 ships when)
 
 > **SCOREBOARD, audited against the code 2026-09-25 — 7 of 9 met, and the two
@@ -1821,7 +1924,7 @@ in 03's note so it is not mistaken for our cost.
 > | 0 | The seams are real (E15) | ✅ 4+ dissimilar consumers; see `docs/extensibility.md` |
 > | 1 | The 7–8 session experience (E7 + E9) | ✅ |
 > | 2 | Pop-out to a second monitor + rescue (E8) | ✅ |
-> | 3 | In-app approvals, no TUI drop | ⚠️ met, but see §5.16's as-built note |
+> | 3 | In-app approvals, no TUI drop | ⚠️ met, but thin — **E22 (#972–#974) now closes the gap**, owner scope call 2026-09-26 |
 > | 4 | Two sessions exchange context via the bus (E11 00–05) | ✅ |
 > | 5 | A dispatched clean-room review round-trips its findings | ✅ **#950, 2026-09-26** — the reviewer's last turn returns as a Feed row on the AUTHOR's card, one click puts it in the author's composer, and the human still presses Enter. `dispatch.spec.ts` proves the whole chain. Extraction was MEASURED (`spike/findings/e13-950-review-last-turn.md`), which is also where §5.15's "3 findings" died: reviews are not countable. #951 (lineage, ephemerality) is the epic's last item and carries no criterion. |
 > | 6 | A rule routes a needs-permission event; an actionable toast answers it (E14) | ✅ |
@@ -1832,6 +1935,24 @@ in 03's note so it is not mistaken for our cost.
 > in flight and blocked on the owner's laptop capture (E21-02), and six items on
 > §8's Phase 2 feature list were never filed — see DESIGN §8's audit block for the
 > table. Of those six, only E13 and the review queue pane bear on a criterion.
+>
+> **UPDATED 2026-09-26 — the audit's six are now all resolved one way or the
+> other, and the scoreboard reads 8 of 9.** Criterion 5 is met (#950). E13 is
+> closed. Of the five still-unfiled items the owner made one scope call on all of
+> them: **three filed into Phase 2 as E22 (#972–#974)** — Monaco in the approval
+> card, deny-with-feedback, approve-all-in-this-file; **the review queue pane
+> deferred to Phase 3** with the floating approval window §5.16 already wanted
+> deferred; and **§5.4's Tier 1 drag line re-scoped in the docs rather than
+> built** — one of its four objects shipped, one is moot, and the other two go to
+> Phase 3 with the file tree they need.
+>
+> **And what happens to the rest of the queue at the cut (owner, 2026-09-26):**
+> Phase 2 ships on its exit criteria, **not on an empty issue list**. At the
+> milestone cut, every non-blocking open issue — the flake sightings, the contrast
+> and type-hygiene stragglers, the polish asks, the `[user]` design sittings —
+> is **swept into the Phase 3 milestone** in bulk, so `gh issue list` stops
+> overstating what Phase 2 still owes. This is the same disease E13 died of read
+> from the other end: a queue that miscounts is a queue nobody can steer by.
 
 0. **(added 2026-07-26)** The seams are real: a second provider adapter could
    be written without editing `sessions/ipc.ts`, renderer contributions resolve
@@ -1887,6 +2008,16 @@ path, neither of which the bus owns.
 > re-scope. Of those only the review queue pane bears on an exit criterion. Treat
 > `PROGRESS.md` as the authority for what is in flight and this block as its
 > epic-level summary.
+>
+> **SETTLED 2026-09-26 — nothing from the audit is unfiled or undecided any more.**
+> E13 closed (#951, 2026-09-26). The five above went to the owner as one scope call
+> and came back as: **E22 filed** (#972 Monaco, #973 deny-with-feedback, #974
+> approve-all-in-file + a revoke surface); **review queue pane → Phase 3**;
+> **§5.4 Tier 1 → re-scoped in the docs, no code**. Closed epics now read **E7,
+> E8, E9, E10, E11, E12, E13, E14, E15, E16, E17, E18, E19, E20**; in flight,
+> **E21** (blocked on the owner's laptop capture) and **E22** (not started).
+> **The next real work is #972**, with #952 — deleting the PTY stack, its gate
+> answered — the strongest thing to run beside it.
 
 **Three items added 2026-07-30**, all user-facing, none blocking anything:
 **E7-06** (auto task labels), **E16** (document viewer) and **E17** (session

@@ -398,6 +398,33 @@ target folder instead.
 > unbuilt. The diff-hunk drag is the one piece with no substitute today — a
 > reviewer wanting to say *"fix this hunk"* to another session must copy, switch
 > and paste.
+>
+> **RE-SCOPED 2026-09-26 (owner scope call) — this tier is NOT Phase 2 work, and
+> the §8 list line that implied it was has been annotated.** The decision was
+> "re-scope the line, don't build against it", and it resolves the four objects
+> like this:
+>
+> - **Last-response chip — DONE**, as the context chip (#799). The gesture §5.5
+>   Level 2 wanted is the gesture that shipped.
+> - **Terminal text selection — DROPPED, not deferred.** There is no terminal in
+>   the UI (#873) and none is coming back. A deferred item implies a later phase
+>   will do it; nothing will.
+> - **File drag — PHASE 3**, with the **Files** tab it would drag from (§5.7,
+>   §5.30 v2). It cannot be built before its source exists, and filing it now
+>   would park a ticket on a trigger nobody watches — exactly how E13 lost seven
+>   weeks.
+> - **Diff-hunk drag — PHASE 3**, with the editable-diff / commit-from-diff work
+>   (§5.7). It *could* be built today against the Changes tab, and the owner chose
+>   not to: it is the only Tier 1 piece left, it shares a surface and a selection
+>   model with the diff-write half, and building it alone would grow a second
+>   hunk-selection path for that epic to reconcile.
+>
+> **What this does to §5.5 Level 1 ("excerpt injection"):** it goes to Phase 3
+> too, because it rests entirely on a tier that now has nothing shippable left in
+> Phase 2. It is **not** demoted or dropped — the question *"with `@`-references
+> and the context chip both shipped, is raw text drag still worth a gesture?"*
+> stays open and gets answered when the file tree makes Tier 1 buildable again,
+> with a year of dogfooding behind the answer instead of a guess in front of it.
 
 **Tier 2 — @-references in prompts (user-driven, app-resolved).**
 A prompt composer bar per session supports `@session` tokens:
@@ -2427,10 +2454,19 @@ reads) get simpler cards — command + cwd + allow/deny — same banner, same ke
 >   honest and fast; for the multi-file change this card exists to review it is
 >   not a review surface at all. Monaco is already in the bundle and already
 >   diffing in the Changes tab, so this is wiring, not new capability.
-> - **"Deny with feedback" is absent.** The decision wire is
+> - **"Deny with feedback" is absent.** ~~The decision wire is
 >   `'allow' | 'deny'` with no message field, so the objection text this section
->   promises has nowhere to go. The agent learns it was refused and never learns
->   why — which is the difference between a correction and a wall.
+>   promises has nowhere to go.~~ **Cause corrected 2026-09-26 while sizing #973:
+>   the wire already carries the message.** `reason` is an accepted parameter the
+>   whole way down — `preload`'s `decidePermission(requestId, decision, reason?,
+>   …)` → `StreamPermissions.decide(…, reason?)`, which sends `{ behavior:
+>   'deny', message: reason || 'Denied in switchboard' }` — and the hook path has
+>   its own `HookListener.verdict(decision, reason?)`. What is missing is that **no
+>   renderer surface ever supplies one**: `App.tsx`'s `decideHeld` is typed
+>   `(requestId, decision)` and drops the argument. The feature is absent for
+>   exactly the reason the section says — the agent learns it was refused and never
+>   learns why, which is the difference between a correction and a wall — but it is
+>   a text field and one threaded parameter, not a protocol change.
 > - **"Approve all in this file" is absent.** The two ends of the ladder ship
 >   (approve this one, always allow this session); the middle rung, which is the
 >   one that matches how a human actually reviews a file, does not.
@@ -2444,6 +2480,19 @@ reads) get simpler cards — command + cwd + allow/deny — same banner, same ke
 > is everything that makes the answer INFORMED — a real diff to read, a reason to
 > send back, a per-file rung, and one place to work through a queue of them. The
 > honest summary is: approvals are unblocked, not yet reviewable.
+>
+> **RESOLVED 2026-09-26 — the four above are now scoped, and three of them are
+> filed.** Owner scope call: **E22, Approval surfaces v2** takes the Monaco diff
+> (#972), deny with feedback (#973) and approve-all-in-this-file (#974) into
+> Phase 2; **#974 also picks up a revoke surface for standing grants**, because
+> sizing it found that "Always allow for this session" is a **one-way door** —
+> the grant lives in `StreamPermissions.allowAllSessions`, is cleared only by
+> `forgetSession`, and nothing in the renderer can take it back. Adding a second
+> standing grant beside an unrevocable one would have doubled that rather than
+> noticed it. **Mode 2 (review queue pane) and mode 3 (floating window) both go to
+> Phase 3**, which means "placement modes (user preference)" stays a preference
+> with one value for the rest of Phase 2 — said plainly here rather than implied
+> away. Plan: `docs/plans/04-phase-2-switchboard.md` → E22.
 >
 > **⚠️ AND A FIFTH THING, FOUND WHEN THE OWNER ASKED WHAT THE GAPS ACTUALLY WERE
 > (2026-09-25) — THIS ONE IS A DEFECT, NOT A MISSING FEATURE. Filed as #953.**
@@ -4182,10 +4231,36 @@ context transfer, and the attention queue work across monitors.
 > Still unfiled and awaiting a decision: the review queue pane, Monaco in the
 > approval card, approve-all-in-this-file, deny-with-feedback, and the §5.4 Tier 1
 > re-scope.
+>
+> **DECIDED 2026-09-26 — the audit's table is now empty, and all five went in one
+> owner scope call.** Three into Phase 2 as the new epic **E22** (#972 Monaco diff
+> in the approval card · #973 deny with feedback · #974 approve-all-in-this-file,
+> which also picks up a revoke surface for standing grants after sizing found that
+> "always allow for this session" has none). **The review queue pane goes to
+> Phase 3**, with the floating approval window §5.16 already recommended deferring
+> and with the cross-session review dashboard it shares plumbing with: §5.8's
+> attention queue covers *noticing* a pending approval, which is the part that
+> bears on exit criterion 3, and the pane is a whole new surface. **§5.4's Tier 1
+> drag line is re-scoped in the docs rather than built** — see §5.4's as-built
+> note, now updated with where each of the four objects went.
+>
+> **One correction the sizing pass produced, and it matters more than the item it
+> came from:** the row above says deny-with-feedback slipped because *"the wire
+> carries `'allow' | 'deny'` and no message."* **It does carry one.** `reason` is
+> threaded from `preload` through `StreamPermissions.decide` into
+> `{ behavior: 'deny', message }`, and the hook path has `verdict(decision,
+> reason?)`. No renderer surface ever passes it. The gap was real; its stated cause
+> was not. An audit that reads sections against code still has to read the code on
+> **both** sides of a wire before it names a cause — **size against the code, never
+> against the note describing it.**
 
 - Session Bus MCP server + `list/get/send/publish` tools
 - @-references in prompt composer
-- Drag-and-drop: text + files between sessions
+- ~~Drag-and-drop: text + files between sessions~~ — **RE-SCOPED OUT of Phase 2,
+  2026-09-26.** Of §5.4 Tier 1's four objects: the last-response chip shipped as
+  the context chip (#799), the terminal selection is **dropped** (no terminal
+  since #873), and the file drag and the diff-hunk drag are **Phase 3**, each with
+  the surface it needs. §5.5 Level 1 goes with them. See §5.4's as-built note.
 - Context transfer: context chips + summary handoff (Level 2); `get_session_context` bus tool
 - Pop-out session subwindows (orchestrator-owned)
 - Context transfer Level 3 (fork-session adoption) behind experimental flag
@@ -4211,6 +4286,9 @@ context transfer, and the attention queue work across monitors.
   clean-room + briefed context policies, round-trip results, lineage nesting
 - Approval surfaces v1: PreToolUse interception spike, approval cards w/ Monaco
   diffs, session-flip mode, review queue pane, deny-with-feedback
+  — *(2026-09-26: interception + session-flip shipped in E10; the Monaco diff,
+  deny-with-feedback and approve-all-in-this-file are **E22**, #972–#974; the
+  **review queue pane moved to Phase 3** with the floating approval window.)*
 - Document viewer v1 (§5.30, added 2026-07-30): rendered markdown with a source
   toggle, a tab per file (the peek slot + pin shipped here and were **removed**
   by owner decision on 2026-08-15, #530), viewer-in-its-own-window, the shared

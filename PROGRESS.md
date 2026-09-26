@@ -3,6 +3,62 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🧭 SCOPE CALL TAKEN — 2026-09-26: **Phase 2's endgame is decided. Next work item is #972.**
+>
+> `/pm` triage + the scope call the last entry asked for. **No code changed**; this
+> is a planning close-out. Three decisions, all the owner's:
+>
+> 1. **The §5.16 approval gap: three of four come into Phase 2 as a new epic, E22 —
+>    filed as #972 (Monaco diff in the approval card), #973 (deny with feedback),
+>    #974 (approve-all-in-this-file + a revoke surface).** The **review queue pane
+>    goes to Phase 3** with the floating approval window, and with the cross-session
+>    review dashboard they share plumbing with.
+> 2. **The 61 open milestone issues do NOT gate the cut.** Phase 2 ships on its exit
+>    criteria; at the cut, everything non-blocking is **bulk-swept into Phase 3** so
+>    the queue stops overstating what Phase 2 owes. *(The Phase 3 milestone does not
+>    exist yet — creating it is part of the cut, not of this item.)*
+> 3. **§5.4 Tier 1 "drag text between sessions" is re-scoped in the docs, not
+>    built.** Of four draggables: one shipped (context chip), one is **dropped** (no
+>    terminal since #873), two are **Phase 3** with the surfaces they need. §5.5
+>    Level 1 goes with them, question intact.
+>
+> **⭐ SIZING #973 AGAINST THE CODE FOUND THE AUDIT'S CAUSE WAS WRONG, AND THAT IS
+> THE ONE THING TO CARRY FORWARD.** DESIGN §8 and §5.16 both said deny-with-feedback
+> was absent because *"the wire is `'allow' | 'deny'` with no message field"*. **The
+> wire already carries it** — `reason` threads from `preload.decidePermission`
+> through `StreamPermissions.decide` into `{ behavior: 'deny', message }`, and the
+> hook path has `verdict(decision, reason?)`. Nothing in the renderer ever passes
+> one: `App.tsx`'s `decideHeld` is typed `(requestId, decision)` and drops it. The
+> gap was real, the cause was not, and the item is **S, not M**. A feature audit
+> that reads a section against the code still has to read **both sides of a wire**
+> before naming a cause.
+>
+> **⚠️ AND A LIVE ONE-WAY DOOR, FOUND THE SAME WAY.** *"Always allow for this
+> session"* **has no revoke surface anywhere** — the grant sits in
+> `StreamPermissions.allowAllSessions`, is cleared only by `forgetSession`, and
+> nothing in the renderer takes it back. A mis-click grants blanket write approval
+> until the session dies. #974 was about to add a **second** standing grant beside
+> it, so #974 now owns the revoke surface for **both** rungs (and is M, not S,
+> because of it). Not filed separately on purpose: fixing one and not the other is
+> how you end up with two grant models.
+>
+> **Queue hygiene applied:** `phase-2` added to #967, #832, #835, #743, #744 (all in
+> the milestone, none labelled); `bug` added to **#832**, which is a trust-boundary
+> defect that has been sitting unlabelled as one; #893, #891, #861 and #965 pulled
+> into the milestone from nowhere. **#966** (first-run tutorial) deliberately left
+> unmilestoned — it wants Phase 3 and Phase 3 has no milestone yet.
+>
+> **Next up: #972, Monaco diff in the approval card.** Run `/next-item`. The two
+> strongest things to run beside it are **#952** (delete the PTY stack — the gate is
+> answered, and it is a large clean deletion that shrinks the surface every later
+> epic has to reason about) and **#967** (the feed loses its tail-pin while a
+> session streams heavily — a fresh, user-visible regression).
+>
+> **Still blocked on Dan, unchanged:** **E21/#904** needs the laptop capture
+> (install the latest, detailed diagnostics on, a normal day at 3+ sessions, send
+> the file), and the **five hand-tests below still need a version bump first** —
+> `gh release list` is the authority.
+
 > # ✅ DONE — 2026-09-26: **#951 — E13-06, lineage nesting + ephemeral by default** (PR #970, merged)
 >
 > **E13 — Dispatch v1 — IS CLOSED.** A dispatched session renders indented under
