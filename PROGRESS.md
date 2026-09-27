@@ -3,37 +3,114 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔨 IN PROGRESS — 2026-09-26: **#952 — E18-16 (filed as E18-11), delete the PTY stack**
+> # ✅ DONE — 2026-09-26: **#952 — E18-16, delete the PTY stack. E18 IS COMPLETE.**
 >
-> First of three items the owner queued back-to-back: **#952 → #972 → #967**, each
-> end-to-end via `/next-item`, no stop between them.
+> First of three items the owner queued back-to-back (**#952 → #972 → #967**).
+> **It consumed the session: #972 and #967 are NOT started.** Filed **M**, landed
+> **XL** — 118 files, **+2,524 / −9,873**. See the sizing note at the bottom.
 >
-> **THE OWNER ASKED FOR THE ORDER TO BE VERIFIED BEFORE IT WAS TRUSTED, AND IT
-> VERIFIES.** His claim: DESIGN §5.16's hook path IS the PTY transport's approval
-> path, so deleting the PTY leaves E22 one transport to satisfy instead of two.
-> Checked against the code: `hook-listener.ts:796` — `maybeHold` returns `'pass'`
-> unconditionally when `transportFor(sessionId) === 'stream'`, measured live by the
-> #404 probe, not precautionary. Stream has been the default since #381 and the only
-> UI-reachable transport since #873, so after this item no session is PTY and the
-> entire hook hold subsystem is unreachable. **One correction to his reasoning,
-> recorded because it changes which later item benefits:** the shrink lands on
-> **#973/#974**, not #972. `shared/ipc/permissions.ts` already declares ONE
-> `PermissionRequest` shape for both transports and the card deliberately does not
-> branch, so #972's renderer work is the same either way. #973 is where it bites —
-> `verdict(decision, reason?)` would otherwise be a second place to thread a deny
-> message through.
+> **⭐ THE OWNER ASKED FOR THE ORDER TO BE VERIFIED BEFORE IT WAS TRUSTED, AND IT
+> VERIFIED — WITH ONE CORRECTION WORTH MORE THAN THE CONFIRMATION.** His claim:
+> §5.16's hook path IS the PTY's approval path, so deleting the PTY leaves E22 one
+> transport to satisfy. True, and the line is `hook-listener.ts:796` — `maybeHold`
+> returned `'pass'` unconditionally for a stream session, **measured** by the #404
+> probe rather than precautionary. But the shrink lands on **#973/#974, not
+> #972**: `shared/ipc/permissions.ts` already declared ONE `PermissionRequest`
+> shape for both transports and the approval card deliberately never branched on
+> it. That design choice is why deleting an entire transport changed nothing the
+> renderer can see — **the cheapest thing in this item was paid for two months
+> ago.**
 >
-> **The issue mis-cites its own spec.** #952 is titled `P2-E18-11` and says "the
-> E18-11 block". E18-11 is *plan mode, `ExitPlanMode` and `AskUserQuestion`* and is
-> still half-unmeasured; the gate text and the deletion list #952 quotes live under
-> **E18-16** (`05-transport-migration.md:525`). Working to E18-16; noted on the issue.
+> **⚠️ THE ONE THING TO CARRY FORWARD: A USER-VISIBLE APPROVAL CHANGE NOBODY ASKED
+> FOR, FOUND BY READING THE MANUAL AGAINST THE CODE.** switchboard kept its own
+> tool-gating table (`GATED`) that was deliberately **stricter than Claude Code**
+> — under `auto-edit` it held every shell command including `mkdir`/`touch`/`mv`/
+> `cp`/`rm`/`sed`, and under `ask`/`auto-edit` it held out-of-cwd reads. It existed
+> only because `PreToolUse` fires for everything and a hook's `allow` BYPASSES the
+> CLI's permission system, so the hook path had to decide for itself what deserved
+> a human. `stream-permissions.ts` has no autonomy gating at all — by design, the
+> CLI asks only about what it wants answered. **So deleting the transport loosened
+> approvals, and `docs/manual/04-approvals-and-autonomy.md` said the opposite in
+> so many words.** Documented in the manual, the CHANGELOG and the dogfood row as
+> the thing to argue with. This is the item's real risk, and it was invisible from
+> the issue.
 >
-> **`shouldHoldPermission` has exactly one caller** (`maybeHold`) and
-> `StreamPermissions` has its own independent hold machinery, so removing the hook
-> approval path is self-contained and is a pure deletion of unreachable code, not a
-> behaviour change. **E18-15 (retire the hook listener) is NOT in scope** — that is
-> the HTTP server, the forwarder and the token files, and it needs `hook_callback` to
-> replace status events first. This item becomes its unblocker.
+> **§5.16's PLAN-MODE RULE IS RETIRED, WHICH IS WHAT THE ISSUE ASKED TO BE
+> RE-EXAMINED.** *"Plan sessions are NEVER held in-app"* rested on that same
+> bypass: an in-app Allow would have skipped plan mode's write-block. That is a
+> fact about **hook semantics, not a product rule**. On the control channel a
+> verdict is answered INTO the CLI's enforcement, so plan sessions are held in-app
+> and plan mode is still read-only. What survives with teeth is narrower and
+> already built: a **dispatched** session asking to leave plan mode is refused at
+> once, because nobody is watching it.
+>
+> **THE ISSUE MIS-CITED ITS OWN SPEC, AND DESIGN §5.16 HAD THE SAME ERROR.** #952
+> is titled `P2-E18-11` and cites "the E18-11 block". E18-11 is *plan mode,
+> `ExitPlanMode`, `AskUserQuestion`* and is still half unmeasured; the gate and the
+> deletion list live under **E18-16**. Corrected in both places.
+>
+> **⭐ THE SEAM PAID FOR ITSELF, AND THE FLIP IT FORCED IS THE LOAD-BEARING PART.**
+> `transport.ts` never leaked a PTY concept — `resize`, the scrollback ring and the
+> #117 epoch stayed on the concrete service — so deleting the transport did not
+> change the seam's shape at all. But `DEFAULT_TRANSPORT` had to flip from `'pty'`
+> to `'stream'`, and the old comment's warning became live in reverse: an adapter
+> recipe that says nothing now gets the stream service. So `claudeAdapter` builds
+> the stream flags **unconditionally** and DECLARES `transport: 'stream'`, and
+> `UnknownTransportError` — whose `kind` is a `string`, not a `TransportKind` — is
+> what catches an adapter that still asks for `'pty'` at runtime. Without those
+> two, a terminal-only adapter would be handed a protocol reader and hang with no
+> error.
+>
+> **WHAT WENT** (the full list is in `05-transport-migration.md`'s E18 exit):
+> `TerminalPane` · `terminal-attach` · `terminal-find` · `terminal-shadow` ·
+> `shared/ipc/pty.ts` and the #117 epoch · `main/pty/` entire · the shell-in-a-PTY
+> e2e fake · `preferred-transport` and `SWITCHBOARD_TRANSPORT` · `hook-check` and
+> `check:pty` · `rebuild-native` and `pty-noise-filter` · `sessions:setTransport`
+> and `mcp:reconnect` · the folder-trust chip · the terminal-handoff bar · the
+> `PreToolUse` hold path (~24 KB, unreachable by construction) · `node-pty` and all
+> three `@xterm/*`.
+>
+> **THE APP NOW SHIPS NO NATIVE MODULE.** No `electron-rebuild`, no `postinstall`,
+> no `asarUnpack`, no per-platform binary in three CI matrices, and an
+> `electron-builder` `files` allowlist that is just `out/**` and `package.json`.
+> `packaging.test.ts` was rewritten to assert that ABSENCE, because an empty
+> allowlist is a claim and an unchecked claim is how a packaged build breaks.
+>
+> **⚠️ TWO REAL DEFECTS FOUND WHILE DELETING, NEITHER ON THE DONE-WHEN.**
+> 1. `composer.ts`'s `submitPrompt` returned `true` unconditionally on the text
+>    path — correct while "main took it or the PTY did" was exhaustive, and a
+>    **silent half-send** once it was not: the composer reads that value to decide
+>    whether to clear the draft. It now reports what happened.
+> 2. `FeedView.tsx` carries **149 mojibake'd em-dashes** (UTF-8 bytes decoded as
+>    cp1252). PRE-EXISTING at HEAD, comments only, no user-facing string affected
+>    — so NOT fixed here, deliberately: a 149-character diff in an unrelated file
+>    would have buried this one. Worth its own tidy-up.
+>
+> **THE `[pty]` E2E TAG CONVENTION IS RETIRED, AND ITS HISTORY IS THE LESSON.**
+> Eleven tagged blocks; most were RETAGGED rather than deleted, because they ran
+> on Direct and always could — that is the done-when's "#418 assertion back"
+> clause. The tag had already rotted twice: #639 found four titles wrong because
+> "is this test about the terminal?" had never been written down, and #873 removed
+> the tag's own witnesses so several stayed green on a claim nothing could check.
+> **A label on a test is a claim, and a claim nothing verifies rots silently.**
+>
+> **E18-15 IS UNBLOCKED BUT NOT DONE.** *Retire the hook listener* needs
+> `hook_callback` on the control channel to take over `SessionStart` / `Stop` /
+> `PostToolUse` / `Notification` first. The listener stays as the STATUS channel;
+> only the hold went. Also still open in E18: E18-11's plan-mode half, E18-12
+> (`rewind` is present but never exercised), E18-13.
+>
+> **SIZING, because the gap matters more than the number.** The issue said M and
+> listed six files. What it could not see: the hook hold path (unreachable only
+> *after* the deletion), the trust chip and its whole subsystem, the handoff bar,
+> two IPC channels, the e2e fake the entire suite runs on, and ~110 test-file
+> errors that the narrowed `TransportKind` surfaced automatically. **The narrowed
+> union was the best tool in the item** — it turned "find every test asserting a
+> dead transport" from a grep into a compile error.
+>
+> **Next up: #972** (Monaco diff in the approval card), then **#967** (the feed's
+> tail-pin). Neither is started.
+
 
 > # 🧭 SCOPE CALL TAKEN — 2026-09-26: **Phase 2's endgame is decided. Next work item is #972.**
 >

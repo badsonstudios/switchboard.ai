@@ -3007,7 +3007,7 @@ for a public store.
   *Vocabulary amended 2026-07-28 (P2-E15-04).* The illustrative
   `session:read` / `session:exec` / `git:write` / `network:fetch` above predate
   the implementation. The shipped IPC vocabulary is dot-separated and plural —
-  `sessions.read`, `sessions.spawn`, `pty.write`, `git.read`, `dialog.open`,
+  `sessions.read`, `sessions.spawn`, `sessions.write`, `git.read`, `dialog.open`,
   `environment.probe`, … — and lives in `src/shared/ipc/capabilities.ts`, which
   is authoritative. **Note there are currently TWO capability vocabularies:**
   these IPC-channel capabilities, and the free-form `capabilities: string[]` on
