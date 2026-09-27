@@ -174,6 +174,46 @@ on the floor, and say so in your PR.
   and the question now appears in the row itself. The menu entries stay exactly
   where they were.
 
+- **Terminal mode is gone for good, and with it the last thing that could ask
+  you a question twice.** The Terminal tab and its ⋯-menu switch went a week
+  ago; the terminal underneath them has now been removed as well. Every session
+  talks to Claude Code directly. Your cards, conversations and history are
+  untouched, and there is nothing to turn on.
+
+  **What you actually lose:** Ctrl-R history search, vim mode, and anything else
+  that only exists as a full-screen terminal interface. If you need one for a
+  piece of work, run `claude` yourself in that folder — same CLI, same
+  conversation. One gap has no route inside the app at all: **approving an MCP
+  server a project defines in its own `.mcp.json`**, which Claude Code offers
+  only in its own picker. Run `claude` in the folder once and answer it there.
+
+- **⚠️ You will be asked to approve fewer things under `✎ auto-edit`.** This is
+  the one change here worth a minute of your attention.
+
+  Switchboard used to keep its own list of which tool calls to stop for, and that
+  list was deliberately stricter than Claude Code's: under **auto-edit** it
+  brought you *every* shell command, including the in-folder housekeeping Claude
+  Code waves through on its own — `mkdir`, `touch`, `mv`, `cp`, `rm`, `sed` —
+  and under **ask** and **auto-edit** it also stopped for reads outside the
+  session's folder. That list rode on the old terminal mechanism and went with
+  it. **Claude Code now decides what you are asked, and you get exactly what you
+  would running it yourself on that mode.**
+
+  If **auto-edit** felt safe partly because of that extra layer, use **ask**
+  instead — it stops for every tool call and has not changed.
+
+- **Plan-mode sessions now show you their permission questions.** They were the
+  one mode switchboard deliberately stayed out of, because answering in-app would
+  have overridden Claude Code's own plan-mode write block. Answers no longer work
+  that way, so the block stands whatever you click and there is no reason to leave
+  you out of the loop. Plan mode is still read-only.
+
+- **The auto-trust / ask-trust chip has been removed from the title bar.** It had
+  been greyed out since nothing could ask you the trust question, and its tooltip
+  pointed at Terminal mode. Switchboard still does not answer that question on
+  your behalf — a folder it has run in stays un-answered, and Claude Code will
+  ask you the first time you run it there yourself.
+
 ### Fixed
 
 - **The permission bar now shows you what a file write would actually put on
@@ -228,6 +268,14 @@ on the floor, and say so in your PR.
   typed afterwards could change it. A label you typed yourself is untouched.
 
 ### Internal
+
+- **switchboard no longer ships any native code.** Deleting the terminal removed
+  `node-pty` and the three `@xterm/*` packages, which were the only things
+  requiring a compiled binary. There is no `postinstall` rebuild step, no
+  per-platform native module in three CI matrices, and nothing unpacked outside
+  the app archive. Installs are smaller and faster, and a class of
+  "failed to load native module" startup failure is now impossible.
+
 
 - **Groundwork for handing a job to a fresh session.** switchboard now knows what
   a *role* is: a saved target you will later be able to hand work to — a name, the

@@ -13,7 +13,6 @@ import {
   submitPrompt,
   interruptSession,
   resolveDraftMentions,
-  SUBMIT_DELAY_MS,
 } from './composer';
 import { sessionStore } from '../store/session-store';
 import { ipcRefusal } from '../../../shared/ipc/refusal';
@@ -56,8 +55,6 @@ beforeEach(() => {
   };
 });
 
-const ESC = String.fromCharCode(27);
-const CR = String.fromCharCode(13);
 
 describe('resolveDraftMentions — what a draft with @-mentions becomes (P2-E11-08)', () => {
   const answer = (value: unknown) => {
@@ -120,18 +117,18 @@ describe('sendSessionCommand — the ⋯ menu route (#381)', () => {
     expect(ptyWrites).toEqual([]);
   });
 
-  // The whole bug: a stream session has no PTY, so a direct `pty.input` was
-  // dropped and the menu item did nothing at all.
-  it('falls back to the PTY only when main declines', async () => {
+  // THE WHOLE BUG #381 FIXED, and what is left of it (#952). A stream session had
+  // no PTY, so a direct `pty.input` was dropped and the menu item did nothing at
+  // all — which is why this route learned to try main FIRST and only then fall
+  // back. There is nothing to fall back TO now, so what has to survive is the
+  // other half: main declining must not look like success.
+  it('does not claim success when main declines', async () => {
     mainTakesPrompts = false;
 
     await sendSessionCommand('live-1', '/clear');
 
     expect(submitted).toEqual([]);
-    expect(ptyWrites[0]).toEqual({ id: 'live-1', data: '/clear' });
-    // ...and the separate, delayed CR that a TUI needs to treat it as submitted
-    vi.advanceTimersByTime(SUBMIT_DELAY_MS);
-    expect(ptyWrites[1]).toEqual({ id: 'live-1', data: String.fromCharCode(13) });
+    expect(ptyWrites).toEqual([]); // and nothing is written anywhere else either
   });
 
   // §5.8: the workspace folding itself away because you clicked a menu item
@@ -180,11 +177,10 @@ describe('interruptSession (#154)', () => {
     expect(ptyWrites).toEqual([]);
   });
 
-  it('writes Esc to the PTY when main declines', async () => {
-    mainTakesInterrupts = false;
-    await interruptSession('live-1');
-    expect(ptyWrites).toEqual([{ id: 'live-1', data: String.fromCharCode(27) }]);
-  });
+  // "Writes Esc to the PTY when main declines" went with the fallback (#952).
+  // The stop button used to write Esc unconditionally and a stream session had no
+  // PTY, so it was a silent no-op and the button did nothing at all — Dan
+  // reproduced it every time (#154). `interrupt` is a real control request now.
 });
 
 // ---------------------------------------------------------------------------
@@ -203,15 +199,11 @@ describe('a rejecting IPC is read as "main did not take it" (P2-E18-17)', () => 
   });
   afterEach(() => warn.mockRestore());
 
-  it('sendSessionCommand falls back to the PTY instead of rejecting', async () => {
-    promptFailure = new Error('ipc exploded');
-
-    await expect(sendSessionCommand('live-1', '/compact')).resolves.toBeUndefined();
-
-    expect(ptyWrites[0]).toEqual({ id: 'live-1', data: '/compact' });
-    vi.advanceTimersByTime(SUBMIT_DELAY_MS);
-    expect(ptyWrites[1]).toEqual({ id: 'live-1', data: CR });
-  });
+  // Two fallback tests went with the PTY route (#952). What they were REALLY
+  // about survives in `mainTook`, asserted below: a REJECTING ipc must be read as
+  // "main did not take it" and said out loud, because every caller is a `void`-ed
+  // click handler — so a rejection used to become an unhandled renderer rejection
+  // AND skip the fallback, leaving the control doing nothing and saying nothing.
 
   it('...and says so, because a silent recovery is how #154 hid for weeks', async () => {
     promptFailure = new Error('ipc exploded');
@@ -223,26 +215,23 @@ describe('a rejecting IPC is read as "main did not take it" (P2-E18-17)', () => 
     expect(warn.mock.calls[0][1]).toBe(promptFailure); // the cause, not just a shrug
   });
 
-  it('interruptSession falls back to Esc instead of rejecting', async () => {
-    interruptFailure = new Error('ipc exploded');
-
-    await expect(interruptSession('live-1')).resolves.toBeUndefined();
-
-    expect(ptyWrites).toEqual([{ id: 'live-1', data: ESC }]);
-    expect(warn).toHaveBeenCalledOnce();
-    expect(String(warn.mock.calls[0][0])).toContain('interrupt');
-  });
 
   it('submitPrompt survives it too, and still counts as a submit', async () => {
     const notify = vi.spyOn(sessionStore, 'notifyPromptSubmitted');
     promptFailure = new Error('ipc exploded');
 
-    // TRUE, not undefined: a text prompt always goes somewhere — main took it
-    // or the PTY did — and only the image path (P2-E10-09) can answer false.
-    await expect(submitPrompt('live-1', 'hello')).resolves.toBe(true);
+    // FALSE now, and the change is the point (#952). A text prompt used to always
+    // go somewhere — main took it, or the PTY route did — so only the image path
+    // (P2-E10-09) could answer false. With no second route a rejected send really
+    // did not happen, and the caller MUST be told, or the composer clears a draft
+    // whose words went nowhere.
+    await expect(submitPrompt('live-1', 'hello')).resolves.toBe(false);
 
+    // §5.8's auto-minimize still fires: it is a response to the user's GESTURE,
+    // deliberately taken before the IPC round trip, and it must not depend on
+    // whether the send succeeded.
     expect(notify).toHaveBeenCalledWith('live-1');
-    expect(ptyWrites[0]).toEqual({ id: 'live-1', data: 'hello' });
+    expect(ptyWrites).toEqual([]);
     notify.mockRestore();
   });
 
@@ -273,7 +262,10 @@ describe('a rejecting IPC is read as "main did not take it" (P2-E18-17)', () => 
 
     await sendSessionCommand('live-1', '/clear');
 
-    expect(ptyWrites[0]).toEqual({ id: 'live-1', data: '/clear' });
+    // A refusal is a NO, and with no fallback route the only thing left to assert
+    // is that it was not mistaken for a yes: nothing was written anywhere.
+    expect(ptyWrites).toEqual([]);
+    expect(submitted).toEqual([]);
   });
 });
 
@@ -281,88 +273,20 @@ describe('a rejecting IPC is read as "main did not take it" (P2-E18-17)', () => 
 // line whose shape is a measured CLI finding (S-03, refound live 2026-07-22):
 // a multiline prompt written raw is read by the TUI as many submitted prompts,
 // and text+CR in one chunk registers as a paste that never submits at all.
-describe('writePromptToPty: multiline is ONE bracketed paste (P2-E18-17)', () => {
-  beforeEach(() => {
-    mainTakesPrompts = false; // the PTY route is the only one that pastes
-  });
+// ── TWO PTY-ROUTE SUITES WENT WITH THE FALLBACK (#952) ──────────────────────
+//
+// `writePromptToPty: multiline is ONE bracketed paste` and `submitPrompt on the
+// PTY route writes the same bytes` pinned the byte-level shape of a keystroke
+// submit: a multiline prompt wrapped in ESC[200~ … ESC[201~ as a SINGLE write,
+// then the carriage return SEPARATELY, 75ms later.
+//
+// ⚠️ THE SEPARATION WAS A MEASURED FINDING, NOT A STYLE CHOICE: text and a CR
+// written together register as a PASTE in the CLI's TUI and never submit (S-03,
+// refound live 2026-07-22). It is recorded here because it is the kind of thing
+// that gets rediscovered the expensive way, and because `main/mcp/ipc.ts`
+// carried a duplicate of the same constants for the same reason.
 
-  it('wraps a multiline prompt in the paste brackets, as a single write', async () => {
-    await sendSessionCommand('live-1', 'first\nsecond');
-
-    expect(ptyWrites).toEqual([
-      { id: 'live-1', data: ESC + '[200~' + 'first\nsecond' + ESC + '[201~' },
-    ]);
-  });
-
-  it('does not wrap a single-line prompt — brackets are for the newline', async () => {
-    await sendSessionCommand('live-1', 'just one line');
-
-    expect(ptyWrites[0].data).toBe('just one line');
-  });
-
-  it('a trailing newline alone is enough to make it a paste', async () => {
-    await sendSessionCommand('live-1', 'one\n');
-
-    expect(ptyWrites[0].data).toBe(ESC + '[200~' + 'one\n' + ESC + '[201~');
-  });
-
-  // THE S-03 finding, and the reason SUBMIT_DELAY_MS exists: the CR is a
-  // SEPARATE, LATER write. Bundling it into the paste is the one-character
-  // change that makes every multiline prompt sit in the composer unsent.
-  it('the CR is a separate, delayed write — never part of the paste', async () => {
-    await sendSessionCommand('live-1', 'first\nsecond');
-
-    expect(ptyWrites).toHaveLength(1); // nothing has submitted it yet
-    expect(ptyWrites[0].data.endsWith(CR)).toBe(false);
-    vi.advanceTimersByTime(SUBMIT_DELAY_MS);
-    expect(ptyWrites[1]).toEqual({ id: 'live-1', data: CR });
-  });
-
-  it('the CR does not arrive early either', async () => {
-    await sendSessionCommand('live-1', 'hello');
-
-    vi.advanceTimersByTime(SUBMIT_DELAY_MS - 1);
-    expect(ptyWrites).toHaveLength(1);
-    vi.advanceTimersByTime(1);
-    expect(ptyWrites).toHaveLength(2);
-  });
-});
-
-// `submitPrompt`'s fallback was asserted only through `sendSessionCommand`
-// before this item — i.e. the user-facing route was never watched taking the
-// PTY path at all, which is the route EVERY Terminal-mode session uses.
-describe('submitPrompt on the PTY route writes the same bytes (P2-E18-17)', () => {
-  it('pastes the prompt and submits it with the delayed CR', async () => {
-    mainTakesPrompts = false;
-
-    await submitPrompt('live-1', 'write me a haiku\nabout ptys');
-
-    expect(submitted).toEqual([]);
-    expect(ptyWrites).toEqual([
-      { id: 'live-1', data: ESC + '[200~' + 'write me a haiku\nabout ptys' + ESC + '[201~' },
-    ]);
-    vi.advanceTimersByTime(SUBMIT_DELAY_MS);
-    expect(ptyWrites[1]).toEqual({ id: 'live-1', data: CR });
-  });
-
-  it('writes NOTHING to the PTY when main took the prompt', async () => {
-    await submitPrompt('live-1', 'hello');
-
-    vi.advanceTimersByTime(SUBMIT_DELAY_MS);
-    expect(ptyWrites).toEqual([]);
-    // no third argument at all on the text-only route — it goes through
-    // `sendSessionCommand`, which is unchanged by P2-E10-09
-    expect(submitted).toEqual([{ id: 'live-1', text: 'hello', attachments: undefined }]);
-  });
-});
-
-// The one place the try-then-fall-back rule is deliberately NOT followed
-// (P2-E10-09). Everywhere else the two routes deliver the same thing, which is
-// what makes falling back safe. A bitmap breaks that: the PTY route is
-// keystrokes, and there is no keystroke for a picture — so falling back would
-// send "what's wrong with this screenshot?" with no screenshot, the prompt
-// would arrive looking perfectly fine, and the answer would be nonsense.
-describe('submitPrompt WITH IMAGES is stream-only (P2-E10-09)', () => {
+describe('submitPrompt WITH IMAGES (P2-E10-09)', () => {
   const png = { kind: 'image' as const, mediaType: 'image/png' as const, data: 'AQIDBA==' };
 
   it('hands the attachments to main alongside the text', async () => {
@@ -380,7 +304,6 @@ describe('submitPrompt WITH IMAGES is stream-only (P2-E10-09)', () => {
 
     await expect(submitPrompt('live-1', 'what is this?', [png])).resolves.toBe(false);
 
-    vi.advanceTimersByTime(SUBMIT_DELAY_MS);
     expect(ptyWrites).toEqual([]);
     expect(submitted).toEqual([]);
   });
@@ -390,7 +313,6 @@ describe('submitPrompt WITH IMAGES is stream-only (P2-E10-09)', () => {
 
     await expect(submitPrompt('live-1', 'what is this?', [png])).resolves.toBe(false);
 
-    vi.advanceTimersByTime(SUBMIT_DELAY_MS);
     expect(ptyWrites).toEqual([]);
   });
 

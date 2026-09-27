@@ -1,15 +1,26 @@
 // Run a script under Electron's Node (`ELECTRON_RUN_AS_NODE=1 electron.exe`)
-// — required for anything loading native modules built for Electron's ABI
-// (node-pty). Usage: node scripts/run-electron-node.js <script> [args...]
+// — the checks run under Electron's own Node so they exercise the same runtime
+// the app does. Usage: node scripts/run-electron-node.js <script> [args...]
 //
-// stdin/stdout are inherited straight through. stderr is piped so it can go
-// through the #176 filter, which drops ONE known-benign node-pty crash dump
-// (see scripts/pty-noise-filter.js for what it matches and why that cannot eat
-// a real error) and prints a one-line note saying it did. Everything else
-// reaches the terminal untouched. `RUN_ELECTRON_NODE_RAW_STDERR=1` turns the
-// filter off entirely and restores plain inheritance.
+// stdin/stdout are inherited straight through. stderr is PIPED and forwarded
+// verbatim.
 //
-// Side effect of the pipe: stdout is still a direct fd but stderr now
+// ⚠️ THE PIPE ONCE HAD A SECOND JOB AND NO LONGER DOES (#952). It existed for
+// the #176 filter, which dropped ONE known-benign node-pty crash dump — the
+// `conpty_console_list_agent.js` fork losing its console to `kill()`, twelve
+// times per `check:pty` run. node-pty is gone with the PTY transport, that dump
+// cannot happen again, and `pty-noise-filter.js` went with it.
+//
+// The pipe itself STAYS, and the reason is the exit-code contract below rather
+// than any filtering: 'close'-with-bounded-'exit'-fallback is what five `check:*`
+// scripts exit through, it is what `run-electron-node.test.js` pins, and the two
+// cases it was built for (a child that exits immediately; a grandchild holding
+// the write end open) are properties of the child, not of node-pty. Ripping the
+// pipe out would be a behaviour change to five green checks inside an item whose
+// job was deleting a transport. `RUN_ELECTRON_NODE_RAW_STDERR=1` still restores
+// plain inheritance.
+//
+// Side effect of the pipe, unchanged: stdout is still a direct fd but stderr
 // round-trips through this process's event loop and is line-buffered, so in a
 // combined log (CI) an error line can appear slightly later relative to stdout
 // than it used to. Nothing is lost — only the interleaving moves.
@@ -24,7 +35,6 @@
 // the guard for free; `src/main/check-scripts.test.ts` holds that door shut.
 const { spawn } = require('child_process');
 const path = require('path');
-const { createAttachConsoleFilter } = require('./pty-noise-filter');
 const { cleanEnv } = require('./clean-env');
 const { guardBundle } = require('./bundle-guard');
 
@@ -54,14 +64,13 @@ function runFiltered(command, args, opts = {}) {
       cwd: opts.cwd,
     });
 
-    let filter = null;
     if (!rawStderr && child.stderr) {
-      filter = createAttachConsoleFilter(write);
       child.stderr.setEncoding('utf8');
-      child.stderr.on('data', (d) => filter.push(d));
-      // A pipe error (the child force-killed mid-write — which check:pty does
-      // twelve times) would otherwise be an UNCAUGHT exception, turning a pass
-      // into a crash: the exact failure mode this whole change exists to end.
+      child.stderr.on('data', (d) => write(d));
+      // A pipe error (a child force-killed mid-write) would otherwise be an
+      // UNCAUGHT exception, turning a pass into a crash. `check:pty` was the
+      // caller that did this twelve times a run and it is gone (#952), but the
+      // guard is a property of piping stderr at all, not of that caller.
       child.stderr.on('error', () => {});
     }
 
@@ -71,19 +80,6 @@ function runFiltered(command, args, opts = {}) {
       if (settled) return;
       settled = true;
       if (drainTimer) clearTimeout(drainTimer);
-      if (filter) {
-        filter.end();
-        if (filter.suppressed > 0) {
-          const orphans = filter.swallowedFooters;
-          write(
-            `run-electron-node: suppressed ${filter.suppressed} known-benign node-pty ` +
-              '"AttachConsole failed" crash dump(s)' +
-              (orphans > 0 ? ` + ${orphans} detached "Node.js v…" line(s)` : '') +
-              " — node-pty's own kill() race, harmless (#176). " +
-              'RUN_ELECTRON_NODE_RAW_STDERR=1 shows them.\n'
-          );
-        }
-      }
       resolve(code);
     };
 

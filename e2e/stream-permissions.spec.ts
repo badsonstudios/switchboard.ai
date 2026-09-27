@@ -105,7 +105,7 @@ test.describe('allow-all in Direct mode never hands off to a terminal (#310)', (
     const folder = tempProjectFolder();
     a = await launchApp({
       seedFolder: folder,
-      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' },
     });
     const w = a.window;
 
@@ -204,7 +204,7 @@ test.describe('allow-all in Direct mode answers at the server (#319)', () => {
     const folder = tempProjectFolder();
     a = await launchApp({
       seedFolder: folder,
-      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' },
     });
     const w = a.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
@@ -309,7 +309,7 @@ test.describe('a hook Notification cannot fake a permission on Direct (#313)', (
     const folder = tempProjectFolder();
     a = await launchApp({
       seedFolder: folder,
-      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' },
     });
     const w = a.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({

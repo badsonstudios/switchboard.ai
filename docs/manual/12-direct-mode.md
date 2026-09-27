@@ -1,17 +1,18 @@
-# 12 — Direct mode (beta)
+# 12 — Direct mode
 
 This page explains how switchboard talks to Claude Code, and what that costs.
 
 **Short version:** Direct mode fixes permission prompts that used to escape into
-the terminal and ask you twice. It costs you the terminal itself. **It is now
-the only mode** — every session runs this way, and there is nothing to turn on.
+the terminal and ask you twice. It costs you the terminal itself. **It is the
+only mode** — every session runs this way, and there is nothing to turn on.
 
-> **This used to be a choice.** A session could be put back on "Terminal mode",
-> which hosted the real Claude Code interface in a tab on the card. That mode
-> has been removed as a choice, along with the tab and the ⋯-menu switch that
-> reached it. A session you had set to Terminal moves to Direct the next time
-> switchboard starts, and says so in the log; its conversation and history are
-> untouched. The list under **What you give up** is what actually went with it.
+> **This used to be a choice, and now it is not one anywhere.** A session could
+> be put back on "Terminal mode", which hosted the real Claude Code interface in
+> a tab on the card. First the tab and the ⋯-menu switch went; now the terminal
+> itself has gone, along with the developer-only way of asking for it back. A
+> session you had set to Terminal moves to Direct the next time switchboard
+> starts; its conversation and history are untouched. The list under **What you
+> give up** is what actually went with it.
 
 ---
 
@@ -55,7 +56,14 @@ check, and no setting that changes it.
 - Anything else that only exists as a full-screen terminal interface
 
 If you need one of those for a particular piece of work, run `claude` yourself
-in a terminal — it is the same CLI and the same conversation history.
+in a terminal — it is the same CLI and the same conversation history, and
+switchboard will pick the conversation back up.
+
+**One gap worth naming, because it has no route inside the app at all:**
+approving an MCP server that a project defines in its own `.mcp.json`. Claude
+Code only offers that in its own picker, and there is no command for it. The MCP
+panel can add, remove, toggle and reconnect servers, but not approve a project's
+own — for that, run `claude` in the folder once and answer it there.
 
 This list used to be longer. It named the pickers for `/resume` and `/rewind`,
 and slash commands generally were called a known gap — none of which is true any
@@ -70,16 +78,16 @@ you Claude Code's trust prompt for a new folder and waits. A Direct-mode session
 doesn't: Claude Code raises no trust question at all outside its own terminal,
 so it just runs in the folder. Nothing hangs and nothing is hidden from you.
 
-That is why the **🔓 auto-trust / 🔒 ask trust** chip in the title bar is greyed
-out — hover it and it says so. It is not broken: there is no longer any session
-that could put the question in front of you, so the setting has nothing to
-govern. Your choice is kept exactly as you left it. Full story in
-[Settings](10-settings.md#trusting-folders).
+**The auto-trust / ask-trust chip has therefore been removed from the title
+bar.** It spent a while greyed out with a tooltip explaining that it could not
+reach any session; a switch that can never do anything is worse than no switch,
+and its explanation pointed at Terminal mode, which no longer exists. Full story
+in [Settings](10-settings.md#trusting-folders).
 
-Because nothing can ask, switchboard doesn't answer on your behalf either: a
-session leaves Claude Code's trust setting for that folder exactly as it found
-it, whichever way the chip is set. Nothing is recorded in your name for a
-question you were never able to see.
+**This does not mean switchboard now trusts folders on your behalf — it means it
+never did.** A session leaves Claude Code's trust setting for that folder exactly
+as it found it. Nothing is recorded in your name for a question you were never
+able to see, which was already true while the chip was greyed out.
 
 Everything else works the same — better, in a couple of places. Your
 conversation still appears in the Session view (and arrives faster; see

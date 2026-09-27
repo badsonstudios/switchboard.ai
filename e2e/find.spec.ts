@@ -8,7 +8,10 @@
 // reach for later. So the test puts THE SAME STRING in two cards, a different
 // number of times in each, and checks the count follows the focus.
 //
-// TRANSPORT SCOPE (P2-E18-18, #404): the first group is `[pty]` — it seeds a
+// TRANSPORT SCOPE — HISTORICAL (P2-E18-18, #404; retagged by #952, which
+// left one transport, so a `[pty]` tag names nothing). The note below is the
+// reasoning as it stood, kept because it says what each test actually drives:
+// // TRANSPORT SCOPE (P2-E18-18, #404): the first group is `[pty]` — it seeds a
 // JSONL file and lets the watcher tail it, which is how a PTY session's Feed is
 // built and is switched off for a stream one. The SECOND group is Direct, and
 // exists because the two transports used to disagree about the headline gesture:
@@ -58,7 +61,7 @@ const count = (w: Page) => w.locator('[data-testid="find-count"]');
 const marks = (w: Page) => w.locator('mark[data-feed-match]');
 const currentMark = (w: Page) => w.locator('mark[data-feed-match-current]');
 
-test.describe('[pty] Session find (E17-02)', () => {
+test.describe('Session find (E17-02)', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
 

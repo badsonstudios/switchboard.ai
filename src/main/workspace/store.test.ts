@@ -2694,19 +2694,21 @@ describe('PersistedSession.transport survives quit -> relaunch (P2-E18-17)', () 
     transport,
   });
 
-  // `pty` and not `stream`: with Direct the default, a card that came back
-  // saying `stream` proves nothing — that is what an ABSENT field produces
-  // downstream too. `pty` is the value no default can supply.
-  it('an explicit Terminal choice is still Terminal after a reload', () => {
-    const a = makeStore(file);
-    a.load();
-    a.upsertSession(withTransport('one', 'pty'));
-    a.save();
-
-    const b = makeStore(file); // "relaunch"
-    expect(b.load().sessions[0].transport).toBe('pty');
-    expect(b.listSessions()[0].transport).toBe('pty'); // the path sessions:create reads
-  });
+  // ⚠️ THIS TEST LOST ITS ONLY USABLE VALUE (#952), AND THAT IS WHY IT IS GONE
+  // RATHER THAN REWRITTEN.
+  //
+  // It pinned that an explicit Terminal choice survived a reload, and it used
+  // `'pty'` deliberately: with Direct the default, a card that came back saying
+  // `'stream'` proves nothing, because that is exactly what an ABSENT field
+  // produces downstream. `'pty'` was *the value no default can supply*, which is
+  // what made the round trip observable at all.
+  //
+  // `TransportKind` is now a union of one, so there is no longer a value that a
+  // default could not have supplied, and the assertion cannot distinguish a
+  // stored choice from silence. The FIELD is still stored and still round-trips
+  // (see the test below, which pins the shape rather than the value) — it is the
+  // persistence half of §5.3's adapter contract, and the day a second provider
+  // brings a second kind, this test is the one to bring back.
 
   it('an explicit Direct choice round-trips as a VALUE, not as silence', () => {
     const a = makeStore(file);
@@ -2743,11 +2745,11 @@ describe('PersistedSession.transport survives quit -> relaunch (P2-E18-17)', () 
   it('upserting the same card replaces rather than duplicates, transport included', () => {
     const st = makeStore(file);
     st.load();
-    st.upsertSession(withTransport('one', 'pty'));
-    st.upsertSession({ ...withTransport('one', 'pty'), layoutSlot: 4 });
+    st.upsertSession(withTransport('one', 'stream'));
+    st.upsertSession({ ...withTransport('one', 'stream'), layoutSlot: 4 });
 
     expect(st.snapshot().sessions).toHaveLength(1);
-    expect(st.snapshot().sessions[0].transport).toBe('pty');
+    expect(st.snapshot().sessions[0].transport).toBe('stream');
   });
 
   // Not shared refs with the caller, on the field's own account: the store
@@ -2756,12 +2758,12 @@ describe('PersistedSession.transport survives quit -> relaunch (P2-E18-17)', () 
   it('the caller cannot mutate a stored choice through its own object', () => {
     const st = makeStore(file);
     st.load();
-    const mine = withTransport('one', 'pty');
+    const mine = withTransport('one', 'stream');
     st.upsertSession(mine);
 
-    mine.transport = 'stream';
+    (mine as { transport?: string }).transport = 'something-else';
 
-    expect(st.listSessions()[0].transport).toBe('pty');
+    expect(st.listSessions()[0].transport).toBe('stream');
   });
 });
 

@@ -1,7 +1,10 @@
 // P2-E14-04 — the actionable permission toast, in a real window on a real
 // desktop.
 //
-// TRANSPORT SCOPE (P2-E18-18, #404): `[pty]` for the whole group. The stimulus
+// TRANSPORT SCOPE — HISTORICAL (P2-E18-18, #404; retagged by #952, which
+// left one transport, so a `[pty]` tag names nothing). The note below is the
+// reasoning as it stood, kept because it says what each test actually drives:
+// // TRANSPORT SCOPE (P2-E18-18, #404): `[pty]` for the whole group. The stimulus
 // is a HELD `PreToolUse` hook, which is the PTY transport's permission path; a
 // Direct session's permission rides `can_use_tool` instead. The behaviour under
 // test is transport-blind by construction — `pendingPermissionFor` and
@@ -66,7 +69,7 @@ const toasts = (home: string): ToastLine[] => lines<ToastLine>(home, 'os toast r
 /** Whether THIS desktop can put a button on a toast — `toastActionsSupported`. */
 const BUTTONS_HERE = process.platform === 'darwin' || process.platform === 'win32';
 
-test.describe('[pty] actionable permission toasts (P2-E14-04)', () => {
+test.describe('actionable permission toasts (P2-E14-04)', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
 

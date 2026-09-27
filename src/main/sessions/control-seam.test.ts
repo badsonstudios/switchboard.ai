@@ -164,8 +164,12 @@ describe('the port is wired to the right two methods', () => {
 });
 
 describe('the two verdicts only the manager can tell apart', () => {
-  it('a PTY session has no control channel — not-stream', async () => {
-    const m = managerOn('pty');
+  // `not-stream` NAMES A MISSING CONTROL CHANNEL, not a transport (#952). It was
+  // driven with a PTY session because that was the transport that had none; the
+  // verdict, its wording and the code path are unchanged, and a handle without
+  // `onMessage` still reaches them.
+  it('a session with no control channel answers not-stream', async () => {
+    const m = managerOn('stream');
     const rec = m.create(identity);
     await expect(m.listModels(rec.id)).resolves.toEqual({
       ok: false,

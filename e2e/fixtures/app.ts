@@ -630,46 +630,26 @@ export async function launchSecondInstance(
  * Two files hold BOTH halves themselves, one `describe` each, and their headers
  * say so: `ask-user-question.spec.ts` and `real-claude.spec.ts`.
  *
- * IS THIS TEST PTY-BY-CONSTRUCTION? (#639 — four titles were wrong because the
- * question had never been written down.) Two things must hold TOGETHER:
+ * ⛳ THE `[pty]` TAGGING CONVENTION IS RETIRED (#952). There is one transport, so
+ * no test can be "PTY-by-construction" and the tag names nothing. Every tagged
+ * block was either RETAGGED — it ran on Direct and always could, which is the
+ * "#418 assertion back" clause of E18-16's done-when — or deleted with the
+ * behaviour it was about. Its history is worth three lines, because two of them
+ * are about test design rather than about transports:
  *
- *   1. it reaches the terminal ON PURPOSE — it passes
- *      `SWITCHBOARD_TRANSPORT: 'pty'`, or it takes this fixture's PTY-only fake
- *      in a file whose other tests ask for `SWITCHBOARD_FAKE_PROVIDER:
- *      'stream'`; and
- *   2. what it ASSERTS is the terminal's own answer — the curated command list,
- *      a trust acceptance on disk, a panel the Direct path draws and the PTY
- *      path deliberately does not.
+ *   • #639 found FOUR titles wrong because the question "is this test really
+ *     about the terminal?" had never been written down. Tagging by what a test
+ *     REACHES is not the same as tagging by what it ASSERTS, and the four had
+ *     confused the two. A test that starts somewhere in order to assert
+ *     something else is not "about" where it started.
+ *   • #873 then took the tag's own evidence away: the witnesses were a live
+ *     `.xterm` and the Terminal tab's notice, so after it a test could still
+ *     SELECT the terminal but could not read its answer off the screen. Several
+ *     tags stayed green for a year on a claim nothing could check.
  *
- * Clause (2) used to begin "a live `.xterm`, the ABSENCE of the 'No terminal
- * for this session' notice". Both of those witnesses were the Terminal tab, and
- * #873 removed it — no surface renders a PTY now, so a test can still SELECT
- * the terminal transport but can no longer read its answer off the screen.
- * What is left are the off-screen witnesses, and they are the stronger ones.
- *
- * (1) without (2) is NOT tagged, and that distinction is the whole reason the
- * rule needs writing down: every transport-switch test in
- * `stream-transport.spec.ts` starts on the PTY — a switch needs somewhere to
- * come from — and then asserts DIRECT behaviour. Their green IS default-
- * transport evidence, so tagging them would be a lie in the opposite
- * direction. Each says as much at its own `launchApp` call.
- *
- * Tag at the HIGHEST level that is wholly PTY-scoped, and only there — a
- * `describe` when every test under it is, individual tests when the group is
- * mixed, never both. So an UNtagged test in a tagged `describe` does not exist;
- * an untagged test in a file whose OTHER tests are tagged is
- * transport-independent and merely happens to run on the PTY — the switch tests
- * above are the one exception, and each of them says so on the spot.
- *
- * HOW TO CHECK THE CONVENTION STILL HOLDS, in one command:
- * `grep -rn "SWITCHBOARD_TRANSPORT: 'pty'" e2e/`. Since #639 every hit is
- * either inside a `[pty]`-titled `describe`/`test`, or sits under a comment
- * saying why it starts on the terminal and then asserts something else. A new
- * hit that is neither is the bug this tag exists to prevent.
- *
- * The tag is plain text in the title, not a Playwright `tag:` option, so it
- * shows up in every reporter and in failure output; `playwright test --grep
- * '\[pty\]'` (or `--grep-invert`) filters on it. Nothing in CI greps titles.
+ * Both are the same lesson: **a label on a test is a claim, and a claim nothing
+ * verifies rots silently.** If a future adapter brings a second transport back,
+ * tag by the ASSERTION and give the tag a witness.
  */
 export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> {
   const home = opts.home ?? fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-'));
@@ -681,12 +661,12 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   // reasons no failure message would ever mention. Same family as the landmines
   // above: scrub it, and let a spec that wants it pass it in `opts.env`.
   delete env.SWITCHBOARD_AUTOCLOSE;
-  // Same reasoning, and newly worth having since #381 made Direct the default
-  // and `SWITCHBOARD_TRANSPORT=pty` the documented way back to a terminal: a
-  // developer with it exported in their shell would silently run the whole
-  // suite on the other transport, and the two specs that assert the DEFAULT
-  // would fail on a 30s locator timeout with nothing pointing at the cause.
-  // Scrubbed here, before `opts.env`, so a spec that means it can still ask.
+  // `SWITCHBOARD_TRANSPORT` is scrubbed even though #952 deleted the variable.
+  //
+  // Not superstition: a developer with it exported from muscle memory now sets an
+  // env var the app ignores, and an ignored var in a launch environment is the
+  // kind of thing someone later "fixes" by wiring it back up. Removing it here
+  // keeps the launch environment a statement of what the app actually reads.
   delete env.SWITCHBOARD_TRANSPORT;
   // Teardown must never meet a modal (#185). Quitting with a session in
   // `working` / `needs-input` / `needs-permission` raises the busy-sessions

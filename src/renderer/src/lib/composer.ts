@@ -9,26 +9,30 @@ import { sessionStore } from '../store/session-store';
 import type { PromptAttachment } from '../../../shared/prompt-attachments';
 import { answered } from '../../../shared/ipc/refusal';
 
-const ESC = String.fromCharCode(27);
-const CR = String.fromCharCode(13);
-const LF = String.fromCharCode(10);
-
-export const SUBMIT_DELAY_MS = 75;
-
-export function writePromptToPty(sessionId: string, text: string): void {
-  const payload = text.includes(LF) ? ESC + '[200~' + text + ESC + '[201~' : text;
-  window.switchboard.pty.input(sessionId, payload);
-  setTimeout(() => window.switchboard.pty.input(sessionId, CR), SUBMIT_DELAY_MS);
-}
+// ── NO PTY FALLBACK SINCE #952 ──────────────────────────────────────────────
+//
+// `writePromptToPty` dressed a prompt as a bracketed paste (ESC [200~ … ESC
+// [201~) and then sent the carriage return SEPARATELY, 75ms later. That second
+// write being separate was a measured finding, not a style choice: text and a CR
+// written together register as a PASTE in the CLI's TUI and never submit (S-03,
+// refound live 2026-07-22). It is recorded here because it is the kind of thing
+// that gets rediscovered the expensive way.
+//
+// `SUBMIT_DELAY_MS`, `ESC`, `CR` and `LF` went with it. Every function below now
+// goes to main and stops — see `mainTook`, which kept its job of reading a
+// REJECTION as "no" out loud, because a silent false is how the #154 class of
+// defect arrives.
 
 /**
  * Send text to a session, whichever transport it is on (P2-E18-08a) — WITHOUT
  * the "the user just submitted a prompt" side effects.
  *
- * TRY-THEN-FALL-BACK, deliberately: main answers false when the session has no
- * typed-message transport, and only then do we do the PTY dance. That keeps the
- * renderer completely ignorant of transports — it has no session record to
- * consult and no need of one.
+ * ONE ROUTE SINCE #952. This was TRY-THEN-FALL-BACK: main answered false when a
+ * session had no typed-message transport, and only then did the renderer do the
+ * PTY dance. The shape existed to keep the renderer completely ignorant of
+ * transports — it has no session record to consult and no need of one — and that
+ * property is unchanged now that main is the only route. A `false` from main
+ * means the prompt did NOT go, and callers must keep treating it that way.
  *
  * This is what the session controls use for `/clear` and `/compact` — the
  * card's ⋯ menu and, since #903, the composer's own buttons, both through
@@ -40,10 +44,10 @@ export function writePromptToPty(sessionId: string, text: string): void {
  * it — and #381 made Direct the default, which would have shipped it to
  * everyone.
  */
-export async function sendSessionCommand(sessionId: string, text: string): Promise<void> {
-  if (await mainTook('submitPrompt', () => window.switchboard.sessions.submitPrompt(sessionId, text)))
-    return;
-  writePromptToPty(sessionId, text);
+export async function sendSessionCommand(sessionId: string, text: string): Promise<boolean> {
+  return mainTook('submitPrompt', () =>
+    window.switchboard.sessions.submitPrompt(sessionId, text)
+  );
 }
 
 /**
@@ -89,8 +93,17 @@ export async function submitPrompt(
     );
   }
 
-  await sendSessionCommand(sessionId, text);
-  return true;
+  // ⚠️ REPORTS WHAT ACTUALLY HAPPENED SINCE #952, and this is a behaviour fix
+  // rather than a mechanical follow-on.
+  //
+  // It used to `return true` unconditionally here, on the stated grounds that "a
+  // text prompt always goes somewhere — main took it or the PTY did — and only
+  // the image path can answer false". The PTY route is gone, so a declined or
+  // rejected send means the prompt did NOT go — and the composer reads this
+  // value to decide whether to clear the draft. Returning `true` would clear a
+  // box whose words went nowhere, which is the silent half-send the image path
+  // above exists to prevent.
+  return sendSessionCommand(sessionId, text);
 }
 
 /**
@@ -127,15 +140,17 @@ export async function resolveDraftMentions(sessionId: string, text: string): Pro
 /**
  * Stop the running turn, whichever transport this session is on (#154).
  *
- * The stop button used to write Esc to the PTY unconditionally. A stream
- * session HAS no PTY, so `ptys.get(id)?.write()` was a silent no-op and the
- * button did nothing at all — Dan reproduced it every time. Same try-then-
- * fall-back shape as `submitPrompt`, for the same reason: the renderer has no
- * business knowing which transport it is on.
+ * The stop button used to write Esc to the PTY unconditionally. A stream session
+ * HAS no PTY, so `ptys.get(id)?.write()` was a silent no-op and the button did
+ * nothing at all — Dan reproduced it every time. The fix was the same
+ * try-then-fall-back shape as `submitPrompt`, for the same reason: the renderer
+ * has no business knowing which transport it is on.
+ *
+ * #952 removed the fall-back half. `interrupt` is a real control request now and
+ * always was on this transport; what is gone is the Esc keystroke behind it.
  */
 export async function interruptSession(sessionId: string): Promise<void> {
-  if (await mainTook('interrupt', () => window.switchboard.sessions.interrupt(sessionId))) return;
-  window.switchboard.pty.input(sessionId, ESC);
+  await mainTook('interrupt', () => window.switchboard.sessions.interrupt(sessionId));
 }
 
 /**

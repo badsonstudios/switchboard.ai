@@ -6,10 +6,12 @@
 // HOW THIS SEAM SAYS NO (#347, following #326's argument for `groups:*` —
 // `main/workspace/group-ipc.ts` holds the full version and is worth reading
 // once). It refuses by RESOLVING a value the caller can read, never by
-// throwing. Most of this file was already there — `sessions:setTransport`
-// answers `{ ok, reason }`, `submitPrompt` / `interrupt` / `decidePermission`
-// answer `false`, `pty:attach` answers `null`, and the `setAutonomy` family
-// returns quietly. `sessions:create` and `sessions:rename` were the two
+// throwing. Most of this file was already there — `submitPrompt` / `interrupt` /
+// `decidePermission` answer `false`, the `setAutonomy` family returns quietly,
+// and `sessions:create` / `sessions:rename` answer `{ ok, reason }`. (The two
+// canonical examples in this sentence used to be `sessions:setTransport`, which
+// answered `{ ok, reason }`, and `pty:attach`, which answered `null`. #952 deleted
+// both with the PTY transport — the shape outlived its illustrations.) `sessions:create` and `sessions:rename` were the two
 // outliers, and the short version of why they changed:
 //
 //   * Every bridge call in the renderer is a bare `void x().then(...)`. A
@@ -43,7 +45,6 @@ import { BrowserWindow, dialog } from 'electron';
 import fs from 'fs';
 import { SessionManager, SessionRecord } from './session-manager';
 import type { ControlVerdict } from '../../shared/control';
-import { PtyService } from '../pty/pty-service';
 import { StreamPermissions } from './stream-permissions';
 import { StreamCommands } from './stream-commands';
 import { StreamModel } from './stream-model';
@@ -53,10 +54,8 @@ import { HookListener } from '../hooks/hook-listener';
 import type { BusHost } from '../bus/host-channel';
 import { IpcBroker } from '../ipc/broker';
 import { Channel } from '../../shared/ipc/capabilities';
-import type { PtyAttachment, PtyChunk, PtySnapshot } from '../../shared/ipc/pty';
 import type { PermissionRequest } from '../../shared/ipc/permissions';
 import { isAutonomyMode, type SessionCardWire } from '../../shared/sessions';
-import type { TransportKind } from '../../shared/transport';
 import type { ProviderCapabilities } from '../extensibility/contributions';
 import { TranscriptWatcher } from '../transcripts/watcher';
 import { searchTranscripts } from '../transcripts/search';
@@ -109,7 +108,6 @@ import { sanitizePromptAttachments } from '../../shared/prompt-attachments';
 
 export interface SessionIpcDeps {
   manager: SessionManager;
-  ptys: PtyService;
   /** Stream-transport permission router (P2-E18-07). Absent until a stream
    *  session can exist, which keeps every PTY-only wiring path unchanged. */
   streamPermissions?: StreamPermissions;
@@ -144,7 +142,7 @@ export interface SessionIpcDeps {
   /** the IPC choke point — every channel, both directions (P2-E15-04) */
   broker: IpcBroker;
   /** auto-trust the folder before spawning (default on; user picks folder) */
-  autoTrust: () => boolean;
+  // `autoTrust` went with the folder-trust chip and the PTY spawn (#952).
   /** Fill blank task labels from the CLI's own conversation title (P2-E7-06,
    *  §5.11; default on). Off hides every auto label and drops toast text back
    *  to the session title — the screen-share switch. */
@@ -250,7 +248,7 @@ export interface SessionIpcDeps {
    *  because it is the only way to aim a WHOLE app instance at one transport —
    *  which is how the e2e suite starts a session on the Terminal now that
    *  Direct is the default (#381). */
-  preferredTransport?: () => TransportKind | undefined;
+  // `preferredTransport` went with `SWITCHBOARD_TRANSPORT` (#952).
   /**
    * A repair the user should SEE, not just find in the log (#539).
    *
@@ -299,13 +297,8 @@ export interface SessionIpcHandle {
 }
 
 export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
-  const { manager, ptys, hooks, transcripts, log, broker, streamPermissions, streamCommands, streamModel } =
+  const { manager, hooks, transcripts, log, broker, streamPermissions, streamCommands, streamModel } =
     deps;
-  // per-session live-feed unsubscribers (attached panes only)
-  const feeds = new Map<string, () => void>();
-  // one attach = one epoch, stamped on every chunk that attach streams. Global
-  // rather than per-session so an id is never reused across sessions either.
-  let ptyEpoch = 0;
   // a card is the durable unit; the live session under it is ephemeral
   const cardOfLive = new Map<string, string>(); // liveSessionId -> cardId
 
@@ -608,13 +601,11 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     // above, which is what turns a live link into a held report; `forget` is
     // deliberately asymmetric and keeps a report whose REVIEWER has gone.
     tearDownStep(liveId, 'dispatchResults.forget', () => deps.dispatchResults?.forget(liveId));
-    // `feeds` is the PTY live-feed unsubscriber from `pty:attach`, not the
-    // Events feed above it — two different things one line apart
-    tearDownStep(liveId, 'pty.detach', () => feeds.get(liveId)?.());
-    // Map.delete cannot throw, and it is deliberately OUTSIDE the step above: a
-    // subscriber that blows up on the way out still gets its handle dropped.
-    feeds.delete(liveId);
-    // the two held-permission releases, shared with the self-exit path (#271).
+    // A `pty.detach` step sat here until #952. It unsubscribed the PTY live feed
+    // that `pty:attach` had set up — deliberately NOT the Events feed one line
+    // above, two different things with confusingly similar names — and it went
+    // with the terminal IPC.
+    // the held-permission release, shared with the self-exit path (#271).
     // They sit adjacent now rather than side-by-side with `transcripts.unwatch`
     // between them; no step here depends on any other (see `tearDownStep`), so
     // the move is free — and `hooks.unregisterSession` is still the step
@@ -1006,30 +997,16 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     if (typeof sessionId === 'string') deps.feed.forget(sessionId);
   });
 
-  // held PreToolUse permissions (E10-03): stream requests to the renderer,
-  // take decisions back. Card id rides along so the UI can find its panel.
+  // In-flight permissions: stream requests to the renderer, take decisions back.
+  // Card id rides along so the UI can find its panel.
   //
-  // …and, since #699, the hook listener asks US the same question the stream
-  // router does BEFORE it parks anything: is there going to be a card id to
-  // stamp? The `cardId` on the line below is what every mounted card filters
-  // on, so a session with no binding produces a push nothing can match. On this
-  // channel that was never a wedge — the 300s release fails open to the CLI's
-  // own TUI prompt — but it was five minutes of a card claiming to hold a
-  // question that was visible to nobody. The probe lets the listener fail open
-  // at once instead.
+  // ONE CHANNEL SINCE #952. This block was doubled — the hook listener's three
+  // subscriptions, then the stream router's identical half from P2-E18-07 — with
+  // the standing requirement that the renderer must not have to know which
+  // channel carried a request, because the user is answering the same question
+  // either way. The hook half is gone with the PTY transport and the shape it was
+  // holding up is now simply the shape.
   //
-  // The SAME expression as the stream probe below, from the same map, and that
-  // is a requirement rather than a coincidence: two channels that disagreed
-  // about whether a session is reachable would mean one failing open while the
-  // other parked, on the same session, in the same instant.
-  hooks.setAnswerSurfaceProbe((liveSessionId) => cardOfLive.has(liveSessionId));
-  hooks.onPermissionRequest((r) =>
-    send('sessions:permissionRequest', { ...r, cardId: cardOfLive.get(r.sessionId) })
-  );
-  hooks.onPermissionResolved((requestId) => send('sessions:permissionResolved', { requestId }));
-  // The stream transport's identical half (P2-E18-07). Same events, same
-  // shape, same bar: the user is answering the same question, and the renderer
-  // must not have to know which channel carried it.
   // …and the router asks US, before it holds anything, whether that stamp is
   // going to exist (#333). The line below is the whole of the routing problem:
   // `cardId` is what every mounted card filters on, so a session with no
@@ -1051,7 +1028,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   );
   // replay for a (re)mounting renderer — a missed push must not park the CLI
   broker.handle('sessions:pendingPermissions', () =>
-    [...hooks.pendingRequests(), ...(streamPermissions?.pendingRequests() ?? [])].map((r) => ({
+    (streamPermissions?.pendingRequests() ?? []).map((r) => ({
       ...r,
       cardId: cardOfLive.get(r.sessionId),
     }))
@@ -1072,23 +1049,19 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   ): boolean => {
     if (typeof requestId !== 'string' || (decision !== 'allow' && decision !== 'deny')) return false;
     const clean = typeof reason === 'string' ? reason.slice(0, 500) : undefined;
-    // Ids are namespaced (`stream:<sessionId>:<native>`), so exactly one of
-    // these can own a given request and the order is not load-bearing.
-    // Falls through rather than branching on the prefix: the prefix is an
-    // implementation detail of the stream router, and asking the routers who
-    // owns it cannot go stale the way a string test would.
+    // ONE ROUTER SINCE #952. This was `hooks.decide(...) || streamPermissions?.
+    // decide(...)`, falling through rather than branching on the id's prefix
+    // (`stream:<sessionId>:<native>`) — deliberately, because the prefix is an
+    // implementation detail of the stream router and asking the routers who owns a
+    // request cannot go stale the way a string test would. With one router the
+    // question does not arise.
     //
-    // `updatedInput` reaches the STREAM router only, and only it knows what to
-    // do with one (#563): it is how an `AskUserQuestion` answer travels, and
-    // there is no hook equivalent because the hook path never holds that tool
-    // (`shouldHoldPermission`'s GATED table does not list it). The hook router's
-    // signature is deliberately left alone rather than grown a parameter it
-    // would ignore.
-    const delivered =
-      hooks.decide(requestId, decision, clean) ||
-      (streamPermissions?.decide(requestId, decision, clean, updatedInput) ?? false);
-    // A DECISION THAT LANDED ON NOTHING (#570). Both routers answer false for a
-    // request they are not holding, and until now that was SILENT — so an answer
+    // `updatedInput` was already stream-only: it is how an `AskUserQuestion`
+    // answer travels (#563), and there was no hook equivalent because the hook
+    // path never held that tool.
+    const delivered = streamPermissions?.decide(requestId, decision, clean, updatedInput) ?? false;
+    // A DECISION THAT LANDED ON NOTHING (#570). The router answers false for a
+    // request it is not holding, and until #570 that was SILENT — so an answer
     // the user watched themselves give could vanish leaving no trace anywhere,
     // which is exactly what happened: the owner reported an answered question
     // coming back "denied", and a log that had recorded every other thing about
@@ -1109,15 +1082,16 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   /**
    * The oldest request this LIVE session is still holding, or null (E14-04).
    *
-   * FIFO across both routers, because that is what the approval bar answers:
-   * its buttons act on `cardQueue[0]`. A toast that answered the newest request
-   * while the bar answered the oldest would make the two surfaces disagree
-   * about which question is on screen — and the user would have no way to tell.
+   * FIFO, because that is what the approval bar answers: its buttons act on
+   * `cardQueue[0]`. A toast that answered the newest request while the bar
+   * answered the oldest would make the two surfaces disagree about which question
+   * is on screen — and the user would have no way to tell. That was a FIFO across
+   * BOTH routers until #952; it is one list now, and the ordering requirement is
+   * unchanged.
    */
   const pendingPermissionFor = (liveSessionId: string): PermissionRequest | null =>
-    [...hooks.pendingRequests(), ...(streamPermissions?.pendingRequests() ?? [])].find(
-      (r) => r.sessionId === liveSessionId
-    ) ?? null;
+    (streamPermissions?.pendingRequests() ?? []).find((r) => r.sessionId === liveSessionId) ??
+    null;
   // Submit a prompt on the session's own transport (P2-E18-08a). Returns
   // false for a PTY session, whose composer route is a bracketed paste and a
   // delayed CR — a genuinely different operation. The renderer tries this
@@ -1213,25 +1187,24 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     if (typeof sessionId !== 'string') return null;
     return streamModel?.modelFor(sessionId) ?? null;
   });
-  // "Allow all (this session)": answered at the SERVER from now on — no
-  // hold, no needs-permission event, no beep (review P2 #19, Dan round 4).
+  // "Allow all (this session)": answered at the SERVER — no hold, no
+  // needs-permission event, no beep (review P2 #19, Dan round 4).
   //
-  // BOTH channels (#319). It told the hooks alone, which is the whole of the
-  // promise for a PTY session and none of it for a Direct one: a stream
-  // session's permissions ride `can_use_tool`, and `HookListener.maybeHold`
-  // passes those straight through before it ever looks at its allow-all set. So
-  // stream allow-all lived only in the renderer — every gated call still had to
-  // reach a window, still beeped on the way, and a session with no window could
-  // not run a gated tool at all.
+  // ONE STORE SINCE #952, and this is the case where collapsing the two channels
+  // is a real improvement rather than bookkeeping. #319 had to tell BOTH, because
+  // telling the hooks alone was the whole of the promise for a PTY session and
+  // none of it for a Direct one — a stream session's permissions rode
+  // `can_use_tool`, which `HookListener.maybeHold` passed straight through before
+  // it ever looked at its allow-all set, so stream allow-all lived only in the
+  // renderer and every gated call still had to reach a window and still beeped on
+  // the way.
   //
-  // Unconditional in both directions rather than branching on the session's
-  // transport. Both sets are keyed by the same live id, both are ignored by the
-  // channel that does not carry that session's permissions, and both are
-  // dropped by the same teardown — so telling both is one line cheaper than
-  // asking, and cannot go stale the way a transport test would.
+  // ⚠️ THE GRANT STILL HAS NO REVOKE SURFACE, and now there is exactly one place
+  // to give it one. It is cleared only by `forgetSession`, so a mis-click grants
+  // blanket approval until the session dies. #974 owns that, and it owns it for
+  // one store rather than two.
   broker.handle('sessions:allowAllSession', (_e, liveId: string) => {
     if (typeof liveId !== 'string') return;
-    hooks.setAllowAll(liveId);
     streamPermissions?.setAllowAll(liveId);
   });
 
@@ -1256,18 +1229,24 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   // value falls through to a plain rebind
   //
   // A reset is routed by source for the same reason a block is, and it is the
-  // sharper of the two: the watcher goes on watching a stream session (usage,
-  // the native id, drift), so it still corrects mis-binds and still sees a
-  // /clear — and an ungated reset would blank a Feed the transcript never
-  // built, with nothing to replay it from. A stream session's resets come off
-  // its own `system:init` instead.
-  transcripts.onReset((sessionId, cause) => {
-    // BEFORE the stream gate: the label belongs to the CARD, not to whichever
-    // transport built its conversation, and a mis-bind correction invalidates it
-    // exactly as a `/clear` does (#883).
+  // sharper of the two: the watcher goes on watching a session (usage, the
+  // native id, drift), so it still corrects mis-binds and still sees a `/clear`
+  // — and an ungated reset would blank a Feed the transcript never built, with
+  // nothing to replay it from. The Feed's resets come off `system:init` instead.
+  //
+  // ⚠️ SINCE #952 THE WATCHER'S RESET NEVER REACHES THE RENDERER, and this is
+  // now a one-way gate rather than a fork. It used to be `if (isStream) return`,
+  // with PTY sessions falling through to the push; there is no second source of
+  // blocks, so the push below belongs entirely to `streamFeed.onReset`.
+  //
+  // WHAT THE WATCHER'S RESET STILL DOES is the label, and it has to keep doing
+  // it: the auto task label belongs to the CARD, not to whichever source built
+  // its conversation, and a mis-bind correction invalidates it exactly as a
+  // `/clear` does (#883). The watcher is the only thing that sees a mis-bind
+  // correction at all, so dropping this subscription would leave a stale label
+  // on a card whose conversation had moved underneath it.
+  transcripts.onReset((sessionId) => {
     clearAutoLabelOnReset(sessionId);
-    if (isStream(sessionId)) return;
-    send('sessions:feedReset', { sessionId, cause });
   });
   deps.streamFeed?.onReset((sessionId, cause) => {
     clearAutoLabelOnReset(sessionId);
@@ -1883,14 +1862,18 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
       // default is at the time it starts. That is what makes this one line
       // move every untouched card, which is the point of the issue.
       //
-      // The adapter still has the final say — it answers in the recipe, and
-      // one that cannot speak stream-json returns a PTY recipe we honour.
+      // The adapter still has the final say — it answers in the recipe, and one
+      // that asks for a transport this host does not implement is refused by name
+      // at the seam (`UnknownTransportError`) rather than silently downgraded.
       //
-      // Resolved HERE, above the trust step, because two decisions now read it
-      // and they must not be able to disagree: the trust pre-write (below) and
-      // the spawn itself. `sessions:cards` reports the same expression for the
-      // same reason (#397).
-      const spawnTransport = prior?.transport ?? deps.preferredTransport?.() ?? DEFAULT_SESSION_TRANSPORT;
+      // TWO OF THE THREE TERMS ARE GONE (#952): the app-wide
+      // `SWITCHBOARD_TRANSPORT` override no longer exists, and the trust pre-write
+      // that was the second reader of this value no longer runs. What is left is a
+      // card's stored choice over the default, which is one value — kept as an
+      // expression rather than a constant because it is the precedence a second
+      // provider adapter reintroduces, and `sessions:cards` reports the same
+      // expression so the two cannot disagree (#397).
+      const spawnTransport = prior?.transport ?? DEFAULT_SESSION_TRANSPORT;
 
       // ── A DISPATCH NEEDS A TYPED-MESSAGE TRANSPORT (P2-E13-03) ───────────
       //
@@ -1919,37 +1902,26 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         });
       }
 
-      // Preparing the folder is the PROVIDER's business (§5.9 trust is Claude's
-      // `~/.claude.json`); a provider that has never heard of it must not have
-      // it written on its behalf.
+      // ── NO AUTO-TRUST WRITE SINCE #952 ───────────────────────────────────
       //
-      // AND ONLY WHEN A PROMPT COULD ACTUALLY HAPPEN (#397). `ensureTrusted`
-      // writes `hasTrustDialogAccepted: true` into the user's real
-      // `~/.claude.json` — a permanent edit to a file that outlives the app —
-      // and its entire purpose is to pre-empt the question Claude Code would
-      // otherwise ask in its TUI. On the Direct transport there is no TUI and
-      // no question: measured at the CLI three times now (#384 twice, and the
-      // #397 probe on 2026-08-13 against claude 2.1.226), a stream-json session
-      // in a never-trusted folder simply runs — no prompt, project settings
-      // load, project hooks fire, and the CLI records nothing about the folder
-      // itself. So on Direct the write bought nothing and cost the user the
-      // only thing the trust chip governs: it accepted the folder for good,
-      // before they could ever be asked, and the manual's "open it in Terminal
-      // mode the first time" workflow could not be reached afterwards.
+      // `plan.ensureTrusted` wrote `hasTrustDialogAccepted: true` into the user's
+      // real `~/.claude.json` — a permanent edit to a file that outlives the app —
+      // to pre-empt the question Claude Code would otherwise ask in its TUI. It ran
+      // only for a PTY spawn, and there is no PTY spawn.
       //
-      // Gated on the ASKED-FOR transport rather than the one the adapter
-      // finally resolves, because the write has to land BEFORE the spawn — by
-      // the time a recipe exists, the CLI is already running. The two differ
-      // only for an adapter that cannot speak stream-json and downgrades to a
-      // PTY (only the fake providers today, both behind the test/e2e gate);
-      // such a session would prompt in its terminal and get answered by hand,
-      // which is the fail-open direction.
-      if (spawnTransport === 'pty' && deps.autoTrust() && plan.ensureTrusted && !plan.ensureTrusted(opts.folder)) {
-        log.warn('auto-trust failed — the provider may prompt in the terminal', {
-          cardId: opts.cardId,
-          folder: opts.folder,
-        });
-      }
+      // WHY THAT IS A DELETION AND NOT A GAP, measured three times (#384 twice,
+      // and the #397 probe on 2026-08-13 against claude 2.1.226): a stream-json
+      // session in a never-trusted folder simply RUNS. No prompt, project settings
+      // load, project hooks fire, and the CLI records nothing about the folder. So
+      // on this transport the write bought nothing — and #397 exists because it
+      // also COST something, accepting the folder for good before the user could
+      // ever be asked.
+      //
+      // The `trust` capability itself (§5.23, `extensibility.md`) and
+      // `providers/trust.ts`'s `ensureFolderTrusted` are left in place as a
+      // contribution point: §5.3 admits a provider whose CLI does ask. Nothing
+      // calls them today, and that is worth a follow-up rather than a silent
+      // deletion of a documented seam.
       const canResume = !!plan.resumeSessionId;
       // THE SPAWN ITSELF, and the last thing here that can fail (#347).
       //
@@ -2036,13 +2008,17 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           // 2.1.272), so the watch and the session agree from the first frame.
           nativeSessionId: plan.forkSessionId ?? plan.resumeSessionId,
           projectsRoot: plan.transcriptsRoot,
-          // A stream session's Feed comes from its typed messages (P2-E18-10),
-          // so the transcript must not derive blocks for it as well — the two
-          // sources would interleave and every block would appear twice. The
-          // watch itself stays: usage totals, the native id for --resume, and
-          // the drift detector are all still wanted, and the CLI writes the
-          // JSONL in stream mode too (S-10).
-          deriveFeed: record.transport !== 'stream',
+          // ALWAYS FALSE SINCE #952, and NOT removed, because the watcher's
+          // default is the other way and this is the line that says which source
+          // owns the Feed.
+          //
+          // A session's Feed comes from its typed messages (P2-E18-10), so the
+          // transcript must not derive blocks as well — the two sources would
+          // interleave and every block would appear twice. The WATCH itself
+          // stays, and that is the part worth not losing: usage totals, the
+          // native id for `--resume`, and the drift detector are all still
+          // wanted, and the CLI writes the JSONL in stream mode too (S-10).
+          deriveFeed: false,
           // Undefined for a provider that declares no `titles` capability, and
           // the watcher then inspects no line for one — "starts no title watch
           // at all" (P2-E7-06). Not conditional on the transport: the CLI
@@ -2624,26 +2600,23 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           status: rec?.status ?? 'suspended',
           liveId,
           groupId: card.groupId,
-          // The transport this card's next session will be ASKED for (#397), by
-          // the SAME precedence `sessions:create` applies (card > env override
-          // > default). Read it off `card`, above the await below, so it comes
-          // from the same synchronous snapshot as everything else here.
+          // The transport this card's next session will be ASKED for, by the SAME
+          // precedence `sessions:create` applies. Read it off `card`, above the
+          // await below, so it comes from the same synchronous snapshot as
+          // everything else here.
           //
-          // Deliberately not `rec?.transport`, which is what a running session
-          // happens to be on: the renderer's only consumer asks "can Claude
-          // Code ever raise a trust question for this card?", and trust is
-          // consulted at SPAWN time, so the transport that answers it is the
-          // one the next spawn will use. When a pending transport change is
-          // outstanding those two differ, and the pending one is the honest
-          // answer — see `lib/trust-reach.ts`.
+          // ONE TERM LEFT OF THREE (#952): the env override is gone, and #397's
+          // consumer — the trust chip, which asked "can Claude Code ever raise a
+          // trust question for this card?" — is gone with it, because the answer
+          // is permanently no. What is left is the card's stored choice over the
+          // default, published because `SessionRecordWire` declares the field and
+          // a second provider's transport is exactly what would go here.
           //
-          // ASKED FOR, not resolved: an adapter that cannot speak stream-json
-          // downgrades the request to a PTY (`session-manager.ts`, and only the
-          // fake providers do it today). Reading `capabilitiesOf` here would
-          // make it exact; it is not worth the coupling until a real adapter
-          // does it. `sessions:create` gates its trust pre-write on the same
-          // asked-for value, so the chip and the write agree by construction.
-          transport: card.transport ?? deps.preferredTransport?.() ?? DEFAULT_SESSION_TRANSPORT,
+          // Deliberately NOT `rec?.transport`, which is what a running session
+          // happens to be on. The two differ while a transport change waits for a
+          // restart, and this field is about the NEXT spawn. Keeping that
+          // distinction costs nothing and is the thing #445 was a scar about.
+          transport: card.transport ?? DEFAULT_SESSION_TRANSPORT,
           autoKey: await autoKeyFor(card.identity.folder),
           // Through the switch (P2-E7-06): a suppressed auto label must not
           // reach the renderer at all, or it renders in the rail for a
@@ -2683,53 +2656,38 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   // drop only the live session (restart): keep the record so it can respawn
   broker.handle('sessions:dropLive', (_e, cardId: string) => dropLiveForCard(cardId));
 
-  // per-card transport (P2-E18-08b). ACCEPTED always, applied on the NEXT
-  // spawn — exactly like `sessions:setAutonomy` directly below, which has the
-  // identical constraint (the CLI cannot change either on a live session).
+  // ── `sessions:setTransport` IS GONE (#952) ─────────────────────────────────
   //
-  // The first version REFUSED while a session was live. That was wrong twice
-  // over, and Dan hit both within minutes of it shipping: it contradicted the
-  // control immediately above it in the same menu, and it told the user to
-  // "stop this session first" when a LIVE session has no stop control at all —
-  // `restartSelf` only drops an already-dead one. A dead end dressed as a
-  // safety check.
+  // Per-card transport (P2-E18-08b), driven by the grid's ⋯ menu. #873 removed
+  // that menu item, leaving a channel with no caller; this item removed the other
+  // value it could be set to, leaving a channel that could only ever refuse
+  // `'pty'` as `bad-value` or write `'stream'` over `'stream'`.
   //
-  // The concern that motivated the refusal — the card's stored answer
-  // disagreeing with the running process — is real, and it is answered by
-  // SAYING SO (`pending: true` -> "applies when this session restarts") rather
-  // than by refusing. Autonomy has carried exactly that trade since E10-05.
-  broker.handle('sessions:setTransport', (_e, cardId: string, transport: string) => {
-    if (typeof cardId !== 'string') return { ok: false, reason: 'unknown-card' };
-    if (transport !== 'pty' && transport !== 'stream') return { ok: false, reason: 'bad-value' };
-    const prior = deps.persist.list().find((s) => s.id === cardId);
-    if (!prior) return { ok: false, reason: 'unknown-card' };
-    deps.persist.upsert({ ...prior, transport });
-    // is a session running under this card right now? then the change is
-    // PENDING, and the UI has to say that instead of implying it took effect.
-    // This asked whether the manager HAD a record until #187 — and a crashed
-    // session keeps its record for the overlay, so after a crash the menu told
-    // the user their change was queued behind a process that no longer existed.
-    // Hence one shared `isRunning`, rather than a second spelling of it here.
-    let pending = false;
-    for (const [liveId, cid] of cardOfLive) {
-      if (cid === cardId && isRunning(liveId)) pending = true;
-    }
-    log.info('card transport changed', { cardId, transport, pending });
-    // A card's transport is now something the SHELL renders, not just the card
-    // (#397: the trust chip greys itself out while nothing will spawn on the
-    // Terminal), so this write has to be announced.
-    //
-    // It is the exception the note above `cardsChanged` allows for. That note
-    // says a renderer-initiated change to the persisted half needs no push
-    // because "the caller refreshes at its own call site" — true of renaming a
-    // card, whose caller is the rail. It is NOT true here: the caller is the
-    // grid's ⋯ menu, which has no route to the rail's refresh. That is the same
-    // gap #170 closed for the live half, and leaving it open would mean
-    // switching a session to Terminal mode did not wake the chip up until some
-    // unrelated event happened to refresh the list.
-    cardsChanged();
-    return { ok: true, pending };
-  });
+  // TWO THINGS IT TAUGHT ARE STILL LIVE ELSEWHERE, which is why they are recorded
+  // here rather than deleted with the code:
+  //
+  // 1. It ACCEPTED always and applied on the next spawn, like
+  //    `sessions:setAutonomy` below, which has the identical constraint (the CLI
+  //    cannot change either on a live session). The first version REFUSED while a
+  //    session was live, and Dan hit two problems within minutes: it contradicted
+  //    the control immediately above it in the same menu, and it said "stop this
+  //    session first" when a live session has no stop control at all. The concern
+  //    — a card's stored answer disagreeing with the running process — is real and
+  //    is answered by SAYING SO (`pending: true`), never by refusing. Autonomy has
+  //    carried that trade since E10-05 and still does.
+  // 2. It called `cardsChanged()`, and it was the documented exception to the note
+  //    above that function: a renderer-initiated change to the persisted half
+  //    normally needs no push because the caller refreshes at its own call site —
+  //    true of renaming a card, whose caller is the rail — but the ⋯ menu had no
+  //    route to the rail's refresh. Any future write reached from the grid rather
+  //    than the rail needs the same push.
+  //
+  // The stored `PersistedSession.transport` field STAYS. See its docblock in
+  // `workspace/store.ts`: it is the persistence half of §5.3's adapter contract,
+  // it is what a second provider's transport would be recorded in, and a v3
+  // migration whose only job is deleting a field that already means what absent
+  // means would be churn. What is gone is the ability to SET it to something this
+  // host cannot host.
 
   // per-card autonomy (E10-05): persists to the record; the CLI can't change
   // mode mid-flight, so it applies on the NEXT spawn/resume of this card
@@ -2859,76 +2817,35 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     return r ?? null;
   });
 
-  // attach: replay scrollback, then stream. Returns the snapshot + this
-  // attach's epoch (see src/shared/ipc/pty.ts for what the epoch is for).
+  // ── THE TERMINAL IPC IS GONE (#952) ──────────────────────────────────────────
   //
-  // Subscribing and snapshotting MUST stay in one synchronous tick — do not
-  // introduce an await between them. That is what makes the handover exact for
-  // THIS epoch: every byte up to this instant is in the snapshot, every byte
-  // after it arrives on `pty:data:<id>` stamped with this epoch. An await here
-  // would reopen the hole #117 closed from the renderer side, and the renderer
-  // relies on that split to know its buffered chunks belong AFTER the snapshot.
-  broker.handle('pty:attach', (_e, id: string): PtyAttachment | null => {
-    const s = ptys.get(id);
-    if (!s) return null;
-    feeds.get(id)?.(); // idempotent re-attach
-    const epoch = ++ptyEpoch;
-    const off = s.onData((d) => send(`pty:data:${id}`, { epoch, d } satisfies PtyChunk));
-    feeds.set(id, off);
-    // a bare decode is safe here: RingBuffer guarantees its snapshot holds no
-    // partial CHARACTER at either end (#205), so there is no split for a
-    // StringDecoder to hold across — and nothing it could flush that wouldn't
-    // be the `U+FFFD` we are avoiding. Escape sequences are handled separately
-    // — once anything has been evicted the snapshot starts at a safe RESUME
-    // point (#211) instead of mid-sequence, so a replay doesn't open with
-    // residue like `38;5;10m`. One documented gap: a snapshot holding no ESC
-    // and no newline at all is left as it was.
-    return { epoch, snapshot: s.scrollback.snapshot().toString('utf8') };
-  });
-
-  // A READ of the same ring buffer, for find (#517, §5.31).
+  // Six channels went with the PTY transport, and they are worth naming because
+  // each one was load-bearing for something that no longer has a mechanism:
   //
-  // §5.31's Terminal group used to be answered by the RENDERER's xterm, and
-  // S-07 makes a hidden pane ingest-only: main keeps the buffer, the pane is
-  // fed only while its tab is showing. So on a card whose Terminal was never
-  // opened the only searchable copy in the window was EMPTY, and the group had
-  // to be withheld to avoid a confident zero about output printed a minute ago.
-  // This is the source of truth it withholds itself in favour of.
+  //   pty:attach    replayed the scrollback and then streamed, minting the #117
+  //                 EPOCH. Subscribing and snapshotting had to stay in one
+  //                 synchronous tick, which is what made the handover exact:
+  //                 every byte up to that instant in the snapshot, every byte
+  //                 after it on `pty:data:<id>` stamped with the epoch.
+  //   pty:snapshot  a READ of the same ring buffer for find (#517, §5.31),
+  //                 deliberately NOT attach — attach replaced the session's
+  //                 single feed, so answering find through it would have cut the
+  //                 stream to the pane the user was looking at.
+  //   pty:data:<id> the byte feed itself.
+  //   pty:detach / pty:input / pty:resize
   //
-  // IT IS NOT `pty:attach`, and must never become it: attach mints an epoch
-  // and REPLACES the session's single feed, so answering find through it would
-  // cut the stream to the pane the user is looking at. Read-only, no
-  // subscription, no epoch, no mutation of anything.
+  // NOTHING REPLACES THEM AND NOTHING SHOULD. A Direct session's output is
+  // already structured when it arrives — typed stream-json messages become feed
+  // blocks (`sessions:feedEvent`) — so there is no byte stream to attach to, no
+  // scrollback ring to search, and no terminal geometry to resize. §5.31's find
+  // lost its Terminal group with the surface it searched (#873 took the pane,
+  // this took the buffer); the Feed group is what remains and it searches
+  // rendered blocks, which is a better answer than raw bytes ever was.
   //
-  // It hands back RAW BYTES — escape sequences, carriage returns and all —
-  // because that is what we have. Deciding what those bytes MEAN is a terminal
-  // emulator's job, and the caller replays them into one (the CLI is a
-  // transport; interpreting its output here would be reimplementing it).
-  broker.handle('pty:snapshot', (_e, id: string): PtySnapshot | null => {
-    if (typeof id !== 'string') return refuse('pty:snapshot', 'session id must be a string');
-    const s = ptys.get(id);
-    // `null` for an unknown id, exactly as `pty:attach` answers it: "there is
-    // no terminal here to look at" is a different fact from "we looked and it
-    // was empty", and find renders the two differently.
-    if (!s) return null;
-    // the same bare decode `pty:attach` makes, for the same reason (#205/#211)
-    return { snapshot: s.scrollback.snapshot().toString('utf8'), cols: s.cols, rows: s.rows };
-  });
-
-  broker.on('pty:detach', (_e, id: string) => {
-    feeds.get(id)?.();
-    feeds.delete(id);
-  });
-
-  broker.on('pty:input', (_e, id: string, data: string) => {
-    // Keystrokes are forwarded to the PTY but do NOT drive status — only the
-    // CLI's own hooks do (a keystroke is not a submitted prompt).
-    ptys.get(id)?.write(data);
-  });
-
-  broker.on('pty:resize', (_e, id: string, cols: number, rows: number) => {
-    ptys.get(id)?.resize(cols, rows);
-  });
+  // The epoch protocol is the one piece worth remembering: it existed because a
+  // snapshot and a live stream are two sources that can overlap, and the renderer
+  // needed to know which bytes it had twice. A typed message stream has no such
+  // ambiguity, which is why deleting it costs nothing rather than leaving a gap.
 
   return {
     labelFor,

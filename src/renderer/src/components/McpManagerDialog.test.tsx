@@ -579,29 +579,26 @@ describe('removing a server', () => {
 });
 
 describe('reconnect — the pane does not decide what it means', () => {
-  it('reports that /mcp was typed into a terminal session', async () => {
-    await mount();
-    await click(button('Reconnect'));
-    expect(calls.filter((c) => c.channel === 'reconnect')[0].args).toEqual(['C:/p/acme', 'L1']);
-    expect(text()).toContain('Typed /mcp into the session');
-  });
+  // "Reports that /mcp was typed into a terminal session" went with the channel
+  // (#952). `mcp:reconnect` typed `/mcp` into a live session on the one transport
+  // where that meant anything; on the other it sent nothing and answered
+  // `restart-required`, which is the only answer left — so the dialog says it
+  // itself and there is no round trip to assert.
 
   it('SAYS RESTART for a Direct session rather than pretending it worked', async () => {
-    // Main sends nothing at all on the stream transport — `/mcp` there opens a
+    // Main used to send nothing on the stream transport — `/mcp` there opened a
     // picker with no terminal to draw it in, which is the dead end this dialog
-    // exists to remove. The renderer's job is to report that honestly.
-    reconnectAnswer = { outcome: 'restart-required' };
+    // exists to remove — and answered `restart-required`. Since #952 that is the
+    // only possible answer, so the dialog says it WITHOUT asking main: same
+    // sentence, one source instead of two.
     await mount();
     await click(button('Reconnect'));
     expect(text()).toContain('restart it to pick up changes');
   });
 
-  it('says so when the card has no live session', async () => {
-    reconnectAnswer = { outcome: 'no-session' };
-    await mount();
-    await click(button('Reconnect'));
-    expect(text()).toContain('not running');
-  });
+  // The `no-session` outcome came back over the same dead channel (#952). The
+  // case it covered is still covered by the test directly below, which reaches it
+  // the way a user actually does: a card with no live id at all.
 
   it('does not call main at all when there is no live id to send', async () => {
     await mount('C:/p/acme', null);
@@ -1585,14 +1582,17 @@ describe('the global Reconnect stops saying "restart the session" (#729 PR 2)', 
     expect(calls.map((c) => c.channel)).not.toContain('reconnect');
   });
 
-  it('still uses the OLD channel when there is no control channel', async () => {
-    // A Terminal session or a suspended card: `mcp:reconnect` types `/mcp` into
-    // a PTY, which is the only thing that works there.
+  // A suspended card, or one whose control channel is not up: there is nothing to
+  // send a control request TO, so the pane must not pretend. It used to fall back
+  // to `mcp:reconnect` — typing `/mcp` into a PTY, the only thing that worked
+  // there — and since #952 there is no fallback channel at all, so the claim is
+  // that it reaches for NEITHER verb and says restart instead.
+  it('asks main for nothing when there is no control channel', async () => {
     listAnswer = (folder) => ({ folder, servers: [server({ name: 'sentry' })], unreadable: [] });
     await mount(); // no status channel at all
     await click(button('Reconnect'));
-    expect(calls.map((c) => c.channel)).toContain('reconnect');
     expect(calls.map((c) => c.channel)).not.toContain('reconnectServer');
+    expect(text()).toContain('restart it to pick up changes');
   });
 
   it('SKIPS servers the user turned off — reconnect would silently re-enable them', async () => {

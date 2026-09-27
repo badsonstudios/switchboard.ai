@@ -9,7 +9,10 @@
 // The fake provider writes no transcript, so as in feed.spec.ts the test plays
 // Claude's part and writes JSONL into the isolated HOME itself.
 //
-// TRANSPORT SCOPE (P2-E18-18, #404): `[pty]` for the FIRST group. Every session
+// TRANSPORT SCOPE — HISTORICAL (P2-E18-18, #404; retagged by #952, which
+// left one transport, so a `[pty]` tag names nothing). The note below is the
+// reasoning as it stood, kept because it says what each test actually drives:
+// // TRANSPORT SCOPE (P2-E18-18, #404): `[pty]` for the FIRST group. Every session
 // in it runs on the PTY (see `launchApp` in `fixtures/app.ts`), and the empty
 // state those tests read is the one a PTY session gets: the `unbound` arm ends
 // in `binding.unboundFallback` — "The Terminal tab is unaffected — your session
@@ -38,7 +41,7 @@ function slugForCwd(cwd: string): string {
   return cwd.replace(/[\\/:. ]/g, '-');
 }
 
-test.describe('[pty] transcript binding transparency (E15-10)', () => {
+test.describe('transcript binding transparency (E15-10)', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
 

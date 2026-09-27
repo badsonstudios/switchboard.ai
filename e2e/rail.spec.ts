@@ -1,9 +1,24 @@
 // The redesigned sessions rail (design_handoff_sessions_rail).
 //
 // The rail's contract is "which sessions need me right now", so the attention
-// treatment is driven through the REAL hook listener — the test plays the
-// CLI's part and asserts what a human would actually see, including the
-// numeric contrast between a needy row and a calm one.
+// treatment is driven through the REAL machinery — the test plays the CLI's part
+// and asserts what a human would actually see, including the numeric contrast
+// between a needy row and a calm one.
+//
+// TWO STIMULI, AND #952 MOVED ONE OF THEM. Plain STATUS still comes from the
+// real hook listener (`hookPoster`): `Stop`, `UserPromptSubmit` and the idle nag
+// have no control-channel equivalent, and that is what the hook channel is still
+// for. But `needs-permission` is no longer reachable that way — #313's guard
+// drops a permission `Notification` before it can move a badge, and #952 made
+// that unconditional, because every real permission arrives as `can_use_tool`
+// and a debounced nudge on top of it is a duplicate at best and a false alarm at
+// worst.
+//
+// So a test that wants a needy row asks for a REAL permission: `!perm` makes the
+// fake stream CLI request one, it is held by `StreamPermissions`, and the status
+// comes from `stream-status.ts`. That is a better test than the one it replaced
+// — it drives the path the product actually uses, rather than a nudge that
+// happened to move the same attribute.
 import { test, expect, Page } from '@playwright/test';
 import path from 'path';
 import {
@@ -12,6 +27,7 @@ import {
   openEventsDrawer,
   tempProjectFolder,
   hookPoster,
+  streamPrompter,
   setTheme,
 } from './fixtures/app';
 
@@ -55,11 +71,9 @@ test.describe('sessions rail', () => {
     await expect(rail(w).getByText('calm')).toBeVisible();
     await expect(rail(w).getByText('need you')).toHaveCount(0);
 
-    const post = await hookPoster(a);
-    await post(title, {
-      hook_event_name: 'Notification',
-      message: 'Claude needs your permission to use Bash',
-    });
+    // A REAL held permission, not a Notification nudge (#952) — see the file
+    // header. `!perm` makes the fake CLI ask for one over `can_use_tool`.
+    await streamPrompter(a)(title, '!perm rail.sh');
 
     // ⚠️ REWRITTEN BY #877, AND THE OLD COMMENT IS THE POINT. It read "the row
     // now SPELLS OUT the ask instead of showing a status word", and asserted
@@ -122,14 +136,12 @@ test.describe('sessions rail', () => {
     // `EventFeed.forget` — which moves the Events window and nothing else. So
     // the two surfaces disagreed about what "addressed" meant.
     //
-    // Driven end to end on purpose: the real hook listener raises it, the real
-    // ✕ dismisses it, and the assertion is the three readouts a human reads.
+    // Driven end to end on purpose: a real `can_use_tool` request raises it, the
+    // real ✕ dismisses it, and the assertion is the three readouts a human reads.
+    // The stimulus moved from a hook Notification to `!perm` in #952 — see the
+    // file header — which makes "end to end" more true than it was.
     const { w, title } = await oneSessionInAGroup();
-    const post = await hookPoster(a);
-    await post(title, {
-      hook_event_name: 'Notification',
-      message: 'Claude needs your permission to use Bash',
-    });
+    await streamPrompter(a)(title, '!perm dismiss.sh');
 
     const r = row(w, title);
     await expect(r).toHaveAttribute('data-needs-you', 'true', { timeout: 15_000 });

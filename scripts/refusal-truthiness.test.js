@@ -280,7 +280,10 @@ describe('the VALUE class it MUST catch (#650)', () => {
     ],
     [
       'property-read',
-      `void window.switchboard.sessions.setTransport('c', 'pty').then((r) => { if (!r?.ok) return; use(r); });`,
+      // `mcp:resetApprovals` since #952 took `sessions:setTransport` away — same
+      // shape, same trap: an `{ ok }` result whose brand becomes the state the
+      // moment a refusal is read as one.
+      `void window.switchboard.mcp.resetApprovals('/f').then((r) => { if (!r?.ok) return; use(r); });`,
     ],
     [
       'passed-on',

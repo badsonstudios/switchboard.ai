@@ -87,32 +87,30 @@ describe('the stream recipe matches S-10 §1 (P2-E18-08a)', () => {
   });
 });
 
-describe('the PTY recipe is untouched (P2-E18-08a)', () => {
-  it('a PTY request carries none of the stream flags', () => {
-    const args = recipe('pty').args;
-    for (const flag of [
-      '--output-format',
-      '--input-format',
-      '--verbose',
-      '--permission-prompt-tool',
-      '--replay-user-messages',
-    ]) {
-      expect(args).not.toContain(flag);
-    }
-  });
-
-  // Every pre-E18 caller passes nothing, and must keep getting a PTY.
-  it('asking for NOTHING is a PTY recipe with no transport declared', () => {
+// ── THERE IS NO SECOND RECIPE (#952) ─────────────────────────────────────────
+//
+// Three tests stood here as "the PTY recipe is untouched": a PTY request carried
+// none of the stream flags, asking for NOTHING produced a PTY recipe with no
+// transport declared, and the S-01 env scrub applied to both branches.
+//
+// The branch is gone, and the middle one is the reason that MATTERS rather than
+// merely no longer applying. `DEFAULT_TRANSPORT` flipped to `'stream'` in the same
+// item, so a recipe that declares no transport is now spawned on the stream
+// service. If this adapter still had a silent branch producing a flagless recipe,
+// the host would hand a plain interactive CLI to a protocol reader and the session
+// would hang with no error. So the adapter builds the flags unconditionally and
+// DECLARES `'stream'`, and the test below is what holds that shut.
+describe('the recipe always declares what it is (#952)', () => {
+  it('asking for NOTHING still produces a full stream recipe', () => {
     const r = recipe(undefined);
-    expect(r.transport).toBeUndefined();
-    expect(r.args).not.toContain('--output-format');
+    expect(r.transport).toBe('stream');
+    expect(r.args).toContain('--output-format');
+    expect(r.args).toContain('--permission-prompt-tool');
   });
 
-  it('the S-01 env scrub is on both branches', () => {
-    for (const t of ['pty', 'stream'] as const) {
-      expect(recipe(t).env.ELECTRON_RUN_AS_NODE).toBeUndefined();
-      expect(recipe(t).env.ELECTRON_NO_ATTACH_CONSOLE).toBeUndefined();
-    }
+  it('the S-01 env scrub survives', () => {
+    expect(recipe('stream').env.ELECTRON_RUN_AS_NODE).toBeUndefined();
+    expect(recipe('stream').env.ELECTRON_NO_ATTACH_CONSOLE).toBeUndefined();
   });
 });
 

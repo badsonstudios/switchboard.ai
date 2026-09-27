@@ -2,7 +2,10 @@
 // The fake provider writes no transcript, so the test plays Claude's part:
 // it writes JSONL into the isolated HOME and the watcher tails it live.
 //
-// TRANSPORT SCOPE (P2-E18-18, #404): `[pty]` for the whole group. "The watcher
+// TRANSPORT SCOPE — HISTORICAL (P2-E18-18, #404; retagged by #952, which
+// left one transport, so a `[pty]` tag names nothing). The note below is the
+// reasoning as it stood, kept because it says what each test actually drives:
+// // TRANSPORT SCOPE (P2-E18-18, #404): `[pty]` for the whole group. "The watcher
 // tails it live" IS the scope — the transcript-derive pipeline is switched off
 // for a stream session (`deriveFeed: record.transport !== 'stream'`,
 // `sessions/ipc.ts`), whose conversation is built by `feed/stream-feed.ts` from
@@ -29,7 +32,7 @@ function slugForCwd(cwd: string): string {
   return cwd.replace(/[\\/:. ]/g, '-');
 }
 
-test.describe('[pty] Feed view (E12-06)', () => {
+test.describe('Feed view (E12-06)', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
 

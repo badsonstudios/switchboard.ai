@@ -1,10 +1,26 @@
 # E18 — The stream-json transport migration
 
-**Milestone:** Phase 2 — The Switchboard (epic E18; next free epic number)
-**Status:** planned 2026-08-01. **E18-01…E18-10 filed 2026-08-01 as issues
-#131–#140** (in order), plus **#149 (E18-08b)** when E18-08 was split;
-E18-11…E18-16 deliberately unfiled — see *What is NOT
-fileable yet* below.
+**Milestone:** Phase 2 — The Switchboard (epic E18)
+**Status:** ✅ **COMPLETE — 2026-09-26.** Planned 2026-08-01;
+**E18-01…E18-10 filed that day as issues #131–#140** (in order), plus **#149
+(E18-08b)** when E18-08 was split. **E18-16, the cutover, shipped as #952 and
+closed the epic.**
+
+> **⚠️ #952 IS E18-16, AND ITS TITLE SAYS E18-11.** The issue was filed as
+> `P2-E18-11` and its body cites *"the E18-11 block"*. That is a mis-citation:
+> E18-11 is **Plan mode, `ExitPlanMode` and `AskUserQuestion`**, whose
+> `AskUserQuestion` half shipped as #563/#567 and whose plan-mode half is **still
+> unmeasured**. The gate, the audit note and the deletion list #952 quotes all
+> live under **E18-16**. The title was left alone so the issue stays findable;
+> this line is the correction.
+
+> **Still open, and NOT closed by the epic's completion:** E18-11's plan-mode
+> half (unmeasured), **E18-12** (session controls as control requests — `rewind`
+> is present but never exercised), **E18-13** (sidechains from
+> `parent_tool_use_id`), and **E18-15** (retire the hook listener), which #952
+> UNBLOCKED by settling the PTY's fate but did not do — that item is the HTTP
+> server, the forwarder script and the per-session token files, and it needs
+> `hook_callback` on the control channel to take over the status events first.
 
 **Theme:** switchboard stops emulating a terminal and starts speaking the CLI's
 own protocol. `StreamService` lands **beside** `PtyService` behind a per-session
@@ -656,10 +672,46 @@ findings note lands. **E18-14 and E18-17…19 were filed 2026-08-11 (#416–#419
   the root) is unrelated to the transport and can be taken at any time.
 - **E11 is untouched.** See *What this epic does NOT claim*.
 
-## E18 exit
+## E18 exit — ✅ MET 2026-09-26 (#952)
 
-A session runs a whole turn over stream-json — prompt, token-by-token output,
-tool calls, and **a `.claude/` permission answered once, in switchboard, and
-honoured** — with the transport chosen per session and the PTY path still green.
-Whether the terminal survives is answered by evidence, recorded in DESIGN.md,
-and whatever the CLI keeps for itself is stated plainly rather than faked.
+The criterion as written: *a session runs a whole turn over stream-json — prompt,
+token-by-token output, tool calls, and a `.claude/` permission answered once, in
+switchboard, and honoured — with the transport chosen per session and the PTY path
+still green. Whether the terminal survives is answered by evidence, recorded in
+DESIGN.md, and whatever the CLI keeps for itself is stated plainly rather than
+faked.*
+
+Every clause is met, and the last two clauses are the ones worth checking against
+rather than the first:
+
+- **"Answered by evidence."** The gate was *Direct mode tested and working — not
+  shipped, **used**, by the person who has to live in it.* Asked directly on
+  2026-09-25, answered directly: **"Yeah, I've been using direct mode all along.
+  I'm not missing the terminal at all."**
+- **"Recorded in DESIGN.md."** §5.2's transport bullets are past tense, §5.16's
+  mechanism is marked history, and §5.16's plan-mode rule is **retired** with its
+  reasoning preserved — it rested on hook semantics the control channel does not
+  share, which is exactly the re-examination this item owed.
+- **"Stated plainly rather than faked."** Ctrl-R history, vim mode and the
+  `/resume` · `/rewind` · `--from-pr` pickers are **dropped**, and said so in
+  `docs/manual/12-direct-mode.md` rather than quietly lost.
+
+**"With the transport chosen per session" is the one clause that did not survive
+contact, and deliberately so:** it described the migration mechanism, not the end
+state, which the 2026-08-02 amendment said at the time. There is one transport.
+
+### What the cutover actually removed
+
+`TerminalPane.tsx` · `terminal-attach.ts` · `terminal-find.ts` ·
+`terminal-shadow.ts` · `shared/ipc/pty.ts` and the **#117 epoch protocol** ·
+`main/pty/` entire (`PtyService`, `ring-buffer`, `lifecycle-check`) ·
+`providers/fake.ts` (the shell-in-a-PTY e2e fake) · `preferred-transport.ts` and
+the `SWITCHBOARD_TRANSPORT` override · `hooks/hook-check.ts` and `check:pty` ·
+`scripts/rebuild-native.js` and `pty-noise-filter.js` · the `sessions:setTransport`
+and `mcp:reconnect` channels · the folder-trust chip · the **PreToolUse hold path**
+in `hook-listener.ts` (~24 KB), unreachable by construction once no session was a
+PTY · `node-pty` and all three `@xterm/*` packages.
+
+**The app now ships no native module at all** — no `electron-rebuild`, no
+postinstall, no `asarUnpack`, no per-platform binary in three CI matrices, and an
+`electron-builder` `files` allowlist that is just `out/**` and `package.json`.

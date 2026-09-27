@@ -80,13 +80,18 @@ describe('the IPC capability map (the done-when: no channel is untagged)', () =>
     for (const c of CAPABILITIES) expect(used.has(c), `${c} is declared but unused`).toBe(true);
   });
 
-  it('resolves dynamic per-session channels by prefix', () => {
-    // pty:data:<sessionId> is one channel per attached pane, so it can never
-    // appear in a map of fixed names. A completeness check that only knew
-    // about fixed names would have declared full coverage while missing the
-    // single highest-volume channel in the app.
-    expect(capabilityFor('pty:data:abc-123')).toBe('pty.read');
-    expect(capabilityFor('pty:data:')).toBe('pty.read');
+  // "Resolves dynamic per-session channels by prefix" ran on `pty:data:<sessionId>`
+  // — one channel per attached pane, which could never appear in a map of fixed
+  // names, and which a completeness check that only knew fixed names would have
+  // missed while declaring full coverage. It was the single highest-volume channel
+  // in the app.
+  //
+  // #952 deleted it and `CHANNEL_PREFIX_CAPABILITIES` is empty, so there is
+  // nothing to resolve. The MECHANISM is still there and still asserted below —
+  // an unknown channel resolves to NO capability — which is the half that keeps a
+  // future family from defaulting open rather than closed.
+  it('a prefix family with no members resolves nothing, rather than everything', () => {
+    expect(capabilityFor('pty:data:abc-123')).toBeUndefined();
   });
 
   it('an unknown channel resolves to NO capability', () => {
@@ -249,7 +254,10 @@ describe('IpcBroker decisions', () => {
     for (const channel of IpcBroker.knownChannels()) {
       expect(allowed(channel, wc), `first-party refused ${channel}`).toBe(true);
     }
-    expect(allowed('pty:data:some-session', wc)).toBe(true);
+    // The dynamic half of this assertion rode on `pty:data:<sessionId>` and went
+    // with it (#952). A first-party grant covering an unknown channel is NOT a
+    // property worth asserting — an unknown channel resolves to no capability and
+    // is refused for everyone, which is the fail-closed half of the design.
   });
 });
 

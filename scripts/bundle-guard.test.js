@@ -517,12 +517,12 @@ describe('check bundles (#298)', () => {
     const root = project(opts);
     const past = new Date(Date.now() - 60_000);
     const built = new Date(Date.now() - 30_000);
-    fs.writeFileSync(path.join(root, 'out', 'main', 'pty-check.js'), '// pty check');
-    fs.utimesSync(path.join(root, 'out', 'main', 'pty-check.js'), built, built);
+    fs.writeFileSync(path.join(root, 'out', 'main', 'bus-check.js'), '// bus check');
+    fs.utimesSync(path.join(root, 'out', 'main', 'bus-check.js'), built, built);
     fs.writeFileSync(
       path.join(root, 'package.json'),
       JSON.stringify({
-        scripts: { 'check:pty': 'node scripts/run-electron-node.js out/main/pty-check.js' },
+        scripts: { 'check:bus': 'node scripts/run-electron-node.js out/main/bus-check.js' },
       })
     );
     fs.utimesSync(path.join(root, 'package.json'), past, past);
@@ -530,28 +530,31 @@ describe('check bundles (#298)', () => {
   }
 
   it('names the npm script by ASKING package.json, not by rewriting the filename', () => {
-    // `pty-check.js` -> `check:pty`, but `hook-check.js` -> `check:hookS`. A
-    // derived guess would print a command that does not exist, in the one
-    // message whose whole job is to be pasteable.
+    // `bus-check.js` -> `check:bus`, but `transcript-check.js` ->
+    // `check:transcriptS`. A derived guess would print a command that does not
+    // exist, in the one message whose whole job is to be pasteable.
+    //
+    // The pair used to be `pty-check.js` / `hook-check.js`, and #952 deleted both
+    // scripts with the PTY transport — which is itself the argument for asking
+    // package.json instead of transforming a filename.
     const cwd = process.cwd();
-    expect(npmScriptFor(cwd, 'out/main/pty-check.js')).toBe('check:pty');
-    expect(npmScriptFor(cwd, 'out/main/hook-check.js')).toBe('check:hooks');
+    expect(npmScriptFor(cwd, 'out/main/bus-check.js')).toBe('check:bus');
     expect(npmScriptFor(cwd, 'out/main/transcript-check.js')).toBe('check:transcripts');
     expect(npmScriptFor(cwd, 'out/main/fake-stream-check.js')).toBe('check:fake-stream');
     expect(npmScriptFor(cwd, 'out/main/nothing-runs-this.js')).toBeNull();
   });
 
   it('guards the bundle plus the identity-carrying main entry, and nothing else', () => {
-    const t = targetFor(process.cwd(), 'out/main/pty-check.js');
-    expect(t.artifacts).toEqual(['out/main/index.js', 'out/main/pty-check.js']);
-    expect(t.label).toBe('check:pty');
-    expect(t.command).toBe('npm run check:pty');
+    const t = targetFor(process.cwd(), 'out/main/bus-check.js');
+    expect(t.artifacts).toEqual(['out/main/index.js', 'out/main/bus-check.js']);
+    expect(t.label).toBe('check:bus');
+    expect(t.command).toBe('npm run check:bus');
   });
 
   it('takes an absolute path or Windows separators', () => {
     const cwd = process.cwd();
-    expect(targetFor(cwd, path.join(cwd, 'out', 'main', 'pty-check.js')).label).toBe('check:pty');
-    expect(targetFor(cwd, 'out\\main\\pty-check.js').label).toBe('check:pty');
+    expect(targetFor(cwd, path.join(cwd, 'out', 'main', 'bus-check.js')).label).toBe('check:bus');
+    expect(targetFor(cwd, 'out\\main\\bus-check.js').label).toBe('check:bus');
   });
 
   it('falls back to the node invocation when no script runs the bundle', () => {
@@ -563,8 +566,8 @@ describe('check bundles (#298)', () => {
   it('passes a fresh check bundle, stamping the script name', () => {
     const root = checkProject({ sources: { 'src/main/pty/lifecycle-check.ts': 'a' } });
     let out = '';
-    expect(guardBundle(root, 'out/main/pty-check.js', {}, (s) => (out += s))).toBe(true);
-    expect(out).toContain('check:pty — NO BUILD RAN');
+    expect(guardBundle(root, 'out/main/bus-check.js', {}, (s) => (out += s))).toBe(true);
+    expect(out).toContain('check:bus — NO BUILD RAN');
     expect(out).toContain('FRESH');
   });
 
@@ -572,34 +575,34 @@ describe('check bundles (#298)', () => {
     const root = checkProject({ sources: { 'src/main/pty/lifecycle-check.ts': 'a' } });
     touch(root, 'src/main/pty/lifecycle-check.ts', new Date());
     let out = '';
-    expect(guardBundle(root, 'out/main/pty-check.js', {}, (s) => (out += s))).toBe(false);
+    expect(guardBundle(root, 'out/main/bus-check.js', {}, (s) => (out += s))).toBe(false);
     expect(out).toContain('STALE');
-    expect(out).toContain('npm run build && npm run check:pty');
+    expect(out).toContain('npm run build && npm run check:bus');
     expect(out).not.toContain('e2e:only');
   });
 
   it('fails when the check bundle itself was never built', () => {
     const root = project({ sources: { 'src/a.ts': 'a' } }); // out/ has no *-check.js
     let out = '';
-    expect(guardBundle(root, 'out/main/pty-check.js', {}, (s) => (out += s))).toBe(false);
-    expect(out).toContain('out/main/pty-check.js');
+    expect(guardBundle(root, 'out/main/bus-check.js', {}, (s) => (out += s))).toBe(false);
+    expect(out).toContain('out/main/bus-check.js');
     expect(out).toContain('npm run build');
   });
 
   it('ignores a half-built RENDERER, which no check script loads', () => {
     // The false positive that would get this guard overridden within a week:
-    // `check:pty` does not care that out/renderer is behind. e2e:only does, and
+    // `check:bus` does not care that out/renderer is behind. e2e:only does, and
     // still says so on the very same project.
     const root = checkProject({ sources: { 'src/renderer/App.tsx': 'a' } });
     touch(root, 'out/renderer/index.html', new Date(Date.now() - 120_000));
-    expect(guardBundle(root, 'out/main/pty-check.js', {}, () => {})).toBe(true);
+    expect(guardBundle(root, 'out/main/bus-check.js', {}, () => {})).toBe(true);
     expect(run(root, {}).failed).toBe(true); // e2e:only, same project
   });
 
   it('is honoured by the same override', () => {
     const root = checkProject({ sources: { 'src/main/pty/lifecycle-check.ts': 'a' } });
     touch(root, 'src/main/pty/lifecycle-check.ts', new Date());
-    expect(guardBundle(root, 'out/main/pty-check.js', { [OVERRIDE_ENV]: '1' }, () => {})).toBe(true);
+    expect(guardBundle(root, 'out/main/bus-check.js', { [OVERRIDE_ENV]: '1' }, () => {})).toBe(true);
   });
 });
 
@@ -697,9 +700,9 @@ describe('isBuildOutput — which runs run-electron-node guards (#298)', () => {
   const root = process.cwd();
 
   it('recognises a bundle under out/, however it is spelled', () => {
-    expect(isBuildOutput(root, 'out/main/pty-check.js')).toBe(true);
-    expect(isBuildOutput(root, path.join(root, 'out', 'main', 'pty-check.js'))).toBe(true);
-    expect(isBuildOutput(root, 'out\\main\\pty-check.js')).toBe(true);
+    expect(isBuildOutput(root, 'out/main/bus-check.js')).toBe(true);
+    expect(isBuildOutput(root, path.join(root, 'out', 'main', 'bus-check.js'))).toBe(true);
+    expect(isBuildOutput(root, 'out\\main\\bus-check.js')).toBe(true);
   });
 
   it('leaves anything that did not come from a build alone', () => {

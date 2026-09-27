@@ -109,7 +109,6 @@ describe('registration', () => {
       'mcp:clearAuth',
       'mcp:health',
       'mcp:list',
-      'mcp:reconnect',
       'mcp:reconnectServer',
       'mcp:remove',
       'mcp:resetApprovals',
@@ -129,7 +128,7 @@ describe('mcp:status — the real inventory, over the control channel (#729)', (
       ],
     },
   };
-  const live = { sessions: { s1: { folder: '/ok', transport: 'stream' } } };
+  const live = { sessions: { s1: { folder: '/ok' } } };
 
   /**
    * An empty mutability floor — no config file declares anything.
@@ -240,7 +239,7 @@ describe('mcp:status — the real inventory, over the control channel (#729)', (
     // same check; this channel returns data, so the hole would be more useful.
     const called = vi.fn(async () => OK);
     const h = harness(['/ok'], {
-      sessions: { s1: { folder: '/somewhere-else', transport: 'stream' } },
+      sessions: { s1: { folder: '/somewhere-else' } },
       status: called,
     });
     const res = (await h.call('mcp:status', '/ok', 's1')) as McpStatusWire;
@@ -347,12 +346,10 @@ describe('the folder gate refuses, and does not throw (§5.29)', () => {
       });
     }
 
-    it(`refuses ${label} on mcp:reconnect, without typing anything`, () => {
-      const h = harness(['/ok'], { sessions: { L1: { folder: '/ok', transport: 'pty' } } });
-      const out = h.call('mcp:reconnect', folder, 'L1') as { outcome: string };
-      expect(out).toEqual({ outcome: 'refused' });
-      expect(h.typed).toEqual([]);
-    });
+    // The `mcp:reconnect` gate case went with the channel (#952). Every OTHER
+    // channel in this file is still gated by the loop above, which is the claim
+    // that matters: the folder gate covers every door into main, and a new one
+    // is never accidental.
   }
 
   it('echoes back a string folder even when refusing, so a stale answer is discardable', () => {
@@ -595,80 +592,28 @@ describe('every channel resolves, whatever it is handed', () => {
       await expect(h.call('mcp:remove', '/ok', junk, 'local')).resolves.toHaveProperty('ok');
       await expect(h.call('mcp:remove', '/ok', 'srv', junk)).resolves.toHaveProperty('ok');
       await expect(h.call('mcp:resetApprovals', junk)).resolves.toHaveProperty('ok');
-      expect(() => h.call('mcp:reconnect', '/ok', junk)).not.toThrow();
-      expect(() => h.call('mcp:reconnect', junk, 'L1')).not.toThrow();
     }
   });
 });
 
-describe('mcp:reconnect — main decides, not the renderer', () => {
-  it('types /mcp then a separate Enter into a terminal session', () => {
-    vi.useFakeTimers();
-    try {
-      const h = harness(['/ok'], { sessions: { L1: { folder: '/ok', transport: 'pty' } } });
-      expect(h.call('mcp:reconnect', '/ok', 'L1')).toEqual({ outcome: 'typed' });
-      // TEXT AND CR IN ONE CHUNK NEVER SUBMITS — it registers as a paste (S-03,
-      // refound live 2026-07-22). Two writes, and the delay is the fix.
-      expect(h.typed).toEqual([{ liveId: 'L1', data: '/mcp' }]);
-      vi.advanceTimersByTime(100);
-      expect(h.typed).toEqual([
-        { liveId: 'L1', data: '/mcp' },
-        { liveId: 'L1', data: String.fromCharCode(13) },
-      ]);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('SENDS NOTHING on a stream session, and says restart instead', () => {
-    // The whole point. `/mcp` on the stream transport opens a picker with no
-    // terminal to draw it in — the dead end #632's intercept exists to remove.
-    // Typing it anyway would reinstate that bug behind a different button.
-    const h = harness(['/ok'], { sessions: { L1: { folder: '/ok', transport: 'stream' } } });
-    expect(h.call('mcp:reconnect', '/ok', 'L1')).toEqual({ outcome: 'restart-required' });
-    expect(h.typed).toEqual([]);
-  });
-
-  it('says restart when there is no PTY host wired at all', () => {
-    const h = harness(['/ok'], {
-      sessions: { L1: { folder: '/ok', transport: 'pty' } },
-      withPty: false,
-    });
-    expect(h.call('mcp:reconnect', '/ok', 'L1')).toEqual({ outcome: 'restart-required' });
-  });
-
-  it('says no-session for a card whose session is not running', () => {
-    const h = harness(['/ok']);
-    expect(h.call('mcp:reconnect', '/ok', 'L1')).toEqual({ outcome: 'no-session' });
-  });
-
-  it('accepts a DIFFERENT SPELLING of the same folder', () => {
-    // "A path has many true spellings and exactly one resolution" — the rule
-    // `read-scope.ts` has scar tissue about, after CI's Windows runners handed
-    // out 8.3 short names. A `!==` here fails CLOSED, so it was not a hole, but
-    // it would refuse a session `mcp:list` answers for happily.
-    const h = harness(['/ok/sub/..'], {
-      sessions: { L1: { folder: '/ok', transport: 'pty' } },
-    });
-    expect(h.call('mcp:reconnect', '/ok/sub/..', 'L1')).toEqual({ outcome: 'typed' });
-  });
-
-  it('refuses a live id that belongs to a DIFFERENT folder', () => {
-    // Otherwise the gate checks one thing and the action affects another: a
-    // caller pairs a folder it is allowed to name with any live session id in
-    // the app, and types into it.
-    const h = harness(['/ok'], { sessions: { L1: { folder: '/somewhere-else', transport: 'pty' } } });
-    expect(h.call('mcp:reconnect', '/ok', 'L1')).toEqual({ outcome: 'refused' });
-    expect(h.typed).toEqual([]);
-  });
-
-  it('refuses a live id that is not a non-empty string', () => {
-    const h = harness(['/ok'], { sessions: { L1: { folder: '/ok', transport: 'pty' } } });
-    expect(h.call('mcp:reconnect', '/ok', '')).toEqual({ outcome: 'refused' });
-    expect(h.call('mcp:reconnect', '/ok', 42)).toEqual({ outcome: 'refused' });
-    expect(h.typed).toEqual([]);
-  });
-});
+// ── THE `mcp:reconnect` SUITE WENT WITH THE CHANNEL (#952) ───────────────────
+//
+// It pinned that MAIN, not the renderer, decided whether typing `/mcp` into a
+// session meant anything: a `pty` session got `/mcp` and then a SEPARATE Enter
+// (one write each, because text and a carriage return together register as a
+// PASTE in the TUI and never submit — S-03), while a `stream` session got
+// `restart-required` and nothing sent. It also pinned the folder gate by
+// RESOLUTION rather than spelling, so `/ok/sub/..` was accepted.
+//
+// With one transport the handler had one possible answer, so it was deleted and
+// the dialog says `restart-required` itself. The surviving verb is
+// `mcp:reconnectServer` (`mcp_reconnect`, #729/#734), which reconnects a NAMED
+// server over the control channel with no terminal and no restart — a better
+// answer than typing at a picker, and covered by its own tests below.
+//
+// The path-resolution rule it demonstrated is not lost: `samePath` still guards
+// every channel that takes a `liveId`, and the auth suite below exercises it on
+// the two verbs where it matters most.
 
 /**
  * The two auth channels (#734).
@@ -680,7 +625,7 @@ describe('mcp:reconnect — main decides, not the renderer', () => {
  * caller pairing a folder it may name with any live session in the app.
  */
 describe('mcp:authenticate / mcp:clearAuth — signing in and out (#734)', () => {
-  const live = { sessions: { s1: { folder: '/ok', transport: 'stream' } } };
+  const live = { sessions: { s1: { folder: '/ok' } } };
 
   it.each([['mcp:authenticate'], ['mcp:clearAuth']])('%s reaches the session when gated', async (channel) => {
     const h = harness(['/ok'], { ...live, auth: true });
@@ -706,7 +651,7 @@ describe('mcp:authenticate / mcp:clearAuth — signing in and out (#734)', () =>
       // check the gate checks one thing and the action affects another — and
       // the action here is somebody's sign-in.
       const h = harness(['/ok', '/other'], {
-        sessions: { s1: { folder: '/other', transport: 'stream' } },
+        sessions: { s1: { folder: '/other' } },
         auth: true,
       });
       const res = await h.call(channel, '/ok', 's1', 'Slack');

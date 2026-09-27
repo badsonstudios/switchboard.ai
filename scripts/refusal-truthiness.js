@@ -618,17 +618,22 @@ if (require.main === module) {
 //     global. Nothing static can tell that an injected closure calls the
 //     bridge, so each of these launders CENTRALLY — in the one place that can
 //     see the value — and each is covered by unit tests instead of by this
-//     scanner. There are five:
+//     scanner. There were five; #952 deleted two with the PTY transport, and
+//     they are kept below because the SHAPE is what the list is for:
 //       - `lib/markdown-links.ts` takes `openExternal` typed `Promise<unknown>`
 //         ON PURPOSE, which forces its call site to narrow. The best guard of
 //         the five, where the signature is ours to choose.
 //       - `lib/latest-wins.ts` takes a whole FETCH closure (#440).
-//       - `lib/terminal-shadow.ts` takes `read: () => pty.snapshot(id)` (#650):
-//         a refusal replayed into the shadow terminal is a 0×0 screen that
-//         finds nothing in a scrollback nobody was allowed to read.
-//       - `lib/terminal-attach.ts` takes `attach: () => pty.attach(id)` (#650):
-//         a refusal has no `epoch`, and the epoch test then drops every chunk
-//         for ever — #117's failure mode through the path written to avoid it.
+//       - ~~`lib/terminal-shadow.ts`~~ took `read: () => pty.snapshot(id)`
+//         (#650): a refusal replayed into the shadow terminal was a 0×0 screen
+//         that found nothing in a scrollback nobody was allowed to read. GONE
+//         with the transport (#952).
+//       - ~~`lib/terminal-attach.ts`~~ took `attach: () => pty.attach(id)`
+//         (#650): a refusal had no `epoch`, and the epoch test then dropped
+//         every chunk for ever — #117's failure mode through the path written
+//         to avoid it. GONE with the transport (#952). Both are worth keeping
+//         in view: an accessor that hands back a REFUSAL where the caller
+//         expects a value degrades into a confident, wrong answer.
 //       - `components/DocumentViewer.tsx`'s `files()` accessor (#650): a
 //         refusal used to degrade to `{ok: undefined}` = "unreadable", which
 //         was fail-safe by accident; it now says so, with the same `UNREADABLE`

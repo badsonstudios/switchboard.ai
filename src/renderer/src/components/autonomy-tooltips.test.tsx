@@ -64,9 +64,6 @@ function bar(autonomy: string): React.JSX.Element {
       layoutMaximized={false}
       onCycleLayoutMode={noop}
       layoutBinding="Ctrl+Alt+L"
-      autoTrust={false}
-      trustReaches={false}
-      onToggleTrust={noop}
       autoLabels={true}
       onCycleLabels={noop}
       soundsOn={false}

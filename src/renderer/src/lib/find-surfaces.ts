@@ -22,7 +22,6 @@
 // directly — the one rule `docs/extensibility.md` opens with.
 import type { FindQuery, FindSurface } from '../extensibility/contributions';
 import type { DocumentSearchResult } from './document-find';
-import type { TerminalMatch, TerminalSearchOutcome, TerminalSearchQuery } from './terminal-find';
 
 /**
  * The registry key.
@@ -72,61 +71,30 @@ export interface MonacoFindSurface extends FindSurface {
   openFind(term: string): boolean;
 }
 
-/**
- * What one terminal search answered, and where the answer came from (#517).
- *
- * `live` is the difference between the two buffers a terminal pane can be
- * searched through, and the bar has to know which it got:
- *
- *  • `true` — the xterm ON SCREEN. It is attached and fed, the matches are
- *    highlighted in place, and `reveal` can scroll to them.
- *  • `false` — an off-screen replay of MAIN'S RING BUFFER
- *    (`lib/terminal-shadow.ts`), because this pane's tab is not showing and a
- *    hidden pane is ingest-only (S-07). The count is real — it is the complete
- *    scrollback, fresher than the pane's own — but there is nothing rendered to
- *    scroll, so the hits are readable and not jumpable.
- *
- * The one thing this must never be is absent: reporting a count without saying
- * which buffer produced it is how a jump affordance ends up pointing at nothing.
- */
-export interface TerminalFindOutcome extends TerminalSearchOutcome {
-  live: boolean;
-}
+// ── NO TERMINAL SURFACE SINCE #952 ──────────────────────────────────────────
+//
+// `TerminalFindOutcome` and `TerminalFindSurface` described what `TerminalPane`
+// published: the session's scrollback behind xterm's search addon (P2-E17-03),
+// widened by #517 to read MAIN's ring buffer when the pane was not on screen.
+//
+// THE ONE IDEA WORTH CARRYING FORWARD is the `live` flag, because the mistake it
+// prevented is not specific to terminals. A search could be answered from two
+// buffers — the xterm ON SCREEN (attached, fed, matches highlighted in place, so
+// `reveal` could scroll to them) or an off-screen replay of main's ring buffer
+// (complete and fresher, but with nothing rendered to scroll to). The count was
+// real either way; only the JUMPABILITY differed. Reporting a count without
+// saying which buffer produced it is how a jump affordance ends up pointing at
+// nothing, so the flag was mandatory rather than informational.
+//
+// The same trap is waiting for any future surface whose searchable data and
+// rendered data are not the same object. If you add one, make it say which it
+// answered from.
+//
+// `search` also returned `null` — distinct from an empty result — for "we could
+// not look at all". That distinction is still enforced across the other
+// surfaces: a confident zero we did not earn is the failure §5.31 exists to
+// prevent.
 
-/**
- * What `TerminalPane` publishes — the session's scrollback, behind the search
- * addon (P2-E17-03, widened to main's ring buffer by #517).
- *
- * `search` is ASYNC as of #517, and the asynchrony is real rather than the
- * seam's shape: when the pane is not on screen the answer comes from main over
- * `pty:snapshot`. When it IS on screen the walk is still synchronous and in
- * this process — the promise resolves in the same tick.
- *
- * THERE IS NO `ready()` ANY MORE. It used to mean "this xterm holds a current
- * view of the PTY", and it was what withheld the group for a Terminal tab you
- * had never opened — correct while the renderer's buffer was the only one we
- * could search, and obsolete now that main's is. A card with a PTY always has a
- * scrollback to search; the cases that remain are "there is no terminal at all"
- * (no surface is published) and "we could not read it", which is a search-time
- * answer (`null`) rather than an availability gate.
- */
-export interface TerminalFindSurface extends FindSurface {
-  kind: 'terminal';
-  /**
-   * Every match, or `null` when we could not look at all — no PTY behind this
-   * card any more, or the read failed.
-   *
-   * `null` is NOT an empty result and the provider must not flatten it into
-   * one: "0 in Terminal (scrollback only)" states that the last 5,000 lines do
-   * not contain the term, and saying that when we never managed to read them is
-   * exactly the confident-zero failure §5.31 exists to prevent.
-   */
-  search(query: TerminalSearchQuery): Promise<TerminalFindOutcome | null>;
-  /** scroll to and select a collected match — only ever true for a live hit */
-  reveal(match: TerminalMatch): boolean;
-  /** drop the highlights and the selection, and let the off-screen replay go */
-  clear(): void;
-}
 
 /**
  * What `DocumentViewer` publishes — the §5.30 viewer's two bodies (#533).

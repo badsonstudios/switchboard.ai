@@ -97,7 +97,10 @@ test.describe('composer slash commands (E10-07)', () => {
     await a?.cleanup();
   });
 
-  test('[pty] / pops builtins + scanned project commands; arrows+Enter insert; submit reaches the PTY', async () => {
+  // Retagged by #952: the tag marked how the SUBMIT at the end was delivered,
+  // and there is one delivery route now. Everything above it — the popup, the
+  // scan, the arrow keys, the insert-not-submit rule — was never transport-bound.
+  test('/ pops builtins + scanned project commands; arrows+Enter insert; submit sends', async () => {
     const folder = tempProjectFolder();
     seedProjectCommands(folder);
     a = await launchApp({ seedFolder: folder });
@@ -264,7 +267,7 @@ test.describe('composer slash commands (E10-07)', () => {
   // the backstop), and #752 taught the fake `/clear` so the path could be
   // driven at all. The gap this sentence described is exactly where #748's bug
   // lived, which is why it is now named rather than merely admitted.
-  test('[pty] a /clear-minted session id wipes the Feed and shows the cleared marker', async () => {
+  test('a /clear-minted session id wipes the Feed and shows the cleared marker', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });
     const w = a.window;

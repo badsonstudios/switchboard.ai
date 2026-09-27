@@ -221,10 +221,18 @@ describe('a stream session, end to end (P2-E18-05)', () => {
     expect(mgr.create(identity).status).toBe('idle');
   });
 
-  it('a PTY session is NOT marked ready this way — it still waits for hooks', () => {
+  // NOT MARKED READY WITHOUT A TYPED MESSAGE SAYING SO (#952 reworded it).
+  //
+  // The old name was "a PTY session is NOT marked ready this way — it still waits
+  // for hooks", and a TUI was the example: it has to boot, and can stop on a trust
+  // dialog, so `starting` is the honest answer until `SessionStart` says
+  // otherwise. The transport is gone; the rule is not. A handle that emits no
+  // typed messages cannot report readiness, and guessing on its behalf is the
+  // thing this pins against.
+  it('a session with no typed messages is NOT marked ready — it stays starting', () => {
     const sink = new LogSink({ dir });
     const mgr = new SessionManager(
-      registryFor('pty'),
+      registryFor('stream'),
       new SilentTransport(),
       createLogger(sink, 'sessions'),
       dir

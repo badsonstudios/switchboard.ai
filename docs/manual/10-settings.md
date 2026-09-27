@@ -11,8 +11,7 @@ Choose **File ▸ Settings…** from the menu bar, or press **`Ctrl+,`**, or ope
 the command palette (**`Ctrl+Shift+P`**) and pick **Settings…**, or click the
 version number in the title bar and press **Settings…** in the About panel.
 
-`Ctrl+,` works everywhere except inside a session's terminal, where the key
-belongs to Claude. From there, use the menu or the palette.
+`Ctrl+,` works everywhere.
 
 Everything in it is something you set once and forget. There is **no Save
 button** — every control takes effect the moment you touch it, and you can watch
@@ -119,35 +118,25 @@ flash — that's the **🔔** switch above.) The full story is in
 
 ## Trusting folders
 
-Claude Code asks whether you trust a folder the first time it runs there. With
-**auto-trust** on (the default), switchboard answers that for you, on the
-grounds that choosing a folder to run an agent in *is* the trust decision.
+**There is no longer a trust setting, and there is nothing you need to do about
+it.** The title bar used to carry a **🔓 auto-trust / 🔒 ask trust** chip. It has
+been removed.
 
-You can switch it to **🔒 ask trust** if you'd rather answer that prompt
-yourself — but today nothing will ask you. Claude Code only ever draws the trust
-question inside its own terminal interface, and switchboard no longer runs
-sessions there ([Direct mode](12-direct-mode.md)); it does not raise the
-question any other way, so it simply runs in the folder. Measured against claude
-2.1.226.
+Claude Code asks whether you trust a folder the first time it runs there — but it
+only ever draws that question inside its own terminal interface, and switchboard
+no longer runs sessions there ([Direct mode](12-direct-mode.md)). It does not
+raise the question any other way, so a session simply runs in the folder.
+Measured against claude 2.1.226.
 
-### Why the chip is greyed out
+The chip spent a while greyed out, explaining that nothing could put the question
+in front of you. A switch that can never do anything is worse than no switch —
+and its explanation pointed at Terminal mode, which no longer exists — so it went.
 
-Because of that, the chip **is disabled**. Hover it and it tells you why: there
-is no session that could put the question in front of you, so the setting has
-nothing to govern.
-
-Being disabled never changes what you had chosen. If you had picked **🔒 ask
-trust**, the chip still says so, greyed out, and that is still what you would
-get if anything could ask.
-
-And while the chip is greyed out, **switchboard doesn't answer the question
-either.** It does not record an acceptance in Claude Code's own settings on your
-behalf — there was never a question to get ahead of, and recording an answer you
-were never able to give would quietly use up the one thing this chip controls.
-
-So a folder switchboard has run in stays un-answered, and the question is still
-there to be asked the first time you run `claude` in that folder yourself, in a
-terminal of your own.
+**The important half is the part that has not changed: switchboard does not
+answer the question on your behalf either.** It records no acceptance in Claude
+Code's own settings for you. A folder switchboard has run in stays un-answered,
+and the question is still there to be asked the first time you run `claude` in
+that folder yourself, in a terminal of your own.
 
 ## Auto task labels
 

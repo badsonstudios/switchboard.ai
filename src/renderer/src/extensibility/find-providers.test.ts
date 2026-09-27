@@ -16,7 +16,6 @@ import {
   hitsFromTranscript,
   listFindProviders,
   sessionFindProvider,
-  terminalFindProvider,
 } from './find-providers';
 import type { SwitchboardApi } from '../../../preload';
 import type {
@@ -59,12 +58,11 @@ function hit(over: Partial<TranscriptSearchResult['hits'][number]> = {}): Transc
 }
 
 describe('the find-provider point (P2-E17-02, §5.23)', () => {
-  it('registers all four of §5.31’s named registrants (#533)', () => {
-    // All four shipped at #533. `find-terminal` was UNREGISTERED with the
-    // Terminal tab (#873): find dispatches to the focused panel's provider, and
-    // there is no Terminal panel left to focus, so registering it would add a
-    // permanently-unavailable group to every Ctrl+F. The provider itself is
-    // still exported and still exercised directly further down this file.
+  it('registers §5.31’s named registrants (#533, #952)', () => {
+    // Four shipped at #533; three remain. `find-terminal` was UNREGISTERED with
+    // the Terminal tab (#873) — find dispatches to the focused panel's provider,
+    // and there was no Terminal panel left to focus — and DELETED with the
+    // transport (#952). Three is the whole roster, not a subset.
     const ids = listFindProviders(fresh()).map((p) => p.manifest.id);
     expect(ids).toEqual(['find-session', 'find-changes', 'find-document']);
   });
@@ -333,108 +331,20 @@ describe('the Changes provider delegates to Monaco (§5.31: do not reimplement i
   });
 });
 
-describe('find-terminal reads MAIN’s ring buffer, not just the pane on screen (#517)', () => {
-  const match = (row: number) => ({ row, col: 4, length: 6, line: `row ${row} NEEDLE`, offset: 6 });
-
-  /** A stand-in `TerminalPane` surface. `live` is #517's whole seam. */
-  const surfaceFor = (
-    out: Record<string, unknown> | null,
-    reveal = vi.fn().mockReturnValue(true)
-  ): FindSurface =>
-    ({
-      kind: 'terminal',
-      search: () => Promise.resolve(out),
-      reveal,
-      clear: () => {},
-    }) as unknown as FindSurface;
-
-  const ctxFor = (surface: FindSurface | null): FindContext => ({
-    sessionId: 's1',
-    cardId: 'card-1',
-    surface,
-  });
-
-  it('no longer greys the bar for a Terminal tab that was never opened', () => {
-    // The reason that used to live here (`find.unavailable.terminalNotShown`)
-    // was true only while the RENDERER's xterm was the only buffer find could
-    // reach. Main's ring buffer is complete whether or not the tab was ever
-    // shown, so a session with a terminal is always searchable — and a session
-    // WITHOUT one still says so.
-    expect(findUnavailableKey(terminalFindProvider, ctxFor(null))).toBe(
-      'find.unavailable.noTerminal'
-    );
-    expect(
-      findUnavailableKey(terminalFindProvider, ctxFor(surfaceFor({ matches: [], total: 0, live: false })))
-    ).toBeNull();
-  });
-
-  it('marks hits from the LIVE pane jumpable, and says nothing extra about them', async () => {
-    const res = await terminalFindProvider.search!(
-      ctxFor(surfaceFor({ matches: [match(3)], total: 1, truncated: false, live: true })),
-      { term: 'NEEDLE' }
-    );
-    expect(res.total).toBe(1);
-    expect(res.hits[0].jumpable).toBe(true);
-    expect(res.notice).toBeUndefined();
-  });
-
-  it('counts a hidden pane’s scrollback for real, but will not offer a jump to it', async () => {
-    // The done-when: a never-opened Terminal tab gets a real count. What it
-    // cannot get is a scroll — the row lives in main's ring buffer and this
-    // window has never drawn it — so the hits are readable and the bar says so
-    // rather than growing an affordance that does nothing.
-    const res = await terminalFindProvider.search!(
-      ctxFor(surfaceFor({ matches: [match(3), match(9)], total: 2, truncated: false, live: false })),
-      { term: 'NEEDLE' }
-    );
-    expect(res.total).toBe(2);
-    expect(res.totalUnknown).toBeFalsy(); // this one IS a count
-    expect(res.hits.map((h) => h.jumpable)).toEqual([false, false]);
-    expect(res.notice).toEqual({ key: 'find.notice.terminalNotShown', tone: 'info' });
-  });
-
-  it('keeps BOTH true things when a hidden pane’s list is also capped', async () => {
-    // One group gets one notice line, and on this path the user can least
-    // verify by looking — so "you cannot step to these" must not silently eat
-    // "there are more of them than you can see".
-    const res = await terminalFindProvider.search!(
-      ctxFor(surfaceFor({ matches: [match(3)], total: 400, truncated: true, live: false })),
-      { term: 'NEEDLE' }
-    );
-    expect(res.notice).toEqual({
-      key: 'find.notice.terminalNotShownTruncated',
-      params: { shown: 1 },
-      tone: 'info',
-    });
-  });
-
-  it('says "could not search" — never 0 — when the scrollback cannot be READ', async () => {
-    // `null` from the surface: no PTY behind this card any more, or the read
-    // failed. Flattening that into `total: 0` would state "not in the last
-    // 5,000 lines" without having looked at them, which is the one answer
-    // §5.31 says find must never give.
-    for (const surface of [null, surfaceFor(null)]) {
-      const res = await terminalFindProvider.search!(ctxFor(surface), { term: 'NEEDLE' });
-      expect(res.hits).toEqual([]);
-      // the number is NOT a number: `totalUnknown` is what stops the bar
-      // printing "0 in Terminal (scrollback only)" — a statement about the last
-      // 5,000 lines, made without having read them
-      expect(res.totalUnknown).toBe(true);
-      expect(res.notice).toEqual({ key: 'find.notice.failed', tone: 'error' });
-    }
-  });
-
-  it('reveal goes through the surface, and a hit with no ref is refused', () => {
-    const reveal = vi.fn().mockReturnValue(true);
-    const ctx = ctxFor(surfaceFor({ matches: [], total: 0, live: true }, reveal));
-    const hitWith = (ref: unknown) =>
-      ({ id: 't1', snippet: '', matchStart: 0, matchLength: 1, jumpable: true, earlierThanLoaded: false, ref });
-    const query = { term: 'NEEDLE' };
-    expect(terminalFindProvider.reveal!(ctx, hitWith(match(3)), query)).toBe(true);
-    expect(reveal).toHaveBeenCalledWith(match(3));
-    expect(terminalFindProvider.reveal!(ctx, hitWith(undefined), query)).toBe(false);
-  });
-});
+// ── THE `find-terminal` SUITE WENT WITH THE PROVIDER (#952) ─────────────────
+//
+// Six tests on #517's seam: a never-opened Terminal tab got a REAL count from
+// main's ring buffer rather than greying the bar, and the `live` flag decided
+// whether those hits were jumpable — a hidden pane's rows exist in main's buffer
+// but have never been drawn in this window, so they were readable and explicitly
+// not steppable, with a notice saying so. It also pinned that a capped list kept
+// BOTH true things: "you cannot step to these" must not silently eat "there are
+// more of them than you can see".
+//
+// THE TRANSFERABLE RULE, for any future surface whose searchable data and drawn
+// data are not the same object: report the count AND say which one you answered
+// from, because a jump affordance over undrawn rows points at nothing. The same
+// note is on `lib/find-surfaces.ts`, where `TerminalFindOutcome.live` used to be.
 
 describe('find-document — the §5.30 viewer (#533)', () => {
   /** A stand-in viewer. `view` is what makes one surface two providers. */

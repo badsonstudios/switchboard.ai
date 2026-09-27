@@ -337,47 +337,23 @@ test.describe("the CLI's own questions (#563)", () => {
 // The honest degrade (P7 §6). A Terminal-mode session's questions stay in the
 // TUI, where the CLI drew them — there is no `can_use_tool` on that transport
 // and `shouldHoldPermission`'s GATED table never holds `AskUserQuestion`, so
-// nothing reaches a card. What must NOT happen is a panel appearing that cannot
-// answer anything: an inert list of radio buttons over a question the CLI is
-// waiting on somewhere else is worse than no panel at all.
-// Tagged at the `describe` (#639): the one test under it is wholly PTY-scoped,
-// so the group is the highest level that is — see `launchApp` for the rule.
-test.describe('[pty] Terminal mode keeps its questions in the terminal (#563)', () => {
-  let a: LaunchedApp;
-  test.afterEach(async () => a?.cleanup());
-
-  test('no question panel is drawn for a PTY session', async () => {
-    test.setTimeout(90_000);
-    const folder = tempProjectFolder();
-    a = await launchApp({
-      seedFolder: folder,
-      env: { SWITCHBOARD_TRANSPORT: 'pty' },
-    });
-    const w = a.window;
-    await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
-
-    // ⚠️ THIS TEST IS WEAKER THAN IT WAS, and the comment stays so nobody
-    // re-reads it as equally strong. It used to PROVE the session was really on
-    // the PTY by finding a real terminal behind the Terminal tab — which
-    // mattered because `session-manager` falls back to the PTY when the stream
-    // is refused and vice versa, so "no panel appeared" from a session that
-    // turned out to be Direct-with-a-broken-fake reads exactly the same.
-    //
-    // That witness was the Terminal tab itself, and it is gone (#873). The
-    // transport is still SELECTED by `SWITCHBOARD_TRANSPORT: 'pty'` above, but
-    // nothing on screen confirms the selection took. If this test ever goes
-    // green while the panel regresses, a silent fall-back to Direct is the
-    // first thing to suspect.
-    const box = w.getByPlaceholder(/Prompt this session/);
-    await box.click();
-    await box.fill('!ask');
-    await box.press('Enter');
-
-    // Nothing appears, and nothing is held: the whole exchange belongs to the
-    // terminal on this transport. Given time to be wrong — an assertion that a
-    // thing does not appear is only worth the wait it gives it.
-    await w.waitForTimeout(5_000);
-    await expect(panel(w)).toHaveCount(0);
-    expect(await heldIds(w)).toEqual([]);
-  });
-});
+// "[pty] Terminal mode keeps its questions in the terminal (#563)" went with the
+// transport (#952).
+//
+// It pinned that an `AskUserQuestion` on a PTY session was NOT lifted into the
+// app: the CLI drew its own chooser in the terminal, and intercepting it there
+// would have been screen-scraping a decision the CLI had KEPT (P7). What must
+// never happen is a panel that cannot answer anything — an inert list of radio
+// buttons over a question the CLI is waiting on somewhere else is worse than no
+// panel at all.
+//
+// On the control channel the same tool is DELEGATED over `can_use_tool` and
+// answered in-app, which is exactly what #563 measured, and the Direct tests
+// above are what assert it.
+//
+// ⚠️ THE TEST HAD ALREADY LOST ITS WITNESS, and that is worth carrying forward:
+// it used to prove the session really was on the PTY by finding a real terminal
+// behind the Terminal tab. #873 removed that, so it was selecting a transport
+// with nothing on screen confirming the selection took — a silent fall-back to
+// Direct would have read exactly like a pass. An assertion that something does
+// NOT appear is only as good as the proof you were looking in the right place.

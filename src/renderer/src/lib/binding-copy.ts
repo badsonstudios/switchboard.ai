@@ -53,8 +53,18 @@ export interface EmptyStateCopy {
 export function emptyStateCopy(
   binding: BindingState,
   diag: BindingDiagnostics | null,
+  /**
+   * Accepted and UNREAD since #952, deliberately.
+   *
+   * It chose between two fail-open lines; there is one line now. The parameter
+   * stays because every caller already threads it, and §5.3's adapter contract
+   * makes "which transport is this session on" a question that can come back —
+   * at which point this is where the answer goes. Dropping it would mean
+   * re-threading it through every call site to ask it again.
+   */
   transport?: TransportKind
 ): EmptyStateCopy {
+  void transport;
   switch (binding) {
     case 'searching':
       return {
@@ -79,22 +89,24 @@ export function emptyStateCopy(
             ? 'binding.unboundSilent' // a turn ran and wrote nothing we can see
             : 'binding.unboundNothing', // no evidence at all (defensive)
         problem: true,
-        // Where the session still IS depends on what is hosting it. A PTY
-        // session is drawing itself in the Terminal tab and the user can go
-        // read it there. A Direct session has no terminal at all — its
-        // conversation arrives in THIS window over the stream, and the
-        // transcript it cannot find is not what feeds this pane (`deriveFeed:
-        // record.transport !== 'stream'`, `sessions/ipc.ts`). So Direct gets a
-        // line about what is actually true and what the missing file actually
-        // costs, rather than a signpost to a tab that says "No terminal for
-        // this session".
+        // ONE LINE SINCE #952, and it is the one that was always true here.
         //
-        // `problem` stays true on BOTH: the watch is still wanted on Direct for
-        // usage totals, the native id `--resume` needs, and the drift detector
-        // (same comment in `sessions/ipc.ts`), so an unbound Direct session is
-        // genuinely degraded — just not in the way the PTY line describes.
-        fallback:
-          transport === 'stream' ? 'binding.unboundFallbackDirect' : 'binding.unboundFallback',
+        // There were two. The PTY line said the session was still running and
+        // only this view of its conversation was missing; the Direct line says
+        // what is actually true — the conversation arrives in THIS window over
+        // the stream, and the transcript it cannot find is not what feeds this
+        // pane (`deriveFeed: false`, `sessions/ipc.ts`).
+        //
+        // The split existed because #447 found the PTY line composing with the
+        // Terminal tab's own equally-true "No terminal for this session" into a
+        // lie — two honest surfaces sending the user to a place that was not
+        // there. #873 removed the destination and #952 removed the transport, so
+        // the weaker line has nothing left to describe.
+        //
+        // `problem` stays TRUE, which is the part not to lose: the watch is still
+        // wanted for usage totals, the native id `--resume` needs, and the drift
+        // detector, so an unbound session is genuinely degraded.
+        fallback: 'binding.unboundFallbackDirect',
       };
     case 'bound':
     case 'awaiting-prompt':

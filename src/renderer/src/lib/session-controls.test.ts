@@ -101,12 +101,15 @@ describe('the two commands', () => {
     expect(submitted).toEqual([{ id: 'live-7', text: '/compact' }]);
   });
 
-  // Both go through `sendSessionCommand`, which asks main first and only falls
-  // back to the PTY when the session has no typed-message transport (#381).
-  // That is what makes the buttons work on BOTH transports, which #903 asks
-  // about explicitly — so a rewrite that reached for the PTY directly has to
-  // fail here.
-  it('falls back to the PTY when main has no typed transport for the session', async () => {
+  // Both go through `sendSessionCommand`, which asks MAIN — never a transport
+  // directly. That indirection is what made the buttons work on both transports
+  // (#381, #903), and it is why #952 deleting one of them changed nothing here.
+  //
+  // The fallback half of this test went with the PTY route: it pinned that a
+  // session with no typed-message transport still got its `/compact` typed in.
+  // What survives is the shape that matters — a rewrite reaching past main would
+  // still fail, because there is nothing behind main to reach.
+  it('asks main and does not reach past it when main declines', async () => {
     const writes: Array<{ id: string; data: string }> = [];
     (window as unknown as { switchboard: unknown }).switchboard = {
       pty: { input: (id: string, data: string) => writes.push({ id, data }) },
@@ -114,6 +117,6 @@ describe('the two commands', () => {
     };
     await compactConversation('live-2');
     await vi.advanceTimersByTimeAsync(200);
-    expect(writes.map((w) => w.data)).toContain('/compact');
+    expect(writes).toEqual([]);
   });
 });

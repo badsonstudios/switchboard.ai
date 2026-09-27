@@ -31,7 +31,6 @@ import {
   TransportSpawnOptions,
   UnknownTransportError,
 } from '../transport/transport';
-import { buildEnv as buildEnvFromPty } from '../pty/pty-service';
 import { buildEnv as buildEnvShared } from '../transport/env';
 import { LogSink, createLogger } from '../log/logger';
 
@@ -80,33 +79,50 @@ function manager(recipe: Partial<SpawnRecipe>, withStream = false): SessionManag
 const identity = { title: 't', folder: 'C:/tmp/x', providerId: 'fake' };
 
 describe('transport seam (P2-E18-02)', () => {
-  it('a recipe that says nothing still spawns on the PTY — the pre-E18 default', () => {
+  // `pty` is the local name of the POSITIONAL transport, which since #952 is the
+  // stream one — the variable kept its name so this file's diff stays readable,
+  // and it is the only transport a host has. What these tests are really about is
+  // resolution: which entry of the map a recipe lands on, and what happens when it
+  // names one that is not there.
+  it('a recipe that says nothing spawns on the default transport', () => {
     const mgr = manager({});
     const rec = mgr.create(identity);
 
     expect(pty.spawned).toHaveLength(1);
-    expect(stream.spawned).toHaveLength(0);
-    expect(rec.transport).toBe('pty');
+    expect(rec.transport).toBe('stream');
   });
 
-  it('an explicit pty recipe is the same path (the field is not load-bearing yet)', () => {
-    const mgr = manager({ transport: 'pty' });
-    expect(mgr.create(identity).transport).toBe('pty');
-    expect(pty.spawned).toHaveLength(1);
+  // ⚠️ THE CASE #952 MADE LOAD-BEARING, and it is the whole safety argument for
+  // flipping `DEFAULT_TRANSPORT` to `'stream'`.
+  //
+  // An adapter that genuinely needs a terminal declares `transport: 'pty'`. That
+  // kind is no longer implemented, and it is no longer even in `TransportKind` —
+  // so this is cast, deliberately, because the value arrives from an ADAPTER at
+  // runtime and a narrowed compile-time type cannot stop it. `UnknownTransportError`
+  // carries `kind: string` for exactly this reason. Without this, a terminal-only
+  // adapter would be silently handed the stream service and hang with no error.
+  it('an adapter still asking for `pty` fails loudly rather than being downgraded', () => {
+    const mgr = manager({ transport: 'pty' as unknown as TransportKind });
+
+    expect(() => mgr.create(identity)).toThrow(UnknownTransportError);
+    expect(pty.spawned).toHaveLength(0);
   });
 
   // THE item. A silent fallback here would hand a stream-json adapter a
-  // terminal and surface hours later as garbled output or a session that never
-  // answers a permission request.
-  it('a recipe asking for an unimplemented transport THROWS rather than getting a PTY', () => {
-    const mgr = manager({ transport: 'stream' });
+  // THE UNIMPLEMENTED KIND IS NOW `'pty'`, which is the inversion #952 produced:
+  // these three tests used `'stream'` as the thing the host did not have, because
+  // the PTY was all it had. Same contract, opposite example, and it matters more
+  // now than it did — a silent fallback would hand a terminal-only adapter the
+  // stream service and surface hours later as a session that never answers.
+  it('a recipe asking for an unimplemented transport THROWS rather than falling back', () => {
+    const mgr = manager({ transport: 'pty' as unknown as TransportKind });
 
     expect(() => mgr.create(identity)).toThrow(UnknownTransportError);
     expect(pty.spawned).toHaveLength(0);
   });
 
   it('the throw names the transport, the provider, and what IS available', () => {
-    const mgr = manager({ transport: 'stream' });
+    const mgr = manager({ transport: 'pty' as unknown as TransportKind });
     let err: unknown;
     try {
       mgr.create(identity);
@@ -114,13 +130,13 @@ describe('transport seam (P2-E18-02)', () => {
       err = e;
     }
     const msg = String((err as Error).message);
-    expect(msg).toContain('stream');
-    expect(msg).toContain('fake');
-    expect(msg).toContain('pty');
+    expect(msg).toContain('pty'); // what was asked for
+    expect(msg).toContain('fake'); // who asked
+    expect(msg).toContain('stream'); // what there is
   });
 
   it('a failed transport resolution leaves NO session record', () => {
-    const mgr = manager({ transport: 'stream' });
+    const mgr = manager({ transport: 'pty' as unknown as TransportKind });
     expect(() => mgr.create(identity)).toThrow();
 
     // same contract as the "no provider adapter" throw it sits beside: the
@@ -128,14 +144,13 @@ describe('transport seam (P2-E18-02)', () => {
     expect(mgr.list()).toHaveLength(0);
   });
 
-  it('a registered transport receives the spawn, and the PTY does not', () => {
-    const mgr = manager({ transport: 'stream' }, true);
+  it('a registered transport receives the spawn', () => {
+    const mgr = manager({ transport: 'stream' });
     const rec = mgr.create(identity);
 
-    expect(stream.spawned).toHaveLength(1);
-    expect(pty.spawned).toHaveLength(0);
+    expect(pty.spawned).toHaveLength(1);
     expect(rec.transport).toBe('stream');
-    expect(stream.spawned[0].cwd).toBe(identity.folder);
+    expect(pty.spawned[0].cwd).toBe(identity.folder);
   });
 
   // Revert-proof: routing kill() through the default instead of the record's
@@ -239,9 +254,14 @@ describe('a transport REQUEST loses to the adapter’s answer (P2-E18-17)', () =
     asked: Array<TransportKind | undefined>
   ): SessionManager {
     const sink = new LogSink({ dir });
-    // BOTH transports registered on purpose: a request that won would then
-    // spawn on the wrong one instead of throwing, which is the failure this
-    // pins. A throw would have been caught by the P2-E18-02 tests above.
+    // The extra map entry overrides the positional one under the same key, so
+    // `stream` is the transport that actually receives the spawn here. Both were
+    // registered originally so that a request which WON would spawn on the wrong
+    // one rather than throwing — that being the failure this suite pins, and a
+    // throw being the P2-E18-02 tests' job. With one kind the override is all
+    // that remains of the arrangement, and it is harmless: the claim under test
+    // is what the adapter was ASKED and what the record says, not which of two
+    // recorders moved.
     return new SessionManager(recordingRegistry(recipe, asked), pty, createLogger(sink, 'sessions'), dir, {
       stream,
     });
@@ -254,40 +274,28 @@ describe('a transport REQUEST loses to the adapter’s answer (P2-E18-17)', () =
     expect(asked).toEqual(['stream']);
   });
 
-  // The pre-E18 adapter: it has never heard of the field, so its recipe says
-  // nothing, and silence from an ADAPTER means the PTY. Ask it for stream and
-  // it still gets a terminal.
-  it('a PTY-only adapter asked for stream spawns on the PTY anyway', () => {
+  // An adapter that has never heard of the field says nothing, and silence from
+  // an ADAPTER now means the only transport there is (#952 flipped
+  // `DEFAULT_TRANSPORT` from `'pty'` to `'stream'`). The request still does not
+  // decide — the adapter's silence does, and it is read as a claim rather than an
+  // absence.
+  it('an adapter that says nothing gets the default, whatever was requested', () => {
     const asked: Array<TransportKind | undefined> = [];
     const rec = managerFor({}, asked).create(identity, { transport: 'stream' });
 
-    expect(rec.transport).toBe('pty');
-    expect(pty.spawned).toHaveLength(1);
-    expect(stream.spawned).toHaveLength(0);
-  });
-
-  it('an adapter that answers `pty` outright is honoured the same way', () => {
-    const asked: Array<TransportKind | undefined> = [];
-    const rec = managerFor({ transport: 'pty' }, asked).create(identity, { transport: 'stream' });
-
-    expect(rec.transport).toBe('pty');
-    expect(stream.spawned).toHaveLength(0);
-  });
-
-  // The other direction, so this is a pin on "the answer decides" and not on
-  // "the PTY always wins": an adapter that answers `stream` gets stream even
-  // though the caller asked for a terminal. Sounds surprising until you read it
-  // as the contract it is — the adapter knows what its CLI can be driven with,
-  // and a provider whose only mode is stream-json has no PTY recipe to give.
-  it('an adapter answering `stream` beats a request for `pty`', () => {
-    const asked: Array<TransportKind | undefined> = [];
-    const rec = managerFor({ transport: 'stream' }, asked).create(identity, { transport: 'pty' });
-
-    expect(asked).toEqual(['pty']);
+    expect(asked).toEqual(['stream']);
     expect(rec.transport).toBe('stream');
     expect(stream.spawned).toHaveLength(1);
-    expect(pty.spawned).toHaveLength(0);
   });
+
+  // Two tests here drove the rule in both directions — an adapter answering `pty`
+  // beat a request for `stream`, and an adapter answering `stream` beat a request
+  // for `pty` — so the pin was on "THE ANSWER DECIDES" rather than on either
+  // transport winning. With one implemented kind the pair collapses to the case
+  // above, and the direction that would now matter is covered by the
+  // `UnknownTransportError` test in the first suite: an adapter's answer is still
+  // final, and a final answer this host cannot honour is an error rather than a
+  // silent substitution. (#952)
 
   it('no request at all is still the adapter’s answer, not the caller’s default', () => {
     const asked: Array<TransportKind | undefined> = [];
@@ -307,14 +315,27 @@ describe('a transport REQUEST loses to the adapter’s answer (P2-E18-17)', () =
 // failure the tests above spend their time on — so this is pinned as a VALUE
 // and as an inequality: the day the user-facing default moves again, only the
 // second assertion stops someone "tidying up" the two into one constant.
-describe('DEFAULT_TRANSPORT vs DEFAULT_SESSION_TRANSPORT (P2-E18-17)', () => {
-  it("an adapter's silence means the PTY, and must keep meaning it", () => {
-    expect(DEFAULT_TRANSPORT).toBe('pty');
-  });
-
-  it("...which is NOT what a user's silence means", () => {
-    expect(DEFAULT_SESSION_TRANSPORT).toBe('stream'); // named, so the diff explains itself if it moves
-    expect(DEFAULT_TRANSPORT).not.toBe(DEFAULT_SESSION_TRANSPORT);
+// DEFAULT_TRANSPORT vs DEFAULT_SESSION_TRANSPORT (P2-E18-17) — THEY NOW AGREE,
+// AND THE REASON THEY USED TO DIFFER IS THE THING TO REMEMBER (#952).
+//
+// They were two different silences. `DEFAULT_TRANSPORT` was what an ADAPTER's
+// silence meant and was `'pty'`, because a recipe with no transport field had
+// told us it does not speak stream-json — reading that as "stream" would have
+// handed a terminal-only CLI a protocol it cannot answer.
+// `DEFAULT_SESSION_TRANSPORT` was what a USER's silence meant, and was only ever
+// a request the adapter could overrule.
+//
+// With one transport implemented, a host cannot express "I can't do this one" by
+// choosing the other, so the distinction collapsed and both are `'stream'`. What
+// still expresses it is `UnknownTransportError` — see the suite above, where an
+// adapter naming a transport this host does not implement fails loudly at spawn.
+// That is why the flip is safe rather than the silent fallback the old comment
+// warned about.
+describe('the two defaults agree, and say so deliberately (#952)', () => {
+  it("an adapter's silence and a user's silence both mean stream", () => {
+    expect(DEFAULT_TRANSPORT).toBe('stream');
+    expect(DEFAULT_SESSION_TRANSPORT).toBe('stream');
+    expect(DEFAULT_TRANSPORT).toBe(DEFAULT_SESSION_TRANSPORT);
   });
 });
 
@@ -511,15 +532,17 @@ describe('the autonomy vocabulary is declared once (#618)', () => {
   });
 });
 
-describe('the S-01 env scrub is shared, not copied (P2-E18-02)', () => {
-  // A second copy of SCRUB_ALWAYS is how "both transports behave the same"
-  // stops being true without anything failing. Identity, not equality.
-  it('pty-service re-exports the shared buildEnv rather than defining its own', () => {
-    expect(buildEnvFromPty).toBe(buildEnvShared);
-  });
-
-  it('still scrubs the S-01 landmines through the old import path', () => {
-    const env = buildEnvFromPty({
+// THE SCRUB IS SHARED, AND THERE IS NOW ONLY ONE PLACE TO SHARE IT FROM (#952).
+//
+// This suite asserted IDENTITY, not equality: `buildEnv` re-exported from
+// `pty-service` had to BE `transport/env`'s, because a second copy of
+// `SCRUB_ALWAYS` is how "both transports behave the same" stops being true
+// without anything failing. One transport, one copy, and the identity check has
+// nothing left to compare — so what remains is the behaviour itself, which is
+// what the S-01 landmines actually cost if it ever regresses.
+describe('the S-01 env scrub (P2-E18-02)', () => {
+  it('scrubs the S-01 landmines and leaves everything else alone', () => {
+    const env = buildEnvShared({
       ELECTRON_RUN_AS_NODE: '1',
       ELECTRON_NO_ATTACH_CONSOLE: '1',
       KEEP: 'x',

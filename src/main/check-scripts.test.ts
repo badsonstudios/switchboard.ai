@@ -31,8 +31,11 @@ const CI_WORKFLOW = '.github/workflows/ci.yml';
 const LOCAL_ONLY: Record<string, string> = {
   'check:adapter':
     'two headless `claude -p` turns (plant a marker, read it back via --resume) - real tokens',
-  'check:hooks':
-    'a real interactive `claude` session in a PTY, through to a real Write tool call - real tokens',
+  // `check:hooks` was here until #952, which deleted the script with the PTY
+  // transport rather than exempting it: it drove a real interactive session in a
+  // PTY through to a real Write held at the PreToolUse hook, and none of those
+  // mechanisms survive. Removed from this map on purpose — the "LOCAL_ONLY has no
+  // STALE entries" test below is what would have caught leaving it.
   'check:transcripts':
     'a real `claude -p` turn, then parses the transcript the CLI wrote - real tokens',
   'check:mcp-attach':
@@ -55,10 +58,15 @@ describe('check:* scripts are all accounted for (#182)', () => {
   it('finds the check scripts at all (guards against the guard silently passing)', () => {
     // If package.json ever stops using the `check:` prefix this whole file
     // would go green over an empty list, which is the failure mode it exists
-    // to prevent. Assert the floor: the two that run in CI plus the FOUR that
-    // cannot (`check:mcp-attach` joined them in #763; this comment and the
-    // number both said three until then, which is how a floor stops being one).
-    expect(checks.length).toBeGreaterThanOrEqual(6);
+    // to prevent. Assert the floor: the two that run in CI (`check:fake-stream`,
+    // `check:bus`) plus the THREE that cannot.
+    //
+    // The number has moved twice and both moves are the point of having it:
+    // `check:mcp-attach` joined LOCAL_ONLY in #763 while this comment still said
+    // three, which is how a floor stops being one; then #952 deleted `check:pty`
+    // (a CI job) and `check:hooks` (local-only) with the PTY transport, taking it
+    // from 7 to 5. A floor that is never edited is not being checked.
+    expect(checks.length).toBeGreaterThanOrEqual(5);
   });
 
   it.each(

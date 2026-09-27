@@ -13,12 +13,18 @@
 // answering it allow WRITES THE FILE with no second prompt (S-10 probe B). The
 // same verdict is worth more from this channel than from a hook.
 //
-// Deliberately shaped like `HookListener`'s permission half — same
+// It was deliberately shaped like `HookListener`'s permission half — same
 // `PermissionRequest`, same `onPermissionRequest` / `onPermissionResolved` /
-// `pendingRequests` / `decide` — so `sessions/ipc.ts` wires it identically and
-// the renderer's approval bar cannot tell the two apart. A second request type
-// would mean a second bar to keep in step with the first.
-import { PermissionRequest } from '../hooks/hook-listener';
+// `pendingRequests` / `decide` — so `sessions/ipc.ts` could wire the two
+// identically and the renderer's approval bar could not tell them apart. A second
+// request type would have meant a second bar to keep in step with the first.
+//
+// SINCE #952 THERE IS NO OTHER HALF: the hook hold path went with the PTY
+// transport, and this is the only permission router in the app. The shape was the
+// right bet anyway — it is why deleting the other one changed nothing the renderer
+// can see — and `PermissionRequest` now comes straight from the shared boundary
+// type rather than being re-exported through the listener.
+import type { PermissionRequest } from '../../shared/ipc/permissions';
 import { Logger } from '../log/logger';
 import { asDisplayString } from '../../shared/display-string';
 import { controlResponse } from '../../shared/stream-protocol';

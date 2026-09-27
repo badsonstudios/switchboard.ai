@@ -163,7 +163,7 @@ test.describe('a conversation you come back to is at its newest message (#555)',
     expect(await lastBlockInView(w)).toBe(true);
   });
 
-  test('[pty] a Terminal session restored from a restart opens at the tail', async () => {
+  test('a session restored from a restart opens at the tail', async () => {
     test.setTimeout(180_000);
     // The OTHER conversation pipeline, and the one most of a real workspace is
     // on: a stream session's Feed is built by `feed/stream-feed.ts`, a PTY

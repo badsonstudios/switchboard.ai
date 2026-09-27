@@ -100,8 +100,19 @@ describe('claudeAdapter.buildSpawn', () => {
 
   it('maps autonomy profiles to permission modes (E6-01)', () => {
     withCliOnPath();
-    const argsFor = (autonomy?: AutonomyMode) =>
-      claudeAdapter.buildSpawn({ cwd: tmp, sessionId: 's', stateDir: path.join(tmp, 'st'), autonomy }).args;
+    // THE PAIR, not the whole argv (#952). Every spawn now carries the stream
+    // flags unconditionally, so a full-list `toEqual` here would fail the next
+    // time an unrelated flag is added — and the subject is the mapping.
+    const argsFor = (autonomy?: AutonomyMode) => {
+      const args = claudeAdapter.buildSpawn({
+        cwd: tmp,
+        sessionId: 's',
+        stateDir: path.join(tmp, 'st'),
+        autonomy,
+      }).args;
+      const at = args.indexOf('--permission-mode');
+      return at < 0 ? [] : args.slice(at, at + 2);
+    };
     expect(argsFor('plan')).toEqual(['--permission-mode', 'plan']);
     expect(argsFor('auto-edit')).toEqual(['--permission-mode', 'acceptEdits']);
     expect(argsFor('full-auto')).toEqual(['--permission-mode', 'bypassPermissions']);

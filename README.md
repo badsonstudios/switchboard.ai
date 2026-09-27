@@ -24,8 +24,9 @@ Status: **design phase** (started 2026-07-18). No code yet.
   render, route, and notify — we never fork agent behavior, and we never fake an
   interaction the CLI kept for itself.
 - Local-first: no accounts, no cloud, no telemetry.
-- Cross-platform: Windows / macOS / Linux (Electron + TypeScript + xterm.js +
-  node-pty + Monaco).
+- Cross-platform: Windows / macOS / Linux (Electron + TypeScript + React +
+  Monaco + Dockview). **No native modules** — the last one, node-pty, went with
+  the terminal transport in #952.
 
 ## Status
 

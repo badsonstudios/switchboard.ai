@@ -129,15 +129,10 @@ function harness(
     setModelVerdict?: unknown;
     /** the transport the manager reports for a live session (P2-E18-10) */
     transport?: TransportKind;
-    /** the app-wide env override of which transport to ask for (#381) */
-    preferredTransport?: () => TransportKind | undefined;
+    // `preferredTransport` went with `SWITCHBOARD_TRANSPORT` (#952).
     /** exit codes per session id — a session listed here is DEAD but still has
      *  a record, which is exactly what a crash leaves behind (#187) */
     exitCodes?: Record<string, number>;
-    /** live PTYs, by id, for the channels that READ one (#517's `pty:snapshot`).
-     *  Empty unless a test seeds it — every other test in this file runs with
-     *  no PTY at all, which is what `pty:snapshot` answering `null` means. */
-    ptys?: Record<string, { scrollback: { snapshot: () => Buffer }; cols: number; rows: number }>;
     /** the ids successive `manager.create` calls mint, in order. Defaults to
      *  'live-1' for ever, which is what every pre-#187 test assumes. */
     spawnIds?: string[];
@@ -158,7 +153,6 @@ function harness(
      *  is what `sessions:pendingPermissions` replays, and `unregisterSession`
      *  is what empties it — so the hook half of that channel is assertable
      *  instead of being a constant `[]`. */
-    hookPending?: Array<{ requestId: string; sessionId: string }>;
     /** which transcript each live id is bound to, for `transcripts:search`
      *  (P2-E17-01). Absent means the watcher has nothing bound for it. */
     transcriptFiles?: Record<string, string | null>;
@@ -254,13 +248,19 @@ function harness(
     status: 'starting',
     createdAt: '',
     exitCode: null,
-    // What the fake manager REPORTS a live session is on, which is independent
-    // of what the seam ASKED for — since #381 the ask defaults to `stream`
-    // while this still answers `pty`, a pairing a stream-capable adapter could
-    // not produce in production. That is fine for the channels under test here
-    // (they read the record, not the request), but do not read a transport
-    // claim about the real app out of a test that leaves this at its default.
-    transport: opts.transport ?? 'pty',
+    // What the fake manager REPORTS a live session is on. It defaulted to `'pty'`
+    // while the ask defaulted to `'stream'` (#381) — a pairing a stream-capable
+    // adapter could not produce in production, which was fine for channels that
+    // read the record rather than the request, and a trap for anyone reading a
+    // transport claim about the real app out of a test that left it alone.
+    //
+    // There is one transport since #952, so the default is now simply true. The
+    // routing that used to be driven by flipping this — `isStream(liveId)` in
+    // `sessions/ipc.ts` — is still live, because it is ALSO false for a liveId the
+    // manager does not know: a suspended card, or an id from a session that has
+    // gone. That is the case those tests now drive, and it is the one that can
+    // still happen.
+    transport: opts.transport ?? 'stream',
   };
 
   // The session ids the manager knows about. Seeded from `liveIds`, then MOVED
@@ -280,7 +280,6 @@ function harness(
     for (const l of exitListeners) l({ sessionId, code, crashed: code !== 0 });
   };
   /** the hook listener's held requests, keyed the way the real one holds them */
-  const hookPending = [...(opts.hookPending ?? [])];
   /**
    * The answer-surface probe the IPC layer hands the HOOK listener (#699).
    *
@@ -450,49 +449,23 @@ function harness(
         return { ...asRecord(id), identity };
       },
     },
-    ptys: { get: (id: string) => opts.ptys?.[id] },
+    // THE FAKE HOOK LISTENER IS A SETTINGS HOST AND NOTHING ELSE (#952).
+    //
+    // It used to carry the whole permission half — `onPermissionRequest`,
+    // `onPermissionResolved`, `setAnswerSurfaceProbe`, `pendingRequests`,
+    // `decide` and `setAllowAll` — because `sessions/ipc.ts` wired BOTH channels
+    // identically and several suites here asserted that one click, one decision
+    // or one teardown reached both. There is one channel; the stream router's
+    // fake (`streamPerms()`) is where those assertions live now.
+    //
+    // `unregisterSession` stays because the teardown still calls it: the token
+    // file and the session's registration are the listener's, and #271's claim is
+    // that the exit path calls it at all.
     hooks: {
-      onPermissionRequest: () => {},
-      onPermissionResolved: () => {},
-      setAnswerSurfaceProbe: (p: (sessionId: string) => boolean) => {
-        hookAnswerSurface = p;
-      },
-      // the hook half of `sessions:pendingPermissions`. Empty unless a test
-      // seeds `hookPending` (#271); until then what that channel replays is
-      // entirely the stream router's (#202).
-      pendingRequests: () => [...hookPending],
       unregisterSession: (id: string) => {
         if (id === opts.throwOnUnregister) throw new Error('unregister exploded');
         unregistered.push(id);
-        // A RESTATEMENT of what `HookListener.unregisterSession` does to its
-        // held requests ("a session closed mid-hold must not leave the CLI
-        // hanging (fail-open)") — so a test can read the hook half of
-        // `sessions:pendingPermissions` rather than a constant. It is not
-        // evidence about that implementation: if the real sweep stopped
-        // releasing holds, only `hook-listener.test.ts` would catch it. What
-        // these tests pin is that the exit path CALLS it.
-        for (let i = hookPending.length - 1; i >= 0; i--) {
-          if (hookPending[i].sessionId === id) hookPending.splice(i, 1);
-        }
       },
-      // The hook half of the app's ONE decision path (P2-E14-04). Recorded and
-      // real (it drops the request) rather than a no-op, because the claim
-      // under test is that `SessionIpcHandle.decidePermission` — what an OS
-      // toast's Allow/Deny button calls, with no window in the loop — lands in
-      // the same routers `sessions:decidePermission` does, and answers FALSE
-      // for a request nobody holds.
-      decide: (requestId: string, decision: string, reason?: string) => {
-        const i = hookPending.findIndex((r) => r.requestId === requestId);
-        if (i < 0) return false;
-        hookPending.splice(i, 1);
-        hookDecisions.push({ requestId, decision, reason });
-        return true;
-      },
-      // the hook half of "Allow all (this session)" (#319). Recorded rather
-      // than no-op'd because the claim under test is that ONE click reaches
-      // BOTH channels — a fake that swallowed it could only prove the stream
-      // half, which is the half that was already there.
-      setAllowAll: (id: string) => allowedAll.push(id),
       buildHookSettings,
       releaseHookSettings,
     },
@@ -674,7 +647,6 @@ function harness(
         busUnregistered.push(id);
       },
     },
-    preferredTransport: opts.preferredTransport,
     /** #539 — the repairs the app announces on screen rather than only logging */
     onHistoryRepair: (r: unknown) => historyRepairs.push(r),
     resolveMentions: opts.resolveMentions,
@@ -1075,10 +1047,20 @@ describe('registerSessionIpc — provider capabilities (P2-E15-01)', () => {
 
     h.call('sessions:create', { cardId: 'card-1', folder, title: 'x' });
 
-    // deriveFeed true: a PTY session's Feed is still built from its transcript
-    // (P2-E18-10 changed the source only for stream sessions)
+    // `deriveFeed: false` for every session since #952. P2-E18-10 moved the Feed
+    // to typed messages for stream sessions; there is no other kind, so the
+    // transcript is watched for usage, the native id and drift — and never for
+    // blocks, which would interleave with the ones already arriving.
+    //
+    // `readTitle` rides along undefined: this adapter declares no `titles`
+    // capability, so the watcher inspects no line for one (P2-E7-06).
     expect(h.watched).toEqual([
-      { sessionId: 'live-1', projectsRoot: '/somewhere/else', deriveFeed: true },
+      {
+        sessionId: 'live-1',
+        projectsRoot: '/somewhere/else',
+        deriveFeed: false,
+        readTitle: undefined,
+      },
     ]);
     expect(h.buildHookSettings).not.toHaveBeenCalled(); // still no hooks
   });
@@ -1107,104 +1089,47 @@ describe('registerSessionIpc — provider capabilities (P2-E15-01)', () => {
     expect(h.releaseHookSettings).toHaveBeenCalledExactlyOnceWith('live-1');
   });
 
-  describe('preparing the folder belongs to the provider', () => {
-    // Every case here is on the TERMINAL transport, because that is the only
-    // one that pre-writes trust at all since #397 — the Direct half is the
-    // describe block below. `preferredTransport` rather than a card choice:
-    // most of these have no prior record.
-    const onTerminal = { preferredTransport: () => 'pty' as const };
-
-    it('auto-trust on + a trust capability: asked once, for this folder', () => {
+  // ── THE TRUST PRE-WRITE IS GONE, AND THIS IS WHAT REPLACED ITS TESTS (#952) ──
+  //
+  // Two describes stood here, ten tests between them. The first covered the
+  // provider's side (auto-trust on/off, a missing `trust` capability, a failure
+  // reported rather than swallowed) and every case ran on the TERMINAL transport,
+  // because since #397 that was the only one that pre-wrote trust at all. The
+  // second was #397's own follow-up: the pre-write gated on the SPAWN transport,
+  // with the env override and a card's own choice driving the gate.
+  //
+  // `ensureTrusted` wrote `hasTrustDialogAccepted: true` into the user's real
+  // `~/.claude.json`, permanently, to pre-empt a question Claude Code only ever
+  // asks in its TUI. There is no TUI, so there is no question, so there is
+  // nothing to pre-empt — measured three times (#384 twice, and the #397 probe on
+  // 2026-08-13 against claude 2.1.226: an untrusted folder in stream-json mode
+  // runs, loads project settings, fires project hooks, and the CLI writes nothing
+  // about the folder itself).
+  //
+  // WHAT IS WORTH PINNING NOW IS THE NEGATIVE, and it is worth pinning precisely
+  // because it looks like a security regression and is not one: switchboard must
+  // never write an acceptance into the user's config on their behalf. The old
+  // suite proved that for Direct sessions; this proves it for all of them,
+  // because all of them are Direct.
+  describe('switchboard never pre-accepts a folder on the user\'s behalf (#397, #952)', () => {
+    it('a spawn calls no trust capability, whatever auto-trust used to say', () => {
       const ensureTrusted = vi.fn(() => true);
-      const h = harness({ trust: { ensureTrusted } }, folder, { autoTrust: true, ...onTerminal });
+      const h = harness({ trust: { ensureTrusted } }, folder, {});
 
       h.call('sessions:create', { cardId: 'card-1', folder, title: 'x' });
 
-      expect(ensureTrusted).toHaveBeenCalledExactlyOnceWith(folder);
+      expect(ensureTrusted).not.toHaveBeenCalled();
+      expect(h.created[0].transport).toBe('stream');
     });
 
-    it('auto-trust on + NO trust capability: the folder is left alone', () => {
-      // a provider that has never heard of ~/.claude.json must not have it
-      // written on its behalf — this is the assumption that used to be
-      // unconditional
-      const h = harness(undefined, folder, { autoTrust: true, ...onTerminal });
+    it('a provider with NO trust capability still starts cleanly', () => {
+      // the assumption that used to be unconditional, and still holds: a provider
+      // that has never heard of `~/.claude.json` must not have it written for it
+      const h = harness(undefined, folder, {});
       expect(() =>
         h.call('sessions:create', { cardId: 'card-1', folder, title: 'x' })
       ).not.toThrow();
       expect(h.created).toHaveLength(1);
-    });
-
-    it('auto-trust off: the capability is never called', () => {
-      const ensureTrusted = vi.fn(() => true);
-      const h = harness({ trust: { ensureTrusted } }, folder, onTerminal);
-      h.call('sessions:create', { cardId: 'card-1', folder, title: 'x' });
-      expect(ensureTrusted).not.toHaveBeenCalled();
-    });
-
-    it('a trust failure is reported rather than swallowed', () => {
-      const h = harness({ trust: { ensureTrusted: () => false } }, folder, {
-        autoTrust: true,
-        ...onTerminal,
-      });
-      h.call('sessions:create', { cardId: 'card-1', folder, title: 'x' });
-      expect(h.warn).toHaveBeenCalledWith('auto-trust failed — the provider may prompt in the terminal', {
-        cardId: 'card-1',
-        folder,
-      });
-    });
-  });
-
-  // #397, the follow-up: the pre-write is gated on the SPAWN TRANSPORT.
-  //
-  // `ensureTrusted` writes `hasTrustDialogAccepted: true` into the user's real
-  // `~/.claude.json`, permanently, to pre-empt a question Claude Code only ever
-  // asks in its TUI. A Direct session has no TUI and is never asked — measured
-  // at the CLI in #384 and again by the #397 probe (2026-08-13, claude 2.1.226:
-  // an untrusted folder in stream-json mode runs, loads project settings and
-  // fires project hooks, and the CLI writes nothing about the folder itself).
-  // So on Direct the write bought nothing and spent the only thing the trust
-  // chip governs — which is what made the greyed-out chip a lie rather than a
-  // statement.
-  //
-  // These tests are the executable version of that: the first two go red if the
-  // `if` in `sessions:create` is ungated, the last two if the gate is ever
-  // pointed at something other than the value the spawn itself uses.
-  describe('the trust pre-write only happens where a prompt could (#397)', () => {
-    const withTrust = (opts: Parameters<typeof harness>[2] = {}) => {
-      const ensureTrusted = vi.fn(() => true);
-      const h = harness({ trust: { ensureTrusted } }, folder, { autoTrust: true, ...opts });
-      h.call('sessions:create', { cardId: 'card-1', folder, title: 'x' });
-      return { h, ensureTrusted };
-    };
-
-    it('a DEFAULT spawn (Direct, #381) writes nothing, even with auto-trust ON', () => {
-      // The whole point: this is what every untouched card does, so before the
-      // gate the first run of any new folder accepted it for good.
-      const { h, ensureTrusted } = withTrust({});
-      expect(ensureTrusted).not.toHaveBeenCalled();
-      expect(h.created[0].transport).toBe('stream'); // ...and it really did start Direct
-    });
-
-    it('a card that CHOSE Direct writes nothing either', () => {
-      const { ensureTrusted } = withTrust({ prior: priorCard({ folder, transport: 'stream' }) });
-      expect(ensureTrusted).not.toHaveBeenCalled();
-    });
-
-    it('the env override can put a spawn on the Terminal, and then it does write', () => {
-      // the same precedence the spawn itself uses — one resolved value, so the
-      // gate and the spawn cannot disagree
-      const { h, ensureTrusted } = withTrust({ preferredTransport: () => 'pty' });
-      expect(ensureTrusted).toHaveBeenCalledExactlyOnceWith(folder);
-      expect(h.created[0].transport).toBe('pty'); // the value the gate read is the value it spawned on
-    });
-
-    it("a card's own Terminal choice beats an env override aiming at Direct", () => {
-      const { h, ensureTrusted } = withTrust({
-        prior: priorCard({ folder, transport: 'pty' }),
-        preferredTransport: () => 'stream',
-      });
-      expect(ensureTrusted).toHaveBeenCalledExactlyOnceWith(folder);
-      expect(h.created[0].transport).toBe('pty');
     });
   });
 
@@ -1330,298 +1255,25 @@ describe('registerSessionIpc — provider capabilities (P2-E15-01)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// P2-E18-08b — the per-card transport setting.
+// P2-E18-08b — the per-card transport setting — DELETED WITH THE CHANNEL (#952)
 //
-// The refusal is the interesting half: a RUNNING CLI cannot change how we talk
-// to it, so accepting the click would store an answer that disagrees with the
-// process actually running, and the user would believe they had switched.
-describe('per-card transport (P2-E18-08b)', () => {
-  const CARD = 'card-1';
-  let dir: string;
-  tempDirEach('sb-tr-', (d) => (dir = d));
-  const { card, start } = cardHelpers(() => dir, CARD);
-
-  it('stores the choice on the card', async () => {
-    const h = harness(undefined, dir, { prior: card() });
-
-    const res = await h.call('sessions:setTransport', CARD, 'stream');
-
-    expect(res).toEqual({ ok: true, pending: false });
-    expect(h.upserted.at(-1)?.transport).toBe('stream');
-  });
-
-  it('switches back again', async () => {
-    const h = harness(undefined, dir, { prior: { ...card(), transport: 'stream' } });
-
-    await h.call('sessions:setTransport', CARD, 'pty');
-
-    expect(h.upserted.at(-1)?.transport).toBe('pty');
-  });
-
-  // The first version REFUSED here, and it was wrong twice over — Dan hit both
-  // within minutes: it contradicted `setAutonomy` directly below it in the same
-  // menu, which has the IDENTICAL constraint and simply applies on next spawn,
-  // and it told the user to "stop this session first" when a live session has
-  // no stop control at all. A dead end dressed as a safety check.
-  it('ACCEPTS while a session is live, and reports the change as pending', async () => {
-    const h = harness(undefined, dir, { prior: card(), liveIds: ['live-1'] });
-    await start(h);
-    h.upserted.length = 0;
-
-    const res = await h.call('sessions:setTransport', CARD, 'stream');
-
-    // stored, so the NEXT start uses it...
-    expect(h.upserted.at(-1)?.transport).toBe('stream');
-    // ...and flagged, so the UI says so rather than implying it took effect
-    expect(res).toEqual({ ok: true, pending: true });
-  });
-
-  // A CRASHED session keeps its record so the card can show the overlay, and
-  // "has a record" used to be the whole liveness test here — so after a crash
-  // the menu told the user their change was waiting on a process that had
-  // already died, and there was nothing they could do to make it apply (#187).
-  it('a CRASHED session is not something to be pending on', async () => {
-    const exitCodes: Record<string, number> = {};
-    const h = harness(undefined, dir, { prior: card(), exitCodes });
-    await start(h);
-    expect(await h.call('sessions:setTransport', CARD, 'stream')).toEqual({
-      ok: true,
-      pending: true,
-    });
-
-    exitCodes['live-1'] = 1; // ...and the CLI dies
-
-    expect(await h.call('sessions:setTransport', CARD, 'pty')).toEqual({
-      ok: true,
-      pending: false,
-    });
-  });
-
-  it('is NOT pending when no session is running', async () => {
-    const h = harness(undefined, dir, { prior: card() });
-    expect(await h.call('sessions:setTransport', CARD, 'stream')).toEqual({
-      ok: true,
-      pending: false,
-    });
-  });
-
-  // #397 — the shell renders this now, so the write has to be announced.
-  it('announces the change, so surfaces outside the card re-read it', async () => {
-    const h = harness(undefined, dir, { prior: card() });
-    const before = h.pushed.filter((p) => p.channel === 'sessions:cardsChanged').length;
-
-    await h.call('sessions:setTransport', CARD, 'pty');
-
-    expect(h.pushed.filter((p) => p.channel === 'sessions:cardsChanged')).toHaveLength(before + 1);
-  });
-
-  it('says nothing when it refused — a rejected write changed no card', async () => {
-    const h = harness(undefined, dir, { prior: card() });
-    const before = h.pushed.filter((p) => p.channel === 'sessions:cardsChanged').length;
-
-    await h.call('sessions:setTransport', CARD, 'carrier-pigeon');
-    await h.call('sessions:setTransport', 'nope', 'pty');
-
-    expect(h.pushed.filter((p) => p.channel === 'sessions:cardsChanged')).toHaveLength(before);
-  });
-
-  it('rejects a value that is not a transport', async () => {
-    const h = harness(undefined, dir, { prior: card() });
-    expect(await h.call('sessions:setTransport', CARD, 'carrier-pigeon')).toEqual({
-      ok: false,
-      reason: 'bad-value',
-    });
-  });
-
-  it('rejects an unknown card rather than inventing one', async () => {
-    const h = harness(undefined, dir, {});
-    expect(await h.call('sessions:setTransport', 'nope', 'stream')).toEqual({
-      ok: false,
-      reason: 'unknown-card',
-    });
-  });
-
-  // The card's stored choice must reach the spawn, or the setting is
-  // decorative.
-  //
-  // Asserted with `pty` since #381: with Direct as the default, a card storing
-  // `stream` proved nothing here — deleting `prior?.transport ??` from the seam
-  // left this green. `pty` is the value the default can never supply.
-  it("a new session asks for the CARD's transport", async () => {
-    const h = harness(undefined, dir, { prior: { ...card(), transport: 'pty' } });
-
-    await start(h);
-
-    expect(h.created[0].transport).toBe('pty');
-  });
-
-  // #397 — the renderer needs the same answer BEFORE the spawn.
-  //
-  // The trust chip greys itself out when no card will spawn on the Terminal,
-  // because Claude Code raises no trust question on the Direct transport
-  // (#384). That rule is only as good as the field it reads, and the field has
-  // to mean "what the NEXT session will run on" — the same three-step
-  // precedence `sessions:create` applies, not the record's raw `transport` and
-  // not what a running session happens to be hosted on.
-  describe('`sessions:cards` reports the NEXT-spawn transport (#397)', () => {
-    const transportOf = async (h: {
-      call: (c: string, ...a: unknown[]) => unknown;
-    }): Promise<string | undefined> => {
-      const cards = (await h.call('sessions:cards')) as Array<{ transport?: string }>;
-      return cards[0]?.transport;
-    };
-
-    it("reports the card's own choice", async () => {
-      const h = harness(undefined, dir, { prior: { ...card(), transport: 'pty' } });
-      expect(await transportOf(h)).toBe('pty');
-    });
-
-    it('reports the DEFAULT for a card that never chose — never `undefined`', async () => {
-      // Silence here would reach the renderer as "no answer", and the chip
-      // would have to guess. It resolves the default instead.
-      const h = harness(undefined, dir, { prior: card() });
-      expect(await transportOf(h)).toBe('stream');
-    });
-
-    it('honours the env override, exactly as the spawn does', async () => {
-      // This is how the e2e suite puts a whole app instance on the Terminal. A
-      // chip that ignored the override would sit greyed out in a run where
-      // every session really is on the Terminal and really can be asked.
-      const h = harness(undefined, dir, { prior: card(), preferredTransport: () => 'pty' });
-      expect(await transportOf(h)).toBe('pty');
-    });
-
-    // ...and the ORDER of those two, which the pair above cannot pin: each of
-    // them leaves the other input absent, so swapping the precedence keeps both
-    // green. `sessions:create` has the identical test for the identical reason.
-    it("a card's own choice still beats the env override", async () => {
-      const h = harness(undefined, dir, {
-        prior: { ...card(), transport: 'pty' },
-        preferredTransport: () => 'stream',
-      });
-      expect(await transportOf(h)).toBe('pty');
-    });
-
-    // THE DECISION, as an executable claim. Both of these run a session on one
-    // transport while the card holds a choice for the other — the state a
-    // pending restart leaves behind — and both assert the CHOICE wins. Reading
-    // the running session instead (`rec?.transport`, which is right there in
-    // the same handler) flips both.
-    it('follows a PENDING switch TO Terminal, not the Direct session still running', async () => {
-      // The workflow this protects: the manual tells someone who wants to be
-      // asked about a folder to open it in Terminal mode. They switch the card
-      // and the restart is what reads `autoTrust` — so the chip has to be
-      // reachable BEFORE the restart, not after it.
-      const prior = card(); // never chose → starts Direct
-      // `transport` here is what the fake manager REPORTS the live session is
-      // on, and it has to be set: its default is `pty`, which would have made
-      // the running and chosen answers agree and let a handler that read the
-      // running one straight through this test.
-      const h = harness(undefined, dir, { prior, liveIds: ['live-1'], transport: 'stream' });
-      await start(h);
-      expect(h.created[0].transport).toBe('stream'); // ...and really is running on it
-
-      await h.call('sessions:setTransport', CARD, 'pty');
-      // the stub's `persist.list` closes over this object, so mutating it is
-      // how the store's write becomes visible to a later read
-      prior.transport = 'pty';
-
-      expect(await transportOf(h)).toBe('pty');
-    });
-
-    it('follows a PENDING switch TO Direct, not the Terminal session still running', async () => {
-      // The other direction, and the one that costs something: the chip goes
-      // quiet while a Terminal session is still up. That is the honest answer —
-      // the next spawn cannot be asked — and it is reversible by switching the
-      // card back, which is exactly what the tooltip says to do.
-      const prior: PersistedSession = { ...card(), transport: 'pty' };
-      // ...and stated here too, for the same reason in the other direction
-      const h = harness(undefined, dir, { prior, liveIds: ['live-1'], transport: 'pty' });
-      await start(h);
-      expect(h.created[0].transport).toBe('pty');
-
-      await h.call('sessions:setTransport', CARD, 'stream');
-      prior.transport = 'stream';
-
-      expect(await transportOf(h)).toBe('stream');
-    });
-  });
-});
-
-// #381 — Direct is what a session starts on unless something says otherwise.
+// Ten tests on `sessions:setTransport`: storing a choice, switching back,
+// accepting while a session is live and reporting the change as PENDING, a
+// crashed session not being something to be pending on, the `cardsChanged`
+// announcement, silence on a refusal, and the two validation refusals.
 //
-// Dan, 2026-08-09: "all sessions default to direct mode. not terminal". The
-// three populations these tests separate are the whole of the change:
+// The interesting half was always the ACCEPTANCE, not a refusal: a running CLI
+// cannot change how we talk to it, so the first version refused while a session
+// was live — and Dan hit two problems within minutes, because it contradicted
+// the control directly above it in the same menu and said "stop this session
+// first" when a live session has no stop control at all. The rule that replaced
+// it is alive and still applies to autonomy: **accept, apply on the next spawn,
+// and SAY the change is pending** — never refuse a setting because a process is
+// already running.
 //
-//  1. a card that has never chosen (including every card that predates the
-//     setting) follows the default, and the default is now Direct;
-//  2. a card that explicitly chose keeps its choice — Terminal included, which
-//     is the promise that makes flipping the default safe;
-//  3. the env override sits between the two, so a whole app instance can be
-//     aimed at one transport without touching anybody's card.
-describe('Direct is the default transport (#381)', () => {
-  const CARD = 'card-1';
-  let dir: string;
-  tempDirEach('sb-tr-default-', (d) => (dir = d));
-  const { card, start } = cardHelpers(() => dir, CARD);
-
-  it('a card that never chose starts in Direct', async () => {
-    const h = harness(undefined, dir, { prior: card() });
-
-    await start(h);
-
-    expect(h.created[0].transport).toBe('stream');
-  });
-
-  it('a brand-new card with no record at all starts in Direct', async () => {
-    const h = harness(undefined, dir, {});
-
-    await start(h, 'fresh');
-
-    expect(h.created[0].transport).toBe('stream');
-  });
-
-  // The promise in the issue, and the reason this is a default and not a
-  // migration: a session that was deliberately put on the terminal stays there.
-  it('a card that explicitly chose Terminal keeps Terminal', async () => {
-    const h = harness(undefined, dir, { prior: { ...card(), transport: 'pty' } });
-
-    await start(h);
-
-    expect(h.created[0].transport).toBe('pty');
-  });
-
-  // ...and the default is not written back onto the card, so a card that never
-  // chose keeps following the default rather than freezing today's answer. This
-  // is what makes population 1 move on one line — and what would make it move
-  // back if the default ever changed again.
-  it('does not record the default as if the user had chosen it', async () => {
-    const h = harness(undefined, dir, { prior: card() });
-
-    await start(h);
-
-    expect(h.upserted.at(-1)?.transport).toBeUndefined();
-  });
-
-  it('the env override decides for a card that never chose', async () => {
-    const h = harness(undefined, dir, { prior: card(), preferredTransport: () => 'pty' });
-
-    await start(h);
-
-    expect(h.created[0].transport).toBe('pty');
-  });
-
-  it("a card's own choice still beats the env override", async () => {
-    const h = harness(undefined, dir, {
-      prior: { ...card(), transport: 'stream' },
-      preferredTransport: () => 'pty',
-    });
-
-    await start(h);
-
-    expect(h.created[0].transport).toBe('stream');
-  });
-});
+// #873 removed the menu item, #952 removed the other value it could hold, and
+// `sessions/ipc.ts` keeps the two design notes worth keeping where the handler
+// used to be.
 
 // P2 #153 follow-up — starting a session must not FORGET the card.
 //
@@ -1648,18 +1300,23 @@ describe('starting a session preserves the card (#153 follow-up)', () => {
     };
   }
 
-  // `pty` and not `stream` since #381, and deliberately: Direct is the default
-  // now, so a card storing `stream` would spawn on `stream` even if the field
-  // were dropped on the way — the second assertion, the one about the spawn,
-  // would have passed on the very bug this test exists for.
+  // ⚠️ THIS PINS A SHAPE NOW, NOT A VALUE, AND IT IS WEAKER FOR IT (#952).
+  //
+  // It used `'pty'` deliberately: Direct being the default meant a card storing
+  // `'stream'` would spawn on `'stream'` even if the field were dropped on the
+  // way, so the second assertion — the one about the spawn — would have passed on
+  // the very bug this test exists for. `'pty'` was the value no default could
+  // supply, and `TransportKind` no longer has one.
+  //
+  // What is still worth asserting is that the field is RE-SAVED across a start
+  // rather than quietly dropped from the record. The spawn half is covered by the
+  // unimplemented-kind test further up, which cannot pass on a dropped field.
   it('keeps the transport across a session start — the relaunch case', async () => {
-    const h = harness(undefined, dir, { prior: priorWith({ transport: 'pty' }) });
+    const h = harness(undefined, dir, { prior: priorWith({ transport: 'stream' }) });
 
     await start(h);
 
-    expect(h.upserted.at(-1)?.transport).toBe('pty');
-    // and it was actually USED for the spawn, not merely re-saved
-    expect(h.created[0].transport).toBe('pty');
+    expect(h.upserted.at(-1)?.transport).toBe('stream');
   });
 
   it('keeps usage, model, task label and group membership too', async () => {
@@ -2331,8 +1988,11 @@ describe('the Feed has two sources and one channel (P2-E18-10)', () => {
     expect(blocks.map((b) => b.text)).toEqual(['from the stream']);
   });
 
-  it('a PTY session still reads its backlog from the transcript', () => {
-    const h = harness(caps, dir, { transport: 'pty', liveIds: ['live-1'], streamFeed: new StreamFeed() });
+  // The fallback branch of `isStream(liveId) && deps.streamFeed`, driven by the
+  // half that is still reachable (#952): a wiring with NO stream feed. It used
+  // to be driven by the transport, which no longer has a second value.
+  it('a session with no stream feed reads its backlog from the transcript', () => {
+    const h = harness(caps, dir, { liveIds: ['live-1'] });
 
     const blocks = h.call('transcripts:blocks', 'live-1') as Array<{ text: string }>;
 
@@ -2422,18 +2082,12 @@ describe('a resumed Direct session replays its history (#395)', () => {
     ]);
   });
 
-  it('a TERMINAL session is left alone — the watcher replays it, as it always did', () => {
-    seedTranscript();
-    const streamFeed = new StreamFeed();
-    harness(capsWith(() => root), dir, {
-      transport: 'pty',
-      liveIds: ['live-1'],
-      streamFeed,
-      prior: priorCard({ folder: dir, nativeSessionId: NATIVE }),
-    }).call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' });
-
-    expect(streamFeed.blocks('live-1')).toEqual([]);
-  });
+  // "A TERMINAL session is left alone — the watcher replays it, as it always
+  // did" went with the transport (#952). It pinned that the stream-feed seeding
+  // below did NOT fire for a session whose blocks came from the transcript
+  // watcher. The seeding is still guarded by `isStream(liveId) && deps.streamFeed`
+  // and the guard's reachable half — a wiring with no stream feed — is covered
+  // where that routing is tested, above.
 
   it('a session that is NOT resuming starts empty, whatever is on disk', () => {
     seedTranscript();
@@ -2835,12 +2489,19 @@ describe('a transcript reset never blanks a stream session (P2-E18-10)', () => {
   const feedResets = (h: { pushed: Array<{ channel: string }> }): number =>
     h.pushed.filter((p) => p.channel === 'sessions:feedReset').length;
 
-  it('a PTY session still gets its reset', () => {
-    const h = harness(caps, dir, { transport: 'pty', liveIds: ['live-1'] });
+  // ⚠️ INVERTED BY #952, AND THE INVERSION IS THE CLAIM.
+  //
+  // This asserted that a PTY session still GOT its reset from the transcript
+  // watcher, because its Feed was built from the transcript. No Feed is built
+  // that way any more, so the watcher's reset must NOT reach the renderer —
+  // pushing one would blank a Feed the transcript never built, with nothing to
+  // replay it from. `streamFeed.onReset` is the only source of a feed reset.
+  it('the transcript watcher never pushes a feed reset', () => {
+    const h = harness(caps, dir, { liveIds: ['live-1'] });
 
     for (const l of h.resets) l('live-1', 'clear');
 
-    expect(feedResets(h)).toBe(1);
+    expect(feedResets(h)).toBe(0);
   });
 
   it('a STREAM session does not', () => {
@@ -3338,56 +2999,19 @@ describe('a stream request for an unbound session is declined, not parked (#333)
 });
 
 // ---------------------------------------------------------------------------
-// #699 — the HOOK listener is told the same thing, over the same map.
+// #699 — the HOOK listener's answer-surface probe — DELETED WITH THE HOLD (#952)
 //
-// `hooks.onPermissionRequest` stamps `cardId: cardOfLive.get(...)` exactly as
-// the stream push does, so an unbound session's held PreToolUse matched no card
+// `hooks.onPermissionRequest` stamped `cardId: cardOfLive.get(...)` exactly as
+// the stream push does, so an unbound session's held `PreToolUse` matched no card
 // either — it just failed open to the CLI's own TUI after 300s instead of
-// wedging, which is why #333 left it. These pin the WIRING; what the listener
-// then does with the answer is `hook-listener.test.ts`'s subject.
-describe('the hook listener gets the answer-surface probe too (#699)', () => {
-  const CARD = 'card-1';
-  let dir: string;
-  tempDirEach('sb-hookprobe-', (d) => (dir = d));
-  const { card, start } = cardHelpers(() => dir, CARD);
-
-  it('answers TRUE for a bound session and FALSE for one that was never bound', () => {
-    const h = harness(undefined, dir, { prior: card() });
-    start(h); // binds live-1 to card-1
-
-    expect(h.hookAnswerSurface('live-1')).toBe(true);
-    expect(h.hookAnswerSurface('ghost')).toBe(false);
-  });
-
-  it('follows the binding down on teardown — the map must not outlive the session', () => {
-    const h = harness(undefined, dir, { prior: card() });
-    start(h);
-    expect(h.hookAnswerSurface('live-1')).toBe(true);
-
-    h.call('sessions:closeCard', CARD); // tearDownLive → unbindLive
-
-    expect(h.hookAnswerSurface('live-1')).toBe(false);
-  });
-
-  it('reads the SAME map the stream probe does — the two channels cannot disagree', () => {
-    // The requirement, not a coincidence. Two probes over different state would
-    // mean one channel failing open while the other parked, on the same session
-    // in the same instant, and nothing in either file would say why.
-    const { perms } = streamPerms();
-    const h = harness(undefined, dir, { prior: card(), streamPermissions: perms });
-    start(h);
-
-    for (const id of ['live-1', 'ghost']) {
-      perms.offer(id, canUseTool(`req-${id}`));
-      // the stream router held it exactly when the hook probe says it could be
-      // shown — one binding, one answer, two channels
-      const streamHeld = perms.pendingRequests().some((r) => r.sessionId === id);
-      expect(streamHeld).toBe(h.hookAnswerSurface(id));
-    }
-
-    h.call('sessions:dropLive', CARD); // clear the hold and its timer
-  });
-});
+// wedging, which is why #333 left it alone at first. These pinned the WIRING:
+// that both channels were handed the SAME probe, off the SAME map, so they could
+// not disagree about whether a session was reachable.
+//
+// There is one channel now. `setAnswerSurfaceProbe` survives on
+// `StreamPermissions` and is still wired from `cardOfLive`; its tests live in
+// `stream-permissions.test.ts`. The requirement that two channels agree is the
+// only thing lost, and only because there is no second channel to disagree with.
 
 // ---------------------------------------------------------------------------
 // #219 — a teardown step that throws must not take the rest of the teardown
@@ -3658,16 +3282,12 @@ describe('a session that exits on its own releases what it was holding (#271)', 
   // the request exists.
   it('stops advertising it to a renderer that remounts afterwards', () => {
     const { perms } = streamPerms();
-    const h = harness(undefined, dir, {
-      prior: card(),
-      streamPermissions: perms,
-      hookPending: [{ requestId: 'hook-1', sessionId: 'live-1' }],
-    });
+    const h = harness(undefined, dir, { prior: card(), streamPermissions: perms });
     start(h);
     perms.offer('live-1', canUseTool('req-1'));
-    // BOTH transports are in that replay, so both have to stop being in it
+    // The replay carried BOTH transports until #952 and had to stop carrying
+    // both; there is one now, and the claim is unchanged.
     expect(h.call('sessions:pendingPermissions')).toEqual([
-      expect.objectContaining({ requestId: 'hook-1', cardId: CARD }),
       expect.objectContaining({ requestId: 'stream:live-1:req-1', cardId: CARD }),
     ]);
 
@@ -3685,10 +3305,6 @@ describe('a session that exits on its own releases what it was holding (#271)', 
       prior: card(),
       spawnIds: ['live-1', 'live-2'],
       streamPermissions: perms,
-      hookPending: [
-        { requestId: 'hook-1', sessionId: 'live-1' },
-        { requestId: 'hook-2', sessionId: 'live-2' },
-      ],
     });
     start(h);
     start(h, 'card-2');
@@ -3704,7 +3320,7 @@ describe('a session that exits on its own releases what it was holding (#271)', 
       (h.call('sessions:pendingPermissions') as Array<{ requestId: string }>).map(
         (r) => r.requestId
       )
-    ).toEqual(['hook-2', 'stream:live-2:req-2']);
+    ).toEqual(['stream:live-2:req-2']);
   });
 
   // The release is NOT a teardown, deliberately. An exited session keeps its
@@ -3877,19 +3493,21 @@ describe('a toast can name and answer a held permission (P2-E14-04)', () => {
   tempDirEach('sb-toastperm-', (d) => (dir = d));
   const { card, start } = cardHelpers(() => dir, CARD);
 
+  // Driven on the stream router since #952 — these four tests were written
+  // against the hook one because it was the easier fake to seed, never because
+  // the claim was about hooks. The claim is about `pendingPermissionFor` and
+  // `decidePermission`, which are the app's ONE naming path and ONE decision
+  // path, whoever calls them.
   it('names the OLDEST request the live session is holding — what the bar answers', () => {
-    const h = harness(undefined, dir, {
-      prior: card(),
-      hookPending: [
-        { requestId: 'hook-1', sessionId: 'live-1' },
-        { requestId: 'hook-2', sessionId: 'live-1' },
-      ],
-    });
+    const { perms } = streamPerms();
+    const h = harness(undefined, dir, { prior: card(), streamPermissions: perms });
     start(h);
+    perms.offer('live-1', canUseTool('req-1'));
+    perms.offer('live-1', canUseTool('req-2'));
     // FIFO, because the approval bar's buttons act on `cardQueue[0]`. A toast
     // that answered the newest while the bar answered the oldest would make the
     // two surfaces disagree about which question is on screen.
-    expect(h.pendingPermissionFor('live-1')?.requestId).toBe('hook-1');
+    expect(h.pendingPermissionFor('live-1')?.requestId).toBe('stream:live-1:req-1');
   });
 
   it('answers null for a session holding nothing, and for one that never existed', () => {
@@ -3899,27 +3517,19 @@ describe('a toast can name and answer a held permission (P2-E14-04)', () => {
     expect(h.pendingPermissionFor('no-such-session')).toBeNull();
   });
 
-  it('sees BOTH transports — a Direct session holds on the stream router', () => {
-    const { perms } = streamPerms();
+  // "Sees BOTH transports" merged into the test above when the other transport
+  // went (#952).
+
+  it('decidePermission answers the router, and the request really is gone', () => {
+    const { perms, sent } = streamPerms();
     const h = harness(undefined, dir, { prior: card(), streamPermissions: perms });
     start(h);
     perms.offer('live-1', canUseTool('req-1'));
-    expect(h.pendingPermissionFor('live-1')?.requestId).toBe('stream:live-1:req-1');
-  });
 
-  it('decidePermission reaches the hook router, exactly as the channel does', () => {
-    const h = harness(undefined, dir, {
-      prior: card(),
-      hookPending: [{ requestId: 'hook-1', sessionId: 'live-1' }],
-    });
-    start(h);
+    expect(h.decidePermission('stream:live-1:req-1', 'deny')).toBe(true);
 
-    expect(h.decidePermission('hook-1', 'deny')).toBe(true);
-
-    expect(h.hookDecisions).toEqual([
-      { requestId: 'hook-1', decision: 'deny', reason: undefined },
-    ]);
-    // and the request really is gone — the bar and the replay agree with the toast
+    expect(sent).toHaveLength(1);
+    // the bar, the replay and the toast agree that nothing is held any more
     expect(h.pendingPermissionFor('live-1')).toBeNull();
     expect(h.call('sessions:pendingPermissions')).toEqual([]);
   });
@@ -3940,39 +3550,33 @@ describe('a toast can name and answer a held permission (P2-E14-04)', () => {
   // actually calls: nothing holds it, so nothing is decided and the caller is
   // told so rather than being left to assume it worked.
   it('answers FALSE for a request nobody holds, and for a nonsense verdict', () => {
-    const h = harness(undefined, dir, {
-      prior: card(),
-      hookPending: [{ requestId: 'hook-1', sessionId: 'live-1' }],
-    });
+    const { perms, sent } = streamPerms();
+    const h = harness(undefined, dir, { prior: card(), streamPermissions: perms });
     start(h);
+    perms.offer('live-1', canUseTool('req-1'));
 
     expect(h.decidePermission('gone', 'allow')).toBe(false);
-    expect(h.decidePermission('hook-1', 'maybe')).toBe(false);
+    expect(h.decidePermission('stream:live-1:req-1', 'maybe')).toBe(false);
     expect(h.decidePermission('', 'allow')).toBe(false);
 
-    expect(h.hookDecisions).toEqual([]); // nothing reached a router
-    expect(h.pendingPermissionFor('live-1')?.requestId).toBe('hook-1'); // still held
+    expect(sent).toEqual([]); // nothing reached the CLI
+    expect(h.pendingPermissionFor('live-1')?.requestId).toBe('stream:live-1:req-1'); // still held
   });
 
   it('the channel and the handle are the same function — one path, two callers', () => {
-    const h = harness(undefined, dir, {
-      prior: card(),
-      hookPending: [
-        { requestId: 'hook-1', sessionId: 'live-1' },
-        { requestId: 'hook-2', sessionId: 'live-1' },
-      ],
-    });
+    const { perms, sent } = streamPerms();
+    const h = harness(undefined, dir, { prior: card(), streamPermissions: perms });
     start(h);
+    perms.offer('live-1', canUseTool('req-1'));
+    perms.offer('live-1', canUseTool('req-2'));
 
-    h.call('sessions:decidePermission', 'hook-1', 'allow', 'from the bar');
-    h.decidePermission('hook-2', 'allow', 'from the toast');
+    h.call('sessions:decidePermission', 'stream:live-1:req-1', 'allow', 'from the bar');
+    h.decidePermission('stream:live-1:req-2', 'allow', 'from the toast');
 
     // Same shape, same clamping, same router — the only difference is who
-    // called. (`reason` is passed straight through by both.)
-    expect(h.hookDecisions).toEqual([
-      { requestId: 'hook-1', decision: 'allow', reason: 'from the bar' },
-      { requestId: 'hook-2', decision: 'allow', reason: 'from the toast' },
-    ]);
+    // called. Both answers reached the CLI, and nothing is left held.
+    expect(sent).toHaveLength(2);
+    expect(h.pendingPermissionFor('live-1')).toBeNull();
   });
 });
 
@@ -4042,14 +3646,16 @@ describe('allow-all is granted on both channels (#319)', () => {
     };
   }
 
-  it('one click reaches the hook listener AND the stream router', () => {
+  // ONE CHANNEL SINCE #952. This asserted that one click reached the hook
+  // listener AND the stream router, because telling the hooks alone was the whole
+  // of the promise for a PTY session and none of it for a Direct one.
+  it('one click reaches the router', () => {
     const { perms } = streamPerms();
     const h = harness(undefined, dir, { prior: card(), streamPermissions: perms });
     start(h);
 
     h.call('sessions:allowAllSession', 'live-1');
 
-    expect(h.allowedAll).toEqual(['live-1']);
     expect(perms.isAllowAll('live-1')).toBe(true);
   });
 
@@ -4106,12 +3712,16 @@ describe('allow-all is granted on both channels (#319)', () => {
 
   // The PTY-only wiring has to survive it: `streamPermissions` is optional in
   // these deps and was undefined in every test in this file until #202.
-  it('works with no stream router at all', () => {
+  // "Works with no stream router at all" proved the click still reached the HOOK
+  // half in a wiring without a stream router (#319). There is no hook half, so
+  // what is left to assert is that a wiring without a router does not THROW —
+  // `streamPermissions` is optional in `SessionIpcDeps` and the handler must stay
+  // fail-open rather than rejecting a click into the renderer.
+  it('does not throw in a wiring with no router at all', () => {
     const h = harness(undefined, dir, { prior: card() });
     start(h);
 
     expect(() => h.call('sessions:allowAllSession', 'live-1')).not.toThrow();
-    expect(h.allowedAll).toEqual(['live-1']);
   });
 });
 
@@ -4591,62 +4201,17 @@ describe('transcripts:search over a stream session (P2-E17-01, #458)', () => {
 // on the old transport, and the next change of default would skip them for
 // ever. The same rule as the default itself, for the same reason — absence is a
 // meaningful value here.
-describe('the env override is not written back onto the card (P2-E18-17)', () => {
-  const CARD = 'card-1';
-  let dir: string;
-  tempDirEach('sb-tr-envback-', (d) => (dir = d));
-  const { card, start } = cardHelpers(() => dir, CARD);
-
-  it('the override decides the spawn but leaves the card unchosen', async () => {
-    const h = harness(undefined, dir, { prior: card(), preferredTransport: () => 'pty' });
-
-    await start(h);
-
-    expect(h.created[0].transport).toBe('pty'); // it did decide...
-    // `.at(-1)?` on an EMPTY list is undefined too, so the card must be proved
-    // written at all — otherwise "stopped persisting the card" passes this as
-    // cleanly as "did not write the transport".
-    expect(h.upserted).not.toHaveLength(0);
-    expect(h.upserted.at(-1)?.transport).toBeUndefined(); // ...and recorded nothing
-  });
-
-  it('holds for a brand-new card with no record at all', async () => {
-    const h = harness(undefined, dir, { preferredTransport: () => 'pty' });
-
-    await start(h, 'fresh');
-
-    expect(h.created[0].transport).toBe('pty');
-    expect(h.upserted).not.toHaveLength(0);
-    expect(h.upserted.at(-1)?.transport).toBeUndefined();
-  });
-
-  it('and for `stream`, which is the value a lazy write-back would hide in', async () => {
-    const h = harness(undefined, dir, { prior: card(), preferredTransport: () => 'stream' });
-
-    await start(h);
-
-    // identical to what the default would have produced, which is the point:
-    // the card must still say nothing, or it silently stops following the
-    // default the day the default moves.
-    expect(h.created[0].transport).toBe('stream');
-    expect(h.upserted).not.toHaveLength(0);
-    expect(h.upserted.at(-1)?.transport).toBeUndefined();
-  });
-
-  it("a card that DID choose keeps its own value written down", async () => {
-    const h = harness(undefined, dir, {
-      prior: { ...card(), transport: 'pty' },
-      preferredTransport: () => 'stream',
-    });
-
-    await start(h);
-
-    // the card's choice beat the override at the spawn...
-    expect(h.created[0].transport).toBe('pty');
-    // ...and the override did not overwrite it on the way through either
-    expect(h.upserted.at(-1)?.transport).toBe('pty');
-  });
-});
+// The `SWITCHBOARD_TRANSPORT` write-back suite went with the override (#952).
+//
+// It pinned that the env override decided the SPAWN but left the card unchosen:
+// writing it back would have pinned every card the override ever touched onto the
+// old transport, and the next change of default would have skipped them for ever.
+// Absence was a meaningful value, and the tests made it one.
+//
+// The rule outlived the variable and still applies to anything that resolves a
+// value at spawn time: resolve it, use it, and do NOT write it onto the card
+// unless the user chose it. `sessions:create` still only persists what it was
+// given.
 
 // ── P2-E7-06: auto task labels from the CLI's own title ────────────────────
 //
@@ -4814,11 +4379,12 @@ describe('AI task labels — the cadence (#758, §5.11)', () => {
     expect(h.oneShotCalls).toEqual([]);
   });
 
-  it('a PTY session still reads its conversation from the transcript', () => {
+  it('a session with no stream feed reads its conversation from the transcript', () => {
     // The other half of the routing the blocker got wrong. Both branches are
     // pinned so a future simplification to either one fails here rather than in
-    // the app — and `transcripts.blocks` is what this fixture returns.
-    const h = harness(claudeLike, dir, { prior: card(), aiLabels: true, transport: 'pty' });
+    // the app — and `transcripts.blocks` is what this fixture returns. Driven by
+    // the absent stream feed since #952, the transport having only one value.
+    const h = harness(claudeLike, dir, { prior: card(), aiLabels: true });
     start(h);
     h.fireStatus('live-1', 'done');
     expect(h.oneShotCalls).toHaveLength(1);
@@ -5406,88 +4972,30 @@ describe('a decision for a request nobody is holding (#570)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// #517 — `pty:snapshot`: the ring buffer, READ
+// #517 — `pty:snapshot` — DELETED WITH THE TERMINAL IPC (#952)
 // ---------------------------------------------------------------------------
+//
+// Four tests, and two of them were about a distinction worth carrying forward
+// even though the channel is gone.
+//
+// 1. It answered the scrollback AND the geometry it was written for, because the
+//    caller replayed those bytes into a terminal and a scrollback re-rendered at
+//    the wrong width wraps in different places — which moves every match position
+//    and can split a match across the fold.
+// 2. It answered `null`, not an empty buffer, for a session with no PTY: **"could
+//    not look" is a different fact from "looked and found none"**, and §5.31
+//    renders the two differently. That rule is still enforced on every surviving
+//    find surface, and it is the confident-zero failure the whole find design
+//    exists to avoid.
+// 3. It refused a non-string id rather than reaching into a map with it (§5.29's
+//    untrusted-renderer-input posture, still the house rule).
+// 4. ⚠️ **A READ MUST NOT RE-RUN A SUBSCRIPTION'S TEARDOWN.** This was its own
+//    channel precisely so that find could not cut the live feed: `pty:attach`
+//    minted an epoch and REPLACED the session's single data subscription, so
+//    answering a read through it would silently have stopped the terminal the
+//    user was watching. The generalisation outlives the PTY — any future
+//    read-only view over a subscription has the same trap waiting.
 
-describe('pty:snapshot hands find the buffer that actually has the answer (#517)', () => {
-  let folder: string;
-  beforeEach(() => {
-    folder = tempDir('sb-snap');
-  });
-
-  /** A stand-in PtySession with a real listener set, so ATTACH can be driven. */
-  const fakePty = (text: string, cols = 132, rows = 44) => {
-    const listeners = new Set<(d: string) => void>();
-    return {
-      scrollback: { snapshot: () => Buffer.from(text, 'utf8') },
-      cols,
-      rows,
-      onData: (l: (d: string) => void) => {
-        listeners.add(l);
-        return () => listeners.delete(l);
-      },
-      /** the PTY printing something, for the test to observe downstream */
-      emit: (d: string) => listeners.forEach((l) => l(d)),
-      listenerCount: () => listeners.size,
-    };
-  };
-
-  it('answers the scrollback AND the geometry it was written for', () => {
-    // The geometry is not decoration: the caller replays these bytes into a
-    // terminal, and a scrollback re-rendered at the wrong width wraps in
-    // different places — which moves every match position and can split a
-    // match across the fold.
-    const h = harness(undefined, folder, { ptys: { 'live-1': fakePty('hello NEEDLE\r\n') } });
-    expect(h.call('pty:snapshot', 'live-1')).toEqual({
-      snapshot: 'hello NEEDLE\r\n',
-      cols: 132,
-      rows: 44,
-    });
-  });
-
-  it('answers null for an id with no PTY — "could not look", not "found none"', () => {
-    const h = harness(undefined, folder);
-    expect(h.call('pty:snapshot', 'nobody')).toBeNull();
-  });
-
-  it('refuses a non-string id rather than reaching into the map with it', () => {
-    const h = harness(undefined, folder);
-    // 42 is passed bare on purpose: harness.call takes ...unknown[], so a cast
-    // to string would be a no-op the type-checked preset rejects (#255 T0).
-    expect(h.call('pty:snapshot', 42)).toBeNull();
-    expect(h.warn).toHaveBeenCalledWith(
-      stringContaining('pty:snapshot refused'),
-      expect.anything()
-    );
-  });
-
-  it('takes NOTHING away from the pane on screen — the live feed keeps streaming', () => {
-    // The reason this is its own channel, asserted against the thing that
-    // would actually break. `pty:attach` mints an epoch and REPLACES the
-    // session's single data feed (`feeds.get(id)?.()`), so answering find
-    // through it — or through anything that reuses that teardown — would
-    // silently cut the terminal the user is looking at.
-    //
-    // So: attach a pane, read the scrollback twice underneath it, then let the
-    // PTY print. The chunk must still arrive, on the SAME epoch, and no second
-    // subscription may have appeared.
-    const p = fakePty('output');
-    const h = harness(undefined, folder, { ptys: { 'live-1': p } });
-    const attachment = h.call('pty:attach', 'live-1') as { epoch: number };
-    expect(p.listenerCount()).toBe(1);
-
-    h.call('pty:snapshot', 'live-1');
-    h.call('pty:snapshot', 'live-1');
-    expect(p.listenerCount()).toBe(1); // nothing subscribed, nothing unsubscribed
-
-    const before = h.pushed.length;
-    p.emit('a line the user is watching');
-    const sent = h.pushed.slice(before);
-    expect(sent).toHaveLength(1);
-    expect(sent[0].channel).toBe('pty:data:live-1');
-    expect(sent[0].payload).toEqual({ epoch: attachment.epoch, d: 'a line the user is watching' });
-  });
-});
 
 // ── the Session Bus wiring (P2-E11-03) ──────────────────────────────────────
 //
@@ -5739,9 +5247,17 @@ describe('sessions:create carrying a dispatch (P2-E13-03, §5.15)', () => {
     // `submitPrompt` needs a stream handle. Starting the session and finding out
     // afterwards leaves a live card with a role, a colour and no instruction —
     // which looks exactly like a dispatch that worked.
+    // Driven by an adapter asking for an UNIMPLEMENTED transport since #952 — the
+    // spawn is refused at the seam, which is the same "this card never started"
+    // outcome the dispatch guard has to survive. It used to be driven by putting
+    // the spawn on a PTY, which genuinely had no typed-message handle.
     const h = harness(undefined, dir, {
       dispatch: pending(),
-      preferredTransport: () => 'pty',
+      prior: {
+        id: 'card-1',
+        identity: { title: 'Security review of App', folder: dir, providerId: 'claude-code' },
+        transport: 'pty' as unknown as TransportKind,
+      } as PersistedSession,
     });
     await create(h);
     expect(h.created).toEqual([]);

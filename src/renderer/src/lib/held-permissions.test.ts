@@ -7,7 +7,6 @@ import {
   intakePermission,
   ledgerAdmits,
 } from './held-permissions';
-import { terminalHandoff } from './terminal-handoff';
 
 // A stand-in for the card's queue entries: only `sessionId` is load-bearing,
 // and the rule must carry the rest through untouched — a request is a question
@@ -198,62 +197,30 @@ describe('intakePermission — the card taking one request (issue 310)', () => {
   });
 });
 
-// …and the bar's own rule, restated against the state the intake now leaves
-// behind. `terminal-handoff.test.ts` owns `terminalHandoff` in full; this is the
-// JOIN — the one thing neither file could see on its own (#310).
-describe('the intake leaves no window the handoff bar can open in (issue 310)', () => {
-  it('an auto-allowed request never produces needs-permission with nothing held', () => {
-    const suppressed: boolean[] = [];
-    intakePermission(
-      {
-        requestId: 'stream:live-A:req-1',
-        sessionId: 'live-A',
-        cardId: 'card-1',
-        tool: 'Write',
-        input: {},
-      },
-      'card-1',
-      {
-        isAllowAll: () => true,
-        decide: () => {},
-        queue: () => {},
-        surface: () => {},
-        suppressHandoff: () => suppressed.push(true),
-      }
-    );
-
-    // main has already applied `permission-held`, so this is the status the
-    // card is sitting on when the intake runs, and nothing is queued
-    expect(
-      terminalHandoff({
-        status: 'needs-permission',
-        hasApproval: false,
-        startingLong: false,
-        recentlyDecided: suppressed.length > 0,
-        // NOT 'stream' on purpose: the transport prop is #261's fix, on another
-        // branch. If this passes with the transport unknown, the suppression is
-        // carrying it on its own — an independent guard, not a duplicate of one.
-        transport: undefined,
-      })
-    ).toBeNull();
-  });
-
-  // The PTY behaviour #125 exists for, asserted right beside it so a future
-  // edit to the intake cannot quietly take it away. A PTY session never reaches
-  // the auto-allow branch (its allow-all is answered at the server, so no
-  // request is pushed), and a CLI-kept prompt still gets its bar.
-  it('a PTY session with a CLI-kept prompt still gets the handoff bar', () => {
-    expect(
-      terminalHandoff({
-        status: 'needs-permission',
-        hasApproval: false,
-        startingLong: false,
-        recentlyDecided: false,
-        transport: 'pty',
-      })
-    ).toMatchObject({ title: 'handoff.permissionTitle', tone: 'permission' });
-  });
-});
+// ── THE #310 JOIN WENT WITH THE BAR (#952) ──────────────────────────────────
+//
+// This described the terminal-handoff bar's rule restated against the state the
+// intake leaves behind — the one thing neither file could see on its own. The
+// claim: an auto-allowed request must never leave a card sitting on
+// `needs-permission` with nothing held, because main applies `permission-held`
+// BEFORE the intake runs, and a card in that state with no queued approval is
+// exactly what the bar rendered on.
+//
+// ⚠️ `suppressHandoff` IS STILL CALLED AND STILL MATTERS, which is why this note
+// is longer than the code it replaces. It sets `recentlyDecided`, and the window
+// it closes is real on any transport: the decision pops the local queue
+// synchronously while `permission-resolved` only arrives after a full IPC round
+// trip, so for a frame or two the card is `needs-permission` with no approval
+// object. The bar was one consumer of that window; anything that renders off the
+// same pair will inherit it.
+//
+// The tests above still assert the intake's own behaviour — that an allow-all
+// request is answered without surfacing and without queueing.
+//
+// A second test sat beside it for the PTY behaviour #125 exists for — a PTY
+// session never reached the auto-allow branch, because its allow-all was
+// answered at the server and no request was pushed, and a CLI-kept prompt still
+// got its bar. Both halves went with their transport and their surface (#952).
 
 // #310 — the last piece of the intake a test could not reach.
 //

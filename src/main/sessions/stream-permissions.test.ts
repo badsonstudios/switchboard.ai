@@ -8,7 +8,7 @@ import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import { StreamPermissions } from './stream-permissions';
 import { SessionEvent, transition } from './state-machine';
 import { streamStatusEvent } from './stream-status';
-import { PermissionRequest } from '../hooks/hook-listener';
+import type { PermissionRequest } from '../../shared/ipc/permissions';
 import { FakeStreamProtocol } from '../providers/fake-stream-protocol';
 import { LogSink, createLogger, LogFields, Logger } from '../log/logger';
 
@@ -299,33 +299,24 @@ describe('the .claude/ case, end to end against the fake (P2-E18-07)', () => {
   });
 });
 
-// P2-E18-07 — the #127 stopgap, and why it must not fire in stream mode.
+// P2-E18-07 / #127 — a `.claude/` write is offered like any other.
 //
-// #127 made `shouldHoldPermission` DECLINE edit-family writes into
-// `<cwd>/.claude/`, because a hook's allow is discarded there and asking the
-// user a question whose answer the CLI throws away is worse than not asking.
-// Over `can_use_tool` the answer is NOT discarded (S-10 probe B), so the
-// carve-out must not apply — that reversal is the whole point of the epic.
-describe('the two channels do not both ask (P2-E18-07)', () => {
-  it('shouldHoldPermission still declines a .claude write — the PTY rule is unchanged', async () => {
-    const { shouldHoldPermission } = await import('../hooks/hook-listener');
-    const cwd = process.platform === 'win32' ? 'C:/proj' : '/proj';
-    const target = process.platform === 'win32' ? 'C:/proj/.claude/x.json' : '/proj/.claude/x.json';
-
-    expect(shouldHoldPermission('ask', 'Write', { file_path: target }, cwd)).toBe(false);
-  });
-
-  it('a normal write in the same session is still held', async () => {
-    const { shouldHoldPermission } = await import('../hooks/hook-listener');
-    const cwd = process.platform === 'win32' ? 'C:/proj' : '/proj';
-    const target = process.platform === 'win32' ? 'C:/proj/src/x.ts' : '/proj/src/x.ts';
-
-    expect(shouldHoldPermission('ask', 'Write', { file_path: target }, cwd)).toBe(true);
-  });
-
-  // The stream router has no such carve-out and must not grow one: it offers
-  // whatever the CLI delegates, and the CLI only delegates what it wants
-  // answered.
+// THE COMPARISON THIS SUITE WAS BUILT ON IS GONE (#952), and it is worth knowing
+// what it was. #127 made the HOOK path's `shouldHoldPermission` DECLINE
+// edit-family writes into `<cwd>/.claude/`, because a hook's allow is discarded
+// there — Claude Code applies a safety check above the permission layer that a
+// hook verdict does not satisfy — and asking the user a question whose answer the
+// CLI throws away is worse than not asking. Two tests here pinned that rule and
+// two pinned this router NOT having it; the pair was the epic's whole thesis in
+// four assertions.
+//
+// Over `can_use_tool` the answer is not discarded (S-10 probe B), so the carve-out
+// never applied here. With the hook path deleted there is no second channel to
+// contrast against, and `shouldHoldPermission` no longer exists to import — so
+// what is left is the half that was always the point: this router offers whatever
+// the CLI delegates, `.claude/` included, and it must never grow a carve-out of
+// its own. The CLI only delegates what it wants answered.
+describe('a .claude write is offered, not withheld (P2-E18-07, #127)', () => {
   it('the stream router offers a .claude write like any other', () => {
     perms.offer('s1', canUseTool('r', 'C:/proj/.claude/settings.json'));
     expect(requests).toHaveLength(1);

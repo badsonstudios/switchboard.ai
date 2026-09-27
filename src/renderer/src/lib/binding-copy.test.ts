@@ -73,52 +73,42 @@ describe('emptyStateCopy', () => {
 // on both transports, and it used to be printed on both. Reported by #418's
 // worker from `binding.spec.ts`: two honest strings composing into a lie, the
 // same defect class as #261's handoff bar one surface over.
-describe('the fail-open line follows the transport (#447)', () => {
+// #447 — the fail-open line. It used to FOLLOW THE TRANSPORT; there is one
+// transport since #952, so it is one line.
+describe('the fail-open line', () => {
   const fallback = (transport?: TransportKind): string | null =>
     emptyStateCopy('unbound', diag(), transport).fallback;
 
   it('only the problem state gets one at all', () => {
     // Nothing has gone wrong, so there is nothing to reassure anyone about —
     // and a reassurance under "No conversation yet" would invent an alarm.
-    for (const s of ['awaiting-prompt', 'searching', 'bound'] as const) {
-      expect(emptyStateCopy(s, diag(), 'pty').fallback).toBeNull();
-      expect(emptyStateCopy(s, diag(), 'stream').fallback).toBeNull();
+    for (const st of ['awaiting-prompt', 'searching', 'bound'] as const) {
+      expect(emptyStateCopy(st, diag(), 'stream').fallback).toBeNull();
     }
-    expect(emptyStateCopy('unbound', diag(), 'pty').fallback).toBeTruthy();
     expect(emptyStateCopy('unbound', diag(), 'stream').fallback).toBeTruthy();
   });
 
-  it('sends a PTY session to the Terminal, and a Direct session nowhere', () => {
-    expect(fallback('pty')).toBe('binding.unboundFallback');
+  // Two tests stood here: one pinned that a PTY session was sent to the Terminal
+  // and a Direct one nowhere, and one pinned that an UNRESOLVED transport
+  // defaulted to the Terminal wording — the safe default at the time, because the
+  // Direct line shown to a PTY user would have denied a terminal that was sitting
+  // right there with the session running in it.
+  //
+  // Neither risk exists now, and the unresolved case is the one that matters: a
+  // card restored from the workspace file renders this panel before its transport
+  // is known, and it must get the true line rather than a legacy one.
+  it('says the same true thing whether or not the transport is known yet', () => {
     expect(fallback('stream')).toBe('binding.unboundFallbackDirect');
-    expect(fallback('pty')).not.toBe(fallback('stream'));
-  });
-
-  it('defaults to the Terminal wording when the transport is not known yet', () => {
-    // The panel renders before `ctx.transport` has been resolved for a card
-    // restored from the workspace file. The PTY line is the safe default: it
-    // was the ONLY line for the whole of E15-10, and a Terminal tab that turns
-    // out to be a stream notice is a mild redundancy — where the Direct line
-    // shown to a PTY user would deny a terminal that is sitting right there,
-    // with the session running in it.
-    expect(fallback(undefined)).toBe('binding.unboundFallback');
+    expect(fallback(undefined)).toBe('binding.unboundFallbackDirect');
   });
 
   // The keys above are indirection; these two sentences are what a user reads,
   // and the bug was IN THE WORDS. Pin both.
   const strings = en.binding as Record<string, string>;
 
-  it('the PTY wording says the session is fine WITHOUT naming a place to go', () => {
-    // It used to read "The Terminal tab is unaffected — your session is still
-    // running there." That sentence named a destination, and #873 removed the
-    // destination — so it now says what is still true instead: the CLI is fine,
-    // and only this view of its conversation is missing.
-    expect(strings.unboundFallback).toBe(
-      'Your session is unaffected — it is still running, and only this view of its conversation is missing.'
-    );
-    expect(strings.unboundFallback.toLowerCase()).not.toContain('terminal');
-  });
-
+  // The PTY wording's own test went with the string (#952). It had already been
+  // rewritten once: it read "The Terminal tab is unaffected — your session is
+  // still running there", and #873 removed the destination it named.
   it('the Direct wording never sends anyone to a terminal that does not exist', () => {
     const direct = strings.unboundFallbackDirect;
     expect(direct).toBeTruthy();

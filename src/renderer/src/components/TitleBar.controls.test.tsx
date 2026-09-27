@@ -14,8 +14,8 @@
 // So this file states BOTH halves, and it has to be both:
 //
 //  • the eight are GONE — otherwise the fix could be reverted silently;
-//  • the five fast off-switches are STILL THERE — otherwise "I deleted the
-//    wrong one" is a green test. Burying labels, sounds, speak, auto-trust or
+//  • the remaining fast off-switches are STILL THERE — otherwise "I deleted the
+//    wrong one" is a green test. Burying labels, sounds, speak or
 //    notifications would break the very case they were made chips for (§5.11
 //    litmus #4: the person who needs it off needs it off NOW, mid screen-share,
 //    without hunting), and that would be a regression #885 CAUSED rather than a
@@ -60,9 +60,6 @@ async function bar(): Promise<void> {
         layoutMaximized={false}
         onCycleLayoutMode={noop}
         layoutBinding="Ctrl+Alt+L"
-        autoTrust={false}
-        trustReaches
-        onToggleTrust={noop}
         autoLabels
         onCycleLabels={noop}
         soundsOn={false}
@@ -111,13 +108,19 @@ const MOVED_TO_SETTINGS: ReadonlyArray<[string, string]> = [
   ['the experimental fork switch', en.titlebar.forkOff],
 ];
 
-/** Four of the five that stayed, by the `data-testid` each one carries. The
- *  fifth — notifications — has no testId and is checked by its words below. */
+/** Three of the four that stayed, by the `data-testid` each one carries. The
+ *  fourth — notifications — has no testId and is checked by its words below.
+ *
+ *  `folder trust` was a fifth until #952. It is NOT "buried into Settings", which
+ *  is what this list exists to catch — it is GONE, along with the setting behind
+ *  it, because nothing can ask the trust question on this transport and a switch
+ *  that can never do anything is worse than no switch. The distinction matters:
+ *  burying it would have been the regression #885 caused; removing the feature is
+ *  a decision, recorded in `docs/manual/10-settings.md`. */
 const FAST_OFF_SWITCHES: ReadonlyArray<[string, string]> = [
   ['task labels', 'auto-labels'],
   ['session sounds', 'session-sounds'],
   ['spoken announcements', 'speak-announcements'],
-  ['folder trust', 'auto-trust'],
 ];
 
 describe('the eight controls #885 moved into Settings', () => {

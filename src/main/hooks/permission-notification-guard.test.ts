@@ -1,26 +1,25 @@
-// #313 — a STREAM session's permission Notification never reaches the status.
+// #313 — a permission Notification never reaches the status.
 //
-// The sibling of `stream-hold-guard.test.ts`, and the other half of the same
-// ruling. P2-E18-07 stopped a stream session's `PreToolUse` being HELD, so
-// there is no second approval bar; it said nothing about the STATUS, and
-// `Notification` is the path that reaches it. `state-machine`'s Notification arm
-// transitions to `needs-permission` on a regex over the CLI's DEBOUNCED nudge —
-// no evidence anything is held, and no way for a pure function to know it is on
-// a transport with an exact signal. On stream every real permission arrives as
+// It was scoped to STREAM sessions and is UNCONDITIONAL since #952, because
+// every session is a stream session. The sibling file that held the other half
+// of the ruling (`stream-hold-guard.test.ts`, "a stream session's PreToolUse is
+// never held") went with the hold path itself: PreToolUse is no longer
+// registered at all, so there is nothing left to guard there.
+//
+// THIS HALF SURVIVES BECAUSE IT WAS NEVER ABOUT THE HOLD. `state-machine`'s
+// Notification arm transitions to `needs-permission` on a regex over the CLI's
+// DEBOUNCED nudge — no evidence anything is held, and no way for a pure function
+// to know a better signal exists. Every real permission arrives as
 // `can_use_tool` and is mapped precisely, so a Notification-driven
 // `needs-permission` is a duplicate at best and a false alarm at worst: the
 // nudge landing after the request was answered drags a working card back to
-// "needs permission" with nothing held and no bar to answer it with.
+// "needs permission" with nothing held and no bar to answer it with. The CLI
+// still sends the nudge; deleting a transport did not stop it.
 //
-// Suppressed at the PRODUCER — this listener already knows the transport — so
-// `transition()` stays pure and transport-free. Dropping the event is exactly
-// equivalent to not transitioning on it: `apply` does nothing with a hook event
-// but run it through `transition`, and a permission blob can only reach the two
-// `/permission/i` arms.
-//
-// UNMEASURED, as at `maybeHold`: nobody has confirmed the real CLI fires
-// Notification hooks at all under `--permission-prompt-tool stdio`. Correct
-// either way, but a guard, not a finding.
+// Suppressed at the PRODUCER so `transition()` stays pure. Dropping the event is
+// exactly equivalent to not transitioning on it: `apply` does nothing with a
+// hook event but run it through `transition`, and a permission blob can only
+// reach the two `/permission/i` arms.
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs';
 import http from 'http';
@@ -28,20 +27,17 @@ import { HookListener } from './hook-listener';
 import { LogSink, createLogger } from '../log/logger';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import { SessionEvent, isPermissionNotification, transition } from '../sessions/state-machine';
-import type { TransportKind } from '../../shared/transport';
 
 let dir: string;
 let listener: HookListener;
 let port: number;
 let applied: Array<{ sessionId: string; ev: SessionEvent }>;
 let nativeIds: string[];
-let transport: TransportKind | undefined;
 
 beforeEach(async () => {
   dir = tempDir('sb-sng-');
   applied = [];
   nativeIds = [];
-  transport = 'pty';
   listener = new HookListener({
     stateDir: dir,
     log: createLogger(new LogSink({ dir }), 'hooks'),
@@ -49,7 +45,6 @@ beforeEach(async () => {
       apply: (sessionId, ev) => applied.push({ sessionId, ev }),
       setNativeSessionId: (_id, nativeId) => nativeIds.push(nativeId),
     },
-    transportFor: () => transport,
   });
   port = await listener.start();
 });
@@ -107,23 +102,28 @@ const PERMISSION = {
 const events = (): string[] =>
   applied.map((a) => (a.ev.kind === 'hook' ? a.ev.event : a.ev.kind));
 
-describe('a permission Notification is dropped on a stream session (#313)', () => {
-  it('the identical event on a PTY session IS applied — the control case', async () => {
-    transport = 'pty';
-
-    await hook('s-pty', PERMISSION);
-
-    expect(applied).toHaveLength(1);
-    expect(applied[0].ev).toMatchObject({ kind: 'hook', event: 'Notification' });
-    // and it really would have moved the badge — otherwise the stream case
-    // below proves only that this payload was always inert
-    expect(transition('working', applied[0].ev).status).toBe('needs-permission');
+describe('a permission Notification is dropped (#313)', () => {
+  // THE CONTROL CASE, WITHOUT A CONTROL TRANSPORT TO RUN IT ON.
+  //
+  // This used to be two tests: the identical event on a PTY session WAS applied
+  // and really did move the badge, which is what stopped the stream case proving
+  // only that the payload was always inert. There is no second transport to
+  // compare against now, so the same guarantee is asserted directly — the payload
+  // would move a working card to `needs-permission` if it reached `transition`.
+  // Without this line, the drop test below could pass over a payload that never
+  // meant anything.
+  it('the payload really would move the badge if it got through', () => {
+    const ev: SessionEvent = {
+      kind: 'hook',
+      event: 'Notification',
+      notificationType: PERMISSION.notification_type,
+      message: PERMISSION.message,
+    };
+    expect(transition('working', ev).status).toBe('needs-permission');
   });
 
-  it('on a STREAM session it never reaches the manager', async () => {
-    transport = 'stream';
-
-    await hook('s-stream', PERMISSION);
+  it('it never reaches the manager', async () => {
+    await hook('s-1', PERMISSION);
 
     expect(applied).toEqual([]);
   });
@@ -134,8 +134,6 @@ describe('a permission Notification is dropped on a stream session (#313)', () =
   // that have no `can_use_tool` equivalent and are therefore the ONLY thing the
   // hook channel is still good for in stream mode.
   it('a non-permission Notification on the same session still gets through', async () => {
-    transport = 'stream';
-
     await hook('s-stream', {
       hook_event_name: 'Notification',
       notification_type: 'idle',
@@ -147,8 +145,6 @@ describe('a permission Notification is dropped on a stream session (#313)', () =
   });
 
   it('every other hook event on a stream session is untouched', async () => {
-    transport = 'stream';
-
     for (const event of ['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'SubagentStop', 'Stop']) {
       await hook('s-stream', { hook_event_name: event });
     }
@@ -166,8 +162,6 @@ describe('a permission Notification is dropped on a stream session (#313)', () =
   // the CLI's debounced nudge labels every on-screen dialog `permission_prompt`
   // and the specifics live in the message (probed — see `state-machine`).
   it('the message alone is enough to classify it', async () => {
-    transport = 'stream';
-
     await hook('s-stream', {
       hook_event_name: 'Notification',
       notification_type: 'generic',
@@ -177,23 +171,11 @@ describe('a permission Notification is dropped on a stream session (#313)', () =
     expect(applied).toEqual([]);
   });
 
-  // Absent = PTY, so every pre-E18 caller (hook-check, the unit suites, the app
-  // before the epic) behaves exactly as it always did.
-  it('an absent transport behaves as PTY', async () => {
-    transport = undefined;
-
-    await hook('s-legacy', PERMISSION);
-
-    expect(applied).toHaveLength(1);
-  });
-
   // The suppression is of the STATUS and of nothing else. `session_id` is
   // applied above the guard on purpose: a dropped Notification must not also
   // cost us the conversation id it happened to be carrying, which is what binds
   // the transcript to the card.
   it('the native session id is still learned from a dropped Notification', async () => {
-    transport = 'stream';
-
     await hook('s-stream', { ...PERMISSION, session_id: 'native-42' });
 
     expect(nativeIds).toEqual(['native-42']);

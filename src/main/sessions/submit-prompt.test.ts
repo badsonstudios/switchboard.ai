@@ -542,11 +542,18 @@ describe('SessionManager.submitPrompt (P2-E18-06)', () => {
     expect(mgr.transitions(rec.id).map((t) => t.cause)).toContain('prompt-sent');
   });
 
-  // The PTY needs composer.ts's bracketed paste + delayed CR, which is a
-  // different operation, not this one in different clothes.
-  it('returns FALSE on a PTY session so the caller can use the other route', () => {
+  // A TRANSPORT WHOSE HANDLE HAS NO `send`, which is what this always tested.
+  //
+  // It used to say "a PTY session" and drive it with `registryFor('pty')` — the
+  // PTY needed `composer.ts`'s bracketed paste plus a delayed CR, a different
+  // operation rather than this one in different clothes. #952 deleted that
+  // transport, but NOT the case: `TransportSession.send?` is still optional in
+  // the seam, deliberately, because a byte-only CLI is a thing §5.3's adapter
+  // contract admits. `ByteTransport` below is exactly that handle, and it is what
+  // the assertion was ever about.
+  it('returns FALSE when the handle cannot take typed messages', () => {
     const mgr = new SessionManager(
-      registryFor('pty'),
+      registryFor('stream'),
       new ByteTransport(),
       createLogger(new LogSink({ dir }), 'sessions'),
       dir
@@ -625,11 +632,14 @@ describe('interrupt (#154)', () => {
     expect(ids[0]).not.toBe(ids[1]);
   });
 
-  // The PTY's interrupt is an Esc keystroke — a genuinely different operation,
-  // so this reports "not mine" and the renderer falls back.
-  it('returns FALSE on a PTY session so the caller can send Esc instead', () => {
+  // Same case as `submitPrompt`'s above (#952): a handle with no `send`. The PTY's
+  // interrupt was an Esc keystroke — a genuinely different operation — and this
+  // reported "not mine" so the renderer could fall back. There is no fallback to
+  // fall back TO now, but `false` still has to mean "this did not happen", which
+  // is what `lib/composer.ts` reads to avoid claiming a stop that never landed.
+  it('returns FALSE when the handle cannot take typed messages', () => {
     const mgr = new SessionManager(
-      registryFor('pty'),
+      registryFor('stream'),
       new ByteTransport(),
       createLogger(new LogSink({ dir }), 'sessions'),
       dir

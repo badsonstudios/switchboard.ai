@@ -529,7 +529,7 @@ on those, run `claude` yourself in a terminal for that piece of work.
 
 ## Good to know
 
-- The Session tab is fully interactive; you never *have* to use the Terminal.
+- The Session tab is fully interactive; it is the only place a session is driven.
 - Very long prompts and skill payloads collapse to a summary — click the
   summary line to expand it, and click it again to fold it back. Once it's
   open, clicking the text itself does nothing, so you can select a line out of

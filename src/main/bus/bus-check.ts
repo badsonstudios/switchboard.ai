@@ -325,7 +325,12 @@ async function main(): Promise<void> {
   const bundle = fs.readFileSync(busServerPath(), 'utf8');
   check('the built child bundle does not require electron', !/require\(["']electron["']\)/.test(bundle));
   check('…and does not carry the session query core', !bundle.includes('SessionQueries'));
-  check('…and does not carry node-pty', !bundle.includes('node-pty'));
+  // `node-pty` was the canary here until #952 deleted it: a NATIVE module that
+  // could never load in a plain-node child, so its name appearing in this bundle
+  // meant the build had pulled main's world in. `node-pty` is gone, so the guard
+  // names what it was really about — the transport layer has no business in a
+  // child the agent's CLI spawns.
+  check('…and does not carry the transport layer', !bundle.includes('StreamService'));
 
   const child = spawnChild(sessionId, endpoint.pipePath, endpoint.tokenPath);
   const peer = new Peer(child);

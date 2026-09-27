@@ -93,7 +93,6 @@ import { collapsedRows, revealTargets } from './lib/ladder';
 import { GuardedRefresh, latestWins } from './lib/latest-wins';
 import { groupChangeLanded } from './lib/groups';
 import { interpretPushAnswer } from './lib/push-answer';
-import { trustSettingReaches } from './lib/trust-reach';
 import {
   cycleGlobal,
   cycleOverride,
@@ -627,12 +626,7 @@ export function App(): React.JSX.Element {
   }, []);
   const [preflightOk, setPreflightOk] = useState(true);
   const [cliVersion, setCliVersion] = useState<string | null>(null);
-  const [autoTrust, setAutoTrust] = useState(true);
-  // Can the trust setting change what any session does? (#397) Only the
-  // Terminal transport ever raises Claude Code's trust question, so an
-  // all-Direct workspace gets an inert chip that says why. The rule and the
-  // measurement behind it are in `lib/trust-reach.ts`.
-  const trustReaches = trustSettingReaches(sessions);
+  // Folder-trust state went with the title-bar chip (#952) — see `chrome.tsx`.
   const [autoLabels, setAutoLabels] = useState(true);
   // AI-written task labels (#758) — ON as of #883, matching the store.
   //
@@ -788,7 +782,6 @@ export function App(): React.JSX.Element {
     // first click then computes `!autoTrust` and writes the opposite of what
     // main actually holds. A refusal means we could not read the setting, and
     // the honest default for a setting we could not read is off.
-    void bridge.settings?.getAutoTrust?.().then((on) => setAutoTrust(took(on)));
     void bridge.settings?.getAutoLabels?.().then((on) => setAutoLabels(took(on)));
     // #758: `took` is doing real work here too. A refusal must read as OFF,
     // because off is what main assumes — and this is the one setting where a
@@ -2107,18 +2100,6 @@ export function App(): React.JSX.Element {
         layoutMaximized={layout.maximized !== null}
         onCycleLayoutMode={cycleLayoutMode}
         layoutBinding={layoutBindingLabel}
-        autoTrust={autoTrust}
-        trustReaches={trustReaches}
-        onToggleTrust={() => {
-          // Defence in depth (#397): the chip is already inert when the setting
-          // cannot reach a session, and this makes the WRITE impossible rather
-          // than merely unclicked — a stored preference must not change because
-          // something else found a way to fire this handler.
-          if (!trustReaches) return;
-          const next = !autoTrust;
-          setAutoTrust(next);
-          void bridge.settings?.setAutoTrust?.(next);
-        }}
         soundsOn={soundsOn}
         onToggleSounds={() => {
           const next = !soundsOn;

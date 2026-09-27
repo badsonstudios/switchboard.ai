@@ -259,24 +259,46 @@ switchboard's:
 That is the whole list. Use full-auto where you would be happy to hand someone
 else the keyboard for the length of the task.
 
-### The two smaller print items
+### What decides when you get asked
 
-- Under **ask** and **auto-edit**, switchboard also asks before Claude reads
-  files *outside* the session's folder — mirroring what Claude Code does on its
-  own.
-- Under **auto-edit**, switchboard is slightly *stricter* than Claude Code
-  would be on its own. Left alone, Claude Code's accept-edits mode also waves
-  through a handful of in-folder housekeeping commands — `mkdir`, `touch`,
-  `mv`, `cp`, `rm`, `sed` — and switchboard brings every shell command to you
-  instead. You will occasionally be asked about a `mkdir` you would not have
-  been asked about in a bare terminal. That is deliberate: being asked when you
-  expected not to be is a small surprise, and the other way round is not.
+**Claude Code does, and only Claude Code.** You are asked exactly what you would
+be asked running `claude` yourself in that folder on that mode — no more, no
+less. Switchboard chooses the mode and then presents the questions Claude Code
+decides to ask; it does not keep a list of its own.
+
+> **⚠️ This changed, and it changed in the direction of FEWER prompts.**
+> Switchboard used to keep its own table of which tools to stop for, because of
+> how the old approval mechanism worked — it saw every tool call and had to
+> decide for itself which ones deserved a person. That table was deliberately
+> *stricter* than Claude Code:
+>
+> - Under **auto-edit** it brought **every** shell command to you, including the
+>   in-folder housekeeping Claude Code's own accept-edits mode waves through —
+>   `mkdir`, `touch`, `mv`, `cp`, `rm`, `sed`. **You will no longer be asked
+>   about those.**
+> - Under **ask** and **auto-edit** it also asked before Claude read a file
+>   *outside* the session's folder. **That is now Claude Code's call too.**
+>
+> The old note here said being asked when you expected not to be is a small
+> surprise and the other way round is not — which is still true, and is why this
+> is called out rather than quietly dropped. If **auto-edit** felt right to you
+> partly because switchboard was adding that extra layer, **use ask instead**:
+> it stops for every tool call, and it is the mode that has not changed.
+>
+> Why it changed: the extra layer rode on a mechanism that also had a hole in it
+> — it could not answer some questions at all, and Claude Code asked you a second
+> time in the terminal when it tried. Removing the terminal removed both halves.
+> See [Direct mode](12-direct-mode.md).
 
 ## Good to know
 
-- **Plan mode never asks in-app, on purpose.** Approving in switchboard would
-  override Claude Code's own plan-mode write block, so plan sessions are left
-  entirely to the CLI's enforcement.
+- **Plan mode now asks in-app like every other mode.** It used to be the one
+  exception: approving in switchboard would have overridden Claude Code's own
+  plan-mode write block, so plan sessions were left entirely to the CLI. That is
+  no longer how answers reach Claude Code — an approval now goes *through* its
+  permission system rather than around it, so plan mode's write block stands
+  whatever you click, and there is no reason to leave you out of the loop. **Plan
+  mode is still read-only**; nothing you can click in switchboard makes it not.
 - **Nothing is ever auto-approved by switchboard.** The only thing that answers
   *allow* without showing you the question is **Allow all (this session)**, and
   that is you having answered it in advance. Everything else, if it can't reach

@@ -1,7 +1,11 @@
-// The folder-trust setting's REACH (#397), pinned end to end at the two seams
-// unit tests cannot reach (#488): the chip is inert while nothing in the
-// workspace will spawn on a terminal, and the `~/.claude.json` pre-write is
-// gated on that same condition.
+// SWITCHBOARD MUST NOT ACCEPT A FOLDER ON THE USER'S BEHALF (#397, #488, #952).
+//
+// This file pinned the folder-trust setting's REACH end to end at two seams unit
+// tests cannot reach: the chip was inert while nothing in the workspace would
+// spawn on a terminal, and the `~/.claude.json` pre-write was gated on that same
+// condition. #952 deleted the chip and the pre-write's only caller, so what is
+// left is the half that is a SECURITY claim rather than a UI one — and it is the
+// half that has to keep being true.
 //
 // Split out of `stream.spec.ts` by #626 (move-only). See that file's header for
 // the whole `stream*.spec.ts` family and what belongs where.
@@ -18,26 +22,11 @@ test.afterAll(async () => teardown());
 
 // #488 — the trust setting, pinned at the two seams unit tests cannot reach.
 //
-// TRANSPORT SCOPE: mixed. The first two tests are Direct (the default); the
-// third is `[pty]` by construction — it exists precisely to show the OTHER
-// answer, so it asks for the Terminal transport by env.
-//
-// #397 made the trust chip inert unless some card will spawn on the Terminal,
-// and gated the `~/.claude.json` pre-write on the same condition. Both halves
-// were unit-tested and both were still unpinned END TO END, which is a
-// different thing:
-//
-//  - `trust-reach.ts` is pure and thoroughly tested, but NOTHING asserted that
-//    `App.tsx` feeds it the real card list. Hard-coding `trustReaches={true}`
-//    left the whole suite green — the rule was right and the wiring was
-//    unmeasured, which is the #153 shape exactly (every part verified, the
-//    product broken).
-//
-//  - the pre-write's gate is covered at the ipc seam (`sessions/ipc.test.ts`),
-//    where `ensureTrusted` is a spy. A regression BELOW that seam — the gate
-//    dropped in `sessions/ipc.ts`, or `trust.ts` writing where it was told not
-//    to — would show up as a permanent edit to a real user's `~/.claude.json`
-//    and nothing would have failed.
+// The remaining test's argument, unchanged: the pre-write's gate is covered at
+// the ipc seam (`sessions/ipc.test.ts`), where `ensureTrusted` is a spy. A
+// regression BELOW that seam — `trust.ts` writing where it was told not to —
+// would show up as a permanent edit to a real user's `~/.claude.json` and nothing
+// would have failed. That is why this one is end to end.
 //
 // Both are zero-token: the fakes declare the same `trust` capability the real
 // provider does (`providers/fake.ts`, `providers/fake-stream.ts`, both routed
@@ -78,44 +67,14 @@ test.describe('the trust setting is honest about its reach (#397)', () => {
     return cfg.projects?.[folder.replace(/\\/g, '/')]?.hasTrustDialogAccepted === true;
   }
 
-  // HALF ONE: the wiring. `aria-disabled` and not `disabled`, because the chip
-  // stays findable while it is inert (`components/chrome.tsx`).
-  //
-  // ⚠️ THIS TEST LOST ITS STRONGEST PROPERTY (#873). It used to assert the
-  // TRANSITION — inert on an all-Direct workspace, awake the moment a card was
-  // switched to Terminal from its ⋯ menu — and it was deliberately one test and
-  // not two, because the transition is the half that cannot be faked: a
-  // hard-coded `true` failed the first assertion, a hard-coded `false` the
-  // second, and a chip wired to anything other than the live card list failed
-  // the second even so.
-  //
-  // The ⋯ switch is gone, so there is no way to move a card between transports
-  // while the app is running and nothing left to stage a transition with. What
-  // is asserted below is the inert state only. A chip hard-coded to
-  // `aria-disabled="true"` would now pass this test; `lib/trust-reach.test.ts`
-  // is what still pins the rule underneath it, including that a `pty` card
-  // makes it reach.
-  test('the trust chip is inert on an all-Direct workspace, and says why', async () => {
-    const folder = tempProjectFolder();
-    // the dual-capable fake so the card really is on Direct — with the PTY-only
-    // fake the session runs on a terminal by refusal, and this test is about
-    // the transport the card CHOSE, which is what the chip reads
-    a = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
-    const w = a.window;
-
-    // There is a card, and it is Direct. Asserting on an EMPTY workspace would
-    // pass for the wrong reason: an empty one is inert too.
-    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
-      timeout: 25_000,
-    });
-    const chip = w.getByTestId('auto-trust');
-    await expect(chip).toHaveAttribute('aria-disabled', 'true', { timeout: 15_000 });
-    // ...and it says WHY, which is the whole point of leaving it on screen. The
-    // wording changed with #873: it used to name the way out ("switch one to
-    // Terminal from its ⋯ menu"), and there is no way out left to name, so it
-    // explains the permanently-empty set instead.
-    await expect(chip).toHaveAttribute('title', /nothing can ask/i);
-  });
+  // The chip test went with the chip (#952). Its history is worth one line,
+  // because it kept losing strength and nobody re-read it: it originally asserted
+  // the TRANSITION — inert on an all-Direct workspace, awake the moment a card
+  // was switched to Terminal — which was the half that could not be faked. #873
+  // removed the ⋯ switch and it degraded to asserting the inert state alone, at
+  // which point a chip hard-coded to `aria-disabled="true"` would have passed it.
+  // **A test that can no longer distinguish the thing it is named after is worth
+  // deleting, not keeping green.**
 
   // HALF TWO, Direct lane: the folder is left alone.
   //
@@ -129,7 +88,7 @@ test.describe('the trust setting is honest about its reach (#397)', () => {
     a = await launchApp({
       home,
       seedFolder: folder,
-      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' },
     });
     const w = a.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
@@ -149,31 +108,17 @@ test.describe('the trust setting is honest about its reach (#397)', () => {
     expect(trustAccepted(home, folder)).toBe(false);
   });
 
-  // HALF TWO, pty lane: the same app, the same setting, the same folder — and
-  // the opposite answer, because here a prompt could actually happen. Without
-  // this the Direct assertion above would also be satisfied by a build that
-  // never trusts anything at all.
-  test('[pty] a Terminal spawn does write the trust acceptance', async () => {
-    const folder = tempProjectFolder();
-    const home = homeWithClaudeConfig();
-    a = await launchApp({
-      home,
-      seedFolder: folder,
-      // the ASKED-FOR transport is what the gate reads (`sessions/ipc.ts`),
-      // and this is the app-wide way to ask for the Terminal (#381)
-      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'pty' },
-    });
-    const w = a.window;
-    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
-      timeout: 25_000,
-    });
-
-    // and with a Terminal card in the workspace the chip is live — the same
-    // condition, read by the other half of #397
-    await expect(w.getByTestId('auto-trust')).not.toHaveAttribute('aria-disabled', 'true', {
-      timeout: 15_000,
-    });
-
-    await expect.poll(() => trustAccepted(home, folder), { timeout: 20_000 }).toBe(true);
-  });
+  // ⚠️ THE COUNTERPART WENT TOO, AND ITS ARGUMENT IS WHY THIS FILE STILL MATTERS.
+  //
+  // A `[pty]` test asserted the OPPOSITE answer — a Terminal spawn DID write the
+  // acceptance — and it existed because without it "we never wrote anything"
+  // above is also satisfied by a build that never trusts anything at all.
+  //
+  // A build that never trusts anything at all is now the intended state, so the
+  // counterpart cannot be rebuilt and the remaining assertion is weaker than it
+  // was. What keeps it honest is the seeded config: `homeWithClaudeConfig` writes
+  // a real `~/.claude.json` into the isolated home, because `ensureFolderTrusted`
+  // opens it FIRST and fails open on any error — so against a home with no config
+  // the write silently would not happen and this test would pass for the wrong
+  // reason. The file it reads is one it made.
 });

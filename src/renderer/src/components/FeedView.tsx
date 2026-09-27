@@ -26,7 +26,6 @@ import { findSurfaceKey, publishFindSurface, type FeedFindSurface } from '../lib
 import { clearFeedMarks, markFeedMatches, moveCurrentMark, sameFindQuery } from '../lib/feed-marks';
 import type { FindQuery } from '../extensibility/contributions';
 import { emptyStateCopy } from '../lib/binding-copy';
-import { terminalHandoff, TerminalHandoff, toneToken } from '../lib/terminal-handoff';
 import { ASK_USER_QUESTION_TOOL, parseAskUserQuestion } from '../../../shared/ask-user-question';
 import { QuestionPanel } from './QuestionPanel';
 import type { BindingDiagnostics, BindingState } from '../../../shared/transcripts';
@@ -320,7 +319,6 @@ export function FeedView(props: {
    *  it now, and the handoff bar drops its button when it is absent rather than
    *  offering a door to nowhere. Kept as a seam for whatever E18-11 decides a
    *  CLI-kept decision should route to. */
-  onJumpToTerminal?: () => void;
   /** composer options row data (E10-05) */
   autonomy?: string;
   model?: string;
@@ -366,20 +364,19 @@ export function FeedView(props: {
   const bottom = React.useRef<HTMLDivElement | null>(null);
   const pinned = React.useRef(true); // stick to the tail unless the user scrolls up
   const scroller = React.useRef<HTMLDivElement | null>(null);
-  // a session stuck in 'starting' usually means the CLI is showing a startup
-  // TUI dialog only the Terminal can render (e.g. 2.1.x's resume-from-summary
-  // picker â€” Dan round 4: it was invisible from the Session tab and his
-  // composer Enter blindly confirmed it). Hooks aren't up yet, so 'starting'
-  // that outlives a normal boot is the only signal we get.
-  const [startingLong, setStartingLong] = React.useState(false);
-  React.useEffect(() => {
-    if (props.status !== 'starting') {
-      setStartingLong(false);
-      return;
-    }
-    const id = setTimeout(() => setStartingLong(true), 8_000);
-    return () => clearTimeout(id);
-  }, [props.status]);
+  // ⚠️ THE `startingLong` SIGNAL WENT WITH THE HANDOFF BAR (#952), and its
+  // reason is worth recording because the hazard was real.
+  //
+  // A session stuck in 'starting' usually meant the CLI was showing a startup TUI
+  // dialog only a terminal could render — 2.1.x's resume-from-summary picker, in
+  // the case Dan hit: invisible from the Session tab, and his composer Enter
+  // blindly CONFIRMED it. Hooks were not up yet, so 'starting' outliving a normal
+  // boot (8s) was the only signal available, and the bar used it to say so.
+  //
+  // It cannot happen on this transport. S-10 measured that stream mode draws no
+  // startup dialog at all, which was the whole premise of that branch — and the
+  // startup path now reports readiness from `system:init` rather than inferring
+  // it from a timer.
   // Is the held request the CLI's own CHOOSER rather than a permission (#563)?
   //
   // Memoised on the request ID, not on the input object, and the memo is
@@ -401,30 +398,30 @@ export function FeedView(props: {
       approvalTool === ASK_USER_QUESTION_TOOL ? parseAskUserQuestion(approvalInput ?? {}) : null,
     [approvalId, approvalTool]
   );
-  // The CLI is waiting on something we are not allowed to answer for it â€” a
-  // decision it kept (P7), or one our hook path never saw. Rendered as a BAR
-  // above the composer (#125), not the 10px header chip it used to be.
-  const handoff = terminalHandoff({
-    status: props.status,
-    // The SAME predicate the approval bar renders on, deliberately written as
-    // one expression: if these two ever disagree, the user gets neither
-    // surface and is stranded with no affordance at all.
-    //
-    // â€¦OR the grouped prompt is showing it (P2-E9-11). The question the handoff
-    // bar answers is "does the user have somewhere to answer this?", not "is
-    // the bar below me drawing it": a batched request has a surface, it is just
-    // one card up in the shell. Without this clause a session whose only held
-    // request had been grouped would read "switchboard can't answer it, go to
-    // the Terminal" while its Allow button sat a few pixels away â€” #125's
-    // defect, one surface over.
-    hasApproval: !!(props.approval && props.onDecide) || !!props.approvalBatched,
-    // `startingLong` is cleared by an effect, so the first render that sees a
-    // new status still has the old flag â€” without this, one frame can paint
-    // the working banner and a "still starting" handoff together.
-    startingLong: props.status === 'starting' && startingLong,
-    recentlyDecided: !!props.recentlyDecided,
-    transport: props.transport,
-  });
+  // ── NO TERMINAL-HANDOFF BAR SINCE #952 ─────────────────────────────────────
+  //
+  // It said the CLI was waiting on something switchboard was not allowed to
+  // answer — a decision the CLI KEPT (P7) — and routed the user to the terminal,
+  // as a full-width bar above the composer (#125, after a 10px header chip that
+  // nobody ever saw).
+  //
+  // EVERY branch of it routed to the Terminal, so it had already returned null
+  // for stream sessions since #153's follow-up: on a transport with no terminal
+  // the bar was not merely unhelpful, it was FALSE and its button was dead. Dan
+  // hit that within minutes of the transport becoming switchable — a freshly
+  // restarted Direct session showing "Claude is showing a start-up dialog …
+  // appear only in the terminal" over an [Open Terminal] button, next to a
+  // Terminal tab that correctly said there was no terminal. Two surfaces in one
+  // window contradicting each other.
+  //
+  // ⚠️ THE QUESTION IT ANSWERED IS STILL OPEN, and deleting the bar does not
+  // close it: what should be said when the CLI keeps a decision for itself?
+  // Today it cannot — there is no TUI to keep one in, and the three states this
+  // bar drew (a CLI-kept permission prompt, the idle "waiting for your answer"
+  // nag, a start-up dialog) either cannot arise or arrive answerably over
+  // `can_use_tool`. §5.10 and P7's third line still require an honest answer if
+  // that changes, and **E18-11** owns it. Until then, silence beats sending
+  // someone to a place that does not exist.
 
   React.useEffect(() => {
     let cancelled = false;
@@ -1145,11 +1142,6 @@ export function FeedView(props: {
       {props.approval && props.onDecide && !askQuestions && (
         <ApprovalBar approval={props.approval} queued={props.approvalQueued ?? 0} onDecide={props.onDecide} />
       )}
-      {/* Docked in the SAME place as the approval bar, deliberately: this is
-          where the user's eyes already are for anything the session is waiting
-          on. `terminalHandoff` returns null while a held approval is showing,
-          so the two can never appear together. */}
-      {handoff && <TerminalHandoffBar handoff={handoff} onJump={props.onJumpToTerminal} />}
       <Composer
         // The saved draft is seeded ONCE, on mount (#485), so a Composer whose
         // card id changed under it would carry the old card's words onto the
@@ -1180,86 +1172,12 @@ export function FeedView(props: {
         // the one thing the fix genuinely took away â€” so the signal is passed
         // in explicitly rather than re-derived. A string, not an object: it is
         // an effect dependency, and a fresh object would re-measure every render.
-        dockedChrome={`${offTail}|${props.approval ? (askQuestions ? 'q' : 'a') : ''}|${handoff ? 'h' : ''}|${props.status ?? ''}`}
+        dockedChrome={`${offTail}|${props.approval ? (askQuestions ? 'q' : 'a') : ''}|${props.status ?? ''}`}
       />
     </div>
   );
 }
 
-/**
- * The CLI is waiting on a decision we may not answer for it (#125, P7 Â§6).
- *
- * Shaped like `ApprovalBar` on purpose â€” same dock, same weight, same tinted
- * left-to-right band â€” because the two answer the same user question ("what is
- * this session waiting for?") and only differ in who gets to answer it. The
- * previous version was a 10px chip in the header strip, which was invisible
- * next to a bar the user had been trained by every prior permission to look
- * for at the bottom.
- */
-function TerminalHandoffBar({
-  handoff,
-  onJump,
-}: {
-  handoff: TerminalHandoff;
-  onJump?: () => void;
-}): React.JSX.Element {
-  const { t } = useTranslation();
-  const hue = `var(${toneToken(handoff.tone)})`;
-  return (
-    <div
-      data-handoff={handoff.tone}
-      // its whole job is to announce a state change the user did not cause
-      role="status"
-      aria-live="polite"
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 12,
-        borderBlockStart: `2px solid ${hue}`,
-        background: `color-mix(in srgb, ${hue} 10%, var(--panel2))`,
-        paddingInline: 12,
-        paddingBlock: 9,
-        fontSize: 11.5,
-        fontFamily: 'var(--font-ui)',
-      }}
-    >
-      {/* `--text`, NOT the status hue or its `-ink` variant. tokens.css says the
-          --status-* hues are tuned for dots and rings, and on nordic â€” the
-          default theme â€” ink IS the hue, so ink on this hue-tinted background
-          measures 3.89:1: worse than the 10px chip this replaced, which used
-          --text. Colour carries the tone in the border and the tint; the words
-          stay at 8:1. (The working banner below does the same thing.) */}
-      <div style={{ flex: 1, minInlineSize: 0, color: 'var(--text)' }}>
-        <div style={{ fontWeight: 700, marginBlockEnd: 2 }}>{t(handoff.title)}</div>
-        <div style={{ lineHeight: 1.45 }}>{t(handoff.body)}</div>
-      </div>
-      {/* Only when there is somewhere to go (#873). The Terminal tab was the
-          only destination this button ever had; with it gone the caller passes
-          no `onJump`, and a button that looks like a way out but goes nowhere
-          is worse than no button — it is the dead-affordance failure #261 was
-          about, one surface over. */}
-      {onJump && (
-        <button
-          onClick={onJump}
-          style={{
-            background: 'var(--btn-primary-bg)',
-            color: 'var(--btn-primary-text)',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-chip)',
-            padding: '5px 14px',
-            cursor: 'pointer',
-            fontFamily: 'var(--font-ui)',
-            fontSize: 11.5,
-            fontWeight: 600,
-            flexShrink: 0,
-          }}
-        >
-          {t('handoff.jump')}
-        </button>
-      )}
-    </div>
-  );
-}
 
 /**
  * Inline approval bar (E10-04) â€” docked just above the composer (Dan's
@@ -1794,15 +1712,20 @@ function Composer({
   React.useEffect(() => {
     stashAttachments(cardId, attachments);
   }, [cardId, attachments]);
-  // A stream session takes typed messages and so can carry an image block; a
-  // PTY session takes KEYSTROKES, and there is no keystroke for a bitmap. The
-  // composer is otherwise deliberately transport-ignorant (`lib/composer.ts`),
-  // and this is the one thing it genuinely cannot discover by trying: the
-  // try-then-fall-back shape exists because both routes deliver the same
-  // thing, which stops being true here. Undefined â€” a session whose transport
-  // we have not been told â€” is treated as capable, because the send path
-  // reports a refusal honestly and guessing "no" would break the default.
-  const canAttach = transport !== 'pty';
+  // ALWAYS TRUE SINCE #952, and kept as a named constant rather than inlined.
+  //
+  // It was `transport !== 'pty'`: a stream session takes typed messages and can
+  // carry an image block, while a PTY session took KEYSTROKES, and there is no
+  // keystroke for a bitmap. The composer is otherwise deliberately
+  // transport-ignorant (`lib/composer.ts`), and attachment capability was the one
+  // thing it could not discover by TRYING: the try-then-fall-back shape worked
+  // because both routes delivered the same thing, which stopped being true here.
+  //
+  // The NAME stays because the capability is real and per-transport. §5.3's
+  // adapter contract admits a provider whose CLI cannot take an image, and this
+  // is the line that would have to consult it. Inlining `true` at the call site
+  // would delete the question along with the answer.
+  const canAttach = true;
 
   /**
    * Ctrl+V.
@@ -2575,14 +2498,25 @@ function Composer({
     // it is deliberately strict â€” bare commands only, because swallowing a
     // command addressed to the CLI is worse than the dead end it replaces.
     //
-    // ...AND ONLY ON A TRANSPORT WITH NO TERMINAL. A `pty` session HAS one, so
-    // the CLI's own picker works there â€” and it can do things this pane
-    // deliberately cannot, including approving a project server, which has no
-    // CLI verb at all. Intercepting it everywhere would take an interaction the
-    // CLI kept for itself in the one mode where it was reachable, which is the
-    // half of P7 the Â§6 amendment did NOT relax. Same test `canAttach` uses a
-    // few lines down, for the same reason: the transport decides.
-    const intercept = transport !== 'pty' ? interceptSlash(text) : { kind: 'send' as const };
+    // UNCONDITIONAL SINCE #952, and the P7 reasoning is why that is a change
+    // worth reading rather than a simplification.
+    //
+    // The intercept used to run ONLY on a transport with no terminal. A `pty`
+    // session HAD one, so the CLI's own picker worked there, and that picker can
+    // do things this pane deliberately cannot, including approving a project
+    // server, which has no CLI verb at all. Intercepting everywhere would have
+    // taken an interaction the CLI kept for itself in the one mode where it was
+    // reachable, which is the half of P7 the §6 amendment did NOT relax.
+    //
+    // There is now no mode where it is reachable. The picker needs a terminal and
+    // there is no terminal, so intercepting takes nothing away: the alternative is
+    // not "the CLI's own picker" but "a command that opens a picker nobody can
+    // see", which is the dead end #632 built this intercept to remove.
+    //
+    // THE GAP IT LEAVES IS REAL AND IS NOW PERMANENT rather than mode-specific:
+    // approving a project server has no CLI verb and no route inside the app.
+    // That belongs in the manual, not in a conditional.
+    const intercept = interceptSlash(text);
     if (intercept.kind === 'open-mcp') {
       sessionStore.notifyMcpOpenRequested();
       clearComposerDraft();
@@ -3238,17 +3172,15 @@ function Composer({
           model && (
             <span
               data-testid="composer-model"
-              // WHY it is not clickable, and only claimed when it is true. The
-              // Terminal sentence names a tab that exists only in Terminal mode
-              // — telling an ENDED Direct session to "type /model in its
-              // Terminal tab" would point at a tab it has never had. Anything
-              // that is not `pty` (a stopped session, a transport we have not
-              // resolved yet) gets the plain statement of fact instead.
-              title={
-                transport === 'pty'
-                  ? t('feedView.modelHintTerminal')
-                  : t('feedView.modelHintInactive')
-              }
+              // WHY it is not clickable, and only claimed when it is true.
+              //
+              // There were two sentences here until #952. The other one told the
+              // user to type `/model` in the session's Terminal tab, and it was
+              // conditional precisely because it named a tab that only existed in
+              // Terminal mode — saying it to an ENDED Direct session would have
+              // pointed at a tab it never had. No session has one now, so the
+              // plain statement of fact is the only true thing to say.
+              title={t('feedView.modelHintInactive')}
               style={{
                 fontFamily: 'var(--font-mono)',
                 fontSize: 9.5,

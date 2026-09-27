@@ -115,13 +115,19 @@ describe('packaging config (P2-E19-01)', () => {
     expect(pkg.version).toMatch(/^\d+\.\d+\.\d+/);
   });
 
-  it('unpacks node-pty from the asar', () => {
-    // THE assertion of this item. Windows cannot LoadLibrary a .node or .dll
-    // out of app.asar, and winpty spawns winpty-agent.exe as a real process
-    // from a real path — so a packaged app with node-pty inside the archive
-    // opens no terminals at all.
-    const unpack = config.asarUnpack as string[];
-    expect(unpack.some((p) => p.includes('node-pty'))).toBe(true);
+  it('unpacks NOTHING from the asar — there is no native code to unpack (#952)', () => {
+    // This was THE assertion of P2-E19-01: Windows cannot LoadLibrary a `.node`
+    // or `.dll` out of app.asar, and winpty spawned `winpty-agent.exe` as a real
+    // process from a real path — so a packaged app with node-pty inside the
+    // archive opened no terminals at all.
+    //
+    // node-pty was the only native dependency and it is gone. `asarUnpack` is
+    // therefore absent, and asserting its ABSENCE is worth as much as asserting
+    // its contents used to be: if a native module comes back without one, the
+    // packaged app fails at runtime on Windows with "failed to load native
+    // module", which is exactly the class of bug no unit test and no dev run
+    // reaches.
+    expect(config.asarUnpack).toBeUndefined();
   });
 
   it('ships an icon that exists and is a real .ico with a 256px entry', () => {
@@ -240,10 +246,29 @@ describe('the node_modules allowlist covers what the main-process bundle imports
   const shipped = (dep: string) =>
     files.some((p) => !p.startsWith('!') && p.startsWith(`node_modules/${dep}/`));
 
-  it('finds runtime deps at all (guards against the guard passing on an empty list)', () => {
-    // node-pty is the whole reason this file exists; if the scan stops seeing
-    // it, the scan is broken, not the config.
-    expect(runtimeDeps).toContain('node-pty');
+  // ⚠️ THE LIST IS LEGITIMATELY EMPTY NOW, WHICH IS EXACTLY WHAT THIS GUARD WAS
+  // BUILT TO DISTINGUISH FROM A BROKEN SCAN (#952).
+  //
+  // It used to assert `runtimeDeps` contained `node-pty` — "the whole reason this
+  // file exists; if the scan stops seeing it, the scan is broken, not the config".
+  // node-pty is gone, the app ships no native module, and nothing in main or
+  // preload `require()`s a bare specifier at runtime any more. So an empty list is
+  // the truth, and the old assertion would now fail on a working scan.
+  //
+  // Replaced with a check on the SCAN rather than on its result: the import walk
+  // must still be finding imports at all. If `imported` is empty the scan is
+  // broken; if it is non-empty and `runtimeDeps` is empty, the app genuinely has
+  // no external runtime dependency — and `electron-builder.js`'s allowlist says
+  // the same thing, which is the pair this file exists to keep honest.
+  it('the import scan is really walking the bundles (not silently finding nothing)', () => {
+    expect(imported.size).toBeGreaterThan(0);
+  });
+
+  it('records that the app ships no external runtime dependency', () => {
+    // A deliberate claim, not an accident: add one to main/preload/shared without
+    // listing it in `electron-builder.js` and the test below goes red. This line
+    // is what makes an empty allowlist readable as a decision.
+    expect(runtimeDeps).toEqual([]);
   });
 
   it('every runtime dependency of main/preload is in the packaged files list', () => {

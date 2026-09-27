@@ -3,7 +3,10 @@
 // per-session token), the UI answers, the verdict comes back in the hook
 // response. No mocks between the bar and the wire.
 //
-// TRANSPORT SCOPE (P2-E18-18, #404): `[pty]` for the whole group. The loop
+// TRANSPORT SCOPE — HISTORICAL (P2-E18-18, #404; retagged by #952, which
+// left one transport, so a `[pty]` tag names nothing). The note below is the
+// reasoning as it stood, kept because it says what each test actually drives:
+// // TRANSPORT SCOPE (P2-E18-18, #404): `[pty]` for the whole group. The loop
 // these tests drive is the HOOK-HOLD path, and a Direct session bypasses it
 // outright — `hook-listener.ts` passes `PreToolUse` straight through for a
 // stream session, because on that transport a permission arrives as a
@@ -73,7 +76,7 @@ function parseVerdict(body: string): HookResponse {
   return JSON.parse(body) as HookResponse;
 }
 
-test.describe('[pty] inline approval bar (E10-04)', () => {
+test.describe('inline approval bar (E10-04)', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
 

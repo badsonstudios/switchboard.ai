@@ -63,7 +63,7 @@ actually serve it.
 
 | Point | Contract | Registered today |
 |---|---|---|
-| `provider-adapter` | `ProviderAdapter` | [`claudeAdapter`](../src/main/providers/claude.ts) — real; [`fakeAdapter`](../src/main/providers/fake.ts) and [`fakeStreamAdapter`](../src/main/providers/fake-stream.ts) — test doubles, one per transport. All three claim the id `claude-code` and exactly one is ever registered (see below) |
+| `provider-adapter` | `ProviderAdapter` | [`claudeAdapter`](../src/main/providers/claude.ts) — real; [`fakeStreamAdapter`](../src/main/providers/fake-stream.ts) — the test double. Both claim the id `claude-code` and exactly one is ever registered (see below). There were two doubles, one per transport, until #952 deleted the PTY one along with its transport |
 
 **Renderer** — [`RendererContributions`](../src/renderer/src/extensibility/contributions.ts):
 
@@ -565,8 +565,6 @@ because every hit was one of these deliberate seams.
 | `sessions.read` | list cards, statuses, pending permissions |
 | `sessions.spawn` | create / resume / close — **starts processes** |
 | `sessions.write` | rename, task label, autonomy, permission decisions |
-| `pty.read` | attach to a terminal's output stream, or read its scrollback. (It fed §5.31's Terminal find group until #873 unregistered that provider along with the Terminal tab; the capability, and the code behind it, remain) |
-| `pty.write` | send keystrokes to a running CLI |
 | `transcripts.read` | conversation blocks, and **searching the transcript file** (§5.31) |
 | `git.read` | status and file versions |
 | `events.read` / `.write` | the attention feed; write is ack/dismiss |
@@ -661,11 +659,15 @@ is one — and those sit outside the vocabulary entirely.
 
 Main's `registry` is a singleton for the app, but `ContributionRegistry` is a plain
 class and standalone tooling constructs its own — see
-[hook-check.ts](../src/main/hooks/hook-check.ts), a CLI check that builds
-a private registry, registers the Claude adapter, and drives a `SessionManager`
+[adapter-check.ts](../src/main/providers/adapter-check.ts), a CLI check that
+builds a private registry, registers the Claude adapter, and drives the adapter
 outside Electron. Keep `SessionManager` (and anything like it) taking a registry
 as a constructor argument rather than reaching for the singleton, or that stops
 working.
+
+*(The example used to be `hook-check.ts`, which drove a whole `SessionManager`
+this way. It went with the PTY transport in #952 — it spawned a real interactive
+session in a real terminal — but the pattern it demonstrated is unchanged.)*
 
 ## Known gaps — the 2026-07-26 architecture review
 

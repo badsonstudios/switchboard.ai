@@ -3,6 +3,38 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔨 IN PROGRESS — 2026-09-26: **#952 — E18-16 (filed as E18-11), delete the PTY stack**
+>
+> First of three items the owner queued back-to-back: **#952 → #972 → #967**, each
+> end-to-end via `/next-item`, no stop between them.
+>
+> **THE OWNER ASKED FOR THE ORDER TO BE VERIFIED BEFORE IT WAS TRUSTED, AND IT
+> VERIFIES.** His claim: DESIGN §5.16's hook path IS the PTY transport's approval
+> path, so deleting the PTY leaves E22 one transport to satisfy instead of two.
+> Checked against the code: `hook-listener.ts:796` — `maybeHold` returns `'pass'`
+> unconditionally when `transportFor(sessionId) === 'stream'`, measured live by the
+> #404 probe, not precautionary. Stream has been the default since #381 and the only
+> UI-reachable transport since #873, so after this item no session is PTY and the
+> entire hook hold subsystem is unreachable. **One correction to his reasoning,
+> recorded because it changes which later item benefits:** the shrink lands on
+> **#973/#974**, not #972. `shared/ipc/permissions.ts` already declares ONE
+> `PermissionRequest` shape for both transports and the card deliberately does not
+> branch, so #972's renderer work is the same either way. #973 is where it bites —
+> `verdict(decision, reason?)` would otherwise be a second place to thread a deny
+> message through.
+>
+> **The issue mis-cites its own spec.** #952 is titled `P2-E18-11` and says "the
+> E18-11 block". E18-11 is *plan mode, `ExitPlanMode` and `AskUserQuestion`* and is
+> still half-unmeasured; the gate text and the deletion list #952 quotes live under
+> **E18-16** (`05-transport-migration.md:525`). Working to E18-16; noted on the issue.
+>
+> **`shouldHoldPermission` has exactly one caller** (`maybeHold`) and
+> `StreamPermissions` has its own independent hold machinery, so removing the hook
+> approval path is self-contained and is a pure deletion of unreachable code, not a
+> behaviour change. **E18-15 (retire the hook listener) is NOT in scope** — that is
+> the HTTP server, the forwarder and the token files, and it needs `hook_callback` to
+> replace status events first. This item becomes its unblocker.
+
 > # 🧭 SCOPE CALL TAKEN — 2026-09-26: **Phase 2's endgame is decided. Next work item is #972.**
 >
 > `/pm` triage + the scope call the last entry asked for. **No code changed**; this

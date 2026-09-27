@@ -123,18 +123,28 @@ export class SessionManager {
 
   constructor(
     private readonly registry: ContributionRegistry<MainContributions>,
-    ptys: SessionTransport,
+    /**
+     * The default transport, positional because every caller passes one.
+     *
+     * It was `ptys: SessionTransport` and keyed `pty` until #952 deleted the PTY
+     * transport. It is now the STREAM service, and the parameter stayed
+     * positional rather than folding into the map below for one reason: the seam
+     * is what §5.3 promises a second provider, and a `SessionManager` that takes
+     * its only transport as an optional map entry would read as though having one
+     * at all were negotiable.
+     */
+    transport: SessionTransport,
     private readonly log: Logger,
     private readonly stateDir: string,
     /**
-     * Transports beyond the PTY (P2-E18-02). Empty today — `StreamService`
-     * registers here in P2-E18-03. Optional and last so every existing call
-     * site is unchanged; the PTY stays positional because it is the default
-     * and every caller already passes it.
+     * Transports beyond the default (P2-E18-02). Empty again, and for a better
+     * reason than the first time: E18 ended with ONE transport rather than two,
+     * so this is the seam §5.3's adapter contract needs for a second provider,
+     * not a staging area for a migration in progress.
      */
     extraTransports?: TransportMap
   ) {
-    this.transports = { pty: ptys, ...extraTransports };
+    this.transports = { stream: transport, ...extraTransports };
     // The outbound control channel (#721). Built HERE rather than in
     // `main/index.ts` because its port is exactly two methods this class
     // already owns — `sendToTransport` (which answers false for a PTY, and is
