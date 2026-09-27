@@ -205,16 +205,17 @@ test.describe('inline approval bar (E10-04)', () => {
   // a 10px chip in the top-left header strip while the user stared at the
   // bottom, where every permission they had ever answered appeared.
   //
-  // THE GROUP'S `[pty]` IS AT ITS SHARPEST HERE. Everywhere else in this file
-  // it means "Direct takes a different route to the same place"; here it means
-  // the Direct behaviour is the exact OPPOSITE of what this test pins. The
-  // same `Notification` is deliberately DROPPED for a stream session (#313,
-  // `hook-listener.ts`) — with permissions riding `can_use_tool`, a debounced
-  // nudge with nothing held is a false alarm, and there is no terminal to send
-  // anyone to. That inverse is pinned by
-  // `stream-permissions.spec.ts` → "a hook Notification cannot fake a permission
-  // on Direct (#313)". Read the two
-  // together or each looks like a bug in the other.
+  // THE `[pty]` NOTE THAT USED TO STAND HERE SAID THIS WAS THE TAG AT ITS SHARPEST,
+  // and it was right: everywhere else in this file the tag meant "Direct takes a
+  // different route to the same place", and here the Direct behaviour was the exact
+  // OPPOSITE of what the test pinned. The same `Notification` is deliberately DROPPED
+  // for a stream session (#313, `hook-listener.ts`) — with permissions riding
+  // `can_use_tool`, a debounced nudge with nothing held is a false alarm, and there is
+  // no terminal to send anyone to.
+  //
+  // #952 settled it by leaving one transport, so the dropped path is the ONLY path and
+  // the inverse is the whole truth. It is pinned by `stream-permissions.spec.ts` → "a
+  // hook Notification cannot fake a permission on Direct (#313)".
   // ── "A PERMISSION THE CLI KEPT GETS A FULL BAR (#125)" — REMOVED (#952) ────
   //
   // It drove a permission `Notification` and asserted the terminal-handoff bar:

@@ -13,17 +13,15 @@
 // `fake-stream-protocol.ts`), so every assertion below reads what reached "the
 // CLI" rather than what the panel believed it sent.
 //
-// NO `SWITCHBOARD_TRANSPORT` in the Direct tests, deliberately — Direct is the
-// default since #381 and a spec about the default must not name it, or it would
-// keep passing on the day the default moved.
+// NO `SWITCHBOARD_TRANSPORT` ANYWHERE, deliberately — Direct was the default since
+// #381 and is the only transport since #952, and a spec about the default must not
+// name it.
 //
-// TRANSPORT SCOPE (P2-E18-18, #404; tag added by #639): SPLIT BY GROUP. The
-// first `describe` is Direct — the panel only exists on that transport, and it
-// is the default, so its green is the coverage that counts. The second is
-// `[pty]` by construction: it asks for the terminal by env and asserts the
-// panel is NOT drawn, having first proved it really is on a PTY. That group
-// went untagged until #639; the rule it now follows lives with `launchApp` in
-// `fixtures/app.ts`.
+// TRANSPORT SCOPE — THERE IS NO SPLIT LEFT (was P2-E18-18 / #404, tag added by
+// #639). This file used to have two groups: a Direct one, where the question panel
+// exists, and a `[pty]` one that asked for the terminal by env and asserted the panel
+// is NOT drawn, having first proved it really was on a PTY. The second group went with
+// the transport — see the note further down where it stood.
 import { test, expect, Page } from '@playwright/test';
 import path from 'path';
 import { launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';

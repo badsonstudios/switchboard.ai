@@ -84,8 +84,13 @@ thing you'd do by hand, and they work the same in either mode.
   panel. Neither needs a terminal any more.
 - **Everything else is passed straight through.** A command switchboard has no
   panel for is sent to Claude Code exactly as you typed it, and Claude Code
-  answers it however it normally would. Commands it answers itself — `/usage`,
-  `/cost`, `/context` — show their output in the Session view.
+  answers it however it normally would.
+- **⚠️ Commands Claude Code answers ITSELF don't show you their answer right now.**
+  `/usage`, `/cost` and `/context` are worked out locally rather than by asking the
+  model, and their output is not currently making it onto the Session view — you see
+  the command you typed and then nothing. The command really did run; only the reply
+  is missing. This is a known gap and it is being worked on. Until it is fixed, run
+  those three in a terminal outside switchboard if you need the numbers.
 - **Clear and Compact are greyed out while a session is still starting, or
   once it has ended** — with a note saying which. That's true of both the
   buttons and the ⋯ menu; they're the same two actions, so they're unavailable

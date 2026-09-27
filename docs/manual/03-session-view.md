@@ -406,12 +406,23 @@ Then the caption adds a short code so you can still tell them apart:
 The code is just an identifier; it means nothing on its own, and it only shows
 up when there's an actual clash.
 
-**Two things worth knowing:**
+**⚠️ Right now you will not see any of this, and that is a known gap.**
 
-- Sub-agent work doesn't appear in the conversation yet — that's still to come.
-- A conversation recorded by an older version of Claude Code may show the
-  indented work with a plain **Subagent** caption and no name. There is nothing
-  wrong; that recording simply doesn't say who was speaking.
+The captions and the indenting are built and they work; what is missing is the
+helpers' work reaching the conversation at all. Until recently switchboard picked it
+up from the files Claude Code writes to disk, and it now reads the conversation
+straight from Claude Code instead — which is faster and more accurate for everything
+else, but does not yet carry what the helpers said. So a session that delegates work
+shows a quiet gap where their part should be, and then carries on with the main
+reply.
+
+Nothing is lost: Claude Code still records all of it, and the main session's summary
+of what its helpers found is unaffected. The description above is what you will see
+again once this is reconnected, which is being worked on now.
+
+One more thing, for when it is back: a conversation recorded by an older version of
+Claude Code may show the indented work with a plain **Subagent** caption and no name.
+There is nothing wrong; that recording simply doesn't say who was speaking.
 
 Set the detail level to **quiet** if you'd rather not see helper chatter at
 all — it hides their work along with the captions.

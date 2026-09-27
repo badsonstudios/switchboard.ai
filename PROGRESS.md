@@ -3,71 +3,115 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ⛔ BLOCKED — 2026-09-26: **#952 is code-complete and CANNOT MERGE. 54 e2e tests
-> fail, and clearing them is E18-14's deferred scope. A SCOPE CALL IS NEEDED.**
+> # ✅ RESOLVED — 2026-09-27: **the 54 e2e failures are cleared. #952's PR is green
+> and merging. The owner chose option (a) — port them inside the item.**
 >
-> PR **#976** is open, red, and must not be merged. Three commits on
-> `feature/952-delete-pty-stack`. **Unit (9,255), lint and all three typechecks are
-> genuinely green; `npm run e2e` is 306 passed / 54 FAILED across 23 spec files.**
+> He was asked the scope question and answered it twice, and the second answer is the
+> operative one: *"I don't mean change the tests so they work now. I mean fix the issue
+> causing the tests to fail."* **So the governing constraint was: no assertion may be
+> weakened to match new behaviour.** Everything below is measured against that.
 >
-> **⚠️ FIRST, THE PROCESS FAILURE, BECAUSE IT IS THE REASON THIS WAS REPORTED GREEN
-> TWICE.** Both earlier e2e runs were piped through `tail -25`. Playwright's
-> summary prints the failure list, then `N failed`, then `N passed` — so `tail`
-> showed "306 passed" with the `54 failed` line one screen above the window, and
-> a grep for "failed" over the truncated file found nothing. **A verification gate
-> whose output cannot be seen in full is not a gate.** CI caught it. Capture a
-> 30-minute suite to a FILE and read the whole summary; never `tail` it.
+> **THERE WAS NO PRODUCT BUG BEHIND ANY OF THE 54.** Checked before porting a line:
+> resumed history arrives intact via `replayResumedHistory` → `streamFeed.hydrate`;
+> allow-all, deny, queueing, batching and crash-release all have passing stream-lane
+> specs already. The four non-obvious failures (theme, terminal-accelerators,
+> events-drawer, focus-policy) all traced to the same two dead stimuli. Proved
+> empirically rather than argued: `events-drawer.spec.ts` went 10/12 → 12/12 with every
+> assertion — counts, the `data-hottest` tint, the aria-label, status-bar agreement,
+> header geometry — untouched.
 >
-> **THE REAL CAUSE, AND IT IS NOT ENVIRONMENTAL.** The entire e2e suite was
-> running PTY sessions and nobody had noticed, because the chain was invisible:
-> `SWITCHBOARD_FAKE_PROVIDER=1` selected the shell-in-a-PTY fake, whose recipe
-> declared NO transport, so `DEFAULT_TRANSPORT` (`'pty'` at the time) gave every
-> session `record.transport === 'pty'`. Two harness mechanisms depended on that
-> and both are now dead:
+> **WHAT REPLACED THE TWO DEAD STIMULI.** `hookPoster` + `PreToolUse` →
+> `streamPrompter` and a real `can_use_tool`, through four new fixtures
+> (`permissionHolder`, `permissionHolderBash`, `permissionHolderEdit`,
+> `answerHeldPermissions`) and two new fake verbs (`!permbash` carries a command
+> verbatim, `!permedit` an old/new pair — both because the payload SHAPE is what those
+> specs assert). Seeded JSONL → the fake's own turn: it mirrors what it emits into a
+> real transcript exactly as the CLI does in stream mode, so one prompt gives both the
+> Feed blocks and a transcript the watcher can claim.
 >
-> 1. **Hook-driven permissions (~25 failures).** `hookPoster` POSTs a `PreToolUse`
->    hook and the spec asserts the approval bar. That was the hold path; the bar
->    never appears, so `getByText('Allow Edit?')` finds nothing. Hit
->    `approval` (6), `attention` (4), `batch-approval`, `a11y-keyboard`, `ladder`,
->    `layout-modes`, `presentation-policy`, `quiet-hours`, `rules`, `urgency`,
->    `permission-toast`, `focus-policy`, `events-drawer`.
-> 2. **Transcript-derived Feed blocks (~29 failures).** Specs seed JSONL and expect
->    the watcher to build Feed blocks. `deriveFeed` was `record.transport !==
->    'stream'`, so it was TRUE only for those PTY-faked sessions; it is
->    unconditionally false now and the Feed comes from typed messages alone. Hit
->    `feed` (13), `find` (3), `binding`, `task-label`, `slash-commands`,
->    `feed-restore-position`, `theme`, `sounds`, `stream-trust`,
->    `terminal-accelerators`.
+> **⭐ AND IT FOUND TWO THINGS NOBODY HAD LISTED, WHICH IS THE ARGUMENT FOR OPTION (a).**
+> Both are user-visible, both were invisible from the issue, and both are now filed,
+> in the manual, in the CHANGELOG and in the dogfood tracker:
 >
-> **⭐ AND THE RETAGGING WAS WRONG, WHICH IS THE ONE JUDGEMENT TO OVERTURN.** The
-> `[pty]` tags on those groups were ACCURATE — they named a real dependency on the
-> transport, not a stale label. I read them as rot because #639 and #873 had rotted
-> two of them, sampled three spec files, saw 36/38 pass, and generalised. **A
-> sample is not a suite, and "this label rotted before" is not evidence that it is
-> rotten now.**
+> - **#977 — subagent captions are GONE, and this is a REGRESSION.** #788 shipped
+>   captioned, separated subagent runs (`Subagent · digger · aaaaaa`); every bit of it
+>   was fed by the transcript watcher adopting `<native-id>/subagents/agent-<id>.jsonl`,
+>   which only ever ran for a PTY session. `StreamFeed` drops sidechain traffic on
+>   purpose (`parent_tool_use_id != null` returns early in both `onStreamEvent` and
+>   `onMessage`) because interleaving a subagent's tokens into the main conversation
+>   would be worse. **The renderer is intact and unit-tested. Nothing feeds it.** That
+>   makes **E18-13 load-bearing for a feature that already shipped**, not for one that
+>   never did — and E18-13 was unfiled, so it is now #977.
+> - **#978 — `/usage`, `/cost`, `/context` show no answer.** `system:local_command` is a
+>   transcript line and appears to have no stream-json equivalent. #156 fixed this once,
+>   on the path that no longer exists. Needs measuring against the PATH CLI before it
+>   needs designing; the fallback (read that one line type from the transcript we
+>   already watch) is a narrow re-opening of transcript-as-feed-source and has to be
+>   argued, not done quietly.
 >
-> **THE SCOPE CALL, WHICH IS DAN'S:** clearing these is **E18-14**'s deferred
-> backlog — #416 ported 11 tests in 3 files and deliberately deferred the rest with
-> a named priority list, on the reasoning that Direct had no UI witness yet. Three
-> ways forward:
+> Both e2e tests are `test.fixme` against those numbers **with their fixtures left
+> intact** — they are the tree's only record of what the CLI actually writes (#978's
+> three lines are verbatim from a real transcript; #977's layout was measured over 3,214
+> transcripts, where `isSidechain: true` appears zero times in a parent file).
 >
-> - **(a) Port them inside #952.** ~54 tests, two stimulus rewrites: `hookPoster`
->   → `streamPrompter` + `!perm` (the pattern already applied to `rail.spec.ts`
->   in this branch, which is green), and seeded JSONL → fake-stream messages.
->   Large, and it makes an already-XL item bigger.
-> - **(b) Split.** Land the source deletion behind a spec-port follow-up. Needs a
->   decision about main being red-in-e2e meanwhile, which the merge-on-green rule
->   forbids — so in practice this means #952 waits.
-> - **(c) Delete the coverage.** Cheapest, and it discards real verification of
->   the approval bar, the attention queue and the Feed. **Not recommended**, and
->   not a call to make quietly.
+> **WHAT WAS DELETED RATHER THAN PORTED, and why each one is not a loss:** the `[pty]`
+> `/clear` test (`stream-feed.spec.ts` asserts the same marker and the same wipe, plus
+> #748's resumed case it could never have caught) · `binding.spec.ts`'s Direct group
+> (the `unbound` arm was the only transport difference and `binding-copy.ts` has one
+> fail-open line now; #447's claim moved into the arm that used to make the PTY
+> assertion) · `feed-restore-position.spec.ts`'s PTY sibling (same test as the Direct
+> one, seeding 61 hand-written lines to reach a state the sibling reaches with one
+> `!bulk`) · `feed.spec.ts`'s #174 walk stayed and was ported, because it asserts a ring
+> width, the hint copy and the walk INTO the Bash IN/OUT that the stream-lane twin does
+> not.
 >
-> **Recommendation: (a).** The mechanism is proven — `rail.spec.ts`'s two tests
-> were ported this way and pass — and the alternative leaves E18 claiming an exit
-> it has not earned.
+> **TWO ASSERTIONS WERE REMOVED BECAUSE THEY COULD NO LONGER FAIL, which is the
+> opposite of loosening one.** `stream-trust.spec.ts` read the folder-trust chip to rule
+> out "the folder was left alone because auto-trust was OFF" — there is no such setting
+> now, so nothing was left to rule out; the seeded `~/.claude.json` is what keeps that
+> test honest. And `batch-approval.spec.ts` asserted `[data-handoff="permission"]` count
+> 0 — that bar is deleted, so the line was cover rather than coverage.
+>
+> **ONE ASSERTION MOVED TO A STRONGER STATE.** `task-label.spec.ts` expected the
+> placeholder between a turn and the CLI's title; sending a prompt is itself an auto
+> source (#883's provisional label), so the rung is the prompt and the ladder still has
+> to supersede it. Its fail-open test now pins that the unreadable `ai-title` line left
+> the provisional label alone AND that `renamed` is nowhere on screen — an empty card
+> could also have meant nothing happened at all.
+>
+> **ONE TEST'S GEOMETRY BECAME LOAD-BEARING, and the arithmetic is in the file so nobody
+> re-derives it.** #716's stimulus was a `Notification` hook and the bar it docked was
+> the terminal handoff bar; the approval bar replaced both, and it is **134px tall
+> against that one's ~45**. At the old 460 content height the pane is genuinely too short
+> for MIN_FEED + that bar + one line of composer, so the floor is missed by 20px —
+> correct fail-open behaviour, not a bug. 580 sits in the band where the floor is
+> achievable AND the panel still binds. Also found: 460 **clamps** to 535, so 460 and 500
+> produced byte-identical geometry; and the precondition was racing (`boxHeight > 0` is
+> true on the first tick), which read 191px about half the time and now polls the FEED to
+> its floor.
+>
+> **⚠️ THE PROCESS FAILURE THAT CAUSED THE FALSE GREEN, KEPT BECAUSE IT IS THE LESSON.**
+> Both earlier e2e runs were piped through `tail -25`. Playwright prints the failure
+> list, then `N failed`, then `N passed` — so `tail` showed "306 passed" with the
+> `54 failed` line one screen above the window, and a grep for "failed" over the
+> truncated file found nothing. **A verification gate whose output cannot be seen in full
+> is not a gate.** CI caught it. Capture a 30-minute suite to a FILE and read the whole
+> summary; never `tail` it.
+>
+> **⭐ AND THE RETAGGING WAS WRONG — the one judgement overturned.** The `[pty]` tags on
+> those groups were ACCURATE: they named a real dependency on the transport, not a stale
+> label. They were read as rot because #639 and #873 had rotted two of them, three spec
+> files were sampled, 36/38 passed, and it was generalised. **A sample is not a suite,
+> and "this label rotted before" is not evidence that it is rotten now.**
+>
+> **THE ORIGINAL CAUSE, for the record.** The whole e2e suite had been running PTY
+> sessions since #381 and nobody had noticed, because the chain was invisible:
+> `SWITCHBOARD_FAKE_PROVIDER=1` selected the shell-in-a-PTY fake, whose recipe declared
+> NO transport, so `DEFAULT_TRANSPORT` (`'pty'` then) gave every session
+> `record.transport === 'pty'`. That switched on hook-driven permissions (~25 failures)
+> and transcript-derived Feed blocks (~29), and both died with the transport.
 >
 > **#972 and #967 are NOT started.**
-
 
 > # ✅ DONE — 2026-09-26: **#952 — E18-16, delete the PTY stack. E18 IS COMPLETE.**
 >
