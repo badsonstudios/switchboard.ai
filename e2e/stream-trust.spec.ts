@@ -95,9 +95,14 @@ test.describe('the trust setting is honest about its reach (#397)', () => {
       timeout: 25_000,
     });
 
-    // auto-trust is ON (the default) — so this is the gate refusing, not the
-    // setting being off. The chip is the one surface that states the value.
-    await expect(w.getByTestId('auto-trust')).toHaveText('🔓 auto-trust');
+    // NO "the setting is on" CHECK, and none is possible any more (#952). This
+    // used to read the chip, to rule out the cheap way of passing: a folder left
+    // alone because auto-trust was switched OFF rather than because the gate
+    // refused. The chip is gone, `getAutoTrust` is gone, and nothing reads the
+    // field — there is no longer a setting that could have been off, so the
+    // assertion has nothing left to rule out. What keeps this from passing
+    // vacuously is `homeWithClaudeConfig`: a real `~/.claude.json` is on disk, so
+    // a build that wrote an acceptance COULD, and this reads that it did not.
 
     const box = w.getByPlaceholder(/Prompt this session/);
     await box.click();

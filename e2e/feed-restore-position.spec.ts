@@ -39,7 +39,6 @@
 // none of this exists unless the conversation overflows its pane, which on a
 // dev machine's desktop it rarely does.
 import { test, expect, Page } from '@playwright/test';
-import fs from 'fs';
 import path from 'path';
 import {
   launchApp,
@@ -59,7 +58,6 @@ const WINDOW = { x: 0, y: 0, width: 1400, height: 900 };
 /** the same 40px slack the pin rule itself uses */
 const TAIL = 40;
 
-const slugForCwd = (cwd: string): string => cwd.replace(/[\\/:. ]/g, '-');
 const composer = (w: Page): ReturnType<Page['getByPlaceholder']> =>
   w.getByPlaceholder(/Prompt this session/);
 
@@ -163,61 +161,19 @@ test.describe('a conversation you come back to is at its newest message (#555)',
     expect(await lastBlockInView(w)).toBe(true);
   });
 
-  test('a session restored from a restart opens at the tail', async () => {
-    test.setTimeout(180_000);
-    // The OTHER conversation pipeline, and the one most of a real workspace is
-    // on: a stream session's Feed is built by `feed/stream-feed.ts`, a PTY
-    // session's by the transcript WATCHER adopting the JSONL on disk. The
-    // backlog therefore arrives by a completely different route, which is
-    // exactly why the done-when says "on both transports".
-    const folder = tempProjectFolder();
-    const name = path.basename(folder);
-    const first = await launchApp({ seedFolder: folder }); // pty is the default
-    a = first;
-    await expect(first.window.getByText(name).first()).toBeVisible({ timeout: 25_000 });
-    await sized(first);
-
-    // the CLI's part, played by the test (the `feed.spec.ts` recipe)
-    const dir = path.join(first.home, '.claude', 'projects', slugForCwd(folder));
-    fs.mkdirSync(dir, { recursive: true });
-    const line = (o: Record<string, unknown>): string =>
-      JSON.stringify({
-        sessionId: 'native-e2e',
-        cwd: folder,
-        timestamp: new Date().toISOString(),
-        ...o,
-      }) + '\n';
-    let jsonl = line({ type: 'user', message: { role: 'user', content: 'a long conversation' } });
-    for (let i = 1; i <= 60; i++) {
-      jsonl += line({
-        type: 'assistant',
-        message: { content: [{ type: 'text', text: `PTY_${i}` }] },
-      });
-    }
-    fs.writeFileSync(path.join(dir, 'native-e2e.jsonl'), jsonl);
-    await expect(first.window.getByText('PTY_60', { exact: true })).toBeAttached({ timeout: 60_000 });
-    await first.window.waitForTimeout(1_000);
-    await first.close();
-
-    // The card has to come back on the SAME conversation, or the watcher will
-    // not touch the file: `watcher.ts` refuses every pre-existing transcript
-    // except "our own resumed conversation" (`<nativeId>.jsonl`), which is the
-    // rule that gives a resumed PTY card its history back at all. The real CLI
-    // reports the id through a hook; the fake does not, so the persisted card
-    // is doctored to carry it — the same supported entry point the split and
-    // suspend cases below use.
-    const ws = readWorkspaceFile(first.home);
-    expect(ws.sessions?.[0], 'the card should have reached disk').toBeTruthy();
-    ws.sessions![0].nativeSessionId = 'native-e2e';
-    writeWorkspaceFile(first.home, ws);
-
-    a = await launchApp({ home: first.home });
-    await sized(a);
-    const w = a.window;
-    await expect(w.getByText('PTY_60', { exact: true })).toBeAttached({ timeout: 60_000 });
-    await expect.poll(() => tailGap(w), { timeout: 15_000 }).toBeLessThan(TAIL);
-    expect(await lastBlockInView(w)).toBe(true);
-  });
+  // ⚠️ ITS PTY SIBLING IS DELETED, NOT PORTED (#952). "a session restored from a
+  // restart opens at the tail" stood here and drove THE OTHER conversation
+  // pipeline: a PTY session's Feed was built by the transcript watcher adopting
+  // the JSONL on disk, so the backlog arrived by a completely different route and
+  // the done-when said "on both transports". There is one transport and one
+  // route, so the two tests had become the same test with a slower stimulus —
+  // and the slower one seeded 61 hand-written JSONL lines to reach a state the
+  // sibling above reaches with one `!bulk`.
+  //
+  // Nothing about #555's contract is lost: the restored-from-restart case is the
+  // test above, and `nativeSessionId` doctoring — the supported entry point the
+  // watcher's resumed-conversation rule needs — is still exercised by the split
+  // and suspend cases below.
 
   test('a suspended card resuming opens at the tail', async () => {
     test.setTimeout(240_000);

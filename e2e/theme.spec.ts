@@ -15,6 +15,7 @@ import {
   setUiLanguage,
   openSettings,
   closeSettings,
+  streamPrompter,
 } from './fixtures/app';
 // the ramp itself, not a copy of it: a seventh status added to the app would
 // otherwise drop out of the sweep in silence (#246)
@@ -483,43 +484,22 @@ test.describe('themes (P2-E15-05)', () => {
       timeout: 25_000,
     });
 
-    // the CLI's part, as feed.spec.ts plays it: a link in rendered prose
-    // (.feed-md a), a tool block header (the tool's name), and a checklist —
-    // three of the sites, on screen, at their real sizes
-    const dir = path.join(a.home, '.claude', 'projects', folder.replace(/[\\/:. ]/g, '-'));
-    fs.mkdirSync(dir, { recursive: true });
-    const line = (o: Record<string, unknown>): string =>
-      JSON.stringify({
-        sessionId: 'native-contrast',
-        cwd: folder,
-        timestamp: new Date().toISOString(),
-        ...o,
-      }) + '\n';
-    fs.writeFileSync(
-      path.join(dir, 'native-contrast.jsonl'),
-      line({ type: 'user', message: { role: 'user', content: 'read the docs' } }) +
-        line({
-          type: 'assistant',
-          message: {
-            content: [
-              { type: 'text', text: 'see [the manual](https://example.invalid/manual)' },
-              { type: 'tool_use', name: 'Read', input: { file_path: 'C:/tmp/x.md' } },
-              {
-                type: 'tool_use',
-                name: 'TodoWrite',
-                input: {
-                  todos: [
-                    { content: 'first step', status: 'completed' },
-                    { content: 'second step', status: 'in_progress' },
-                  ],
-                },
-              },
-            ],
-          },
-        })
-    );
+    // Three of the sites on screen at their real sizes, through the session
+    // instead of through a hand-written JSONL (#952): a link in rendered prose
+    // (`.feed-md a`), a tool block header (the tool's name), and a checklist.
+    //
+    // Two prompts, because the two halves come from different levers. `!tools` is
+    // the fake's tool turn — Bash, Edit, Read and a TodoWrite checklist, in the
+    // measured stream shape — and the reply echo is how any assistant PROSE gets
+    // here, which is what carries the markdown link. What the fake cannot invent
+    // is a stream message the real CLI never sends, and neither of these is that.
+    const prompt = streamPrompter(a);
+    const title = path.basename(folder);
+    await prompt(title, '!tools');
+    await prompt(title, 'see [the manual](https://example.invalid/manual)');
+
     await expect(w.locator('.feed-md a')).toBeVisible({ timeout: 25_000 });
-    await expect(w.getByText('first step')).toBeVisible();
+    await expect(w.getByText('first stream step')).toBeVisible();
 
     // Colours are sampled the instant the theme attribute lands, and several
     // controls transition `color` over ~0.1s (.rail-x, .collapsed-row …). A
