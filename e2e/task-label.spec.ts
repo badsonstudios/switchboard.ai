@@ -1,15 +1,27 @@
 // P2-E7-06: a blank task label fills itself from the title the CLI writes into
 // its own transcript (§5.11).
 //
-// The fake provider writes no transcript, so — as in `feed.spec.ts` and
-// `binding.spec.ts` — the test plays Claude's part and writes JSONL into the
-// isolated HOME. The `ai-title` lines it writes are REAL, captured from
-// transcripts in `~/.claude/projects/`: the key order is not stable and the CLI
-// revises its answer, and a hand-written fixture would prove neither.
+// TWO HALVES, AND ONLY ONE OF THEM IS STILL WRITTEN BY HAND (#952).
+//
+// The CONVERSATION comes from the session now. This file used to write the whole
+// transcript itself, including a `user` line whose text doubled as the proof that
+// binding had succeeded — which only worked because the shell-in-a-PTY fake made
+// every test session a PTY and switched `deriveFeed` on. The fake CLI mirrors its
+// turn into its own JSONL exactly as the real one does in stream mode, so
+// `converse()` produces a transcript the watcher claims AND a block the Feed
+// renders, and "transcript bound" is provable again.
+//
+// The `ai-title` LINES are still appended by hand, and must be: nothing emits
+// them but Claude Code, on an undocumented key. They are REAL, captured from
+// transcripts in `~/.claude/projects/` — the key order is not stable and the CLI
+// revises its answer, and a hand-written fixture would prove neither. They carry
+// their own `sessionId` from the session they were captured in, which is not this
+// one and never was; the reader takes the title off the line it is on rather than
+// cross-checking it, and that is the behaviour under test.
 import { test, expect, Page } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
-import { launchApp, LaunchedApp, retype, tempProjectFolder } from './fixtures/app';
+import { launchApp, LaunchedApp, retype, streamPrompter, tempProjectFolder } from './fixtures/app';
 import { REVISED, titlesOf } from '../src/main/transcripts/fixtures/ai-title';
 
 function slugForCwd(cwd: string): string {
@@ -35,22 +47,43 @@ const labelBox = (w: Page) => w.getByTestId('card-header').locator('input');
 const railRow = (w: Page, label: string) =>
   w.getByRole('button', { name: new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) });
 
-function transcriptPath(home: string, folder: string): string {
-  return path.join(home, '.claude', 'projects', slugForCwd(folder), 'native-e2e.jsonl');
+/**
+ * The transcript the session is actually bound to.
+ *
+ * Found rather than named (#952). It used to be `native-e2e.jsonl`, because the
+ * test wrote it; the fake CLI names its own after the `session_id` it announces,
+ * which is generated. One file per isolated HOME per folder, so "the only
+ * `.jsonl` under this folder's slug" identifies it — and the throw matters,
+ * because two files here would mean the watcher had a choice to make and an
+ * append could land in the transcript nobody is reading.
+ */
+function boundTranscript(home: string, folder: string): string {
+  const dir = path.join(home, '.claude', 'projects', slugForCwd(folder));
+  const found = fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'));
+  if (found.length !== 1) {
+    throw new Error(`expected exactly one transcript under ${dir}, found ${found.length}: ${found}`);
+  }
+  return path.join(dir, found[0]);
 }
 
-/** The CLI's part: a transcript this session can claim, plus title lines. */
-function writeTranscript(home: string, folder: string, titleLines: string[]): void {
-  const file = transcriptPath(home, folder);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const line = (o: Record<string, unknown>) =>
-    JSON.stringify({ sessionId: 'native-e2e', cwd: folder, timestamp: new Date().toISOString(), ...o }) +
-    '\n';
-  fs.writeFileSync(
-    file,
-    line({ type: 'user', message: { role: 'user', content: 'add a markdown preview' } }) +
-      titleLines.map((l) => l + '\n').join('')
-  );
+/**
+ * Run a real turn, so there is a transcript to claim and a block to see.
+ *
+ * `REPLY` is what the Feed shows for it, and every "transcript bound" assertion
+ * below reads that instead of a `user` line this file wrote — the Feed is built
+ * from typed messages, not from the file.
+ */
+const PROMPT = 'add a markdown preview';
+const REPLY = `FAKE-REPLY: ${PROMPT}`;
+
+async function converse(app: LaunchedApp, folder: string): Promise<void> {
+  await streamPrompter(app)(path.basename(folder), PROMPT);
+  await expect(app.window.getByText(REPLY)).toBeVisible({ timeout: 25_000 });
+}
+
+/** The CLI's other part: `ai-title` lines, into the transcript it is writing. */
+function appendTitles(home: string, folder: string, titleLines: string[]): void {
+  fs.appendFileSync(boundTranscript(home, folder), titleLines.map((l) => l + '\n').join(''));
 }
 
 test.describe('auto task labels (E7-06)', () => {
@@ -66,12 +99,22 @@ test.describe('auto task labels (E7-06)', () => {
     // the placeholder is what a card with no label reads as today
     await expect(cardLabel(w)).toHaveText('+ task label');
 
+    // A real turn first — the CLI has to be writing a transcript before it can
+    // put a title in one. Sending a prompt is itself an auto source (#883, the
+    // provisional label: the owner's own prompt, cleaned, filling a blank so the
+    // card is not empty through the whole first turn), so the state between the
+    // turn and the title is the PROMPT rather than the placeholder. That is the
+    // ladder this test walks — provisional, then the CLI's first answer, then its
+    // revision — and every rung after the first must supersede the one before it.
+    await converse(a, folder);
+    await expect(cardLabel(w)).toHaveText(PROMPT);
+
     // The CLI's FIRST answer, then its second, in the order and the two key
     // orders a real transcript had them.
-    writeTranscript(a.home, folder, [REVISED.lines[0][1]]);
+    appendTitles(a.home, folder, [REVISED.lines[0][1]]);
     await expect(cardLabel(w)).toHaveText(FIRST_TITLE);
 
-    fs.appendFileSync(transcriptPath(a.home, folder), REVISED.lines[1][1] + '\n');
+    appendTitles(a.home, folder, [REVISED.lines[1][1]]);
     // it keeps tracking while the label is nobody's...
     await expect(cardLabel(w)).toHaveText(SETTLED_TITLE);
     // ...and it renders on the rail too, in the row's accessible name (§5.11)
@@ -91,8 +134,8 @@ test.describe('auto task labels (E7-06)', () => {
     await expect(cardLabel(w)).toHaveText('mine, thanks');
 
     // the CLI names the conversation — and must not touch it
-    writeTranscript(a.home, folder, [REVISED.lines[1][1]]);
-    await expect(w.getByText('add a markdown preview')).toBeVisible(); // transcript bound
+    await converse(a, folder); // transcript bound
+    appendTitles(a.home, folder, [REVISED.lines[1][1]]);
     await w.waitForTimeout(1_000);
     await expect(cardLabel(w)).toHaveText('mine, thanks');
 
@@ -102,7 +145,7 @@ test.describe('auto task labels (E7-06)', () => {
     // the text SELECTED, so the blur would commit the very label being cleared.
     await labelBox(w).fill('');
     await w.keyboard.press('Enter');
-    fs.appendFileSync(transcriptPath(a.home, folder), REVISED.lines[2][1] + '\n');
+    appendTitles(a.home, folder, [REVISED.lines[2][1]]);
     await expect(cardLabel(w)).toHaveText(SETTLED_TITLE);
   });
 
@@ -112,7 +155,8 @@ test.describe('auto task labels (E7-06)', () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
-    writeTranscript(a.home, folder, [REVISED.lines[1][1]]);
+    await converse(a, folder);
+    appendTitles(a.home, folder, [REVISED.lines[1][1]]);
     await expect(cardLabel(w)).toHaveText(SETTLED_TITLE);
 
     // THREE STATES ON ONE CHIP as of #758, and since #883 the cycle STARTS at
@@ -145,7 +189,8 @@ test.describe('auto task labels (E7-06)', () => {
     a = await launchApp({ seedFolder: folder });
     const first = a;
     const w = first.window;
-    writeTranscript(first.home, folder, [REVISED.lines[1][1]]);
+    await converse(first, folder);
+    appendTitles(first.home, folder, [REVISED.lines[1][1]]);
     await expect(cardLabel(w)).toHaveText(SETTLED_TITLE);
 
     // The COMPUTED clamp, because that is the only thing the setting does.
@@ -200,10 +245,16 @@ test.describe('auto task labels (E7-06)', () => {
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
 
-    writeTranscript(a.home, folder, [
+    await converse(a, folder); // transcript IS bound
+    appendTitles(a.home, folder, [
       JSON.stringify({ type: 'ai-title', sessionId: 'native-e2e', cwd: folder, conversationTitle: 'renamed' }),
     ]);
-    await expect(w.getByText('add a markdown preview')).toBeVisible(); // transcript IS bound
-    await expect(cardLabel(w)).toHaveText('+ task label'); // …and the label is untouched
+    // …and the label is UNTOUCHED: still the provisional one the prompt set
+    // (#883), never `renamed`. "Exactly as it does today" is the provisional
+    // rather than the placeholder now, which is a stronger check than the
+    // placeholder was — it pins that the unreadable line changed nothing, where
+    // an empty card could also have meant nothing had happened at all.
+    await expect(cardLabel(w)).toHaveText(PROMPT);
+    await expect(w.getByText('renamed')).toHaveCount(0);
   });
 });
