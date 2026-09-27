@@ -3,8 +3,47 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ✅ RESOLVED — 2026-09-27: **the 54 e2e failures are cleared. #952's PR is green
-> and merging. The owner chose option (a) — port them inside the item.**
+> # ✅ DONE — 2026-09-27: **#952 MERGED (PR #976). The 54 e2e failures are cleared,
+> and clearing them found a user-facing bug plus two regressions.**
+>
+> **Next up: #972** (E22-01, the Monaco diff in the approval card), then #967.
+>
+> All four CI jobs green on `39a737e`. The owner chose option (a) — port the specs
+> inside the item.
+>
+> **⭐ THE PORT FOUND A LIVE BUG AND IT IS FIXED HERE, not ticketed: the actionable
+> permission toast had no request attached.** `requestId: ''`, so no Allow/Deny
+> buttons and a body click that could not raise the question — §5.9's safety half,
+> failing silently, on Direct since #381 because the spec that would have caught it
+> was `[pty]`. **THE ORDER IS THE CAUSE:** the pump applies the status event and THEN
+> runs its message listeners, so `streamStatusEvent`'s `permission-held` walks the
+> card to `needs-permission` and fires the toast rules **before**
+> `StreamPermissions.offer()` has registered the request. On the hook path the hold
+> was registered before the notification announced it. Fixed by deferring the
+> RESOLUTION (one `setImmediate`, taken only when the join would otherwise be empty)
+> rather than reordering the pump — `StreamPermissions` documents its dependence on
+> `permission-held` already being applied, and with `apply` running after its deny
+> branches the badge would stick.
+>
+> **⚠️ AND A SELF-INFLICTED RED CI WORTH KEEPING: never run a formatter over a whole
+> file to tidy one edit.** `npx prettier --write src/main/index.ts` reflowed all 8,000
+> lines — 668 insertions / 438 deletions for a 41-line change. Typecheck, lint, build
+> and BOTH e2e jobs passed on it, because it is valid TypeScript that behaves
+> identically. What went red was the coverage that reads that file as TEXT:
+> `single-instance.test.ts` (the lock must come before the state dir is derived) and
+> `broker.test.ts` (49 channels "tagged but never registered"). A reformat of
+> `index.ts` is a semantic change to those tests.
+>
+> **Two e2e lessons from the same CI run.** A stimulus prompt was RENAMING the card:
+> a session's first prompt fills a blank task label with itself (#883) and a card's
+> §5.11 identity IS its label, so `!perm held.sh` became the session's name and
+> `quiet-hours` read it back where it wanted the folder. The three `permissionHolder*`
+> fixtures now pin the label to the folder name first — true by construction, since
+> that is what an unlabelled card already displays. And the "Copied" flash is no
+> longer asserted end to end: `COPIED_MS` is 1200 and a loaded Windows runner does not
+> guarantee a Playwright round trip inside that window (24 consecutive polls read
+> "Copy"). It is pinned deterministically, exact number included, in
+> `lib/feed-code.test.ts`.
 >
 > He was asked the scope question and answered it twice, and the second answer is the
 > operative one: *"I don't mean change the tests so they work now. I mean fix the issue
