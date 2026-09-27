@@ -2584,9 +2584,27 @@ reads) get simpler cards — command + cwd + allow/deny — same banner, same ke
 > tools leave, and tools rename their keys — so a list of names is not
 > something a permission surface may depend on being complete.
 >
-> The 1500-character clip and the short scroll boxes are untouched and remain
-> the Monaco item's question. What changed is that a clip now SAYS it clipped —
-> a first page that looks like a whole file is this same bug one size down.
+> **AS BUILT, 2026-09-27 (P2-E22-01, #972): the 1500-character clip is GONE and a
+> file change is a real Monaco diff.** `Edit`, `Write` and `MultiEdit` — dispatched
+> by SHAPE, in `lib/approval-diff.ts` — render in the diff editor the Changes tab
+> runs, with the same side-by-side / inline control and the same measured
+> narrow-column floor (§`5.24`, #532). A `MultiEdit` renders as separate changes in
+> apply order, forced apart by a separator line present identically on both sides so
+> Monaco breaks its hunks on the change boundaries rather than merging adjacent ones.
+> The bound is now 200k per side and 400k per payload, and when it bites the card
+> NAMES what it withheld in changes, lines and characters instead of appending an
+> ellipsis. Monaco sits behind `React.lazy` + `Suspense` with the old panes as the
+> fallback, so a body that fails to load leaves the question answerable rather than
+> blank — which is also why `ToolInputPreview` is still live: it is the non-diff
+> renderer AND the fail-open fallback.
+>
+> Everything with ONE side keeps the panes and keeps the clip: a `Bash` command, a
+> read, a `NotebookEdit`'s `new_source`. A diff editor showing "everything added"
+> tells the reader less than a tinted pane does at far greater cost.
+>
+> (This paragraph read: "The 1500-character clip and the short scroll boxes are
+> untouched and remain the Monaco item's question. What changed is that a clip now
+> SAYS it clipped." That item is #972 and it is done.)
 
 ### 5.17 MCP Manager & slash-command surfaces
 
@@ -4247,7 +4265,7 @@ context transfer, and the attention queue work across monitors.
 > | **Dispatch v1 (all of it)** | §5.15, epic E13, **exit criterion 5** | The plan said "file these when E11-05 and E11-09 are merged". Both merged 2026-09-08/13. No trigger fired, so nothing was filed. |
 > | **Review queue pane** | §5.16 placement mode 2 | E10 shipped twelve items and this was not one of them; the attention queue (§5.8) covers *noticing*, not *arrowing through pending diffs*. |
 > | **Deny with feedback** | §5.16 button row | The wire carries `'allow' \| 'deny'` and no message. The agent is told no and never told why. |
-> | **Monaco diff in the approval card** | §5.16, and this list's own wording | Ships as two `<pre>` panes truncated at 1500 characters. Readable for a one-line edit, useless for the multi-file change the card exists to review. |
+> | ~~**Monaco diff in the approval card**~~ | §5.16, and this list's own wording | ~~Ships as two `<pre>` panes truncated at 1500 characters.~~ **SHIPPED 2026-09-27, P2-E22-01 (#972)** — see §5.16's as-built note. One caveat recorded rather than glossed: "Monaco is lazy-loaded" is met only in the sense that matters for fail-open. `DiffPane` is a static import, so monaco-editor is in the entry chunk and evaluated at startup regardless; making it genuinely lazy is a separate and real win that this item did not take. |
 > | **"Approve all in this file"** | §5.16 button row | Approve-one and always-allow-this-session both ship; the middle rung does not. |
 > | **Drag text between sessions** | §5.4 Tier 1, §5.5 Level 1 | See §5.4's as-built note: of four draggable objects, one shipped, one is moot (the terminal is gone) and two are blocked on the Phase 3 file tree. This line needs re-scoping, not just building. |
 >

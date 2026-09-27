@@ -3,6 +3,70 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ DONE — 2026-09-27: **#972 — E22-01, the Monaco diff in the approval card.**
+> Second of the three the owner queued (#952 → #972 → #967). **Next up: #967.**
+>
+> **⚠️ ONE CRITERION IS PARTLY MET AND IS RECORDED AS SUCH, not ticked.** "Monaco is
+> lazy-loaded" holds in the sense the item needs — the view is behind `React.lazy` +
+> `Suspense`, and a failed load lands in `ContributionBoundary` and puts the panes
+> back — but it does NOT defer monaco-editor. `DiffPane` is a static import in
+> `extensibility/panels.tsx`, so monaco rides in the entry chunk and is evaluated at
+> startup regardless; measured, this item's own chunk is ~6 kB against a ~9.7 MB
+> entry. The arrival criterion is therefore met, and was met before this item. Making
+> monaco genuinely lazy is a real separate win nobody has filed. The first draft's
+> comments claimed the lazy import did this; they now say the opposite at length, and
+> so does DESIGN §5.16 and the §8 table.
+>
+> **The review found thirteen things and two were real defects**, both worth knowing:
+> the side-by-side/inline control was DEAD on a narrow card (it was labelled with the
+> EFFECTIVE layout, which #532's measured floor pins to inline — so it read "Inline",
+> clicking set the preference to inline, and nothing changed; it is now the Changes
+> tab's two-button control, `aria-pressed` on the CHOICE, plus the same visible
+> too-narrow note, because Chromium never shows `title` on keyboard focus); and
+> `MAX_SIDE_CHARS` did not bound a `MultiEdit` at all, being per side PER HUNK — 40
+> hunks could have reached ~16M characters, concatenated into two Monaco models.
+> `MAX_TOTAL_CHARS` is spent across hunks in apply order now.
+>
+> Also from the review: `command` is tested FIRST (an input carrying both a command and
+> a content rendered as a diff in the editor and as the command in the fallback — one
+> question answered two ways depending on whether monaco loaded) · hunk numbering is
+> against the CLI's own array, so with entry 2 malformed the third edit is no longer
+> labelled "change 2" · the withheld line's character count was unreachable behind an
+> `else if`, and the FIRST fix for that was also wrong (any non-empty remainder is ≥1
+> line under the human counting rule) — both numbers are reported together now · the
+> separator can collide with a payload line, so the rule width escalates until it
+> cannot · `caption` and `withheldText` are exported and tested, because criterion 3
+> ("the card STATES what it is withholding") was asserted by a comment and nothing else.
+>
+> **TWO GEOMETRY LESSONS, both found by tests rather than by reading.** A flat 180px
+> diff pushed the composer's autonomy chip out of the viewport in a short window, so
+> the height is `min(180px, 24vh)` — CSS `min()`, so the browser re-evaluates it on
+> resize with no observer and `automaticLayout` picks it up. And Monaco VIRTUALISES: an
+> e2e that compared two labels' `boundingBox().y` passed in isolation and went red in
+> the full suite, because a line below the fold is not in the DOM at all and a few
+> pixels of window height was the whole difference. Order is pinned where it is
+> arithmetic; the e2e scrolls, the way a user does.
+>
+> Branch `feature/972-monaco-approval-diff`. Plan posted to the issue.
+>
+> **The shape, so a fresh session does not re-derive it:** `ToolInputPreview` is NOT
+> rewritten — it becomes the fallback and the non-diff renderer and keeps all 285
+> lines of its tests, because fail-open means those panes are a path a user can still
+> reach. Three new pieces beside it: `lib/approval-diff.ts` (pure — diffable?, hunks,
+> the bound, what was withheld), `components/ApprovalDiffView.tsx` (the lazy Monaco
+> half, created exactly as `DiffPane` creates its own), and
+> `components/ApprovalPreview.tsx` (the dispatcher). `ContributionBoundary` gains an
+> optional `fallback` so a failed lazy load puts the panes back rather than leaving a
+> gap.
+>
+> **The one decision worth not re-litigating:** a `MultiEdit` renders in ONE editor,
+> with a separator line inserted identically into both sides between edits. Monaco
+> reads an identical line as unchanged context, so the hunk breaks land exactly on the
+> edit boundaries and apply order stays legible. One editor per edit was the other
+> candidate and it loses to this item's own "no new long task on arrival"; plain
+> concatenation is the blob the done-when rules out, and it would let Monaco merge two
+> adjacent edits into one hunk.
+
 > # ✅ DONE — 2026-09-27: **#952 MERGED (PR #976). The 54 e2e failures are cleared,
 > and clearing them found a user-facing bug plus two regressions.**
 >

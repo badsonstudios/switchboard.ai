@@ -2460,7 +2460,12 @@ export function App(): React.JSX.Element {
           screen every time a fleet parked. Renders nothing when nothing groups.
           Outside the grid for the reason the strips are — a group spans cards,
           and dockview has not mounted most of them. */}
-      <BatchApprovalBar batch={permissionBatch} members={batchMembers} onDecide={decideBatch} />
+      <BatchApprovalBar
+        batch={permissionBatch}
+        members={batchMembers}
+        onDecide={decideBatch}
+        colorScheme={theme.colorScheme}
+      />
       {/* The one child of this column that is MEANT to give. `flex: 1` is
           `flex: 1 1 0%` — a basis of ZERO — and a flex container shares out
           negative free space in proportion to each item's shrink factor times

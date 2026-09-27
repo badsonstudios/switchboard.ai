@@ -17,20 +17,13 @@
 // demand their own workers and throw against the single plain worker below.
 import React, { useEffect, useRef } from 'react';
 import * as monaco from 'monaco-editor/esm/vs/editor/edcore.main';
-import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import '../lib/monaco-languages';
+// The single worker, assigned on import so it is in place whichever surface
+// mounts first. Was declared and assigned here and in `DiffPane`, identically;
+// #972 needed it a third time and moved it instead of copying it again.
+import '../lib/monaco-worker';
 import { defineDiffThemes, DIFF_THEME } from '../lib/monaco-theme';
 import type { FindableEditor } from '../lib/monaco-find';
-
-declare global {
-  interface Window {
-    MonacoEnvironment?: monaco.Environment;
-  }
-}
-// Same single worker as DiffPane — with the rich language services gone,
-// `editor.worker` is the only worker anything in this app can ask for. Assigned
-// on import so it is in place whichever surface mounts first.
-window.MonacoEnvironment = { getWorker: () => new EditorWorker() };
 
 export interface DocumentSourceProps {
   text: string;

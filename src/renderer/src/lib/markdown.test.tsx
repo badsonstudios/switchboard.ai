@@ -2324,8 +2324,11 @@ describe('content cannot NAME one of the app’s own controls (#654)', () => {
     // test's shape: NOT `toEqual([])`, because a bare zero would have to be
     // maintained by deleting the rule.
     expect(offenders.sort()).toEqual([
-      // A React PROP called `id`, not a DOM attribute — `ContributionBoundary`
-      // uses it to name a contribution point in error messages.
+      // Both of these are a React PROP called `id`, not a DOM attribute —
+      // `ContributionBoundary` uses it to name a contribution point in its error
+      // messages, and nothing it is given reaches the document. Content cannot
+      // collide with a name that is never an id.
+      'components/ApprovalPreview.tsx: id="approval-diff"',
       'components/SessionGrid.tsx: id="document-viewer"',
     ]);
   });

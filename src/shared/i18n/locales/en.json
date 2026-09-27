@@ -346,6 +346,15 @@
     "notebookCell": "New source for cell {cell}",
     "notebookNewCell": "New source for a new cell"
   },
+  "approvalDiff": {
+    "edit": "Proposed change",
+    "write": "New contents — {count, plural, one {# line} other {# lines}}",
+    "multiEdit": "{count, plural, one {# change} other {# changes}}, in the order they apply",
+    "withheld": "Not shown here: {what}",
+    "withheldChanges": "{count, plural, one {# change} other {# changes}}",
+    "withheldLines": "{count, plural, one {# line} other {# lines}}",
+    "withheldChars": "{count, plural, one {# character} other {# characters}}"
+  },
   "question": {
     "title": "Claude is asking you a question",
     "submit": "Send answer",

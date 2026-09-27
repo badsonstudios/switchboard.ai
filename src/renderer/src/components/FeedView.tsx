@@ -85,7 +85,7 @@ import {
   type ComposerBounds,
 } from '../lib/composer-size';
 import { argumentSummary } from '../lib/permission-batches';
-import { ToolInputPreview } from './ToolInputPreview';
+import { ApprovalPreview } from './ApprovalPreview';
 import {
   filterCommands,
   insertCommand,
@@ -325,6 +325,17 @@ export function FeedView(props: {
   } | null;
   /** more holds waiting behind this one (review P0#4) */
   approvalQueued?: number;
+  /**
+   * Which skin the app is wearing, for the approval body's Monaco diff (#972).
+   *
+   * ⚠️ #261's LESSON, PRE-EMPTED AGAIN: this prop is dead unless the render site
+   * in `extensibility/panels.tsx` threads `ctx.colorScheme` through, and the
+   * failure would be silent — `ApprovalPreview` treats absent as "no diff" and
+   * falls back to the plain panes, so the card would keep working and the whole
+   * item would simply not be on screen. Optional because a unit test mounts this
+   * with no theme around it and the panes are the right answer there.
+   */
+  colorScheme?: 'light' | 'dark';
   /** a held request of this session's is on Â§5.8's grouped prompt instead
    *  (P2-E9-11) â€” the question IS answerable, just not from here */
   approvalBatched?: boolean;
@@ -1132,7 +1143,12 @@ export function FeedView(props: {
         />
       )}
       {props.approval && props.onDecide && !askQuestions && (
-        <ApprovalBar approval={props.approval} queued={props.approvalQueued ?? 0} onDecide={props.onDecide} />
+        <ApprovalBar
+          approval={props.approval}
+          queued={props.approvalQueued ?? 0}
+          onDecide={props.onDecide}
+          colorScheme={props.colorScheme}
+        />
       )}
       <Composer
         // The saved draft is seeded ONCE, on mount (#485), so a Composer whose
@@ -1179,6 +1195,7 @@ function ApprovalBar({
   approval,
   queued,
   onDecide,
+  colorScheme,
 }: {
   approval: {
     requestId: string;
@@ -1188,6 +1205,8 @@ function ApprovalBar({
   };
   queued: number;
   onDecide: (decision: 'allow' | 'deny', allowAll?: boolean) => void;
+  /** absent means the plain panes — see `ApprovalPreview` */
+  colorScheme?: 'light' | 'dark';
 }): React.JSX.Element {
   const { t } = useTranslation();
   const btn = (primary: boolean): React.CSSProperties => ({
@@ -1267,7 +1286,7 @@ function ApprovalBar({
           the reason the summary line above is shared: §5.16 is ONE question,
           and two placements that answer "what am I agreeing to" differently
           have shown the user two things and called them the same. */}
-      <ToolInputPreview input={approval.input} />
+      <ApprovalPreview input={approval.input} colorScheme={colorScheme} />
       <div style={{ display: 'flex', gap: 6 }}>
         <button onClick={() => onDecide('allow')} style={btn(true)}>
           {t('approval.allow')}

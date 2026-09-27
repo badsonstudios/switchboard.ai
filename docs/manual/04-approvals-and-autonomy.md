@@ -12,24 +12,53 @@ A review bar appears just above the prompt box: **Allow \<tool\>?**, with the
 file or command it names, and underneath it **what the request would actually
 do**:
 
+- **A change to a file** — a **real diff**, the same one the Changes tab shows,
+  with colour, syntax highlighting and the changed parts marked. This covers
+  editing part of a file, writing a whole one, and making several changes to one
+  file at once.
 - **A shell command** — the command itself.
-- **An edit to part of a file** — the before and the after, side by side.
-- **Writing a whole file** — the contents it would put there, with a note of
-  how many lines that is. If it's writing an empty file, it says so rather than
-  showing you a blank box.
-- **Several changes to one file at once** — each before-and-after in turn, with
-  a count at the top. If there are more than a handful it shows the first few
-  and tells you how many it didn't show, so you always know the size of what
-  you're agreeing to.
 - **A change to a notebook** — the new contents of the cell, and which cell.
 - **Anything else** — every setting in the request, listed one per line. You
   will see this for tools switchboard doesn't have a special layout for,
   including new ones added after your copy of switchboard was built. It's plain,
   but it's never blank.
 
-Long content is cut off with a **…** so a single request can't take over the
-window. The **…** is the signal that there is more than you can see — if it
-isn't there, you are looking at the whole thing.
+### Reading the diff
+
+The button on the right of the diff says **Side by side** or **Inline**, and
+switches between them. It's the same choice as the one in the Changes tab and the
+command palette — set it anywhere and it applies everywhere, because it's a habit
+rather than a property of one request. On a narrow card two columns stop being
+readable, so it shows the inline diff and the button's tooltip says that is why.
+
+**Writing a whole file** shows everything as added, with a count of the lines.
+That is deliberate rather than a limitation: switchboard is looking at the request,
+not at your disk, so it does not know and will not guess what was there before. An
+empty file still says so in words instead of showing you a blank box.
+
+**Several changes to one file** are shown as separate changes in the order they
+will be applied, each with a **change 2 of 5** line above it. Those lines are
+switchboard's, not part of your file — they're drawn with a long dash so they can't
+be mistaken for something Claude is proposing to write.
+
+**The diff scrolls.** It's a band above the prompt box, not a full pane, so anything
+past the first few lines is a scroll away rather than missing — use the wheel inside
+it. It also gets shorter on a short window, so the prompt box and its buttons never
+get pushed off the bottom of the screen.
+
+**Nothing is quietly cut short any more.** A request used to be trimmed at about
+1,500 characters with a **…** on the end. Now you get the whole thing, and in the
+rare case that a request is genuinely enormous, a line under the diff says exactly
+what is missing — how many lines, how many characters, how many changes. If there's
+no such line, you're looking at all of it.
+
+**If the diff can't load**, you get the older simple before-and-after boxes
+instead, and the request is still answerable. That's on purpose: a body that fails
+to draw must never cost you the ability to answer.
+
+A shell command and the other one-sided requests keep the simple boxes, and are
+still trimmed with a **…** if they're very long — there's no diff to show for a
+command, and an editor would tell you less than the plain text does.
 
 Three buttons:
 

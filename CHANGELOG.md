@@ -98,6 +98,26 @@ on the floor, and say so in your PR.
 
 ### Added
 
+- **An approval request now shows you a real diff.** When Claude asks to change a
+  file, the review bar draws the change the way the **Changes** tab does — proper
+  colours, syntax highlighting, and the changed parts marked — instead of two plain
+  before-and-after boxes. The button on the right switches between **Side by side**
+  and **Inline**, and it's the same setting as the Changes tab's, so you set it once.
+
+  **Two things you could not see before.** Several changes to one file are now shown
+  as separate changes in the order they will be applied, each labelled *change 2 of
+  5*, rather than run together. And nothing is quietly cut short: a request used to
+  be trimmed at about 1,500 characters with a **…** on the end, and now you get the
+  whole thing — with, in the rare case that a request is enormous, a line under the
+  diff saying exactly how many lines, characters and changes are missing.
+
+  Shell commands and other one-sided requests keep the simple boxes. There is no
+  diff to show for a command, and an editor would tell you less than the plain text
+  does.
+
+  If the diff cannot draw for any reason, the older boxes come back and the request
+  is still answerable — a body that fails must never cost you the ability to answer.
+
 - **You can hand a session's work to a fresh session in a role you pick.** A
   card's **⋯** menu has a new **Dispatch…** entry, and the command palette has
   one entry per role. It opens a box where you choose who gets the work — **Code

@@ -100,7 +100,13 @@ test.describe('inline approval bar (E10-04)', () => {
     // 1. held request -> bar appears with the edit preview -> Allow
     await hold(title, 'one');
     await expect(w.getByText('Allow Edit?')).toBeVisible({ timeout: 15_000 });
-    await expect(w.getByText('new-one')).toBeVisible(); // new_string pane
+    // the new text, wherever the body chose to draw it. `.first()` and no assumption
+    // about WHICH surface: since #972 an `Edit` renders in a Monaco diff, whose
+    // side-by-side view paints the same token in both panes — and if the diff had not
+    // loaded, the panes underneath would show it instead. What this line is for is
+    // that the new text is on screen before Allow is pressed, and that is true either
+    // way. `approval-diff.spec.ts` is what pins the editor itself.
+    await expect(w.getByText('new-one').first()).toBeVisible({ timeout: 20_000 });
     await w.getByRole('button', { name: 'Allow', exact: true }).click();
     await expect(w.getByText('Allow Edit?')).toHaveCount(0);
 

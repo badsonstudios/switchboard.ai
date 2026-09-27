@@ -6,6 +6,16 @@
 // claim about the component as a whole and therefore has to be made against
 // the real component rather than against a helper.
 //
+// SINCE #972 THIS COMPONENT IS TWO THINGS, and both are under test here without a
+// line changing: the NON-DIFF renderer (a `Bash` command, a read, a
+// `NotebookEdit`, the dump) and the FAIL-OPEN FALLBACK behind the Monaco diff —
+// what is on screen while the chunk loads, and what comes back if it never does.
+// So the `Edit`, `Write` and `MultiEdit` cases below are no longer the first thing
+// a user sees for those tools, and they are still a path a user can reach, which
+// is why they keep every assertion they had. The diff route is pinned in
+// `ApprovalPreview.test.tsx`, `FeedView.approval-preview.test.tsx` and
+// `lib/approval-diff.test.ts`.
+//
 // The last describe is the one that matters most in a year: a tool nobody has
 // taught this file about must degrade to a dump. Every named branch below will
 // eventually be wrong — `NotebookEdit` already keys its path `notebook_path`

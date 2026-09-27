@@ -675,17 +675,19 @@ export class FakeStreamProtocol {
     // An EDIT permission, with the old/new pair the approval bar renders as a
     // diff (#952).
     //
-    // WHY A SEPARATE VERB rather than widening `!perm`: the bar's two panes are a
-    // property of `Edit`'s INPUT SHAPE, not of permissions in general. `!perm`
-    // raises a `Write` — one `content` field, one pane — and a test that wants to
-    // assert "the new text is on screen before I approve it" needs a shape that
-    // HAS a new text to show. Approval-bar tests used to get this from a
+    // WHY A SEPARATE VERB rather than widening `!perm`: what the bar draws is a
+    // property of the INPUT SHAPE, not of permissions in general. `!perm` raises a
+    // `Write` — one `content` field, so its diff is entirely additions — and a test
+    // that wants to assert "the new text REPLACED the old one and I saw both before
+    // I approved it" needs a shape that has two sides. (Both of those now render in
+    // a Monaco diff rather than in panes, #972; the reason for two verbs is the
+    // shapes, which have not changed.) Approval-bar tests used to get this from a
     // hand-POSTed `PreToolUse` hook carrying whatever `tool_input` they liked;
     // with the hook path gone the fake has to be able to produce it, or the claim
     // becomes untestable and would have to be dropped rather than moved.
     //
     // `!permedit <marker…>` — the marker lands in BOTH strings, so a test can tell
-    // the two panes apart and tell two successive requests apart.
+    // the before from the after and tell two successive requests apart.
     // A BASH permission, carrying the command verbatim (#952).
     //
     // The third and last of the `!perm*` family, and the same argument as
@@ -700,6 +702,31 @@ export class FakeStreamProtocol {
     if (text.startsWith('!permbash ')) {
       const command = text.slice(10).trim();
       this.askPermission('Bash', { command, description: 'Build' });
+      return;
+    }
+
+    // A MULTIEDIT permission — ONE request carrying N changes (#972).
+    //
+    // `!permedit a b c` raises three SEPARATE `Edit` requests, which is a different
+    // shape and a different claim. The approval card's done-when is that a MultiEdit
+    // renders its changes as separate hunks IN APPLY ORDER inside one diff, and
+    // nothing here could drive that: no verb had ever produced an `edits` array, so
+    // the richest payload the card has to review was reachable from a hand-written
+    // transcript and from no stream anywhere — the same gap `!tools` was written to
+    // close one surface over.
+    //
+    // Three changes, each distinguishable from the others, because the assertion
+    // that matters is ORDER: two identical ones could be rendered backwards and
+    // nothing on screen would say so.
+    if (text === '!permmulti') {
+      this.askPermission('MultiEdit', {
+        file_path: this.host.resolve(cwd, 'multi.ts'),
+        edits: [
+          { old_string: 'MULTI_OLD_1', new_string: 'MULTI_NEW_1' },
+          { old_string: 'MULTI_OLD_2', new_string: 'MULTI_NEW_2' },
+          { old_string: 'MULTI_OLD_3', new_string: 'MULTI_NEW_3' },
+        ],
+      });
       return;
     }
 

@@ -12,8 +12,11 @@ import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { answered } from '../../../shared/ipc/refusal';
 import { useTranslation } from 'react-i18next';
 import * as monaco from 'monaco-editor/esm/vs/editor/edcore.main';
-import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import '../lib/monaco-languages';
+// The single worker, assigned on import. Extracted by #972, which needed it a
+// third time — see `lib/monaco-worker.ts` for why it is a side effect and not an
+// `install()` anyone could forget to call.
+import '../lib/monaco-worker';
 import { languageForPath } from '../lib/diff-language';
 import {
   effectiveDiffLayout,
@@ -46,17 +49,6 @@ function joinPath(folder: string, relative: string): string {
   const sep = folder.includes('\\') && !folder.includes('/') ? '\\' : '/';
   return `${folder.replace(/[\\/]+$/, '')}${sep}${relative}`;
 }
-
-declare global {
-  interface Window {
-    MonacoEnvironment?: monaco.Environment;
-  }
-}
-// One worker, and no `label` switch: with the rich language services gone,
-// `editor.worker` is the only worker anything in this app can ask for.
-window.MonacoEnvironment = {
-  getWorker: () => new EditorWorker(),
-};
 
 export function DiffPane(props: {
   folder: string;
