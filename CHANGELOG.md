@@ -281,6 +281,14 @@ on the floor, and say so in your PR.
   token filed problem reports perfectly well while updates went on saying this
   machine had no credentials for the release list. Use **Check for updates…**
   once after saving; the next automatic check picks it up on its own.
+- **An approval pop-up outside the app now actually has its Allow and Deny buttons.**
+  When a session asked permission while you were looking somewhere else, the desktop
+  notification went out with no buttons on it, and clicking it did not take you to the
+  question — you had to find the card yourself. It was being built a fraction of a
+  second before the request it was about had been registered, so it had nothing to
+  attach them to. Both buttons are back, and clicking the body of the toast raises the
+  right session.
+
 - A session card no longer keeps a task label describing a conversation it
   could not reopen. If the conversation is gone from disk and the session has
   to start fresh, the card goes back to **+ task label** and your next prompt
