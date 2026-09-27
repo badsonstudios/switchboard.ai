@@ -247,6 +247,49 @@ test.describe('the approval card shows a real diff (E22-01)', () => {
     await expect(w.getByText('Allow MultiEdit?')).toHaveCount(0);
   });
 
+  test('in a SHORT window the diff gives way, and Allow stays reachable', async () => {
+    // ⚠️ THE CLAIM THAT MATTERS WHEN THE ROOM RUNS OUT, and it is not "the
+    // conversation keeps its floor" — measured, it cannot: a pane short enough leaves
+    // less than MIN_FEED once the bar, the diff and one line of composer are in it,
+    // and the scroller is the only thing that can pay. That is correct fail-open
+    // behaviour and `APPROVAL_DIFF_BLOCK_SIZE` says so.
+    //
+    // What must NEVER give is the answer. §5.16's subject is that a held request gets
+    // answered, so **Allow** and **Deny** stay on screen and clickable however little
+    // room there is — and the diff shrinks with the window (`min(180px, 24vh)`) rather
+    // than pushing them off the bottom. This is the assertion #716 used to carry by
+    // accident, made on purpose and where it belongs.
+    const folder = tempProjectFolder();
+    const title = path.basename(folder);
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
+    await a.app.evaluate(({ BrowserWindow }) => {
+      const win = BrowserWindow.getAllWindows()[0];
+      win.unmaximize();
+      // Deliberately mean. The window's own minimum clamps this upward, which is
+      // fine: the point is the shortest pane the app will actually give a user.
+      win.setContentSize(1024, 480);
+    });
+
+    await permissionHolderEdit(a)(title, 'one');
+    await expect(w.getByText('Allow Edit?')).toBeVisible({ timeout: 15_000 });
+    await expect(diffHost(w)).toBeVisible({ timeout: 25_000 });
+
+    // the diff took the clamp, not the whole window
+    const host = (await diffHost(w).boundingBox())!;
+    expect(host.height).toBeLessThan(181);
+    expect(host.height).toBeGreaterThan(0);
+
+    // …and all three answers are on screen and usable, which is the whole point
+    const allow = w.getByRole('button', { name: 'Allow', exact: true });
+    const deny = w.getByRole('button', { name: 'Deny', exact: true });
+    await expect(allow).toBeInViewport();
+    await expect(deny).toBeInViewport();
+    await allow.click();
+    await expect(w.getByText('Allow Edit?')).toHaveCount(0);
+  });
+
   test('a Bash command keeps the plain preview — no editor where there is no diff', async () => {
     const folder = tempProjectFolder();
     const title = path.basename(folder);

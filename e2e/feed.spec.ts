@@ -24,7 +24,7 @@ import path from 'path';
 import {
   hookPoster,
   launchApp,
-  permissionHolder,
+  permissionHolderBash,
   LaunchedApp,
   tabFromFeedToComposer,
   tempProjectFolder,
@@ -1041,10 +1041,25 @@ test.describe('Feed view (E12-06)', () => {
     // The APPROVAL bar is the honest replacement and is a better fit for the
     // paragraph above: it arrives from a real `can_use_tool` the CLI issued, it docks
     // below the scroller exactly as the handoff bar did (FeedView's own probe note
-    // says so), and it is the app's core loop rather than a corner. `!perm` raises
-    // one for `Write`.
-    await permissionHolder(a)(title);
-    await expect(w.getByText('Allow Write?')).toBeVisible({ timeout: 15_000 });
+    // says so), and it is the app's core loop rather than a corner.
+    //
+    // ⚠️ A BASH PERMISSION, NOT A WRITE, AND THE REASON IS THIS TEST'S SUBJECT (#972).
+    // `!perm` raises a `Write`, which is DIFFABLE — so the bar arrives with a Monaco
+    // editor in it and ~250px of docked chrome, and on CI's 1024×768 desktop the pane
+    // is then genuinely too short for MIN_FEED plus that bar plus one line of
+    // composer. The feed lands at 12px and this assertion fails, on both platforms,
+    // for a reason that has nothing to do with #716: that is correct fail-open
+    // behaviour when the room does not exist, and it was already written down in
+    // `APPROVAL_DIFF_BLOCK_SIZE`'s docblock.
+    //
+    // What #716 is about is a bar ARRIVING WITHOUT A KEYSTROKE and the box giving its
+    // room back. Any bar does that, and a `Bash` permission is the smallest one: not
+    // diffable, so the body is the plain command pane, and the geometry stops being a
+    // function of how tall a diff editor happens to be. The diff's own behaviour in a
+    // short window is `approval-diff.spec.ts`'s to assert, and it asserts the thing
+    // that actually matters there — that Allow and Deny stay reachable.
+    await permissionHolderBash(a)(title, 'npm run build');
+    await expect(w.getByText('Allow Bash?')).toBeVisible({ timeout: 15_000 });
 
     // THE ASSERTION: the box gave the height back. Without it the cap is stale,
     // the box keeps a size the column no longer has, and the feed — the only
