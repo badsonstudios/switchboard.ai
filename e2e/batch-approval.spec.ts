@@ -126,9 +126,11 @@ test.describe('batch permission handling (P2-E9-11)', () => {
     // ONE question, ONE place to answer it: the mounted card's own review bar
     // does not draw the same request a second time
     await expect(w.getByText('Allow Bash?')).toHaveCount(0);
-    // …and it does not fall through to "answer it in the terminal" either
-    // (#125's bar): the question is answerable, just not from the card
-    await expect(w.locator('[data-handoff="permission"]')).toHaveCount(0);
+    // The line under this one used to add: "…and it does not fall through to
+    // 'answer it in the terminal' either (#125's bar)". That bar is gone with the
+    // transport (#952), so the assertion could no longer fail and is removed rather
+    // than left looking like cover. The claim above it — ONE question, ONE place to
+    // answer it — is the one that was ever at risk.
 
     await w.getByTestId('batch-allow-all').click();
 

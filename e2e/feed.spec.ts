@@ -1,27 +1,30 @@
-// P2-E12-06: Feed view v1 — read-only rendered blocks from the transcript.
-// The fake provider writes no transcript, so the test plays Claude's part:
-// it writes JSONL into the isolated HOME and the watcher tails it live.
+// P2-E12-06: Feed view v1 — read-only rendered blocks from a live conversation.
 //
-// TRANSPORT SCOPE — HISTORICAL (P2-E18-18, #404; retagged by #952, which
-// left one transport, so a `[pty]` tag names nothing). The note below is the
-// reasoning as it stood, kept because it says what each test actually drives:
-// // TRANSPORT SCOPE (P2-E18-18, #404): `[pty]` for the whole group. "The watcher
-// tails it live" IS the scope — the transcript-derive pipeline is switched off
-// for a stream session (`deriveFeed: record.transport !== 'stream'`,
-// `sessions/ipc.ts`), whose conversation is built by `feed/stream-feed.ts` from
-// typed messages instead. So every rendering, scroll and keyboard assertion
-// here is about the non-default path, however green. See `launchApp` in
-// `fixtures/app.ts` for the tag.
+// TRANSPORT SCOPE — THERE IS ONE (#952). This file used to be tagged `[pty]` in its
+// entirety, and the tag was accurate: "the test writes JSONL and the watcher tails
+// it" WAS the scope, because the transcript-derive pipeline was switched off for a
+// stream session (`deriveFeed: record.transport !== 'stream'`) and a stream session
+// has been the default since #381. Every rendering, scroll and keyboard assertion
+// here was about the non-default path, however green it was.
 //
-// The Direct counterpart is `stream-feed.spec.ts` (P2-E18-14) — tool boxes,
-// Edit diff panes, verbosity presets, the #174 walk, the #196 landmark and the
-// tail pin, all built from a stream.
+// It now drives the only path there is. `stream-feed.spec.ts` (P2-E18-14) remains
+// the Direct-lane counterpart and is no longer a counterpart to anything — the two
+// files overlap on tool boxes and the #174 walk, and the duplication is deliberate
+// for now: this file reaches claims that one does not (markdown, the gutter and dot
+// rules, the clipboard round trip, the popout) and one shared setup would couple
+// them.
+//
+// TWO TESTS HERE ARE `fixme`, and neither is a flake. Both were transcript-only
+// features that #952 made unreachable: local slash-command output (#978) and
+// subagent captions (#977, a regression — the feature shipped). Their fixtures are
+// left intact on purpose; see the note above each.
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 import {
   hookPoster,
   launchApp,
+  permissionHolder,
   LaunchedApp,
   tabFromFeedToComposer,
   tempProjectFolder,
@@ -71,7 +74,7 @@ test.describe('Feed view (E12-06)', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
 
-  test('renders assistant text and a collapsed tool row from live transcript lines', async () => {
+  test('renders assistant text and a collapsed tool row from a live turn', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
@@ -81,64 +84,49 @@ test.describe('Feed view (E12-06)', () => {
     // Feed is the DEFAULT view (E12-07) — the empty state shows with no click
     await expect(w.getByText('No conversation yet')).toBeVisible();
 
-    // simulate the CLI writing its transcript in the isolated HOME
-    const dir = path.join(a.home, '.claude', 'projects', slugForCwd(folder));
-    fs.mkdirSync(dir, { recursive: true });
-    const line = (o: Record<string, unknown>) =>
-      JSON.stringify({ sessionId: 'native-e2e', cwd: folder, timestamp: new Date().toISOString(), ...o }) + '\n';
-    fs.writeFileSync(
-      path.join(dir, 'native-e2e.jsonl'),
-      line({ type: 'user', message: { role: 'user', content: 'summarize this repo' } }) +
-        line({
-          type: 'assistant',
-          message: {
-            content: [
-              { type: 'text', text: 'Hello from the **feed**' },
-              { type: 'tool_use', name: 'Read', input: { file_path: 'C:/tmp/x.md' } },
-            ],
-          },
-        })
-    );
+    // PROSE first, through the reply echo — which is how any assistant text gets
+    // here now the transcript is not the Feed's source (#952). The markdown is the
+    // point: `**feed**` has to arrive as markup a renderer can render.
+    await arrive(a, title, 'Hello from the **feed**');
+    // ⚠️ SCOPED TO THE CONVERSATION, and it has to be. The prompt now shows up in
+    // three other places — the rail row, the card's task label (#883's provisional
+    // label fills a blank from the prompt) and the user block — so a bare
+    // `getByText` is a strict-mode violation, and a `.first()` would quietly assert
+    // the RAIL instead of the feed.
+    const prose = w.locator('[data-feed-region] .feed-md', { hasText: 'Hello from the' });
+    await expect(prose.first()).toBeVisible();
+    await expect(w.locator('[data-feed-region] .feed-md strong', { hasText: 'feed' }).first()).toBeVisible();
 
-    await expect(w.getByText('summarize this repo')).toBeVisible();
-    await expect(w.getByText('Hello from the')).toBeVisible();
-    await expect(w.locator('.feed-md strong', { hasText: 'feed' })).toBeVisible(); // markdown rendered
+    // `!tools` is the fake's TOOL TURN, and it replaces a hand-written transcript
+    // (#952). It emits the measured stream shape — one `assistant` message per
+    // content block, each arriving mid-stream — for a Bash call with a two-line
+    // command ('Stream check'), an Edit (STREAM_OLD → STREAM_NEW), a plain Read
+    // row, a TodoWrite checklist, a `tool_result` for the Bash call, and prose
+    // (STREAM_PROSE) AFTER the tools so block order is observable.
+    //
+    // The literals below are its, not this file's: the old fixtures spelled the
+    // same structure BOX_/KEYS_/RICH_. Nothing about what is being claimed moved.
+    await arrive(a, title, '!tools');
+
     await expect(w.getByText('Read', { exact: true })).toBeVisible(); // collapsed tool row
     // expanding the tool row reveals the input detail
     await w.getByText('Read', { exact: true }).click();
     await expect(w.getByText(/file_path/)).toBeVisible();
 
     // rich blocks v2 (E10-06): Edit diff panes + Bash IN/OUT + todos checklist
-    fs.appendFileSync(
-      path.join(dir, 'native-e2e.jsonl'),
-      line({
-        type: 'assistant',
-        message: {
-          content: [
-            { type: 'tool_use', id: 'u1', name: 'Bash', input: { command: 'echo RICH_OUT', description: 'Check output' } },
-            { type: 'tool_use', name: 'Edit', input: { file_path: 'C:/tmp/y.ts', old_string: 'OLD_LINE', new_string: 'NEW_LINE' } },
-            { type: 'tool_use', name: 'TodoWrite', input: { todos: [{ content: 'first step', status: 'completed' }] } },
-          ],
-        },
-      }) +
-        line({
-          type: 'user',
-          message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'u1', content: 'RICH_OUT' }] },
-        })
-    );
-    await expect(w.getByText('Check output')).toBeVisible(); // Bash header description
-    await expect(w.getByText('NEW_LINE')).toBeVisible(); // Edit new pane (open by default)
+    await expect(w.getByText('Stream check')).toBeVisible(); // Bash header description
+    await expect(w.getByText('STREAM_NEW')).toBeVisible(); // Edit new pane (open by default)
     await expect(w.getByText('+1 / -1 lines')).toBeVisible(); // edit stats subtitle
     await expect(w.getByText('Update Todos')).toBeVisible();
-    await expect(w.getByText('first step')).toBeVisible();
+    await expect(w.getByText('first stream step')).toBeVisible();
     // OUT section expands to the tool result
     await w.getByText('▸ OUT').click();
-    await expect(w.getByText('RICH_OUT', { exact: true }).last()).toBeVisible();
+    await expect(w.getByText('STREAM_OUT_LINE2').last()).toBeVisible();
 
     // verbosity presets switch live (E12-07): quiet hides tool rows
     await w.getByRole('button', { name: 'quiet' }).click();
     await expect(w.getByText('Read', { exact: true })).toHaveCount(0);
-    await expect(w.getByText('Hello from the')).toBeVisible(); // prose stays
+    await expect(prose.first()).toBeVisible(); // prose stays
     await w.getByRole('button', { name: 'normal' }).click();
     await expect(w.getByText('Read', { exact: true })).toBeVisible();
   });
@@ -306,7 +294,20 @@ test.describe('Feed view (E12-06)', () => {
   // meta line, the `<command-name>` invocation, and the output as
   // `system`/`subtype:"local_command"` wrapped in `<local-command-stdout>`.
   // THERE IS NO `assistant` ENTRY — that absence is the whole bug.
-  test('a local slash command shows its OUTPUT, not just a collapsed echo (#156)', async () => {
+  //
+  // ⚠️ FIXME — #978, opened by #952. THE FIXTURE BELOW IS DELIBERATELY UNCHANGED.
+  //
+  // This never worked on the stream and now works nowhere: `system:local_command`
+  // is a TRANSCRIPT line with no known stream-json equivalent, and the Feed stopped
+  // being built from the transcript for a real session at E18-10. The renderer half
+  // is not suspected — it is the line that never arrives.
+  //
+  // Left as `fixme` rather than deleted, and the three JSONL entries left as they
+  // are, because they are copied VERBATIM from a real transcript (read 2026-08-02)
+  // and are the only record in the tree of what the CLI actually writes for a local
+  // command. #978 has to measure the stream before it can rebuild this; it should
+  // read these first.
+  test.fixme('a local slash command shows its OUTPUT, not just a collapsed echo (#156)', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
@@ -372,31 +373,16 @@ test.describe('Feed view (E12-06)', () => {
     const w = a.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
 
-    const dir = path.join(a.home, '.claude', 'projects', slugForCwd(folder));
-    fs.mkdirSync(dir, { recursive: true });
-    const line = (o: Record<string, unknown>): string =>
-      JSON.stringify({ sessionId: 'native-box', cwd: folder, timestamp: new Date().toISOString(), ...o }) + '\n';
-    fs.writeFileSync(
-      path.join(dir, 'native-box.jsonl'),
-      line({ type: 'user', message: { role: 'user', content: 'BOX_PROMPT' } }) +
-        line({
-          type: 'assistant',
-          message: {
-            content: [
-              { type: 'text', text: 'BOX_PROSE answer' },
-              // two lines on purpose: a COLLAPSED section still shows its first
-              // line, so only a second one can tell open from shut
-              { type: 'tool_use', id: 'b1', name: 'Bash', input: { command: 'echo BOX_CMD\nBOX_CMD_LINE2', description: 'Box check' } },
-              { type: 'tool_use', name: 'Edit', input: { file_path: 'C:/tmp/box.ts', old_string: 'BOX_OLD', new_string: 'BOX_NEW' } },
-              { type: 'tool_use', name: 'Read', input: { file_path: 'C:/tmp/box.md' } },
-            ],
-          },
-        }) +
-        line({
-          type: 'user',
-          message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'b1', content: 'BOX_OUTPUT\nBOX_OUT_LINE2' }] },
-        })
-    );
+    // `!tools` is the fake's TOOL TURN, and it replaces a hand-written transcript
+    // (#952). It emits the measured stream shape — one `assistant` message per
+    // content block, each arriving mid-stream — for a Bash call with a two-line
+    // command ('Stream check'), an Edit (STREAM_OLD → STREAM_NEW), a plain Read
+    // row, a TodoWrite checklist, a `tool_result` for the Bash call, and prose
+    // (STREAM_PROSE) AFTER the tools so block order is observable.
+    //
+    // The literals below are its, not this file's: the old fixtures spelled the
+    // same structure BOX_/KEYS_/RICH_. Nothing about what is being claimed moved.
+    await arrive(a, path.basename(folder), '!tools');
 
     // 1. every tool block is its own bordered container
     await expect(w.locator('[data-feed-box="bash"]')).toBeVisible({ timeout: 20_000 });
@@ -410,7 +396,7 @@ test.describe('Feed view (E12-06)', () => {
 
     // …and dropping the dot must not drop the GUTTER: prose starts on the same
     // column as the boxes, or the conversation zig-zags down the page
-    const prose = await w.locator('.feed-md', { hasText: 'BOX_PROSE' }).boundingBox();
+    const prose = await w.locator('.feed-md', { hasText: 'STREAM_PROSE' }).boundingBox();
     const box = await w.locator('[data-feed-box="edit"]').boundingBox();
     expect(Math.abs(prose!.x - box!.x)).toBeLessThanOrEqual(1);
 
@@ -418,11 +404,11 @@ test.describe('Feed view (E12-06)', () => {
     //    subtitle is box body by construction — it is neither the header line
     //    nor an inner expander — so a click there proves the whole container is
     //    the target.
-    await expect(w.getByText('BOX_NEW')).toBeVisible(); // Edit opens expanded
+    await expect(w.getByText('STREAM_NEW')).toBeVisible(); // Edit opens expanded
     await w.getByText('+1 / -1 lines').click();
-    await expect(w.getByText('BOX_NEW')).toHaveCount(0);
+    await expect(w.getByText('STREAM_NEW')).toHaveCount(0);
     await w.getByText('+1 / -1 lines').click();
-    await expect(w.getByText('BOX_NEW')).toBeVisible();
+    await expect(w.getByText('STREAM_NEW')).toBeVisible();
 
     //    …and the Bash box opens from its PADDING, where there is nothing but
     //    the container itself — Dan's ask in his own words: click the box and
@@ -432,8 +418,8 @@ test.describe('Feed view (E12-06)', () => {
     await w.locator('[data-feed-box="bash"]').click({ position: { x: 3, y: 2 } });
     await expect(w.getByText('▾ IN')).toBeVisible();
     await expect(w.getByText('▾ OUT')).toBeVisible();
-    await expect(w.getByText('BOX_CMD_LINE2')).toBeVisible(); // the WHOLE command
-    await expect(w.getByText('BOX_OUT_LINE2')).toBeVisible();
+    await expect(w.getByText('STREAM_CMD_LINE2')).toBeVisible(); // the WHOLE command
+    await expect(w.getByText('STREAM_OUT_LINE2')).toBeVisible();
 
     // 4. an expander INSIDE the box owns its own click (it must not also flip
     //    the box, or every fine-grained control would fight its container)
@@ -475,29 +461,16 @@ test.describe('Feed view (E12-06)', () => {
     const w = a.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
 
-    const dir = path.join(a.home, '.claude', 'projects', slugForCwd(folder));
-    fs.mkdirSync(dir, { recursive: true });
-    const line = (o: Record<string, unknown>): string =>
-      JSON.stringify({ sessionId: 'native-a11y', cwd: folder, timestamp: new Date().toISOString(), ...o }) + '\n';
-    fs.writeFileSync(
-      path.join(dir, 'native-a11y.jsonl'),
-      line({ type: 'user', message: { role: 'user', content: 'KEYS_PROMPT' } }) +
-        line({
-          type: 'assistant',
-          message: {
-            content: [
-              { type: 'text', text: 'KEYS_PROSE answer' },
-              { type: 'tool_use', id: 'k1', name: 'Bash', input: { command: 'echo KEYS_CMD\nKEYS_CMD_LINE2', description: 'Keys check' } },
-              { type: 'tool_use', name: 'Edit', input: { file_path: 'C:/tmp/keys.ts', old_string: 'KEYS_OLD', new_string: 'KEYS_NEW' } },
-              { type: 'tool_use', name: 'Read', input: { file_path: 'C:/tmp/keys.md' } },
-            ],
-          },
-        }) +
-        line({
-          type: 'user',
-          message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'k1', content: 'KEYS_OUTPUT' }] },
-        })
-    );
+    // `!tools` is the fake's TOOL TURN, and it replaces a hand-written transcript
+    // (#952). It emits the measured stream shape — one `assistant` message per
+    // content block, each arriving mid-stream — for a Bash call with a two-line
+    // command ('Stream check'), an Edit (STREAM_OLD → STREAM_NEW), a plain Read
+    // row, a TodoWrite checklist, a `tool_result` for the Bash call, and prose
+    // (STREAM_PROSE) AFTER the tools so block order is observable.
+    //
+    // The literals below are its, not this file's: the old fixtures spelled the
+    // same structure BOX_/KEYS_/RICH_. Nothing about what is being claimed moved.
+    await arrive(a, path.basename(folder), '!tools');
     await expect(w.locator('[data-feed-box="bash"]')).toBeVisible({ timeout: 20_000 });
 
     // 1. EVERY expander is a real <button aria-expanded>, and no box lies about
@@ -548,13 +521,13 @@ test.describe('Feed view (E12-06)', () => {
     // 5. the arrows walk the whole set, including the expanders INSIDE the Bash
     //    box that no box-level shortcut could ever reach on their own
     await w.keyboard.press('Home'); // -> the first expander, the Bash header
-    expect((await focused()).label).toContain('Keys check');
+    expect((await focused()).label).toContain('Stream check');
     await w.keyboard.press('ArrowDown'); // -> Bash IN
     await w.keyboard.press('ArrowDown'); // -> Bash OUT
     f = await focused();
     expect(f.label).toContain('OUT');
     await w.keyboard.press('Enter');
-    await expect(w.getByText('KEYS_OUTPUT', { exact: true }).last()).toBeVisible();
+    await expect(w.getByText('STREAM_OUT_LINE2').last()).toBeVisible();
     await expect(w.getByText('▸ IN')).toBeVisible(); // IN stayed shut — no coarse toggle
 
     // 6. Escape hands focus back to the region, and tabbing out of it reaches
@@ -783,7 +756,6 @@ test.describe('Feed view (E12-06)', () => {
       process.platform === 'linux',
       'popout opens a 2nd OS window — unreliable under headless xvfb'
     );
-    const NL = String.fromCharCode(10);
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
@@ -801,18 +773,10 @@ test.describe('Feed view (E12-06)', () => {
       });
     });
 
-    const dir = path.join(a.home, '.claude', 'projects', slugForCwd(folder));
-    fs.mkdirSync(dir, { recursive: true });
-    const line = (o: Record<string, unknown>): string =>
-      JSON.stringify({ sessionId: 'poplink', cwd: folder, timestamp: new Date().toISOString(), ...o }) + NL;
-    fs.writeFileSync(
-      path.join(dir, 'poplink.jsonl'),
-      line({ type: 'user', message: { role: 'user', content: 'POP_LINK' } }) +
-        line({
-          type: 'assistant',
-          message: { content: [{ type: 'text', text: 'See [popped docs](https://popped.test/x).' }] },
-        })
-    );
+    // the link arrives in a reply, through the echo (#952) — the same lever the
+    // in-window link test above uses, so the only difference between them stays the
+    // window the click happens in
+    await arrive(a, path.basename(folder), 'See [popped docs](https://popped.test/x).');
     await expect(w.getByText('popped docs', { exact: true })).toBeVisible({ timeout: 20_000 });
 
     await w.getByTitle('Pop out into its own window').click();
@@ -1021,10 +985,30 @@ test.describe('Feed view (E12-06)', () => {
     // At a dev machine's height the twelve-line cap wins and a docked bar costs
     // the box nothing — which is a real configuration, and the wrong one to
     // measure a room bug in.
+    //
+    // 580, WAS 460 (#952), AND THE HEIGHT IS NOW LOAD-BEARING IN BOTH DIRECTIONS.
+    //
+    // The bar that docks below is the APPROVAL bar rather than #125's handoff bar,
+    // and it is 134px tall against that one's ~45. Measured: at 460 the panel comes
+    // out 269px — 460 is below this window's floor, so it clamps to 535 content and
+    // 460 vs 500 produced byte-identical geometry, which is worth knowing before
+    // anyone tunes this again. Docked chrome is then 21 (verbosity strip) + 134 (bar)
+    // + 40 (the composer row's own controls), so `roomForBox` offers the textarea
+    // 14px — less than one line. It takes 34 anyway, the scroller is the only thing
+    // that can pay, and MIN_FEED is missed by 20. That is correct fail-open behaviour
+    // rather than a bug: the pane is genuinely too short for the floor plus that bar
+    // plus one line of composer, and something has to give.
+    //
+    // So the window has to sit in a BAND: tall enough that the floor is achievable
+    // once the bar docks (panel ≥ 60 + 40 + 21 + 134 + 34), short enough that the
+    // panel and not the twelve-line cap is what stops the box growing (panel - 121 <
+    // the cap, ~214px). 580 content ≈ 314 panel is inside it. Both ends are asserted
+    // below, so a window that drifts out of the band fails rather than passing.
+
     await a.app.evaluate(({ BrowserWindow }) => {
       const win = BrowserWindow.getAllWindows()[0];
       win.unmaximize();
-      win.setContentSize(win.getContentSize()[0], 460);
+      win.setContentSize(win.getContentSize()[0], 580);
     });
 
     const box = w.getByPlaceholder(/Prompt this session/);
@@ -1035,25 +1019,38 @@ test.describe('Feed view (E12-06)', () => {
 
     // fill it until the panel, not the line cap, is what stops it
     await box.fill('lorem ipsum dolor sit amet '.repeat(120));
-    await expect.poll(boxHeight, { timeout: 10_000 }).toBeGreaterThan(0);
+    // SETTLE ON THE PRECONDITION, don't sample and hope (#952). This polled
+    // `boxHeight > 0`, which is true on the first tick, and then measured the feed
+    // once — so the assertion raced the box's growth and read 191px about half the
+    // time. Polling the FEED to its floor says the precondition out loud and waits
+    // for it, and it folds the separate `toBeLessThan` into the wait.
+    const feedHeight = async (): Promise<number> => (await feed.boundingBox())!.height;
+    await expect.poll(feedHeight, { timeout: 10_000 }).toBeLessThan(MIN_FEED + 8);
     const tall = await boxHeight();
-    expect((await feed.boundingBox())!.height).toBeLessThan(MIN_FEED + 8);
 
     // A bar arrives. Nothing is typed, the window does not move, the box keeps
     // its width — so nothing the composer watches for itself has changed.
-    const post = await hookPoster(a);
-    await post(title, {
-      hook_event_name: 'Notification',
-      notification_type: 'permission_prompt',
-      message: 'Claude needs your permission to use Write',
-    });
-    await expect(w.locator('[data-handoff="permission"]')).toBeVisible({ timeout: 15_000 });
+    //
+    // BOTH ENDS OF THIS CHANGED, AND FOR THE SAME REASON (#952). The stimulus was a
+    // `Notification` hook with `notification_type: 'permission_prompt'`, and the bar
+    // it docked was the TERMINAL HANDOFF bar — `data-handoff`, #125's "your session
+    // is waiting in the Terminal tab". Both are gone: a permission `Notification` is
+    // dropped before it can move anything (#313), and there is no terminal to hand
+    // off to.
+    //
+    // The APPROVAL bar is the honest replacement and is a better fit for the
+    // paragraph above: it arrives from a real `can_use_tool` the CLI issued, it docks
+    // below the scroller exactly as the handoff bar did (FeedView's own probe note
+    // says so), and it is the app's core loop rather than a corner. `!perm` raises
+    // one for `Write`.
+    await permissionHolder(a)(title);
+    await expect(w.getByText('Allow Write?')).toBeVisible({ timeout: 15_000 });
 
     // THE ASSERTION: the box gave the height back. Without it the cap is stale,
     // the box keeps a size the column no longer has, and the feed — the only
     // flexible item here — is squeezed under its floor to pay for it.
     await expect.poll(boxHeight, { timeout: 10_000 }).toBeLessThan(tall);
-    expect((await feed.boundingBox())!.height).toBeGreaterThan(MIN_FEED - 8);
+    expect(await feedHeight()).toBeGreaterThan(MIN_FEED - 8);
     await expect(chip).toBeInViewport();
     await expect(box).toBeInViewport();
   });
@@ -1070,31 +1067,27 @@ test.describe('Feed view (E12-06)', () => {
     const w = a.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
 
-    const dir = path.join(a.home, '.claude', 'projects', slugForCwd(folder));
-    fs.mkdirSync(dir, { recursive: true });
-    const line = (o: Record<string, unknown>): string =>
-      JSON.stringify({ sessionId: 'native-copy', cwd: folder, timestamp: new Date().toISOString(), ...o }) + NL;
     // two lines, so "it copied the whole fence" is a different answer from "it
     // copied the line you could see"
     const FENCE = ['npm run build', 'npm test', ''].join(NL);
-    const OUT = ['COPY_OUT', 'COPY_OUT_LINE2'].join(NL);
-    fs.writeFileSync(
-      path.join(dir, 'native-copy.jsonl'),
-      line({ type: 'user', message: { role: 'user', content: 'COPY_PROMPT' } }) +
-        line({
-          type: 'assistant',
-          message: {
-            content: [
-              { type: 'text', text: ['Run this:', '', '```bash', FENCE + '```', ''].join(NL) },
-              { type: 'tool_use', id: 'c1', name: 'Bash', input: { command: 'echo COPY_CMD', description: 'Copy check' } },
-            ],
-          },
-        }) +
-        line({
-          type: 'user',
-          message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'c1', content: OUT }] },
-        })
-    );
+    // the fake's own Bash result, two lines for the same reason (#952)
+    const OUT = ['STREAM_OUTPUT', 'STREAM_OUT_LINE2'].join(NL);
+
+    // The fence arrives in a REPLY, through the echo (#952) — markdown a renderer
+    // has to turn into a `.feed-code` with a language header and a Copy button. The
+    // echo prefixes the FIRST line only, so the fence's own content, which is what
+    // the clipboard assertion compares against, is byte-identical either way.
+    await arrive(a, path.basename(folder), ['Run this:', '', '```bash', FENCE + '```', ''].join(NL));
+    // `!tools` is the fake's TOOL TURN, and it replaces a hand-written transcript
+    // (#952). It emits the measured stream shape — one `assistant` message per
+    // content block, each arriving mid-stream — for a Bash call with a two-line
+    // command ('Stream check'), an Edit (STREAM_OLD → STREAM_NEW), a plain Read
+    // row, a TodoWrite checklist, a `tool_result` for the Bash call, and prose
+    // (STREAM_PROSE) AFTER the tools so block order is observable.
+    //
+    // The literals below are its, not this file's: the old fixtures spelled the
+    // same structure BOX_/KEYS_/RICH_. Nothing about what is being claimed moved.
+    await arrive(a, path.basename(folder), '!tools');
 
     // start from a clipboard we know is not the answer
     await a.app.evaluate(({ clipboard }) => clipboard.writeText('CLIPBOARD_UNTOUCHED'));
@@ -1106,7 +1099,9 @@ test.describe('Feed view (E12-06)', () => {
       (await a.app.evaluate(({ clipboard }) => clipboard.readText())).replace(/\r\n/g, String.fromCharCode(10));
 
     // 1. the fence in the reply carries a header with its language and a Copy
-    const fence = w.locator('.feed-code').first();
+    // scoped to the assistant block: the prompt that provoked this reply carries
+    // the same fence, so `.feed-code` alone would be ambiguous (#952)
+    const fence = w.locator('[data-feed-block="assistant"] .feed-code').first();
     await expect(fence).toBeVisible({ timeout: 20_000 });
     await expect(fence.locator('.feed-code-lang')).toHaveText('bash');
     await fence.locator('[data-feed-copy]').click();
@@ -1120,14 +1115,32 @@ test.describe('Feed view (E12-06)', () => {
     //    section, not the one line a collapsed section shows
     await expect(w.locator('[data-feed-box="bash"]')).toBeVisible();
     await w.locator('[data-feed-box="bash"]').click({ position: { x: 3, y: 2 } });
-    const out = w.locator('[data-feed-code]', { hasText: 'COPY_OUT_LINE2' }).last();
+    const out = w.locator('[data-feed-code]', { hasText: 'STREAM_OUT_LINE2' }).last();
     await out.locator('[data-feed-copy]').click();
     await expect.poll(pasted, { timeout: 5_000 }).toBe(OUT);
 
     // 3. and the button says "Copied" only for a moment
     await expect(fence.locator('[data-feed-copy]')).toHaveText('Copy');
   });
-  test('names and separates two concurrent subagents (#788)', async () => {
+  //
+  // ⚠️ FIXME — #977, opened by #952, AND THIS ONE IS A REGRESSION RATHER THAN A GAP.
+  //
+  // #788 shipped captioned, separated subagent runs, and every bit of it was fed by
+  // the transcript watcher adopting `<native-id>/subagents/agent-<id>.jsonl`. That
+  // only ever ran for a PTY session, so the feature has been invisible on the
+  // default transport since #381 and is now invisible everywhere. `StreamFeed`
+  // drops sidechain traffic on purpose — `parent_tool_use_id != null` returns early
+  // in both `onStreamEvent` and `onMessage` — because interleaving a subagent's
+  // tokens into the main conversation would be worse than dropping them. The
+  // renderer (`.agent-divider`, the caption rule, the grouping) is intact and
+  // unit-tested. Nothing feeds it.
+  //
+  // The fixture below is LEFT ALONE on purpose. It writes the layout the CLI really
+  // writes, measured over 3,214 transcripts (`isSidechain: true` appears zero times
+  // in a parent file), and #977 should read it before rebuilding this on the stream:
+  // the shape will change, the CLAIMS will not — three runs, two ids, one shared
+  // name, and the session's own voice never captioned.
+  test.fixme('names and separates two concurrent subagents (#788)', async () => {
     // The first sidechain coverage in the e2e tree, and it writes the layout
     // the CLI really writes: subagent turns live in
     // `<native-id>/subagents/agent-<id>.jsonl`, NOT in the parent transcript.
