@@ -3,6 +3,72 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ⛔ BLOCKED — 2026-09-26: **#952 is code-complete and CANNOT MERGE. 54 e2e tests
+> fail, and clearing them is E18-14's deferred scope. A SCOPE CALL IS NEEDED.**
+>
+> PR **#976** is open, red, and must not be merged. Three commits on
+> `feature/952-delete-pty-stack`. **Unit (9,255), lint and all three typechecks are
+> genuinely green; `npm run e2e` is 306 passed / 54 FAILED across 23 spec files.**
+>
+> **⚠️ FIRST, THE PROCESS FAILURE, BECAUSE IT IS THE REASON THIS WAS REPORTED GREEN
+> TWICE.** Both earlier e2e runs were piped through `tail -25`. Playwright's
+> summary prints the failure list, then `N failed`, then `N passed` — so `tail`
+> showed "306 passed" with the `54 failed` line one screen above the window, and
+> a grep for "failed" over the truncated file found nothing. **A verification gate
+> whose output cannot be seen in full is not a gate.** CI caught it. Capture a
+> 30-minute suite to a FILE and read the whole summary; never `tail` it.
+>
+> **THE REAL CAUSE, AND IT IS NOT ENVIRONMENTAL.** The entire e2e suite was
+> running PTY sessions and nobody had noticed, because the chain was invisible:
+> `SWITCHBOARD_FAKE_PROVIDER=1` selected the shell-in-a-PTY fake, whose recipe
+> declared NO transport, so `DEFAULT_TRANSPORT` (`'pty'` at the time) gave every
+> session `record.transport === 'pty'`. Two harness mechanisms depended on that
+> and both are now dead:
+>
+> 1. **Hook-driven permissions (~25 failures).** `hookPoster` POSTs a `PreToolUse`
+>    hook and the spec asserts the approval bar. That was the hold path; the bar
+>    never appears, so `getByText('Allow Edit?')` finds nothing. Hit
+>    `approval` (6), `attention` (4), `batch-approval`, `a11y-keyboard`, `ladder`,
+>    `layout-modes`, `presentation-policy`, `quiet-hours`, `rules`, `urgency`,
+>    `permission-toast`, `focus-policy`, `events-drawer`.
+> 2. **Transcript-derived Feed blocks (~29 failures).** Specs seed JSONL and expect
+>    the watcher to build Feed blocks. `deriveFeed` was `record.transport !==
+>    'stream'`, so it was TRUE only for those PTY-faked sessions; it is
+>    unconditionally false now and the Feed comes from typed messages alone. Hit
+>    `feed` (13), `find` (3), `binding`, `task-label`, `slash-commands`,
+>    `feed-restore-position`, `theme`, `sounds`, `stream-trust`,
+>    `terminal-accelerators`.
+>
+> **⭐ AND THE RETAGGING WAS WRONG, WHICH IS THE ONE JUDGEMENT TO OVERTURN.** The
+> `[pty]` tags on those groups were ACCURATE — they named a real dependency on the
+> transport, not a stale label. I read them as rot because #639 and #873 had rotted
+> two of them, sampled three spec files, saw 36/38 pass, and generalised. **A
+> sample is not a suite, and "this label rotted before" is not evidence that it is
+> rotten now.**
+>
+> **THE SCOPE CALL, WHICH IS DAN'S:** clearing these is **E18-14**'s deferred
+> backlog — #416 ported 11 tests in 3 files and deliberately deferred the rest with
+> a named priority list, on the reasoning that Direct had no UI witness yet. Three
+> ways forward:
+>
+> - **(a) Port them inside #952.** ~54 tests, two stimulus rewrites: `hookPoster`
+>   → `streamPrompter` + `!perm` (the pattern already applied to `rail.spec.ts`
+>   in this branch, which is green), and seeded JSONL → fake-stream messages.
+>   Large, and it makes an already-XL item bigger.
+> - **(b) Split.** Land the source deletion behind a spec-port follow-up. Needs a
+>   decision about main being red-in-e2e meanwhile, which the merge-on-green rule
+>   forbids — so in practice this means #952 waits.
+> - **(c) Delete the coverage.** Cheapest, and it discards real verification of
+>   the approval bar, the attention queue and the Feed. **Not recommended**, and
+>   not a call to make quietly.
+>
+> **Recommendation: (a).** The mechanism is proven — `rail.spec.ts`'s two tests
+> were ported this way and pass — and the alternative leaves E18 claiming an exit
+> it has not earned.
+>
+> **#972 and #967 are NOT started.**
+
+
 > # ✅ DONE — 2026-09-26: **#952 — E18-16, delete the PTY stack. E18 IS COMPLETE.**
 >
 > First of three items the owner queued back-to-back (**#952 → #972 → #967**).
