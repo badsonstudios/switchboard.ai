@@ -241,14 +241,11 @@ export interface SessionIpcDeps {
   /** slash-command discovery for the composer popup (E10-07, §5.17) — async:
    *  the scan must never stall the main process on a slow disk */
   slashCommands: (folder: string, providerId: string) => Promise<SlashCommand[]>;
-  /** The env-level override of which transport a session asks its adapter for
-   *  (P2-E18-08a). It sits BELOW the card's own setting and above the default —
-   *  the full order is at the `sessions:create` call site. Returning `undefined`
-   *  = no override. Kept after #149 gave the choice a real home on the card,
-   *  because it is the only way to aim a WHOLE app instance at one transport —
-   *  which is how the e2e suite starts a session on the Terminal now that
-   *  Direct is the default (#381). */
-  // `preferredTransport` went with `SWITCHBOARD_TRANSPORT` (#952).
+  // `preferredTransport` went with `SWITCHBOARD_TRANSPORT` (#952). It was the
+  // env-level override of which transport a session asked its adapter for,
+  // sitting below the card's own setting and above the default — the only way to
+  // aim a WHOLE app instance at one transport, which is how the e2e suite used to
+  // start a session on the Terminal once Direct became the default (#381).
   /**
    * A repair the user should SEE, not just find in the log (#539).
    *

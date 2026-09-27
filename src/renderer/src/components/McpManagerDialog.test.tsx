@@ -1019,7 +1019,8 @@ describe('the measured settle — pending is an answer, not a spinner (#729)', (
 
 describe('when the session cannot answer, the pane says WHICH reason', () => {
   it.each([
-    ['not-stream', 'Terminal mode'],
+    // `not-stream` names a missing control channel since #952, not a transport
+    ['not-stream', 'no live connection'],
     ['unavailable', 'answer'],
     ['no-session', 'Start this session'],
   ])('falls back to the config list and explains `%s`', async (reason, phrase) => {

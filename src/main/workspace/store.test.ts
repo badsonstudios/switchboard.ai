@@ -957,7 +957,7 @@ describe('update prefs (P2-E19-03)', () => {
     const st = makeStore(file);
     st.load();
     expect(st.getUpdatePrefs()).toEqual({ autoCheck: true });
-    expect(st.getAutoTrust()).toBe(false); // …and nothing else moved
+    expect(st.snapshot().autoTrust).toBe(false); // …and nothing else moved
     // auto labels default ON for a file that predates them (P2-E7-06): the
     // feature is what the setting is for, and off is the exception
     expect(st.getAutoLabels()).toBe(true);
@@ -1131,7 +1131,7 @@ describe('service-health prefs (P2-E14-07)', () => {
     const st = makeStore(file);
     st.load();
     expect(st.getServiceHealthPrefs()).toEqual({ poll: true });
-    expect(st.getAutoTrust()).toBe(false); // …and nothing else moved
+    expect(st.snapshot().autoTrust).toBe(false); // …and nothing else moved
   });
 
   it('two stores do not share the defaults object', () => {
@@ -1200,7 +1200,7 @@ describe('phone-push prefs (P2-E14-06)', () => {
     const st = makeStore(file);
     st.load();
     expect(st.getPushPrefs()).toEqual({ push: false, service: 'ntfy', webhook: false });
-    expect(st.getAutoTrust()).toBe(false);
+    expect(st.snapshot().autoTrust).toBe(false);
   });
 
   it('two stores do not share the defaults object', () => {
@@ -1892,24 +1892,32 @@ describe('load-time repairs are audible (#344)', () => {
       expect(loadWarns()).toEqual([]);
     });
 
-    // THE CASE THE FIRST VERSION GOT WRONG, and the reason the count is a
-    // difference across the dispatch rather than a tally of what went in.
+    // ⚠️ THIS CASE INVERTED IN #952, AND THE INVERSION IS THE POINT.
     //
-    // A v2 file has already been lifted, so its migration is the identity and
-    // nothing moves — but a `'pty'` can still be present, either hand-edited or
+    // It used to assert SILENCE: a v2 file was already the current shape, so its
+    // migration was the identity and a `'pty'` in it STAYED — hand-edited, or
     // re-persisted by a developer running `SWITCHBOARD_TRANSPORT=pty`, which
-    // `sessions:create` writes back on every spawn. Counting the INPUT claimed
-    // a migration on every launch, for ever, about a card that stayed on the
-    // PTY the whole time — a false line in the one file someone reads to find
-    // out what happened.
-    it('is silent on a v2 file that still holds a pty card — nothing was lifted', () => {
+    // `sessions:create` wrote back on every spawn. Counting the INPUT would have
+    // claimed a migration on every launch for ever about a card that never moved,
+    // which is why the count is a DIFFERENCE across the dispatch.
+    //
+    // #952 deleted the transport, so that surviving `'pty'` is no longer a
+    // choice this host can honour — it is a card that would refuse every dispatch
+    // and ask the adapter for something that does not exist. v2 -> v3 lifts it,
+    // and the line is now correct rather than false.
+    //
+    // The difference-based count is what let the same reporting code tell these
+    // two apart without being edited.
+    it('lifts a v2 file that still holds a pty card, and says so', () => {
       write({ version: 2, sessions: [{ ...sess('a'), transport: 'pty' }] });
       const warns: Line[] = [];
       const state = makeStore(file, fakeLogger(warns)).load();
 
-      // the card is untouched: v2 is the current shape, so the choice stands
-      expect(state.sessions.find((s) => s.id === 'a')?.transport).toBe('pty');
-      expect(warns).toEqual([]);
+      // the stored choice is CLEARED, not rewritten: absent means "never chose",
+      // which is what is true once there is nothing to have chosen
+      expect(state.sessions.find((s) => s.id === 'a')?.transport).toBeUndefined();
+      expect(warns).toHaveLength(1);
+      expect(warns[0].msg).toMatch(/moved off the removed Terminal transport/);
     });
 
     // A file from the FUTURE is read-only — this build will never write it — so

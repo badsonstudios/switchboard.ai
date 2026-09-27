@@ -841,8 +841,7 @@ const api = {
       ipcRenderer.invoke('mcp:clearAuth', folder, liveId, name),
   },
   settings: {
-    getAutoTrust: (): Promise<boolean> => ipcRenderer.invoke('settings:getAutoTrust'),
-    setAutoTrust: (on: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setAutoTrust', on),
+    // `getAutoTrust` / `setAutoTrust` went with the folder-trust chip (#952).
     /** Fill blank task labels from the CLI's own conversation title (P2-E7-06).
      *  Off hides every auto label at once and drops toast text back to the
      *  session title — the screen-share switch (§5.11). */

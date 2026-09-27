@@ -567,11 +567,11 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   };
   // The per-card transport state (P2-E18-08b) lived here: the current mode, the
   // pending-restart flag, and the toggle that drove `sessions:setTransport`.
-  // All three were the ⋯ menu switch's backing store, and went with it (#873).
-  // The IPC channel itself is deliberately kept — see the note in the menu.
+  // All three were the ⋯ menu switch's backing store, and went with it (#873);
+  // the channel behind them went with the transport (#952).
   // Per-session "notify when done" (P2-E14-03, §5.9). It lives in this menu
   // rather than the composer's options row because it is a durable property of
-  // the CARD — like the transport switch directly above it — not a choice
+  // the CARD — as the transport switch above it used to be — not a choice
   // about the next prompt, and because the composer is gone entirely from the
   // Terminal tab and from a collapsed card, where the setting must still be
   // reachable. Its whole implementation in main is a RULE; the checkbox is
@@ -727,17 +727,24 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // and a setter read before its own `useState` line is a hazard nobody should
   // have to reason about. Its timer and its clear live with `decide`.
   //
-  // A COUNTER, not a boolean, and #310 is why. Setting a boolean that is already
-  // `true` is a React bail-out: no re-render, no effect re-run, so the 2s timer
-  // keeps its ORIGINAL deadline. That was survivable while only the manual
-  // Allow/Deny path opened the window — two clicks inside two seconds are rare —
-  // but an allow-all session opens it on EVERY gated call, so back-to-back is
-  // the normal case there, and the second call would have inherited whatever was
-  // left of the first one's window. A counter always changes, so the effect
-  // always re-arms.
-  const [decidedSeq, setDecidedSeq] = React.useState(0);
-  const recentlyDecided = decidedSeq > 0;
-  const noteDecided = (): void => setDecidedSeq((n) => n + 1);
+  // ── THE "RECENTLY DECIDED" WINDOW WENT WITH ITS ONLY CONSUMER (#952) ───────
+  //
+  // `decidedSeq` / `recentlyDecided` / `noteDecided` and a 2s timer existed for
+  // ONE reader: the terminal-handoff bar. The queue pops synchronously while
+  // `permission-resolved` only comes back after a full IPC round trip, so for a
+  // frame or two a card read "needs-permission with nothing held" — exactly the
+  // state the bar rendered on — and answering a permission flashed "switchboard
+  // can't answer it for you" where the button had just been (#125 review).
+  //
+  // ⚠️ THE RACE IS STILL THERE. It is only the SURFACE that is gone. Anything
+  // added later that renders off `status === 'needs-permission' && !approval`
+  // inherits this exact flash, and will need this window back. #310's lesson
+  // comes with it: it has to be a COUNTER, not a boolean — setting a boolean
+  // that is already `true` is a React bail-out, so no re-render, no effect
+  // re-run, and the timer keeps its ORIGINAL deadline. Survivable when only
+  // manual Allow/Deny opened the window; wrong for an allow-all session, which
+  // opens it on every gated call, where the second call would inherit whatever
+  // was left of the first one's.
   // ⋯ session-controls menu (E10-07, §5.17): GUI sugar that TYPES the real
   // slash command into the PTY — the CLI stays the source of truth
   const [menuOpen, setMenuOpen] = React.useState(false);
@@ -1245,7 +1252,6 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
         },
         queue: (req) => setPermQueue((prev) => enqueueHeld(prev, req)),
         surface: () => setView(DEFAULT_PANEL_ID),
-        suppressHandoff: () => noteDecided(),
       });
     const offReq = window.switchboard.sessions.onPermissionRequest(enqueue);
     const offRes = window.switchboard.sessions.onPermissionResolved((r) => {
@@ -1312,28 +1318,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     // silently delete that one, which is still held. See `dropAnswered`.
     // The resolved event prunes too; both are idempotent.
     setPermQueue((prev) => dropAnswered(prev, head.requestId));
-    // The queue pops NOW; `permission-resolved` only comes back after a full
-    // IPC round trip, so for a frame or two the card reads
-    // "needs-permission with nothing held" — which is exactly the state the
-    // handoff bar exists for. Without this window, answering a permission
-    // flashes "switchboard can't answer it for you" where the button was
-    // (#125 review). The window is generous on purpose: it costs nothing if
-    // the status beats it, and a stale bar is worse than a late one.
-    noteDecided();
   };
-  // Keyed on the COUNTER, not on the boolean: every answer re-arms the full 2s
-  // (see the declaration). The cleanup cancels the previous deadline first, so
-  // consecutive answers never leave a stray timer that could close the window
-  // early on the one after it.
-  React.useEffect(() => {
-    if (decidedSeq === 0) return;
-    const id = setTimeout(() => setDecidedSeq(0), 2_000);
-    return () => clearTimeout(id);
-  }, [decidedSeq]);
-  // a new hold means the round trip finished and the next question is live
-  React.useEffect(() => {
-    if (perm) setDecidedSeq(0);
-  }, [perm]);
 
   // membership follows the panel when the user drags it between dockview
   // groups in the grid (E12-04)
@@ -1579,7 +1564,6 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     model: model ?? usage?.model,
     binding: binding?.binding,
     bindingDiag: binding?.bindingDiag ?? null,
-    recentlyDecided,
     changed,
     waiting: heldCount,
     approval: perm,

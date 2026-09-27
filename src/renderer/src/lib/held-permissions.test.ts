@@ -113,7 +113,6 @@ describe('intakePermission — the card taking one request (issue 310)', () => {
       decided: [] as Array<{ requestId: string; decision: string }>,
       queued: [] as IncomingPermission[],
       surfaced: 0,
-      suppressed: 0,
     };
     return {
       calls,
@@ -123,7 +122,6 @@ describe('intakePermission — the card taking one request (issue 310)', () => {
           calls.decided.push({ requestId, decision }),
         queue: (r: IncomingPermission) => calls.queued.push(r),
         surface: () => calls.surfaced++,
-        suppressHandoff: () => calls.suppressed++,
       },
     };
   }
@@ -135,7 +133,6 @@ describe('intakePermission — the card taking one request (issue 310)', () => {
     expect(calls.queued).toHaveLength(1);
     expect(calls.surfaced).toBe(1);
     expect(calls.decided).toEqual([]); // the USER answers this one
-    expect(calls.suppressed).toBe(0); // …and nothing is being suppressed yet
   });
 
   it('passes the CLI\u2019s own fields through to the bar untouched', () => {
@@ -149,18 +146,20 @@ describe('intakePermission — the card taking one request (issue 310)', () => {
     const { calls, port } = ports(['live-A']);
     intakePermission(incoming({ cardId: 'card-2' }), 'card-1', port);
 
-    expect(calls).toMatchObject({ queued: [], decided: [], surfaced: 0, suppressed: 0 });
+    expect(calls).toMatchObject({ queued: [], decided: [], surfaced: 0 });
   });
 
-  // THE BUG. Answering silently is right; answering silently and saying nothing
-  // is what put a Direct session into `needs-permission` with no held approval —
-  // the terminal-handoff bar's exact render condition — on every gated call.
-  it('auto-allows for an allow-all session AND suppresses the handoff bar', () => {
+  // THE BUG THIS INTAKE EXISTS FOR. Answering silently is right; answering
+  // silently and saying nothing is what put a session into `needs-permission`
+  // with no held approval on every gated call.
+  //
+  // The `suppressHandoff` half of the assertion went with the bar (#952) — see
+  // the note further down for the race it covered, which is still there.
+  it('auto-allows for an allow-all session', () => {
     const { calls, port } = ports(['live-A']);
     intakePermission(incoming(), 'card-1', port);
 
     expect(calls.decided).toEqual([{ requestId: 'stream:live-A:req-1', decision: 'allow' }]);
-    expect(calls.suppressed).toBe(1);
   });
 
   it('an auto-allow raises no bar and steals no tab', () => {
@@ -180,20 +179,21 @@ describe('intakePermission — the card taking one request (issue 310)', () => {
 
     expect(calls.decided).toEqual([]);
     expect(calls.queued).toHaveLength(1);
-    expect(calls.suppressed).toBe(0);
   });
 
-  // Every gated call in an allow-all session lands here, and every one of them
-  // has to re-open the window: a suppression that only fired once would let the
-  // bar back in on call two, which is exactly what Dan saw repeat.
-  it('suppresses on EVERY auto-allow, not just the first', () => {
+  // Every gated call in an allow-all session lands here, and every one has to be
+  // answered — a decision that only fired once would leave call two held with
+  // nothing to answer it, which is what Dan saw repeat.
+  //
+  // This pinned the SUPPRESSION count until #952; the decision count is the half
+  // that survives, and it is the one the CLI is waiting on.
+  it('answers EVERY auto-allow, not just the first', () => {
     const { calls, port } = ports(['live-A']);
     intakePermission(incoming({ requestId: 'r1' }), 'card-1', port);
     intakePermission(incoming({ requestId: 'r2' }), 'card-1', port);
     intakePermission(incoming({ requestId: 'r3' }), 'card-1', port);
 
     expect(calls.decided.map((d) => d.requestId)).toEqual(['r1', 'r2', 'r3']);
-    expect(calls.suppressed).toBe(3);
   });
 });
 
@@ -206,13 +206,13 @@ describe('intakePermission — the card taking one request (issue 310)', () => {
 // BEFORE the intake runs, and a card in that state with no queued approval is
 // exactly what the bar rendered on.
 //
-// ⚠️ `suppressHandoff` IS STILL CALLED AND STILL MATTERS, which is why this note
-// is longer than the code it replaces. It sets `recentlyDecided`, and the window
-// it closes is real on any transport: the decision pops the local queue
-// synchronously while `permission-resolved` only arrives after a full IPC round
-// trip, so for a frame or two the card is `needs-permission` with no approval
-// object. The bar was one consumer of that window; anything that renders off the
-// same pair will inherit it.
+// ⚠️ `suppressHandoff` WENT WITH IT, AND SO DID THE WINDOW — BUT NOT THE RACE.
+// The decision pops the local queue synchronously while `permission-resolved`
+// only arrives after a full IPC round trip, so for a frame or two the card is
+// `needs-permission` with no approval object. The bar was the only consumer of
+// that window; anything added later that renders off the same pair inherits the
+// flash, and will need the counter and its 2s timer back (see `SessionGrid.tsx`,
+// where the reasoning is kept).
 //
 // The tests above still assert the intake's own behaviour — that an allow-all
 // request is answered without surfacing and without queueing.
@@ -294,7 +294,6 @@ describe('a standing allow-all does not answer the CLI own questions (#563)', ()
       decided: [] as Array<{ requestId: string; decision: string }>,
       queued: [] as IncomingPermission[],
       surfaced: 0,
-      suppressed: 0,
     };
     return {
       calls,
@@ -304,7 +303,6 @@ describe('a standing allow-all does not answer the CLI own questions (#563)', ()
           calls.decided.push({ requestId, decision }),
         queue: (r: IncomingPermission) => calls.queued.push(r),
         surface: () => calls.surfaced++,
-        suppressHandoff: () => calls.suppressed++,
       },
     };
   }

@@ -70,7 +70,6 @@ export const sessionPanels: PanelContribution[] = [
         controlsLock={ctx.controlsLock}
         binding={ctx.binding}
         bindingDiag={ctx.bindingDiag}
-        recentlyDecided={ctx.recentlyDecided}
         autonomy={ctx.autonomy}
         model={ctx.model}
         approval={ctx.approval}

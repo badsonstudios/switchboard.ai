@@ -880,7 +880,7 @@ export class SessionManager {
    * Teach the stream pump which sessions answer their own gated calls (#319).
    *
    * "Allow all (this session)" promises no hold, no needs-permission event and
-   * no beep — `HookListener.setAllowAll`'s docblock has said so since P2 — and
+   * no beep — `StreamPermissions.setAllowAll`'s docblock has said so since P2 — and
    * Direct mode broke every part of it. `streamStatusEvent` maps a
    * `can_use_tool` to `permission-held`, which lands here, and `apply` fans it
    * out to `onStatusChange` → `feed.ingest` → ATTENTION → the Notifier's

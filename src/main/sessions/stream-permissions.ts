@@ -439,8 +439,12 @@ export class StreamPermissions {
     //    FIRST, ahead of allow-all, and the order is the argument. §5.16's
     //    plan-mode rule is that nothing in-app may ALLOW past plan mode's write
     //    block — `hooks/hook-listener.ts` keeps the same line from the other
-    //    channel (`GATED.plan = []`, "an in-app Allow returns
-    //    permissionDecision:'allow', which BYPASSES the CLI's permission system").
+    //    channel. That rule was `GATED.plan = []` in the old hook listener, and
+    //    its premise — "an in-app Allow returns permissionDecision:'allow', which
+    //    BYPASSES the CLI's permission system" — was true of HOOKS only. #952
+    //    retired it: an allow here is answered INTO the CLI's enforcement, so
+    //    plan mode's write-block stands. THIS branch is unaffected and is the
+    //    part that still has teeth, for a different reason — nobody is watching.
     //    Allow-all is an in-app allow. So if it ran first, a user who had switched
     //    a dispatched reviewer to "Allow all" would be allowing exactly the thing
     //    §5.16 forbids, and would be doing it to a session nobody is watching.

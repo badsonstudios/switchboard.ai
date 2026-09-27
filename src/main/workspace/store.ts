@@ -59,7 +59,7 @@ import { Rule, isSaneRule } from '../events/rules';
 import { RoleTemplate, isSaneRoleTemplate } from '../../shared/dispatch';
 import { isUsableQuietWindow } from '../../shared/quiet-hours';
 import type { AutonomyMode } from '../../shared/sessions';
-import type { TransportKind } from '../../shared/transport';
+import { DEFAULT_SESSION_TRANSPORT, type TransportKind } from '../../shared/transport';
 import type { NotificationPrefs } from '../../shared/notifications';
 
 export interface PersistedSession {
@@ -245,6 +245,16 @@ export interface WorkspaceState {
    */
   dispatchTemplates: RoleTemplate[];
   /** auto-trust a folder on session open (picking a folder = trusting it) */
+  /**
+   * Folder-trust preference — PERSISTED BUT UNREAD since #952.
+   *
+   * Its only consumer was the `~/.claude.json` pre-write, which ran for PTY
+   * spawns alone and went with the transport; the title-bar chip that set it went
+   * with it. Kept rather than migrated away because it is one boolean, and
+   * §5.3's adapter contract admits a provider whose CLI does draw a trust prompt
+   * — at which point this is the preference it reads. `providers/trust.ts` and the
+   * `trust` capability are kept for the same reason.
+   */
   autoTrust: boolean;
   /**
    * Fill a blank task label from the CLI's own conversation title (P2-E7-06,
@@ -385,7 +395,7 @@ export interface WorkspaceState {
 }
 
 /** The schema version this build writes. Bump it and add a MIGRATIONS entry. */
-export const CURRENT_VERSION = 2;
+export const CURRENT_VERSION = 3;
 
 /**
  * Version dispatch (P2-E15-13, §5.26, AR-P2-9).
@@ -420,6 +430,41 @@ type Migration = (raw: Record<string, unknown>) => Record<string, unknown>;
  * Pure and silent on purpose: `load()` counts what this changed and reports it,
  * because `fileNotes` is this file's one reporting channel.
  */
+/**
+ * v2 -> v3 (#952): the PTY transport is DELETED, not merely unreachable.
+ *
+ * ⚠️ WHY A SECOND MIGRATION FOR THE SAME FIELD. `dropPtyTransport` ran for v1
+ * files only, and a v2 file could still be carrying `transport: 'pty'` — the
+ * store's own note records that a developer running `SWITCHBOARD_TRANSPORT=pty`
+ * re-persisted it on every spawn, and `sessions:create`'s `upsert({ ...prior })`
+ * then carried it forward for ever.
+ *
+ * That was harmless while the PTY existed. It is not harmless now: the card's
+ * stored kind is what `sessions:create` asks the adapter for, so such a card
+ * would refuse every dispatch, publish a transport the type says cannot exist,
+ * and — before the fake adapter was hardened in the same item — be handed a bare
+ * shell over the stream protocol.
+ *
+ * Written as "drop anything that is not the one kind we implement" rather than
+ * "drop `'pty'`", because the hazard is an UNHOSTABLE value, and the next one
+ * will not be spelled `pty`.
+ */
+function dropUnknownTransport(raw: Record<string, unknown>): Record<string, unknown> {
+  if (!Array.isArray(raw.sessions)) return raw;
+  const sessions = raw.sessions as unknown[];
+  let lifted = false;
+  const next = sessions.map((v): unknown => {
+    if (!v || typeof v !== 'object') return v;
+    const rec = v as Record<string, unknown>;
+    if (rec.transport === undefined || rec.transport === DEFAULT_SESSION_TRANSPORT) return v;
+    lifted = true;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { transport: _removed, ...rest } = rec;
+    return rest;
+  });
+  return lifted ? { ...raw, sessions: next } : raw;
+}
+
 function dropPtyTransport(raw: Record<string, unknown>): Record<string, unknown> {
   if (!Array.isArray(raw.sessions)) return raw;
   // `unknown[]`, not the `any[]` the guard leaves behind: every entry here came
@@ -441,8 +486,13 @@ function dropPtyTransport(raw: Record<string, unknown>): Record<string, unknown>
 }
 
 const MIGRATIONS: Record<number, Migration | undefined> = {
-  1: dropPtyTransport, // v1 -> v2: clears the removed Terminal transport
-  2: (raw) => raw, // identity: v2 IS the current shape
+  // Each entry lifts its version ALL THE WAY to the current one — they are not
+  // chained. v1 needs both passes: #873's `'pty'` clear, then #952's sweep of
+  // anything else this host cannot spawn. Composed here rather than made one
+  // function so each keeps its own reason.
+  1: (raw) => dropUnknownTransport(dropPtyTransport(raw)),
+  2: dropUnknownTransport, // v2 -> v3: the transport kind is gone (#952)
+  3: (raw) => raw, // identity: v3 IS the current shape
 };
 
 /** No entry for this version (a future file, or a table gap): read it as-is. */
@@ -641,21 +691,26 @@ export class WorkspaceStore {
       // nothing happened. `fileNotes` rather than `note()` because this must be
       // audible on a file that loaded read-only too — though by construction it
       // no longer fires on one.
-      const countPty = (v: unknown): number =>
+      // WIDENED BY #952 from "counts `'pty'`" to "counts a kind this host cannot
+      // spawn". The difference is still what makes the note honest, and the
+      // widening is what makes it keep working: v2 files can carry `'pty'`, and
+      // the next unhostable value will not be spelled `pty` either.
+      const countUnhostable = (v: unknown): number =>
         Array.isArray(v)
-          ? v.filter(
-              (s) =>
-                !!s && typeof s === 'object' && (s as Record<string, unknown>).transport === 'pty'
-            ).length
+          ? v.filter((x) => {
+              if (!x || typeof x !== 'object') return false;
+              const t = (x as Record<string, unknown>).transport;
+              return t !== undefined && t !== DEFAULT_SESSION_TRANSPORT;
+            }).length
           : 0;
-      const ptyBefore = countPty(obj.sessions);
+      const unhostableBefore = countUnhostable(obj.sessions);
       const migrated = (MIGRATIONS[fileVersion] ?? passthrough)(obj);
       const raw = migrated as Partial<WorkspaceState>;
-      const ptyLifted = ptyBefore - countPty(migrated.sessions);
-      if (ptyLifted > 0) {
+      const lifted = unhostableBefore - countUnhostable(migrated.sessions);
+      if (lifted > 0) {
         fileNotes.push({
-          msg: 'sessions were moved off the removed Terminal transport and now follow the Direct default (#873)',
-          fields: { sessions: ptyLifted },
+          msg: 'sessions were moved off the removed Terminal transport and now follow the Direct default (#873, #952)',
+          fields: { sessions: lifted },
         });
       }
       const groups = keepSane(raw.groups, isSaneGroup, 'group', note).map((g) => {
@@ -1493,14 +1548,10 @@ export class WorkspaceStore {
     return { ...this.state.push };
   }
 
-  getAutoTrust(): boolean {
-    return this.state.autoTrust;
-  }
-
-  setAutoTrust(on: boolean): void {
-    this.state.autoTrust = on;
-    this.saveSoon();
-  }
+  // `getAutoTrust` / `setAutoTrust` went with the chip and the pre-write (#952).
+  // The FIELD is still read off disk and written back (see `autoTrust` in the
+  // sanitizer): dropping it would mean a migration to delete a boolean that costs
+  // nothing and that a future provider-declared trust prompt would want back.
 
   getAutoLabels(): boolean {
     return this.state.autoLabels;

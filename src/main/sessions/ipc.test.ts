@@ -3258,10 +3258,7 @@ describe('a session that exits on its own releases what it was holding (#271)', 
   });
 
   it('drops the hook registration, which releases the parked HTTP response', () => {
-    const h = harness(undefined, dir, {
-      prior: card(),
-      hookPending: [{ requestId: 'hook-1', sessionId: 'live-1' }],
-    });
+    const h = harness(undefined, dir, { prior: card() });
     start(h);
 
     h.fireExit('live-1', 0);
@@ -3464,11 +3461,12 @@ describe('a session that exits on its own releases what it was holding (#271)', 
   // The PTY-only wiring has no router to call, so the hook release is the whole
   // of it — asserted here rather than only the absence of a throw, which every
   // `tearDownStep` guarantees for free and would make this vacuous.
-  it('the PTY-only wiring releases its hook half with no StreamPermissions at all', () => {
-    const h = harness(undefined, dir, {
-      prior: card(),
-      hookPending: [{ requestId: 'hook-1', sessionId: 'live-1' }],
-    });
+  // Named for the PTY-only wiring until #952; what it actually pins is a wiring
+  // with NO `StreamPermissions` at all — a read-only registration, which is still
+  // a real shape — and that the exit path still tears the hook registration down
+  // through it rather than depending on a router being there.
+  it('a wiring with no StreamPermissions still releases the hook registration', () => {
+    const h = harness(undefined, dir, { prior: card() });
     start(h);
 
     expect(() => h.fireExit('live-1', 1)).not.toThrow();

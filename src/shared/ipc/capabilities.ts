@@ -415,8 +415,6 @@ export const CHANNEL_CAPABILITIES = {
   // this channel can start, reach or read a session.
   'settings:getTaskLabelSize': 'settings.read',
   'settings:setTaskLabelSize': 'settings.write',
-  'settings:getAutoTrust': 'settings.read',
-  'settings:setAutoTrust': 'settings.write',
   // §5.5 Level 3, behind its experimental flag (P2-E11-12). An ordinary
   // preference read/write pair — the flag only decides whether a SURFACE is
   // drawn; nothing here can start, fork or reach a session.

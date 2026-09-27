@@ -207,10 +207,15 @@ describe('the list', () => {
     expect(text()).toContain('Unsupported control request subtype');
   });
 
-  it('explains a Terminal-mode session instead of looking broken', async () => {
+  // `not-stream` NAMED A TRANSPORT UNTIL #952 and now names a missing control
+  // channel — a handle that came up without `send`, which a restart usually
+  // fixes. The claim is unchanged: the pane EXPLAINS rather than looking broken,
+  // and it must not name Terminal mode, which no longer exists.
+  it('explains a session with no live connection instead of looking broken', async () => {
     listAnswer = { ok: false, reason: 'not-stream', message: 'this session has no control channel' };
     await mount();
-    expect(text()).toContain('Terminal');
+    expect(text()).toContain('no live connection');
+    expect(text()).not.toContain('Terminal');
   });
 
   it('asks nothing at all with no session', async () => {

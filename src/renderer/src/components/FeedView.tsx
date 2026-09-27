@@ -308,17 +308,9 @@ export function FeedView(props: {
    *  `PanelContext` gives — `null` is already a state, so optional would add a
    *  silent fourth one. */
   controlsLock: SessionControlLock;
-  /** an approval was answered moments ago and the status has not caught up
-   *  (P2 #125) â€” suppresses the handoff bar so clicking Allow never flashes
-   *  "switchboard can't answer this" where the button just was */
-  recentlyDecided?: boolean;
   /** transcript binding state (P2-E15-10) â€” decides what an EMPTY feed says */
   binding?: BindingState;
   bindingDiag?: BindingDiagnostics | null;
-  /** Jumped to the Terminal tab, which no longer exists (#873). Nothing passes
-   *  it now, and the handoff bar drops its button when it is absent rather than
-   *  offering a door to nowhere. Kept as a seam for whatever E18-11 decides a
-   *  CLI-kept decision should route to. */
   /** composer options row data (E10-05) */
   autonomy?: string;
   model?: string;
@@ -1712,20 +1704,20 @@ function Composer({
   React.useEffect(() => {
     stashAttachments(cardId, attachments);
   }, [cardId, attachments]);
-  // ALWAYS TRUE SINCE #952, and kept as a named constant rather than inlined.
+  // ── NO `canAttach` CONSTANT ANY MORE (#952) ──────────────────────────────
   //
   // It was `transport !== 'pty'`: a stream session takes typed messages and can
   // carry an image block, while a PTY session took KEYSTROKES, and there is no
   // keystroke for a bitmap. The composer is otherwise deliberately
   // transport-ignorant (`lib/composer.ts`), and attachment capability was the one
-  // thing it could not discover by TRYING: the try-then-fall-back shape worked
+  // thing it could not discover by TRYING — the try-then-fall-back shape worked
   // because both routes delivered the same thing, which stopped being true here.
   //
-  // The NAME stays because the capability is real and per-transport. §5.3's
-  // adapter contract admits a provider whose CLI cannot take an image, and this
-  // is the line that would have to consult it. Inlining `true` at the call site
-  // would delete the question along with the answer.
-  const canAttach = true;
+  // Every session takes typed messages now, so the value is always true and both
+  // it and the branch it guarded are gone. THE QUESTION IS NOT: §5.3's adapter
+  // contract admits a provider whose CLI cannot take an image, and when one
+  // arrives this is where the check goes back — with a message that names the
+  // PROVIDER, since "use Direct mode" will not be the answer.
 
   /**
    * Ctrl+V.
@@ -1772,15 +1764,19 @@ function Composer({
     origin: 'paste' | 'drop' = 'paste',
     preRejected: AttachmentRejection | null = null
   ): void => {
-    // A FOLDER is reported before the transport is: "files can only be sent in
-    // Direct mode â€” use the Terminal tab instead" is nonsense advice about a
-    // folder, which cannot be attached by any session in any mode.
+    // A FOLDER is reported first, and that ORDER is the surviving half of a rule
+    // worth keeping: a folder cannot be attached by any session in any mode, so a
+    // capability message about it would be nonsense advice.
+    //
+    // The capability check that followed went with the transport (#952). It read
+    // `if (!canAttach) setAttachNotice(t('feedView.attach.terminalMode'))` and said
+    // "files can only be sent in Direct mode" — unreachable now that `canAttach`
+    // is a constant, and false if it ever fired. `canAttach` keeps its name
+    // because §5.3's adapter contract admits a provider whose CLI cannot take an
+    // image; when one arrives, the branch comes back here and needs a message
+    // that names the PROVIDER rather than a transport.
     if (preRejected === 'directory' && files.length === 0) {
       setAttachNotice(attachMessage('directory'));
-      return;
-    }
-    if (!canAttach) {
-      setAttachNotice(t('feedView.attach.terminalMode'));
       return;
     }
     if (files.length === 0) {
@@ -2605,16 +2601,33 @@ function Composer({
     /** Send the draft's final form. `notice` is what stays under the box once it went. */
     function dispatch(prompt: string, notice: string | null): void {
       if (attachments.length === 0) {
-        // The path this composer has always had, byte for byte: transport-
-        // agnostic (P2-E18-08a), main answers whether it took it, and this falls
-        // back to the PTY dance if not. A text prompt cannot be refused â€” one of
-        // the two routes always accepts it â€” so the box clears immediately and
-        // the send stays as snappy as it was.
-        void submitPrompt(sessionId, prompt);
-        clearSentDraft(text);
-        removeHeldMessages(cardId, forwardedIds);
-        setDismissed(false);
-        setAttachNotice(notice);
+        // ⚠️ THE DRAFT IS CLEARED ONLY ONCE THE PROMPT HAS GONE (#952).
+        //
+        // This used to clear IMMEDIATELY, under a comment that said "a text
+        // prompt cannot be refused — one of the two routes always accepts it".
+        // That was true while `submitPrompt` fell back to typing into a PTY, and
+        // it is the exact premise the transport deletion removed: main declining,
+        // or the IPC rejecting, now means the words went NOWHERE.
+        //
+        // Clearing a composer whose contents went nowhere is the one outcome the
+        // user cannot undo, which is the same argument the attachments path below
+        // has always made — the two now agree rather than differing on a
+        // transport detail.
+        //
+        // A SECOND CALLBACK, NOT `.finally`, for the reason spelled out below:
+        // `void p.then(f).finally(g)` leaves a rejection unhandled.
+        const done = beginSend(cardId);
+        void submitPrompt(sessionId, prompt).then((ok) => {
+          done();
+          if (!ok) {
+            setAttachNotice(t('feedView.attach.notSent'));
+            return;
+          }
+          clearSentDraft(text);
+          removeHeldMessages(cardId, forwardedIds);
+          setDismissed(false);
+          setAttachNotice(notice);
+        }, done);
         box.current?.focus();
         return;
       }

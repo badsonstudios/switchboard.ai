@@ -2369,11 +2369,11 @@ app
         heldCount: workspace.countSuppressed(),
       };
     });
-    broker.handle('settings:getAutoTrust', () => workspace.getAutoTrust());
-    broker.handle('settings:setAutoTrust', (_e, on: boolean) => {
-      workspace.setAutoTrust(on === true);
-      return workspace.getAutoTrust();
-    });
+    // NO `settings:*AutoTrust` (#952). The pair read and wrote the folder-trust
+    // setting for the title-bar chip. Both the chip and the setting's only
+    // consumer — the `~/.claude.json` pre-write, which ran for PTY spawns alone —
+    // went with the transport, so an open channel over an unread value would have
+    // been an invitation to wire it back up.
     // §5.5 Level 3, experimental and off by default (P2-E11-12). `=== true` for
     // the reason every setter on this file uses it: an absent or non-boolean
     // argument must read as OFF rather than as truthy — the `mcp_toggle` hazard

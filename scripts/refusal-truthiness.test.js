@@ -128,9 +128,11 @@ describe('shapes it MUST catch', () => {
     ],
     [
       // the point-free shape, where four of the nineteen real sites hid: the raw
-      // answer goes straight into a React setter and becomes the state
+      // answer goes straight into a React setter and becomes the state.
+      // (`settings.getAutoTrust` until #952 deleted that bridge method — any
+      // boolean-answering channel wears the same shape.)
       'a point-free .then(setter)',
-      `void window.switchboard.settings.getAutoTrust().then(setAutoTrust);`,
+      `void window.switchboard.settings.getAutoLabels().then(setAutoLabels);`,
     ],
     [
       'a .then with a DESTRUCTURED parameter — unfollowable, so reported',

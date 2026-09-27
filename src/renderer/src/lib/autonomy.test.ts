@@ -103,20 +103,49 @@ describe('the hover copy', () => {
   });
 
   /**
-   * `auto-edit` is `acceptEdits`. What holds the shell line there is OURS, not
-   * the CLI's: `acceptEdits` auto-approves `mkdir`, `touch`, `mv`, `cp`, `rm`,
-   * `rmdir` and `sed` inside the working directory as well as file edits, and
-   * it is the PreToolUse hold policy (`main/hooks/hook-listener.ts`, GATED) that
-   * brings every shell call to the user at this profile. So the copy may say
-   * commands still come to you — but it must keep saying WHICH things do, and
-   * it must not widen that promise to the whole filesystem: reads outside the
-   * folder are held here and the sentence that says so is the one users check.
+   * ⚠️ THIS COPY WAS WRONG FROM THE MOMENT #952 LANDED, AND THIS TEST WAS PINNING
+   * IT. Both are corrected here, and the history is the point.
+   *
+   * `auto-edit` is `acceptEdits`. The old copy promised *"Shell commands, web
+   * fetches, and reading anything outside the folder still come to you"*, and
+   * that was true — but what held those was OURS, not the CLI's: `acceptEdits`
+   * auto-approves `mkdir`, `touch`, `mv`, `cp`, `rm`, `rmdir` and `sed` inside
+   * the working directory as well as file edits, and it was the PreToolUse hold
+   * policy (`GATED` in the old `hooks/hook-listener.ts`) that brought every shell
+   * call to the user at this profile.
+   *
+   * That policy rode on the PTY transport and went with it. The CLI's own
+   * behaviour is now the whole behaviour, so the tooltip must describe
+   * `acceptEdits` as it really is — and must NOT keep a promise switchboard can
+   * no longer keep, because this is the string a user reads before deciding how
+   * much rope to give an agent.
+   *
+   * The assertions below are the new contract: name the commands that DO get
+   * waved through, keep the folder scoping, and point at `ask` for anyone who
+   * wanted the old behaviour.
    */
   it('tells the truth about auto-edit', () => {
     const d = desc('auto-edit');
-    expect(d).toMatch(/Shell commands/);
-    expect(d).toMatch(/outside the folder/);
+    // it must NOT re-promise the deleted hold policy
+    expect(d).not.toMatch(/Shell commands[^.]*still come to you/);
+    // it must NAME what acceptEdits really waves through
+    expect(d).toContain('mkdir');
+    expect(d).toContain('acceptEdits');
+    // ...and point at the mode that still stops for everything
+    expect(d).toMatch(/use ask/);
     // the promise is scoped to the session's folder, never "your files"
     expect(d).toContain("session's folder");
+  });
+
+  /**
+   * `ask` lost a clause in the same change, for the same reason: it promised
+   * that reading anything OUTSIDE the session's folder came to you, which was
+   * `READ_GATED_AUTONOMIES` and is gone. What it must still say is the thing
+   * that is true and is why anyone picks it — every tool call stops.
+   */
+  it('tells the truth about ask', () => {
+    const d = desc('ask');
+    expect(d).toMatch(/every tool call/i);
+    expect(d).not.toMatch(/outside the session's folder/);
   });
 });
