@@ -6,36 +6,31 @@
 // blank pane, so a user could not tell "I haven't asked it anything yet" from
 // "your app lost my conversation".
 //
-// The fake provider writes no transcript, so as in feed.spec.ts the test plays
-// Claude's part and writes JSONL into the isolated HOME itself.
+// WHAT THE STIMULI ARE, AND WHY TWO KINDS (rewritten by #952).
 //
-// TRANSPORT SCOPE — HISTORICAL (P2-E18-18, #404; retagged by #952, which
-// left one transport, so a `[pty]` tag names nothing). The note below is the
-// reasoning as it stood, kept because it says what each test actually drives:
-// // TRANSPORT SCOPE (P2-E18-18, #404): `[pty]` for the FIRST group. Every session
-// in it runs on the PTY (see `launchApp` in `fixtures/app.ts`), and the empty
-// state those tests read is the one a PTY session gets: the `unbound` arm ends
-// in `binding.unboundFallback` — "The Terminal tab is unaffected — your session
-// is still running there." — which is a sentence only a PTY session can be
-// told. A Direct session's Terminal tab holds the P2-E18-08b notice, not a
-// running CLI.
+// The UNCLAIMABLE file is still written by hand, and has to be: the point of
+// that test is a transcript appearing under our folder that is NOT ours, which
+// no real CLI and no fake will ever produce for us.
 //
-// The Direct counterpart is the SECOND group in this file (#447). It is only
-// the `unbound` arm that differs by transport, so it is only that arm that is
-// duplicated: everything above it (the three non-problem states, the give-up
-// clock, the searching→unbound walk) is watcher behaviour, and the watcher
-// still binds for a stream session — only `deriveFeed` is off (`sessions/
-// ipc.ts`).
+// The CLAIMABLE one is not, any more. It used to be a hand-written JSONL, and the
+// proof that binding had succeeded was its text showing up in the Feed — which
+// only worked because the shell-in-a-PTY fake made every test session a PTY, so
+// `deriveFeed` was on. It has been off for a real session since E18-10, so that
+// half now goes through the session: the fake writes its own transcript as the
+// real CLI does in stream mode, and emits the blocks the Feed renders.
 //
-// FIXED HERE SINCE (#447, found by #418): `binding.unboundFallback` used to
-// render with no transport gate at all, so an unbound DIRECT session was told
-// to go look at a Terminal tab whose entire content is "No terminal for this
-// session". The gate lives in `lib/binding-copy.ts`; both wordings are pinned
-// there in `binding-copy.test.ts` and end-to-end in the two groups below.
+// ONE GROUP SINCE #952, not two (was P2-E18-18, #404; the second was #447).
+// The `unbound` arm was the only thing that differed by transport — the PTY
+// wording sent the user to a Terminal tab, which on Direct composed with that
+// tab's own equally-true "No terminal for this session" into a lie. #873 removed
+// the destination and #952 removed the transport, so `binding-copy.ts` has one
+// fail-open line and there is nothing left to duplicate. #447's claim survives
+// below, in the arm that used to make the PTY assertion: the line names where the
+// conversation actually comes from and never names a tab.
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
-import { hookPoster, launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';
+import { hookPoster, launchApp, LaunchedApp, streamPrompter, tempProjectFolder } from './fixtures/app';
 
 function slugForCwd(cwd: string): string {
   return cwd.replace(/[\\/:. ]/g, '-');
@@ -124,17 +119,16 @@ test.describe('transcript binding transparency (E15-10)', () => {
     // it tried, plus the thing the user most needs to hear: the CLI is fine.
     await expect(w.locator('[data-binding="unbound"]')).toBeVisible({ timeout: 15_000 });
     await expect(w.getByText("Couldn't find this session's transcript")).toBeVisible();
-    // The fallback no longer names the Terminal tab (#873) — it named a place
-    // the user could go, and there is no such place now, so it says what is
-    // still true instead: the CLI is fine, only this view of it is missing.
-    await expect(
-      w.getByText('Your session is unaffected — it is still running')
-    ).toBeVisible();
-    // ...and NOT the Direct wording (#447), which makes a claim about where the
-    // conversation comes FROM and is still transport-specific.
+    // ...and THIS is #447, inverted by #952. The assertion pair used to read the
+    // other way round here — PTY wording present, Direct wording absent — and the
+    // Direct group below made this exact pair. There is one transport and one
+    // fail-open line, so this is the pair that is true, and it still pins both
+    // halves of the composition bug: the line says where the conversation comes
+    // FROM, and it never sends the user to a tab that is not there.
+    await expect(w.getByText('The Terminal tab is unaffected', { exact: false })).toHaveCount(0);
     await expect(
       w.getByText('in Direct mode the conversation arrives in this window', { exact: false })
-    ).toHaveCount(0);
+    ).toBeVisible();
   });
 
   test('the real transcript binds and every explanation disappears', async () => {
@@ -143,86 +137,17 @@ test.describe('transcript binding transparency (E15-10)', () => {
     const w = a.window;
     await expect(w.getByText('No conversation yet')).toBeVisible();
 
-    const dir = path.join(a.home, '.claude', 'projects', slugForCwd(folder));
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(
-      path.join(dir, 'native-e2e.jsonl'),
-      JSON.stringify({
-        type: 'user',
-        sessionId: 'native-e2e',
-        cwd: folder,
-        timestamp: new Date().toISOString(),
-        message: { role: 'user', content: 'hello there' },
-      }) + '\n'
-    );
+    // A REAL turn, which is the only thing that writes a claimable transcript
+    // (#952). The hand-written `native-e2e.jsonl` this replaces proved binding by
+    // its text appearing in the Feed — a PTY-only consequence, and the last thing
+    // in this file that depended on the old fake. The fake CLI mirrors its turn
+    // into the JSONL exactly as the real one does in stream mode, so the watcher
+    // has the same file to claim, and the same claim is under test.
+    await streamPrompter(a)(path.basename(folder), 'hello there');
 
-    await expect(w.getByText('hello there')).toBeVisible();
+    await expect(w.getByText('FAKE-REPLY: hello there')).toBeVisible();
     // no empty-state block of any flavour survives a bound session with content
     await expect(w.locator('[data-binding]')).toHaveCount(0);
   });
 });
 
-/**
- * The Direct half of the same state (#447).
- *
- * The bug this pins is a COMPOSITION bug, so only an end-to-end test can see
- * it: both strings were true on their own, and the app printed them at the same
- * time in the same window. The Session tab said "your session is still running
- * there [in the Terminal]" while the Terminal tab of that same card said "No
- * terminal for this session". Neither surface's own test could fail.
- *
- * `SWITCHBOARD_FAKE_PROVIDER: 'stream'` is the app's DEFAULT transport since
- * #381 — the fake that answers with a stream recipe rather than the PTY one —
- * which is why this group carries no `[pty]` tag and why the defect shipped
- * where most users are.
- */
-test.describe('transcript binding transparency on Direct (#447)', () => {
-  let a: LaunchedApp;
-  test.afterEach(async () => a?.cleanup());
-
-  test('an unbound Direct session gets the wording that is true of it', async () => {
-    const folder = tempProjectFolder();
-    // Same 6s give-up as the PTY sibling, and the same reason: `searching` has
-    // to exist for longer than one loaded CI runner's hiccup.
-    a = await launchApp({
-      seedFolder: folder,
-      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_BIND_GIVEUP_MS: '6000' },
-    });
-    const w = a.window;
-    await expect(w.getByText('No conversation yet')).toBeVisible();
-
-    // The stream fake writes a transcript of its own only once a turn runs
-    // (`appendTranscript`, `fake-stream-cli.ts`), and this test sends no
-    // prompt — so the only file under this folder's slug is the unclaimable
-    // one below, exactly as in the PTY sibling.
-    const dir = path.join(a.home, '.claude', 'projects', slugForCwd(folder));
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(
-      path.join(dir, 'not-ours.jsonl'),
-      JSON.stringify({
-        type: 'assistant',
-        sessionId: 'someone-elses-conversation',
-        cwd: 'C:/somewhere/entirely/else',
-        timestamp: new Date().toISOString(),
-        message: { role: 'assistant', content: [{ type: 'text', text: 'hi' }] },
-      }) + '\n'
-    );
-
-    // The watcher runs on Direct too — only `deriveFeed` is off — so the walk
-    // to `unbound` is the same one, and the diagnosis is the same diagnosis.
-    await expect(w.locator('[data-binding="unbound"]')).toBeVisible({ timeout: 15_000 });
-    await expect(w.getByText("Couldn't find this session's transcript")).toBeVisible();
-
-    // ...and THIS is #447: the fail-open line names what is true here.
-    await expect(w.getByText('The Terminal tab is unaffected', { exact: false })).toHaveCount(0);
-    await expect(
-      w.getByText('in Direct mode the conversation arrives in this window', { exact: false })
-    ).toBeVisible();
-
-    // The other half of the composition used to be checked here by opening the
-    // Terminal tab and reading "No terminal for this session" — the sentence
-    // the old fallback was sending the user to go and read. Neither the tab nor
-    // that notice exists since #873, so the contradiction #447 was about can no
-    // longer be constructed at all.
-  });
-});
