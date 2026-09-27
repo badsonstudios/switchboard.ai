@@ -1221,6 +1221,12 @@ function ApprovalBar({
   });
   return (
     <div
+      /* NAMED so a test can say "in the BAR" (#972). The permission's file path is
+         also rendered by the Events panel (`events-v2.ts` → `argumentDetail`), so an
+         unscoped text assertion can match there while the bar is still showing the
+         PREVIOUS request — which is exactly how `stream-approval.spec.ts`'s queue
+         test went red on CI and green everywhere else. */
+      data-approval-bar={approval.tool}
       style={{
         borderBlockStart: '2px solid var(--status-needs-permission)',
         background: 'color-mix(in srgb, var(--status-needs-permission) 8%, var(--panel2))',
