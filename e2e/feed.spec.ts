@@ -26,12 +26,47 @@ import {
   tabFromFeedToComposer,
   tempProjectFolder,
   setTheme,
+  streamPrompter,
 } from './fixtures/app';
 
 function slugForCwd(cwd: string): string {
   return cwd.replace(/[\\/:. ]/g, '-');
 }
 
+/**
+ * A block ARRIVES, without the user having touched the composer.
+ *
+ * Goes through the bridge rather than the box on purpose — see the note on the
+ * describe below. `streamPrompter` resolves the live id per call, so it works on
+ * a card that has been restarted.
+ */
+async function arrive(app: LaunchedApp, title: string, text: string): Promise<void> {
+  await streamPrompter(app)(title, text);
+}
+
+// ── HOW THIS FILE PROVOKES A CONVERSATION (#952) ─────────────────────────────
+//
+// It used to WRITE the CLI's transcript JSONL and let the watcher derive Feed
+// blocks from it. That worked only because the shell-in-a-PTY fake made every
+// test session a PTY: `deriveFeed` was `record.transport !== 'stream'`, so for a
+// real Direct session — the default since #381 — the transcript has NOT been the
+// Feed's source since E18-10. The Feed is built from typed messages, and the
+// transcript is kept for usage, the native id and drift detection.
+//
+// So the content arrives the way it does in production: through the session. Two
+// levers, and the choice between them matters:
+//
+//   • `arrive()` submits through the BRIDGE (`sessions.submitPrompt`), which is
+//     the passive path — no composer focus, no §5.8 auto-minimize, no draft
+//     clearing. That is what the old file append was: a block showing up while
+//     the user is doing something else. The scroll tests below depend on that
+//     distinction, so they must not type.
+//   • typing in the composer is a USER GESTURE and is used only where the gesture
+//     is the subject.
+//
+// `!bulk <n> <prefix>` is the fake's volume verb, written for exactly these
+// tests: the tail-pin, the reading-position restore and the keyboard walk all
+// need a feed taller than the pane.
 test.describe('Feed view (E12-06)', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
@@ -112,20 +147,10 @@ test.describe('Feed view (E12-06)', () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
-    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
+    const title = path.basename(folder);
+    await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
 
-    const dir = path.join(a.home, '.claude', 'projects', slugForCwd(folder));
-    fs.mkdirSync(dir, { recursive: true });
-    const line = (o: Record<string, unknown>) =>
-      JSON.stringify({ sessionId: 'native-scroll', cwd: folder, timestamp: new Date().toISOString(), ...o }) + '\n';
-    let body = '';
-    for (let i = 1; i <= 60; i++) {
-      body += line({
-        type: 'assistant',
-        message: { content: [{ type: 'text', text: `SCROLL_BLOCK_${i}` }] },
-      });
-    }
-    fs.writeFileSync(path.join(dir, 'native-scroll.jsonl'), body);
+    await arrive(a, title, '!bulk 60 SCROLL_BLOCK_');
 
     // the tail is on screen, the head is not — we're pinned to the bottom
     await expect(w.getByText('SCROLL_BLOCK_60')).toBeVisible({ timeout: 15_000 });
@@ -142,17 +167,10 @@ test.describe('Feed view (E12-06)', () => {
     const other = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
-    await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
+    const title = path.basename(folder);
+    await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
 
-    const dir = path.join(a.home, '.claude', 'projects', slugForCwd(folder));
-    fs.mkdirSync(dir, { recursive: true });
-    const line = (o: Record<string, unknown>) =>
-      JSON.stringify({ sessionId: 'native-keep', cwd: folder, timestamp: new Date().toISOString(), ...o }) + '\n';
-    let body = '';
-    for (let i = 1; i <= 60; i++) {
-      body += line({ type: 'assistant', message: { content: [{ type: 'text', text: `KEEP_BLOCK_${i}` }] } });
-    }
-    fs.writeFileSync(path.join(dir, 'native-keep.jsonl'), body);
+    await arrive(a, title, '!bulk 60 KEEP_BLOCK_');
     await expect(w.getByText('KEEP_BLOCK_60')).toBeVisible({ timeout: 15_000 });
 
     const feed = () =>
@@ -183,11 +201,8 @@ test.describe('Feed view (E12-06)', () => {
     await expect.poll(feed, { timeout: 10_000 }).toBe(target);
 
     // and a block arriving while you're reading must not yank you anywhere
-    fs.appendFileSync(
-      path.join(dir, 'native-keep.jsonl'),
-      line({ type: 'assistant', message: { content: [{ type: 'text', text: 'KEEP_BLOCK_61' }] } })
-    );
-    await expect(w.getByText('KEEP_BLOCK_61')).toBeAttached({ timeout: 15_000 });
+    await arrive(a, title, 'KEEP_BLOCK_61');
+    await expect(w.getByText('KEEP_BLOCK_61').first()).toBeAttached({ timeout: 15_000 });
     expect(await feed()).toBe(target);
   });
 
@@ -201,17 +216,10 @@ test.describe('Feed view (E12-06)', () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
-    await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
+    const title = path.basename(folder);
+    await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
 
-    const dir = path.join(a.home, '.claude', 'projects', slugForCwd(folder));
-    fs.mkdirSync(dir, { recursive: true });
-    const line = (o: Record<string, unknown>) =>
-      JSON.stringify({ sessionId: 'native-nudge', cwd: folder, timestamp: new Date().toISOString(), ...o }) + '\n';
-    let body = '';
-    for (let i = 1; i <= 60; i++) {
-      body += line({ type: 'assistant', message: { content: [{ type: 'text', text: `NUDGE_BLOCK_${i}` }] } });
-    }
-    fs.writeFileSync(path.join(dir, 'native-nudge.jsonl'), body);
+    await arrive(a, title, '!bulk 60 NUDGE_BLOCK_');
     await expect(w.getByText('NUDGE_BLOCK_60')).toBeInViewport({ timeout: 15_000 });
 
     const feed = () =>
@@ -233,11 +241,8 @@ test.describe('Feed view (E12-06)', () => {
 
     // it must come back, and stay back as new output lands
     await expect.poll(feed, { timeout: 5_000 }).toBeLessThan(2);
-    fs.appendFileSync(
-      path.join(dir, 'native-nudge.jsonl'),
-      line({ type: 'assistant', message: { content: [{ type: 'text', text: 'NUDGE_BLOCK_61' }] } })
-    );
-    await expect(w.getByText('NUDGE_BLOCK_61')).toBeInViewport({ timeout: 15_000 });
+    await arrive(a, title, 'NUDGE_BLOCK_61');
+    await expect(w.getByText('NUDGE_BLOCK_61').first()).toBeInViewport({ timeout: 15_000 });
   });
 
   test('switching away and back keeps you GLUED to the tail if that is where you were', async () => {
@@ -247,17 +252,10 @@ test.describe('Feed view (E12-06)', () => {
     const other = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
-    await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
+    const title = path.basename(folder);
+    await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
 
-    const dir = path.join(a.home, '.claude', 'projects', slugForCwd(folder));
-    fs.mkdirSync(dir, { recursive: true });
-    const line = (o: Record<string, unknown>) =>
-      JSON.stringify({ sessionId: 'native-tail', cwd: folder, timestamp: new Date().toISOString(), ...o }) + '\n';
-    let body = '';
-    for (let i = 1; i <= 60; i++) {
-      body += line({ type: 'assistant', message: { content: [{ type: 'text', text: `TAIL_BLOCK_${i}` }] } });
-    }
-    fs.writeFileSync(path.join(dir, 'native-tail.jsonl'), body);
+    await arrive(a, title, '!bulk 60 TAIL_BLOCK_');
     await expect(w.getByText('TAIL_BLOCK_60')).toBeInViewport({ timeout: 15_000 });
 
     await a.app.evaluate(({ dialog }, d) => {
