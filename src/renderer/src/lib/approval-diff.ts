@@ -38,6 +38,37 @@
 // still being in the binary's edit set, and `NotebookEdit` keys its path
 // `notebook_path`. Names move; shapes have been stable.
 
+/**
+ * How tall the diff is — and therefore how much room the PANES must reserve.
+ *
+ * ⚠️ A LAYOUT CONSTANT IN THE MODEL MODULE, deliberately, because two components
+ * have to agree on it and this is the module they both already import.
+ * `ApprovalDiffView` gives its editor host this height; `ApprovalPreview` gives the
+ * `Suspense` fallback the SAME height. If they disagree, the bar changes size the
+ * moment the lazy chunk resolves — and the buttons underneath move with it.
+ *
+ * That jump is not cosmetic. The bar is the surface a user clicks **Allow** on, and
+ * a control that moves between the moment it is aimed at and the moment it is
+ * pressed is a control that can eat the press. §5.16's whole subject is that the
+ * question gets answered.
+ *
+ * Two sizes for the reason `ToolInputPreview` takes `dense`: the grouped band above
+ * the workspace pays for its height in somebody's editor; the card's own bar can
+ * afford a few more pixels.
+ *
+ * CLAMPED AGAINST THE WINDOW, and that half is measured (#972): a flat 180px pushed
+ * the composer's autonomy chip clean out of the viewport in a short window
+ * (`feed.spec.ts`'s #716 case, 535px of content height), because the bar is docked
+ * chrome and the conversation is the only thing in that column willing to give.
+ * `min()` in CSS rather than arithmetic in JS: the browser re-evaluates it on every
+ * resize with no observer, no state and no re-render, and a diff editor with
+ * `automaticLayout` picks the new size up by itself.
+ */
+export const APPROVAL_DIFF_BLOCK_SIZE = {
+  dense: 'min(132px, 20vh)',
+  roomy: 'min(180px, 24vh)',
+} as const;
+
 /** One change, in apply order, as two sides a diff editor can take. */
 export interface DiffHunk {
   /** 1-based position in apply order — the caption the separator carries */

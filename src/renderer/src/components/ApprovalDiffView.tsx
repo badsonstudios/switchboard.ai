@@ -68,35 +68,12 @@ import {
   subscribeDiffLayout,
 } from '../lib/diff-layout';
 import { defineDiffThemes, DIFF_THEME } from '../lib/monaco-theme';
-import { joinHunks, lineCount, type ApprovalDiff } from '../lib/approval-diff';
-
-/**
- * Height of the editor.
- *
- * An explicit size and not `flex: 1`: Monaco's diff editor measures its host, and a
- * host with no height of its own inside a `flexShrink: 0` band measures 0 and
- * renders nothing at all. Two sizes for the same reason `ToolInputPreview` takes
- * `dense` — the grouped band above the workspace pays for its height in somebody's
- * editor, the card's own bar can afford a few more pixels.
- *
- * ⚠️ CLAMPED AGAINST THE WINDOW, AND THAT HALF IS NOT COSMETIC. MEASURED (#972):
- * a flat 180px pushed the composer's autonomy chip clean out of the viewport in a
- * short window — `feed.spec.ts`'s #716 case, at 535px of content height — because
- * the bar is docked chrome and the conversation is the only thing in that column
- * willing to give. Allow and Deny stay reachable, so the question is still
- * answerable, but a review surface that evicts the composer is the approval card
- * making the rest of the app worse, which is the trade §5.16 is most careful about.
- *
- * `min()` in CSS rather than arithmetic in JS on purpose: the browser re-evaluates
- * it on every resize with no observer, no state and no re-render, and a diff editor
- * with `automaticLayout: true` picks the new size up by itself. The vh share is
- * deliberately smaller than the px cap, so on any ordinary window the px number is
- * what applies and the clamp is invisible.
- */
-const HEIGHT = {
-  dense: 'min(132px, 20vh)',
-  roomy: 'min(180px, 24vh)',
-};
+import {
+  APPROVAL_DIFF_BLOCK_SIZE,
+  joinHunks,
+  lineCount,
+  type ApprovalDiff,
+} from '../lib/approval-diff';
 
 export interface ApprovalDiffViewProps {
   diff: ApprovalDiff;
@@ -221,7 +198,10 @@ export default function ApprovalDiffView(props: ApprovalDiffViewProps): React.JS
     return () => ro.disconnect();
   }, []);
 
-  const height = props.dense === true ? HEIGHT.dense : HEIGHT.roomy;
+  // The same constant the Suspense fallback reserves — see its docblock for why
+  // they must not disagree.
+  const height =
+    props.dense === true ? APPROVAL_DIFF_BLOCK_SIZE.dense : APPROVAL_DIFF_BLOCK_SIZE.roomy;
 
   return (
     <div data-approval-diff={props.diff.kind} style={{ marginBlockEnd: 5 }}>

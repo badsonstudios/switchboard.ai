@@ -43,7 +43,7 @@
 // broken chunk does not re-throw once per feed re-render.
 import React from 'react';
 import { ContributionBoundary } from '../extensibility/boundary';
-import { approvalDiff } from '../lib/approval-diff';
+import { APPROVAL_DIFF_BLOCK_SIZE, approvalDiff } from '../lib/approval-diff';
 import { ToolInputPreview } from './ToolInputPreview';
 
 /**
@@ -79,9 +79,48 @@ export function ApprovalPreview(props: {
   if (!diff || !props.colorScheme) return panes;
   return (
     <ContributionBoundary id="approval-diff" fallback={panes}>
-      <React.Suspense fallback={panes}>
+      <React.Suspense fallback={<ReservedPanes dense={props.dense}>{panes}</ReservedPanes>}>
         <ApprovalDiffView diff={diff} colorScheme={props.colorScheme} dense={props.dense} />
       </React.Suspense>
     </ContributionBoundary>
+  );
+}
+
+/**
+ * The panes, in exactly the room the diff is about to take.
+ *
+ * ⚠️ THE RESERVATION IS THE POINT, not the panes. Without it the bar is SHORT while
+ * the chunk is in flight and TALL the moment it resolves — so everything below the
+ * body, including **Allow** and **Deny**, moves down under the user's cursor at an
+ * arbitrary moment. A control that shifts between being aimed at and being pressed is
+ * a control that can eat the press, and this is the bar whose entire job is to be
+ * answered (§5.16).
+ *
+ * Suspected in exactly that shape by a Windows CI failure this could not otherwise
+ * explain: Playwright's click on Allow completed, the button took focus — so mousedown
+ * landed — and no decision ever reached main.
+ *
+ * Only on the SUSPENSE fallback, never on the boundary's. A failed load is a state the
+ * bar stays in, so reserving space there would be dead pixels under a short payload
+ * for as long as the request is open.
+ */
+function ReservedPanes(props: {
+  dense?: boolean;
+  children: React.ReactNode;
+}): React.JSX.Element {
+  return (
+    <div
+      data-approval-diff-reserved
+      style={{
+        blockSize:
+          props.dense === true ? APPROVAL_DIFF_BLOCK_SIZE.dense : APPROVAL_DIFF_BLOCK_SIZE.roomy,
+        // The panes are shorter than the reservation for an ordinary payload and
+        // taller for a big one; both have to fit the box the diff will occupy.
+        overflow: 'auto',
+        marginBlockEnd: 5,
+      }}
+    >
+      {props.children}
+    </div>
   );
 }
