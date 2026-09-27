@@ -61,7 +61,9 @@ function boundTranscript(home: string, folder: string): string {
   const dir = path.join(home, '.claude', 'projects', slugForCwd(folder));
   const found = fs.readdirSync(dir).filter((f) => f.endsWith('.jsonl'));
   if (found.length !== 1) {
-    throw new Error(`expected exactly one transcript under ${dir}, found ${found.length}: ${found}`);
+    throw new Error(
+      `expected exactly one transcript under ${dir}, found ${found.length}: ${found.join(', ')}`
+    );
   }
   return path.join(dir, found[0]);
 }
