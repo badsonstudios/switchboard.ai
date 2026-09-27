@@ -20,12 +20,12 @@ import {
   LaunchedApp,
   skipPopoutOnLinux,
   tempProjectFolder,
-  hookPoster,
   gridLeafViews,
   persistedLayout,
   persistedUi,
   readWorkspaceFile,
   writeWorkspaceFile,
+  permissionHolder,
 } from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -302,7 +302,6 @@ test.describe('presentation ladder (E9-05)', () => {
     const third = await addSession(a);
     await expect(tabs(w)).toHaveCount(3);
 
-    const post = await hookPoster(a, 3);
 
     // hide the MIDDLE card: the slot it has to come back to is between two
     // neighbours, so landing at the end would be visibly wrong
@@ -319,10 +318,10 @@ test.describe('presentation ladder (E9-05)', () => {
     await expect(w.locator('.dv-active-tab')).toContainText(third);
 
     // now the hidden session blocks on a permission — nobody clicked anything
-    await post(second, {
-      hook_event_name: 'Notification',
-      message: 'Claude needs your permission to use Bash',
-    });
+    // A REAL held request (#952): `PreToolUse` is no longer registered, and a
+    // permission `Notification` is dropped before it can move a badge (#313).
+    // `!perm` is what a permission IS on this transport. Assertions unchanged.
+    await permissionHolder(a)(second);
 
     // it comes back on its own, INTO ITS ORIGINAL SLOT
     await expect(tabs(w)).toHaveCount(3, { timeout: 25_000 });
@@ -345,17 +344,13 @@ test.describe('presentation ladder (E9-05)', () => {
     await expect(tabs(w)).toHaveCount(1, { timeout: 25_000 });
     const second = await addSession(a);
     await expect(tabs(w)).toHaveCount(2);
-    const post = await hookPoster(a, 2);
 
     await row(w, second).click();
     await palette(w, 'Collapse session to a strip');
     await expect(stripRow(w, second)).toBeVisible();
     await expect(tabs(w)).toHaveCount(1);
 
-    await post(second, {
-      hook_event_name: 'Notification',
-      message: 'Claude needs your permission to use Bash',
-    });
+    await permissionHolder(a)(second);
 
     await expect(tabs(w)).toHaveCount(2, { timeout: 25_000 });
     // and it leaves the strip behind — a session cannot be a card AND a row

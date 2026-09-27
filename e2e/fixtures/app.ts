@@ -1529,11 +1529,75 @@ export function streamPrompter(
     );
     if (!accepted) {
       throw new Error(
-        `submitPrompt was refused for "${title}" — a PTY session has no typed-message ` +
-          `transport, so this card is not in Direct mode`
+        `submitPrompt was refused for "${title}" — main declined it, so this card has ` +
+          `no live session with a control channel`
       );
     }
   };
+}
+
+/**
+ * Put a session into `needs-permission` with a REAL held request (#952).
+ *
+ * ⚠️ THE ONE WAY TO PROVOKE A PERMISSION, and the reason it is a fixture rather
+ * than three lines repeated in twenty specs.
+ *
+ * Until #952 the suite did this by POSTing a `PreToolUse` hook through
+ * `hookPoster` and letting the hold path park it. That worked only because the
+ * shell-in-a-PTY fake declared no transport, so every test session came up as a
+ * PTY — which is not how a real session has worked since #381 made Direct the
+ * default. `PreToolUse` is no longer registered at all, and a permission
+ * `Notification` is dropped before it can move a badge (#313), so neither hook
+ * route can raise this state any more.
+ *
+ * `!perm` makes the fake CLI issue a real `can_use_tool` control request, which
+ * is what a permission IS on this transport: it carries a `decision_reason`, it
+ * is held by `StreamPermissions`, and answering it goes back to the CLI.
+ *
+ * WHAT CALLERS MUST KNOW, because it differs from the nudge it replaces: this
+ * request is genuinely HELD. It does not clear itself when the next status
+ * arrives — it has to be ANSWERED (click Allow/Deny, or `sessions:decidePermission`).
+ * A spec that used the Notification's transience to get back to a calm state
+ * needs to answer first. `hookPoster` is still the right tool for every OTHER
+ * status event: the hook listener remains the status channel, and `Stop` is still
+ * the done authority (S-06).
+ */
+export function permissionHolder(
+  a: LaunchedApp
+): (title: string, marker?: string) => Promise<void> {
+  const prompt = streamPrompter(a);
+  return (title, marker = 'held.sh') => prompt(title, `!perm ${marker}`);
+}
+
+/**
+ * Answer every permission this app is holding, without going through the bar.
+ *
+ * The companion to `permissionHolder`, and needed because a held request does NOT
+ * clear itself: a spec that raises one and then asserts a CALM state has to
+ * answer it. Clicking Allow is the right thing when the bar is what is under
+ * test — but many specs raise a permission on a card that is not the focused
+ * one, where no bar is on screen to click, and their subject is a lamp, a count
+ * or a toast rather than the bar itself.
+ *
+ * Goes through `sessions:decidePermission`, which is the SAME path the bar's own
+ * button takes (`sessions/ipc.ts` hoists it so the bar, the batch band, the
+ * Events row and the OS toast all share one decision path) — so this is not a
+ * back door, it is the same door without the pixels.
+ *
+ * Returns how many it answered, so a caller can assert it really had something
+ * to answer rather than passing on an empty list.
+ */
+export async function answerHeldPermissions(
+  a: LaunchedApp,
+  decision: 'allow' | 'deny' = 'allow'
+): Promise<number> {
+  return a.window.evaluate(async (d) => {
+    const held = (await window.switchboard.sessions.pendingPermissions()) as Array<{
+      requestId: string;
+    }>;
+    for (const r of held) await window.switchboard.sessions.decidePermission(r.requestId, d);
+    return held.length;
+  }, decision);
 }
 
 /** `poll`, for a check that has to await something. */

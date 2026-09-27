@@ -10,6 +10,7 @@ import {
   tempProjectFolder,
   hookPoster,
   openEventsDrawer,
+  permissionHolder,
 } from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -51,10 +52,10 @@ test.describe('attention queue (E9-03)', () => {
     // back to rail order or arrival order, these assertions break.
     const titles = { done: names[0], permission: names[1], input: names[2] };
     await post(titles.done, { hook_event_name: 'Stop' });
-    await post(titles.permission, {
-      hook_event_name: 'Notification',
-      message: 'Claude needs your permission to use Bash',
-    });
+    // A REAL held request (#952): `PreToolUse` is no longer registered, and a
+    // permission `Notification` is dropped before it can move a badge (#313).
+    // `!perm` is what a permission IS on this transport. Assertions unchanged.
+    await permissionHolder(a)(titles.permission);
     await post(titles.input, {
       hook_event_name: 'Notification',
       message: 'Claude needs input to continue',

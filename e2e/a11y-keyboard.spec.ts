@@ -13,8 +13,8 @@ import {
   launchApp,
   LaunchedApp,
   tempProjectFolder,
-  hookPoster,
   openEventsDrawer,
+  permissionHolder,
 } from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -271,11 +271,10 @@ test.describe('keyboard paths swept by #197', () => {
     await expect(w.locator('[data-urgency-lamp][aria-current="true"]')).toHaveCount(1);
 
     // make the FIRST session ask for something, so it has an Events row
-    const post = await hookPoster(a, 2);
-    await post(names[0], {
-      hook_event_name: 'Notification',
-      message: 'Claude needs your permission to use Bash',
-    });
+    // A REAL held request (#952): `PreToolUse` is no longer registered, and a
+    // permission `Notification` is dropped before it can move a badge (#313).
+    // `!perm` is what a permission IS on this transport. Assertions unchanged.
+    await permissionHolder(a)(names[0]);
     // the rows live in the events drawer, collapsed by default (P2-E14-01) —
     // and this whole block is about their KEYBOARD reachability, which starts
     // with the drawer being openable at all

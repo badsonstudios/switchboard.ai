@@ -18,10 +18,10 @@ import {
   launchApp,
   LaunchedApp,
   tempProjectFolder,
-  hookPoster,
   persistedUi,
   readWorkspaceFile,
   skipPopoutOnLinux,
+  permissionHolder,
 } from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -127,7 +127,6 @@ test.describe('layout modes (E9-07)', () => {
     const second = await addSession(a);
     const third = await addSession(a);
     await expect(tabs(w)).toHaveCount(3);
-    const post = await hookPoster(a, 3);
 
     await row(w, first).click();
     await palette(w, 'Layout: Queue — only the sessions that need you');
@@ -139,10 +138,10 @@ test.describe('layout modes (E9-07)', () => {
 
     // now one of the folded sessions blocks on a permission. Nobody clicked
     // anything: the status machine did this.
-    await post(third, {
-      hook_event_name: 'Notification',
-      message: 'Claude needs your permission to use Bash',
-    });
+    // A REAL held request (#952): `PreToolUse` is no longer registered, and a
+    // permission `Notification` is dropped before it can move a badge (#313).
+    // `!perm` is what a permission IS on this transport. Assertions unchanged.
+    await permissionHolder(a)(third);
     await expect(tabs(w)).toHaveCount(2, { timeout: 25_000 });
     await expect(stripRows(w)).toHaveCount(1);
     await expect(stripRow(w, second)).toBeVisible();
