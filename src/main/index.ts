@@ -9,46 +9,52 @@ import {
   screen,
   session,
   shell,
-} from 'electron';
-import path from 'path';
-import fs from 'fs';
-import { ArrangementMemories, planDisplayRestore, windowOptionsFrom, WindowState } from './window-state';
-import { WorkspaceStore, displayFingerprint } from './workspace/store';
-import os from 'os';
-import { LogSink, createLogger } from './log/logger';
-import { registerBuiltinContributions } from './bootstrap';
-import { registry } from './extensibility';
-import { StreamService } from './transport/stream-service';
-import { createDiagnosticLogger } from './transport/diagnostics';
-import { CpuHeartbeat } from './diagnostics/cpu-heartbeat';
-import { ProcessCensus } from './diagnostics/process-census';
-import { liveChildren } from './diagnostics/live-children';
-import { registerReportIpc } from './diagnostics/report-ipc';
-import { EventLoopDelay } from './diagnostics/event-loop';
-import { PerfCapture } from './diagnostics/perf-capture';
-import type { PerfBatch } from '../shared/perf';
-import { StreamPermissions } from './sessions/stream-permissions';
-import { StreamCommands } from './sessions/stream-commands';
-import { StreamModel } from './sessions/stream-model';
-import { StreamFeed } from './feed/stream-feed';
-import { SessionManager } from './sessions/session-manager';
-import { HookListener } from './hooks/hook-listener';
-import { TranscriptWatcher } from './transcripts/watcher';
-import { HistoryRepairLog } from './sessions/history-repair-log';
-import { registerSessionIpc, SessionIpcHandle } from './sessions/ipc';
+} from "electron";
+import path from "path";
+import fs from "fs";
+import {
+  ArrangementMemories,
+  planDisplayRestore,
+  windowOptionsFrom,
+  WindowState,
+} from "./window-state";
+import { WorkspaceStore, displayFingerprint } from "./workspace/store";
+import os from "os";
+import { LogSink, createLogger } from "./log/logger";
+import { registerBuiltinContributions } from "./bootstrap";
+import { registry } from "./extensibility";
+import { StreamService } from "./transport/stream-service";
+import { createDiagnosticLogger } from "./transport/diagnostics";
+import { CpuHeartbeat } from "./diagnostics/cpu-heartbeat";
+import { ProcessCensus } from "./diagnostics/process-census";
+import { liveChildren } from "./diagnostics/live-children";
+import { registerReportIpc } from "./diagnostics/report-ipc";
+import { EventLoopDelay } from "./diagnostics/event-loop";
+import { PerfCapture } from "./diagnostics/perf-capture";
+import type { PerfBatch } from "../shared/perf";
+import { StreamPermissions } from "./sessions/stream-permissions";
+import type { PermissionRequest } from "../shared/ipc/permissions";
+import { StreamCommands } from "./sessions/stream-commands";
+import { StreamModel } from "./sessions/stream-model";
+import { StreamFeed } from "./feed/stream-feed";
+import { SessionManager } from "./sessions/session-manager";
+import { HookListener } from "./hooks/hook-listener";
+import { TranscriptWatcher } from "./transcripts/watcher";
+import { HistoryRepairLog } from "./sessions/history-repair-log";
+import { registerSessionIpc, SessionIpcHandle } from "./sessions/ipc";
 // The contained one-shot behind AI task labels (#758). Wired in here rather
 // than imported by `sessions/ipc.ts`, so the argv that makes a turn harmless
 // stays a provider concern and the label path stays injectable.
-import { runContainedPrompt } from './providers/claude-oneshot';
-import { registerGroupIpc } from './workspace/group-ipc';
-import { registerMcpIpc } from './mcp/ipc';
-import { samePath } from './mcp/config';
-import { registerFsIpc } from './fs/ipc';
-import { ReadScope } from './fs/read-scope';
-import { IpcBroker } from './ipc/broker';
-import { allCapabilities, Channel } from '../shared/ipc/capabilities';
-import { EventFeed } from './events/feed';
-import { Notifier, quietWindowOf } from './events/notifier';
+import { runContainedPrompt } from "./providers/claude-oneshot";
+import { registerGroupIpc } from "./workspace/group-ipc";
+import { registerMcpIpc } from "./mcp/ipc";
+import { samePath } from "./mcp/config";
+import { registerFsIpc } from "./fs/ipc";
+import { ReadScope } from "./fs/read-scope";
+import { IpcBroker } from "./ipc/broker";
+import { allCapabilities, Channel } from "../shared/ipc/capabilities";
+import { EventFeed } from "./events/feed";
+import { Notifier, quietWindowOf } from "./events/notifier";
 import {
   ACTION_OS_TOAST,
   ACTION_PUSH,
@@ -58,10 +64,10 @@ import {
   defaultRules,
   inQuietWindow,
   visibilityAcross,
-} from './events/rules';
-import type { QuietState } from '../shared/quiet-hours';
-import type { NotificationPrefs } from '../shared/notifications';
-import { RuleActionRegistry, RulesEngine } from './events/rules-engine';
+} from "./events/rules";
+import type { QuietState } from "../shared/quiet-hours";
+import type { NotificationPrefs } from "../shared/notifications";
+import { RuleActionRegistry, RulesEngine } from "./events/rules-engine";
 import {
   answerableFromToast,
   DECIDE_BUTTONS,
@@ -69,49 +75,64 @@ import {
   PermissionToasts,
   permissionSummary,
   toastActionsSupported,
-} from './events/permission-toast';
-import { notificationBody } from './events/notification-text';
-import { createMainI18n } from './i18n';
-import { languageFromUi } from '../shared/i18n';
-import { APP_USER_MODEL_ID } from '../shared/app-identity';
-import { registerRulesIpc } from './events/rules-ipc';
-import { registerDigestIpc } from './events/digest-ipc';
-import { DEFAULT_SOUND } from '../shared/sounds';
-import { SoundActions } from './events/sound-actions';
-import { createRendererAudioSink } from './events/audio-sink';
-import { registerSoundIpc } from './events/sound-ipc';
-import { PushActions } from './events/push-actions';
-import { registerPushIpc } from './events/push-ipc';
-import { SecretStore } from './secrets/store';
-import { GitService } from './git/git-service';
-import { BusHost } from './bus/host-channel';
-import { SessionQueries, summariesFrom } from './sessions/queries';
-import { resolveMentions } from './sessions/mention-resolve';
-import { buildContextOffer } from './sessions/context-drop';
-import { renderOutput } from './bus/bus-tools';
-import { SiblingDelivery } from './sessions/delivery';
-import { Blackboard } from './sessions/blackboard';
-import { pushSiblingMessage, registerDeliveryIpc } from './sessions/delivery-ipc';
-import { registerDispatchIpc } from './sessions/dispatch-ipc';
-import { DispatchResults } from './sessions/dispatch-results';
-import { runPreflight } from './preflight';
-import { startStaticServer, StaticServer } from './static-server';
-import { installCspHeaders } from './csp';
-import { parsePopoutFeatures } from './popout-bounds';
-import { scanSlashCommands } from './capabilities/slash-commands';
-import { buildMenuTemplate } from './app-menu';
-import { UpdateService, FEED_ENV, isAllowedReleaseUrl } from './update/service';
-import { UpdateInstaller, UPDATE_DIR_NAME, resolveHandshake, resolveOffer } from './update/install';
-import { launchInstaller } from './update/installer';
-import { tokenSourcesFor } from './update/token';
-import type { UpdateHandshake, UpdateInstallStatus } from '../shared/update';
-import { ServiceHealthService } from './health/service';
-import { SERVICE_STATUS_FEED_ENV } from './health/statuspage';
-import { installTerminalAccelerators, makeAcceleratorDeps } from './terminal-accelerators';
-import type { ContextMenuDeps } from './context-menu';
-import { installContextMenu, makeContextMenuDeps, sanitizeContextMenuLabels } from './context-menu';
-import type { ContextMenuLabels } from '../shared/context-menu';
-import { DEFAULT_CONTEXT_MENU_LABELS } from '../shared/context-menu';
+} from "./events/permission-toast";
+import { notificationBody } from "./events/notification-text";
+import { createMainI18n } from "./i18n";
+import { languageFromUi } from "../shared/i18n";
+import { APP_USER_MODEL_ID } from "../shared/app-identity";
+import { registerRulesIpc } from "./events/rules-ipc";
+import { registerDigestIpc } from "./events/digest-ipc";
+import { DEFAULT_SOUND } from "../shared/sounds";
+import { SoundActions } from "./events/sound-actions";
+import { createRendererAudioSink } from "./events/audio-sink";
+import { registerSoundIpc } from "./events/sound-ipc";
+import { PushActions } from "./events/push-actions";
+import { registerPushIpc } from "./events/push-ipc";
+import { SecretStore } from "./secrets/store";
+import { GitService } from "./git/git-service";
+import { BusHost } from "./bus/host-channel";
+import { SessionQueries, summariesFrom } from "./sessions/queries";
+import { resolveMentions } from "./sessions/mention-resolve";
+import { buildContextOffer } from "./sessions/context-drop";
+import { renderOutput } from "./bus/bus-tools";
+import { SiblingDelivery } from "./sessions/delivery";
+import { Blackboard } from "./sessions/blackboard";
+import {
+  pushSiblingMessage,
+  registerDeliveryIpc,
+} from "./sessions/delivery-ipc";
+import { registerDispatchIpc } from "./sessions/dispatch-ipc";
+import { DispatchResults } from "./sessions/dispatch-results";
+import { runPreflight } from "./preflight";
+import { startStaticServer, StaticServer } from "./static-server";
+import { installCspHeaders } from "./csp";
+import { parsePopoutFeatures } from "./popout-bounds";
+import { scanSlashCommands } from "./capabilities/slash-commands";
+import { buildMenuTemplate } from "./app-menu";
+import { UpdateService, FEED_ENV, isAllowedReleaseUrl } from "./update/service";
+import {
+  UpdateInstaller,
+  UPDATE_DIR_NAME,
+  resolveHandshake,
+  resolveOffer,
+} from "./update/install";
+import { launchInstaller } from "./update/installer";
+import { tokenSourcesFor } from "./update/token";
+import type { UpdateHandshake, UpdateInstallStatus } from "../shared/update";
+import { ServiceHealthService } from "./health/service";
+import { SERVICE_STATUS_FEED_ENV } from "./health/statuspage";
+import {
+  installTerminalAccelerators,
+  makeAcceleratorDeps,
+} from "./terminal-accelerators";
+import type { ContextMenuDeps } from "./context-menu";
+import {
+  installContextMenu,
+  makeContextMenuDeps,
+  sanitizeContextMenuLabels,
+} from "./context-menu";
+import type { ContextMenuLabels } from "../shared/context-menu";
+import { DEFAULT_CONTEXT_MENU_LABELS } from "../shared/context-menu";
 import {
   Box,
   groupIdFromFrameName,
@@ -119,11 +140,19 @@ import {
   LivePopout,
   patchPopoutPositions,
   resolvePopoutBounds,
-} from './popout-geometry';
-import { dialog } from 'electron';
-import { buildIdentity, isReleaseBuild, windowTitle } from '../shared/build-identity';
-import { acquireInstanceLock, focusRunningWindow, sleepSync } from './single-instance';
-import { refocusAfterDialog } from './dialog-refocus';
+} from "./popout-geometry";
+import { dialog } from "electron";
+import {
+  buildIdentity,
+  isReleaseBuild,
+  windowTitle,
+} from "../shared/build-identity";
+import {
+  acquireInstanceLock,
+  focusRunningWindow,
+  sleepSync,
+} from "./single-instance";
+import { refocusAfterDialog } from "./dialog-refocus";
 
 /* ---- ONE switchboard per user profile (#289) -------------------------------
  *
@@ -164,13 +193,13 @@ if (!isPrimaryInstance) {
   // at the top of `whenReady` below is the belt to this pair of braces.
   app.quit();
 } else {
-  app.on('second-instance', () => {
+  app.on("second-instance", () => {
     try {
       // The window is the answer 99% of the time. `currentWindow` is set by
       // createWindow() and nulled when it closes, so this is also the "still
       // booting" case — null until the first window exists.
       if (focusRunningWindow(currentWindow)) {
-        if (sink) log.app.info('second launch focused the running window');
+        if (sink) log.app.info("second launch focused the running window");
         return;
       }
       // No window to raise. On macOS the app survives its last window and only
@@ -178,11 +207,13 @@ if (!isPrimaryInstance) {
       // for that, and doing nothing would look like a dead app. Guarded on
       // `isReady` because createWindow() needs the workspace store, which the
       // bootstrap has not built yet if a second launch races our own startup.
-      if (app.isReady() && BrowserWindow.getAllWindows().length === 0) createWindow();
+      if (app.isReady() && BrowserWindow.getAllWindows().length === 0)
+        createWindow();
     } catch (err) {
       // A second launch must never be able to take the running app down. The
       // log line is best-effort too: `sink` does not exist until `whenReady`.
-      if (sink) log.app.warn('second-instance handling failed', { error: String(err) });
+      if (sink)
+        log.app.warn("second-instance handling failed", { error: String(err) });
     }
   });
 }
@@ -190,7 +221,7 @@ if (!isPrimaryInstance) {
 /** Stamped in at build time (P2-E15-15); constant for the process lifetime. */
 const BUILD_IDENTITY = buildIdentity();
 /** The name the OS window carries when there is nothing unusual to report. */
-const APP_NAME = 'switchboard.ai';
+const APP_NAME = "switchboard.ai";
 
 // Safe-by-default for every window this app will ever open (§5.29 posture).
 app.enableSandbox();
@@ -211,18 +242,18 @@ app.setAppUserModelId(APP_USER_MODEL_ID);
 
 function logsDir(): string {
   try {
-    return app.getPath('logs');
+    return app.getPath("logs");
   } catch {
-    return path.join(app.getPath('userData'), 'logs');
+    return path.join(app.getPath("userData"), "logs");
   }
 }
 let sink: LogSink;
 const log = {
   get app() {
-    return createLogger(sink, 'app');
+    return createLogger(sink, "app");
   },
   get ui() {
-    return createLogger(sink, 'ui');
+    return createLogger(sink, "ui");
   },
 };
 
@@ -241,7 +272,7 @@ function rendererOrigin(): string | null {
 function isSafeExternalUrl(url: string): boolean {
   try {
     const u = new URL(url);
-    return u.protocol === 'https:' || u.protocol === 'http:';
+    return u.protocol === "https:" || u.protocol === "http:";
   } catch {
     return false;
   }
@@ -257,7 +288,7 @@ function popoutGroupCount(layout: unknown): number {
 function isPopoutUrl(url: string): boolean {
   try {
     const u = new URL(url);
-    if (!u.pathname.endsWith('popout.html')) return false;
+    if (!u.pathname.endsWith("popout.html")) return false;
     const origin = rendererOrigin();
     return !!origin && u.origin === origin;
   } catch {
@@ -289,8 +320,9 @@ let grantFirstParty: ((win: BrowserWindow) => void) | null = null;
 // Outbound pushes from module-level helpers. Set by the bootstrap alongside
 // the broker: "every channel goes through the broker, in both directions" is
 // only true if the helpers obey it too (P2-E15-04).
-let pushToRenderer: ((win: BrowserWindow | null, channel: Channel, payload?: unknown) => void) | null =
-  null;
+let pushToRenderer:
+  | ((win: BrowserWindow | null, channel: Channel, payload?: unknown) => void)
+  | null = null;
 // live popout windows, tagged with the dockview group each one hosts (#86).
 // The GROUP ID is what matches them to the serialized layout — creation order
 // famously doesn't, because dockview registers a popout when its window has
@@ -343,7 +375,10 @@ function positiveMs(raw: string | undefined): number | undefined {
  * real install has neither set, so the dialog behaves exactly as before.
  */
 function scriptedQuit(): boolean {
-  return !!process.env.SWITCHBOARD_NO_QUIT_CONFIRM || !!process.env.SWITCHBOARD_AUTOCLOSE;
+  return (
+    !!process.env.SWITCHBOARD_NO_QUIT_CONFIRM ||
+    !!process.env.SWITCHBOARD_AUTOCLOSE
+  );
 }
 
 /**
@@ -368,12 +403,12 @@ function confirmCloseWithBusySessions(win: BrowserWindow): boolean {
   const busy = busySessions();
   if (busy.length === 0) return true;
   const choice = dialog.showMessageBoxSync(win, {
-    type: 'warning',
-    buttons: ['Quit anyway', 'Cancel'],
+    type: "warning",
+    buttons: ["Quit anyway", "Cancel"],
     defaultId: 1,
     cancelId: 1,
-    title: 'Sessions are mid-task',
-    message: `${busy.length} session(s) are mid-task:\n\n${busy.join('\n')}\n\nQuit anyway?`,
+    title: "Sessions are mid-task",
+    message: `${busy.length} session(s) are mid-task:\n\n${busy.join("\n")}\n\nQuit anyway?`,
   });
   return choice === 0;
 }
@@ -394,7 +429,7 @@ function confirmCloseWithBusySessions(win: BrowserWindow): boolean {
  */
 let acceleratorReadyFor: number | null = null;
 const acceleratorDeps = makeAcceleratorDeps({
-  platform: process.platform === 'darwin' ? 'darwin' : 'other',
+  platform: process.platform === "darwin" ? "darwin" : "other",
   renderer: () => {
     const win = currentWindow;
     if (!win || win.isDestroyed()) return { id: null, alive: false };
@@ -403,10 +438,11 @@ const acceleratorDeps = makeAcceleratorDeps({
   ready: () => acceleratorReadyFor,
   send: (commandId, fromPopout) => {
     if (!pushToRenderer) return false;
-    pushToRenderer(currentWindow, 'app:accelerator', { commandId, fromPopout });
+    pushToRenderer(currentWindow, "app:accelerator", { commandId, fromPopout });
     return true;
   },
-  onError: (err) => log.app.warn('terminal accelerator failed', { error: String(err) }),
+  onError: (err) =>
+    log.app.warn("terminal accelerator failed", { error: String(err) }),
 });
 
 /**
@@ -425,7 +461,7 @@ const contextMenuDeps: ContextMenuDeps = makeContextMenuDeps({
   labels: () => contextMenuLabels,
   windowFor: (contents) => BrowserWindow.fromWebContents(contents),
   build: (template) => Menu.buildFromTemplate(template),
-  onError: (err) => log.ui.warn('context menu failed', { error: String(err) }),
+  onError: (err) => log.ui.warn("context menu failed", { error: String(err) }),
 });
 
 function trackWindowGeometry(win: BrowserWindow): void {
@@ -450,17 +486,17 @@ function trackWindowGeometry(win: BrowserWindow): void {
     if (!win.isMaximized()) lastNormalBounds = win.getNormalBounds();
     save();
   };
-  win.on('resize', onChange);
-  win.on('move', onChange);
+  win.on("resize", onChange);
+  win.on("move", onChange);
   // wrapped, not passed directly: these hand the listener an event object,
   // which as a positional argument would read as `force`
-  win.on('maximize', () => save());
-  win.on('unmaximize', () => save());
+  win.on("maximize", () => save());
+  win.on("unmaximize", () => save());
   // #864: a window that was minimized or fullscreen when the displays changed
   // could not be placed then. Try again the moment it becomes placeable.
-  win.on('restore', () => onWindowBecameVisible?.());
-  win.on('leave-full-screen', () => onWindowBecameVisible?.());
-  win.on('close', () => {
+  win.on("restore", () => onWindowBecameVisible?.());
+  win.on("leave-full-screen", () => onWindowBecameVisible?.());
+  win.on("close", () => {
     save(true);
     workspace.save(); // flush the debounce before the process dies
   });
@@ -476,8 +512,12 @@ const RESTORE_SETTLE_MS = 10_000;
 
 function snapshotPopoutBoxes(): void {
   try {
-    const layout = workspace.getLayout() as { popoutGroups?: Array<{ position?: Box | null }> } | null;
-    bootPopoutBoxes = (layout?.popoutGroups ?? []).map((g) => g.position).filter(isUsableBox);
+    const layout = workspace.getLayout() as {
+      popoutGroups?: Array<{ position?: Box | null }>;
+    } | null;
+    bootPopoutBoxes = (layout?.popoutGroups ?? [])
+      .map((g) => g.position)
+      .filter(isUsableBox);
   } catch {
     bootPopoutBoxes = []; // geometry is a nicety — never block startup
   }
@@ -495,12 +535,18 @@ function snapshotPopoutBoxes(): void {
 }
 
 /** would this rect land on a display the user actually has? */
-function boundsOnAnyDisplay(b: Partial<{ x: number; y: number; width: number; height: number }>): boolean {
-  if (typeof b.x !== 'number' || typeof b.y !== 'number') return true; // nothing to judge
-  const w = typeof b.width === 'number' ? b.width : 0;
-  const h = typeof b.height === 'number' ? b.height : 0;
+function boundsOnAnyDisplay(
+  b: Partial<{ x: number; y: number; width: number; height: number }>,
+): boolean {
+  if (typeof b.x !== "number" || typeof b.y !== "number") return true; // nothing to judge
+  const w = typeof b.width === "number" ? b.width : 0;
+  const h = typeof b.height === "number" ? b.height : 0;
   return workAreas().some(
-    (a) => b.x! < a.x + a.width - 80 && b.x! + w > a.x + 80 && b.y! < a.y + a.height - 40 && b.y! + h > a.y + 20
+    (a) =>
+      b.x! < a.x + a.width - 80 &&
+      b.x! + w > a.x + 80 &&
+      b.y! < a.y + a.height - 40 &&
+      b.y! + h > a.y + 20,
   );
 }
 
@@ -527,17 +573,17 @@ function watchPopoutGeometry(child: BrowserWindow): void {
       // popouts still to come — the flush at close covers that window instead
       if (restoringLayout) return;
       const win = currentWindow;
-      pushToRenderer?.(win, 'app:popoutGeometryChanged');
+      pushToRenderer?.(win, "app:popoutGeometryChanged");
     }, 250);
     timer.unref?.();
   };
   // moved/resized are the settled events but are darwin+win32 only; move/resize
   // fire everywhere (and continuously), which the debounce above absorbs
-  child.on('moved', nudge);
-  child.on('resized', nudge);
-  child.on('move', nudge);
-  child.on('resize', nudge);
-  child.on('closed', () => clearTimeout(timer));
+  child.on("moved", nudge);
+  child.on("resized", nudge);
+  child.on("move", nudge);
+  child.on("resize", nudge);
+  child.on("closed", () => clearTimeout(timer));
 }
 
 /**
@@ -554,7 +600,7 @@ function watchPopoutGeometry(child: BrowserWindow): void {
  */
 function scheduleForcedExit(): void {
   const timer = setTimeout(() => {
-    log.app.warn('still alive after quit — forcing exit', { pid: process.pid });
+    log.app.warn("still alive after quit — forcing exit", { pid: process.pid });
     app.exit(0);
   }, 1500);
   // never let the backstop itself be the reason the process stays up
@@ -582,21 +628,21 @@ function createWindow(): BrowserWindow {
     // theme JSON, so closing this needs the token maps somewhere both
     // processes can see. Not worth that today; recorded so the next person
     // knows the blocker moved.
-    backgroundColor: '#242933',
+    backgroundColor: "#242933",
     // "Which build is this?" answerable from the TASKBAR, without focusing the
     // window (P2-E15-15). A clean `main` build gets the bare app name; anything
     // else — feature branch, dirty tree, detached, unknown provenance — says so.
     title: windowTitle(APP_NAME, BUILD_IDENTITY),
     webPreferences: {
-      preload: path.join(__dirname, '../preload/index.js'),
+      preload: path.join(__dirname, "../preload/index.js"),
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
       additionalArguments: [
         `--switchboard-version=${app.getVersion()}`,
         `--switchboard-seed-panels=${process.env.SWITCHBOARD_SEED_PANELS ?? 0}`,
-        `--switchboard-seed-session=${process.env.SWITCHBOARD_SEED_SESSION ?? ''}`,
-        `--switchboard-seed-document=${process.env.SWITCHBOARD_SEED_DOCUMENT ?? ''}`,
+        `--switchboard-seed-session=${process.env.SWITCHBOARD_SEED_SESSION ?? ""}`,
+        `--switchboard-seed-document=${process.env.SWITCHBOARD_SEED_DOCUMENT ?? ""}`,
         // The renderer plays two cues main never sends it — the card menu's
         // preview and the "hear what you just turned on" sample — so the mute
         // has to reach this side too, or a muted e2e run still makes a noise.
@@ -610,7 +656,7 @@ function createWindow(): BrowserWindow {
   // window by default. Vetoing that is what makes the build suffix survive a
   // load, and it costs nothing: our renderer never sets a title of its own.
   // Scoped to THIS window; popouts keep dockview's page-driven titles.
-  win.on('page-title-updated', (e) => {
+  win.on("page-title-updated", (e) => {
     e.preventDefault();
   });
 
@@ -629,11 +675,11 @@ function createWindow(): BrowserWindow {
   installContextMenu(win.webContents, contextMenuDeps);
   // A navigating renderer has torn its listener down; nothing may be claimed
   // again until the new one says it is listening.
-  win.webContents.on('did-start-loading', () => {
+  win.webContents.on("did-start-loading", () => {
     acceleratorReadyFor = null;
   });
   trackWindowGeometry(win);
-  win.on('close', (e) => {
+  win.on("close", (e) => {
     if (!confirmCloseWithBusySessions(win)) {
       e.preventDefault();
       return;
@@ -655,7 +701,12 @@ function createWindow(): BrowserWindow {
           const content = p.win.getContentBounds();
           return {
             groupId: p.groupId,
-            box: { left: outer.x, top: outer.y, width: content.width, height: content.height },
+            box: {
+              left: outer.x,
+              top: outer.y,
+              width: content.width,
+              height: content.height,
+            },
           };
         });
       if (live.length > 0) {
@@ -668,17 +719,20 @@ function createWindow(): BrowserWindow {
         // persists a layout with no popout at all and the window does not come
         // back. Silent before — and indistinguishable from "restore failed" in
         // a log — so say which of the two happened (#165).
-        log.ui.info('popout geometry flushed', { live: live.length, stored });
+        log.ui.info("popout geometry flushed", { live: live.length, stored });
         if (stored < live.length) {
-          log.ui.warn('quit beat popout registration — popouts will not be restored', {
-            live: live.length,
-            stored,
-          });
+          log.ui.warn(
+            "quit beat popout registration — popouts will not be restored",
+            {
+              live: live.length,
+              stored,
+            },
+          );
         }
       }
     } catch (err) {
       // geometry is a nicety; never let it block a close
-      log.app.warn('popout geometry flush failed', { error: String(err) });
+      log.app.warn("popout geometry flush failed", { error: String(err) });
     }
   });
   // A window that can no longer answer a permission hold has to say so.
@@ -687,21 +741,25 @@ function createWindow(): BrowserWindow {
   // nothing able to decide it (P2-E15-09).
   //
   // TWO ways to lose the renderer, and only one of them closes the window:
-  win.on('closed', () => {
+  win.on("closed", () => {
     // guard on identity: a stray second window must not release the live
     // window's holds, and the app shouldn't keep a destroyed BrowserWindow
     if (win !== currentWindow) return;
     currentWindow = null;
-    onRendererLost?.('main window closed');
+    onRendererLost?.("main window closed");
   });
   // a CRASHED renderer leaves the window open with dead contents — hasLiveWindow
   // catches later calls, but this is what frees the ones already parked
-  win.webContents.on('render-process-gone', (_e, details) => {
-    if (win === currentWindow) onRendererLost?.(`renderer gone: ${details.reason}`);
+  win.webContents.on("render-process-gone", (_e, details) => {
+    if (win === currentWindow)
+      onRendererLost?.(`renderer gone: ${details.reason}`);
   });
-  win.once('ready-to-show', () => {
+  win.once("ready-to-show", () => {
     win.show();
-    log.ui.info('window shown', { restored: !!state.bounds, maximized: state.isMaximized });
+    log.ui.info("window shown", {
+      restored: !!state.bounds,
+      maximized: state.isMaximized,
+    });
   });
 
   // external links open in the OS browser (http/https only), never in-app.
@@ -731,12 +789,18 @@ function createWindow(): BrowserWindow {
       popout && !boundsOnAnyDisplay(resolved.bounds)
         ? { width: resolved.bounds.width, height: resolved.bounds.height }
         : resolved.bounds;
-    log.ui.info('window-open requested', { url, popout, asked, bounds, restored: matchedIndex >= 0 });
+    log.ui.info("window-open requested", {
+      url,
+      popout,
+      asked,
+      bounds,
+      restored: matchedIndex >= 0,
+    });
     if (popout) {
       return {
-        action: 'allow',
+        action: "allow",
         overrideBrowserWindowOptions: {
-          backgroundColor: '#242933',
+          backgroundColor: "#242933",
           ...bounds,
           // dockview persists the popout's INNER size (innerWidth/innerHeight);
           // without this Electron would read those as the OUTER frame size and
@@ -752,12 +816,16 @@ function createWindow(): BrowserWindow {
           // renderer's code is not checking for, so a card list arrives as a
           // refusal object rather than as a rejection, and `on`-channels are
           // dropped with only a log line. Grant it here if you ever add one.
-          webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
+          webPreferences: {
+            sandbox: true,
+            contextIsolation: true,
+            nodeIntegration: false,
+          },
         },
       };
     }
     if (isSafeExternalUrl(url)) void shell.openExternal(url);
-    return { action: 'deny' };
+    return { action: "deny" };
   });
   // Popout geometry is only durable if something notices the window moved.
   // dockview notices via a debounced requestAnimationFrame poll of screenX —
@@ -766,9 +834,12 @@ function createWindow(): BrowserWindow {
   // open-time) position is what gets restored: #86, a popout coming back
   // straddling two monitors. Electron's own move/resize events are
   // authoritative and fire regardless of focus, so drive the save from those.
-  win.webContents.on('did-create-window', (child, details) => {
+  win.webContents.on("did-create-window", (child, details) => {
     if (!isPopoutUrl(details.url)) return;
-    const entry = { win: child, groupId: groupIdFromFrameName(details.frameName) };
+    const entry = {
+      win: child,
+      groupId: groupIdFromFrameName(details.frameName),
+    };
     popoutWindows.push(entry);
     // A popped-out session is still a session: the palette and the attention
     // jump have to work from its terminal too (#90, §5.8 — tearing a card off
@@ -779,20 +850,21 @@ function createWindow(): BrowserWindow {
     // too, so a popped-out composer would otherwise be the one text box in the
     // app you cannot paste into with the mouse.
     installContextMenu(child.webContents, contextMenuDeps);
-    child.on('closed', () => {
+    child.on("closed", () => {
       const i = popoutWindows.indexOf(entry);
       if (i >= 0) popoutWindows.splice(i, 1);
     });
     watchPopoutGeometry(child);
   });
   // surface renderer console into the main log (E8 diagnostic + general debug)
-  win.webContents.on('console-message', (...args: unknown[]) => {
+  win.webContents.on("console-message", (...args: unknown[]) => {
     const d = args[0] as { message?: string; level?: unknown } | undefined;
-    const message = typeof d === 'object' && d?.message !== undefined ? d.message : args[1];
-    log.ui.info('renderer console', { message: String(message).slice(0, 500) });
+    const message =
+      typeof d === "object" && d?.message !== undefined ? d.message : args[1];
+    log.ui.info("renderer console", { message: String(message).slice(0, 500) });
   });
   // no top-frame navigation away from our own content
-  win.webContents.on('will-navigate', (event, url) => {
+  win.webContents.on("will-navigate", (event, url) => {
     const origin = rendererOrigin();
     if (!origin || !url.startsWith(origin)) event.preventDefault();
   });
@@ -802,7 +874,7 @@ function createWindow(): BrowserWindow {
   } else if (RENDERER_ORIGIN) {
     void win.loadURL(`${RENDERER_ORIGIN}/index.html`);
   } else {
-    void win.loadFile(path.join(__dirname, '../renderer/index.html')); // fallback
+    void win.loadFile(path.join(__dirname, "../renderer/index.html")); // fallback
   }
   return win;
 }
@@ -822,23 +894,29 @@ app
     // The build stamp goes in the FIRST log line (P2-E15-15): when a bug report
     // arrives as a log file, "which build produced this?" must be answerable
     // from the top of it rather than inferred from what the code did.
-    log.app.info('app ready', {
+    log.app.info("app ready", {
       version: app.getVersion(),
       platform: process.platform,
-      commit: BUILD_IDENTITY.commit ?? 'unknown',
-      branch: BUILD_IDENTITY.branch ?? 'detached',
+      commit: BUILD_IDENTITY.commit ?? "unknown",
+      branch: BUILD_IDENTITY.branch ?? "detached",
       dirty: BUILD_IDENTITY.dirty,
-      builtAt: BUILD_IDENTITY.builtAt ?? 'unknown',
+      builtAt: BUILD_IDENTITY.builtAt ?? "unknown",
       release: isReleaseBuild(BUILD_IDENTITY),
     });
     // serve the packaged renderer over loopback http so dockview pop-out works
     if (!DEV_URL) {
       try {
-        staticServer = await startStaticServer(path.join(__dirname, '../renderer'));
+        staticServer = await startStaticServer(
+          path.join(__dirname, "../renderer"),
+        );
         RENDERER_ORIGIN = staticServer.origin;
-        log.app.info('renderer served over loopback', { origin: RENDERER_ORIGIN });
+        log.app.info("renderer served over loopback", {
+          origin: RENDERER_ORIGIN,
+        });
       } catch (err) {
-        log.app.error('static server failed; falling back to file://', { error: String(err) });
+        log.app.error("static server failed; falling back to file://", {
+          error: String(err),
+        });
       }
     }
     // Header-based CSP for every window in the default session — main and
@@ -850,26 +928,32 @@ app
       session.defaultSession,
       rendererOrigin,
       !!DEV_URL,
-      (err) => log.app.error('csp header listener failed', { error: String(err) })
+      (err) =>
+        log.app.error("csp header listener failed", { error: String(err) }),
     );
     // The IPC choke point (P2-E15-04). Every channel registers through it, in
     // both directions; it refuses a call whose caller does not hold the
     // channel's capability. Created BEFORE any registration, and before the
     // first window, so no channel can exist outside it.
-    const broker = new IpcBroker(createLogger(sink, 'ipc'));
+    const broker = new IpcBroker(createLogger(sink, "ipc"));
     grantFirstParty = (win) =>
-      broker.grant(win.webContents, { id: 'renderer', capabilities: allCapabilities() });
-    pushToRenderer = (win, channel, payload) => broker.send(win, channel, payload);
+      broker.grant(win.webContents, {
+        id: "renderer",
+        capabilities: allCapabilities(),
+      });
+    pushToRenderer = (win, channel, payload) =>
+      broker.send(win, channel, payload);
     workspace = new WorkspaceStore(
-      path.join(app.getPath('userData'), 'workspace.json'),
-      createLogger(sink, 'workspace'),
+      path.join(app.getPath("userData"), "workspace.json"),
+      createLogger(sink, "workspace"),
       // Saving started failing, or started working again (#207). Pushed rather
       // than polled because — unlike read-only, which latches at load — this
       // changes while the user is looking at the window, and the notice has to
       // come DOWN as well as up. `currentWindow` is read at call time, so a
       // change before the window exists simply has nowhere to go; the window
       // reads `workspace:saveState` when it mounts and catches up.
-      (state) => pushToRenderer?.(currentWindow, 'workspace:saveStateChanged', state)
+      (state) =>
+        pushToRenderer?.(currentWindow, "workspace:saveStateChanged", state),
     );
     workspace.load();
     // Main's own translator (#471, §5.21). AFTER `workspace.load()`, because
@@ -880,7 +964,7 @@ app
     // NO IPC CHANNEL AND NO SUBSCRIPTION: the thunk is called afresh on every
     // string, so a language changed at 10:31 is spoken by the toast that fires
     // at 10:31.0001. `main/i18n.ts` explains why that beats `changeLanguage`.
-    const i18nLog = createLogger(sink, 'i18n');
+    const i18nLog = createLogger(sink, "i18n");
     const i18n = await createMainI18n({
       language: () => languageFromUi(workspace.getUi()),
       log: i18nLog,
@@ -890,7 +974,7 @@ app
     // which is indistinguishable from a missing translation. It is also the
     // only assertion an e2e can make that the REAL, bundled main process — CJS,
     // `require('i18next-icu')`, no Vite — got its interpolator (`e2e/boot.spec.ts`).
-    i18nLog.info('main i18n ready', {
+    i18nLog.info("main i18n ready", {
       ready: i18n.ready,
       language: languageFromUi(workspace.getUi()),
     });
@@ -900,24 +984,24 @@ app
     // `currentWindow` is read at call time, so a repair with no window yet
     // simply waits in the list for `sessions:historyRepairs`.
     const historyRepairs = new HistoryRepairLog(workspace, (notice) =>
-      pushToRenderer?.(currentWindow, 'sessions:historyRepair', notice)
+      pushToRenderer?.(currentWindow, "sessions:historyRepair", notice),
     );
     for (const c of workspace.listUntangled()) {
       historyRepairs.add({
-        kind: 'ceded',
+        kind: "ceded",
         cardId: c.cardId,
         cardTitle: c.cardTitle,
         nativeSessionId: c.nativeSessionId,
         keptByTitle: c.keptByTitle,
       });
     }
-    broker.handle('sessions:historyRepairs', () => historyRepairs.list());
-    broker.on('sessions:dismissHistoryRepair', (_e, id: unknown) => {
-      if (typeof id === 'string' && id) historyRepairs.dismiss(id);
+    broker.handle("sessions:historyRepairs", () => historyRepairs.list());
+    broker.on("sessions:dismissHistoryRepair", (_e, id: unknown) => {
+      if (typeof id === "string" && id) historyRepairs.dismiss(id);
     });
     // renderer <-> workspace layout persistence (E3-01)
-    broker.handle('workspace:getLayout', () => workspace.getLayout());
-    broker.on('workspace:setLayout', (_e, layout: unknown) => {
+    broker.handle("workspace:getLayout", () => workspace.getLayout());
+    broker.on("workspace:setLayout", (_e, layout: unknown) => {
       // Once the close is confirmed, the main process has already stamped the
       // authoritative popout geometry (#86). A renderer tearing down still
       // emits layout changes as dockview disposes, and those carry the stale
@@ -933,7 +1017,8 @@ app
       // ways a popout can fail to come back.
       if (quitConfirmed) {
         const dropped = popoutGroupCount(layout);
-        if (dropped > 0) log.ui.info('layout dropped after quit', { popouts: dropped });
+        if (dropped > 0)
+          log.ui.info("layout dropped after quit", { popouts: dropped });
         return;
       }
       workspace.setLayout(layout);
@@ -943,54 +1028,63 @@ app
     // log-only, which is the silent half of a data-loss story — the renderer
     // reads this to say so on screen instead (#168). Latched at load, so one
     // read at boot is the whole answer; nothing pushes a change.
-    broker.handle('workspace:isReadOnly', () => workspace.isReadOnly());
+    broker.handle("workspace:isReadOnly", () => workspace.isReadOnly());
     // The other half of the same story (#207): the file is writable in
     // principle, but the writes are failing — a full disk, a permission, an
     // anti-virus sitting on the folder. Unlike read-only this comes and goes,
     // so it is pushed on `workspace:saveStateChanged` too; this read is what a
     // window that opened mid-failure uses to catch up.
-    broker.handle('workspace:saveState', () => workspace.saveState());
+    broker.handle("workspace:saveState", () => workspace.saveState());
     // renderer-owned UI state (E12-08): focus, view tabs, prefs
-    broker.handle('workspace:getUi', () => workspace.getUi());
-    broker.on('workspace:setUi', (_e, ui: unknown) => workspace.setUi(ui));
+    broker.handle("workspace:getUi", () => workspace.getUi());
+    broker.on("workspace:setUi", (_e, ui: unknown) => workspace.setUi(ui));
     // the renderer is listening for claimed chords (#90) — until this arrives,
     // nothing is taken from the page
-    broker.on('app:acceleratorReady', (e) => {
+    broker.on("app:acceleratorReady", (e) => {
       acceleratorReadyFor = e.sender.id;
     });
     // A renderer confirm/alert closed (#909): without this, Windows leaves the
     // page taking clicks but no keys. Ours = the main window and every popout,
     // and only the one that already has focus is touched.
-    broker.on('app:refocusAfterDialog', () => {
+    broker.on("app:refocusAfterDialog", () => {
       const ours = [currentWindow, ...popoutWindows.map((p) => p.win)].filter(
-        (w): w is BrowserWindow => !!w
+        (w): w is BrowserWindow => !!w,
       );
-      const outcome = refocusAfterDialog(process.platform, BrowserWindow.getFocusedWindow(), ours);
+      const outcome = refocusAfterDialog(
+        process.platform,
+        BrowserWindow.getFocusedWindow(),
+        ours,
+      );
       // `lost` means blur() handed the foreground away and Windows refused to
       // give it back: exactly the case someone will grep for
-      if (outcome === 'lost') log.ui.warn('refocus after dialog: focus did not come back');
-      else log.ui.debug('refocus after dialog', { outcome });
+      if (outcome === "lost")
+        log.ui.warn("refocus after dialog: focus did not come back");
+      else log.ui.debug("refocus after dialog", { outcome });
     });
     // The four right-click labels, already translated (#526). Main has no
     // i18n; the renderer publishes them at boot and on every language change.
     // Sanitized rather than trusted — they become items in a NATIVE menu.
-    broker.on('app:contextMenuLabels', (_e, raw: unknown) => {
+    broker.on("app:contextMenuLabels", (_e, raw: unknown) => {
       contextMenuLabels = sanitizeContextMenuLabels(raw);
       // Said out loud because the failure is otherwise SILENT: a renamed
       // channel, a caller without `app.window`, a preload that did not load —
       // every one of them leaves the menus in English for ever with nothing
       // anywhere to read. One line at boot answers "did the labels arrive?".
-      log.ui.info('context menu labels received', { paste: contextMenuLabels.paste });
+      log.ui.info("context menu labels received", {
+        paste: contextMenuLabels.paste,
+      });
     });
     // display work areas — for popout-position rescue on restore (E8-02)
-    broker.handle('app:workAreas', () => screen.getAllDisplays().map((d) => d.workArea));
+    broker.handle("app:workAreas", () =>
+      screen.getAllDisplays().map((d) => d.workArea),
+    );
     const tellRendererDisplaysChanged = (): void => {
       const win = currentWindow;
       if (win && !win.isDestroyed()) {
         pushToRenderer?.(
           win,
-          'app:displaysChanged',
-          screen.getAllDisplays().map((d) => d.workArea)
+          "app:displaysChanged",
+          screen.getAllDisplays().map((d) => d.workArea),
         );
       }
     };
@@ -1049,18 +1143,20 @@ app
       if (plan.unmaximizeFirst) win.unmaximize();
       win.setBounds(plan.bounds);
       if (plan.maximizeAfter) win.maximize();
-      log.ui.info('main window returned to its remembered display', {
+      log.ui.info("main window returned to its remembered display", {
         bounds: `${plan.bounds.x},${plan.bounds.y} ${plan.bounds.width}x${plan.bounds.height}`,
       });
     };
     /** how long to let the OS finish shuffling before we place the window */
-    const displaySettleMs = positiveMs(process.env.SWITCHBOARD_DISPLAY_SETTLE_MS) ?? 600;
+    const displaySettleMs =
+      positiveMs(process.env.SWITCHBOARD_DISPLAY_SETTLE_MS) ?? 600;
     let displaySettleTimer: NodeJS.Timeout | undefined;
     let pendingMemories: ArrangementMemories | null = null;
     const scheduleMainWindowRestore = (): void => {
       // The FIRST event of a burst wins: the snapshot has to predate the
       // shuffle, and a later event in the same burst has already lost that race.
-      if (!pendingMemories) pendingMemories = workspace.rememberedArrangements();
+      if (!pendingMemories)
+        pendingMemories = workspace.rememberedArrangements();
       displaySettling = true;
       clearTimeout(displaySettleTimer);
       // The OS keeps moving windows for a beat AFTER it announces the display,
@@ -1092,7 +1188,7 @@ app
     // raise "restore your popouts?" with nothing having reconnected — and would
     // re-raise it after the user dismissed it, because the stash is only
     // cleared when the offer is accepted. The popout flow stays as it was.
-    screen.on('display-added', () => {
+    screen.on("display-added", () => {
       tellRendererDisplaysChanged();
       scheduleMainWindowRestore();
     });
@@ -1101,13 +1197,13 @@ app
     // recorded as the user's own choice. Suspending saves is most of the value
     // here; placing the window matters too, for the arrangement you drop INTO
     // when you unplug at the desk.
-    screen.on('display-removed', () => {
+    screen.on("display-removed", () => {
       scheduleMainWindowRestore();
     });
     // A resolution or work-area change is the same class of event as a hotplug
     // — a monitor waking at a different resolution looks exactly like this —
     // and it changes the fingerprint, so the same decision applies.
-    screen.on('display-metrics-changed', () => {
+    screen.on("display-metrics-changed", () => {
       scheduleMainWindowRestore();
     });
     // move a popout window to a restored display (E8-06 accept). Done here:
@@ -1132,8 +1228,8 @@ app
     // window still leaves popouts where they are. The owner asked for that to
     // stay, and it stays because raising is only ever done on an explicit
     // request for a particular session — never on window focus.
-    broker.handle('app:raisePopout', (_e, groupId: unknown) => {
-      if (typeof groupId !== 'string' || !groupId) return false;
+    broker.handle("app:raisePopout", (_e, groupId: unknown) => {
+      if (typeof groupId !== "string" || !groupId) return false;
       const hit = popoutWindows.find((p) => p.groupId === groupId);
       const win = hit && !hit.win.isDestroyed() ? hit.win : null;
       if (!win) return false;
@@ -1161,7 +1257,7 @@ app
     // measurement covers. The dispatch dialog renders into the main window's DOM, so
     // without this, `Dispatch…` from a popped-out card would put a modal in a window
     // the user cannot see and look like it did nothing.
-    broker.handle('app:raiseMain', () => {
+    broker.handle("app:raiseMain", () => {
       const win = currentWindow;
       if (!win || win.isDestroyed()) return false;
       // Minimized counts as "behind": restore before raising, or `focus()` on a
@@ -1172,18 +1268,25 @@ app
       win.focus();
       return true;
     });
-    broker.handle('app:movePopout',
-      (_e, from: { x: number; y: number }, to: { left: number; top: number; width: number; height: number }) => {
+    broker.handle(
+      "app:movePopout",
+      (
+        _e,
+        from: { x: number; y: number },
+        to: { left: number; top: number; width: number; height: number },
+      ) => {
         if (
-          typeof from?.x !== 'number' ||
-          typeof from?.y !== 'number' ||
-          typeof to?.left !== 'number' ||
-          typeof to?.top !== 'number' ||
+          typeof from?.x !== "number" ||
+          typeof from?.y !== "number" ||
+          typeof to?.left !== "number" ||
+          typeof to?.top !== "number" ||
           !Number.isFinite(to.width) ||
           !Number.isFinite(to.height)
         )
           return false;
-        const candidates = BrowserWindow.getAllWindows().filter((w) => w !== currentWindow && !w.isDestroyed());
+        const candidates = BrowserWindow.getAllWindows().filter(
+          (w) => w !== currentWindow && !w.isDestroyed(),
+        );
         const hit = candidates.find((w) => {
           const b = w.getBounds();
           return Math.abs(b.x - from.x) <= 40 && Math.abs(b.y - from.y) <= 40;
@@ -1192,7 +1295,7 @@ app
         // the move must survive a quit that follows immediately (#86)
         setTimeout(() => {
           const w = currentWindow;
-          pushToRenderer?.(w, 'app:popoutGeometryChanged');
+          pushToRenderer?.(w, "app:popoutGeometryChanged");
         }, 300).unref?.();
         hit.setBounds({
           x: Math.round(to.left),
@@ -1201,10 +1304,10 @@ app
           height: Math.round(to.height),
         });
         return true;
-      }
+      },
     );
     // persistent groups (E12-01)
-    registerGroupIpc(workspace, broker, createLogger(sink, 'workspace'));
+    registerGroupIpc(workspace, broker, createLogger(sink, "workspace"));
     // the MCP Manager's read half (§5.17, #632)
     //
     // `isSessionFolder` is the §5.29 gate, and it is the SAME pair of lists
@@ -1217,7 +1320,7 @@ app
     // arbitrary caller-supplied path.
     registerMcpIpc({
       broker,
-      log: createLogger(sink, 'mcp'),
+      log: createLogger(sink, "mcp"),
       // COMPARED BY RESOLUTION, not by spelling. `read-scope.ts` carries the
       // scar tissue for this: a spelling pre-check was written once and CI
       // killed it, because GitHub's Windows runners hand out 8.3 short names
@@ -1258,7 +1361,8 @@ app
       // The two verbs #632 and #714 concluded did not exist (#729 PR 2).
       // `name`/`enabled` stay untyped through to `mcpToggleRequest`, which is
       // the single place they are validated — see `McpIpcDeps.mcpToggle`.
-      mcpToggle: (liveId, name, enabled) => manager.mcpToggle(liveId, name, enabled),
+      mcpToggle: (liveId, name, enabled) =>
+        manager.mcpToggle(liveId, name, enabled),
       mcpReconnect: (liveId, name) => manager.mcpReconnect(liveId, name),
       // Sign in and out of a remote server (#734) — the pair #729's probes
       // missed because they invented verb names instead of reading the list
@@ -1267,7 +1371,9 @@ app
       mcpClearAuth: (liveId, name) => manager.mcpClearAuth(liveId, name),
     });
     registerBuiltinContributions();
-    log.app.info('contributions registered', { manifests: registry.manifests() });
+    log.app.info("contributions registered", {
+      manifests: registry.manifests(),
+    });
 
     // Which provider a brand-new card runs on: the first REGISTERED adapter.
     // Registration order is precedence (P2-E15-02), and bootstrap is the only
@@ -1275,13 +1381,16 @@ app
     // a string spread through the session core. Existing cards keep the
     // provider they were created with (see planSessionStart).
     const defaultProviderId = (): string => {
-      const first = registry.list('provider-adapter')[0];
-      if (!first) throw new Error('no provider adapter registered — bootstrap did not run');
+      const first = registry.list("provider-adapter")[0];
+      if (!first)
+        throw new Error(
+          "no provider adapter registered — bootstrap did not run",
+        );
       return first.manifest.id;
     };
 
     // session core (E2) bootstrap
-    const stateDir = path.join(app.getPath('userData'), 'sessions');
+    const stateDir = path.join(app.getPath("userData"), "sessions");
     // The stream transport, and since #952 the ONLY one. It was constructed
     // beside `new PtyService()` from P2-E18-08a until this item deleted the
     // other half — "beside" was the whole shape of the migration, and the
@@ -1293,13 +1402,13 @@ app
     // the log rather than the Events panel, and why deleting the emitter would
     // have been the wrong half of the choice.
     const streams = new StreamService({
-      onDiagnostic: createDiagnosticLogger(createLogger(sink, 'transport')),
+      onDiagnostic: createDiagnosticLogger(createLogger(sink, "transport")),
     });
     const manager = new SessionManager(
       registry,
       streams,
-      createLogger(sink, 'sessions'),
-      stateDir
+      createLogger(sink, "sessions"),
+      stateDir,
     );
     // Last run's session state directories, taken NOW (#290) — before
     // `registerSessionIpc` (far below), which is the only door a session can be
@@ -1321,7 +1430,7 @@ app
     try {
       manager.sweepOrphanStateDirs();
     } catch (err) {
-      log.app.warn('session state dir sweep failed', { error: String(err) });
+      log.app.warn("session state dir sweep failed", { error: String(err) });
     }
     // Is there anyone to ask? A destroyed window or a crashed renderer means no
     // (P2-E15-09). A RELOADING renderer is neither, so the pending-holds replay
@@ -1342,18 +1451,22 @@ app
       // …and the answer ends `needs-permission` immediately, rather than when
       // the CLI next speaks (#310). Same collaborator the hook path gets.
       (sessionId, ev) => manager.apply(sessionId, ev),
-      createLogger(sink, 'permissions'),
+      createLogger(sink, "permissions"),
       // …and it fails open like a hook hold does (#319). Without these a closed
       // window parked a `can_use_tool` for EVER — no timeout, no liveness gate,
       // and nothing to release what was already held.
-      { hasLiveWindow }
+      { hasLiveWindow },
     );
-    manager.onStreamMessage((sessionId, msg) => streamPermissions.offer(sessionId, msg));
+    manager.onStreamMessage((sessionId, msg) =>
+      streamPermissions.offer(sessionId, msg),
+    );
     // "Allow all (this session)" means no hold, no needs-permission event and
     // no beep — including in Direct mode (#319). The router answers the call;
     // only the pump can stop the status that rings the bell. See
     // `setPermissionHoldSuppressor`.
-    manager.setPermissionHoldSuppressor((sessionId) => streamPermissions.isAllowAll(sessionId));
+    manager.setPermissionHoldSuppressor((sessionId) =>
+      streamPermissions.isAllowAll(sessionId),
+    );
     // the CLI's own slash-command list, off the same stream (P2-E18-09).
     //
     // A SEPARATE subscription, not a second call inside the one above: the
@@ -1362,20 +1475,26 @@ app
     // would put them back in the same blast radius — a throw from the
     // permission router would silently stop the command list updating, for ever
     // and with no symptom but a stale popup.
-    const streamCommands = new StreamCommands(createLogger(sink, 'sessions'));
-    manager.onStreamMessage((sessionId, msg) => streamCommands.offer(sessionId, msg));
+    const streamCommands = new StreamCommands(createLogger(sink, "sessions"));
+    manager.onStreamMessage((sessionId, msg) =>
+      streamCommands.offer(sessionId, msg),
+    );
     // Which model each session is actually running (#721). Same shape as the
     // command store above and for the same reason: `system:init` is the only
     // message that carries it, it arrives once per TURN, and nothing can ask
     // for it.
-    const streamModel = new StreamModel(createLogger(sink, 'sessions'));
-    manager.onStreamMessage((sessionId, msg) => streamModel.offer(sessionId, msg));
+    const streamModel = new StreamModel(createLogger(sink, "sessions"));
+    manager.onStreamMessage((sessionId, msg) =>
+      streamModel.offer(sessionId, msg),
+    );
     // The Feed, off the same stream (P2-E18-10). A THIRD subscription, for the
     // reason spelled out above: one listener per consumer, one blast radius
     // each. This one carries the most traffic by far — S-11 counted 719
     // `stream_event`s against 27 `assistant` messages in a working day.
-    const streamFeed = new StreamFeed(createLogger(sink, 'sessions'));
-    manager.onStreamMessage((sessionId, msg) => streamFeed.offer(sessionId, msg));
+    const streamFeed = new StreamFeed(createLogger(sink, "sessions"));
+    manager.onStreamMessage((sessionId, msg) =>
+      streamFeed.offer(sessionId, msg),
+    );
     // A turn that never produced a `result` must not leave a block claiming to
     // still be filling in (#140). The session's exit is the last honest moment
     // to say so.
@@ -1391,25 +1510,30 @@ app
       getPrefs: () => workspace.getServiceHealthPrefs(),
       // `currentWindow` is reassigned on macOS re-activate, so this reads it
       // fresh — the convention every other push in this file follows.
-      push: (status) => pushToRenderer?.(currentWindow, 'health:status', status),
-      log: createLogger(sink, 'health'),
+      push: (status) =>
+        pushToRenderer?.(currentWindow, "health:status", status),
+      log: createLogger(sink, "health"),
       // Dev/test only, and the reason no test in this repo ever reaches the
       // real status page. Same P2-E15-10 rule as the update feed: a packaged
       // build has no environment variable that can move a user-visible
       // endpoint.
-      feedOverride: app.isPackaged ? undefined : process.env[SERVICE_STATUS_FEED_ENV],
+      feedOverride: app.isPackaged
+        ? undefined
+        : process.env[SERVICE_STATUS_FEED_ENV],
       // "no polling when offline is detected" (§5.14). Electron's own answer,
       // not a heuristic of ours.
       isOnline: () => net.isOnline(),
       probeDeps: { userAgent: app.getVersion() },
     });
-    manager.onStreamMessage((sessionId, msg) => health.noteStreamMessage(sessionId, msg));
+    manager.onStreamMessage((sessionId, msg) =>
+      health.noteStreamMessage(sessionId, msg),
+    );
     // A session that is gone stops corroborating anything.
     manager.onSessionExit((e) => health.forgetSession(e.sessionId));
     const hooks = new HookListener({
       stateDir,
       manager,
-      log: createLogger(sink, 'hooks'),
+      log: createLogger(sink, "hooks"),
       // NOTHING ABOUT PERMISSIONS (#952). This used to pass `autonomyFor`,
       // `cwdFor`, `transportFor` and `hasLiveWindow` for the hold policy. The
       // listener is a STATUS channel now — `Stop` is the done authority (S-06) —
@@ -1431,12 +1555,15 @@ app
     // rather than be remembered.
     onRendererLost = (reason) => {
       for (const [what, release] of [
-        ['stream', () => streamPermissions.releaseHeld(reason)],
+        ["stream", () => streamPermissions.releaseHeld(reason)],
       ] as const) {
         try {
           release();
         } catch (err) {
-          log.app.error('releasing held permissions failed', { channel: what, error: String(err) });
+          log.app.error("releasing held permissions failed", {
+            channel: what,
+            error: String(err),
+          });
         }
       }
     };
@@ -1449,22 +1576,26 @@ app
     let seedRoot: string | undefined;
     try {
       seedRoot = registry
-        .resolve('provider-adapter', defaultProviderId())
+        .resolve("provider-adapter", defaultProviderId())
         ?.capabilities?.transcripts?.projectsRoot();
     } catch (err) {
-      log.app.warn('default provider transcripts root failed', { error: String(err) });
+      log.app.warn("default provider transcripts root failed", {
+        error: String(err),
+      });
     }
     const transcripts = new TranscriptWatcher({
       projectsRoot: seedRoot,
-      log: createLogger(sink, 'transcripts'),
+      log: createLogger(sink, "transcripts"),
       // Test-only: the real deadline is 45s, which no e2e should sit through.
       // Read only in a dev/test build, so the shipped binary has no env var
       // that can move a user-visible deadline (P2-E15-10).
-      bindGiveUpMs: app.isPackaged ? undefined : positiveMs(process.env.SWITCHBOARD_BIND_GIVEUP_MS),
+      bindGiveUpMs: app.isPackaged
+        ? undefined
+        : positiveMs(process.env.SWITCHBOARD_BIND_GIVEUP_MS),
     });
     void hooks.start().catch((err) => {
       // hooks are an accelerator, not the authority — start-failure degrades
-      log.app.error('hook listener failed to start', { error: String(err) });
+      log.app.error("hook listener failed to start", { error: String(err) });
     });
     // ── update checks (P2-E19-03, §E19) ──────────────────────────────────
     //
@@ -1475,8 +1606,9 @@ app
     const feedOverride = app.isPackaged ? undefined : process.env[FEED_ENV];
     // `off` is a switch, not a feed. Only a URL widens what the installer is
     // allowed to talk to (see `allowLoopback` below).
-    const feedUrlOverride = feedOverride && feedOverride.trim() !== 'off' ? feedOverride : undefined;
-    const updateLog = createLogger(sink, 'updates');
+    const feedUrlOverride =
+      feedOverride && feedOverride.trim() !== "off" ? feedOverride : undefined;
+    const updateLog = createLogger(sink, "updates");
     // ── the OS credential store (P2-E14-06, §5.29) ───────────────────────────
     //
     // Assembled here, above the update block, because THREE subsystems read the
@@ -1501,9 +1633,9 @@ app
     // push channel it used to borrow: a store serving push, reports and updates
     // should not file its lines under one of the three.
     const secretStore = new SecretStore({
-      dir: app.getPath('userData'),
+      dir: app.getPath("userData"),
       crypto: safeStorage,
-      log: createLogger(sink, 'secrets'),
+      log: createLogger(sink, "secrets"),
     });
     // The credential chain for everything that talks to the release feed. The
     // ORDER is `token.ts`'s and is written down exactly once, there — the whole
@@ -1533,20 +1665,23 @@ app
         log: updateLog,
       });
     } catch (err) {
-      log.app.warn('the post-update handshake could not be resolved', { error: String(err) });
+      log.app.warn("the post-update handshake could not be resolved", {
+        error: String(err),
+      });
     }
     // The download/verify/install half (E19-04). Constructed before the
     // service, which asks it whether an install is running before it prompts.
     // One definition: the directory we stage into is also the ONLY directory
     // `launchInstaller` will execute from, and two spellings of it would make
     // that containment check a coincidence rather than a guarantee.
-    const updateDir = path.join(app.getPath('temp'), UPDATE_DIR_NAME);
+    const updateDir = path.join(app.getPath("temp"), UPDATE_DIR_NAME);
     const installer = new UpdateInstaller({
       currentVersion: app.getVersion(),
       updateDir,
       getPrefs: () => workspace.getUpdatePrefs(),
       setPrefs: (patch) => workspace.setUpdatePrefs(patch),
-      push: (status) => pushToRenderer?.(currentWindow, 'update:installStatus', status),
+      push: (status) =>
+        pushToRenderer?.(currentWindow, "update:installStatus", status),
       log: updateLog,
       // A stub feed serves its assets over http on loopback and wants no
       // credentials. Both are gated on a feed override that names a URL —
@@ -1573,13 +1708,16 @@ app
         // the pending version back), which is why the confirmation comes
         // BEFORE the spawn and not after it.
         const win = currentWindow;
-        if (win && !win.isDestroyed() && !confirmCloseWithBusySessions(win)) return 'declined';
+        if (win && !win.isDestroyed() && !confirmCloseWithBusySessions(win))
+          return "declined";
         // The e2e seam. Non-packaged builds only, like every other one: the
         // suite drives this path end to end and must not actually run an
         // installer or take the app down mid-suite.
         if (!app.isPackaged && process.env.SWITCHBOARD_UPDATE_NO_LAUNCH) {
-          updateLog.info('install launch suppressed by the test seam', { file });
-          return 'quit';
+          updateLog.info("install launch suppressed by the test seam", {
+            file,
+          });
+          return "quit";
         }
         // FLUSH, before anything can replace this process. `setUpdatePrefs`
         // debounces by 500ms, and the pending version is the whole handshake:
@@ -1587,24 +1725,27 @@ app
         // would make the feature's core deliverable depend on an unrelated
         // refactor never happening.
         workspace.save();
-        if (!launchInstaller(file, { updateDir })) return 'failed';
+        if (!launchInstaller(file, { updateDir })) return "failed";
         quitConfirmed = true;
         app.quit();
-        return 'quit';
+        return "quit";
       },
     });
     // Stale installers are ~120 MB each. Nothing can be downloading yet — this
     // runs before the first window — so the sweep is unconditional.
     void installer
       .sweep()
-      .catch((err: unknown) => log.app.warn('the installer sweep failed', { error: String(err) }));
+      .catch((err: unknown) =>
+        log.app.warn("the installer sweep failed", { error: String(err) }),
+      );
     const updates = new UpdateService({
       currentVersion: app.getVersion(),
       getPrefs: () => workspace.getUpdatePrefs(),
       setPrefs: (patch) => workspace.setUpdatePrefs(patch),
       // `currentWindow` is reassigned on macOS re-activate, so this reads it
       // fresh — the convention every other push in this file follows.
-      push: (status) => pushToRenderer?.(currentWindow, 'update:status', status),
+      push: (status) =>
+        pushToRenderer?.(currentWindow, "update:status", status),
       log: updateLog,
       // Dev/test only. A packaged build has no environment variable that can
       // move its update feed (the P2-E15-10 rule for SWITCHBOARD_BIND_GIVEUP_MS).
@@ -1633,9 +1774,9 @@ app
     const eventLoop = new EventLoopDelay();
     eventLoop.start();
     const perfCapture = new PerfCapture({
-      dir: app.getPath('userData'),
+      dir: app.getPath("userData"),
       version: app.getVersion(),
-      log: createLogger(sink, 'perf'),
+      log: createLogger(sink, "perf"),
     });
     perfCapture.setEnabled(workspace.getPerfCapture());
     const cpuHeartbeat = new CpuHeartbeat({
@@ -1653,7 +1794,7 @@ app
             percent: Number.isFinite(pct) ? pct : 0,
           };
         }),
-      log: createLogger(sink, 'cpu'),
+      log: createLogger(sink, "cpu"),
       coreCount: os.cpus().length,
       // Load, beside the burn. "2 cores' worth" cannot be read without knowing
       // whether the app was hosting twelve sessions or none at the time.
@@ -1696,35 +1837,35 @@ app
     // guessed. Without this, every morning on a laptop writes one warn line
     // claiming the app hung all night, and the laptop is the only machine that
     // has ever shown #719.
-    powerMonitor.on('resume', () => cpuHeartbeat.clockJumped());
+    powerMonitor.on("resume", () => cpuHeartbeat.clockJumped());
     // ── E21's capture channel (#923) ──────────────────────────────────────
     //
     // `on`, not `handle`: a flush is fire-and-forget. Making the renderer await
     // main's acknowledgement would put an IPC round trip on the process we are
     // trying to time, which is the failure this whole item exists to avoid.
-    broker.on('perf:record', (_e, batch: PerfBatch) => {
+    broker.on("perf:record", (_e, batch: PerfBatch) => {
       perfCapture.record(batch);
     });
-    broker.handle('perf:mainStats', () => eventLoop.latest());
-    broker.handle('perf:hasCapture', () => fs.existsSync(perfCapture.path()));
-    broker.handle('perf:reveal', () => {
+    broker.handle("perf:mainStats", () => eventLoop.latest());
+    broker.handle("perf:hasCapture", () => fs.existsSync(perfCapture.path()));
+    broker.handle("perf:reveal", () => {
       // The file is the deliverable of E21-02 — he has to be able to find it to
       // attach it. Nothing to reveal until the switch has been on at least once.
       if (!fs.existsSync(perfCapture.path())) return false;
       shell.showItemInFolder(perfCapture.path());
       return true;
     });
-    broker.handle('update:check', (_e, opts: { manual?: boolean } = {}) =>
+    broker.handle("update:check", (_e, opts: { manual?: boolean } = {}) =>
       // `push: false` — this caller gets the answer as the return value, and
       // pushing as well would open the dialog twice.
-      updates.check(opts?.manual === true, { push: false })
+      updates.check(opts?.manual === true, { push: false }),
     );
     // ── the install (E19-04) ─────────────────────────────────────────────
     //
     // No arguments: main installs the release IT found. The renderer asking
     // "install this URL" would be the renderer choosing what gets executed, and
     // the whole capability is built the other way round.
-    broker.handle('update:install', async (): Promise<UpdateInstallStatus> => {
+    broker.handle("update:install", async (): Promise<UpdateInstallStatus> => {
       const offered = updates.lastResult();
       // The renderer's dialog is showing something main no longer believes — a
       // window left open across a release being withdrawn (#315). Answer
@@ -1732,19 +1873,19 @@ app
       // where the `no-asset` this used to return blamed the release's files.
       const decision = resolveOffer(offered);
       if (!decision.ok) {
-        updateLog.warn('an install was requested with no release on offer', {
+        updateLog.warn("an install was requested with no release on offer", {
           // The distinction the UI does not carry, kept where it is useful.
-          state: offered?.state ?? 'never-checked',
+          state: offered?.state ?? "never-checked",
           reason: offered?.reason,
         });
         return decision.status;
       }
       return installer.install(decision.offer);
     });
-    broker.handle('update:cancelInstall', () => {
+    broker.handle("update:cancelInstall", () => {
       installer.cancel();
     });
-    broker.handle('update:handshake', () => {
+    broker.handle("update:handshake", () => {
       // ONE-SHOT. A second window (macOS re-activate, a reopened popout) is not
       // a second update, and being congratulated twice for one install reads as
       // a bug in the thing whose whole job is to be trustworthy about versions.
@@ -1752,23 +1893,28 @@ app
       handshake = null;
       return answer;
     });
-    broker.handle('update:getPrefs', () => workspace.getUpdatePrefs());
-    broker.handle('update:setPrefs', (_e, p: { autoCheck?: boolean; skippedVersion?: string }) => {
-      // Narrowed by hand rather than passed through: `lastCheck` is the
-      // service's own bookkeeping and must not be settable from the renderer.
-      if (typeof p?.autoCheck === 'boolean') workspace.setUpdatePrefs({ autoCheck: p.autoCheck });
-      if (typeof p?.skippedVersion === 'string') updates.skip(p.skippedVersion);
-      return workspace.getUpdatePrefs();
-    });
+    broker.handle("update:getPrefs", () => workspace.getUpdatePrefs());
+    broker.handle(
+      "update:setPrefs",
+      (_e, p: { autoCheck?: boolean; skippedVersion?: string }) => {
+        // Narrowed by hand rather than passed through: `lastCheck` is the
+        // service's own bookkeeping and must not be settable from the renderer.
+        if (typeof p?.autoCheck === "boolean")
+          workspace.setUpdatePrefs({ autoCheck: p.autoCheck });
+        if (typeof p?.skippedVersion === "string")
+          updates.skip(p.skippedVersion);
+        return workspace.getUpdatePrefs();
+      },
+    );
     // ── provider service health (P2-E14-07) ──────────────────────────────
     //
     // A mounting window asks once; everything after that arrives on
     // `health:status`. `start()` polls immediately, so the first answer is on
     // its way before the window has finished asking.
-    broker.handle('health:get', () => health.current());
-    broker.handle('health:getPrefs', () => workspace.getServiceHealthPrefs());
-    broker.handle('health:setPrefs', (_e, p: { poll?: boolean }) => {
-      if (typeof p?.poll === 'boolean') {
+    broker.handle("health:get", () => health.current());
+    broker.handle("health:getPrefs", () => workspace.getServiceHealthPrefs());
+    broker.handle("health:setPrefs", (_e, p: { poll?: boolean }) => {
+      if (typeof p?.poll === "boolean") {
         workspace.setServiceHealthPrefs({ poll: p.poll });
         // start or stop the timer to match — turning it off must actually stop
         // the traffic, not just grey out a checkbox
@@ -1777,11 +1923,13 @@ app
       return workspace.getServiceHealthPrefs();
     });
     health.start();
-    broker.handle('update:openExternal', (_e, url: string) => {
+    broker.handle("update:openExternal", (_e, url: string) => {
       // The strings that reach here came out of a release body we rendered, so
       // the allowlist is tight and lives next to the checker (§5.29).
       if (!isAllowedReleaseUrl(url)) {
-        log.app.warn('refused to open a link from the update dialog', { url: String(url).slice(0, 200) });
+        log.app.warn("refused to open a link from the update dialog", {
+          url: String(url).slice(0, 200),
+        });
         return false;
       }
       // `openExternal` REJECTS when the OS has no handler for the scheme. An
@@ -1790,7 +1938,11 @@ app
       // should be "nothing happened".
       void shell
         .openExternal(url)
-        .catch((err: unknown) => log.app.warn('could not open the release page', { error: String(err) }));
+        .catch((err: unknown) =>
+          log.app.warn("could not open the release page", {
+            error: String(err),
+          }),
+        );
       return true;
     });
 
@@ -1825,10 +1977,12 @@ app
             // there must not open a viewer in a main window nobody is looking
             // at.
             const fromPopout = !!from && from !== currentWindow;
-            if (!acceleratorDeps(fromPopout).deliver('view.openFile')) {
+            if (!acceleratorDeps(fromPopout).deliver("view.openFile")) {
               // Not a crash and not silence: a menu item that did nothing is
               // exactly what someone greps for afterwards.
-              log.app.warn('menu open-file could not reach the renderer', { fromPopout });
+              log.app.warn("menu open-file could not reach the renderer", {
+                fromPopout,
+              });
             }
           },
           // File > Settings… (#908): `openFile`'s path. Settings lives in the
@@ -1837,15 +1991,19 @@ app
           // brought forward, as the palette's Settings… does.
           settings: (from) => {
             const fromPopout = !!from && from !== currentWindow;
-            if (!acceleratorDeps(fromPopout).deliver('view.settings')) {
-              log.app.warn('menu settings could not reach the renderer', { fromPopout });
+            if (!acceleratorDeps(fromPopout).deliver("view.settings")) {
+              log.app.warn("menu settings could not reach the renderer", {
+                fromPopout,
+              });
             }
           },
           checkForUpdates: () =>
             void updates
               .check(true, { push: true })
               .catch((err: unknown) =>
-                log.app.warn('menu update check failed', { error: String(err) })
+                log.app.warn("menu update check failed", {
+                  error: String(err),
+                }),
               ),
           // Help ▸ Report a problem… (#815). THROUGH THE COMMAND REGISTRY, for
           // `openFile`'s reason: the dialog belongs to the renderer, and a menu
@@ -1853,12 +2011,12 @@ app
           // `fromPopout: false` — the click came from the application menu,
           // which belongs to the main window.
           reportProblem: () => {
-            if (!acceleratorDeps(false).deliver('app.reportProblem')) {
-              log.app.warn('menu report-problem could not reach the renderer');
+            if (!acceleratorDeps(false).deliver("app.reportProblem")) {
+              log.app.warn("menu report-problem could not reach the renderer");
             }
           },
-        })
-      )
+        }),
+      ),
     );
     snapshotPopoutBoxes(); // before the renderer can rewrite the layout (#86)
     createWindow(); // sets currentWindow; IPC/notifier read it via closure
@@ -1869,7 +2027,7 @@ app
     // Assembled here because this is the only file allowed to touch
     // `Notification`; everything above it (`events/rules.ts`,
     // `events/rules-engine.ts`) is pure and testable without electron.
-    const rulesLog = createLogger(sink, 'rules');
+    const rulesLog = createLogger(sink, "rules");
 
     // ── P2-E14-04: the toast can ANSWER, not just announce ────────────────
     //
@@ -1888,7 +2046,8 @@ app
         // is the one place that knows restore-then-show-then-focus is three
         // different fixes), then tell the renderer which card to land on.
         focusRunningWindow(currentWindow);
-        if (cardId) broker.send(currentWindow, 'sessions:revealCard', { cardId });
+        if (cardId)
+          broker.send(currentWindow, "sessions:revealCard", { cardId });
       },
       log: rulesLog,
     });
@@ -1899,22 +2058,15 @@ app
     // session was on and the toast could not tell. There is one transport, so
     // there is one place a verdict can come from.
     streamPermissions.onPermissionResolved((requestId) =>
-      permissionToasts.withdraw(requestId)
+      permissionToasts.withdraw(requestId),
     );
 
     const ruleActions = new RuleActionRegistry(rulesLog);
     ruleActions.register(ACTION_OS_TOAST, (action, ctx) => {
-      // Whether the OS can display a notification at all is an ENVIRONMENT
-      // fact, not a decision this rule made: a Linux box with no notification
-      // daemon (a CI container, say) reports `false` here forever. So the two
-      // facts are logged separately — the rule fired, and this is whether the
-      // desktop took it. A silent early return was the one outcome that could
-      // not be debugged, and "why didn't it pop?" is a real support question.
-      const shown = Notification.isSupported();
       // P2-E14-04. The request this toast is about, if it is about one at all.
-      // Resolved HERE rather than carried on the rule, because whether a
+      // Resolved at SHOW TIME rather than carried on the rule, because whether a
       // permission is still held is a fact about right now: between the event
-      // and this line the bar may already have answered it, and a toast
+      // and the toast the bar may already have answered it, and a toast
       // offering Allow for a question nobody is holding is worse than no toast.
       //
       // The rule can opt OUT (`buttons: false`) and nothing else about the
@@ -1924,65 +2076,113 @@ app
       // TWO toasts for one permission. Opt-out also happens to be the right
       // default: there is no sane rule that says "tell me, but do not let me
       // answer".
-      const req =
-        ctx.event.kind === 'needs-permission' && action.buttons !== false
+      const wantsRequest =
+        ctx.event.kind === "needs-permission" && action.buttons !== false;
+      const heldRequest = (): PermissionRequest | null =>
+        wantsRequest
           ? (sessionIpcRef?.pendingPermissionFor(ctx.event.sessionId) ?? null)
           : null;
-      // A QUESTION gets no buttons (#563). `answerableFromToast` carries the
-      // measurement: an allow with no answers is read by the CLI as "the user
-      // did not answer", so Allow here would silently discard the question
-      // rather than grant it. The click path below still raises the card, which
-      // is the only place the question can actually be answered.
-      const decidable = !!req && answerableFromToast(req) && toastActionsSupported(process.platform);
-      if (shown) {
-        const toast = new Notification({
-          title: ctx.title,
-          body: ctx.body,
-          silent: true, // the Notifier's beep is the sound cue
-          // Labels resolved per toast, never hoisted to a module constant
-          // (#471): they have to be in the language the user is in NOW, and
-          // anything computed once at boot would still be saying "Allow" after
-          // they switched.
-          ...(decidable ? { actions: decideButtonActions(i18n.t) } : {}),
-        });
-        // A toast the desktop refused is not a toast: without this line the
-        // failure is invisible, and "it worked yesterday" has nowhere to look.
-        toast.on('failed', (_e, error) =>
-          rulesLog.warn('the desktop refused an OS toast', { ruleId: ctx.rule.id, error })
-        );
-        if (req) {
-          const requestId = req.requestId;
-          // `details.actionIndex` rather than the positional argument, which
-          // electron.d.ts marks deprecated.
-          if (decidable) {
-            toast.on('action', (details) => permissionToasts.press(requestId, details.actionIndex));
+
+      const emit = (req: PermissionRequest | null): void => {
+        // Whether the OS can display a notification at all is an ENVIRONMENT
+        // fact, not a decision this rule made: a Linux box with no notification
+        // daemon (a CI container, say) reports `false` here forever. So the two
+        // facts are logged separately — the rule fired, and this is whether the
+        // desktop took it. A silent early return was the one outcome that could
+        // not be debugged, and "why didn't it pop?" is a real support question.
+        const shown = Notification.isSupported();
+        // A QUESTION gets no buttons (#563). `answerableFromToast` carries the
+        // measurement: an allow with no answers is read by the CLI as "the user
+        // did not answer", so Allow here would silently discard the question
+        // rather than grant it. The click path below still raises the card, which
+        // is the only place the question can actually be answered.
+        const decidable =
+          !!req &&
+          answerableFromToast(req) &&
+          toastActionsSupported(process.platform);
+        if (shown) {
+          const toast = new Notification({
+            title: ctx.title,
+            body: ctx.body,
+            silent: true, // the Notifier's beep is the sound cue
+            // Labels resolved per toast, never hoisted to a module constant
+            // (#471): they have to be in the language the user is in NOW, and
+            // anything computed once at boot would still be saying "Allow" after
+            // they switched.
+            ...(decidable ? { actions: decideButtonActions(i18n.t) } : {}),
+          });
+          // A toast the desktop refused is not a toast: without this line the
+          // failure is invisible, and "it worked yesterday" has nowhere to look.
+          toast.on("failed", (_e, error) =>
+            rulesLog.warn("the desktop refused an OS toast", {
+              ruleId: ctx.rule.id,
+              error,
+            }),
+          );
+          if (req) {
+            const requestId = req.requestId;
+            // `details.actionIndex` rather than the positional argument, which
+            // electron.d.ts marks deprecated.
+            if (decidable) {
+              toast.on("action", (details) =>
+                permissionToasts.press(requestId, details.actionIndex),
+              );
+            }
+            // Clicking the BODY is a shortcut, never a verdict — wired on every
+            // platform, because it is the whole gesture on Linux and the fallback
+            // wherever the buttons do not render.
+            toast.on("click", () =>
+              permissionToasts.activate(requestId, ctx.cardId),
+            );
+            // Deliberately NOT unhooked on `close`: a Windows toast that times
+            // out fires `close` and then sits in the Action Center, where
+            // `close()` still removes it. See `PermissionToasts.withdraw`.
+            permissionToasts.track(requestId, toast);
           }
-          // Clicking the BODY is a shortcut, never a verdict — wired on every
-          // platform, because it is the whole gesture on Linux and the fallback
-          // wherever the buttons do not render.
-          toast.on('click', () => permissionToasts.activate(requestId, ctx.cardId));
-          // Deliberately NOT unhooked on `close`: a Windows toast that times
-          // out fires `close` and then sits in the Action Center, where
-          // `close()` still removes it. See `PermissionToasts.withdraw`.
-          permissionToasts.track(requestId, toast);
+          toast.show();
         }
-        toast.show();
-      }
-      // The e2e proof that a rule reached the toast action
-      // (`e2e/rules.spec.ts`, `e2e/permission-toast.spec.ts`) — and the line to
-      // grep after "why did/didn't it pop".
-      rulesLog.info('os toast rule fired', {
-        kind: ctx.event.kind,
-        cardId: ctx.cardId ?? '',
-        visibility: ctx.visibility,
-        ruleId: ctx.rule.id,
-        shown,
-        // How many Allow/Deny buttons went on it, and which request they
-        // answer. Zero with a requestId present means this desktop cannot
-        // carry buttons — the click path is what the user gets.
-        buttons: decidable ? DECIDE_BUTTONS.length : 0,
-        requestId: req?.requestId ?? '',
-      });
+        // The e2e proof that a rule reached the toast action
+        // (`e2e/rules.spec.ts`, `e2e/permission-toast.spec.ts`) — and the line to
+        // grep after "why did/didn't it pop".
+        rulesLog.info("os toast rule fired", {
+          kind: ctx.event.kind,
+          cardId: ctx.cardId ?? "",
+          visibility: ctx.visibility,
+          ruleId: ctx.rule.id,
+          shown,
+          // How many Allow/Deny buttons went on it, and which request they
+          // answer. Zero with a requestId present means this desktop cannot
+          // carry buttons — the click path is what the user gets.
+          buttons: decidable ? DECIDE_BUTTONS.length : 0,
+          requestId: req?.requestId ?? "",
+        });
+      };
+
+      // ⚠️ ONE TURN LATER WHEN THE JOIN WOULD BE EMPTY, AND THE ORDER IS THE
+      // REASON (#952, found by porting `permission-toast.spec.ts` off the hook path).
+      //
+      // The pump applies the status event and THEN runs its message listeners
+      // (`session-manager.ts`): `streamStatusEvent` maps `can_use_tool` to
+      // `permission-held`, which walks the card to `needs-permission`, which fires
+      // the rules — all before `StreamPermissions.offer()` has registered the
+      // request. So `pendingPermissionFor` answers null and the toast goes out with
+      // no request attached: no Allow/Deny buttons, and a body click that cannot
+      // raise the question. That is §5.9's safety half failing silently, and on the
+      // deleted hook path it could not happen, because the hold was registered
+      // before the notification that announced it.
+      //
+      // Deferring the RESOLUTION is the fix rather than reordering the pump.
+      // `StreamPermissions` documents its dependence on `permission-held` having
+      // been applied already — its plan-mode refusal and both deny branches END
+      // that state, and if `apply` ran after them the badge would stick. So the
+      // pump keeps its order and the toast stops reading too early.
+      //
+      // Deferred ONLY when the answer would be null, so the ordinary case is
+      // unchanged and a permission answered before the toast is built still
+      // produces a buttonless toast rather than a stale one.
+      if (wantsRequest && !heldRequest())
+        setImmediate(() => emit(heldRequest()));
+      else emit(heldRequest());
     });
     // ── the two channels that leave the machine (P2-E14-06, §5.9 + §5.29) ──
     //
@@ -1997,7 +2197,7 @@ app
     // every event, which is a lie about the build. The handlers themselves
     // resolve to "not configured" in silence, which is the truth about the
     // machine.
-    const pushLog = createLogger(sink, 'push');
+    const pushLog = createLogger(sink, "push");
     // `secretStore` is built up in the update block, not here — three
     // subsystems share the one instance and the update block runs first (#856).
     const pushActions = new PushActions({
@@ -2014,12 +2214,12 @@ app
     // the log paths are read fresh for every report, not captured at startup.
     registerReportIpc({
       broker,
-      log: createLogger(sink, 'report'),
+      log: createLogger(sink, "report"),
       secrets: secretStore,
       bundleDeps: () => ({
         logsDir: logsDir(),
-        userDataDir: app.getPath('userData'),
-        outDir: app.getPath('userData'),
+        userDataDir: app.getPath("userData"),
+        outDir: app.getPath("userData"),
         version: app.getVersion(),
         identity: BUILD_IDENTITY,
         uptimeMs: Math.round(process.uptime() * 1000),
@@ -2061,13 +2261,15 @@ app
             }
           : null,
       ],
-      send: (w, channel, payload) => broker.send(w.win, channel as 'audio:play', payload),
+      send: (w, channel, payload) =>
+        broker.send(w.win, channel as "audio:play", payload),
       muted: audioMuted(),
       log: rulesLog,
     });
     const soundActions = new SoundActions({
       sink: audioSink,
-      soundFor: (cardId) => (cardId ? workspace.cardSound(cardId).id : DEFAULT_SOUND.id),
+      soundFor: (cardId) =>
+        cardId ? workspace.cardSound(cardId).id : DEFAULT_SOUND.id,
       // The beep the notifier stopped making while cues are on. Without it, an
       // event whose cue reached nobody would be completely silent.
       fallback: () => shell.beep(),
@@ -2085,7 +2287,8 @@ app
     // prefer the card's task label over the session title — the label answers
     // WHAT is waiting, the title answers WHICH. Late-bound exactly like
     // cardIdForLive above; a suppressed auto label returns undefined here too.
-    let labelForLive: (sessionId: string) => string | undefined = () => undefined;
+    let labelForLive: (sessionId: string) => string | undefined = () =>
+      undefined;
     const rules = new RulesEngine({
       getRules: () => workspace.listRules(),
       // ── quiet hours (P2-E14-05b, §5.9) ──
@@ -2113,9 +2316,9 @@ app
         const stored = workspace.recordSuppressed(record);
         if (!stored) return;
         try {
-          pushToRenderer?.(currentWindow, 'notifications:suppressed', stored);
+          pushToRenderer?.(currentWindow, "notifications:suppressed", stored);
         } catch (err) {
-          rulesLog.warn('suppressed push failed; the record is still held', {
+          rulesLog.warn("suppressed push failed; the record is still held", {
             id: record.id,
             error: String(err),
           });
@@ -2138,11 +2341,12 @@ app
       cardIdFor: (liveId) => cardIdForLive(liveId),
       // Every window, not just the main one: a popped-out card (E8) is a
       // window the user can be looking at while the main one is minimized.
-      getVisibility: () => visibilityAcross([currentWindow, ...popoutWindows.map((p) => p.win)]),
+      getVisibility: () =>
+        visibilityAcross([currentWindow, ...popoutWindows.map((p) => p.win)]),
       titleFor: (e) =>
         labelForLive(e.sessionId) ??
         manager.get(e.sessionId)?.identity.title ??
-        'switchboard.ai',
+        "switchboard.ai",
       // P2-E14-04: a permission toast NAMES what it would allow. "needs
       // permission" beside an Allow button asks the user to grant a tool call
       // they cannot see, which is the one thing an off-screen decision path may
@@ -2154,7 +2358,7 @@ app
       // further than the desktop: `push.ts` and the webhook forward this body
       // verbatim, so the phone gets the same sentence in the same language.
       bodyFor: (e) => {
-        if (e.kind === 'needs-permission') {
+        if (e.kind === "needs-permission") {
           const req = sessionIpcRef?.pendingPermissionFor(e.sessionId);
           if (req) return permissionSummary(req, i18n.t);
         }
@@ -2167,13 +2371,15 @@ app
       broker,
       log: rulesLog,
       store: workspace,
-      knownCard: (cardId) => workspace.listSessions().some((s) => s.id === cardId),
+      knownCard: (cardId) =>
+        workspace.listSessions().some((s) => s.id === cardId),
     });
     registerSoundIpc({
       broker,
       log: rulesLog,
       store: workspace,
-      knownCard: (cardId) => workspace.listSessions().some((s) => s.id === cardId),
+      knownCard: (cardId) =>
+        workspace.listSessions().some((s) => s.id === cardId),
       onUnplayable: (channel) => soundActions.unplayable(channel),
     });
     // The digest's read half (P2-E14-05c) — the list `notifications:quietState`
@@ -2199,17 +2405,21 @@ app
     feed.onEvent((e) => {
       if (e) notifier.handle(e); // null = pure removal, nothing to announce
     });
-    broker.handle('preflight:check', () => runPreflight());
+    broker.handle("preflight:check", () => runPreflight());
     busySessions = () =>
       manager
         .list()
-        .filter((s) => ['working', 'needs-input', 'needs-permission'].includes(s.status))
+        .filter((s) =>
+          ["working", "needs-input", "needs-permission"].includes(s.status),
+        )
         .map((s) => `• ${s.identity.title} (${s.status})`);
 
     // git handlers are scoped to KNOWN session folders (§5.29): a compromised
     // renderer must not turn these into an arbitrary-file-read primitive
     const knownFolder = (folder: string): boolean =>
-      manager.list().some((s) => path.resolve(s.identity.folder) === path.resolve(folder));
+      manager
+        .list()
+        .some((s) => path.resolve(s.identity.folder) === path.resolve(folder));
     const gitService = new GitService();
 
     // ── the Session Bus (§5.4; #761 built the answers, #762 the channel, #763
@@ -2227,7 +2437,7 @@ app
     // decision and the reasoning, and it lives in `sessions/queries.ts` rather
     // than here precisely because this file has no tests (#763 review: every
     // mutation of an inline mapping survived the suite).
-    const busLog = createLogger(sink, 'bus');
+    const busLog = createLogger(sink, "bus");
     // A named const since #765, because `SiblingDelivery` resolves session
     // references through the SAME instance the read tools use — so `@Beta`
     // means one session whether you are reading it or writing to it.
@@ -2265,7 +2475,8 @@ app
       broker,
       log: busLog,
       store: workspace,
-      knownCard: (cardId) => workspace.listSessions().some((s) => s.id === cardId),
+      knownCard: (cardId) =>
+        workspace.listSessions().some((s) => s.id === cardId),
       delivery: siblingDelivery,
     });
     // The e2e seam (#765). Non-packaged builds only, like every other one. The
@@ -2276,18 +2487,19 @@ app
     // below the pipe `check:bus` already proves, so everything from the
     // resolver to the composer and back is the production object graph.
     if (!app.isPackaged && process.env.SWITCHBOARD_E2E_SIBLING_SEND) {
-      (globalThis as { __switchboardSendToSession?: SiblingDelivery['send'] }).__switchboardSendToSession = (
-        callerId,
-        ref,
-        message
-      ) => siblingDelivery.send(callerId, ref, message);
+      (
+        globalThis as { __switchboardSendToSession?: SiblingDelivery["send"] }
+      ).__switchboardSendToSession = (callerId, ref, message) =>
+        siblingDelivery.send(callerId, ref, message);
     }
     // The shared scratchpad (#796). In-memory for the life of the app and owned
     // here, so it dies with the process it belongs to — see `blackboard.ts` for
     // why it is deliberately not in the workspace store. It reads the session
     // list through the SAME query core the bus answers `list_sessions` from, so
     // a publisher's name on the board and in that list cannot disagree.
-    const blackboard = new Blackboard({ sessions: () => sessionQueries.listSessions() });
+    const blackboard = new Blackboard({
+      sessions: () => sessionQueries.listSessions(),
+    });
     const busHost = new BusHost({
       stateDir,
       queries: sessionQueries,
@@ -2296,7 +2508,7 @@ app
       log: busLog,
     });
 
-    broker.handle('git:status', (_e, folder: string) =>
+    broker.handle("git:status", (_e, folder: string) =>
       knownFolder(folder)
         ? gitService.status(folder)
         : // A REFUSAL, AND IT SAYS SO (#785 review). This was a bare
@@ -2307,16 +2519,20 @@ app
           // exactly how it survived the ticket that named it.
           {
             isRepo: false,
-            unreadable: 'switchboard only reads git for folders it has open as a session',
+            unreadable:
+              "switchboard only reads git for folders it has open as a session",
             files: [],
-          }
+          },
     );
-    broker.handle('git:fileVersions', (_e, folder: string, file: string) => {
+    broker.handle("git:fileVersions", (_e, folder: string, file: string) => {
       // scope to a known folder AND forbid escaping it (path traversal)
-      if (!knownFolder(folder)) return { original: '', modified: '' };
+      if (!knownFolder(folder)) return { original: "", modified: "" };
       const resolved = path.resolve(folder, file);
-      if (resolved !== path.resolve(folder) && !resolved.startsWith(path.resolve(folder) + path.sep)) {
-        return { original: '', modified: '' };
+      if (
+        resolved !== path.resolve(folder) &&
+        !resolved.startsWith(path.resolve(folder) + path.sep)
+      ) {
+        return { original: "", modified: "" };
       }
       return gitService.fileVersions(folder, file);
     });
@@ -2329,7 +2545,7 @@ app
     // `manager.list()` alone would refuse exactly that. `knownFolder` above is
     // narrower on purpose — a git status shells out against a live session's
     // repo — and the two are different questions, so they are two lists.
-    const fsLog = createLogger(sink, 'fs');
+    const fsLog = createLogger(sink, "fs");
     const readScope = new ReadScope({
       sessionFolders: () => [
         ...manager.list().map((s) => s.identity.folder),
@@ -2351,16 +2567,21 @@ app
       scope: readScope,
       getWindow: () => currentWindow,
     });
-    broker.handle('notifications:getPrefs', () => workspace.getNotificationPrefs());
-    broker.handle('notifications:setPrefs', (_e, p: Partial<NotificationPrefs>) => {
-      workspace.setNotificationPrefs(p);
-      return workspace.getNotificationPrefs();
-    });
+    broker.handle("notifications:getPrefs", () =>
+      workspace.getNotificationPrefs(),
+    );
+    broker.handle(
+      "notifications:setPrefs",
+      (_e, p: Partial<NotificationPrefs>) => {
+        workspace.setNotificationPrefs(p);
+        return workspace.getNotificationPrefs();
+      },
+    );
     // P2-E14-05b. Quiet hours' whole job is to do nothing, which makes it the
     // one feature a user cannot tell is working — so the dialog can ask whether
     // the window is open RIGHT NOW (main owns the clock) and how many events it
     // has held. The list itself belongs to #483's digest; this is the count.
-    broker.handle('notifications:quietState', (): QuietState => {
+    broker.handle("notifications:quietState", (): QuietState => {
       const prefs = workspace.getNotificationPrefs();
       const window = quietWindowOf(prefs);
       return {
@@ -2378,15 +2599,17 @@ app
     // the reason every setter on this file uses it: an absent or non-boolean
     // argument must read as OFF rather than as truthy — the `mcp_toggle` hazard
     // `shared/stream-protocol.ts` documents, applied to our own wire.
-    broker.handle('settings:getExperimentalFork', () => workspace.getExperimentalFork());
-    broker.handle('settings:setExperimentalFork', (_e, on: boolean) => {
+    broker.handle("settings:getExperimentalFork", () =>
+      workspace.getExperimentalFork(),
+    );
+    broker.handle("settings:setExperimentalFork", (_e, on: boolean) => {
       workspace.setExperimentalFork(on === true);
       return workspace.getExperimentalFork();
     });
     // Detailed performance capture (#923), same `=== true` coercion and the
     // same "answer with what was stored" contract.
-    broker.handle('settings:getPerfCapture', () => workspace.getPerfCapture());
-    broker.handle('settings:setPerfCapture', (_e, on: boolean) => {
+    broker.handle("settings:getPerfCapture", () => workspace.getPerfCapture());
+    broker.handle("settings:setPerfCapture", (_e, on: boolean) => {
       workspace.setPerfCapture(on === true);
       const now = workspace.getPerfCapture();
       // The file follows the switch immediately rather than at the next launch:
@@ -2425,12 +2648,13 @@ app
     //     and a refusal computed against a guess is worse than no refusal at all.
     const dispatches = registerDispatchIpc({
       broker,
-      log: createLogger(sink, 'dispatch'),
+      log: createLogger(sink, "dispatch"),
       listTemplates: () => workspace.listDispatchTemplates(),
       contextDeps: {
         queries: sessionQueries,
         experimentalFork: () => workspace.getExperimentalFork(),
-        conversationIdFor: (sessionId) => manager.get(sessionId)?.nativeSessionId ?? null,
+        conversationIdFor: (sessionId) =>
+          manager.get(sessionId)?.nativeSessionId ?? null,
       },
       taskStatementOf: (sessionId) => {
         const answer = sessionQueries.taskStatement(sessionId);
@@ -2462,12 +2686,14 @@ app
       blocks: (sessionId) => streamFeed.blocks(sessionId),
       raise: (author, dispatch) => feed.dispatchResult(author, dispatch),
       send: (from, to, text) => siblingDelivery.send(from, to, text),
-      log: createLogger(sink, 'dispatch'),
+      log: createLogger(sink, "dispatch"),
     });
     // The row's one button. A handle in, a receipt out; everything it can refuse
     // is refused with a reason the row prints, which is #765's "never silently
     // dropped" applied to the same delivery from the other end.
-    broker.handle('dispatch:inject', (_e, reviewer: unknown) => dispatchResults.inject(reviewer));
+    broker.handle("dispatch:inject", (_e, reviewer: unknown) =>
+      dispatchResults.inject(reviewer),
+    );
     const sessionIpc: SessionIpcHandle = registerSessionIpc({
       manager,
       streamPermissions,
@@ -2479,7 +2705,7 @@ app
       transcripts,
       feed,
       broker,
-      log: createLogger(sink, 'ipc'),
+      log: createLogger(sink, "ipc"),
       getWindow: () => currentWindow, // reassigned on macOS re-activate
       // #531: a folder picker opened from a popped-out session is parented to
       // THAT window. `popoutWindows` is main's own registry, filled from
@@ -2506,11 +2732,13 @@ app
       // Its own log subsystem, not `ipc`: a labeler that starts failing (a rate
       // limit, a CLI upgrade that renames a flag) should be findable without
       // reading every IPC line, and this is the one path that spends money.
-      runOneShot: ((): ((req: Parameters<typeof runContainedPrompt>[0]) => ReturnType<typeof runContainedPrompt>) => {
+      runOneShot: ((): ((
+        req: Parameters<typeof runContainedPrompt>[0],
+      ) => ReturnType<typeof runContainedPrompt>) => {
         // Built ONCE, not per call: a label run happens on every finished turn
         // across every open session, and minting a logger each time is pure
         // churn for the life of the app.
-        const aiLabelLog = createLogger(sink, 'ai-label');
+        const aiLabelLog = createLogger(sink, "ai-label");
         return (req) => runContainedPrompt(req, { log: aiLabelLog });
       })(),
       // §5.5 Level 3 (P2-E11-12). A thunk, not a snapshot: the flag can be
@@ -2529,18 +2757,20 @@ app
         remove: (cardId) => workspace.removeSession(cardId),
       },
       capabilitiesOf: (providerId) =>
-        registry.resolve('provider-adapter', providerId)?.capabilities,
-      isRegisteredProvider: (providerId) => !!registry.resolve('provider-adapter', providerId),
+        registry.resolve("provider-adapter", providerId)?.capabilities,
+      isRegisteredProvider: (providerId) =>
+        !!registry.resolve("provider-adapter", providerId),
       defaultProviderId,
       repoRoot: (folder) => gitService.root(folder),
       slashCommands: (folder, providerId) =>
         scanSlashCommands(
-          { cwd: folder, userClaudeDir: path.join(os.homedir(), '.claude') },
-          registry.resolve('provider-adapter', providerId)?.slashCommands?.() ?? [],
+          { cwd: folder, userClaudeDir: path.join(os.homedir(), ".claude") },
+          registry.resolve("provider-adapter", providerId)?.slashCommands?.() ??
+            [],
           // `warn`: everything this callback carries is a scan that failed and
           // fell open to a shorter list. The line you grep for after "my
           // commands vanished" should not sit at info among routine chatter.
-          (msg) => log.app.warn(msg)
+          (msg) => log.app.warn(msg),
         ),
       // NO `preferredTransport` (#952). `SWITCHBOARD_TRANSPORT` was the app-wide
       // override — below a card's own choice, above the default (#381) — and it
@@ -2583,7 +2813,7 @@ app
     // straight after `will-quit`, Electron dropped it silently, with no second
     // `will-quit` and no `quit`, and the app hung for ever with no windows.
     let streamsDrained = false;
-    app.on('will-quit', (e) => {
+    app.on("will-quit", (e) => {
       if (streamsDrained || !streams.hasLive()) return;
       streamsDrained = true;
       e.preventDefault();
@@ -2594,7 +2824,7 @@ app
         })
         .finally(() => setTimeout(() => app.quit(), 0));
     });
-    app.on('quit', () => {
+    app.on("quit", () => {
       // A toast offering Allow for a session that is being torn down is a
       // button that can only disappoint. Take them down with the app.
       permissionToasts.withdrawAll();
@@ -2614,7 +2844,7 @@ app
       staticServer?.close();
       scheduleForcedExit();
     });
-    app.on('activate', () => {
+    app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
 
@@ -2625,13 +2855,13 @@ app
     }
   })
   .catch((err) => {
-    console.error('fatal: app failed to start', err);
+    console.error("fatal: app failed to start", err);
     app.exit(1);
   });
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") app.quit();
 });
-app.on('quit', () => {
-  if (sink) log.app.info('app quit');
+app.on("quit", () => {
+  if (sink) log.app.info("app quit");
 });

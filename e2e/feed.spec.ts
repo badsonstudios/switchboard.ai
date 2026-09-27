@@ -1105,10 +1105,22 @@ test.describe('Feed view (E12-06)', () => {
     await expect(fence).toBeVisible({ timeout: 20_000 });
     await expect(fence.locator('.feed-code-lang')).toHaveText('bash');
     await fence.locator('[data-feed-copy]').click();
-    await expect(fence.locator('[data-feed-copy]')).toHaveText('Copied');
-    // POLLED, not read once: the label flashes synchronously and the write is a
-    // promise, so a bare read races the clipboard by a millisecond or two — it
-    // failed exactly that way the first time this test ran.
+    // ⚠️ THE "Copied" FLASH IS NOT ASSERTED HERE ANY MORE, and it is not a gap
+    // (#952). `runCopy` sets the label synchronously and reverts it after
+    // COPIED_MS — 1200ms — so catching it needs a Playwright round trip inside
+    // that window, and a loaded Windows runner does not guarantee one: it went red
+    // on CI with 24 consecutive polls all reading "Copy", the flash having come and
+    // gone before the first probe. A 1200ms window is not something an out-of-process
+    // assertion can be held to.
+    //
+    // It is pinned where it is deterministic, including the exact number:
+    // `lib/feed-code.test.ts` → "writes the exact text and flashes the button" sets
+    // the label, fires the timer and reads it back as "Copy", and asserts
+    // `COPIED_MS === 1200`. What only the real app can settle is the line below.
+    //
+    // POLLED, not read once: the write is a promise, so a bare read races the
+    // clipboard by a millisecond or two — it failed exactly that way the first time
+    // this test ran.
     await expect.poll(pasted, { timeout: 5_000 }).toBe(FENCE);
 
     // 2. a Bash section offers one too, once it is open — and copies the WHOLE
@@ -1119,7 +1131,9 @@ test.describe('Feed view (E12-06)', () => {
     await out.locator('[data-feed-copy]').click();
     await expect.poll(pasted, { timeout: 5_000 }).toBe(OUT);
 
-    // 3. and the button says "Copied" only for a moment
+    // …and the button is back to "Copy" by now, which is the revert half of the
+    // flash and is the one end of it a poll can be trusted with: it is a state the
+    // button STAYS in.
     await expect(fence.locator('[data-feed-copy]')).toHaveText('Copy');
   });
   //

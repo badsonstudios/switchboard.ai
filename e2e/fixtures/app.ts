@@ -1512,6 +1512,36 @@ export async function launchDirectToolTurn(prefix: string): Promise<DirectToolTu
  * the throw, which turns that into a named failure instead of a locator
  * timeout thirty seconds later).
  */
+/**
+ * Stop a stimulus prompt from RENAMING the card (#952).
+ *
+ * ⚠️ READ THIS BEFORE ADDING ANOTHER PROMPT-DRIVEN FIXTURE. A session's first
+ * prompt fills a blank task label with itself (#883's provisional label: the owner's
+ * own prompt, cleaned, so a card is not empty through the whole first turn), and a
+ * card's §5.11 IDENTITY is its label when it has one. So a fixture that raises a
+ * permission with `!perm held.sh` renames the card to `!perm held.sh`, and every
+ * spec that asserts a toast, a digest row, an Events row or a rail row NAMES the
+ * session — by its folder — starts reading the verb back. It cost a red CI run:
+ * `quiet-hours.spec.ts` got `"!perm held.sh — needs permission"` where it wanted the
+ * folder.
+ *
+ * Pinning the label to the folder name first makes the expectation TRUE BY
+ * CONSTRUCTION rather than incidentally: it is what an unlabelled card already
+ * displays, so nothing on screen changes, and the provisional pass then finds a
+ * label present and leaves it alone (it only ever fills a blank).
+ *
+ * Only the `permissionHolder*` family needs this — they are the fixtures whose
+ * prompt is pure stimulus. A spec whose prompt is its SUBJECT wants the real
+ * behaviour and must not call this.
+ */
+async function pinLabelToFolder(a: LaunchedApp, title: string): Promise<void> {
+  await a.window.evaluate(async (t) => {
+    const cards = await window.switchboard.sessions.cards();
+    const card = cards.find((c) => c.title === t);
+    if (card) await window.switchboard.sessions.setTaskLabel(card.cardId, t);
+  }, title);
+}
+
 export function streamPrompter(
   a: LaunchedApp
 ): (title: string, text: string) => Promise<void> {
@@ -1566,7 +1596,10 @@ export function permissionHolder(
   a: LaunchedApp
 ): (title: string, marker?: string) => Promise<void> {
   const prompt = streamPrompter(a);
-  return (title, marker = 'held.sh') => prompt(title, `!perm ${marker}`);
+  return async (title, marker = 'held.sh') => {
+    await pinLabelToFolder(a, title);
+    await prompt(title, `!perm ${marker}`);
+  };
 }
 
 /**
@@ -1581,7 +1614,10 @@ export function permissionHolderBash(
   a: LaunchedApp
 ): (title: string, command: string) => Promise<void> {
   const prompt = streamPrompter(a);
-  return (title, command) => prompt(title, `!permbash ${command}`);
+  return async (title, command) => {
+    await pinLabelToFolder(a, title);
+    await prompt(title, `!permbash ${command}`);
+  };
 }
 
 /**
@@ -1597,7 +1633,10 @@ export function permissionHolderEdit(
   a: LaunchedApp
 ): (title: string, marker?: string) => Promise<void> {
   const prompt = streamPrompter(a);
-  return (title, marker = 'one') => prompt(title, `!permedit ${marker}`);
+  return async (title, marker = 'one') => {
+    await pinLabelToFolder(a, title);
+    await prompt(title, `!permedit ${marker}`);
+  };
 }
 
 /**
