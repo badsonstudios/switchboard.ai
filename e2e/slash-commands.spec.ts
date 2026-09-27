@@ -38,33 +38,6 @@ function findFile(root: string, name: string, depth = 6): string | null {
   return null;
 }
 
-async function poll<T>(fn: () => T | null, timeoutMs = 20_000): Promise<T> {
-  const start = Date.now();
-  for (;;) {
-    const v = fn();
-    if (v) return v;
-    if (Date.now() - start > timeoutMs) throw new Error('poll timed out');
-    await new Promise((r) => setTimeout(r, 250));
-  }
-}
-
-/** Play the CLI's part: POST a hook event to the app's real listener. */
-async function postHook(home: string, body: Record<string, unknown>): Promise<string> {
-  const logFile = await poll(() => {
-    const f = findFile(home, 'switchboard.log');
-    return f && fs.readFileSync(f, 'utf8').includes('hook listener up') ? f : null;
-  });
-  const port = Number(/"msg":"hook listener up".*?"port":(\d+)/.exec(fs.readFileSync(logFile, 'utf8'))![1]);
-  const tokenFile = await poll(() => findFile(home, 'hook-token'));
-  const token = fs.readFileSync(tokenFile, 'utf8').trim();
-  const r = await fetch(`http://127.0.0.1:${port}/hook`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-switchboard-token': token },
-    body: JSON.stringify(body),
-  });
-  return r.text();
-}
-
 function seedProjectCommands(folder: string): void {
   fs.mkdirSync(path.join(folder, '.claude', 'commands'), { recursive: true });
   fs.writeFileSync(
@@ -76,10 +49,6 @@ function seedProjectCommands(folder: string): void {
     path.join(folder, '.claude', 'skills', 'demo', 'SKILL.md'),
     '---\nname: demo\ndescription: Demo skill\n---\nDo the demo.\n'
   );
-}
-
-function slugForCwd(cwd: string): string {
-  return cwd.replace(/[\\/:. ]/g, '-');
 }
 
 test.describe('composer slash commands (E10-07)', () => {
@@ -227,23 +196,34 @@ test.describe('composer slash commands (E10-07)', () => {
     await expect(box).toHaveValue('/'); // the draft survives the dismiss
   });
 
-  test('⋯ menu: Clear conversation locks while starting, then confirms', async () => {
+  // ⚠️ THE 'starting' LOCK WAS ASSERTED HERE AND IS NOT ANY MORE (#952). Said out
+  // loud rather than quietly dropped, because the rule itself is untouched.
+  //
+  // `sessionControlLock` still returns `'starting'` for a starting session and
+  // both surfaces still obey it (§5.10's startup-dialog rule: the CLI may be in a
+  // TUI dialog the composer cannot see, so a write now lands in the wrong place).
+  // What changed is that the state is no longer REACHABLE from a test. A PTY
+  // session sat in `starting` until a `SessionStart` hook arrived, which is why
+  // this test posted one; a Direct session is `idle` the moment its transport is
+  // up, and there is no knob to hold it open. Asserting `toBeDisabled()` in that
+  // window would be a race, and a race is worse than no test.
+  //
+  // The rule is owned by unit tests, on both arms and in both surfaces:
+  // `lib/session-controls.test.ts` (the rule, including `'done'` NOT locking) and
+  // `components/FeedView.session-controls.test.tsx` → "a starting session has both
+  // buttons disabled, and says why in the name". What is left here is the part
+  // that needs a real app: the ⋯ route reaching the real session.
+  test('⋯ menu: Clear conversation confirms before it sends', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
 
-    // controls are LOCKED while 'starting' (§5.10 startup-dialog rule)
     await w.getByTitle('Session menu').click();
     // scoped to the menu: since #903 the composer's own row carries a button
     // with the same accessible name, and it is the same action by design
     const clear = w.getByTestId('card-menu').getByRole('button', { name: 'Clear conversation' });
-    await expect(clear).toBeDisabled();
-
-    // the session reports ready — play the CLI: SessionStart over real hooks.
-    // The menu stays open and unlocks live on the status change.
-    await postHook(a.home, { hook_event_name: 'SessionStart', source: 'startup' });
-    await expect(clear).toBeEnabled({ timeout: 10_000 });
+    await expect(clear).toBeEnabled({ timeout: 15_000 });
     await clear.click();
     await expect(w.getByText(/Clear this conversation\?/)).toBeVisible();
     // scoped for the same reason the locator above is: the row's controls sit
@@ -257,38 +237,17 @@ test.describe('composer slash commands (E10-07)', () => {
     await expect(w.getByText(/Clear this conversation\?/)).toHaveCount(0);
   });
 
-  // `[pty]`: the wipe rides the transcript watcher's rebind on a new native id,
-  // and a stream session's feed is not built from the transcript at all.
+  // ⚠️ A SECOND CLEAR TEST STOOD HERE AND IS DELETED, NOT MOVED (#952).
   //
-  // THE DIRECT HALF NOW HAS ITS OWN COVER — `stream-feed.spec.ts` → "Clear
-  // conversation on a Direct session". This comment used to end "…it resets off
-  // `system:init`, which no e2e drives", and both halves of that went stale in
-  // one day: #748 made `conversation_reset` the primary trigger (the init is
-  // the backstop), and #752 taught the fake `/clear` so the path could be
-  // driven at all. The gap this sentence described is exactly where #748's bug
-  // lived, which is why it is now named rather than merely admitted.
-  test('a /clear-minted session id wipes the Feed and shows the cleared marker', async () => {
-    const folder = tempProjectFolder();
-    a = await launchApp({ seedFolder: folder });
-    const w = a.window;
-    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
-
-    // play the CLI: a bound conversation with visible content…
-    const dir = path.join(a.home, '.claude', 'projects', slugForCwd(folder));
-    fs.mkdirSync(dir, { recursive: true });
-    const line = (o: Record<string, unknown>) =>
-      JSON.stringify({ sessionId: 'native-old', cwd: folder, timestamp: new Date().toISOString(), ...o }) + '\n';
-    fs.writeFileSync(
-      path.join(dir, 'native-old.jsonl'),
-      line({ type: 'assistant', message: { content: [{ type: 'text', text: 'OLD_CONversation_TEXT' }] } })
-    );
-    await expect(w.getByText('OLD_CONversation_TEXT')).toBeVisible({ timeout: 15_000 });
-
-    // …then /clear executes: SessionStart(source:'clear') delivers a NEW id
-    await postHook(a.home, { hook_event_name: 'SessionStart', source: 'clear', session_id: 'native-fresh' });
-
-    // the old conversation is wiped and the app SAYS SO (silent /clear fix)
-    await expect(w.getByText('Conversation cleared — context starts fresh')).toBeVisible({ timeout: 10_000 });
-    await expect(w.getByText('OLD_CONversation_TEXT')).toHaveCount(0);
-  });
+  // "a /clear-minted session id wipes the Feed and shows the cleared marker" was
+  // tagged `[pty]` and earned it: the wipe it drove rode the transcript watcher
+  // rebinding onto a new native id, and it proved the wipe by seeding a JSONL and
+  // watching the text vanish. Neither half exists for a real session — the Feed
+  // is built from typed messages, and `conversation_reset` on the stream has been
+  // the primary trigger since #748.
+  //
+  // Its claim is not lost, and was already double-covered before this deletion:
+  // `stream-feed.spec.ts` → "Clear conversation on a Direct session" asserts the
+  // same cleared marker and the same disappearance, plus the resumed-card case
+  // that was #748's actual bug — which this test could never have caught.
 });
