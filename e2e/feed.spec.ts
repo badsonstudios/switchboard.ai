@@ -712,11 +712,11 @@ test.describe('Feed view (E12-06)', () => {
   // to run: the real one launches the machine's actual browser, and a CI run
   // that opens a browser window per test is a bad neighbour.
   test('clicking a link in a reply reaches the browser seam (#527)', async () => {
-    const NL = String.fromCharCode(10);
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
-    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
+    const title = path.basename(folder);
+    await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
 
     const opened = async (): Promise<string[]> =>
       a.app.evaluate(() => (globalThis as unknown as { __opened?: string[] }).__opened ?? []);
@@ -735,29 +735,22 @@ test.describe('Feed view (E12-06)', () => {
       });
     });
 
-    const dir = path.join(a.home, '.claude', 'projects', slugForCwd(folder));
-    fs.mkdirSync(dir, { recursive: true });
-    const line = (o: Record<string, unknown>): string =>
-      JSON.stringify({ sessionId: 'links', cwd: folder, timestamp: new Date().toISOString(), ...o }) + NL;
-    fs.writeFileSync(
-      path.join(dir, 'links.jsonl'),
-      line({ type: 'user', message: { role: 'user', content: 'LINK_PROMPT' } }) +
-        line({
-          type: 'assistant',
-          message: {
-            content: [
-              {
-                type: 'text',
-                text: [
-                  'See [the docs](https://links.test/docs) for more.',
-                  '',
-                  'And [do not open this](javascript:globalThis.__pwned=1) either,',
-                  'nor [this one](file:///C:/Windows/System32/calc.exe).',
-                ].join(NL),
-              },
-            ],
-          },
-        })
+    // The same markdown, arriving as the reply to a prompt (#952). The fake
+    // echoes what it is asked, so any assistant TEXT a test needs — markdown,
+    // links, a code fence — can be provoked this way; what it cannot invent is a
+    // stream message the real CLI never sends.
+    //
+    // The three URLs are the point and are unchanged: one safe, and two the
+    // renderer must refuse to hand to the OS.
+    await arrive(
+      a,
+      title,
+      [
+        'See [the docs](https://links.test/docs) for more.',
+        '',
+        'And [do not open this](javascript:globalThis.__pwned=1) either,',
+        'nor [this one](file:///C:/Windows/System32/calc.exe).',
+      ].join('\n')
     );
 
     const feed = w.getByRole('region', { name: /^Conversation/ });
