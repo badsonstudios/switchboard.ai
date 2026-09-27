@@ -22,9 +22,9 @@ import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 import {
-  hookPoster,
   launchApp,
   LaunchedApp,
+  permissionHolderEdit,
   tempProjectFolder,
   openEventsDrawer,
 } from './fixtures/app';
@@ -80,156 +80,70 @@ test.describe('inline approval bar (E10-04)', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
 
-  test('held Edit -> Allow / Allow-all round-trips real hook verdicts', async () => {
+  test('a held Edit shows the new text, then Allow and Allow-all answer it', async () => {
     const folder = tempProjectFolder();
-    const title = folder.split(/[\\/]/).pop()!;
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
+    const title = folder.split(/[\\/]/).pop()!;
     await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
 
-    // the CLI's view of the world: listener port from the app log, the
-    // per-session token from the state dir (both created by the real spawn)
-    const logFile = await poll(() => {
-      const f = findFile(a.home, 'switchboard.log');
-      return f && fs.readFileSync(f, 'utf8').includes('hook listener up') ? f : null;
-    });
-    const port = Number(/"msg":"hook listener up".*?"port":(\d+)/.exec(fs.readFileSync(logFile, 'utf8'))![1]);
-    const tokenFile = await poll(() => findFile(a.home, 'hook-token'));
-    const token = fs.readFileSync(tokenFile, 'utf8').trim();
-
-    const preToolUse = (marker: string) =>
-      fetch(`http://127.0.0.1:${port}/hook`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-switchboard-token': token },
-        body: JSON.stringify({
-          hook_event_name: 'PreToolUse',
-          tool_name: 'Edit',
-          tool_input: { file_path: 'C:/proj/x.ts', old_string: `old-${marker}`, new_string: `new-${marker}` },
-        }),
-      }).then((r) => r.text());
+    // A REAL `can_use_tool` request carrying an Edit's old/new pair (#952).
+    //
+    // The verdict used to be read out of the hook RESPONSE BODY, which is why
+    // this file used to resolve a port and a token out of the app's own log. There
+    // is no hook response to read: the answer goes back over the control channel.
+    // So the claim is asserted where the user experiences it — the bar appears
+    // with the new text in it, answering makes it go, and Allow-all stops the next
+    // one appearing at all.
+    const hold = permissionHolderEdit(a);
 
     // 1. held request -> bar appears with the edit preview -> Allow
-    const p1 = preToolUse('one');
-    await expect(w.getByText('Allow Edit?')).toBeVisible({ timeout: 10_000 });
+    await hold(title, 'one');
+    await expect(w.getByText('Allow Edit?')).toBeVisible({ timeout: 15_000 });
     await expect(w.getByText('new-one')).toBeVisible(); // new_string pane
     await w.getByRole('button', { name: 'Allow', exact: true }).click();
-    expect(parseVerdict(await p1).hookSpecificOutput!.permissionDecision).toBe('allow');
     await expect(w.getByText('Allow Edit?')).toHaveCount(0);
 
     // 2. next request -> "Allow all (this session)"
-    const p2 = preToolUse('two');
-    await expect(w.getByText('Allow Edit?')).toBeVisible({ timeout: 10_000 });
+    await hold(title, 'two');
+    await expect(w.getByText('Allow Edit?')).toBeVisible({ timeout: 15_000 });
     await w.getByRole('button', { name: 'Allow all (this session)' }).click();
-    expect(parseVerdict(await p2).hookSpecificOutput!.permissionDecision).toBe('allow');
+    await expect(w.getByText('Allow Edit?')).toHaveCount(0);
 
-    // 3. third request auto-allows WITHOUT the bar ever appearing
-    const p3 = preToolUse('three');
-    expect(parseVerdict(await p3).hookSpecificOutput!.permissionDecision).toBe('allow');
+    // 3. a third request auto-allows WITHOUT the bar ever appearing. Given time
+    // to be wrong: an assertion that something does not appear is worth only the
+    // wait it gives it.
+    await hold(title, 'three');
+    await w.waitForTimeout(3_000);
     await expect(w.getByText('Allow Edit?')).toHaveCount(0);
   });
 
-  test("Dan's case: a PowerShell dir-listing holds and the bar appears in the Session tab", async () => {
-    const folder = tempProjectFolder();
-    a = await launchApp({ seedFolder: folder });
-    const w = a.window;
-    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
-    const logFile = await poll(() => {
-      const f = findFile(a.home, 'switchboard.log');
-      return f && fs.readFileSync(f, 'utf8').includes('hook listener up') ? f : null;
-    });
-    const port = Number(/"msg":"hook listener up".*?"port":(\d+)/.exec(fs.readFileSync(logFile, 'utf8'))![1]);
-    const tokenFile = await poll(() => findFile(a.home, 'hook-token'));
-    const token = fs.readFileSync(tokenFile, 'utf8').trim();
+  // ── "DAN'S CASE: A POWERSHELL DIR-LISTING HOLDS" — RETIRED (#952) ────────
+  //
+  // This one is worth more than a pointer, because what it guarded is genuinely
+  // gone rather than moved.
+  //
+  // It pinned that the WINDOWS SHELL TOOL held — the exact case that slipped in
+  // the 2026-07-22 probe — and that the bar appeared in the Session tab with no
+  // handoff bar beside it. What made `PowerShell` hold was switchboard's OWN hold
+  // policy (`GATED`, in the old hook listener), which listed the shell tools per
+  // autonomy. That table is deleted: Claude Code decides what to ask about now,
+  // so there is no list of ours for a tool name to slip out of.
+  //
+  // The general claim underneath — a delegated permission draws a bar in the
+  // Session tab, and nothing sends the user to a terminal — is asserted by the
+  // test above and by `stream-permissions.spec.ts`.
 
-    // the Windows shell tool (2026-07-22 probe) — the exact case that slipped
-    const pending = fetch(`http://127.0.0.1:${port}/hook`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-switchboard-token': token },
-      body: JSON.stringify({
-        hook_event_name: 'PreToolUse',
-        tool_name: 'PowerShell',
-        tool_input: { command: 'Get-ChildItem C:/Users/dan/Downloads', description: 'List Downloads' },
-      }),
-    }).then((r) => r.text());
-    // the bar shows IN THE SESSION TAB — and the "answer it in the Terminal"
-    // handoff must NOT appear beside it (#125): this decision was delegated to
-    // us, so sending the user to the terminal would push them away from the
-    // very control that answers it
-    await expect(w.getByText('Allow PowerShell?')).toBeVisible({ timeout: 10_000 });
-    await expect(w.locator('[data-handoff]')).toHaveCount(0);
-    await w.getByRole('button', { name: 'Allow', exact: true }).click();
-    expect(parseVerdict(await pending).hookSpecificOutput!.permissionDecision).toBe('allow');
-  });
+  // ── "RAPID HOLDS QUEUE" — MOVED, NOT LOST (#952) ─────────────────────────
+  //
+  // Pinned on the real transport by `stream-approval.spec.ts` → "concurrent holds
+  // queue on the card, and the Session tab surfaces itself", which passes.
 
-  test('a hold surfaces the Session tab from Terminal, and rapid holds QUEUE (P0#4/#5)', async () => {
-    const folder = tempProjectFolder();
-    a = await launchApp({ seedFolder: folder });
-    const w = a.window;
-    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
-    const logFile = await poll(() => {
-      const f = findFile(a.home, 'switchboard.log');
-      return f && fs.readFileSync(f, 'utf8').includes('hook listener up') ? f : null;
-    });
-    const port = Number(/"msg":"hook listener up".*?"port":(\d+)/.exec(fs.readFileSync(logFile, 'utf8'))![1]);
-    const tokenFile = await poll(() => findFile(a.home, 'hook-token'));
-    const token = fs.readFileSync(tokenFile, 'utf8').trim();
-    const hold = (file: string) =>
-      fetch(`http://127.0.0.1:${port}/hook`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-switchboard-token': token },
-        body: JSON.stringify({
-          hook_event_name: 'PreToolUse',
-          tool_name: 'Edit',
-          tool_input: { file_path: file, old_string: 'a', new_string: 'b' },
-        }),
-      }).then((r) => r.text());
-
-    // Park the card on a tab that is NOT Session, then hold twice in quick
-    // succession — otherwise "the Session tab auto-surfaces" asserts nothing.
-    // This used to park on the Terminal tab, which went with #873; Changes is
-    // the surviving non-default tab.
-    await w.getByRole('tab', { name: 'Changes' }).click();
-    const p1 = hold('C:/one.ts');
-    const p2 = hold('C:/two.ts');
-    // the Session tab auto-surfaces with the bar + queue badge
-    await expect(w.getByText('Allow Edit?')).toBeVisible({ timeout: 10_000 });
-    await expect(w.getByText('+1 more waiting')).toBeVisible();
-    await w.getByRole('button', { name: 'Allow', exact: true }).click();
-    expect(parseVerdict(await p1).hookSpecificOutput!.permissionDecision).toBe('allow');
-    // the second request advances into the bar
-    await expect(w.getByText('C:/two.ts')).toBeVisible({ timeout: 10_000 });
-    await w.getByRole('button', { name: 'Deny' }).click();
-    expect(parseVerdict(await p2).hookSpecificOutput!.permissionDecision).toBe('deny');
-    await expect(w.getByText('Allow Edit?')).toHaveCount(0);
-  });
-
-  test('Deny returns a deny verdict', async () => {
-    const folder = tempProjectFolder();
-    a = await launchApp({ seedFolder: folder });
-    const w = a.window;
-    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
-    const logFile = await poll(() => {
-      const f = findFile(a.home, 'switchboard.log');
-      return f && fs.readFileSync(f, 'utf8').includes('hook listener up') ? f : null;
-    });
-    const port = Number(/"msg":"hook listener up".*?"port":(\d+)/.exec(fs.readFileSync(logFile, 'utf8'))![1]);
-    const tokenFile = await poll(() => findFile(a.home, 'hook-token'));
-    const token = fs.readFileSync(tokenFile, 'utf8').trim();
-
-    const pending = fetch(`http://127.0.0.1:${port}/hook`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-switchboard-token': token },
-      body: JSON.stringify({
-        hook_event_name: 'PreToolUse',
-        tool_name: 'Bash',
-        tool_input: { command: 'rm -rf /' },
-      }),
-    }).then((r) => r.text());
-    await expect(w.getByText('Allow Bash?')).toBeVisible({ timeout: 10_000 });
-    await expect(w.getByText('rm -rf /').first()).toBeVisible(); // command preview
-    await w.getByRole('button', { name: 'Deny' }).click();
-    expect(parseVerdict(await pending).hookSpecificOutput!.permissionDecision).toBe('deny');
-  });
+  // ── "DENY RETURNS A DENY VERDICT" — MOVED, NOT LOST (#952) ───────────────
+  //
+  // Pinned on the real transport by `stream-approval.spec.ts` → "Deny reaches the
+  // CLI and the tool never runs", which passes and is the stronger assertion: it
+  // checks the tool did not run, not merely that a verdict came back.
 
   test('an interactive question flips the card to needs-input, not working (#92)', async () => {
     // Probed against real claude 2.1.220: an AskUserQuestion blocks MID-TURN,
@@ -277,47 +191,12 @@ test.describe('inline approval bar (E10-04)', () => {
     await expect(w.locator('aside').getByText('needs input')).toHaveCount(0, { timeout: 15_000 });
   });
 
-  test('a CRASHED renderer releases the hold instead of parking the CLI (P2-E15-09)', async () => {
-    // Linux/xvfb can't host this scenario. Crashing the renderer there takes
-    // the WINDOW with it, so `window-all-closed` fires and (non-darwin) quits
-    // the whole app — the hook server dies mid-request and the POST comes back
-    // `SocketError: other side closed` instead of a verdict. On Windows the
-    // window provably survives the crash (probe: "windows still open: 1"),
-    // which is the state this test exists to cover. The guarantee still holds
-    // on Linux by a different route: app exit tears the listener down, and the
-    // forwarder fails open when it can't reach us (S-03).
-    test.skip(process.platform === 'linux', 'a renderer crash kills the whole app under xvfb; covered on Windows');
-    // The defect this pins: the "nobody to ask" check tested permListeners.size,
-    // which is never zero (ipc.ts subscribes once and never unsubscribes). So a
-    // dead renderer left the CLI parked the full 300s per gated call.
-    //
-    // This is the one path a human cannot reasonably test on Windows — closing
-    // the window quits the app there, so only a crash reaches it. Hence a test.
-    const folder = tempProjectFolder();
-    const title = folder.split(/[\\/]/).pop()!;
-    a = await launchApp({ seedFolder: folder });
-    const w = a.window;
-    await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
-    const post = await hookPoster(a);
-
-    // park a real hold: the request is live on the wire, waiting for a click
-    const held = post(title, {
-      hook_event_name: 'PreToolUse',
-      tool_name: 'PowerShell',
-      tool_input: { command: 'Get-ChildItem', description: 'List' },
-    });
-    await expect(w.getByText('Allow PowerShell?')).toBeVisible({ timeout: 15_000 });
-
-    // now kill the renderer. The BrowserWindow survives with dead contents —
-    // which is exactly why isDestroyed() alone was not enough of a signal.
-    await a.app.evaluate(({ BrowserWindow }) => {
-      BrowserWindow.getAllWindows()[0].webContents.forcefullyCrashRenderer();
-    });
-
-    // no opinion, immediately: the CLI falls back to its own TUI prompt. Before
-    // this fix the same await sat here for the full hold timeout.
-    expect(await held, 'the hold outlived the renderer').toBe('{}');
-  });
+  // ── "A CRASHED RENDERER RELEASES THE HOLD" — MOVED, NOT LOST (#952) ───────
+  //
+  // Its claim — a renderer that dies must not leave the CLI parked — is pinned on
+  // the real transport by `stream-approval.spec.ts` → "a CRASHED renderer
+  // releases a Direct hold instead of parking the CLI", which passes. This copy
+  // drove the hook hold path, which no longer exists.
 
   // #125 — the case that started this: a decision the CLI KEPT. Dan hit it live
   // on 2026-07-31 (a `.claude\scripts\coverage.sh` write). No PreToolUse ever
@@ -336,46 +215,19 @@ test.describe('inline approval bar (E10-04)', () => {
   // `stream-permissions.spec.ts` → "a hook Notification cannot fake a permission
   // on Direct (#313)". Read the two
   // together or each looks like a bug in the other.
-  test('a permission the CLI KEPT gets a full bar in the Session tab, not a chip (#125)', async () => {
-    const folder = tempProjectFolder();
-    a = await launchApp({ seedFolder: folder });
-    const w = a.window;
-    const title = folder.split(/[\\/]/).pop()!;
-    await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
-
-    const post = await hookPoster(a);
-    // Exactly what the CLI sent in the live incident: not a PreToolUse we can
-    // hold, just a nudge that it is waiting on a human.
-    await post(title, {
-      hook_event_name: 'Notification',
-      notification_type: 'permission_prompt',
-      message: 'Claude needs your permission to use Write',
-    });
-
-    const bar = w.locator('[data-handoff="permission"]');
-    await expect(bar).toBeVisible({ timeout: 15_000 });
-    await expect(bar.getByText('Claude is asking permission in the terminal')).toBeVisible();
-    // it explains WHY we cannot answer, rather than just pointing elsewhere
-    await expect(bar.getByText(/rather than offering it to switchboard/)).toBeVisible();
-
-    // Docked at the BOTTOM, directly above the composer — the entire point of
-    // #125. Asserted against the composer, which always exists: an earlier
-    // version compared against the feed scroller behind a `.catch(() => null)`,
-    // so on any run where a block had arrived the check silently evaporated.
-    const barBox = (await bar.boundingBox())!;
-    const composerBox = (await w.locator('textarea').first().boundingBox())!;
-    expect(barBox.y + barBox.height).toBeLessThanOrEqual(composerBox.y + 2);
-    // in the bottom half of the window, i.e. emphatically not the header strip
-    // it used to live in. `viewportSize()` is null for an Electron window, so
-    // ask the page for its real height.
-    const winHeight = await w.evaluate(() => window.innerHeight);
-    expect(barBox.y).toBeGreaterThan(winHeight / 2);
-
-    // The bar used to carry an [Open Terminal] button, and one click reached
-    // the real prompt. The button is gone (#873): its only destination was the
-    // Terminal tab, and `FeedView` now omits it rather than offering a door to
-    // nowhere. The bar still SAYS where the decision lives, which is the P7
-    // obligation — what it can no longer do is take you there.
-    await expect(bar.getByRole('button', { name: 'Open Terminal' })).toHaveCount(0);
-  });
+  // ── "A PERMISSION THE CLI KEPT GETS A FULL BAR (#125)" — REMOVED (#952) ────
+  //
+  // It drove a permission `Notification` and asserted the terminal-handoff bar:
+  // a decision the CLI KEPT for itself, announced where the user was already
+  // looking, after a 10px header chip nobody ever saw.
+  //
+  // Both halves are gone. There is no transport on which the CLI can keep a
+  // permission decision — it delegates every one over `can_use_tool` — and the
+  // handoff bar was deleted with the terminal it routed to. The inverse this test
+  // was read against is still pinned, in `stream-permissions.spec.ts` → "a hook
+  // Notification cannot fake a permission on Direct (#313)".
+  //
+  // ⚠️ The QUESTION it answered is still open, and #952 did not close it: what
+  // should be said when the CLI keeps a decision? Today it cannot. E18-11 owns
+  // the answer if that ever changes.
 });

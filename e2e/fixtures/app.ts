@@ -1570,6 +1570,37 @@ export function permissionHolder(
 }
 
 /**
+ * Raise a BASH permission carrying `command` verbatim.
+ *
+ * For the claims that need a real command string in the held request: the OS
+ * toast's body is built from what main is holding, and batching groups two
+ * sessions that asked for the SAME thing. See `!permbash` in
+ * `fake-stream-protocol.ts`.
+ */
+export function permissionHolderBash(
+  a: LaunchedApp
+): (title: string, command: string) => Promise<void> {
+  const prompt = streamPrompter(a);
+  return (title, command) => prompt(title, `!permbash ${command}`);
+}
+
+/**
+ * Raise an EDIT permission, whose input has the old/new pair the bar diffs.
+ *
+ * `permissionHolder`'s sibling. `!perm` raises a `Write` — one `content` field,
+ * one pane — which is the right shape for "is a permission being held"; this is
+ * for the tests whose subject is what the bar SHOWS you before you approve it.
+ * See `!permedit` in `fake-stream-protocol.ts` for why the fake needed a second
+ * verb rather than a wider first one.
+ */
+export function permissionHolderEdit(
+  a: LaunchedApp
+): (title: string, marker?: string) => Promise<void> {
+  const prompt = streamPrompter(a);
+  return (title, marker = 'one') => prompt(title, `!permedit ${marker}`);
+}
+
+/**
  * Answer every permission this app is holding, without going through the bar.
  *
  * The companion to `permissionHolder`, and needed because a held request does NOT
