@@ -166,7 +166,6 @@ export interface PermissionIntake {
   /** a question needs eyes: surface the Session tab (E10-04 review P0#5) */
   surface: () => void;
   /** hold the terminal-handoff bar off for the round trip (see below) */
-  suppressHandoff: () => void;
 }
 
 /**
@@ -213,7 +212,6 @@ export function intakePermission(
   // a request already in flight when the grant was written.
   if (r.tool !== ASK_USER_QUESTION_TOOL && ports.isAllowAll(r.sessionId)) {
     ports.decide(r.requestId, 'allow');
-    ports.suppressHandoff();
     return;
   }
   ports.queue(r);

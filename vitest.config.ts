@@ -3,8 +3,11 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     // scripts/ is plain CJS run by `node` before/around the build, so it has no
-    // place under src/ — but scripts/pty-noise-filter.js is allowed to DELETE
-    // stderr (#176) and has to be tested like anything else.
+    // place under src/ — but some of it is load-bearing and has to be tested
+    // like anything else, notably `run-electron-node.js`, whose exit code IS the
+    // exit code of five `check:*` scripts (#176). It earned the entry as the
+    // home of a stderr filter that was allowed to DELETE output; that filter
+    // went with node-pty (#952) and the exit-code contract is why it stays.
     // e2e/ holds Playwright SPECS (`*.spec.ts`) — but the fixture they all sit
     // on is ordinary code with branches no spec can reach on purpose, notably
     // `launchApp`'s launch-failure reaping (#230). Those get a vitest `*.test.ts`

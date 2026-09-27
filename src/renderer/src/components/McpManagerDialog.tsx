@@ -1337,23 +1337,20 @@ export function McpManagerDialog(props: McpManagerDialogProps): React.JSX.Elemen
       setNotice({ bad: true, text: t('mcp.reconnect.no-session') });
       return;
     }
-    const mine = epoch.current;
-    setBusy({ kind: 'reconnect' });
-    setNotice(null);
-    try {
-      const result = answered(await window.switchboard?.mcp?.reconnect?.(folder, props.liveId));
-      if (mine !== epoch.current) return; // a later sitting owns the screen now
-      const outcome = result?.outcome ?? 'refused';
-      setNotice({
-        bad: outcome !== 'typed',
-        text: t(`mcp.reconnect.${outcome}`),
-      });
-    } catch {
-      if (mine !== epoch.current) return;
-      setNotice({ bad: true, text: t('mcp.error.refused') });
-    } finally {
-      if (mine === epoch.current) setBusy(null);
-    }
+    // NO CONTROL CHANNEL, SO THE ANSWER IS "RESTART", AND IT IS SAID HERE (#952).
+    //
+    // This used to invoke `mcp:reconnect`, which typed `/mcp` into the session on
+    // the one transport where that meant anything and answered `restart-required`
+    // on the other. With the PTY transport gone that channel had a single
+    // possible answer, so it was deleted and the sentence moved here — the same
+    // string, from one place instead of a round trip.
+    //
+    // Reaching this line means `runtime` was null, i.e. the session did not
+    // answer `mcp_status`: a suspended card, or one whose control channel is not
+    // up. Restarting it is genuinely what is needed, and unlike the old
+    // `refused` / `no-session` outcomes there is no longer an action being gated
+    // — nothing is sent, so there is nothing to refuse.
+    setNotice({ bad: true, text: t('mcp.reconnect.restart-required') });
   };
 
   const row = (s: McpServerWire): React.JSX.Element => {

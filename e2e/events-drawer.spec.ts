@@ -23,6 +23,7 @@ import path from 'path';
 import {
   hookPoster,
   launchApp,
+  streamPrompter,
   LaunchedApp,
   openEventsDrawer,
   tempProjectFolder,
@@ -108,11 +109,10 @@ test.describe('the events drawer (P2-E14-01)', () => {
     await expect(tab(w)).toHaveAttribute('data-count', '0');
     await expect(statusCount(w)).toHaveAttribute('data-count', '0');
 
-    const post = await hookPoster(a, 1);
-    await post(title, {
-      hook_event_name: 'Notification',
-      message: 'Claude needs your permission to use Bash',
-    });
+    // A REAL held permission over `can_use_tool`, not a hook Notification: the
+    // nudge is a debounced duplicate and #313 drops it. Only the STIMULUS moved;
+    // every assertion below is the one this test has always made.
+    await streamPrompter(a)(title, '!perm drawer.sh');
 
     // the count arrives on the collapsed tab — no opening required, which is
     // the point of putting it there
@@ -131,7 +131,12 @@ test.describe('the events drawer (P2-E14-01)', () => {
     // inks stops being a vocabulary and becomes decoration.
     await expect(statusCount(w)).toHaveAttribute('data-hottest', 'needs-permission');
 
-    // and it goes back down when the session stops waiting
+    // and it goes back down when the session stops waiting. Answer the real
+    // request first — it is genuinely held, so it does not clear itself — and then
+    // the SAME `UserPromptSubmit` the original used: the hook listener is still
+    // the status channel, so that half of `hookPoster` is untouched.
+    await w.getByRole('button', { name: 'Allow', exact: true }).click();
+    const post = await hookPoster(a, 1);
     await post(title, { hook_event_name: 'UserPromptSubmit' });
     await expect(tab(w)).toHaveAttribute('data-count', '0', { timeout: 20_000 });
     await expect(statusCount(w)).toHaveAttribute('data-count', '0');
@@ -260,9 +265,10 @@ test.describe('the events drawer (P2-E14-01)', () => {
   // block-start margin moves the following siblings up by the same amount).
   test('the header is pinned, full width, and sits on nothing', async () => {
     const { w, title } = await oneSession();
-    const post = await hookPoster(a, 1);
-    // an event, so the hotkey hint below the header is really there to be sat on
-    await post(title, { hook_event_name: 'Notification', message: 'needs your permission' });
+    // an event, so the hotkey hint below the header is really there to be sat on.
+    // A REAL held permission rather than a hook Notification (#952) — the nudge is
+    // a debounced duplicate and #313 drops it.
+    await streamPrompter(a)(title, '!perm header.sh');
     await expect(tab(w)).toHaveAttribute('data-count', '1', { timeout: 20_000 });
     await openEventsDrawer(w);
     await expect(closeBtn(w)).toBeVisible();

@@ -164,26 +164,15 @@ describe('a session we can switch', () => {
 });
 
 describe('a session we cannot switch', () => {
-  it('leaves a Terminal-mode session’s model as plain text', async () => {
-    // It can SHOW a model — `usage.model`, from the transcript — and we still
-    // cannot change it. A button here would be a menu of guaranteed refusals.
-    await mount({ transport: 'pty', model: 'claude-sonnet-5' });
-    expect(chip()?.tagName).toBe('SPAN');
-    expect(chip()?.textContent).toBe('claude-sonnet-5');
-  });
-
-  it('says where the switcher actually is, instead of failing silently', async () => {
-    await mount({ transport: 'pty', model: 'claude-sonnet-5' });
-    expect(chip()?.getAttribute('title')).toBe(en.feedView.modelHintTerminal);
-  });
-
-  it('shows nothing at all when there is no model to show', async () => {
-    // No affordance, because there is nothing to afford: no text to correct and
-    // no menu we could open. The chip is simply absent, as it was before #747.
-    await mount({ transport: 'pty' });
-    expect(chip()).toBeNull();
-  });
-
+  // Two Terminal-mode tests stood here (#952): one pinned that such a session's
+  // model rendered as plain text — it could SHOW a model, from the transcript,
+  // while we still could not change it, and a button there would have been a menu
+  // of guaranteed refusals — and one pinned the `modelHintTerminal` tooltip that
+  // told the user to type `/model` in the Terminal tab.
+  //
+  // The rule they demonstrated is alive in the two tests below: the chip is a
+  // BUTTON only where a switch can really happen, and the tooltip has to earn its
+  // claim rather than inherit it from the branch.
   it('treats a session with no live id as unswitchable', async () => {
     // A card whose session has ended keeps rendering; `sessionId` is empty
     // there, and `set_model` needs a session to send to.

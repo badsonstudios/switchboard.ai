@@ -1,8 +1,9 @@
 // The MCP Manager's IPC seam (§5.17, #632 read, #714 write).
 //
-// Eleven channels. Three answer questions about a folder, three change something
-// through the CLI, one types into a session, and four go over the session's
-// control channel:
+// Ten channels. Three answer questions about a folder, three change something
+// through the CLI, and four go over the session's control channel. An eleventh,
+// `mcp:reconnect`, TYPED `/mcp` into a session and went with the PTY transport
+// (#952) — see where it used to be, at the bottom of this file:
 //
 //   mcp:list            the servers, off the config files. Cheap — two file reads.
 //   mcp:status          the servers the SESSION really has, over the control
@@ -19,8 +20,6 @@
 //   mcp:add             `claude mcp add …`
 //   mcp:remove          `claude mcp remove <name> -s <scope>`
 //   mcp:resetApprovals  `claude mcp reset-project-choices` — PROJECT-WIDE
-//   mcp:reconnect       type `/mcp` into a live session, on the one transport
-//                       where that means anything
 //   mcp:toggle          `mcp_toggle` over the control channel (#729) — the verb
 //                       #632 and #714 concluded did not exist, measured
 //   mcp:reconnectServer `mcp_reconnect` — reconnects ONE server with no
@@ -32,11 +31,11 @@
 // HOW THIS SEAM SAYS NO: by resolving, never by throwing — the house shape
 // `group-ipc.ts`'s header argues for at length. `mcp:list` answers an inventory
 // with `unreadable` scopes named in it; `mcp:health` answers an empty map with
-// `ok: false`; the three writes answer `{ ok: false, reason }`; `mcp:reconnect`
-// answers an outcome. Nothing here has a failure mode that reaches the renderer
-// as a rejection, which matters more in this family than in most because every
-// one of them is driven from a modal the user opened deliberately: an exception
-// behind a dialog is a dialog that does nothing.
+// `ok: false`; the writes answer `{ ok: false, reason }`. Nothing here has a
+// failure mode that reaches the renderer as a rejection, which matters more in
+// this family than in most because every one of them is driven from a modal the
+// user opened deliberately: an exception behind a dialog is a dialog that does
+// nothing.
 //
 // THE FOLDER GATE RUNS ON ALL OF THEM (§5.29). It mattered on the read channels
 // because the folder decides which `.mcp.json` is read and where a child
@@ -65,22 +64,22 @@ import type {
   McpHealthWire,
   McpInventoryWire,
   McpMutationResult,
-  McpReconnectResult,
   McpScope,
   McpStatusWire,
 } from '../../shared/mcp';
 import type { ControlVerdict } from '../../shared/control';
 
-/** What main needs to know about a live session to reconnect it. */
+/** What main needs to know about a live session to gate a call against it. */
 export interface McpLiveSession {
   /** the folder it is running in — checked against the gated folder so a
    *  caller cannot pair an allowed folder with somebody else's session id */
   folder: string;
-  /** which transport is hosting it RIGHT NOW — the live record's field, not
-   *  the card's stored preference. #445 is the scar: those two disagree while
-   *  a transport change waits for a restart, and reading the wrong one here
-   *  would type `/mcp` into a session that has no terminal to show it in. */
-  transport: string;
+  // NO `transport` FIELD SINCE #952. It carried which transport was hosting the
+  // session RIGHT NOW — the live record's field, never the card's stored
+  // preference, #445 being the scar: those two disagree while a transport change
+  // waits for a restart, and reading the wrong one would have typed `/mcp` into a
+  // session with no terminal to show it in. `mcp:reconnect` was its only reader
+  // and there is one transport now, so the distinction has nothing left to decide.
 }
 
 export interface McpIpcDeps {
@@ -100,12 +99,10 @@ export interface McpIpcDeps {
   isSessionFolder: (folder: string) => boolean;
   /**
    * The live session behind an id, or null. Absent in a read-only wiring (and
-   * in #632's tests), which is why `mcp:reconnect` treats it as "no session"
-   * rather than assuming it is there.
+   * in #632's tests), which is why every handler that takes a `liveId` treats
+   * its absence as "no session" rather than assuming it is there.
    */
   liveSession?: (liveId: string) => McpLiveSession | null;
-  /** Write raw bytes to a live PTY. Absent when there is no PTY host. */
-  typeIntoPty?: (liveId: string, data: string) => void;
   /**
    * Ask a live session for its real MCP inventory (#729).
    *
@@ -148,20 +145,6 @@ export interface McpIpcDeps {
  * in the app.
  */
 const empty = (folder: string): McpInventoryWire => ({ folder, servers: [], unreadable: [] });
-
-/**
- * `/mcp`, and then Enter — as two writes, 75ms apart.
- *
- * NOT ONE CHUNK, and this is a finding rather than a style choice: text and a
- * carriage return written together register as a PASTE in the CLI's TUI and
- * never submit (S-03, refound live 2026-07-22). `lib/composer.ts` carries the
- * same constants for the same reason; they are duplicated here rather than
- * imported because that module is renderer-side and this is main, and a shared
- * module for two numbers would be a worse trade than the comment on both.
- */
-const RECONNECT_TEXT = '/mcp';
-const CR = String.fromCharCode(13);
-const SUBMIT_DELAY_MS = 75;
 
 /**
  * Every value in a request that must never come back on screen.
@@ -487,61 +470,31 @@ export function registerMcpIpc(deps: McpIpcDeps): void {
     return deps.mcpClearAuth(gate.id, name);
   });
 
-  /**
-   * Reconnect — and the transport decision is MAIN'S, on purpose.
-   *
-   * §5.17 says reconnect "injects `/mcp` into that session's input route — we
-   * type, not fake". That sentence is true on ONE transport and this is the
-   * function that has to know which:
-   *
-   *   pty     the CLI's picker opens in a terminal the user is looking at.
-   *           Type it. This is what the design meant.
-   *   stream  there is no terminal. Typing `/mcp` sends the command, the CLI
-   *           opens a picker nobody can see, and the session sits there — the
-   *           exact dead end #632's `/mcp` intercept was built to remove.
-   *           SEND NOTHING and say so.
-   *
-   * The renderer must not make this call. `lib/composer.ts`'s
-   * `sendSessionCommand` is documented as being blind to transports — which is
-   * correct for `/compact`, whose two routes deliver the same thing, and wrong
-   * here, where one route delivers nothing at all. Routing reconnect through it
-   * would reinstate the bug behind a different button.
-   */
-  broker.handle(
-    'mcp:reconnect',
-    (_e, folder: unknown, liveId: unknown): McpReconnectResult => {
-      if (!allowed('mcp:reconnect', folder)) return { outcome: 'refused' };
-      if (typeof liveId !== 'string' || !liveId) {
-        log.warn('mcp:reconnect refused: liveId must be a non-empty string');
-        return { outcome: 'refused' };
-      }
-      const session = deps.liveSession?.(liveId) ?? null;
-      if (!session) return { outcome: 'no-session' };
-      // THE SESSION'S FOLDER MUST BE THE FOLDER WE GATED. Without this, the
-      // gate checks one thing and the action affects another: a caller could
-      // pair a folder it is allowed to name with the id of any live session in
-      // the app, and type into it. The gate has to cover what actually happens.
-      //
-      // COMPARED BY RESOLUTION, not by spelling — the same rule the gate itself
-      // uses (`main/index.ts`'s `isSessionFolder`), and for the same recorded
-      // reason: "a path has many true spellings and exactly one resolution",
-      // learned when CI's Windows runners handed out 8.3 short names
-      // (`C:\Users\RUNNER~1\…`). A spelling comparison here fails CLOSED, so it
-      // was not a hole — but it would refuse a session that `mcp:list` answers
-      // for happily, on the same machine, which is a bug report nobody could
-      // reproduce.
-      if (!samePath(path.resolve(session.folder), path.resolve(folder))) {
-        log.warn('mcp:reconnect refused: session does not belong to that folder', { folder });
-        return { outcome: 'refused' };
-      }
-      if (session.transport !== 'pty' || !deps.typeIntoPty) {
-        return { outcome: 'restart-required' };
-      }
-      deps.typeIntoPty(liveId, RECONNECT_TEXT);
-      // the Enter, separately and later — see RECONNECT_TEXT
-      setTimeout(() => deps.typeIntoPty?.(liveId, CR), SUBMIT_DELAY_MS);
-      log.info('mcp reconnect typed into session', { liveId });
-      return { outcome: 'typed' };
-    }
-  );
+  // ── `mcp:reconnect` IS GONE (#952) ───────────────────────────────────────────
+  //
+  // It typed `/mcp` into a live session, and §5.17's *"injects `/mcp` into that
+  // session's input route — we type, not fake"* was true on exactly one
+  // transport. This handler existed to know which: on the PTY the CLI's picker
+  // opened in a terminal the user was looking at, and on stream there was no
+  // terminal, so typing `/mcp` opened a picker nobody could see and left the
+  // session sitting there — the exact dead end #632's `/mcp` intercept was built
+  // to remove. Main sent NOTHING and answered `restart-required`.
+  //
+  // With the PTY transport deleted, every call could only take the second branch,
+  // so the handler had one possible answer and the IPC round trip bought nothing.
+  // The renderer now says `restart-required` itself for a session with no control
+  // channel, which is the same sentence from one place instead of two.
+  //
+  // WHAT REPLACES IT FOR A LIVE SESSION IS BETTER THAN WHAT IT DID, and that is
+  // why this is a deletion and not a loss: `mcp:reconnectServer` (`mcp_reconnect`,
+  // #729/#734) reconnects a named server over the control channel with no terminal
+  // and no restart, and pulls in one the session never loaded. §5.17's design
+  // intent — reconnect a server without leaving the app — is met by the channel
+  // the CLI delegates it on, rather than by typing at a picker.
+  //
+  // `typeIntoPty`, `RECONNECT_TEXT`, the separate `CR` and `SUBMIT_DELAY_MS` went
+  // with it. The S-03 finding those constants encoded (text and a carriage return
+  // written together register as a PASTE and never submit) still holds and still
+  // matters — `lib/composer.ts` carries it, which is why it was duplicated here
+  // rather than shared.
 }

@@ -630,46 +630,26 @@ export async function launchSecondInstance(
  * Two files hold BOTH halves themselves, one `describe` each, and their headers
  * say so: `ask-user-question.spec.ts` and `real-claude.spec.ts`.
  *
- * IS THIS TEST PTY-BY-CONSTRUCTION? (#639 — four titles were wrong because the
- * question had never been written down.) Two things must hold TOGETHER:
+ * ⛳ THE `[pty]` TAGGING CONVENTION IS RETIRED (#952). There is one transport, so
+ * no test can be "PTY-by-construction" and the tag names nothing. Every tagged
+ * block was either RETAGGED — it ran on Direct and always could, which is the
+ * "#418 assertion back" clause of E18-16's done-when — or deleted with the
+ * behaviour it was about. Its history is worth three lines, because two of them
+ * are about test design rather than about transports:
  *
- *   1. it reaches the terminal ON PURPOSE — it passes
- *      `SWITCHBOARD_TRANSPORT: 'pty'`, or it takes this fixture's PTY-only fake
- *      in a file whose other tests ask for `SWITCHBOARD_FAKE_PROVIDER:
- *      'stream'`; and
- *   2. what it ASSERTS is the terminal's own answer — the curated command list,
- *      a trust acceptance on disk, a panel the Direct path draws and the PTY
- *      path deliberately does not.
+ *   • #639 found FOUR titles wrong because the question "is this test really
+ *     about the terminal?" had never been written down. Tagging by what a test
+ *     REACHES is not the same as tagging by what it ASSERTS, and the four had
+ *     confused the two. A test that starts somewhere in order to assert
+ *     something else is not "about" where it started.
+ *   • #873 then took the tag's own evidence away: the witnesses were a live
+ *     `.xterm` and the Terminal tab's notice, so after it a test could still
+ *     SELECT the terminal but could not read its answer off the screen. Several
+ *     tags stayed green for a year on a claim nothing could check.
  *
- * Clause (2) used to begin "a live `.xterm`, the ABSENCE of the 'No terminal
- * for this session' notice". Both of those witnesses were the Terminal tab, and
- * #873 removed it — no surface renders a PTY now, so a test can still SELECT
- * the terminal transport but can no longer read its answer off the screen.
- * What is left are the off-screen witnesses, and they are the stronger ones.
- *
- * (1) without (2) is NOT tagged, and that distinction is the whole reason the
- * rule needs writing down: every transport-switch test in
- * `stream-transport.spec.ts` starts on the PTY — a switch needs somewhere to
- * come from — and then asserts DIRECT behaviour. Their green IS default-
- * transport evidence, so tagging them would be a lie in the opposite
- * direction. Each says as much at its own `launchApp` call.
- *
- * Tag at the HIGHEST level that is wholly PTY-scoped, and only there — a
- * `describe` when every test under it is, individual tests when the group is
- * mixed, never both. So an UNtagged test in a tagged `describe` does not exist;
- * an untagged test in a file whose OTHER tests are tagged is
- * transport-independent and merely happens to run on the PTY — the switch tests
- * above are the one exception, and each of them says so on the spot.
- *
- * HOW TO CHECK THE CONVENTION STILL HOLDS, in one command:
- * `grep -rn "SWITCHBOARD_TRANSPORT: 'pty'" e2e/`. Since #639 every hit is
- * either inside a `[pty]`-titled `describe`/`test`, or sits under a comment
- * saying why it starts on the terminal and then asserts something else. A new
- * hit that is neither is the bug this tag exists to prevent.
- *
- * The tag is plain text in the title, not a Playwright `tag:` option, so it
- * shows up in every reporter and in failure output; `playwright test --grep
- * '\[pty\]'` (or `--grep-invert`) filters on it. Nothing in CI greps titles.
+ * Both are the same lesson: **a label on a test is a claim, and a claim nothing
+ * verifies rots silently.** If a future adapter brings a second transport back,
+ * tag by the ASSERTION and give the tag a witness.
  */
 export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> {
   const home = opts.home ?? fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-'));
@@ -681,12 +661,12 @@ export async function launchApp(opts: LaunchOptions = {}): Promise<LaunchedApp> 
   // reasons no failure message would ever mention. Same family as the landmines
   // above: scrub it, and let a spec that wants it pass it in `opts.env`.
   delete env.SWITCHBOARD_AUTOCLOSE;
-  // Same reasoning, and newly worth having since #381 made Direct the default
-  // and `SWITCHBOARD_TRANSPORT=pty` the documented way back to a terminal: a
-  // developer with it exported in their shell would silently run the whole
-  // suite on the other transport, and the two specs that assert the DEFAULT
-  // would fail on a 30s locator timeout with nothing pointing at the cause.
-  // Scrubbed here, before `opts.env`, so a spec that means it can still ask.
+  // `SWITCHBOARD_TRANSPORT` is scrubbed even though #952 deleted the variable.
+  //
+  // Not superstition: a developer with it exported from muscle memory now sets an
+  // env var the app ignores, and an ignored var in a launch environment is the
+  // kind of thing someone later "fixes" by wiring it back up. Removing it here
+  // keeps the launch environment a statement of what the app actually reads.
   delete env.SWITCHBOARD_TRANSPORT;
   // Teardown must never meet a modal (#185). Quitting with a session in
   // `working` / `needs-input` / `needs-permission` raises the busy-sessions
@@ -1532,6 +1512,36 @@ export async function launchDirectToolTurn(prefix: string): Promise<DirectToolTu
  * the throw, which turns that into a named failure instead of a locator
  * timeout thirty seconds later).
  */
+/**
+ * Stop a stimulus prompt from RENAMING the card (#952).
+ *
+ * ⚠️ READ THIS BEFORE ADDING ANOTHER PROMPT-DRIVEN FIXTURE. A session's first
+ * prompt fills a blank task label with itself (#883's provisional label: the owner's
+ * own prompt, cleaned, so a card is not empty through the whole first turn), and a
+ * card's §5.11 IDENTITY is its label when it has one. So a fixture that raises a
+ * permission with `!perm held.sh` renames the card to `!perm held.sh`, and every
+ * spec that asserts a toast, a digest row, an Events row or a rail row NAMES the
+ * session — by its folder — starts reading the verb back. It cost a red CI run:
+ * `quiet-hours.spec.ts` got `"!perm held.sh — needs permission"` where it wanted the
+ * folder.
+ *
+ * Pinning the label to the folder name first makes the expectation TRUE BY
+ * CONSTRUCTION rather than incidentally: it is what an unlabelled card already
+ * displays, so nothing on screen changes, and the provisional pass then finds a
+ * label present and leaves it alone (it only ever fills a blank).
+ *
+ * Only the `permissionHolder*` family needs this — they are the fixtures whose
+ * prompt is pure stimulus. A spec whose prompt is its SUBJECT wants the real
+ * behaviour and must not call this.
+ */
+async function pinLabelToFolder(a: LaunchedApp, title: string): Promise<void> {
+  await a.window.evaluate(async (t) => {
+    const cards = await window.switchboard.sessions.cards();
+    const card = cards.find((c) => c.title === t);
+    if (card) await window.switchboard.sessions.setTaskLabel(card.cardId, t);
+  }, title);
+}
+
 export function streamPrompter(
   a: LaunchedApp
 ): (title: string, text: string) => Promise<void> {
@@ -1549,11 +1559,115 @@ export function streamPrompter(
     );
     if (!accepted) {
       throw new Error(
-        `submitPrompt was refused for "${title}" — a PTY session has no typed-message ` +
-          `transport, so this card is not in Direct mode`
+        `submitPrompt was refused for "${title}" — main declined it, so this card has ` +
+          `no live session with a control channel`
       );
     }
   };
+}
+
+/**
+ * Put a session into `needs-permission` with a REAL held request (#952).
+ *
+ * ⚠️ THE ONE WAY TO PROVOKE A PERMISSION, and the reason it is a fixture rather
+ * than three lines repeated in twenty specs.
+ *
+ * Until #952 the suite did this by POSTing a `PreToolUse` hook through
+ * `hookPoster` and letting the hold path park it. That worked only because the
+ * shell-in-a-PTY fake declared no transport, so every test session came up as a
+ * PTY — which is not how a real session has worked since #381 made Direct the
+ * default. `PreToolUse` is no longer registered at all, and a permission
+ * `Notification` is dropped before it can move a badge (#313), so neither hook
+ * route can raise this state any more.
+ *
+ * `!perm` makes the fake CLI issue a real `can_use_tool` control request, which
+ * is what a permission IS on this transport: it carries a `decision_reason`, it
+ * is held by `StreamPermissions`, and answering it goes back to the CLI.
+ *
+ * WHAT CALLERS MUST KNOW, because it differs from the nudge it replaces: this
+ * request is genuinely HELD. It does not clear itself when the next status
+ * arrives — it has to be ANSWERED (click Allow/Deny, or `sessions:decidePermission`).
+ * A spec that used the Notification's transience to get back to a calm state
+ * needs to answer first. `hookPoster` is still the right tool for every OTHER
+ * status event: the hook listener remains the status channel, and `Stop` is still
+ * the done authority (S-06).
+ */
+export function permissionHolder(
+  a: LaunchedApp
+): (title: string, marker?: string) => Promise<void> {
+  const prompt = streamPrompter(a);
+  return async (title, marker = 'held.sh') => {
+    await pinLabelToFolder(a, title);
+    await prompt(title, `!perm ${marker}`);
+  };
+}
+
+/**
+ * Raise a BASH permission carrying `command` verbatim.
+ *
+ * For the claims that need a real command string in the held request: the OS
+ * toast's body is built from what main is holding, and batching groups two
+ * sessions that asked for the SAME thing. See `!permbash` in
+ * `fake-stream-protocol.ts`.
+ */
+export function permissionHolderBash(
+  a: LaunchedApp
+): (title: string, command: string) => Promise<void> {
+  const prompt = streamPrompter(a);
+  return async (title, command) => {
+    await pinLabelToFolder(a, title);
+    await prompt(title, `!permbash ${command}`);
+  };
+}
+
+/**
+ * Raise an EDIT permission, whose input has the old/new pair the bar diffs.
+ *
+ * `permissionHolder`'s sibling. `!perm` raises a `Write` — one `content` field,
+ * one pane — which is the right shape for "is a permission being held"; this is
+ * for the tests whose subject is what the bar SHOWS you before you approve it.
+ * See `!permedit` in `fake-stream-protocol.ts` for why the fake needed a second
+ * verb rather than a wider first one.
+ */
+export function permissionHolderEdit(
+  a: LaunchedApp
+): (title: string, marker?: string) => Promise<void> {
+  const prompt = streamPrompter(a);
+  return async (title, marker = 'one') => {
+    await pinLabelToFolder(a, title);
+    await prompt(title, `!permedit ${marker}`);
+  };
+}
+
+/**
+ * Answer every permission this app is holding, without going through the bar.
+ *
+ * The companion to `permissionHolder`, and needed because a held request does NOT
+ * clear itself: a spec that raises one and then asserts a CALM state has to
+ * answer it. Clicking Allow is the right thing when the bar is what is under
+ * test — but many specs raise a permission on a card that is not the focused
+ * one, where no bar is on screen to click, and their subject is a lamp, a count
+ * or a toast rather than the bar itself.
+ *
+ * Goes through `sessions:decidePermission`, which is the SAME path the bar's own
+ * button takes (`sessions/ipc.ts` hoists it so the bar, the batch band, the
+ * Events row and the OS toast all share one decision path) — so this is not a
+ * back door, it is the same door without the pixels.
+ *
+ * Returns how many it answered, so a caller can assert it really had something
+ * to answer rather than passing on an empty list.
+ */
+export async function answerHeldPermissions(
+  a: LaunchedApp,
+  decision: 'allow' | 'deny' = 'allow'
+): Promise<number> {
+  return a.window.evaluate(async (d) => {
+    const held = (await window.switchboard.sessions.pendingPermissions()) as Array<{
+      requestId: string;
+    }>;
+    for (const r of held) await window.switchboard.sessions.decidePermission(r.requestId, d);
+    return held.length;
+  }, decision);
 }
 
 /** `poll`, for a check that has to await something. */

@@ -18,7 +18,6 @@ import os from 'os';
 import { LogSink, createLogger } from './log/logger';
 import { registerBuiltinContributions } from './bootstrap';
 import { registry } from './extensibility';
-import { PtyService } from './pty/pty-service';
 import { StreamService } from './transport/stream-service';
 import { createDiagnosticLogger } from './transport/diagnostics';
 import { CpuHeartbeat } from './diagnostics/cpu-heartbeat';
@@ -28,8 +27,8 @@ import { registerReportIpc } from './diagnostics/report-ipc';
 import { EventLoopDelay } from './diagnostics/event-loop';
 import { PerfCapture } from './diagnostics/perf-capture';
 import type { PerfBatch } from '../shared/perf';
-import { parsePreferredTransport, TRANSPORT_ENV_VAR } from './transport/preferred-transport';
 import { StreamPermissions } from './sessions/stream-permissions';
+import type { PermissionRequest } from '../shared/ipc/permissions';
 import { StreamCommands } from './sessions/stream-commands';
 import { StreamModel } from './sessions/stream-model';
 import { StreamFeed } from './feed/stream-feed';
@@ -1233,28 +1232,26 @@ app
           ...workspace.listSessions().map((s) => s.identity.folder),
         ].some((f) => samePath(path.resolve(f), want));
       },
-      // ── the write half's two extra seams (#714) ──────────────────────────
+      // ── the write half's extra seam (#714) ───────────────────────────────
       //
-      // THE LIVE RECORD'S TRANSPORT, not the card's. `SessionCardWire.transport`
-      // is the transport the card's NEXT spawn will use, and #445 is the scar
-      // from reading one for the other: the two legitimately disagree while a
-      // transport change waits for a restart. Reconnect has to know what is
-      // hosting the session RIGHT NOW, because on `stream` there is no terminal
-      // for the CLI's `/mcp` picker to appear in and the honest answer is to
-      // send nothing at all.
+      // The folder is returned so a channel taking a `liveId` can check it
+      // against the one that passed the gate — otherwise the gate covers a folder
+      // while the action reaches any live session in the app.
       //
-      // The folder is returned so `mcp:reconnect` can check it against the one
-      // that passed the gate — otherwise the gate covers a folder while the
-      // action reaches any live session in the app.
+      // IT USED TO RETURN THE TRANSPORT TOO, and the reason is worth keeping even
+      // though the field is gone (#952): `mcp:reconnect` needed the LIVE record's
+      // transport, never `SessionCardWire.transport`, which is what the card's
+      // NEXT spawn will use. #445 is the scar from reading one for the other —
+      // the two legitimately disagree while a transport change waits for a
+      // restart. That distinction is the thing to remember if a future adapter
+      // brings a second transport back.
       liveSession: (liveId) => {
         const rec = manager.list().find((s) => s.id === liveId);
-        return rec ? { folder: rec.identity.folder, transport: rec.transport } : null;
+        return rec ? { folder: rec.identity.folder } : null;
       },
-      // The same `ptys.get(id)?.write(data)` `pty:input` uses — one door into a
-      // terminal, not two. `PtySession.write` is already a no-op on a dead PTY
-      // (S-01: writes to a closed pty raise async socket errors), so a session
-      // that exited between the click and the write costs nothing.
-      typeIntoPty: (liveId, data) => ptys.get(liveId)?.write(data),
+      // NO `typeIntoPty` (#952) — there is no PTY to type into, and the handler
+      // that used it (`mcp:reconnect`) is gone. `mcpReconnect` below is the
+      // control-channel verb that does the job properly.
       // The control channel, for the one question the config files cannot
       // answer (#729). `manager.mcpStatus` already refuses a session it does not
       // hold, so this is a straight pass-through rather than another guard.
@@ -1286,10 +1283,10 @@ app
 
     // session core (E2) bootstrap
     const stateDir = path.join(app.getPath('userData'), 'sessions');
-    const ptys = new PtyService();
-    // The stream transport, finally constructed (P2-E18-08a). Every item before
-    // this one drove StreamService from tests; nothing in the app had ever made
-    // one. It sits BESIDE PtyService, which is the whole shape of the migration.
+    // The stream transport, and since #952 the ONLY one. It was constructed
+    // beside `new PtyService()` from P2-E18-08a until this item deleted the
+    // other half — "beside" was the whole shape of the migration, and the
+    // migration is over.
     // ...with its diagnostics pointed at the log (#449). Every parse failure,
     // overlong line, stderr byte and dead-pipe write this transport noticed
     // between E18-03 and now was produced and dropped, because nothing ever
@@ -1299,9 +1296,12 @@ app
     const streams = new StreamService({
       onDiagnostic: createDiagnosticLogger(createLogger(sink, 'transport')),
     });
-    const manager = new SessionManager(registry, ptys, createLogger(sink, 'sessions'), stateDir, {
-      stream: streams,
-    });
+    const manager = new SessionManager(
+      registry,
+      streams,
+      createLogger(sink, 'sessions'),
+      stateDir
+    );
     // Last run's session state directories, taken NOW (#290) — before
     // `registerSessionIpc` (far below), which is the only door a session can be
     // spawned through, so no session of ours can exist and no directory on disk
@@ -1411,25 +1411,27 @@ app
       stateDir,
       manager,
       log: createLogger(sink, 'hooks'),
-      // hold policy (E10-03): gate by the session's own autonomy + folder
-      autonomyFor: (id) => manager.get(id)?.autonomy,
-      cwdFor: (id) => manager.get(id)?.identity.folder,
-      // a stream session's permissions ride can_use_tool, never a held hook
-      transportFor: (id) => manager.get(id)?.transport,
-      // shared with the stream channel — see its declaration above
-      hasLiveWindow,
+      // NOTHING ABOUT PERMISSIONS (#952). This used to pass `autonomyFor`,
+      // `cwdFor`, `transportFor` and `hasLiveWindow` for the hold policy. The
+      // listener is a STATUS channel now — `Stop` is the done authority (S-06) —
+      // and every permission rides `can_use_tool`.
     });
-    // BOTH channels, always (#319). The hook path has failed open on a lost
-    // renderer since P2-E15-09; the stream path had no equivalent at all, so a
-    // closed window left its `can_use_tool` parked with no deadline behind it.
+    // ONE CHANNEL NOW (#952), and the shape is deliberately kept.
     //
-    // Isolated from each other on purpose: this runs while the window is going
-    // away, both halves answer somebody who is BLOCKED, and a throw out of the
-    // first one must not be why the second never ran. Same argument as
-    // `tearDownStep`'s in sessions/ipc.ts.
+    // #319 made this run for BOTH channels: the hook path had failed open on a
+    // lost renderer since P2-E15-09, while the stream path had no equivalent at
+    // all, so a closed window left its `can_use_tool` parked with no deadline
+    // behind it. The hook half went with the transport; the stream half is the one
+    // that mattered, and it is still the one holding a blocked caller.
+    //
+    // The loop and the try/catch stay rather than collapsing to a bare call. This
+    // runs while the window is going away, on behalf of somebody who is BLOCKED,
+    // and #319's lesson was precisely that a throw out of one release must not be
+    // why another never happens. A second channel is one line here, and the day
+    // §5.3's adapter contract brings one, the isolation should already exist
+    // rather than be remembered.
     onRendererLost = (reason) => {
       for (const [what, release] of [
-        ['hooks', () => hooks.releaseHeld(reason)],
         ['stream', () => streamPermissions.releaseHeld(reason)],
       ] as const) {
         try {
@@ -1658,7 +1660,9 @@ app
       // whether the app was hosting twelve sessions or none at the time.
       counters: () => ({
         windows: BrowserWindow.getAllWindows().length,
-        ptys: ptys.list().length,
+        // No `ptys` counter since #952: there is one transport, and a column
+        // that is structurally always 0 in a capture the owner is asked to read
+        // is worse than no column. `streams` is the session count now.
         streams: streams.list().length,
         // #719, 2026-09-22: 122 `node.exe` sat on the laptop at idle and nobody
         // could say whose they were. `children` is what WE have running, by
@@ -1891,26 +1895,20 @@ app
     });
     // A verdict from ANY surface — the approval bar, the Events panel's inline
     // buttons, the batch band, a session teardown releasing its holds, or the
-    // toast itself — withdraws the toast. Both routers, because a permission
-    // rides whichever transport its session is on and the toast cannot tell.
-    hooks.onPermissionResolved((requestId) => permissionToasts.withdraw(requestId));
+    // toast itself — withdraws the toast. ONE router since #952: it used to be
+    // subscribed on both, because a permission rode whichever transport its
+    // session was on and the toast could not tell. There is one transport, so
+    // there is one place a verdict can come from.
     streamPermissions.onPermissionResolved((requestId) =>
       permissionToasts.withdraw(requestId)
     );
 
     const ruleActions = new RuleActionRegistry(rulesLog);
     ruleActions.register(ACTION_OS_TOAST, (action, ctx) => {
-      // Whether the OS can display a notification at all is an ENVIRONMENT
-      // fact, not a decision this rule made: a Linux box with no notification
-      // daemon (a CI container, say) reports `false` here forever. So the two
-      // facts are logged separately — the rule fired, and this is whether the
-      // desktop took it. A silent early return was the one outcome that could
-      // not be debugged, and "why didn't it pop?" is a real support question.
-      const shown = Notification.isSupported();
       // P2-E14-04. The request this toast is about, if it is about one at all.
-      // Resolved HERE rather than carried on the rule, because whether a
+      // Resolved at SHOW TIME rather than carried on the rule, because whether a
       // permission is still held is a fact about right now: between the event
-      // and this line the bar may already have answered it, and a toast
+      // and the toast the bar may already have answered it, and a toast
       // offering Allow for a question nobody is holding is worse than no toast.
       //
       // The rule can opt OUT (`buttons: false`) and nothing else about the
@@ -1920,10 +1918,18 @@ app
       // TWO toasts for one permission. Opt-out also happens to be the right
       // default: there is no sane rule that says "tell me, but do not let me
       // answer".
-      const req =
-        ctx.event.kind === 'needs-permission' && action.buttons !== false
-          ? (sessionIpcRef?.pendingPermissionFor(ctx.event.sessionId) ?? null)
-          : null;
+      const wantsRequest = ctx.event.kind === 'needs-permission' && action.buttons !== false;
+      const heldRequest = (): PermissionRequest | null =>
+        wantsRequest ? (sessionIpcRef?.pendingPermissionFor(ctx.event.sessionId) ?? null) : null;
+
+      const emit = (req: PermissionRequest | null): void => {
+      // Whether the OS can display a notification at all is an ENVIRONMENT
+      // fact, not a decision this rule made: a Linux box with no notification
+      // daemon (a CI container, say) reports `false` here forever. So the two
+      // facts are logged separately — the rule fired, and this is whether the
+      // desktop took it. A silent early return was the one outcome that could
+      // not be debugged, and "why didn't it pop?" is a real support question.
+      const shown = Notification.isSupported();
       // A QUESTION gets no buttons (#563). `answerableFromToast` carries the
       // measurement: an allow with no answers is read by the CLI as "the user
       // did not answer", so Allow here would silently discard the question
@@ -1979,6 +1985,32 @@ app
         buttons: decidable ? DECIDE_BUTTONS.length : 0,
         requestId: req?.requestId ?? '',
       });
+      };
+
+      // ⚠️ ONE TURN LATER WHEN THE JOIN WOULD BE EMPTY, AND THE ORDER IS THE
+      // REASON (#952, found by porting `permission-toast.spec.ts` off the hook path).
+      //
+      // The pump applies the status event and THEN runs its message listeners
+      // (`session-manager.ts`): `streamStatusEvent` maps `can_use_tool` to
+      // `permission-held`, which walks the card to `needs-permission`, which fires
+      // the rules — all before `StreamPermissions.offer()` has registered the
+      // request. So `pendingPermissionFor` answers null and the toast goes out with
+      // no request attached: no Allow/Deny buttons, and a body click that cannot
+      // raise the question. That is §5.9's safety half failing silently, and on the
+      // deleted hook path it could not happen, because the hold was registered
+      // before the notification that announced it.
+      //
+      // Deferring the RESOLUTION is the fix rather than reordering the pump.
+      // `StreamPermissions` documents its dependence on `permission-held` having
+      // been applied already — its plan-mode refusal and both deny branches END
+      // that state, and if `apply` ran after them the badge would stick. So the
+      // pump keeps its order and the toast stops reading too early.
+      //
+      // Deferred ONLY when the answer would be null, so the ordinary case is
+      // unchanged and a permission answered before the toast is built still
+      // produces a buttonless toast rather than a stale one.
+      if (wantsRequest && !heldRequest()) setImmediate(() => emit(heldRequest()));
+      else emit(heldRequest());
     });
     // ── the two channels that leave the machine (P2-E14-06, §5.9 + §5.29) ──
     //
@@ -2365,11 +2397,11 @@ app
         heldCount: workspace.countSuppressed(),
       };
     });
-    broker.handle('settings:getAutoTrust', () => workspace.getAutoTrust());
-    broker.handle('settings:setAutoTrust', (_e, on: boolean) => {
-      workspace.setAutoTrust(on === true);
-      return workspace.getAutoTrust();
-    });
+    // NO `settings:*AutoTrust` (#952). The pair read and wrote the folder-trust
+    // setting for the title-bar chip. Both the chip and the setting's only
+    // consumer — the `~/.claude.json` pre-write, which ran for PTY spawns alone —
+    // went with the transport, so an open channel over an unread value would have
+    // been an invitation to wire it back up.
     // §5.5 Level 3, experimental and off by default (P2-E11-12). `=== true` for
     // the reason every setter on this file uses it: an absent or non-boolean
     // argument must read as OFF rather than as truthy — the `mcp_toggle` hazard
@@ -2466,7 +2498,6 @@ app
     broker.handle('dispatch:inject', (_e, reviewer: unknown) => dispatchResults.inject(reviewer));
     const sessionIpc: SessionIpcHandle = registerSessionIpc({
       manager,
-      ptys,
       streamPermissions,
       streamCommands,
       streamModel,
@@ -2487,7 +2518,6 @@ app
         const hit = popoutWindows.find((p) => p.groupId === groupId);
         return hit && !hit.win.isDestroyed() ? hit.win : null;
       },
-      autoTrust: () => workspace.getAutoTrust(),
       autoLabels: () => workspace.getAutoLabels(),
       setAutoLabels: (on) => workspace.setAutoLabels(on),
       // AI-written task labels (#758). A thunk for `experimentalFork`'s reason
@@ -2540,11 +2570,11 @@ app
           // commands vanished" should not sit at info among routine chatter.
           (msg) => log.app.warn(msg)
         ),
-      // The app-wide override, below a card's own choice and above the default
-      // (#381). Read per call rather than once at boot; the parse itself, and
-      // the reason a typo has to warn, live in `transport/preferred-transport.ts`.
-      preferredTransport: () =>
-        parsePreferredTransport(process.env[TRANSPORT_ENV_VAR], log.app.warn),
+      // NO `preferredTransport` (#952). `SWITCHBOARD_TRANSPORT` was the app-wide
+      // override — below a card's own choice, above the default (#381) — and it
+      // was the last route to the PTY after #873 took the ⋯ menu away. With one
+      // transport there is nothing for it to select, so the variable and its
+      // parser are gone rather than silently ignored.
       // the sweep reattached a card to a conversation nobody asked it to (#539)
       onHistoryRepair: (repair) => historyRepairs.add(repair),
       // The composer's `@Name` at send (P2-E11-08) — the SAME `sessionQueries`
@@ -2596,7 +2626,6 @@ app
       // A toast offering Allow for a session that is being torn down is a
       // button that can only disappoint. Take them down with the app.
       permissionToasts.withdrawAll();
-      ptys.killAll();
       streams.killAll();
       hooks.stop();
       // Every bus endpoint down, every token file gone (P2-E11-03). The tokens

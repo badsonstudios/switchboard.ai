@@ -13,7 +13,6 @@ import type { ConversationHistory, ConversationHistoryRequest } from '../shared/
 import type { PromptAttachment } from '../shared/prompt-attachments';
 import type { TaskLabelSize } from '../shared/task-label-size';
 import type { SiblingAck, SiblingMessage } from '../shared/sibling-message';
-import type { PtyAttachment, PtyChunk, PtySnapshot } from '../shared/ipc/pty';
 import type {
   BindingSnapshot,
   CliCost,
@@ -29,7 +28,6 @@ import type {
   McpInventoryWire,
   McpStatusWire,
   McpMutationResult,
-  McpReconnectResult,
   McpScope,
 } from '../shared/mcp';
 import type {
@@ -45,7 +43,6 @@ import type {
   SessionSummary,
   StatusChange,
 } from '../shared/sessions';
-import type { TransportKind } from '../shared/transport';
 import type {
   ReportDraft,
   ReportResult,
@@ -406,17 +403,13 @@ const api = {
       ipcRenderer.invoke('sessions:setTaskLabel', cardId, label),
     setAutonomy: (cardId: string, autonomy: AutonomyMode): Promise<void> =>
       ipcRenderer.invoke('sessions:setAutonomy', cardId, autonomy),
-    /**
-     * Choose a card's transport (P2-E18-08b). Applies to the NEXT spawn, like
-     * autonomy: the CLI cannot change either on a live session. `pending` is
-     * true when a session is running under this card right now, so the UI can
-     * say the change is queued rather than implying it took effect.
-     */
-    setTransport: (
-      cardId: string,
-      transport: TransportKind
-    ): Promise<{ ok: boolean; reason?: string; pending?: boolean }> =>
-      ipcRenderer.invoke('sessions:setTransport', cardId, transport),
+    // NO `setTransport` (#952). It chose a card's transport (P2-E18-08b) and
+    // applied to the NEXT spawn, like autonomy — the CLI cannot change either on a
+    // live session — reporting `pending` when a session was running under the card
+    // so the UI could say the change was queued rather than implying it took
+    // effect. #873 removed the ⋯ menu item that called it; this item removed the
+    // other value it could carry. `sessions/ipc.ts` keeps the parts of its design
+    // that still apply elsewhere.
     /**
      * Rename a LIVE session by its live id.
      *
@@ -781,20 +774,18 @@ const api = {
      *  per-server verb (probed twice, 2026-08-25 and 2026-08-26). */
     resetApprovals: (folder: string): Promise<McpMutationResult> =>
       ipcRenderer.invoke('mcp:resetApprovals', folder),
-    /**
-     * Type `/mcp` into a live session — and MAIN decides whether that means
-     * anything, which is the entire reason this is not a `sessions.submitPrompt`
-     * call in the renderer.
-     *
-     * On the Terminal transport the CLI's picker opens in a terminal the user
-     * is looking at. On Direct there is no terminal, so the same keystrokes
-     * open a picker nobody can see and the session sits there — the dead end
-     * #632's `/mcp` intercept exists to remove. Main answers
-     * `restart-required` and sends NOTHING, rather than reinstating that bug
-     * behind a different button.
-     */
-    reconnect: (folder: string, liveId: string): Promise<McpReconnectResult> =>
-      ipcRenderer.invoke('mcp:reconnect', folder, liveId),
+    // NO `reconnect` (#952). It typed `/mcp` into a live session, and MAIN decided
+    // whether that meant anything — which was the entire reason it was not a
+    // `sessions.submitPrompt` call here. On the Terminal transport the CLI's picker
+    // opened in a terminal the user was looking at; on Direct there is none, so the
+    // same keystrokes opened a picker nobody could see and the session sat there,
+    // the dead end #632's `/mcp` intercept exists to remove. Main answered
+    // `restart-required` and sent nothing.
+    //
+    // With the Terminal transport deleted that was the only possible answer, so the
+    // channel went and the dialog says `restart-required` itself. `reconnectServer`
+    // below is the verb that actually reconnects a server, over the control channel,
+    // with no terminal and no restart.
     /**
      * Turn one MCP server on or off (#729 PR 2) — the verb #632 and #714 both
      * concluded did not exist. It does; it is just not a `claude mcp`
@@ -850,8 +841,7 @@ const api = {
       ipcRenderer.invoke('mcp:clearAuth', folder, liveId, name),
   },
   settings: {
-    getAutoTrust: (): Promise<boolean> => ipcRenderer.invoke('settings:getAutoTrust'),
-    setAutoTrust: (on: boolean): Promise<boolean> => ipcRenderer.invoke('settings:setAutoTrust', on),
+    // `getAutoTrust` / `setAutoTrust` went with the folder-trust chip (#952).
     /** Fill blank task labels from the CLI's own conversation title (P2-E7-06).
      *  Off hides every auto label at once and drops toast text back to the
      *  session title — the screen-share switch (§5.11). */
@@ -1260,25 +1250,12 @@ const api = {
       return () => ipcRenderer.removeListener('sessions:feedReset', h);
     },
   },
-  pty: {
-    // resolves with { epoch, snapshot } — the epoch tells the renderer which
-    // buffered chunks are newer than the snapshot (#117, shared/ipc/pty.ts)
-    attach: (id: string): Promise<PtyAttachment | null> => ipcRenderer.invoke('pty:attach', id),
-    // the ring buffer, READ — no epoch, no feed, nothing taken away from the
-    // pane on screen (#517). This is what §5.31's Terminal group searches when
-    // the tab it belongs to has never been opened.
-    snapshot: (id: string): Promise<PtySnapshot | null> => ipcRenderer.invoke('pty:snapshot', id),
-    detach: (id: string): void => ipcRenderer.send('pty:detach', id),
-    input: (id: string, data: string): void => ipcRenderer.send('pty:input', id, data),
-    resize: (id: string, cols: number, rows: number): void =>
-      ipcRenderer.send('pty:resize', id, cols, rows),
-    onData: (id: string, cb: (chunk: PtyChunk) => void): (() => void) => {
-      const channel = `pty:data:${id}`;
-      const h = (_e: unknown, chunk: PtyChunk) => cb(chunk);
-      ipcRenderer.on(channel, h);
-      return () => ipcRenderer.removeListener(channel, h);
-    },
-  },
+  // NO `pty` NAMESPACE (#952). It carried `attach`/`snapshot`/`detach`/`input`/
+  // `resize`/`onData` and the #117 epoch protocol, and the whole bridge went
+  // with the transport — there is no PTY in main to attach to. Nothing replaces
+  // it: a Direct session's output arrives as typed feed messages
+  // (`sessions:feedEvent`), not as bytes, so the renderer never needs a byte
+  // channel again.
 };
 
 contextBridge.exposeInMainWorld('switchboard', api);

@@ -13,23 +13,18 @@
 // that has to be made in a real window.
 import { test, expect, Page } from '@playwright/test';
 import path from 'path';
-import { hookPoster, launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';
+import {
+  launchApp,
+  LaunchedApp,
+  permissionHolderBash,
+  tempProjectFolder,
+} from './fixtures/app';
 
-/** The hook listener's answer to a PreToolUse POST, as `hook-listener.ts`
- *  writes it. Absent when the request was not held. */
-interface HookResponse {
-  hookSpecificOutput?: {
-    hookEventName: string;
-    permissionDecision: 'allow' | 'deny';
-    permissionDecisionReason: string;
-  };
-}
-
-function verdict(body: string): 'allow' | 'deny' {
-  const parsed = JSON.parse(body) as HookResponse;
-  if (!parsed.hookSpecificOutput) throw new Error(`request was never held: ${body}`);
-  return parsed.hookSpecificOutput.permissionDecision;
-}
+// `HookResponse` and `verdict()` went with the parked hook response (#952). They
+// read a decision out of the HTTP body the hold path kept open. What the tests
+// below assert instead is the state that decision produces — the card goes, the
+// ledger empties, or the other request is still held — which is the claim a user
+// could actually check.
 
 /** the rail row for a session, by title — the house locator */
 const row = (w: Page, title: string) =>
@@ -64,11 +59,12 @@ async function answer(w: Page, requestId: string, decision: 'allow' | 'deny'): P
   );
 }
 
-const bash = (command: string): Record<string, unknown> => ({
-  hook_event_name: 'PreToolUse',
-  tool_name: 'Bash',
-  tool_input: { command },
-});
+// The `bash()` hook BODY that used to go through `hookPoster` is gone (#952).
+// It was POSTed unawaited so the parked HTTP response could be read back as the
+// verdict; there is no hook to park, because permissions arrive as `can_use_tool`
+// and are answered over the control channel. The COMMAND still has to be real and
+// identical across both sessions — that is what batching groups on — so
+// `permissionHolderBash` carries it verbatim.
 
 // ONE app for the whole file, and `serial` so a failure stops the block rather
 // than cascading through the tests behind it.
@@ -84,7 +80,7 @@ test.describe.configure({ mode: 'serial' });
 
 test.describe('batch permission handling (P2-E9-11)', () => {
   let a: LaunchedApp;
-  let post: (title: string, body: Record<string, unknown>) => Promise<string>;
+  let ask: (title: string, command: string) => Promise<void>;
   let one: string;
   let two: string;
 
@@ -95,9 +91,9 @@ test.describe('batch permission handling (P2-E9-11)', () => {
     a = await launchApp({ seedFolder: folder });
     await expect(row(a.window, one)).toBeVisible({ timeout: 25_000 });
     two = await addSession(a);
-    // AFTER both sessions exist: the poster snapshots the token map and the
-    // card list once
-    post = await hookPoster(a, 2);
+    // AFTER both sessions exist: the holder resolves a live id per call, so it
+    // needs both cards to be there
+    ask = permissionHolderBash(a);
   });
 
   // A held request left over from a failed test would park its CLI and,
@@ -113,8 +109,8 @@ test.describe('batch permission handling (P2-E9-11)', () => {
     const w = a.window;
     // both CLIs park. Deliberately not awaited: a held POST does not answer
     // until the UI decides, which is the whole mechanism.
-    const first = post(one, bash('npm test'));
-    const second = post(two, bash('npm test'));
+    await ask(one, 'npm test');
+    await ask(two, 'npm test');
 
     const card = w.getByTestId('batch-approval');
     await expect(card).toBeVisible({ timeout: 15_000 });
@@ -130,43 +126,42 @@ test.describe('batch permission handling (P2-E9-11)', () => {
     // ONE question, ONE place to answer it: the mounted card's own review bar
     // does not draw the same request a second time
     await expect(w.getByText('Allow Bash?')).toHaveCount(0);
-    // …and it does not fall through to "answer it in the terminal" either
-    // (#125's bar): the question is answerable, just not from the card
-    await expect(w.locator('[data-handoff="permission"]')).toHaveCount(0);
+    // The line under this one used to add: "…and it does not fall through to
+    // 'answer it in the terminal' either (#125's bar)". That bar is gone with the
+    // transport (#952), so the assertion could no longer fail and is removed rather
+    // than left looking like cover. The claim above it — ONE question, ONE place to
+    // answer it — is the one that was ever at risk.
 
     await w.getByTestId('batch-allow-all').click();
 
     // one click, two real hook verdicts, down two separate parked responses
-    expect(verdict(await first)).toBe('allow');
-    expect(verdict(await second)).toBe('allow');
     await expect(card).toHaveCount(0);
     expect(await heldIds(w)).toEqual([]);
   });
 
   test('declining ONE leaves the other held', async () => {
     const w = a.window;
-    const first = post(one, bash('rm -rf build'));
-    const second = post(two, bash('rm -rf build'));
+    await ask(one, 'rm -rf build');
+    await ask(two, 'rm -rf build');
 
     const card = w.getByTestId('batch-approval');
     await expect(card).toBeVisible({ timeout: 15_000 });
 
     // the cherry-pick half: this session, and only this session
     await w.locator(`[data-batch-member][title="${one}"] [data-batch-deny]`).click();
-    expect(verdict(await first)).toBe('deny');
 
     // the group is down to one session, so it dissolves — the question does
     // NOT: main is still holding it, and the other CLI is still blocked
     await expect(card).toHaveCount(0);
     await expect.poll(() => heldIds(w)).toHaveLength(1);
 
-    // and nothing answered it behind the user's back. `Promise.race` against a
-    // timer, because "this promise has not settled" is the actual claim.
-    const settled = await Promise.race([
-      second.then(() => 'settled' as const),
-      new Promise<'still held'>((r) => setTimeout(() => r('still held'), 750)),
-    ]);
-    expect(settled).toBe('still held');
+    // and nothing answered it behind the user's back. This was a `Promise.race`
+    // against a timer, because "the parked hook response has not settled" was the
+    // claim; there is no parked response, so the claim is made where it is now
+    // observable — the request is STILL in main's ledger after a beat long enough
+    // for a stray answer to have landed.
+    await w.waitForTimeout(750);
+    await expect.poll(() => heldIds(w)).toHaveLength(1);
 
     // THE INVARIANT the whole suppression rests on: a question the group let go
     // of is back on its own session's bar. Focused explicitly rather than
@@ -177,7 +172,6 @@ test.describe('batch permission handling (P2-E9-11)', () => {
 
     // and answered through the UI, so the loop closes where a user would close it
     await w.getByRole('button', { name: 'Allow', exact: true }).click();
-    expect(verdict(await second)).toBe('allow');
   });
 
   test('answering an UNGROUPED request never disturbs a grouped sibling', async () => {
@@ -188,9 +182,9 @@ test.describe('batch permission handling (P2-E9-11)', () => {
     // again — invisible everywhere the moment the group dissolves.
     test.setTimeout(90_000); // three held requests and three card switches
     const w = a.window;
-    const grouped = post(one, bash('npm test')); // …joins the group
-    const alone = post(one, bash('git status')); // …stays on session one's bar
-    const sibling = post(two, bash('npm test')); // …the other half of the group
+    await ask(one, 'npm test'); // …joins the group
+    await ask(one, 'git status'); // …stays on session one's bar
+    await ask(two, 'npm test'); // …the other half of the group
 
     await expect(w.getByTestId('batch-approval')).toBeVisible({ timeout: 15_000 });
     await expect.poll(() => heldIds(w)).toHaveLength(3);
@@ -204,20 +198,17 @@ test.describe('batch permission handling (P2-E9-11)', () => {
     // `exact`: the grouped card's own Deny buttons are named "Deny in <session>",
     // so only the card bar's plain one matches
     await w.getByRole('button', { name: 'Deny', exact: true }).click();
-    expect(verdict(await alone)).toBe('deny');
 
     // the group is untouched, and now dissolving it must hand session one's
     // grouped request back to a card that still knows about it
     await expect(w.getByTestId('batch-approval')).toBeVisible();
     await w.locator(`[data-batch-member][title="${two}"] [data-batch-deny]`).click();
-    expect(verdict(await sibling)).toBe('deny');
 
     await expect(w.getByTestId('batch-approval')).toHaveCount(0);
     await row(w, one).click();
     await expect(w.getByText('Allow Bash?')).toBeVisible({ timeout: 10_000 });
     await expect(w.getByText('npm test').first()).toBeVisible();
     await w.getByRole('button', { name: 'Allow', exact: true }).click();
-    expect(verdict(await grouped)).toBe('allow');
   });
 
   test('two sessions asking DIFFERENT things do not group', async () => {
@@ -225,8 +216,8 @@ test.describe('batch permission handling (P2-E9-11)', () => {
     // shape, different value — over-grouping here is a user clicking one Allow
     // and authorising something they never read.
     const w = a.window;
-    const first = post(one, bash('rm -rf build'));
-    const second = post(two, bash('rm -rf /'));
+    await ask(one, 'rm -rf build');
+    await ask(two, 'rm -rf /');
 
     // Wait for the RENDERER to have both, not just main. `heldIds` asks main,
     // which can be holding two while the window has processed neither push —
@@ -242,7 +233,5 @@ test.describe('batch permission handling (P2-E9-11)', () => {
     await expect(w.getByTestId('batch-approval')).toHaveCount(0);
 
     for (const id of await heldIds(w)) await answer(w, id, 'deny');
-    expect(verdict(await first)).toBe('deny');
-    expect(verdict(await second)).toBe('deny');
   });
 });

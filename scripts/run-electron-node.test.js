@@ -1,28 +1,21 @@
 // #176 — five `check:*` scripts run through run-electron-node.js, so its exit
 // code IS their exit code. That contract used to be one `spawnSync` line; it is
-// now an async spawn with a piped, filtered stderr, which is a lot more surface
-// for a check to start silently passing on. These tests drive `runFiltered`
-// with plain `node` (NOT the Electron binary — CI's unit job installs no
-// Electron system libs on Linux) so the plumbing is covered on all three OSes.
+// now an async spawn with a piped stderr, which is a lot more surface for a
+// check to start silently passing on. These tests drive `runFiltered` with plain
+// `node` (NOT the Electron binary — CI's unit job installs no Electron system
+// libs on Linux) so the plumbing is covered on all three OSes.
+//
+// #952 REMOVED THE FILTERING, NOT THE CONTRACT. The two cases that pinned the
+// node-pty `AttachConsole` dump are gone with node-pty itself. Everything else
+// here survives unchanged, because it was never about the filter: an exit code,
+// a missing binary, the last bytes of a child that exits immediately, and a
+// grandchild holding the write end open are properties of spawning, and they are
+// what the five checks actually ride on.
 import { describe, it, expect } from 'vitest';
 import { execPath } from 'process';
 import { runFiltered } from './run-electron-node.js';
 
-/** verbatim from a `npm run check:pty` run on Windows, as a JS string literal */
-const DUMP_LINES = [
-  'C:\\repo\\node_modules\\node-pty\\lib\\conpty_console_list_agent.js:13',
-  'var consoleProcessList = getConsoleProcessList(shellPid);',
-  '                         ^',
-  '',
-  'Error: AttachConsole failed',
-  '    at Object.<anonymous> (C:\\repo\\node_modules\\node-pty\\lib\\conpty_console_list_agent.js:13:26)',
-  '    at Module._load (node:internal/modules/cjs/loader:1403:12)',
-  '',
-  'Node.js v24.18.0',
-  '',
-];
-
-/** run a snippet under plain node, capturing what the filter lets through */
+/** run a snippet under plain node, capturing what reaches our stderr sink */
 async function run(source, opts = {}) {
   let err = '';
   const code = await runFiltered(execPath, ['-e', source], {
@@ -54,27 +47,26 @@ describe('runFiltered — the contract five check:* scripts exit through (#176)'
     expect(code).toBe(1);
   });
 
-  it('drops the benign dump, keeps the real error, and says what it dropped', async () => {
+  it('forwards stderr verbatim — nothing is added, nothing is swallowed', async () => {
+    // This is what replaced the two filter tests (#952): the pipe's remaining
+    // job is to be transparent, and a filter re-introduced by accident would
+    // fail here rather than silently eat a real error.
     const r = await run(
-      `process.stderr.write(${JSON.stringify(DUMP_LINES.join('\n'))});` +
-        "process.stderr.write('Error: the thing that actually broke\\n');" +
-        'process.exit(1)'
+      "process.stderr.write('Error: the thing that actually broke\\n');" + 'process.exit(1)'
     );
     expect(r.code).toBe(1);
-    expect(r.err).not.toContain('conpty_console_list_agent');
-    expect(r.err).toContain('Error: the thing that actually broke');
-    expect(r.err).toContain('suppressed 1 known-benign');
+    expect(r.err).toBe('Error: the thing that actually broke\n');
   });
 
-  it('emits no note when there was nothing to suppress', async () => {
+  it('adds no note to an ordinary warning', async () => {
     const r = await run("process.stderr.write('just a normal warning\\n')");
     expect(r.err).toBe('just a normal warning\n');
   });
 
-  it('rawStderr restores plain inheritance — no filtering, no note', async () => {
-    // the escape hatch: stderr is inherited, so it bypasses the filter entirely
-    // and nothing reaches our `write` sink — including the note. (One marker
-    // line, not a whole dump: it lands in this run's real stderr.)
+  it('rawStderr restores plain inheritance — nothing reaches our sink', async () => {
+    // the escape hatch: stderr is inherited, so it bypasses our pipe entirely
+    // and nothing reaches our `write` sink. (One marker line: it lands in this
+    // run's real stderr.)
     const r = await run("process.stderr.write('#176 raw passthrough\\n'); process.exit(7)", {
       rawStderr: true,
     });

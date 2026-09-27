@@ -408,11 +408,15 @@ describe('service-level diagnostics (#449)', () => {
   });
 });
 
-// P1's `pty/lifecycle-check.ts` is a separate Electron entry point because
-// node-pty is a NATIVE module and cannot load under vitest — it needs
-// `electron --run-as-node`. StreamService has no native dependency
-// (`child_process` is core), so the same coverage runs here instead, on all
-// three CI legs rather than only where someone remembers to invoke a script.
+// THE COVERAGE THAT USED TO NEED ITS OWN ELECTRON ENTRY POINT, and now does not.
+//
+// P1's `pty/lifecycle-check.ts` was a separate `electron --run-as-node` script
+// with its own npm script and its own CI job, purely because node-pty was a
+// NATIVE module and could not load under vitest. `StreamService` has no native
+// dependency (`child_process` is core), so the same concurrency coverage runs
+// HERE, on all three CI legs, rather than only where someone remembers to invoke
+// a script. #952 deleted the script, the job and the module — this is what
+// replaced it, and it had already been doing the work.
 describe('concurrency — the shape the product actually runs (P2-E18-03)', () => {
   it('12 concurrent sessions each frame their own stream, then all exit', async () => {
     const N = 12;

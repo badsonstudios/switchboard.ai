@@ -310,7 +310,7 @@ Work items:
 - **P2-E15-04 · Capability-brokered preload bridge — M (§5.23, §5.29,
   AR-P0-2).** *(depends: 02)* The preload's ~60 hand-maintained methods become
   capability-TAGGED: one declared capability string per IPC channel
-  (`sessions.read`, `sessions.spawn`, `pty.write`, `git.read`,
+  (`sessions.read`, `sessions.spawn`, `sessions.write`, `git.read`,
   `settings.write`, …), and a single main-side choke point that checks the
   caller's declared set before dispatch. First-party declares everything, so
   this is a no-op at runtime today — that is the point: the enforcement POINT

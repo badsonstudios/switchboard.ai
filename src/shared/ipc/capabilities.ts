@@ -22,8 +22,10 @@ export const CAPABILITIES = [
   'sessions.read', // list cards, statuses, pending permissions
   'sessions.spawn', // create / resume / close a session — starts processes
   'sessions.write', // rename, task label, autonomy, permission decisions
-  'pty.read', // attach to a terminal's output stream
-  'pty.write', // send keystrokes to a running CLI
+  // `pty.read` and `pty.write` went with the PTY transport (#952). They granted
+  // attach-to-output-stream and send-keystrokes respectively, and there is no
+  // terminal to do either to. A future adapter that hosts a byte-oriented CLI
+  // would reintroduce them here, with the channels they guard.
   'transcripts.read',
   'git.read',
   'events.read',
@@ -287,7 +289,6 @@ export const CHANNEL_CAPABILITIES = {
   'mcp:add': 'mcp.write',
   'mcp:remove': 'mcp.write',
   'mcp:resetApprovals': 'mcp.write',
-  'mcp:reconnect': 'mcp.write',
   'mcp:toggle': 'mcp.write',
   'mcp:reconnectServer': 'mcp.write',
   'mcp:authenticate': 'mcp.write',
@@ -333,23 +334,13 @@ export const CHANNEL_CAPABILITIES = {
   // leaving an attention event silent. It reads nothing and changes nothing;
   // `settings.read` is the narrowest tag that fits.
   'audio:failed': 'settings.read',
-  'pty:attach': 'pty.read',
-  'pty:detach': 'pty.read',
-  // A READ of the scrollback with no stream attached to it (#517). Same
-  // capability as `pty:attach` and deliberately not a narrower one: it hands
-  // back the same bytes, so a caller holding it can read everything the CLI
-  // printed. What it cannot do is take the live feed away from the pane on
-  // screen, which is the reason it exists as its own channel.
-  'pty:snapshot': 'pty.read',
-  'pty:input': 'pty.write',
-  'pty:resize': 'pty.write',
+  // The five `pty:*` channels went with the transport (#952).
   'sessions:allowAllSession': 'sessions.write',
   'sessions:cards': 'sessions.read',
   'sessions:closeCard': 'sessions.spawn',
   'sessions:create': 'sessions.spawn',
   'sessions:decidePermission': 'sessions.write',
   'sessions:submitPrompt': 'sessions.write',
-  'sessions:setTransport': 'sessions.write',
   'sessions:interrupt': 'sessions.write',
   // The control channel (#721). `listModels` READS — it asks the CLI what it
   // would accept and changes nothing — while `setModel` changes what the
@@ -424,8 +415,6 @@ export const CHANNEL_CAPABILITIES = {
   // this channel can start, reach or read a session.
   'settings:getTaskLabelSize': 'settings.read',
   'settings:setTaskLabelSize': 'settings.write',
-  'settings:getAutoTrust': 'settings.read',
-  'settings:setAutoTrust': 'settings.write',
   // §5.5 Level 3, behind its experimental flag (P2-E11-12). An ordinary
   // preference read/write pair — the flag only decides whether a SURFACE is
   // drawn; nothing here can start, fork or reach a session.
@@ -547,17 +536,28 @@ export const CHANNEL_CAPABILITIES = {
 /**
  * DYNAMIC channel families — one channel per session, so they cannot be listed.
  *
- * `pty:data:<sessionId>` is the terminal's output stream: main opens one per
- * attached pane. A map of fixed names would have missed it entirely, which is
- * the kind of gap that makes a security check worth less than it looks.
+ * ⚠️ EMPTY SINCE #952, AND KEPT ON PURPOSE. The only member was
+ * `pty:data:<sessionId>`, the terminal's output stream, with one channel per
+ * attached pane — and the REASON it was here is the part worth keeping: a map of
+ * fixed names would have missed it entirely, which is the kind of gap that makes
+ * a security check worth less than it looks.
+ *
+ * The next per-session channel family will have the same shape and the same
+ * trap. Deleting this would mean rediscovering it.
  */
-export const CHANNEL_PREFIX_CAPABILITIES = {
-  'pty:data:': 'pty.read',
-} as const satisfies Record<string, Capability>;
+export const CHANNEL_PREFIX_CAPABILITIES = {} as const satisfies Record<string, Capability>;
 
 export type StaticChannel = keyof typeof CHANNEL_CAPABILITIES;
-export type DynamicChannel = `pty:data:${string}`;
-export type Channel = StaticChannel | DynamicChannel;
+/**
+ * No dynamic families today — see `CHANNEL_PREFIX_CAPABILITIES` (#952).
+ *
+ * `never` rather than a deleted type: `Channel` below is the app-wide vocabulary
+ * and a family added later belongs in this union, not in a new one. It is not a
+ * member of `Channel` while it is `never`, which is why that union names only
+ * the static half.
+ */
+export type DynamicChannel = never;
+export type Channel = StaticChannel;
 
 // Maps, not object lookups. `CHANNEL_CAPABILITIES['constructor']` returns the
 // Object constructor — truthy, not a Capability, and it would sail straight

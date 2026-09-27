@@ -39,7 +39,7 @@
 // away mid-sentence while you are typing.
 import { test, expect, ElectronApplication, Page } from '@playwright/test';
 import path from 'path';
-import { hookPoster, launchApp, LaunchedApp, tempProjectFolder } from './fixtures/app';
+import { launchApp, LaunchedApp, tempProjectFolder, permissionHolder } from './fixtures/app';
 
 const palette = (w: Page) => w.getByRole('dialog', { name: 'Command palette' });
 const activeTab = (w: Page) => w.locator('.dv-active-tab');
@@ -107,11 +107,10 @@ test.describe('browser-process accelerators keep their scope (#90)', () => {
     await w.getByRole('button', { name: '+ session' }).click();
     await expect(w.getByText(second).first()).toBeVisible({ timeout: 25_000 });
 
-    const post = await hookPoster(a, 2);
-    await post(second, {
-      hook_event_name: 'Notification',
-      message: 'Claude needs your permission to use Bash',
-    });
+    // A REAL held request (#952): `PreToolUse` is no longer registered, and a
+    // permission `Notification` is dropped before it can move a badge (#313).
+    // `!perm` is what a permission IS on this transport. Assertions unchanged.
+    await permissionHolder(a)(second);
     // read the count off the events TAB rather than the drawer's rows: the
     // drawer is collapsed by default (P2-E14-01), and opening an overlay across
     // the workspace would be staging the wrong scene

@@ -26,13 +26,13 @@ import { AddressInfo } from 'net';
 import {
   blurApp,
   findFile,
-  hookPoster,
   launchApp,
   LaunchedApp,
   openEventsDrawer,
   poll,
   tempProjectFolder,
   workspaceJsonPath,
+  permissionHolder,
 } from './fixtures/app';
 
 /** Whatever the app POSTed at us, in arrival order. */
@@ -210,11 +210,10 @@ test.describe('quiet hours (P2-E14-05b)', () => {
     await blurApp(a);
 
     const toastsBefore = toastLines(a.home);
-    const post = await hookPoster(a);
-    await post(name, {
-      hook_event_name: 'Notification',
-      message: 'Claude needs your permission to use Bash',
-    });
+    // A REAL held request (#952): `PreToolUse` is no longer registered, and a
+    // permission `Notification` is dropped before it can move a badge (#313).
+    // `!perm` is what a permission IS on this transport. Assertions unchanged.
+    await permissionHolder(a)(name);
 
     // ── the webhook ARRIVED ─────────────────────────────────────────────────
     const delivered = await poll(
@@ -320,11 +319,7 @@ test.describe('quiet hours (P2-E14-05b)', () => {
 
     await blurApp(a);
 
-    const post = await hookPoster(a);
-    await post(name, {
-      hook_event_name: 'Notification',
-      message: 'Claude needs your permission to use Bash',
-    });
+    await permissionHolder(a)(name);
 
     const fired = await poll(() => {
       const lines = firings(a.home).filter((l) => l.kind === 'needs-permission');

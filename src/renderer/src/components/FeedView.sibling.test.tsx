@@ -217,14 +217,10 @@ describe('a message from another session', () => {
     expect(ptyWrites).toEqual([]);
   });
 
-  it('does not submit in TERMINAL mode either — the PTY route is the other door', async () => {
-    const host = await mount('pty');
-    await arrive(message());
-    expect(blocks(host)).toHaveLength(1);
-    await settle();
-    expect(submitted).toEqual([]);
-    expect(ptyWrites).toEqual([]);
-  });
+  // "Does not submit in TERMINAL mode either — the PTY route is the other door"
+  // went with that door (#952). The safety property it doubled is asserted
+  // directly in the test above: an arriving sibling message must not submit
+  // itself through ANY route the composer can reach.
 
   it('does not touch what the user was typing', async () => {
     const host = await mount();
@@ -289,16 +285,10 @@ describe('the user’s Enter is the keypress §5.4 requires', () => {
     expect(submitted[0].indexOf('first')).toBeLessThan(submitted[0].indexOf('second'));
   });
 
-  it('in Terminal mode it goes the terminal route, as the user’s own prompt would', async () => {
-    mainTakes = false; // a PTY session: main has no typed-message route
-    const host = await mount('pty');
-    await arrive(message('check it'));
-    age();
-    await pressEnter(host);
-    await settle();
-    expect(ptyWrites.join('')).toContain('check it');
-    expect(ptyWrites.join('')).toContain('The user reviewed it');
-  });
+  // "In Terminal mode it goes the terminal route, as the user's own prompt
+  // would" went with that route (#952). The claim was that an accepted sibling
+  // message travels by whatever door the user's OWN prompt would use — there is
+  // one door now, and the test above asserts the message goes through it.
 });
 
 describe('an Enter that was not about the message does not send it (#765 review)', () => {

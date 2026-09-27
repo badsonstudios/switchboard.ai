@@ -177,8 +177,17 @@ export class ControlChannel {
       if (!delivered) {
         // No `send` on the handle. `SessionManager` has already ruled out the
         // session-is-gone case before delegating here (see its `listModels` /
-        // `setModel`), so what is left is a transport that cannot carry a typed
-        // message at all — the PTY.
+        // `setModel`), so what is left is a handle that cannot carry a typed
+        // message at all.
+        //
+        // ⚠️ THE VERDICT'S NAME OUTLIVED ITS CAUSE (#952). `not-stream` meant "this
+        // is a PTY", and there is no PTY. It is still REACHABLE — `send` is
+        // optional on `TransportSession` because §5.3's adapter contract admits a
+        // byte-only CLI — but today it means the handle came up without one, which
+        // a restart usually fixes. The three user-facing strings behind it say
+        // that rather than naming Terminal mode; the verdict keeps its name
+        // because renaming a wire value is a change the renderer would have to
+        // follow, for no gain.
         settle({
           ok: false,
           reason: 'not-stream',

@@ -8,46 +8,60 @@
 // reach for later. So the test puts THE SAME STRING in two cards, a different
 // number of times in each, and checks the count follows the focus.
 //
-// TRANSPORT SCOPE (P2-E18-18, #404): the first group is `[pty]` — it seeds a
-// JSONL file and lets the watcher tail it, which is how a PTY session's Feed is
-// built and is switched off for a stream one. The SECOND group is Direct, and
-// exists because the two transports used to disagree about the headline gesture:
-// a Direct session's blocks carry the moment the message reached us rather than
-// the CLI's timestamp, so the engine could not line the file up with the view
-// and every hit came back read-only (#458). It now lines them up on the API's
-// own ids instead, and that group is the proof — on the transport that has been
-// the default since #381.
+// WHAT THE TWO GROUPS ARE FOR (P2-E18-18, #404; rewritten by #952).
+//
+// They used to be split by TRANSPORT: the first was `[pty]`, because it seeded a
+// JSONL file and let the watcher tail it — which was how a PTY session's Feed got
+// built and was switched off for a stream one. #952 left one transport, so that
+// split is gone and the first group now provokes its conversation through the
+// session like everything else.
+//
+// The second group stays, and the reason it was written is still the reason it
+// earns its runtime: it drives TOOL blocks, and the engine has to line the
+// transcript up with the view to decide a hit is editable. Blocks on this
+// transport carry the moment the message reached us rather than the CLI's
+// timestamp, so a timestamp-matching engine came back read-only on every hit
+// (#458); it matches on the API's own ids instead, and this group is the proof.
 import { test, expect, Page } from '@playwright/test';
-import fs from 'fs';
 import path from 'path';
 import {
   launchApp,
   launchDirectToolTurn,
   LaunchedApp,
   registerTempDir,
+  streamPrompter,
   tempProjectFolder,
 } from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
-function slugForCwd(cwd: string): string {
-  return cwd.replace(/[\\/:. ]/g, '-');
-}
-
-/** Write a transcript the watcher will tail, with `term` repeated `times`. */
-function seedTranscript(home: string, folder: string, term: string, times: number, unique: string): void {
-  const dir = path.join(home, '.claude', 'projects', slugForCwd(folder));
-  fs.mkdirSync(dir, { recursive: true });
-  const line = (o: Record<string, unknown>): string =>
-    JSON.stringify({ sessionId: 'native-e2e', cwd: folder, timestamp: new Date().toISOString(), ...o }) + '\n';
-  let out = line({ type: 'user', message: { role: 'user', content: `build ${unique}` } });
-  for (let i = 0; i < times; i += 1) {
-    out += line({
-      type: 'assistant',
-      message: { content: [{ type: 'text', text: `attempt ${i} said ${term} while doing ${unique}` }] },
-    });
-  }
-  fs.writeFileSync(path.join(dir, 'native-e2e.jsonl'), out);
+/**
+ * Put a searchable conversation on a card, THROUGH the session (#952).
+ *
+ * This used to hand-write the CLI's transcript JSONL. Find does read the
+ * transcript, so that half still worked — but these tests also assert the text is
+ * on SCREEN and that #520's marks land on it, and the Feed has not been built
+ * from the transcript since E18-10. It only looked like it was because the
+ * shell-in-a-PTY fake made every test session a PTY.
+ *
+ * Prompting the fake gives both halves at once: it emits the blocks the Feed
+ * renders AND mirrors the same turn into a real transcript, the way the real CLI
+ * does in stream mode.
+ *
+ * ⚠️ `matches` IS THE MATCH COUNT, NOT THE NUMBER OF REPLIES, and the difference
+ * is worth spelling out. A prompt is itself a Feed block, so a needle inside the
+ * prompt text is present `n + 1` times after `!bulk n <prefix>`. Callers ask for
+ * the count they want to assert and the arithmetic happens once, here, instead of
+ * in every expectation.
+ */
+async function seedConversation(
+  app: LaunchedApp,
+  title: string,
+  term: string,
+  matches: number,
+  unique: string
+): Promise<void> {
+  await streamPrompter(app)(title, `!bulk ${matches - 1} said ${term} while doing ${unique} `);
 }
 
 const bar = (w: Page) => w.locator('[data-testid="find-bar"]');
@@ -58,7 +72,7 @@ const count = (w: Page) => w.locator('[data-testid="find-count"]');
 const marks = (w: Page) => w.locator('mark[data-feed-match]');
 const currentMark = (w: Page) => w.locator('mark[data-feed-match-current]');
 
-test.describe('[pty] Session find (E17-02)', () => {
+test.describe('Session find (E17-02)', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
 
@@ -79,8 +93,8 @@ test.describe('[pty] Session find (E17-02)', () => {
 
     // THE SAME STRING in both, a different number of times. If the search ever
     // reached across cards the count would be 5 on both.
-    seedTranscript(a.home, folderA, 'SHARED_NEEDLE', 2, 'ONLY_IN_A');
-    seedTranscript(a.home, folderB, 'SHARED_NEEDLE', 3, 'ONLY_IN_B');
+    await seedConversation(a, first, 'SHARED_NEEDLE', 2, 'ONLY_IN_A');
+    await seedConversation(a, second, 'SHARED_NEEDLE', 3, 'ONLY_IN_B');
     await expect(w.getByText(/ONLY_IN_B/).first()).toBeVisible({ timeout: 25_000 });
 
     // the second card is the focused one
@@ -106,7 +120,7 @@ test.describe('[pty] Session find (E17-02)', () => {
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
     await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
-    seedTranscript(a.home, folder, 'STEP_ME', 3, 'ONE_CARD');
+    await seedConversation(a, path.basename(folder), 'STEP_ME', 3, 'ONE_CARD');
     await expect(w.getByText(/ONE_CARD/).first()).toBeVisible({ timeout: 25_000 });
 
     // focus something identifiable first, so "gives focus back" is checkable
@@ -145,7 +159,7 @@ test.describe('[pty] Session find (E17-02)', () => {
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
     await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
-    seedTranscript(a.home, folder, 'MARK_ME', 3, 'ONE_CARD');
+    await seedConversation(a, path.basename(folder), 'MARK_ME', 3, 'ONE_CARD');
     await expect(w.getByText(/ONE_CARD/).first()).toBeVisible({ timeout: 25_000 });
 
     await w.keyboard.press(`${MOD}+f`);

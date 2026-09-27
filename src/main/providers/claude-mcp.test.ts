@@ -247,21 +247,22 @@ describe('claudeAdapter.buildSpawn — --mcp-config (P2-E11-03)', () => {
       ELECTRON_RUN_AS_NODE: undefined,
       ELECTRON_NO_ATTACH_CONSOLE: undefined,
     });
-    expect(recipe.transport).toBe(opts.transport === 'stream' ? 'stream' : undefined);
+    // ALWAYS `'stream'` since #952: the adapter declares what it will actually do
+    // rather than letting the host's default speak for it, which is what stops a
+    // flagless recipe being handed to a protocol reader.
+    expect(recipe.transport).toBe('stream');
     // The full argv, as a literal — not "does not contain the new flag", which
     // is satisfied by any number of OTHER things having been added.
     const expected: string[] = [];
     if (opts.settings) expected.push('--settings', path.join(tmp, 'st', 's', 'settings.json'));
-    if (opts.transport === 'stream') {
-      expected.push(
-        '--output-format', 'stream-json',
-        '--verbose',
-        '--input-format', 'stream-json',
-        '--permission-prompt-tool', 'stdio',
-        '--replay-user-messages',
-        '--include-partial-messages'
-      );
-    }
+    expected.push(
+      '--output-format', 'stream-json',
+      '--verbose',
+      '--input-format', 'stream-json',
+      '--permission-prompt-tool', 'stdio',
+      '--replay-user-messages',
+      '--include-partial-messages'
+    );
     if (opts.resumeSessionId) expected.push('--resume', opts.resumeSessionId);
     // Both flags, in this order, and ONLY alongside a resume id — `--fork-session`
     // is documented as "use with --resume or --continue", and a lone one would be

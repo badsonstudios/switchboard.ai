@@ -1,43 +1,32 @@
-// Which transport a session is actually ON — what is left of that question
-// after #873.
+// What is left of "which transport is this session on" (#873, #952).
 //
-// This file was the home of the ⋯ menu's transport switch: the journey a person
-// took to move a session between Terminal and Direct (#153), the
-// pending-restart affordance, and the tests proving the choice survived both a
-// restart and a relaunch. The switch was removed on the owner's call
-// (2026-09-19), and with it the Terminal tab that every one of those tests used
-// as its witness.
+// ⛳ THE QUESTION IS CLOSED. This file was the home of the ⋯ menu's transport
+// switch: the journey a person took to move a session between Terminal and
+// Direct (#153), the pending-restart affordance, and the tests proving the
+// choice survived a restart and a relaunch. #873 removed the switch and the
+// Terminal tab every one of those tests used as its witness; #952 removed the
+// transport itself.
 //
-// WHAT WENT, AND WHAT IT COST — written down so the gaps are known rather than
-// rediscovered from a green suite:
+// WHAT WAS LOST ALONG THE WAY, written down so the gaps stay known rather than
+// being rediscovered from a green suite:
 //
 //  - **The switch journey (#153) and both persistence tests.** There is no
-//    user-settable transport any more, so there is no choice left to persist.
-//    They went with the control they were about.
+//    user-settable transport, so there is no choice to persist.
 //
 //  - **"a restarted Direct session offers no bar and no dead button".** Its
-//    assertions were transport-level and worth keeping, but the only way to
-//    RESTART a running session from the UI was the switch's own "Restart
-//    session now" button — the card's ✕ deletes the record, and the overlay's
-//    Restart only exists once a session has ended. The scenario can no longer
-//    be staged. Per its own comment this was the ONLY test anywhere proving a
-//    session restarted INTO Direct has a working hook channel, so **that proof
-//    is lost**; the bar-absence half of its claim survives below.
+//    assertions were worth keeping, but the only way to RESTART a running
+//    session from the UI was the switch's own "Restart session now" button. Per
+//    its own comment it was the ONLY test anywhere proving a session restarted
+//    INTO Direct has a working hook channel, so **that proof is still lost.**
 //
 //  - **"a brand-new session comes up in Direct with nothing asked for" (#381).**
-//    Both witnesses were UI — the Terminal tab's notice and the ⋯ menu's mode
-//    label. The default-transport claim now rests on `stream-trust.spec.ts`,
-//    which decides it ON DISK rather than on screen: a Direct spawn writes no
-//    trust acceptance for the folder and a PTY spawn does. That pair is a
-//    better witness than either of these was, because it cannot be satisfied by
-//    something merely rendering.
+//    Both witnesses were UI. The claim now rests on `stream-trust.spec.ts`,
+//    which decides on DISK rather than on screen — though #952 cost that file
+//    its counterpart too, so read its header before leaning on it.
 //
-//  - **"a session switched to Terminal is still on Terminal after a relaunch".**
-//    Its premise — a session the user chose Terminal for — can no longer exist.
-//
-// The PTY transport itself is untouched and still reachable with
-// `SWITCHBOARD_TRANSPORT=pty`: E18-16 requires it to keep WORKING as the
-// fallback while Direct mode is under test. What was removed is the UI.
+// WHAT THIS FILE IS NOW: the regression guard for the terminal-handoff bar's
+// REMOVAL. It is cheap, and it is the only end-to-end check that no surface
+// still offers to send someone to a terminal.
 //
 // Uses the stream-json fake (`SWITCHBOARD_FAKE_PROVIDER=stream`), so it needs no
 // `claude` login and no network.
@@ -49,38 +38,23 @@ import { tempProjectFolder, teardown } from './fixtures/stream-session';
 // gone, so a folder that was merely late to unlock goes on this pass.
 test.afterAll(async () => teardown());
 
-// #261 — the handoff bar must not route a Direct session to a terminal it does
-// not have.
+// #261, and its conclusion (#952) — nothing routes anyone to a terminal.
 //
 // Dan hit the original within minutes of the switch working: a freshly
 // restarted Direct session showed "Claude is showing a start-up dialog … appear
 // only in the terminal" over an [Open Terminal] button, next to a Terminal tab
 // that correctly said there was no terminal. Two surfaces in one window
-// contradicting each other.
+// contradicting each other. #261 made the bar transport-aware; #952 deleted the
+// bar, because every branch of it routed somewhere that no longer exists.
 //
-// This test drives the branch by hand. A `Notification` from the CLI's own
-// debounced nudge is exactly what put the bar on screen in the live incident:
-// no PreToolUse, therefore no hold, therefore no approval bar to outrank it.
-// On a PTY session that is the #125 case and the bar is CORRECT (asserted in
-// approval.spec.ts). Here there is no terminal to send anyone to.
+// This drives the state the live incident produced. A `Notification` from the
+// CLI's own debounced nudge is what put the bar on screen: no PreToolUse,
+// therefore no hold, therefore no approval bar to outrank it.
 //
-// RETARGETED FROM `needs-permission` TO `needs-input` BY #313, which removed the
-// state this test used to drive: a permission-classified Notification no longer
-// reaches the state machine on a stream session at all, so `needs-permission` is
-// reachable on this transport ONLY via a held `can_use_tool` — and a held
-// request sets `hasApproval`, which short-circuits `terminalHandoff` BEFORE the
-// transport check. Driving it that way would leave this test green for a reason
-// that has nothing to do with the transport.
-//
-// `needs-input` is the same shape and is still reachable: an unheld, unbarred
-// status whose handoff branch routes to a terminal a Direct session does not
-// have. Same rule, same line of `terminalHandoff`, same two absences.
-//
-// The `startingLong` branch is not reachable from the outside (nothing can hold
-// the fake in `starting` for 8s). It keeps its teeth at the render site in
-// `FeedView.handoff.test.tsx` and in `terminal-handoff.test.ts`'s branch table,
-// both of which fail if the stream guard is removed.
-test.describe('the handoff bar stays silent on Direct (#261)', () => {
+// ⚠️ IT ASSERTS AN ABSENCE, so the FIRST assertion — that the session really
+// reached `needs-input` — is what stops it passing because nothing happened.
+// That is exactly how a sibling test used to pass before it was deleted.
+test.describe('nothing offers a route to a terminal (#261, #952)', () => {
   let a: LaunchedApp | undefined;
   test.afterEach(async () => {
     const launched = a;
@@ -88,23 +62,16 @@ test.describe('the handoff bar stays silent on Direct (#261)', () => {
     await teardown(launched);
   });
 
-  test('a Direct session waiting on input offers no bar and no dead button (#261)', async () => {
+  test('a session waiting on input offers no bar and no dead button', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({
       seedFolder: folder,
-      // Start in Direct rather than switching + restarting: the transport is
-      // the subject of the test, not the path taken to it, and a restart moves
-      // the live session id out from under `hookPoster`.
-      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' },
     });
     const w = a.window;
     const title = folder.split(/[\\/]/).pop()!;
     await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
 
-    // The "it really is Direct" probe was a Terminal-tab round trip and went
-    // with the tab (#873). The env above SELECTS the transport rather than
-    // observing it, which is the stronger of the two anyway — but note that a
-    // silent fall-back to the PTY would no longer be caught here.
     const post = await hookPoster(a);
     await post(title, {
       hook_event_name: 'Notification',
@@ -115,15 +82,13 @@ test.describe('the handoff bar stays silent on Direct (#261)', () => {
       message: 'Claude is waiting on you',
     });
 
-    // The session REALLY reached the state — without this the absence
-    // assertions below would prove only that nothing happened, which is exactly
-    // how the deleted sibling test used to pass.
+    // The session REALLY reached the state — see the warning above.
     await expect(w.locator('nav .rail-row[data-session-status="needs-input"]')).toHaveCount(1, {
       timeout: 15_000,
     });
 
     // ...and the Session tab stays silent rather than pointing at a terminal
-    // that does not exist. `data-handoff` is the bar itself; the button is what
+    // that does not exist. `data-handoff` was the bar itself; the button is what
     // the user would have clicked to nowhere.
     await expect(w.locator('[data-handoff]')).toHaveCount(0);
     await expect(w.getByRole('button', { name: /Open Terminal/i })).toHaveCount(0);

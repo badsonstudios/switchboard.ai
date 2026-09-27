@@ -76,7 +76,7 @@ test.describe('a stream-json session (P2-E18-08a)', () => {
       // return a stream recipe unconditionally, which meant nothing could
       // exercise switching — and that is why #153 shipped (#153: the setting
       // could never take effect and no test could have caught it).
-      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' },
     });
     const w = a.window;
 
@@ -104,7 +104,7 @@ test.describe('a stream-json session (P2-E18-08a)', () => {
       // return a stream recipe unconditionally, which meant nothing could
       // exercise switching — and that is why #153 shipped (#153: the setting
       // could never take effect and no test could have caught it).
-      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' },
     });
     const w = a.window;
 
@@ -157,7 +157,7 @@ test.describe('the Feed renders a stream session (P2-E18-08b)', () => {
       // return a stream recipe unconditionally, which meant nothing could
       // exercise switching — and that is why #153 shipped (#153: the setting
       // could never take effect and no test could have caught it).
-      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' },
     });
     const w = a.window;
 
@@ -199,7 +199,7 @@ test.describe('slash commands come from the CLI in Direct mode (P2-E18-09)', () 
     const folder = tempProjectFolder();
     a = await launchApp({
       seedFolder: folder,
-      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' },
     });
     const w = a.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
@@ -244,7 +244,7 @@ test.describe('slash commands come from the CLI in Direct mode (P2-E18-09)', () 
     const folder = tempProjectFolder();
     a = await launchApp({
       seedFolder: folder,
-      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' },
     });
     const w = a.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
@@ -266,27 +266,12 @@ test.describe('slash commands come from the CLI in Direct mode (P2-E18-09)', () 
     await expect(w.getByText('Arrived mid-session')).toBeVisible();
   });
 
-  test('[pty] a PTY session keeps the curated list', async () => {
-    const folder = tempProjectFolder();
-    // the dual-capable fake, asked for the PTY. Asking is now REQUIRED: until
-    // #381 a session that asked for nothing got the PTY, and this test relied on
-    // that silence. Direct is the default now, so a test about the PTY has to
-    // say PTY — the env is the app-wide way to say it.
-    a = await launchApp({
-      seedFolder: folder,
-      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'pty' },
-    });
-    const w = a.window;
-    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
-      timeout: 25_000,
-    });
-
-    const box = w.getByPlaceholder(/Prompt this session/);
-    await box.click();
-    await box.pressSequentially('/');
-    await expect(w.getByText('/curated-only', { exact: true })).toBeVisible({ timeout: 15_000 });
-    await expect(w.getByText('/fake-only', { exact: true })).toHaveCount(0);
-  });
+  // "A PTY session keeps the curated list" went with the transport (#952). It
+  // pinned the OTHER side of P2-E18-09: a session with no control channel falls
+  // back to switchboard's hand-curated slash-command list, because there is no
+  // `system:init.slash_commands` to read. That fallback still exists in
+  // `shared/slash-commands.ts` and still runs for a session whose channel has not
+  // come up — what is gone is the app-wide env var that could force it.
 });
 
 // #154 — the stop button did nothing in Direct mode.
@@ -306,7 +291,7 @@ test.describe('the stop button actually stops (#154)', () => {
     const folder = tempProjectFolder();
     a = await launchApp({
       seedFolder: folder,
-      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' },
     });
     const w = a.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
@@ -350,7 +335,7 @@ test.describe('the Feed is built from typed messages (P2-E18-10)', () => {
     const folder = tempProjectFolder();
     a = await launchApp({
       seedFolder: folder,
-      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' },
     });
     const w = a.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
@@ -388,7 +373,7 @@ test.describe('the Feed is built from typed messages (P2-E18-10)', () => {
     const folder = tempProjectFolder();
     a = await launchApp({
       seedFolder: folder,
-      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' },
     });
     const w = a.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
@@ -436,7 +421,7 @@ test.describe('the Feed is built from typed messages (P2-E18-10)', () => {
     const folder = tempProjectFolder();
     a = await launchApp({
       seedFolder: folder,
-      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' },
     });
     const w = a.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({
@@ -481,7 +466,7 @@ test.describe('the Feed is built from typed messages (P2-E18-10)', () => {
     const folder = tempProjectFolder();
     a = await launchApp({
       seedFolder: folder,
-      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_TRANSPORT: 'stream' },
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' },
     });
     const w = a.window;
     await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({

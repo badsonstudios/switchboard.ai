@@ -9,10 +9,6 @@
     "version": "v{version}",
     "notifOn": "🔔 on",
     "notifOff": "🔕 off",
-    "trustOn": "🔓 auto-trust",
-    "trustOff": "🔒 ask trust",
-    "trustHint": "Whether a folder you open is trusted for you, or Claude Code is left to ask about it. Claude Code only ever puts that question in its own terminal interface, which switchboard no longer opens.",
-    "trustInert": "Unavailable: Claude Code only ever asks about folder trust inside its own terminal interface, and switchboard no longer runs sessions there — so nothing can ask, and this setting changes nothing. Your choice is kept exactly as you left it.",
     "autoLabelsOn": "🏷 auto labels",
     "autoLabelsOff": "🏷 labels off",
     "autoLabelsHint": "Showing the title Claude gives each conversation, in blank task labels. Costs nothing, and does not follow the work as it changes. Click to hide task labels entirely.",
@@ -237,11 +233,9 @@
     "closeConfirm": "Close \"{title}\"? This ends the session and removes the card.",
     "closeAllConfirm": "Close {count, plural, one {# session} other {# sessions}}? This ends them and removes their cards.{spared, plural, =0 {} one { # pinned session is kept.} other { # pinned sessions are kept.}}",
     "closeAllNothing": "Nothing to close — {count, plural, one {the # open session is pinned} other {all # open sessions are pinned}}.",
-    "viewTerminal": "Terminal",
     "viewDiff": "Changes",
     "viewSession": "Session",
     "viewHistory": "History",
-    "showTerminal": "Show Terminal",
     "hideTerminal": "Hide Terminal",
     "viewSoon": "Coming soon",
     "viewTabs": "Views",
@@ -400,9 +394,9 @@
     "auto-edit": "🛡 auto-edit",
     "full-auto": "🛡 full-auto",
     "desc": {
-      "ask": "ask — every file change, shell command and web fetch comes to you first, and so does reading anything outside the session's folder. Full gatekeeping, and the safe default.",
-      "plan": "plan — Claude reads, explores and writes you a plan, but changes nothing until you approve it. The block is Claude Code's own; switchboard adds nothing to it and asks you nothing.",
-      "auto-edit": "auto-edit — Claude edits files inside the session's folder without asking you. Shell commands, web fetches, and reading anything outside the folder still come to you. Let it write code, and keep gatekeeping what it runs.",
+      "ask": "ask — every tool call comes to you first: file changes, shell commands, web fetches. Full gatekeeping, and the safe default.",
+      "plan": "plan — Claude reads, explores and writes you a plan, but changes nothing until you approve it. The block is Claude Code's own and stands whatever you click here; what you will be asked is whether to let it leave plan mode.",
+      "auto-edit": "auto-edit — Claude edits files inside the session's folder without asking you, and runs the housekeeping commands that go with it — mkdir, touch, mv, cp, rm, sed. Anything heavier still comes to you. This is Claude Code's acceptEdits, exactly as it behaves on its own; if you want every command to stop for you, use ask.",
       "full-auto": "full-auto — nothing comes to you. Every tool call runs the moment Claude asks for it, including writes outside the session's folder. This is Claude Code's bypassPermissions, the mode --dangerously-skip-permissions turns on: deny rules in your settings still block, a few things always need a person (a question for you, rm on a critical path), and nothing else stops anything. It is not a sandbox."
     },
     "scope": {
@@ -686,17 +680,7 @@
     "unboundFoundQuiet": "Transcripts are being written for this folder, but none match this session — and Claude Code has not reported any activity to switchboard.ai either, which usually means its hooks aren't reaching us.",
     "unboundSilent": "This session has run at least one turn, but no transcript for it has turned up in {path}.",
     "unboundNothing": "Nothing has turned up in {path}.",
-    "unboundFallback": "Your session is unaffected — it is still running, and only this view of its conversation is missing.",
     "unboundFallbackDirect": "Your session is unaffected — in Direct mode the conversation arrives in this window as Claude replies, rather than being read from that file. Watch the status on the card header; the transcript is only needed for usage totals and for resuming this session later."
-  },
-  "handoff": {
-    "permissionTitle": "Claude is asking permission in the terminal",
-    "permissionBody": "Claude Code is handling this one in its own prompt rather than offering it to switchboard.ai — most often an edit inside the project's .claude folder. switchboard cannot answer it for you.",
-    "inputTitle": "Claude is waiting for your answer",
-    "inputBody": "It is waiting in Claude Code's own prompt, which switchboard has no way to show you.",
-    "startingTitle": "Claude is showing a start-up dialog",
-    "startingBody": "This session hasn't finished starting. Some start-up prompts — trusting a folder, picking a conversation to resume — are drawn by Claude Code itself, where switchboard cannot reach them.",
-    "jump": "Open Terminal"
   },
   "feedView": {
     "notice": {
@@ -738,7 +722,6 @@
       "empty": "That file is empty, so there is nothing to send. (A folder dropped on the prompt box can look like this too.)",
       "directory": "Folders cannot be attached to a prompt. Drop it outside the prompt box to open it as a session, or drop the files inside it.",
       "unsupported": "That file type cannot be attached. Images (PNG, JPEG, GIF, WebP), text and source files, and PDFs work. For anything else, put its full file path in the prompt instead.",
-      "terminalMode": "Files can only be sent by a session in Direct mode. This one runs in Terminal mode.",
       "notSent": "That prompt wasn't sent, so nothing has been cleared. The session may have stopped, or it may not be in Direct mode.",
       "notRestored": "Not restored: {names}. Your typed prompt is kept when switchboard.ai restarts; attached files are not, because no copy of them is ever left on disk. Attach them again."
     },
@@ -940,7 +923,6 @@
     },
     "cycleLayout": "Layout: next mode (Grid → Focus → Queue)",
     "maximize": "Maximize this session / put the layout back",
-    "toggleTerminal": "Toggle Terminal view",
     "toggleChanges": "Toggle Changes view",
     "toggleRail": "Toggle the sessions rail",
     "toggleEvents": "Show or hide the events drawer",
@@ -1074,7 +1056,6 @@
     "groupSeparator": " · ",
     "noticeInGroup": "{group}: {message}",
     "group": {
-      "terminal": "Terminal (scrollback only)",
       "document": "Document"
     },
     "noResults": "No results",
@@ -1099,12 +1080,10 @@
     "cannotJumpTitle": "This match can't be scrolled to — the snippet is all of it we can show.",
     "hitMeta": "{kind, select, user {your prompt} assistant {reply} thinking {thinking} tool {tool} todos {plan} notice {background task} other {block}} · {time}",
     "hitMetaNoTime": "{kind, select, user {your prompt} assistant {reply} thinking {thinking} tool {tool} todos {plan} notice {background task} other {block}}",
-    "hitMetaTerminal": "terminal · line {line}",
     "unavailable": {
       "noProvider": "Find doesn't work on the {view} tab yet.",
       "noSession": "There is no session here to search.",
       "diffNotReady": "The diff hasn't loaded yet — open a changed file and try again.",
-      "noTerminal": "This session has no terminal, so there's no scrollback to search.",
       "noDocument": "There is no document here to search.",
       "documentNotReady": "This document hasn't finished opening, so there's nothing to search yet.",
       "failed": "Find isn't available on this tab right now."
@@ -1114,8 +1093,6 @@
       "timedOut": "The search stopped early, so this is only part of what's there.",
       "noTranscript": "Nothing to search yet — this session hasn't written anything down.",
       "cannotJump": "These matches can be read here, but this session can't be scrolled to them.",
-      "terminalNotShown": "These matches are really in the terminal's scrollback — open the Terminal tab if you want to scroll to them.",
-      "terminalNotShownTruncated": "Showing the first {shown}. They are really in the terminal's scrollback — open the Terminal tab if you want to scroll to them.",
       "truncated": "Showing the first {shown} matches.",
       "failed": "The search couldn't run. The session is untouched."
     }
@@ -1138,7 +1115,7 @@
     "currentMark": "✓",
     "switching": "switching…",
     "runningNow": "running now",
-    "notStream": "This session runs in Terminal mode, so switchboard can't change its model.",
+    "notStream": "This session has no live connection to Claude Code, so switchboard can't change its model. Restarting it usually fixes this.",
     "sessionGone": "That session has stopped, so there's nothing to change.",
     "timedOut": "Claude Code didn't answer. The session may be busy starting up — try again in a moment.",
     "failed": "Couldn't change the model. The session is untouched.",
@@ -1165,7 +1142,7 @@
     "configuredOnly": "This list comes from your configuration files. Claude Code also connects servers that live in no file — connectors from your claude.ai account, and servers that plugins bring with them — so those can't be shown here. For the full list, run claude in the project folder and ask it /mcp there.",
     "whyConfiguredOnly": {
       "no-session": "Start this session to see everything it really has.",
-      "not-stream": "This session runs in Terminal mode, which can't be asked for the full list.",
+      "not-stream": "This session has no live connection to Claude Code, so it can't be asked for the full list — only what its config files say.",
       "unavailable": "The session didn't answer when asked for the full list."
     },
     "cliNote": "Adding and removing run Claude Code's own commands. Servers that don't come from a configuration file can be shown, signed in to, turned off and reconnected here, but not removed.",
@@ -1196,7 +1173,7 @@
     "reconnectingProgress": "Reconnecting {done} of {total}…",
     "reconnectedNone": "There are no servers to reconnect.",
     "control": {
-      "notStream": "This session can't be asked to do that — it's running in Terminal mode.",
+      "notStream": "This session can't be asked to do that — it has no live connection to Claude Code. Restarting it usually fixes this.",
       "timedOut": "The session didn't answer. It may be busy or stuck."
     },
     "emptyRuntime": "This session has no MCP servers.",
@@ -1246,10 +1223,8 @@
     },
     "reconnect": {
       "action": "Reconnect",
-      "typed": "Typed /mcp into the session — answer it in the terminal.",
       "restart-required": "This session runs in Direct mode, which has no terminal for Claude Code's picker. It loads MCP servers when it starts, so restart it to pick up changes.",
-      "no-session": "This session is not running. Start it to reconnect.",
-      "refused": "switchboard could not reach that session."
+      "no-session": "This session is not running. Start it to reconnect."
     },
     "form": {
       "title": "Add an MCP server",

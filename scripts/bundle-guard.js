@@ -514,13 +514,18 @@ function readBundleIdentity(root) {
 
 /**
  * The npm script that runs this bundle, found by ASKING package.json rather
- * than by transforming the filename: `pty-check.js` is `check:pty` but
- * `hook-check.js` is `check:hooks`, and a guess that is wrong tells the reader
- * to type a command that does not exist. Returns null when nothing matches, and
- * the caller falls back to spelling out the node invocation.
+ * than by transforming the filename: `bus-check.js` is `check:bus` but
+ * `transcript-check.js` is `check:transcriptS`, and a guess that is wrong tells
+ * the reader to type a command that does not exist. Returns null when nothing
+ * matches, and the caller falls back to spelling out the node invocation.
+ *
+ * (The example pair used to be `pty-check.js` / `hook-check.js`, which made the
+ * same point until #952 deleted both scripts with the PTY transport. The lesson
+ * outlived its illustration, which is the argument for asking rather than
+ * transforming in the first place.)
  *
  * @param {string} root
- * @param {string} relBundle posix-shaped, e.g. `out/main/pty-check.js`
+ * @param {string} relBundle posix-shaped, e.g. `out/main/bus-check.js`
  * @returns {string|null}
  */
 function npmScriptFor(root, relBundle) {

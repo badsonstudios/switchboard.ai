@@ -957,7 +957,7 @@ describe('update prefs (P2-E19-03)', () => {
     const st = makeStore(file);
     st.load();
     expect(st.getUpdatePrefs()).toEqual({ autoCheck: true });
-    expect(st.getAutoTrust()).toBe(false); // …and nothing else moved
+    expect(st.snapshot().autoTrust).toBe(false); // …and nothing else moved
     // auto labels default ON for a file that predates them (P2-E7-06): the
     // feature is what the setting is for, and off is the exception
     expect(st.getAutoLabels()).toBe(true);
@@ -1131,7 +1131,7 @@ describe('service-health prefs (P2-E14-07)', () => {
     const st = makeStore(file);
     st.load();
     expect(st.getServiceHealthPrefs()).toEqual({ poll: true });
-    expect(st.getAutoTrust()).toBe(false); // …and nothing else moved
+    expect(st.snapshot().autoTrust).toBe(false); // …and nothing else moved
   });
 
   it('two stores do not share the defaults object', () => {
@@ -1200,7 +1200,7 @@ describe('phone-push prefs (P2-E14-06)', () => {
     const st = makeStore(file);
     st.load();
     expect(st.getPushPrefs()).toEqual({ push: false, service: 'ntfy', webhook: false });
-    expect(st.getAutoTrust()).toBe(false);
+    expect(st.snapshot().autoTrust).toBe(false);
   });
 
   it('two stores do not share the defaults object', () => {
@@ -1892,24 +1892,32 @@ describe('load-time repairs are audible (#344)', () => {
       expect(loadWarns()).toEqual([]);
     });
 
-    // THE CASE THE FIRST VERSION GOT WRONG, and the reason the count is a
-    // difference across the dispatch rather than a tally of what went in.
+    // ⚠️ THIS CASE INVERTED IN #952, AND THE INVERSION IS THE POINT.
     //
-    // A v2 file has already been lifted, so its migration is the identity and
-    // nothing moves — but a `'pty'` can still be present, either hand-edited or
+    // It used to assert SILENCE: a v2 file was already the current shape, so its
+    // migration was the identity and a `'pty'` in it STAYED — hand-edited, or
     // re-persisted by a developer running `SWITCHBOARD_TRANSPORT=pty`, which
-    // `sessions:create` writes back on every spawn. Counting the INPUT claimed
-    // a migration on every launch, for ever, about a card that stayed on the
-    // PTY the whole time — a false line in the one file someone reads to find
-    // out what happened.
-    it('is silent on a v2 file that still holds a pty card — nothing was lifted', () => {
+    // `sessions:create` wrote back on every spawn. Counting the INPUT would have
+    // claimed a migration on every launch for ever about a card that never moved,
+    // which is why the count is a DIFFERENCE across the dispatch.
+    //
+    // #952 deleted the transport, so that surviving `'pty'` is no longer a
+    // choice this host can honour — it is a card that would refuse every dispatch
+    // and ask the adapter for something that does not exist. v2 -> v3 lifts it,
+    // and the line is now correct rather than false.
+    //
+    // The difference-based count is what let the same reporting code tell these
+    // two apart without being edited.
+    it('lifts a v2 file that still holds a pty card, and says so', () => {
       write({ version: 2, sessions: [{ ...sess('a'), transport: 'pty' }] });
       const warns: Line[] = [];
       const state = makeStore(file, fakeLogger(warns)).load();
 
-      // the card is untouched: v2 is the current shape, so the choice stands
-      expect(state.sessions.find((s) => s.id === 'a')?.transport).toBe('pty');
-      expect(warns).toEqual([]);
+      // the stored choice is CLEARED, not rewritten: absent means "never chose",
+      // which is what is true once there is nothing to have chosen
+      expect(state.sessions.find((s) => s.id === 'a')?.transport).toBeUndefined();
+      expect(warns).toHaveLength(1);
+      expect(warns[0].msg).toMatch(/moved off the removed Terminal transport/);
     });
 
     // A file from the FUTURE is read-only — this build will never write it — so
@@ -2694,19 +2702,21 @@ describe('PersistedSession.transport survives quit -> relaunch (P2-E18-17)', () 
     transport,
   });
 
-  // `pty` and not `stream`: with Direct the default, a card that came back
-  // saying `stream` proves nothing — that is what an ABSENT field produces
-  // downstream too. `pty` is the value no default can supply.
-  it('an explicit Terminal choice is still Terminal after a reload', () => {
-    const a = makeStore(file);
-    a.load();
-    a.upsertSession(withTransport('one', 'pty'));
-    a.save();
-
-    const b = makeStore(file); // "relaunch"
-    expect(b.load().sessions[0].transport).toBe('pty');
-    expect(b.listSessions()[0].transport).toBe('pty'); // the path sessions:create reads
-  });
+  // ⚠️ THIS TEST LOST ITS ONLY USABLE VALUE (#952), AND THAT IS WHY IT IS GONE
+  // RATHER THAN REWRITTEN.
+  //
+  // It pinned that an explicit Terminal choice survived a reload, and it used
+  // `'pty'` deliberately: with Direct the default, a card that came back saying
+  // `'stream'` proves nothing, because that is exactly what an ABSENT field
+  // produces downstream. `'pty'` was *the value no default can supply*, which is
+  // what made the round trip observable at all.
+  //
+  // `TransportKind` is now a union of one, so there is no longer a value that a
+  // default could not have supplied, and the assertion cannot distinguish a
+  // stored choice from silence. The FIELD is still stored and still round-trips
+  // (see the test below, which pins the shape rather than the value) — it is the
+  // persistence half of §5.3's adapter contract, and the day a second provider
+  // brings a second kind, this test is the one to bring back.
 
   it('an explicit Direct choice round-trips as a VALUE, not as silence', () => {
     const a = makeStore(file);
@@ -2743,11 +2753,11 @@ describe('PersistedSession.transport survives quit -> relaunch (P2-E18-17)', () 
   it('upserting the same card replaces rather than duplicates, transport included', () => {
     const st = makeStore(file);
     st.load();
-    st.upsertSession(withTransport('one', 'pty'));
-    st.upsertSession({ ...withTransport('one', 'pty'), layoutSlot: 4 });
+    st.upsertSession(withTransport('one', 'stream'));
+    st.upsertSession({ ...withTransport('one', 'stream'), layoutSlot: 4 });
 
     expect(st.snapshot().sessions).toHaveLength(1);
-    expect(st.snapshot().sessions[0].transport).toBe('pty');
+    expect(st.snapshot().sessions[0].transport).toBe('stream');
   });
 
   // Not shared refs with the caller, on the field's own account: the store
@@ -2756,12 +2766,12 @@ describe('PersistedSession.transport survives quit -> relaunch (P2-E18-17)', () 
   it('the caller cannot mutate a stored choice through its own object', () => {
     const st = makeStore(file);
     st.load();
-    const mine = withTransport('one', 'pty');
+    const mine = withTransport('one', 'stream');
     st.upsertSession(mine);
 
-    mine.transport = 'stream';
+    (mine as { transport?: string }).transport = 'something-else';
 
-    expect(st.listSessions()[0].transport).toBe('pty');
+    expect(st.listSessions()[0].transport).toBe('stream');
   });
 });
 

@@ -104,42 +104,58 @@ and an operator who can connect any of them.
 ### 5.2 Claude Code integration (first-class adapter)
 
 All integration is via the locally installed CLI — which authenticates through the
-user's `claude login` (Max subscription). The first two bullets are
-**alternative transports**, chosen per session (§6 amendment 2026-08-01); the
-transcript and hook channels ride alongside either:
+user's `claude login` (Max subscription).
 
-- **Interactive PTY** (**no longer the default, and scheduled for removal** —
-  see the amendment notes below): spawn `claude` in the session folder. Full
-  fidelity of the TUI: permission prompts, slash commands, plan mode, ANSI
-  rendering — and the affordances only a terminal has (Ctrl-R history, vim mode,
-  the `/resume` and `--from-pr` pickers).
-- **Duplex stream-json** (**the default since 2026-08-09**, per session; epic
-  E18): the same CLI over
-  `child_process` pipes with `--output-format stream-json --verbose
-  --input-format stream-json`, plus a bidirectional control channel. What it
-  buys that the PTY cannot: **`can_use_tool` permission requests** carrying
-  `decision_reason`, `decision_reason_type` and `permission_suggestions` —
-  including the `.claude/` writes the hook path cannot answer at all (see the
+> **⛳ THE TRANSPORT QUESTION IS CLOSED (#952, 2026-09-26).** This section used to
+> open with two **alternative transports**, chosen per session. There is one. The
+> PTY is a recorded decision below, not an option, and the per-session choice, the
+> `SWITCHBOARD_TRANSPORT` override and the `transport` menu are all gone. Epic
+> **E18 is complete.**
+
+- **Duplex stream-json** — the only transport, and the default since 2026-08-09
+  (epic E18): the CLI over `child_process` pipes with `--output-format stream-json
+  --verbose --input-format stream-json`, plus a bidirectional control channel.
+  What it buys that the PTY could not: **`can_use_tool` permission requests**
+  carrying `decision_reason`, `decision_reason_type` and `permission_suggestions`
+  — including the `.claude/` writes the hook path could not answer at all (see the
   hooks caveat below) — token-by-token `stream_event` deltas, and a live
   `system:init.slash_commands` list instead of a hand-curated one. All three are
-  MEASURED (S-10). The protocol also carries `interrupt`,
-  `set_permission_mode`, `set_model` and `rewind` as control requests, which
-  would replace injected keystrokes — but those are **present, not verified**
-  (S-10 §3: interrupt semantics were never exercised, and `rewind` exists as a
-  request while its picker does not). E18-12 measures them; until it does, do
-  not plan against them. What it costs is in the §6 amendment. The JSONL
-  transcript is still written, so the channel below keeps working unchanged.
+  MEASURED (S-10). The protocol also carries `interrupt`, `set_permission_mode`,
+  `set_model` and `rewind` as control requests; `interrupt` and `set_model` ship,
+  while `rewind` remains **present, not verified** (S-10 §3 — it exists as a
+  request while its picker does not). E18-12 measures the rest; until it does, do
+  not plan against them. The JSONL transcript is still written, so the channel
+  below keeps working unchanged.
+
+- ~~**Interactive PTY**~~ — **REMOVED 2026-09-26 (#952, E18-16).** It spawned
+  `claude` in the session folder under node-pty and rendered the TUI in xterm.js:
+  full fidelity of permission prompts, slash commands, plan mode and ANSI
+  rendering. **What went with it, stated plainly rather than quietly dropped:**
+  Ctrl-R history, vim mode, and the `/resume`, `/rewind` and `--from-pr` pickers.
+  Each was to be rebuilt properly or dropped and said so; all four are dropped and
+  said so here and in `docs/manual/12-direct-mode.md`. Also gone: `node-pty` and
+  the three `@xterm/*` packages, which means **this app now ships no native module
+  at all** — no ABI rebuild, no per-platform binary, no `asarUnpack`.
 
 > **Amendment 2026-08-02 — the PTY is a transitional transport, not a permanent
-> one.** The owner decided that Terminal mode is removed once Direct mode is
-> tested and working in real use: *"we're going to be dropping Terminal Mode
-> anyway once we get Direct Mode completely tested here and working."* The
-> per-session choice above is therefore a **migration mechanism**, not the end
-> state. Nothing is deleted until the condition is met, and PTY mode must keep
-> working the whole way — it is the fallback while Direct mode is under test.
-> Execution and the full list of what is lost: `docs/plans/05-transport-migration.md`,
-> E18-16. **This does not relax P7:** each terminal-only affordance is rebuilt
-> properly or dropped and said so. Screen-scraping stays rejected precedent (§5).
+> one. EXECUTED 2026-09-26.** The owner decided that Terminal mode would be
+> removed once Direct mode was tested and working in real use: *"we're going to be
+> dropping Terminal Mode anyway once we get Direct Mode completely tested here and
+> working."* The per-session choice was therefore a **migration mechanism**, not
+> the end state. **The condition was met and reported on 2026-09-25** — *"Yeah,
+> I've been using direct mode all along. I'm not missing the terminal at all."* —
+> and #952 deleted the stack. Execution and the full list of what was lost:
+> `docs/plans/05-transport-migration.md`, E18-16. **This did not relax P7:** each
+> terminal-only affordance was rebuilt properly or dropped and said so.
+> Screen-scraping stays rejected precedent (§5).
+>
+> ⚠️ **Worth recording how long the gate sat.** The condition was written
+> 2026-08-02, Direct became the default 2026-08-09 (#381), the UI half went
+> 2026-09-19 (#873) — and **nobody put the question to the owner until
+> 2026-09-25**, seven weeks in which the answer was probably already yes. The gate
+> lived in a paragraph in a plan file and not in a ticket, which is the same
+> failure the 2026-09-25 feature audit found six times over in §8. **Never park
+> work on a condition without also parking a ticket on it.**
 >
 > **Amendment 2026-08-09 (#381) — Direct is the default; the PTY is opt-in.**
 > Dan: *"all sessions default to direct mode. not terminal."* This inverts what
@@ -149,7 +165,10 @@ transcript and hook channels ride alongside either:
 > does not get tested in real use. A card that has explicitly chosen keeps its
 > choice either way; a card that never chose follows the default, so untouched
 > cards move to Direct. The PTY still works, is still one menu click away, and
-> is still the fallback until the condition is met.
+> is still the fallback until the condition is met. *(Superseded by #952: there
+> is no menu and no fallback. Kept because it records WHY Direct became the
+> default — a mode nobody is put in does not get tested in real use, and that is
+> the argument that produced the evidence the removal rests on.)*
 >
 > ⚠ **Known consequence, measured 2026-08-02 (#156):** the transcript channel
 > below is **strictly poorer than the stream** for local slash commands —
@@ -2376,11 +2395,24 @@ Pain point (owner, VS Code extension): edit approvals are a tiny checkbox on an
 opened file tab, or a jump back to the session tab. switchboard.ai replaces the
 approval UI entirely rather than decorating it.
 
-> **Plan-mode rule (owner decision 2026-07-23):** plan sessions are NEVER
-> held in-app. A hook `permissionDecision:'allow'` bypasses the CLI's whole
-> permission system — including plan mode's write-block — so an in-app Allow
-> would let a "read-only planning" session write files. The CLI's own plan
-> enforcement is authoritative; in-app approvals apply to ask/auto-edit.
+> **⛳ Plan-mode rule (owner decision 2026-07-23) — RETIRED 2026-09-26 (#952).**
+> It said: *plan sessions are NEVER held in-app*, because a hook
+> `permissionDecision:'allow'` bypasses the CLI's whole permission system —
+> including plan mode's write-block — so an in-app Allow would let a "read-only
+> planning" session write files.
+>
+> **The hazard was real and it was a fact about HOOK SEMANTICS, not a product
+> rule.** It lived in exactly one place, `GATED.plan = []` in
+> `hooks/hook-listener.ts`, and it went with the hook hold path. On the control
+> channel an in-app verdict is answered *into* the CLI's permission system as a
+> `can_use_tool` response rather than around it, so there is nothing to bypass: a
+> plan-mode session's requests are held in-app, and that is safe. The CLI's own
+> plan enforcement remains authoritative, which is the half that never changed.
+>
+> **What survives with teeth is narrower and already built:** a **dispatched**
+> session asking to leave plan mode is refused at once, because nobody is
+> watching it (`sessions/stream-permissions.ts`, #948's probe). If you came here
+> following a comment about plan mode, that is the rule you are looking for.
 > Also settled: "Allow all (this session)" is scoped to the LIVE session
 > (a respawn/resume prompts again), held requests QUEUE per card, a hold
 > auto-surfaces the Session tab, and pending holds replay to a reloading
@@ -2405,18 +2437,30 @@ mis-parse answers the wrong question on the user's behalf. Where hooks cannot
 express it, the answers are the stream-json transport (below) or saying plainly
 that the decision lives in the terminal (§5.10's handoff bar).
 
-> **The mechanism above is transport-scoped (added 2026-08-01, E18-01).**
-> Everything in this section describes the **PTY transport's** approval path,
-> and it is bounded by the hook ceiling recorded in §5.2: a hook's `allow` does
-> not satisfy the CLI's `.claude/` safety check, so those prompts cannot be
-> answered here at all. On the **stream-json transport** the CLI delegates the
-> same decision as a `can_use_tool` control request — richer payload
+> **⛳ The mechanism above is HISTORY (added 2026-08-01 as E18-01; closed by #952,
+> 2026-09-26).** Everything described above is the **PTY transport's** approval
+> path — a `PreToolUse` hook held open while the user decided — and it was bounded
+> by the hook ceiling recorded in §5.2: a hook's `allow` does not satisfy the
+> CLI's `.claude/` safety check, so those prompts could not be answered here at
+> all.
+>
+> **The approval path is now the control channel, and only that.** The CLI
+> delegates the same decision as a `can_use_tool` control request: richer payload
 > (`decision_reason`, `decision_reason_type`, `permission_suggestions`), no
-> hold-and-release dance, and the `.claude/` case included. **This section is
-> rewritten by E18-07, which builds it** — deliberately not before, so DESIGN
-> keeps describing what exists rather than what is planned. The plan-mode rule
-> above is one of the things E18-11 re-examines: it rests on hook semantics that
-> the control channel may not share.
+> hold-and-release dance, and the `.claude/` case included. `PreToolUse` is no
+> longer registered at all, so a gated tool call no longer costs an HTTP round
+> trip through the hook listener on top of the request that was already carrying
+> the decision.
+>
+> The hook listener itself **stays**, as the STATUS channel — `Stop` is the done
+> authority (S-06). Retiring it outright is **E18-15**, which needs `hook_callback`
+> on the control channel to take over `SessionStart` / `Stop` / `PostToolUse` /
+> `Notification` first, and which this item unblocks.
+>
+> *(This note used to say the plan-mode rule was "one of the things E18-11
+> re-examines". That was a mis-citation carried into #952's own issue body:
+> E18-11 is plan mode / `ExitPlanMode` / `AskUserQuestion` and is still half
+> unmeasured. The deletion is **E18-16**.)*
 
 **The approval card.** Session identity banner (color stripe · icon · name · task
 label) + file path + full Monaco diff (side-by-side/inline) + button row:
@@ -2963,7 +3007,7 @@ for a public store.
   *Vocabulary amended 2026-07-28 (P2-E15-04).* The illustrative
   `session:read` / `session:exec` / `git:write` / `network:fetch` above predate
   the implementation. The shipped IPC vocabulary is dot-separated and plural —
-  `sessions.read`, `sessions.spawn`, `pty.write`, `git.read`, `dialog.open`,
+  `sessions.read`, `sessions.spawn`, `sessions.write`, `git.read`, `dialog.open`,
   `environment.probe`, … — and lives in `src/shared/ipc/capabilities.ts`, which
   is authoritative. **Note there are currently TWO capability vocabularies:**
   these IPC-channel capabilities, and the free-form `capabilities: string[]` on

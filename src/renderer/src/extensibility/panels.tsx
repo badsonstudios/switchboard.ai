@@ -70,7 +70,6 @@ export const sessionPanels: PanelContribution[] = [
         controlsLock={ctx.controlsLock}
         binding={ctx.binding}
         bindingDiag={ctx.bindingDiag}
-        recentlyDecided={ctx.recentlyDecided}
         autonomy={ctx.autonomy}
         model={ctx.model}
         approval={ctx.approval}
@@ -91,7 +90,7 @@ export const sessionPanels: PanelContribution[] = [
         transport={ctx.transport}
         onDecide={ctx.onDecide}
         onCycleAutonomy={ctx.onCycleAutonomy}
-        // No `onJumpToTerminal` since #873: the tab it jumped to is gone, and
+        // No `onJumpToTerminal`, and no bar to give it to since #952 — see
         // `setView('terminal')` would now resolve to the Session tab — a button
         // labelled "Open Terminal" that quietly does something else. The bar
         // still states what the CLI is waiting on; it just no longer offers a

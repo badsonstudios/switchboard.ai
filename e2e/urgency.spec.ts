@@ -17,6 +17,8 @@ import {
   tempProjectFolder,
   hookPoster,
   setTheme,
+  permissionHolder,
+  answerHeldPermissions,
 } from './fixtures/app';
 // the ramp itself, not a copy of it (the csp spec sets the precedent for
 // importing from src/): a seventh status must be measured by #267's audit
@@ -122,11 +124,10 @@ test.describe('urgency strip (E9-04)', () => {
     // a calm session is calm: no attention treatment until something asks
     await expect(lamp(w, first)).toHaveAttribute('data-needs-you', 'false');
 
-    const post = await hookPoster(a, 2);
-    await post(first, {
-      hook_event_name: 'Notification',
-      message: 'Claude needs your permission to use Bash',
-    });
+    // A REAL held request (#952): `PreToolUse` is no longer registered and a
+    // permission `Notification` is dropped before it can move a badge (#313), so
+    // `!perm` is what a permission IS on this transport. Assertions unchanged.
+    await permissionHolder(a)(first);
     await expect(lamp(w, first)).toHaveAttribute('data-status', 'needs-permission', {
       timeout: 15_000,
     });
@@ -135,7 +136,18 @@ test.describe('urgency strip (E9-04)', () => {
     await expect(lamp(w, second)).toHaveAttribute('data-needs-you', 'false');
     await expect(w.getByTestId('urgency-count')).toHaveAttribute('data-needing', '1');
 
-    // answering it takes the lamp back down, live
+    // answering it takes the lamp back down, live — and now it really is an
+    // ANSWER rather than the next status overwriting a transient nudge. The turn
+    // then completes, which leaves the card `done` (finished, unreviewed — still
+    // a needs-you state), so the prompt that follows is what returns it to calm.
+    // `hookPoster` is untouched here: the listener is still the status channel.
+    //
+    // Answered off-screen deliberately: the bar is on `first`'s card and the
+    // SECOND session has focus, so there is no Allow button on screen to click.
+    // `answerHeldPermissions` takes the bar's own `sessions:decidePermission`
+    // path — the same door, without needing the pixels.
+    expect(await answerHeldPermissions(a)).toBe(1);
+    const post = await hookPoster(a, 2);
     await post(first, { hook_event_name: 'UserPromptSubmit' });
     await expect(lamp(w, first)).toHaveAttribute('data-needs-you', 'false', { timeout: 15_000 });
     await expect(w.getByTestId('urgency-count')).toHaveAttribute('data-needing', '0');
@@ -172,11 +184,7 @@ test.describe('urgency strip (E9-04)', () => {
     await w.getByRole('button', { name: '+ session' }).click();
     await expect(lamps(w)).toHaveCount(2, { timeout: 25_000 });
 
-    const post = await hookPoster(a, 2);
-    await post(names[1], {
-      hook_event_name: 'Notification',
-      message: 'Claude needs your permission to use Bash',
-    });
+    await permissionHolder(a)(names[1]);
     await expect(lamp(w, names[1])).toHaveAttribute('data-status', 'needs-permission', {
       timeout: 15_000,
     });

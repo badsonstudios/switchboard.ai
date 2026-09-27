@@ -58,39 +58,31 @@ module.exports = {
    * What goes in the app.
    *
    * An ALLOWLIST rather than the default "all production dependencies",
-   * because electron-vite bundles the renderer: monaco-editor, react, xterm,
-   * marked and the rest are already inside `out/renderer/assets`, and shipping
-   * a second uncompiled copy of them adds ~100 MB to an installer the updater
+   * because electron-vite bundles the renderer: monaco-editor, react, marked
+   * and the rest are already inside `out/renderer/assets`, and shipping a
+   * second uncompiled copy of them adds ~100 MB to an installer the updater
    * (E19-04) will have to download.
    *
-   * The evidence for the allowlist: `node-pty` is the only bare specifier the
-   * BUILT main/preload bundles still `require()` at runtime — it is native, so
-   * `externalizeDepsPlugin` leaves it external on purpose. That is not a fact
-   * anyone should have to re-derive by grepping `out/`, so
-   * `src/main/packaging.test.ts` re-checks it against the SOURCE imports on
-   * every unit run: add a runtime dependency to main, preload or shared
-   * without listing it here and the suite goes red rather than the packaged
-   * app.
+   * ⚠️ THE LIST IS NOW `out/**` AND `package.json`, AND THAT IS THE WHOLE APP
+   * (#952). It used to carry five `node_modules/node-pty/**` lines, because
+   * node-pty was the only bare specifier the BUILT main/preload bundles still
+   * `require()`d at runtime — it is native, so `externalizeDepsPlugin` left it
+   * external on purpose. The PTY transport is gone and so is that dependency,
+   * which means **this app now ships no native module at all**: no
+   * `asarUnpack`, no ABI rebuild, no per-platform binary, and nothing in
+   * `node_modules` reaching the installer.
    *
-   * node-pty's own tree is trimmed hard: `prebuilds/` (58 MB of binaries for
-   * ABIs we do not run — postinstall rebuilds against Electron's) and the
-   * compiler leftovers in `build/Release` (~90 MB of .pdb/.iobj/.ipdb/obj) are
-   * build output, not runtime. What IS needed:
-   *   - lib/**                     the JS, incl. the forked conpty agent
-   *   - build/Release/*.node       conpty + pty + conpty_console_list
-   *   - build/Release/winpty.dll   loaded by pty.node
-   *   - build/Release/*.exe        winpty-agent.exe, spawned by winpty.dll
-   *   - package.json               `main` resolution
+   * The guard that made this safe stays, and it matters more now, not less:
+   * `src/main/packaging.test.ts` re-checks this list against the SOURCE imports
+   * of main, preload and shared on every unit run. Add a runtime dependency
+   * without listing it here and the suite goes red rather than the packaged
+   * app. An empty-looking allowlist is a claim — that nothing is external — and
+   * that test is what keeps it true.
    */
   files: [
     'out/**',
     'package.json',
     '!node_modules/**',
-    'node_modules/node-pty/package.json',
-    'node_modules/node-pty/lib/**',
-    'node_modules/node-pty/build/Release/*.node',
-    'node_modules/node-pty/build/Release/*.dll',
-    'node_modules/node-pty/build/Release/*.exe',
     // NOTHING here for #815's zip writer, deliberately: `yazl` is inlined into
     // the main bundle instead (`src/build/bundled-deps.ts` carries the why —
     // its `buffer-crc32` dependency is invisible to the runtime-dep guard).
@@ -99,26 +91,24 @@ module.exports = {
   ],
 
   /**
-   * node-pty must live OUTSIDE app.asar.
+   * No `asarUnpack` (#952).
    *
-   * Two independent reasons, either one sufficient: Windows cannot LoadLibrary
-   * a .node or a .dll out of a virtual archive, and winpty.dll spawns
-   * `winpty-agent.exe` as a real process from a real path. Electron rewrites
-   * requires into `app.asar.unpacked/` for us, so nothing in the source has to
-   * know. This one line is the difference between a packaged app that opens
-   * terminals and one that throws "Failed to load native module" on the first
-   * session — which is why "a PTY session starts in the packaged app" is the
-   * done-when that matters for this item.
+   * node-pty needed it — Windows cannot LoadLibrary a .node or a .dll out of a
+   * virtual archive, and winpty.dll spawned `winpty-agent.exe` as a real
+   * process from a real path. With the PTY transport deleted there is no native
+   * code in the package, so everything can live inside app.asar. If a native
+   * dependency is ever added back, it needs a line here and a line in `files`,
+   * and `packaging.test.ts` is what will tell you.
    */
-  asarUnpack: ['node_modules/node-pty/**'],
 
   /**
-   * `npm ci`'s postinstall already ran electron-rebuild against Electron's ABI
-   * (scripts/rebuild-native.js), including the Windows Spectre-libs fallback
-   * that plain electron-builder does not have. Letting electron-builder redo
-   * it would at best repeat two minutes of work and at worst fail on a machine
-   * that needs that fallback — with the correct binaries already sitting in
-   * node_modules.
+   * Nothing to rebuild (#952).
+   *
+   * This was `false` because `npm ci`'s postinstall had already run
+   * electron-rebuild against Electron's ABI, including a Windows Spectre-libs
+   * fallback electron-builder does not have. There is no postinstall and no
+   * native module now, so the flag only asserts that electron-builder must not
+   * go looking — which is cheap insurance and one less thing to rediscover.
    */
   npmRebuild: false,
 

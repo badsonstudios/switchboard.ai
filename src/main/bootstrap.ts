@@ -2,23 +2,23 @@
 // populates the registry; everyone else resolves through it (§5.23).
 import { registry } from './extensibility';
 import { claudeAdapter } from './providers/claude';
-import { fakeAdapter } from './providers/fake';
 import { fakeStreamAdapter } from './providers/fake-stream';
 
 export function registerBuiltinContributions(): void {
   // e2e tests swap the real CLI for a fake (hermetic: no login, no network).
-  // Two of them, one per transport — '1' is the original shell-in-a-PTY and is
-  // what all 98 pre-E18 e2e tests select; 'stream' is the stream-json fake
-  // (P2-E18-04). Kept as distinct VALUES of one variable rather than two
-  // variables so the modes cannot both be on at once and silently race to
-  // register the same 'claude-code' id.
-  const fake = process.env.SWITCHBOARD_FAKE_PROVIDER;
-  if (fake === 'stream') {
+  //
+  // ONE FAKE SINCE #952. There were two, one per transport: `'1'` selected the
+  // original shell-in-a-PTY fake (`providers/fake.ts`) and `'stream'` selected
+  // the stream-json fake (P2-E18-04). The PTY one spawned `cmd.exe` / `sh` in a
+  // real node-pty, which is a thing that cannot exist any more.
+  //
+  // BOTH SPELLINGS STILL SELECT A FAKE, deliberately. `'1'` is written into
+  // dozens of specs, and the failure mode of dropping it would be an e2e run
+  // that silently launched against the REAL `claude` binary with the user's
+  // login — slow, non-hermetic, and spending tokens. Accepting any truthy value
+  // and answering with the only fake there is fails safe.
+  if (process.env.SWITCHBOARD_FAKE_PROVIDER) {
     registry.register('provider-adapter', fakeStreamAdapter);
-    return;
-  }
-  if (fake === '1') {
-    registry.register('provider-adapter', fakeAdapter);
     return;
   }
   registry.register('provider-adapter', claudeAdapter);

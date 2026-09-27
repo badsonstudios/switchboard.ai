@@ -13,7 +13,6 @@ import fs from 'fs';
 import path from 'path';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import { AUTONOMY_PERMISSION_MODE, claudeAdapter, resetCliPathCache } from './claude';
-import { fakeAdapter } from './fake';
 import { fakeStreamAdapter } from './fake-stream';
 import { slugForCwd } from '../transcripts/paths';
 import type { SpawnOptions } from '../extensibility/contributions';
@@ -66,7 +65,9 @@ describe('the `fork` capability is the gate (§5.3, §5.5 Level 3)', () => {
   // harness and a real `--fork-session` argv. If someone "tidies up" the fakes
   // to mirror the real adapter again, this is what goes red.
   it.each([
-    ['pty fake', fakeAdapter],
+    // The 'pty fake' row went with `providers/fake.ts` (#952) — a shell in a
+    // real node-pty is not a thing that can exist now. The stream fake is the
+    // only one, and it is the one the whole e2e suite runs on.
     ['stream fake', fakeStreamAdapter],
   ])('is NOT declared by the %s — the absence IS the gate', (_label, adapter) => {
     expect(adapter.capabilities?.fork).toBeUndefined();
@@ -113,24 +114,26 @@ describe('the `fork` capability is the gate (§5.3, §5.5 Level 3)', () => {
 describe('claudeAdapter.buildSpawn — the fork flags', () => {
   it('passes --fork-session and --session-id, AFTER --resume', () => {
     const args = spawn({ resumeSessionId: 'native-1', forkSession: true, forkSessionId: FORK_ID });
-    // Order, not just presence: `--fork-session` is documented as modifying a
+    // ORDER, not just presence: `--fork-session` is documented as modifying a
     // resume, and the CLI's own launcher builds the pair this way.
-    expect(args.slice(0, 5)).toEqual([
+    //
+    // Asserted as a CONTIGUOUS RUN rather than against the whole list (#952).
+    // The stream flags used to be conditional and a resume-only spawn had none,
+    // so the full `toEqual` was readable; they are unconditional now, and pinning
+    // every flag here would make this test fail the next time an unrelated one is
+    // added. What it is actually about is the four tokens below, in that order.
+    const at = args.indexOf('--resume');
+    expect(at).toBeGreaterThanOrEqual(0);
+    expect(args.slice(at, at + 5)).toEqual([
       '--resume',
       'native-1',
       '--fork-session',
       '--session-id',
       FORK_ID,
     ]);
-    expect(args).toEqual([
-      '--resume',
-      'native-1',
-      '--fork-session',
-      '--session-id',
-      FORK_ID,
-      '--permission-mode',
-      AUTONOMY_PERMISSION_MODE.ask,
-    ]);
+    // ...and the permission mode still lands after the pair, not between it
+    expect(args.indexOf('--permission-mode')).toBeGreaterThan(at + 4);
+    expect(args[args.indexOf('--permission-mode') + 1]).toBe(AUTONOMY_PERMISSION_MODE.ask);
   });
 
   it('passes NEITHER flag when there is no conversation to fork from', () => {
@@ -144,7 +147,13 @@ describe('claudeAdapter.buildSpawn — the fork flags', () => {
 
   it('passes neither flag on an ordinary resume', () => {
     const args = spawn({ resumeSessionId: 'native-1' });
-    expect(args).toEqual(['--resume', 'native-1', '--permission-mode', AUTONOMY_PERMISSION_MODE.ask]);
+    // Presence, not the whole list, for the reason above (#952).
+    expect(args).not.toContain('--fork-session');
+    expect(args).not.toContain('--session-id');
+    expect(args.slice(args.indexOf('--resume'), args.indexOf('--resume') + 2)).toEqual([
+      '--resume',
+      'native-1',
+    ]);
   });
 
   // ── THE REFUSAL THAT PROTECTS THE CARD BINDING ────────────────────────────

@@ -23,6 +23,7 @@ import {
   readWorkspaceFile,
   writeWorkspaceFile,
   openEventsDrawer,
+  permissionHolder,
 } from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -171,10 +172,10 @@ test.describe('focus-stealing policy (E9-10)', () => {
     // it blocks on a permission. Under `urgent` the lamp is the WHOLE response:
     // no focus, and the workspace is not rearranged either — E9-05's reveal is
     // itself a rearrangement, and "never steal" cannot coexist with it.
-    await post(second, {
-      hook_event_name: 'Notification',
-      message: 'Claude needs your permission to use Bash',
-    });
+    // A REAL held request (#952): `PreToolUse` is no longer registered, and a
+    // permission `Notification` is dropped before it can move a badge (#313).
+    // `!perm` is what a permission IS on this transport. Assertions unchanged.
+    await permissionHolder(a)(second);
     await expect(lamp(w, second)).toHaveAttribute('data-needs-you', 'true', { timeout: 20_000 });
     await expect(tabs(w)).toHaveCount(1);
     await expect(focused(w)).toHaveText(new RegExp(first));
@@ -184,10 +185,7 @@ test.describe('focus-stealing policy (E9-10)', () => {
     await palette(w, 'When any session needs you: always jump to it');
     await post(second, { hook_event_name: 'UserPromptSubmit' }); // answer the hold
     await expect(lamp(w, second)).toHaveAttribute('data-needs-you', 'false', { timeout: 20_000 });
-    await post(second, {
-      hook_event_name: 'Notification',
-      message: 'Claude needs your permission to use Bash',
-    });
+    await permissionHolder(a)(second);
     await expect(tabs(w)).toHaveCount(2, { timeout: 20_000 });
     await expect(focused(w)).toHaveText(new RegExp(second));
   });
@@ -211,10 +209,7 @@ test.describe('focus-stealing policy (E9-10)', () => {
     await row(w, first).click();
     await expect(focused(w)).toHaveText(new RegExp(first));
 
-    await post(second, {
-      hook_event_name: 'Notification',
-      message: 'Claude needs your permission to use Bash',
-    });
+    await permissionHolder(a)(second);
     // the event lands — the log still has it, and so does the rail. The drawer
     // is collapsed by default (P2-E14-01), and this test reads BOTH a presence
     // and an absence off its rows, so it has to be open for either to mean

@@ -65,8 +65,11 @@ function cspMetaBackstop(): PluginOption {
 
 export default defineConfig({
   main: {
-    // native/runtime deps (node-pty) must stay external — bundling a native
-    // module breaks it. The exceptions are listed in src/build/bundled-deps.ts,
+    // Runtime deps stay external by default. This mattered most for node-pty,
+    // which was native and could not be bundled at all; since #952 deleted the
+    // PTY transport nothing external is native, but the default stands because
+    // it is still the right one for anything large or node-specific.
+    // The exceptions are listed in src/build/bundled-deps.ts,
     // with the reason: i18next + i18next-icu are inlined because ICU's
     // formatter arrives through a PEER dependency this app never declares, so
     // externalizing them would ship an app that cannot compose a notification.
@@ -77,9 +80,7 @@ export default defineConfig({
         input: {
           index: 'src/main/index.ts',
           // standalone done-when checks, run via `electron --run-as-node`
-          'pty-check': 'src/main/pty/lifecycle-check.ts',
           'adapter-check': 'src/main/providers/adapter-check.ts',
-          'hook-check': 'src/main/hooks/hook-check.ts',
           'transcript-check': 'src/main/transcripts/transcript-check.ts',
           // the stream-json fake CLI (P2-E18-04) — a real program the fake
           // adapter spawns, run under `electron --run-as-node` like the checks

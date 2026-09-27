@@ -1,7 +1,10 @@
 // P2-E14-04 — the actionable permission toast, in a real window on a real
 // desktop.
 //
-// TRANSPORT SCOPE (P2-E18-18, #404): `[pty]` for the whole group. The stimulus
+// TRANSPORT SCOPE — HISTORICAL (P2-E18-18, #404; retagged by #952, which
+// left one transport, so a `[pty]` tag names nothing). The note below is the
+// reasoning as it stood, kept because it says what each test actually drives:
+// // TRANSPORT SCOPE (P2-E18-18, #404): `[pty]` for the whole group. The stimulus
 // is a HELD `PreToolUse` hook, which is the PTY transport's permission path; a
 // Direct session's permission rides `can_use_tool` instead. The behaviour under
 // test is transport-blind by construction — `pendingPermissionFor` and
@@ -25,7 +28,7 @@
 // Read through the app LOG, the house pattern for main-process facts
 // (`rules.spec.ts`, `approval.spec.ts`, `hookPoster`): the lines are written by
 // the code under test, so they say what it DID rather than what a mock saw.
-import { test, expect } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 import {
@@ -35,6 +38,7 @@ import {
   LaunchedApp,
   poll,
   tempProjectFolder,
+  permissionHolderBash,
 } from './fixtures/app';
 
 interface ToastLine {
@@ -66,7 +70,15 @@ const toasts = (home: string): ToastLine[] => lines<ToastLine>(home, 'os toast r
 /** Whether THIS desktop can put a button on a toast — `toastActionsSupported`. */
 const BUTTONS_HERE = process.platform === 'darwin' || process.platform === 'win32';
 
-test.describe('[pty] actionable permission toasts (P2-E14-04)', () => {
+/** How many permissions main is holding right now. */
+async function heldCount(w: Page): Promise<number> {
+  const held = (await w.evaluate(() =>
+    window.switchboard.sessions.pendingPermissions()
+  )) as unknown[];
+  return held.length;
+}
+
+test.describe('actionable permission toasts (P2-E14-04)', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
 
@@ -83,18 +95,10 @@ test.describe('[pty] actionable permission toasts (P2-E14-04)', () => {
       window.switchboard.notifications.setPrefs({ enabled: true, osToasts: true })
     );
 
-    // The CLI's view of the world: listener port from the app log, the
-    // per-session token from the state dir (both created by the real spawn).
-    const logFile = await poll(() => {
-      const f = findFile(a.home, 'switchboard.log');
-      return f && fs.readFileSync(f, 'utf8').includes('hook listener up') ? f : null;
-    });
-    const ports = [
-      ...fs.readFileSync(logFile, 'utf8').matchAll(/"msg":"hook listener up".*?"port":(\d+)/g),
-    ];
-    const port = Number(ports[ports.length - 1][1]);
-    const tokenFile = await poll(() => findFile(a.home, 'hook-token'));
-    const token = fs.readFileSync(tokenFile, 'utf8').trim();
+    // The listener port and the per-session token used to be dug out of the app's
+    // own log and state dir here, so the test could POST a `PreToolUse` as the CLI.
+    // A permission is a control request now (#952) — `permissionHolderBash` below
+    // sends it through the session itself, so none of that discovery is needed.
 
     // The user looks away — the toast's own condition (§5.9: no popup over the
     // window you are already reading). Asserted rather than assumed by
@@ -103,17 +107,10 @@ test.describe('[pty] actionable permission toasts (P2-E14-04)', () => {
     // rule fired for a reason it did not have.
     await blurApp(a);
 
-    // …and the CLI asks for something. Left unawaited: the hook response is
-    // PARKED until the permission is decided, which is the whole point.
-    const held = fetch(`http://127.0.0.1:${port}/hook`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-switchboard-token': token },
-      body: JSON.stringify({
-        hook_event_name: 'PreToolUse',
-        tool_name: 'Bash',
-        tool_input: { command: 'npm run build', description: 'Build' },
-      }),
-    }).then((r) => r.text());
+    // …and the CLI asks for something. A REAL `can_use_tool` request (#952): the
+    // command has to be real, because the safety half below asserts the toast's
+    // body was built from the request main is actually holding.
+    await permissionHolderBash(a)(title, 'npm run build');
 
     const fired = await poll(() => {
       const t = toasts(a.home).filter((x) => x.kind === 'needs-permission');
@@ -159,10 +156,10 @@ test.describe('[pty] actionable permission toasts (P2-E14-04)', () => {
     // mislead.
     await w.getByRole('button', { name: 'Allow', exact: true }).click();
 
-    const verdict = JSON.parse(await held) as {
-      hookSpecificOutput?: { permissionDecision?: string };
-    };
-    expect(verdict.hookSpecificOutput?.permissionDecision).toBe('allow');
+    // The answer used to be read out of the parked hook response. There is no
+    // parked response — it goes back over the control channel — so the assertion
+    // is made where a user would see it: main is holding nothing afterwards.
+    await expect.poll(() => heldCount(w)).toBe(0);
 
     // Gated on the DESKTOP'S capability, not on the platform, and for the same
     // reason `shown` exists at all (#421's CI lesson): a Linux CI container has

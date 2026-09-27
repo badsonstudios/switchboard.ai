@@ -96,26 +96,27 @@ export const fakeStreamAdapter: ProviderAdapter = {
   },
 
   /**
-   * Honour the REQUESTED transport, exactly as the real adapter does.
+   * Build the stream recipe UNCONDITIONALLY, exactly as the real adapter does.
    *
-   * The first version always returned a stream recipe, which meant no test
-   * could ever exercise SWITCHING — the fake ignored the very setting #149
-   * added, so the human path (set it, restart, use it) was untestable and the
-   * feature shipped unusable (#153). A fake that cannot say "no" to a request
-   * cannot test the request.
+   * ⚠️ THE BRANCH THIS USED TO HAVE WAS A LIVE HAZARD WHEN #952 FLIPPED
+   * `DEFAULT_TRANSPORT`, and it is worth knowing why it was ever there.
+   *
+   * It read `if (options.transport !== 'stream')` and returned a bare
+   * `cmd.exe` / `sh` with NO stream flags and NO `transport` field — the PTY
+   * fake's recipe. That existed for a good reason at the time: the first version
+   * always returned a stream recipe, so no test could exercise SWITCHING, the
+   * fake ignored the very setting #149 added, and the feature shipped unusable
+   * (#153). A fake that cannot say "no" to a request cannot test the request.
+   *
+   * There is nothing left to say no TO, and the branch stopped being inert the
+   * moment an absent `transport` started meaning `'stream'`: `SessionManager`
+   * resolves `recipe.transport ?? DEFAULT_TRANSPORT`, so that shell would be
+   * handed to `StreamService` and have NDJSON pumped at it — a session that hangs
+   * with no error, which is the #164 failure the real adapter was hardened
+   * against in this same item. The fake has to mirror that hardening or the
+   * hardening is untested by the suite that runs on it.
    */
   buildSpawn(options: SpawnOptions): SpawnRecipe {
-    if (options.transport !== 'stream') {
-      // the PTY fake's recipe: a real shell in a real PTY
-      return {
-        command: process.platform === 'win32' ? 'cmd.exe' : 'sh',
-        args: [],
-        env: {
-          ELECTRON_RUN_AS_NODE: undefined,
-          ELECTRON_NO_ATTACH_CONSOLE: undefined,
-        },
-      };
-    }
     // `--settings`, exactly as the real adapter builds it (#313).
     //
     // The fake declared the `hooks` capability from the day it was written, so

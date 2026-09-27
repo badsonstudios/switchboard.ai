@@ -1,9 +1,11 @@
 // Runtime dependencies the MAIN bundle inlines instead of `require()`-ing (#471).
 //
 // `electron.vite.config.ts` externalizes `dependencies` by default
-// (`externalizeDepsPlugin`), which is right for anything native or huge:
-// bundling node-pty breaks it outright. The trade goes the other way for a
-// small pure-JS library, and for i18next it goes the other way *decisively*:
+// (`externalizeDepsPlugin`), which is right for anything native or huge —
+// bundling a native module breaks it outright, as node-pty did before #952
+// deleted the PTY transport and with it this app's last native dependency. The
+// trade goes the other way for a small pure-JS library, and for i18next it goes
+// the other way *decisively*:
 //
 //   • **`i18next-icu` declares `intl-messageformat` as a PEER dependency**, and
 //     `intl-messageformat` pulls two `@formatjs/*` packages of its own. None of

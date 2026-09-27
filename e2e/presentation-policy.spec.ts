@@ -26,6 +26,7 @@ import {
   hookPoster,
   persistedUi,
   readWorkspaceFile,
+  permissionHolder,
 } from './fixtures/app';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -59,11 +60,25 @@ async function setSessionPolicy(w: Page, title: string, value: string): Promise<
 }
 
 /** Focus a session's card and send it a prompt, the way a user does. */
+/**
+ * Submit a prompt that STARTS a turn and does not finish it.
+ *
+ * ⚠️ `!hang` rather than 'do the thing' (#952), and the reason is the whole
+ * subject of this file. These tests assert a card is COLLAPSED after submit and
+ * comes back on `Stop` — two states with a gap between them. The old fake was a
+ * shell in a PTY, which never emitted a result, so that gap was open for as long
+ * as the test needed. The stream fake answers immediately and ENDS the turn, so
+ * the card was collapsing and being restored before the assertion could look.
+ *
+ * `!hang` reproduces the old fake's useful property deliberately rather than by
+ * accident: it starts the turn and never completes it, so the session stays
+ * `working` until this file's own `Stop` says otherwise.
+ */
 async function submitIn(w: Page, title: string): Promise<void> {
   await row(w, title).click();
   await expect(w.locator('.dv-active-tab')).toContainText(title);
   await composer(w).click();
-  await composer(w).fill('do the thing');
+  await composer(w).fill('!hang');
   await w.keyboard.press('Enter');
 }
 
@@ -160,7 +175,6 @@ test.describe('presentation policy (E9-06)', () => {
     const second = await addSession(a);
     const third = await addSession(a);
     await expect(tabs(w)).toHaveCount(3);
-    const post = await hookPoster(a, 3);
 
     await setPresentationPolicy(w, 'Hide on submit');
     await submitIn(w, second);
@@ -176,10 +190,10 @@ test.describe('presentation policy (E9-06)', () => {
     await expect(w.locator('.dv-active-tab')).toContainText(third);
 
     // now it needs a human — §5.8's other restore trigger
-    await post(second, {
-      hook_event_name: 'Notification',
-      message: 'Claude needs your permission to use Bash',
-    });
+    // A REAL held request (#952): `PreToolUse` is no longer registered, and a
+    // permission `Notification` is dropped before it can move a badge (#313).
+    // `!perm` is what a permission IS on this transport. Assertions unchanged.
+    await permissionHolder(a)(second);
 
     await expect(tabs(w)).toHaveCount(3, { timeout: 25_000 });
     expect(await tabs(w).allInnerTexts()).toEqual([

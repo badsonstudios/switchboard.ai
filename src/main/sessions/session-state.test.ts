@@ -378,8 +378,12 @@ describe('a live session owns its state dir; a dead one does not (#290)', () => 
       // already written into it.
       const log = captureLog();
       const released: string[] = [];
+      // The UNIMPLEMENTED kind is `'pty'` since #952 — it used to be `'stream'`,
+      // back when the PTY was the only one wired. Cast because an adapter supplies
+      // this at runtime and `TransportKind` no longer admits it, which is exactly
+      // the case `UnknownTransportError` carries a `string` for.
       const m = new SessionManager(
-        registryThat(() => ({ transport: 'stream' })), // only the PTY is wired
+        registryThat(() => ({ transport: 'pty' as unknown as TransportKind })),
         new Ptys(),
         log,
         stateDir
@@ -390,7 +394,7 @@ describe('a live session owns its state dir; a dead one does not (#290)', () => 
           settingsFor: () => ({ hooks: {} }),
           releaseSettingsFor: (id) => released.push(id),
         })
-      ).toThrow(/stream/);
+      ).toThrow(/pty/);
 
       expect(released).toHaveLength(1);
       expect(fs.readdirSync(stateDir)).toEqual([]);

@@ -11,7 +11,6 @@ import { ThemeDefinition } from '../theme/theme';
 import { BuildIdentity, commitStamp } from '../../../shared/build-identity';
 import type { PresentationPolicy } from '../lib/presentation-policy';
 import type { LayoutMode } from '../lib/layout-mode';
-import { TRUST_INERT_REASON_KEY } from '../lib/trust-reach';
 import { autonomyTooltip } from '../lib/autonomy';
 import type { ServiceHealthStatus } from '../../../shared/service-health';
 import type { EventDto } from '../model/types';
@@ -76,11 +75,9 @@ export function TitleBar(props: {
   layoutMaximized: boolean;
   onCycleLayoutMode: () => void;
   layoutBinding: string;
-  autoTrust: boolean;
-  onToggleTrust: () => void;
+  // `autoTrust` / `trustReaches` / `onToggleTrust` went with the chip (#952).
   /** whether the trust setting can change what any session does (#397) — false
    *  greys the chip out, because Direct-mode sessions are never asked */
-  trustReaches: boolean;
   /**
    * Task labels, as THREE STATES ON ONE CHIP (P2-E7-06 + #758, §5.11):
    *
@@ -146,26 +143,26 @@ export function TitleBar(props: {
       >
         {t('titlebar.rail')}
       </Chip>
-      {/* Folder trust. INERT unless some card will spawn on the Terminal
-          (#397): Claude Code raises no trust question at all on the Direct
-          transport — measured, and pinned by e2e/real-claude.spec.ts — and
-          Direct is the default. `lib/trust-reach.ts` carries the argument, the
-          measurement, and why the rule is workspace-wide.
+      {/* ── NO FOLDER-TRUST CHIP SINCE #952 ───────────────────────────────
+          It was INERT unless some card would spawn on the Terminal (#397):
+          Claude Code raises no trust question at all on the Direct transport,
+          measured and pinned by e2e/real-claude.spec.ts. With the Terminal
+          transport deleted it could never be anything but inert, and its
+          disabled tooltip told the user to switch a session to Terminal — a
+          direction to a place that no longer exists.
 
-          The stored value is left alone when the chip is inert. Someone who
-          chose 🔒 ask trust keeps it, sees it, and gets it back the moment a
-          card goes to Terminal; flipping them to auto-trust because we had
-          decided the setting was pointless would be a silent change to a
-          security preference on their behalf. */}
-      <Chip
-        selected={props.autoTrust}
-        onClick={props.onToggleTrust}
-        disabled={!props.trustReaches}
-        title={props.trustReaches ? t('titlebar.trustHint') : t(TRUST_INERT_REASON_KEY)}
-        testId="auto-trust"
-      >
-        {props.autoTrust ? t('titlebar.trustOn') : t('titlebar.trustOff')}
-      </Chip>
+          A permanently-inert control that explains itself by naming a removed
+          feature is the dead end PHILOSOPHY refuses, so the control went rather
+          than the explanation getting reworded.
+
+          WHAT THIS DOES NOT CHANGE, because it reads like a security regression
+          and is not one: nothing was ever auto-accepted on Direct anyway. The
+          #397 follow-up gated the `hasTrustDialogAccepted` pre-write on the
+          spawn's transport, and the probe behind it (claude 2.1.226) showed an
+          untrusted folder in stream mode running normally, loading project
+          settings, firing project hooks, and leaving no record of itself in
+          `~/.claude.json`. The setting had no effect of any kind — question or
+          write — which is exactly what made the greyed chip honest. */}
       {/* Auto task labels (P2-E7-06, §5.11). A chip and not a buried setting
           for the same reason as the two below it: the thing it governs is a
           phrase derived from what you asked the agent, rendered on every card

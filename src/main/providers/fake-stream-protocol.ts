@@ -672,6 +672,49 @@ export class FakeStreamProtocol {
       return; // the turn continues when the answers arrive
     }
 
+    // An EDIT permission, with the old/new pair the approval bar renders as a
+    // diff (#952).
+    //
+    // WHY A SEPARATE VERB rather than widening `!perm`: the bar's two panes are a
+    // property of `Edit`'s INPUT SHAPE, not of permissions in general. `!perm`
+    // raises a `Write` — one `content` field, one pane — and a test that wants to
+    // assert "the new text is on screen before I approve it" needs a shape that
+    // HAS a new text to show. Approval-bar tests used to get this from a
+    // hand-POSTed `PreToolUse` hook carrying whatever `tool_input` they liked;
+    // with the hook path gone the fake has to be able to produce it, or the claim
+    // becomes untestable and would have to be dropped rather than moved.
+    //
+    // `!permedit <marker…>` — the marker lands in BOTH strings, so a test can tell
+    // the two panes apart and tell two successive requests apart.
+    // A BASH permission, carrying the command verbatim (#952).
+    //
+    // The third and last of the `!perm*` family, and the same argument as
+    // `!permedit`: the payload shape is the subject. Two claims need a real
+    // command string in a real `Bash` request — the OS toast's body must be built
+    // from the request main is actually holding (§5.9's safety half: an Allow
+    // pressed off-screen grants the call the user was SHOWN), and batching groups
+    // two sessions by asking for the same thing. Neither survives a `Write` with
+    // a canned `content`.
+    //
+    // `!permbash <command…>` — everything after the verb is the command.
+    if (text.startsWith('!permbash ')) {
+      const command = text.slice(10).trim();
+      this.askPermission('Bash', { command, description: 'Build' });
+      return;
+    }
+
+    if (text.startsWith('!permedit ')) {
+      for (const marker of text.slice(10).trim().split(/\s+/)) {
+        if (!marker) continue;
+        this.askPermission('Edit', {
+          file_path: this.host.resolve(cwd, 'x.ts'),
+          old_string: `old-${marker}`,
+          new_string: `new-${marker}`,
+        });
+      }
+      return;
+    }
+
     // The CLI's own CHOOSER (#563) — an `AskUserQuestion` request, in the shape
     // the real CLI sends it.
     //

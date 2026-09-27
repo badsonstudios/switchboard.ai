@@ -516,9 +516,16 @@ export const claudeAdapter: ProviderAdapter = {
     // the CLI delegate `can_use_tool` instead of drawing its own prompt, and
     // S-09 proved it is silently IGNORED by an interactive TUI session — so it
     // belongs here, on the stream branch, and nowhere else.
-    const stream = options.transport === 'stream';
-    if (stream) {
-      args.push(
+    // UNCONDITIONAL SINCE #952, and that is a HARDENING rather than a tidy-up.
+    //
+    // It was `if (options.transport === 'stream')`. With the PTY deleted,
+    // `DEFAULT_TRANSPORT` flipped to `'stream'` — so a recipe that declared no
+    // transport would now be spawned on the stream service. If this branch were
+    // still conditional and the condition ever went false, the host would hand a
+    // plain interactive CLI to a protocol reader and the session would hang with
+    // no error. Building the flags unconditionally and declaring `'stream'` below
+    // makes the recipe and the host agree by construction.
+    args.push(
         '--output-format', 'stream-json',
         '--verbose',
         '--input-format', 'stream-json',
@@ -533,9 +540,8 @@ export const claudeAdapter: ProviderAdapter = {
         // S-10 and S-11 spawned with it; the SDK's own argument builder in the
         // extension bundle emits exactly this flag for its
         // `includePartialMessages` option.
-        '--include-partial-messages'
-      );
-    }
+      '--include-partial-messages'
+    );
     if (options.resumeSessionId) args.push('--resume', options.resumeSessionId);
     // §5.5 Level 3 — fork adoption (P2-E11-12).
     //
@@ -579,8 +585,9 @@ export const claudeAdapter: ProviderAdapter = {
         ELECTRON_NO_ATTACH_CONSOLE: undefined,
       },
       // We ANSWER with what we will actually do. The host asked; only the
-      // adapter knows whether its CLI speaks the protocol.
-      transport: stream ? 'stream' : undefined,
+      // adapter knows whether its CLI speaks the protocol — and this one does,
+      // always, so it says so rather than relying on the host's default (#952).
+      transport: 'stream',
     };
   },
 };

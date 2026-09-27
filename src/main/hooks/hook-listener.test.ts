@@ -3,13 +3,7 @@ import fs from 'fs';
 import http from 'http';
 import path from 'path';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
-import {
-  HookListener,
-  PermissionRequest,
-  isInsideClaudeDir,
-  isOutsideCwd,
-  shouldHoldPermission,
-} from './hook-listener';
+import { HookListener } from './hook-listener';
 import { LogSink, createLogger, Logger, LogFields } from '../log/logger';
 import { SessionEvent } from '../sessions/state-machine';
 
@@ -76,35 +70,13 @@ function tokenFor(sessionId: string): string {
   return fs.readFileSync(tokenPath, 'utf8');
 }
 
-/**
- * The hook listener's answer to a PreToolUse POST, as `hook-listener.ts`'s
- * `verdict()` writes it. `hookSpecificOutput` is absent when the request was
- * NOT held (the fail-open `{}` body), which is itself asserted below, so it is
- * optional here. Same shape as `e2e/approval.spec.ts`'s `HookResponse` — the
- * two read the same wire contract, deliberately declared in both places rather
- * than shared, because each is a test's own statement of what the CLI reads.
- */
-interface HookResponse {
-  hookSpecificOutput?: {
-    hookEventName: string;
-    permissionDecision: 'allow' | 'deny';
-    permissionDecisionReason: string;
-  };
-}
-
-/**
- * `JSON.parse` hands back `any`; this is where that stops for this file.
- *
- * Returning the INNER object — and throwing when it is absent — is about the
- * FAILURE, not about catching one that used to escape: a response that stopped
- * carrying a verdict already failed, three lines later, as `received
- * undefined`. Now it fails here, naming the body it actually got.
- */
-function verdictOf(body: string): NonNullable<HookResponse['hookSpecificOutput']> {
-  const verdict = (JSON.parse(body) as HookResponse).hookSpecificOutput;
-  if (!verdict) throw new Error(`hook response carried no verdict: ${body}`);
-  return verdict;
-}
+// `HookResponse` and `verdictOf` went with the hold path (#952). They typed and
+// unwrapped the listener's answer to a HELD `PreToolUse` POST — the
+// `hookSpecificOutput` envelope carrying `permissionDecision` and
+// `permissionDecisionReason`. Nothing is held now, every POST is answered `{}`,
+// and there is no verdict to read. `e2e/approval.spec.ts` declared the same
+// shape independently; if that copy is still there, it is stale for the same
+// reason.
 
 /** The file-level log, or '' before anything has been written to it. */
 function logText(): string {
@@ -179,13 +151,25 @@ describe('§5.29 floor (done-when: invalid requests rejected and logged)', () =>
 });
 
 describe('event routing', () => {
+  // AN *IDLE* NOTIFICATION, NOT A PERMISSION ONE, AND THE SWAP IS THE POINT.
+  //
+  // This used to post `permission_prompt`. Since #952 made #313's guard
+  // unconditional, a permission Notification is dropped before it reaches the
+  // manager for EVERY session — so the old payload would have asserted routing
+  // through a path that deliberately no longer routes. The subject here is
+  // payload-to-event mapping and native-id capture, neither of which is about
+  // permissions; the idle nag is a Notification with no `can_use_tool`
+  // equivalent, which is exactly what the hook channel is still for.
+  //
+  // The dropped case, and the fact that a drop still learns the native id, are
+  // asserted in `permission-notification-guard.test.ts`.
   it('maps hook payloads to session events and captures the native id', async () => {
     const t = tokenFor('s1');
     const status = await post(
       JSON.stringify({
         hook_event_name: 'Notification',
-        notification_type: 'permission_prompt',
-        message: 'Claude needs your permission',
+        notification_type: 'idle',
+        message: 'Claude is waiting for your input',
         session_id: 'native-abc',
       }),
       { 'x-switchboard-token': t }
@@ -198,7 +182,7 @@ describe('event routing', () => {
     expect(applied[0].ev).toMatchObject({
       kind: 'hook',
       event: 'Notification',
-      notificationType: 'permission_prompt',
+      notificationType: 'idle',
     });
   });
 
@@ -236,914 +220,30 @@ describe('event routing', () => {
   });
 });
 
-describe('PreToolUse hold + decision round-trip (P2-E10-03, §5.16)', () => {
-  // a listener with holds armed: ask-autonomy sessions, short fail-open timeout
-  let held: HookListener;
-  let heldPort: number;
-  let requests: PermissionRequest[];
-  let heldApplied: Array<{ sessionId: string; ev: SessionEvent }>;
-
-  beforeEach(async () => {
-    requests = [];
-    heldApplied = [];
-    held = new HookListener({
-      stateDir: tempDir('sb-hold-'),
-      log: createLogger(new LogSink({ dir }), 'hooks'),
-      manager: {
-        apply: (sessionId, ev) => heldApplied.push({ sessionId, ev }),
-        setNativeSessionId: () => {},
-      },
-      autonomyFor: () => 'ask',
-      holdTimeoutMs: 400,
-    });
-    heldPort = await held.start();
-    held.onPermissionRequest((r) => requests.push(r));
-  });
-
-  afterEach(() => held.stop());
-
-  function postHeld(body: string, token: string): Promise<{ status: number; body: string }> {
-    return new Promise((resolve, reject) => {
-      const req = http.request(
-        {
-          host: '127.0.0.1',
-          port: heldPort,
-          path: '/hook',
-          method: 'POST',
-          headers: { 'content-type': 'application/json', 'x-switchboard-token': token },
-        },
-        (res) => {
-          let out = '';
-          res.on('data', (d) => (out += d));
-          res.on('end', () => resolve({ status: res.statusCode ?? 0, body: out }));
-        }
-      );
-      req.on('error', reject);
-      req.end(body);
-    });
-  }
-
-  function heldToken(sessionId: string): string {
-    const { tokenPath } = held.registerSession(sessionId);
-    return fs.readFileSync(tokenPath, 'utf8');
-  }
-
-  const preToolUse = (tool: string) =>
-    JSON.stringify({
-      hook_event_name: 'PreToolUse',
-      tool_name: tool,
-      tool_input: { file_path: 'C:/x.ts', old_string: 'a', new_string: 'b' },
-    });
-
-  it('holds a gated call until allow; verdict JSON returns to the hook', async () => {
-    const t = heldToken('s1');
-    const pending = postHeld(preToolUse('Edit'), t);
-    await until('the call to park', () => requests.length === 1);
-    // parked: the request surfaced, the session flipped to needs-permission
-    expect(requests).toHaveLength(1);
-    expect(requests[0]).toMatchObject({ tool: 'Edit', sessionId: 's1' });
-    expect(requests[0].input).toMatchObject({ file_path: 'C:/x.ts' });
-    expect(heldApplied.some((a) => a.ev.kind === 'permission-held')).toBe(true);
-
-    expect(held.decide(requests[0].requestId, 'allow')).toBe(true);
-    const res = await pending;
-    const verdict = verdictOf(res.body);
-    expect(verdict).toMatchObject({ hookEventName: 'PreToolUse', permissionDecision: 'allow' });
-    expect(heldApplied.some((a) => a.ev.kind === 'permission-resolved')).toBe(true);
-  });
-
-  it('deny returns a deny verdict with the reason', async () => {
-    const t = heldToken('s1');
-    const pending = postHeld(preToolUse('Bash'), t);
-    await until('the call to park', () => requests.length === 1);
-    held.decide(requests[0].requestId, 'deny', 'not on my watch');
-    const verdict = verdictOf((await pending).body);
-    expect(verdict).toMatchObject({ permissionDecision: 'deny', permissionDecisionReason: 'not on my watch' });
-  });
-
-  it("the DEFAULT deny reason tells the model a human refused — not that a gate blocked it", async () => {
-    // Dan 2026-07-26: "Denied from switchboard" read as an infrastructure
-    // block, so Claude announced it was "getting blocked by something called
-    // switchboard" and routed around the denial with other tools until it got
-    // the result anyway. The reason string is fed to the MODEL — it has to
-    // close that door explicitly.
-    const t = heldToken('s1');
-    const pending = postHeld(preToolUse('Bash'), t);
-    await until('the call to park', () => requests.length === 1);
-    held.decide(requests[0].requestId, 'deny'); // no reason -> the default
-    const verdict = verdictOf((await pending).body);
-    const why = verdict.permissionDecisionReason;
-    expect(verdict.permissionDecision).toBe('deny');
-    expect(why).toMatch(/user/i); // a human decided
-    expect(why).toMatch(/denied/i);
-    expect(why).toMatch(/do not retry/i); // and must not be worked around
-    expect(why).toMatch(/another tool|different route/i);
-    // the old wording is the actual defect — it must not come back
-    expect(why).not.toBe('Denied from switchboard');
-  });
-
-  it('timeout fails OPEN: {} response, so the CLI runs its own TUI prompt', async () => {
-    const t = heldToken('s1');
-    const res = await postHeld(preToolUse('Write'), t); // resolves via the 400ms timeout
-    expect(res.body).toBe('{}');
-    // a late decide on the dead request is refused
-    expect(held.decide(requests[0].requestId, 'allow')).toBe(false);
-  });
-
-  it('non-gated calls are never held (instant {} ack)', async () => {
-    const t = heldToken('s1');
-    const res = await postHeld(preToolUse('Read'), t); // Read isn't gated for ask
-    expect(res.body).toBe('{}');
-    expect(requests).toHaveLength(0);
-  });
-
-  it('pendingRequests() replays in-flight holds; empties after decide (P0#3)', async () => {
-    const t = heldToken('s1');
-    const pending = postHeld(preToolUse('Edit'), t);
-    await until('the call to park', () => requests.length === 1);
-    const replay = held.pendingRequests();
-    expect(replay).toHaveLength(1);
-    expect(replay[0]).toMatchObject({ tool: 'Edit', sessionId: 's1' });
-    held.decide(replay[0].requestId, 'allow');
-    await pending;
-    expect(held.pendingRequests()).toHaveLength(0);
-  });
-
-  it('unregisterSession releases in-flight holds (fail-open)', async () => {
-    const t = heldToken('s1');
-    const pending = postHeld(preToolUse('Edit'), t);
-    await until('the call to park', () => requests.length === 1);
-    held.unregisterSession('s1');
-    expect((await pending).body).toBe('{}');
-  });
-
-  it('allow-all answers gated calls at the server: no hold, no event, no push (P2 #19)', async () => {
-    const t = heldToken('s1');
-    held.setAllowAll('s1');
-    const res = await postHeld(preToolUse('Edit'), t); // resolves immediately
-    const verdict = verdictOf(res.body);
-    expect(verdict).toMatchObject({ permissionDecision: 'allow' });
-    expect(requests).toHaveLength(0); // renderer never bothered
-    expect(held.pendingRequests()).toHaveLength(0); // nothing parked
-    // and crucially: NO permission-held event -> no needs-permission beep
-    expect(heldApplied.some((a) => a.ev.kind === 'permission-held')).toBe(false);
-  });
-
-  it('allow-all is per-LIVE-session and ends with it', async () => {
-    const t1 = heldToken('s1');
-    held.setAllowAll('s1');
-    held.unregisterSession('s1'); // session over — the grant dies with it
-    const t2 = heldToken('s1'); // "respawn" under the same id
-    void t1;
-    const pending = postHeld(preToolUse('Edit'), t2);
-    await until('the respawned session to prompt again', () => requests.length === 1);
-    expect(requests).toHaveLength(1); // prompts again
-    held.decide(requests[0].requestId, 'deny');
-    await pending;
-  });
-});
-
-describe('a hold needs somebody to ask: window liveness (P2-E15-09, AR-P1-7)', () => {
-  // The old guard was `permListeners.size === 0`, which can never fire in the
-  // app: ipc.ts subscribes once at setup and never unsubscribes. So a closed
-  // window or a crashed renderer left the CLI parked the full 300s per gated
-  // call. These pin the real signal.
-  let held: HookListener;
-  let heldPort: number;
-  let requests: PermissionRequest[];
-  let heldApplied: Array<{ sessionId: string; ev: SessionEvent }>;
-  let windowLive: boolean;
-  let livenessChecks: number;
-  let livenessThrows: boolean;
-  /** every no-window line this listener logged, by level — #334's subject */
-  let noWindowLines: { warn: number; debug: number };
-
-  beforeEach(async () => {
-    requests = [];
-    heldApplied = [];
-    windowLive = true;
-    livenessChecks = 0;
-    livenessThrows = false;
-    noWindowLines = { warn: 0, debug: 0 };
-    const realLog = createLogger(new LogSink({ dir }), 'hooks');
-    const count =
-      (level: 'warn' | 'debug') =>
-      (msg: string, fields?: LogFields): void => {
-        if (msg.startsWith('no live window to ask')) noWindowLines[level]++;
-        realLog[level](msg, fields);
-      };
-    held = new HookListener({
-      stateDir: tempDir('sb-live-'),
-      log: { ...realLog, warn: count('warn'), debug: count('debug') } satisfies Logger,
-      manager: {
-        apply: (sessionId, ev) => heldApplied.push({ sessionId, ev }),
-        setNativeSessionId: () => {},
-      },
-      autonomyFor: () => 'ask',
-      // long on purpose: a fail-open here must be IMMEDIATE, not a timeout in
-      // disguise — both produce '{}', only one of them is the fix
-      holdTimeoutMs: 5_000,
-      hasLiveWindow: () => {
-        livenessChecks++;
-        if (livenessThrows) throw new Error('window torn down mid-check');
-        return windowLive;
-      },
-    });
-    heldPort = await held.start();
-    held.onPermissionRequest((r) => requests.push(r));
-  });
-
-  afterEach(() => held.stop());
-
-  function postHeld(body: string, token: string): Promise<{ status: number; body: string }> {
-    return new Promise((resolve, reject) => {
-      const req = http.request(
-        {
-          host: '127.0.0.1',
-          port: heldPort,
-          path: '/hook',
-          method: 'POST',
-          headers: { 'content-type': 'application/json', 'x-switchboard-token': token },
-        },
-        (res) => {
-          let out = '';
-          res.on('data', (d) => (out += d));
-          res.on('end', () => resolve({ status: res.statusCode ?? 0, body: out }));
-        }
-      );
-      req.on('error', reject);
-      req.end(body);
-    });
-  }
-
-  function heldToken(sessionId: string): string {
-    const { tokenPath } = held.registerSession(sessionId);
-    return fs.readFileSync(tokenPath, 'utf8');
-  }
-
-  const edit = JSON.stringify({
-    hook_event_name: 'PreToolUse',
-    tool_name: 'Edit',
-    tool_input: { file_path: 'C:/x.ts', old_string: 'a', new_string: 'b' },
-  });
-
-  it('no live window: a gated call fails open IMMEDIATELY instead of parking the CLI', async () => {
-    windowLive = false;
-    const t = heldToken('s1');
-    const started = Date.now();
-    const res = await postHeld(edit, t);
-    expect(res.body).toBe('{}'); // no opinion — the CLI's own prompt takes over
-    expect(Date.now() - started).toBeLessThan(1_000); // not the 5s timeout
-    expect(requests).toHaveLength(0); // nobody was asked
-    expect(held.pendingRequests()).toHaveLength(0); // nothing parked
-    // and no needs-permission state for a card that cannot be shown
-    expect(heldApplied.some((a) => a.ev.kind === 'permission-held')).toBe(false);
-    // but the event is STILL ingested — failing open must not make the session
-    // go dark. The status path is what later surfaces the CLI's own prompt.
-    expect(heldApplied.length).toBeGreaterThan(0);
-  });
-
-  it('an UNGATED call never consults the window (the gate sits after the policy)', async () => {
-    // ordering matters for the log: checking liveness first would warn on every
-    // PreToolUse a session makes, gated or not
-    windowLive = false;
-    const t = heldToken('s1');
-    const read = JSON.stringify({
-      hook_event_name: 'PreToolUse',
-      tool_name: 'Read', // not gated at ask, inside the cwd
-      tool_input: { file_path: 'C:/x.ts' },
-    });
-    expect((await postHeld(read, t)).body).toBe('{}');
-    expect(livenessChecks).toBe(0);
-  });
-
-  it('live window: the same call still holds (the control — else the test above is vacuous)', async () => {
-    const t = heldToken('s1');
-    const pending = postHeld(edit, t);
-    await until('the call to park', () => requests.length === 1);
-    expect(requests).toHaveLength(1);
-    expect(heldApplied.some((a) => a.ev.kind === 'permission-held')).toBe(true);
-    held.decide(requests[0].requestId, 'allow');
-    await pending;
-  });
-
-  it('the pendingPermissions replay path still works with a live window (must not regress)', async () => {
-    const t = heldToken('s1');
-    const pending = postHeld(edit, t);
-    await until('the call to park', () => requests.length === 1);
-    // this is what a reloading renderer re-reads on mount — a reload leaves the
-    // window neither destroyed nor crashed, so it must still find its hold here
-    const replay = held.pendingRequests();
-    expect(replay).toHaveLength(1);
-    expect(replay[0]).toMatchObject({ tool: 'Edit', sessionId: 's1' });
-    held.decide(replay[0].requestId, 'allow');
-    await pending;
-    expect(held.pendingRequests()).toHaveLength(0);
-  });
-
-  it('allow-all is answered at the server even with no window — it never needed one', async () => {
-    windowLive = false;
-    const t = heldToken('s1');
-    held.setAllowAll('s1');
-    const res = await postHeld(edit, t);
-    // the liveness gate sits AFTER allow-all on purpose: a granted session gets
-    // its verdict, not a shrug
-    expect(verdictOf(res.body)).toMatchObject({ permissionDecision: 'allow' });
-    expect(requests).toHaveLength(0);
-  });
-
-  it('releaseHeld frees what was ALREADY parked when the window closed', async () => {
-    // the liveness gate only helps calls arriving after the window dies; this is
-    // the request that was already waiting when the user hit ✕
-    const t = heldToken('s1');
-    const pending = postHeld(edit, t);
-    await until('the call to park', () => requests.length === 1);
-    expect(held.pendingRequests()).toHaveLength(1);
-
-    // deliberately NOT flipping windowLive: releaseHeld is the teardown path
-    // and must free the request on its own, without consulting the gate
-    held.releaseHeld('main window closed');
-    expect((await pending).body).toBe('{}');
-    expect(held.pendingRequests()).toHaveLength(0);
-    // a decision arriving after the release is refused, not applied late
-    expect(held.decide(requests[0].requestId, 'allow')).toBe(false);
-  });
-
-  it('a liveness check that THROWS counts as no window — never park on "I can\'t tell"', async () => {
-    // the real provider touches Electron natives on an object that can be torn
-    // down asynchronously. If it throws mid-request and we don't catch it, the
-    // response is never ended and the CLI parks on ITS timeout instead — the
-    // exact failure this item exists to remove.
-    livenessThrows = true;
-    const t = heldToken('s1');
-    const started = Date.now();
-    const res = await postHeld(edit, t);
-    expect(res.body).toBe('{}');
-    expect(Date.now() - started).toBeLessThan(1_000);
-    expect(held.pendingRequests()).toHaveLength(0);
-  });
-
-  it('releaseHeld with nothing parked is a no-op', () => {
-    expect(() => held.releaseHeld('main window closed')).not.toThrow();
-    expect(held.pendingRequests()).toHaveLength(0);
-  });
-
-  // #334. `noWindowWarned` means "already warned about the outage we are IN".
-  // It was only ever cleared in `unregisterSession`, so within one session the
-  // warning fired once and every later outage went out at `debug` — an operator
-  // watching the log sees the first closed window and never the second.
-  it('the no-window warning re-arms once a window comes back', async () => {
-    const t = heldToken('s1');
-
-    // Outage 1 — loud.
-    windowLive = false;
-    expect((await postHeld(edit, t)).body).toBe('{}');
-    expect(noWindowLines).toEqual({ warn: 1, debug: 0 });
-
-    // Still down — quiet. This is the flag's real job and must not regress:
-    // one line per gated call is a log nobody reads.
-    expect((await postHeld(edit, t)).body).toBe('{}');
-    expect(noWindowLines).toEqual({ warn: 1, debug: 1 });
-
-    // The window is back: this call holds like any other, and re-arms on its
-    // way past the gate. A live window logs nothing at all here.
-    windowLive = true;
-    const pending = postHeld(edit, t);
-    await until('the call to hold again', () => requests.length === 1);
-    expect(requests).toHaveLength(1);
-    held.decide(requests[0].requestId, 'allow');
-    await pending;
-    expect(noWindowLines).toEqual({ warn: 1, debug: 1 });
-
-    // Outage 2 — loud AGAIN. Revert the `delete` in `maybeHold` and this is
-    // the assertion that goes red (warn stays 1, debug becomes 2).
-    windowLive = false;
-    expect((await postHeld(edit, t)).body).toBe('{}');
-    expect(noWindowLines).toEqual({ warn: 2, debug: 1 });
-  });
-});
-
-describe('a hold needs somewhere to SHOW it: the answer-surface probe (#699)', () => {
-  // #333's hole, in the other channel. The push a hold produces is stamped
-  // `cardId: cardOfLive.get(...)` and every mounted card drops what is not its
-  // own, so an unbound session parked for the full 300s in front of nobody.
-  // Unlike the stream path there IS a fallback here — release with no opinion
-  // and the CLI's own TUI prompt takes it — so the fix is to reach it AT ONCE
-  // rather than after five minutes of a card claiming to hold a question.
-  let held: HookListener;
-  let heldPort: number;
-  let requests: PermissionRequest[];
-  let heldApplied: Array<{ sessionId: string; ev: SessionEvent }>;
-  /** what the probe answers; `null` = no probe wired at all */
-  let bound: boolean | null;
-  let probeThrows: boolean;
-  let probeCalls: number;
-  let windowLive: boolean;
-  /** every unroutable line this listener logged, by level */
-  let lines: { error: number; debug: number };
-  /** …and the window gate's, so the ORDER of the two can be asserted */
-  let noWindowLines: number;
-
-  beforeEach(async () => {
-    requests = [];
-    heldApplied = [];
-    bound = true;
-    probeThrows = false;
-    probeCalls = 0;
-    windowLive = true;
-    lines = { error: 0, debug: 0 };
-    noWindowLines = 0;
-    const realLog = createLogger(new LogSink({ dir }), 'hooks');
-    const count =
-      (level: 'error' | 'debug') =>
-      (msg: string, fields?: LogFields): void => {
-        if (msg.startsWith('no card owns this session')) lines[level]++;
-        if (msg.startsWith('no live window to ask')) noWindowLines++;
-        realLog[level](msg, fields);
-      };
-    held = new HookListener({
-      stateDir: tempDir('sb-surface-'),
-      log: {
-        ...realLog,
-        error: count('error'),
-        debug: count('debug'),
-        // the window gate logs its first line at `warn`; counted through the
-        // same helper so one assertion can compare the two gates
-        warn: count('debug'),
-      } satisfies Logger,
-      manager: {
-        apply: (sessionId, ev) => heldApplied.push({ sessionId, ev }),
-        setNativeSessionId: () => {},
-      },
-      autonomyFor: () => 'ask',
-      hasLiveWindow: () => windowLive,
-      // long on purpose, exactly as the window-liveness block sets it: a
-      // fail-open here must be IMMEDIATE, not a timeout wearing the same '{}'
-      holdTimeoutMs: 5_000,
-    });
-    heldPort = await held.start();
-    held.onPermissionRequest((r) => requests.push(r));
-  });
-
-  afterEach(() => held.stop());
-
-  /** wire the probe unless the test wants the unwired default */
-  function wire(): void {
-    if (bound === null) return;
-    held.setAnswerSurfaceProbe(() => {
-      probeCalls++;
-      if (probeThrows) throw new Error('cardOfLive torn down mid-check');
-      return bound as boolean;
-    });
-  }
-
-  function postHeld(body: string, token: string): Promise<{ status: number; body: string }> {
-    return new Promise((resolve, reject) => {
-      const req = http.request(
-        {
-          host: '127.0.0.1',
-          port: heldPort,
-          path: '/hook',
-          method: 'POST',
-          headers: { 'content-type': 'application/json', 'x-switchboard-token': token },
-        },
-        (res) => {
-          let out = '';
-          res.on('data', (d) => (out += d));
-          res.on('end', () => resolve({ status: res.statusCode ?? 0, body: out }));
-        }
-      );
-      req.on('error', reject);
-      req.end(body);
-    });
-  }
-
-  function heldToken(sessionId: string): string {
-    const { tokenPath } = held.registerSession(sessionId);
-    return fs.readFileSync(tokenPath, 'utf8');
-  }
-
-  const edit = JSON.stringify({
-    hook_event_name: 'PreToolUse',
-    tool_name: 'Edit',
-    tool_input: { file_path: 'C:/x.ts', old_string: 'a', new_string: 'b' },
-  });
-
-  /**
-   * Post an `edit` in TWO writes, running `betweenHalves` after the headers have
-   * been read and before the body ends — the real straggler window.
-   *
-   * `handle` takes the token off the headers and runs `maybeHold` on
-   * `req.on('end')`. Everything between is a window in which the session can be
-   * torn down, and a `Write` carrying file content is a body big enough to make
-   * it wide. Two writes with a turn of the loop in between reproduce it
-   * deterministically, without depending on how a megabyte happens to chunk.
-   */
-  function postHeldSlowBody(
-    token: string,
-    betweenHalves: () => void
-  ): Promise<{ status: number; body: string }> {
-    const half = Math.floor(edit.length / 2);
-    return new Promise((resolve, reject) => {
-      const req = http.request(
-        {
-          host: '127.0.0.1',
-          port: heldPort,
-          path: '/hook',
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-            'x-switchboard-token': token,
-            // explicit, so the server knows the body is not finished yet
-            'content-length': String(Buffer.byteLength(edit)),
-          },
-        },
-        (res) => {
-          let out = '';
-          res.on('data', (d) => (out += d));
-          res.on('end', () => resolve({ status: res.statusCode ?? 0, body: out }));
-        }
-      );
-      req.on('error', reject);
-      req.write(edit.slice(0, half));
-      // the headers are on the wire and the body is not: tear the session down
-      // here, exactly as a Restart would
-      setTimeout(() => {
-        betweenHalves();
-        req.end(edit.slice(half));
-      }, 20);
-    });
-  }
-
-  it('no card owns the session: the call fails open IMMEDIATELY instead of parking it', async () => {
-    bound = false;
-    wire();
-    const t = heldToken('s1');
-    const started = Date.now();
-    const res = await postHeld(edit, t);
-    expect(res.body).toBe('{}'); // no opinion — the CLI's own prompt takes over
-    expect(Date.now() - started).toBeLessThan(1_000); // not the 5s timeout
-    expect(requests).toHaveLength(0); // nobody was asked
-    expect(held.pendingRequests()).toHaveLength(0); // nothing parked
-    // and no needs-permission badge for a card that does not exist to wear it
-    expect(heldApplied.some((a) => a.ev.kind === 'permission-held')).toBe(false);
-    // …but the event is STILL ingested: failing open must not make the session
-    // go dark, which is the same rule the window gate keeps.
-    expect(heldApplied.length).toBeGreaterThan(0);
-  });
-
-  it('a card owns it: the same call still holds (the control — else the test above is vacuous)', async () => {
-    bound = true;
-    wire();
-    const t = heldToken('s1');
-    const pending = postHeld(edit, t);
-    await until('the call to park', () => requests.length === 1);
-    expect(requests).toHaveLength(1);
-    expect(heldApplied.some((a) => a.ev.kind === 'permission-held')).toBe(true);
-    held.decide(requests[0].requestId, 'allow');
-    await pending;
-  });
-
-  it('NO probe wired at all holds, exactly as it did before #699', async () => {
-    // hook-check.ts and every unit test that drives this listener standalone
-    // live here. An unwired default that declined would break all of them, and
-    // would be one refactor away from breaking the app.
-    bound = null;
-    wire();
-    const t = heldToken('s1');
-    const pending = postHeld(edit, t);
-    await until('the call to park', () => requests.length === 1);
-    expect(requests).toHaveLength(1);
-    held.decide(requests[0].requestId, 'allow');
-    await pending;
-  });
-
-  it('a probe that THROWS holds — this gate fails toward the user, not away from them', async () => {
-    // the OPPOSITE of the liveness guard's posture, and deliberately: holding
-    // when nobody can answer parks the CLI, but holding when we cannot tell
-    // whether a card owns the session costs a bounded wait with the 300s
-    // release underneath. Denying instead takes a decision the user could have
-    // made off their screen.
-    probeThrows = true;
-    wire();
-    const t = heldToken('s1');
-    const pending = postHeld(edit, t);
-    await until('the call to park despite the throw', () => requests.length === 1);
-    expect(requests).toHaveLength(1);
-    held.decide(requests[0].requestId, 'allow');
-    await pending;
-  });
-
-  it('an UNGATED call never consults the probe (the gate sits after the policy)', async () => {
-    bound = false;
-    wire();
-    const t = heldToken('s1');
-    const read = JSON.stringify({
-      hook_event_name: 'PreToolUse',
-      tool_name: 'Read', // not gated at ask, inside the cwd
-      tool_input: { file_path: 'C:/x.ts' },
-    });
-    expect((await postHeld(read, t)).body).toBe('{}');
-    expect(probeCalls).toBe(0);
-  });
-
-  it('allow-all is answered at the server even with no card — it never needed one', async () => {
-    // the probe sits AFTER allow-all, matching StreamPermissions.offer's order:
-    // a granted session gets its verdict, not a shrug
-    bound = false;
-    wire();
-    const t = heldToken('s1');
-    held.setAllowAll('s1');
-    const res = await postHeld(edit, t);
-    expect(verdictOf(res.body)).toMatchObject({ permissionDecision: 'allow' });
-    expect(requests).toHaveLength(0);
-    expect(probeCalls).toBe(0);
-  });
-
-  it('the unroutable report re-arms once the session is bound again', async () => {
-    // `unroutableWarned` is `noWindowWarned`'s twin and keeps its rule (#334):
-    // membership means "already reported the state we are IN", not "reported
-    // once, ever". Without the re-arm, an operator sees the first lost binding
-    // and never the second.
-    wire();
-    const t = heldToken('s1');
-
-    // Unbinding 1 — loud. `error`, not `warn`: an authenticated live session
-    // with no card is a binding this process lost.
-    bound = false;
-    expect((await postHeld(edit, t)).body).toBe('{}');
-    expect(lines).toEqual({ error: 1, debug: 0 });
-
-    // Still unbound — quiet. One line per gated call is a log nobody reads.
-    expect((await postHeld(edit, t)).body).toBe('{}');
-    expect(lines).toEqual({ error: 1, debug: 1 });
-
-    // Bound again: this call holds, and re-arms on its way past the gate.
-    bound = true;
-    const pending = postHeld(edit, t);
-    await until('the call to hold again', () => requests.length === 1);
-    held.decide(requests[0].requestId, 'allow');
-    await pending;
-    expect(lines).toEqual({ error: 1, debug: 1 });
-
-    // Unbinding 2 — loud AGAIN. Revert the `delete` in `maybeHold` and this is
-    // the assertion that goes red (error stays 1, debug becomes 2).
-    bound = false;
-    expect((await postHeld(edit, t)).body).toBe('{}');
-    expect(lines).toEqual({ error: 2, debug: 1 });
-  });
-
-  it('unregisterSession re-arms it too — a respawn under the same id reports again', async () => {
-    wire();
-    bound = false;
-    const t1 = heldToken('s1');
-    expect((await postHeld(edit, t1)).body).toBe('{}');
-    expect(lines).toEqual({ error: 1, debug: 0 });
-
-    held.unregisterSession('s1'); // the session ends here
-    const t2 = heldToken('s1'); // "respawn" under the same id
-    expect((await postHeld(edit, t2)).body).toBe('{}');
-    expect(lines).toEqual({ error: 2, debug: 0 });
-  });
-
-  it('the WINDOW gate wins when both are down — one event, one named cause', async () => {
-    // The order this gate's comment argues for, and until now nothing tested it:
-    // both conditions resolve the same way, so all the order decides is which
-    // fault gets reported. Swap the two blocks and this goes red — which is the
-    // point, because the stream router reports the window first too, and two
-    // channels naming different causes for one event is the drift being
-    // designed out.
-    windowLive = false;
-    bound = false;
-    wire();
-    const t = heldToken('s1');
-
-    expect((await postHeld(edit, t)).body).toBe('{}');
-
-    expect(noWindowLines).toBe(1); // the window said so…
-    expect(lines).toEqual({ error: 0, debug: 0 }); // …and the card gate never spoke
-    expect(probeCalls).toBe(0); // it was not even consulted
-  });
-
-  it('a session already torn down is a straggler: debug, and it must not leak a flag', async () => {
-    // THE CASE THAT ACTUALLY REACHES THIS GATE (#699 review). `handle` resolves
-    // the token from the HEADERS and runs the gate on `req.on('end')`, so a
-    // large PreToolUse body leaves many event-loop turns in between — and a
-    // Restart landing in that window unregisters the session mid-request.
-    //
-    // Reported at `error` it would cry invariant violation over an ordinary
-    // race. Worse, `unroutableWarned.add` would run AFTER `unregisterSession`
-    // had already cleared that session's entry, so nothing would ever remove it
-    // again: one leaked string per raced restart for the life of the process.
-    bound = false;
-    wire();
-    const t = heldToken('s1');
-    held.unregisterSession('s1'); // …but keep posting with the dead token
-
-    // A dead token 401s at the door, which is the ordinary shape of this race.
-    const rejected = await postHeld(edit, t);
-    expect(rejected.status).toBe(401);
-    expect(lines).toEqual({ error: 0, debug: 0 });
-
-    // Now the mid-body version: the token was live when the headers were read
-    // and is gone by the time the gate runs. `unregisterSession` between the two
-    // is what `handle` cannot see.
-    const t2 = heldToken('s2');
-    const inFlight = postHeldSlowBody(t2, () => held.unregisterSession('s2'));
-    expect((await inFlight).body).toBe('{}');
-    // debug, NOT error — and no flag left behind for a session that is over
-    expect(lines).toEqual({ error: 0, debug: 1 });
-    expect(requests).toHaveLength(0);
-    expect(held.pendingRequests()).toHaveLength(0);
-  });
-});
-
-describe('never ask a question whose answer the CLI discards (#127)', () => {
-  // Measured 2026-08-01: Claude Code accepts our `permissionDecision:"allow"`
-  // for the ordinary permission layer, then applies its `.claude/` safety check
-  // ON TOP — so the user answered our bar and was prompted again in the
-  // terminal six seconds later. Holding it presents a decision we do not own
-  // (PHILOSOPHY P7); the #125 handoff bar explains the CLI's prompt instead.
-  //
-  // Paths are platform-shaped: a `C:/...` literal is a RELATIVE path on POSIX,
-  // so hard-coding drive letters makes the positive cases fail on the Linux and
-  // macOS CI legs AND the negative cases pass vacuously — a green half-suite
-  // proving nothing. Same guard the out-of-cwd tests below already use.
-  const win = process.platform === 'win32';
-  const CWD = win ? 'C:/proj' : '/proj';
-  const inClaude = win ? 'C:/proj/.claude/scripts/coverage.sh' : '/proj/.claude/scripts/coverage.sh';
-  const inSrc = win ? 'C:/proj/src/index.ts' : '/proj/src/index.ts';
-  const lookalike = win ? 'C:/proj/.claude-backup/x' : '/proj/.claude-backup/x';
-  const otherProject = win ? 'C:/other/.claude/settings.json' : '/other/.claude/settings.json';
-
-  it("does not hold a write into the project's own .claude folder", () => {
-    for (const tool of ['Write', 'Edit', 'MultiEdit', 'NotebookEdit']) {
-      expect(
-        shouldHoldPermission('ask', tool, { file_path: inClaude }, CWD),
-        `held ${tool} into .claude`
-      ).toBe(false);
-    }
-  });
-
-  it('holds the same tools everywhere else — this is a carve-out, not a retreat', () => {
-    expect(shouldHoldPermission('ask', 'Write', { file_path: inSrc }, CWD)).toBe(true);
-    // a sibling whose name merely STARTS with .claude is not inside it
-    expect(shouldHoldPermission('ask', 'Write', { file_path: lookalike }, CWD)).toBe(true);
-  });
-
-  it("still holds a write into ANOTHER project's .claude folder", () => {
-    // Only the session's OWN folder is guarded by the CLI on its behalf; a
-    // write into someone else's .claude is exactly what our bar exists for.
-    expect(shouldHoldPermission('ask', 'Write', { file_path: otherProject }, CWD)).toBe(true);
-  });
-
-  it('resolves RELATIVE tool paths against the session folder', () => {
-    expect(shouldHoldPermission('ask', 'Write', { file_path: '.claude/hooks.json' }, CWD)).toBe(false);
-    expect(shouldHoldPermission('ask', 'Write', { file_path: 'src/app.ts' }, CWD)).toBe(true);
-  });
-
-  it('carves out the GLOBAL .claude too, when a session runs in the home folder', () => {
-    // The highest-consequence instance: `<cwd>/.claude` is then global
-    // settings, global CLAUDE.md, and hooks that fire in EVERY session. Still
-    // correct — the CLI guards it identically and it is that session's own
-    // `.claude` — but it must be a deliberate, recorded choice rather than a
-    // surprise nobody considered.
-    const home = win ? 'C:/Users/dan' : '/home/dan';
-    const target = win ? 'C:/Users/dan/.claude/settings.json' : '/home/dan/.claude/settings.json';
-    expect(shouldHoldPermission('ask', 'Write', { file_path: target }, home)).toBe(false);
-  });
-
-  it('leaves pathless and shell tools alone', () => {
-    // WebFetch is MUTATING but not an EDIT tool, so the carve-out never
-    // considers it — which is why the branch keys off toolCategory rather than
-    // MUTATING. Bash could redirect into .claude and we cannot tell from the
-    // command string; it keeps its normal hold. (Whether the CLI's guard is
-    // tool-scoped, and therefore whether a Bash write double-prompts too, is
-    // UNVERIFIED — worth a probe if it ever bites.)
-    expect(shouldHoldPermission('ask', 'WebFetch', { url: 'https://x' }, CWD)).toBe(true);
-    expect(shouldHoldPermission('ask', 'Bash', { command: 'echo hi > .claude/x' }, CWD)).toBe(true);
-  });
-
-  it('needs a cwd to judge containment, and does not guess without one', () => {
-    expect(shouldHoldPermission('ask', 'Write', { file_path: '.claude/x' }, undefined)).toBe(true);
-  });
-});
-
-describe('isInsideClaudeDir', () => {
-  const win = process.platform === 'win32';
-  const cwd = win ? 'C:/proj' : '/proj';
-  const abs = (rest: string) => (win ? `C:/proj/${rest}` : `/proj/${rest}`);
-
-  it('is true for the directory itself and anything under it', () => {
-    expect(isInsideClaudeDir(abs('.claude'), cwd)).toBe(true);
-    expect(isInsideClaudeDir(abs('.claude/skills/a/b.md'), cwd)).toBe(true);
-    expect(isInsideClaudeDir('.claude/settings.json', cwd)).toBe(true);
-  });
-
-  it('is false for siblings, parents and lookalikes', () => {
-    expect(isInsideClaudeDir(abs('src/x.ts'), cwd)).toBe(false);
-    expect(isInsideClaudeDir(abs('.claude-backup/x'), cwd)).toBe(false);
-    expect(isInsideClaudeDir(win ? 'C:/other/.claude/x' : '/other/.claude/x', cwd)).toBe(false);
-    expect(isInsideClaudeDir('../.claude/x', cwd)).toBe(false);
-  });
-
-  it('escapes fail toward HOLDING, which is the safe direction', () => {
-    expect(isInsideClaudeDir('.claude/../../escape.txt', cwd)).toBe(false);
-    expect(isInsideClaudeDir('', cwd)).toBe(false);
-  });
-
-  it('handles a drive-root / filesystem-root session folder', () => {
-    // The case string-prefixing broke on (review P1 #10): resolve() keeps the
-    // trailing separator, so `base + sep` matches nothing.
-    const root = win ? 'C:/' : '/';
-    expect(isInsideClaudeDir(win ? 'C:/.claude/x' : '/.claude/x', root)).toBe(true);
-    expect(isInsideClaudeDir(win ? 'C:/src/x' : '/src/x', root)).toBe(false);
-  });
-});
-
-describe('shouldHoldPermission policy', () => {
-  it('NEVER holds an interactive question tool, at any autonomy (#92)', () => {
-    // The tool is in the PreToolUse matcher purely so we learn the session is
-    // blocked. Holding it would park the CLI behind our approval bar for a
-    // dialog only the Terminal can answer — nothing to click, and a verdict
-    // that can never come.
-    for (const autonomy of ['ask', 'plan', 'auto-edit', 'full-auto', undefined]) {
-      expect(
-        shouldHoldPermission(autonomy, 'AskUserQuestion', {}, 'C:/proj'),
-        `held AskUserQuestion at autonomy=${autonomy}`
-      ).toBe(false);
-    }
-  });
-
-  it('gates by autonomy exactly as the CLI would prompt', () => {
-    expect(shouldHoldPermission('ask', 'Edit')).toBe(true);
-    expect(shouldHoldPermission('ask', 'Read')).toBe(false);
-    expect(shouldHoldPermission('auto-edit', 'Edit')).toBe(false);
-    expect(shouldHoldPermission('auto-edit', 'Bash')).toBe(true);
-    expect(shouldHoldPermission('full-auto', 'Bash')).toBe(false);
-    expect(shouldHoldPermission(undefined, 'Bash')).toBe(false); // unknown: fail open
-  });
-
-  it('plan NEVER holds — the CLI\'s own plan enforcement is authoritative (P0#1, Option A)', () => {
-    expect(shouldHoldPermission('plan', 'Edit')).toBe(false);
-    expect(shouldHoldPermission('plan', 'Bash')).toBe(false);
-    expect(shouldHoldPermission('plan', 'PowerShell')).toBe(false);
-    expect(shouldHoldPermission('plan', 'Read', { file_path: 'C:/elsewhere/x' }, 'C:/proj')).toBe(false);
-  });
-
-  it('gates the Windows PowerShell tool like Bash (2026-07-22 probe)', () => {
-    expect(shouldHoldPermission('ask', 'PowerShell')).toBe(true);
-    expect(shouldHoldPermission('auto-edit', 'PowerShell')).toBe(true);
-    expect(shouldHoldPermission('full-auto', 'PowerShell')).toBe(false);
-  });
-
-  it('read tools hold ONLY when they leave the session folder', () => {
-    // platform-real paths: 'C:/...' is a RELATIVE path on POSIX, and the
-    // fixed isOutsideCwd resolves relative targets against the session
-    // folder (review P1 #10) — so drive-letter literals only mean
-    // "absolute" on Windows
-    const win = process.platform === 'win32';
-    const cwd = win ? 'C:/proj/app' : '/proj/app';
-    const inside = win ? 'C:/proj/app/src/x.ts' : '/proj/app/src/x.ts';
-    const downloads = win ? 'C:/Users/dan/Downloads/w2.pdf' : '/home/dan/Downloads/w2.pdf';
-    const elsewhere = win ? 'C:/elsewhere' : '/elsewhere';
-    expect(shouldHoldPermission('ask', 'Read', { file_path: inside }, cwd)).toBe(false);
-    expect(shouldHoldPermission('ask', 'Read', { file_path: downloads }, cwd)).toBe(true);
-    expect(shouldHoldPermission('auto-edit', 'Glob', { path: elsewhere }, cwd)).toBe(true);
-    expect(shouldHoldPermission('ask', 'Grep', {}, cwd)).toBe(false); // no target = stays in cwd
-    expect(shouldHoldPermission('full-auto', 'Read', { file_path: `${elsewhere}/x` }, cwd)).toBe(false);
-  });
-});
-
-describe('isOutsideCwd path handling (review P1 #10)', () => {
-  const win = process.platform === 'win32';
-  it('relative tool paths resolve against the SESSION folder, not the app cwd', () => {
-    const cwd = win ? 'C:/proj/app' : '/proj/app';
-    expect(isOutsideCwd('src/x.ts', cwd)).toBe(false);
-    expect(isOutsideCwd('./deep/y.ts', cwd)).toBe(false);
-    expect(isOutsideCwd('../sibling/z.ts', cwd)).toBe(true);
-    expect(isOutsideCwd('..', cwd)).toBe(true);
-  });
-
-  it('a drive-root/filesystem-root session folder contains its own files', () => {
-    const root = win ? 'D:\\' : '/';
-    expect(isOutsideCwd(win ? 'D:\\x.txt' : '/x.txt', root)).toBe(false);
-    expect(isOutsideCwd(win ? 'D:\\deep\\y.txt' : '/deep/y.txt', root)).toBe(false);
-    if (win) expect(isOutsideCwd('C:\\other.txt', 'D:\\')).toBe(true); // cross-drive
-  });
-
-  it('the base folder itself is inside; case differences fold on win32', () => {
-    const cwd = win ? 'C:/proj/app' : '/proj/app';
-    expect(isOutsideCwd(cwd, cwd)).toBe(false);
-    if (win) expect(isOutsideCwd('c:/PROJ/app/x.ts', cwd)).toBe(false);
-  });
-
-  it('a sibling folder whose name starts with dots is still outside-aware', () => {
-    const cwd = win ? 'C:/proj/app' : '/proj/app';
-    expect(isOutsideCwd(win ? 'C:/proj/app/..config/x' : '/proj/app/..config/x', cwd)).toBe(false);
-    expect(isOutsideCwd(win ? 'C:/proj/other/x' : '/proj/other/x', cwd)).toBe(true);
-  });
-});
+// ── SEVEN SUITES WENT WITH THE HOLD PATH (#952) ─────────────────────────────
+//
+// Roughly 900 lines covering the `PreToolUse` hold: the decision round-trip
+// (P2-E10-03, §5.16), window liveness (P2-E15-09, AR-P1-7), the answer-surface
+// probe (#699), the `.claude/` carve-out (#127), `isInsideClaudeDir`,
+// `shouldHoldPermission`'s policy table, and `isOutsideCwd`'s path handling.
+//
+// None of it was ported. Every one of those suites tested a decision this
+// listener no longer makes — it does not classify tools, does not consult an
+// autonomy, and does not park an HTTP response. `StreamPermissions` makes the
+// decisions now and `stream-permissions.test.ts` is where their coverage lives;
+// it was never a port target because that router was built with its own tests
+// from P2-E18-07.
+//
+// WHAT WAS GENUINELY LOST, so it is not rediscovered as a surprise: the
+// `.claude/` carve-out's unit coverage (#127). It declined edit-family writes
+// into a project's own `.claude/` because the CLI applies a safety check ABOVE
+// the permission layer that a hook verdict does not satisfy. That case is not
+// unhandled — the control channel reports it properly, as
+// `decision_reason_type: 'safetyCheck'` with a suggested remedy, and it is the
+// finding that forced the whole transport migration (DESIGN §6, 2026-08-01) —
+// but the app no longer has to detect it, so there is no predicate left to test.
+// The three exported helpers it needed (`isInsideClaudeDir`, `isOutsideCwd`,
+// `shouldHoldPermission`) went with it.
 
 describe('buildHookSettings', () => {
   it('produces a valid injectable hook config with token-by-path (S-03)', () => {
@@ -1158,19 +258,47 @@ describe('buildHookSettings', () => {
       expect(h.command).toContain('hook-token'); // path, not the token itself
       expect(h.command).not.toMatch(/[0-9a-f]{32}/); // no raw token on argv
     }
-    // PreToolUse: its own entry — long-wait forwarder, CLI timeout above ours,
-    // and a MATCHER (required for tool hooks; its absence silently disabled
-    // approvals in production — Dan 2026-07-21). Must cover the Windows shell
-    // tool and the read tools the out-of-cwd rule gates.
-    const preEntry = settings.hooks['PreToolUse'][0] as { matcher?: string; hooks: Array<{ command: string; timeout: number }> };
-    const pre = preEntry.hooks[0];
-    expect(pre.timeout).toBeGreaterThan(60);
-    expect(pre.command).toMatch(/hook-forwarder\.cjs.*\d{4,}$/); // waitMs argv
-    for (const tool of ['Bash', 'PowerShell', 'Write', 'Edit', 'Read', 'Glob']) {
-      expect(preEntry.matcher).toContain(tool);
-    }
     expect(fs.existsSync(path.join(dir, 'hook-forwarder.cjs'))).toBe(true);
     expect(fs.existsSync(path.join(dir, 's9', 'hook-token'))).toBe(true);
+  });
+
+  // THE DELETION'S OBSERVABLE CONTRACT (#952), and the reason it is an assertion
+  // rather than a comment: this is the line that stops the CLI calling us before
+  // every tool run, and re-adding the entry is exactly how the hold path would
+  // come back to life by accident.
+  //
+  // It used to be a whole paragraph of this file's largest test: PreToolUse got
+  // its own entry with a long-wait forwarder (a fourth argv telling it to WAIT
+  // for a decision), a CLI-side timeout a beat above ours so OUR fail-open `{}`
+  // won the race, and a MATCHER — whose absence had silently disabled approvals
+  // in production once (Dan, 2026-07-21), which is why the matcher was asserted
+  // tool by tool.
+  it('registers NO PreToolUse entry — permissions ride can_use_tool (#952)', () => {
+    const settings = listener.buildHookSettings('s10') as { hooks: Record<string, unknown> };
+    expect(settings.hooks['PreToolUse']).toBeUndefined();
+    // The status set is untouched, which is the other half of the claim: this
+    // listener is still the status channel, and `Stop` is still the done
+    // authority (S-06).
+    expect(Object.keys(settings.hooks).sort()).toEqual([
+      'Notification',
+      'PostToolUse',
+      'SessionStart',
+      'Stop',
+      'SubagentStop',
+      'UserPromptSubmit',
+    ]);
+  });
+
+  // No `waitMs` fourth argument on any surviving entry: it existed ONLY so the
+  // forwarder would block for a held decision, and a forwarder that still waited
+  // would hold the CLI for nothing.
+  it('no entry asks the forwarder to wait', () => {
+    const settings = listener.buildHookSettings('s11') as {
+      hooks: Record<string, Array<{ hooks: Array<{ command: string }> }>>;
+    };
+    for (const entries of Object.values(settings.hooks)) {
+      expect(entries[0].hooks[0].command).not.toMatch(/hook-forwarder\.cjs.*\d{4,}$/);
+    }
   });
 });
 
@@ -1214,28 +342,10 @@ describe('hook-token files follow their session (#282)', () => {
     });
   }
 
-  /** POST to a listener on its own port, resolving with the RESPONSE BODY —
-   *  which for a held PreToolUse is the verdict the CLI applies. */
-  function postTo(p: number, body: string, token: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const req = http.request(
-        {
-          host: '127.0.0.1',
-          port: p,
-          path: '/hook',
-          method: 'POST',
-          headers: { 'content-type': 'application/json', 'x-switchboard-token': token },
-        },
-        (res) => {
-          let out = '';
-          res.on('data', (d) => (out += d));
-          res.on('end', () => resolve(out));
-        }
-      );
-      req.on('error', reject);
-      req.end(body);
-    });
-  }
+  // `postTo` went with them (#952): it POSTed to a listener on its own port and
+  // resolved with the RESPONSE BODY, which was only interesting when that body
+  // was a held request's verdict. The suites in this block use `own.registerSession`
+  // and the filesystem directly, which is what they were ever really about.
 
   /** Warnings this block is about — `start()` may also warn about node not
    *  being on PATH, which is nothing to do with tokens. */
@@ -1283,43 +393,16 @@ describe('hook-token files follow their session (#282)', () => {
     expect(tokenWarnings()[0].fields?.sessionId).toBe('s-stuck');
   });
 
-  it('...and a parked hold is still released — the step AFTER the removal', async () => {
-    // The removal is not the last thing `unregisterSession` does: the fail-open
-    // hold release is. Asserting the token is revoked would prove nothing (the
-    // map is emptied BEFORE the removal, so it survives a throw); this is the
-    // half a throw would actually skip, and skipping it parks the CLI for the
-    // full hold with nobody left to answer.
-    const stateDir = tempDir('sb-token-');
-    own = new HookListener({
-      stateDir,
-      log: capturingLog(),
-      manager: { apply: () => {}, setNativeSessionId: () => {} },
-      autonomyFor: () => 'ask',
-      holdTimeoutMs: 30_000, // long enough that a timeout can't fake the pass
-    });
-    own.onPermissionRequest(() => {}); // without a subscriber nothing is held
-    const heldPort = await own.start();
-    const { tokenPath } = own.registerSession('s-stuck');
-    const token = fs.readFileSync(tokenPath, 'utf8').trim();
-    const inFlight = postTo(
-      heldPort,
-      JSON.stringify({
-        hook_event_name: 'PreToolUse',
-        tool_name: 'Edit',
-        tool_input: { file_path: 'C:/x.ts', old_string: 'a', new_string: 'b' },
-      }),
-      token
-    );
-    await until('the hold to park', () => own!.pendingRequests().length === 1);
-    expect(own.pendingRequests()).toHaveLength(1);
-
-    fs.rmSync(tokenPath);
-    fs.mkdirSync(tokenPath); // the unlink will now throw
-    own.unregisterSession('s-stuck');
-
-    expect(own.pendingRequests()).toEqual([]);
-    expect(await inFlight).toBe('{}'); // fail-open: the CLI runs its own prompt
-  });
+  // A THIRD TEST STOOD HERE AND WENT WITH THE HOLD PATH (#952).
+  //
+  // It pinned the step AFTER the token removal: `unregisterSession` ended by
+  // releasing any parked hold, fail-open, so a throw from the token unlink could
+  // not skip it and park the CLI for the full 300s with nobody left to answer.
+  // Nothing parks now — `pending`, `release()` and the whole hold went with the
+  // PTY transport — so the ordering it protected no longer exists.
+  //
+  // The two tests either side of it are the ones that still matter, and they are
+  // unchanged: the unlink is best-effort and must not throw out of a teardown.
 
   it('start() sweeps the tokens a previous run left behind', async () => {
     const stateDir = tempDir('sb-token-');

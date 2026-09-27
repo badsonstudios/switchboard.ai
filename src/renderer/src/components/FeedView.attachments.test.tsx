@@ -345,37 +345,20 @@ describe('submitting', () => {
   });
 });
 
-describe('a Terminal-mode session says so instead of pretending', () => {
-  it('refuses the attachment and explains why', async () => {
-    const host = await mount('pty');
-
-    const ev = await paste(host, { files: [png()] });
-
-    expect(ev.defaultPrevented).toBe(true);
-    expect(chips(host)).toEqual([]);
-    expect(notice(host)).toContain('Direct mode');
-  });
-
-  it('still leaves a plain-text paste alone', async () => {
-    const host = await mount('pty');
-    const ev = await paste(host, { text: 'words' });
-    expect(ev.defaultPrevented).toBe(false);
-    expect(notice(host)).toBe('');
-  });
-
-  // The image is the part this session cannot take. The WORDS on the same
-  // clipboard are still the user's, and swallowing them too would make a
-  // Terminal-mode session worse at ordinary pasting than it was before.
-  it('still lets the text half of a text+image clipboard through', async () => {
-    const host = await mount('pty');
-
-    const ev = await paste(host, { files: [png()], text: 'from a spreadsheet' });
-
-    expect(ev.defaultPrevented).toBe(false);
-    expect(chips(host)).toEqual([]);
-    expect(notice(host)).toContain('Direct mode');
-  });
-});
+// ── THE TERMINAL-MODE REFUSAL SUITE WENT WITH THE TRANSPORT (#952) ──────────
+//
+// Three tests: a Terminal-mode session refused an image paste and SAID so
+// ("Direct mode" in the notice) rather than silently dropping it, still left a
+// plain-text paste alone, and still let the TEXT half of a text+image clipboard
+// through — because the image was the part that session could not take, and
+// swallowing the words too would have made it worse at ordinary pasting than it
+// was before.
+//
+// `canAttach` is unconditionally true now: every session takes typed messages,
+// and a bitmap has no keystroke representation only on a transport that took
+// keystrokes. The SPLIT-CLIPBOARD behaviour is the part worth keeping in mind if
+// a provider adapter ever declares it cannot take images — refuse the half you
+// cannot take, pass the half you can, and say which.
 
 describe('a paste that produces nothing says why', () => {
   it('names the escape hatch for an unsupported type', async () => {
@@ -528,16 +511,10 @@ describe('a drop that cannot be used says why (P2-E10-10)', () => {
     expect(notice(host)).toContain('empty');
   });
 
-  // Terminal mode has no typed-message transport, so it cannot carry any of
-  // this — and must say so rather than dropping the file silently.
-  it('refuses a drop in Terminal mode and explains why', async () => {
-    const host = await mount('pty');
-
-    await drop(host, [textFile('x\n', 'a.md')]);
-
-    expect(chips(host)).toEqual([]);
-    expect(notice(host)).toContain('Direct mode');
-  });
+  // "Refuses a drop in Terminal mode and explains why" went with the transport
+  // (#952). Terminal mode had no typed-message route, so it could not carry a
+  // dropped file and had to SAY so rather than dropping it silently. Every
+  // session takes typed messages now.
 });
 
 describe('the drop overlay cannot outlive its drag (P2-E10-10)', () => {
@@ -650,7 +627,7 @@ describe('paste and drop differ ONLY where they must', () => {
   // ...but a folder ON ITS OWN is reported as a folder even in Terminal mode,
   // where "use the Terminal tab instead" would be nonsense advice.
   it('reports a folder as a folder even in Terminal mode', async () => {
-    const host = await mount('pty');
+    const host = await mount('stream');
 
     await drop(host, [], ['src']);
 

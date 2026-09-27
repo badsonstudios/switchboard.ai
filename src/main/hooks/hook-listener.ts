@@ -10,7 +10,6 @@ import http from 'http';
 import { randomBytes } from 'crypto';
 import fs from 'fs';
 import path from 'path';
-import type { PermissionRequest } from '../../shared/ipc/permissions';
 
 function findNodeOnPath(): string | null {
   const names = process.platform === 'win32' ? ['node.exe'] : ['node'];
@@ -33,14 +32,11 @@ import { SessionManager } from '../sessions/session-manager';
 // that disagree about which names are ours is the drift worth designing out.
 import { isSessionStateDirName, DEFAULT_SWEEP_BUDGET_MS } from '../sessions/session-state';
 import { SessionEvent, isPermissionNotification } from '../sessions/state-machine';
-import {
-  SHELLISH,
-  MUTATING,
-  READ_TOOLS,
-  INTERACTIVE_TOOLS,
-  toolCategory,
-} from '../../shared/tool-taxonomy';
-import type { TransportKind } from '../../shared/transport';
+// NO `tool-taxonomy` IMPORT SINCE #952: SHELLISH / MUTATING / READ_TOOLS /
+// INTERACTIVE_TOOLS and `toolCategory` were the hold policy's vocabulary. The
+// module is very much alive — the renderer's block presentation shares it, which
+// was the point of putting it in `shared/` — this file simply no longer classifies
+// tools, because it no longer decides anything about them.
 
 /** Hook events the listener subscribes to for status (S-06 set + PostToolUse). */
 const STATUS_EVENTS = [
@@ -56,22 +52,13 @@ export interface HookListenerOptions {
   stateDir: string;
   manager: Pick<SessionManager, 'apply' | 'setNativeSessionId'>;
   log: Logger;
-  /** session autonomy lookup for the hold policy (E10-03); absent = no holds */
-  autonomyFor?: (sessionId: string) => string | undefined;
-  /** session folder lookup — out-of-cwd reads are gated (E10 fix) */
-  cwdFor?: (sessionId: string) => string | undefined;
-  /** how long a held PreToolUse waits for a UI decision before failing OPEN
-   *  to the CLI's own TUI prompt. Default 300s — human-scale (Dan hit the
-   *  old 60s mid-testing); the CLI's own hook budget is ~600s (S-03). */
-  holdTimeoutMs?: number;
-  /** Is there a renderer that could actually answer a hold? (P2-E15-09.)
-   *  Absent = assume yes, so a listener driven without a UI (hook-check,
-   *  unit tests) keeps its old behaviour. */
-  hasLiveWindow?: () => boolean;
-  /** Which transport hosts this session (P2-E18-07). A 'stream' session's
-   *  permissions ride `can_use_tool`, so PreToolUse is never held for it.
-   *  Absent = PTY, which is every pre-E18 caller. */
-  transportFor?: (sessionId: string) => TransportKind | undefined;
+  // NO HOLD OPTIONS SINCE #952. `autonomyFor`, `cwdFor`, `holdTimeoutMs`,
+  // `hasLiveWindow` and `transportFor` all existed for the PreToolUse hold path
+  // and went with it. `transportFor` is the one worth a sentence: it was added in
+  // P2-E18-07 so a STREAM session's PreToolUse was never held — its permissions
+  // ride `can_use_tool` — and once the PTY transport was deleted every session
+  // was a stream session, which made the guard a tautology and the whole hold
+  // path unreachable. That is why the path is gone rather than merely disabled.
   /** How long `sweepOrphanTokens` may spend, in ms. Absent = the shared
    *  default (`DEFAULT_SWEEP_BUDGET_MS`). A test seam, and the only reason it
    *  is an option at all: the sweep is private and runs inside `start()`. */
@@ -83,277 +70,76 @@ export interface HookListenerOptions {
   sweepNow?: () => number;
 }
 
-// The in-flight permission request (E10-03) now lives in
-// `shared/ipc/permissions`, with its documentation, and is re-exported here
-// because that is where every existing caller already imports it from. It moved
-// because it is a BOUNDARY type — preload and the renderer describe the same
-// object over IPC — and the three hand-kept copies had already drifted: main
-// learned `reasonType`, `displayName` and `suggestions` from the stream
-// transport and neither of the other two ever heard about it (#312).
-export type { PermissionRequest } from '../../shared/ipc/permissions';
+// `PermissionRequest` is NO LONGER RE-EXPORTED from here (#952). It lives in
+// `shared/ipc/permissions` with its documentation, and it moved there in #312
+// because it is a BOUNDARY type — main, preload and the renderer describe the
+// same object over IPC — after the three hand-kept copies drifted. This file
+// re-exported it only because every caller of the HOOK hold path imported it
+// from here; with that path gone, `StreamPermissions` is the producer and the
+// shared module is the one place to import from.
 
-/**
- * Hold policy (P2-E10-03, §5.16): hold the calls a person should see at this
- * autonomy, and nothing more — otherwise we'd nag full-auto sessions the CLI
- * would have let through. Unknown autonomy fails open (no hold).
- *
- * This used to claim it held "ONLY calls the CLI itself would prompt for at
- * this autonomy". That was true when it was written and is not true now
- * (#587): at `auto-edit` the CLI's `acceptEdits` waves through in-folder
- * housekeeping commands — `mkdir`, `touch`, `mv`, `cp`, `rm`, `rmdir`, `sed`,
- * and the PowerShell `Set-Content`/`Add-Content`/`Clear-Content`/`Remove-Item`
- * family — and we hold every one of them, because SHELLISH is in the
- * `auto-edit` row. So the real policy is: **a superset of the CLI's prompts,
- * never a subset.** Erring toward more prompts is the safe direction and is
- * deliberate — `docs/manual/04-approvals-and-autonomy.md` tells the user we are
- * slightly stricter than a bare terminal. Erring the other way would mean
- * silently approving something the CLI wanted a person for, which this table
- * must never do.
- */
-// Tool-name taxonomy (SHELLISH/MUTATING/READ_TOOLS) is imported from
-// src/shared/tool-taxonomy.ts — shared with the renderer's block presentation
-// so shell/edit classification can't drift between the hold policy and the
-// Feed (review P1 #9).
-
-const GATED: Record<string, string[]> = {
-  ask: [...SHELLISH, ...MUTATING],
-  // plan NEVER holds (owner decision 2026-07-23, review P0#1): an in-app
-  // "Allow" returns permissionDecision:'allow', which BYPASSES the CLI's
-  // permission system — including plan mode's write-block. Plan sessions
-  // let the CLI's own plan enforcement run untouched.
-  plan: [],
-  'auto-edit': [...SHELLISH, 'WebFetch'],
-  'full-auto': [],
-};
-
-/** Autonomies whose out-of-cwd reads we hold (plan/full-auto excluded — see GATED). */
-const READ_GATED_AUTONOMIES = ['ask', 'auto-edit'];
-
-/** PreToolUse matcher — REQUIRED for tool hooks (S-03's proven shape used
- *  one; without it the entry never fires and the CLI's own TUI prompt runs
- *  instead — Dan's 2026-07-21 find). Union of everything the policy might
- *  hold, PLUS the interactive tools — those are never held, but the hook is
- *  the only immediate signal that the CLI has stopped and is waiting for a
- *  human (#92); without the entry we never hear about them at all. */
-const PRETOOL_MATCHER = [...SHELLISH, ...MUTATING, ...READ_TOOLS, ...INTERACTIVE_TOOLS].join('|');
-
-/** The primary filesystem target of a tool call, if any. Serves both the
- *  out-of-cwd read branch and the `.claude` carve-out below. */
-function toolPath(input: Record<string, unknown> | undefined): string | undefined {
-  const p = input?.file_path ?? input?.path ?? input?.notebook_path;
-  return typeof p === 'string' ? p : undefined;
-}
-
-/** Does `base` contain `target`? Judged via path.relative — string-prefixing
- *  broke on drive-root folders, where resolve() keeps the trailing separator
- *  and `base + sep` matches nothing (review P1 #10, reproduced).
- *
- *  LEXICAL, deliberately: no `realpath`. This runs on the hook hot path, and
- *  the target frequently does not exist yet (it is about to be created). The
- *  cost is that a junction or symlink inside the base escapes containment —
- *  see `isInsideClaudeDir`, where that assumption is load-bearing. */
-function contains(base: string, target: string): boolean {
-  const fold = (x: string) => (process.platform === 'win32' ? x.toLowerCase() : x);
-  const rel = path.relative(fold(base), fold(target));
-  return !(rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel));
-}
-
-/** Is `p` outside the session's folder? (The CLI prompts for outside reads.)
- *  Relative tool paths resolve against the SESSION folder, not the app's own
- *  cwd. */
-export function isOutsideCwd(p: string, cwd: string): boolean {
-  return !contains(path.resolve(cwd), path.resolve(cwd, p));
-}
-
-/**
- * Is `p` inside the session folder's own `.claude/` directory?
- *
- * The two resolve bases are asymmetric on purpose — the TARGET resolves
- * against `cwd`, the BASE against `cwd/.claude` — because a relative tool path
- * like `.claude/hooks.json` is relative to the session folder. This looks like
- * it could be written as `!isOutsideCwd(p, join(cwd, '.claude'))`; it cannot,
- * because that resolves the target to `.claude/.claude/hooks.json`.
- *
- * Note "the session folder's own `.claude`" is the GLOBAL config when a session
- * runs in the home directory — global settings, global CLAUDE.md, global hooks
- * that fire in every session. Still correct (the CLI guards it identically,
- * and it is that session's own `.claude`), but it is the highest-consequence
- * instance of the carve-out below, so it is pinned by a test.
- */
-export function isInsideClaudeDir(p: string, cwd: string): boolean {
-  return contains(path.resolve(cwd, '.claude'), path.resolve(cwd, p));
-}
-
-export function shouldHoldPermission(
-  autonomy: string | undefined,
-  tool: string | undefined,
-  input?: Record<string, unknown>,
-  cwd?: string
-): boolean {
-  if (!autonomy || !tool) return false;
-  // A decision the CLI KEEPS — never ask a question whose answer we cannot
-  // honour (#127, P7 third line). Claude Code guards writes into a project's
-  // own `.claude/` above the permission layer: it accepts our
-  // `permissionDecision:"allow"` for the ordinary check and then applies its
-  // safety check anyway, so the user answered OUR bar and was asked again in
-  // the terminal six seconds later (measured 2026-08-01). Holding it presents a
-  // decision we do not own and teaches the user our approvals are advisory;
-  // passing hands it to the layer that actually owns it, which the #125 handoff
-  // bar then explains. Checked FIRST so it beats the GATED table.
-  //
-  // THE LOAD-BEARING ASSUMPTION is not "the CLI will keep guarding this" — it
-  // is that the CLI's guard uses the SAME containment rule we do. Both are
-  // lexical; neither resolves links. A junction at `<cwd>/.claude/link`
-  // pointing elsewhere skips our bar, and whether the CLI still catches it
-  // depends on whether it resolves links. Not worth a sync `realpath` on this
-  // path (it throws for a target about to be created), but that is the thing
-  // that would actually break.
-  //
-  // Note this branch is UNREACHABLE in the configuration S-09 documented,
-  // where no PreToolUse reached us for the `.claude` write at all — #127's log
-  // and S-09 describe two different configurations, and only #127's reaches
-  // here. Where it is unreachable, the carve-out cannot be what exposes
-  // anything.
-  // `toolCategory === 'edit'`, NOT all of MUTATING: MUTATING also holds
-  // WebFetch, which is pathless today but one schema change away from growing
-  // a `path` field and silently un-holding a network tool. The CLI's guard is
-  // scoped to its own edit tools — its prompt says "allow Claude to edit its
-  // own settings".
-  if (cwd && toolCategory(tool) === 'edit') {
-    const target = toolPath(input);
-    if (target && isInsideClaudeDir(target, cwd)) return false;
-  }
-  if ((GATED[autonomy] ?? []).includes(tool)) return true;
-  // read tools only prompt when they leave the workspace — mirror that
-  if (READ_GATED_AUTONOMIES.includes(autonomy) && READ_TOOLS.includes(tool) && cwd) {
-    const target = toolPath(input);
-    if (target && isOutsideCwd(target, cwd)) return true;
-  }
-  return false;
-}
+// ── THE HOLD POLICY IS GONE, AND SO IS §5.16's PLAN-MODE RULE (#952) ─────────
+//
+// This file used to carry `GATED`, `READ_GATED_AUTONOMIES`, `PRETOOL_MATCHER`,
+// `shouldHoldPermission` and the `.claude` carve-out — the policy deciding which
+// tool calls a person should see at a given autonomy. All of it served the
+// PreToolUse HOLD, and the hold is gone with the PTY transport.
+//
+// WHY A POLICY WAS NEEDED AT ALL, because this is the part that does not carry
+// over and is the reason nothing replaces it. `PreToolUse` fires for EVERY tool
+// call, and a hook's `permissionDecision:'allow'` BYPASSES the CLI's own
+// permission system. So the hook path had to decide for itself what deserved a
+// human — a table of tools per autonomy, erring toward more prompts than the CLI
+// would give, because erring the other way meant silently approving something
+// the CLI wanted a person for.
+//
+// The control channel inverts that. The CLI asks `can_use_tool` only for what it
+// actually wants permission for, and our answer goes THROUGH its permission
+// system rather than around it. There is no policy to hold because there is no
+// question we were not asked.
+//
+// ⚠️ AND THAT IS WHAT RETIRES §5.16's PLAN-MODE RULE — *"plan sessions are NEVER
+// held in-app"* (owner, 2026-07-23). It lived here as `GATED.plan = []`, and its
+// premise was exactly the bypass above: an in-app Allow returned
+// `permissionDecision:'allow'`, which skipped plan mode's write-block, so holding
+// a plan session would have let a "read-only planning" session write files. The
+// hazard was real and it was a fact about HOOK SEMANTICS, not a product rule. On
+// the control channel a plan-mode session's requests are held in-app and that is
+// safe, because an allow is answered into the CLI's own enforcement.
+//
+// What survives with teeth is narrower and already built, in
+// `sessions/stream-permissions.ts`: a DISPATCHED session asking to leave plan
+// mode is refused at once, because nobody is watching it. That is a different
+// rule for a different reason, and it is the one to look for if you came here
+// following §5.16.
+//
+// The `.claude/` carve-out is also worth knowing the fate of. It declined
+// edit-family writes into a project's own `.claude/` (#127) because the CLI
+// applies a safety check ABOVE the permission layer that a hook verdict does not
+// satisfy — the user answered our bar and was asked again in the terminal six
+// seconds later. The control channel reports that case properly, as
+// `decision_reason_type: 'safetyCheck'` with a suggested remedy, which is the
+// finding that forced this whole migration (DESIGN §6, 2026-08-01).
 
 export class HookListener {
   private server: http.Server | null = null;
   private port = 0;
   private readonly tokens = new Map<string, string>(); // token -> sessionId
   private forwarderPath: string | null = null;
-  // held PreToolUse responses awaiting a UI decision (E10-03). The request
-  // rides along so a reloading/racing renderer can REPLAY what's pending
-  // (review P0#3 — a missed push must not park the CLI for the full hold).
-  private readonly pending = new Map<
-    string,
-    { res: http.ServerResponse; timer: NodeJS.Timeout; sessionId: string; request: PermissionRequest }
-  >();
-  private readonly permListeners = new Set<(r: PermissionRequest) => void>();
-  private readonly resolvedListeners = new Set<(requestId: string) => void>();
-  // LIVE sessions where the user chose "Allow all (this session)". Checked
-  // BEFORE parking (review P2 #19 / Dan round 4): an allow-all session must
-  // not hold, beep, or round-trip the renderer for every gated call — the
-  // verdict is answered right here. Keyed by live id so a respawn prompts
-  // again (P0 #2 semantics); cleared on unregister.
-  private readonly allowAllSessions = new Set<string>();
-  // sessions already warned about having no window to ask (P2-E15-09) — the
-  // condition repeats per gated call, the warning shouldn't. Membership means
-  // "warned about the outage we are IN", not "warned once, ever": `maybeHold`
-  // re-arms it the moment a live window is seen again (#334).
-  private readonly noWindowWarned = new Set<string>();
-  /**
-   * Sessions already reported as having no surface to ask on (#699).
-   *
-   * `noWindowWarned`'s twin — same meaning, same re-arm, same place — and
-   * deliberately a SECOND set rather than a shared one: a session can be
-   * unbound while the window is fine, and merging them would let one outage
-   * silence the other's first line, which is the whole failure #334 fixed.
-   */
-  private readonly unroutableWarned = new Set<string>();
-  /** see `setAnswerSurfaceProbe` — absent until `registerSessionIpc` wires it */
-  private answerSurface: ((sessionId: string) => boolean) | null = null;
-  private reqCounter = 0;
-
-  /** Is there a renderer that could answer a hold? A provider that THROWS
-   *  counts as "no" — "I can't tell" must never resolve to "park the CLI".
-   *  Absent provider = assume yes (hook-check, unit tests). */
-  private windowLive(): boolean {
-    try {
-      return this.opts.hasLiveWindow?.() !== false;
-    } catch (err) {
-      this.opts.log.warn('window liveness check threw — treating as no window', {
-        error: String(err),
-      });
-      return false;
-    }
-  }
-
-  /**
-   * Teach this listener which live sessions have a surface that can SHOW a
-   * held request (#699).
-   *
-   * The canonical argument for what this question means, and why it is not the
-   * same question as `hasLiveWindow`, is `StreamPermissions`'
-   * `AnswerSurfaceProbe` docblock — read that one; this is the same probe, from
-   * the same map (`registerSessionIpc`'s `cardOfLive`), asked by the other
-   * channel. The signature is repeated rather than imported because
-   * `stream-permissions.ts` already imports `PermissionRequest` from this file,
-   * and a type-only import back would close a module cycle for one function
-   * type.
-   *
-   * A SETTER, not a constructor option, for the reason #333 gives: `cardOfLive`
-   * belongs to `registerSessionIpc` and does not exist when `main/index.ts`
-   * builds this listener. Unset, `answerable` returns true and this class
-   * behaves exactly as it did before #699 — which is what keeps `hook-check.ts`
-   * and every unit test that drives this listener standalone unchanged.
-   */
-  setAnswerSurfaceProbe(probe: (sessionId: string) => boolean): void {
-    this.answerSurface = probe;
-  }
-
-  /**
-   * Could a held request for this session be SHOWN to someone? (#699)
-   *
-   * Fails toward HOLDING — no probe, or a probe that throws, means yes — which
-   * is `StreamPermissions.answerable`'s posture, adopted here for the same
-   * reason: holding when we cannot tell costs a bounded park with a 300s
-   * fail-open under it, and refusing to hold when a card WOULD have shown it
-   * takes a decision off the user's screen that they could have made.
-   *
-   * Note the two channels weigh that trade against different alternatives and
-   * still land in the same place. The stream router's third gate DENIES, because
-   * a `control_request` has no fallback. Here the alternative is `release()` —
-   * no opinion, and the CLI's own TUI prompt takes the question — so being wrong
-   * costs the user a prompt in the terminal instead of one in the app, not a
-   * refused tool call. That is the cheaper mistake of the two, and it is why
-   * this gate is worth having at all rather than merely being safe.
-   */
-  /**
-   * Is this session still one of ours? (#699)
-   *
-   * Membership in `tokens` IS the registration — `unregisterSession` clears it
-   * first, before the token file and before the held requests — so this answers
-   * "could a NEW request from this session still authenticate", which is the
-   * question that separates a mid-body straggler from a live unbound session.
-   *
-   * A reverse scan of a map keyed the other way, and cheap enough to leave that
-   * way: it runs only on the gated branch of a request that already failed the
-   * card probe, over one entry per live session. `unregisterSession` does the
-   * same scan on a much commoner path.
-   */
-  private isRegistered(sessionId: string): boolean {
-    for (const sid of this.tokens.values()) if (sid === sessionId) return true;
-    return false;
-  }
-
-  private answerable(sessionId: string): boolean {
-    if (!this.answerSurface) return true;
-    try {
-      return this.answerSurface(sessionId) !== false;
-    } catch (err) {
-      this.opts.log.warn('answer-surface probe threw — holding the request anyway', {
-        sessionId,
-        error: String(err),
-      });
-      return true;
-    }
-  }
+  // NO HOLD STATE SINCE #952. `pending`, `permListeners`, `resolvedListeners`,
+  // `allowAllSessions`, `noWindowWarned`, `unroutableWarned`, `answerSurface`,
+  // `reqCounter`, `windowLive()`, `setAnswerSurfaceProbe()`, `isRegistered()` and
+  // `answerable()` all belonged to the PreToolUse hold. `StreamPermissions` holds
+  // the surviving versions of the two gates worth naming — "is there a live
+  // window" and "does a card own this session" (#699) — and its docblocks are now
+  // the only place that reasoning lives.
+  //
+  // `allowAllSessions` is the one to know about if you are looking for it: the
+  // hook listener had its own copy of "Allow all (this session)", answered at the
+  // server with no hold and no beep. The surviving grant is
+  // `StreamPermissions.allowAllSessions`, and it is the one that still has no
+  // revoke surface — #974 owns that. Deleting this copy means there is one
+  // standing-grant store to fix rather than two.
 
   constructor(private readonly opts: HookListenerOptions) {}
 
@@ -388,7 +174,6 @@ export class HookListener {
   }
 
   stop(): void {
-    for (const id of [...this.pending.keys()]) this.release(id); // fail open
     this.server?.close();
     this.server?.closeAllConnections?.();
     this.server = null;
@@ -400,116 +185,26 @@ export class HookListener {
     this.tokens.clear();
   }
 
-  /** Live permission requests (held PreToolUse calls) — E10-03/E10-04. */
-  onPermissionRequest(cb: (r: PermissionRequest) => void): () => void {
-    this.permListeners.add(cb);
-    return () => this.permListeners.delete(cb);
-  }
-
-  /** Everything currently held — for renderer (re)subscribe replay (P0#3). */
-  pendingRequests(): PermissionRequest[] {
-    return [...this.pending.values()].map((p) => ({ ...p.request }));
-  }
-
-  /** A held request ended (decision OR timeout/teardown) — dismiss UI. */
-  onPermissionResolved(cb: (requestId: string) => void): () => void {
-    this.resolvedListeners.add(cb);
-    return () => this.resolvedListeners.delete(cb);
-  }
-
-  private notifyResolved(requestId: string): void {
-    for (const l of this.resolvedListeners) {
-      try {
-        l(requestId);
-      } catch {
-        /* listener's problem */
-      }
-    }
-  }
-
-  /** Fail every parked request open at once (P2-E15-09). The hasLiveWindow
-   *  gate only helps calls that arrive AFTER the window dies; anything already
-   *  held when the user closes the window would otherwise sit out the full
-   *  300s with nothing able to answer it. */
-  releaseHeld(reason: string): void {
-    const ids = [...this.pending.keys()];
-    if (ids.length === 0) return;
-    this.opts.log.warn('releasing held permissions — failing open to the TUI', {
-      reason,
-      count: ids.length,
-    });
-    for (const id of ids) this.release(id);
-  }
-
-  /** Mark a LIVE session as allow-all: gated calls answer 'allow' at the
-   *  server, with no hold, no needs-permission event, and no beep. */
-  setAllowAll(sessionId: string): void {
-    this.allowAllSessions.add(sessionId);
-    this.opts.log.info('allow-all enabled for session', { sessionId });
-  }
-
   /**
-   * `permissionDecisionReason` is not a log line — the CLI feeds it straight to
-   * the MODEL, and the model acts on how it reads.
+   * NO PERMISSION API SINCE #952.
    *
-   * Dan, 2026-07-26: a denial used to say "Denied from switchboard", which
-   * reads exactly like an infrastructure gate. Claude concluded a hook or
-   * sandbox was blocking it, announced "PowerShell is getting blocked by
-   * something called switchboard", and routed around the denial with a
-   * different tool — then a third — until it got the listing anyway. A denial
-   * that the agent treats as an obstacle to solve is worse than no denial at
-   * all: the user pressed Deny and got the thing they refused.
+   * `onPermissionRequest`, `pendingRequests`, `onPermissionResolved`,
+   * `releaseHeld`, `setAllowAll`, `decide` and the private `verdict` / `release`
+   * pair all went with the hold. Every one of them has a counterpart on
+   * `StreamPermissions`, and the call sites that used to merge the two channels
+   * (`sessions/ipc.ts`'s `pendingRequests` concatenation, `main/index.ts`'s
+   * two-entry release list) now have one side.
    *
-   * So the reason has to say three things: the USER decided this, it is not a
-   * technical fault, and working around it is not on the table.
+   * ⚠️ `verdict(decision, reason?)` IS THE ONE TO KNOW ABOUT IF YOU ARE HERE FOR
+   * DENY-WITH-FEEDBACK (#973). It composed the `permissionDecisionReason` the CLI
+   * feeds straight to the MODEL, and it carried a hard-won lesson: a denial that
+   * said "Denied from switchboard" read as an infrastructure fault, so Claude
+   * announced that something was blocking it and routed around the denial with a
+   * different tool, then a third, until it got the listing anyway (Dan,
+   * 2026-07-26). The wording that fixed it — the USER decided, this is not a
+   * technical fault, do not retry and do not find another route — now lives ONLY
+   * on the stream path, and it is the text #973 should reuse rather than reinvent.
    */
-  private verdict(decision: 'allow' | 'deny', reason?: string): string {
-    const denied =
-      'The user reviewed this request in switchboard and DENIED it. This is a ' +
-      'deliberate decision by the human operator — not a sandbox restriction, a ' +
-      'misconfiguration, or a transient error. Do NOT retry this call, and do NOT ' +
-      'attempt the same goal through another tool or a different route. Stop what ' +
-      'you were doing and ask the user how they would like to proceed.';
-    const allowed = 'The user reviewed this request in switchboard and allowed it.';
-    return JSON.stringify({
-      hookSpecificOutput: {
-        hookEventName: 'PreToolUse',
-        permissionDecision: decision,
-        permissionDecisionReason: reason ?? (decision === 'deny' ? denied : allowed),
-      },
-    });
-  }
-
-  /** Answer a held request. Returns false if it already resolved/timed out. */
-  decide(requestId: string, decision: 'allow' | 'deny', reason?: string): boolean {
-    const p = this.pending.get(requestId);
-    if (!p) return false;
-    clearTimeout(p.timer);
-    this.pending.delete(requestId);
-    try {
-      p.res.end(this.verdict(decision, reason));
-    } catch {
-      /* connection gone — the CLI's own prompt takes over (fail-open) */
-    }
-    this.opts.manager.apply(p.sessionId, { kind: 'permission-resolved' });
-    this.opts.log.info('permission decided', { requestId, decision, sessionId: p.sessionId });
-    this.notifyResolved(requestId);
-    return true;
-  }
-
-  /** Release a held request with no opinion — the CLI's own TUI prompt runs. */
-  private release(requestId: string): void {
-    const p = this.pending.get(requestId);
-    if (!p) return;
-    clearTimeout(p.timer);
-    this.pending.delete(requestId);
-    try {
-      p.res.end('{}');
-    } catch {
-      /* already gone */
-    }
-    this.notifyResolved(requestId);
-  }
 
   /**
    * Issue a per-session token, stored in a file referenced by path — never on
@@ -530,9 +225,6 @@ export class HookListener {
     for (const [tok, sid] of this.tokens) {
       if (sid === sessionId) this.tokens.delete(tok);
     }
-    this.allowAllSessions.delete(sessionId); // "this session" ends here
-    this.noWindowWarned.delete(sessionId); // a respawn warns again if still blind
-    this.unroutableWarned.delete(sessionId); // …and again if still unbound (#699)
     // The file follows the map entry (#282). It is dead the moment the token
     // leaves `this.tokens` — nothing can authenticate with it again — and this
     // is its LAST mention: a self-exited card the user never touches again gets
@@ -547,8 +239,6 @@ export class HookListener {
     // token dies in memory, and it does not depend on the manager knowing this
     // session exists (`hooks/hook-check.ts` drives this class on its own).
     this.removeTokenFile(sessionId);
-    // a session closed mid-hold must not leave the CLI hanging (fail-open)
-    for (const [id, p] of this.pending) if (p.sessionId === sessionId) this.release(id);
   }
 
   /**
@@ -708,22 +398,22 @@ export class HookListener {
     const entry = { hooks: [{ type: 'command', timeout: 10, command }] };
     const hooks: Record<string, unknown> = {};
     for (const ev of STATUS_EVENTS) hooks[ev] = [entry];
-    // PreToolUse gets its own entry: the forwarder waits (4th arg) for a held
-    // decision and prints the hook JSON verdict to stdout; the CLI-side
-    // timeout is a beat above ours so OUR timeout (fail-open '{}') wins.
-    const holdMs = this.opts.holdTimeoutMs ?? 300_000;
-    hooks['PreToolUse'] = [
-      {
-        matcher: PRETOOL_MATCHER,
-        hooks: [
-          {
-            type: 'command',
-            timeout: Math.ceil(holdMs / 1000) + 10,
-            command: `${command} ${holdMs + 5_000}`,
-          },
-        ],
-      },
-    ];
+    // NO `PreToolUse` ENTRY SINCE #952, and this is the line that makes the
+    // deletion real rather than merely unreachable: the CLI is no longer asked to
+    // call us before a tool runs, so there is no round trip to ignore. It used to
+    // get its own entry with `PRETOOL_MATCHER`, a CLI-side timeout a beat above
+    // ours (so OUR fail-open `{}` won), and a fourth argument telling the
+    // forwarder to WAIT for a decision and print the hook verdict to stdout.
+    //
+    // A real saving, not just tidiness: every gated tool call spent an HTTP round
+    // trip through this listener before it could proceed, on top of the
+    // `can_use_tool` request that was already carrying the decision. Permissions
+    // ride the control channel alone now.
+    //
+    // The forwarder still exists and still takes its first three arguments — the
+    // STATUS events above are its whole job, and `Stop` is the done authority
+    // (S-06). Retiring the forwarder and this HTTP server altogether is E18-15,
+    // which needs `hook_callback` on the control channel first.
     return { hooks };
   }
 
@@ -749,215 +439,17 @@ export class HookListener {
     req.on('data', (c) => (body += c));
     req.on('end', () => {
       res.writeHead(200, { 'content-type': 'application/json' });
-      // PreToolUse for a gated tool HOLDS (E10-03): the response is parked
-      // until the UI decides; allow-all sessions are ANSWERED at the server
-      // (no hold, no event, no beep — P2 #19); everything else acks
-      // instantly (S-06).
-      const r = this.maybeHold(sessionId, body, res);
-      if (r === 'pass') res.end('{}');
+      // EVERY request acks instantly (S-06), with no branch. Until #952 this
+      // called `maybeHold` first: a gated `PreToolUse` was PARKED until the UI
+      // decided, an allow-all session was answered here at the server with no
+      // hook event and no beep, and only everything else acked. `PreToolUse` is
+      // no longer registered, so there is nothing to park and status is all that
+      // arrives.
+      res.end('{}');
       this.ingest(sessionId, body);
-      if (r === 'held') this.opts.manager.apply(sessionId, { kind: 'permission-held' });
     });
   }
 
-  /** Park a gated PreToolUse response ('held'), answer it server-side for an
-   *  allow-all session ('answered'), or leave it alone ('pass'). */
-  private maybeHold(
-    sessionId: string,
-    body: string,
-    res: http.ServerResponse
-  ): 'held' | 'answered' | 'pass' {
-    let e: Record<string, unknown>;
-    try {
-      e = JSON.parse(body) as Record<string, unknown>;
-    } catch {
-      return 'pass';
-    }
-    if (e.hook_event_name !== 'PreToolUse') return 'pass';
-    // Defensive only. This was the ORIGINAL "nobody to ask" guard and it never
-    // fires in the app — ipc.ts subscribes once at setup and never unsubscribes,
-    // and hook-check subscribes before any session spawns. Nothing but a unit
-    // test reaches it. Window liveness (below) is the check that actually does
-    // the work (P2-E15-09 / AR-P1-7).
-    if (this.permListeners.size === 0) return 'pass'; // nobody to ask — fail open
-    // A STREAM session's permissions belong to the control channel, not here
-    // (P2-E18-07). Hooks are independent of the transport, so a stream session
-    // can still fire PreToolUse — and holding it would ask the user the same
-    // question TWICE, once from each channel, which is a worse version of the
-    // very bug this epic exists to fix. The `can_use_tool` request is the one
-    // that carries the reason and that the `.claude/` guard actually honours,
-    // so it wins and this passes.
-    //
-    // MEASURED 2026-08-10 (#404 probe, claude 2.1.226, the exact Direct flag
-    // list): the real CLI DOES fire PreToolUse (and SessionStart / Stop /
-    // UserPromptSubmit / PostToolUse) under `--input-format stream-json` with
-    // `--permission-prompt-tool stdio`. So this guard is live, not
-    // precautionary — without it every Direct tool call would be held twice.
-    if (this.opts.transportFor?.(sessionId) === 'stream') {
-      this.opts.log.debug('PreToolUse passed: stream session, permissions ride can_use_tool', {
-        sessionId,
-      });
-      return 'pass';
-    }
-    const tool = typeof e.tool_name === 'string' ? e.tool_name : undefined;
-    const input =
-      e.tool_input && typeof e.tool_input === 'object'
-        ? (e.tool_input as Record<string, unknown>)
-        : undefined;
-    if (
-      !shouldHoldPermission(
-        this.opts.autonomyFor?.(sessionId),
-        tool,
-        input,
-        this.opts.cwdFor?.(sessionId)
-      )
-    )
-      return 'pass';
-    if (this.allowAllSessions.has(sessionId)) {
-      try {
-        res.end(this.verdict('allow', 'Allow-all (this session) from switchboard'));
-      } catch {
-        /* connection gone — CLI falls back to its own prompt */
-      }
-      this.opts.log.debug('gated call auto-allowed (allow-all session)', { sessionId, tool });
-      return 'answered';
-    }
-    // Nobody to ask — the window is closed, destroyed, or its renderer crashed
-    // while sessions kept running. Holding here would park the CLI for the full
-    // 300s per gated call with no UI able to answer (AR-P1-7). Fail open: no
-    // opinion, so the CLI's own TUI prompt takes over.
-    //
-    // Deliberately checked AFTER the policy (so an ungated call never logs) and
-    // AFTER allow-all (that verdict is answered at the server and never needed a
-    // renderer). A RELOADING renderer is still live — its window is neither
-    // destroyed nor crashed — so the pendingPermissions replay path is untouched.
-    if (!this.windowLive()) {
-      // Loud the first time per session, quiet after: a closed window with a
-      // busy session produces one of these per gated call, and a log that
-      // repeats one line forever is a log nobody reads.
-      const first = !this.noWindowWarned.has(sessionId);
-      this.noWindowWarned.add(sessionId);
-      const where = { sessionId, tool };
-      if (first) this.opts.log.warn('no live window to ask — failing open to the TUI', where);
-      else this.opts.log.debug('no live window to ask — failing open to the TUI', where);
-      return 'pass';
-    }
-    // A window is back. Re-arm the warning so the NEXT outage is loud again
-    // (#334). The flag means "already warned about the outage we are IN", not
-    // "warned once, ever" — without this, a window that closes, returns and
-    // closes again logs the second outage at `debug` and the operator sees
-    // nothing. `unregisterSession` clears it too, but only when the session
-    // itself ends; a session outlives many windows.
-    this.noWindowWarned.delete(sessionId);
-
-    // There is a window, and this session is not in it (#699).
-    //
-    // The push this hold produces is stamped with the card that owns the live
-    // session (`registerSessionIpc`: `cardId: cardOfLive.get(r.sessionId)`) and
-    // every mounted card drops what is not its own, so a session with NO card
-    // parks a request that is offered to a room with nobody in it: held, badged
-    // `needs-permission`, and shown to no one until the 300s deadline released
-    // it on the user's behalf. #333 closed exactly this hole for the stream
-    // channel. This is the same hole in the other channel, left open on purpose
-    // at the time because it is much less severe — the release fails open to
-    // the CLI's own TUI prompt, so the session was never wedged, only slow.
-    //
-    // HOW A REQUEST ACTUALLY GETS HERE, because "we lost a binding" is NOT the
-    // answer and guessing it produced a log level and a leak that both had to be
-    // corrected (#699 review). On every teardown path the TOKEN dies before the
-    // BINDING — `tearDownLive` runs `hooks.unregisterSession` and unbinds dead
-    // last, and the self-exit path unregisters without ever unbinding — while
-    // `bindLive` is synchronous with `manager.create`, so there is no pre-bind
-    // window either. A request that ARRIVES for an unbound session therefore
-    // 401s at the door and never reaches this function at all.
-    //
-    // What reaches it is a straggler of our own making. `handle` resolves the
-    // token from the HEADERS and runs this on `req.on('end')`, so a PreToolUse
-    // with a large body — a `Write` carrying file content is exactly that — has
-    // many turns of the event loop between the two. A Restart or a Close Card
-    // landing in that window clears the token AND the binding while the request
-    // is still streaming in. Before this gate, that request was then HELD, after
-    // `unregisterSession` had already swept `pending` — so nothing was left that
-    // could release it but the 300s timer, and the push announcing it carried
-    // `cardId: undefined` and matched no card. That is the case this closes.
-    //
-    // Five minutes of a card claiming to hold a question nobody can see is
-    // still not an answer. Fail open NOW, to the same place the deadline would
-    // have failed open to five minutes later. Nothing is lost by being early —
-    // the verdict is byte-identical (`{}`), and the user gets a prompt they can
-    // actually reach while they are still looking at whatever caused it.
-    //
-    // Checked AFTER the window gate, matching `StreamPermissions.offer`'s
-    // 1-2-3-4 order exactly, and for that function's stated reason: both
-    // conditions resolve the same way, so all the order decides is which fault
-    // gets reported, and "no window was open" is the truer and more useful one
-    // when both hold — a missing card is then a consequence of the app going
-    // away, not a separate fault. Two channels disagreeing about this order
-    // would be two channels naming different causes for one event.
-    if (!this.answerable(sessionId)) {
-      const where = { sessionId, tool };
-      const line = 'no card owns this session — failing open to the TUI rather than parking it';
-      // HOW LOUD depends on whether this session still exists, and it is the
-      // same discriminator `StreamPermissions.offer` uses for the same split —
-      // there it is `send`'s delivered flag, here it is whether the token is
-      // still ours to honour (`unregisterSession` clears it as its first act).
-      //
-      // A session that has been unregistered is the mid-body straggler above:
-      // ordinary, nobody is blocked, and the fail-open is exactly right. `debug`,
-      // and — the part that matters — it must NOT touch `unroutableWarned`. That
-      // set is cleared by `unregisterSession`, which has already run by
-      // definition on this branch, so an insert here is one string leaked per
-      // raced restart for the life of the process with nothing left to remove it.
-      if (!this.isRegistered(sessionId)) {
-        this.opts.log.debug(`${line} (session already torn down)`, where);
-        return 'pass';
-      }
-      // Still registered, still authenticating, and no card: THAT is a binding
-      // this process lost, and it is the invariant violation worth an `error`
-      // where the window gate says `warn` — a closed window is something the
-      // user did. Loud once per unbinding, quiet after, re-armed on the way past
-      // (#334's rule), because a busy unbound session produces one per gated
-      // call. Not known to be reachable today; it is the half that would matter
-      // if it ever were.
-      const first = !this.unroutableWarned.has(sessionId);
-      this.unroutableWarned.add(sessionId);
-      if (first) this.opts.log.error(line, where);
-      else this.opts.log.debug(line, where);
-      return 'pass';
-    }
-    // Bound again — re-arm, exactly as the window gate above does.
-    this.unroutableWarned.delete(sessionId);
-
-    const requestId = `perm-${++this.reqCounter}`;
-    const timer = setTimeout(() => {
-      // no decision in time: no opinion — the CLI's own TUI prompt takes over
-      this.opts.log.warn('permission hold timed out — failing open to the TUI', {
-        requestId,
-        sessionId,
-      });
-      this.release(requestId);
-    }, this.opts.holdTimeoutMs ?? 300_000);
-    timer.unref?.();
-    const request: PermissionRequest = {
-      requestId,
-      sessionId,
-      tool: tool ?? '',
-      input:
-        e.tool_input && typeof e.tool_input === 'object'
-          ? (e.tool_input as Record<string, unknown>)
-          : {},
-    };
-    this.pending.set(requestId, { res, timer, sessionId, request });
-    this.opts.log.info('permission held', { requestId, sessionId, tool });
-    for (const l of this.permListeners) {
-      try {
-        l(request);
-      } catch (err) {
-        this.opts.log.error('permission listener threw', { error: String(err) });
-      }
-    }
-    return 'held';
-  }
 
   private ingest(sessionId: string, body: string): void {
     let e: Record<string, unknown> = {};
@@ -1015,41 +507,36 @@ export class HookListener {
       // SessionStart carries source ('compact' fires mid-turn, review P1 #11)
       source: typeof e.source === 'string' ? e.source : undefined,
     };
-    // A STREAM session's permissions belong to the control channel, not here
-    // (#313) — the same ruling as the hold guard in `maybeHold`, applied to the
-    // other half of the same problem.
+    // A permission `Notification` NEVER drives status — it belongs to the control
+    // channel (#313), and since #952 that is true of every session rather than
+    // only the stream ones, so the transport test is gone and the guard is
+    // unconditional.
     //
-    // P2-E18-07 stopped a stream session's PreToolUse being HELD, so there is
-    // no second approval bar. It said nothing about the STATUS, and
-    // `Notification` is the path that reaches it: `state-machine`'s Notification
-    // arm transitions to `needs-permission` on a regex over the CLI's DEBOUNCED
-    // nudge, with no evidence that anything is held and no way to know it is on
-    // a transport that has a better signal. On stream, every real permission
-    // arrives as `can_use_tool` and is mapped exactly (`stream-status.ts`), so a
-    // Notification-driven `needs-permission` is at best a duplicate of a status
-    // we already set — and at worst a FALSE ALARM, the debounced nudge landing
-    // after the request was answered and dragging a working card back to
-    // "needs permission" with nothing held and no bar to answer.
+    // WHY IT IS STILL HERE AT ALL, given PreToolUse is no longer registered. This
+    // is a different path from the hold: `state-machine`'s Notification arm
+    // transitions to `needs-permission` on a regex over the CLI's DEBOUNCED nudge,
+    // with no evidence that anything is held. Every real permission arrives as
+    // `can_use_tool` and is mapped exactly (`stream-status.ts`), so a
+    // Notification-driven `needs-permission` is at best a duplicate of a status we
+    // already set — and at worst a FALSE ALARM, the debounced nudge landing after
+    // the request was answered and dragging a working card back to "needs
+    // permission" with nothing held and no bar to answer. The CLI still SENDS the
+    // nudge; nothing about deleting a transport stops it.
     //
-    // Suppressed at the PRODUCER rather than in `transition()`, deliberately:
-    // the state machine is a pure function that has never had to know about
-    // transports, and teaching it would mean threading `transport` through
-    // every `SessionEvent` producer to serve one arm. This listener already
-    // knows (`transportFor` has been plumbed since P2-E18-07).
-    //
-    // DROPPING the event is exactly equivalent to not transitioning on it:
+    // Suppressed at the PRODUCER rather than in `transition()`, deliberately: the
+    // state machine is a pure function, and a permission-classified blob can only
+    // reach the two `/permission/i` arms — the `needs-input` one deliberately
+    // stays. Dropping the event is exactly equivalent to not transitioning on it:
     // `SessionManager.apply` does nothing with a hook event but run it through
-    // `transition`, and a permission-classified blob can only reach the two
-    // `/permission/i` arms — the `needs-input` one already stays. Nothing else
-    // in the payload is consumed on this path (`session_id` was applied above,
-    // before this guard).
+    // `transition`, and nothing else in the payload is consumed on this path
+    // (`session_id` was applied above, before this guard).
     //
     // MEASURED 2026-08-10 (#404 probe, claude 2.1.226): hooks DO fire under
-    // `--permission-prompt-tool stdio` — see `maybeHold`. Neither probe run
-    // produced a Notification specifically (no permission prompt was drawn),
-    // but the channel is confirmed live, so this guard is load-bearing.
-    if (isPermissionNotification(ev) && this.opts.transportFor?.(sessionId) === 'stream') {
-      this.opts.log.debug('Notification not applied: stream session, permissions ride can_use_tool', {
+    // `--permission-prompt-tool stdio`. Neither probe run produced a Notification
+    // specifically (no permission prompt was drawn), but the channel is confirmed
+    // live, so this guard is load-bearing rather than precautionary.
+    if (isPermissionNotification(ev)) {
+      this.opts.log.debug('Notification not applied: permissions ride can_use_tool', {
         sessionId,
         notificationType: ev.notificationType,
       });

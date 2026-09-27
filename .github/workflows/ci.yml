@@ -42,7 +42,11 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - run: npm run check:pty
+      # `check:pty` used to run here, on both runners, and went with the PTY
+      # transport (#952). It was also the last job in this file that needed a
+      # NATIVE module: node-pty had no Electron prebuilds, so every runner did an
+      # `electron-rebuild` in postinstall — that step is gone from all three
+      # matrices along with it.
       # Never ran anywhere until #164, which is why it rotted TWICE without a
       # red build: once when #153 made the fake honour the requested transport,
       # once when #163 put a thinking block ahead of the text one. Both are the
@@ -55,17 +59,21 @@ jobs:
       # the first and only thing that executes the UNIX-DOMAIN-SOCKET path,
       # which #760's findings note lists under "what is NOT proven".
       - run: npm run check:bus
-      # The remaining four check:* scripts are LOCAL-ONLY and deliberately have
-      # no job here (#182). The first three each drive the REAL `claude` CLI
+      # The remaining three check:* scripts are LOCAL-ONLY and deliberately have
+      # no job here (#182). The first two each drive the REAL `claude` CLI
       # through a real model turn:
       #   check:adapter     - two headless `-p` turns: plants a marker word,
       #                       then reads it back through `--resume`
-      #   check:hooks       - a real interactive session in a PTY: trust dialog,
-      #                       a typed prompt, and a real Write tool call held at
-      #                       the PreToolUse hook
       #   check:transcripts - a real `-p` turn, then parses the transcript the
       #                       CLI itself wrote under ~/.claude/projects
-      # The fourth is local-only for a DIFFERENT reason, worth stating so it is
+      # `check:hooks` was a fourth and is DELETED, not moved (#952): it drove a
+      # real interactive session through a real PTY — trust dialog, typed prompt,
+      # a real Write held at the PreToolUse hook — and every mechanism in that
+      # sentence went with the transport. The §5.29 floor it also covered (401
+      # without a token, 403 for a non-loopback Host) is unit-tested in
+      # `hook-listener.test.ts`, so what was lost is the real-CLI integration
+      # witness for a hold path that no longer exists.
+      # The third is local-only for a DIFFERENT reason, worth stating so it is
       # not later "fixed" into a job by someone who reads the paragraph below
       # and sees it does not apply:
       #   check:mcp-attach  - spends NO tokens and takes no model turn. It spawns
@@ -79,9 +87,9 @@ jobs:
       # A runner has no subscription login, and giving it one would mean either
       # an ANTHROPIC_API_KEY or spending Dan's subscription tokens on every PR -
       # two hard constraints we do not cross (.claude/CLAUDE.md). Nor is there a
-      # login-free subset worth wiring: in all three the real model turn IS the
+      # login-free subset worth wiring: in each one the real model turn IS the
       # thing under test, so what is left without it is already covered by the
-      # unit suite. All three were run by hand on Windows against claude 2.1.220
+      # unit suite. They were run by hand on Windows against claude 2.1.220
       # for #182 and PASS, so this records a healthy decision, not a broken one.
       # `src/main/check-scripts.test.ts` enforces this comment against
       # package.json, so a NEW check script cannot land with neither a CI job
