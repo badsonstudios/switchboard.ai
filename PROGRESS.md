@@ -3,6 +3,103 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ DONE — 2026-09-28: **#974 — E22-03, approve-all-in-this-file + the revoke
+> surface for BOTH standing grants** (PR **#987**, merged on green CI).
+> **E22 IS COMPLETE. Phase 2 exit criterion 3 is met and no longer "thin".**
+> Second of the three the owner queued (#973 → #974 → #977). **Next up: #977.**
+>
+> ⚠️ **A VERSION BUMP IS STILL OWED.** `package.json` is 0.8.99, the latest
+> release is v0.8.99 (verified with `gh release list`), and the open CHANGELOG
+> section is 0.8.100. **Five** items of user-facing work are now on `main` and in
+> no release (#952, #972, #967, #973, #974). Nothing can be hand-tested until it
+> moves.
+>
+> **THE HEADLINE IS NOT THE MIDDLE RUNG.** "Approve all in this file" is the
+> feature the issue is named for and it is the smaller half. Sizing it found that
+> **"Always allow for this session" had no revoke surface anywhere** — the grant
+> lived in `StreamPermissions.allowAllSessions`, was cleared only by
+> `forgetSession`, and a mis-click handed a live session blanket write approval
+> until it died. That was true from #319 (2026-08) until today.
+>
+> **THREE THINGS THE MEASUREMENT CHANGED, none of them in the issue body:**
+>
+> 1. **The fold rule's real job is not the one the done-when asks for.** It wants
+>    a relative and an absolute reference to be one grant. Read from the PATH CLI
+>    (2.1.280): *"The file_path parameter must be an absolute path, not a relative
+>    path"* — a model mistake the CLI itself rejects. What actually happens is
+>    **two absolute spellings**: the captured `can_use_tool` payload spells a
+>    Windows path `C:/p/...` with forward slashes. `path.resolve` settles
+>    separators and `..`; `HOST_STYLE` settles case (#683's constant, the same one
+>    the read-scope check reads). Relative is still handled against the session's
+>    folder and **fails closed** when that is unknown, because resolving against
+>    the app's own `process.cwd()` would key a grant to a directory with nothing
+>    to do with the session.
+> 2. **The hold suppressor could not see the message, and half the done-when lives
+>    there.** "never emit `needs-permission` and never beep" is the PUMP's half —
+>    `streamStatusEvent` maps `can_use_tool` to `permission-held` one message
+>    before the router sees it. `(sessionId) => boolean` is enough for allow-all,
+>    a property of the SESSION, and not for a per-file grant, a property of the
+>    REQUEST. It takes the message now and asks `willAutoAllow`.
+> 3. **`StreamPermissions` does not know a session's folder.** `folderOf` joins
+>    `hasLiveWindow` in its options, fed from `manager.get(id).identity.folder`.
+>
+> **⭐ THE REVIEW FINDING THAT WOULD HAVE MADE THE HEADLINE FEATURE A LIE.** The
+> renderer keeps its **own copy** of the allow-all grant (`allowAllByLive`), and
+> it has to: `intakePermission` and `ledgerAdmits` use it to answer a request that
+> was ALREADY in flight when the grant was written. Until this item a grant could
+> only ever be SET, so the two copies could not drift and nothing kept them in
+> step — "they can never disagree" was true by accident. **With a revoke they
+> could:** main clears its set and starts holding and PUSHING again, and the
+> window silently allows every one of them. The user revokes, watches the list
+> empty, and is still never asked — the one-way door moves one process to the
+> left. Main's push is the single writer now (`setAllowAllFromMain`, subscribed in
+> the shell beside the permission ledger), and the new e2e was **falsified against
+> the fix**: remove the mirror and it fails with no bar appearing.
+>
+> **⚠️ ONE BUG THIS ITEM WROTE, CAUGHT BY ITS OWN TEST**, and it is #563's hole
+> reopening from a new direction: the per-file branch had no `!isQuestion` guard,
+> so an `AskUserQuestion` whose input happened to carry a `file_path` under an
+> active grant would have been auto-allowed — and the CLI reads a bare allow on
+> that tool as *"The user did not answer the questions."* The question would have
+> been silently skipped from the one path that pushes nothing to a renderer. Both
+> branches carry the rule now; the conditions are independent and neither can be
+> left to the other.
+>
+> **AND ONE HARDENING WORTH KNOWING:** `allowFile` now refuses a path the session
+> is not currently asking about. The invariant ("the button only exists on a HELD
+> bar, drawn from that request's own `targetPath`") was enforced entirely on the
+> side `fs/read-scope.ts` says cannot be trusted — so the channel accepted any
+> absolute path for any live id, and anything that reached the bridge could have
+> pre-planted a standing auto-allow on a file no call ever named.
+>
+> **WHERE THE SURFACE IS, AND WHY.** A section in the card's ⋯ menu, not a dialog:
+> a modal is heavier than the fact it manages, and the menu already holds this
+> card's other standing preferences. **It renders when it is empty** — the defect
+> is a grant you cannot see, and a section that only appeared when it had
+> something in it would be indistinguishable from the feature not existing. The ⋯
+> button carries a dot and states the count in its accessible name, because a
+> session under allow-all **cannot ask**, so "it has not needed me" and "I told it
+> not to bother me" look identical from outside.
+>
+> **Two sets in main, not one union**, and that is the shape the item is sized
+> around: "revoke the blanket grant but keep the three files I meant" has to be
+> expressible.
+>
+> **ONE REVIEW FINDING WAS CHECKED AND DID NOT HOLD**, and the comment says so
+> rather than quietly implementing it: the "queue moves during the IPC round trip"
+> race cannot happen today, because the deferred `decide()` closes over the
+> `cardQueue` of the render the click happened in. Measured — the test passes with
+> and without the explicit `target` argument. The argument stays anyway, because
+> that safety is an accident of where `decide` is declared and a `useCallback` or
+> a ref would take it away with no type error.
+>
+> Also from review and kept: `willAutoAllow` carries `offer`'s
+> unanswerable-request guard, so the two cannot disagree and park a CLI with
+> nothing on screen · `folderOf` is wrapped like every other injected predicate ·
+> NUL rejected · the emptied list is pushed on teardown · an unknown revoke `kind`
+> is logged rather than swallowed · `pushGrants` hoisted above its callers ·
+> `isAllowAll` says it has no production caller left.
+
 > # ✅ DONE — 2026-09-28: **#973 — E22-02, deny with feedback** (PR **#985**,
 > merged on green CI). **First of the three the owner queued this session
 > (#973 → #974 → #977). Next up: #974.**
