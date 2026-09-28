@@ -59,6 +59,12 @@ This is the conversation, rendered to be read rather than scrolled past:
 The view stays pinned to the newest message, including when you switch back to
 a session you'd left. Scroll up freely; it won't yank you back.
 
+**Only scrolling unsticks it.** Clicking inside the conversation — expanding a tool
+box, pressing a **Copy** button, clicking to put the keyboard focus there — leaves the
+view following, even while Claude is writing flat out. That used to be the one case
+where a busy session quietly stopped keeping up: a click while output was pouring in
+could be mistaken for scrolling away.
+
 That holds across the things that move a card around, too: quitting and
 reopening switchboard, clicking a session in the sidebar, and dragging cards
 into a different arrangement all leave each conversation showing its latest
