@@ -3,8 +3,22 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # ✅ DONE — 2026-09-27: **#972 — E22-01, the Monaco diff in the approval card.**
-> Second of the three the owner queued (#952 → #972 → #967). **Next up: #967.**
+> # ✅ DONE — 2026-09-27: **#972 — E22-01, the Monaco diff in the approval card**
+> (PR **#980**, merged on green CI). Second of the three the owner queued
+> (#952 → #972 → #967). **Next up: #967.**
+>
+> **Three follow-ups filed and OPEN:** #977 (subagent captions — from #952), #978
+> (local slash-command output — from #952), **#981 (the composer's height cap does not
+> enforce the room it was offered — from this item's CI investigation, and NOT this
+> item's bug).**
+>
+> **SIX CI RUNS. The cost was concentrated in one failure that does not reproduce
+> locally, and the lesson is about where to look:** a click that LANDS on a button and
+> produces nothing is a LAYOUT problem, not an event-handling one. Three runs were
+> spent on the wrong hypothesis (an unscoped test locator — a real latent bug, fixed,
+> but not the cause) before the trace's `button "Allow" [active]` plus "no decision
+> reached main" was read correctly. `gh run download` on the failure artifact is what
+> settled it; the aria snapshot in `error-context.md` is worth reaching for early.
 >
 > **⚠️ ONE CRITERION IS PARTLY MET AND IS RECORDED AS SUCH, not ticked.** "Monaco is
 > lazy-loaded" holds in the sense the item needs — the view is behind `React.lazy` +
