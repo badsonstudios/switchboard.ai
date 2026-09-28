@@ -3,6 +3,72 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🚢 RELEASED — 2026-09-28: **v0.8.100** (PR **#991**, tagged `v0.8.100`).
+> **This is the release that makes the dogfood tracker testable again.** The
+> owner asked for the number and gave it: 0.8.100, the placeholder the last cut
+> opened.
+>
+> ⚠️ **IT CARRIES NINETEEN FEATURE COMMITS, NOT SIX**, and the six was a live
+> mis-count corrected while cutting. The summaries during the three-item run kept
+> saying "six items of user-facing work on `main`" — that was the set recorded in
+> this file's recent entries, not the set since the tag. `git log v0.8.99..main`
+> is the number that counts:
+>
+>   * **all of E13 — Dispatch** (#946–#951): role templates, context policies,
+>     manual dispatch, workspace policy, the findings round-trip, lineage. **This
+>     is the epic carrying Phase 2 exit criterion 5, and not one row of it has
+>     ever been hand-tested.**
+>   * **#952** (the PTY deletion) · **#953** (the approval bar showing what a
+>     Write would do) · **#581** · **#704** · **#828** · **#856** · **#886** ·
+>     **#903** · **#947**
+>   * and the six that were being tracked: **#967, #972, #973, #974, #977**.
+>
+> The CHANGELOG section was already complete at 25 bullets — the notes were
+> right, the count in the reporting was not. Worth knowing because the next
+> person to say "N items are unreleased" should count from the tag, not from
+> this file.
+>
+> **⭐ AND THE AUDIT CAUGHT A DEFECT IN THE NOTES THEMSELVES.** The 0.8.100
+> section both announced *"a session's helpers are back in the conversation"*
+> (#977, fixed in this very release) and, forty lines down, warned that *"what
+> sub-agents said"* is temporarily missing. Both were true when written; one is
+> not now. **That body is rendered IN-APP by the update dialog (E19-03) and shown
+> to every user**, so a release that argues with itself is not a documentation
+> nit. Rewritten to the one thing still missing (`/usage`, `/cost`, `/context` —
+> #978) with a pointer to the fix for the other, rather than a silent deletion:
+> anyone who read the earlier draft should be able to see what happened to it.
+>
+> **The procedure was followed as written**, and the two gates were dry-run
+> locally before the push rather than discovered on the tag: `resolveRelease`
+> agrees tag ↔ `package.json`, the section exists (327 lines), and **the rollup
+> is EMPTY** (`rolledUp: []`) because 0.8.99 was published — nothing skipped is
+> being swept in. Version, dated section and lock in one commit; the lock diff is
+> the two version lines and nothing else (#487's gate, after #394 let it sit four
+> releases behind). `## 0.8.101 — unreleased` is open above it, because that empty
+> section is the only place the next work item may file.
+>
+> **THE DOGFOOD TRACKER'S SEVENTEEN GATED ROWS ARE NOW LIVE.** Every
+> "NOT RELEASED YET" is "IN v0.8.100", and the header says to install it before
+> anything else in the file. The sitting is ordered: #952 first, because
+> everything after it assumes the approval behaviour it changed; then the
+> approvals work (#972, #973, #974); then the subagents (#977); then **Dispatch**,
+> the largest block of unexercised product in the list; then the singles; then the
+> four RE-TEST rows for bugs the owner reported himself (#909, #896, #813, #748).
+>
+> **WHERE PHASE 2 STANDS.** All nine exit criteria read ✅ and E22 is complete.
+> What is NOT done is verification: the tracker records **20 hand-tested against
+> 116 untested**. Criterion 5 is ticked on the strength of an e2e, not on the
+> owner having watched a dispatched review come back. That is a real gap and it is
+> his to close — cutting Phase 2 while carrying it is a legitimate call, but it
+> should be a call rather than a side effect of the scoreboard reading green.
+>
+> **Next:** the owner's sitting, then **E21-02** — a `[user]` item and the only
+> remaining unblocked-by-him Phase 2 work: install this build on the laptop, turn
+> the detailed tier on, work a normal day at 3+ sessions, send the file. E21-03
+> and E21-04 follow from it, and 04 (#740, feed virtualisation) deliberately waits
+> because its evidence came from the synthetic throttle this epic exists to stop
+> trusting.
+
 > # ✅ DONE — 2026-09-28: **#977 — E18-13, a session's helpers are back in the
 > conversation** (PR **#989**, merged on green CI). **THE THREE-ITEM RUN THE
 > OWNER QUEUED IS COMPLETE: #973 → #974 → #977, all merged.**
