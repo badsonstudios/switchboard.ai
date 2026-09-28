@@ -3,6 +3,96 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ DONE — 2026-09-28: **#973 — E22-02, deny with feedback** (PR **#985**,
+> merged on green CI). **First of the three the owner queued this session
+> (#973 → #974 → #977). Next up: #974.**
+>
+> **E22 is two-thirds done and exit criterion 3 is no longer "thin" in two of its
+> three places.** #974 (approve-all-in-this-file + the revoke surface for BOTH
+> standing grants) is the last one.
+>
+> ⚠️ **A VERSION BUMP IS STILL OWED.** `package.json` is 0.8.99; the open CHANGELOG
+> section is 0.8.100. **Four** items of user-facing work are now on `main` and in no
+> release (#952, #972, #967, #973). Nothing below can be hand-tested until it moves.
+>
+> **THE ISSUE WAS RIGHT THAT THE WIRE CARRIED IT AND WRONG ABOUT WHAT WAS BROKEN,
+> AND THE WRONG HALF WAS THE BIGGER ONE.** The renderer half was exactly what the
+> plan predicted — a text field and one threaded parameter. What reading the code
+> for it turned up was that **the stream path's default denial was `'Denied in
+> switchboard'`: #94's bug, verbatim, as the only denial text in the app.**
+> `HookListener.verdict` had the fix (a denial that reads like infrastructure makes
+> Claude announce it is blocked and route around the refusal with a second tool,
+> then a third — Dan, 2026-07-26); #952 deleted `verdict`; the stream path had never
+> been given it. Restored verbatim from `989fb51^`, and `hook-listener.ts`'s
+> tombstone — which was addressed to this issue by number — now says so.
+>
+> **THE OBJECTION IS CARRIED, NEVER SUBSTITUTED, and that is the decision not to
+> re-litigate.** Both old implementations swapped (`reason ?? denied`, `reason ||
+> 'Denied in switchboard'`), so the MORE USEFUL a user's feedback was, the WEAKER
+> the denial became — "use the other file" would have reached the model as an
+> actionable note with no do-not-route-around rule attached at all. The framing is
+> unconditional now; the words follow it, fenced with a **per-denial nonce**
+> (`randomBytes(4)` — a fixed fence is theatre, since 500 characters of arbitrary
+> prose may simply contain it), marked as data rather than instructions, and with
+> OUR rule restated after the quote because recency is the strongest position in a
+> prompt whose reader is a model.
+>
+> **ONE DONE-WHEN WAS STALE BY ONE ITEM AND IS RECORDED, NOT QUIETLY DROPPED.** It
+> asks for the text on "both transports". #952 deleted the hook permission API the
+> day after this issue was filed — `PreToolUse` is not registered at all. One path,
+> asserted against its outbound `control_response` rather than against the call,
+> which matters here more than usual: `reason` was an accepted parameter for two
+> epics while no surface supplied one, so a test on the call would have passed
+> throughout.
+>
+> **⚠️ THE LAYOUT WAS WRONG TWICE AND CI FOUND THE SECOND ONE.** The field's floor
+> belongs on the ROOT and must include the button row. Floor on the root sized for
+> the textarea alone → the textarea got ~5px; floor moved to the textarea with the
+> root at `minBlockSize: 0` → the root shrank below its own content, and a flex item
+> smaller than its content OVERFLOWS, so Send/Cancel painted over the answer row
+> (`<button>Allow all (this session)</button> … intercepts pointer events`). Allow
+> and Deny were still `toBeInViewport` and still unclickable, which is a more
+> interesting failure than #972's and would have read as flake.
+>
+> **AND THE GUARD ITSELF TOOK THREE TRIES — worth reading before writing the next
+> one.** "Sum the bar's direct children" passed against the broken build (the
+> field's BOX is the shrunk one; the overflow is inside it). "No button hangs below
+> the bar" passed too (nothing did — the bar had the room). What works is
+> `elementFromPoint` at each control's own centre, **scoped out of
+> `[data-approval-diff-slot]`** — that slot SCROLLS by design, so on a 480px Windows
+> runner its own `Side by side` / `Inline` controls leave the clip and read as
+> covered. Mutation-checked twice: with the floor back on the wrong element it names
+> Send and Cancel.
+>
+> **Review found nine things; two were the layout defects above, and one was a
+> third dropped argument in the same seam.** `PanelContext.onDecide` declared
+> `(decision, allowAll?)` while the real function had grown `updatedInput` (#563)
+> and `reason` (this item) — and it typechecked throughout, because a function
+> taking fewer parameters is assignable to one taking more. A contributed panel
+> written against that type could not have answered a question or denied with a
+> reason, with no error saying why. One shared `DecideHeld` type now, beside
+> `PermissionRequest`, which exists for the same failure.
+>
+> Also from review and worth keeping: the untrusted text is fenced and the rule
+> restated after it · the Unicode formatting class (zero-widths, bidi overrides,
+> isolates, BOM, line/paragraph separators) is stripped alongside C0/C1, because
+> the transcript and every surface that echoes it read this string too · the clamp
+> is surrogate-aware, since `slice` on UTF-16 units can leave a lone high surrogate
+> that `JSON.stringify` emits as a valid escape and the model reads as U+FFFD ·
+> the field closes on SEND rather than waiting for the request to swap, because a
+> decision can land on nothing · focus returns to the button it was opened from.
+>
+> **CI cost two runs and neither was a product bug.** Run 1: the guard above.
+> Run 2: `install.test.ts > cancel` timed out at 5000ms on a loaded Windows runner —
+> a file this item did not touch, green locally and on `gh run rerun --failed`. The
+> 5s-budget class again.
+>
+> **ONE PLACE THE PLAN'S LITERAL WORDING WAS NOT FOLLOWED, deliberately and on the
+> record.** It says a bare Deny is "byte-for-byte unchanged", which taken literally
+> pins `'Denied in switchboard'` in place — while the same plan's sibling note tells
+> #973 to reuse the wording that replaced it. The bare-Deny GESTURE is unchanged:
+> one click, no field, a default message.
+
 > # ✅ DONE — 2026-09-28: **#967 — the feed losing its tail-pin while a session
 > streams** (PR **#983**, merged on green CI, all four jobs first time).
 >
