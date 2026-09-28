@@ -3,9 +3,22 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🚧 IN PROGRESS — 2026-09-28: **#967 — the feed losing its tail-pin while a
-> session streams.** Third of the three the owner queued (#952 → #972 → #967). Branch
-> `feature/967-feed-tail-pin`. Plan posted to the issue.
+> # ✅ DONE — 2026-09-28: **#967 — the feed losing its tail-pin while a session
+> streams** (PR **#983**, merged on green CI, all four jobs first time).
+>
+> **THE THREE-ITEM RUN THE OWNER QUEUED IS COMPLETE: #952 → #972 → #967, all merged.**
+>
+> **Next up:** no item is claimed. Phase 2's open queue is **E21** (#921–#926,
+> responsiveness — still blocked on the owner's laptop capture) and **E22's remaining
+> two**, #973 (deny with feedback, S) and #974 (approve-all-in-this-file + the revoke
+> surface for BOTH standing grants, M). Four follow-ups were filed during the run and
+> are OPEN: **#977** (subagent captions — a regression from #952), **#978** (local
+> slash-command output), **#981** (the composer's height cap does not enforce the room
+> it was offered — found by #972's CI, pre-existing), and nothing from #967.
+>
+> ⚠️ **A VERSION BUMP IS OWED BEFORE ANY OF IT CAN BE HAND-TESTED.** `package.json` is
+> still 0.8.99 and the open CHANGELOG section is 0.8.100; three items' worth of
+> user-facing work is on `main` and in no release.
 >
 > **THE OWNER'S HYPOTHESIS WAS HALF RIGHT AND THE WRONG HALF MATTERED.** The issue
 > guessed `lastGesture` was global ("typed, clicked, hovered-scrolled a different
