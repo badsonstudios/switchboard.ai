@@ -2509,9 +2509,10 @@ reads) get simpler cards — command + cwd + allow/deny — same banner, same ke
 >   wrong while its existence was right; the lesson is the one the audit was
 >   called to teach — size against the code, never against the note describing
 >   the code.**
-> - **"Approve all in this file" is absent.** The two ends of the ladder ship
->   (approve this one, always allow this session); the middle rung, which is the
->   one that matches how a human actually reviews a file, does not.
+> - ~~**"Approve all in this file" is absent.**~~ **SHIPPED 2026-09-28, P2-E22-03
+>   (#974)**, together with the revoke surface for BOTH rungs — see the as-built
+>   note below. The audit was right that the middle rung was missing and did not
+>   notice the larger thing beside it: the TOP rung could not be taken back.
 > - **Review queue pane (mode 2) and floating approval window (mode 3) are
 >   absent.** Only session-flip exists, so "placement modes (user preference)"
 >   describes a preference with one value. Mode 2 is on §8's Phase 2 list and is
@@ -2638,6 +2639,74 @@ reads) get simpler cards — command + cwd + allow/deny — same banner, same ke
 > (Struck above: the audit's claim that this feature was absent because the wire
 > had no message field. It had one. §8's table carried the same wrong cause and is
 > corrected there too.)
+
+>
+> **AS BUILT, 2026-09-28 (P2-E22-03, #974): the ladder has its middle rung, and
+> — for the first time — a door back out of the top one.**
+>
+> **Approve all in this file** sits between **Allow** and **Allow all (this
+> session)**, in §5.16's own order, on any request that names a file. Which key
+> that is comes from `shared/tool-paths.ts`, imported by BOTH ends: the renderer
+> decides whether to offer the button and for which path, and main decides
+> whether a later call falls under the grant. Two key lists would mean a button
+> that granted one path while the router matched another — a standing auto-allow
+> on a file the user never saw — which is why that list is on the boundary rather
+> than being a fourth renderer-side copy.
+>
+> The grant is scoped exactly like allow-all per the 2026-07-23 refinement: held
+> in **main** (`StreamPermissions.filesAllowed`), keyed by LIVE id so a respawn or
+> resume asks again, cleared in `forgetSession`, and a granted call is answered at
+> the server — no hold, no `needs-permission`, no beep.
+>
+> ⚠️ **THAT LAST CLAUSE COST A SIGNATURE CHANGE ONE LAYER UP, and it is worth
+> knowing why.** `SessionManager`'s hold suppressor was `(sessionId) => boolean`,
+> which is enough for allow-all — a property of the SESSION — and not for a
+> per-file grant, which is a property of the REQUEST. `streamStatusEvent` maps
+> `can_use_tool` to `permission-held` at the pump, one message BEFORE the router
+> sees it, so without the message the card would have flashed
+> `needs-permission`, raised an Events row and beeped for a call it was about to
+> answer in the same tick. It now takes the message and asks
+> `StreamPermissions.willAutoAllow`, which is one question ("will this be
+> answered at the server?") replacing `isAllowAll`, a question that was only ever
+> the same one because there was only one answer.
+>
+> **THE FOLD RULE'S REAL JOB IS NOT THE ONE THE ITEM ASKED FOR.** The done-when
+> says a relative and an absolute reference to one file must be one grant. Read
+> from the PATH CLI (2.1.280): *"The file_path parameter must be an absolute
+> path, not a relative path"* — so that is a model mistake the CLI itself
+> rejects. What actually happens is **two absolute spellings**: the captured
+> `can_use_tool` payload spells a Windows path `C:/p/.claude/...` with forward
+> slashes, while anything else on the platform uses backslashes. `path.resolve`
+> settles separators and `..`; `HOST_STYLE.caseInsensitive` (the #683 precedent,
+> read from the same constant the read-scope check uses) settles case. Relative is
+> still handled, against the session's folder — and **fails closed** when the
+> folder is unknown, because resolving against the app's own `process.cwd()` would
+> key a grant to a directory with nothing to do with the session.
+>
+> **THE REVOKE SURFACE IS A SECTION IN THE CARD'S ⋯ MENU, not a dialog**, and it
+> renders **when it is empty**. A modal would be heavier than the fact it manages,
+> and the menu is already where this card's other standing preferences live. The
+> empty state is a requirement rather than politeness: the defect is a grant you
+> cannot see, and a section that appeared only when it had something in it would
+> be indistinguishable from the feature not existing. The ⋯ button also carries a
+> dot and says the count in its accessible name, because a session under allow-all
+> **cannot ask** — so "it has not needed me" and "I told it not to bother me" look
+> identical from the outside, which is the half of the one-way-door defect that
+> survives even once a revoke exists.
+>
+> **Two sets in main, not one union**, and that is the shape the item is sized
+> around: "revoke the blanket grant but keep the three files I actually meant" has
+> to be expressible, because it is the gesture a user reaches for after a
+> mis-click on a bar.
+>
+> ⚠️ **ONE BUG THIS ITEM WROTE AND ITS OWN TEST CAUGHT**, recorded because it is
+> the #563 hole reopening from a new direction: the per-file branch had no
+> `!isQuestion` guard, so an `AskUserQuestion` whose input happened to carry a
+> `file_path` under an active grant would have been auto-allowed — and the CLI
+> reads a bare allow on that tool as *"The user did not answer the questions."*
+> The user's question would have been silently skipped from the one path that
+> pushes nothing to a renderer. Both branches carry the rule now; the conditions
+> are independent and neither can be left to the other.
 
 ### 5.17 MCP Manager & slash-command surfaces
 
@@ -4299,7 +4368,7 @@ context transfer, and the attention queue work across monitors.
 > | **Review queue pane** | §5.16 placement mode 2 | E10 shipped twelve items and this was not one of them; the attention queue (§5.8) covers *noticing*, not *arrowing through pending diffs*. |
 > | ~~**Deny with feedback**~~ | §5.16 button row | ~~The wire carries `'allow' \| 'deny'` and no message. The agent is told no and never told why.~~ **SHIPPED 2026-09-28, P2-E22-02 (#973)** — see §5.16's as-built note. **The cause in this cell was wrong and the correction is the point:** the wire carried a `reason` the whole way down to `{ behavior: 'deny', message }`; no renderer surface ever supplied one. What the item actually found was worse — the stream path's default denial was `'Denied in switchboard'`, the exact wording #94 fixed, because #952 deleted `HookListener.verdict` and the fix had never been copied across. |
 > | ~~**Monaco diff in the approval card**~~ | §5.16, and this list's own wording | ~~Ships as two `<pre>` panes truncated at 1500 characters.~~ **SHIPPED 2026-09-27, P2-E22-01 (#972)** — see §5.16's as-built note. One caveat recorded rather than glossed: "Monaco is lazy-loaded" is met only in the sense that matters for fail-open. `DiffPane` is a static import, so monaco-editor is in the entry chunk and evaluated at startup regardless; making it genuinely lazy is a separate and real win that this item did not take. |
-> | **"Approve all in this file"** | §5.16 button row | Approve-one and always-allow-this-session both ship; the middle rung does not. |
+> | ~~**"Approve all in this file"**~~ | §5.16 button row | ~~Approve-one and always-allow-this-session both ship; the middle rung does not.~~ **SHIPPED 2026-09-28, P2-E22-03 (#974)** — with the door back out of BOTH rungs, which is why it was M. Sizing it found that "Always allow for this session" had no revoke surface anywhere: the grant lived in `StreamPermissions.allowAllSessions`, was cleared only by `forgetSession`, and a mis-click was a one-way door until the session died. |
 > | **Drag text between sessions** | §5.4 Tier 1, §5.5 Level 1 | See §5.4's as-built note: of four draggable objects, one shipped, one is moot (the terminal is gone) and two are blocked on the Phase 3 file tree. This line needs re-scoping, not just building. |
 >
 > **And one line that was never Phase 2's to keep:** "complete keyboard

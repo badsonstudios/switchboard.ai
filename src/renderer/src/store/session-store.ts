@@ -1472,8 +1472,46 @@ export class SessionStore {
   }
 
   // ── allow-all, keyed by LIVE id ─────────────────────────────────────────
+  //
+  // ⚠️ THIS IS A SECOND COPY OF A GRANT MAIN ALSO HOLDS, and #974's review found
+  // out what that costs. Main's `StreamPermissions.allowAllSessions` answers
+  // future calls at the server; this set answers a request that was ALREADY in
+  // flight when the grant was written (`held-permissions`'s `intakePermission`,
+  // and `ledgerAdmits` for the grouped card). Both are needed and neither is
+  // redundant — but until #974 nothing could take the grant BACK, so the two
+  // could only ever be set, and "they can never disagree" was true by accident.
+  //
+  // The moment a revoke existed, they could: `revokeAllowAll` cleared main's set,
+  // `offer` began holding and pushing again, and THIS set silently answered every
+  // one of them with an allow. The user would have revoked the grant, watched the
+  // list empty, and still never been asked. The one-way door would have moved one
+  // process to the left.
+  //
+  // So `setAllowAllFromMain` below is the correction: main pushes its own truth
+  // after EVERY mutation (`sessions:standingGrantsChanged`) and the shell mirrors
+  // it. `setAllowAll` is kept because the click still needs to take effect
+  // locally in the same tick — the in-flight request it exists for can be sitting
+  // in the queue right now — and the push that follows confirms it.
   setAllowAll(liveId: string): void {
     this.allowAllByLive.add(liveId);
+  }
+  /**
+   * Mirror main's answer, which is the ONE that decides (#974).
+   *
+   * Called from the `standingGrantsChanged` push and from nowhere else. It is
+   * the only writer that can CLEAR the set short of the live id retiring, and
+   * that is deliberate: a renderer that decided locally to forget a grant would
+   * start showing bars for calls main is still answering at the server.
+   */
+  setAllowAllFromMain(liveId: string, allowAll: boolean): void {
+    const had = this.allowAllByLive.has(liveId);
+    if (had === allowAll) return;
+    if (allowAll) this.allowAllByLive.add(liveId);
+    else this.allowAllByLive.delete(liveId);
+    // Attention is derived from what is HELD, and a grant going away means the
+    // next request will be held rather than swallowed — same reason
+    // `notifyLiveRetired` re-derives.
+    this.rederiveAttention();
   }
   isAllowAll(liveId: string): boolean {
     return this.allowAllByLive.has(liveId);

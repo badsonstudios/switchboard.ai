@@ -1913,7 +1913,34 @@ Work items:
   different requests; `docs/manual/` page before the PR.
 
 - **P2-E22-03 (#974) · "Approve all in this file" + a revoke surface for standing
-  grants — M.** *(no deps; ships after 01 only by convenience, not by need)*
+  grants — M. ✅ DONE 2026-09-28 (PR #987).** *(no deps; ships after 01 only by
+  convenience, not by need)*
+
+  > **THREE THINGS THE IMPLEMENTATION MEASURED.**
+  >
+  > 1. **The fold rule's real job is not the one this item asked for.** The
+  >    done-when wants a relative and an absolute reference to be one grant; the
+  >    CLI's own tool schema says `The file_path parameter must be an absolute
+  >    path, not a relative path` (read from the PATH binary, 2.1.280), so that is
+  >    a model mistake the CLI rejects. What actually happens is TWO ABSOLUTE
+  >    SPELLINGS — the captured `can_use_tool` payload uses forward slashes on
+  >    Windows. `path.resolve` settles separators; `HOST_STYLE` settles case.
+  >    Relative is handled against the session folder and **fails closed** when
+  >    that is unknown.
+  > 2. **The hold suppressor could not see the message, and half the done-when
+  >    lives there.** "never emit `needs-permission` and never beep" is the PUMP's
+  >    half, and its predicate was `(sessionId) => boolean` — enough for allow-all,
+  >    which is a property of the session, and not for a per-file grant, which is a
+  >    property of the request. It takes the message now and asks
+  >    `willAutoAllow`.
+  > 3. **`StreamPermissions` does not know a session's folder.** `folderOf` joins
+  >    `hasLiveWindow` in its options, fed from `manager.get(id).identity.folder`.
+  >
+  > ⚠️ **AND ONE BUG THIS ITEM WROTE, caught by its own test:** the per-file branch
+  > had no `!isQuestion` guard, so an `AskUserQuestion` carrying a `file_path`
+  > under an active grant would have been auto-allowed — which the CLI reads as
+  > "The user did not answer the questions". The #563 hole, reopened from a new
+  > direction and closed before it shipped.
   The middle rung of §5.16's ladder, plus the door back out of both rungs.
   *Done when:* an Edit/Write/MultiEdit card offers **Approve all in this file**,
   which answers the held request and auto-allows later gated calls from the
@@ -1952,7 +1979,7 @@ quality of the answer, not the mechanism that asks for it.
 > | 0 | The seams are real (E15) | ✅ 4+ dissimilar consumers; see `docs/extensibility.md` |
 > | 1 | The 7–8 session experience (E7 + E9) | ✅ |
 > | 2 | Pop-out to a second monitor + rescue (E8) | ✅ |
-> | 3 | In-app approvals, no TUI drop | ⚠️ met, and no longer thin in two of three places — **E22**: #972 (Monaco diff) ✅ 2026-09-27, #973 (deny with feedback) ✅ 2026-09-28, **#974 (approve-all-in-this-file + the revoke surface for BOTH standing grants) is the last one open**. |
+> | 3 | In-app approvals, no TUI drop | ✅ **MET AND NO LONGER THIN — E22 COMPLETE 2026-09-28**: #972 (Monaco diff), #973 (deny with feedback), #974 (approve-all-in-this-file + the revoke surface for BOTH standing grants, which did not exist for EITHER rung before it). |
 > | 4 | Two sessions exchange context via the bus (E11 00–05) | ✅ |
 > | 5 | A dispatched clean-room review round-trips its findings | ✅ **#950, 2026-09-26** — the reviewer's last turn returns as a Feed row on the AUTHOR's card, one click puts it in the author's composer, and the human still presses Enter. `dispatch.spec.ts` proves the whole chain. Extraction was MEASURED (`spike/findings/e13-950-review-last-turn.md`), which is also where §5.15's "3 findings" died: reviews are not countable. #951 (lineage, ephemerality) is the epic's last item and carries no criterion. |
 > | 6 | A rule routes a needs-permission event; an actionable toast answers it (E14) | ✅ |

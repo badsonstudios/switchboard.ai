@@ -503,6 +503,27 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   };
 
   /**
+   * Tell the window what this session is standing on (#974).
+   *
+   * Called after EVERY mutation, including the ones the renderer asked for and
+   * including the teardown below. A surface that refreshed only when it was
+   * the one doing the asking would go stale the moment anything else moved a
+   * grant — the OS toast's Allow-all, an exit, another window — and a stale
+   * list of standing approvals is the defect E22-03 exists to fix.
+   *
+   * Declared HERE rather than beside its channels 700 lines down, because the
+   * teardown is a caller and a const used above its declaration reads as a TDZ
+   * hazard even when it is not one (review).
+   */
+  const pushGrants = (liveId: string): void => {
+    if (!streamPermissions) return;
+    send('sessions:standingGrantsChanged', {
+      sessionId: liveId,
+      ...streamPermissions.standingGrants(liveId),
+    });
+  };
+
+  /**
    * Release everything one live session is HOLDING ON BEHALF OF THE USER: its
    * hook registration — and with it every parked `PreToolUse` HTTP response and
    * its 300s timer — plus every outstanding stream `can_use_tool`.
@@ -545,6 +566,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
    * be vague. The two callers say different and true things so the log can tell
    * a session the user closed from one that died.
    */
+
   const releaseHeldPermissions = (liveId: string, why: string): void => {
     // …which parks a `PreToolUse` HTTP response per held request. Its release
     // deliberately does NOT `apply('permission-resolved')` the way `decide()`
@@ -555,6 +577,15 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     tearDownStep(liveId, 'streamPermissions.forgetSession', () =>
       streamPermissions?.forgetSession(liveId, why)
     );
+    // …and SAY SO (#974, found in review). `forgetSession` drops this session's
+    // standing grants, and nothing else would tell the window: the card would
+    // keep its ⋯ dot lit and keep listing approvals that no longer exist, and a
+    // click on one would return false in silence. A stale list of standing
+    // approvals is the exact defect `pushGrants` exists to prevent.
+    //
+    // Its own step, so a failure here cannot skip the release above — this is
+    // bookkeeping and that is the thing that stops a CLI waiting for ever.
+    tearDownStep(liveId, 'pushGrants', () => pushGrants(liveId));
   };
 
   /**
@@ -1206,14 +1237,59 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   // renderer and every gated call still had to reach a window and still beeped on
   // the way.
   //
-  // ⚠️ THE GRANT STILL HAS NO REVOKE SURFACE, and now there is exactly one place
-  // to give it one. It is cleared only by `forgetSession`, so a mis-click grants
-  // blanket approval until the session dies. #974 owns that, and it owns it for
-  // one store rather than two.
+  // ⚠️ IT HAS ONE NOW (#974) — see `sessions:revokeStandingGrant` below. This
+  // note said "the grant still has no revoke surface … a mis-click grants
+  // blanket approval until the session dies", which was true from #319 until
+  // 2026-09-28 and is the reason E22-03 was sized M rather than S.
   broker.handle('sessions:allowAllSession', (_e, liveId: string) => {
     if (typeof liveId !== 'string') return;
     streamPermissions?.setAllowAll(liveId);
+    pushGrants(liveId);
   });
+
+  // ── The ladder's middle rung, and the door back out of both (#974, §5.16) ──
+  //
+  // One channel per verb rather than one `setStandingGrant(kind, …)`, because
+  // the two rungs are genuinely different promises — "everything this session
+  // ever asks" against "this one file" — and a single channel with a `kind`
+  // discriminator is a channel where a renderer bug can widen a grant by
+  // getting one string wrong.
+  //
+  // `pushGrants` (declared up by the teardown, which is also a caller) runs
+  // after every mutation here.
+  broker.handle('sessions:allowFileForSession', (_e, liveId: string, filePath: unknown) => {
+    if (typeof liveId !== 'string') return null;
+    const key = streamPermissions?.allowFile(liveId, filePath) ?? null;
+    if (key !== null) pushGrants(liveId);
+    // The FOLDED key back, not a boolean: the surface lists what is actually
+    // being matched on, and a button that reported success while granting
+    // nothing (an unresolvable path) is worse than one that reported failure.
+    return key;
+  });
+  broker.handle(
+    'sessions:revokeStandingGrant',
+    (_e, liveId: string, kind: string, filePath?: unknown) => {
+      if (typeof liveId !== 'string' || !streamPermissions) return false;
+      if (kind !== 'all' && kind !== 'file') {
+        // Not silently false: a `kind` this handler does not know is a renderer
+        // bug, and the symptom without a line here is a revoke button that does
+        // nothing for ever with nothing anywhere saying why.
+        log.warn('revokeStandingGrant with an unknown kind', { liveId, kind: String(kind) });
+        return false;
+      }
+      const done =
+        kind === 'all'
+          ? streamPermissions.revokeAllowAll(liveId)
+          : streamPermissions.revokeFile(liveId, filePath);
+      if (done) pushGrants(liveId);
+      return done;
+    }
+  );
+  broker.handle('sessions:standingGrants', (_e, liveId: string) =>
+    typeof liveId === 'string' && streamPermissions
+      ? streamPermissions.standingGrants(liveId)
+      : { allowAll: false, files: [] }
+  );
 
   // Feed view blocks (P2-E12-06): live stream + backlog for attach.
   //

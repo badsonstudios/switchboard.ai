@@ -185,6 +185,134 @@ test.describe('Direct-mode permissions (P2-E18-14)', () => {
     expect(await heldIds(w)).toEqual([]);
   });
 
+
+  // P2-E22-03 (#974). The ladder's middle rung, end to end, plus the door back
+  // out of it — because a standing grant you cannot take back is the defect
+  // this item was sized around, and a unit test cannot prove that a second
+  // gated call really never reaches a window.
+  test('Approve all in this file grants one file, and the ⋯ menu takes it back', async () => {
+    test.setTimeout(120_000);
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder, env: DIRECT });
+    const w = a.window;
+    await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
+
+    const prompt = streamPrompter(a);
+    const title = path.basename(folder);
+    const bar = w.locator('[data-approval-bar]');
+
+    // 1. ASK, AND GRANT THE FILE.
+    await prompt(title, '!perm granted.sh');
+    await expect(w.getByText('Allow Write?')).toBeVisible({ timeout: 30_000 });
+    await w.locator('[data-approval-allow-file]').click();
+    await expect(bar).toHaveCount(0, { timeout: 15_000 });
+    await expect
+      .poll(() => fs.existsSync(path.join(folder, 'granted.sh')), { timeout: 20_000 })
+      .toBe(true);
+
+    // 2. THE SAME FILE AGAIN — and this is the assertion the whole rung is for.
+    //    Not "the bar went away": no bar may ever APPEAR, main answers at the
+    //    server, and nothing is pushed to this window at all.
+    fs.rmSync(path.join(folder, 'granted.sh'));
+    await prompt(title, '!perm granted.sh');
+    await expect
+      .poll(() => fs.existsSync(path.join(folder, 'granted.sh')), { timeout: 20_000 })
+      .toBe(true);
+    expect(await heldIds(w)).toEqual([]);
+    await expect(bar).toHaveCount(0);
+
+    // 3. A DIFFERENT FILE STILL HOLDS. The grant is one file, not a mood.
+    await prompt(title, '!perm other.sh');
+    await expect(w.getByText('Allow Write?')).toBeVisible({ timeout: 30_000 });
+    await expect(w.getByText(/other\.sh/).first()).toBeVisible();
+
+    // 4. THE CARD SAYS SOMETHING IS STANDING, before anything is opened. A
+    //    session that has stopped asking has no other way to tell you why.
+    await expect(w.getByTestId('card-menu-grant-dot')).toBeVisible();
+
+    // 5. REVOKE IT, from the menu, without answering the held request.
+    await w.getByTestId('card-menu-button').click();
+    const row = w.getByTestId('card-menu').getByTestId('card-grant-file');
+    await expect(row).toHaveCount(1);
+    await expect(row).toContainText('granted.sh');
+    await row.getByRole('button').click();
+    // the list is main's, pushed back — so an empty section is proof the ROUTER
+    // let go, not proof the renderer hid a row
+    await expect(w.getByTestId('card-standing-grants-empty')).toBeVisible({ timeout: 15_000 });
+    await expect(w.getByTestId('card-menu-grant-dot')).toHaveCount(0);
+    // ⚠️ CLOSING THIS MENU TOOK TWO TRIES AND BOTH FAILURES ARE WORTH KNOWING.
+    // `Escape` alone does nothing: the handler is on the wrapper around the ⋯
+    // button, so it only fires while focus is inside — and the revoke just
+    // removed the button that had it, dropping focus to `body`. Clicking ⋯ again
+    // does not work either: the menu's click-away backdrop sits OVER the button
+    // it belongs to, so Playwright reported `<div></div> intercepts pointer
+    // events` for thirty seconds. Focus the button (focus does not hit-test),
+    // then Escape.
+    await w.getByTestId('card-menu-button').focus();
+    await w.keyboard.press('Escape');
+    await expect(w.getByTestId('card-menu')).toHaveCount(0);
+
+    // 6. …AND THE GRANTED FILE ASKS AGAIN. Answer the request from step 3
+    //    first, so the session is free to raise the next one.
+    await w.getByRole('button', { name: 'Deny', exact: true }).click();
+    await expect(bar).toHaveCount(0, { timeout: 15_000 });
+    fs.rmSync(path.join(folder, 'granted.sh'));
+    await prompt(title, '!perm granted.sh');
+    await expect(w.getByText('Allow Write?')).toBeVisible({ timeout: 30_000 });
+    expect(fs.existsSync(path.join(folder, 'granted.sh'))).toBe(false);
+  });
+
+
+  // ⚠️ THE OTHER RUNG, AND IT IS THE ONE THAT WAS ACTUALLY BROKEN. #974's review
+  // found that revoking "Allow all (this session)" cleared main's grant and left
+  // an identical copy in the WINDOW (`sessionStore.allowAllByLive`), which then
+  // auto-allowed every request main started pushing again. The user would have
+  // revoked, watched the list empty, and still never been asked.
+  //
+  // The e2e above tests the per-file rung, whose revoke worked from the first
+  // draft. This one tests the rung with the history — and it is the only shape
+  // that could have caught that bug, because BOTH processes have to be involved:
+  // a main-side unit test passes against the broken build, and so does a
+  // renderer-side one.
+  test('revoking "Allow all" really does make the session ask again', async () => {
+    test.setTimeout(120_000);
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder, env: DIRECT });
+    const w = a.window;
+    const title = path.basename(folder);
+    await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
+
+    const prompt = streamPrompter(a);
+    await prompt(title, '!perm one.sh');
+    await expect(w.getByText('Allow Write?')).toBeVisible({ timeout: 30_000 });
+    await w.getByRole('button', { name: 'Allow all (this session)' }).click();
+    await expect(w.locator('[data-approval-bar]')).toHaveCount(0, { timeout: 15_000 });
+
+    // it really is standing: a second call lands with nothing on screen
+    await prompt(title, '!perm two.sh');
+    await expect
+      .poll(() => fs.existsSync(path.join(folder, 'two.sh')), { timeout: 20_000 })
+      .toBe(true);
+    await expect(w.locator('[data-approval-bar]')).toHaveCount(0);
+
+    // take it back
+    await w.getByTestId('card-menu-button').click();
+    const row = w.getByTestId('card-menu').getByTestId('card-grant-all');
+    await expect(row).toHaveCount(1);
+    await row.getByRole('button').click();
+    await expect(w.getByTestId('card-standing-grants-empty')).toBeVisible({ timeout: 15_000 });
+    await w.getByTestId('card-menu-button').focus();
+    await w.keyboard.press('Escape');
+    await expect(w.getByTestId('card-menu')).toHaveCount(0);
+
+    // …and the session asks again. THIS is the assertion the bug would fail:
+    // against the broken build the request reached the window and the window
+    // answered it itself, so the file appeared and no bar ever did.
+    await prompt(title, '!perm three.sh');
+    await expect(w.getByText('Allow Write?')).toBeVisible({ timeout: 30_000 });
+    expect(fs.existsSync(path.join(folder, 'three.sh'))).toBe(false);
+  });
+
   // Two gated calls in ONE turn, which is the only way to reach the card's
   // queue on this transport from the outside: a second prompt cannot be typed
   // while the composer's session sits behind the first request's bar. The fake

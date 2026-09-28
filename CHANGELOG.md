@@ -98,6 +98,26 @@ on the floor, and say so in your PR.
 
 ### Added
 
+- **"Approve all in this file", and a way to take a standing approval back.**
+  When a session asks to change a file, the review bar now offers **Approve all
+  in this file** beside **Allow**: it allows this change and every later change
+  that session makes to *that one file*, without asking again. It only appears
+  when the request names a file — a shell command has nothing to scope it to.
+
+  **And there is finally a way out.** The card's **⋯** menu has a **STANDING
+  APPROVALS** section listing everything this session has been told it may do
+  without asking — the new per-file approvals *and* **Allow all (this session)**,
+  which until now could not be taken back at all: once clicked, it held until the
+  session restarted. Each line has a **✕**. Taking back the blanket one leaves
+  your per-file ones alone, and vice versa.
+
+  A small dot on the **⋯** button means something is standing. It matters because
+  a session under "Allow all" cannot ask you anything, so "it hasn't needed me"
+  and "I told it not to bother me" otherwise look identical.
+
+  Standing approvals last as long as the running session. Restart it, or close and
+  reopen the card, and it asks again from scratch. Nothing is written to disk.
+
 - **You can now tell a session *why* you said no.** Beside **Deny** on the review
   bar there is a **Deny with feedback…** button. It opens a small box under the
   diff, the cursor already in it; type your objection and press **Enter**. Your

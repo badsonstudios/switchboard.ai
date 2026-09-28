@@ -25,7 +25,10 @@
 // can see — and `PermissionRequest` now comes straight from the shared boundary
 // type rather than being re-exported through the listener.
 import { randomBytes } from 'crypto';
+import path from 'path';
 import { MAX_DENIAL_REASON_CHARS, type PermissionRequest } from '../../shared/ipc/permissions';
+import { targetPath } from '../../shared/tool-paths';
+import { HOST_STYLE } from '../fs/read-scope';
 import { Logger } from '../log/logger';
 import { asDisplayString } from '../../shared/display-string';
 import { controlResponse } from '../../shared/stream-protocol';
@@ -249,6 +252,24 @@ export interface StreamPermissionsOptions {
   hasLiveWindow?: () => boolean;
   /** How long a question may go unanswered. Defaults to the hook path's 300s. */
   holdTimeoutMs?: number;
+  /**
+   * This live session's working directory, for resolving a per-file grant
+   * (#974). Absent, or null for an unknown session, means a RELATIVE path
+   * cannot be resolved — and this router then refuses to grant or match one,
+   * which is the safe way to be wrong: an unresolvable path that matched would
+   * be a standing auto-allow on a file the user never saw.
+   *
+   * ⚠️ In practice this is a belt on top of a contract. The CLI's own tool
+   * schemas say `The file_path parameter must be an absolute path, not a
+   * relative path` (read from the PATH binary, 2.1.280), so a relative path is a
+   * model mistake the CLI itself rejects rather than an ordinary case. What the
+   * folding actually earns its place on is TWO ABSOLUTE SPELLINGS of one file —
+   * `C:/p/x.ts` against `C:\p\x.ts` against `C:\P\X.ts` — which the CLI does
+   * produce (its captured `can_use_tool` payload uses forward slashes on
+   * Windows). `path.resolve` settles the separators; `PathStyle` settles the
+   * case.
+   */
+  folderOf?: (sessionId: string) => string | null;
 }
 
 interface Pending {
@@ -280,6 +301,23 @@ export class StreamPermissions {
    * which is where a live id stops existing.
    */
   private readonly allowAllSessions = new Set<string>();
+  /**
+   * Per-file standing grants, the ladder's MIDDLE rung (#974, §5.16).
+   *
+   * `liveId -> set of FOLDED absolute paths` (see `grantKey`). Scoped exactly
+   * like `allowAllSessions` above and for the same reasons — held here in main
+   * so a granted call never round-trips a renderer, keyed by LIVE id so a
+   * respawn or resume asks again, cleared in `forgetSession`, which is where a
+   * live id stops existing.
+   *
+   * ⚠️ TWO SETS RATHER THAN ONE UNION, and the difference is not tidiness: the
+   * revoke surface has to be able to show and take back the two rungs
+   * SEPARATELY. Folding "allow everything" into the same structure as "allow
+   * this file" would make "revoke the blanket grant but keep the three files I
+   * actually meant" unexpressible — and that is the gesture a user reaches for
+   * after a mis-click on a bar, which is the defect #974 was sized around.
+   */
+  private readonly filesAllowed = new Map<string, Set<string>>();
   /**
    * LIVE sessions that were DISPATCHED, i.e. that nobody is watching (#948).
    *
@@ -487,8 +525,13 @@ export class StreamPermissions {
     //    one it is going to get anyway, and #948's probe measured the request being
     //    RETRIED, so that is up to ten minutes of a review doing nothing.
     //
-    //    ⚠️ WHAT THIS DOES NOT BUY IS SILENCE, and an earlier version of this
-    //    comment claimed it did (review). `streamStatusEvent` applies
+    //    ⚠️ WHAT THIS DOES NOT BUY IS SILENCE — unless the session ALSO holds a
+    //    standing grant, which #974 made possible and this paragraph predates.
+    //    `willAutoAllow` now answers true for an allow-all session's
+    //    `ExitPlanMode`, so the pump suppresses `permission-held` and the beep
+    //    genuinely does not happen. That is harmless (the call is denied here in
+    //    the same tick either way) and it is not what the rest of this note is
+    //    about. For a session with no standing grant, everything below holds. `streamStatusEvent` applies
     //    `permission-held` at the pump, one message before this code runs, so the
     //    beep and the Events row have already happened by the time we answer;
     //    `setPermissionHoldSuppressor` is keyed by SESSION alone, so suppressing
@@ -592,6 +635,46 @@ export class StreamPermissions {
         sessionId,
         requestId,
         tool: request.tool,
+        delivered: sent,
+      });
+      return;
+    }
+
+    // 1b. The LADDER'S MIDDLE RUNG (#974, §5.16): this session was told to
+    //     approve everything in ONE file, and this call touches that file.
+    //
+    //     Answered here rather than in the branch above, and the two are kept
+    //     apart on purpose — see `filesAllowed` for why the grants are two sets
+    //     and not one union. Everything else about this branch is branch 1's,
+    //     for branch 1's reasons: the same server-side answer, the same absence
+    //     of `applyStatus`, and the same exemption for a QUESTION -- which
+    //     `willAutoAllow` also applies, because the pump's suppressor and this
+    //     branch must not disagree about which messages are about to be
+    //     answered.
+    //
+    //     ⚠️ ORDER MATTERS ONLY ONE WAY ROUND. Allow-all is the wider grant, so
+    //     it is tested first and a session holding both never reaches here.
+    //     Putting this first would cost a path resolution per call on a session
+    //     that was going to allow it regardless.
+    //     WARNING, AND THE TEST ABOVE IS WHY IT IS HERE. The first draft of
+    //     this branch had no `!isQuestion` and a unit test caught it: an
+    //     `AskUserQuestion` whose input happens to carry a `file_path` under an
+    //     active grant would have been auto-allowed, and #563 measured what the
+    //     CLI does with a bare allow on that tool -- "The user did not answer
+    //     the questions." The session's question would have been silently
+    //     skipped, from the one path that pushes nothing to a renderer, so the
+    //     user would not even have seen what they missed. Branch 1 carries this
+    //     rule too; the two conditions are independent and both have to say it.
+    if (!isQuestion(request.tool) && this.fileGranted(sessionId, request.input)) {
+      const sent = this.send(
+        sessionId,
+        controlResponse(nativeRequestId, { behavior: 'allow', updatedInput: request.input })
+      );
+      this.log.debug('gated call auto-allowed (per-file grant)', {
+        sessionId,
+        requestId,
+        tool: request.tool,
+        path: targetPath(request.input),
         delivered: sent,
       });
       return;
@@ -1069,6 +1152,9 @@ export class StreamPermissions {
     // that replaces this one asks again (#319). Mirrors
     // `HookListener.unregisterSession`.
     this.allowAllSessions.delete(sessionId);
+    // Same rule, same reason, same line (#974): a per-file grant is keyed by
+    // LIVE id, so the session that replaces this one asks about that file again.
+    this.filesAllowed.delete(sessionId);
     // Same rule, same reason (#948): keyed by LIVE id, so a dispatched card whose
     // session is restarted comes back as an ordinary one. The briefing is
     // single-use on the other side of this too (`dispatch-ipc.ts`'s `consume`), so
@@ -1190,10 +1276,232 @@ export class StreamPermissions {
     this.log.info('allow-all enabled for stream session', { sessionId });
   }
 
-  /** Does this live session answer its own gated calls? (`SessionManager`'s
-   *  `permission-held` suppressor asks this — see `offer` step 1.) */
+  /**
+   * Does this live session answer its own gated calls? (`offer` step 1.)
+   *
+   * NO PRODUCTION CALLER SINCE #974 — `SessionManager`'s suppressor asks
+   * `willAutoAllow` now, which is the same question widened to cover a grant
+   * that depends on the request. Kept because it is the narrow question, tests
+   * ask it directly, and a reader of `offer` branch 1 will look for it.
+   */
   isAllowAll(sessionId: string): boolean {
     return this.allowAllSessions.has(sessionId);
+  }
+
+  /**
+   * Grant every later gated call on ONE FILE in this live session (#974).
+   *
+   * Returns the folded key actually stored, or null when the path could not be
+   * resolved — the caller wants to know, because a button that reported success
+   * and granted nothing is worse than one that failed.
+   */
+  allowFile(sessionId: string, filePath: unknown): string | null {
+    const key = this.grantKey(sessionId, filePath);
+    // ⚠️ THE GRANT HAS TO NAME A FILE THIS SESSION IS ACTUALLY ASKING ABOUT,
+    // and that check is here rather than in the renderer because the renderer is
+    // the side that cannot be trusted (`fs/read-scope.ts`'s header: "a
+    // renderer-side scope check protects nobody"). Without it the channel
+    // accepts any absolute path for any live id — so a renderer bug, or anything
+    // that reached this bridge, could pre-plant a standing auto-allow on
+    // `~/.ssh/config` before a single call arrived, and it would then fire with
+    // nothing on screen.
+    //
+    // The invariant the UI already satisfies is the one enforced: the button
+    // exists only on a HELD bar, drawn from that request's own
+    // `targetPath`. Every real call site therefore has a pending request whose
+    // target folds to this key. Found in review (#974).
+    if (key !== null && !this.heldTargets(sessionId).has(key)) {
+      this.log.warn('refusing a per-file grant for a path this session is not asking about', {
+        sessionId,
+        path: key,
+      });
+      return null;
+    }
+    if (key === null) {
+      this.log.warn('refusing a per-file grant for a path that will not resolve', {
+        sessionId,
+        // the RAW value, typed, because "it was an object" is the whole diagnosis
+        type: typeof filePath,
+      });
+      return null;
+    }
+    const set = this.filesAllowed.get(sessionId) ?? new Set<string>();
+    set.add(key);
+    this.filesAllowed.set(sessionId, set);
+    this.log.info('per-file allow granted for stream session', { sessionId, path: key });
+    return key;
+  }
+
+  /** Take back one per-file grant. False = this session never held it. */
+  revokeFile(sessionId: string, filePath: unknown): boolean {
+    const key = this.grantKey(sessionId, filePath);
+    const set = key === null ? undefined : this.filesAllowed.get(sessionId);
+    if (!set || key === null || !set.delete(key)) return false;
+    if (set.size === 0) this.filesAllowed.delete(sessionId);
+    this.log.info('per-file allow revoked', { sessionId, path: key });
+    return true;
+  }
+
+  /**
+   * Take back "Always allow for this session" (#974).
+   *
+   * ⚠️ THIS DID NOT EXIST, AND THAT IS WHY #974 IS AN M. The grant was cleared
+   * only by `forgetSession` — so a mis-click on a bar that hands a live session
+   * blanket write approval was a ONE-WAY DOOR until the session died. Shipping a
+   * second standing grant beside an unrevocable one would have doubled the
+   * problem rather than noticed it.
+   */
+  revokeAllowAll(sessionId: string): boolean {
+    const had = this.allowAllSessions.delete(sessionId);
+    if (had) this.log.info('allow-all revoked for stream session', { sessionId });
+    return had;
+  }
+
+  /**
+   * What this live session is standing on, for the surface that shows it.
+   *
+   * Paths come back as the FOLDED keys, which is what the app is actually
+   * matching on — not the spelling the user happened to click. Showing the
+   * original would be showing something other than the grant in force, and the
+   * revoke that followed would be a second guess at the same normalisation.
+   */
+  standingGrants(sessionId: string): { allowAll: boolean; files: string[] } {
+    return {
+      allowAll: this.allowAllSessions.has(sessionId),
+      files: [...(this.filesAllowed.get(sessionId) ?? [])].sort(),
+    };
+  }
+
+  /**
+   * Will this message be answered at the server, with no hold and no beep?
+   *
+   * ⚠️ THE `SessionManager` SUPPRESSOR ASKS THIS, AND IT USED TO ASK
+   * `isAllowAll` INSTEAD. That was the same question while only one answer
+   * existed: allow-all is a property of the SESSION, so the session id was
+   * enough. A per-file grant is a property of the REQUEST, so it is not — and
+   * the half the suppressor owns is not cosmetic. `streamStatusEvent` maps
+   * `can_use_tool` to `permission-held` at the pump, one message BEFORE this
+   * router sees it, so without this the card would flash `needs-permission`, the
+   * Events row would appear and the beep would sound for a call that is about to
+   * be answered in the same tick. The done-when says "never hold, never emit
+   * `needs-permission` and never beep"; this is the last two.
+   *
+   * Deliberately takes the raw message rather than a parsed request: the pump
+   * has the message and nothing else, and parsing it twice is how the two ends
+   * would come to disagree about what counts.
+   */
+  willAutoAllow(sessionId: string, msg: Record<string, unknown>): boolean {
+    const req = msg.request as Record<string, unknown> | undefined;
+    if (msg.type !== 'control_request' || req?.subtype !== 'can_use_tool') return false;
+    // ⚠️ THE SAME UNANSWERABLE-REQUEST GUARD `offer` OPENS WITH, and it has to be
+    // here too (review). `offer` drops a `can_use_tool` with no `request_id`
+    // before it answers anything — there is nothing to echo back. Without the
+    // same test, this predicate would say "about to be answered" for a message
+    // that is about to be dropped, `holdSuppressed` would swallow
+    // `permission-held`, and the CLI would park with nothing on screen, no
+    // badge, no bar and no beep. Latent for allow-all before #974; a second
+    // grant is a second way to reach it.
+    if (!asDisplayString(msg.request_id)) return false;
+    const tool = asDisplayString(req.tool_name);
+    // A QUESTION IS EXEMPT FROM BOTH RUNGS (#563). "Allow all tools in this
+    // session" is not "answer all questions in this session", and neither is
+    // "approve everything in this file" — a question holds and waits for a
+    // person. `offer` says this at length; this must agree with it or the two
+    // would suppress and hold the same message.
+    if (isQuestion(tool)) return false;
+    if (this.allowAllSessions.has(sessionId)) return true;
+    return this.fileGranted(sessionId, req.input);
+  }
+
+  /**
+   * The folded targets of every request this session is CURRENTLY holding.
+   *
+   * What `allowFile` checks a grant against — see its note. Computed rather than
+   * maintained, because `pending` is already the list and a second index would
+   * be a second thing to get wrong on every exit path.
+   */
+  private heldTargets(sessionId: string): Set<string> {
+    const out = new Set<string>();
+    for (const p of this.pending.values()) {
+      if (p.sessionId !== sessionId) continue;
+      const raw = targetPath(p.request.input);
+      const key = raw === null ? null : this.grantKey(sessionId, raw);
+      if (key !== null) out.add(key);
+    }
+    return out;
+  }
+
+  /** Is this input's target file standing-granted for this session? (#974) */
+  private fileGranted(sessionId: string, input: unknown): boolean {
+    const set = this.filesAllowed.get(sessionId);
+    if (!set || set.size === 0) return false;
+    const raw = targetPath(input as Record<string, unknown> | null);
+    if (raw === null) return false;
+    const key = this.grantKey(sessionId, raw);
+    return key !== null && set.has(key);
+  }
+
+  /**
+   * One file's identity, for matching a grant — or null when we cannot say.
+   *
+   * TWO NORMALISATIONS, and the second is the #683 precedent:
+   *
+   *  1. **`path.resolve`** settles separators and `..`. This is the one that
+   *     actually earns its place, because the CLI mixes them: its captured
+   *     `can_use_tool` payload spells a Windows path `C:/p/.claude/...`, while
+   *     anything the user or another tool produced will use backslashes.
+   *  2. **The host's case rule** (`HOST_STYLE` from `fs/read-scope.ts`) folds
+   *     `C:\P\X.ts` onto `C:\p\x.ts` on Windows and macOS, and leaves them apart
+   *     on Linux. Read from the same constant the read-scope check uses, rather
+   *     than a second `process.platform` test, so a grant and a scope cannot
+   *     come to disagree about what one file is.
+   *
+   * ⚠️ THERE IS NO `realpath`, AND THAT IS A CHOICE. A `Write` grant is
+   * routinely for a file that does not exist yet, so resolving the target would
+   * throw on exactly the common case. The direction that costs is narrow and
+   * worth naming: every SPELLING difference this does not canonicalise — an 8.3
+   * short name, a symlinked parent, an extended-length prefix — produces a
+   * different key and so fails CLOSED, which is the safe way to be wrong. What stays open is
+   * IDENTITY: a grant on `notes.md` keeps matching if that name is later
+   * repointed at another file. Bounded by the grant dying with the live session,
+   * and by `allowFile` refusing a path this session is not already asking about.
+   *
+   * NULL IS THE FAIL-CLOSED ANSWER and it has two causes: a value that is not a
+   * usable string, and a RELATIVE path in a session whose folder we do not know.
+   * Resolving the latter against the app's own `process.cwd()` — which is what
+   * a bare `path.resolve` would do — would key the grant to a directory that has
+   * nothing to do with the session, and could match a later call by accident.
+   */
+  private grantKey(sessionId: string, filePath: unknown): string | null {
+    if (typeof filePath !== 'string' || filePath === '') return null;
+    // A NUL is never part of a real path, and every layer below would either
+    // reject it or truncate at it. Rejected here so it cannot reach a log line
+    // or the ⋯ menu — `ReadScope.resolve` refuses it for the same reason.
+    if (filePath.includes('\0')) return null;
+    let abs = filePath;
+    if (!path.isAbsolute(abs)) {
+      // ⚠️ WRAPPED, like every other injected predicate in this class
+      // (`windowLive`, `answerable`), and the failure direction is the one that
+      // matters: a throw here would propagate out of `willAutoAllow` into
+      // `holdSuppressed` (caught, status applied) and then out of `offer` into
+      // the pump's listener loop (swallowed) — leaving nothing pending, no
+      // timer and no bar, with the card stuck on `needs-permission` for ever.
+      // "I cannot tell where this session lives" resolves to "no grant".
+      let folder: string | null = null;
+      try {
+        folder = this.opts.folderOf?.(sessionId) ?? null;
+      } catch (err) {
+        this.log.warn('folder lookup threw — treating the path as unresolvable', {
+          sessionId,
+          error: String(err),
+        });
+        return null;
+      }
+      if (!folder) return null;
+      abs = path.join(folder, abs);
+    }
+    const resolved = path.resolve(abs);
+    return HOST_STYLE.caseInsensitive ? resolved.toLowerCase() : resolved;
   }
 
   /**

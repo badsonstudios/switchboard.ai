@@ -94,6 +94,8 @@ export const sessionPanels: PanelContribution[] = [
         // this is now the only render site consuming the guard.
         transport={ctx.transport}
         onDecide={ctx.onDecide}
+        // #261's lesson again: the button is absent, not broken, without this
+        onAllowFile={ctx.onAllowFile}
         onCycleAutonomy={ctx.onCycleAutonomy}
         // No `onJumpToTerminal`, and no bar to give it to since #952 — see
         // `setView('terminal')` would now resolve to the Session tab — a button

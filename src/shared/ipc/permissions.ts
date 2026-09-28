@@ -59,6 +59,26 @@ export type DecideHeld = (
 ) => void;
 
 /**
+ * What a LIVE session is standing on — §5.16's ladder, as state (#974).
+ *
+ * Both rungs in one shape because the surface shows them together and a user
+ * does not think of them as two features: "what has this session been told it
+ * may do without asking me." They are two SETS in main, deliberately (see
+ * `StreamPermissions.filesAllowed`), because revoking one must not touch the
+ * other — but that is a storage fact, not a presentation one.
+ *
+ * `files` are the FOLDED keys main is matching on, not the spellings the user
+ * clicked. A list that showed the original would be showing something other than
+ * the grant in force.
+ */
+export interface StandingGrants {
+  /** "Always allow for this session" — the wider rung */
+  allowAll: boolean;
+  /** resolved, host-folded absolute paths, sorted */
+  files: string[];
+}
+
+/**
  * An in-flight permission request, as main knows it.
  *
  * ONE shape for both transports (P2-E18-07): a held `PreToolUse` hook, or a

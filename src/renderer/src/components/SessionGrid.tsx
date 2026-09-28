@@ -26,6 +26,11 @@ import { listPanels, panelBadge, panelEnabled } from '../extensibility/panels';
 import { ContributionBoundary } from '../extensibility/boundary';
 import { IdentityChip, identityBadgeStyle, identityWash } from './IdentityChip';
 import { DiffPane } from './DiffPane';
+import {
+  StandingGrantsSection,
+  grantCount,
+  useStandingGrants,
+} from './StandingGrants';
 import { DocumentViewer } from './DocumentViewer';
 import { SessionHistoryDialog } from './SessionHistoryDialog';
 import { DispatchDialog, dispatchedTitle } from './DispatchDialog';
@@ -748,6 +753,12 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // ⋯ session-controls menu (E10-07, §5.17): GUI sugar that TYPES the real
   // slash command into the PTY — the CLI stays the source of truth
   const [menuOpen, setMenuOpen] = React.useState(false);
+  // What this session has been told it may do without asking (#974). Read here
+  // rather than inside the menu because the ⋯ BUTTON needs the count too: a
+  // session that has stopped asking should say so from the card, not only once
+  // you have opened something. Cheap — one IPC read per live id, then pushes.
+  const standingGrants = useStandingGrants(live?.id ?? null);
+  const standingCount = grantCount(standingGrants);
   const [confirmClear, setConfirmClear] = React.useState(false);
   /**
    * Whatever went wrong creating a session from THIS card's ＋ (#531).
@@ -1307,12 +1318,31 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
      * for two epics and no renderer surface ever supplied one, which is the
      * entirety of why "deny with feedback" did not exist.
      */
-    reason?: string
+    reason?: string,
+    /** answer THIS request rather than the queue's head — see below */
+    target?: IncomingPermission
   ): void => {
     // the head of the bar's OWN list, not of the raw queue: a grouped request
     // is answered on the grouped card, and this button must never decide one
     // the user cannot see (P2-E9-11)
-    const head = cardQueue[0];
+    //
+    // ⚠️ `target` OVERRIDES IT, and the honest reason is narrower than the one
+    // review suggested. Every synchronous caller wants the head and passes
+    // nothing. `approveFile` awaits an IPC round trip before answering, and the
+    // queue CAN move in between (`permissionResolved` from an OS toast, the
+    // batch card, the 300s fail-open; or `subscribeLiveRetired`) — but a
+    // deferred `decide()` would still answer the right request, because it
+    // closes over the `cardQueue` of the render the click happened in.
+    // MEASURED: a test that moves the queue mid-flight passes with or without
+    // this parameter.
+    //
+    // It is here anyway, and stays, because that safety is an accident of where
+    // `decide` is declared. Anything that made it a `useCallback`, moved the
+    // queue into a ref, or hoisted it would silently convert "the request the
+    // user clicked" into "whatever is head now" — with no type error and no
+    // failing test. One argument buys the invariant outright instead of
+    // inheriting it from a closure.
+    const head = target ?? cardQueue[0];
     if (!head) return;
     if (allowAll) {
       // main answers future gated calls at the server — no hold/event/beep
@@ -1329,6 +1359,43 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     // silently delete that one, which is still held. See `dropAnswered`.
     // The resolved event prunes too; both are idempotent.
     setPermQueue((prev) => dropAnswered(prev, head.requestId));
+  };
+
+  /**
+   * §5.16's middle rung (#974): grant this file for the live session, then
+   * answer the request that asked about it.
+   *
+   * THE ORDER IS LOAD-BEARING AND IT IS "GRANT FIRST", the same order
+   * `allowAllFromEvents` gives at length in `App.tsx`: the CLI can raise its
+   * next gated call the instant this one is answered, and a grant that landed
+   * after it would leave that call holding a bar the user believed they had
+   * just dismissed for this file.
+   *
+   * ⚠️ NO OPTIMISTIC LOCAL COPY, unlike allow-all. `sessionStore.setAllowAll`
+   * exists because the CARD'S OWN intake has to auto-allow a request that was
+   * already in flight when the grant was made (`intakePermission`'s allow-all
+   * branch), and that is a per-SESSION question the store can answer. A per-file
+   * grant is a per-REQUEST question whose answer lives in main — main resolves
+   * the path against the session's folder and folds it with the host's rule —
+   * and a second copy of that arithmetic in the renderer is precisely how a
+   * button would come to grant one path while the router matched another. The
+   * cost is that a request ALREADY queued on this card still shows its bar; it
+   * is one request, the user is looking at it, and answering it is one click.
+   */
+  const approveFile = (filePath: string): void => {
+    const head = cardQueue[0];
+    if (!head) return;
+    void window.switchboard.sessions
+      .allowFileForSession(head.sessionId, filePath)
+      // Fail-open, and quietly: main logs the refusal with the reason. An
+      // unresolvable path grants nothing, and the answer below still happens —
+      // the user pressed a button that means "yes, and stop asking about this
+      // file", and the half we can honour is the yes.
+      .catch(() => null)
+      // `head`, PASSED EXPLICITLY — see `decide`'s note. Today's closure would
+      // get this right on its own; the argument is what stops a later refactor
+      // taking that away in silence.
+      .finally(() => decide('allow', false, undefined, undefined, head));
   };
 
   // membership follows the panel when the user drags it between dockview
@@ -1581,6 +1648,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     approvalQueued: Math.max(0, cardQueue.length - 1),
     approvalBatched: permBatched,
     onDecide: decide,
+    onAllowFile: approveFile,
     onCycleAutonomy: cycleCardAutonomy,
     setView,
   };
@@ -1973,14 +2041,37 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               }}
             >
               <button
-                title={t('grid.menu')}
+                data-testid="card-menu-button"
+                /* THE MENU BUTTON SAYS WHEN SOMETHING IS STANDING (#974). A
+                   session under "Always allow" cannot ask, so it has no other
+                   way to tell you why it stopped — which is the half of the
+                   one-way-door defect that is invisible even once a revoke
+                   exists. The marker is in the NAME as well as the glyph:
+                   a coloured dot alone is not information. */
+                title={standingCount > 0 ? t('grants.menuHint', { count: standingCount }) : t('grid.menu')}
+                aria-label={standingCount > 0 ? t('grants.menuHint', { count: standingCount }) : t('grid.menu')}
                 onClick={() => {
                   setMenuOpen((o) => !o);
                   setConfirmClear(false);
                 }}
-                style={cheadBtn}
+                style={{ ...cheadBtn, position: 'relative' }}
               >
                 {t('grid.menuIcon')}
+                {standingCount > 0 && (
+                  <span
+                    data-testid="card-menu-grant-dot"
+                    aria-hidden="true"
+                    style={{
+                      position: 'absolute',
+                      insetBlockStart: 1,
+                      insetInlineEnd: 1,
+                      inlineSize: 5,
+                      blockSize: 5,
+                      borderRadius: '50%',
+                      background: 'var(--status-needs-permission)',
+                    }}
+                  />
+                )}
               </button>
               {menuOpen && (
                 <>
@@ -2227,6 +2318,18 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
                             })}
                           </button>
                         )}
+                        {/* §5.16's door back out (#974). ALWAYS rendered for a
+                            live session, empty or not — the defect being fixed
+                            is a grant you cannot see, and a section that showed
+                            up only when there was something in it would be
+                            indistinguishable from the feature not existing.
+                            NOT locked with the session controls below: those
+                            type a slash command into a live CLI, this takes back
+                            a permission, and a card whose session is wedged is
+                            exactly when you want to be able to. */}
+                        <div style={{ borderBlockStart: '1px solid var(--border)', marginBlock: 3 }} />
+                        <StandingGrantsSection liveId={live.id} grants={standingGrants} />
+                        <div style={{ borderBlockEnd: '1px solid var(--border)', marginBlock: 3 }} />
                         <button
                           disabled={controlsLocked}
                           title={t(lockReasonKey(controlsLock) ?? 'grid.menuClearHint')}

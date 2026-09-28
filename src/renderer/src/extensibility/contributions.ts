@@ -225,6 +225,8 @@ export interface PanelContext {
    * with a reason, and nothing would have told its author why.
    */
   onDecide?: DecideHeld;
+  /** §5.16's middle rung (#974) — grant one file, and answer this call */
+  onAllowFile?: (filePath: string) => void;
   onCycleAutonomy?: () => void;
   /** switch the card to another panel by id */
   setView: (id: PanelId) => void;

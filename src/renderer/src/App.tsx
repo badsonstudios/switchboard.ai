@@ -562,6 +562,18 @@ export function App(): React.JSX.Element {
     const offRetired = sessionStore.subscribeLiveRetired((liveId) =>
       sessionStore.dropPendingPermissionsForLive(liveId)
     );
+    // ⚠️ MAIN'S STANDING GRANTS ARE MIRRORED HERE, and #974's review is why.
+    // The shell keeps its own allow-all set so that a request ALREADY in flight
+    // when the grant was written is answered rather than queued
+    // (`ledgerAdmits` / `intakePermission`). Until #974 a grant could only ever
+    // be SET, so the two copies could not disagree. With a revoke they can — and
+    // without this line the revoke would have been a lie: main would start
+    // holding and pushing again, and this window would silently allow every one
+    // of them. Subscribed once, in the shell, for the same reason the permission
+    // ledger is: it is the only component that is always mounted.
+    const offGrants = bridge.sessions?.onStandingGrants?.((g) =>
+      sessionStore.setAllowAllFromMain(g.sessionId, g.allowAll)
+    );
     void bridge.sessions
       ?.pendingPermissions?.()
       // one write for the whole replay, not one per request
@@ -577,6 +589,7 @@ export function App(): React.JSX.Element {
       offReq?.();
       offRes?.();
       offRetired();
+      offGrants?.();
     };
     // bridge is resolved once per mount and stable for the process
   }, []);
