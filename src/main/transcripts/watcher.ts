@@ -207,6 +207,40 @@ const HEAD_CACHE_MAX = 4096;
 const CATCHUP_CHUNK = 256 * 1024;
 
 /**
+ * Which of a session's transcript lines become Feed blocks (#977).
+ *
+ * ⚠️ THIS WAS A BOOLEAN, AND THE MIDDLE VALUE IS THE WHOLE OF #977. A stream
+ * session was watched with `deriveFeed: false`, and what that MEANT was "the
+ * Feed comes from typed messages, so the main conversation must not be derived
+ * twice". What it DID was switch off derivation for every file the session owns
+ * — including `<native-id>/subagents/agent-*.jsonl`, which the stream does not
+ * carry at all.
+ *
+ * So #788's captioned, separated subagent runs went invisible the day Direct
+ * became the default (#381), and invisible everywhere when the PTY was deleted
+ * (#952). The renderer was intact the whole time; nothing fed it.
+ *
+ * MEASURED before choosing this over reading `parent_tool_use_id` off the
+ * stream (`spike/findings/e18-977-stream-sidechains.md`, CLI 2.1.280):
+ *
+ *  - the subagent's reply is on disk **without** `--forward-subagent-text`,
+ *    carrying `isSidechain`, `agentId` and `attributionAgent` — #788's exact
+ *    contract;
+ *  - the stream carries only the SEEDING prompt without that flag;
+ *  - and **the tail drain is already reading these files** for a stream session,
+ *    because it is ungated by design. The IO is paid either way; only the
+ *    derivation was being thrown away.
+ *
+ *  - `'all'`        — a transcript-driven session. Every line it owns.
+ *  - `'sidechains'` — a stream session. Subagent files only; the main
+ *                     conversation belongs to `StreamFeed`.
+ *  - `'none'`       — derive nothing. No caller wants this today; it exists so
+ *                     that "I want nothing" is sayable, because the old boolean
+ *                     could not tell it apart from "I want the sidechains".
+ */
+export type FeedDerivation = 'all' | 'sidechains' | 'none';
+
+/**
  * How long the poll tick will respect a `tail.catchingUp` lease before taking
  * the tail back (#742).
  *
@@ -337,7 +371,7 @@ interface WatchedSession {
    * is a flag on the watch rather than "do not watch at all". Two sources
    * feeding one Feed would render every block twice.
    */
-  deriveFeed: boolean;
+  deriveFeed: FeedDerivation;
   /**
    * Read this provider's conversation title off a transcript line (§5.11), or
    * undefined when the provider declares no `titles` capability — in which case
@@ -467,6 +501,36 @@ export interface TranscriptWatcherOptions {
   bindGiveUpMs?: number;
   /** how long a never-prompted card keeps discovery on the fast ladder (#388) */
   unpromptedFastMs?: number;
+  /**
+   * Where a `'sidechains'` session's subagent lines go (#977).
+   *
+   * ⚠️ THEY MUST NOT GO INTO THIS WATCHER'S OWN `FeedBuffer`, and the reason is
+   * written down in the file that owns the other one:
+   *
+   *   *"two buffers feeding one renderer is more than a rendering-order problem:
+   *   both number their blocks from seq 1, and the renderer upserts on seq
+   *   (`lib/feed.ts`), so the first streamed block would OVERWRITE the first
+   *   replayed one"* — `feed/stream-feed.ts`, on `hydrate`.
+   *
+   * That paragraph is #395's, and #977's first draft walked straight into it:
+   * the watcher pushed sidechain blocks into `w.feed` while `StreamFeed` pushed
+   * the session's own into its buffer, both counting from 1. The first subagent
+   * block replaced the session's first block, survivors sorted to the TOP of the
+   * conversation, and none of them was in `transcripts:blocks` — so they
+   * vanished on any remount and a resumed card never saw them at all.
+   *
+   * So the watcher hands the LINE over and the stream Feed pushes it, into the
+   * one buffer that session has. One seq space, one backlog, one reset to route
+   * — which is the same argument `hydrate` makes for doing the replay there.
+   *
+   * Returns false when nothing took it (no stream Feed for this session), in
+   * which case the line is dropped rather than misfiled.
+   */
+  sidechainSink?: (
+    sessionId: string,
+    entry: Record<string, unknown>,
+    origin: BlockOrigin
+  ) => boolean;
   /** how long a bound session keeps draining after its process died (#200) */
   postExitSettleMs?: number;
   /** the hard ceiling on watching anything for an exited session (#200) */
@@ -697,7 +761,7 @@ export class TranscriptWatcher {
        * and still wanted, which is why this is a flag and not a decision to
        * stop watching.
        */
-      deriveFeed?: boolean;
+      deriveFeed?: FeedDerivation | boolean;
       /** How this session's provider spells a conversation title (§5.11).
        *  Omitted = it has none, and no line is inspected for one. */
       readTitle?: (line: Record<string, unknown>) => string | undefined;
@@ -768,7 +832,17 @@ export class TranscriptWatcher {
       feed: new FeedBuffer((b) => this.reemit(sessionId, b)),
       exitedAt: null,
       quiesced: false,
-      deriveFeed: session.deriveFeed !== false,
+      // `false` still means `'sidechains'`, not `'none'`, and that is the #977
+      // change in one line: the ONLY caller that passed `false` is a stream
+      // session, and what it meant was "do not double the main conversation" —
+      // never "hide the subagents", which is what it silently did for two
+      // transports. A caller that genuinely wants nothing derived says so.
+      deriveFeed:
+        session.deriveFeed === undefined || session.deriveFeed === true
+          ? 'all'
+          : session.deriveFeed === false
+            ? 'sidechains'
+            : session.deriveFeed,
       readTitle: session.readTitle,
     });
     this.ensurePolling();
@@ -2059,7 +2133,24 @@ export class TranscriptWatcher {
    * Tolerant: unknown shapes produce nothing, never a throw.
    */
   private deriveBlocks(w: WatchedSession, full: string, e: Record<string, unknown>): void {
-    if (!w.deriveFeed) return;
+    if (w.deriveFeed === 'none') return;
+    // ⚠️ `'sidechains'` ROUTES BY FILE, and it has to be the FILE rather than the
+    // `isSidechain` flag (#977, found in review). On a resumed stream card the
+    // main transcript is replayed into `StreamFeed` by `replayResumedHistory`,
+    // which derives EVERY entry of it — including the `isSidechain` lines an
+    // older CLI wrote there. Gating on the flag would let this watcher derive
+    // those same lines a second time, out of the same file, into the other
+    // buffer. The bound file is `StreamFeed`'s, whole.
+    //
+    // …and what is left goes THERE, not into `w.feed`. See `sidechainSink`: two
+    // buffers feeding one renderer both count from seq 1 and the renderer
+    // upserts on seq, so a second source does not interleave — it OVERWRITES.
+    if (w.deriveFeed === 'sidechains') {
+      if (full === w.boundFile) return;
+      const origin: BlockOrigin = { sidechain: true, ...agentOriginFor(e, true, full) };
+      this.opts.sidechainSink?.(w.sessionId, e, origin);
+      return;
+    }
     const sidechain = full !== w.boundFile || e.isSidechain === true;
     // THIS IS THE LINE #788 IS ABOUT, AND IT IS THE `full !== w.boundFile` HALF
     // THAT FIRES. Measured over 3,214 transcripts, `isSidechain: true` appears

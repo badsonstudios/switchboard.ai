@@ -14,23 +14,32 @@
 // rules, the clipboard round trip, the popout) and one shared setup would couple
 // them.
 //
-// TWO TESTS HERE ARE `fixme`, and neither is a flake. Both were transcript-only
-// features that #952 made unreachable: local slash-command output (#978) and
-// subagent captions (#977, a regression — the feature shipped). Their fixtures are
-// left intact on purpose; see the note above each.
+// ONE TEST HERE IS `fixme`, and it is not a flake: local slash-command output
+// (#978), a transcript-only feature #952 made unreachable. Its fixture is left
+// intact on purpose; see the note above it.
+//
+// There were TWO. The other was subagent captions (#977) — a REGRESSION rather
+// than a gap, because #788 shipped the feature and `deriveFeed: false` for a
+// stream session switched off the subagent files along with the main
+// conversation it was aimed at. It is live again, and it came back with its
+// fixture rather than a rewrite: #977's probe re-confirmed the on-disk layout on
+// CLI 2.1.280.
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 import {
+  findFile,
   hookPoster,
   launchApp,
   permissionHolderBash,
   LaunchedApp,
+  pollAsync,
   tabFromFeedToComposer,
   tempProjectFolder,
   setTheme,
   streamPrompter,
 } from './fixtures/app';
+import { FAKE_SESSION_ID } from '../src/main/providers/fake-stream-ids';
 
 function slugForCwd(cwd: string): string {
   return cwd.replace(/[\\/:. ]/g, '-');
@@ -1182,64 +1191,88 @@ test.describe('Feed view (E12-06)', () => {
     await expect(fence.locator('[data-feed-copy]')).toHaveText('Copy');
   });
   //
-  // ⚠️ FIXME — #977, opened by #952, AND THIS ONE IS A REGRESSION RATHER THAN A GAP.
+  // #788 shipped captioned, separated subagent runs. Every bit of it was fed by
+  // the transcript watcher adopting `<native-id>/subagents/agent-<id>.jsonl` —
+  // and `deriveFeed: false` for a stream session switched that off along with
+  // the main conversation it was actually aimed at. So the feature went
+  // invisible on the default transport from #381, and everywhere after #952,
+  // with the renderer (`.agent-divider`, the caption rule, the grouping) intact
+  // and unit-tested the whole time.
   //
-  // #788 shipped captioned, separated subagent runs, and every bit of it was fed by
-  // the transcript watcher adopting `<native-id>/subagents/agent-<id>.jsonl`. That
-  // only ever ran for a PTY session, so the feature has been invisible on the
-  // default transport since #381 and is now invisible everywhere. `StreamFeed`
-  // drops sidechain traffic on purpose — `parent_tool_use_id != null` returns early
-  // in both `onStreamEvent` and `onMessage` — because interleaving a subagent's
-  // tokens into the main conversation would be worse than dropping them. The
-  // renderer (`.agent-divider`, the caption rule, the grouping) is intact and
-  // unit-tested. Nothing feeds it.
+  // ⚠️ THIS TEST IS BACK, NOT REWRITTEN. The fixture below is the one the `fixme`
+  // left in place, and #977's probe re-confirmed its layout on CLI 2.1.280 —
+  // subagent turns live in their own files, `isSidechain: true` appears zero
+  // times in the parent, and the `assistant` line carries `agentId` and
+  // `attributionAgent`. The CLAIMS are unchanged: three runs, two ids, one
+  // shared name, and the session's own voice never captioned.
   //
-  // The fixture below is LEFT ALONE on purpose. It writes the layout the CLI really
-  // writes, measured over 3,214 transcripts (`isSidechain: true` appears zero times
-  // in a parent file), and #977 should read it before rebuilding this on the stream:
-  // the shape will change, the CLAIMS will not — three runs, two ids, one shared
-  // name, and the session's own voice never captioned.
-  test.fixme('names and separates two concurrent subagents (#788)', async () => {
-    // The first sidechain coverage in the e2e tree, and it writes the layout
-    // the CLI really writes: subagent turns live in
-    // `<native-id>/subagents/agent-<id>.jsonl`, NOT in the parent transcript.
-    // Measured over 3,214 transcripts, `isSidechain: true` appears zero times
-    // in a parent file — so a spec that set the flag on a main-file line would
-    // be testing a shape the CLI stopped producing, and would pass while the
-    // real path stayed broken.
+  // WHAT DID CHANGE is where the session's OWN voice comes from. It used to be a
+  // hand-written line in the main transcript; on this transport the main
+  // conversation is the STREAM's, so it is prompted for real. That is the
+  // difference the item made concrete: one file excluded, the other included.
+  test('names and separates two concurrent subagents (#788)', async () => {
+    test.setTimeout(120_000);
     const folder = tempProjectFolder();
+    const title = path.basename(folder);
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
-    const dir = path.join(a.home, '.claude', 'projects', slugForCwd(folder));
-    fs.mkdirSync(dir, { recursive: true });
+    await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
+
+    // the session's own voice, off the stream
+    await streamPrompter(a)(title, 'dispatching two agents');
+    await expect(w.getByText('dispatching two agents').first()).toBeVisible({ timeout: 30_000 });
+
+    // ⚠️ WAIT FOR THE TURN TO FINISH BEFORE COUNTING. The fake echoes the prompt
+    // (`--replay-user-messages`) and then replies `FAKE-REPLY: <prompt>`, so the
+    // count goes 1 → 2 across two messages. Snapshotting between them made this
+    // assertion read "2 became 4" on the Linux runner — a GROWTH reported as a
+    // failure, which is the wrong bug and the wrong direction.
+    await expect(w.getByText(/FAKE-REPLY/)).toBeVisible({ timeout: 30_000 });
+
+    // How much of the session's OWN voice is on screen, before anything else
+    // writes into this conversation. See the assertion at the bottom.
+    const ownBlocksBefore = await w.getByText('dispatching two agents').count();
+    expect(ownBlocksBefore).toBeGreaterThan(1);
+
+    // …and the subagents' voices, from the files the CLI writes. Found rather
+    // than reconstructed, for `stream-approval.spec.ts`'s reason: the slug rule
+    // is a fold the app owns and a fourth hand-copy of it would turn any
+    // disagreement into a 30s poll blaming the renderer for a fixture bug.
+    const main = await pollAsync(
+      () => Promise.resolve(findFile(a.home, `${FAKE_SESSION_ID}.jsonl`)),
+      'the fake never wrote its transcript',
+      30_000
+    );
+    const subs = path.join(path.dirname(main), FAKE_SESSION_ID, 'subagents');
+    fs.mkdirSync(subs, { recursive: true });
     const line = (o: Record<string, unknown>) =>
-      JSON.stringify({ sessionId: 'native-e2e', cwd: folder, timestamp: new Date().toISOString(), ...o }) + '\n';
+      JSON.stringify({
+        sessionId: FAKE_SESSION_ID,
+        cwd: folder,
+        timestamp: new Date().toISOString(),
+        isSidechain: true,
+        ...o,
+      }) + '\n';
     const say = (text: string, extra: Record<string, unknown> = {}) =>
       line({ type: 'assistant', message: { content: [{ type: 'text', text }] }, ...extra });
 
-    fs.writeFileSync(path.join(dir, 'native-e2e.jsonl'), say('dispatching two agents'));
-    await expect(w.getByText('dispatching two agents')).toBeVisible({ timeout: 20_000 });
-
     // Two agents, INTERLEAVED across two files the way concurrent ones arrive,
     // and sharing a name — the case a label alone cannot separate.
-    const subs = path.join(dir, 'native-e2e', 'subagents');
-    fs.mkdirSync(subs, { recursive: true });
-    const sidechain = { isSidechain: true };
     fs.writeFileSync(
       path.join(subs, 'agent-aaaaaa11.jsonl'),
-      say('AGENT A FIRST', { ...sidechain, agentId: 'aaaaaa11', attributionAgent: 'digger' })
+      say('AGENT A FIRST', { agentId: 'aaaaaa11', attributionAgent: 'digger' })
     );
-    await expect(w.getByText('AGENT A FIRST')).toBeVisible({ timeout: 20_000 });
+    await expect(w.getByText('AGENT A FIRST')).toBeVisible({ timeout: 25_000 });
     fs.writeFileSync(
       path.join(subs, 'agent-bbbbbb22.jsonl'),
-      say('AGENT B FIRST', { ...sidechain, agentId: 'bbbbbb22', attributionAgent: 'digger' })
+      say('AGENT B FIRST', { agentId: 'bbbbbb22', attributionAgent: 'digger' })
     );
-    await expect(w.getByText('AGENT B FIRST')).toBeVisible({ timeout: 20_000 });
+    await expect(w.getByText('AGENT B FIRST')).toBeVisible({ timeout: 25_000 });
     fs.appendFileSync(
       path.join(subs, 'agent-aaaaaa11.jsonl'),
-      say('AGENT A SECOND', { ...sidechain, agentId: 'aaaaaa11' })
+      say('AGENT A SECOND', { agentId: 'aaaaaa11' })
     );
-    await expect(w.getByText('AGENT A SECOND')).toBeVisible({ timeout: 20_000 });
+    await expect(w.getByText('AGENT A SECOND')).toBeVisible({ timeout: 25_000 });
 
     // Three runs, because A was interrupted by B and came back. Each captioned
     // with the agent's name AND the id fragment that tells the two
@@ -1254,7 +1287,28 @@ test.describe('Feed view (E12-06)', () => {
     await expect(captions.nth(2)).toHaveText('Subagent \u00b7 digger \u00b7 aaaaaa');
 
     // ...and the session's own voice is never captioned.
-    await expect(w.getByText('dispatching two agents')).toBeVisible();
     await expect(captions.nth(0)).not.toHaveText(/dispatching/);
+
+    // ⚠️ AND THE SESSION'S OWN BLOCKS ARE ALL STILL THERE. Counted BEFORE the
+    // subagent files were written and compared, rather than asserted against a
+    // literal: the number is a property of the fake's echo plus its reply and is
+    // not the claim. The claim is that it did not GO DOWN.
+    //
+    // This is what the first draft of this feature would have failed. It gave
+    // the watcher its own `FeedBuffer`, and two buffers feeding one renderer
+    // both number their blocks from seq 1 while the renderer UPSERTS on seq — so
+    // the first subagent block REPLACED the session's first block rather than
+    // joining it. Every presence assertion above sails straight through that.
+    expect(await w.getByText('dispatching two agents').count()).toBe(ownBlocksBefore);
+
+    // ⚠️ AND IT SURVIVES A REMOUNT, which is the other half the two-buffer draft
+    // got wrong: `transcripts:blocks` serves the STREAM Feed's backlog, so
+    // blocks the watcher kept to itself were never in it and vanished the moment
+    // the view re-read it. Switching tabs away and back is the cheapest way to
+    // make the view do exactly that.
+    await w.getByRole('tab', { name: 'Changes' }).first().click();
+    await w.getByRole('tab', { name: 'Session' }).first().click();
+    await expect(w.getByText('AGENT A FIRST')).toBeVisible({ timeout: 15_000 });
+    await expect(w.locator('.agent-divider')).toHaveCount(3);
   });
 });

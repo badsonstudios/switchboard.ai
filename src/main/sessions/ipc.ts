@@ -805,9 +805,11 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
 
     // ⚠️ ROUTED BY TRANSPORT, exactly as `transcripts:blocks` is. The first cut
     // read `transcripts.blocks()` unconditionally and **the feature never ran
-    // once in the shipped configuration**: a stream session is watched with
-    // `deriveFeed: false`, so the watcher derives no blocks and hands back an
-    // empty list — while `snapshot.lines` still counts, so `shouldRelabel`
+    // once in the shipped configuration**: a stream session's blocks are the
+    // stream Feed's, so the watcher hands back an empty list (it derives none of
+    // the main conversation, and since #977 it does not keep the subagent blocks
+    // either — it hands them over) — while `snapshot.lines` still counts, so
+    // `shouldRelabel`
     // happily said "run". Every session ships as `stream` since #873, so the
     // labeler decided to spend, found nothing, and returned one line later.
     // Caught in review; the cadence tests missed it because the harness leaves
@@ -1300,9 +1302,20 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   // one it is looking at — so they share `sessions:feedBlock` rather than
   // getting a second channel the FeedView would have to subscribe to twice.
   //
-  // Exactly one source is live per session: the watcher is told not to derive
-  // (below, at `sessions:create`) for a stream session, which is what keeps
-  // this from rendering every block twice.
+  // ⚠️ TWO SOURCES SEND ON THIS CHANNEL AND THERE IS STILL ONE BUFFER PER
+  // SESSION, which is the distinction #977 turns on.
+  //
+  // A stream session is watched with `deriveFeed: 'sidechains'`: the watcher
+  // derives none of the MAIN conversation (that is `StreamFeed`'s, and deriving
+  // it here as well would render every block twice), and hands the SUBAGENT
+  // lines it finds to `StreamFeed.absorbSidechain` rather than buffering them
+  // itself. So the blocks arriving on `transcripts.onBlock` below belong to
+  // transcript-driven sessions only, and a stream session's blocks — its own and
+  // its subagents' — all come from the one buffer, in one seq space.
+  //
+  // That last part is not tidiness. Both buffers number from seq 1 and the
+  // renderer UPSERTS on seq (`lib/feed.ts`), so a second source for one session
+  // would not interleave — it would OVERWRITE.
   const isStream = (liveId: string): boolean => manager.get(liveId)?.transport === 'stream';
   transcripts.onBlock((sessionId, block) => send('sessions:feedBlock', { sessionId, block }));
   deps.streamFeed?.onBlock((sessionId, block) => send('sessions:feedBlock', { sessionId, block }));
@@ -2101,7 +2114,22 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           // stays, and that is the part worth not losing: usage totals, the
           // native id for `--resume`, and the drift detector are all still
           // wanted, and the CLI writes the JSONL in stream mode too (S-10).
-          deriveFeed: false,
+          //
+          // ⚠️ `'sidechains'`, NOT `false`, SINCE #977 — and the two used to be
+          // the same value, which is the bug. What this line MEANT was "do not
+          // double the main conversation". What it DID was switch derivation off
+          // for every file the session owns, including
+          // `<native-id>/subagents/agent-*.jsonl` — so #788's captioned subagent
+          // runs went invisible on the default transport (#381) and everywhere
+          // after the PTY was deleted (#952), with the renderer intact and
+          // nothing feeding it.
+          //
+          // The stream does NOT carry that content: `--forward-subagent-text` is
+          // off, and measured, only the subagent's SEEDING prompt arrives
+          // without it (`spike/findings/e18-977-stream-sidechains.md`). The
+          // files do, in full, with `agentId` and `attributionAgent` — and the
+          // watcher was already tailing them, because the drain is ungated.
+          deriveFeed: 'sidechains',
           // Undefined for a provider that declares no `titles` capability, and
           // the watcher then inspects no line for one — "starts no title watch
           // at all" (P2-E7-06). Not conditional on the transport: the CLI

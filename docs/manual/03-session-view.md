@@ -412,23 +412,23 @@ Then the caption adds a short code so you can still tell them apart:
 The code is just an identifier; it means nothing on its own, and it only shows
 up when there's an actual clash.
 
-**⚠️ Right now you will not see any of this, and that is a known gap.**
+A conversation recorded by an older version of Claude Code may show the indented
+work with a plain **Subagent** caption and no name. There is nothing wrong; that
+recording simply doesn't say who was speaking.
 
-The captions and the indenting are built and they work; what is missing is the
-helpers' work reaching the conversation at all. Until recently switchboard picked it
-up from the files Claude Code writes to disk, and it now reads the conversation
-straight from Claude Code instead — which is faster and more accurate for everything
-else, but does not yet carry what the helpers said. So a session that delegates work
-shows a quiet gap where their part should be, and then carries on with the main
-reply.
+**This was missing for a while, and it is back.** For about a month — between
+switchboard changing how it reads a conversation and this being noticed — a
+session that handed work to helpers showed a quiet gap where their part should
+have been, and then carried on with the main reply. Nothing was lost while it was
+gone: Claude Code recorded all of it, and it is those recordings the captions are
+read from again now.
 
-Nothing is lost: Claude Code still records all of it, and the main session's summary
-of what its helpers found is unaffected. The description above is what you will see
-again once this is reconnected, which is being worked on now.
-
-One more thing, for when it is back: a conversation recorded by an older version of
-Claude Code may show the indented work with a plain **Subagent** caption and no name.
-There is nothing wrong; that recording simply doesn't say who was speaking.
+**Reopening a session brings its helpers back too**, which it never used to.
+One thing to expect there: their work appears at the **end** of the restored
+conversation rather than back at the moment it happened. The recordings are read
+in a different order from the main conversation, and putting them back in place
+would mean re-numbering everything already on screen. The captions still say
+which helper is which, and anything that happens from then on is in order.
 
 Set the detail level to **quiet** if you'd rather not see helper chatter at
 all — it hides their work along with the captions.
