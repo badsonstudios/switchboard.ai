@@ -94,7 +94,9 @@ on the floor, and say so in your PR.
 
 ---
 
-## 0.8.100 — unreleased
+## 0.8.101 — unreleased
+
+## 0.8.100 — 2026-09-28
 
 ### Added
 
