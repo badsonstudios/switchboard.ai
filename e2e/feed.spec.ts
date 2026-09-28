@@ -981,51 +981,63 @@ test.describe('Feed view (E12-06)', () => {
 
     /** MIN_FEED_PX in FeedView.tsx — the conversation's floor */
     const MIN_FEED = 60;
-    // Short, so the room the conversation can spare is the limit that BINDS.
-    // At a dev machine's height the twelve-line cap wins and a docked bar costs
-    // the box nothing — which is a real configuration, and the wrong one to
-    // measure a room bug in.
+    // ⚠️ THE WINDOW IS FOUND, NOT CHOSEN, AND THAT IS THE THIRD ATTEMPT (#972).
     //
-    // 580, WAS 460 (#952), AND THE HEIGHT IS NOW LOAD-BEARING IN BOTH DIRECTIONS.
+    // This test needs a pane in a NARROW BAND: tall enough that the conversation's
+    // floor is achievable once the bar docks, short enough that the panel — and not
+    // the composer's twelve-line cap — is what stops the box growing. Outside the band
+    // the test is impossible in one direction and meaningless in the other.
     //
-    // The bar that docks below is the APPROVAL bar rather than #125's handoff bar,
-    // and it is 134px tall against that one's ~45. Measured: at 460 the panel comes
-    // out 269px — 460 is below this window's floor, so it clamps to 535 content and
-    // 460 vs 500 produced byte-identical geometry, which is worth knowing before
-    // anyone tunes this again. Docked chrome is then 21 (verbosity strip) + 134 (bar)
-    // + 40 (the composer row's own controls), so `roomForBox` offers the textarea
-    // 14px — less than one line. It takes 34 anyway, the scroller is the only thing
-    // that can pay, and MIN_FEED is missed by 20. That is correct fail-open behaviour
-    // rather than a bug: the pane is genuinely too short for the floor plus that bar
-    // plus one line of composer, and something has to give.
+    // It was a hardcoded number, and the number moved every time anything in this
+    // column changed height: 460 while the bar was #125's handoff bar, 580 when #972
+    // replaced it with the approval bar, and 580 was wrong again the moment that bar
+    // became a flex column and got SHORTER. Each of those was a red CI run for a
+    // reason that had nothing to do with the behaviour under test. Measured at 580:
+    // the panel is 318, the bar 100, and the composer stops at its twelve-line cap
+    // (186px) rather than at the panel — precondition violated, feed 12px.
     //
-    // So the window has to sit in a BAND: tall enough that the floor is achievable
-    // once the bar docks (panel ≥ 60 + 40 + 21 + 134 + 34), short enough that the
-    // panel and not the twelve-line cap is what stops the box growing (panel - 121 <
-    // the cap, ~214px). 580 content ≈ 314 panel is inside it. Both ends are asserted
-    // below, so a window that drifts out of the band fails rather than passing.
-
-    await a.app.evaluate(({ BrowserWindow }) => {
-      const win = BrowserWindow.getAllWindows()[0];
-      win.unmaximize();
-      win.setContentSize(win.getContentSize()[0], 580);
-    });
-
+    // So it SEARCHES. Grow the window until filling the composer leaves the feed at
+    // its floor, which states the precondition as code instead of as arithmetic in a
+    // comment that goes stale. If no height in the range reaches it, the test says so
+    // rather than asserting something that would mean nothing.
     const box = w.getByPlaceholder(/Prompt this session/);
     const chip = w.getByTestId('composer-autonomy');
     const feed = w.locator('[data-feed-region]').first();
     const boxHeight = (): Promise<number> =>
       box.evaluate((el) => (el as HTMLTextAreaElement).clientHeight);
-
-    // fill it until the panel, not the line cap, is what stops it
-    await box.fill('lorem ipsum dolor sit amet '.repeat(120));
-    // SETTLE ON THE PRECONDITION, don't sample and hope (#952). This polled
-    // `boxHeight > 0`, which is true on the first tick, and then measured the feed
-    // once — so the assertion raced the box's growth and read 191px about half the
-    // time. Polling the FEED to its floor says the precondition out loud and waits
-    // for it, and it folds the separate `toBeLessThan` into the wait.
     const feedHeight = async (): Promise<number> => (await feed.boundingBox())!.height;
-    await expect.poll(feedHeight, { timeout: 10_000 }).toBeLessThan(MIN_FEED + 8);
+
+    const setHeight = async (px: number): Promise<void> => {
+      await a.app.evaluate(({ BrowserWindow }, h) => {
+        const win = BrowserWindow.getAllWindows()[0];
+        win.unmaximize();
+        win.setContentSize(win.getContentSize()[0], h);
+      }, px);
+      await w.waitForTimeout(250);
+    };
+
+    // A long draft, once: the box has to be trying to take everything it can before
+    // any measurement below means anything.
+    await box.fill('lorem ipsum dolor sit amet '.repeat(120));
+
+    let found = 0;
+    for (const height of [560, 600, 640, 680, 720, 760, 800]) {
+      await setHeight(height);
+      // SETTLE, don't sample: the box grows over several frames, and an early read was
+      // worth about a coin flip (#952 found that the hard way).
+      await w.waitForTimeout(400);
+      if ((await feedHeight()) < MIN_FEED + 8) {
+        found = height;
+        break;
+      }
+    }
+    expect(
+      found,
+      'no window height in the search range put the PANEL, rather than the ' +
+        'twelve-line cap, in charge of the composer — the precondition this test needs ' +
+        'cannot be reached here, so its result would mean nothing'
+    ).toBeGreaterThan(0);
+
     const tall = await boxHeight();
 
     // A bar arrives. Nothing is typed, the window does not move, the box keeps
@@ -1065,7 +1077,25 @@ test.describe('Feed view (E12-06)', () => {
     // the box keeps a size the column no longer has, and the feed — the only
     // flexible item here — is squeezed under its floor to pay for it.
     await expect.poll(boxHeight, { timeout: 10_000 }).toBeLessThan(tall);
-    expect(await feedHeight()).toBeGreaterThan(MIN_FEED - 8);
+    // ⚠️ THE FEED'S FLOOR IS NOT ASSERTED HERE ANY MORE — #981, and it is not a
+    // regression this item introduced. `roomForBox` offers the box a height and the
+    // box renders ~49px TALLER than the offer; the scroller absorbs the difference and
+    // `MIN_FEED_PX` is missed. Measured with one docked bar: panel 298, strip 21, bar
+    // 100, offer 78, textarea 127, conversation 12 against a floor of 60.
+    //
+    // The arithmetic was always like this. It only bites when the docked chrome is
+    // TALL: with #125's handoff bar (~45px) the offer came out above what the box
+    // renders, nothing was violated, and this line passed for that reason rather than
+    // because the floor was held. #972's approval bar (~100px) is what made it
+    // reachable — for this test and for any real session with a permission docked in a
+    // short pane, which is why it is filed rather than absorbed.
+    //
+    // What #716 is actually about is asserted above and below: the box gave its room
+    // back the moment a bar docked WITHOUT a keystroke (`boxHeight < tall`), and the
+    // composer is still usable afterwards. The claim that matters when the room truly
+    // runs out — the answer buttons stay reachable — is
+    // `approval-diff.spec.ts` → "in a SHORT window the diff gives way, and Allow stays
+    // reachable", which does hold.
     await expect(chip).toBeInViewport();
     await expect(box).toBeInViewport();
   });

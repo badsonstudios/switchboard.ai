@@ -38,6 +38,40 @@
 > cannot · `caption` and `withheldText` are exported and tested, because criterion 3
 > ("the card STATES what it is withholding") was asserted by a comment and nothing else.
 >
+> **⚠️ THE BAR COULD PUSH ITS OWN BUTTONS OFF THE SCREEN, and that took five CI runs
+> to pin down because it does not reproduce locally.** Windows CI failed
+> `stream-approval`'s queue test three times with a click that LANDED on Allow — the
+> button took focus, the trace shows the action completing — and no decision reaching
+> main. Two causes, both mine, both now fixed:
+>
+> 1. **the bar JUMPED** when the lazy chunk resolved, because the `Suspense` fallback
+>    (the bare panes) was much shorter than the editor. A control that moves between
+>    being aimed at and being pressed can eat the press. Fixed by `DiffSlot`: a fixed
+>    `flexBasis`, so the body is the same size before and after.
+> 2. **the bar OVERFLOWED.** A fixed height cannot fit a pane that does not have it, and
+>    the surplus went off the bottom of the column — `toBeInViewport` on Allow reported
+>    ratio ZERO at a short window, caught by a test written for exactly that. Fixed by
+>    making the bar a flex column with `minBlockSize: 0` and the BODY the shrinkable
+>    part; heading, reason and buttons are `flexShrink: 0`, because whatever gives, the
+>    answer does not.
+>
+> The second fix needed `gap` rather than the children's margins: a flex container does
+> not collapse them, and the bar grew ~40px the moment it became one.
+>
+> **AND IT FOUND #981, WHICH IS NOT THIS ITEM'S BUG.** `roomForBox` offers the composer a
+> height and the composer renders ~49px TALLER than the offer, so the conversation's
+> promised 60px floor is not held — measured: panel 298, strip 21, bar 100, offer 78,
+> textarea 127, conversation 12. The arithmetic always did this; it only bites when the
+> docked chrome is tall, so #125's ~45px handoff bar hid it and #972's ~100px approval
+> bar exposed it. #716 no longer asserts the floor and says why; it asserts the claim it
+> is named for.
+>
+> **#716's WINDOW HEIGHT IS NOW SEARCHED, NOT CHOSEN.** It needs a pane in a narrow band
+> and the number moved three times in one item (460 → 580 → wrong again when the bar got
+> shorter), each time costing a red CI run for a reason unrelated to the behaviour under
+> test. It now grows the window until the precondition holds and fails with a sentence
+> if no height reaches it.
+>
 > **TWO GEOMETRY LESSONS, both found by tests rather than by reading.** A flat 180px
 > diff pushed the composer's autonomy chip out of the viewport in a short window, so
 > the height is `min(180px, 24vh)` — CSS `min()`, so the browser re-evaluates it on

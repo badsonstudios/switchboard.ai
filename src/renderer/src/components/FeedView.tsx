@@ -1232,9 +1232,38 @@ function ApprovalBar({
         background: 'color-mix(in srgb, var(--status-needs-permission) 8%, var(--panel2))',
         padding: '8px 10px',
         fontSize: 11,
+        /* ⚠️ A FLEX COLUMN THAT CAN SHRINK, AND `minBlockSize: 0` IS THE LOAD-BEARING
+           LINE (#972). The bar already defaulted to `flex: 0 1 auto` — shrinkable — but
+           a flex item will not go below its content's min-content height without
+           this, so a tall body pushed the bar past the bottom of the column and took
+           Allow and Deny off the screen with it. MEASURED on Windows CI at a short
+           window: `toBeInViewport` on Allow reported a viewport ratio of ZERO, and
+           the same overflow is the best explanation for a click that landed on the
+           button and never produced a decision.
+           The `reason` div below has carried its own version of this guard since
+           P2-E18-07 ("long reasons must not shove the buttons off a short card").
+           This is that rule applied to the part that is now much taller than a
+           reason. */
+        display: 'flex',
+        flexDirection: 'column',
+        minBlockSize: 0,
+        /* `gap` AND NOT THE CHILDREN'S MARGINS, because a flex container does not
+           collapse them. Margins that had been collapsing in the old block layout
+           started stacking the moment this became a flex column, and the bar grew by
+           ~40px — enough to squeeze the conversation to 12px and fail #716 on every
+           platform. Caught locally this time, which is the only reason it is a
+           footnote rather than another CI round trip. */
+        gap: 6,
       }}
     >
-      <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', marginBlockEnd: 6 }}>
+      <div
+        style={{
+          display: 'flex',
+          gap: 8,
+          alignItems: 'baseline',
+          flexShrink: 0,
+        }}
+      >
         {/* -ink, not the hue: the title sits on the bar's own 8% tint of that
             same hue, where the hue measures 2.19:1 on daylight and 4.04:1 on
             nordic. The ink lands at 5.08-8.00:1 across the four themes (#246). */}
@@ -1274,11 +1303,11 @@ function ApprovalBar({
         <div
           style={{
             color: 'var(--text)',
-            marginBlockEnd: 6,
             lineHeight: 1.4,
             // long reasons must not shove the buttons off a short card
             maxBlockSize: 64,
             overflow: 'auto',
+            flexShrink: 0,
           }}
         >
           {approval.reason}
@@ -1293,7 +1322,9 @@ function ApprovalBar({
           and two placements that answer "what am I agreeing to" differently
           have shown the user two things and called them the same. */}
       <ApprovalPreview input={approval.input} colorScheme={colorScheme} />
-      <div style={{ display: 'flex', gap: 6 }}>
+      {/* `flexShrink: 0`: whatever else gives, the ANSWER does not. §5.16 is about a
+          held request being answerable, and a button below the fold is not. */}
+      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
         <button onClick={() => onDecide('allow')} style={btn(true)}>
           {t('approval.allow')}
         </button>

@@ -68,12 +68,10 @@ import {
   subscribeDiffLayout,
 } from '../lib/diff-layout';
 import { defineDiffThemes, DIFF_THEME } from '../lib/monaco-theme';
-import {
-  APPROVAL_DIFF_BLOCK_SIZE,
-  joinHunks,
-  lineCount,
-  type ApprovalDiff,
-} from '../lib/approval-diff';
+// No height constant here any more: `ApprovalPreview`'s `DiffSlot` owns the room and
+// this fills it. See that component — the two disagreeing about a height is the bug
+// this arrangement removes.
+import { joinHunks, lineCount, type ApprovalDiff } from '../lib/approval-diff';
 
 export interface ApprovalDiffViewProps {
   diff: ApprovalDiff;
@@ -198,13 +196,16 @@ export default function ApprovalDiffView(props: ApprovalDiffViewProps): React.JS
     return () => ro.disconnect();
   }, []);
 
-  // The same constant the Suspense fallback reserves — see its docblock for why
-  // they must not disagree.
-  const height =
-    props.dense === true ? APPROVAL_DIFF_BLOCK_SIZE.dense : APPROVAL_DIFF_BLOCK_SIZE.roomy;
-
   return (
-    <div data-approval-diff={props.diff.kind} style={{ marginBlockEnd: 5 }}>
+    <div
+      data-approval-diff={props.diff.kind}
+      /* FILLS `DiffSlot` rather than setting a height of its own (#972). The slot owns
+         the room — fixed basis, shrinkable — so the editor below lays out at the size
+         it actually HAS. Setting a height here and letting the slot clip it would put
+         the bottom of a diff, and Monaco's own scrollbar, somewhere nobody could
+         reach. */
+      style={{ display: 'flex', flexDirection: 'column', minBlockSize: 0, flex: '1 1 auto' }}
+    >
       <div
         style={{
           display: 'flex',
@@ -213,6 +214,7 @@ export default function ApprovalDiffView(props: ApprovalDiffViewProps): React.JS
           fontSize: 10,
           color: 'var(--muted)',
           marginBlockEnd: 3,
+          flexShrink: 0,
         }}
       >
         <span data-approval-diff-caption>{caption(t, props.diff)}</span>
@@ -265,7 +267,11 @@ export default function ApprovalDiffView(props: ApprovalDiffViewProps): React.JS
         ref={hostRef}
         data-approval-diff-host
         style={{
-          blockSize: height,
+          // Whatever the slot has left after the caption row. `minBlockSize: 0` for
+          // the same reason the bar needs it: without it this refuses to go below
+          // Monaco's min-content height and the overflow reappears one level down.
+          flex: '1 1 auto',
+          minBlockSize: 0,
           border: '1px solid var(--border)',
           borderRadius: 4,
           overflow: 'hidden',

@@ -78,46 +78,61 @@ export function ApprovalPreview(props: {
   const diff = React.useMemo(() => approvalDiff(props.input), [props.input]);
   if (!diff || !props.colorScheme) return panes;
   return (
-    <ContributionBoundary id="approval-diff" fallback={panes}>
-      <React.Suspense fallback={<ReservedPanes dense={props.dense}>{panes}</ReservedPanes>}>
-        <ApprovalDiffView diff={diff} colorScheme={props.colorScheme} dense={props.dense} />
-      </React.Suspense>
-    </ContributionBoundary>
+    <DiffSlot dense={props.dense}>
+      <ContributionBoundary id="approval-diff" fallback={panes}>
+        <React.Suspense fallback={panes}>
+          <ApprovalDiffView diff={diff} colorScheme={props.colorScheme} dense={props.dense} />
+        </React.Suspense>
+      </ContributionBoundary>
+    </DiffSlot>
   );
 }
 
 /**
- * The panes, in exactly the room the diff is about to take.
+ * The room the body gets, and the reason the bar can no longer overflow.
  *
- * ⚠️ THE RESERVATION IS THE POINT, not the panes. Without it the bar is SHORT while
- * the chunk is in flight and TALL the moment it resolves — so everything below the
- * body, including **Allow** and **Deny**, moves down under the user's cursor at an
- * arbitrary moment. A control that shifts between being aimed at and being pressed is
- * a control that can eat the press, and this is the bar whose entire job is to be
- * answered (§5.16).
+ * ⚠️ TWO PROBLEMS, ONE SLOT, and both were measured rather than reasoned:
  *
- * Suspected in exactly that shape by a Windows CI failure this could not otherwise
- * explain: Playwright's click on Allow completed, the button took focus — so mousedown
- * landed — and no decision ever reached main.
+ *  1. **The bar used to JUMP.** The `Suspense` fallback was the bare panes, much
+ *     shorter than the editor, so everything below the body — Allow and Deny
+ *     included — moved down the moment the chunk resolved. A control that shifts
+ *     between being aimed at and being pressed is a control that can eat the press,
+ *     and Windows CI produced exactly that: a click that landed on Allow (the button
+ *     took focus) and never produced a decision. A fixed `flexBasis` means the slot
+ *     is the same size before and after, so nothing moves.
+ *  2. **The bar used to OVERFLOW.** A fixed height cannot fit in a pane that does not
+ *     have it, and the surplus went off the bottom of the column — `toBeInViewport`
+ *     on Allow reported a viewport ratio of ZERO at a short window. `flexShrink: 1`
+ *     with `minBlockSize: 0` makes the BODY the thing that gives, which is the only
+ *     part of a permission that can afford to.
  *
- * Only on the SUSPENSE fallback, never on the boundary's. A failed load is a state the
- * bar stays in, so reserving space there would be dead pixels under a short payload
- * for as long as the request is open.
+ * So: basis = the diff's height, grow 0, shrink 1. It asks for exactly the room the
+ * diff wants, never more, and yields it when the column is short. `ApprovalDiffView`
+ * fills the slot rather than setting its own height, so Monaco lays out at the size
+ * it actually has and its own scrollbar keeps the rest reachable — clipping the host
+ * instead would put the bottom of a diff somewhere no one could scroll to.
+ *
+ * Wrapped around the boundary as well as the Suspense fallback, deliberately: a
+ * failed load then renders the panes in the same slot. That costs some dead space
+ * under a short payload in a state that should be rare, and it buys the guarantee
+ * that the bar's height never depends on whether a chunk arrived.
  */
-function ReservedPanes(props: {
-  dense?: boolean;
-  children: React.ReactNode;
-}): React.JSX.Element {
+function DiffSlot(props: { dense?: boolean; children: React.ReactNode }): React.JSX.Element {
   return (
     <div
-      data-approval-diff-reserved
+      data-approval-diff-slot
       style={{
-        blockSize:
+        flexGrow: 0,
+        flexShrink: 1,
+        flexBasis:
           props.dense === true ? APPROVAL_DIFF_BLOCK_SIZE.dense : APPROVAL_DIFF_BLOCK_SIZE.roomy,
-        // The panes are shorter than the reservation for an ordinary payload and
-        // taller for a big one; both have to fit the box the diff will occupy.
+        minBlockSize: 0,
+        // no margin: the bar is a flex column with its own `gap`
+        display: 'flex',
+        flexDirection: 'column',
+        // the panes are the fallback and can be taller than the slot; the diff fills
+        // it exactly. Either way the slot is what the column sees.
         overflow: 'auto',
-        marginBlockEnd: 5,
       }}
     >
       {props.children}
