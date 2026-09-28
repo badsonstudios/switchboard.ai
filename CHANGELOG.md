@@ -265,25 +265,23 @@ on the floor, and say so in your PR.
   that way, so the block stands whatever you click and there is no reason to leave
   you out of the loop. Plan mode is still read-only.
 
-- **⚠️ Two things you used to see in the conversation are temporarily missing, and
-  both are being worked on.** They came from the recording Claude Code writes to
-  disk, which was how switchboard built the conversation in terminal mode.
-  Everything now comes straight from Claude Code instead — faster and more
-  accurate, and it does not yet carry these two:
+- **⚠️ One thing you used to see in the conversation is temporarily missing, and
+  it is being worked on.** It came from the recording Claude Code writes to disk,
+  which was how switchboard built the conversation in terminal mode. Everything
+  now comes straight from Claude Code instead — faster and more accurate, and it
+  does not yet carry this:
 
-  - **What sub-agents said.** A session that delegates work shows a quiet gap
-    where the helpers' part should be, then carries on with the main reply. The
-    captions that name and separate them are built and ready; nothing is reaching
-    them. Claude Code still records all of it, and the main session's own summary
-    of what its helpers found is unaffected.
   - **The answer to `/usage`, `/cost` and `/context`.** Claude Code works these out
     itself rather than asking the model, and the answer is not arriving. You see
     the command you typed and then nothing. The command really ran; run it in a
     terminal outside switchboard if you need the numbers.
 
-  Neither is a loss of data and neither affects a session's work. They are the two
-  places where removing the terminal took something visible with it, and they are
+  It is not a loss of data and it does not affect a session's work. It is the one
+  place where removing the terminal took something visible with it, and it is
   named here rather than left for you to find.
+
+  *(There were two. What sub-agents said was the other, and it is fixed in this
+  same release — see "A session's helpers are back in the conversation" above.)*
 
 - **The auto-trust / ask-trust chip has been removed from the title bar.** It had
   been greyed out since nothing could ask you the trust question, and its tooltip
