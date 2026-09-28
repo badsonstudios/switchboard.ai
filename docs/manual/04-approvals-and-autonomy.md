@@ -60,7 +60,7 @@ A shell command and the other one-sided requests keep the simple boxes, and are
 still trimmed with a **…** if they're very long — there's no diff to show for a
 command, and an editor would tell you less than the plain text does.
 
-Three buttons:
+Four buttons:
 
 - **Allow** — this one time.
 - **Allow all (this session)** — stop asking for this session. It means it:
@@ -73,6 +73,36 @@ Three buttons:
   should stop rather than look for another way round. It won't retry the same
   thing or reach for a different tool to get there anyway — it comes back and
   asks what you'd like instead.
+- **Deny with feedback…** — refuse, *and say why*. A small box opens under the
+  diff. Type your objection, press **Enter**, and your words go back to Claude
+  along with the refusal.
+
+### Saying why you said no
+
+A bare **Deny** tells Claude that you decided against something. It doesn't tell
+it what you'd rather have — so it stops and asks, and you end up typing the
+explanation into the prompt box anyway.
+
+**Deny with feedback** saves that round trip. "Wrong directory — that's
+generated." "Don't touch the migration, do the model first." "Use the test
+fixture, not the real config." Claude gets the refusal *and* the correction in
+one go, and picks up from there.
+
+- **Enter sends.** **Shift+Enter** starts a new line if you want more than a
+  sentence. **Esc** closes the box and answers nothing — the request is still
+  waiting for you.
+- There's a limit of 500 characters. A counter appears as you approach it.
+- Your text is attributed to you when Claude sees it, so an objection phrased as
+  an instruction ("use the other file") reads as *you* saying it, not as
+  switchboard making up rules.
+- The plain **Deny** is unchanged and still one click. You never have to explain
+  yourself.
+
+The same **Deny…** button is on each held request in the Events drawer, so you
+can refuse with a reason without opening the session at all. It is deliberately
+*not* on the shared card when several sessions are asking the same thing: one
+explanation can't honestly stand in for several different requests, so that card
+offers plain Allow and Deny and leaves the explaining to each session's own card.
 
 If several requests pile up, they queue: the bar shows **+2 more waiting** and
 advances as you answer. The card surfaces its Session tab automatically when a
@@ -219,6 +249,13 @@ they want to run, and lists them by name:
 - Each session also gets its own **Allow** and **Deny** next to its name, so
   you can say yes to one and no to another. Answering one leaves the rest
   exactly as they were: still waiting, still yours to decide.
+- **No "Deny with feedback" here** — not on the group button, where one
+  explanation would be sent to every session as if it were about each of them,
+  and not on the individual rows either, which are one line tall and meant for
+  quick triage. If you want to explain yourself to one session in particular,
+  its own card is where to do it. A plain Deny from this card still tells each
+  session you decided deliberately and that it should not go looking for a way
+  round.
 
 While a request is on the grouped card, it is not also shown in its own
 session's review bar — one question, one place to answer it. Answer or decline

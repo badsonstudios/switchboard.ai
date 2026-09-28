@@ -1075,6 +1075,14 @@ export class FakeStreamProtocol {
       }
     } else {
       said = `denied write to ${filePath}`;
+      // ⚠️ THE DENIAL `message` IS NARRATED (#973), and it is the only way an
+      // e2e can assert what actually went out on the wire rather than what a
+      // renderer called. The real CLI does not print it — it feeds it to the
+      // MODEL, which is the whole reason its wording matters — so the nearest
+      // honest analogue a fake can offer is to say it out loud. On its own
+      // line, so the existing `/denied write to/` assertions are untouched.
+      const why = asDisplayString(inner.message);
+      if (why) said += `\nDENIAL MESSAGE: ${why}`;
     }
     // A `!permhang` request stops here, whatever happened: the tool has run and
     // the CLI has gone quiet, which is the state a host must survive without

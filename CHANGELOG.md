@@ -98,6 +98,21 @@ on the floor, and say so in your PR.
 
 ### Added
 
+- **You can now tell a session *why* you said no.** Beside **Deny** on the review
+  bar there is a **Deny with feedback…** button. It opens a small box under the
+  diff, the cursor already in it; type your objection and press **Enter**. Your
+  words go back with the refusal, so instead of a wall Claude gets a correction —
+  *"wrong directory, that's generated"*, *"use the test fixture, not the real
+  config"* — and carries on from there rather than stopping to ask what you meant.
+
+  **Shift+Enter** starts a new line, **Esc** closes the box and answers nothing.
+  There is a 500-character limit with a counter as you approach it. Plain **Deny**
+  is unchanged and still one click — you never have to explain yourself.
+
+  The same button is on each held request in the **Events** drawer. It is
+  deliberately *not* on the shared card you get when several sessions ask the same
+  thing: one explanation cannot honestly stand in for several different requests.
+
 - **An approval request now shows you a real diff.** When Claude asks to change a
   file, the review bar draws the change the way the **Changes** tab does — proper
   colours, syntax highlighting, and the changed parts marked — instead of two plain
@@ -256,6 +271,13 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **A refusal no longer reads like something being broken.** Every denial — with
+  or without feedback — now tells Claude plainly that a person decided this, that
+  it is not a sandbox restriction or a glitch, and that it should not retry or go
+  looking for another way round. Without that, a denial can read as an obstacle to
+  solve: Claude announces it is being blocked by something, reaches for a different
+  tool, then a third, and eventually does the thing you refused. That wording
+  existed and was lost when the Terminal transport was removed; it is back.
 - **The permission bar now shows you what a file write would actually put on
   disk.** When Claude asked to write a whole file, edit several places in one
   go, or change a notebook, the bar named the file and stopped there — so

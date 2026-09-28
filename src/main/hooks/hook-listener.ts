@@ -195,15 +195,20 @@ export class HookListener {
    * (`sessions/ipc.ts`'s `pendingRequests` concatenation, `main/index.ts`'s
    * two-entry release list) now have one side.
    *
-   * ⚠️ `verdict(decision, reason?)` IS THE ONE TO KNOW ABOUT IF YOU ARE HERE FOR
-   * DENY-WITH-FEEDBACK (#973). It composed the `permissionDecisionReason` the CLI
+   * ⚠️ `verdict(decision, reason?)` WAS THE ONE TO KNOW ABOUT, AND ITS TEXT IS
+   * BACK (#973, 2026-09-28). It composed the `permissionDecisionReason` the CLI
    * feeds straight to the MODEL, and it carried a hard-won lesson: a denial that
    * said "Denied from switchboard" read as an infrastructure fault, so Claude
    * announced that something was blocking it and routed around the denial with a
    * different tool, then a third, until it got the listing anyway (Dan,
    * 2026-07-26). The wording that fixed it — the USER decided, this is not a
-   * technical fault, do not retry and do not find another route — now lives ONLY
-   * on the stream path, and it is the text #973 should reuse rather than reinvent.
+   * technical fault, do not retry and do not find another route — did NOT survive
+   * this deletion: the stream path, which became the only path, was still sending
+   * `'Denied in switchboard'`, which is #94's bug verbatim. #973 restored the
+   * paragraph into `StreamPermissions.denialMessage`, where it is now
+   * unconditional and the user's objection is appended to it rather than swapped
+   * in. This note is left standing because it is the only record of WHY that
+   * paragraph is phrased the way it is.
    */
 
   /**

@@ -1870,8 +1870,36 @@ Work items:
   measured by E21-01's always-on tier; unit tests plus one e2e that answers a real
   held permission with a Monaco diff on screen; `docs/manual/` page before the PR.
 
-- **P2-E22-02 (#973) · Deny with feedback — S.** *(no deps)*
+- **P2-E22-02 (#973) · Deny with feedback — S. ✅ DONE 2026-09-28 (PR #986).**
+  *(no deps)*
   The UI half only — see the measurement above; the wire is already there.
+
+  > **THREE THINGS THE IMPLEMENTATION MEASURED, recorded so the next reader does
+  > not re-derive them.**
+  >
+  > 1. **"Both transports" is one transport.** This item's done-when asks for the
+  >    text to be asserted on the stream path *and* the hook path. #952 deleted the
+  >    hook permission API the day after the issue was filed — `PreToolUse` is not
+  >    registered and `hook-listener.ts` carries a tombstone saying so. One path,
+  >    asserted against its outbound `control_response`.
+  > 2. **The bare-Deny default was #94's bug, verbatim.** `verdict`'s "the user
+  >    decided, do not route around it" paragraph died with the hook path; the
+  >    stream path had never been given it and was sending `'Denied in
+  >    switchboard'` — the exact string that made Claude route around a refusal
+  >    with a second tool, then a third. The paragraph is restored into
+  >    `StreamPermissions.denialMessage`. **This is the one place the "byte-for-
+  >    byte unchanged" bullet below is deliberately not followed**, and it is not
+  >    followed *because* of this plan's own sibling note telling #973 to reuse
+  >    that wording. The bare-Deny *gesture* is unchanged: one click, no field.
+  > 3. **The objection is CARRIED, not SUBSTITUTED.** Both old implementations
+  >    swapped (`reason ?? denied`, `reason || 'Denied in switchboard'`), so better
+  >    feedback produced a weaker denial. Framing unconditional, words appended
+  >    under an attribution.
+  >
+  > Also: the cap already existed as a bare `slice(0, 500)` in `sessions/ipc.ts`'s
+  > channel handler — the wrong side of the router and invisible to the renderer.
+  > It is `MAX_DENIAL_REASON_CHARS` in `shared/ipc/permissions.ts` now, read by
+  > both the field's `maxLength` and `sanitizeDenialReason`.
   *Done when:* the approval bar has a **Deny with feedback** control beside Deny
   that opens a bounded objection field (focus lands in it, Enter sends, Esc
   cancels); the text reaches the CLI as the denial `message` on **both**
@@ -1924,7 +1952,7 @@ quality of the answer, not the mechanism that asks for it.
 > | 0 | The seams are real (E15) | ✅ 4+ dissimilar consumers; see `docs/extensibility.md` |
 > | 1 | The 7–8 session experience (E7 + E9) | ✅ |
 > | 2 | Pop-out to a second monitor + rescue (E8) | ✅ |
-> | 3 | In-app approvals, no TUI drop | ⚠️ met, but thin — **E22 (#972–#974) now closes the gap**, owner scope call 2026-09-26 |
+> | 3 | In-app approvals, no TUI drop | ⚠️ met, and no longer thin in two of three places — **E22**: #972 (Monaco diff) ✅ 2026-09-27, #973 (deny with feedback) ✅ 2026-09-28, **#974 (approve-all-in-this-file + the revoke surface for BOTH standing grants) is the last one open**. |
 > | 4 | Two sessions exchange context via the bus (E11 00–05) | ✅ |
 > | 5 | A dispatched clean-room review round-trips its findings | ✅ **#950, 2026-09-26** — the reviewer's last turn returns as a Feed row on the AUTHOR's card, one click puts it in the author's composer, and the human still presses Enter. `dispatch.spec.ts` proves the whole chain. Extraction was MEASURED (`spike/findings/e13-950-review-last-turn.md`), which is also where §5.15's "3 findings" died: reviews are not countable. #951 (lineage, ephemerality) is the epic's last item and carries no criterion. |
 > | 6 | A rule routes a needs-permission event; an actionable toast answers it (E14) | ✅ |

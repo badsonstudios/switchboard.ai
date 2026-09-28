@@ -36,6 +36,27 @@
 // sessions may run this one command". Every button on this card answers exactly
 // the requests it lists.
 //
+// DENY WITH FEEDBACK IS NOT HERE EITHER, AND THE DONE-WHEN SAYS SO (#973)
+// -----------------------------------------------------------------------
+// The card bar and the Events row both offer it. This card does not, and the
+// two buttons have different reasons:
+//
+//   * **Deny all.** One objection text cannot honestly speak for N different
+//     requests from N different sessions. It would be attributed to the user, in
+//     their own words, on every one of them, and on at least N-1 it would be an
+//     explanation of something else. A denial the model reads as the user's
+//     stated reason has to actually be the user's reason for THAT call.
+//   * **The per-member Deny.** Here the objection WOULD be honest — this is the
+//     one place that gap is worth naming rather than filing under the sentence
+//     above. It is still not offered, for a layout reason and a purpose reason.
+//     This is a triage band for several sessions at once, one line per member;
+//     composing prose is not a one-line gesture, and a field per row turns the
+//     band into a form. And the card behind each row already has the control: a
+//     user with something to say to one session in particular is a user with a
+//     reason to go and say it there. Deny here still sends the full "the user
+//     decided this, do not route around it" framing, which is the part that
+//     stops an agent treating a refusal as an obstacle.
+//
 // Ordering, naming and the grouping rule itself are `lib/permission-batches`;
 // this file only paints.
 import React from 'react';

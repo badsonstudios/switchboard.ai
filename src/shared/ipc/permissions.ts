@@ -14,6 +14,51 @@
 // by three people happening to type the same fields.
 
 /**
+ * How much objection text a denial may carry (P2-E22-02, #973).
+ *
+ * Here rather than beside either end of the wire, because BOTH ends need the
+ * same number and they need it for different jobs: the renderer's field sets
+ * `maxLength` to it, so the user is stopped at the edge and can see it; main
+ * clamps to it, because a `maxLength` is a suggestion an untrusted renderer
+ * makes to itself. Two constants that agreed on the day they were written is
+ * exactly how the one in `sessions/ipc.ts` (a bare `slice(0, 500)`) ended up
+ * being the only cap in the app and living nowhere near the router that needed
+ * it.
+ *
+ * 500 characters is that same number, kept: it is several sentences of prose,
+ * which is what an objection is, and the message it lands in is read by a model
+ * with a context window to spend.
+ */
+export const MAX_DENIAL_REASON_CHARS = 500;
+
+/**
+ * Answering a held request, as every renderer surface spells it (#973).
+ *
+ * ⚠️ ONE DECLARATION BECAUSE THIS SIGNATURE HAS NOW LOST AN ARGUMENT TWICE.
+ * `PanelContext.onDecide` declared `(decision, allowAll?)` while the real
+ * function had grown `updatedInput` (#563) and then `reason` (#973) — and it
+ * TYPECHECKED throughout, because a function taking fewer parameters is
+ * assignable to one taking more. It worked at runtime only because the value
+ * being assigned happened to be the real four-parameter `SessionGrid.decide`;
+ * a panel contribution written against the declared type would have compiled,
+ * run, and silently been unable to answer a question or deny with a reason.
+ *
+ * That is the same failure `PermissionRequest` was extracted for — a boundary
+ * type whose whole job is to catch a dropped field quietly saying the field did
+ * not exist. So it lives beside it, and the three ends import it rather than
+ * three people happening to type the same parameters.
+ */
+export type DecideHeld = (
+  decision: 'allow' | 'deny',
+  /** also grant every future gated call in this LIVE session */
+  allowAll?: boolean,
+  /** the answered `AskUserQuestion` input (#563) — ignored for any other tool */
+  updatedInput?: unknown,
+  /** the user's objection text on a deny (#973) — carried, never substituted */
+  reason?: string
+) => void;
+
+/**
  * An in-flight permission request, as main knows it.
  *
  * ONE shape for both transports (P2-E18-07): a held `PreToolUse` hook, or a

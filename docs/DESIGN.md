@@ -2498,19 +2498,17 @@ reads) get simpler cards — command + cwd + allow/deny — same banner, same ke
 >   honest and fast; for the multi-file change this card exists to review it is
 >   not a review surface at all. Monaco is already in the bundle and already
 >   diffing in the Changes tab, so this is wiring, not new capability.
-> - **"Deny with feedback" is absent.** ~~The decision wire is
->   `'allow' | 'deny'` with no message field, so the objection text this section
->   promises has nowhere to go.~~ **Cause corrected 2026-09-26 while sizing #973:
->   the wire already carries the message.** `reason` is an accepted parameter the
->   whole way down — `preload`'s `decidePermission(requestId, decision, reason?,
->   …)` → `StreamPermissions.decide(…, reason?)`, which sends `{ behavior:
->   'deny', message: reason || 'Denied in switchboard' }` — and the hook path has
->   its own `HookListener.verdict(decision, reason?)`. What is missing is that **no
->   renderer surface ever supplies one**: `App.tsx`'s `decideHeld` is typed
->   `(requestId, decision)` and drops the argument. The feature is absent for
->   exactly the reason the section says — the agent learns it was refused and never
->   learns why, which is the difference between a correction and a wall — but it is
->   a text field and one threaded parameter, not a protocol change.
+> - ~~**"Deny with feedback" is absent.**~~ **SHIPPED 2026-09-28, P2-E22-02
+>   (#973)** — see the as-built note below this list. The audit's stated cause
+>   (~~"the decision wire is `'allow' | 'deny'` with no message field"~~) was
+>   **corrected 2026-09-26 while sizing #973: the wire already carried the
+>   message**, and the feature was missing because no renderer surface ever
+>   supplied one — `App.tsx`'s `decideHeld` was typed `(requestId, decision)` and
+>   dropped the argument. It landed as a text field and one threaded parameter,
+>   as that correction predicted. **Two days running, a gap's stated *cause* was
+>   wrong while its existence was right; the lesson is the one the audit was
+>   called to teach — size against the code, never against the note describing
+>   the code.**
 > - **"Approve all in this file" is absent.** The two ends of the ladder ship
 >   (approve this one, always allow this session); the middle rung, which is the
 >   one that matches how a human actually reviews a file, does not.
@@ -2605,6 +2603,41 @@ reads) get simpler cards — command + cwd + allow/deny — same banner, same ke
 > (This paragraph read: "The 1500-character clip and the short scroll boxes are
 > untouched and remain the Monaco item's question. What changed is that a clip now
 > SAYS it clipped." That item is #972 and it is done.)
+>
+> **AS BUILT, 2026-09-28 (P2-E22-02, #973): the button row's fifth entry is real,
+> and the interesting half was the WORDING, not the field.**
+>
+> **Deny with feedback…** sits beside **Deny** on the card bar and on each held
+> request in the Events drawer. It opens a bounded objection field — focus lands
+> in it, Enter sends, Shift+Enter newlines, Esc cancels, 500 characters, the same
+> constant `StreamPermissions` clamps to on main's side of the wire, where control
+> characters are stripped and an all-whitespace objection falls back to a bare
+> denial. It is **not** on the grouped band (§5.8's octomux card), including its
+> per-member rows; `BatchApprovalBar`'s header gives the two different reasons.
+>
+> ⚠️ **THE WIRE ALWAYS CARRIED IT, AND WHAT WAS ACTUALLY BROKEN WAS WORSE THAN A
+> MISSING FIELD.** `HookListener.verdict` composed the denial the CLI feeds
+> straight to the model, and #94 had already learned what happens when it reads
+> like infrastructure: "Denied from switchboard" made Claude announce it was
+> "getting blocked by something called switchboard" and route around the refusal
+> with a second tool, then a third, until it got what the user had refused. #952
+> deleted `verdict` with the rest of the hook permission API — and the stream
+> path, now the only path, had never been given that fix. Its default was
+> `'Denied in switchboard'`: the bug's own wording, shipped as the only denial
+> text in the app for two days. #973 restored `verdict`'s framing verbatim.
+>
+> **The objection is CARRIED, never SUBSTITUTED**, which is the one design
+> decision here worth not re-litigating. Both old implementations swapped the
+> reason in for the framing (`reason ?? denied`, `reason || 'Denied in
+> switchboard'`), so the more useful a user's feedback was, the weaker the denial
+> became — an objection like "use the other file" would have reached the model as
+> an actionable note with no do-not-route-around rule attached at all. The framing
+> is unconditional; the user's words follow it under an attribution, so an
+> objection phrased as an instruction is not read as switchboard's own rule.
+>
+> (Struck above: the audit's claim that this feature was absent because the wire
+> had no message field. It had one. §8's table carried the same wrong cause and is
+> corrected there too.)
 
 ### 5.17 MCP Manager & slash-command surfaces
 
@@ -4264,7 +4297,7 @@ context transfer, and the attention queue work across monitors.
 > |---|---|---|
 > | **Dispatch v1 (all of it)** | §5.15, epic E13, **exit criterion 5** | The plan said "file these when E11-05 and E11-09 are merged". Both merged 2026-09-08/13. No trigger fired, so nothing was filed. |
 > | **Review queue pane** | §5.16 placement mode 2 | E10 shipped twelve items and this was not one of them; the attention queue (§5.8) covers *noticing*, not *arrowing through pending diffs*. |
-> | **Deny with feedback** | §5.16 button row | The wire carries `'allow' \| 'deny'` and no message. The agent is told no and never told why. |
+> | ~~**Deny with feedback**~~ | §5.16 button row | ~~The wire carries `'allow' \| 'deny'` and no message. The agent is told no and never told why.~~ **SHIPPED 2026-09-28, P2-E22-02 (#973)** — see §5.16's as-built note. **The cause in this cell was wrong and the correction is the point:** the wire carried a `reason` the whole way down to `{ behavior: 'deny', message }`; no renderer surface ever supplied one. What the item actually found was worse — the stream path's default denial was `'Denied in switchboard'`, the exact wording #94 fixed, because #952 deleted `HookListener.verdict` and the fix had never been copied across. |
 > | ~~**Monaco diff in the approval card**~~ | §5.16, and this list's own wording | ~~Ships as two `<pre>` panes truncated at 1500 characters.~~ **SHIPPED 2026-09-27, P2-E22-01 (#972)** — see §5.16's as-built note. One caveat recorded rather than glossed: "Monaco is lazy-loaded" is met only in the sense that matters for fail-open. `DiffPane` is a static import, so monaco-editor is in the entry chunk and evaluated at startup regardless; making it genuinely lazy is a separate and real win that this item did not take. |
 > | **"Approve all in this file"** | §5.16 button row | Approve-one and always-allow-this-session both ship; the middle rung does not. |
 > | **Drag text between sessions** | §5.4 Tier 1, §5.5 Level 1 | See §5.4's as-built note: of four draggable objects, one shipped, one is moot (the terminal is gone) and two are blocked on the Phase 3 file tree. This line needs re-scoping, not just building. |

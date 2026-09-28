@@ -511,6 +511,14 @@ const api = {
     /**
      * Answer one held request.
      *
+     * `reason` is the user's objection text on a deny (#973) — the second
+     * renderer -> CLI payload in this bridge, and vetted on the same side as the
+     * first: `StreamPermissions.sanitizeDenialReason` strips control characters
+     * and clamps to `MAX_DENIAL_REASON_CHARS`. It is CARRIED, not substituted —
+     * main always sends the "the user decided this, do not route around it"
+     * framing and appends these words under an attribution. Ignored entirely on
+     * an allow, which has no message field to put it in.
+     *
      * `updatedInput` is the `AskUserQuestion` answer (#563) and nothing else:
      * main accepts it ONLY for that tool, only on an allow, and only as a
      * bounded plain object (`StreamPermissions.sanitizeUpdatedInput`). It is the

@@ -221,6 +221,20 @@ describe('the buttons answer exactly what they name', () => {
     const host = await mountBatch([req('r1', 'live-A'), req('r2', 'live-B')]);
     expect(host.textContent).not.toContain('this session');
   });
+
+  // The other deliberate absence (#973), and it gets a test for the same reason
+  // the one above does: it is a DECISION, argued at length in this file's header
+  // and in App's `decideBatch`, and a future change that wired a reason through
+  // here would otherwise pass CI in silence. One objection cannot honestly speak
+  // for N different requests from N different sessions — it would be attributed
+  // to the user, in their own words, on every one of them.
+  it('offers no deny-with-feedback — not on the group button, not on a member row', async () => {
+    const host = await mountBatch([req('r1', 'live-A'), req('r2', 'live-B')]);
+    expect(host.querySelector('[data-deny-feedback]')).toBeNull();
+    expect(host.querySelector('[data-approval-deny-feedback]')).toBeNull();
+    expect(host.textContent).not.toContain('feedback');
+    expect(host.textContent).not.toContain('reason');
+  });
 });
 
 describe('the a11y contract (issue 197 rules, one surface later)', () => {
