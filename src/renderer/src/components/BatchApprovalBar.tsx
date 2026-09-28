@@ -42,13 +42,20 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 import { argumentDetail, BatchMemberView, PermissionBatch } from '../lib/permission-batches';
-import { ToolInputPreview } from './ToolInputPreview';
+import { ApprovalPreview } from './ApprovalPreview';
 
 export function BatchApprovalBar(props: {
   /** the group on screen, from the store's derive; null renders nothing */
   batch: PermissionBatch | null;
   /** its members with §5.11 identity resolved, in arrival order */
   members: readonly BatchMemberView[];
+  /**
+   * Which skin the app is wearing, for the Monaco diff in the body (#972).
+   *
+   * Threaded from `App`, which owns the theme. Absent means the plain panes, so a
+   * caller that forgets loses the diff rather than the card.
+   */
+  colorScheme?: 'light' | 'dark';
   /** answer these requests — the same `sessions:decidePermission` the card's
    *  own bar calls, one call per request */
   onDecide: (requestIds: readonly string[], decision: 'allow' | 'deny') => void;
@@ -137,7 +144,7 @@ export function BatchApprovalBar(props: {
           and this card is the one that cannot fall back to "the conversation
           is right there". `dense`, because a band above the workspace pays for
           its height in somebody's editor. */}
-      <ToolInputPreview input={batch.input} dense />
+      <ApprovalPreview input={batch.input} colorScheme={props.colorScheme} dense />
       {/* One row per HELD REQUEST, not per session: a session that happens to
           be asking the same thing twice is waiting on two answers, and a card
           that listed it once would leave one of them held with nothing on

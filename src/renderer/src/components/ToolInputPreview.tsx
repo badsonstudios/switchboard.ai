@@ -34,10 +34,31 @@
 // tool nobody has taught this file about degrades to a key/value dump rather
 // than to silence.
 //
-// What is deliberately NOT here: any change to how MUCH is shown. The 1500-char
-// clip and the short scroll boxes are a separate, deliberate question (the
-// Monaco-in-the-approval-card item). This file is about branches that did not
-// exist, not about their size.
+// WHAT THIS FILE IS NOW, SINCE #972
+// ---------------------------------
+// It is no longer the whole body. `ApprovalPreview` is what both bars call, and it
+// sends the tools with two sides — `Edit`, `Write`, `MultiEdit` — to a real Monaco
+// diff instead. This file keeps TWO live roles and is not dead code in either:
+//
+//   * **the non-diff renderer.** A `Bash` command, a read, a `NotebookEdit`, and
+//     the default dump have one side, and a diff editor showing "everything
+//     added" tells the reader less than a tinted pane does at far greater cost.
+//   * **the fail-open fallback.** Monaco is lazy-loaded, so these panes are what
+//     is on screen while the chunk is in flight AND what comes back if it never
+//     arrives. That is the whole reason `ContributionBoundary` grew a `fallback`:
+//     a gap here would leave someone answering a permission with nothing on
+//     screen, and the paragraph above is about exactly why that is the worst
+//     available outcome.
+//
+// So the clip below is still real and still reachable, and its tests still hold.
+// What changed is that it is no longer what a user sees for the payloads the clip
+// hurt most — which is what the Monaco item was for.
+//
+// (This paragraph used to read: "What is deliberately NOT here: any change to how
+// MUCH is shown. The 1500-char clip and the short scroll boxes are a separate,
+// deliberate question (the Monaco-in-the-approval-card item)." That item is #972
+// and it is done; the clip's replacement, and #953's rule about naming what was
+// withheld, live in `lib/approval-diff.ts`.)
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { inputFallback } from '../lib/permission-batches';

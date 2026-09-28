@@ -74,6 +74,11 @@ export const sessionPanels: PanelContribution[] = [
         model={ctx.model}
         approval={ctx.approval}
         approvalQueued={ctx.approvalQueued}
+        // #972's Monaco diff in the approval body, and #261's lesson one more
+        // time: without this the prop is absent, `ApprovalPreview` falls back to
+        // the plain panes, the card still works and the feature is simply not
+        // there. A silent nothing is the failure mode this file keeps having.
+        colorScheme={ctx.colorScheme}
         // P2-E9-11, and #261's lesson applied before it bites: the flag exists
         // to stop the handoff bar contradicting a grouped prompt, and it is
         // dead unless THIS render site threads it through

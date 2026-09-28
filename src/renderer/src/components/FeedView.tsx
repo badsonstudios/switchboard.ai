@@ -85,7 +85,7 @@ import {
   type ComposerBounds,
 } from '../lib/composer-size';
 import { argumentSummary } from '../lib/permission-batches';
-import { ToolInputPreview } from './ToolInputPreview';
+import { ApprovalPreview } from './ApprovalPreview';
 import {
   filterCommands,
   insertCommand,
@@ -325,6 +325,17 @@ export function FeedView(props: {
   } | null;
   /** more holds waiting behind this one (review P0#4) */
   approvalQueued?: number;
+  /**
+   * Which skin the app is wearing, for the approval body's Monaco diff (#972).
+   *
+   * ⚠️ #261's LESSON, PRE-EMPTED AGAIN: this prop is dead unless the render site
+   * in `extensibility/panels.tsx` threads `ctx.colorScheme` through, and the
+   * failure would be silent — `ApprovalPreview` treats absent as "no diff" and
+   * falls back to the plain panes, so the card would keep working and the whole
+   * item would simply not be on screen. Optional because a unit test mounts this
+   * with no theme around it and the panes are the right answer there.
+   */
+  colorScheme?: 'light' | 'dark';
   /** a held request of this session's is on Â§5.8's grouped prompt instead
    *  (P2-E9-11) â€” the question IS answerable, just not from here */
   approvalBatched?: boolean;
@@ -1132,7 +1143,12 @@ export function FeedView(props: {
         />
       )}
       {props.approval && props.onDecide && !askQuestions && (
-        <ApprovalBar approval={props.approval} queued={props.approvalQueued ?? 0} onDecide={props.onDecide} />
+        <ApprovalBar
+          approval={props.approval}
+          queued={props.approvalQueued ?? 0}
+          onDecide={props.onDecide}
+          colorScheme={props.colorScheme}
+        />
       )}
       <Composer
         // The saved draft is seeded ONCE, on mount (#485), so a Composer whose
@@ -1179,6 +1195,7 @@ function ApprovalBar({
   approval,
   queued,
   onDecide,
+  colorScheme,
 }: {
   approval: {
     requestId: string;
@@ -1188,6 +1205,8 @@ function ApprovalBar({
   };
   queued: number;
   onDecide: (decision: 'allow' | 'deny', allowAll?: boolean) => void;
+  /** absent means the plain panes — see `ApprovalPreview` */
+  colorScheme?: 'light' | 'dark';
 }): React.JSX.Element {
   const { t } = useTranslation();
   const btn = (primary: boolean): React.CSSProperties => ({
@@ -1202,14 +1221,49 @@ function ApprovalBar({
   });
   return (
     <div
+      /* NAMED so a test can say "in the BAR" (#972). The permission's file path is
+         also rendered by the Events panel (`events-v2.ts` → `argumentDetail`), so an
+         unscoped text assertion can match there while the bar is still showing the
+         PREVIOUS request — which is exactly how `stream-approval.spec.ts`'s queue
+         test went red on CI and green everywhere else. */
+      data-approval-bar={approval.tool}
       style={{
         borderBlockStart: '2px solid var(--status-needs-permission)',
         background: 'color-mix(in srgb, var(--status-needs-permission) 8%, var(--panel2))',
         padding: '8px 10px',
         fontSize: 11,
+        /* ⚠️ A FLEX COLUMN THAT CAN SHRINK, AND `minBlockSize: 0` IS THE LOAD-BEARING
+           LINE (#972). The bar already defaulted to `flex: 0 1 auto` — shrinkable — but
+           a flex item will not go below its content's min-content height without
+           this, so a tall body pushed the bar past the bottom of the column and took
+           Allow and Deny off the screen with it. MEASURED on Windows CI at a short
+           window: `toBeInViewport` on Allow reported a viewport ratio of ZERO, and
+           the same overflow is the best explanation for a click that landed on the
+           button and never produced a decision.
+           The `reason` div below has carried its own version of this guard since
+           P2-E18-07 ("long reasons must not shove the buttons off a short card").
+           This is that rule applied to the part that is now much taller than a
+           reason. */
+        display: 'flex',
+        flexDirection: 'column',
+        minBlockSize: 0,
+        /* `gap` AND NOT THE CHILDREN'S MARGINS, because a flex container does not
+           collapse them. Margins that had been collapsing in the old block layout
+           started stacking the moment this became a flex column, and the bar grew by
+           ~40px — enough to squeeze the conversation to 12px and fail #716 on every
+           platform. Caught locally this time, which is the only reason it is a
+           footnote rather than another CI round trip. */
+        gap: 6,
       }}
     >
-      <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', marginBlockEnd: 6 }}>
+      <div
+        style={{
+          display: 'flex',
+          gap: 8,
+          alignItems: 'baseline',
+          flexShrink: 0,
+        }}
+      >
         {/* -ink, not the hue: the title sits on the bar's own 8% tint of that
             same hue, where the hue measures 2.19:1 on daylight and 4.04:1 on
             nordic. The ink lands at 5.08-8.00:1 across the four themes (#246). */}
@@ -1249,11 +1303,11 @@ function ApprovalBar({
         <div
           style={{
             color: 'var(--text)',
-            marginBlockEnd: 6,
             lineHeight: 1.4,
             // long reasons must not shove the buttons off a short card
             maxBlockSize: 64,
             overflow: 'auto',
+            flexShrink: 0,
           }}
         >
           {approval.reason}
@@ -1267,8 +1321,10 @@ function ApprovalBar({
           the reason the summary line above is shared: §5.16 is ONE question,
           and two placements that answer "what am I agreeing to" differently
           have shown the user two things and called them the same. */}
-      <ToolInputPreview input={approval.input} />
-      <div style={{ display: 'flex', gap: 6 }}>
+      <ApprovalPreview input={approval.input} colorScheme={colorScheme} />
+      {/* `flexShrink: 0`: whatever else gives, the ANSWER does not. §5.16 is about a
+          held request being answerable, and a button below the fold is not. */}
+      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
         <button onClick={() => onDecide('allow')} style={btn(true)}>
           {t('approval.allow')}
         </button>

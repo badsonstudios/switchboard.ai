@@ -146,8 +146,23 @@ test.describe('Direct-mode permissions (P2-E18-14)', () => {
 
     await w.getByRole('button', { name: 'Allow', exact: true }).click();
 
-    // the second advances into the bar, and the badge goes with it
-    await expect(w.getByText(/second\.sh/).first()).toBeVisible({ timeout: 15_000 });
+    // The second advances into the bar, and the badge goes with it.
+    //
+    // ⚠️ SCOPED TO THE BAR, AND ORDERED BEHIND `heldIds` (#972). This read
+    // `w.getByText(/second\.sh/)` across the whole window, and the permission's file
+    // path is ALSO rendered by the Events panel (`events-v2.ts` → `argumentDetail`) —
+    // so the locator could resolve against an Events row while the bar still showed
+    // `first.sh` and the queue badge was still 1. That is precisely the state CI
+    // caught: `second.sh` visible, `+1 more waiting` still there, 24 polls in a row.
+    // It went green locally every time, because the bar happened to advance first.
+    //
+    // Waiting on `heldIds` makes the sequence deterministic rather than hopeful: once
+    // main holds ONE request, the badge cannot still be counting a second.
+    await expect.poll(() => heldIds(w), { timeout: 15_000 }).toHaveLength(1);
+    // `.first()`: the bar names the path TWICE — once in its summary line and once
+    // inside the CLI's own `decision_reason` — and both are the bar, which is the
+    // point. What matters is that neither is an Events row.
+    await expect(w.locator('[data-approval-bar]').getByText(/second\.sh/).first()).toBeVisible();
     await expect(w.getByText('+1 more waiting')).toHaveCount(0);
     await w.getByRole('button', { name: 'Deny', exact: true }).click();
     await expect(w.getByText('Allow Write?')).toHaveCount(0);

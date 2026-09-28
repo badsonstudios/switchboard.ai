@@ -50,6 +50,21 @@ interface Props {
   /** contribution id, for the log line */
   id: string;
   children: React.ReactNode;
+  /**
+   * What to render instead of the gap, when there is something better (#972).
+   *
+   * ⚠️ NOT AN ERROR MESSAGE, and the header's rule is the reason: a broken
+   * contribution leaves a gap and does not shout at the user about an internal
+   * fault they cannot act on. This exists for the case where the surface has a
+   * SIMPLER TRUE THING to show — the approval card's `ToolInputPreview` panes when
+   * the Monaco diff fails to load, where a gap would leave the user answering a
+   * permission with no body on screen at all, which is the fail-open constraint
+   * broken in the direction that matters most.
+   *
+   * Omitted is still the right default. Most contributions have no fallback that
+   * is better than absence, and inventing one would be a placeholder.
+   */
+  fallback?: React.ReactNode;
 }
 
 export class ContributionBoundary extends React.Component<Props, { failed: boolean }> {
@@ -110,8 +125,12 @@ export class ContributionBoundary extends React.Component<Props, { failed: boole
   render(): React.ReactNode {
     // deliberately renders NOTHING rather than an error placeholder: a broken
     // status-bar item or block should leave a gap, not shout at the user about
-    // an internal fault they cannot act on
-    return this.state.failed ? null : this.props.children;
+    // an internal fault they cannot act on. A caller with a simpler TRUE thing to
+    // show passes it as `fallback` — see that prop; `??` and not `||`, so a
+    // fallback that is deliberately empty (`''`, `0`) is still the caller's answer
+    // rather than silently becoming the gap.
+    if (!this.state.failed) return this.props.children;
+    return this.props.fallback ?? null;
   }
 }
 
