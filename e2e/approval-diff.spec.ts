@@ -286,6 +286,55 @@ test.describe('the approval card shows a real diff (E22-01)', () => {
     const deny = w.getByRole('button', { name: 'Deny', exact: true });
     await expect(allow).toBeInViewport();
     await expect(deny).toBeInViewport();
+
+    // ⚠️ AND THEY STAY THERE WITH THE OBJECTION FIELD OPEN (#973). E22-02 adds a
+    // textarea to this bar, which is a new way to do exactly what #972 measured
+    // here: push the answer off the bottom of a short column. The field shrinks
+    // with the body rather than sitting on top of it — this is that claim, at
+    // the window where it is hardest to keep.
+    await w.locator('[data-approval-deny-feedback]').click();
+    await expect(w.locator('[data-deny-feedback-input]')).toBeVisible();
+    await expect(allow).toBeInViewport();
+    await expect(deny).toBeInViewport();
+
+    // ⚠️ IN THE VIEWPORT IS NOT THE SAME AS REACHABLE, and the first version of
+    // this fix proved it: the field's floor was on the textarea and not on its
+    // root, so the root shrank below its own content, the Send/Cancel row
+    // overflowed downward and PAINTED OVER the answer row. Both assertions above
+    // passed; the click below is what failed, with
+    // `<button>Allow all (this session)</button> … intercepts pointer events`.
+    //
+    // So the claim is "the answer is not COVERED", asked of the page itself —
+    // `elementFromPoint` at each button's centre is the same question the browser
+    // answers when the user clicks. Two geometric versions were written first and
+    // both passed against the broken build, which is worth recording because they
+    // are the obvious things to reach for:
+    //
+    //   * **summing the bar's direct children** — the field's BOX is the shrunk
+    //     one and the overflow is inside it, so the sum is correct and fine;
+    //   * **"no button hangs below the bar"** — nothing does. The bar had the
+    //     room; it was the FIELD that was given less than its content, and what
+    //     it spilled onto was its sibling, inside the bar's own box.
+    //
+    // `scrollHeight` is out for the reason #716 recorded: it is blind to a flex
+    // row's overflow. Written as an assertion rather than left to the click below
+    // because CI fonts run ~5% wider than this machine's, and a few pixels of
+    // overlap reads as a flaky click and as an unambiguous name.
+    const covered = await w.evaluate(() => {
+      const bar = document.querySelector('[data-approval-bar]');
+      if (!bar) return ['no approval bar'];
+      return [...bar.querySelectorAll('button')]
+        .filter((b) => {
+          const r = b.getBoundingClientRect();
+          const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+          return hit !== b && !b.contains(hit);
+        })
+        .map((b) => `${b.textContent ?? '?'} is not the topmost element at its own centre`);
+    });
+    expect(covered).toEqual([]);
+
+    await w.locator('[data-deny-feedback-cancel]').click();
+
     await allow.click();
     await expect(w.getByText('Allow Edit?')).toHaveCount(0);
   });

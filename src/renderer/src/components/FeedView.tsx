@@ -87,6 +87,8 @@ import {
 import { argumentSummary } from '../lib/permission-batches';
 import { nextPin, TAIL_SLACK } from '../lib/feed-pin';
 import { ApprovalPreview } from './ApprovalPreview';
+import { DenyFeedbackField } from './DenyFeedback';
+import type { DecideHeld } from '../../../shared/ipc/permissions';
 import {
   filterCommands,
   insertCommand,
@@ -349,7 +351,9 @@ export function FeedView(props: {
    * tool call with the answers written into its input, which is the CLI's own
    * design and not a side channel we invented.
    */
-  onDecide?: (decision: 'allow' | 'deny', allowAll?: boolean, updatedInput?: unknown) => void;
+  /** the shared signature — see `DecideHeld`, which exists because this one
+   *  has now quietly lost an argument twice */
+  onDecide?: DecideHeld;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const [blocks, setBlocks] = React.useState<FeedBlockDto[]>([]);
@@ -1248,11 +1252,24 @@ function ApprovalBar({
     reason?: string;
   };
   queued: number;
-  onDecide: (decision: 'allow' | 'deny', allowAll?: boolean) => void;
+  onDecide: DecideHeld;
   /** absent means the plain panes — see `ApprovalPreview` */
   colorScheme?: 'light' | 'dark';
 }): React.JSX.Element {
   const { t } = useTranslation();
+  // WHICH REQUEST the objection field is open for, not merely whether it is
+  // open (#973). Consecutive holds in one session reuse this component — the
+  // props change and nothing remounts — so a boolean would leave the field open
+  // over the NEXT question with the previous one's half-typed text in it, which
+  // is an answer the user did not give about a request they have not read. This
+  // is the same hazard `QuestionPanel`'s `key={requestId}` exists for, solved
+  // where the state lives so it closes SYNCHRONOUSLY: an effect would leave one
+  // frame showing the old field under the new heading.
+  const [feedbackFor, setFeedbackFor] = React.useState<string | null>(null);
+  const feedbackOpen = feedbackFor === approval.requestId;
+  // `aria-expanded` needs an `aria-controls` to be worth anything, and several
+  // cards render this bar at once, so the id cannot be a literal.
+  const feedbackId = React.useId();
   const btn = (primary: boolean): React.CSSProperties => ({
     background: primary ? 'var(--btn-primary-bg)' : 'var(--panel)',
     color: primary ? 'var(--btn-primary-text)' : 'var(--text)',
@@ -1366,6 +1383,28 @@ function ApprovalBar({
           and two placements that answer "what am I agreeing to" differently
           have shown the user two things and called them the same. */}
       <ApprovalPreview input={approval.input} colorScheme={colorScheme} />
+      {/* ABOVE the button row and BELOW the body, which is the only place it can
+          go. The bar is a flex column whose body is the shrinkable part; the field
+          shrinks too (see `DenyFeedbackField`), so opening it takes room from the
+          diff and never from Allow and Deny. Putting it under the buttons would
+          move them mid-gesture — the #972 failure, where a click that landed on
+          Allow produced no decision at all. */}
+      {feedbackOpen && (
+        <DenyFeedbackField
+          id={feedbackId}
+          onSend={(reason) => {
+            // CLOSED HERE, not left to the request swapping under it (review).
+            // The swap is what normally closes it and that path is tested — but
+            // a decision can land on nothing (`decidePermission` answers false
+            // for a request main no longer holds, and no `permissionResolved` is
+            // coming), and then the field would still be open, still populated,
+            // and Send still armed over whatever appeared next.
+            setFeedbackFor(null);
+            onDecide('deny', false, undefined, reason);
+          }}
+          onCancel={() => setFeedbackFor(null)}
+        />
+      )}
       {/* `flexShrink: 0`: whatever else gives, the ANSWER does not. §5.16 is about a
           held request being answerable, and a button below the fold is not. */}
       <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
@@ -1386,6 +1425,21 @@ function ApprovalBar({
         )}
         <button onClick={() => onDecide('deny')} style={btn(false)}>
           {t('approval.deny')}
+        </button>
+        {/* Deny and Deny-with-feedback are SEPARATE buttons, not one button that
+            opens a field. A bare Deny is one click today and stays one click;
+            routing it through a field would tax the answer this app most wants a
+            user to feel free to give. §5.16 lists them side by side for the same
+            reason. */}
+        <button
+          data-approval-deny-feedback=""
+          aria-expanded={feedbackOpen}
+          aria-controls={feedbackOpen ? feedbackId : undefined}
+          title={t('approval.denyFeedbackHint')}
+          onClick={() => setFeedbackFor(feedbackOpen ? null : approval.requestId)}
+          style={btn(false)}
+        >
+          {t('approval.denyFeedback')}
         </button>
       </div>
     </div>

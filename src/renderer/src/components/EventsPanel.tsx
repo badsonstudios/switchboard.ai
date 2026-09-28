@@ -26,6 +26,7 @@
 import type { HistoryRepairNotice } from '../../../shared/history-repair';
 import type { Digest } from '../lib/digest';
 import type { PermissionRequestDto } from '../../../shared/ipc/permissions';
+import { DenyFeedbackField } from './DenyFeedback';
 import type { AskQuestion } from '../../../shared/ask-user-question';
 import { offersInject, type DispatchResultDto } from '../../../shared/dispatch-result';
 import { EventDto } from '../model/types';
@@ -225,7 +226,12 @@ export interface EventsPanelProps {
    */
   held: readonly PermissionRequestDto[];
   /** answer ONE held request, on the same channel the card's bar uses */
-  onDecidePermission: (requestId: string, decision: 'allow' | 'deny') => void;
+  onDecidePermission: (
+    requestId: string,
+    decision: 'allow' | 'deny',
+    /** the user's objection text on a deny (#973) */
+    reason?: string
+  ) => void;
   /**
    * The card bar's "Allow all (this session)", from a row: write the standing
    * grant for this LIVE session, then allow what it is already holding.
@@ -1049,7 +1055,7 @@ function HeldActions(props: {
   /** the session's name, for button names a screen reader can tell apart */
   who: string;
   liveSessionId: string;
-  onDecide: (requestId: string, decision: 'allow' | 'deny') => void;
+  onDecide: (requestId: string, decision: 'allow' | 'deny', reason?: string) => void;
   onAllowAll: (liveSessionId: string, heldRequestIds: readonly string[]) => void;
   /** questions are answered on the card: open it */
   onAnswer: () => void;
@@ -1073,6 +1079,13 @@ function HeldActions(props: {
     const ceiling = setTimeout(() => setDisarmed(false), REARM_CEILING_MS);
     return () => clearTimeout(ceiling);
   }, [disarmed]);
+  // WHICH request the objection field is open for (#973), for the reason
+  // `ApprovalBar` gives at length: the row swaps in the next held request under
+  // the same pointer when an answer lands, so a boolean would leave a half-typed
+  // objection sitting over a question nobody has read yet.
+  const [feedbackFor, setFeedbackFor] = React.useState<string | null>(null);
+  // several rows render at once, so `aria-controls` cannot be a literal
+  const feedbackId = React.useId();
   const answeredId = React.useRef<string | null>(null);
   React.useEffect(() => {
     if (!disarmed || shownId === answeredId.current) return;
@@ -1153,12 +1166,50 @@ function HeldActions(props: {
             >
               {t('events.held.deny')}
             </button>
+            <button
+              type="button"
+              className="events-btn"
+              data-event-deny-feedback={perm.requestId}
+              aria-label={t('events.held.denyFeedbackOne', { tool, session: who })}
+              aria-expanded={feedbackFor === perm.requestId}
+              aria-controls={feedbackFor === perm.requestId ? feedbackId : undefined}
+              title={t('events.held.denyFeedbackHint')}
+              disabled={disarmed}
+              onClick={() =>
+                setFeedbackFor(feedbackFor === perm.requestId ? null : perm.requestId)
+              }
+              style={actionBtn(false)}
+            >
+              {t('events.held.denyFeedback')}
+            </button>
             {more > 0 && (
               <span style={{ fontSize: 10, color: 'var(--muted)' }}>
                 {t('events.held.more', { count: more })}
               </span>
             )}
           </div>
+          {/* Below the buttons here, unlike the card bar, and the difference is
+              that this row is not a flex column with an answer at the bottom of
+              it — there is nothing underneath to push out of reach. Through
+              `answer()` like every other button on the row, so the double-click
+              disarm covers it too. */}
+          {feedbackFor === perm.requestId && (
+            <div style={{ marginBlockStart: 4 }}>
+              <DenyFeedbackField
+                compact
+                id={feedbackId}
+                disabled={disarmed}
+                onSend={(reason) => {
+                  // closed here rather than left to the next request swapping in
+                  // — see `ApprovalBar`'s copy of this for the fail-open case it
+                  // covers, and `REARM_CEILING_MS` above for this row's version
+                  setFeedbackFor(null);
+                  answer(() => props.onDecide(perm.requestId, 'deny', reason));
+                }}
+                onCancel={() => setFeedbackFor(null)}
+              />
+            </div>
+          )}
         </>
       )}
       {held.questions.length > 0 && (

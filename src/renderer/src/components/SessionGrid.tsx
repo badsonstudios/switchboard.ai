@@ -1297,7 +1297,18 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
       setPermQueue((prev) => dropRetired(prev, liveId));
     });
   }, []);
-  const decide = (decision: 'allow' | 'deny', allowAll = false, updatedInput?: unknown): void => {
+  const decide = (
+    decision: 'allow' | 'deny',
+    allowAll = false,
+    updatedInput?: unknown,
+    /**
+     * The user's objection text on a deny (#973). Threaded, not dropped — this
+     * parameter was accepted the whole way down to `{ behavior: 'deny', message }`
+     * for two epics and no renderer surface ever supplied one, which is the
+     * entirety of why "deny with feedback" did not exist.
+     */
+    reason?: string
+  ): void => {
     // the head of the bar's OWN list, not of the raw queue: a grouped request
     // is answered on the grouped card, and this button must never decide one
     // the user cannot see (P2-E9-11)
@@ -1311,7 +1322,7 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     }
     // `updatedInput` is the answered `AskUserQuestion` input (#563) — undefined
     // for every other surface, and main ignores it for any tool but that one.
-    void window.switchboard.sessions.decidePermission(head.requestId, decision, undefined, updatedInput);
+    void window.switchboard.sessions.decidePermission(head.requestId, decision, reason, updatedInput);
     // BY ID, not `slice(1)` (P2-E9-11). The head the user answered is the head
     // of the FILTERED list, and a grouped sibling ahead of it in the raw queue
     // makes those two different entries — `slice(1)` would answer this one and

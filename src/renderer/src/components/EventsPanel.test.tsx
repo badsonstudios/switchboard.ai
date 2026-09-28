@@ -474,6 +474,100 @@ describe('Events v2: inline decisions, questions, filters', () => {
     }
   });
 
+  // P2-E22-02 (#973). The row is the second surface that can deny a SINGLE
+  // request, so it is the second that has to be able to say why — the card bar
+  // being the other. The batch bar deliberately is not; `BatchApprovalBar`'s
+  // header gives both reasons.
+  describe('deny with feedback', () => {
+    const openField = async (requestId: string): Promise<HTMLTextAreaElement> => {
+      await click(q(`[data-event-deny-feedback="${requestId}"]`));
+      return q<HTMLTextAreaElement>('[data-deny-feedback-input]');
+    };
+    const type = async (f: HTMLTextAreaElement, text: string): Promise<void> => {
+      // the descriptor, not the setter in a variable: `unbound-method` (#255 T4)
+      const valueProp = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!;
+      await act(async () => {
+        valueProp.set!.call(f, text);
+        f.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    };
+
+    it('sends the objection as the third argument, and never opens the card', async () => {
+      await show([e(1, 'live-a', 'needs-permission')], [perm('r1', 'live-a')]);
+      expect(host.querySelector('[data-deny-feedback-input]')).toBeNull();
+
+      const f = await openField('r1');
+      expect(document.activeElement).toBe(f);
+      await type(f, 'the suite is already running');
+      await act(async () => {
+        f.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+        );
+      });
+
+      expect(onDecide.mock.calls).toEqual([['r1', 'deny', 'the suite is already running']]);
+      expect(onFocus).not.toHaveBeenCalled();
+    });
+
+    it('Esc closes it without answering — the request stays held', async () => {
+      await show([e(1, 'live-a', 'needs-permission')], [perm('r1', 'live-a')]);
+      const f = await openField('r1');
+      await act(async () => {
+        f.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+        );
+      });
+
+      expect(onDecide).not.toHaveBeenCalled();
+      expect(host.querySelector('[data-deny-feedback-input]')).toBeNull();
+    });
+
+    // The row's plain Deny is the one-click answer and stays one click. Threading
+    // every refusal through a field would tax the answer this app most wants a
+    // user to feel free to give.
+    it('leaves the bare Deny alone', async () => {
+      await show([e(1, 'live-a', 'needs-permission')], [perm('r1', 'live-a')]);
+      await click(q('[data-event-deny="r1"]'));
+      expect(onDecide.mock.calls).toEqual([['r1', 'deny']]);
+    });
+
+    // THE ONE THAT WOULD BE A REAL BUG, and the row is where it is worst: nothing
+    // pops locally, so when an answer lands the NEXT held request swaps in under
+    // the same pointer. A field keyed on "open" rather than on "open for THIS
+    // request" would leave a half-typed objection sitting over a question nobody
+    // has read, one Enter away from being attributed to the user.
+    it('does not carry a half-typed objection onto the next request', async () => {
+      await show(
+        [e(1, 'live-a', 'needs-permission')],
+        [perm('r1', 'live-a'), perm('r2', 'live-a', 'rm -rf build')]
+      );
+      const f = await openField('r1');
+      await type(f, 'about the FIRST request');
+
+      // main answered r1: the row now shows r2
+      await show([e(1, 'live-a', 'needs-permission')], [perm('r2', 'live-a', 'rm -rf build')]);
+      expect(host.querySelector('[data-deny-feedback-input]')).toBeNull();
+
+      const again = await openField('r2');
+      expect(again.value).toBe('');
+    });
+
+    // The row disarms its buttons for a beat after an answer (see the
+    // double-click guard above). A box that still takes keystrokes and swallows
+    // Enter looks live and is not.
+    it('the field goes dead with the rest of the row while it is disarmed', async () => {
+      await show(
+        [e(1, 'live-a', 'needs-permission')],
+        [perm('r1', 'live-a'), perm('r2', 'live-a', 'git status')]
+      );
+      await openField('r1');
+      await click(q('[data-event-deny="r1"]'));
+
+      expect(q<HTMLTextAreaElement>('[data-deny-feedback-input]').disabled).toBe(true);
+      expect(q<HTMLButtonElement>('[data-deny-feedback-send]').disabled).toBe(true);
+    });
+  });
+
   it('Allow all hands over the live id and EVERY permission it holds, and says how many more', async () => {
     await show(
       [e(1, 'live-a', 'needs-permission')],

@@ -1045,7 +1045,17 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     updatedInput?: unknown
   ): boolean => {
     if (typeof requestId !== 'string' || (decision !== 'allow' && decision !== 'deny')) return false;
-    const clean = typeof reason === 'string' ? reason.slice(0, 500) : undefined;
+    // ⚠️ THE CAP MOVED (#973). This line was `reason.slice(0, 500)` — the only
+    // bound on the objection text in the app, applied in a channel handler, with
+    // its number written nowhere the router or the renderer could read it. It is
+    // `StreamPermissions.sanitizeDenialReason` now, beside `sanitizeUpdatedInput`
+    // and keyed off `MAX_DENIAL_REASON_CHARS`, which the renderer's field also
+    // reads for its `maxLength`. Vetting untrusted text belongs with the code
+    // that builds the payload out of it, not with the code that forwards it.
+    //
+    // What stays here is the type guard, because this function has a caller with
+    // no bridge in front of it (the OS toast, from main) and `decision` is
+    // validated on the same line for the same reason.
     // ONE ROUTER SINCE #952. This was `hooks.decide(...) || streamPermissions?.
     // decide(...)`, falling through rather than branching on the id's prefix
     // (`stream:<sessionId>:<native>`) — deliberately, because the prefix is an
@@ -1056,7 +1066,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     // `updatedInput` was already stream-only: it is how an `AskUserQuestion`
     // answer travels (#563), and there was no hook equivalent because the hook
     // path never held that tool.
-    const delivered = streamPermissions?.decide(requestId, decision, clean, updatedInput) ?? false;
+    const delivered = streamPermissions?.decide(requestId, decision, reason, updatedInput) ?? false;
     // A DECISION THAT LANDED ON NOTHING (#570). The router answers false for a
     // request it is not holding, and until #570 that was SILENT — so an answer
     // the user watched themselves give could vanish leaving no trace anywhere,

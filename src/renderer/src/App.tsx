@@ -436,9 +436,21 @@ export function App(): React.JSX.Element {
   // card (P2-E9-11) and the Events rows (P2-E14-02). One function, so the two
   // cannot disagree about what a `false`, a refusal or a rejection means.
   const decideHeld = React.useCallback(
-    (requestId: string, decision: 'allow' | 'deny') => {
+    (
+      requestId: string,
+      decision: 'allow' | 'deny',
+      /**
+       * The user's objection text on a deny (#973). THIS PARAMETER NOT EXISTING
+       * was the whole of the deny-with-feedback gap: `decidePermission` has
+       * accepted a `reason` since the stream transport landed and main has
+       * always sent it as the denial `message`, and this signature — the one
+       * every non-card surface funnels through — dropped it on the floor.
+       * `decideBatch` below deliberately never passes one; see its header.
+       */
+      reason?: string
+    ) => {
       void bridge.sessions
-          ?.decidePermission?.(requestId, decision)
+          ?.decidePermission?.(requestId, decision, reason)
           // FALSE means main never had it — released, timed out, or resolved by
           // something else, and no `permissionResolved` is coming for it. Self-
           // heal, or the ledger would count a phantom session on the card for
@@ -486,6 +498,12 @@ export function App(): React.JSX.Element {
       // held request is a separate CLI blocked on a separate answer, and main
       // routing them one by one is what keeps a partly-failed batch honest.
       // Deliberately NOT `allowAllSession`: see BatchApprovalBar's header.
+      //
+      // AND DELIBERATELY NO `reason` (#973). One objection text cannot honestly
+      // speak for N different requests from N different sessions — it would be
+      // attributed to the user, in their own words, on every one of them, and on
+      // at least N-1 it would be about something else. The batch bar's own
+      // header carries the long version.
       for (const requestId of requestIds) decideHeld(requestId, decision);
     },
     [decideHeld]

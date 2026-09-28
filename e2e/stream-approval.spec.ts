@@ -107,6 +107,84 @@ test.describe('Direct-mode permissions (P2-E18-14)', () => {
     expect(await heldIds(w)).toEqual([]);
   });
 
+  // P2-E22-02 (#973). Deny ABOVE proves the verdict reaches the CLI; this proves
+  // the user's WORDS do, and that they arrive wrapped in the framing rather than
+  // instead of it.
+  //
+  // It is an e2e and not a unit test because every hop between the textarea and
+  // the wire used to drop the argument — `ApprovalBar` -> `SessionGrid.decide` ->
+  // `decidePermission` -> the channel -> `StreamPermissions.decide`. Each of
+  // those now accepts a `reason`, and the feature was missing for two epics with
+  // main's end already finished, so a test that stops at any one hop is a test
+  // that would have passed the whole time. The fake narrates the denial
+  // `message` it received (see `fake-stream-protocol`), so what is asserted here
+  // is the payload, from the far side.
+  test('Deny with feedback carries the words AND the framing to the CLI', async () => {
+    test.setTimeout(90_000);
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder, env: DIRECT });
+    const w = a.window;
+    await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
+
+    const box = w.getByPlaceholder(/Prompt this session/);
+    await box.click();
+    await box.fill('!perm refused.sh');
+    await box.press('Enter');
+    await expect(w.getByText('Allow Write?')).toBeVisible({ timeout: 30_000 });
+
+    // the field is not there until it is asked for
+    await expect(w.locator('[data-deny-feedback-input]')).toHaveCount(0);
+    await w.locator('[data-approval-deny-feedback]').click();
+    const field = w.locator('[data-deny-feedback-input]');
+    await expect(field).toBeFocused();
+    await field.fill('that path is generated — edit the template instead');
+    // the field holds what was typed, asserted separately so a failure below
+    // cannot be blamed on the typing
+    await expect(field).toHaveValue(/edit the template instead/);
+    // Enter sends: the request is HELD and a CLI is blocked on it, so the fast
+    // path has to be the one that answers (`DenyFeedbackField`).
+    await field.press('Enter');
+
+    await expect(w.getByText(/DENIAL MESSAGE:/)).toBeVisible({ timeout: 30_000 });
+
+    // ⚠️ READ FROM THE TRANSCRIPT, NOT FROM THE FEED, and the first draft of this
+    // test read the feed and was wrong for an instructive reason: the message is
+    // a PARAGRAPH — framing, blank line, the user's words — and the feed renders
+    // paragraphs as separate nodes, so `textContent()` on the element matching
+    // `/DENIAL MESSAGE:/` returned the framing and stopped exactly where the
+    // attribution began. It looked precisely like the reason being dropped.
+    // The JSONL holds the assistant text whole, which is the string the model
+    // would actually have been handed.
+    const said = await pollAsync(
+      () => {
+        const transcript = findFile(a.home, FAKE_TRANSCRIPT);
+        if (transcript === null) return Promise.resolve(null);
+        const text = fs.readFileSync(transcript, 'utf8');
+        return Promise.resolve(text.includes('DENIAL MESSAGE:') ? text : null);
+      },
+      'the fake never narrated the denial message it was sent',
+      30_000
+    );
+    // BOUNDED TO ONE JSONL RECORD (review). `slice(indexOf(...))` alone runs to
+    // EOF, so every `toContain` below could be satisfied by some later line in
+    // the file that has nothing to do with this denial.
+    const from = said.indexOf('DENIAL MESSAGE:');
+    const lineEnd = said.indexOf('\n', from);
+    const message = said.slice(from, lineEnd === -1 ? undefined : lineEnd);
+    // the user's words reached the model...
+    expect(message).toContain('edit the template instead');
+    // ...and so did the sentence that stops it treating a refusal as an
+    // obstacle to route around (#94). Carried, not replaced — the bug being
+    // ruled out is the one where better feedback makes for a weaker denial.
+    expect(message).toContain('DENIED it');
+    expect(message).toContain('Do NOT retry this call');
+    expect(message).not.toContain('Denied in switchboard');
+
+    expect(fs.existsSync(path.join(folder, 'refused.sh'))).toBe(false);
+    await expect(w.getByText('Allow Write?')).toHaveCount(0);
+    expect(await heldIds(w)).toEqual([]);
+  });
+
   // Two gated calls in ONE turn, which is the only way to reach the card's
   // queue on this transport from the outside: a second prompt cannot be typed
   // while the composer's session sits behind the first request's bar. The fake

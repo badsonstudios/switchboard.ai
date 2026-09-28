@@ -25,6 +25,7 @@ import type { FeedBlockDto } from '../lib/feed';
 import type { ThemeDefinition, ThemeId } from '../theme/theme';
 import type { ServiceHealthStatus } from '../../../shared/service-health';
 import type { EventDto } from '../model/types';
+import type { DecideHeld } from '../../../shared/ipc/permissions';
 import type { TransportKind } from '../../../shared/transport';
 
 /**
@@ -215,7 +216,15 @@ export interface PanelContext {
    * answer. It is being answered, one surface up.
    */
   approvalBatched?: boolean;
-  onDecide?: (decision: 'allow' | 'deny', allowAll?: boolean) => void;
+  /**
+   * ⚠️ THE SHARED TYPE, since #973 — this line read
+   * `(decision: 'allow' | 'deny', allowAll?: boolean) => void` while the
+   * function behind it had grown two more parameters, and neither omission was
+   * a type error. `DecideHeld`'s docblock has the whole story; the short version
+   * is that a contributed panel could not have answered a question or denied
+   * with a reason, and nothing would have told its author why.
+   */
+  onDecide?: DecideHeld;
   onCycleAutonomy?: () => void;
   /** switch the card to another panel by id */
   setView: (id: PanelId) => void;
