@@ -44,7 +44,7 @@ import { test, expect, Page } from '@playwright/test';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { launchApp, LaunchedApp, registerTempDir } from './fixtures/app';
+import { launchApp, LaunchedApp, registerTempDir, streamPrompter } from './fixtures/app';
 
 /** the dual-capable fake, asked for nothing — i.e. the app's own default */
 const DIRECT = { SWITCHBOARD_FAKE_PROVIDER: 'stream' };
@@ -166,6 +166,85 @@ test.describe('the feed has a way back to the tail — with a conversation (#442
     await expect(jump(w)).toHaveCount(0);
     expect(await blockFollowed(w)).toBe(true);
     await expect(jump(w)).toHaveCount(0);
+  });
+
+  // #967, the owner dogfooding: *"When it's doing a lot of things — Claude is
+  // working constantly — it doesn't always keep the session scrolled to the
+  // bottom."*
+  //
+  // The mechanism, and why this test looks the way it does: `onPointerDown` on
+  // the scroller marks a gesture, and it fires for ANY click in the conversation
+  // — expanding a tool block, pressing Copy, clicking to focus. The old rule then
+  // treated every scroll for the next 500ms as the user's and re-derived the pin
+  // from raw distance, which under sustained streaming is large. One click plus
+  // one unattributed scroll and the feed stopped following its own session.
+  //
+  // So the test does the thing the owner was doing: click IN the feed, without
+  // scrolling, while output keeps arriving.
+  //
+  // ⚠️ AND IT DOES NOT DISCRIMINATE THE FIX. Said here rather than left to be
+  // assumed, because a test that looks like proof and is not is worse than no test.
+  // MEASURED, by deleting the `delta === 0` branch from `lib/feed-pin.ts` and running
+  // this file: 6 passed, with one block and with two hundred. The bug needs the tail
+  // to be FAR from the viewport at the instant a stray scroll event is sampled, and
+  // the fake emits a whole `!bulk` turn synchronously — the pin catches up before
+  // anything can be misread. `stream-feed.spec.ts` records the same limitation for
+  // the same reason ("no e2e driven by it can observe a break that spans ticks").
+  //
+  // What IS the proof is `lib/feed-pin.test.ts`, which runs the OLD rule beside the
+  // new one on the same input and shows the two answers differing. What this test is
+  // worth is the coarse guard: a regression that unpins on a click outright, or that
+  // stops following at all, fails here.
+  test('a click in the conversation does not stop it following (#967)', async () => {
+    const w = a.window;
+    await wheelToBottom(w);
+    await expect(jump(w)).toHaveCount(0);
+
+    // A click that is emphatically NOT a scroll. On the region itself rather than
+    // a control, so nothing expands and the only thing this can be testing is the
+    // pointer-down → gesture-window path.
+    const clickedAt = Date.now();
+    await w.locator('[data-feed-region]').click({ position: { x: 5, y: 5 } });
+
+    // …and the session talks INSIDE the gesture window, which is the whole point.
+    //
+    // ⚠️ THROUGH THE BRIDGE, NOT THE COMPOSER, and the premise assertion below is how
+    // that was discovered. The first version typed into the composer — click, fill,
+    // Enter, a CDP round trip each — and the block landed ~900ms after the click, well
+    // past `GESTURE_MS`. The test passed, and it was passing for the wrong reason: the
+    // window had already closed, so the old rule would have kept the pin too.
+    // `submitPrompt` is one round trip and lands inside it.
+    // 200 blocks, not one: the bug needs the tail to be FAR AWAY at the moment the
+    // scroll event is sampled, which is what "Claude is working constantly" means.
+    // One block lands and the pin catches up before anything can be misread —
+    // measured: the mutation test below passes with a single block, i.e. a
+    // one-block stimulus cannot tell the fix from its absence.
+    const name = `PIN967_`;
+    await streamPrompter(a)(path.basename(folder), `!bulk 200 ${name}`);
+    await expect(w.getByText(`${name}200`, { exact: true })).toBeAttached({ timeout: 60_000 });
+    const firstBlockAt = Date.now();
+    await w.waitForTimeout(700); // the pin lands on the next frame; give it several
+    expect(await tailGap(w)).toBeLessThan(40);
+
+    // and a second one, because the failure is intermittent by nature and one block
+    // landing right is the weaker half of the claim
+    expect(await blockFollowed(w)).toBe(true);
+    // it never offered a way back, because it never left
+    await expect(jump(w)).toHaveCount(0);
+
+    // ⚠️ ASSERT THE PREMISE, OR THIS TEST CAN STOP TESTING ANYTHING (found in
+    // review). Everything above only discriminates while the FIRST block lands
+    // inside `GESTURE_MS` — 500ms, `FeedView`'s constant. On a loaded runner the
+    // click, the fill, the Enter, a CDP round trip and the fake's reply can exceed
+    // that, the window closes, and the OLD rule would have repinned too: green for
+    // the wrong reason, silently, for ever. So the test says out loud what it needed
+    // rather than hoping for it.
+    expect(
+      firstBlockAt - clickedAt,
+      'the first block landed after the 500ms gesture window had closed, so this ' +
+        'test no longer exercises the #967 path at all — it is passing for the wrong ' +
+        'reason. Make the stimulus faster rather than relaxing this.'
+    ).toBeLessThan(500);
   });
 
   test('the #174 keyboard walk unpins the tail — and now that is visible', async () => {

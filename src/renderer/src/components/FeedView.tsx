@@ -85,6 +85,7 @@ import {
   type ComposerBounds,
 } from '../lib/composer-size';
 import { argumentSummary } from '../lib/permission-batches';
+import { nextPin, TAIL_SLACK } from '../lib/feed-pin';
 import { ApprovalPreview } from './ApprovalPreview';
 import {
   filterCommands,
@@ -475,6 +476,24 @@ export function FeedView(props: {
   // the top. Probed: read at 7014 â†’ switch away â†’ return at 0, and it stayed
   // there because an unpinned view was never restored.
   const lastTop = React.useRef(0);
+  /**
+   * Where the scroller physically IS, as of the last event or our own last write.
+   *
+   * ⚠️ NOT `lastTop`, AND THE SPLIT IS THE POINT (#967, found in review). The two
+   * were briefly the same ref and they are two different facts:
+   *
+   *   * `lastTop` is the user's READING POSITION — the thing #555 and #562 restore
+   *     them to. It may only ever be written from something the user did.
+   *   * this is a bookkeeping value, written by every scroll event and by every
+   *     scroller write we make, and read for one purpose: `scrollTop - knownTop`,
+   *     which is how the pin rule tells a moved viewport from moved content.
+   *
+   * Sharing one ref meant a layout scroll, a clamp during a re-show, or our own pin
+   * could overwrite the reading position with somewhere the user never chose — and
+   * the #555 backstop below keys off `lastTop.current > 0`, so a clamp to 0 would
+   * have disabled the recovery permanently.
+   */
+  const knownTop = React.useRef(0);
   // set while a re-shown panel still owes the user their position back
   const owesRestore = React.useRef(false);
   // the scroller had zero height last time we looked â€” i.e. it was hidden
@@ -521,13 +540,20 @@ export function FeedView(props: {
     // pane IS at its tail, so a chip there would be a control that does
     // nothing â€” and 40px is the same slack the pin rule itself uses, so the
     // two can never disagree about whether the feed overflows.
-    setOffTail(!pinned.current && el.scrollHeight > el.clientHeight + 40);
+    setOffTail(!pinned.current && el.scrollHeight > el.clientHeight + TAIL_SLACK);
   }, []);
   const pin = React.useCallback((): void => {
     const el = scroller.current;
     if (!el) return;
     autoPin.current = true;
     el.scrollTop = el.scrollHeight;
+    // ⚠️ RECORD WHERE WE PUT IT (#967) — in `knownTop`, never in `lastTop`. The pin
+    // rule compares `scrollTop` against this, so a pin that did not write it would
+    // make its own landing look like a user scroll; writing the READING position
+    // here instead would tell a later restore that the user had chosen the bottom.
+    // Read BACK rather than assumed: the browser clamps to
+    // `scrollHeight - clientHeight`.
+    knownTop.current = el.scrollTop;
     requestAnimationFrame(() => (autoPin.current = false));
   }, []);
   /**
@@ -538,7 +564,9 @@ export function FeedView(props: {
   const jumpToLatest = React.useCallback((): void => {
     pinned.current = true;
     owesRestore.current = false;
-    lastTop.current = scroller.current?.scrollHeight ?? 0;
+    // `pin()` records where it actually landed (#967), so there is nothing to
+    // guess at here any more — this used to set `lastTop` to `scrollHeight`, which
+    // is not even a position the scroller can hold.
     pin();
     setOffTail(false);
     // The control REMOVES ITSELF on success, so something has to catch the
@@ -558,12 +586,27 @@ export function FeedView(props: {
     if (!el || el.clientHeight === 0) return;
     autoPin.current = true;
     el.scrollTop = pinned.current ? el.scrollHeight : lastTop.current;
+    // `knownTop` only (#967). Writing `lastTop` back here would RATCHET the saved
+    // position toward zero: this runs from the ResizeObserver, i.e. mid-relayout,
+    // exactly when `scrollHeight` can be transiently short — the write clamps, and
+    // saving the clamped value as the user's intent would move it a little closer to
+    // the top on every re-show that caught a short layout.
+    knownTop.current = el.scrollTop;
     requestAnimationFrame(() => (autoPin.current = false));
     owesRestore.current = false;
   }, []);
   React.useEffect(() => {
     if (!props.visible || !pinned.current) return;
-    const id = requestAnimationFrame(pin);
+    // ⚠️ RE-CHECKED INSIDE THE FRAME (#967, found in review). The guard above runs at
+    // EFFECT time and `pinned` is a ref, so flipping it in `onScroll` neither re-runs
+    // this effect nor cancels the frame: the last block of a burst queues a pin, the
+    // user wheels up inside that frame, and the pin fires anyway and yanks them back.
+    // That was already true before this item; what made it worth fixing now is that
+    // `pin` writes `knownTop`, so the yank would also have made the NEXT event look
+    // like the user moving — a one-frame race turning into a lost reading position.
+    const id = requestAnimationFrame(() => {
+      if (pinned.current) pin();
+    });
     return () => cancelAnimationFrame(id);
   }, [blocks, props.visible, pin]);
   // becoming visible again is when the position was lost â€” claim the debt and
@@ -933,41 +976,42 @@ export function FeedView(props: {
           // 0; treating that as "the user scrolled to the top" would both unpin
           // the tail and overwrite the position we're trying to give back
           if (!el || el.clientHeight === 0) return;
-          if (autoPin.current) {
-            // Normally our own pin â€” not user intent, so ignore it. But
-            // `autoPin` stays set until the next animation frame, and a
-            // LAYOUT scroll landing in that same frame used to be swallowed
-            // with it: the view was left stranded mid-history with output
-            // below the fold and no further event to correct it (#112,
-            // measured â€” the stranded run saw exactly one scroll, with
-            // autoPin already true).
-            //
-            // Our pin always lands ON the tail, so a scroll arriving here
-            // that is nowhere near the tail is somebody else's. Correct it â€”
-            // but only with no recent gesture behind it, so a user scrolling
-            // up while a pin is in flight is never yanked back.
-            const away = el.scrollHeight - el.scrollTop - el.clientHeight;
-            if (pinned.current && away >= 40 && Date.now() - lastGesture.current > GESTURE_MS) pin();
-            // our own scrolls do not change the pin, but they are the frame in
-            // which a `jumpTo` unpin becomes visible (#442)
-            syncOffTail();
-            return;
+          // ⚠️ THE DECISION IS IN `lib/feed-pin.ts` (#967), and it is there because it
+          // was forty lines of branching inside this attribute and this is the sixth
+          // bug in it (#112, #442, #555, #562, #740, #967) — not one of them reachable
+          // from a unit test while it lived here. What stays in the component is the
+          // three things only the component can do: read the DOM, move the scroller,
+          // and remember where it put it.
+          const decision = nextPin({
+            pinned: pinned.current,
+            auto: autoPin.current,
+            // THE question (#967): did the VIEWPORT move, or did the content move
+            // under it? A user scroll changes `scrollTop`; blocks arriving below the
+            // fold change `scrollHeight` and leave `scrollTop` exactly where we left
+            // it. Sustained streaming is the second thing, continuously — and the old
+            // rule, which only knew how long ago something had been touched, read it
+            // as the first whenever the user had clicked anything in the conversation
+            // within the last half second.
+            delta: el.scrollTop - knownTop.current,
+            away: el.scrollHeight - el.scrollTop - el.clientHeight,
+            gestureRecent: Date.now() - lastGesture.current <= GESTURE_MS,
+          });
+          pinned.current = decision.pinned;
+          // Bookkeeping, unconditionally: the scroller IS where it now says it is, and
+          // the next event's `delta` is measured from here. (`pin()` below overwrites
+          // it with where it actually landed.)
+          knownTop.current = el.scrollTop;
+          if (decision.repin) pin();
+          if (decision.userDriven) {
+            // a continuing gesture keeps the window alive, so a scrollbar drag or a
+            // momentum scroll does not decay mid-movement
+            markGesture();
+            // THE READING POSITION, and the only place it is written from an event.
+            // A layout scroll or a clamp must never be saved as somewhere the user
+            // chose to be — see `knownTop`'s docblock.
+            lastTop.current = el.scrollTop;
+            owesRestore.current = false; // the user has taken the wheel
           }
-          // Nobody touched anything: this scroll came from LAYOUT (the approval
-          // bar docking, the working banner, content reflowing). It must never
-          // change what the user wants â€” and if they were following the tail,
-          // put them back on it rather than leaving output below the fold.
-          if (Date.now() - lastGesture.current > GESTURE_MS) {
-            if (pinned.current) pin();
-            syncOffTail();
-            return;
-          }
-          // a real gesture, and a continuing one keeps the window alive so a
-          // scrollbar drag or momentum scroll doesn't decay mid-movement
-          markGesture();
-          pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-          lastTop.current = el.scrollTop;
-          owesRestore.current = false; // the user has taken the wheel
           syncOffTail();
         }}
         style={{ flex: 1, minBlockSize: 0, overflowY: 'auto', fontSize: 12, lineHeight: 1.5, paddingBlock: 6 }}

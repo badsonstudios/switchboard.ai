@@ -3,6 +3,41 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🚧 IN PROGRESS — 2026-09-28: **#967 — the feed losing its tail-pin while a
+> session streams.** Third of the three the owner queued (#952 → #972 → #967). Branch
+> `feature/967-feed-tail-pin`. Plan posted to the issue.
+>
+> **THE OWNER'S HYPOTHESIS WAS HALF RIGHT AND THE WRONG HALF MATTERED.** The issue
+> guessed `lastGesture` was global ("typed, clicked, hovered-scrolled a different
+> panel"). It is not — every writer is already scoped to the feed's own scroller. But
+> `onPointerDown` IS on the scroller, so it fires for ANY click in the conversation
+> (expanding a tool box, pressing Copy, clicking to focus), and the old rule then read
+> every scroll for 500ms as the user's and re-derived the pin from raw distance — large,
+> continuously, while streaming. One click plus one stray scroll unpinned it.
+>
+> **THE RULE IS NOW `lib/feed-pin.ts`, and it asks a different question:** did the
+> VIEWPORT move (`scrollTop`), or did the content (`scrollHeight`)? Plus a second half
+> review found was needed: only movement AWAY from the tail may unpin, because inside
+> the gesture window a `scrollTop` change need not be the user's at all — Chrome's
+> scroll anchoring adjusts it whenever content above the fold reflows.
+>
+> **⚠️ THE E2E DOES NOT DISCRIMINATE THIS FIX, and that is recorded in the test rather
+> than assumed.** Measured by deleting the new branch and running the file: 6 passed,
+> with one block and with two hundred. The fake emits a whole `!bulk` turn synchronously
+> so the pin always catches up before anything can be misread — the same limitation
+> `stream-feed.spec.ts` records for the same reason. The proof is the unit test, which
+> runs the OLD rule beside the new one on the same input. **An earlier run appeared to
+> show the e2e failing under mutation; that was `-g` skipping the `beforeAll` that
+> launches the app, not discrimination.** Filtering a serial file by name is a trap.
+>
+> **REVIEW FOUND SIX THINGS AND THE BIGGEST WAS A REF DOING TWO JOBS.** `lastTop` was
+> both "where the scroller is" (for the new comparison) and "where the user was reading"
+> (#555/#562's restore target), so a layout scroll or a clamp could overwrite the
+> reading position — and a clamp to 0 would have disabled the #555 recovery permanently,
+> since it keys off `lastTop > 0`. Split into `knownTop` + `lastTop`. Also fixed: a
+> deferred `pin()` that re-checked nothing could fire after the user had scrolled away
+> (a pre-existing one-frame race, made worse by the new bookkeeping).
+
 > # ✅ DONE — 2026-09-27: **#972 — E22-01, the Monaco diff in the approval card**
 > (PR **#980**, merged on green CI). Second of the three the owner queued
 > (#952 → #972 → #967). **Next up: #967.**

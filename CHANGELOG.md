@@ -309,6 +309,14 @@ on the floor, and say so in your PR.
   attach them to. Both buttons are back, and clicking the body of the toast raises the
   right session.
 
+- **A busy session keeps up with itself again.** When Claude was working flat out, the
+  conversation could quietly stop scrolling to the newest message — you'd look back and
+  find output had been piling up below the fold without your having scrolled anywhere.
+  The cause was a click: expanding a tool box, pressing **Copy**, or just clicking in the
+  conversation was briefly treated as if you had scrolled away, and while output was
+  arriving fast that was enough to unstick the view. Now only actually moving the view
+  counts as moving the view.
+
 - A session card no longer keeps a task label describing a conversation it
   could not reopen. If the conversation is gone from disk and the session has
   to start fresh, the card goes back to **+ task label** and your next prompt
