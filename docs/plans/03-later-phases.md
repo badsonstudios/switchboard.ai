@@ -27,6 +27,18 @@ Planning notes for when this gets broken out:
 ## Phase 3 — The IDE
 *Theme: review, safety, and fleet-level surfaces.*
 
+**Broken out → `docs/plans/06-phase-3-ide.md`** (epics E23–E39; milestone
+"Phase 3 - The IDE", opened 2026-09-28 at the Phase 2 cut). That file carries the
+epic breakdown, the order, the exit criteria, and the **45 issues swept in from
+Phase 2** — including E21/responsiveness, carried forward. Everything below is
+the original planning material, retained because the plan file cites it rather
+than repeating it.
+
+> **Both audit blocks below were folded into the plan file's epics and are kept
+> here as the record of where each item came from:** §5.7's four orphans and OQ #9
+> are **E24** (the write half of git); the review queue pane is **E26**, the
+> floating approval window **E27**, and §5.4 Tier 1 + §5.5 Level 1 are **E30**.
+
 > **ADDED BY THE 2026-09-25 FEATURE AUDIT — four things this phase now owns that
 > it did not before.** The audit read all 34 of DESIGN §5's sections against the
 > code. Three §5.7 bullets turned out to be in **no phase at all**, and one open
@@ -139,6 +151,16 @@ Planning notes:
   unfinished pages. Deliberately late — the manual should compile content that
   already exists, not become a writing project. Pull it earlier if the app
   reaches outside users first (public release triggers it regardless).
+
+  > **⚠️ CONTRADICTED BY A FILED ISSUE, 2026-09-28 — flagged rather than quietly
+  > resolved.** **#965** asks for exactly this work (audit every shipped feature,
+  > reconcile `docs/manual/`, render to HTML, owner screenshot shot-list) and the
+  > Phase 2 cut swept it into **Phase 3 as E33**, because a filed issue outranks a
+  > planning note — #946's whole lesson was that an unfiled item contributes
+  > nothing to any count. **The reasoning above still holds, though, and now has a
+  > number behind it:** the dogfood tracker reads 20 hand-tested against 116
+  > untested, so auditing "every shipped feature" today means auditing features
+  > nobody has used. Owner's call which way it goes; see #965's issue comment.
 - Adapter order by likely demand: Codex → Gemini → Aider → generic.
 - Plugin API alpha gate: only after 2-3 dissimilar internal consumers exist on
   the seams (§5.23) — check the registry's actual consumer list before

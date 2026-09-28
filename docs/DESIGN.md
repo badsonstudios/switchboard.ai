@@ -1531,7 +1531,11 @@ Every session carries an identity that renders IDENTICALLY everywhere it appears
 
 - **Title**: defaults to folder name (full path in tooltip); user-editable.
 - **Accent color**: auto-assigned from a distinguishable palette; user-overridable.
-  Applied to card border, sidebar dot, feed entries, toast edge.
+  Applied to card border, the sessions-rail **edge bar**, feed entries, toast edge.
+  *(Was "sidebar dot" until 2026-09-28, #688 — the rail has drawn an edge bar,
+  not a dot, since 2026-07-26. A doc line describing a shape the app stopped
+  drawing two months earlier is exactly the drift the cut sweep exists to catch,
+  so it was fixed rather than swept into Phase 3.)*
   **An accent is a FIELD colour, never a text ink** *(amended 2026-08-10, Dan's
   call, #269)* — a stripe, a dot, a ring, a badge's background. It is chosen to
   be DISTINGUISHABLE from the other seven, which is a different job from being
@@ -4343,8 +4347,33 @@ context transfer, and the attention queue work across monitors.
   xterm.js + hard scrollback cap before S6/S7 are asserted anywhere
 - Windows first, but built on cross-platform stack; mac/linux CI builds from day one
 
-**Phase 2 — the switchboard**
+**Phase 2 — the switchboard** ✅ **SHIPPED — CUT 2026-09-28 at v0.8.100**
 
+> **THE CUT, 2026-09-28.** All nine exit criteria met (E22, the last epic,
+> completed the same day); the GitHub milestone is **closed at 0 open / 406
+> closed**. Epics delivered: **E7–E22** — every one of E7, E8, E9, E10, E11 (13
+> items), E12, E13 (6), E14, E15, E16, E17, E18 (15), E19, E20, E22, and **E21
+> carried forward to Phase 3** (responsiveness; it was never an exit criterion
+> and is blocked on the owner's laptop capture).
+>
+> **Phase 2 shipped on its exit criteria, not on an empty issue list** — the
+> owner's 2026-09-26 call. The 63 open issues at the cut went three ways: **45 to
+> Phase 3**, **14 to a new standing "Flakes & CI health" lane** (11 flake
+> sightings + #255/#323/#671 tooling hygiene — deliberately NOT a phase, so that
+> a phase's open count means product work owed), and **4 closed as verified dead**
+> (#607 already fixed · #659 and #518 both moot since the PTY stack and
+> `@xterm/addon-search` left the tree · #688 fixed in the cut's own PR). The
+> full accounting, including the evidence behind each close, is in
+> `docs/plans/04-phase-2-switchboard.md`'s cut block.
+>
+> **⚠️ WHAT NINE GREEN ROWS DO NOT MEAN.** The criteria were *demonstrated*,
+> largely by e2e; the product has not been *used*. The dogfood tracker reads **20
+> hand-tested against 116 untested** at the cut, and **criterion 5 rests on
+> `dispatch.spec.ts`, not on the owner having watched a dispatched review come
+> back** — all of E13 shipped in v0.8.100 unexercised by hand. That is recorded
+> here because a table of ✅ is precisely where such a gap goes unnoticed, and
+> because it is the same disease as E13's: something real that no count can see.
+>
 > **AUDIT 2026-09-25 — what this list actually delivered, checked line by line
 > against the code rather than against the issue tracker.** Asked for by the
 > owner: *"make sure our features are all there."* The tracker said Phase 2 was
@@ -4465,7 +4494,38 @@ context transfer, and the attention queue work across monitors.
 these three lean on Phase 3 surfaces: watcher windows + undercard tray; tray
 mode + session archive v1; fleet snapshots + layout DSL.)*
 
-**Phase 3 — the IDE**
+**Phase 3 — the IDE** 🚧 **CURRENT — milestone opened 2026-09-28; scope in
+`docs/plans/06-phase-3-ide.md` (epics E23–E38)**
+
+> **SCOPED 2026-09-28 at the Phase 2 cut.** This list is still the authoritative
+> feature source; what the plan file adds is the epic breakdown, the dependency
+> order, and **the 45 issues swept in from Phase 2**, which are raw material, not
+> planned work items — per `00-process.md`, items are filed just-in-time.
+>
+> **Three things this phase now owns that this list does not name**, all arriving
+> from the sweep rather than from §8:
+>
+> - **E21 responsiveness, carried forward** (#904, #716, #740, #719, #743, #744,
+>   #697 — labelled `perf`). Not an exit criterion in Phase 2 and blocked on the
+>   owner's laptop capture, so it moved rather than held the cut. **#719 —
+>   switchboard.exe pegging the laptop CPU — is the most severe open issue in the
+>   repo** and is evidence-blocked, not effort-blocked.
+> - **The trust boundary on injected context** (#832, #830). One session's output
+>   can steer *another* session's file attachments, because an `@word` inside
+>   injected context resolves against the receiving session. Filed as a bug; it
+>   is the signature feature (§5.4/§5.5 context transfer) with a forgery hole in
+>   it, and it has no Phase 3 parent on this list.
+> - **Onboarding and the manual** (#966 first-run tutorial, #965 the HTML manual
+>   audit). #965 **contradicts a Phase 4 planning note** that deliberately dated
+>   the manual build late; the note's reasoning still holds (auditing 116
+>   untested features is auditing what nobody has used), but a filed issue
+>   outranks a note. Sequencing is the owner's call — see #965's own comment.
+>
+> **Also promoted by the sweep, and worth naming because the owner reported it
+> himself:** #521, *"no discoverable way to open a file — I expected a Files
+> tab."* That is the gateway to this phase's largest epic; three document-viewer
+> bugs (#504, #506, #508) and one of §5.4's two surviving draggables sit behind it.
+
 - Watcher windows for subagents, undercard tray + attention bubbling
   (§5.6, §5.24) — moved from Phase 2 (2026-07-21)
 - Tray mode + session archive v1 (§5.25) — moved from Phase 2 (2026-07-21)

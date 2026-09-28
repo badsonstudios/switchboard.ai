@@ -1,5 +1,18 @@
 # Phase 2 — The Switchboard
 
+> # ✅ COMPLETE — CUT 2026-09-28 at **v0.8.100**.
+> Milestone **"Phase 2 - The Switchboard" is CLOSED** at **0 open / 406 closed**.
+> All nine exit criteria met; E22 (the last epic) completed 2026-09-28. The
+> non-blocking long tail was swept to **"Phase 3 - The IDE"** (45) and the
+> standing **"Flakes & CI health"** lane (14), with 4 closed as verified-dead.
+> **See the cut block at "Exit criteria" below** for the three-way split, the
+> evidence behind each close, and the one thing nine green rows cannot tell you
+> (hand-testing: 20 of 136).
+>
+> **The next phase is scoped in `docs/plans/06-phase-3-ide.md`.** This file is
+> history now — read it for how Phase 2 went, not for what to do next. `PROGRESS.md`
+> remains the authority on live state.
+
 **Theme:** sessions become aware of each other; the attention system matures;
 the session window grows up (richer cards, layout modes, pop-outs).
 
@@ -1965,6 +1978,52 @@ quality of the answer, not the mechanism that asks for it.
 
 ## Exit criteria (Phase 2 ships when)
 
+> # 🚩 PHASE 2 IS CUT — 2026-09-28, at **v0.8.100**.
+> **All nine criteria met (E22 completed 2026-09-28); milestone closed at
+> 0 open / 406 closed; the long tail swept.** The owner asked for the cut in the
+> same breath as the sweep, which is the right order: the queue had to stop
+> overstating what this phase owed before anyone could read what the next one is.
+>
+> **What the cut is, precisely:** Phase 2 shipped on its exit criteria, **not on
+> an empty issue list** (owner's 2026-09-26 call, recorded below). At the cut the
+> 63 open issues went three ways:
+>
+> | Where | N | What it holds |
+> |---|---|---|
+> | **Phase 3 - The IDE** (milestone 4) | **45** | Everything that is product work — including the carried-forward **E21 responsiveness family** (7, labelled `perf`) and the three `[user]` design sittings (labelled `owner-action`) |
+> | **Flakes & CI health** (milestone 5) | **14** | 11 flake sightings (labelled `flake`) + 3 CI/tooling hygiene items (#255 eslint typed preset, #323 prettier config, #671 type-hygiene stragglers). **A standing lane, not a phase** — held separately so that a phase's open count means *product work owed* |
+> | **Closed** | **4** | #607, #659, #518, #688 — all four verified dead against the code, not guessed |
+>
+> **The four closes, because "closed as stale" is the claim most worth showing
+> your work on:**
+>
+> * **#607** — already fixed. All four copies of the `auto-collapse` string in
+>   `en.json` lost their `(default)` at some point after #76 and nobody closed
+>   the ticket.
+> * **#659** — moot. It worried that untagged specs assert a live `.xterm` on the
+>   default-PTY fake, so the non-`[pty]` lane could not be read as Direct
+>   coverage. **#952 deleted the PTY stack**: there is no `src/shared/ipc/pty.ts`,
+>   no terminal pane, and every surviving `.xterm` in `e2e/` is a past-tense
+>   comment. The untagged lane *is* the Direct lane now.
+> * **#518** — moot. An upstream `@xterm/addon-search` defect, test-pinned in
+>   #516. **`@xterm/addon-search` is not in `package.json` at all any more.** An
+>   upstream bug in a package we do not ship is not a bug we own.
+> * **#688** — **fixed in the cut's own PR** rather than triaged. DESIGN §5.11
+>   said "sidebar dot" where the rail has drawn an edge bar since 2026-07-26. A
+>   one-line doc drift is cheaper to fix than to carry.
+>
+> **⚠️ AND THE ONE THING THE SCOREBOARD CANNOT TELL YOU, stated here because a
+> green row is exactly where it would hide.** Nine ✅ means nine criteria were
+> *demonstrated*, largely by e2e. It does not mean the product has been *used*.
+> The dogfood tracker reads **20 hand-tested against 116 untested** at the cut,
+> and **criterion 5 — a dispatched clean-room review round-tripping its
+> findings — is ticked on the strength of `dispatch.spec.ts`, not on the owner
+> having watched a review come back.** All of E13 shipped in v0.8.100 and not one
+> row of it has been exercised by hand. Cutting while carrying that is a
+> legitimate call and it was made deliberately; what it is not is evidence that
+> the gap closed. The owner's dogfood sitting is the thing that closes it, and
+> bugs it files outrank everything now sitting in Phase 3.
+>
 > **SCOREBOARD, audited against the code 2026-09-25 — 7 of 9 met, and the two
 > that are not have different shapes.** Criterion **5 is not started and not
 > filed** (E13, above). Criterion **3 is met but thinner than §5.16 specifies** —
