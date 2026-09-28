@@ -1347,14 +1347,28 @@ app
       // …and it fails open like a hook hold does (#319). Without these a closed
       // window parked a `can_use_tool` for EVER — no timeout, no liveness gate,
       // and nothing to release what was already held.
-      { hasLiveWindow }
+      {
+        hasLiveWindow,
+        // A per-file grant has to resolve a relative path against the session's
+        // own directory, and the router only ever sees a session id (#974).
+        // Null for a session the manager has forgotten, which
+        // StreamPermissions.grantKey reads as 'cannot resolve' and fails CLOSED
+        // on: an unresolvable grant that matched would be a standing auto-allow
+        // on a file the user never saw.
+        folderOf: (sessionId) => manager.get(sessionId)?.identity.folder ?? null,
+      }
     );
     manager.onStreamMessage((sessionId, msg) => streamPermissions.offer(sessionId, msg));
     // "Allow all (this session)" means no hold, no needs-permission event and
     // no beep — including in Direct mode (#319). The router answers the call;
     // only the pump can stop the status that rings the bell. See
     // `setPermissionHoldSuppressor`.
-    manager.setPermissionHoldSuppressor((sessionId) => streamPermissions.isAllowAll(sessionId));
+    manager.setPermissionHoldSuppressor((sessionId, msg) =>
+      // WILL-AUTO-ALLOW, not IS-ALLOW-ALL (#974). The two were the same
+      // question while allow-all was the only standing grant; a per-file one
+      // is a property of the REQUEST, so the id alone cannot answer it.
+      streamPermissions.willAutoAllow(sessionId, msg)
+    );
     // the CLI's own slash-command list, off the same stream (P2-E18-09).
     //
     // A SEPARATE subscription, not a second call inside the one above: the

@@ -336,6 +336,13 @@ export const CHANNEL_CAPABILITIES = {
   'audio:failed': 'settings.read',
   // The five `pty:*` channels went with the transport (#952).
   'sessions:allowAllSession': 'sessions.write',
+  // The ladder's middle rung and the revoke surface (#974). `allowFile` widens
+  // what the session may do without asking, so it is a write; `revoke` NARROWS
+  // it and is a write for the same reason `setModel` is — it changes what the
+  // running session will do next. `standingGrants` only reports.
+  'sessions:allowFileForSession': 'sessions.write',
+  'sessions:revokeStandingGrant': 'sessions.write',
+  'sessions:standingGrants': 'sessions.read',
   'sessions:cards': 'sessions.read',
   'sessions:closeCard': 'sessions.spawn',
   'sessions:create': 'sessions.spawn',
@@ -502,6 +509,11 @@ export const CHANNEL_CAPABILITIES = {
   'sessions:feedBlock': 'transcripts.read',
   'sessions:feedReset': 'transcripts.read',
   'sessions:permissionRequest': 'sessions.read',
+  // the push half of `sessions:standingGrants` (#974). Its OWN name, like
+  // `permissionRequest` beside `pendingPermissions`: one map, one key, and a
+  // push that shared a handle's name would be one typo from being routed as
+  // the wrong kind of channel.
+  'sessions:standingGrantsChanged': 'sessions.read',
   'sessions:permissionResolved': 'sessions.read',
   // "bring this card to the front" — pushed when the user clicked an OS toast
   // for a held permission (P2-E14-04). `sessions.read` and not `.write`: it

@@ -88,6 +88,7 @@ import { argumentSummary } from '../lib/permission-batches';
 import { nextPin, TAIL_SLACK } from '../lib/feed-pin';
 import { ApprovalPreview } from './ApprovalPreview';
 import { DenyFeedbackField } from './DenyFeedback';
+import { targetPath } from '../../../shared/tool-paths';
 import type { DecideHeld } from '../../../shared/ipc/permissions';
 import {
   filterCommands,
@@ -354,6 +355,8 @@ export function FeedView(props: {
   /** the shared signature — see `DecideHeld`, which exists because this one
    *  has now quietly lost an argument twice */
   onDecide?: DecideHeld;
+  /** grant every later call on one file, and answer this one (#974) */
+  onAllowFile?: (filePath: string) => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const [blocks, setBlocks] = React.useState<FeedBlockDto[]>([]);
@@ -1195,6 +1198,7 @@ export function FeedView(props: {
           approval={props.approval}
           queued={props.approvalQueued ?? 0}
           onDecide={props.onDecide}
+          onAllowFile={props.onAllowFile}
           colorScheme={props.colorScheme}
         />
       )}
@@ -1243,6 +1247,7 @@ function ApprovalBar({
   approval,
   queued,
   onDecide,
+  onAllowFile,
   colorScheme,
 }: {
   approval: {
@@ -1253,10 +1258,29 @@ function ApprovalBar({
   };
   queued: number;
   onDecide: DecideHeld;
+  /**
+   * Grant every later call on ONE file, and answer this one (#974).
+   *
+   * A NAMED PROP RATHER THAN A FIFTH POSITIONAL ARGUMENT ON `onDecide`, and
+   * that is a direct consequence of #973's review: `onDecide` had quietly lost
+   * `updatedInput` and then `reason` at a seam that typechecked either way, and
+   * the lesson was that this signature grows badly. Granting a file is also not
+   * a KIND of decision — it is a standing preference the bar happens to be a
+   * place to set, which is exactly what `sessionStore.setAllowAll` already is
+   * beside its own decision.
+   *
+   * Absent means the host cannot grant (tests, any future embedder), and the
+   * button is not drawn rather than drawn dead.
+   */
+  onAllowFile?: (filePath: string) => void;
   /** absent means the plain panes — see `ApprovalPreview` */
   colorScheme?: 'light' | 'dark';
 }): React.JSX.Element {
   const { t } = useTranslation();
+  // Which file this call would touch, or null for one that touches none — the
+  // SHARED rule (`shared/tool-paths`), so the button cannot offer a path main
+  // would not match a later call against.
+  const filePath = targetPath(approval.input);
   // WHICH REQUEST the objection field is open for, not merely whether it is
   // open (#973). Consecutive holds in one session reuse this component — the
   // props change and nothing remounts — so a boolean would leave the field open
@@ -1406,11 +1430,33 @@ function ApprovalBar({
         />
       )}
       {/* `flexShrink: 0`: whatever else gives, the ANSWER does not. §5.16 is about a
-          held request being answerable, and a button below the fold is not. */}
-      <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+          held request being answerable, and a button below the fold is not.
+
+          `flexWrap` SINCE #974, when the row reached five. Without it a narrow
+          card overflows horizontally and the buttons past the edge are simply
+          unreachable — there is no scrollbar on a flex row and nothing tells the
+          user what they are missing. Wrapping makes the row taller instead,
+          which costs the diff some height and keeps every answer clickable;
+          that is the same trade the whole bar already makes. */}
+      <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap' }}>
         <button onClick={() => onDecide('allow')} style={btn(true)}>
           {t('approval.allow')}
         </button>
+        {/* §5.16's MIDDLE RUNG (#974), in §5.16's own order: between "this one"
+            and "everything". Only for a call that names a file — a `Bash`
+            command has nothing to scope a grant to, and `targetPath` is the one
+            list main matches against, so the button cannot offer a path the
+            router would not recognise. */}
+        {onAllowFile && filePath !== null && approval.tool !== ASK_USER_QUESTION_TOOL && (
+          <button
+            data-approval-allow-file=""
+            title={t('approval.allowFileHint', { path: filePath })}
+            onClick={() => onAllowFile(filePath)}
+            style={btn(false)}
+          >
+            {t('approval.allowFile')}
+          </button>
+        )}
         {/* NOT for a question (#563). This bar only ever sees an
             `AskUserQuestion` when its payload failed to parse and the panel
             stood down â€” a rare fallback, but one where "Allow all (this

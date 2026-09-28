@@ -60,9 +60,12 @@ A shell command and the other one-sided requests keep the simple boxes, and are
 still trimmed with a **…** if they're very long — there's no diff to show for a
 command, and an editor would tell you less than the plain text does.
 
-Four buttons:
+Five buttons:
 
 - **Allow** — this one time.
+- **Approve all in this file** — allow this change, and every later change this
+  session makes **to that one file**, without asking again. It only appears when
+  the request names a file: a shell command has nothing to scope it to.
 - **Allow all (this session)** — stop asking for this session. It means it:
   from that click on, switchboard answers for you the moment Claude asks.
   Nothing appears on screen, nothing beeps, the taskbar doesn't flash, and no
@@ -76,6 +79,33 @@ Four buttons:
 - **Deny with feedback…** — refuse, *and say why*. A small box opens under the
   diff. Type your objection, press **Enter**, and your words go back to Claude
   along with the refusal.
+
+### Taking a standing approval back
+
+**Approve all in this file** and **Allow all (this session)** both set something
+*standing* — the session stops asking, and from then on you see nothing at all:
+no bar, no entry in the Events drawer, no sound. That is the point of them, and
+it is also why they need a way back.
+
+**The card's ⋯ menu has a STANDING APPROVALS section.** It is always there, and
+it says "None — this session asks every time" when there is nothing in it. When
+there is, each line is one approval with a **✕** beside it:
+
+- **Everything (this session)** — the blanket one.
+- One line per file, showing the end of the path. Hover, or use a screen reader,
+  for the whole thing.
+
+Take one back and the session asks about that file again, immediately. Taking
+back the blanket approval leaves your per-file ones alone, and vice versa.
+
+**A small dot on the ⋯ button** means something is standing. Worth knowing,
+because a session under "Allow all" cannot ask you anything — so without the dot,
+"it hasn't asked me about anything in a while" and "I told it not to" look
+identical.
+
+Standing approvals last as long as the *running session* does. Restart it, or
+close and reopen the card, and it asks again from scratch. Nothing is saved to
+disk.
 
 ### Saying why you said no
 

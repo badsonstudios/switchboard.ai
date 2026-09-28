@@ -333,6 +333,8 @@
   "approval": {
     "title": "Allow {tool}?",
     "allow": "Allow",
+    "allowFile": "Approve all in this file",
+    "allowFileHint": "Allow this, and every later change this session makes to {path} — until it restarts. Revocable from the card’s ⋯ menu.",
     "allowAll": "Allow all (this session)",
     "deny": "Deny",
     "denyFeedback": "Deny with feedback…",
@@ -346,6 +348,16 @@
     "cancel": "Cancel",
     "count": "{n} left",
     "placeholderCompact": "Why not? Enter sends"
+  },
+  "grants": {
+    "heading": "STANDING APPROVALS",
+    "none": "None — this session asks every time.",
+    "allowAll": "Everything (this session)",
+    "allowAllHint": "“Always allow for this session”: every gated call is answered for you, with nothing on screen and no sound, until the session restarts.",
+    "revokeAllowAll": "Stop allowing everything in this session",
+    "revokeFile": "Stop allowing changes to {path}",
+    "revokeIcon": "✕",
+    "menuHint": "{count, plural, one {# standing approval} other {# standing approvals}} in force — open to see or revoke"
   },
   "approvalPreview": {
     "write": "New contents — {count, plural, one {# line} other {# lines}}",

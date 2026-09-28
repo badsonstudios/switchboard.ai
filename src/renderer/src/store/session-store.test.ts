@@ -480,6 +480,45 @@ describe('identity maps that used to be module globals', () => {
     expect(allowAllSize(store)).toBe(1);
   });
 
+  // ⚠️ THE REGRESSION #974's REVIEW CAUGHT, and it is worth stating as a claim
+  // rather than as a test name: THIS SET AND MAIN'S MUST NOT DISAGREE.
+  //
+  // The shell keeps a copy of the allow-all grant so that a request already in
+  // flight when the grant was written is answered rather than queued
+  // (`intakePermission`, `ledgerAdmits`). Until #974 a grant could only ever be
+  // SET, so the two copies could not drift and nothing had to keep them in step.
+  // With a revoke they can: main clears its set and starts holding and PUSHING
+  // requests again, and a renderer still holding its own copy would silently
+  // allow every one of them. The user revokes, watches the list empty, and is
+  // still never asked — the one-way door moved one process to the left.
+  it('mirrors main when a standing grant is REVOKED, or the revoke is a lie', () => {
+    store.mapLiveToCard('live-1', 'card-A');
+    store.setAllowAll('live-1');
+    expect(store.isAllowAll('live-1')).toBe(true);
+
+    store.setAllowAllFromMain('live-1', false);
+
+    expect(store.isAllowAll('live-1')).toBe(false);
+    expect(allowAllSize(store)).toBe(0);
+  });
+
+  it('mirrors main when a grant is made somewhere else entirely', () => {
+    // the OS toast's Allow-all answers from MAIN with no window in the loop
+    // (`permission-toast.ts`), so this window learns about it from the push or
+    // not at all
+    store.mapLiveToCard('live-1', 'card-A');
+    store.setAllowAllFromMain('live-1', true);
+    expect(store.isAllowAll('live-1')).toBe(true);
+  });
+
+  it('is a no-op when it already agrees, so a push storm costs no re-renders', () => {
+    let notified = 0;
+    const off = store.subscribe(() => notified++);
+    store.setAllowAllFromMain('live-1', false);
+    expect(notified).toBe(0);
+    off();
+  });
+
   it("releases the corpse's grant when a respawn rebinds the card", () => {
     store.mapLiveToCard('live-1', 'card-A');
     store.setAllowAll('live-1');

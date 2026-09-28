@@ -20,7 +20,7 @@ import type {
   TranscriptSearchRequest,
   TranscriptSearchResult,
 } from '../shared/transcripts';
-import type { PermissionRequestDto } from '../shared/ipc/permissions';
+import type { PermissionRequestDto, StandingGrants } from '../shared/ipc/permissions';
 import type { FileReadResult, FileWatchNotice } from '../shared/ipc/fs';
 import type {
   McpAddRequest,
@@ -595,6 +595,45 @@ const api = {
     /** future gated calls for this LIVE session answer 'allow' in main (P2 #19) */
     allowAllSession: (liveId: string): Promise<void> =>
       ipcRenderer.invoke('sessions:allowAllSession', liveId),
+    /**
+     * §5.16's middle rung (#974): approve everything this LIVE session does to
+     * ONE file. Resolves to the path main is actually matching on, or `null`
+     * when it could not resolve one — never a bare boolean, because a surface
+     * that listed the spelling the user clicked would be listing something other
+     * than the grant in force.
+     */
+    allowFileForSession: (liveId: string, filePath: string): Promise<string | null> =>
+      ipcRenderer.invoke('sessions:allowFileForSession', liveId, filePath),
+    /**
+     * Take a standing grant back — `'all'` for "Always allow for this session",
+     * `'file'` plus a path for one per-file grant.
+     *
+     * ⚠️ Until #974 there was no way to do this AT ALL: the blanket grant was
+     * cleared only when the session died, so a mis-click on a bar was a one-way
+     * door. Two kinds on one channel, and `kind` is validated on main's side.
+     */
+    revokeStandingGrant: (
+      liveId: string,
+      kind: 'all' | 'file',
+      filePath?: string
+    ): Promise<boolean> =>
+      ipcRenderer.invoke('sessions:revokeStandingGrant', liveId, kind, filePath),
+    /** what this LIVE session is standing on right now (#974) */
+    standingGrants: (liveId: string): Promise<StandingGrants> =>
+      ipcRenderer.invoke('sessions:standingGrants', liveId),
+    /**
+     * A grant changed — pushed after EVERY mutation, including the renderer's
+     * own. A surface that refreshed only when it was the one asking would go
+     * stale the moment anything else moved a grant (the OS toast's Allow-all, a
+     * teardown), and a stale list of standing approvals is the defect #974 is.
+     */
+    onStandingGrants: (
+      cb: (g: StandingGrants & { sessionId: string }) => void
+    ): (() => void) => {
+      const h = (_e: unknown, g: StandingGrants & { sessionId: string }) => cb(g);
+      ipcRenderer.on('sessions:standingGrantsChanged', h);
+      return () => ipcRenderer.removeListener('sessions:standingGrantsChanged', h);
+    },
     pendingPermissions: (): Promise<PermissionRequestDto[]> =>
       ipcRenderer.invoke('sessions:pendingPermissions'),
     onPermissionResolved: (cb: (r: { requestId: string }) => void): (() => void) => {

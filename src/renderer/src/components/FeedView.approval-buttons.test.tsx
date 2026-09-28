@@ -1,5 +1,10 @@
 // @vitest-environment jsdom
-// Deny with feedback, on the card's own bar (P2-E22-02, #973).
+// The approval bar's BUTTONS — E22's two additions to §5.16's ladder.
+//
+// Named for the bar rather than for one item, because both things it covers are
+// the same hazard in the same row: `Deny with feedback` (P2-E22-02, #973) and
+// `Approve all in this file` (P2-E22-03, #974). It was
+// `FeedView.deny-feedback.test.tsx` until the second one arrived.
 //
 // WHAT THIS FILE IS REALLY GUARDING is a dropped argument. `decidePermission`
 // has accepted a `reason` since the stream transport landed, and main has always
@@ -41,7 +46,15 @@ function stubBridge(): void {
   };
 }
 
-async function mountHeld(requestId = 'r1'): Promise<HTMLElement> {
+async function mountHeld(
+  requestId = 'r1',
+  tool = 'Bash',
+  input: Record<string, unknown> = { command: 'rm -rf build' },
+  // `undefined` is a REAL case and the default is deliberately not a stub: an
+  // absent `onAllowFile` is what a host that cannot grant looks like, and #974's
+  // button has to be absent rather than dead for it.
+  onAllowFile?: (filePath: string) => void
+): Promise<HTMLElement> {
   const host = document.createElement('div');
   document.body.appendChild(host);
   root = createRoot(host);
@@ -52,10 +65,11 @@ async function mountHeld(requestId = 'r1'): Promise<HTMLElement> {
         cardId="card-1"
         visible
         controlsLock={null}
-        approval={{ requestId, tool: 'Bash', input: { command: 'rm -rf build' } }}
+        approval={{ requestId, tool, input }}
         onDecide={(decision, allowAll, updatedInput, reason) =>
           decisions.push([decision, allowAll, updatedInput, reason])
         }
+        onAllowFile={onAllowFile}
       />
     );
   });
@@ -254,5 +268,63 @@ describe('the objection field (P2-E22-02, #973)', () => {
     // …rather than dropping it on `document.body`, which leaves a keyboard user
     // mid-answer Tabbing from the top of the document
     expect(document.activeElement).toBe(trigger(host));
+  });
+});
+
+// ── P2-E22-03 (#974): the ladder's middle rung ──────────────────────────────
+//
+// This block asserts the WIRING, for the reason this whole file exists: the
+// button is drawn from a shared rule (`shared/tool-paths`) that main also
+// matches against, so a card that offered a path the router would not recognise
+// would grant nothing and say nothing about it.
+describe('Approve all in this file (P2-E22-03, #974)', () => {
+  const allowFileBtn = (h: HTMLElement): HTMLButtonElement | null =>
+    h.querySelector('[data-approval-allow-file]');
+
+  it('is offered for a call that names a file, and hands over THAT path', async () => {
+    const granted: string[] = [];
+    const host = await mountHeld('r1', 'Write', { file_path: 'C:/p/a.ts', content: 'x' }, (p) =>
+      granted.push(p)
+    );
+    const btn = allowFileBtn(host);
+    expect(btn).not.toBeNull();
+    await act(async () => btn!.click());
+    expect(granted).toEqual(['C:/p/a.ts']);
+  });
+
+  it('reads NotebookEdit\u2019s own key, which is not file_path', async () => {
+    const granted: string[] = [];
+    const host = await mountHeld(
+      'r1',
+      'NotebookEdit',
+      { notebook_path: '/p/n.ipynb', new_source: 'x' },
+      (p) => granted.push(p)
+    );
+    await act(async () => allowFileBtn(host)!.click());
+    expect(granted).toEqual(['/p/n.ipynb']);
+  });
+
+  // A `Bash` call has nothing to scope a grant to. Absent rather than disabled:
+  // a greyed button advertises something the app has deliberately refused.
+  it('is not drawn for a call that touches no file', async () => {
+    const host = await mountHeld('r1', 'Bash', { command: 'rm -rf build' }, () => {});
+    expect(allowFileBtn(host)).toBeNull();
+  });
+
+  it('is not drawn for a QUESTION, which no standing grant answers (#563)', async () => {
+    const host = await mountHeld(
+      'r1',
+      'AskUserQuestion',
+      { file_path: '/p/a.ts', questions: 'malformed' },
+      () => {}
+    );
+    expect(allowFileBtn(host)).toBeNull();
+  });
+
+  // #261's lesson, and the one this file was extended for: without the prop the
+  // button is ABSENT and the card still works, so a forgotten thread is silent.
+  it('is not drawn when the host cannot grant', async () => {
+    const host = await mountHeld('r1', 'Write', { file_path: '/p/a.ts' }, undefined);
+    expect(allowFileBtn(host)).toBeNull();
   });
 });

@@ -119,7 +119,9 @@ export class SessionManager {
   private readonly streamMessageListeners = new Set<
     (sessionId: string, msg: Record<string, unknown>) => void
   >();
-  private permissionHoldSuppressor: ((sessionId: string) => boolean) | null = null;
+  private permissionHoldSuppressor:
+    | ((sessionId: string, msg: Record<string, unknown>) => boolean)
+    | null = null;
 
   constructor(
     private readonly registry: ContributionRegistry<MainContributions>,
@@ -669,7 +671,7 @@ export class SessionManager {
           this.setNativeSessionId(id, m.session_id, cleared ? 'clear' : undefined);
         }
         const ev = streamStatusEvent(m);
-        if (ev && !this.holdSuppressed(id, ev)) this.apply(id, ev);
+        if (ev && !this.holdSuppressed(id, ev, m)) this.apply(id, ev);
         for (const l of this.streamMessageListeners) {
           try {
             l(id, m);
@@ -903,26 +905,37 @@ export class SessionManager {
    * SUPPRESSES `permission-held` AND NOTHING ELSE. Every other stream event
    * from an allow-all session is exactly as meaningful as before.
    */
-  setPermissionHoldSuppressor(fn: (sessionId: string) => boolean): void {
+  /**
+   * ⚠️ TAKES THE MESSAGE SINCE #974, and the widening is the point. It was
+   * `(sessionId) => boolean`, which was enough while the only standing grant was
+   * allow-all — a property of the SESSION. A per-file grant is a property of the
+   * REQUEST, so the id alone cannot answer it, and without the message a granted
+   * call would still flash `needs-permission`, raise an Events row and beep one
+   * message before the router answered it in the same tick.
+   */
+  setPermissionHoldSuppressor(
+    fn: (sessionId: string, msg: Record<string, unknown>) => boolean
+  ): void {
     this.permissionHoldSuppressor = fn;
   }
 
   /** Should this event be dropped rather than applied? Only ever true for a
-   *  `permission-held` from an allow-all session — and never when the
-   *  predicate throws: "I can't tell" must fall back to the honest status, not
-   *  to silence (a suppressed hold nobody answers is a card stuck on
-   *  `working` while the CLI waits). */
-  private holdSuppressed(id: string, ev: SessionEvent): boolean {
+   *  `permission-held` the router is about to answer at the server — an
+   *  allow-all session, or a per-file grant covering this very call (#974) —
+   *  and never when the predicate throws: "I can't tell" must fall back to the
+   *  honest status, not to silence (a suppressed hold nobody answers is a card
+   *  stuck on `working` while the CLI waits). */
+  private holdSuppressed(id: string, ev: SessionEvent, msg: Record<string, unknown>): boolean {
     if (ev.kind !== 'permission-held' || !this.permissionHoldSuppressor) return false;
     let suppress = false;
     try {
-      suppress = this.permissionHoldSuppressor(id) === true;
+      suppress = this.permissionHoldSuppressor(id, msg) === true;
     } catch (err) {
       this.log.error('permission-hold suppressor threw', { sessionId: id, error: String(err) });
       return false;
     }
     if (suppress) {
-      this.log.debug('permission-held suppressed: allow-all session', { sessionId: id });
+      this.log.debug('permission-held suppressed: the router will answer it', { sessionId: id });
     }
     return suppress;
   }

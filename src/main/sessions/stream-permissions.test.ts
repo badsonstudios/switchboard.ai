@@ -4,6 +4,7 @@
 // case, and it appears here twice over: once as the routing test, and once end
 // to end through the #134 fake, where the FILE actually gets written.
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
+import path from 'path';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
 import { StreamPermissions } from './stream-permissions';
 import { SessionEvent, transition } from './state-machine';
@@ -1644,5 +1645,278 @@ describe('a dispatched session and ExitPlanMode (#948, §5.15)', () => {
     perms.forgetSession('s1', 'card closed');
     perms.offer('s1', exitPlanMode());
     expect(requests).toHaveLength(1); // held, like any other session's
+  });
+});
+
+/**
+ * Grant a file THE WAY THE APP DOES, and leave the router otherwise as it was.
+ *
+ * ⚠️ A BARE `allowFile` IS REFUSED SINCE REVIEW, and that refusal is the point:
+ * the channel will not grant a path this session is not currently asking
+ * about, so nothing can pre-plant a standing auto-allow on a file no call ever
+ * named. The UI already satisfies it — the button exists only on a HELD bar —
+ * so these tests have to as well, and a helper beats eight copies of the same
+ * three lines.
+ *
+ * Offer, grant, answer, then wipe the spies: every test here is about what
+ * happens to the NEXT request.
+ */
+const grant = (p: StreamPermissions, sessionId: string, filePath: string): string | null => {
+  p.offer(sessionId, canUseTool('grant-seed', filePath));
+  const key = p.allowFile(sessionId, filePath);
+  p.decide(`stream:${sessionId}:grant-seed`, 'allow');
+  sent.length = 0;
+  requests.length = 0;
+  applied.length = 0;
+  return key;
+};
+
+/**
+ * P2-E22-03 (#974) — the ladder's middle rung, and the door back out of both.
+ *
+ * ⚠️ THE ASSERTIONS ARE ABOUT WHAT NEVER HAPPENS. A per-file grant's whole
+ * promise is negative — no hold, no `needs-permission`, no beep — so a test
+ * that only checked the CLI got an allow would pass against a build that also
+ * pushed a request, applied a status and rang the bell. Every case below reads
+ * `requests` and `applied` as well as `sent`.
+ */
+describe('approve all in this file (P2-E22-03, #974)', () => {
+  /** a fresh router that knows where the session lives, for relative paths */
+  const withFolder = (folder: string | null): StreamPermissions => {
+    const p = new StreamPermissions(
+      (sessionId, msg) => {
+        sent.push({ sessionId, msg: msg as Record<string, unknown> });
+        return true;
+      },
+      (sessionId, ev) => applied.push({ sessionId, ev }),
+      createLogger(new LogSink({ dir }), 'perm'),
+      { folderOf: () => folder }
+    );
+    p.onPermissionRequest((r) => requests.push(r));
+    return p;
+  };
+  const WIN = process.platform === 'win32';
+  const ABS = WIN ? 'C:\\p\\src\\a.ts' : '/p/src/a.ts';
+  const OTHER = WIN ? 'C:\\p\\src\\b.ts' : '/p/src/b.ts';
+
+
+  it('a granted file is answered at the server: no hold, no request, no status', () => {
+    grant(perms, 's1', ABS);
+    perms.offer('s1', canUseTool('req-1', ABS));
+
+    expect(sent).toHaveLength(1);
+    expect((sent[0].msg.response as { response: Record<string, unknown> }).response).toEqual({
+      behavior: 'allow',
+      updatedInput: { file_path: ABS, content: 'echo hi\n' },
+    });
+    // the three negatives, which are the actual done-when
+    expect(requests).toEqual([]);
+    expect(perms.pendingRequests()).toEqual([]);
+    expect(applied).toEqual([]);
+  });
+
+  it('a DIFFERENT file still holds — the grant is one file, not a mood', () => {
+    grant(perms, 's1', ABS);
+    perms.offer('s1', canUseTool('req-1', OTHER));
+
+    expect(requests).toHaveLength(1);
+    expect(sent).toEqual([]);
+  });
+
+  it('a tool with no path is never covered, whatever is granted', () => {
+    grant(perms, 's1', ABS);
+    perms.offer('s1', {
+      type: 'control_request',
+      request_id: 'req-2',
+      request: { subtype: 'can_use_tool', tool_name: 'Bash', input: { command: 'rm -rf /' } },
+    });
+    expect(requests).toHaveLength(1);
+  });
+
+  it('a QUESTION still holds, exactly as it does under allow-all (#563)', () => {
+    // "Approve everything in this file" is no more an answer to a question than
+    // "allow all tools" is. Asserted on both the router and the suppressor,
+    // because they are two code paths and the pump only consults the second.
+    grant(perms, 's1', ABS);
+    const q = {
+      type: 'control_request',
+      request_id: 'q-1',
+      request: {
+        subtype: 'can_use_tool',
+        tool_name: 'AskUserQuestion',
+        input: { file_path: ABS, questions: [] },
+      },
+    };
+    perms.offer('s1', q);
+    expect(requests).toHaveLength(1);
+    expect(perms.willAutoAllow('s1', q)).toBe(false);
+  });
+
+  describe('one file, two spellings — the #683 fold rule', () => {
+    // ⚠️ THE CASE THE DONE-WHEN NAMES IS NOT THE CASE THAT BITES. It asks for a
+    // relative and an absolute reference to be one grant; the CLI's own tool
+    // schema says `The file_path parameter must be an absolute path, not a
+    // relative path`, so that is a model mistake the CLI rejects. What actually
+    // happens is TWO ABSOLUTE SPELLINGS — the captured `can_use_tool` payload
+    // spells a Windows path with forward slashes (`C:/p/.claude/...`) while
+    // anything else on the platform uses backslashes.
+    it.runIf(WIN)('separators and case both fold on a case-insensitive host', () => {
+      grant(perms, 's1', 'C:/p/src/a.ts');
+      perms.offer('s1', canUseTool('req-1', 'C:\\P\\SRC\\A.TS'));
+      expect(requests).toEqual([]);
+      expect(sent).toHaveLength(1);
+    });
+
+    it.runIf(!WIN)('case does NOT fold on a case-sensitive host', () => {
+      grant(perms, 's1', '/p/src/a.ts');
+      perms.offer('s1', canUseTool('req-1', '/p/src/A.ts'));
+      // two different files on Linux, and folding them would widen a grant the
+      // user never made
+      expect(requests).toHaveLength(1);
+    });
+
+    it('a `..` segment resolves to the same grant', () => {
+      grant(perms, 's1', ABS);
+      const round = WIN ? 'C:\\p\\src\\..\\src\\a.ts' : '/p/src/../src/a.ts';
+      perms.offer('s1', canUseTool('req-1', round));
+      expect(requests).toEqual([]);
+    });
+  });
+
+  describe('a relative path, which the CLI is not supposed to send', () => {
+    it('resolves against the session folder when we know it', () => {
+      const p = withFolder(WIN ? 'C:\\p' : '/p');
+      grant(p, 's1', ABS);
+      p.offer('s1', canUseTool('req-1', `src${path.sep}a.ts`));
+      expect(requests).toEqual([]);
+      expect(sent).toHaveLength(1);
+    });
+
+    it('FAILS CLOSED when we do not — an unresolvable grant must never match', () => {
+      const p = withFolder(null);
+      // held, so the "is this session asking about it" check cannot be what
+      // refuses the grant — it has to be the unresolvable path
+      p.offer('s1', canUseTool('seed', 'src/a.ts'));
+      expect(p.allowFile('s1', 'src/a.ts')).toBeNull();
+      p.decide('stream:s1:seed', 'deny');
+      requests.length = 0;
+
+      p.offer('s1', canUseTool('req-1', 'src/a.ts'));
+      expect(requests).toHaveLength(1);
+    });
+  });
+
+  it('returns the FOLDED key, so the surface lists what is actually matched', () => {
+    const key = grant(perms, 's1', ABS);
+    expect(key).toBe(WIN ? ABS.toLowerCase() : ABS);
+    expect(perms.standingGrants('s1')).toEqual({ allowAll: false, files: [key] });
+  });
+
+  it('refuses a path that is not a usable string', () => {
+    // with a real request held, so the refusal is about the VALUE
+    perms.offer('s1', canUseTool('seed', ABS));
+    expect(perms.allowFile('s1', { toString: () => ABS })).toBeNull();
+    expect(perms.allowFile('s1', '')).toBeNull();
+    expect(perms.standingGrants('s1').files).toEqual([]);
+  });
+
+  it('is keyed by LIVE id: another session is unaffected, and a respawn asks again', () => {
+    grant(perms, 's1', ABS);
+    perms.offer('s2', canUseTool('req-1', ABS));
+    expect(requests).toHaveLength(1); // s2 never got the grant
+
+    perms.forgetSession('s1', 'card closed');
+    requests.length = 0;
+    perms.offer('s1', canUseTool('req-2', ABS));
+    expect(requests).toHaveLength(1); // …and s1's grant died with the live id
+  });
+});
+
+/**
+ * The door back out (#974). It did not exist for EITHER rung: the blanket grant
+ * was cleared only by `forgetSession`, so a mis-click was a one-way door until
+ * the session died.
+ */
+describe('revoking a standing grant (P2-E22-03, #974)', () => {
+  const WIN = process.platform === 'win32';
+  const ABS = WIN ? 'C:\\p\\src\\a.ts' : '/p/src/a.ts';
+
+  it('revoking allow-all makes the session ask again', () => {
+    perms.setAllowAll('s1');
+    expect(perms.revokeAllowAll('s1')).toBe(true);
+    perms.offer('s1', canUseTool('req-1'));
+    expect(requests).toHaveLength(1);
+    expect(perms.isAllowAll('s1')).toBe(false);
+  });
+
+  it('revoking one file leaves the others standing', () => {
+    const other = WIN ? 'C:\\p\\src\\b.ts' : '/p/src/b.ts';
+    grant(perms, 's1', ABS);
+    grant(perms, 's1', other);
+    expect(perms.revokeFile('s1', ABS)).toBe(true);
+
+    perms.offer('s1', canUseTool('req-1', ABS));
+    expect(requests).toHaveLength(1); // asks again
+    perms.offer('s1', canUseTool('req-2', other));
+    expect(requests).toHaveLength(1); // still granted
+  });
+
+  // THE GESTURE THE WHOLE ITEM IS SIZED AROUND: a user who mis-clicked the
+  // blanket grant wants it gone WITHOUT losing the files they meant. Two sets
+  // rather than one union is what makes this expressible.
+  it('the two rungs revoke independently', () => {
+    // FILE FIRST, then the blanket one: with allow-all already set the seeding
+    // request is answered at the server and never becomes pending, so the grant
+    // would be refused for the right reason and the test would prove nothing.
+    grant(perms, 's1', ABS);
+    perms.setAllowAll('s1');
+    perms.revokeAllowAll('s1');
+
+    expect(perms.standingGrants('s1').allowAll).toBe(false);
+    expect(perms.standingGrants('s1').files).toHaveLength(1);
+    perms.offer('s1', canUseTool('req-1', ABS));
+    expect(requests).toEqual([]); // the file grant survived
+  });
+
+  it('revoking something that was never granted answers false rather than throwing', () => {
+    expect(perms.revokeAllowAll('s1')).toBe(false);
+    expect(perms.revokeFile('s1', ABS)).toBe(false);
+    expect(perms.revokeFile('s1', 42)).toBe(false);
+  });
+});
+
+/**
+ * `willAutoAllow` is what the PUMP asks, one message before this router sees
+ * anything (`SessionManager.holdSuppressed`). If it and `offer` ever disagreed,
+ * a granted call would flash `needs-permission`, raise an Events row and beep —
+ * or a held one would be silently suppressed and wait with no bar.
+ */
+describe('the suppressor agrees with the router (P2-E22-03, #974)', () => {
+  const ABS = process.platform === 'win32' ? 'C:\\p\\src\\a.ts' : '/p/src/a.ts';
+
+  it('true exactly when `offer` would answer at the server', () => {
+    const msg = canUseTool('req-1', ABS);
+    expect(perms.willAutoAllow('s1', msg)).toBe(false);
+
+    grant(perms, 's1', ABS);
+    expect(perms.willAutoAllow('s1', msg)).toBe(true);
+
+    perms.revokeFile('s1', ABS);
+    expect(perms.willAutoAllow('s1', msg)).toBe(false);
+
+    perms.setAllowAll('s1');
+    expect(perms.willAutoAllow('s1', msg)).toBe(true);
+  });
+
+  it('is false for anything that is not a can_use_tool', () => {
+    perms.setAllowAll('s1');
+    expect(perms.willAutoAllow('s1', { type: 'assistant' })).toBe(false);
+    expect(
+      perms.willAutoAllow('s1', {
+        type: 'control_request',
+        request_id: 'x',
+        request: { subtype: 'hook_callback' },
+      })
+    ).toBe(false);
   });
 });
