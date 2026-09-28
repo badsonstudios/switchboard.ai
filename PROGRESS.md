@@ -3,6 +3,75 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🚩 PHASE 2 IS CUT — 2026-09-28. **Phase 3 is the current milestone.**
+> Owner's instruction, in one pass: cut the phase, sweep the queue before he
+> starts filing dogfood bugs, scope Phase 3. All three done; **no code shipped in
+> this pass** — it is a planning and tracker change.
+>
+> **THE CUT.** Milestone **"Phase 2 - The Switchboard" is CLOSED at 0 open / 406
+> closed.** All nine exit criteria met, E22 complete, v0.8.100 shipped. Written
+> into `docs/plans/04-phase-2-switchboard.md` (header + a cut block at the exit
+> criteria) and **DESIGN §8**, whose Phase 2 heading now reads SHIPPED.
+>
+> **THE SWEEP — and the owner was right about the count.** `gh issue list` was
+> cross-checked against `gh api .../milestones` on every step: **63 open**, not
+> 30. It went three ways:
+>
+> | Where | N |
+> |---|---|
+> | **Phase 3 - The IDE** (milestone 4) | **45** |
+> | **Flakes & CI health** (milestone 5) | **14** |
+> | Closed as verified-dead | **4** |
+>
+> New labels, so the queue can be read by shape rather than by reading 45 titles:
+> **`phase-3`** · **`flake`** (the 11 sightings) · **`perf`** (the 7 carried E21
+> items) · **`owner-action`** (the 3 `[user]` sittings). **No open issue is
+> unmilestoned and none still carries `phase-2`** — both verified, not assumed.
+> **"Flakes & CI health" is a standing lane, NOT a phase**, so that a phase's open
+> count means *product work owed*; it holds the 11 flakes plus #255/#323/#671.
+>
+> **⭐ THE FOUR CLOSES WERE VERIFIED AGAINST THE CODE, AND THREE WERE ONLY
+> CLOSEABLE BECAUSE OF WORK THAT LANDED LAST WEEK.** "Closed as stale" is the
+> triage claim most likely to be a guess, so each one has its evidence in a
+> comment on the issue:
+>
+> * **#607** — already fixed. All four `auto-collapse` strings in `en.json` lost
+>   their `(default)` after #76 and nobody closed the ticket.
+> * **#659** — moot: **#952 deleted the PTY stack.** No `src/shared/ipc/pty.ts`,
+>   no terminal pane, and every surviving `.xterm` in `e2e/` is a past-tense
+>   comment. The untagged lane *is* the Direct lane now, which was the whole ask.
+> * **#518** — moot: **`@xterm/addon-search` is not in `package.json` at all.** An
+>   upstream defect in a package we no longer ship is not a bug we own.
+> * **#688** — **fixed in this PR** instead of triaged: DESIGN §5.11 said "sidebar
+>   dot" where the rail has drawn an edge bar since 2026-07-26.
+>
+> **PHASE 3 IS SCOPED → `docs/plans/06-phase-3-ide.md`** (new), epics **E23–E39**,
+> with `03-later-phases.md`'s Phase 3 outline slimmed to a pointer per the
+> plan-mode convention. **The milestone is filed; the issues are NOT** — per
+> `00-process.md`, items are filed just-in-time, and the 45 swept issues are
+> explicitly labelled in that file as *raw material, not work items*. Exit
+> criteria: 11, and **#10 is new** — hand-testing is not a backlog.
+>
+> **⚠️ THE DEBT THE CUT CARRIES, AND IT IS NOT A FOOTNOTE.** Nine ✅ means nine
+> criteria were *demonstrated*, largely by e2e — not that the product has been
+> *used*. The tracker reads **20 hand-tested against 116 untested**, and
+> **criterion 5 rests on `dispatch.spec.ts`, not on the owner having watched a
+> dispatched review come back**: all six items of E13 shipped in v0.8.100
+> unexercised by hand. Cutting while carrying that was a deliberate call with eyes
+> open, recorded in all three docs so it cannot later read as an oversight. Exit
+> criterion 10 exists so it happens once.
+>
+> **Next:** the owner's dogfood sitting (in flight — he is doing the **E21-02**
+> laptop capture now; **E21-02/03/04 are explicitly not to be started**). Bugs the
+> sitting files outrank everything in Phase 3. **Recommended first pick once he is
+> back: #832 + #830 together** — one session's output can steer another's file
+> attachments via `@word` inside injected context; it is a trust hole in the
+> signature feature, it is labelled a bug, and #830 carries the shared forgery
+> guard. Then **#978** (the one caveat v0.8.100's in-app release notes still
+> advertise, and the `deriveFeed` plumbing was measured five days ago), then
+> **#861** and **#981** as small wins. **#521** — *"no discoverable way to open a
+> file"*, owner-reported — outranks the two small ones and is the gateway to E25.
+
 > # 🚢 RELEASED — 2026-09-28: **v0.8.100** (PR **#991**, tagged `v0.8.100`).
 > **This is the release that makes the dogfood tracker testable again.** The
 > owner asked for the number and gave it: 0.8.100, the placeholder the last cut
