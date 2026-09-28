@@ -1870,7 +1870,7 @@ Work items:
   measured by E21-01's always-on tier; unit tests plus one e2e that answers a real
   held permission with a Monaco diff on screen; `docs/manual/` page before the PR.
 
-- **P2-E22-02 (#973) · Deny with feedback — S. ✅ DONE 2026-09-28 (PR #986).**
+- **P2-E22-02 (#973) · Deny with feedback — S. ✅ DONE 2026-09-28 (PR #985).**
   *(no deps)*
   The UI half only — see the measurement above; the wire is already there.
 
