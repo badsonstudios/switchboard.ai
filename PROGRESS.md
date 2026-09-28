@@ -3,6 +3,80 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ DONE — 2026-09-28: **#977 — E18-13, a session's helpers are back in the
+> conversation** (PR **#989**, merged on green CI). **THE THREE-ITEM RUN THE
+> OWNER QUEUED IS COMPLETE: #973 → #974 → #977, all merged.**
+>
+> **Next up:** no item is claimed. **Phase 2's queue is E21** (#904 and the perf
+> family #716/#719/#740 — still blocked on the owner's laptop capture) **and the
+> ~28 open issues that sweep to Phase 3 at the cut** per his 2026-09-26 call.
+> E22 is complete; exit criterion 3 is met and no longer "thin".
+>
+> ⚠️ **A VERSION BUMP IS OWED AND IT IS NOW THE ONLY THING BETWEEN SIX ITEMS AND
+> THE OWNER'S HANDS.** `package.json` is 0.8.99, the latest release is v0.8.99
+> (verified with `gh release list`), the open CHANGELOG section is 0.8.100, and
+> **six** items of user-facing work are on `main` and in no release: #952, #972,
+> #967, #973, #974, #977. Nothing in the dogfood tracker can be tested until it
+> moves.
+>
+> **THE ISSUE PROPOSED THE WRONG SOURCE, AND MEASURING IS WHAT SAID SO.** It
+> reads: *"build sidechain blocks from `parent_tool_use_id` — it is on every
+> stream message and needs no probe to read."* True about the FIELD. Three real
+> CLI turns on 2.1.280 (`spike/findings/e18-977-stream-sidechains.md`):
+>
+> 1. **The CLI has a `--forward-subagent-text` flag we do not pass.** Without it
+>    exactly ONE sidechain frame arrives — the subagent's seeding prompt — and
+>    nothing it says. With it, two.
+> 2. **But the reply is on disk anyway**, carrying `isSidechain`, `agentId` and
+>    `attributionAgent`: #788's exact contract, unchanged on 2.1.280.
+> 3. **And the watcher was already tailing those files.** `deriveFeed: false`
+>    stops `deriveBlocks`; it does not stop the tail, which is ungated by design.
+>    The IO was paid. Only the derivation was thrown away — which also answers
+>    the #719 objection before anyone raises it.
+>
+> So the whole fix is `deriveFeed: 'all' | 'sidechains' | 'none'` with a stream
+> session on `'sidechains'`. The boolean could not tell "do not double the main
+> file" apart from "hide the subagents", and for a month it meant both: a
+> REGRESSION, not a gap — #788 shipped the feature, #381 made it invisible on the
+> default transport and #952 made it invisible everywhere, with the renderer
+> intact and unit-tested throughout.
+>
+> **#395's note is answered by the same change**, not by separate work:
+> `subagentFiles()` does a `readdirSync`, so a resumed card adopts the subagent
+> transcripts already on disk.
+>
+> **⭐ THE FIRST DRAFT WALKED INTO #395's OWN WARNING, WHICH WAS SITTING UNEDITED
+> IN A FILE THIS ITEM CHANGES.** `stream-feed.ts`'s `hydrate` docblock: *"two
+> buffers feeding one renderer is more than a rendering-order problem: both
+> number their blocks from seq 1, and the renderer upserts on seq, so the first
+> streamed block would OVERWRITE the first replayed one."* The draft gave the
+> watcher its own `FeedBuffer` and did exactly that — the first subagent block
+> REPLACED the session's first block, survivors sorted to the TOP of the
+> conversation, and none of them reached `transcripts:blocks`, so they vanished
+> on any remount and a resumed card never saw them at all. **Every presence
+> assertion in the e2e sailed through it**, which is the lesson worth keeping: a
+> `.first()` and a `toBeVisible` cannot see an overwrite.
+>
+> Found in review. The watcher hands the LINE to `StreamFeed.absorbSidechain`
+> now: one buffer per session, one seq space, one backlog — the same conclusion
+> `hydrate` reached for the replay. The e2e counts the session's own blocks
+> BEFORE and after, and was falsified against the two-buffer version (4 → 2).
+>
+> **TWO SMALLER FINDINGS, both correcting the issue:** the tool is called
+> **`Agent`, not `Task`** on 2.1.280; and **`subagent_type` and
+> `task_description` are on the stream ENVELOPE**, so the correlation the issue
+> proposed to get a name would not have been needed either.
+>
+> Also from review: the mode routes by FILE rather than by the `isSidechain`
+> flag, so an old transcript's sidechain lines in the MAIN file cannot be derived
+> twice (the replay already derives them) · the stale "a stream session derives
+> nothing" comments in four files now say what is true · **the resumed-history
+> claim states the caveat it earns** — subagent history lands at the END of a
+> restored conversation rather than interleaved, because the replay runs inside
+> `sessions:create` and the adoption on a later tick, and re-numbering an
+> already-hydrated buffer is a bigger change than this item. Said in the manual,
+> the CHANGELOG, the plan and the tracker rather than hidden.
+
 > # ✅ DONE — 2026-09-28: **#974 — E22-03, approve-all-in-this-file + the revoke
 > surface for BOTH standing grants** (PR **#987**, merged on green CI).
 > **E22 IS COMPLETE. Phase 2 exit criterion 3 is met and no longer "thin".**
