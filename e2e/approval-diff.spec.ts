@@ -320,10 +320,19 @@ test.describe('the approval card shows a real diff (E22-01)', () => {
     // row's overflow. Written as an assertion rather than left to the click below
     // because CI fonts run ~5% wider than this machine's, and a few pixels of
     // overlap reads as a flaky click and as an unambiguous name.
+    // ⚠️ NOT EVERY BUTTON IN THE BAR — the diff slot's own controls are excluded,
+    // and Windows CI is what taught that. `Side by side` / `Inline` live inside
+    // `[data-approval-diff-slot]`, which is a SCROLLING region by design
+    // (`overflow: auto`, so a diff taller than its slot stays reachable). On a
+    // 480px runner they scroll out of the clip, `elementFromPoint` at their
+    // centre hits what is painted there instead, and the assertion reported them
+    // as covered. That is the slot working, not the bar failing. The claim here
+    // is about the ANSWER — everything the bar puts below the body.
     const covered = await w.evaluate(() => {
       const bar = document.querySelector('[data-approval-bar]');
       if (!bar) return ['no approval bar'];
       return [...bar.querySelectorAll('button')]
+        .filter((b) => b.closest('[data-approval-diff-slot]') === null)
         .filter((b) => {
           const r = b.getBoundingClientRect();
           const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
