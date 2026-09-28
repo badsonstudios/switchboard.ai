@@ -1222,10 +1222,17 @@ test.describe('Feed view (E12-06)', () => {
     await streamPrompter(a)(title, 'dispatching two agents');
     await expect(w.getByText('dispatching two agents').first()).toBeVisible({ timeout: 30_000 });
 
+    // ⚠️ WAIT FOR THE TURN TO FINISH BEFORE COUNTING. The fake echoes the prompt
+    // (`--replay-user-messages`) and then replies `FAKE-REPLY: <prompt>`, so the
+    // count goes 1 → 2 across two messages. Snapshotting between them made this
+    // assertion read "2 became 4" on the Linux runner — a GROWTH reported as a
+    // failure, which is the wrong bug and the wrong direction.
+    await expect(w.getByText(/FAKE-REPLY/)).toBeVisible({ timeout: 30_000 });
+
     // How much of the session's OWN voice is on screen, before anything else
     // writes into this conversation. See the assertion at the bottom.
     const ownBlocksBefore = await w.getByText('dispatching two agents').count();
-    expect(ownBlocksBefore).toBeGreaterThan(0);
+    expect(ownBlocksBefore).toBeGreaterThan(1);
 
     // …and the subagents' voices, from the files the CLI writes. Found rather
     // than reconstructed, for `stream-approval.spec.ts`'s reason: the slug rule
