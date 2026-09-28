@@ -4,9 +4,11 @@
 // re-sends none of it: a stream session's messages start at the NEXT turn. In
 // Terminal mode that gap is covered twice — the PTY repaints, and the transcript
 // watcher adopts the pre-existing JSONL and derives blocks from it. In Direct
-// mode it was covered not at all: there is no terminal, and the watcher is told
-// `deriveFeed: false` for a stream session so that two sources cannot interleave
-// into one Feed. Every card that resumed after #381 therefore opened blank, with
+// mode it was covered not at all: there is no terminal, and the watcher does not
+// derive a stream session's main transcript, so that two sources cannot
+// interleave into one Feed. (Since #977 it does pick up that session's SUBAGENT
+// files — and hands them to this Feed rather than buffering them, for the seq
+// reason `hydrate` gives.) Every card that resumed after #381 therefore opened blank, with
 // no Terminal tab to check against — indistinguishable from a wiped session,
 // which is exactly how Dan read it on the 0.3.0 update.
 //

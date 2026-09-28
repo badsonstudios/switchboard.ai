@@ -499,14 +499,53 @@ no longer holds a veto.
 operations instead of keystroke injection (§5.9's Esc-to-PTY becomes a real
 interrupt). `interrupt` is in the protocol and has never been exercised.
 
-### E18-13 · Sidechains from `parent_tool_use_id` — M [S-11 gate]
+### E18-13 · Sidechains — ✅ DONE 2026-09-28 (issue #977, PR #989)
 
-Drive the S-05 sidechain rendering from the field that is already on every
-message. Unmeasured against our feed. **Note from #395 (2026-08-11):** a
-resumed Direct card's replay reads only the main conversation file, so
-subagent sidechains are absent from replayed history too — a visible
-difference vs a resumed Terminal card. This item owns both the live and the
-replayed sidechain path when picked up.
+~~Drive the S-05 sidechain rendering from the field that is already on every
+message.~~ **The title of this item was its wrong answer**, and the measurement
+is the whole story (`spike/findings/e18-977-stream-sidechains.md`, CLI 2.1.280):
+
+- **`parent_tool_use_id` is on every message and the CONTENT is not.** The CLI
+  has a `--forward-subagent-text` flag we do not pass; without it the stream
+  carries the subagent's SEEDING prompt and nothing it says. Measured: 1
+  sidechain frame without the flag, 2 with.
+- **But the reply is on disk anyway**, in
+  `<native-id>/subagents/agent-<id>.jsonl`, carrying `isSidechain`, `agentId`
+  and `attributionAgent` — #788's exact contract, unchanged on 2.1.280.
+- **And the watcher was already tailing those files.** `deriveFeed: false` for a
+  stream session stops `deriveBlocks`; it does not stop the tail, which is
+  ungated by design. The IO was paid; only the derivation was thrown away.
+
+So the fix is **one condition**: `deriveFeed` became
+`'all' | 'sidechains' | 'none'`, a stream session takes `'sidechains'`, and the
+subagent files derive while the main conversation stays with `StreamFeed`. The
+boolean could not tell "do not double the main file" apart from "hide the
+subagents", and for a month it meant both.
+
+**#395's note is answered without separate work**, and the item says so:
+`subagentFiles()` does a `readdirSync`, so a resumed card adopts the subagent
+transcripts already on disk, and they reach the same buffer the replay landed in
+— which is what puts them in `transcripts:blocks` and makes them survive a
+remount. ⚠️ They land at the END of the replayed history rather than interleaved,
+because the replay runs inside `sessions:create` and the adoption on a later
+tick; re-numbering an already-hydrated buffer to place them is a bigger change
+than this item, and the trade is recorded in the manual rather than hidden.
+
+⚠️ **THE FIRST DRAFT GAVE THE WATCHER ITS OWN `FeedBuffer` AND WALKED INTO
+#395's OWN WARNING**, which was sitting unedited in the file this item changes:
+*"two buffers feeding one renderer is more than a rendering-order problem: both
+number their blocks from seq 1, and the renderer upserts on seq, so the first
+streamed block would OVERWRITE the first replayed one."* It did exactly that —
+the first subagent block replaced the session's first block, survivors sorted to
+the top, and none of them reached `transcripts:blocks`, so they vanished on any
+remount. The watcher hands the LINE to `StreamFeed.absorbSidechain` now; one
+buffer per session, which is the same conclusion `hydrate` reached for the
+replay.
+
+**This was a REGRESSION, not a gap.** #788 shipped the feature; it went invisible
+on the default transport at #381 and everywhere at #952, with the renderer intact
+and unit-tested the whole time. `feed.spec.ts`'s `test.fixme` is live again with
+its original fixture, because the layout it encoded is still what the CLI writes.
 
 ### E18-14 · Transport-matrix e2e — M [issue #416, filed 2026-08-11]
 

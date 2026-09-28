@@ -925,3 +925,106 @@ describe('replaying a resumed conversation (#395)', () => {
     expect(feed.blocks(SID).map((b) => b.text)).toEqual(['real']);
   });
 });
+
+/**
+ * P2-E18-13 / #977 — the subagent half.
+ *
+ * ⚠️ THE CLAIM IS ONE SEQ SPACE, and it is the one the first draft failed. The
+ * watcher had its own `FeedBuffer` and pushed sidechain blocks into it, while
+ * this Feed pushed the session's own into this one. Both count from seq 1 and
+ * the renderer UPSERTS on seq (`renderer/lib/feed.ts`), so the first subagent
+ * block did not interleave with the session's first block — it REPLACED it.
+ *
+ * #395 had already written that warning into `hydrate`'s docblock, one method
+ * above the one this tests. Nothing enforced it.
+ */
+describe('subagent lines from the transcript (#977)', () => {
+  let feed: StreamFeed;
+  const SID = 'live-sc';
+  const origin = { sidechain: true as const, agentId: 'aaaaaa11', agentName: 'digger' };
+  const subLine = (text: string) => ({
+    type: 'assistant',
+    message: { role: 'assistant', content: [{ type: 'text', text }] },
+    isSidechain: true,
+    agentId: 'aaaaaa11',
+    attributionAgent: 'digger',
+  });
+
+  /** the session's own transcript line, for the replay case below */
+  const mainLine = (text: string) => ({
+    type: 'assistant',
+    message: { role: 'assistant', content: [{ type: 'text', text }] },
+  });
+
+  beforeEach(() => {
+    feed = new StreamFeed();
+  });
+
+  /**
+   * A session this Feed knows about.
+   *
+   * `absorbSidechain` deliberately does NOT create one — see its note: a session
+   * it has never heard of is not one whose subagent output anybody is waiting
+   * for, and `ensure`ing here would leak an entry per stray line. In the app the
+   * entry always exists by the time a subagent file can: a fresh session's first
+   * `Agent` call IS an assistant message, and a resumed one is hydrated inside
+   * `sessions:create`.
+   */
+  const known = (): void => {
+    feed.offer(SID, assistant([{ type: 'text', text: 'the session speaks' }]));
+  };
+
+  // The whole blocker in one assertion: the seqs must be DISJOINT, because the
+  // renderer keys on them and a collision is a silent overwrite.
+  it('shares the session\'s seq space rather than starting its own', () => {
+    feed.offer(SID, assistant([{ type: 'text', text: 'the session speaks' }]));
+    feed.absorbSidechain(SID, subLine('the agent speaks'), origin);
+    feed.offer(SID, assistant([{ type: 'text', text: 'the session again' }]));
+
+    const blocks = feed.blocks(SID);
+    expect(blocks.map((b) => b.text)).toEqual([
+      'the session speaks',
+      'the agent speaks',
+      'the session again',
+    ]);
+    const seqs = blocks.map((b) => b.seq);
+    expect(new Set(seqs).size).toBe(seqs.length);
+    // …and in order, which is what stops a subagent's reply sorting above the
+    // prompt that caused it
+    expect([...seqs].sort((a, b) => a - b)).toEqual(seqs);
+  });
+
+  it('stamps the origin, which is what the caption and the grouping read', () => {
+    known();
+    feed.absorbSidechain(SID, subLine('agent'), origin);
+    const b = feed.blocks(SID)[1];
+    expect(b.sidechain).toBe(true);
+    expect(b.agentId).toBe('aaaaaa11');
+    expect(b.agentName).toBe('digger');
+  });
+
+  // …so `transcripts:blocks` serves them, which is what makes a subagent run
+  // survive a remount and a resumed card see one at all. The first draft kept
+  // them in the watcher's buffer, which that channel never reads.
+  it('lands in the BACKLOG, not only on the live push', () => {
+    known();
+    feed.absorbSidechain(SID, subLine('agent'), origin);
+    expect(feed.blocks(SID).map((b) => b.text)).toEqual(['the session speaks', 'agent']);
+  });
+
+  it('after a replay, it continues the replayed history rather than colliding with it', () => {
+    feed.hydrate(SID, [mainLine('old prompt'), mainLine('old reply')]);
+    feed.absorbSidechain(SID, subLine('agent'), origin);
+    const blocks = feed.blocks(SID);
+    expect(blocks.map((b) => b.text)).toEqual(['old prompt', 'old reply', 'agent']);
+    expect(new Set(blocks.map((b) => b.seq)).size).toBe(3);
+  });
+
+  // NOT `ensure`: a session this Feed has never heard of is not one whose
+  // subagent output anybody is waiting for, and creating state for it here would
+  // leak an entry per stray line.
+  it('answers false for a session it has never heard of, and creates nothing', () => {
+    expect(feed.absorbSidechain('never-seen', subLine('agent'), origin)).toBe(false);
+    expect(feed.blocks('never-seen')).toEqual([]);
+  });
+});

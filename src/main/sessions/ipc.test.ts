@@ -13,6 +13,7 @@ import { PersistedSession } from '../workspace/store';
 import { SessionIdentity } from './session-manager';
 import { StreamCommands } from './stream-commands';
 import { StreamPermissions } from './stream-permissions';
+import type { FeedDerivation } from '../transcripts/watcher';
 import { StreamFeed } from '../feed/stream-feed';
 import { StreamModel } from './stream-model';
 import { Logger } from '../log/logger';
@@ -217,7 +218,7 @@ function harness(
   const watched: Array<{
     sessionId: string;
     projectsRoot?: string;
-    deriveFeed?: boolean;
+    deriveFeed?: FeedDerivation | boolean;
     readTitle?: (line: Record<string, unknown>) => string | undefined;
   }> = [];
   const buildHookSettings = vi.fn(() => ({ hooks: {} }));
@@ -484,7 +485,7 @@ function harness(
         sessionId: string,
         s: {
           projectsRoot?: string;
-          deriveFeed?: boolean;
+          deriveFeed?: FeedDerivation | boolean;
           readTitle?: (line: Record<string, unknown>) => string | undefined;
         }
       ) => {
@@ -1047,10 +1048,11 @@ describe('registerSessionIpc — provider capabilities (P2-E15-01)', () => {
 
     h.call('sessions:create', { cardId: 'card-1', folder, title: 'x' });
 
-    // `deriveFeed: false` for every session since #952. P2-E18-10 moved the Feed
-    // to typed messages for stream sessions; there is no other kind, so the
-    // transcript is watched for usage, the native id and drift — and never for
-    // blocks, which would interleave with the ones already arriving.
+    // `deriveFeed: 'sidechains'` for every session since #977. P2-E18-10 moved
+    // the Feed to typed messages for stream sessions; there is no other kind, so
+    // the MAIN transcript is watched for usage, the native id and drift and never
+    // for blocks, which would interleave with the ones already arriving. The
+    // SUBAGENT files are the exception, because the stream does not carry them.
     //
     // `readTitle` rides along undefined: this adapter declares no `titles`
     // capability, so the watcher inspects no line for one (P2-E7-06).
@@ -1058,7 +1060,7 @@ describe('registerSessionIpc — provider capabilities (P2-E15-01)', () => {
       {
         sessionId: 'live-1',
         projectsRoot: '/somewhere/else',
-        deriveFeed: false,
+        deriveFeed: 'sidechains',
         readTitle: undefined,
       },
     ]);
@@ -1964,14 +1966,24 @@ describe('the Feed has two sources and one channel (P2-E18-10)', () => {
 
   const caps = { transcripts: { projectsRoot: () => '/root' } };
 
-  it('a STREAM session tells the watcher not to derive blocks for it', () => {
+  it("a STREAM session tells the watcher to derive its SIDECHAINS and nothing else", () => {
     const h = harness(caps, dir, { transport: 'stream', streamFeed: new StreamFeed() });
 
     h.call('sessions:create', { cardId: 'card-1', folder: dir, title: 'x' });
 
     // still watched — usage, the native id for --resume, and drift all still
     // want the transcript, and the CLI writes one in stream mode (S-10)
-    expect(h.watched).toEqual([{ sessionId: 'live-1', projectsRoot: '/root', deriveFeed: false }]);
+    //
+    // ⚠️ `'sidechains'`, AND THIS ASSERTION USED TO SAY `false` (#977). The two
+    // were the same value and that was the bug: what this call MEANT was "do not
+    // double the main conversation", and what it DID was switch derivation off
+    // for the subagent files too — which the stream does not carry at all
+    // (`--forward-subagent-text` is off; measured, only the seeding prompt
+    // arrives without it). #788's captioned runs were invisible for a month with
+    // the renderer intact.
+    expect(h.watched).toEqual([
+      { sessionId: 'live-1', projectsRoot: '/root', deriveFeed: 'sidechains' },
+    ]);
   });
 
   it('the backlog for a stream session comes from the stream, not the transcript', () => {
@@ -2025,8 +2037,8 @@ describe('the Feed has two sources and one channel (P2-E18-10)', () => {
 
 // #395 — a RESUMED Direct session gets its history back.
 //
-// The two facts above collide here: a stream session is told `deriveFeed:
-// false`, and `--resume` re-sends nothing over the stream. So a resumed Direct
+// The two facts above collide here: a stream session's main transcript is not
+// derived, and `--resume` re-sends nothing over the stream. So a resumed Direct
 // card had NO source of history at all and opened blank — which is what every
 // pre-existing card did on the first launch after #381. `sessions:create` now
 // replays the conversation's own transcript into the stream Feed, once, before
@@ -4239,7 +4251,8 @@ describe('AI task labels — the cadence (#758, §5.11)', () => {
    * ⚠️ `transport` defaults to `pty` in this harness, and building the cadence
    * tests on that default hid a blocker: the label path read
    * `transcripts.blocks()` unconditionally, which is empty for a stream session
-   * (`deriveFeed: false`), so the feature never ran once in the real app while
+   * (the main transcript is not derived), so the feature never ran once in the
+   * real app while
    * every test here passed. Since #873 every session is stream, so stream is
    * the default here — a `pty` case is pinned separately below.
    */

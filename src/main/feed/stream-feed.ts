@@ -50,7 +50,7 @@
 // ---------------------------------------------------------------------------
 import { Logger } from '../log/logger';
 import { toolCategory } from '../../shared/tool-taxonomy';
-import { DerivedBlock, FeedBlock, TEXT_CAP, deriveIntents } from './blocks';
+import { BlockOrigin, DerivedBlock, FeedBlock, TEXT_CAP, deriveIntents } from './blocks';
 import { FeedBuffer } from './buffer';
 
 /**
@@ -114,8 +114,8 @@ export class StreamFeed {
    * none of it: the CLI's stream starts at the next turn. A Terminal session
    * gets its history back twice over (the PTY repaint, and the transcript
    * watcher adopting the pre-existing JSONL), and a Direct session got it
-   * neither way — the watcher is told `deriveFeed: false` precisely so the two
-   * sources cannot interleave. The result was a resumed card that looked wiped,
+   * neither way — the watcher does not derive a stream session's main
+   * transcript, precisely so the two sources cannot interleave. The result was a resumed card that looked wiped,
    * which is how Dan read it after 0.3.0.
    *
    * WHY IT IS THE STREAM FEED'S JOB and not the watcher's. The interleaving
@@ -161,9 +161,13 @@ export class StreamFeed {
       for (const e of entries) {
         // The SAME derivation the transcript watcher runs (`blocks.ts`), so a
         // replayed turn cannot look different from the one that streamed live.
-        // What it does NOT reproduce is the watcher's subagent files: only the
-        // main conversation is read back, so a resumed session's sidechains are
-        // absent rather than misfiled — rendering them at all is E18-13.
+        //
+        // It still reads the MAIN conversation only — and since #977 that is no
+        // longer the gap #395 recorded. The watcher's `subagentFiles()` does a
+        // `readdirSync`, so a resumed card adopts the subagent transcripts that
+        // are already on disk and derives them under `deriveFeed: 'sidechains'`.
+        // The replayed half needed no code of its own; it needed the same
+        // condition the live half needed.
         for (const intent of deriveIntents(e)) {
           if (intent.t === 'tool-result') {
             s.buffer.attachResult(intent.toolUseId, intent.out);
@@ -171,8 +175,10 @@ export class StreamFeed {
           }
           // No `agentId` on this path, and not because it was overlooked: a
           // replay reads the MAIN transcript only, and `agentId` was measured
-          // zero times there (#788). A sidechain here can only be a
-          // pre-2.1.226 line, which carries no id to group by either.
+          // zero times there (#788, re-confirmed on 2.1.280 by #977). A
+          // sidechain here can only be a pre-2.1.226 line, which carries no id
+          // to group by either. The subagent files come through the watcher,
+          // with their ids intact.
           const block = s.buffer.push(intent.block, { sidechain: e.isSidechain === true });
           if (intent.toolUseId) s.buffer.remember(intent.toolUseId, block);
           n++;
@@ -180,6 +186,56 @@ export class StreamFeed {
       }
     });
     return n;
+  }
+
+  /**
+   * Take ONE subagent line from the transcript watcher (#977).
+   *
+   * ⚠️ THIS EXISTS SO THERE IS STILL ONE BUFFER PER SESSION, which is the whole
+   * of `hydrate`'s argument one method up: two buffers feeding one renderer both
+   * number from seq 1 and the renderer upserts on seq, so a second source does
+   * not interleave — it OVERWRITES. #977's first draft had the watcher push into
+   * its own buffer and re-learned that the hard way (the first subagent block
+   * replaced the session's first block, survivors sorted to the top, and none of
+   * them reached `transcripts:blocks`, so they vanished on remount).
+   *
+   * Pushing HERE gets three things for free, and they are the same three
+   * `hydrate` lists: one seq space, one backlog for `transcripts:blocks` to
+   * serve — which is what makes a subagent run survive a remount and a resumed
+   * card see one at all — and one reset to route.
+   *
+   * WHY THE WATCHER AND NOT THE STREAM. The CLI does not send this content on
+   * the stream: `--forward-subagent-text` gates it and we do not pass it.
+   * Measured on 2.1.280 — without the flag exactly ONE sidechain frame arrives,
+   * the subagent's seeding prompt, and nothing it says. The files carry all of
+   * it, with `agentId` and `attributionAgent`, and the watcher was already
+   * tailing them (`spike/findings/e18-977-stream-sidechains.md`).
+   *
+   * NOT `silently`: these are live blocks for a session the renderer is
+   * subscribed to, which is the opposite of `hydrate`'s case.
+   *
+   * Returns false when this session has no stream Feed, so the caller can drop
+   * the line rather than misfile it.
+   */
+  absorbSidechain(
+    sessionId: string,
+    entry: Record<string, unknown>,
+    origin: BlockOrigin
+  ): boolean {
+    const s = this.sessions.get(sessionId);
+    // NOT `ensure`: a session this Feed has never heard of is not one whose
+    // subagent output anybody is waiting for, and creating state for it here
+    // would leak an entry per stray line.
+    if (!s) return false;
+    for (const intent of deriveIntents(entry)) {
+      if (intent.t === 'tool-result') {
+        s.buffer.attachResult(intent.toolUseId, intent.out);
+        continue;
+      }
+      const block = s.buffer.push(intent.block, origin);
+      if (intent.toolUseId) s.buffer.remember(intent.toolUseId, block);
+    }
+    return true;
   }
 
   /** Feed one typed message from one stream session. */
@@ -386,10 +442,18 @@ export class StreamFeed {
   private onStreamEvent(sessionId: string, msg: Record<string, unknown>): void {
     const ev = msg.event as Record<string, unknown> | undefined;
     if (!ev || typeof ev.type !== 'string') return;
-    // Sidechain content is explicitly out of scope for this item (E18-13 owns
-    // it, behind the S-11 probes) — but a subagent's tokens must not be
-    // interleaved into the main conversation's blocks in the meantime, which is
-    // exactly what ignoring `parent_tool_use_id` here would do.
+    // ⚠️ THE GUARD STAYS, AND #977 IS WHY IT IS NOT A GAP ANY MORE. It used to
+    // say "E18-13 owns it"; E18-13 landed and chose the other source.
+    //
+    // A subagent's words reach the Feed from its own transcript file, which the
+    // watcher already tails and now derives (`deriveFeed: 'sidechains'`).
+    // Dropping them here is what stops the same text arriving twice.
+    //
+    // Nothing is lost by dropping DELTAS in particular: measured on the PATH CLI
+    // 2.1.280, **zero** `stream_event` frames carried a `parent_tool_use_id`,
+    // with or without `--forward-subagent-text`. A subagent's reply is one
+    // finished message, never a token stream, so there was no streaming half to
+    // give up (`spike/findings/e18-977-stream-sidechains.md`).
     if (msg.parent_tool_use_id != null) return;
     const s = this.ensure(sessionId);
     const index = typeof ev.index === 'number' ? ev.index : 0;
@@ -440,8 +504,11 @@ export class StreamFeed {
 
   /** An `assistant` or `user` message: the authoritative version of a turn. */
   private onMessage(sessionId: string, msg: Record<string, unknown>): void {
-    // See `onStreamEvent`: sidechain rendering is E18-13, and until it lands a
-    // subagent's messages must not be mistaken for the session's own.
+    // See `onStreamEvent`: sidechain content comes from the transcript since
+    // #977, and dropping it here is what keeps one `FeedBuffer` from receiving
+    // the same subagent text from two sources. Without
+    // `--forward-subagent-text` — which we deliberately do not pass — the only
+    // thing that would arrive here is the subagent's SEEDING prompt anyway.
     if (msg.parent_tool_use_id != null) return;
     const s = this.ensure(sessionId);
     // The stream carries no timestamp of its own, and the Feed shows one (and

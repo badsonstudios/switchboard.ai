@@ -1472,6 +1472,13 @@ app
     const transcripts = new TranscriptWatcher({
       projectsRoot: seedRoot,
       log: createLogger(sink, 'transcripts'),
+      // Subagent lines from a stream session's transcript go into the STREAM
+      // Feed's buffer, not the watcher's (#977). One buffer per session, because
+      // two of them both number from seq 1 and the renderer upserts on seq — see
+      // `TranscriptWatcherOptions.sidechainSink`, and `StreamFeed.hydrate`,
+      // which makes the same argument about the same hazard for the replay.
+      sidechainSink: (sessionId, entry, origin) =>
+        streamFeed.absorbSidechain(sessionId, entry, origin),
       // Test-only: the real deadline is 45s, which no e2e should sit through.
       // Read only in a dev/test build, so the shipped binary has no env var
       // that can move a user-visible deadline (P2-E15-10).

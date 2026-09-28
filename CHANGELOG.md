@@ -291,6 +291,24 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **A session's helpers are back in the conversation.** When Claude hands a piece
+  of work to a sub-agent, that helper's work appears indented behind a dashed
+  line with a caption saying which helper is talking — and for about a month it
+  did not appear at all. A session that delegated showed a quiet gap where its
+  helpers' part should have been, then carried on with the main reply.
+
+  The cause was one switch doing two jobs. When switchboard changed how it reads
+  a conversation, it told the old reader to stand down — and that reader was also
+  the only thing picking up the helpers, which the new one does not carry.
+  Nothing was lost while it was gone: Claude Code recorded all of it, and it is
+  those recordings the captions are read from again now.
+
+  **Reopening a session brings its helpers' history back too**, which it never
+  did on this path. One thing to expect: in a restored conversation their work
+  appears at the end rather than back at the moment it happened, because the
+  recordings are read in a different order from the main conversation. Anything
+  that happens from then on is in order.
+
 - **A refusal no longer reads like something being broken.** Every denial — with
   or without feedback — now tells Claude plainly that a person decided this, that
   it is not a sandbox restriction or a glitch, and that it should not retry or go

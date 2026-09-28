@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
+import type { BlockOrigin } from '../feed/blocks';
 import { TranscriptWatcher, slugForCwd, conversationExists } from './watcher';
 import { LogSink, createLogger } from '../log/logger';
 import { cleanupTempDirs, tempDir } from '../../test-temp-dirs';
@@ -715,9 +716,10 @@ describe('Feed block derivation (P2-E12-06 §5.10)', () => {
 
   // A stream session's Feed is built from typed messages (P2-E18-10). The
   // watcher still binds, counts usage and learns the native id for it — it just
-  // must not ALSO derive blocks, or every one of them would render twice.
-  it('derives no blocks at all when the Feed has another source (deriveFeed: false)', async () => {
-    watcher.watch('s1', { cwd, deriveFeed: false });
+  // must not ALSO derive the MAIN conversation, or every block would render
+  // twice.
+  it("derives none of the MAIN conversation when the Feed has another source", async () => {
+    watcher.watch('s1', { cwd, deriveFeed: 'sidechains' });
     const file = path.join(projectDir(), 'native-1.jsonl');
     const seen: string[] = [];
     const off = watcher.onBlock((_sid, b) => seen.push(b.kind));
@@ -732,6 +734,139 @@ describe('Feed block derivation (P2-E12-06 §5.10)', () => {
     // …and the rest of the watch is untouched: it still bound and read the file
     expect(watcher.snapshot('s1')!.bound).toBe(true);
     expect(watcher.snapshot('s1')!.lines).toBe(2);
+  });
+
+  // ⚠️ THE OTHER HALF, AND IT IS THE WHOLE OF #977. `deriveFeed: false` used to
+  // mean BOTH "do not double the main conversation" and "hide the subagents",
+  // because a boolean cannot tell them apart — so #788's captioned runs went
+  // invisible on the default transport (#381) and everywhere after #952, with
+  // the renderer intact and nothing feeding it.
+  //
+  // The subagent transcript is the ONLY source for this content on a stream
+  // session: measured on CLI 2.1.280, without `--forward-subagent-text` the
+  // stream carries the subagent's SEEDING prompt and nothing it says
+  // (`spike/findings/e18-977-stream-sidechains.md`).
+  //
+  // AND IT IS HANDED OVER, NOT BUFFERED HERE. `w2.blocks('s1')` staying EMPTY is
+  // as much the assertion as the sink receiving the line: two buffers feeding
+  // one renderer both number from seq 1 and the renderer upserts on seq, so a
+  // watcher that kept these would not interleave with the stream, it would
+  // OVERWRITE it. Found in review, after the first draft did exactly that.
+  it('hands the subagent files to the STREAM Feed, and keeps none of them (#977)', async () => {
+    const taken: Array<{ sessionId: string; text: string; origin: BlockOrigin }> = [];
+    const w2 = makeWatcher({
+      projectsRoot: root,
+      log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
+      pollMs: 25,
+      sidechainSink: (sessionId, e, origin) => {
+        const c = (e.message as { content?: Array<{ text?: string }> } | undefined)?.content;
+        taken.push({ sessionId, text: c?.[0]?.text ?? '', origin });
+        return true;
+      },
+    });
+    w2.watch('s1', { cwd, deriveFeed: 'sidechains' });
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    writeLines(file, [entry({ message: { content: [{ type: 'text', text: 'dispatching' }] } })]);
+    await sleep(150);
+    expect(taken).toEqual([]); // the main file is the stream's, whole
+
+    const subs = path.join(projectDir(), 'native-1', 'subagents');
+    fs.mkdirSync(subs, { recursive: true });
+    writeLines(path.join(subs, 'agent-aaaaaa11.jsonl'), [
+      entry({
+        message: { content: [{ type: 'text', text: 'AGENT SAID THIS' }] },
+        isSidechain: true,
+        agentId: 'aaaaaa11',
+        attributionAgent: 'digger',
+      }),
+    ]);
+    await sleep(300);
+
+    expect(taken).toHaveLength(1);
+    expect(taken[0].sessionId).toBe('s1');
+    expect(taken[0].text).toContain('AGENT SAID THIS');
+    // STAMPED, which is what the caption and the grouping need
+    expect(taken[0].origin).toEqual({
+      sidechain: true,
+      agentId: 'aaaaaa11',
+      agentName: 'digger',
+    });
+    // …and this watcher kept nothing: one buffer per session
+    expect(w2.blocks('s1')).toEqual([]);
+  });
+
+  // The other half of the same claim, and a resumed card turns on it: an OLD
+  // transcript can carry `isSidechain` lines in the MAIN file, and
+  // `replayResumedHistory` already derives every entry of that file into the
+  // stream Feed. Gating on the flag rather than on the FILE would derive those
+  // lines a second time, out of the same file, into the other buffer (review).
+  it('never touches the BOUND file, even when a line claims to be a sidechain', async () => {
+    const taken: string[] = [];
+    const w2 = makeWatcher({
+      projectsRoot: root,
+      log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
+      pollMs: 25,
+      sidechainSink: (sessionId) => {
+        taken.push(sessionId);
+        return true;
+      },
+    });
+    w2.watch('s1', { cwd, deriveFeed: 'sidechains' });
+    writeLines(path.join(projectDir(), 'native-1.jsonl'), [
+      entry({ message: { content: [{ type: 'text', text: 'main' }] } }),
+      entry({ message: { content: [{ type: 'text', text: 'old-style' }] }, isSidechain: true }),
+    ]);
+    await sleep(300);
+    expect(taken).toEqual([]);
+    expect(w2.blocks('s1')).toEqual([]);
+  });
+
+  // The value that says what the old boolean could not. Nothing asks for it
+  // today; it exists so "I want nothing derived" stops being unsayable.
+  it("'none' really does derive nothing, subagents included", async () => {
+    watcher.watch('s1', { cwd, deriveFeed: 'none' });
+    const file = path.join(projectDir(), 'native-1.jsonl');
+    writeLines(file, [entry({ message: { content: [{ type: 'text', text: 'main' }] } })]);
+    await sleep(150);
+    const subs = path.join(projectDir(), 'native-1', 'subagents');
+    fs.mkdirSync(subs, { recursive: true });
+    writeLines(path.join(subs, 'agent-bbbbbb22.jsonl'), [
+      entry({ message: { content: [{ type: 'text', text: 'agent' }] }, isSidechain: true }),
+    ]);
+    await sleep(300);
+    expect(watcher.blocks('s1')).toEqual([]);
+  });
+
+  // The old spelling still works and still means what its one caller meant,
+  // which is the compatibility claim the three-value type has to make.
+  it('the legacy `false` maps to sidechains, not to none', async () => {
+    const taken: string[] = [];
+    const w2 = makeWatcher({
+      projectsRoot: root,
+      log: createLogger(new LogSink({ dir: logDir }), 'transcripts'),
+      pollMs: 25,
+      sidechainSink: (_sid, e) => {
+        const c = (e.message as { content?: Array<{ text?: string }> } | undefined)?.content;
+        taken.push(c?.[0]?.text ?? '');
+        return true;
+      },
+    });
+    w2.watch('s1', { cwd, deriveFeed: false });
+    writeLines(path.join(projectDir(), 'native-1.jsonl'), [
+      entry({ message: { content: [{ type: 'text', text: 'main' }] } }),
+    ]);
+    await sleep(150);
+    const subs = path.join(projectDir(), 'native-1', 'subagents');
+    fs.mkdirSync(subs, { recursive: true });
+    writeLines(path.join(subs, 'agent-cccccc33.jsonl'), [
+      entry({
+        message: { content: [{ type: 'text', text: 'agent' }] },
+        isSidechain: true,
+        agentId: 'cccccc33',
+      }),
+    ]);
+    await sleep(300);
+    expect(taken).toEqual(['agent']);
   });
 });
 
