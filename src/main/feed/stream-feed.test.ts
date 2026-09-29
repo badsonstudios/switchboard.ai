@@ -7,6 +7,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { StreamFeed } from './stream-feed';
 import { FeedBlock } from './blocks';
+import {
+  LOCAL_COMMAND_TEXT,
+  localCommandFrame,
+  localCommandInit,
+} from './fixtures/local-command-frame';
 
 const SID = 'live-1';
 const CONV = '00000000-conv-4000-8000-000000000000';
@@ -1026,5 +1031,124 @@ describe('subagent lines from the transcript (#977)', () => {
   it('answers false for a session it has never heard of, and creates nothing', () => {
     expect(feed.absorbSidechain('never-seen', subLine('agent'), origin)).toBe(false);
     expect(feed.blocks('never-seen')).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #978 — a LOCAL slash command (`/usage`, `/cost`, `/context`), against the
+// frame the CLI actually sends.
+//
+// These exist because the issue claimed this path was broken and it was not,
+// and because the only thing standing behind "it works" was a fake whose
+// local-command frame is three keys wide. The real one is nine, and the three
+// that are new since S-11 (`model: "<synthetic>"`, `local_command_source`,
+// `local_command_run`) are exactly the kind of field a derivation could start
+// tripping over without any test noticing.
+//
+// The turn shape is its own finding and is asserted here rather than described:
+// `system:init` -> `assistant` -> `result`, with NO `user` echo (despite
+// `--replay-user-messages`) and NO `stream_event` at all. It is the one turn
+// where the `assistant` message is the first and only carrier of the text, so
+// every reconciliation path in this class is bypassed.
+describe('a local slash command (#978)', () => {
+  it('renders its output as ordinary prose, from the real 2.1.280 frame', () => {
+    feed.offer(SID, localCommandInit());
+    feed.offer(SID, localCommandFrame());
+
+    const blocks = feed.blocks(SID);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].kind).toBe('assistant');
+    // The WHOLE output, not a truncated head — the block carries the text the
+    // user came for, and `You are currently using…` is the first line of it.
+    expect(blocks[0].text).toBe(LOCAL_COMMAND_TEXT);
+    // Not a subagent's: `parent_tool_use_id` is null on this frame, and a
+    // non-null one is dropped by `onMessage` before it reaches derivation.
+    expect(blocks[0].sidechain).toBeFalsy();
+  });
+
+  // The question anyone reading this path asks first. `system:init` arrives
+  // once per TURN, so a local command adds one — and an init whose session_id
+  // has not changed must set the conversation id and stop, or every `/usage`
+  // would throw the conversation away in front of the user.
+  it('does not wipe the Feed, though it brings an init of its own', () => {
+    // The prior init MATTERS and this test was wrong without it (caught in
+    // review): with no conversation id on record, `onSystem` returns through its
+    // `conversationId === undefined` branch and the test proves only that a
+    // FIRST init is harmless. The branch that has to hold here is the other one
+    // — an init whose id has not CHANGED — so the id is established first.
+    feed.offer(SID, localCommandInit(CONV));
+    feed.offer(SID, assistant([{ type: 'text', text: 'an earlier reply' }]));
+    expect(feed.blocks(SID)).toHaveLength(1);
+
+    feed.offer(SID, localCommandInit(CONV));
+    feed.offer(SID, { ...localCommandFrame(), session_id: CONV });
+
+    expect(resets).toEqual([]);
+    expect(feed.blocks(SID).map((b) => b.text)).toEqual([
+      'an earlier reply',
+      LOCAL_COMMAND_TEXT,
+    ]);
+  });
+
+  // ⚠️ THE REGRESSION GUARD WITH THE MOST LEVERAGE, and the least obvious.
+  //
+  // A local command emits no `stream_event`, so nothing is ever `assembling`
+  // when its `assistant` message lands. `onMessage` calls `claim()` for every
+  // assistant message, and `claim()`'s documented fallback takes ANY block of a
+  // superseding kind out of the map when the index misses. If a local command
+  // arrived while a real reply's deltas were still open — the shape a user
+  // produces by running `/usage` on a session that is mid-turn — a careless
+  // change here would let the local output SWALLOW the streamed reply's block
+  // and replace its text.
+  // ⭐ THE ROUTE A USER ACTUALLY TAKES, and the reason this is a bug rather
+  // than a theoretical one. Interrupt a reply (`result` with the message still
+  // unreconciled — #154's measured shape), then run `/usage`.
+  //
+  // `finalize` closes streaming on `result` but deliberately does NOT expire
+  // the assembly map, because an interrupted turn's `assistant` message can
+  // still arrive after its `result`. So the half-finished reply is sitting in
+  // the map when the local command's message lands, and before #978 that
+  // message claimed it: the text the user stopped mid-sentence was REPLACED by
+  // the usage numbers, in place, at the same seq.
+  it('does not overwrite a reply the user interrupted', () => {
+    feed.offer(SID, ev({ type: 'message_start', message: { role: 'assistant' } }));
+    feed.offer(SID, ev({ type: 'content_block_start', index: 0, content_block: { type: 'text' } }));
+    feed.offer(SID, textDelta('half a sentence the user stop'));
+    feed.offer(SID, { type: 'result', subtype: 'success', session_id: CONV });
+
+    feed.offer(SID, localCommandInit(CONV));
+    feed.offer(SID, { ...localCommandFrame(), session_id: CONV });
+
+    const texts = feed.blocks(SID).map((b) => b.text);
+    expect(texts).toEqual(['half a sentence the user stop', LOCAL_COMMAND_TEXT]);
+  });
+
+  // The same guard from the other side, and the turn is played out IN FULL —
+  // including the local command's own `result`, which the first draft of this
+  // test omitted. That omission mattered: without the `result` the test implied
+  // the streamed block stays open, and it does not. `finalize` closes every open
+  // block on that result, exactly as it would for any turn.
+  //
+  // So what is asserted is the thing that is actually true: the local command
+  // APPENDS beside the reply instead of taking its block, and the reply's own
+  // text survives. Whether it is still marked streaming afterwards is the
+  // `result`'s business, not this guard's.
+  it('appends beside a streaming reply rather than claiming its block', () => {
+    feed.offer(SID, ev({ type: 'message_start', message: { role: 'assistant' } }));
+    feed.offer(SID, ev({ type: 'content_block_start', index: 0, content_block: { type: 'text' } }));
+    feed.offer(SID, textDelta('the model is still talking'));
+
+    feed.offer(SID, localCommandInit(CONV));
+    feed.offer(SID, { ...localCommandFrame(), session_id: CONV });
+    feed.offer(SID, { type: 'result', subtype: 'success', session_id: CONV });
+
+    const blocks = feed.blocks(SID);
+    expect(blocks.map((b) => b.text)).toEqual([
+      'the model is still talking',
+      LOCAL_COMMAND_TEXT,
+    ]);
+    // …and the turn's own result closed the streamed block, as it does for any
+    // turn. Pinned so the claim above cannot quietly become false.
+    expect(blocks.every((b) => b.streaming !== true)).toBe(true);
   });
 });
