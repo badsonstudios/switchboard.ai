@@ -3,6 +3,140 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ DONE — 2026-09-29: **E37 — #978, and the issue was wrong** (PR **#998**,
+> merged on green CI). Local slash-command output was never missing on the
+> stream. What the item actually shipped is a **different bug in the same code
+> that nobody had reported**, plus the withdrawal of a false claim from three
+> places users read.
+>
+> **⭐ THE PREMISE WAS FALSE, AND THE REASON IS DATEABLE.** #978 says `/usage`,
+> `/cost` and `/context` "never reach the Feed on the stream — it is a
+> transcript-only line". Measured on **CLI 2.1.280** with our verbatim flag list
+> (`spike/probes/978/probe-local-commands.mjs`, findings in
+> `spike/findings/978-local-slash-commands-on-stream.md`), four turns with a plain
+> prompt as a **control** so "no output" could be told apart from "the probe is
+> broken":
+>
+> | turn | frames | assistant text |
+> |---|---|---|
+> | `/usage` | `system:init` · `assistant` · `result` | 1,043 chars |
+> | `/cost` | ditto | **byte-identical** — the CLI rewrites `/cost` to `/usage` |
+> | `/context` | ditto | 3,035 chars |
+> | control | the ordinary shape, deltas and all | the control token |
+>
+> **It already rendered, by three independently measured links:** the frame
+> arrives (probe) · the captured frame fed through `deriveIntents` yields one
+> `assistant` prose block · `e2e/stream.spec.ts` → *"a local slash command's
+> output renders (#156)"* **passes on `main` unmodified**, and was not touched by
+> this item.
+>
+> **#978 was created 2026-09-27T17:08Z. #952 merged at 19:20Z.** *"Since #952 it
+> does not work anywhere"* was a **prediction about a change still in flight**.
+> What #952 really did was set `e2e/feed.spec.ts`'s local-command test to
+> `test.fixme` — a test asserting the TRANSCRIPT-driven Feed, the mechanism #952
+> deleted on purpose and which `watcher.ts:2158` skips by design for the bound
+> file. It can never pass again.
+>
+> **⚠️ THE LESSON, AND IT GENERALISES PAST SLASH COMMANDS: a disabled test states
+> a claim about the product, and `test.fixme` states the strongest one available —
+> "this does not work."** That placeholder was read as evidence by the issue, by
+> `docs/manual/05-slash-commands.md`, and by **v0.8.100's in-app release notes,
+> which told every user to go run these in a terminal instead**. Deleting a test
+> that measures a deleted mechanism is a smaller lie than leaving it disabled with
+> a ticket number on it.
+>
+> **⭐ THE BUG THAT WAS ACTUALLY THERE, found by reading the turn SHAPE rather than
+> chasing the symptom.** A local command emits no `message_start` and no
+> `message_stop`, so it never reaches `endMessage` — the only thing that CLEARS
+> `StreamFeed`'s assembly map. `finalize` deliberately does not (#154: an
+> interrupted turn's `assistant` can arrive after its own `result`). So anything
+> left in that map is handed to the local command's message by `claim()`'s
+> index-miss fallback, which takes ANY open block of a superseding kind — and its
+> text **REPLACES that block's text in place, at the same seq**. Text the user has
+> already read, silently overwritten. `wasNeverStreamed` closes it: a message no
+> model produced cannot complete a token stream, so it claims nothing and closes
+> nothing. **Revert-proof run — removing the guard fails exactly the two tests that
+> describe the bug and no others.**
+>
+> **THE GUARD'S BREADTH WAS CHECKED AGAINST THE BINARY, not reasoned about** (the
+> standing rule). Two markers: `local_command_run` / `local_command_source` for
+> precision — **both NEW since S-11 measured this on 2.1.220** — and
+> `model: "<synthetic>"` for breadth and for older builds. In 2.1.280
+> `<synthetic>` appears in exactly three assistant builders and **all three
+> construct their `content` inline**, so the guard cannot strand a streamed block
+> or duplicate a reply.
+>
+> **⚠️ THE PRECONDITION IS UNMEASURED AND IS WRITTEN DOWN AS SUCH, in all three
+> places.** The overwrite needs an ORPHAN in the map; the obvious way to make one
+> is to interrupt a reply, but this repo's own #154 finding is that an interrupted
+> turn's `assistant` usually DOES arrive, which would claim the block first. The
+> guard is right on the class's contract either way. The CHANGELOG describes the
+> condition instead of asserting the symptom and the dogfood row says it may be
+> hard to trigger — **which is the same failure mode this entire item exists to
+> clean up after.**
+>
+> **THE FAKE WAS KINDER THAN THE CLI IN FOUR WAYS AND IS NOW KINDER IN NONE.** It
+> gained the three labelling fields and **stopped echoing local commands**
+> (measured: no `user` frame despite `--replay-user-messages`). Not cosmetic —
+> while it echoed them, the manual could claim the answer appears *"under the
+> collapsed line showing the command you ran"*. Against the fake there WAS such a
+> line; in Direct mode there is not, and the manual now says so.
+>
+> **WHAT USERS READ, CORRECTED IN THREE PLACES — one of them outside the diff.**
+> `checker.ts`'s `notesSince()` serves **every** GitHub release body newer than the
+> running build, so 0.8.100's false caveat was still being shown to anyone updating
+> from 0.8.99 or earlier. **The published v0.8.100 release body was edited** (body
+> only; assets, tag and flags untouched), corrected rather than deleted so anyone
+> who read the warning can see what happened to it. The dated CHANGELOG section was
+> matched to it — **a deliberate exception to that file's "never touch a dated
+> section" rule**, which is about FILING work into a shipped section, not about
+> withdrawing a statement that became false.
+>
+> **Review: 0 blockers, 5 should-fixes, 4 nits, all taken.** Three changed shipped
+> behaviour or user-facing text (the fake's echo, the manual's collapsed-line
+> claim, the CHANGELOG's overclaim). The review also checked `<synthetic>`'s
+> breadth against the CLI binary rather than accepting the comment's word for it.
+>
+> **Green:** lint · build · both typecheck projects · **9,503 unit** · **full e2e
+> 363 passed / 2 skipped** · all four CI jobs. Two known contention flakes
+> (`git-service`, `win-cmd`) verified green run alone. Docs:
+> `docs/manual/05-slash-commands.md`, CHANGELOG **0.8.102** + the 0.8.100
+> correction, the dogfood tracker (two corrected rows + one new UNTESTED), the
+> findings note.
+>
+> **Follow-up filed, #997:** the Feed drops `isMeta` but the stream spells it
+> `is_meta` — a synthetic `PushNotification` frame would render as a tool row.
+> Pre-existing, surfaced by the `<synthetic>` survey, explicitly NOT claimed to be
+> reachable today: it wants a probe first.
+>
+> **Next up:** **#521** (*"no discoverable way to open a file"* — owner-reported,
+> the gateway to E25), then **#861** and **#981** as small wins.
+> **E21-02/03/04 (#904/#716/#740) remain the owner's and are not to be started.**
+
+> # 🚢 RELEASED — 2026-09-29: **v0.8.101** (PR **#996**, tagged `v0.8.101`,
+> installer + sha256 published). **Cut BEFORE #978 on the owner's instruction**,
+> and the reason was the tracker rather than the size of the batch: 117 dogfood
+> rows read *"needs a version bump before you can install it"*, including both
+> halves of E34 from the day before. Nothing in the sitting could be hand-tested
+> until an installable build existed.
+>
+> An ordinary **patch** by the CHANGELOG's own policy — one item of user-facing
+> work (E34), two entries, no epic closed, so no question was owed on the number.
+> 0.8.101 was also the placeholder the last cut opened, so no heading needed
+> correcting. Both gates dry-run locally before the push: `resolveRelease` agrees
+> tag ↔ `package.json`, the section exists (22 lines), **the rollup is EMPTY**
+> (0.8.100 was published), the lock diff is the two version lines and nothing else,
+> and `release-notes.test.js` green at 46. `## 0.8.102 — unreleased` opened above
+> it.
+>
+> ⚠️ **AND THE 0.8.101 HEADING WAS DELETED AND RESTORED DURING #978** — worth
+> knowing because of what caught it. Editing the CHANGELOG to open 0.8.102's
+> section dropped `## 0.8.101 — 2026-09-29`, silently folding a *published*
+> release's notes into the unreleased one. Nothing about the text looked wrong.
+> **`release-notes.test.js`'s "reads THIS repo's real CHANGELOG.md" failed with
+> "no section for 0.8.101"** — the gate exists for exactly this and is the only
+> thing that noticed.
+
 > # ✅ DONE — 2026-09-29: **E34 — #832 + #830, one session's words can no longer
 > open another session's files** (PR **#994**, merged on green CI, both issues
 > closed). The owner queued these two together for a reason that held up: #832
