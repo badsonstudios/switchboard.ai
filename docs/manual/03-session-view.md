@@ -235,6 +235,20 @@ The box at the bottom sends straight to the real Claude Code session:
   part of the conversation comes along. If you mention several sessions at once
   and the total is too long, the ones you mentioned first come along and a line
   in your message says which were left out.
+  - **It arrives folded up.** In the conversation, what came from TradingApp
+    shows as a single **Context from TradingApp** row — click it to read the
+    whole thing, click again to fold it away. Your own question sits underneath,
+    in full, where you can actually see it. Only context switchboard.ai added is
+    folded: if you paste or type something that merely looks like it, it stays on
+    screen exactly as you sent it. Folding lasts for as long as the app is
+    running — quit and reopen, and older messages like this show in full again.
+  - **Anything that looks like a file name in the other session's text is
+    defused.** Claude reads `@`-words in a message as files to open, and it would
+    look for them in *your* folder — so a stray `@types/node` in somebody else's
+    conversation could have attached a file, or listed a whole directory, in your
+    session. Those are marked with a `\` so they read as words instead. Nothing
+    is removed, and nothing you typed yourself is touched. The same goes for a
+    message another session sends you and for a dragged context chip.
   - An `@` that doesn't match an open session, an email address, an `@` inside
     `` `code` `` or a code block, or the session you're typing in, is sent
     exactly as you typed it.

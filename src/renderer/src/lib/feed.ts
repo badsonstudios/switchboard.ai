@@ -40,6 +40,16 @@ export interface FeedBlockDto {
    * The main-side shape and the reasoning are `main/feed/blocks.ts`.
    */
   attachments?: { images: number; documents: number };
+  /**
+   * user: the stretches of `text` that are context THIS APP injected at send
+   * (#830) — `[start, end)` offsets, so `text` stays exactly what was sent.
+   *
+   * Only ever present for markers main minted for this session: a user can type
+   * the marker and a pasted transcript can carry one, so the renderer must NOT
+   * look for the shape itself. The guard and its known limits are
+   * `main/feed/context-refs.ts`.
+   */
+  context?: Array<{ ref: string; name: string; start: number; end: number }>;
   durationMs?: number;
   sidechain: boolean;
   /**

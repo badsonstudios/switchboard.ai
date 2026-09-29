@@ -10,6 +10,8 @@ import path from 'path';
 import { SessionQueries, type DiffSource } from './queries';
 import { renderOutput, CONTENT_FENCE } from '../bus/bus-tools';
 import { resolveMentions } from './mention-resolve';
+import { AT_ESCAPE_NOTE } from '../../shared/at-mentions';
+import { findContextSections } from '../../shared/injected-context';
 import type { SessionSummary } from '../../shared/sessions';
 
 let dir: string;
@@ -203,5 +205,60 @@ describe('resolveMentions — an ambiguous name', () => {
     const twin = summary({ id: 'live-t', name: 'Beta', folder: 'C:/p/beta-2' });
     const r = run(queries([OWN, twin]), 'note to @Beta');
     expect(r.ok).toBe(false);
+  });
+});
+
+describe('resolveMentions — what the injected block carries (#832, #830)', () => {
+  /** The CLI's own bare-mention extractor — see `at-mentions.test.ts`. */
+  const mentions = (s: string): string[] =>
+    [...s.matchAll(/(^|[\s。、？！])@([^\s]+)\b/g)].map((m) => m[2] ?? '');
+
+  it('DEFUSES an @word in the other session’s output — the whole of #832', () => {
+    // The sibling's transcript talks about an npm scope. Before this, the
+    // receiving CLI resolved it against the receiving folder.
+    const q = queries([OWN, TRADING], { 'live-a': ['I bumped @types/node and it built'] });
+    const r = run(q, 'what happened in @TradingApp?');
+    if (!r.ok) throw new Error('expected a send');
+    // The user's own mention is rewritten (#798) and the sibling's is escaped —
+    // so the CLI finds NOTHING to attach in the whole prompt.
+    expect(mentions(r.prompt)).toEqual([]);
+    // …and the word is still readable, which is the other half of the promise.
+    expect(r.prompt).toContain('types/node');
+    expect(r.prompt).toContain(AT_ESCAPE_NOTE);
+  });
+
+  it('says nothing about escaping when the sibling said nothing @-shaped', () => {
+    const q = queries([OWN, TRADING], { 'live-a': ['the build is green'] });
+    const r = run(q, 'and @TradingApp?');
+    if (!r.ok) throw new Error('expected a send');
+    expect(r.prompt).not.toContain(AT_ESCAPE_NOTE);
+  });
+
+  it('marks the block with a minted ref, labelled with the RESOLVED name (#830)', () => {
+    const q = queries([OWN, TRADING], { 'live-a': ['output'] });
+    const refs: string[] = [];
+    // `@tradingapp` — a spelling that resolves but is not the session's own.
+    // Hex, like the real `ContextRefs.mint` — the marker's own pattern only
+    // accepts hex, which is itself one more thing a forger has to get right.
+    const r = resolveMentions(q, renderOutput, 'ping @tradingapp', OWN.id, () => {
+      const ref = `0000000${refs.length}`;
+      refs.push(ref);
+      return ref;
+    });
+    if (!r.ok) throw new Error('expected a send');
+    const [found] = findContextSections(r.prompt, (ref) => refs.includes(ref));
+    expect(found?.name).toBe('TradingApp');
+    expect(found?.start).toBe(0);
+    // The fence is INSIDE the envelope: this wraps `renderOutput`, it does not
+    // replace it.
+    expect(r.prompt.slice(found?.start, found?.end)).toContain(CONTENT_FENCE);
+  });
+
+  it('sends exactly what it always sent when nothing mints — no envelope, still defused', () => {
+    const q = queries([OWN, TRADING], { 'live-a': ['saw @types/node'] });
+    const r = run(q, 'and @TradingApp?');
+    if (!r.ok) throw new Error('expected a send');
+    expect(findContextSections(r.prompt, () => true)).toEqual([]);
+    expect(mentions(r.prompt)).toEqual([]);
   });
 });

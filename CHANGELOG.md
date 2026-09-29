@@ -96,6 +96,29 @@ on the floor, and say so in your PR.
 
 ## 0.8.101 — unreleased
 
+### Fixed
+
+- **One session's words can no longer reach into another session's files.**
+  When you mention a session with `@Name`, drag a context chip, or let one
+  session send a message to another, the text that arrives was being read for
+  file references — so an ordinary `@types/node` sitting in somebody else's
+  transcript could quietly attach a file, or list a whole folder, in *your*
+  session. Any `@` inside text that came from elsewhere is now marked so it is
+  read as a word rather than a path, the word itself stays readable, and the
+  session is told plainly that those paths belong to the other folder. Nothing
+  you type yourself is changed.
+
+### Changed
+
+- **A mentioned session's output now folds up inside your own message.** Send a
+  prompt that mentions `@Another Session` and the conversation shows a single
+  **Context from Another Session** row you can click open, with your actual
+  question underneath it instead of buried under pages of somebody else's
+  transcript. Only context switchboard itself added is folded: text that merely
+  *looks* like it — pasted, or typed by hand — stays on screen exactly as you
+  sent it. Folding is remembered for as long as the app is running; reopen it
+  later and those older messages show in full again.
+
 ## 0.8.100 — 2026-09-28
 
 ### Added

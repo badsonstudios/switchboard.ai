@@ -18,6 +18,11 @@
 // numbers, the block cap, tool-result stitching — is `FeedBuffer`'s job.
 import { asDisplayString } from '../../shared/display-string';
 import { ToolCategory, toolCategory } from '../../shared/tool-taxonomy';
+import {
+  fitContextSections,
+  findContextSections,
+  type ContextSection,
+} from '../../shared/injected-context';
 import { classifyInjected, describeInjectedTurn } from './injected';
 
 /**
@@ -103,6 +108,29 @@ export interface FeedBlock {
    * produced, and every pinned shape in the suite stays pinned.
    */
   attachments?: FeedAttachments;
+  /**
+   * user: the stretches of `text` that are context THIS APP injected (#830).
+   *
+   * OFFSETS INTO `text`, never a copy of it — which is what keeps the pill
+   * honest, and means a renderer that ignores this field renders today's block.
+   * The renderer folds these ranges; everything between them is the user's own
+   * prose.
+   *
+   * `text` is what was sent, up to the block's budget. When the budget bites,
+   * `fitContextSections` spends it on the user's words first and shortens the
+   * SECTION — so the offsets are into the text on this block and nothing else.
+   * The transcript keeps every byte, and a find reads the uncapped line.
+   *
+   * ABSENT, not `[]`, when there are none — the house rule `attachments` states
+   * above, and for the same reason: the ordinary prompt's block is byte-for-byte
+   * the block this file has always produced.
+   *
+   * ⚠️ ONLY EVER SET FOR MARKERS THIS APP MINTED. A user can type the marker and
+   * a pasted transcript can carry one, so shape alone proves nothing; the guard
+   * is `DerivationContext.isMintedRef`, and a derivation that is handed no guard
+   * builds no sections at all.
+   */
+  context?: ContextSection[];
   /** thinking: how long it lasted (set when the next block lands) */
   durationMs?: number;
   /** true when the line came from a subagent transcript */
@@ -415,13 +443,30 @@ function localCommandText(entry: Record<string, unknown>): string | null {
 }
 
 /**
+ * What only the LIVE SESSION knows, and a pure derivation cannot work out.
+ *
+ * The same seam `BlockOrigin` sits on, at the other end of the function: whether
+ * a context marker in a user turn is one this app minted is a fact about app
+ * state, not about the line. It arrives as a PREDICATE rather than a register so
+ * that this module keeps the promise at the top of the file — no state, no I/O —
+ * and so that a caller with nothing to check against (session find, the context
+ * package, every test that does not care) simply passes nothing and gets the
+ * fail-closed answer.
+ */
+export interface DerivationContext {
+  /** #830's forgery guard — `ContextRefs.guardFor(sessionId)` in the app */
+  isMintedRef?: (ref: string) => boolean;
+}
+
+/**
  * What one message means for the Feed. Tolerant by construction: an unknown
  * shape produces an empty list, never a throw — both callers are reading
  * untrusted output from another process.
  */
 export function deriveIntents(
   entry: Record<string, unknown>,
-  caps: DerivationCaps = DISPLAY_CAPS
+  caps: DerivationCaps = DISPLAY_CAPS,
+  ctx: DerivationContext = {}
 ): BlockIntent[] {
   // CLI-internal lines are not conversation. FIRST, ahead of every shape test:
   // it used to sit behind the `message` check, which was harmless while only
@@ -438,7 +483,7 @@ export function deriveIntents(
   const message = entry.message as { content?: unknown; role?: string; id?: unknown } | undefined;
   if (!message) return [];
 
-  if (entry.type === 'user') return userIntents(entry, message, ts, caps);
+  if (entry.type === 'user') return userIntents(entry, message, ts, caps, ctx);
   if (entry.type === 'assistant' && Array.isArray(message.content)) {
     // The API message's own id, and the reason it is read HERE rather than by
     // either caller: it is the one field a prose block can be identified by
@@ -528,11 +573,44 @@ function noticeIntent(
   };
 }
 
+/**
+ * One user turn's prose, capped — and its injected-context sections, if this
+ * derivation is allowed to recognise any (#830).
+ *
+ * ⚠️ **THE CAP IS APPLIED WITH THE SECTIONS IN HAND, NOT BEFORE THEM, and that
+ * ordering is the whole of what makes the feature fire.** The obvious version
+ * slices to `caps.text` first and looks for markers in the result — and for the
+ * case #830 opens with, a mention of a BUSY session, that finds nothing:
+ * `queries.ts` caps one session's output at the same 20,000 characters this
+ * block is capped at, so the closing marker is the first thing off the end.
+ * `fitContextSections` spends the budget on the user's own words first and
+ * shortens the section instead. `blocks.test.ts` pins both.
+ *
+ * `caps.text === 0` is the identity-only pass, which promises no text is built:
+ * there is nothing to scan and nobody to show it to. An unguarded derivation
+ * (session find, the context package) gets the plain slice it always got.
+ */
+function userText(
+  raw: string,
+  caps: DerivationCaps,
+  ctx: DerivationContext
+): { text: string; context?: ContextSection[] } {
+  if (ctx.isMintedRef === undefined || caps.text <= 0) return { text: raw.slice(0, caps.text) };
+  const found = findContextSections(raw, ctx.isMintedRef);
+  if (found.length === 0) return { text: raw.slice(0, caps.text) };
+  const fitted = fitContextSections(raw, found, caps.text);
+  // Absent, never `undefined`-valued — see `FeedBlock.context`.
+  return fitted.sections.length === 0
+    ? { text: fitted.text }
+    : { text: fitted.text, context: fitted.sections };
+}
+
 function userIntents(
   entry: Record<string, unknown>,
   message: { content?: unknown },
   ts: string | undefined,
-  caps: DerivationCaps
+  caps: DerivationCaps,
+  ctx: DerivationContext
 ): BlockIntent[] {
   const out: BlockIntent[] = [];
   // a real prompt is a string (or text items); tool_result items attach their
@@ -551,7 +629,7 @@ function userIntents(
     // wrong clothes.
     const notice = noticeIntent(entry, message.content, ts, caps);
     if (notice) return [notice];
-    out.push({ t: 'block', block: { kind: 'user', text: message.content.slice(0, caps.text), ts } });
+    out.push({ t: 'block', block: { kind: 'user', ...userText(message.content, caps, ctx), ts } });
     return out;
   }
   if (!Array.isArray(message.content)) return out;
@@ -589,7 +667,7 @@ function userIntents(
       marked = true;
       out.push({
         t: 'block',
-        block: { kind: 'user', text: c.text.slice(0, caps.text), ts, ...mark },
+        block: { kind: 'user', ...userText(c.text, caps, ctx), ts, ...mark },
         index,
       });
     } else if (c?.type === 'tool_result' && typeof c.tool_use_id === 'string') {

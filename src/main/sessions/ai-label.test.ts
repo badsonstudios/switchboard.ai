@@ -17,6 +17,8 @@ import {
   type AiLabelState,
   type RelabelInput,
 } from './ai-label';
+import { MAX_LABEL_LENGTH } from './auto-label';
+import { wrapInjectedContext } from '../../shared/injected-context';
 
 const NOW = 1_700_000_000_000;
 
@@ -220,11 +222,30 @@ describe('the instant label from the prompt (provisionalLabel, #883)', () => {
 
   it('REFUSES a turn that leads with another session\'s output', () => {
     // #798 injects a mention's context BEFORE the user's words, so the first
-    // line is the other session's header. Finding where the user's text resumes
-    // is #830's job; until then a label reading "Context from @other" is worse
-    // than no label for the few seconds before the AI pass lands. Refused rather
-    // than guessed.
-    expect(provisionalLabel('# Context from @TradingApp\n\nsome output\n\nnow fix mine')).toBeNull();
+    // line is the other session's header. A label reading "Context from other"
+    // is worse than no label for the few seconds before the AI pass lands.
+    // Refused rather than guessed.
+    //
+    // BOTH SHAPES, because there are two doors: the dragged context block's
+    // markdown heading (#799), and the marked envelope an `@Name` injection
+    // wears since #830.
+    expect(
+      provisionalLabel('# Context from "TradingApp" (session)\n\nsome output\n\nnow fix mine')
+    ).toBeNull();
+    const injected = wrapInjectedContext({
+      body: 'their output',
+      name: 'TradingApp',
+      sessionId: 'sess-1',
+      ref: 'a1b2c3d4',
+    });
+    expect(provisionalLabel(`${injected}\n\nnow fix mine`)).toBeNull();
+  });
+
+  it('keeps labelling a prompt that merely QUOTES the marker mid-sentence', () => {
+    // Anchored at the start, the rule `injected.ts` states for the same hazard:
+    // someone reporting this bug is talking ABOUT a marker, not wearing one.
+    const quoted = 'why does it print [Context a1b2c3d4 from another switchboard session, "A"…';
+    expect(provisionalLabel(quoted)).toBe(quoted.slice(0, MAX_LABEL_LENGTH).trim());
   });
 
   it('renders a slash command as a person writes it, never as markup', () => {

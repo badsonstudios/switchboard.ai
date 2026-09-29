@@ -6,7 +6,11 @@
 //
 // WHAT REACHES THE MODEL, AND WHY:
 //   - Each RESOLVED session's context block goes AHEAD of the prose, once per
-//     SESSION however often it is mentioned, in first-mention order.
+//     SESSION however often it is mentioned, in first-mention order. It is
+//     DEFUSED on the way in (#832: an `@word` inside another session's output
+//     attaches a file in THIS session's folder — measured) and wrapped in a
+//     marked envelope (#830: so the Feed can collapse it without trusting text
+//     shape). Both live in `injected-context.ts`.
 //   - A RESOLVED mention is rewritten in the prose from `@TradingApp` to
 //     `"TradingApp" (session)`. MEASURED (#798 probe, CLI 2.1.272): the CLI
 //     expands any `@word` as a file mention itself — a same-named file in the
@@ -31,6 +35,7 @@
 // caller keeps the draft and shows the reason.
 
 import type { FoundMention } from './mention-finder';
+import { CONTEXT_REF_LENGTH, wrapInjectedContext } from './injected-context';
 
 export type MentionAnswer =
   | {
@@ -39,6 +44,16 @@ export type MentionAnswer =
       block: string;
       /** the resolved session's ID — what "the same session twice" is decided on */
       key: string;
+      /**
+       * The resolved session's own name, which is what the Feed's collapsed row
+       * is labelled with (#830).
+       *
+       * NOT `FoundMention.typed`, and the difference is the whole point of
+       * reading it off the resolution: `@api` and `@API` are two spellings of
+       * one session, and a row headed with whichever the user happened to type
+       * would label the same block two different ways in one conversation.
+       */
+      name: string;
     }
   | { kind: 'missing' }
   | { kind: 'own' }
@@ -77,14 +92,36 @@ export function leftOutNote(names: readonly string[]): string {
 }
 
 /**
+ * Mint the reference ONE injected section is marked with (#830), or `undefined`
+ * for a wiring that has no register to check it against later.
+ *
+ * A function rather than a value because a prompt can carry several sections and
+ * each gets its own: one ref per send would still be unforgeable, but a distinct
+ * ref per section is what makes the close markers unambiguous when the same
+ * session is mentioned twice in a conversation.
+ */
+export type MintContextRef = (() => string) | undefined;
+
+/**
+ * A ref-shaped string used only to MEASURE an enveloped block.
+ *
+ * Every minted ref is exactly `CONTEXT_REF_LENGTH` hex characters, so a block
+ * measured with this is byte-for-byte the length of the block that gets sent.
+ * It is never sent and never registered — nothing can match it.
+ */
+const PLACEHOLDER_REF = '0'.repeat(CONTEXT_REF_LENGTH);
+
+/**
  * @param text     the draft as the user wrote it
  * @param found    `findMentions(text, names)`, in order
  * @param answers  one answer per mention AS TYPED (`FoundMention.typed`)
+ * @param mint     per-section forgery ref (#830); omitted → no envelope
  */
 export function buildMentionPrompt(
   text: string,
   found: readonly FoundMention[],
-  answers: ReadonlyMap<string, MentionAnswer>
+  answers: ReadonlyMap<string, MentionAnswer>,
+  mint?: MintContextRef
 ): MentionPrompt {
   const refusals: string[] = [];
   for (const m of found) {
@@ -101,14 +138,31 @@ export function buildMentionPrompt(
     const a = answers.get(m.typed);
     if (a?.kind !== 'resolved' || seen.has(a.key)) continue;
     seen.add(a.key);
+    // DEFUSED AND ENVELOPED BEFORE IT IS MEASURED (#832/#830). The escape and
+    // the markers are part of what goes on the wire, so they are part of what
+    // the budget is spending — measuring the bare block and sending a longer one
+    // would put the cap somewhere other than where it says it is.
+    //
+    // MEASURED WITH A PLACEHOLDER REF, then minted only if it fits. Every ref is
+    // the same length, so the measurement is exact — and a section that gets
+    // left out no longer burns an entry out of the register's bound for a
+    // marker that was never sent (review nit).
+    const wrap = (ref?: string): string =>
+      wrapInjectedContext({
+        body: a.block,
+        name: a.name,
+        sessionId: a.key,
+        ...(ref === undefined ? {} : { ref }),
+      });
+    const measured = wrap(mint === undefined ? undefined : PLACEHOLDER_REF);
     // The FIRST mentions win the budget, which is the order the user wrote them
     // in. A block that does not fit is named rather than trimmed.
-    if (a.block.length > budget) {
+    if (measured.length > budget) {
       leftOut.push(m.typed);
       continue;
     }
-    budget -= a.block.length;
-    blocks.push(a.block);
+    budget -= measured.length;
+    blocks.push(mint === undefined ? measured : wrap(mint()));
   }
   if (leftOut.length > 0) blocks.push(leftOutNote(leftOut));
   if (blocks.length === 0) return { ok: true, prompt: text };

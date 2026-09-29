@@ -163,7 +163,7 @@ test.describe('dropping a context chip on another session (#799)', () => {
     // It is WAITING in Beta's composer, attributed — and nothing has been sent.
     const held = w.locator('[data-sibling-message][data-sibling-kind="context"]');
     await expect(held).toHaveCount(1, { timeout: 15_000 });
-    await expect(held).toContainText(`Context from @${alpha}`);
+    await expect(held).toContainText(`Context from "${alpha}" (session)`);
     const before = await userTurns(w).count();
 
     // ── and the user's Enter is what sends it ───────────────────────────────
@@ -178,12 +178,12 @@ test.describe('dropping a context chip on another session (#799)', () => {
     const sent = userTurns(w).last();
     // The handoff went, under its own header — visible even collapsed, because
     // it is the turn's first line.
-    await expect(sent).toContainText(`Context from @${alpha}`);
+    await expect(sent).toContainText(`Context from "${alpha}" (session)`);
 
     // ⚠️ EXPAND BEFORE READING THE BODY. A handoff is thousands of characters,
     // so the feed collapses the turn to a one-line marker and the body is not
     // in the DOM at all until it is opened — the first version of this spec
-    // asserted against `▸# Context from @…click to expand` and failed on text
+    // asserted against `▸# Context from "…"…click to expand` and failed on text
     // that had genuinely been sent.
     const expander = sent.locator('[data-feed-expander]').first();
     if ((await expander.count()) > 0) await expander.click();

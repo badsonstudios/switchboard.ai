@@ -26,16 +26,29 @@
 
 import type { SessionQueries } from './queries';
 import { findMentions } from '../../shared/mention-finder';
-import { buildMentionPrompt, type MentionAnswer, type MentionPrompt } from '../../shared/mention-prompt';
+import {
+  buildMentionPrompt,
+  type MentionAnswer,
+  type MentionPrompt,
+  type MintContextRef,
+} from '../../shared/mention-prompt';
 
 /** The three query-core calls this needs — narrowed so a test can see which. */
 export type MentionQueries = Pick<SessionQueries, 'listSessions' | 'resolve' | 'sessionOutput'>;
 
+/**
+ * @param mint  mints the forgery ref each injected section is marked with
+ *              (#830). OPTIONAL for the same reason `resolveMentions` itself is
+ *              optional on the IPC deps: a wiring without it sends exactly what
+ *              it sent before, unmarked — which the Feed then declines to
+ *              collapse, because the guard fails closed.
+ */
 export function resolveMentions(
   queries: MentionQueries,
   render: (output: unknown) => string,
   text: string,
-  ownSessionId: string
+  ownSessionId: string,
+  mint?: MintContextRef
 ): MentionPrompt {
   const listed = queries.listSessions();
   // No list, nothing to match against: the draft goes as typed, exactly as it
@@ -58,7 +71,7 @@ export function resolveMentions(
   for (const typed of new Set(found.map((m) => m.typed))) {
     answers.set(typed, answerFor(queries, render, typed, ownSessionId));
   }
-  return buildMentionPrompt(text, found, answers);
+  return buildMentionPrompt(text, found, answers, mint);
 }
 
 function answerFor(
@@ -76,5 +89,12 @@ function answerFor(
   // second time is a second chance for it to mean something else.
   const output = queries.sessionOutput(found.value.id);
   if (!output.ok) return { kind: 'missing' };
-  return { kind: 'resolved', block: render(output.value), key: found.value.id };
+  // The RESOLVED session's name, not the spelling that found it (#830) — see
+  // `MentionAnswer`.
+  return {
+    kind: 'resolved',
+    block: render(output.value),
+    key: found.value.id,
+    name: found.value.name,
+  };
 }

@@ -41,6 +41,8 @@ import {
   type SectionId,
 } from './context-package';
 import { cleanSenderName, stripUnsafeControls } from '../../shared/sibling-message';
+import { neutraliseAtMentions } from '../../shared/at-mentions';
+import { mentionLabel } from '../../shared/mention-prompt';
 import {
   CONTEXT_FIDELITIES,
   type ContextFidelity,
@@ -72,7 +74,8 @@ function sectionOf(pkg: ContextPackage, id: SectionId) {
  * parts that carry a claim. Three things have to survive onto an excerpt or the
  * handoff is dishonest in exactly the way §5.5 spends a paragraph forbidding:
  *
- *  1. **WHO it came from** — the "Context from @A" header §5.5 names.
+ *  1. **WHO it came from** — the `Context from "A" (session)` header §5.5
+ *     names (it lost its `@` in #832; see `renderPackage`).
  *  2. **That no model wrote it.** A document headed "Where it left off" reads as
  *     a summary somebody composed. Saying plainly that it was extracted
  *     mechanically is what makes the rest safe to trust at the level it deserves.
@@ -93,7 +96,11 @@ function renderExcerpt(pkg: ContextPackage, id: SectionId): string {
   // being asked to trust. The house already solved this for the sibling header;
   // this is the same hazard through a different door, and it also turns a blank
   // title into `(unnamed)` rather than `@`.
-  lines.push(`# Context from @${cleanSenderName(pkg.session.name)} — ${section?.title ?? ''}`.trimEnd());
+  // `mentionLabel` rather than `@Name` — `renderPackage` states the reason
+  // (#832: our own header was a file mention in the receiving session).
+  lines.push(
+    `# Context from ${mentionLabel(cleanSenderName(pkg.session.name))} — ${section?.title ?? ''}`.trimEnd()
+  );
   lines.push('');
   lines.push(
     'This is one section of a handoff extracted mechanically from the session ' +
@@ -157,7 +164,24 @@ export function buildContextOffer(pkg: ContextPackage): ContextOffer {
     // is that the text they review is the text the agent reads. A transcript can
     // legitimately carry a control byte; refusing the whole gesture over one
     // would be a refusal addressed to nobody.
-    text: stripUnsafeControls(o.text),
+    //
+    // ── AND THE `@`-WORDS GO WITH THEM (#832) ─────────────────────────────
+    //
+    // THE THIRD DOOR ONTO THE SAME HAZARD, and the issue named only two — the
+    // `@Name` injection and the sibling message. This one is a dragged context
+    // package, which is our own mechanical rendering of ANOTHER session's
+    // transcript, dropped into this session's composer and sent. The CLI reads
+    // `@word` out of the whole prompt and resolves it here, so a `@types/node`
+    // quoted anywhere in that transcript lists this folder. Leaving it open
+    // because the issue did not list it would have shipped a fix that is true of
+    // two doors out of three.
+    //
+    // OUR OWN HEADING IS ESCAPED TOO, deliberately and not as collateral:
+    // `# Context from @A` is a live file mention for a session whose folder
+    // holds a file called `A`, and it is one we wrote. One rule over the whole
+    // document is also one rule to explain — the alternative was a second,
+    // quieter rule for the lines we happen to have authored.
+    text: neutraliseAtMentions(stripUnsafeControls(o.text)).text,
   }));
 
   return {

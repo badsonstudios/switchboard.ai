@@ -2,8 +2,9 @@
 //
 // WHAT §5.5 ASKS FOR: a structured handoff — goal, decisions, files touched,
 // current state, key snippets — that gets injected into another session under a
-// "Context from @A:" header, so B can pick up A's work without B's user copying
-// anything across.
+// `Context from "A" (session)` header, so B can pick up A's work without B's
+// user copying
+// anything across. (§5.5 said `@A`; #832 took the `@` out — see `renderPackage`.)
 //
 // ── WHY THE MECHANICAL VARIANT IS THE ONE BUILT FIRST ───────────────────────
 //
@@ -64,6 +65,7 @@
 import { DerivationCaps, FeedBlock, TEXT_CAP, touchedPath } from '../feed/blocks';
 import { isCommandPlumbing } from '../../shared/command-invocation';
 import { cleanSenderName } from '../../shared/sibling-message';
+import { mentionLabel } from '../../shared/mention-prompt';
 import { blocksFrom, renderBlock, sliceTail } from './transcript-blocks';
 // TYPE-ONLY, and it has to stay that way: `queries.ts` imports this module for
 // `sessionContext`, so a VALUE import here would close a runtime cycle between
@@ -897,7 +899,13 @@ export function renderPackage(pkg: ContextPackage): string {
   // normalises whitespace, so a newline in a title would break the header. Same
   // helper, same reason, as the sibling message's own attribution line. It is
   // identity for every ordinary title, so byte-stability is untouched.
-  lines.push(`# Context from @${cleanSenderName(pkg.session.name)}`);
+  // `mentionLabel`, not `@Name` (#832). The heading is part of a PROMPT, and
+  // the CLI resolves `@word` in a prompt against the receiving session's folder
+  // — a session titled after its project is very likely to name a real directory
+  // there, so our own header was a live file mention that would list it. The
+  // non-`@` form is the one #798 already chose for the user's own prose, for
+  // this exact reason; DESIGN §5.5's "Context from @A" wording moved with it.
+  lines.push(`# Context from ${mentionLabel(cleanSenderName(pkg.session.name))}`);
   lines.push('');
   lines.push(
     'This handoff was extracted mechanically from the session transcript — no model ' +

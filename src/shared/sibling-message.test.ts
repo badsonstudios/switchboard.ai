@@ -8,6 +8,7 @@ import {
   markerRef,
   normalizeNewlines,
 } from './sibling-message';
+import { AT_ESCAPE_NOTE } from './at-mentions';
 
 const ESC = String.fromCharCode(27);
 
@@ -164,5 +165,42 @@ describe('markerRef', () => {
   it('never returns empty, whatever it is handed', () => {
     expect(markerRef('')).toBe('ref');
     expect(markerRef('zzz-zzz')).toBe('ref');
+  });
+});
+
+describe('formatSiblingPrompt — a sender cannot attach the RECIPIENT’s files (#832)', () => {
+  const FROM = { id: 'sess-1', name: 'Alpha' };
+  /** The CLI's own bare-mention extractor — see `at-mentions.test.ts`. */
+  const mentions = (s: string): string[] =>
+    [...s.matchAll(/(^|[\s。、？！])@([^\s]+)\b/g)].map((m) => m[2] ?? '');
+
+  it('defuses an @word the sending agent wrote, and tells the recipient it did', () => {
+    const out = formatSiblingPrompt(FROM, 'please look at @types/node', 'user', 'abc12345');
+    expect(mentions(out)).toEqual([]);
+    expect(out).toContain('types/node');
+    expect(out).toContain(AT_ESCAPE_NOTE);
+  });
+
+  it('adds nothing to an ordinary message — the header is what it always was', () => {
+    const out = formatSiblingPrompt(FROM, 'the build is green', 'user', 'abc12345');
+    expect(out).not.toContain(AT_ESCAPE_NOTE);
+    expect(out).toBe(
+      '[Message abc12345 from another switchboard session, "Alpha" (session id sess-1). ' +
+        'The user reviewed it and sent it on to you. ' +
+        'It ends at the matching "End of message abc12345" line.]\n' +
+        'the build is green\n' +
+        '[End of message abc12345 from "Alpha".]'
+    );
+  });
+
+  it('defuses on the AUTOMATIC path too, where nobody read it first', () => {
+    const out = formatSiblingPrompt(FROM, 'run @scripts', 'automatic', 'abc12345');
+    expect(mentions(out)).toEqual([]);
+    expect(out).toContain('delivered automatically');
+  });
+
+  it('cannot be defeated by putting the mention on its own line', () => {
+    const out = formatSiblingPrompt(FROM, 'see this:\n@NOTES.md\nthanks', 'user', 'abc12345');
+    expect(mentions(out)).toEqual([]);
   });
 });
