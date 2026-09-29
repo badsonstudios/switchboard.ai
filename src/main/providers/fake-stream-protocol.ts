@@ -384,15 +384,31 @@ export class FakeStreamProtocol {
     //   `isSynthetic`. `ROt(e)` is
     //   `e.isMeta||e.isVisibleInTranscriptOnly||e.isCompactSummary||void 0` —
     //   `undefined` for a typed prompt, so likewise dropped.
-    this.emit({
-      type: 'user',
-      message,
-      session_id: this.sessionId,
-      parent_tool_use_id: null,
-      ...(typeof msg.uuid === 'string' && { uuid: msg.uuid }),
-      isReplay: true,
-      ...(msg.origin !== undefined && { origin: msg.origin }),
-    });
+    // ⚠️ EXCEPT FOR A LOCAL SLASH COMMAND, WHICH IS NOT ECHOED AT ALL (#978).
+    //
+    // Measured on CLI 2.1.280 with `--replay-user-messages` on: a `/usage`,
+    // `/cost` or `/context` turn is `system:init -> assistant -> result` and
+    // there is NO `user` frame anywhere in it, while an ordinary prompt in the
+    // same session gets one (`spike/findings/978-local-slash-commands-on-stream.md`).
+    // The flag does not cover a command the CLI answers itself.
+    //
+    // This was the fourth measured difference on this turn shape and the last
+    // one this fake was still smoothing over — and it is not a detail: it is
+    // why the manual could claim the answer appears "under the collapsed line
+    // showing the command you ran". Against the fake there WAS such a line.
+    // Against the CLI there is not, and a Direct-mode user sees the answer with
+    // nothing above it. `onClear` already models the no-echo shape.
+    if (!isLocalCommand(text)) {
+      this.emit({
+        type: 'user',
+        message,
+        session_id: this.sessionId,
+        parent_tool_use_id: null,
+        ...(typeof msg.uuid === 'string' && { uuid: msg.uuid }),
+        isReplay: true,
+        ...(msg.origin !== undefined && { origin: msg.origin }),
+      });
+    }
 
     // WHAT THE MODEL SAW (P2-E10-09). The real CLI answers an image by talking
     // about it, which is not a thing a fake can do — so it answers by SAYING
@@ -605,13 +621,34 @@ export class FakeStreamProtocol {
     // `/context`, `/model` and `/agents` alike (probe run 2026-08-02, every one
     // of them returning renderable text). It is the one turn shape where the
     // assembler has nothing streamed to reconcile against.
-    if (text.startsWith('/')) {
+    //
+    // ⚠️ RE-MEASURED ON 2.1.280 FOR #978, AND THE FRAME GREW THREE FIELDS. The
+    // shape above still holds; what this fake was missing is how the CLI now
+    // LABELS the turn — `model: "<synthetic>"`, `local_command_source` (the raw
+    // `<local-command-stdout>` wrapper) and `local_command_run` ({command,
+    // args}). Findings: `spike/findings/978-local-slash-commands-on-stream.md`.
+    //
+    // They are emitted here because `stream-feed.ts` now READS them: they are
+    // what tells it this message completes no streamed block, which is what
+    // stops a `/usage` overwriting an interrupted reply. A fake that kept the
+    // three-key sketch would let that guard be deleted with the e2e still
+    // green — the same fake-is-kinder-than-reality hole as #153/#154/#139.
+    if (isLocalCommand(text)) {
       const out = `LOCAL-OUTPUT for ${text}`;
+      const command = text.replace(/^\//, '').split(/\s+/)[0] ?? '';
       this.emit({
         type: 'assistant',
-        message: { role: 'assistant', content: [{ type: 'text', text: out }] },
+        message: {
+          role: 'assistant',
+          // no model ran — this is the CLI's own marker for that, and the
+          // broader half of the guard in `stream-feed.ts`
+          model: '<synthetic>',
+          content: [{ type: 'text', text: out }],
+        },
         session_id: this.sessionId,
         parent_tool_use_id: null,
+        local_command_source: `<local-command-stdout>${out}</local-command-stdout>`,
+        local_command_run: { command, args: text.slice(command.length + 1) },
       });
       this.host.appendTranscript?.({
         type: 'system',
@@ -1411,6 +1448,27 @@ export function extractDocuments(message: unknown): FakeDocument[] {
     }
   }
   return out;
+}
+
+/**
+ * A prompt the CLI answers ITSELF rather than by asking the model — `/usage`,
+ * `/cost`, `/context` and friends (#978).
+ *
+ * ONE PREDICATE, TWO CALL SITES, deliberately: `onUser` suppresses the
+ * `--replay-user-messages` echo for these, and the `/` branch further down
+ * builds the local-command reply. Those two must agree about what a local
+ * command IS — if the echo test and the reply test ever drift apart the fake
+ * starts emitting a shape the real CLI never produces (an echo with no reply,
+ * or a reply with an echo), which is precisely the class of fake-only shape
+ * this file exists to avoid.
+ *
+ * `/clear` never reaches either: it is intercepted at the top of `onUser` and
+ * is not a turn at all (#752).
+ *
+ * Exported for `fake-stream-check.ts` and its unit tests.
+ */
+export function isLocalCommand(text: string): boolean {
+  return text.startsWith('/');
 }
 
 export function extractText(message: unknown): string {

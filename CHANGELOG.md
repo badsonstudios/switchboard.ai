@@ -96,6 +96,25 @@ on the floor, and say so in your PR.
 
 ## 0.8.102 — unreleased
 
+### Fixed
+
+- **`/usage` can no longer overwrite an answer that was left unfinished.** When
+  a reply ends without being properly closed off — stopping one part-way is the
+  way you'd most likely cause it — running `/usage`, `/cost` or `/context` next
+  could replace that half-finished answer with the numbers, in the same spot,
+  instead of adding them underneath. Text you had already read would simply turn
+  into something else. They are now always separate replies, in the order they
+  happened.
+
+### Changed
+
+- **The note saying `/usage`, `/cost` and `/context` don't show their output has
+  been withdrawn from the manual and from v0.8.100's release notes.** It was
+  never true. Those commands have printed their answers in the conversation all
+  along; the warning was written ahead of a change that turned out not to affect
+  them. If you have been running them in a separate terminal because of that
+  note, you can stop.
+
 ## 0.8.101 — 2026-09-29
 
 ### Fixed
@@ -290,23 +309,22 @@ on the floor, and say so in your PR.
   that way, so the block stands whatever you click and there is no reason to leave
   you out of the loop. Plan mode is still read-only.
 
-- **⚠️ One thing you used to see in the conversation is temporarily missing, and
-  it is being worked on.** It came from the recording Claude Code writes to disk,
-  which was how switchboard built the conversation in terminal mode. Everything
-  now comes straight from Claude Code instead — faster and more accurate, and it
-  does not yet carry this:
+- **✅ CORRECTION (2026-09-29): the warning that stood here was wrong, and
+  nothing is missing.** This release originally warned that the answer to
+  `/usage`, `/cost` and `/context` would not appear in the conversation. It does,
+  and it always did in this release — the warning was written from a prediction
+  about a change that was still being built, and the prediction did not come
+  true. Those three commands print their answers in the conversation like any
+  other reply. You do not need a terminal for them.
 
-  - **The answer to `/usage`, `/cost` and `/context`.** Claude Code works these out
-    itself rather than asking the model, and the answer is not arriving. You see
-    the command you typed and then nothing. The command really ran; run it in a
-    terminal outside switchboard if you need the numbers.
+  The text is corrected rather than deleted because this release's notes are
+  shown inside the app, and anyone who read the warning should be able to find
+  out what happened to it. Nothing about the software changed to make this true;
+  it was true on the day this version shipped.
 
-  It is not a loss of data and it does not affect a session's work. It is the one
-  place where removing the terminal took something visible with it, and it is
-  named here rather than left for you to find.
-
-  *(There were two. What sub-agents said was the other, and it is fixed in this
-  same release — see "A session's helpers are back in the conversation" above.)*
+  *(There were two warnings. The other was about what sub-agents said, and that
+  one was real and is fixed in this same release — see "A session's helpers are
+  back in the conversation" above.)*
 
 - **The auto-trust / ask-trust chip has been removed from the title bar.** It had
   been greyed out since nothing could ask you the trust question, and its tooltip

@@ -14,11 +14,16 @@
 // rules, the clipboard round trip, the popout) and one shared setup would couple
 // them.
 //
-// ONE TEST HERE IS `fixme`, and it is not a flake: local slash-command output
-// (#978), a transcript-only feature #952 made unreachable. Its fixture is left
-// intact on purpose; see the note above it.
+// NOTHING HERE IS `fixme` ANY MORE. There were two.
 //
-// There were TWO. The other was subagent captions (#977) — a REGRESSION rather
+// Local slash-command output (#978) was never the gap its `fixme` advertised —
+// it moved to the stream at #140 and `e2e/stream.spec.ts` has covered it since.
+// The disabled test measured the transcript path #952 deleted on purpose, and
+// leaving it disabled with a ticket number on it is what persuaded an issue, the
+// manual and a release note that the feature was missing. Deleted, with the
+// reasoning kept where the test was.
+//
+// The other was subagent captions (#977) — a REGRESSION rather
 // than a gap, because #788 shipped the feature and `deriveFeed: false` for a
 // stream session switched off the subagent files along with the main
 // conversation it was aimed at. It is live again, and it came back with its
@@ -40,10 +45,6 @@ import {
   streamPrompter,
 } from './fixtures/app';
 import { FAKE_SESSION_ID } from '../src/main/providers/fake-stream-ids';
-
-function slugForCwd(cwd: string): string {
-  return cwd.replace(/[\\/:. ]/g, '-');
-}
 
 /**
  * A block ARRIVES, without the user having touched the composer.
@@ -292,86 +293,32 @@ test.describe('Feed view (E12-06)', () => {
     });
   });
 
-  // #156, and the case that shipped with a UNIT test and no e2e — which is
-  // exactly the gap Dan's PR #163 re-test walked into. The transcript half of
-  // the local-slash-command fix was never proved through the renderer, so
-  // nothing in the suite could say whether the OUTPUT was on screen or merely
-  // in a data structure.
+  // #156's transcript-path e2e USED TO LIVE HERE, and #978 deleted it rather
+  // than fixing it. Worth the paragraph, because the deletion is the finding.
   //
-  // The three entries below are copied from a REAL transcript
-  // (`~/.claude/projects/…`, read 2026-08-02), not invented: a `<local-command-caveat>`
-  // meta line, the `<command-name>` invocation, and the output as
-  // `system`/`subtype:"local_command"` wrapped in `<local-command-stdout>`.
-  // THERE IS NO `assistant` ENTRY — that absence is the whole bug.
+  // It wrote three real JSONL entries to disk — a `<local-command-caveat>` meta
+  // line, the `<command-name>` invocation, and the output as
+  // `system`/`subtype:"local_command"` — and asserted the Feed rendered the
+  // third. That is the TRANSCRIPT-driven Feed, which #952 deleted on purpose:
+  // a stream session is watched with `deriveFeed: 'sidechains'`, and
+  // `watcher.ts` returns early for the bound main transcript by design. The
+  // test could never pass again and was set `test.fixme` with #978 on it.
   //
-  // ⚠️ FIXME — #978, opened by #952. THE FIXTURE BELOW IS DELIBERATELY UNCHANGED.
+  // ⚠️ AND THAT PLACEHOLDER BECAME EVIDENCE. `test.fixme` states the strongest
+  // claim a disabled test can make — "this does not work" — and it was read
+  // that way: by the issue (#978 was filed 2h12m BEFORE #952 even merged,
+  // predicting a breakage), by `docs/manual/05-slash-commands.md`, and by
+  // v0.8.100's in-app release notes, which told every user the output was
+  // missing. It was never missing. The capability moved to the stream at #140
+  // and has been covered since by `e2e/stream.spec.ts` -> "a local slash
+  // command's output renders (#156)", which types `/usage` into the composer
+  // and passes unmodified.
   //
-  // This never worked on the stream and now works nowhere: `system:local_command`
-  // is a TRANSCRIPT line with no known stream-json equivalent, and the Feed stopped
-  // being built from the transcript for a real session at E18-10. The renderer half
-  // is not suspected — it is the line that never arrives.
-  //
-  // Left as `fixme` rather than deleted, and the three JSONL entries left as they
-  // are, because they are copied VERBATIM from a real transcript (read 2026-08-02)
-  // and are the only record in the tree of what the CLI actually writes for a local
-  // command. #978 has to measure the stream before it can rebuild this; it should
-  // read these first.
-  test.fixme('a local slash command shows its OUTPUT, not just a collapsed echo (#156)', async () => {
-    const folder = tempProjectFolder();
-    a = await launchApp({ seedFolder: folder });
-    const w = a.window;
-    await expect(w.getByText(folder.split(/[\\/]/).pop()!).first()).toBeVisible({ timeout: 25_000 });
-    await expect(w.getByText('No conversation yet')).toBeVisible();
-
-    const dir = path.join(a.home, '.claude', 'projects', slugForCwd(folder));
-    fs.mkdirSync(dir, { recursive: true });
-    const line = (o: Record<string, unknown>): string =>
-      JSON.stringify({
-        sessionId: 'native-e2e',
-        cwd: folder,
-        timestamp: new Date().toISOString(),
-        ...o,
-      }) + '\n';
-    fs.writeFileSync(
-      path.join(dir, 'native-e2e.jsonl'),
-      line({
-        type: 'user',
-        isMeta: true,
-        message: { role: 'user', content: '<local-command-caveat>Caveat</local-command-caveat>' },
-      }) +
-        line({
-          type: 'user',
-          message: {
-            role: 'user',
-            content:
-              '<command-name>/usage</command-name>\n            <command-message>usage</command-message>\n            <command-args></command-args>',
-          },
-        }) +
-        line({
-          type: 'system',
-          subtype: 'local_command',
-          level: 'info',
-          isMeta: false,
-          isSidechain: false,
-          content: '<local-command-stdout>Current session: 12% used · resets Aug 2</local-command-stdout>',
-        })
-    );
-
-    // THE OUTPUT IS ON SCREEN, WITH NO CLICK. Scoped to `.feed-md` — the
-    // assistant-prose renderer — so it can only pass by rendering as its own
-    // visible block. Matching loose page text would also have been satisfied by
-    // the text sitting inside the collapsed invocation pill, which is precisely
-    // the failure this test exists to distinguish.
-    const output = w.locator('.feed-md', { hasText: 'Current session: 12% used' });
-    await expect(output).toBeVisible({ timeout: 20_000 });
-
-    // …and the invocation still collapses to its command name, which is the
-    // existing treatment for a command echo (a skill invocation dumps its whole
-    // body here). The output is a SEPARATE block after it — no new UI, and
-    // nothing the user has to expand.
-    await expect(w.getByText('click to expand')).toBeVisible();
-    await expect(w.getByText('command-message')).toHaveCount(0); // boilerplate stays collapsed
-  });
+  // The transcript shape the fixture recorded is not lost: it is in
+  // `spike/findings/978-local-slash-commands-on-stream.md`, re-measured on CLI
+  // 2.1.280, beside the stream shape it disagrees with. A findings note is
+  // where a measurement belongs; a disabled test is where it rots into a
+  // rumour.
 
   // #91, Dan's live feedback 2026-07-26. Two presentation rules that only the
   // real window can settle: a tool block is a BOX whose whole body expands it,

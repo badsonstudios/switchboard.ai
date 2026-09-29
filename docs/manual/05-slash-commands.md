@@ -85,12 +85,17 @@ thing you'd do by hand, and they work the same in either mode.
 - **Everything else is passed straight through.** A command switchboard has no
   panel for is sent to Claude Code exactly as you typed it, and Claude Code
   answers it however it normally would.
-- **⚠️ Commands Claude Code answers ITSELF don't show you their answer right now.**
-  `/usage`, `/cost` and `/context` are worked out locally rather than by asking the
-  model, and their output is not currently making it onto the Session view — you see
-  the command you typed and then nothing. The command really did run; only the reply
-  is missing. This is a known gap and it is being worked on. Until it is fixed, run
-  those three in a terminal outside switchboard if you need the numbers.
+- **Commands Claude Code answers itself show their answer here like any other
+  reply.** `/usage`, `/cost` and `/context` are worked out on your machine rather
+  than by asking the model, so they cost you nothing and take a couple of
+  seconds. The answer appears in the conversation as ordinary text.
+
+  One thing that surprises people: **your command does not appear above the
+  answer.** Ordinary prompts show up in the conversation as you send them;
+  these don't, because Claude Code never sends them back. You type `/usage`, the
+  composer clears, and the numbers appear on their own. That is working
+  correctly. (`/cost` and `/usage` give the same answer — Claude Code treats
+  them as one command.)
 - **Clear and Compact are greyed out while a session is still starting, or
   once it has ended** — with a note saying which. That's true of both the
   buttons and the ⋯ menu; they're the same two actions, so they're unavailable

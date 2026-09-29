@@ -81,6 +81,69 @@ function supersedes(streamed: FeedBlock, kind: FeedBlock['kind']): boolean {
   return streamed.kind === 'tool' && kind === 'todos';
 }
 
+/**
+ * Could this `assistant` message have been built by `stream_event` deltas?
+ *
+ * `true` means it could not, and therefore that it must not claim a block the
+ * deltas opened.
+ *
+ * ── THE BUG (#978) ────────────────────────────────────────────────────────
+ *
+ * A local slash command (`/usage`, `/cost`, `/context`) arrives as a bare
+ * `system:init -> assistant -> result`: no `message_start`, no deltas, no
+ * `message_stop`. So it never reaches `endMessage`, which is the only thing
+ * that CLEARS the assembly map — `finalize` deliberately does not (#154: an
+ * interrupted turn's `assistant` can arrive after its own `result`).
+ *
+ * If anything is still sitting in that map, `claim()`'s index-miss fallback
+ * hands it over: the fallback takes ANY open block of a superseding kind,
+ * because the real CLI reports content index 0 on every `assistant` message of
+ * a multi-block turn. The local command's text then REPLACES that block's text,
+ * in place, at the same seq — text the user has already read, silently
+ * overwritten. It is the failure `supersedes()` refuses a kind disagreement to
+ * avoid, arriving through the one door that check does not cover.
+ *
+ * ── THE TWO MARKERS, AND WHY BOTH ─────────────────────────────────────────
+ *
+ * `local_command_run` / `local_command_source` are the CLI stating that the
+ * turn was a local command. They are the precise signal and the one to prefer —
+ * MEASURED on 2.1.280, `spike/findings/978-local-slash-commands-on-stream.md`.
+ * They are also NEW: S-11 captured the same turn on 2.1.220 and neither field
+ * was there.
+ *
+ * `model: "<synthetic>"` is the older, broader one, and it generalises the rule
+ * rather than merely widening CLI coverage: `<synthetic>` is the CLI saying no
+ * model produced this message. Nothing a model did not produce can be the
+ * completion of a token stream, because there were no tokens.
+ *
+ * ⚠️ THE BREADTH WAS CHECKED AGAINST THE BINARY, not reasoned about (the
+ * standing rule, `docs/reference-implementations.md`). In CLI 2.1.280
+ * `<synthetic>` appears in exactly three assistant builders — a
+ * `PushNotification` tool_use, a `"(no content)"` / `"No response requested."`
+ * text message, and one generic — and **all three construct their `content`
+ * inline**. None re-sends text that deltas produced, so this guard cannot
+ * strand a streamed block or duplicate a reply. `local_command_source` is
+ * emitted by one builder only, which the CLI's own schema calls *"the
+ * local-command twin"*; it cannot ride on a model turn.
+ *
+ * The residual risk is the generic builder, whose `content` comes from its
+ * callers. If one ever re-sent streamed content, this would APPEND a block
+ * rather than replace one — an extra block, never lost text, which is the same
+ * direction `supersedes()` already chose on purpose.
+ *
+ * DELIBERATELY NOT a check for "were there any deltas this turn?". That is the
+ * same fact one inference further away, and it would need turn-scoped state
+ * this class keeps for a different purpose — the assembly map outliving the
+ * tokens is load-bearing (see its declaration) and reading it as "a stream
+ * happened" is how the two facts get collapsed again.
+ */
+function wasNeverStreamed(msg: Record<string, unknown>): boolean {
+  if (msg.local_command_run != null || msg.local_command_source != null) return true;
+  const message = msg.message;
+  if (typeof message !== 'object' || message === null) return false;
+  return (message as Record<string, unknown>).model === '<synthetic>';
+}
+
 interface StreamedSession {
   buffer: FeedBuffer;
   /**
@@ -540,14 +603,23 @@ export class StreamFeed {
     // message we have just received — more than a transcript's is.
     const entry = { ...msg, timestamp: new Date().toISOString() };
     const isAssistant = msg.type === 'assistant';
+    // ⚠️ A MESSAGE NOTHING STREAMED MUST NOT CLAIM A STREAMED BLOCK (#978).
+    // The full argument, and the two markers it turns on, are on
+    // `wasNeverStreamed`. In one line: `claim()`'s index-miss fallback takes ANY
+    // open block of a superseding kind, which is right for a model's reply and
+    // wrong for a message no model produced — it would replace text the user has
+    // already read.
+    const unstreamed = isAssistant && wasNeverStreamed(msg);
     for (const intent of deriveIntents(entry, DISPLAY_CAPS, this.ctx(sessionId))) {
       if (intent.t === 'tool-result') {
         s.buffer.attachResult(intent.toolUseId, intent.out);
         continue;
       }
       // Only an assistant message can complete streamed deltas; a replayed
-      // `user` message shares the index space with nothing.
-      const streamed = isAssistant ? this.claim(s, intent.index, intent.block.kind) : undefined;
+      // `user` message shares the index space with nothing, and an unstreamed
+      // one completes nothing by construction (see above).
+      const streamed =
+        isAssistant && !unstreamed ? this.claim(s, intent.index, intent.block.kind) : undefined;
       const block = streamed
         ? // ALWAYS emitted, never conditionally: by now the block is usually
           // already `streaming: false` (content_block_stop got there first), and
@@ -570,7 +642,21 @@ export class StreamFeed {
     // CLI sends one message per content block — see `claim`) or an orphan.
     // Either way it is no longer filling in, and either way it must stay in
     // the map so a later message can still find it.
-    if (isAssistant) this.closeStreaming(s);
+    //
+    // `!unstreamed` for the same reason it guards the claim: this message is not
+    // part of whatever turn it lands in, so it has no standing to say that
+    // turn's tokens have stopped.
+    //
+    // ⚠️ AND IT IS NOT A GUARANTEE THAT NOTHING CLOSES — a claim an earlier
+    // draft of this comment made and which is false. The measured local-command
+    // turn ENDS IN ITS OWN `result` (`system:init -> assistant -> result`), and
+    // that result reaches `finalize` milliseconds later and closes every open
+    // block anyway. What this line buys is narrow and worth having on its own:
+    // the close is not attributed to a message that had nothing to do with it,
+    // so if the shape ever changes — a local command that does not end its own
+    // turn — the behaviour follows from the frames rather than from this
+    // function guessing.
+    if (isAssistant && !unstreamed) this.closeStreaming(s);
   }
 
   /**

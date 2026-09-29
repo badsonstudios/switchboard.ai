@@ -902,6 +902,34 @@ describe('isReplay on the echo (#666)', () => {
     expect(Object.keys(toolResults[0])).not.toContain('isReplay');
   });
 
+  // ⭐ A LOCAL SLASH COMMAND IS NOT ECHOED AT ALL (#978), and this is the
+  // fourth measured difference on that turn shape — the last one this fake was
+  // still smoothing over. Measured on CLI 2.1.280 WITH `--replay-user-messages`
+  // on: `/usage` produces `system:init -> assistant -> result` and no `user`
+  // frame anywhere, while an ordinary prompt in the same session gets one
+  // (`spike/findings/978-local-slash-commands-on-stream.md`). The flag does not
+  // cover a command the CLI answers itself.
+  //
+  // It is not a detail. While the fake echoed these, `docs/manual/` could say
+  // the answer appears "under the collapsed line showing the command you ran" —
+  // true against the fake, false in Direct mode, where the answer arrives with
+  // nothing above it. The same shape `/clear` has been pinned for since #752.
+  it('does NOT echo a local slash command', () => {
+    proto.handle(userMsg('/usage'));
+    expect(out.filter((m) => m.type === 'user')).toHaveLength(0);
+    // …and it still ANSWERED, so this pins "no echo" rather than "nothing ran"
+    expect(out.filter((m) => m.type === 'assistant')).toHaveLength(1);
+    expect(out.filter((m) => m.type === 'result')).toHaveLength(1);
+  });
+
+  // The control for the test above, in the same session shape: an ordinary
+  // prompt IS echoed. Without it, a `handle` that had quietly stopped emitting
+  // user frames at all would pass the assertion above and mean nothing.
+  it('…while an ordinary prompt in the same fake still is', () => {
+    proto.handle(userMsg('an ordinary prompt'));
+    expect(out.filter((m) => m.type === 'user' && m.isReplay === true)).toHaveLength(1);
+  });
+
   // AN ECHO IS NOT AN ACK — pinned as documentation, because the flag makes it
   // tempting to read one as proof the turn ran. The real CLI emits this exact
   // shape for a message it DROPPED as a duplicate ("Sending acknowledgment for
@@ -1312,12 +1340,26 @@ describe('`/clear` rotates the conversation (#752)', () => {
     expect(resets()[0].session_id).toBe(FAKE_SESSION_ID);
   });
 
-  it('`/clear something` is an ORDINARY prompt, not a clear', () => {
+  it('`/clear something` is NOT a clear', () => {
     // The real CLI treats it as a different command, and so does
     // `slash-intercept.ts` on the way out. A fake that swallowed it would hide
     // a prompt the user actually sent.
     proto.handle(userMsg('/clear the build cache'));
     expect(resets()).toEqual([]);
-    expect(out.filter((m) => m.type === 'user' && m.isReplay === true)).toHaveLength(1);
+    // It still gets ANSWERED — the point is that the answer is not a reset.
+    expect(out.filter((m) => m.type === 'result')).toHaveLength(1);
+    // ⚠️ AND IT IS NOT ECHOED, which changed at #978 and is worth the note.
+    // This used to assert one echo, back when the fake echoed every turn. It
+    // does not any more: anything starting with `/` reaches the fake's
+    // local-command branch and is answered there, and a locally-answered
+    // command carries no `--replay-user-messages` echo (measured on 2.1.280 for
+    // `/usage`, `/cost`, `/context`). Echoing it while answering it locally
+    // would be a shape the real CLI does not produce either way.
+    //
+    // WHAT IS NOT CLAIMED: that the real CLI answers `/clear the build cache`
+    // locally at all. Only the three above were measured. The fake has routed
+    // every `/` prefix to that branch since #156 and this change does not widen
+    // it — it just stops the echo disagreeing with the reply.
+    expect(out.filter((m) => m.type === 'user')).toHaveLength(0);
   });
 });
