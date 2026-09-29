@@ -3,6 +3,93 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ DONE — 2026-09-29: **E34 — #832 + #830, one session's words can no longer
+> open another session's files** (PR **#994**, merged on green CI, both issues
+> closed). The owner queued these two together for a reason that held up: #832
+> is the bug, #830 carries the shared forgery guard, and doing them apart would
+> have built that guard twice.
+>
+> **⭐ THE PROBE CAME FIRST, BECAUSE THE ISSUE ASKED FOR IT.** #832 refused to
+> choose between its three options without evidence — *"does the CLI attach from
+> an `@word` that appears inside a fenced block in practice?"*. Measured on
+> **CLI 2.1.280** (`spike/probes/832/probe-fenced-at.mjs`, findings in
+> `spike/findings/832-fenced-at-mention.md`), two turns, two unguessable tokens:
+>
+> | turn | mention inside our real fenced shape | result |
+> |---|---|---|
+> | 1 | `@ALPHA.md` | **attached** — an `attachment` line in the transcript |
+> | 2 | `\@BRAVO.md` | **nothing attached** |
+>
+> **So the fence protects nothing and one backslash stops it.** That settles the
+> options: *"say it in the fence"* cannot be the fix on its own, because the
+> attach step runs BEFORE the model reads a word of our header — a sentence
+> addressed to the model cannot prevent a file read or a 1,000-entry directory
+> listing. It is still said, as an explanation.
+>
+> **⚠️ FIVE DOORS, AND THE ISSUE NAMED TWO.** Each one puts another session's text
+> into this session's prompt, and shipping a fix true of two out of five would
+> have been worse than not claiming one: the `@Name` injection · a sibling's
+> message · a dragged context block · **the clean-room dispatch bundle, which
+> carries a DIFF** (` @param`, ` @returns`, ` @decorator` live in a patch in
+> quantity) · **and our own headings**. `# Context from @A` was itself a live
+> file mention — a session is usually titled after its project, so `@A` had a
+> good chance of naming a real directory in the receiving folder. They read
+> `Context from "A" (session)` now (#798's form, for #798's reason); **DESIGN
+> §5.5's wording moved with it, and so did `ai-label.ts`'s prefix constant**,
+> which would otherwise have matched nothing and silently taken a card's label
+> off the top of another session's handoff.
+>
+> **THE FOLD (#830)** is a marked envelope carrying a random 8-hex ref minted
+> main-side per section (`main/feed/context-refs.ts`); only a section whose ref
+> this app minted renders as a collapsed **Context from <Session>** row, and a
+> typed or pasted look-alike stays the plain text it is. `deriveIntents` takes a
+> **predicate, not the register**, so `blocks.ts` keeps its no-state promise and
+> an unguarded caller (session find, the context package) gets the fail-closed
+> answer.
+>
+> **⭐ REVIEW CHANGED THE SHIPPED BEHAVIOUR TWICE, and both are worth knowing:**
+>
+> * **The fold would have been a no-op in the case it was built for.** Slicing to
+>   the block's text cap before looking for markers loses the closing marker —
+>   and one session's output is capped at the SAME 20,000 characters a Feed block
+>   is, so a mention of a *busy* session (the case the issue opens with) folded
+>   nothing AND truncated the user's own question off the end.
+>   `fitContextSections` spends the budget on the prose first and shortens the
+>   section instead.
+> * **The ref stops a marker being GUESSED, not COPIED.** The marker is in the
+>   prompt, so the receiving agent reads it — `sibling-message.ts`'s "the sender
+>   is never told" sentence does not transfer. `defuseContextMarkers` breaks
+>   marker lines in text arriving from elsewhere, which is the other half.
+>
+> Also caught and fixed: the session NAME was un-escaped inside three new prompt
+> lines (a card titled *"Bump @types/node"* is an ordinary auto-label, not a
+> contrived one), a newline in a title would have split the marker silently, and
+> two e2e specs pinned the old header.
+>
+> **⚠️ KNOWN LIMIT, stated in three places rather than discovered later:** the
+> register is in memory and keyed by the LIVE session id, so **folding lasts for
+> the session's current run** — a restart or a resume re-derives that history
+> EXPANDED, in full, exactly as it was sent. Persisting it would mean writing the
+> secret half of a forgery guard to a file the very agents it guards against can
+> read, so "survives a restart" and "cannot be forged" were never available at
+> the same time.
+>
+> **Green:** 9,497 unit tests (one known `win-cmd` 5s-budget contention flake,
+> green run alone), all four CI jobs, lint, build, both typecheck projects. Docs:
+> `docs/manual/03-session-view.md`, CHANGELOG **0.8.101 — unreleased**, DESIGN
+> §5.5, the dogfood tracker (one new UNTESTED row), the findings note.
+>
+> **⚠️ A VERSION BUMP IS OWED BEFORE THIS CAN BE HAND-TESTED.** It is on `main`
+> and in the unreleased section; the tracker row says so. The dogfood sitting
+> cannot exercise it until 0.8.101 ships.
+>
+> **Next up:** nothing is claimed. The owner is dogfooding v0.8.100 and **anything
+> he files outranks the queue**. Otherwise, from the cut's own ordering:
+> **#978** (the one caveat v0.8.100's in-app release notes still advertise to
+> users), then **#521** (*"no discoverable way to open a file"* — owner-reported,
+> and the gateway to E25), then **#861** and **#981** as small wins.
+> **E21-02/03/04 (#904/#716/#740) remain the owner's and are not to be started.**
+
 > # 🚩 PHASE 2 IS CUT — 2026-09-28. **Phase 3 is the current milestone.**
 > Owner's instruction, in one pass: cut the phase, sweep the queue before he
 > starts filing dogfood bugs, scope Phase 3. All three done; **no code shipped in
