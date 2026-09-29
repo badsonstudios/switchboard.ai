@@ -36,6 +36,8 @@
 // the opening prompt and stops.
 import { GOAL_CHAR_CAP, capText, estimateTokens } from './context-package';
 import { cleanSenderName, stripUnsafeControls } from '../../shared/sibling-message';
+import { neutraliseAtMentions } from '../../shared/at-mentions';
+import { mentionLabel } from '../../shared/mention-prompt';
 import type { SessionSummary } from '../../shared/sessions';
 
 /**
@@ -314,7 +316,11 @@ export function buildCleanRoomBundle(src: CleanRoomSource): CleanRoomBundle {
   // on the rename paths normalises whitespace, so a newline in one would break
   // the heading of a document another model is asked to trust. It also turns a
   // blank title into `(unnamed)` rather than leaving a bare `@`.
-  lines.push(`# Clean-room handoff from @${field(src.session.name)}`);
+  // `mentionLabel`, not `@Name` (#832): this heading is part of a PROMPT, and
+  // the CLI resolves an `@word` in a prompt against the RECEIVING session's
+  // folder — so a session titled after its project named a real directory in the
+  // dispatched one. Same change, same reason, as `renderPackage`'s heading.
+  lines.push(`# Clean-room handoff from ${mentionLabel(field(src.session.name))}`);
   lines.push('');
   lines.push(PREAMBLE);
   lines.push('');
@@ -360,7 +366,18 @@ export function buildCleanRoomBundle(src: CleanRoomSource): CleanRoomBundle {
   // NOT STRIPPED HERE — the inputs already were, at the top. Everything joined
   // below is either one of those or a literal from this file. See the note
   // there for why a late strip is what broke the fence.
-  const text = lines.join('\n') + '\n';
+  //
+  // ⚠️ `neutraliseAtMentions` IS THE ONE LATE PASS, and it is not the mistake
+  // that note describes (#832). The strip had to go because it edited bytes
+  // INSIDE quoted content after the fence had been drawn around them, silently.
+  // This is the opposite case: editing the quoted content is the entire point,
+  // and the diff is the reason — ` @param`, ` @returns` and ` @decorator` live
+  // in a patch in quantity, and every one of them would attach a file or list a
+  // directory in the DISPATCHED session's folder when this bundle becomes its
+  // opening prompt. It runs over the assembled document precisely so that
+  // nothing which got in by another route is missed, and it says so in-band
+  // wherever a caller shows the document.
+  const text = neutraliseAtMentions(lines.join('\n') + '\n').text;
   return {
     session: src.session,
     text,

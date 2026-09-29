@@ -107,10 +107,29 @@ describe('what the target actually receives', () => {
     expect(optionOf(buildContextOffer(pkg), 'package').text).toBe(renderPackage(pkg));
   });
 
-  it('names the SOURCE session in every option — §5.5 asks for a "Context from @A" header', () => {
+  it('DEFUSES an @word in the source transcript — the third door onto #832', () => {
+    // The issue named two paths: the `@Name` injection and the sibling message.
+    // A dragged context block is the third and has exactly the same shape — our
+    // own mechanical rendering of ANOTHER session's transcript, dropped into
+    // this composer and sent, where the CLI resolves `@word` against THIS
+    // folder.
+    const pkg = build([userLine('bump @types/node please'), assistantLine('done')]);
+    const cli = /(^|[\s。、？！])@([^\s]+)\b/g;
+    // The raw document really does carry a mention — this is the hazard, not a
+    // hypothetical.
+    expect([...renderPackage(pkg).matchAll(cli)].length).toBeGreaterThan(0);
+    const offer = buildContextOffer(pkg);
+    for (const o of offer.options) expect([...o.text.matchAll(cli)]).toEqual([]);
+    // Still readable in the option that carries the prompt — the escape is
+    // visible, never a deletion. (Only the whole package is guaranteed to hold
+    // the goal; a single-section excerpt may not quote it at all.)
+    expect(optionOf(offer, 'package').text).toContain('types/node');
+  });
+
+  it('names the SOURCE session in every option — the header §5.5 asks for', () => {
     const offer = buildContextOffer(build([userLine('go'), assistantLine('done')]));
     expect(offer.from).toEqual({ id: 'sess-1', name: 'TradingApp' });
-    for (const o of offer.options) expect(o.text).toContain('Context from @TradingApp');
+    for (const o of offer.options) expect(o.text).toContain('Context from "TradingApp" (session)');
   });
 
   it('⚠️ carries COVERAGE into every option, not just the whole package', () => {

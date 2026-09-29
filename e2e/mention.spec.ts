@@ -131,6 +131,16 @@ test.describe('@-mention resolution at send (#798)', () => {
 
     const sent = userTurns(w).filter({ hasText: 'apply it here' });
     await expect(sent).toBeVisible({ timeout: 30_000 });
+    // SINCE #830 THE INJECTED HALF ARRIVES FOLDED, and that is the item: the
+    // row names the source session, the user's own question stays expanded
+    // beside it, and the block itself is behind one click. Asserting the
+    // content without opening it would be asserting against the old shape.
+    const context = sent.locator('[data-feed-box="context"]');
+    await expect(context).toHaveCount(1);
+    await expect(context).toContainText(`Context from ${alpha}`);
+    await expect(sent).toContainText("'s work and apply it here");
+    await expect(sent).not.toContainText('Recent output from');
+    await context.locator('[data-feed-expander]').click();
     // The attributed header, #764's standing caveat, the fence, and the actual
     // content — the whole of what the done-when means by "injected as context".
     await expect(sent).toContainText(`Recent output from ${alpha}`);

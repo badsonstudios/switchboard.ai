@@ -722,7 +722,12 @@ content into B's conversation as input, at a chosen fidelity:
   gesture; the text-selection half has no terminal to select in any more.
 - **Level 2 — Context package handoff (default).** Drag A's *context chip* onto B →
   switchboard.ai generates a structured handoff (goal, decisions, files touched, current
-  state, key snippets) and injects it into B with a "Context from @A:" header.
+  state, key snippets) and injects it into B with a `Context from "A" (session)`
+  header. *(That header read `Context from @A` until 2026-09-29. #832 measured
+  that the CLI resolves any `@word` in a prompt against the RECEIVING session's
+  folder, so our own header was attaching or listing whatever `A` named in B —
+  the same defect the item fixed everywhere else. The non-`@` form is #798's, for
+  #798's reason.)*
   Generation options: (a) ask A's own agent to write the handoff, or (b) one-shot
   headless pass (`claude -p`) over A's transcript. Summarized > raw: full transcripts
   can be 100k+ tokens and would consume B's context window and rate limits.

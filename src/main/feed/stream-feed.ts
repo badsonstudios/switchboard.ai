@@ -50,7 +50,16 @@
 // ---------------------------------------------------------------------------
 import { Logger } from '../log/logger';
 import { toolCategory } from '../../shared/tool-taxonomy';
-import { BlockOrigin, DerivedBlock, FeedBlock, TEXT_CAP, deriveIntents } from './blocks';
+import {
+  BlockOrigin,
+  DerivationContext,
+  DerivedBlock,
+  DISPLAY_CAPS,
+  FeedBlock,
+  TEXT_CAP,
+  deriveIntents,
+} from './blocks';
+import type { ContextRefs } from './context-refs';
 import { FeedBuffer } from './buffer';
 
 /**
@@ -103,8 +112,23 @@ export class StreamFeed {
   private readonly blockListeners = new Set<(sessionId: string, b: FeedBlock) => void>();
   private readonly resetListeners = new Set<(sessionId: string, cause?: 'clear') => void>();
 
-  /** Optional so a test can construct one bare; the app always passes it. */
-  constructor(private readonly log?: Logger) {}
+  /**
+   * Both optional so a test can construct one bare; the app always passes them.
+   *
+   * `refs` is #830's forgery guard (`feed/context-refs.ts`). Without it, a user
+   * turn carrying injected context derives exactly as it did before — one block,
+   * full text, nothing folded — which is the fail-closed direction and the
+   * reason it can be absent at all.
+   */
+  constructor(
+    private readonly log?: Logger,
+    private readonly refs?: ContextRefs
+  ) {}
+
+  /** What `deriveIntents` needs to know about this session, or nothing. */
+  private ctx(sessionId: string): DerivationContext {
+    return this.refs === undefined ? {} : { isMintedRef: this.refs.guardFor(sessionId) };
+  }
 
   /**
    * Seed a RESUMED session's Feed with the conversation that already happened
@@ -168,7 +192,7 @@ export class StreamFeed {
         // are already on disk and derives them under `deriveFeed: 'sidechains'`.
         // The replayed half needed no code of its own; it needed the same
         // condition the live half needed.
-        for (const intent of deriveIntents(e)) {
+        for (const intent of deriveIntents(e, DISPLAY_CAPS, this.ctx(sessionId))) {
           if (intent.t === 'tool-result') {
             s.buffer.attachResult(intent.toolUseId, intent.out);
             continue;
@@ -227,7 +251,7 @@ export class StreamFeed {
     // subagent output anybody is waiting for, and creating state for it here
     // would leak an entry per stray line.
     if (!s) return false;
-    for (const intent of deriveIntents(entry)) {
+    for (const intent of deriveIntents(entry, DISPLAY_CAPS, this.ctx(sessionId))) {
       if (intent.t === 'tool-result') {
         s.buffer.attachResult(intent.toolUseId, intent.out);
         continue;
@@ -516,7 +540,7 @@ export class StreamFeed {
     // message we have just received — more than a transcript's is.
     const entry = { ...msg, timestamp: new Date().toISOString() };
     const isAssistant = msg.type === 'assistant';
-    for (const intent of deriveIntents(entry)) {
+    for (const intent of deriveIntents(entry, DISPLAY_CAPS, this.ctx(sessionId))) {
       if (intent.t === 'tool-result') {
         s.buffer.attachResult(intent.toolUseId, intent.out);
         continue;
@@ -749,6 +773,11 @@ export class StreamFeed {
 
   /** The session is gone; so are its blocks. */
   forgetSession(sessionId: string): void {
+    // …and the refs minted for it (#830). They are useless once the session is
+    // gone — nothing will ever derive a block under this id again — and the
+    // register is the one piece of per-session state that would otherwise sit
+    // there for the life of the process.
+    this.refs?.forget(sessionId);
     this.sessions.delete(sessionId);
   }
 }

@@ -19,6 +19,8 @@
 // `delivery.test.ts` pins the payload's key set, so adding a `submit` here is a
 // red test and a conversation rather than a quiet convenience.
 
+import { AT_ESCAPE_NOTE, neutraliseAtMentions } from './at-mentions';
+
 /**
  * The longest message one session may send another, in characters.
  *
@@ -245,8 +247,16 @@ function oneLine(s: string): string {
   // Controls go too (#765 review): a card title is the user's, but it lands
   // inside a header another agent reads, and an ESC in it would be the same
   // hazard `UNSAFE` refuses in the message body.
+  //
+  // …and `@`-words go with them (#832 review). EVERY caller of this puts the
+  // result inside a PROMPT — the sibling header, `renderOutput`'s "Recent output
+  // from …", the context handoff's heading, the clean-room bundle — and a card
+  // title is very often auto-labelled from the user's own first prompt, so
+  // "Bump @types/node" is an ordinary title rather than a contrived one. Left
+  // alone, our own attribution line would be the file mention the rest of this
+  // item exists to stop, in the sentence announcing where the text came from.
   const flat = s.replace(UNSAFE_ALL, '').replace(/\s+/g, ' ').trim();
-  return flat === '' ? '(unnamed)' : flat;
+  return flat === '' ? '(unnamed)' : neutraliseAtMentions(flat).text;
 }
 
 /**
@@ -271,6 +281,22 @@ function oneLine(s: string): string {
  * told, so a forged end marker cannot match the real one. Still a labelling
  * convention, not a cryptographic guarantee — but no longer one a message can
  * impersonate by guessing.
+ *
+ * ── AND THE MESSAGE'S `@`-WORDS ARE DEFUSED (#832) ─────────────────────────
+ *
+ * The second half of the same hazard, and it shipped here first. The CLI pulls
+ * `@word` file mentions out of the WHOLE prompt and resolves them against the
+ * RECEIVING session's folder — so `@types/node` in a message an agent wrote
+ * lists the recipient's `node_modules`, and the user who pressed Enter had no
+ * way to predict it. `neutraliseAtMentions` breaks the shape visibly; the
+ * recipient is told in the header, because unlike the read tools this text is
+ * meant to be acted on and a silent edit would be a worse lie than a loud one.
+ *
+ * What it costs the sender is one tool call: a path is still readable and still
+ * `Read`-able, it is just no longer pre-attached. The REFUSE-don't-strip rule
+ * above does not apply, and the difference is worth naming — a control character
+ * is something an agent can be told to stop sending, while `@` is ordinary
+ * English and refusing every message containing one would refuse most of them.
  */
 export function formatSiblingPrompt(
   from: SiblingSender,
@@ -279,18 +305,20 @@ export function formatSiblingPrompt(
   ref: string
 ): string {
   const name = oneLine(from.name);
+  const safe = neutraliseAtMentions(text);
   const who =
-    how === 'user'
+    (how === 'user'
       ? 'The user reviewed it and sent it on to you.'
       : 'It was delivered automatically — the user lets this session accept messages from ' +
-        'other sessions without reviewing them.';
+        'other sessions without reviewing them.') +
+    (safe.count > 0 ? ` ${AT_ESCAPE_NOTE}` : '');
   // "…ends at the matching line" (round 2): a forged header carries a ref of
   // its own invention and would otherwise look exactly like a real one — the
   // recipient has to be told WHICH ref counts, and the real header says so first.
   return (
     `[Message ${ref} from another switchboard session, "${name}" (session id ${from.id}). ${who} ` +
     `It ends at the matching "End of message ${ref}" line.]\n` +
-    `${text}\n` +
+    `${safe.text}\n` +
     `[End of message ${ref} from "${name}".]`
   );
 }

@@ -451,7 +451,7 @@ describe('a transcript with no tool calls still yields a usable package', () => 
 
   it('yields a whole document for a session that has produced nothing at all', () => {
     const doc = renderPackage(build([]));
-    expect(doc).toContain('# Context from @TradingApp');
+    expect(doc).toContain('# Context from "TradingApp" (session)');
     expect(doc).toContain('_This session has not been given a prompt yet._');
     expect(doc.trim().length).toBeGreaterThan(200);
   });
@@ -1162,7 +1162,7 @@ describe('reading the transcript (SessionQueries.sessionContext)', () => {
     if (!r.ok) throw new Error('expected a package, got a refusal');
     expect(r.value.coverage).toBe('whole');
     expect(r.value.sections).toHaveLength(6);
-    expect(renderPackage(r.value)).toContain('# Context from @TradingApp');
+    expect(renderPackage(r.value)).toContain('# Context from "TradingApp" (session)');
   });
 
   it('reaches back for the opening prompt when the tail window missed it', () => {
@@ -1255,7 +1255,7 @@ describe('reading the transcript (SessionQueries.sessionContext)', () => {
     const file = writeTranscript(['not json', '{', '[]', 'null', '']);
     const r = queriesOver(file).sessionContext('TradingApp');
     if (!r.ok) throw new Error('expected a package, not a refusal');
-    expect(renderPackage(r.value)).toContain('# Context from @TradingApp');
+    expect(renderPackage(r.value)).toContain('# Context from "TradingApp" (session)');
   });
 
   it('builds a real session\'s package from the captured fixture', () => {

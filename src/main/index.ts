@@ -32,6 +32,7 @@ import type { PermissionRequest } from '../shared/ipc/permissions';
 import { StreamCommands } from './sessions/stream-commands';
 import { StreamModel } from './sessions/stream-model';
 import { StreamFeed } from './feed/stream-feed';
+import { ContextRefs } from './feed/context-refs';
 import { SessionManager } from './sessions/session-manager';
 import { HookListener } from './hooks/hook-listener';
 import { TranscriptWatcher } from './transcripts/watcher';
@@ -1389,7 +1390,13 @@ app
     // reason spelled out above: one listener per consumer, one blast radius
     // each. This one carries the most traffic by far — S-11 counted 719
     // `stream_event`s against 27 `assistant` messages in a working day.
-    const streamFeed = new StreamFeed(createLogger(sink, 'sessions'));
+    // #830's forgery register, shared by the two things that must agree about
+    // it: `resolveMentions` MINTS a ref per injected section, and both Feed
+    // derivations ask whether a marker they found is one of them. One instance,
+    // because a second register would say no to refs the first minted — and
+    // saying no is invisible (the section just renders expanded).
+    const contextRefs = new ContextRefs();
+    const streamFeed = new StreamFeed(createLogger(sink, 'sessions'), contextRefs);
     manager.onStreamMessage((sessionId, msg) => streamFeed.offer(sessionId, msg));
     // A turn that never produced a `result` must not leave a block claiming to
     // still be filling in (#140). The session's exit is the last honest moment
@@ -1479,6 +1486,8 @@ app
       // which makes the same argument about the same hazard for the replay.
       sidechainSink: (sessionId, entry, origin) =>
         streamFeed.absorbSidechain(sessionId, entry, origin),
+      // The SAME register the stream Feed reads (#830) — see its construction.
+      contextRefs,
       // Test-only: the real deadline is 45s, which no e2e should sit through.
       // Read only in a dev/test build, so the shipped binary has no env var
       // that can move a user-visible deadline (P2-E15-10).
@@ -2601,8 +2610,13 @@ app
       // The composer's `@Name` at send (P2-E11-08) — the SAME `sessionQueries`
       // the bus tools answer from, and `renderOutput`'s wording, so a mention
       // and `get_session_output` cannot disagree about a session.
+      // The ref is minted against the RECEIVING session (#830): that is the
+      // session whose Feed will be asked to fold the block, and a register keyed
+      // by anything else would answer a question nobody asked.
       resolveMentions: (text, ownSessionId) =>
-        resolveMentions(sessionQueries, renderOutput, text, ownSessionId),
+        resolveMentions(sessionQueries, renderOutput, text, ownSessionId, () =>
+          contextRefs.mint(ownSessionId)
+        ),
       // The context chip's drop dialog (P2-E11-10) — the SAME `sessionQueries`
       // the bus tools, `@Name` and `get_session_output` answer from, so a chip
       // dragged across the screen and an agent asking about the same session

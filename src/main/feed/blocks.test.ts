@@ -6,12 +6,15 @@
 // consumer, `StreamFeed`, has to be able to rely on exactly the same answers.
 import { describe, it, expect } from 'vitest';
 import {
+  DISPLAY_CAPS,
+  DerivedBlock,
   IDENTITY_ONLY_CAPS,
   deriveIntents,
   touchedPath,
   EmitIntent,
   ToolResultIntent,
 } from './blocks';
+import { wrapInjectedContext } from '../../shared/injected-context';
 
 const blocks = (intents: ReturnType<typeof deriveIntents>): EmitIntent[] =>
   intents.filter((i): i is EmitIntent => i.t === 'block');
@@ -436,5 +439,100 @@ describe('touchedPath — which key names a file (#766)', () => {
     expect(touchedPath({ file_path: 42 })).toBeUndefined();
     expect(touchedPath({ file_path: null })).toBeUndefined();
     expect(touchedPath({ file_path: { toString: () => 'a.ts' } })).toBeUndefined();
+  });
+});
+
+describe('deriveIntents — injected context inside a user turn (#830)', () => {
+  const REF = 'a1b2c3d4';
+  const section = (ref: string, name = 'TradingApp'): string =>
+    wrapInjectedContext({ body: 'their recent output', name, sessionId: 'sess-1', ref });
+  const userLine = (text: string): Record<string, unknown> => ({
+    type: 'user',
+    message: { role: 'user', content: text },
+  });
+  const blockOf = (intents: ReturnType<typeof deriveIntents>): DerivedBlock =>
+    (intents[0] as EmitIntent).block;
+
+  it('marks the stretch this app injected, and leaves `text` exactly as sent', () => {
+    const prompt = `${section(REF)}\n\nwhat do you make of it?`;
+    const b = blockOf(
+      deriveIntents(userLine(prompt), DISPLAY_CAPS, { isMintedRef: (r) => r === REF })
+    );
+    expect(b.kind).toBe('user');
+    expect(b.text).toBe(prompt);
+    expect(b.context).toHaveLength(1);
+    const s = b.context?.[0];
+    expect(s?.name).toBe('TradingApp');
+    expect(prompt.slice(s?.start, s?.end)).toBe(section(REF));
+  });
+
+  it('does NOT mark a look-alike nobody minted — the forgery case', () => {
+    const prompt = `${section('deadbeef')}\n\nwhat do you make of it?`;
+    const b = blockOf(
+      deriveIntents(userLine(prompt), DISPLAY_CAPS, { isMintedRef: (r) => r === REF })
+    );
+    expect(b.text).toBe(prompt);
+    expect('context' in b).toBe(false);
+  });
+
+  it('builds no sections at all without a guard — the fail-closed default', () => {
+    const prompt = `${section(REF)}\n\nand?`;
+    expect('context' in blockOf(deriveIntents(userLine(prompt)))).toBe(false);
+  });
+
+  it('leaves an ordinary prompt byte-for-byte what it always was', () => {
+    const plain = blockOf(
+      deriveIntents(userLine('just a question'), DISPLAY_CAPS, { isMintedRef: () => true })
+    );
+    expect(plain).toEqual({ kind: 'user', text: 'just a question', ts: undefined });
+  });
+
+  it('⚠️ still folds when the cap bites — the budget is spent on the PROSE first', () => {
+    // The case the feature exists for. `queries.ts` caps one session's output at
+    // the same 20,000 characters this block is capped at, so a mention of a busy
+    // session is over budget by construction. Slicing first found no closing
+    // marker, folded nothing, and truncated the user's question off the end.
+    const question = 'so what should I do?';
+    const long = wrapInjectedContext({
+      body: 'x'.repeat(2_000),
+      name: 'TradingApp',
+      sessionId: 'sess-1',
+      ref: REF,
+    });
+    const prompt = `${long}\n\n${question}`;
+    const caps = { ...DISPLAY_CAPS, text: 1_000 };
+    const b = blockOf(deriveIntents(userLine(prompt), caps, { isMintedRef: () => true }));
+    expect(b.text?.length).toBeLessThanOrEqual(1_000);
+    expect(b.text).toContain(question);
+    expect(b.context).toHaveLength(1);
+    const s = b.context?.[0];
+    expect(b.text?.slice(s?.start, s?.end).startsWith('[Context ')).toBe(true);
+  });
+
+  it('falls back to an honest slice, and no sections, when even the prose will not fit', () => {
+    const prompt = `${section(REF)}\n\n${'q'.repeat(500)}`;
+    const caps = { ...DISPLAY_CAPS, text: 200 };
+    const b = blockOf(deriveIntents(userLine(prompt), caps, { isMintedRef: () => true }));
+    expect('context' in b).toBe(false);
+    expect(b.text?.length).toBe(200);
+  });
+
+  it('marks the same stretch when the turn arrives as text ITEMS (the stream shape)', () => {
+    const prompt = `${section(REF)}\n\nwell?`;
+    const entry = {
+      type: 'user',
+      message: { role: 'user', content: [{ type: 'text', text: prompt }] },
+    };
+    const b = blockOf(deriveIntents(entry, DISPLAY_CAPS, { isMintedRef: () => true }));
+    expect(b.context).toHaveLength(1);
+    expect(b.text).toBe(prompt);
+  });
+
+  it('builds nothing on the identity-only pass, which promises no text at all', () => {
+    const prompt = `${section(REF)}\n\nwell?`;
+    const b = blockOf(
+      deriveIntents(userLine(prompt), IDENTITY_ONLY_CAPS, { isMintedRef: () => true })
+    );
+    expect('context' in b).toBe(false);
   });
 });

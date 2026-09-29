@@ -911,7 +911,7 @@ describe('sessionContextFor (#800)', () => {
     const r = make(lines).sessionContextFor('TradingApp');
     if (!r.ok) throw new Error(r.reason);
     expect(r.value.level).toBe(DEFAULT_FIDELITY);
-    expect(r.value.text).toContain('# Context from @TradingApp');
+    expect(r.value.text).toContain('# Context from "TradingApp" (session)');
     expect(r.value.text).toContain('add a stop-loss');
   });
 
@@ -922,7 +922,7 @@ describe('sessionContextFor (#800)', () => {
     const r = make(lines).sessionContextFor('TradingApp', level);
     if (!r.ok) throw new Error(r.reason);
     expect(r.value.level).toBe(level);
-    expect(r.value.text).toContain('Context from @TradingApp');
+    expect(r.value.text).toContain('Context from "TradingApp" (session)');
   });
 
   it('different levels really are different documents', () => {
@@ -995,7 +995,7 @@ describe('sessionContextFor (#800)', () => {
     if (!r.ok) throw new Error(r.reason);
     expect(r.value.empty).toBe(true);
     expect(r.value.coverage).toBe('whole');
-    expect(r.value.text).toContain('Context from @TradingApp');
+    expect(r.value.text).toContain('Context from "TradingApp" (session)');
   });
 
   it('COPIES the package’s own estimate and coverage — it does not compute a second one', () => {

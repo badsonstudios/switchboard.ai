@@ -16,7 +16,12 @@ const build = (text: string, a: Map<string, MentionAnswer>, names: readonly stri
 const TRADING = '[[block: TradingApp output]]';
 const BRAIN = '[[block: BrainHarbor output]]';
 /** a resolved answer for a session of its own */
-const resolved = (block: string, key = block): MentionAnswer => ({ kind: 'resolved', block, key });
+const resolved = (block: string, key = block, name = key): MentionAnswer => ({
+  kind: 'resolved',
+  block,
+  key,
+  name,
+});
 
 describe('buildMentionPrompt — what a draft with mentions sends', () => {
   it('puts the resolved session’s block AHEAD of the prose, and rewrites the mention out of @ shape', () => {

@@ -728,6 +728,10 @@
         "event": "event"
       }
     },
+    "injectedContext": {
+      "label": "Context from {name}",
+      "hint": "sent with your prompt"
+    },
     "thinking": "thinking…",
     "thoughtFor": "Thought for {s}s",
     "editStats": "+{added} / -{removed} lines",

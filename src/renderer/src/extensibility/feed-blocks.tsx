@@ -736,13 +736,136 @@ function AttachmentMarker({
 }
 
 /**
+ * One stretch of a sent prompt that this app injected: another session's recent
+ * output, resolved from an `@Name` mention (#830).
+ *
+ * A COLLAPSED ROW, in the same furniture as every other foldable thing in the
+ * feed — `ToolBox` for the container and its read-not-a-click guard,
+ * `FeedExpander` for the keyboard path and `aria-expanded`. It is deliberately
+ * not a variant of the user pill: what it holds is not the user's words.
+ *
+ * ⚠️ THE ROW DOES NOT DECIDE WHAT IS INJECTED. It renders the ranges main put on
+ * the block, and main puts one there only for a marker it minted (`main/feed/
+ * context-refs.ts`). A pasted transcript containing the marker text arrives with
+ * no ranges at all and renders as the plain prose it is — which is the whole
+ * reason this could not be done with a regex in the renderer.
+ */
+function InjectedContextRow({
+  name,
+  body,
+  revealed,
+}: {
+  name: string;
+  body: string;
+  /** find jumped into this turn — unfold, §5.31, like every other row */
+  revealed: boolean;
+}): React.JSX.Element {
+  const { t } = useTranslation();
+  const [expanded, setExpanded] = React.useState(false);
+  const open = expanded || revealed;
+  const bodyId = React.useId();
+  const toggle = (): void => setExpanded(!open);
+  return (
+    <ToolBox kind="context" onToggle={toggle}>
+      <div style={{ fontSize: 11 }}>
+        <FeedExpander
+          open={open}
+          onToggle={toggle}
+          controls={open ? bodyId : undefined}
+          style={{ display: 'flex', gap: 6, alignItems: 'baseline', inlineSize: '100%' }}
+        >
+          <span style={{ fontSize: 8, color: 'var(--faint)', flexShrink: 0 }}>
+            {open ? t('feedView.expandedIcon') : t('feedView.collapsedIcon')}
+          </span>
+          <span
+            style={{
+              fontWeight: 700,
+              color: 'var(--text)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              minInlineSize: 0,
+            }}
+          >
+            {t('feedView.injectedContext.label', { name })}
+          </span>
+          <span style={{ fontSize: 9.5, color: 'var(--faint)', flexShrink: 0 }}>
+            {t('feedView.injectedContext.hint')}
+          </span>
+        </FeedExpander>
+        {open && (
+          // `NO_TOGGLE` for the reason every other expanded payload carries it:
+          // this is for READING, and selecting a line out of it must not fold it
+          // away under the pointer.
+          <pre
+            id={bodyId}
+            {...NO_TOGGLE}
+            style={{
+              margin: '2px 0 4px 14px',
+              padding: 6,
+              background: 'var(--panel)',
+              border: '1px solid var(--border)',
+              borderRadius: 4,
+              fontSize: 10,
+              fontFamily: 'var(--font-mono)',
+              color: 'var(--muted)',
+              maxBlockSize: 240,
+              overflow: 'auto',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+            }}
+          >
+            {body}
+          </pre>
+        )}
+      </div>
+    </ToolBox>
+  );
+}
+
+/**
  * The user's prompt in a tinted pill (Dan #2). Long payloads — skill
  * invocations dump the whole skill body as a user message — collapse to a
  * header line with click-to-expand, like tool blocks (Dan #7).
+ *
+ * ── WHAT `b.context` CHANGES (#830) ────────────────────────────────────────
+ *
+ * A prompt that mentioned another session carries that session's output ahead of
+ * the prose. Before this, the pill saw one very long string: it collapsed, and
+ * the header line it showed was the first 160 characters of SOMEBODY ELSE'S
+ * transcript, with the user's actual question hidden behind an expander. Now the
+ * injected stretches fold into their own rows and the question stands on its
+ * own — so `long`, `cmd` and the label are all computed from the PROSE, which is
+ * the text the user typed.
+ *
+ * Nothing changes for a block with no ranges: the prose IS the text, byte for
+ * byte, and every pinned shape in the suite still holds.
+ *
+ * THE ROWS RENDER FIRST, not interleaved. Every injected section is built ahead
+ * of the prose (`buildMentionPrompt`), so in practice this IS document order;
+ * the flattening would only show if a future caller injected mid-prose, and it
+ * would cost ordering rather than content.
  */
 function UserPill({ b }: { b: FeedBlockDto }): React.JSX.Element {
   const { t } = useTranslation();
-  const text = b.text ?? '';
+  const full = b.text ?? '';
+  const sections = b.context;
+  // The user's own words: everything outside the injected ranges. `slice` on
+  // main's offsets, never a re-parse of the markers — the renderer is not where
+  // "is this really ours" gets decided. Memoised on `b.context` itself, not on a
+  // `?? []` default, which would be a fresh array and a fresh computation every
+  // render for the overwhelmingly common block that has none.
+  const text = React.useMemo(() => {
+    if (sections === undefined || sections.length === 0) return full;
+    const parts: string[] = [];
+    let at = 0;
+    for (const s of sections) {
+      parts.push(full.slice(at, s.start));
+      at = s.end;
+    }
+    parts.push(full.slice(at));
+    return parts.join('').trim();
+  }, [full, sections]);
   const [expanded, setExpanded] = React.useState(false);
   // find jumped here — a long prompt (a skill body dumped as a user message)
   // unfolds (§5.31). See lib/feed-reveal. (This used to take a bare `text` and
@@ -782,6 +905,15 @@ function UserPill({ b }: { b: FeedBlockDto }): React.JSX.Element {
       }}
     >
       {b.attachments && <AttachmentMarker attachments={b.attachments} />}
+      {/* Injected context (#830), each stretch in its own collapsed row. Keyed
+          by the ref, which is unique per section by construction — an index key
+          would hand a row's open/shut state to whatever section landed in its
+          slot when the block was re-emitted. */}
+      {sections?.map((s) => (
+        <div key={s.ref} style={{ marginBlockEnd: 4 }}>
+          <InjectedContextRow name={s.name} body={full.slice(s.start, s.end)} revealed={revealed} />
+        </div>
+      ))}
       {/* The header line is the ONLY expand target now (#174). It used to be
           the whole pill, in both states — which meant an expanded prompt
           collapsed under the pointer the moment you tried to select a line out

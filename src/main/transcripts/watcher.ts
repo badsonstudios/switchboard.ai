@@ -13,7 +13,8 @@ import path from 'path';
 import { StringDecoder } from 'string_decoder';
 import { Logger } from '../log/logger';
 import { BindingDiagnostics, BindingState, type ResetCause } from '../../shared/transcripts';
-import { BlockOrigin, FeedBlock, deriveIntents, touchedPath } from '../feed/blocks';
+import { BlockOrigin, DISPLAY_CAPS, FeedBlock, deriveIntents, touchedPath } from '../feed/blocks';
+import type { ContextRefs } from '../feed/context-refs';
 import { agentOriginFor } from '../feed/agent-attribution';
 import { FeedBuffer } from '../feed/buffer';
 import { conversationExists, slugForCwd } from './paths';
@@ -531,6 +532,14 @@ export interface TranscriptWatcherOptions {
     entry: Record<string, unknown>,
     origin: BlockOrigin
   ) => boolean;
+  /**
+   * #830's forgery guard — which injected-context markers this app minted.
+   *
+   * Optional, and absent means nothing folds: a turn carrying injected context
+   * derives exactly as it did before. See `feed/context-refs.ts` for why the
+   * register is in memory and what that costs across a restart.
+   */
+  contextRefs?: ContextRefs;
   /** how long a bound session keeps draining after its process died (#200) */
   postExitSettleMs?: number;
   /** the hard ceiling on watching anything for an exited session (#200) */
@@ -2164,7 +2173,9 @@ export class TranscriptWatcher {
     // three concurrent agents read as one confused agent. `agentOriginFor`
     // stamps which one, and the renderer groups on it.
     const origin: BlockOrigin = { sidechain, ...agentOriginFor(e, sidechain, full) };
-    for (const intent of deriveIntents(e)) {
+    const refs = this.opts.contextRefs;
+    const ctx = refs === undefined ? {} : { isMintedRef: refs.guardFor(w.sessionId) };
+    for (const intent of deriveIntents(e, DISPLAY_CAPS, ctx)) {
       if (intent.t === 'tool-result') {
         w.feed.attachResult(intent.toolUseId, intent.out);
         continue;

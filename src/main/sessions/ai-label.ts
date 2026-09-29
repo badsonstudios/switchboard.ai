@@ -42,6 +42,7 @@ import { labelSourceOf, MAX_LABEL_LENGTH, type LabelledCard } from './auto-label
 // a person writes it (`/next-item 818`) and never as raw `<command-name>`
 // markup, which is the bug the history picker shipped before that item.
 import { commandInvocation, isCommandPlumbing } from '../../shared/command-invocation';
+import { findContextSections } from '../../shared/injected-context';
 
 /**
  * What we remember about a card between labeling runs.
@@ -274,11 +275,19 @@ function isStrippable(code: number): boolean {
 }
 
 /**
- * The header every injected context block opens with — `context-drop.ts` and
- * `context-package.ts` both write it, and #830 is the ticket for recognising
- * these inside a sent turn properly.
+ * The header a dragged context block opens with — `context-drop.ts` and
+ * `context-package.ts` both write it.
+ *
+ * ⚠️ IT LOST ITS `@` IN #832 and this constant moved with it. The heading used
+ * to read `# Context from @A`, which was itself a file mention in the RECEIVING
+ * session; it is `# Context from "A" (session)` now — quote included here, so a
+ * prompt legitimately opening `# Context from the design review` still gets a
+ * label. A prefix that still
+ * expected the `@` would have matched nothing and gone on silently — the card
+ * would have taken its provisional label off the top of another session's
+ * handoff, which is the one outcome the check exists to prevent.
  */
-const INJECTED_CONTEXT_HEADER = '# Context from @';
+const INJECTED_CONTEXT_HEADER = '# Context from "';
 
 /**
  * First non-empty line, tidied and capped — the PROVISIONAL path's cleaning.
@@ -323,9 +332,16 @@ function tidyOneLine(raw: string): string | null {
  *   - **Ordinary prose** becomes its first line, tidied.
  *   - **A turn that leads with another session's output** (an `@mention` since
  *     #798 injects that BEFORE your words) answers `null` — REFUSED RATHER THAN
- *     GUESSED. Finding where the user's own text resumes is #830's job, and a
- *     label reading "Context from @other-session" is worse than no label for
- *     the few seconds until the AI pass lands.
+ *     GUESSED. A label reading "Context from other-session" is worse than no
+ *     label for the few seconds until the AI pass lands.
+ *
+ *     #830 GAVE THAT TURN A MARKER, and this now recognises it — but on SHAPE
+ *     ALONE, with the forgery guard deliberately not consulted. That is the
+ *     opposite of the rule the Feed follows, and the reason is that the two are
+ *     not the same question: a wrongly-collapsed Feed block HIDES text the user
+ *     sent, while a wrongly-refused label costs a placeholder for a few seconds
+ *     and is replaced by the AI pass either way. Erring towards "say nothing"
+ *     is free here and is not free there.
  *
  * NOTE THE MARKUP REFUSAL IN `cleanAiLabel` IS DELIBERATELY NOT APPLIED HERE.
  * That guard exists because model output is untrusted and may be steered by a
@@ -338,6 +354,9 @@ export function provisionalLabel(text: string): string | null {
   if (!t) return null;
   if (isCommandPlumbing(t)) return tidyOneLine(commandInvocation(t) ?? '');
   if (t.startsWith(INJECTED_CONTEXT_HEADER)) return null;
+  // `() => true` is the un-guarded parse — see the doc comment above for why
+  // shape is the right test HERE and the wrong one in the Feed.
+  if (findContextSections(t, () => true).some((s) => s.start === 0)) return null;
   return tidyOneLine(t);
 }
 
