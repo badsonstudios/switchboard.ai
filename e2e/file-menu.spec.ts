@@ -82,6 +82,86 @@ test.describe('the File menu (#569)', () => {
     expect(await menuLabels(a)).toEqual(['File', 'View', 'Window', 'Help']);
   });
 
+  // #521 — THE CLAIM THIS WHOLE FILE NEVER MAKES, and the one the owner's report
+  // is actually about. Every other test here proves the TEMPLATE is right: File
+  // is first, its items fire, they reach the renderer, the document lands in the
+  // right place. Not one of them proves the menu bar is ON SCREEN — and
+  // "nothing visible in the UI points at either" is the whole of #521's layer 1.
+  //
+  // The gap matters because it is one flag wide: `autoHideMenuBar: true` and the
+  // menu still builds, still fires, and every assertion above still passes —
+  // while the user is back in front of a window with no visible way to open a
+  // file. Proven, not assumed: injecting that flag into `createWindow` fails
+  // THIS test and leaves the other six green.
+  //
+  // WHAT THIS DOES NOT COVER, said here so nobody reads it as cover they have
+  // not got: a custom title bar (`frame: false` / `titleBarStyle: 'hidden'`).
+  // `isMenuBarVisible()` reads the window's menu-bar FLAG, not its frame, so a
+  // frameless redesign could take the bar off the screen with both assertions
+  // below still green. That wants its own assertion on the day §5.24's chrome
+  // work goes near the title bar.
+  //
+  // WINDOWS AND LINUX ONLY. macOS draws the menu in the system bar, where
+  // electron.d.ts annotates both of these `@platform win32,linux`. macOS is not
+  // a shipped target and the CI matrix is windows + ubuntu, so today the skip is
+  // documentation rather than mechanism; revisit with the first mac build.
+  test('the menu bar is on screen, not auto-hidden (#521)', async () => {
+    test.skip(process.platform === 'darwin', 'macOS has no in-window menu bar to be visible');
+    a = await launchApp({ env: DIRECT });
+
+    // Asked of the REAL window in the browser process — the renderer cannot see
+    // native chrome at all, which is why this could only ever be an e2e claim.
+    //
+    // `getAllWindows()[0]` is the repo idiom and is right here — nothing in this
+    // test seeds a home, so no popout group can restore and exactly one window
+    // exists. But that is a PRECONDITION, not a fact about the index, and a
+    // future edit that adds a `seedFolder` would silently start interrogating
+    // whichever window sorted first. So it is asserted rather than assumed.
+    //
+    // (`a.app.browserWindow(a.window)` would identify the window directly, but
+    // Playwright types it as a bare `JSHandle`, so every property read off it is
+    // an `any` the lint rules reject.)
+    const bar = await a.app.evaluate(({ BrowserWindow }) => {
+      const all = BrowserWindow.getAllWindows();
+      const w = all[0];
+      return {
+        count: all.length,
+        visible: w?.isMenuBarVisible() ?? null,
+        autoHide: w?.autoHideMenuBar ?? null,
+      };
+    });
+    expect(bar.count, 'one window, so [0] is the window under test').toBe(1);
+    // SEPARATELY: a visible menu bar with no menu in it is still nothing to
+    // click, and this is the assertion carrying the #521 label that a later
+    // reader will trust as THE discoverability guard, so it says that out loud.
+    //
+    // MEASURED, because the obvious reasoning about it is wrong: review
+    // predicted `Menu.setApplicationMenu(null)` would leave the two flags above
+    // untouched and slip past. It does not — injecting it fails the `visible`
+    // assertion, because Electron reports `isMenuBarVisible()` FALSE for a
+    // window with no application menu on win32. So this assertion is
+    // belt-and-braces rather than the only net. It stays: that coupling is
+    // undocumented, it is not measured on Linux, and naming the claim beats
+    // inheriting it from an implementation detail.
+    const hasMenu = await a.app.evaluate(({ Menu }) => Menu.getApplicationMenu() !== null);
+
+    expect(
+      bar.visible,
+      'the menu bar must be visible — #521 is literally "no discoverable way to open a file"'
+    ).toBe(true);
+    // Not redundant with `visible`, though the revert-proof run would have tripped
+    // either: Electron documents the SETTER as not hiding an already-visible bar,
+    // so a later `win.autoHideMenuBar = true` leaves `visible` true and only this
+    // catches it.
+    expect(
+      bar.autoHide,
+      'auto-hide hides File behind an Alt press that nobody who cannot find the menu knows to make'
+    ).toBe(false);
+    expect(hasMenu, 'a visible menu bar with no application menu in it is not a route to anything').toBe(
+      true
+    );
+  });
+
   test('Open File… opens a document, beside the session and not inside it', async () => {
     test.setTimeout(180_000);
     const folder = tempProjectFolder();
