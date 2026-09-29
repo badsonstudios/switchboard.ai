@@ -3,6 +3,109 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ DONE — 2026-09-29: **E25 — #521 layer 1, and the fix had already
+> shipped** (PR **#1000**, merged on green CI). **#521 stays OPEN** — layer 2,
+> the Files tab, is unstarted and gated on a design call only the owner can
+> make.
+>
+> **⭐ THE SECOND STALE ISSUE IN TWO ITEMS, AND THIS ONE IS DATEABLE TOO.** #521
+> reports *"no discoverable way to open a file… I don't see any way to open a
+> file at all"*, filed **2026-08-14 against v0.4.0**, when the app genuinely had
+> no menu bar. **#569 built one on 2026-08-19** (File ▸ Open File…, `Ctrl+O`
+> shown-not-claimed) and **#908** added Settings under it. Layer 1's done-when —
+> *"an always-visible route to Open file… exists and the manual names it"* — has
+> been satisfied for **six weeks**. Nobody went back and said so.
+>
+> `app-menu.ts` knew. Its own comment reads: *"`Open file…` was in the palette
+> all along and nobody could find it, which is half of what #521 reports."* The
+> issue it names stayed open above it the whole time.
+>
+> **MEASURED BEFORE IT WAS CLAIMED**, the #978 habit applied deliberately rather
+> than by luck:
+>
+> | check | result |
+> |---|---|
+> | all 6 pre-existing `e2e/file-menu.spec.ts` tests on **unmodified `main` @ 26240a9** | **pass** |
+> | `frame` / `titleBarStyle` / `autoHideMenuBar` anywhere in `src/main` | **absent** — `windowOptionsFrom` passes geometry only |
+> | the manual names it | `15-document-viewer.md` *"the **File** menu at the top left"* + `06-keyboard.md`'s `Ctrl+O` row |
+>
+> **⚠️ WHY IT STAYED OPEN, AND IT IS IN THE TRACKER IN BLACK AND WHITE.** The
+> dogfood row *"File menu: Open File / Exit (#569)"* has sat in **UNTESTED since
+> v0.8.0**. The row directly below it — *"Ctrl+O, and the CLI's own ctrl+o"* — is
+> **TESTED 2026-08-20**. So the owner verified the *keyboard* half five days
+> after the menu shipped and **never opened the menu**, which is exactly the
+> behaviour #521 describes. A fixed bug and an untested row pointed at each other
+> for six weeks and neither moved. That row is now annotated with why it is the
+> one to test first.
+>
+> **⭐ WHAT ACTUALLY SHIPPED IS THE MISSING CLAIM, NOT A MISSING FEATURE.** Every
+> assertion in that spec proves the menu **template**: File is first, its items
+> fire, they reach the renderer, the document lands beside the focused session,
+> the browser starts in the right folder. **Not one proves a user can SEE it** —
+> and that gap is one flag wide. `autoHideMenuBar: true` and all six stay green
+> while the user is back in front of the window #521 complained about. So: one
+> test asserting the real window reports its menu bar **visible**, **not
+> auto-hiding**, and **holding an application menu**. **Revert-proof — injecting
+> the flag fails exactly this test and leaves the other six passing.**
+>
+> **⭐ REVIEW WAS RIGHT ABOUT THE GAP AND WRONG ABOUT THE MECHANISM, AND
+> MEASURING IT CHANGED THE CODE.** It predicted `Menu.setApplicationMenu(null)`
+> would slip past the visibility flags, so the test's name would outrun its
+> evidence. Injected instead of accepted: it **fails `visible`**, because
+> Electron reports `isMenuBarVisible()` **false** for a window with no
+> application menu on win32. The `hasMenu` assertion stays — that coupling is
+> undocumented and unmeasured on Linux — but its comment now states the
+> measurement rather than the prediction. **A review finding is a hypothesis;
+> this repo's own standing rule is that the binary settles it.**
+>
+> Review's other should-fix was taken as written: the comment claimed cover
+> against a frameless title bar that `isMenuBarVisible()` cannot give, since it
+> reads the menu-bar flag and not the frame. That is now named as an explicit
+> **non-goal**, to be closed the day anything goes near the title bar. A nit to
+> use `app.browserWindow(page)` over `getAllWindows()[0]` was **declined with a
+> reason** — Playwright types it as a bare `JSHandle`, so every read off it is an
+> `any` the lint rules reject; the one-window precondition is **asserted** in the
+> test instead of assumed.
+>
+> **Green:** lint · all three typecheck projects · `file-menu.spec.ts` **7/7** ·
+> **all four CI jobs**, including **e2e ubuntu-latest** — the leg that matters
+> here, since the new assertion reads Electron window state under `xvfb` and
+> could only be measured on Windows locally. Unit suite **9,503 passed** with the
+> known `win-cmd.test.ts` contention flake, **green run alone at 47/47**.
+>
+> **Docs: none owed.** Test-only, no behaviour change, so no manual page and no
+> CHANGELOG entry — `0.8.102 — unreleased` is untouched, and the release-notes
+> gate was therefore not at risk.
+>
+> **⛔ BLOCKER — LAYER 2 IS A DESIGN GATE, NOT A GATE THIS SKILL MAY SKIP.** #521
+> says so itself: *"**Layer 2** gets a design gate (2–3 shapes to Dan) before any
+> code, like #407."* Three shapes were costed against the code and put to the
+> owner; **none is chosen and no layer-2 code exists.** The costing, so the next
+> session does not redo it:
+>
+> * **The tab strip is ready.** Session tabs are contributions
+>   (`extensibility/panels.tsx`, §5.23) — Session `10`, Changes `20`, History
+>   `30` — so a Files tab is a new `PanelContribution`, not surgery. `enabled:
+>   ctx => !!ctx.folder` and `badge()` come free, `GitFileStatus` already carries
+>   decorations, and `document-open.ts` + §5.30 already decide where a clicked
+>   file lands.
+> * **⚠️ THE REAL COST IS NOT THE UI. There is no directory-listing IPC at all.**
+>   Every tree shape needs a new main-side `listDir` behind `ReadScope`, which is
+>   a new security surface — and #832 is six days old. `FileWatchService`
+>   watches **files by signature**, not directories, so a tree's refresh
+>   semantics is new work too, not a reuse.
+> * **Shape C (no tree — fuzzy quick-open over the session folder) is the litmus
+>   test's own question**, PHILOSOPHY §4 against *"we are not rebuilding VS
+>   Code's explorer"*. It is recorded as a live option precisely because the
+>   owner asked for a tree; it needs a `.gitignore`-aware index, so it is not
+>   free either.
+>
+> **Next up:** **#861** (blackboard note removal — the 100-key cap is a one-way
+> door), then **#981** (the composer's height cap). **#521 remains open on layer
+> 2** and returns to the queue only when the owner picks a shape.
+> **E21-02/03/04 (#904/#716/#740) remain the owner's and are not to be started.**
+> **#997 still wants a probe first and was not touched.**
+
 > # ✅ DONE — 2026-09-29: **E37 — #978, and the issue was wrong** (PR **#998**,
 > merged on green CI). Local slash-command output was never missing on the
 > stream. What the item actually shipped is a **different bug in the same code
