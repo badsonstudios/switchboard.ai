@@ -1069,8 +1069,20 @@ export function App(): React.JSX.Element {
     // one is in flight — the `openSettings` rule, for its reason.
     setReportStatus(null);
     setReportOpen(true);
+    // THE TWIN CLOSES (#1008). The native Help menu stays clickable while a
+    // renderer modal is up, so Report a problem → Feature request (or the
+    // reverse) could put two windows with IDENTICAL chrome on top of each
+    // other, both claiming `aria-modal` at the same z-index — the very thing
+    // every `dialogAbove` prop in this file exists to avoid. They are two
+    // errands; you are only on one of them.
+    setFeatureOpen(false);
     refreshReportStatus();
   }, [refreshReportStatus]);
+  /** Help ▸ Feature request… (#1008) — and its twin closes, for the same reason */
+  const openFeatureRequest = React.useCallback(() => {
+    setReportOpen(false);
+    setFeatureOpen(true);
+  }, []);
   /**
    * Open Settings, optionally at a section (#885).
    *
@@ -1776,10 +1788,8 @@ export function App(): React.JSX.Element {
           // command, so the menu and the palette are one implementation.
           reportProblem: openReportProblem,
           // #1008. The Help menu delivers `app.featureRequest` to this same
-          // command, so the menu and the palette are one implementation. An
-          // inline thunk over a `useState` setter, which is stable — so it
-          // needs no entry in the dependency list below.
-          featureRequest: () => setFeatureOpen(true),
+          // command, so the menu and the palette are one implementation.
+          featureRequest: openFeatureRequest,
           showPerfSummary: openPerfSummary,
           checkForUpdates,
           // §5.30's `Open file…`. Picking a file in the native dialog is also

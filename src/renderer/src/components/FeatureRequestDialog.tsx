@@ -82,8 +82,14 @@ export function FeatureRequestDialog(props: FeatureRequestDialogProps): React.JS
   const attempt = React.useRef(0);
 
   React.useEffect(() => {
-    if (!props.open) return;
+    // BUMPED BEFORE THE `open` GUARD, so CLOSING invalidates an in-flight send
+    // too and not only re-opening. Cancel while one is settling, click into a
+    // composer, and a late success would otherwise run `close()` a second time
+    // — whose focus restore yanks the caret out of wherever the user went — or
+    // set a failure line on a dialog nobody is looking at. (The report dialog
+    // guards only the re-open case; same latent defect, not fixed here.)
     attempt.current += 1;
+    if (!props.open) return;
     // A re-open starts clean: a stale failure line would report a send that is
     // no longer on screen, and last time's words are not this time's request.
     setTitle('');

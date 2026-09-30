@@ -52,6 +52,23 @@ describe('the subject line', () => {
     expect(s.endsWith('...')).toBe(true);
   });
 
+  it('flattens control characters rather than letting one into a mail header', () => {
+    // RFC 6068 §7: a decoded newline in a `mailto:` subject has historically
+    // been read by some clients as the start of ANOTHER header — a `cc:` the
+    // user did not choose. Unreachable from the dialog (the title is a
+    // single-line input), but the argument this path rests on is that main
+    // composes the URL so the renderer cannot steer it.
+    const s = featureSubject({ title: 'Idea\ncc: someone@example.com', details: '' });
+    expect(s).not.toContain('\n');
+    expect(featureMailto(draft({ title: 'Idea\r\nbcc: x@y.z' }))).not.toContain('%0A');
+  });
+
+  it('never cuts an emoji in half when clipping a long title', () => {
+    const s = featureSubject({ title: `${'a'.repeat(115)}🎉🎉🎉`, details: '' });
+    expect(() => encodeURIComponent(s)).not.toThrow();
+    expect(s).not.toMatch(/[\uD800-\uDBFF]$|[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+  });
+
   it('is the prefix alone when there is nothing at all to name', () => {
     // Not reachable from the dialog — it refuses an empty body — but main
     // sanitizes whatever crosses the wire, so this must not throw or produce a
@@ -111,12 +128,48 @@ describe('the ticket channel', () => {
   });
 });
 
+describe('the ticket channel, continued', () => {
+  it('says where it was cut, as the email one does', () => {
+    const url = featureIssueUrl(draft({ channel: 'ticket', details: 'word '.repeat(5000) }));
+    expect(decodeURIComponent(url.split('&body=')[1])).toContain('trimmed to fit');
+  });
+});
+
 describe('featureUrlFor', () => {
   it('routes each channel to its own composer, and only its own', () => {
     expect(featureUrlFor(draft({ channel: 'email' })).startsWith('mailto:')).toBe(true);
     expect(featureUrlFor(draft({ channel: 'ticket' })).startsWith('https://github.com/')).toBe(
       true
     );
+  });
+});
+
+describe('an over-length request full of emoji', () => {
+  // THE BUG THIS SUITE SHIPPED GREEN WITHOUT. `slice` counts UTF-16 code
+  // units, so a clamp index can land between the halves of a surrogate pair,
+  // and `encodeURIComponent` THROWS on a lone surrogate. The throw escaped the
+  // handler's try block entirely and reached the user as "could not send" — a
+  // diagnosis of the wrong thing, with no log line and no way forward. Emoji
+  // are not exotic in a sentence that begins "I wish it could…".
+  it.each([
+    ['email' as const, MAX_MAILTO_CHARS],
+    ['ticket' as const, MAX_ISSUE_URL_CHARS],
+  ])('%s composes instead of throwing, and still fits', (channel, cap) => {
+    const d = draft({ channel, title: 'Emoji', details: 'a🎉'.repeat(4000) });
+    let url = '';
+    expect(() => (url = featureUrlFor(d))).not.toThrow();
+    expect(url.length).toBeLessThanOrEqual(cap);
+    // and the URL is a real one — a half-encoded surrogate would not survive
+    expect(() => decodeURIComponent(url)).not.toThrow();
+  });
+
+  it('holds at every length, not just the one a fixture happened to pick', () => {
+    // The cut lands on a surrogate for only some inputs, so a single fixture
+    // passes 89 times in 100 while the defect is still there.
+    for (let n = 900; n < 1000; n++) {
+      const d = draft({ channel: 'email', details: 'a🎉'.repeat(n) });
+      expect(() => featureUrlFor(d), `n=${n}`).not.toThrow();
+    }
   });
 });
 

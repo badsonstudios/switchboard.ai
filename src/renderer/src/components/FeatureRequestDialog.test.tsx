@@ -259,6 +259,27 @@ describe('the window itself', () => {
   });
 });
 
+describe('a send still settling when the dialog is simply CANCELLED', () => {
+  it('does not close a second time, which would steal focus back', async () => {
+    // Cancel while a hand-off is in flight, click into a composer, and a late
+    // success used to run `close()` again — whose focus restore yanks the caret
+    // out of wherever you went. The guard has to bump on CLOSE, not only on
+    // re-open, or this whole case is invisible to it.
+    let settle: (r: FeedbackResult) => void = () => {};
+    handlers.onSubmit.mockImplementation(
+      () => new Promise<FeedbackResult>((res) => (settle = res))
+    );
+    await send();
+    expect(handlers.onClose).not.toHaveBeenCalled();
+    await render(false);
+    expect(handlers.onClose).not.toHaveBeenCalled();
+    await act(async () => {
+      settle({ ok: true, channel: 'email' });
+    });
+    expect(handlers.onClose).not.toHaveBeenCalled();
+  });
+});
+
 describe('a send still settling when the dialog is closed and re-opened', () => {
   it('does not close the fresh one, nor print its error in it', async () => {
     let settle: (r: FeedbackResult) => void = () => {};

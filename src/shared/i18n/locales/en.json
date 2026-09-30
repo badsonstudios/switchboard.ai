@@ -909,7 +909,6 @@
   },
   "feature": {
     "title": "Feature request",
-    "open": "Feature request…",
     "intro": "Tell us what you'd like switchboard to do. Nothing is sent from here — your own email or browser opens with this already written in it, and you press send there.",
     "titleField": "Title (optional)",
     "titlePlaceholder": "A few words, if you have them",

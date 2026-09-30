@@ -63,8 +63,16 @@ export function registerFeatureRequestIpc(deps: FeatureRequestIpcDeps): void {
       return { ok: false, channel: draft.channel, problem: 'empty-details' };
     }
 
-    const url = featureUrlFor(draft);
+    // THE COMPOSITION IS INSIDE THE TRY, not above it. This handler's promise
+    // is that every outcome is a reportable result — and a throw from building
+    // the string would have escaped that promise entirely, rejecting the invoke
+    // and reaching the dialog as "could not send", which is a diagnosis of the
+    // wrong thing. That was not hypothetical: `encodeURIComponent` throws on a
+    // lone surrogate, so a long request with an emoji in it did exactly this
+    // until `clampEncoded` learned where a character ends.
+    let url = '';
     try {
+      url = featureUrlFor(draft);
       await sh.openExternal(url);
     } catch (err) {
       // `openExternal` REJECTS when the OS has no handler for the scheme — a
@@ -72,9 +80,16 @@ export function registerFeatureRequestIpc(deps: FeatureRequestIpcDeps): void {
       // exotic one. Reported rather than swallowed (#896's lesson): the dialog
       // closes on success, so a hand-off that never happened would close the
       // window and take the user's words with it.
+      //
+      // THE ERROR'S NAME, NOT ITS MESSAGE. An `openExternal` rejection is
+      // platform-dependent and could quote the URL it was handed — which is the
+      // user's own words, percent-encoded. These logs are what the diagnostic
+      // bundle zips and what a problem report posts to GitHub, so a message
+      // that might carry the body would smuggle it into the one place in this
+      // app where local text really leaves the machine.
       log.warn('could not hand the feature request to the OS', {
         channel: draft.channel,
-        error: String(err),
+        error: err instanceof Error ? err.name : 'unknown',
       });
       return { ok: false, channel: draft.channel, problem: 'send-failed' };
     }

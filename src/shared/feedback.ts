@@ -114,7 +114,48 @@ export const MAX_ISSUE_URL_CHARS = 6000;
 /** said in the body when the clamp bit, so a short request is never a mystery */
 const TRUNCATION_NOTE = '\n\n[…trimmed to fit — send the rest in a reply]';
 
-/** The mail subject / issue title, never empty by the time it ships. */
+/**
+ * A cut index that never lands INSIDE an astral character.
+ *
+ * `slice` counts UTF-16 code units, so an index can fall between the two halves
+ * of a surrogate pair — and `encodeURIComponent` THROWS on a lone surrogate
+ * (`URIError: URI malformed`). Emoji are not exotic in a sentence beginning "I
+ * wish it could…", so without this a long request with a 🎉 in it fails, every
+ * time, on both channels, with an error message about the wrong thing.
+ */
+function safeCut(s: string, i: number): number {
+  const c = s.charCodeAt(i - 1);
+  // a HIGH surrogate at the end means its low half is on the other side
+  return c >= 0xd800 && c <= 0xdbff ? i - 1 : i;
+}
+
+/**
+ * Every C0/C1 control character replaced by a space.
+ *
+ * Written as a code-point walk rather than a regex on purpose — a character
+ * class over this range is what `no-control-regex` exists to stop, and
+ * `Array.from` iterates by CODE POINT, so a surrogate pair survives the pass
+ * whole rather than being inspected as two halves.
+ */
+function flattenControls(s: string): string {
+  return Array.from(s, (ch) => {
+    const cp = ch.codePointAt(0) ?? 0;
+    return cp < 0x20 || cp === 0x7f ? ' ' : ch;
+  }).join('');
+}
+
+/**
+ * The mail subject / issue title, never empty by the time it ships.
+ *
+ * CONTROL CHARACTERS ARE FLATTENED, and that is not cosmetic: a `mailto:`
+ * subject is a header, and RFC 6068 §7 warns that a decoded newline in one has
+ * historically been read by some clients as the start of another header (a `cc:`
+ * somebody did not choose). Nothing in the dialog can produce one — the title is
+ * a single-line input and the fallback is one trimmed line — but the argument
+ * this whole path is built on is that main composes the URL so a compromised
+ * renderer cannot steer it. A renderer that cannot name the destination should
+ * not be able to append a recipient either.
+ */
 export function featureSubject(draft: Pick<FeatureRequestDraft, 'title' | 'details'>): string {
   const typed = draft.title.trim();
   // The first non-empty LINE, not the first 60 characters of a blob: a request
@@ -124,10 +165,12 @@ export function featureSubject(draft: Pick<FeatureRequestDraft, 'title' | 'detai
     .split('\n')
     .map((l) => l.trim())
     .find((l) => l.length > 0);
-  const chosen = typed || fallback || '';
+  const chosen = flattenControls(typed || fallback || '').trim();
   // 120 is GitHub's comfortable title width and about where a mail client stops
-  // showing a subject; a title longer than that is a body that got lost.
-  const clipped = chosen.length > 120 ? `${chosen.slice(0, 117)}...` : chosen;
+  // showing a subject; a title longer than that is a body that got lost. The
+  // prefix is added afterwards, so the composed line runs a little past it.
+  const clipped =
+    chosen.length > 120 ? `${chosen.slice(0, safeCut(chosen, 117))}...` : chosen;
   return `${FEATURE_SUBJECT_PREFIX} ${clipped}`.trim();
 }
 
@@ -143,17 +186,21 @@ function clampEncoded(text: string, fixed: number, budget: number): string {
   if (fixed + encodeURIComponent(text).length <= budget) return text;
   const note = TRUNCATION_NOTE;
   const room = budget - fixed - encodeURIComponent(note).length;
-  if (room <= 0) return note.trim();
+  // Not reachable from either caller — the largest fixed part is a few hundred
+  // characters against a budget of thousands — but this branch's whole job is
+  // the degenerate case, so it must not answer with something that is itself
+  // over the cap. No room means no body, which is the truth.
+  if (room <= 0) return '';
   // Halve-and-probe rather than a per-character loop: the body can be thousands
   // of characters and `encodeURIComponent` is not free.
   let lo = 0;
   let hi = text.length;
   while (lo < hi) {
     const mid = Math.ceil((lo + hi) / 2);
-    if (encodeURIComponent(text.slice(0, mid)).length <= room) lo = mid;
+    if (encodeURIComponent(text.slice(0, safeCut(text, mid))).length <= room) lo = mid;
     else hi = mid - 1;
   }
-  return `${text.slice(0, lo).trimEnd()}${note}`;
+  return `${text.slice(0, safeCut(text, lo)).trimEnd()}${note}`;
 }
 
 /** The body both channels carry — the user's words, and nothing else. */
