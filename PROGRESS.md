@@ -3,6 +3,50 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🗂️ ORCHESTRATION RUN — started 2026-09-30, **seven issues in three
+> waves**. Dan: *"get these six tickets done in one step without needing me."*
+> **This block is the resume mechanism — the orchestrator is its ONLY writer;
+> workers report through `.claude/work_files/orchestrator/<issue#>.md` and never
+> touch this file.**
+>
+> **⚠️ MERGE POLICY IS OVERRIDDEN FOR THIS RUN, DELIBERATELY.** `/orchestrate`'s
+> standing boundary is *never merge a user-facing PR* — it queues them, because
+> N workers landing unattended means nobody reads a report between landings.
+> **Every item in this run is user-facing**, so that boundary would have queued
+> all seven and needed Dan for every one, which is the opposite of what he asked
+> for. So this run merges on green CI, which is `/next-item`'s standing rule
+> since 2026-09-08. His lever is revert, not approval. **This override is for
+> THIS run only — do not read it as the skill changing.**
+>
+> | wave | issue | worktree | branch | state |
+> |---|---|---|---|---|
+> | 1 | **#1009** composer chip ink + nordic affordance | `sb-wt-1` | `feature/1009-composer-chip-ink` | dispatched |
+> | 1 | **#1010** document-viewer outline toggle | `sb-wt-2` | `feature/1010-outline-toggle` | dispatched |
+> | 1 | **#1008** Help ▸ Feature request | `sb-wt-3` | `feature/1008-feature-request` | dispatched |
+> | 2 | **#941 + #942** silent commands (one track — same dispatcher) | tbd | tbd | queued |
+> | 2 | **#997** `isMeta` vs `is_meta` — **probe FIRST**, then decide | tbd | tbd | queued |
+> | 3 | **#521 layer 2** Files tab, **shape A** | tbd | tbd | queued |
+>
+> **Scope calls made for the workers so they would not stall** (all three are
+> Dan’s to overturn, and each PR says which was taken): #1010 persists the
+> outline toggle **per viewer panel** rather than globally, matching how that
+> viewer remembers everything else. #1009 takes the **filled resting state +
+> visible hover** direction for the nordic affordance, and reports rather than
+> expands if the `--border` audit runs into #685’s territory. #1008 refactors
+> toward Report-a-problem’s shared compose→send path, and takes the smaller
+> shape if that extraction ripples.
+>
+> **⚠️ #521 layer 2 is wave 3 and alone on purpose.** It is the only item here
+> that adds a SECURITY SURFACE — there is no directory-listing IPC at all, so a
+> tree needs a new main-side `listDir` behind `ReadScope` with #832 days old.
+> It does not share a wave with anything.
+>
+> **Gate deviation, stated rather than hidden:** workers run lint + typecheck +
+> the FULL unit suite + the e2e specs for their own surface under the machine
+> lock, not the full e2e suite each — three full local suites would serialize to
+> over an hour behind one lock, and CI runs the whole thing on both platforms
+> for every PR anyway. **No PR merges without all four CI jobs green.**
+
 > # 🎯 DECISION — 2026-09-30: **#521 layer 2 — the owner chose SHAPE A**, the
 > Files tab on the session card, **built placement-agnostic** so shape B (Files as a
 > document-area panel) stays a later move rather than a rewrite. The design gate the
