@@ -310,7 +310,12 @@
    * stepped toward its ink, so a pointer gets a real response on light and dark
    * alike without either theme needing its own rule. The step measures
    * 1.33-1.89:1 against the resting fill and `--text` stays at 5.90-10.16:1
-   * on it. */
+   * on it.
+   *
+   * THE NAMES ARE GENERIC AND THE AUDIT IS NOT. `tokens.drift.test.ts` measures
+   * the edge against the surfaces the COMPOSER's chip sits on — its own fill,
+   * `--panel2` and `--panel`. A second surface adopting these tokens has to add
+   * itself to that list, or it inherits the name without the promise. */
   --control-edge: color-mix(in srgb, var(--muted) 80%, var(--chip));
   --control-hover: color-mix(in srgb, var(--muted) 22%, var(--chip));
 }

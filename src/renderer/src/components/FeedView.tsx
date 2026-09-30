@@ -1580,8 +1580,11 @@ function controlName(
  * the one place that cannot fall out of step with the attribute — which is
  * precisely how the model chip's busy state would otherwise have stopped
  * deadening the moment its enabled ink stopped being the dim one.
+ *
+ * NOT to be confused with a CONTEXT chip, which is the other thing this file
+ * calls a chip and is a dragged payload rather than a control.
  */
-const CHIP = 'composer-chip';
+const CHIP_CLASS = 'composer-chip';
 
 /**
  * The tallest the composer's textarea may grow to without pushing anything off
@@ -3471,7 +3474,7 @@ function Composer({
           onClick={onCycleAutonomy}
           data-testid="composer-autonomy"
           title={autonomyTooltip(t, autonomy, 'session')}
-          className={CHIP}
+          className={CHIP_CLASS}
           // THE ROW'S ONE INLINE INK, and only for the one mode that is a
           // warning: the feed's copy of the grid's autonomy chip, which #221
           // fixed and this one was missed by (#246). Now measured on the chip's
@@ -3519,7 +3522,7 @@ function Composer({
               if (modelMenuAt) return closeModelMenu();
               setModelMenuAt(e.currentTarget.getBoundingClientRect());
             }}
-            className={CHIP}
+            className={CHIP_CLASS}
             // WHAT IS LEFT INLINE, and why each of the two survived #1009:
             //
             // • `--font-mono`, KEPT ON PURPOSE. The other three chips say
@@ -3655,7 +3658,7 @@ function Composer({
                 // identical words, and wipes the session believing nothing has
                 // happened yet. The answer has to be audibly an answer.
                 aria-label={t('feedView.clearConfirmGo')}
-                className={CHIP}
+                className={CHIP_CLASS}
                 // The chip's METRICS from the class, its COLOUR from here: the
                 // destructive confirm wears the crashed hue as INK on its own
                 // wash, the tinted-fill shape #221 settled on -- the border
@@ -3677,7 +3680,7 @@ function Composer({
                 data-testid="composer-clear-cancel"
                 aria-label={t('feedView.clearConfirmCancel')}
                 onClick={() => setConfirmClear(false)}
-                className={CHIP}
+                className={CHIP_CLASS}
               >
                 {t('grid.menuClearCancel')}
               </button>
@@ -3709,7 +3712,7 @@ function Composer({
                       setCompactBusy(false);
                     });
                   }}
-                  className={CHIP}
+                  className={CHIP_CLASS}
                 >
                   {t('feedView.compact')}
                 </button>
@@ -3721,7 +3724,7 @@ function Composer({
                   disabled={controlsLock !== null}
                   aria-label={controlName(t, 'grid.menuClear', controlsLock)}
                   onClick={() => setConfirmClear(true)}
-                  className={CHIP}
+                  className={CHIP_CLASS}
                 >
                   {t('feedView.clear')}
                 </button>
