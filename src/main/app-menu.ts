@@ -40,6 +40,14 @@ export interface MenuActions {
    */
   reportProblem?: () => void;
   /**
+   * Help > Feature request… (#1008).
+   *
+   * `reportProblem`'s arrangement exactly, for its reason: the dialog belongs
+   * to the renderer and this delivers a command id, so the menu and the palette
+   * reach one implementation rather than two that can drift.
+   */
+  featureRequest?: () => void;
+  /**
    * File > Open File… (#569).
    *
    * Deliberately NOT "show a dialog here". The renderer already owns this
@@ -189,6 +197,15 @@ export function buildMenuTemplate(
     // — is a choice INSIDE the dialog, alongside the subject and description it
     // collects, so two menu items would be two doors into one room.
     help.push({ label: 'Report a Problem…', click: () => actions.reportProblem?.() });
+  }
+  if (actions.featureRequest) {
+    // Report a Problem's TWIN, and a separate entry rather than a third radio
+    // inside that dialog (#1008). "Something is broken" and "I wish it did X"
+    // are two different errands: one carries evidence and wants logs attached,
+    // the other is a sentence someone thought of while using the app. Folding
+    // them together would make every feature request collect a zip it has no
+    // use for — and would hide the one under a heading that says the other.
+    help.push({ label: 'Feature Request…', click: () => actions.featureRequest?.() });
   }
   if (help.length > 0) template.push({ label: 'Help', submenu: help });
 

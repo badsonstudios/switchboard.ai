@@ -53,6 +53,7 @@ function deps(): CommandDeps & DepMocks {
     checkForUpdates: vi.fn(),
     openFile: vi.fn(),
     reportProblem: vi.fn(),
+    featureRequest: vi.fn(),
   showPerfSummary: vi.fn(),
     closeAllDocuments: vi.fn(),
     openSettings: vi.fn<CommandDeps['openSettings']>(),
@@ -350,11 +351,17 @@ describe('seed command set (E9-01)', () => {
     // about is a reading taken after the moment has passed. It claims no
     // binding either.
     //
+    // `app.featureRequest` joined them in #1008, for `app.reportProblem`'s
+    // reasons exactly — the Help menu delivers it down this same accelerator
+    // channel, and the moment anyone thinks "I wish it did X" is the moment
+    // they are using the app, very often with a composer focused. No binding.
+    //
     // Anything else in this list is a bug — and NO scope whatsoever fires inside
     // a terminal (proven in commands.test.ts), which is what leaves the hosted
     // CLI's own `ctrl+o` alone.
     const typingOk = buildCommands(deps()).filter((c) => c.scope === 'typing-ok');
     expect(typingOk.map((c) => c.id).sort()).toEqual([
+      'app.featureRequest',
       'app.perfSummary',
       'app.reportProblem',
       'find.open',

@@ -98,6 +98,20 @@ on the floor, and say so in your PR.
 
 ### Added
 
+- **You can now ask for a feature from inside the app.** **Help ▸ Feature
+  request…** opens a box: an optional title, and one big field for what you'd
+  like switchboard to do. Then you choose how it reaches us — it opens your own
+  email program with the address and your words already filled in, or your own
+  browser on the project's new-issue page, already filled in the same way.
+  **Nothing is sent from switchboard.** All it does is write the message out for
+  you and hand it to a program you already use; you read it, change anything you
+  like, and press send there — or close the window, in which case nothing was
+  sent at all. Only what you type is included: no logs, no files, nothing about
+  your sessions. The ticket option needs a GitHub account with access to the
+  project's tracker, which is private; if yours doesn't have it, your browser
+  shows GitHub's sign-in page, nothing in the app breaks, and the email option
+  is one click away.
+
 - **Sessions can now take a note off the shared board.** The board your sessions
   leave notes on has a limit on how many notes it can hold, and until now
   nothing could ever come off it — once that limit was reached, every new note

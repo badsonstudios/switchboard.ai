@@ -115,6 +115,8 @@ describe('the IPC capability map (the done-when: no channel is untagged)', () =>
       'src/main/events/push-ipc.ts',
       // the report dialog's three channels (#815)
       'src/main/diagnostics/report-ipc.ts',
+      // Help ▸ Feature request…'s one channel (#1008)
+      'src/main/feedback/feature-request-ipc.ts',
       'src/main/events/sound-ipc.ts',
       // the missed-events digest's two readers (P2-E14-05c). Its outbound
       // `notifications:suppressed` push is sent from `index.ts` above, beside

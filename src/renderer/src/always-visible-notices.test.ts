@@ -188,6 +188,8 @@ const NOT_A_NOTICE: Readonly<Record<string, string>> = {
   UpdateDialog: 'a modal, same as AboutPanel',
   CommandPalette: 'a modal, same as AboutPanel',
   ReportProblemDialog: 'a modal, same as AboutPanel (#815)',
+  FeatureRequestDialog:
+    'a modal, same as AboutPanel (#1008) — it and ReportProblemDialog share one ComposeDialog shell, which is where the `position: fixed` lives',
   // #885 absorbed three entries that used to be here — PushSetupDialog,
   // QuietHoursDialog and TaskLabelSizeDialog — into this one.
   SettingsDialog: 'a modal, same as AboutPanel (#885)',

@@ -77,6 +77,8 @@ export interface CommandDeps {
   openFile: () => void;
   /** Help ▸ Report a problem… — opens the report dialog (#815) */
   reportProblem: () => void;
+  /** Help ▸ Feature request… — opens the feature-request dialog (#1008) */
+  featureRequest: () => void;
   /** E21's on-screen reading: p50/p95 per interaction plus long tasks (#923) */
   showPerfSummary: () => void;
   /** close every docked §5.30 viewer at once, sparing popped-out ones (#543) */
@@ -819,6 +821,22 @@ export function buildCommands(deps: CommandDeps): Command[] {
       categoryKey: CATEGORY_HELP,
       scope: 'typing-ok',
       run: () => deps.reportProblem(),
+    },
+    {
+      // Help ▸ Feature request… (#1008). The row above, exactly: the MENU
+      // delivers this id rather than opening a dialog of its own, so the
+      // palette and the menu are one implementation.
+      //
+      // `typing-ok` for the same reason too, and a sharper one — the moment you
+      // want this is the moment you are in the middle of using the app and
+      // notice what it will not do, which is very often a composer you are
+      // typing into. No binding: a once-in-a-while action, and the registry's
+      // keys are spoken for.
+      id: 'app.featureRequest',
+      titleKey: 'commands.featureRequest',
+      categoryKey: CATEGORY_HELP,
+      scope: 'typing-ok',
+      run: () => deps.featureRequest(),
     },
     {
       // "Is it better?" answered without opening a log file (#923).
