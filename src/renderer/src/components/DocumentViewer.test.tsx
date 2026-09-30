@@ -29,6 +29,7 @@ import {
   type DocumentFindSurface,
 } from '../lib/find-surfaces';
 import { openFindBar, resetFindBarState, setFindTerm } from '../lib/find-bar-state';
+import { setDocumentOutline } from '../lib/document-outline';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -524,6 +525,131 @@ describe('the rest of the v1 markdown scope', () => {
     expect(surface()!.view()).toBe('rendered');
     await click(buttonByText('Source'));
     expect(surface()!.view()).not.toBe('rendered');
+  });
+});
+
+// --- the outline's off switch (#1010) --------------------------------------
+//
+// The PREFERENCE itself — parsing, persistence, the subscribe — is
+// `lib/document-outline.test.ts`. What this owns is the viewer's half: the chip
+// is where the owner asked for it, it is honest about when it can do nothing,
+// and turning it off takes the nav out of the tree rather than merely hiding
+// it (which is what hands the width back, and what takes the tab stops away).
+describe('hiding the outline (#1010)', () => {
+  const HEADINGS = '# A\n\n## B\n\n## C\n\ntext\n';
+  const toggle = (): HTMLButtonElement => q('[data-testid="doc-outline-toggle"]') as HTMLButtonElement;
+
+  beforeEach(() => {
+    // Module state, shared by every test in this file: leave it as the app
+    // would find it on a workspace nobody has told.
+    setDocumentOutline(true);
+  });
+
+  it('puts the chip in the toolbar beside Rendered and Source', async () => {
+    answer = () => ok(HEADINGS);
+    await mount('/p/DESIGN.md');
+    const chips = [...host.querySelectorAll('.doc-header button')].map((b) => b.textContent?.trim());
+    expect(chips).toContain('Outline');
+    // between the mode pair and "Open externally", which is the cluster the
+    // owner named
+    expect(chips.indexOf('Outline')).toBe(chips.indexOf('Source') + 1);
+    expect(chips.indexOf('Open externally')).toBe(chips.indexOf('Outline') + 1);
+  });
+
+  it('starts pressed, and hiding takes the nav out of the tree', async () => {
+    answer = () => ok(HEADINGS);
+    await mount('/p/DESIGN.md');
+    expect(toggle().getAttribute('aria-pressed')).toBe('true');
+    expect(toggle().getAttribute('title')).toBe('Hide outline');
+    expect(q('.doc-outline')).not.toBeNull();
+
+    await click(toggle());
+    // REMOVED, not hidden: `.doc-outline` is a flex item beside a `flex: 1`
+    // body, so its absence is what gives the document the width — and a nav
+    // that is still in the DOM would still be a tab stop.
+    expect(q('.doc-outline')).toBeNull();
+    expect(toggle().getAttribute('aria-pressed')).toBe('false');
+    expect(toggle().getAttribute('title')).toBe('Show outline');
+  });
+
+  it('brings it back', async () => {
+    answer = () => ok(HEADINGS);
+    await mount('/p/DESIGN.md');
+    await click(toggle());
+    await click(toggle());
+    expect([...host.querySelectorAll('.doc-outline-link')].map((b) => b.textContent)).toEqual([
+      'A',
+      'B',
+      'C',
+    ]);
+  });
+
+  it('is greyed when the document is too short to have an outline', async () => {
+    // The same threshold the outline has always used: under three headings
+    // there is nothing to navigate, so there is nothing to hide either.
+    answer = () => ok('# A\n\n## B\n\ntext\n');
+    await mount('/p/short.md');
+    expect(q('.doc-outline')).toBeNull();
+    expect(toggle().disabled).toBe(true);
+    expect(toggle().getAttribute('title')).toBe('This view has no outline to show');
+  });
+
+  it('is greyed over a source view, which has no outline either', async () => {
+    answer = () => ok(HEADINGS);
+    await mount('/p/DESIGN.md');
+    expect(toggle().disabled).toBe(false);
+    await click(buttonByText('Source'));
+    // `outline` still holds the last rendered document's headings; the chip
+    // must not offer to hide something that is not on screen.
+    expect(toggle().disabled).toBe(true);
+    await click(buttonByText('Rendered'));
+    expect(toggle().disabled).toBe(false);
+  });
+
+  it('is greyed for a file that is only ever a card', async () => {
+    answer = () => ok('', { binary: true, size: 148_000, encoding: undefined });
+    await mount('/p/spec.pdf');
+    expect(toggle().disabled).toBe(true);
+  });
+
+  it('opens a document with the outline already off when that is what was stored', async () => {
+    setDocumentOutline(false);
+    answer = () => ok(HEADINGS);
+    await mount('/p/DESIGN.md');
+    expect(q('.doc-outline')).toBeNull();
+    // ...and still says so, rather than looking like a document with no
+    // headings: the chip is live, not greyed.
+    expect(toggle().disabled).toBe(false);
+    expect(toggle().getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('is one answer for every open viewer, which is the point of a global', async () => {
+    answer = () => ok(HEADINGS);
+    await act(async () => {
+      root!.render(
+        <>
+          <DocumentViewer path="/p/DESIGN.md" colorScheme="dark" />
+          <DocumentViewer path="/p/PROGRESS.md" colorScheme="dark" />
+        </>
+      );
+    });
+    await act(async () => {});
+    expect(host.querySelectorAll('.doc-outline')).toHaveLength(2);
+    await click(host.querySelector('[data-testid="doc-outline-toggle"]'));
+    expect(host.querySelectorAll('.doc-outline')).toHaveLength(0);
+  });
+
+  it('never strands focus inside the pane it just removed', async () => {
+    answer = () => ok(HEADINGS);
+    await mount('/p/DESIGN.md');
+    const link = q('.doc-outline-link') as HTMLButtonElement;
+    link.focus();
+    expect(document.activeElement).toBe(link);
+    // A CLICK does not move focus in jsdom, which is exactly the shape of the
+    // case this guard is for: the flip arriving while a heading link holds
+    // focus. Without the rescue, `activeElement` falls to <body>.
+    await click(toggle());
+    expect(document.activeElement).toBe(toggle());
   });
 });
 

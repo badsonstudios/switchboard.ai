@@ -141,7 +141,8 @@ What you get in the rendered view:
   characters rather than real checkboxes.
 - **Code blocks** with the language named and a **Copy** button, for when the
   agent has just handed you a command.
-- **An outline** down the left of long documents. Click a heading to jump.
+- **An outline** down the left of long documents. Click a heading to jump. You
+  can turn it off — see below.
 - **Front matter** (the `---` block some files start with) folded into a small
   chip you can expand, rather than dumped at the top as a line of noise.
 - **Links that work.** A link to another file in a folder you have a session
@@ -152,6 +153,28 @@ What you get in the rendered view:
   only*. Links out of it to its neighbours are refused, because you told
   switchboard.ai it could read one file, not a folder. Pick the neighbour the
   same way, or open a session in that folder.
+
+### Turning the outline off
+
+Next to `Rendered | Source` there is an **Outline** button. It is switched on,
+and pressing it takes the outline away and gives its width back to the
+document — useful on a long file you are reading rather than navigating, or in
+a narrow pane where every pixel of prose counts. Press it again to bring the
+outline back.
+
+- **The app remembers.** Your choice sticks across every document you open and
+  survives closing switchboard.ai. It is **one setting for the whole app**, not
+  one per file: turn the outline off on one document and it is off on the next
+  one too.
+- **The button greys out when there is nothing to hide.** A document with fewer
+  than three headings never had an outline, and neither does the **Source**
+  view or a file the viewer can only name rather than show. The button stays
+  there, greyed, so you can see *why* rather than wonder where it went.
+- **A narrow pane still decides for itself.** Below about 420 pixels wide the
+  viewer drops the outline on its own — a third of a pane that size is
+  headings sitting on top of the thing they point at. The button disappears
+  along with it, because there is nothing left for it to do. Widen the pane and
+  both come back.
 
 ## It follows the file
 

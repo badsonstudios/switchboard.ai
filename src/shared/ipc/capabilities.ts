@@ -192,6 +192,18 @@ export const CHANNEL_CAPABILITIES = {
   'diag:reportStatus': 'diagnostics.credential',
   'diag:submit': 'diagnostics.report',
   'diag:setGitHubToken': 'diagnostics.credential',
+  // Help ▸ Feature request… (#1008). `shell.openExternal` and deliberately NOT
+  // `diagnostics.report`, even though one of its two channels names the same
+  // repo. That word means "POSTS A NEW ISSUE" — it is the power to create
+  // something on a third-party host without the user seeing it happen. This
+  // channel cannot create anything: it opens a pre-filled form, in the user's
+  // own mail client or browser, and every one of them waits on a Send button
+  // this app does not own. What it really exercises is the power the
+  // `shell.openExternal` entry names exactly — "putting something in front of
+  // the user, outside the app". Tagging it `diagnostics.report` would hand a
+  // future consumer that only needs to open a form the ability to file issues
+  // silently, which is the split `diagnostics.credential` was made for.
+  'feedback:featureRequest': 'shell.openExternal',
   // ── DISPATCH (P2-E13-03, §5.15) ────────────────────────────────────────
   //
   // NO NEW CAPABILITY, and that is a decision rather than an oversight. Neither

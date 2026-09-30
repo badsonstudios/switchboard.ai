@@ -100,6 +100,34 @@ describe('Help ▸ Check for Updates… (P2-E19-03)', () => {
     expect(reportProblem).toHaveBeenCalledTimes(1);
   });
 
+  it('Help ▸ Feature Request… appears when the app wires it up, and RUNS it (#1008)', () => {
+    const featureRequest = vi.fn();
+    const template = buildMenuTemplate('win32', { featureRequest });
+    expect(labels(template)).toContain('Help');
+    const help = template.find((m) => m.label === 'Help');
+    const item = (help?.submenu as MenuItemConstructorOptions[]).find(
+      (i) => i.label === 'Feature Request…'
+    );
+    expect(item).toBeDefined();
+    item?.click?.(undefined as never, undefined, undefined as never);
+    expect(featureRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('Report a Problem and Feature Request are TWO entries, in that order (#1008)', () => {
+    // Two errands, not one dialog with a third radio in it: one carries
+    // evidence and wants logs attached, the other is a sentence somebody
+    // thought of while using the app.
+    const template = buildMenuTemplate('win32', {
+      reportProblem: () => {},
+      featureRequest: () => {},
+    });
+    const help = template.find((m) => m.label === 'Help');
+    expect((help?.submenu as MenuItemConstructorOptions[]).map((i) => i.label)).toEqual([
+      'Report a Problem…',
+      'Feature Request…',
+    ]);
+  });
+
   it('Help is built from WHATEVER is wired, not gated on the update check (#815)', () => {
     // It used to be `if (actions.checkForUpdates)` wrapping a one-item list, so
     // a build wiring only the other entry would have had no Help menu at all.
