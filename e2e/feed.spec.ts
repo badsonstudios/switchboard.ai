@@ -928,7 +928,7 @@ test.describe('Feed view (E12-06)', () => {
   // A permission handoff is the honest way to produce one — it is the same bar
   // `approval.spec.ts` docks, it arrives from the CLI rather than from the test
   // touching the composer, and it is the app's core loop rather than a corner.
-  test('a bar docking on its own gives the composer its room back (#716)', async () => {
+  test('a bar docking on its own gives the composer its room back, and the conversation keeps its floor (#716, #981)', async () => {
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder });
     const w = a.window;
@@ -976,12 +976,60 @@ test.describe('Feed view (E12-06)', () => {
     // any measurement below means anything.
     await box.fill('lorem ipsum dolor sit amet '.repeat(120));
 
+    /**
+     * `MIN_FEED_PX`'s contract, as one question the geometry cannot dodge (#981):
+     * the conversation keeps its floor, UNLESS the room for it does not exist — in
+     * which case the box is down to its one line and has nothing left to give.
+     *
+     * ⚠️ WHY NOT JUST THE FLOOR. The search below deliberately finds the SHORTEST
+     * window where the panel is in charge, which is the tightest geometry the
+     * machine offers, and on Linux CI text renders about 5% wider (#885) — the
+     * bar's wrapping five-button row or its command line can take an extra line
+     * there. A bare floor assertion would then go red for the runner's fonts rather
+     * than for the behaviour, while this one holds on any geometry and still fails
+     * the bug: #981's box sat at 127px, nowhere near its 32px minimum, with the
+     * conversation at 12.
+     */
+    const columnState = (): Promise<{ feed: number; box: number; min: number }> =>
+      box.evaluate((el) => {
+        const t = el as HTMLTextAreaElement;
+        const panel = t.parentElement!.parentElement!.parentElement!;
+        const cs = getComputedStyle(t);
+        const px = (v: string): number => Number.parseFloat(v) || 0;
+        return {
+          feed: (panel.querySelector('[data-feed-region]') as HTMLElement).offsetHeight,
+          box: t.clientHeight,
+          // clientHeight is content + padding, so the minimum it can report is
+          // one line plus the same padding
+          min: px(cs.minBlockSize) + px(cs.paddingBlockStart) + px(cs.paddingBlockEnd),
+        };
+      });
+    const expectFloorOrMinimum = async (when: string): Promise<void> => {
+      // SETTLE, don't sample. `expect.poll` passes on the first sample that passes
+      // and the bug's own sequence is a transient — the box shrinks (feed briefly
+      // large), then the bar springs back (feed 12). A poll landing in that window
+      // would pass against the broken code. #952 taught this file the same lesson
+      // 60 lines up and this assertion is not allowed to unlearn it.
+      await w.waitForTimeout(600);
+      const s = await columnState();
+      expect(
+        s.feed >= MIN_FEED - 8 || s.box <= s.min + 1,
+        `${when}: the conversation was ${s.feed}px against a floor of ${MIN_FEED}, and ` +
+          `the composer was ${s.box}px with a minimum of ${s.min} — so the box was ` +
+          `holding room it had been told it could not have`
+      ).toBe(true);
+    };
+
     let found = 0;
     for (const height of [560, 600, 640, 680, 720, 760, 800]) {
       await setHeight(height);
       // SETTLE, don't sample: the box grows over several frames, and an early read was
       // worth about a coin flip (#952 found that the hard way).
       await w.waitForTimeout(400);
+      // `MIN_FEED + 8` is the ±8 this file uses for the floor throughout: the cap is
+      // `Math.floor`ed and the feed's border box is read to a fraction of a pixel, so
+      // a held floor lands a few px either side of 60 rather than on it. It is slack
+      // for rounding, not for a violation — 8px is under half a rendered line.
       if ((await feedHeight()) < MIN_FEED + 8) {
         found = height;
         break;
@@ -1033,26 +1081,62 @@ test.describe('Feed view (E12-06)', () => {
     // the box keeps a size the column no longer has, and the feed — the only
     // flexible item here — is squeezed under its floor to pay for it.
     await expect.poll(boxHeight, { timeout: 10_000 }).toBeLessThan(tall);
-    // ⚠️ THE FEED'S FLOOR IS NOT ASSERTED HERE ANY MORE — #981, and it is not a
-    // regression this item introduced. `roomForBox` offers the box a height and the
-    // box renders ~49px TALLER than the offer; the scroller absorbs the difference and
-    // `MIN_FEED_PX` is missed. Measured with one docked bar: panel 298, strip 21, bar
-    // 100, offer 78, textarea 127, conversation 12 against a floor of 60.
+    // ⭐ AND IT GAVE BACK THE RIGHT AMOUNT (#981). `< tall` passes with a cap fifty
+    // pixels too generous, and for six weeks that is exactly what shipped: the box
+    // rendered ~49px TALLER than the room `roomForBox` had offered it and the
+    // conversation absorbed the difference, 12px against a floor of 60.
     //
-    // The arithmetic was always like this. It only bites when the docked chrome is
-    // TALL: with #125's handoff bar (~45px) the offer came out above what the box
-    // renders, nothing was violated, and this line passed for that reason rather than
-    // because the floor was held. #972's approval bar (~100px) is what made it
-    // reachable — for this test and for any real session with a permission docked in a
-    // short pane, which is why it is filed rather than absorbed.
+    // The cause is not arithmetic, it is WHEN the arithmetic ran. The approval bar is
+    // `flex: 0 1 auto` with `minBlockSize: 0` (#972, so Allow stays reachable), so it
+    // is SQUEEZED while the composer is still tall and springs back once the composer
+    // lets go. Measured on Windows at this geometry: the same bar reports 50px with
+    // the box tall and 122px once it has shrunk. `roomForBox` read the squeezed
+    // number, subtracted it, and handed the box a cap that assumed a bar 72px shorter
+    // than the one about to exist. `roomForBox` now collapses the box for that
+    // measurement, which is the only state where "what this panel can spare" has an
+    // answer that does not depend on the answer.
     //
-    // What #716 is actually about is asserted above and below: the box gave its room
-    // back the moment a bar docked WITHOUT a keystroke (`boxHeight < tall`), and the
-    // composer is still usable afterwards. The claim that matters when the room truly
-    // runs out — the answer buttons stay reachable — is
-    // `approval-diff.spec.ts` → "in a SHORT window the diff gives way, and Allow stays
-    // reachable", which does hold.
+    // This assertion is therefore the one that would fail again: it measures the
+    // OUTCOME (what the conversation was left with) rather than the direction of
+    // travel. Measured on Windows at this geometry — panel 298, strip 21, bar 122 —
+    // the conversation goes from 12px to 62px; those numbers are this machine's and
+    // are here to say what the failure looked like, not as thresholds.
+    //
+    // ⚠️ IT PROVES THE PAIR, NOT EACH HALF. #981 landed two changes — `roomForBox`
+    // collapses the box to measure, and the composer observes the docked bars —
+    // and either one alone passes this line, because a wrong measurement followed
+    // by the bar springing back fires the observer and converges on the right
+    // answer. The collapse's own contribution is that the FIRST commit is already
+    // correct rather than corrected a frame later, and a frame is not something
+    // this test can see. Removing the observation, on the other hand, fails below.
+    await expectFloorOrMinimum('a bar docked under a long prompt');
     await expect(chip).toBeInViewport();
+    await expect(box).toBeInViewport();
+
+    // ⭐ THE SECOND DOOR: A BAR THAT GROWS WHERE IT STANDS (#981). "Deny with
+    // feedback" opens an objection field inside the bar already docked — measured
+    // here at 122px → 194px. Nothing about WHICH bars are docked changes, so
+    // `dockedChrome` does not move; the box keeps its width, the panel keeps its
+    // height and the options row keeps its wrap. Before #981 the composer watched
+    // exactly those three things and therefore saw nothing at all, and held a cap
+    // for a column 72px shorter than the one it was in.
+    //
+    // THE SAME CONTRACT ANSWERS THIS ONE TOO, and it has to: at this geometry the
+    // grown bar leaves no 60px to hold (measured on Windows — panel 298, bar 194,
+    // composer minimum 72), so the honest claim is the fail-open half. The box
+    // gives back everything it has rather than most of it, and the answers stay
+    // reachable — `approval-diff.spec.ts`'s claim one door along.
+    const beforeField = await boxHeight();
+    // The button is the last child of a row that WRAPS in a narrow card (#974), in a
+    // bar that may be squeezed, in a window this test made deliberately short. If it
+    // has been pushed off the panel the click would time out on the placeholder
+    // below and read as a behaviour failure, which is #972's own lesson.
+    await expect(w.locator('[data-approval-deny-feedback]')).toBeInViewport();
+    await w.locator('[data-approval-deny-feedback]').click();
+    await expect(w.getByPlaceholder(/^Why not\?/)).toBeVisible();
+    await expect.poll(boxHeight, { timeout: 10_000 }).toBeLessThan(beforeField);
+    await expectFloorOrMinimum('the objection field opened inside a docked bar');
+    await expect(w.getByRole('button', { name: 'Allow', exact: true })).toBeInViewport();
     await expect(box).toBeInViewport();
   });
 
