@@ -3,6 +3,110 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ DONE — 2026-09-30: **E25 — #981, the composer's height cap holds the room
+> it was offered** (PR **#1006**, merged on green CI, issue closed). **The
+> arithmetic the issue pointed at was never wrong. The state it ran in was.**
+>
+> **THE BUG.** `roomForBox` offers the composer a cap so the conversation keeps
+> `MIN_FEED_PX` (60), and the box rendered ~49px TALLER than the offer: one Bash
+> permission docked in a 298px panel left the conversation **12px**. The issue
+> named three candidates — a double-count in the chrome term, something
+> downstream taking `max(room, line-minimum)`, the offer never being applied.
+> **All three were wrong**, and a probe said so before a line was changed
+> (`spike/probes/981/`, findings in `spike/findings/`).
+>
+> **⭐ THE CAUSE: THE BAR IS SQUEEZED BY THE BOX IT IS BEING MEASURED AGAINST.**
+> The approval bar is `flex: 0 1 auto` with `minBlockSize: 0` **on purpose**
+> (#972, so Allow stays reachable), which makes its height a function of what
+> the composer is currently taking. Measured on Windows, the same bar in the
+> same panel:
+>
+> | textarea cap | bar `offsetHeight` | its `scrollHeight` |
+> |---|---|---|
+> | 162px (as it was before the bar docked) | **50** | 100 |
+> | 40px (as it settles after the fix) | 122 | 120 |
+> | 0px (the box at its minimum) | **122** | 120 |
+>
+> So it was a one-way ratchet: the bar docks while the box is tall and is
+> squeezed → `roomForBox` reads the squeezed height and offers a cap that
+> assumes a bar 72px shorter than the one about to exist → the box honours the
+> offer → the bar springs back into the room the box just let go of → the
+> conversation, the only `flex: 1` item left, pays for both.
+>
+> `roomForBox` now **collapses the box for the sibling measurement** — the one
+> state in which the column cannot be overflowing on the box's account.
+> **`scrollHeight` was measured as the cheaper, non-mutating alternative and
+> rejected on the numbers** (100 squeezed, 120 settled — not the natural height
+> either). Two docblock claims that were simply FALSE are now correct: "the box
+> no longer needs collapsing" was true of the chrome term and false of the
+> sibling term, and "nothing `remeasure` reads depends on what it writes" was
+> the licence the bug shipped under.
+>
+> **⭐ THE SECOND DOOR, AND NOTHING WATCHED IT AT ALL.** "Deny with feedback"
+> opens an objection field **inside a bar already docked** — 122px → 194px.
+> `dockedChrome` does not move (the same bars are docked), the box keeps its
+> width, the panel keeps its height, the options row keeps its wrap. All four
+> signals silent. The `ResizeObserver` now takes the panel's other children too,
+> their summed height joins its guard, and the subscription follows
+> `dockedChrome` — which **gained the request id**, because `QuestionPanel` is
+> keyed on it and therefore REMOUNTS between consecutive questions: a new node
+> behind an unchanged stamp would have left the observer holding a detached one.
+> (That one came from review, not from the probe.)
+>
+> **⭐⭐ EACH HALF ALONE PASSES THE FLOOR ASSERTION, AND THAT IS WRITTEN DOWN
+> RATHER THAN GLOSSED.** Reverting the collapse and keeping the observation
+> still goes green: a squeezed measurement is followed by the spring-back, which
+> fires the observer and converges. Measured, not assumed — the revert was run.
+> The collapse's own contribution is that the **first commit is correct rather
+> than corrected a frame later**, which is the one-frame overhang the
+> `confirmClear` note beside it already refuses to accept. Removing the
+> observation fails the objection-field assertion outright. So the e2e proves
+> the PAIR, and the comment says so instead of implying more.
+>
+> **THE REVIEW BLOCKER WAS A HYPOTHESIS AND THE BINARY SETTLED IT.** Collapsing
+> the box transiently GROWS the feed (the only `flex: 1` child), and a scroller
+> whose `clientHeight` grows has its `scrollTop` clamped down — "clamps are
+> one-way", said review, which would put a manufactured scroll event inside
+> `feed-pin`'s gesture window and silently unpin the conversation. Measured: a
+> feed pinned at **1883** with 223px of box to give up clamps to **1692** while
+> collapsed, returns to **1883** on restore, and dispatches **no scroll event at
+> all** — the restore is in the same synchronous block, so the net change is
+> zero and nothing is delivered in between. The hazard is real, the `finally` is
+> what closes it, and that is now the function's own stated guarantee rather
+> than a property of its callers.
+>
+> **THE OTHER REVIEW FINDINGS, all taken:** the floor assertion was a poll —
+> which passes on the first sample that passes, and the bug's own sequence is a
+> transient, so it could have gone green against broken code (the lesson #952
+> taught this same file 60 lines up). It settles first now, and asserts the
+> CONTRACT (`floor held, OR the box is at its one-line minimum`) rather than the
+> floor alone, because the search deliberately lands on the tightest geometry
+> the machine offers and Linux CI renders text ~5% wider (#885). Also: the
+> deny-feedback button is asserted in the viewport before it is clicked (it is
+> the last child of a wrapping row in a deliberately short window — #972's own
+> failure), the sibling-sum guard is indexed rather than `Array.from` (it runs
+> on every keystroke), and a unit test now pins that guard term, which could
+> have been deleted with every test green.
+>
+> **`MIN_FEED_PX` IS DOCUMENTED AS A FLOOR, NOT A GUARANTEE** — the issue's third
+> question, answered rather than left. It binds the OFFER; one line of composer
+> still beats it, so in a panel too short for floor + chrome + a line the
+> conversation yields and the answers stay reachable. That is
+> `approval-diff.spec.ts`'s trade one door along, and it is now stated where it
+> is made instead of contradicted by a comment.
+>
+> **Green:** lint · all three typecheck projects · **9,548 unit** (the two known
+> contention flakes verified green run alone) · **full e2e** · the affected
+> specs re-run after review · **all four CI jobs**. Docs:
+> `docs/manual/03-session-view.md` (the box stops sooner in a short pane, and
+> what yields when it cannot), CHANGELOG **0.8.102**, the dogfood tracker (a new
+> UNTESTED row; the stale "known miss" note and its RE-TEST row both retired).
+>
+> **Next up:** the queue is open — **#941**/**#942** (silent commands) and
+> **#997** (needs a probe first) are the near ones. **#521 layer 2 is still
+> blocked on the owner's choice of shape (A, B or C)** and must not be started
+> without it. **E21-02/03/04 (#904/#716/#740) remain the owner's.**
+
 > # ✅ DONE — 2026-09-30: **E11 — #861, the blackboard's 100-key cap stops
 > being a one-way door** (PR **#1004**, merged on green CI, issue closed).
 > **Review changed what shipped**, and that is the part worth reading.
