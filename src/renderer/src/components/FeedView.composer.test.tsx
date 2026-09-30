@@ -294,4 +294,40 @@ describe('the composer is bounded, and CSS does the growing (issues 406, 716)', 
     expect(styleReads.mock.calls.filter(([el]) => el === box)).toHaveLength(0);
     styleReads.mockRestore();
   });
+
+  // #981's second door. A bar that changes height WHERE IT STANDS — the objection
+  // field opening inside an approval bar, a "1 more waiting" line arriving — moves
+  // the same pixels as one docking, and moves none of the three things the guard
+  // above watched: the box's width, the panel's height, the options row's wrap.
+  //
+  // jsdom measures every element as 0, so the sibling has to say a height out loud
+  // or this passes against a deleted guard term (the same trap `stubWidth` exists
+  // for one test up). The measurement itself still cannot happen here — a jsdom
+  // panel has no `clientHeight`, so `roomForBox` returns before it touches
+  // anything — which is exactly why the assertion is "it went and measured", and
+  // the answer it would get is `e2e/feed.spec.ts`'s to check.
+  it('measures again when a bar already docked changes height (#981)', async () => {
+    stubWidth(300);
+    const box = await mountComposer();
+    const panel = box.closest('[data-composer-dropzone]')!.parentElement!;
+    const bar = document.createElement('div');
+    Object.defineProperty(bar, 'offsetHeight', { configurable: true, value: 40 });
+    panel.appendChild(bar);
+    const styleReads = vi.spyOn(window, 'getComputedStyle');
+
+    // The bar grew where it stands: nothing else about the column moved.
+    await act(async () => {
+      for (const cb of resizeCallbacks) cb([], {} as ResizeObserver);
+    });
+    expect(styleReads.mock.calls.filter(([el]) => el === box).length).toBeGreaterThan(0);
+
+    // ...and it is still a GUARD, not a re-measure on every tick: unchanged now
+    // means unchanged, or the keystroke path gets its cost back.
+    styleReads.mockClear();
+    await act(async () => {
+      for (const cb of resizeCallbacks) cb([], {} as ResizeObserver);
+    });
+    expect(styleReads.mock.calls.filter(([el]) => el === box)).toHaveLength(0);
+    styleReads.mockRestore();
+  });
 });

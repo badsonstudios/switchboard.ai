@@ -206,6 +206,13 @@ The box at the bottom sends straight to the real Claude Code session:
   onto several lines by itself, so a pasted paragraph is never half-hidden. It
   stops growing at twelve lines and scrolls inside itself after that, and it
   shrinks back down as you delete.
+- **In a short pane it stops sooner, on purpose.** The box never takes the last
+  of the conversation above it, so in a small pop-out or a four-way split it
+  caps below twelve lines and scrolls instead — and it gives room back the
+  moment something else needs the space, such as a permission bar arriving.
+  Make the pane taller and the box grows again. If the pane is too short for
+  all of it, the conversation is what yields: the box keeps a line to type in
+  and any buttons waiting for an answer stay on screen.
 - While Claude is working, the send button becomes a **■ stop** button, which
   interrupts the current turn.
 - Typing `/` at the start of a line opens command autocomplete — see

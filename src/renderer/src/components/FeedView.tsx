@@ -1232,7 +1232,15 @@ export function FeedView(props: {
         // the one thing the fix genuinely took away â€” so the signal is passed
         // in explicitly rather than re-derived. A string, not an object: it is
         // an effect dependency, and a fresh object would re-measure every render.
-        dockedChrome={`${offTail}|${props.approval ? (askQuestions ? 'q' : 'a') : ''}|${props.status ?? ''}`}
+        //
+        // ⚠️ IT CARRIES THE REQUEST ID BECAUSE IT TRACKS ELEMENT IDENTITY, not
+        // merely which KINDS of bar are docked (#981 review). `QuestionPanel`
+        // is keyed on `requestId` and therefore REMOUNTS between consecutive
+        // questions â€” a new DOM node of a new height, while a `q|q` stamp sat
+        // still. The composer now observes these siblings directly, so a stamp
+        // that missed the swap would leave it observing a detached node and
+        // holding a cap for a column that no longer exists.
+        dockedChrome={`${offTail}|${props.approval ? (askQuestions ? 'q' : 'a') : ''}|${props.approval?.requestId ?? ''}|${props.status ?? ''}`}
       />
     </div>
   );
@@ -1517,7 +1525,19 @@ function blockEdge(cs: CSSStyleDeclaration, part: 'padding' | 'border'): number 
   return px(cs.getPropertyValue(`${part}-top${w}`)) + px(cs.getPropertyValue(`${part}-bottom${w}`));
 }
 
-/** the conversation never gives up its last 60px to make room for the box */
+/**
+ * The conversation keeps its last 60px rather than give it to the box.
+ *
+ * ⚠️ A FLOOR, NOT A GUARANTEE, and #981 is why that distinction is written down
+ * here instead of left to a reader. It binds the OFFER `roomForBox` makes: the
+ * box is never told it may have room this floor is standing on. It cannot bind
+ * the outcome, because one line of composer beats both limits
+ * (`composerBounds`) — so in a panel too short for the floor plus its docked
+ * chrome plus one line, the conversation still yields and the box keeps the
+ * line. That is deliberate fail-open: a composer too small to show the
+ * character being typed is not a composer, and `approval-diff.spec.ts` asserts
+ * the same trade one door along (the diff gives way, Allow stays reachable).
+ */
 const MIN_FEED_PX = 60;
 
 /**
@@ -1581,25 +1601,97 @@ function controlChip(locked: boolean): React.CSSProperties {
  * extra half-line it was never owed and the box stopped that much early (caught
  * by the e2e's floor assertion, 2026-08-11).
  *
- * That subtraction is why this NO LONGER needs the box collapsed first, which
- * it did until #716. The row is `max(box, buttons)`, so a taller box adds the
- * same pixels to `own` and to `row` and cancels â€” the answer is the chrome
- * either way. Being independent of the box's current height is exactly what
- * lets the bounds be measured on a resize instead of on every keystroke.
+ * That subtraction is why the CHROME term no longer needs the box collapsed,
+ * which it did until #716. The row is `max(box, buttons)`, so a taller box adds
+ * the same pixels to `own` and to `row` and cancels â€” the answer is the chrome
+ * either way.
+ *
+ * ⚠️ THE SIBLING TERM IS A DIFFERENT STORY, AND #716 MISSED IT (#981). A docked
+ * bar does NOT keep the height it asked for: the approval bar is `flex: 0 1
+ * auto` with `minBlockSize: 0` on purpose (#972, so Allow stays reachable), so
+ * it is SQUEEZED by whatever the composer is currently taking and springs back
+ * when the composer lets go. Measured on Windows, one Bash permission docked in
+ * a 298px panel: the same bar reports **50px** while the box is tall, **122px**
+ * once the box has shrunk. Reading it in the first state and writing a cap the
+ * box then honours is a one-way ratchet — the box takes the offer, the bar
+ * takes the difference back, and the conversation pays for both. That is the
+ * ~49px of #981, and it is why the floor was missed rather than merely tight.
+ *
+ * So the siblings are measured WITH THE BOX COLLAPSED — the one state in which
+ * the column cannot be overflowing on the box's account, which is what makes
+ * "what can this panel spare" answerable without already knowing the answer.
+ * Measured at 0px and at 40px, the same bar reports 122 both times.
+ * `scrollHeight` was measured as the cheaper, non-mutating alternative and
+ * rejected on the numbers — the same bar reports 100 squeezed and 120 settled,
+ * so it is not the natural height either.
+ *
+ * ⚠️ ONE READ STILL DEPENDS ON A WRITE, and it is named rather than denied
+ * (review): the collapse lands on `min-block-size` once the box has bounds,
+ * because `min` beats `max` in CSS — so the siblings are read against a box one
+ * line tall, and `remeasure` is what wrote that line. It cannot oscillate,
+ * because the minimum is a constant function of line-height and font size and
+ * nothing here can move either. A future change that made the FLOOR depend on
+ * the room would break that, and would break the no-2-cycle argument at
+ * `remeasure`'s dedupe with it.
+ *
+ * COST, because #716 was a performance item: a write→read pair forces a
+ * synchronous layout UNCONDITIONALLY, where a lone `offsetHeight` read forces
+ * one only when layout is already dirty — so this is more than the function did
+ * before, and the claim worth making is not that it is free. It is that it
+ * cannot reach the keystroke path: the cap is exactly the height at which the
+ * column stops overflowing, so at the cap `dockedHeight()` is stable and the
+ * observer's guard early-returns on every keystroke tick. (That invariant, not
+ * "bounds cannot change from typing", is the load-bearing one — a sibling with
+ * `flex-grow`, or a smaller `MIN_FEED_PX`, would break it.)
+ *
+ * ⚠️ WHAT THIS BUYS OVER THE OBSERVER ALONE IS ONE COMMIT, AND THE E2E CANNOT
+ * SEE IT. #981 shipped two changes, and each one alone is enough for the
+ * SETTLED outcome: with the docked siblings observed, a squeezed-bar
+ * measurement is followed by the bar springing back, which fires the observer
+ * and measures again, converging on the same answer. Measured — the floor
+ * assertion in `feed.spec.ts` passes with this collapse removed. What it does
+ * not survive is the FIRST PAINT: without the collapse the same-commit
+ * measurement is wrong, the bar docks over a box still holding its old cap, and
+ * the conversation is squeezed for the frame before the observer corrects it.
+ * That is the one-frame overhang the `confirmClear` note on the layout effect
+ * below already refuses to accept, for the same reason and in the same column.
+ *
+ * IT DOES NOT MOVE THE CONVERSATION, and that was a review hypothesis settled
+ * on the binary rather than argued: the feed is the only `flex: 1` child, so
+ * the collapse transiently GROWS it and a scroller whose `clientHeight` grows
+ * has its `scrollTop` clamped down. Measured (`spike/probes/981`), a feed
+ * pinned to the tail at 1883 with 223px of box to give up: clamped to 1692 with
+ * the box collapsed, back at 1883 the moment it is restored, and **no `scroll`
+ * event dispatched at all** — because the restore is in the same synchronous
+ * block, so the net change is zero and nothing is delivered in between. That
+ * matters beyond tidiness: a scroll event inside `feed-pin`'s gesture window
+ * reads as a deliberate scroll away from the tail and silently unpins.
  */
 function roomForBox(own: HTMLElement | null, el: HTMLElement): number | undefined {
   const panel = own?.parentElement;
   const row = el.parentElement ?? el;
   if (!own || !panel || panel.clientHeight === 0) return undefined;
-  let taken = MIN_FEED_PX + (own.offsetHeight - row.offsetHeight);
-  for (const sib of Array.from(panel.children)) {
-    // everything docked around the conversation â€” the verbosity strip, the
-    // working banner, an approval bar â€” keeps the height it asked for; only the
-    // scroller (`flex: 1`) is the one that yields
-    if (sib === own || sib.hasAttribute('data-feed-region')) continue;
-    taken += (sib as HTMLElement).offsetHeight;
+  // The `finally` is the whole safety argument and it belongs to THIS function,
+  // not to its callers: collapse and restore are one synchronous block, so no
+  // paint, no scroll dispatch and no observation can land between them whoever
+  // calls this and from where. Nothing is restored to a REMEMBERED value except
+  // the one property written -- `held` is `''` for a box that had no inline cap
+  // yet, which puts it back under the stylesheet rather than under a number.
+  const held = el.style.maxBlockSize;
+  el.style.maxBlockSize = '0px';
+  try {
+    let taken = MIN_FEED_PX + (own.offsetHeight - row.offsetHeight);
+    for (const sib of Array.from(panel.children)) {
+      // everything docked around the conversation â€” the verbosity strip, the
+      // working banner, an approval bar â€” gets the room it wants; only the
+      // scroller (`flex: 1`) is the one that yields
+      if (sib === own || sib.hasAttribute('data-feed-region')) continue;
+      taken += (sib as HTMLElement).offsetHeight;
+    }
+    return Math.max(0, panel.clientHeight - taken);
+  } finally {
+    el.style.maxBlockSize = held;
   }
-  return Math.max(0, panel.clientHeight - taken);
 }
 
 /**
@@ -1649,6 +1741,10 @@ function Composer({
    * Only its IDENTITY matters: when it changes, something around the
    * conversation appeared or went away, and the room this box may grow into
    * changed with it. See the call site for why nothing else can detect that.
+   *
+   * It stamps the docked ELEMENTS, not the kinds of bar (#981): a bar that is
+   * replaced by another of the same kind is a new node, and this value is what
+   * re-subscribes the observer to it.
    */
   dockedChrome?: string;
 }): React.JSX.Element {
@@ -2533,8 +2629,16 @@ function Composer({
     // where only the box's HEIGHT moved, and height is all our write can move.
     // Worth being exact about, because the dedupe catches fixed points and not
     // 2-cycles: if the bounds could ever alternate Aâ†’Bâ†’A, `prev === next` would
-    // be false every time and this would spin. They cannot today, because
-    // nothing `remeasure` reads depends on what it writes (see `roomForBox`).
+    // be false every time and this would spin.
+    //
+    // THIS USED TO SAY "nothing `remeasure` reads depends on what it writes",
+    // and that was FALSE (#981): a docked bar's height is a function of the
+    // box's height, so the reading did depend on the writing and the box
+    // ratcheted the conversation under its floor. What is true after the fix is
+    // weaker and enough â€” the sibling measurement is taken against the box's
+    // MINIMUM (see `roomForBox`), and the minimum is a constant function of
+    // line-height and font size. A cycle needs a read that changes with the
+    // value written; a constant cannot supply one.
     setBounds((prev) =>
       prev && prev.minBlockSize === next.minBlockSize && prev.maxBlockSize === next.maxBlockSize
         ? prev
@@ -2586,14 +2690,44 @@ function Composer({
   // second line, and the box keeps a cap its panel no longer has. That is
   // #406's overhang through a third door, and the model chip changing to a
   // longer name would open it just as well.
+  //
+  // AND THE DOCKED BARS THEMSELVES ARE WATCHED, which is new with #981.
+  // `dockedChrome` says WHICH of them are there, so it fires when one appears
+  // or goes away -- and a bar that changes height while it stays put moves
+  // exactly the same pixels. Click Deny and the objection field opens inside
+  // the approval bar; a second permission arrives behind the first and the bar
+  // gains its "1 more waiting" line. Neither changes the box's width, the
+  // panel's height, the options row or `dockedChrome`, so before this the box
+  // kept a cap the column no longer had and the conversation paid the
+  // difference -- #981's own failure, arriving a second way.
   React.useEffect(() => {
     const el = box.current;
     const panel = root.current?.parentElement;
     if (!el) return;
     const rowHeight = (): number => optionsRow.current?.offsetHeight ?? 0;
+    /** everything docked around the conversation, as one number -- `roomForBox`'s
+     *  sibling term, read here only to tell "it moved" from "it did not".
+     *
+     *  Indexed rather than `Array.from`, and that is not style: in a real
+     *  browser this runs on every keystroke (the box's own height changes, the
+     *  observer fires, and this is what decides to do nothing), so it is on the
+     *  path #716 cleared. The reads are post-layout and N is about three, but
+     *  an allocation per keystroke is the shape that item was about. */
+    const dockedHeight = (): number => {
+      const own = root.current;
+      if (!panel || !own) return 0;
+      let sum = 0;
+      for (let i = 0; i < panel.children.length; i += 1) {
+        const sib = panel.children[i];
+        if (sib === own || sib.hasAttribute('data-feed-region')) continue;
+        sum += (sib as HTMLElement).offsetHeight;
+      }
+      return sum;
+    };
     let lastWidth = el.getBoundingClientRect().width;
     let lastRoom = panel?.clientHeight ?? 0;
     let lastOptions = rowHeight();
+    let lastDocked = dockedHeight();
     const ro = new ResizeObserver(() => {
       const width = el.getBoundingClientRect().width;
       // a collapsed panel measures 0 and would cap the box at nothing; it comes
@@ -2601,17 +2735,45 @@ function Composer({
       if (width === 0) return;
       const room = panel?.clientHeight ?? 0;
       const options = rowHeight();
-      if (width === lastWidth && room === lastRoom && options === lastOptions) return;
+      const docked = dockedHeight();
+      if (
+        width === lastWidth &&
+        room === lastRoom &&
+        options === lastOptions &&
+        docked === lastDocked
+      )
+        return;
       lastWidth = width;
       lastRoom = room;
       lastOptions = options;
+      lastDocked = docked;
       remeasure();
     });
     ro.observe(el);
     if (panel) ro.observe(panel);
     if (optionsRow.current) ro.observe(optionsRow.current);
+    // ⚠️ THE SUBSCRIPTION FOLLOWS `dockedChrome`, which is why it is a dependency
+    // of this effect and not only of the layout effect above: these are the
+    // ELEMENTS that come and go, so a bar that docks after this ran would
+    // otherwise never be observed at all.
+    //
+    // The observer cannot chase its own tail here even though `remeasure` now
+    // WRITES style synchronously inside this callback -- it collapses the box
+    // to measure, and that transiently moves these very siblings. The collapse
+    // and the restore are one synchronous block (`roomForBox`), so no
+    // observation can be gathered between them and the next callback reads the
+    // restored heights, which are the ones already cached. What it does see is
+    // the real spring-back after a new cap lands -- and that re-measure
+    // produces the same bounds, so `remeasure`'s dedupe ends it there.
+    if (panel) {
+      const own = root.current;
+      for (const sib of Array.from(panel.children)) {
+        if (sib === own || sib.hasAttribute('data-feed-region')) continue;
+        ro.observe(sib);
+      }
+    }
     return () => ro.disconnect();
-  }, [remeasure]);
+  }, [remeasure, dockedChrome]);
 
   /** something to send: words, a picture, a sibling's message, or any mix (E10-09, E11-05) */
   // Only SETTLED messages make the box sendable — an Enter would not send the

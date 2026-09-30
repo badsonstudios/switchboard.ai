@@ -113,6 +113,18 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **The conversation no longer gets squeezed to nothing when a permission is
+  waiting.** In a short session pane — a small pop-out, a four-way split, a
+  splitter dragged up — a permission request arriving under a long prompt left
+  the conversation about a line tall, with the prompt box holding on to room
+  the column no longer had. The box now works out its limit against the bar
+  that is really there rather than the one it briefly squashed, so the
+  conversation keeps a usable strip above it. The same fix covers a bar that
+  grows where it stands: click **Deny with feedback…** and the box makes way
+  for the field instead of ignoring it. In a pane too short for all three, the
+  prompt box still keeps one line and the answer buttons stay on screen — the
+  conversation is what yields, as before.
+
 - **`/usage` can no longer overwrite an answer that was left unfinished.** When
   a reply ends without being properly closed off — stopping one part-way is the
   way you'd most likely cause it — running `/usage`, `/cost` or `/context` next
