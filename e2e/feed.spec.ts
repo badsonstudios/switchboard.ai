@@ -1126,7 +1126,15 @@ test.describe('Feed view (E12-06)', () => {
     // composer minimum 72), so the honest claim is the fail-open half. The box
     // gives back everything it has rather than most of it, and the answers stay
     // reachable — `approval-diff.spec.ts`'s claim one door along.
-    const beforeField = await boxHeight();
+    //
+    // ⚠️ AND IT IS THE CONTRACT THAT IS ASSERTED, NOT "THE BOX GOT SMALLER" — which
+    // is what this line said first, and it went red on Windows CI at `< 32` against
+    // a box already sitting at 32. "It gave room back" presumes it HAD room to give,
+    // and a runner whose pane is shorter than this desktop's leaves the box at its
+    // one-line minimum the moment the bar docks. Nothing is lost by dropping it: the
+    // contract fails on the unfixed code anyway (the box stays at 54 while the grown
+    // bar needs the column, so neither half of "floor, or the minimum" holds), and
+    // unlike the direction of travel it means the same thing on every geometry.
     // The button is the last child of a row that WRAPS in a narrow card (#974), in a
     // bar that may be squeezed, in a window this test made deliberately short. If it
     // has been pushed off the panel the click would time out on the placeholder
@@ -1134,7 +1142,6 @@ test.describe('Feed view (E12-06)', () => {
     await expect(w.locator('[data-approval-deny-feedback]')).toBeInViewport();
     await w.locator('[data-approval-deny-feedback]').click();
     await expect(w.getByPlaceholder(/^Why not\?/)).toBeVisible();
-    await expect.poll(boxHeight, { timeout: 10_000 }).toBeLessThan(beforeField);
     await expectFloorOrMinimum('the objection field opened inside a docked bar');
     await expect(w.getByRole('button', { name: 'Allow', exact: true })).toBeInViewport();
     await expect(box).toBeInViewport();
