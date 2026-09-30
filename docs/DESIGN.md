@@ -4030,6 +4030,69 @@ a pointer where they left.)*
   >   carries a `disabledReasonKey`, and giving that branch a voice would make
   >   *every* disabled chord in the app speak. That is a decision about the
   >   dispatcher, and it is filed rather than smuggled in.
+  >
+  >   **DECIDED, 2026-09-30 (#942): it speaks, and every disabled command does.**
+  >   The exemption above is closed, and the three things it left open were
+  >   answered rather than narrowed:
+  >
+  >   1. **Blast radius: accepted.** EVERY matched-but-unavailable command
+  >      announces its `disabledReasonKey` — not a chosen family. That is the
+  >      sixth rule's own argument applied consistently, and the alternative (an
+  >      allowlist per chord family) is a second rule to keep in step with a
+  >      registry that grows every milestone. Nothing new is written: the words
+  >      are the ones the palette already renders beside the dimmed entry, so
+  >      rule (a)'s "never a parallel path that can drift" holds for these
+  >      sentences the way it holds for `rail.reordered`.
+  >   2. **Not gated.** No double-press, no `scope === 'app'` filter. A chord that
+  >      MATCHED is a real binding for a real command that is really disabled, and
+  >      saying why is information rather than noise — while a "press it twice"
+  >      rule would itself be undiscoverable, which is the defect being fixed. The
+  >      one case that would genuinely spam needed nothing: `dispatch` has
+  >      returned before matching anything on `e.repeat` since E9-01, so a held
+  >      key announces once.
+  >   3. **The two silences are now two names.** `dispatch` and
+  >      `dispatchAccelerator` returned `Command | null`, and the `null` meant
+  >      both "no binding claimed that key" and "a binding claimed it and its
+  >      command is disabled". They return a named `DispatchOutcome` — `ran`,
+  >      `unavailable`, `unmatched` — and only `unavailable` speaks. A keystroke
+  >      nothing matched is not a disabled command; it is a key the app has no
+  >      opinion about, and announcing for a typo is the undiscoverable noise
+  >      point 2 declined. Naming it also closed a live hazard: the popout key
+  >      bridge decided whether to raise the main window from the old return's
+  >      TRUTHINESS, which a union object would have satisfied on every keystroke.
+  >
+  >   The words live in `lib/command-voice`, beside `lib/session-voice` and apart
+  >   from it: this one speaks for the REGISTRY rather than for §5.8's families,
+  >   and it needs a command where the other needs a card. `lib/commands` reports
+  >   the outcome and stays pure by construction — the same posture it already
+  >   takes with `onError`.
+  >
+  > **A seventh thing the sixth rule does extend to, added by #941 (2026-09-30):
+  > a PALETTE command that rearranges the window says what it did, on the same
+  > terms as a chord.** The rule was written about chords because chords were what
+  > was silent, and applied to §5.8's ladder it reached the two STEP commands only.
+  > Four siblings jump straight to a named rung (`session.collapse`,
+  > `session.tabbed`, `session.expand`, `session.hide`), are palette-only by
+  > design — the steps are the key path — and announced nothing, so the person who
+  > typed a title and pressed Enter got no confirmation that anything had happened
+  > to a card they may not be able to see. That is the same defect one door over,
+  > and "a chord is somebody's accessible path" is if anything truer of the palette.
+  >
+  > Two things came out of applying it there. **A jump's refusal is not a step's:**
+  > `moveCardToRung` returns early when the card is already on the rung asked for,
+  > so "already hidden" is the no-op worth announcing, where a step's is the end of
+  > the ladder. Both are knowable before the command runs, which is why either can
+  > be answered synchronously; everything else waits on the command's promise
+  > exactly as point 3 above requires. **And `hidden` says more than its name.**
+  > §5.8's ladder is expanded → collapsed → tabbed → hidden and the keyboard cannot
+  > climb back out of the bottom — a card with no dockview panel is no card's
+  > `activeCardId`, so every card-scoped chord is inert against it (#581's e2e had
+  > to be reordered around exactly this). Reaching `hidden` is a **one-way door for
+  > the keyboard**, and the announcement is the only affordance that can say so, so
+  > it names the recovery route. Keyed on the RUNG REACHED and not on the command
+  > that reached it, because "say the outcome, not the gesture" is the first rule
+  > these sentences were written under and two gestures landing a card in one state
+  > must not describe it two ways.
 
 ### 5.33 Session history — opening a past conversation
 

@@ -167,6 +167,7 @@
   "ladder": {
     "announceRung": "{title} {rung}",
     "announceRungUnchanged": "{title} is already {rung}",
+    "announceHidden": "{title} hidden, still running — use Go to {title} in the command list to bring it back",
     "rung": {
       "expanded": "expanded",
       "collapsed": "collapsed to the strip",

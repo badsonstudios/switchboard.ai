@@ -140,12 +140,49 @@ export interface DispatchEvent extends KeyLike {
 }
 
 /**
- * Run the first command whose binding matches. Returns the command that ran, or
- * null. preventDefault() is called ONLY when a command actually ran — an
- * unmatched key must reach whatever would have got it anyway.
+ * WHAT A KEYSTROKE DID — three outcomes, named (#942).
+ *
+ * This used to be `Command | null`, and the `null` meant two different things:
+ * "no binding claimed that key" and "a binding claimed it and its command is
+ * disabled right now". Only the second has anything to say — every command
+ * carries a `disabledReasonKey` and §5.32's sixth rule says silence is
+ * indistinguishable from a binding that has stopped working — so the two had to
+ * stop wearing one return value before either could be acted on.
+ *
+ * `unmatched` is deliberately ONE outcome covering every no-op the app has no
+ * opinion about: no binding, a chord suppressed because you are typing, a key a
+ * terminal owns, an auto-repeat, mid-IME composition, an id that is no longer
+ * registered. None of them is a disabled command, and none of them may speak —
+ * announcing for a plain typo would be the undiscoverable noise #942 declined.
+ *
+ * NOT a boolean and not truthy-by-accident: the popout key bridge decides
+ * whether to pull the main window forward from this answer, so `ran` has to be
+ * something a call site states rather than something it infers.
+ */
+export type DispatchOutcome<Ctx extends CommandContext = CommandContext> =
+  /** a binding matched and its command ran (it may still have thrown — see `onError`) */
+  | { outcome: 'ran'; command: Command<Ctx> }
+  /** a binding matched; its command is disabled right now. THE ONE THAT SPEAKS. */
+  | { outcome: 'unavailable'; command: Command<Ctx> }
+  /** nothing ran, and there is nothing to say about it */
+  | { outcome: 'unmatched' };
+
+/** The one `unmatched` value, so the hot path allocates nothing for the
+ *  overwhelmingly common answer (every ordinary keystroke in the app). Frozen
+ *  because it is shared: a caller that mutated it would change every past and
+ *  future answer. */
+const UNMATCHED: { outcome: 'unmatched' } = Object.freeze({ outcome: 'unmatched' });
+
+/**
+ * Run the first command whose binding matches. preventDefault() is called ONLY
+ * when a command actually ran — an unmatched key must reach whatever would have
+ * got it anyway, and a DISABLED command is not an exception: it changed nothing,
+ * so the key still belongs to whoever would have had it.
  *
  * A matched-but-disabled command stops the scan rather than letting a later
- * command claim the same accelerator as a fallback: one key, one meaning.
+ * command claim the same accelerator as a fallback: one key, one meaning. Since
+ * #942 it also says which command it was, so the caller can announce the reason
+ * the palette already renders beside the dimmed entry.
  *
  * Fail-open (a hard constraint): a throwing command must never escape into the
  * keydown handler, where an uncaught error could wedge the renderer.
@@ -156,20 +193,20 @@ export function dispatch<Ctx extends CommandContext>(
   ctx: Ctx,
   platform: Platform,
   onError?: (err: unknown, commandId: string) => void,
-): Command<Ctx> | null {
-  if (e.isComposing) return null; // mid-IME composition (same rule as the composer)
-  if (e.repeat) return null; // holding Ctrl+N must not queue nine folder pickers
+): DispatchOutcome<Ctx> {
+  if (e.isComposing) return UNMATCHED; // mid-IME composition (same rule as the composer)
+  if (e.repeat) return UNMATCHED; // holding Ctrl+N must not queue nine folder pickers
   const { typing, terminal } = classifyTarget(e.target ?? null);
-  if (terminal) return null; // the CLI owns every key it can see
+  if (terminal) return UNMATCHED; // the CLI owns every key it can see
   for (const cmd of commands) {
     if (!cmd.binding) continue;
     if (typing && cmd.scope !== 'typing-ok') continue;
     if (!matchesBinding(e, cmd.binding, platform)) continue;
-    if (!isAvailable(cmd, ctx, onError)) return null; // matched but unavailable
+    if (!isAvailable(cmd, ctx, onError)) return { outcome: 'unavailable', command: cmd };
     e.preventDefault?.();
-    return runCommand(cmd, ctx, onError);
+    return { outcome: 'ran', command: runCommand(cmd, ctx, onError) };
   }
-  return null;
+  return UNMATCHED;
 }
 
 /**
@@ -231,13 +268,21 @@ export function dispatchAccelerator<Ctx extends CommandContext>(
   ctx: Ctx,
   target: Element | null,
   onError?: (err: unknown, commandId: string) => void,
-): Command<Ctx> | null {
+): DispatchOutcome<Ctx> {
   const cmd = commands.find((c) => c.id === commandId);
-  if (!cmd) return null; // an id we no longer register: nothing to run, never a throw
+  if (!cmd) return UNMATCHED; // an id we no longer register: nothing to run, never a throw
   const { typing, terminal } = classifyTarget(target);
-  if (typing && !terminal && cmd.scope !== 'typing-ok') return null;
-  if (!isAvailable(cmd, ctx, onError)) return null;
-  return runCommand(cmd, ctx, onError);
+  if (typing && !terminal && cmd.scope !== 'typing-ok') return UNMATCHED;
+  // Matched and disabled, exactly as in `dispatch` and announced the same way
+  // (#942). Of the two sources above, the CHORDS are the ones that need it most:
+  // they are claimed above the renderer precisely so they work from inside a
+  // session terminal, where nothing else the user presses has any effect at all.
+  // A disabled MENU item reaching here would speak too, which is right for the
+  // same reason — a menu click that produces nothing is the same silence — and
+  // is not a case that exists today: neither command #569 routes through here
+  // carries an `enabled` predicate.
+  if (!isAvailable(cmd, ctx, onError)) return { outcome: 'unavailable', command: cmd };
+  return { outcome: 'ran', command: runCommand(cmd, ctx, onError) };
 }
 
 /** the accelerator bound to a command id, or '' — for tooltips and the palette */

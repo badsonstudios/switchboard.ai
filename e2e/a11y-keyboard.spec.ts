@@ -381,4 +381,62 @@ test.describe('keyboard paths swept by #197', () => {
       await said.evaluateAll((els) => els.filter((e) => (e.textContent ?? '') !== '').length)
     ).toBe(1);
   });
+
+  test('the palette says what it rearranged, and a dead-end chord says why (#941, #942)', async () => {
+    // The other two doors onto the same region. #581 covered the CHORDS; these
+    // are the two cases it left silent, and only a real window can prove them:
+    // the palette's Enter has to reach the command and the command has to reach
+    // the region, and the dispatcher's disabled branch only exists on a real
+    // keystroke.
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    const name = path.basename(folder);
+    await expect(w.getByText(name).first()).toBeVisible({ timeout: 25_000 });
+
+    const said = w.locator('[data-live-region]');
+    await expect(said).toHaveCount(2);
+    const spoken = async (): Promise<string> =>
+      (await said.evaluateAll((els) => els.map((e) => e.textContent ?? '').filter(Boolean)))[0] ??
+      '';
+
+    // Stand on the rail ROW, as the #581 case does and for its reason: the
+    // keyboard is then in the app's chrome rather than in the card's prompt box.
+    await w.locator('nav [draggable="true"]').filter({ hasText: name }).first().click();
+    await expect(w.locator('.dv-active-tab')).toContainText(name);
+
+    // ── #941: a palette-only command, run the only way it can be run ────────
+    // `Hide session` is the one of the four worth driving end to end here: it is
+    // the rung with its own sentence, and it is the rung the keyboard cannot
+    // climb back out of — which is what sets up the #942 half below.
+    await w.keyboard.press(`${MOD}+Shift+P`);
+    await w.getByPlaceholder('Type a command or a session name…').fill('hide session');
+    await w.keyboard.press('Enter');
+    const hidden = `${name} hidden, still running — use Go to ${name} in the command list to bring it back`;
+    await expect.poll(spoken).toBe(hidden);
+    // and the card really did leave the workspace, so the sentence is not a
+    // claim the region made on its own
+    await expect(w.locator('.dv-active-tab')).toHaveCount(0);
+
+    // ── #942, first half: a keystroke nothing matched stays SILENT ───────────
+    // Asserted BEFORE the disabled chord, and by the region still holding the
+    // previous sentence: "nothing was said" has no positive form, so the only
+    // honest proof is that nothing overwrote what was there.
+    await w.keyboard.press(`${MOD}+Shift+F9`); // no command binds this
+    await expect.poll(spoken).toBe(hidden);
+
+    // ── #942, second half: a chord whose command is disabled says why ────────
+    // With no card in the workspace there is no active session, so the ladder
+    // step matches a real binding and finds a disabled command. Before #942 this
+    // produced nothing at all — the exact thing §5.32 says reads as a shortcut
+    // that has stopped working.
+    await w.keyboard.press(`${MOD}+Shift+ArrowDown`);
+    await expect.poll(spoken).toBe('No session is focused');
+    // the palette's own words for it, not a second wording — same key, same
+    // sentence, which is what rule (a) asks of anything that speaks twice
+    await w.keyboard.press(`${MOD}+Shift+P`);
+    await expect(
+      w.getByRole('dialog', { name: 'Command palette' }).getByText('No session is focused').first()
+    ).toBeVisible();
+  });
 });
