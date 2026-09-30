@@ -472,7 +472,34 @@ export function deriveIntents(
   // it used to sit behind the `message` check, which was harmless while only
   // `user`/`assistant` were read and stops being so the moment another entry
   // type is (a `system` line carries `isMeta` too).
-  if (entry.isMeta === true) return [];
+  //
+  // ⚠️ BOTH SPELLINGS, AND THAT IS NOT DEFENSIVENESS — IT IS THE CONTRACT
+  // (#997). `isMeta` is the TRANSCRIPT spelling; the STREAM spells the same
+  // flag `is_meta`, and this function is the only reader of it for both
+  // transports. The CLI says so in its own code twice over (read off the PATH
+  // binary 2.1.280, `spike/findings/997-is-meta-on-the-stream.md`):
+  //
+  //   * its outbound wire schemas declare `is_meta` as an optional literal
+  //     `true` on the `user` shape ("synthesized by the loop (not user
+  //     keyboard input)") AND on the `assistant` shape ("synthesized by the
+  //     loop (not a model response)");
+  //   * its own wire->internal ingest converter opens with
+  //     `if (r.is_meta === true) return []` and then writes `isMeta: false`
+  //     into the internal shape — one function, both spellings, so the rename
+  //     is the transport boundary rather than a version drift.
+  //
+  // MEASURED 2026-09-30 against CLI 2.1.280 with switchboard's exact flag
+  // list: NO `is_meta` frame arrived (`spike/probes/997/`). The census over
+  // that session's whole stream found only `isReplay` and `is_error`. So this
+  // clause changes nothing observable today and is a guard on a declared
+  // field, not a fix for a bug anyone has seen — see the findings note for
+  // why the frame the issue was filed about (a `PushNotification` `tool_use`
+  // with `is_meta: true`) is unreachable from a non-interactive spawn.
+  //
+  // The `=== true` on both is load-bearing for the same reason it always was:
+  // these arrive from another process, and a truthy test would drop a line
+  // over a non-empty string.
+  if (entry.isMeta === true || entry.is_meta === true) return [];
   const ts = typeof entry.timestamp === 'string' ? entry.timestamp : undefined;
 
   const local = localCommandText(entry);
