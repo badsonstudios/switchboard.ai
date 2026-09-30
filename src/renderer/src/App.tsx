@@ -58,7 +58,13 @@ import { installAnnouncer, setAudioMuted, sharedAnnouncer } from './lib/announce
 // ...and its namesake for the OTHER sense (#581): `lib/announcer` is the sound,
 // `LiveRegion` is the words a screen reader reads.
 import { LiveRegion } from './components/LiveRegion';
-import { sayPinToggled, sayReordered, stepLadderAloud } from './lib/session-voice';
+import {
+  sayPinToggled,
+  sayReordered,
+  setLadderAloud,
+  stepLadderAloud,
+} from './lib/session-voice';
+import { sayUnavailable } from './lib/command-voice';
 import { DEFAULT_SOUND } from '../../shared/sounds';
 // #440: a refused call RESOLVES a truthy object — read every bridge answer
 // through one of these, never as a bare boolean. See shared/ipc/refusal.ts.
@@ -1687,8 +1693,15 @@ export function App(): React.JSX.Element {
           },
           toggleCardView: (cardId, view) => grid.current?.toggleCardView(cardId, view),
           popOutCard: (cardId) => grid.current?.popOutCard(cardId),
-          hideCard: (cardId) => grid.current?.hideCard(cardId),
-          setLadder: (cardId, rung) => grid.current?.setLadder(cardId, rung),
+          // #941 — the four palette commands that jump straight to a named rung,
+          // given the voice #581 gave the two step chords one door over. Wrapped
+          // here rather than in the grid for the reason the step is: the grid's
+          // verbs are also driven by the card header, the strip row and E9-07's
+          // layout sweeps, and none of those is a gesture that should speak.
+          hideCard: (cardId) =>
+            setLadderAloud(cardId, 'hidden', () => grid.current?.hideCard(cardId)),
+          setLadder: (cardId, rung) =>
+            setLadderAloud(cardId, rung, () => grid.current?.setLadder(cardId, rung)),
           // the one family whose outcome arrives after the command returns — the
           // grid hands back a promise that resolves when the transition is over,
           // and `stepLadderAloud` reads the rung then rather than predicting it
@@ -1943,15 +1956,21 @@ export function App(): React.JSX.Element {
   }, []);
   const popoutKeysRef = React.useRef(new Map<Window, (e: KeyboardEvent) => void>());
   useEffect(() => {
-    // Returns the command that ran (or null) — the popout bridge below needs
-    // the REAL answer, not a guess from e.defaultPrevented: the composer
-    // preventDefaults its own Enter, and mistaking that for a command would
-    // yank this window in front of the one being typed in.
-    const onKey = (e: KeyboardEvent, sourceWindow?: Window): unknown => {
+    // Returns whether a command RAN — the popout bridge below needs the REAL
+    // answer, not a guess from e.defaultPrevented: the composer preventDefaults
+    // its own Enter, and mistaking that for a command would yank this window in
+    // front of the one being typed in.
+    //
+    // `outcome === 'ran'` and not the truthiness of the answer, since #942 gave
+    // the dispatcher three named outcomes instead of `Command | null`. A chord
+    // that matched a DISABLED command must not raise this window: it speaks, but
+    // it changed nothing here, and the window the user is typing in stays where
+    // it is.
+    const onKey = (e: KeyboardEvent, sourceWindow?: Window): boolean => {
       // while a modal owns the screen, nothing underneath it fires —
       // regardless of where focus ended up inside the modal
-      if (modalOpenRef.current) return null;
-      return dispatch(
+      if (modalOpenRef.current) return false;
+      const result = dispatch(
         {
           key: e.key,
           ctrlKey: e.ctrlKey,
@@ -1971,6 +1990,11 @@ export function App(): React.JSX.Element {
         // error in the keydown handler (the main process tails this console)
         (err, id) => console.error(`[commands] ${id} failed`, err),
       );
+      // #942 — the chord matched a real binding and the command behind it is
+      // disabled right now. The palette dims that entry and renders the reason;
+      // a chord has no affordance at all, so the reason is spoken instead.
+      if (result.outcome === 'unavailable') sayUnavailable(result.command);
+      return result.outcome === 'ran';
     };
     // Bubble phase, so a component that stops propagation keeps its keys. The
     // real protection for text inputs is classifyTarget in lib/commands — the
@@ -2088,13 +2112,18 @@ export function App(): React.JSX.Element {
       // in THIS window would name a window that is not one, and
       // `activeDocumentId` would answer null for a docked viewer.
       const sourceWindow = fromPopout ? (target?.ownerDocument.defaultView ?? undefined) : undefined;
-      const ran = dispatchAccelerator(
+      const result = dispatchAccelerator(
         commandId,
         commands,
         commandContext(sourceWindow),
         target,
         (err, id) => console.error(`[commands] ${id} failed`, err),
       );
+      // #942, and this is the path that needs it most: these two chords are
+      // claimed above the renderer precisely so they reach a user who is inside
+      // a session terminal, where nothing else they press has any effect at all.
+      if (result.outcome === 'unavailable') sayUnavailable(result.command);
+      const ran = result.outcome === 'ran';
       // Pressed in a popped-out window: what these commands show — the palette,
       // the grid — is in THIS window, so bring it forward. Unless the command
       // deliberately raised a different one (jumping to another popped-out

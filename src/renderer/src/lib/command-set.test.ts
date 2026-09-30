@@ -229,11 +229,17 @@ describe('seed command set (E9-01)', () => {
     ];
     for (const [id, rung] of rungs) {
       const d = deps();
-      byId(buildCommands(d), id).run(ctxWith(['a'], 'a'));
+      const cmd = byId(buildCommands(d), id);
+      // PALETTE-ONLY, and #941 turns on it: the step chords are the key path, so
+      // the only user of these four is somebody who typed a title in the palette
+      // and pressed Enter — which is why they needed a voice of their own.
+      expect(cmd.binding, id).toBeUndefined();
+      cmd.run(ctxWith(['a'], 'a'));
       expect(d.setLadder).toHaveBeenCalledWith('a', rung);
     }
     // and hide stays on its own dep — it is the one with a different history
     const d = deps();
+    expect(byId(buildCommands(d), 'session.hide').binding).toBeUndefined();
     byId(buildCommands(d), 'session.hide').run(ctxWith(['a'], 'a'));
     expect(d.hideCard).toHaveBeenCalledWith('a');
   });

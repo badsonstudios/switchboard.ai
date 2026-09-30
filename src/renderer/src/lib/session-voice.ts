@@ -1,5 +1,17 @@
 // WHAT THE THREE CHORD FAMILIES SAY (#581) — the words, and nothing else.
 //
+// AND, SINCE #941, THE FOUR PALETTE COMMANDS THAT JUMP STRAIGHT TO A RUNG. Those
+// have no chord at all (`lib/command-set` says so: the two step chords are the
+// key path), which is not a reason for them to be silent — the person who opened
+// the palette, typed a title and pressed Enter has exactly the same problem the
+// chords had, and it is the same ladder and the same sentences. `setLadderAloud`
+// is that second door; the words are unchanged apart from `hidden`, which says
+// its recovery route because the keyboard cannot climb back out of it.
+//
+// What is NOT here is the voice for a command that is DISABLED — that is
+// `lib/command-voice` (#942), which speaks for every command in the registry
+// rather than for these, and needs the registry rather than the session store.
+//
 // `lib/live-region.ts` is the channel and `components/LiveRegion.tsx` is the DOM;
 // this is the sentence. Split out so the wording is unit-testable against the real
 // resource file without a store, a window, or a dockview — which matters more than
@@ -74,16 +86,43 @@ export function reorderSaid(t: Translate, f: ReorderSaid): string {
 }
 
 /**
- * `Mod+Shift+Arrow` — §5.8's presentation ladder.
+ * §5.8's presentation ladder — what the card's new rung sounds like.
  *
- * `changed` is false only when the card is already on the rung the step would
- * reach, which is the top or the bottom of the ladder — knowable synchronously,
- * unlike a real move. See `App`'s ladder wiring for why the other case waits for
- * the store instead of predicting.
+ * Spoken by BOTH doors onto the ladder: `Mod+Shift+Arrow` (the two step
+ * commands) and, since #941, the four palette commands that jump straight to a
+ * named rung.
+ *
+ * `changed` is false when the card is already on the rung that was asked for —
+ * the top or the bottom for a step, an identical rung for a jump. Both are
+ * knowable synchronously, unlike a real move; see `App`'s ladder wiring for why
+ * the other case waits for the store instead of predicting.
+ *
+ * HIDDEN SAYS MORE THAN ITS NAME (#941, a wording decision made for the owner).
+ * §5.8's ladder is expanded → collapsed → tabbed → hidden, and the keyboard
+ * cannot climb back out of the bottom: a card with no dockview panel is no
+ * card's `activeCardId`, so every card-scoped chord is inert against it (#581's
+ * e2e had to be reordered around exactly this). Reaching `hidden` is therefore a
+ * ONE-WAY DOOR for the keyboard, and the announcement is the only affordance
+ * that can say so — the visual path has the strip, the rail row and the lamp to
+ * click.
+ *
+ * Keyed on the RUNG REACHED and not on the command that reached it, which is
+ * rule 1 of this module applied honestly: the outcome is the news, and two
+ * gestures that land a card in the same state must not describe it two ways.
+ * So `Mod+Shift+↓` onto the bottom rung says the same sentence the palette's
+ * `Hide session` does.
+ *
+ * The recovery route is named in the spelling the palette uses for it
+ * (`commands.goToSession`, "Go to {title}"). Written out rather than nested via
+ * `$t()` because these catalogs are ICU-formatted and ICU owns the whole string
+ * — so this is one place a title rename has to be followed by hand, which is
+ * cheaper than an announcement that silently stops resolving.
  */
 export function ladderSaid(t: Translate, title: string, rung: Ladder, changed = true): string {
   const vars = { title, rung: t(`ladder.rung.${rung}`) };
-  return t(changed ? 'ladder.announceRung' : 'ladder.announceRungUnchanged', vars);
+  if (!changed) return t('ladder.announceRungUnchanged', vars);
+  if (rung === 'hidden') return t('ladder.announceHidden', { title });
+  return t('ladder.announceRung', vars);
 }
 
 // ── THE PLUMBING ────────────────────────────────────────────────────────────
@@ -205,11 +244,73 @@ export function stepLadderAloud(
 
   // the top or the bottom of the ladder: nothing is coming, so say so now
   if (want === from) {
-    const title = titleOf(cardId);
-    if (title) announce(ladderSaid(t, title, from, false));
+    sayRungRefused(cardId, from);
     return;
   }
 
+  sayRungWhenSettled(cardId, from, settled);
+}
+
+/**
+ * Run one of the four palette commands that jump straight to a NAMED rung and
+ * say what rung it reached (#941) — the second door onto the half above.
+ *
+ * `session.collapse`, `session.tabbed`, `session.expand` and `session.hide` are
+ * palette-only by design (the two step chords are the key path), so their user
+ * is somebody who typed a title and pressed Enter. Before this they got no
+ * confirmation at all that anything had happened to a card they may not be able
+ * to see, which is §5.32's sixth rule unsatisfied one door over from where #581
+ * satisfied it.
+ *
+ * WHY THIS IS NOT `stepLadderAloud` WITH A DIFFERENT ARGUMENT. A step derives its
+ * target from the pure `stepUp`/`stepDown`, and its refusal is the END of the
+ * ladder. A jump is handed its target, and its refusal is a DIFFERENT one:
+ * `moveCardToRung` returns early when the card is already on the rung asked for,
+ * and "already hidden" is the thing worth saying there rather than a move that
+ * never happened. Both refusals are knowable before the command runs, which is
+ * the only reason either can be answered synchronously.
+ *
+ * Everything else — waiting on the command's own promise rather than on the
+ * store, reading the title after the round trip, treating a throw as a finish,
+ * saying where the card ACTUALLY is — is shared with the step path and documented
+ * there. The rung is captured BEFORE `run()` for the same reason the step
+ * captures its own: it is what "did this change anything" is measured against,
+ * and reading it afterwards would measure nothing.
+ *
+ * @param run the command itself, awaited for completion rather than success
+ */
+export function setLadderAloud(
+  cardId: string,
+  rung: Ladder,
+  run: () => Promise<void> | void
+): void {
+  const from = sessionStore.getPresentation(cardId).ladder;
+  const settled = Promise.resolve(run()).catch(() => undefined);
+
+  // already on that rung: `moveCardToRung` will refuse it, so say so now
+  if (rung === from) {
+    sayRungRefused(cardId, from);
+    return;
+  }
+
+  sayRungWhenSettled(cardId, from, settled);
+}
+
+/** A ladder command that is known, before it runs, to move nothing: say where
+ *  the card still is. Silence would be indistinguishable from a dead binding —
+ *  or, from the palette, from an entry that did not run at all. */
+function sayRungRefused(cardId: string, from: Ladder): void {
+  const title = titleOf(cardId);
+  if (title) announce(ladderSaid(t, title, from, false));
+}
+
+/**
+ * Say where the card ended up, once the transition it was handed is over.
+ *
+ * The half both ladder doors share. `from` is the rung the command started
+ * against, captured by the caller before it ran.
+ */
+function sayRungWhenSettled(cardId: string, from: Ladder, settled: Promise<void>): void {
   void settled
     .then(() => {
       // the title is read HERE and not before the move: a session renamed during
@@ -217,16 +318,18 @@ export function stepLadderAloud(
       const title = titleOf(cardId);
       if (!title) return; // gone mid-move: drop the errand rather than name a ghost
       const now = sessionStore.getPresentation(cardId).ladder;
-      // `now`, not `want`. A transition that ended somewhere else says where it
-      // ended; one that moved nothing says the card is still where it was, which
-      // is the same shape as the end-of-ladder answer and for the same reason —
-      // silence is indistinguishable from a binding that has stopped working.
+      // `now`, not the rung that was asked for. A transition that ended somewhere
+      // else says where it ended; one that moved nothing says the card is still
+      // where it was, which is the same shape as the refusal answer and for the
+      // same reason — silence is indistinguishable from a binding that has
+      // stopped working.
       announce(ladderSaid(t, title, now, now !== from));
     })
     .catch(() => {
-      // The command's own failure is already handled above; this covers a throw
-      // from the SENTENCE — a malformed ICU string in the catalog would otherwise
-      // become an unhandled rejection out of a keydown handler. Nothing left to
-      // say, and saying nothing is not allowed to be loud (PHILOSOPHY §3).
+      // The command's own failure is already handled by the caller's `catch`;
+      // this covers a throw from the SENTENCE — a malformed ICU string in the
+      // catalog would otherwise become an unhandled rejection out of a keydown
+      // handler. Nothing left to say, and saying nothing is not allowed to be
+      // loud (PHILOSOPHY §3).
     });
 }

@@ -9,7 +9,13 @@ import {
   formatBinding,
   matchesBinding,
   parseBinding,
+  ranCommand,
 } from './commands';
+
+/** The answer for a keystroke the app has no opinion about (#942). Written out
+ *  rather than imported so a rename of the outcome value — the thing App.tsx
+ *  branches on — fails these tests instead of following them silently. */
+const UNMATCHED = { outcome: 'unmatched' };
 
 const key = (k: string, mods: Partial<Record<'ctrl' | 'meta' | 'shift' | 'alt', boolean>> = {}) => ({
   key: k,
@@ -144,35 +150,37 @@ describe('dispatch (E9-01 scope rule)', () => {
     const c = cmd();
     const preventDefault = vi.fn();
     const ran = dispatch({ ...key('1', { ctrl: true }), preventDefault }, [c], ctx, 'other');
-    expect(ran).toBe(c);
+    expect(ran).toEqual({ outcome: 'ran', command: c });
     expect(c.run).toHaveBeenCalledOnce();
     expect(preventDefault).toHaveBeenCalledOnce();
   });
 
   it('leaves an unmatched key alone (no preventDefault)', () => {
     const preventDefault = vi.fn();
-    expect(dispatch({ ...key('2', { ctrl: true }), preventDefault }, [cmd()], ctx, 'other')).toBeNull();
+    expect(dispatch({ ...key('2', { ctrl: true }), preventDefault }, [cmd()], ctx, 'other')).toEqual(
+      UNMATCHED
+    );
     expect(preventDefault).not.toHaveBeenCalled();
   });
 
   it('never fires while focus is in a text input (scope app)', () => {
     const c = cmd();
     const target = document.createElement('textarea');
-    expect(dispatch({ ...key('1', { ctrl: true }), target }, [c], ctx, 'other')).toBeNull();
+    expect(dispatch({ ...key('1', { ctrl: true }), target }, [c], ctx, 'other')).toEqual(UNMATCHED);
     expect(c.run).not.toHaveBeenCalled();
   });
 
   it("a bare digit in a text input never jumps (the issue's done-when)", () => {
     const c = cmd();
     const target = document.createElement('textarea');
-    expect(dispatch({ ...key('1'), target }, [c], ctx, 'other')).toBeNull();
+    expect(dispatch({ ...key('1'), target }, [c], ctx, 'other')).toEqual(UNMATCHED);
     expect(c.run).not.toHaveBeenCalled();
   });
 
   it("'typing-ok' fires in our own inputs", () => {
     const c = cmd({ scope: 'typing-ok' });
     const target = document.createElement('textarea');
-    expect(dispatch({ ...key('1', { ctrl: true }), target }, [c], ctx, 'other')).toBe(c);
+    expect(ranCommand(dispatch({ ...key('1', { ctrl: true }), target }, [c], ctx, 'other'))).toBe(c);
   });
 
   it('NOTHING fires in a terminal — not even typing-ok (the CLI owns its keys)', () => {
@@ -182,32 +190,41 @@ describe('dispatch (E9-01 scope rule)', () => {
     host.appendChild(target);
     const c = cmd({ scope: 'typing-ok' });
     const preventDefault = vi.fn();
-    expect(dispatch({ ...key('1', { ctrl: true }), target, preventDefault }, [c], ctx, 'other')).toBeNull();
+    expect(
+      dispatch({ ...key('1', { ctrl: true }), target, preventDefault }, [c], ctx, 'other')
+    ).toEqual(UNMATCHED);
     expect(c.run).not.toHaveBeenCalled();
     expect(preventDefault).not.toHaveBeenCalled(); // the keystroke reaches the PTY
   });
 
   it('ignores keys mid-IME-composition', () => {
     const c = cmd();
-    expect(dispatch({ ...key('1', { ctrl: true }), isComposing: true }, [c], ctx, 'other')).toBeNull();
+    expect(dispatch({ ...key('1', { ctrl: true }), isComposing: true }, [c], ctx, 'other')).toEqual(
+      UNMATCHED
+    );
   });
 
   it('a disabled command matches but does not run, and keeps its default', () => {
     const c = cmd({ enabled: () => false });
     const preventDefault = vi.fn();
-    expect(dispatch({ ...key('1', { ctrl: true }), preventDefault }, [c], ctx, 'other')).toBeNull();
+    expect(dispatch({ ...key('1', { ctrl: true }), preventDefault }, [c], ctx, 'other')).toEqual({
+      outcome: 'unavailable',
+      command: c,
+    });
     expect(c.run).not.toHaveBeenCalled();
     expect(preventDefault).not.toHaveBeenCalled();
   });
 
   it('palette-only commands (no binding) are never key-dispatched', () => {
     const c = cmd({ binding: undefined });
-    expect(dispatch({ ...key('1', { ctrl: true }) }, [c], ctx, 'other')).toBeNull();
+    expect(dispatch({ ...key('1', { ctrl: true }) }, [c], ctx, 'other')).toEqual(UNMATCHED);
   });
 
   it('ignores auto-repeat: holding Ctrl+N must not queue nine folder pickers', () => {
     const c = cmd();
-    expect(dispatch({ ...key('1', { ctrl: true }), repeat: true }, [c], ctx, 'other')).toBeNull();
+    expect(dispatch({ ...key('1', { ctrl: true }), repeat: true }, [c], ctx, 'other')).toEqual(
+      UNMATCHED
+    );
     expect(c.run).not.toHaveBeenCalled();
   });
 
@@ -232,7 +249,10 @@ describe('dispatch (E9-01 scope rule)', () => {
       },
     });
     const onError = vi.fn();
-    expect(dispatch({ ...key('1', { ctrl: true }) }, [c], ctx, 'other', onError)).toBeNull();
+    expect(dispatch({ ...key('1', { ctrl: true }) }, [c], ctx, 'other', onError)).toEqual({
+      outcome: 'unavailable',
+      command: c,
+    });
     expect(c.run).not.toHaveBeenCalled();
     expect(onError).toHaveBeenCalled();
   });
@@ -240,13 +260,15 @@ describe('dispatch (E9-01 scope rule)', () => {
   it('matches the PHYSICAL key too, so Ctrl+1 works on non-US layouts', () => {
     const c = cmd();
     // AZERTY: the '1' key unshifted reports key='&' but code='Digit1'
-    expect(dispatch({ ...key('&', { ctrl: true }), code: 'Digit1' }, [c], ctx, 'other')).toBe(c);
+    expect(ranCommand(dispatch({ ...key('&', { ctrl: true }), code: 'Digit1' }, [c], ctx, 'other'))).toBe(
+      c
+    );
   });
 
   it('runs at most one command per keystroke', () => {
     const a = cmd({ id: 'a' });
     const b = cmd({ id: 'b' });
-    expect(dispatch({ ...key('1', { ctrl: true }) }, [a, b], ctx, 'other')).toBe(a);
+    expect(ranCommand(dispatch({ ...key('1', { ctrl: true }) }, [a, b], ctx, 'other'))).toBe(a);
     expect(b.run).not.toHaveBeenCalled();
   });
 });
@@ -264,43 +286,50 @@ describe('dispatchAccelerator (#90 — claimed above the renderer)', () => {
 
   it('RUNS from inside a terminal — the key never reached the PTY to be stolen', () => {
     const c = cmd({ id: 'palette.open', scope: 'typing-ok' });
-    expect(dispatchAccelerator('palette.open', [c], ctx, inTerminal())).toBe(c);
+    expect(ranCommand(dispatchAccelerator('palette.open', [c], ctx, inTerminal()))).toBe(c);
     expect(c.run).toHaveBeenCalledOnce();
   });
 
   it("runs an 'app'-scope command in a terminal too (the attention jump)", () => {
     const c = cmd({ id: 'attention.next', scope: 'app' });
-    expect(dispatchAccelerator('attention.next', [c], ctx, inTerminal())).toBe(c);
+    expect(ranCommand(dispatchAccelerator('attention.next', [c], ctx, inTerminal()))).toBe(c);
   });
 
   it('still stands down while you type in OUR OWN inputs (scope survives)', () => {
     const c = cmd({ id: 'attention.next', scope: 'app' });
-    expect(dispatchAccelerator('attention.next', [c], ctx, document.createElement('textarea'))).toBeNull();
+    expect(
+      dispatchAccelerator('attention.next', [c], ctx, document.createElement('textarea'))
+    ).toEqual(UNMATCHED);
     expect(c.run).not.toHaveBeenCalled();
   });
 
   it("...unless the command is 'typing-ok', like the palette", () => {
     const c = cmd({ id: 'palette.open', scope: 'typing-ok' });
-    expect(dispatchAccelerator('palette.open', [c], ctx, document.createElement('textarea'))).toBe(c);
+    expect(
+      ranCommand(dispatchAccelerator('palette.open', [c], ctx, document.createElement('textarea')))
+    ).toBe(c);
   });
 
   it('runs with no focused element at all', () => {
     const c = cmd({ id: 'palette.open', scope: 'typing-ok' });
-    expect(dispatchAccelerator('palette.open', [c], ctx, null)).toBe(c);
+    expect(ranCommand(dispatchAccelerator('palette.open', [c], ctx, null))).toBe(c);
   });
 
   it('runs the REGISTERED command — an id we do not register does nothing', () => {
     const c = cmd({ id: 'palette.open' });
-    expect(dispatchAccelerator('something.else', [c], ctx, null)).toBeNull();
+    expect(dispatchAccelerator('something.else', [c], ctx, null)).toEqual(UNMATCHED);
     expect(c.run).not.toHaveBeenCalled();
   });
 
   it('respects enabled(): an empty queue is still a no-op', () => {
     const c = cmd({ id: 'attention.next', enabled: (x) => x.attentionCount > 0 });
-    expect(dispatchAccelerator('attention.next', [c], ctx, inTerminal())).toBeNull();
+    expect(dispatchAccelerator('attention.next', [c], ctx, inTerminal())).toEqual({
+      outcome: 'unavailable',
+      command: c,
+    });
     expect(c.run).not.toHaveBeenCalled();
     const withQueue = { ...ctx, attentionCount: 1 };
-    expect(dispatchAccelerator('attention.next', [c], withQueue, inTerminal())).toBe(c);
+    expect(ranCommand(dispatchAccelerator('attention.next', [c], withQueue, inTerminal()))).toBe(c);
   });
 
   it('fails open: a throwing command is reported, never rethrown', () => {
@@ -324,8 +353,51 @@ describe('dispatchAccelerator (#90 — claimed above the renderer)', () => {
       },
     });
     const onError = vi.fn();
-    expect(dispatchAccelerator('palette.open', [c], ctx, null, onError)).toBeNull();
+    expect(dispatchAccelerator('palette.open', [c], ctx, null, onError)).toEqual({
+      outcome: 'unavailable',
+      command: c,
+    });
     expect(c.run).not.toHaveBeenCalled();
     expect(onError).toHaveBeenCalled();
+  });
+});
+
+describe('the two answers that used to share one null (#942)', () => {
+  // The whole point of the type change. `null` meant both "no binding claimed
+  // that key" and "a binding claimed it and its command is disabled", and only
+  // the second may speak — so the two had to stop being the same value before
+  // anything could tell them apart. These pin the distinction itself rather
+  // than a behaviour, because the distinction is what App.tsx branches on.
+  it('a matched-but-disabled chord hands back the command, so its reason is reachable', () => {
+    const c = cmd({ enabled: () => false, disabledReasonKey: 'commands.disabled.noActiveSession' });
+    const r = dispatch({ ...key('1', { ctrl: true }) }, [c], ctx, 'other');
+    expect(r.outcome).toBe('unavailable');
+    // the sentence the palette already renders beside the dimmed entry
+    expect(r.outcome === 'unavailable' && r.command.disabledReasonKey).toBe(
+      'commands.disabled.noActiveSession'
+    );
+  });
+
+  it('a key no binding wanted carries no command at all — there is nothing to say', () => {
+    const c = cmd({ enabled: () => false, disabledReasonKey: 'commands.disabled.noActiveSession' });
+    expect(dispatch({ ...key('9', { ctrl: true }) }, [c], ctx, 'other')).toEqual(UNMATCHED);
+  });
+
+  it('an AUTO-REPEAT of a disabled chord is unmatched, so holding a key cannot spam', () => {
+    // The one case where announcing every matched-but-disabled chord would
+    // genuinely be noise, and it needs nothing new: the repeat guard returns
+    // before any binding is matched, so there is no command to speak for.
+    const c = cmd({ enabled: () => false, disabledReasonKey: 'commands.disabled.noActiveSession' });
+    expect(dispatch({ ...key('1', { ctrl: true }), repeat: true }, [c], ctx, 'other')).toEqual(
+      UNMATCHED
+    );
+  });
+
+  it('ranCommand collapses the three outcomes for callers that only care if one ran', () => {
+    const c = cmd();
+    expect(ranCommand(dispatch({ ...key('1', { ctrl: true }) }, [c], ctx, 'other'))).toBe(c);
+    const off = cmd({ enabled: () => false });
+    expect(ranCommand(dispatch({ ...key('1', { ctrl: true }) }, [off], ctx, 'other'))).toBeNull();
+    expect(ranCommand(dispatch({ ...key('9', { ctrl: true }) }, [c], ctx, 'other'))).toBeNull();
   });
 });

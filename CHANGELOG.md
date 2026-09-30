@@ -113,6 +113,31 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **A keyboard shortcut that can't be used right now tells you why instead of
+  doing nothing.** Plenty of shortcuts only make sense some of the time —
+  pinning needs a session to pin, and "go to the next session that needs you"
+  needs one to be waiting. Pressing one of those used to produce absolutely
+  nothing: no sound, no message, no change on screen, which is impossible to tell
+  apart from a shortcut that has broken. If you use a screen reader that was the
+  whole of what you got. Now it says why, in the same words the command list
+  already shows beside the greyed-out entry — *"No session is focused"*,
+  *"Nothing is waiting on you"*. This is every shortcut in the app, not a chosen
+  few. Mistyping a shortcut still stays completely silent: a key nothing is bound
+  to isn't a shortcut that can't be used, and holding a key down says it once.
+
+- **The four commands that resize a session from the command list now say what
+  they did.** *Collapse session to a strip*, *Stack session with the tabbed
+  sessions*, *Expand session to its full card* and *Hide session* have no
+  shortcut of their own, so the only way to use them is to open the command list,
+  type a title and press Enter — and doing that gave you no confirmation at all
+  that anything had happened to a card you may not be able to see. They now read
+  out where the session ended up, exactly as the `Ctrl+Shift+↑`/`↓` shortcuts
+  have since the last release, and a command that changed nothing says so
+  (*"trading-app is already hidden"*). **Hiding** says one thing more, because
+  from the keyboard it's the one step you can't simply reverse: you hear
+  *"trading-app hidden, still running — use Go to trading-app in the command list
+  to bring it back"*.
+
 - **The four buttons under the prompt box now look like buttons.** The row that
   carries the autonomy mode, the model, **Compact** and **Clear** was drawn with
   a hairline outline that all but disappeared against the panel behind it — on

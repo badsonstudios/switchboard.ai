@@ -21,6 +21,7 @@ import {
   reorderSaid,
   sayPinToggled,
   sayReordered,
+  setLadderAloud,
   stepLadderAloud,
   type Translate,
 } from './session-voice';
@@ -99,7 +100,21 @@ describe('the words, through the real ICU chain', () => {
     expect(ladderSaid(t, 'switchboard', 'tabbed')).toBe(
       'switchboard stacked with the tabbed sessions'
     );
-    expect(ladderSaid(t, 'switchboard', 'hidden')).toBe('switchboard hidden');
+  });
+
+  it('names the way back out of the bottom rung (#941)', () => {
+    // The keyboard cannot climb back up from `hidden`: a card with no dockview
+    // panel is no card's `activeCardId`, so every card-scoped chord is inert
+    // against it. Reaching it is therefore a ONE-WAY DOOR for the keyboard, and
+    // the announcement is the only affordance that can say so — which is why
+    // this rung alone says more than its name.
+    const said = ladderSaid(t, 'switchboard', 'hidden');
+    expect(said).toBe(
+      'switchboard hidden, still running — use Go to switchboard in the command list to bring it back'
+    );
+    // and the route it names is the one the palette really offers, spelled the
+    // way the palette spells it (a rename of that title has to be followed here)
+    expect(said).toContain(t('commands.goToSession', { title: 'switchboard' }));
   });
 
   it('has words for EVERY rung the ladder defines, not just the four listed above', () => {
@@ -109,10 +124,18 @@ describe('the words, through the real ICU chain', () => {
     // reading out "ladder.rung.floating" to the user
     expect(LADDER_ORDER.length).toBeGreaterThan(0);
     for (const rung of LADDER_ORDER) {
+      // the rung's own word, asked for directly. `ladderSaid` has taken a
+      // special path for `hidden` since #941, so a loop over its OUTPUT alone
+      // would stop proving that `ladder.rung.hidden` exists at all — and it
+      // still has to, because the refused sentence ("is already hidden") uses it.
+      const word = t(`ladder.rung.${rung}`);
+      expect(word, `no words for the '${rung}' rung`).not.toContain('ladder.rung');
+      expect(word).not.toBe('');
       const said = ladderSaid(t, 'switchboard', rung);
       expect(said, `no words for the '${rung}' rung`).not.toContain('ladder.rung');
       expect(said).toContain('switchboard');
       expect(said).not.toBe('switchboard '); // a key that resolved to nothing
+      expect(ladderSaid(t, 'switchboard', rung, false)).toContain(word);
     }
   });
 
@@ -399,6 +422,143 @@ describe('Mod+Shift+Arrow — the ladder', () => {
         sessionStore.setPresentation(c, { ladder: 'collapsed' });
       });
       await flush();
+    } finally {
+      process.off('unhandledRejection', onRejection);
+    }
+    expect(rejections).toEqual([]);
+  });
+});
+
+describe('the four palette commands that jump to a named rung (#941)', () => {
+  /** a card sitting on a rung, ready to be jumped */
+  const on = (rung: Ladder, title = 'switchboard'): string => {
+    const c = card();
+    sessionStore.setSessions([session(c, title)]);
+    sessionStore.setPresentation(c, { ladder: rung });
+    return c;
+  };
+
+  // ONE CASE PER COMMAND, driven through the rung each one asks for, because the
+  // defect was per-command: `session.collapse`, `session.tabbed` and
+  // `session.expand` go through `deps.setLadder` and `session.hide` through
+  // `deps.hideCard`, and all four were silent.
+
+  it('session.collapse says the strip it landed on', async () => {
+    const c = on('expanded');
+    setLadderAloud(c, 'collapsed', () => {
+      sessionStore.setPresentation(c, { ladder: 'collapsed' });
+    });
+    await flush();
+    expect(heard).toEqual(['switchboard collapsed to the strip']);
+  });
+
+  it('session.tabbed waits for the round trip before it claims anything', async () => {
+    // `toTabbed` is async: the panel has to be moved into the shared group, so
+    // the only honest moment to read the rung is when that is over
+    const c = on('expanded');
+    let land = (): void => {};
+    setLadderAloud(c, 'tabbed', () => new Promise<void>((res) => (land = res)));
+    await flush();
+    expect(heard).toEqual([]); // nothing said yet
+
+    sessionStore.setPresentation(c, { ladder: 'tabbed' });
+    land();
+    await flush();
+    expect(heard).toEqual(['switchboard stacked with the tabbed sessions']);
+  });
+
+  it('session.expand says the card came back', async () => {
+    const c = on('tabbed');
+    setLadderAloud(c, 'expanded', async () => {
+      await Promise.resolve(); // `revealCardPanel`, as a round trip
+      sessionStore.setPresentation(c, { ladder: 'expanded' });
+    });
+    await flush();
+    expect(heard).toEqual(['switchboard expanded']);
+  });
+
+  it('session.hide names the way back, because the keyboard has none', async () => {
+    const c = on('expanded');
+    setLadderAloud(c, 'hidden', () => {
+      sessionStore.setPresentation(c, { ladder: 'hidden' });
+    });
+    await flush();
+    expect(heard).toEqual([
+      'switchboard hidden, still running \u2014 use Go to switchboard in the command list to bring it back',
+    ]);
+  });
+
+  it('says "already <rung>" for the refusal a jump has, before the command runs', () => {
+    // A JUMP'S REFUSAL IS NOT A STEP'S. `moveCardToRung` returns early when the
+    // card is already on the rung asked for, and that \u2014 not the end of the
+    // ladder \u2014 is the no-op worth announcing here. Knowable up front, from the
+    // rung read before `run`, so there is nothing to wait for.
+    const c = on('hidden');
+    setLadderAloud(c, 'hidden', () => {});
+    expect(heard).toEqual(['switchboard is already hidden']); // synchronous
+  });
+
+  it('a refusal still says "already", not the one-way-door sentence', () => {
+    // the recovery route is news about a card that JUST left the workspace; a
+    // card that was already gone is not what the user asked about
+    const c = on('hidden');
+    setLadderAloud(c, 'hidden', () => {});
+    expect(heard[0]).not.toContain('still running');
+  });
+
+  it('says where the card ACTUALLY is when the jump moved nothing', async () => {
+    // the `laddering` guard: a jump fired while a transition is in flight is
+    // refused without writing a rung, and silence there is indistinguishable
+    // from a palette entry that did not run at all
+    const c = on('expanded');
+    setLadderAloud(c, 'tabbed', () => {
+      /* refused. Nothing is written. */
+    });
+    await flush();
+    expect(heard).toEqual(['switchboard is already expanded']);
+  });
+
+  it('runs the command even for a card the rail has forgotten', async () => {
+    // fail-open, exactly as the step path is: the voice is the optional half
+    let ran = 0;
+    setLadderAloud(card(), 'collapsed', () => {
+      ran++;
+    });
+    await flush();
+    expect(ran).toBe(1);
+    expect(heard).toEqual([]);
+  });
+
+  it('uses the name the session has NOW, and drops the errand if it ended', async () => {
+    const c = on('expanded', 'old name');
+    setLadderAloud(c, 'collapsed', () => {
+      sessionStore.setSessions([session(c, 'renamed mid-move')]);
+      sessionStore.setPresentation(c, { ladder: 'collapsed' });
+    });
+    await flush();
+    expect(heard).toEqual(['renamed mid-move collapsed to the strip']);
+
+    heard = [];
+    const gone = on('expanded');
+    setLadderAloud(gone, 'collapsed', () => {
+      sessionStore.setPresentation(gone, { ladder: 'collapsed' });
+      sessionStore.setSessions([]);
+    });
+    await flush();
+    expect(heard).toEqual([]);
+  });
+
+  it('reports the state a FAILED jump left behind, and never rejects', async () => {
+    const rejections: unknown[] = [];
+    const onRejection = (err: unknown): void => {
+      rejections.push(err);
+    };
+    process.on('unhandledRejection', onRejection);
+    try {
+      const c = on('expanded');
+      setLadderAloud(c, 'tabbed', () => Promise.reject(new Error('dockview said no')));
+      await flush();
+      expect(heard).toEqual(['switchboard is already expanded']);
     } finally {
       process.off('unhandledRejection', onRejection);
     }
