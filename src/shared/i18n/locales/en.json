@@ -907,6 +907,29 @@
       "unavailable": "This copy of switchboard could not collect a report. Nothing was sent."
     }
   },
+  "feature": {
+    "title": "Feature request",
+    "intro": "Tell us what you'd like switchboard to do. Nothing is sent from here — your own email or browser opens with this already written in it, and you press send there.",
+    "titleField": "Title (optional)",
+    "titlePlaceholder": "A few words, if you have them",
+    "details": "What would you like the app to do?",
+    "detailsPlaceholder": "What you want, and what it would let you do that you can't do today.",
+    "channel": "How should it reach us?",
+    "toEmail": "Open an email",
+    "toEmailHint": "Opens your mail app with the address and your words already filled in.",
+    "toTicket": "Open a ticket",
+    "toTicketHint": "Opens GitHub's new-issue page in your browser with this already filled in.",
+    "ticketNote": "The project's issue tracker is private, so this only works if your GitHub account has access to it. If it doesn't, your browser will show a sign-in or not-found page and nothing here is affected — pick the email option instead.",
+    "privacyNote": "Only what you type here is included. No logs, no files, and nothing about your sessions.",
+    "submit": "Send",
+    "cancel": "Cancel",
+    "working": "Opening…",
+    "problem": {
+      "emptyDetails": "Say what you'd like first — even one line.",
+      "sendFailed": "That couldn't be opened. Your mail app or browser may not be set up — try the other option.",
+      "unavailable": "This copy of switchboard could not send that. Nothing left your machine."
+    }
+  },
   "perf": {
     "title": "Performance summary",
     "intro": "How long things took in this window since it opened. These are percentiles, not averages: half of everything was faster than the p50 figure, and 19 times out of 20 it was faster than p95. The worst column is the single slowest one, which is usually the one you noticed.",
@@ -936,6 +959,7 @@
   "commands": {
     "perfSummary": "Show performance summary",
     "reportProblem": "Report a problem…",
+    "featureRequest": "Feature request…",
     "jumpTo": "Go to session {n}",
     "nextSession": "Next session",
     "prevSession": "Previous session",

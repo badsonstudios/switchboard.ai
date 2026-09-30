@@ -73,6 +73,12 @@ import {
   type ReportStatus,
   type ReportWriteResult,
 } from '../../shared/diagnostics';
+import { FeatureRequestDialog } from './components/FeatureRequestDialog';
+import {
+  unavailableFeedback,
+  type FeatureRequestDraft,
+  type FeedbackResult,
+} from '../../shared/feedback';
 import { McpManagerDialog } from './components/McpManagerDialog';
 import { ModelPickerDialog } from './components/ModelPickerDialog';
 import type { QuietState } from '../../shared/quiet-hours';
@@ -288,6 +294,10 @@ export function App(): React.JSX.Element {
   // yet", which the dialog renders as unknown rather than as "no credential".
   const [reportOpen, setReportOpen] = useState(false);
   const [reportStatus, setReportStatus] = useState<ReportStatus | null>(null);
+  // Help ▸ Feature request… (#1008). No status to fetch — unlike the report
+  // dialog there is no credential involved and nothing to ask main about
+  // before the window opens, because neither channel posts anything.
+  const [featureOpen, setFeatureOpen] = useState(false);
   // ...and the other door to it: `/mcp` typed in a composer (#632). The signal
   // comes off the store rather than a prop, because the composer is rendered by
   // dockview three levels down — see `subscribeMcpOpen`.
@@ -1059,8 +1069,20 @@ export function App(): React.JSX.Element {
     // one is in flight — the `openSettings` rule, for its reason.
     setReportStatus(null);
     setReportOpen(true);
+    // THE TWIN CLOSES (#1008). The native Help menu stays clickable while a
+    // renderer modal is up, so Report a problem → Feature request (or the
+    // reverse) could put two windows with IDENTICAL chrome on top of each
+    // other, both claiming `aria-modal` at the same z-index — the very thing
+    // every `dialogAbove` prop in this file exists to avoid. They are two
+    // errands; you are only on one of them.
+    setFeatureOpen(false);
     refreshReportStatus();
   }, [refreshReportStatus]);
+  /** Help ▸ Feature request… (#1008) — and its twin closes, for the same reason */
+  const openFeatureRequest = React.useCallback(() => {
+    setReportOpen(false);
+    setFeatureOpen(true);
+  }, []);
   /**
    * Open Settings, optionally at a section (#885).
    *
@@ -1585,6 +1607,7 @@ export function App(): React.JSX.Element {
       settingsOpen ||
       mcpOpen ||
       reportOpen ||
+      featureOpen ||
       perfSummaryOpen ||
       modelFor !== null;
   });
@@ -1764,6 +1787,9 @@ export function App(): React.JSX.Element {
           // #815. The Help menu delivers `app.reportProblem` to this same
           // command, so the menu and the palette are one implementation.
           reportProblem: openReportProblem,
+          // #1008. The Help menu delivers `app.featureRequest` to this same
+          // command, so the menu and the palette are one implementation.
+          featureRequest: openFeatureRequest,
           showPerfSummary: openPerfSummary,
           checkForUpdates,
           // §5.30's `Open file…`. Picking a file in the native dialog is also
@@ -2213,7 +2239,7 @@ export function App(): React.JSX.Element {
         summary={perfSummaryData}
         // two stacked `aria-modal` regions is a thing screen readers disagree
         // about, so only the top one claims it — as every other dialog here does
-        dialogAbove={settingsOpen || mcpOpen || reportOpen || modelFor !== null}
+        dialogAbove={settingsOpen || mcpOpen || reportOpen || featureOpen || modelFor !== null}
       />
       <AboutPanel
         open={aboutOpen}
@@ -2229,6 +2255,7 @@ export function App(): React.JSX.Element {
           settingsOpen ||
           mcpOpen ||
           reportOpen ||
+          featureOpen ||
           perfSummaryOpen ||
           modelFor !== null
         }
@@ -2422,6 +2449,25 @@ export function App(): React.JSX.Element {
         // exactly that, so this needs no door of its own — and opening one
         // would be a second, weaker path to the browser.
         onOpenIssue={(url) => void bridge.update?.openExternal?.(url)?.catch(() => {})}
+      />
+      {/* Help ▸ Feature request… (#1008). Report a problem's twin, and note
+          what it does NOT have beside it: no status fetch, no perf summary, no
+          `onOpenIssue`. The dialog hands main three strings; main composes the
+          address and opens the user's own mail client or browser with the form
+          already filled in. Nothing is posted from here, which is why there is
+          no URL for this side to be handed back. */}
+      <FeatureRequestDialog
+        open={featureOpen}
+        onClose={() => setFeatureOpen(false)}
+        onSubmit={(draft: FeatureRequestDraft): Promise<FeedbackResult> => {
+          const answer = bridge.feedback?.featureRequest?.(draft);
+          // No namespace, or a refusal: a real result saying nothing was sent,
+          // rather than a rejected promise the dialog would have to catch.
+          if (!answer) return Promise.resolve(unavailableFeedback(draft.channel));
+          return answer
+            .then((r) => answered(r) ?? unavailableFeedback(draft.channel))
+            .catch(() => unavailableFeedback(draft.channel));
+        }}
       />
       <UpdateDialog
         open={updateOpen}

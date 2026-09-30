@@ -12,11 +12,24 @@
 //   is and that it must be dragged on. A button implying otherwise would drop
 //   the evidence this feature exists to move.
 //
-// The dialog shape — scrim, click-away, focus capture, Escape, focus restore —
-// is `SettingsDialog.tsx`'s, on purpose: two modals that behave differently
-// is a bug report waiting to happen.
+// THE WINDOW ITSELF IS `ComposeDialog` (#1008) — scrim, click-away, focus
+// capture, Escape, focus restore, and the footer where a failure's reason sits
+// beside the button that caused it. It used to be spelled out here, copied from
+// `SettingsDialog.tsx`; when Feature request arrived it was about to be copied
+// a third time, so it moved. Every fix this dialog earned the hard way lives
+// there now and is documented there: the primary button's fill, the sideways
+// scroll, the always-mounted live region. What stayed here is what is actually
+// about reporting a problem — the fields, the destinations, the credential
+// panel, and what a send means.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import {
+  ComposeDialog,
+  composeButtonStyle,
+  composeFieldStyle,
+  composeLabelStyle,
+} from './ComposeDialog';
+import { useModalDismiss } from '../lib/modal-dismiss';
 import {
   REPORT_DESTINATIONS,
   type ReportDestination,
@@ -79,9 +92,8 @@ function reportProblem(r: ReportResult): ReportProblem | null {
 
 export function ReportProblemDialog(props: ReportProblemDialogProps): React.JSX.Element | null {
   const { t } = useTranslation();
-  const returnFocusTo = React.useRef<HTMLElement | null>(null);
-  const dialog = React.useRef<HTMLDivElement | null>(null);
   const fieldId = React.useId();
+  const { dialogRef, close } = useModalDismiss(props.open, props.onClose);
 
   const [subject, setSubject] = React.useState('');
   const [description, setDescription] = React.useState('');
@@ -112,17 +124,9 @@ export function ReportProblemDialog(props: ReportProblemDialogProps): React.JSX.
     setBusy(false);
     setResult(null);
     setTokenRefused(false);
-    returnFocusTo.current = document.activeElement as HTMLElement | null;
-    dialog.current?.focus();
   }, [props.open]);
 
   if (!props.open) return null;
-
-  const close = (): void => {
-    props.onClose();
-    const el = returnFocusTo.current;
-    requestAnimationFrame(() => el?.focus?.());
-  };
 
   const canFile = props.status?.canFileIssue === true;
   const filable = subject.trim().length > 0 && !busy;
@@ -189,55 +193,8 @@ export function ReportProblemDialog(props: ReportProblemDialogProps): React.JSX.
       .catch(() => setTokenRefused(true));
   };
 
-  const label = { fontSize: 11.5, color: 'var(--muted)' } as const;
-  const input = {
-    background: 'var(--panel2)',
-    color: 'var(--text)',
-    border: '1px solid var(--border)',
-    borderRadius: 6,
-    padding: '5px 8px',
-    fontFamily: 'var(--font-ui)',
-    fontSize: 12,
-    inlineSize: '100%',
-    // padding and border INSIDE the 100%, or every field is 18px wider than the
-    // dialog and the whole form scrolls sideways
-    boxSizing: 'border-box',
-  } as const;
-  // THE APP'S PRIMARY BUTTON, not a session accent. This used `--accent`, which
-  // only exists INSIDE a session card (each card sets its own identity hue);
-  // this dialog renders at the root, where it is undefined — so the fill fell
-  // away and left a transparent button with near-black `--accent-ink-on-fill`
-  // text, which the owner read as disabled. `--btn-primary-*` is theme-level,
-  // defined everywhere, and what every other Send button uses.
-  //
-  // Written as two whole objects rather than one with ternaries in the colour
-  // declarations, which is not cosmetic: the theme drift test reads a ternary
-  // on a colour as an offender, and it is right to. That is exactly how a hue
-  // ends up on words by accident.
-  const buttonBase: React.CSSProperties = {
-    flexShrink: 0,
-    whiteSpace: 'nowrap',
-    border: '1px solid var(--border)',
-    borderRadius: 6,
-    padding: '5px 12px',
-    fontSize: 12,
-    fontFamily: 'var(--font-ui)',
-  };
-  const secondaryButton: React.CSSProperties = {
-    ...buttonBase,
-    background: 'var(--panel2)',
-    color: 'var(--text)',
-    cursor: 'pointer',
-  };
-  const primaryButton: React.CSSProperties = {
-    ...buttonBase,
-    background: 'var(--btn-primary-bg)',
-    color: 'var(--btn-primary-text)',
-    cursor: filable ? 'pointer' : 'default',
-    opacity: filable ? 1 : 0.5,
-  };
-  const button = (primary: boolean): React.CSSProperties =>
-    primary ? primaryButton : secondaryButton;
+  const label = composeLabelStyle;
+  const input = composeFieldStyle;
 
   /** the one line that says whether a GitHub issue can be filed at all */
   const tokenLine = (): string => {
@@ -253,215 +210,121 @@ export function ReportProblemDialog(props: ReportProblemDialogProps): React.JSX.
   };
 
   return (
-    <div
-      onMouseDown={close}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 51,
-        background: 'var(--scrim)',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'flex-start',
-        paddingBlockStart: '8vh',
-      }}
+    <ComposeDialog
+      kind="report"
+      dialogRef={dialogRef}
+      onDismiss={close}
+      title={t('report.title')}
+      intro={t('report.intro')}
+      cancelLabel={t('report.cancel')}
+      submitLabel={busy ? t('report.working') : t('report.submit')}
+      canSubmit={filable}
+      // the subject is the one required field
+      submitBlockedReason={
+        subject.trim().length === 0 ? t('report.problem.emptySubject') : undefined
+      }
+      // `?? 'unavailable'` is unreachable — `result` is only ever set on a
+      // failure — and is here for the type, not a case
+      message={
+        result === null
+          ? null
+          : t(`report.problem.${PROBLEM_KEY[reportProblem(result) ?? 'unavailable']}`)
+      }
+      onSubmit={submit}
     >
-      <div
-        ref={dialog}
-        role="dialog"
-        aria-modal="true"
-        aria-label={t('report.title')}
-        tabIndex={-1}
-        data-report-dialog
-        onMouseDown={(e) => e.stopPropagation()}
-        onKeyDown={(e) => {
-          e.stopPropagation();
-          if (e.key === 'Escape') {
-            e.preventDefault();
-            close();
-          }
-        }}
-        style={{
-          inlineSize: 'min(560px, 94vw)',
-          maxBlockSize: '84vh',
-          overflowY: 'auto',
-          background: 'var(--panel)',
-          border: '1px solid var(--border)',
-          borderRadius: 10,
-          boxShadow: 'var(--tab-lift)',
-          fontFamily: 'var(--font-ui)',
-          color: 'var(--text)',
-          outline: 'none',
-        }}
-      >
-        <div
-          style={{
-            padding: '11px 14px',
-            borderBlockEnd: '1px solid var(--border)',
-            background: 'var(--panel2)',
-            fontSize: 13,
-            fontWeight: 600,
-          }}
-        >
-          {t('report.title')}
-        </div>
-        <p style={{ margin: 0, padding: '10px 14px 0', fontSize: 11.5, color: 'var(--muted)' }}>
-          {t('report.intro')}
-        </p>
-
-        <section style={{ display: 'grid', gap: 10, padding: '12px 14px' }}>
-          <div style={{ display: 'grid', gap: 4 }}>
-            <label htmlFor={`${fieldId}f-subject`} style={label}>
-              {t('report.subject')}
-            </label>
-            <input
-              id={`${fieldId}f-subject`}
-              data-report-field="subject"
-              value={subject}
-              placeholder={t('report.subjectPlaceholder')}
-              onChange={(e) => setSubject(e.target.value)}
-              style={input}
-            />
-          </div>
-
-          <div style={{ display: 'grid', gap: 4 }}>
-            <label htmlFor={`${fieldId}f-description`} style={label}>
-              {t('report.description')}
-            </label>
-            <textarea
-              id={`${fieldId}f-description`}
-              data-report-field="description"
-              value={description}
-              rows={6}
-              placeholder={t('report.descriptionPlaceholder')}
-              onChange={(e) => setDescription(e.target.value)}
-              style={{ ...input, resize: 'vertical', fontFamily: 'var(--font-ui)' }}
-            />
-          </div>
-
-          <fieldset style={{ border: 0, margin: 0, padding: 0, display: 'grid', gap: 6 }}>
-            <legend style={{ ...label, padding: 0 }}>{t('report.destination')}</legend>
-            {REPORT_DESTINATIONS.map((d) => (
-              <label
-                key={d}
-                style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: 6, fontSize: 12 }}
-              >
-                <input
-                  type="radio"
-                  name={`${fieldId}dest`}
-                  data-report-destination={d}
-                  checked={destination === d}
-                  onChange={() => setDestination(d)}
-                />
-                <span>
-                  {t(`report.${LABEL[d]}`)}
-                  <span style={{ display: 'block', ...label }}>{t(`report.${HINT[d]}`)}</span>
-                </span>
-              </label>
-            ))}
-          </fieldset>
-
-          {destination === 'github' && (
-            <div
-              data-report-token
-              style={{
-                display: 'grid',
-                gap: 6,
-                padding: '8px 10px',
-                background: 'var(--panel2)',
-                border: '1px solid var(--border)',
-                borderRadius: 6,
-              }}
-            >
-              <span style={label}>{tokenLine()}</span>
-              {tokenRefused && (
-                <span data-report-token-refused style={label}>
-                  {t('report.tokenNotStored')}
-                </span>
-              )}
-              {!canFile && props.status?.storeAvailable === true && (
-                <>
-                  <span style={label}>{t('report.tokenIntro')}</span>
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <input
-                      aria-label={t('report.tokenLabel')}
-                      data-report-field="token"
-                      type="password"
-                      value={token}
-                      onChange={(e) => setToken(e.target.value)}
-                      style={input}
-                    />
-                    <button type="button" onClick={saveToken} style={button(false)}>
-                      {t('report.tokenSave')}
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
-          {/* Only for GitHub: it explains why the zip is not attached to an
-              ISSUE, which is not a thing the email or zip destinations do. */}
-          {destination === 'github' && (
-            <p style={{ margin: 0, ...label }}>{t('report.bundleNote')}</p>
-          )}
-
-        </section>
-
-        <div
-          style={{
-            display: 'flex',
-            justifyContent: 'flex-end',
-            alignItems: 'center',
-            gap: 8,
-            padding: '10px 14px',
-            borderBlockStart: '1px solid var(--border)',
-            // pinned to the bottom of the dialog's scroller, so the buttons AND
-            // the line that answers them are on screen however long the form is
-            position: 'sticky',
-            insetBlockEnd: 0,
-            background: 'var(--panel)',
-          }}
-        >
-          {/* WHY A SEND FAILED, beside the button that was pressed. It used to
-              sit at the foot of the form, below a six-line description box —
-              off screen in a short window, so a failed send looked like a dead
-              button. Only failures reach here: a success closes the dialog.
-              ANNOUNCED: it is the answer to a button the user just pressed, and
-              without a live region a screen-reader user hears nothing. The
-              region is ALWAYS mounted and only its text changes — many screen
-              readers skip a live region that arrives with its words already in
-              it. It takes the slack in the row and wraps; the buttons never
-              shrink, so a long reason cannot fold "Send report" in two. */}
-          <p
-            role="status"
-            aria-live="polite"
-            style={{ margin: 0, marginInlineEnd: 'auto', flex: '1 1 auto', minInlineSize: 0, fontSize: 12 }}
-          >
-            {result !== null && (
-              <span data-report-result>
-                {/* `?? 'unavailable'` is unreachable — `result` is only ever
-                    set on a failure — and is here for the type, not a case */}
-                {t(`report.problem.${PROBLEM_KEY[reportProblem(result) ?? 'unavailable']}`)}
-              </span>
-            )}
-          </p>
-          <button type="button" data-report-cancel onClick={close} style={button(false)}>
-            {t('report.cancel')}
-          </button>
-          <button
-            type="button"
-            data-report-submit
-            onClick={submit}
-            disabled={!filable}
-            // a dead button says why — the subject is the one required field
-            title={subject.trim().length === 0 ? t('report.problem.emptySubject') : undefined}
-            style={button(true)}
-          >
-            {busy ? t('report.working') : t('report.submit')}
-          </button>
-        </div>
+      <div style={{ display: 'grid', gap: 4 }}>
+        <label htmlFor={`${fieldId}f-subject`} style={label}>
+          {t('report.subject')}
+        </label>
+        <input
+          id={`${fieldId}f-subject`}
+          data-report-field="subject"
+          value={subject}
+          placeholder={t('report.subjectPlaceholder')}
+          onChange={(e) => setSubject(e.target.value)}
+          style={input}
+        />
       </div>
-    </div>
+
+      <div style={{ display: 'grid', gap: 4 }}>
+        <label htmlFor={`${fieldId}f-description`} style={label}>
+          {t('report.description')}
+        </label>
+        <textarea
+          id={`${fieldId}f-description`}
+          data-report-field="description"
+          value={description}
+          rows={6}
+          placeholder={t('report.descriptionPlaceholder')}
+          onChange={(e) => setDescription(e.target.value)}
+          style={{ ...input, resize: 'vertical', fontFamily: 'var(--font-ui)' }}
+        />
+      </div>
+
+      <fieldset style={{ border: 0, margin: 0, padding: 0, display: 'grid', gap: 6 }}>
+        <legend style={{ ...label, padding: 0 }}>{t('report.destination')}</legend>
+        {REPORT_DESTINATIONS.map((d) => (
+          <label
+            key={d}
+            style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: 6, fontSize: 12 }}
+          >
+            <input
+              type="radio"
+              name={`${fieldId}dest`}
+              data-report-destination={d}
+              checked={destination === d}
+              onChange={() => setDestination(d)}
+            />
+            <span>
+              {t(`report.${LABEL[d]}`)}
+              <span style={{ display: 'block', ...label }}>{t(`report.${HINT[d]}`)}</span>
+            </span>
+          </label>
+        ))}
+      </fieldset>
+
+      {destination === 'github' && (
+        <div
+          data-report-token
+          style={{
+            display: 'grid',
+            gap: 6,
+            padding: '8px 10px',
+            background: 'var(--panel2)',
+            border: '1px solid var(--border)',
+            borderRadius: 6,
+          }}
+        >
+          <span style={label}>{tokenLine()}</span>
+          {tokenRefused && (
+            <span data-report-token-refused style={label}>
+              {t('report.tokenNotStored')}
+            </span>
+          )}
+          {!canFile && props.status?.storeAvailable === true && (
+            <>
+              <span style={label}>{t('report.tokenIntro')}</span>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input
+                  aria-label={t('report.tokenLabel')}
+                  data-report-field="token"
+                  type="password"
+                  value={token}
+                  onChange={(e) => setToken(e.target.value)}
+                  style={input}
+                />
+                <button type="button" onClick={saveToken} style={composeButtonStyle(false)}>
+                  {t('report.tokenSave')}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Only for GitHub: it explains why the zip is not attached to an ISSUE,
+          which is not a thing the email or zip destinations do. */}
+      {destination === 'github' && <p style={{ margin: 0, ...label }}>{t('report.bundleNote')}</p>}
+    </ComposeDialog>
   );
 }

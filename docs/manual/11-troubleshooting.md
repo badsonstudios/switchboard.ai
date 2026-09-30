@@ -481,3 +481,50 @@ A token you save here is also what update checking uses, so a machine without
 the GitHub command-line tool gets both from one paste. Updates won't notice
 until the next check, so go to **Help ▸ Check for updates…** once after saving
 and you'll see the real answer instead of "no credentials".
+
+## Asking for a feature
+
+Nothing is broken, you just wish the app did something it doesn't. That's
+**Help ▸ Feature request…** — the twin of the box above, without the log
+collecting. (It's in the command palette too: press `Ctrl+Shift+P` and type
+*feature*.)
+
+There are two boxes. **Title** is optional — leave it blank and the first line
+of what you write becomes the title. **What would you like the app to do?** is
+the one that has to have something in it; the **Send** button stays greyed out
+until it does. Say what you want and what it would let you do that you can't do
+today — the second half is usually the more useful one.
+
+Then pick how it should reach us:
+
+| Choice | What happens |
+|---|---|
+| **Open an email** | Your mail app opens with the address and your words already filled in. |
+| **Open a ticket** | Your browser opens the project's new-issue page with the title and text already filled in. |
+
+**Nothing is sent from switchboard.** Whichever you pick, all the app does is
+open *your* email program or *your* browser with the form already written out.
+You read it, change anything you like, and press send there. Nothing happens
+until you do, and if you close the window instead, nothing was sent.
+
+**Only what you type is included.** No log files, no diagnostic zip, nothing
+about your sessions or your folders. That's the difference from a problem
+report, which deliberately does collect those things.
+
+**Who "Open a ticket" works for.** The project's issue tracker is **private**,
+so that option only works if your GitHub account has been given access to it —
+today that means the people building switchboard. If you don't have access,
+your browser will show GitHub's sign-in or "not found" page. That's all that
+happens: nothing in switchboard breaks, the dialog is still there with your
+words in it, and you can switch to **Open an email** and send it that way.
+**If in doubt, use the email option** — it works for everyone.
+
+**When it goes through, the dialog closes by itself** — your mail app or your
+browser appearing with the text in it is the confirmation. If your mail program
+or browser can't be opened at all, the dialog stays open with the reason next to
+the button and everything you typed still there, so you can pick the other
+option.
+
+**Very long requests are trimmed**, and say so where they were cut — web
+addresses and mail links can only carry so much. If you're writing an essay,
+send a short version this way and follow up with the rest in a reply.

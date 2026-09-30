@@ -49,6 +49,7 @@ import type {
   ReportStatus,
   ReportWriteResult,
 } from '../shared/diagnostics';
+import type { FeatureRequestDraft, FeedbackResult } from '../shared/feedback';
 import type { PerfBatch, PerfLoopDelay } from '../shared/perf';
 import type { ControlVerdict } from '../shared/control';
 import type { NotificationPrefs } from '../shared/notifications';
@@ -1243,6 +1244,23 @@ const api = {
      */
     setGitHubToken: (value: string): Promise<ReportWriteResult> =>
       ipcRenderer.invoke('diag:setGitHubToken', value),
+  },
+  /**
+   * Help ▸ Feature request… (#1008).
+   *
+   * Its own namespace rather than a fourth member of `diagnostics`, and the
+   * split is the same one `perf` makes above: `diagnostics` SENDS — it builds a
+   * zip and posts an issue with a credential — while this one hands a pre-filled
+   * form to an application the user already owns and waits for them to press
+   * Send in it. Nothing here can post anything.
+   *
+   * It takes TEXT, never a URL. Main composes the address from the constants it
+   * holds, so a compromised renderer cannot name a destination for
+   * `shell.openExternal` (`main/feedback/feature-request-ipc.ts`).
+   */
+  feedback: {
+    featureRequest: (draft: FeatureRequestDraft): Promise<FeedbackResult> =>
+      ipcRenderer.invoke('feedback:featureRequest', draft),
   },
   push: {
     getConfig: (): Promise<PushConfig> => ipcRenderer.invoke('push:getConfig'),

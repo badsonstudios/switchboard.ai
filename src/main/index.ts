@@ -24,6 +24,7 @@ import { CpuHeartbeat } from './diagnostics/cpu-heartbeat';
 import { ProcessCensus } from './diagnostics/process-census';
 import { liveChildren } from './diagnostics/live-children';
 import { registerReportIpc } from './diagnostics/report-ipc';
+import { registerFeatureRequestIpc } from './feedback/feature-request-ipc';
 import { EventLoopDelay } from './diagnostics/event-loop';
 import { PerfCapture } from './diagnostics/perf-capture';
 import type { PerfBatch } from '../shared/perf';
@@ -1888,6 +1889,12 @@ app
               log.app.warn('menu report-problem could not reach the renderer');
             }
           },
+          // Help ▸ Feature request… (#1008). The line above, for its reason.
+          featureRequest: () => {
+            if (!acceleratorDeps(false).deliver('app.featureRequest')) {
+              log.app.warn('menu feature-request could not reach the renderer');
+            }
+          },
         })
       )
     );
@@ -2083,6 +2090,11 @@ app
         uptimeMs: Math.round(process.uptime() * 1000),
       }),
     });
+    // Help ▸ Feature request… (#1008). Report-a-problem's twin minus the
+    // evidence: no zip, no credential, no network call of ours — just the
+    // user's words handed to their own mail client or browser, pre-filled,
+    // waiting on a Send button we do not own.
+    registerFeatureRequestIpc({ broker, log: createLogger(sink, 'feedback') });
     // ── the two channels that stay in the room (P2-E14-05a, §5.9 + §5.11) ──
     //
     // A cue that says WHICH card wants you, and a voice that says it out loud.
