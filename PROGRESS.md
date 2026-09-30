@@ -3,6 +3,23 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🎯 DECISION — 2026-09-30: **#521 layer 2 — the owner chose SHAPE A**, the
+> Files tab on the session card, **built placement-agnostic** so shape B (Files as a
+> document-area panel) stays a later move rather than a rewrite. The design gate the
+> issue mandated is **closed**; layer 2 is unblocked and **unstarted**.
+>
+> The costing is on the issue (comment, 2026-09-30) and in the 2026-09-29 layer-1
+> entry below. The one line nobody should re-derive: **there is no directory-listing
+> IPC at all.** Every tree shape needs a new main-side `listDir` behind `ReadScope`,
+> which is a new security surface with #832 days old, and `FileWatchService` watches
+> FILES by signature rather than directories — so a tree’s refresh semantics is new
+> work, not a reuse. The tab strip itself is ready: session tabs are contributions
+> (§5.23), so the tab is a new `PanelContribution` rather than surgery.
+>
+> A’s known limitation, named by the owner as he chose it: tabs are exclusive, so you
+> cannot browse the tree while watching the Feed. That is exactly what B would buy,
+> and the reason A is to be built without assuming where it lives.
+
 > # ✅ DONE — 2026-09-30: **E25 — #981, the composer's height cap holds the room
 > it was offered** (PR **#1006**, merged on green CI, issue closed). **The
 > arithmetic the issue pointed at was never wrong. The state it ran in was.**
