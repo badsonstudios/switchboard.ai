@@ -9,13 +9,21 @@ import {
   formatBinding,
   matchesBinding,
   parseBinding,
-  ranCommand,
+  type DispatchOutcome,
 } from './commands';
 
 /** The answer for a keystroke the app has no opinion about (#942). Written out
  *  rather than imported so a rename of the outcome value — the thing App.tsx
  *  branches on — fails these tests instead of following them silently. */
 const UNMATCHED = { outcome: 'unmatched' };
+
+/** The command that ran, or null — the pre-#942 shape, so the cases that only
+ *  care THAT one ran still read as one line. Local rather than exported from the
+ *  module: no production caller wants this projection (App.tsx branches on the
+ *  outcome by name, which is the whole point of naming them), and an export
+ *  nothing but a test uses is a second way to read the answer. */
+const ranCommand = (r: DispatchOutcome): Command | null =>
+  r.outcome === 'ran' ? r.command : null;
 
 const key = (k: string, mods: Partial<Record<'ctrl' | 'meta' | 'shift' | 'alt', boolean>> = {}) => ({
   key: k,

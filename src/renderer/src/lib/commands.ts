@@ -173,14 +173,6 @@ export type DispatchOutcome<Ctx extends CommandContext = CommandContext> =
  *  future answer. */
 const UNMATCHED: { outcome: 'unmatched' } = Object.freeze({ outcome: 'unmatched' });
 
-/** Did a command actually run? The projection every caller that only cares about
- *  that should use, so `=== 'ran'` is written once. */
-export function ranCommand<Ctx extends CommandContext>(
-  result: DispatchOutcome<Ctx>,
-): Command<Ctx> | null {
-  return result.outcome === 'ran' ? result.command : null;
-}
-
 /**
  * Run the first command whose binding matches. preventDefault() is called ONLY
  * when a command actually ran — an unmatched key must reach whatever would have
@@ -282,9 +274,13 @@ export function dispatchAccelerator<Ctx extends CommandContext>(
   const { typing, terminal } = classifyTarget(target);
   if (typing && !terminal && cmd.scope !== 'typing-ok') return UNMATCHED;
   // Matched and disabled, exactly as in `dispatch` and announced the same way
-  // (#942). This path is the one that needs it MOST: these two chords are the
-  // ones claimed above the renderer precisely so they work from inside a session
-  // terminal, where the keyboard user has no other affordance at all.
+  // (#942). Of the two sources above, the CHORDS are the ones that need it most:
+  // they are claimed above the renderer precisely so they work from inside a
+  // session terminal, where nothing else the user presses has any effect at all.
+  // A disabled MENU item reaching here would speak too, which is right for the
+  // same reason — a menu click that produces nothing is the same silence — and
+  // is not a case that exists today: neither command #569 routes through here
+  // carries an `enabled` predicate.
   if (!isAvailable(cmd, ctx, onError)) return { outcome: 'unavailable', command: cmd };
   return { outcome: 'ran', command: runCommand(cmd, ctx, onError) };
 }
