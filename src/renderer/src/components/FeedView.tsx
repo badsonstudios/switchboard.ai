@@ -1566,27 +1566,25 @@ function controlName(
 }
 
 /**
- * The options row's chip treatment, shared by the Clear/Compact buttons (#903)
- * so they read as the same kind of thing as the autonomy chip beside them. A
- * control that looks like a label does not get clicked, which is the lesson
- * #747 taught the model chip one door along.
+ * The options row's chip treatment, worn by all four controls (#1009).
  *
- * Locked state is the `disabled` attribute plus this dimmer ink and the tooltip
- * that says why, never colour on its own (DESIGN 5.32).
+ * THE LOOK IS IN `tokens.css` under `.composer-chip`, and that is the point.
+ * This used to be a style FUNCTION, which meant the model chip could — and did
+ * — decline to call it and hardcode `var(--faint)`, the disabled ink, while
+ * enabled. One class cannot be opted out of by a component that never mentions
+ * it, and a `:hover` state cannot be expressed inline at all: an inline
+ * background beats any rule on specificity.
+ *
+ * The `locked` parameter is gone with it. Every call site passed exactly what
+ * it also passed to `disabled`, so `.composer-chip:disabled` says it once, in
+ * the one place that cannot fall out of step with the attribute — which is
+ * precisely how the model chip's busy state would otherwise have stopped
+ * deadening the moment its enabled ink stopped being the dim one.
+ *
+ * NOT to be confused with a CONTEXT chip, which is the other thing this file
+ * calls a chip and is a dragged payload rather than a control.
  */
-function controlChip(locked: boolean): React.CSSProperties {
-  return {
-    background: 'transparent',
-    border: '1px solid var(--border)',
-    borderRadius: 'var(--radius-chip)',
-    color: locked ? 'var(--faint)' : 'var(--muted)',
-    fontSize: 10,
-    fontFamily: 'var(--font-ui)',
-    padding: '1px 8px',
-    cursor: locked ? 'default' : 'pointer',
-    whiteSpace: 'nowrap',
-  };
-}
+const CHIP_CLASS = 'composer-chip';
 
 /**
  * The tallest the composer's textarea may grow to without pushing anything off
@@ -3476,19 +3474,17 @@ function Composer({
           onClick={onCycleAutonomy}
           data-testid="composer-autonomy"
           title={autonomyTooltip(t, autonomy, 'session')}
-          style={{
-            background: 'transparent',
-            border: '1px solid var(--border)',
-            borderRadius: 'var(--radius-chip)',
-            // the feed's copy of the grid's autonomy chip, which #221 fixed and
-            // this one was missed by (#246): 10px text in the raw crashed hue,
-            // 3.35:1 on daylight's --panel and 3.89:1 on nordic's
-            color: autonomy === 'full-auto' ? 'var(--status-crashed-ink)' : 'var(--muted)',
-            fontSize: 10,
-            fontFamily: 'var(--font-ui)',
-            padding: '1px 8px',
-            cursor: 'pointer',
-          }}
+          className={CHIP_CLASS}
+          // THE ROW'S ONE INLINE INK, and only for the one mode that is a
+          // warning: the feed's copy of the grid's autonomy chip, which #221
+          // fixed and this one was missed by (#246). Now measured on the chip's
+          // own fill rather than on the panel behind it — 4.73:1 on nordic,
+          // 5.65:1 on daylight, asserted in tokens.drift.test.ts. Every other
+          // state leaves `color` unset so the class owns it, which is what
+          // `FeedView.session-controls.test.tsx` pins.
+          style={
+            autonomy === 'full-auto' ? { color: 'var(--status-crashed-ink)' } : undefined
+          }
         >
           {t(`autonomy.${autonomy ?? 'ask'}`)}
         </button>
@@ -3526,18 +3522,28 @@ function Composer({
               if (modelMenuAt) return closeModelMenu();
               setModelMenuAt(e.currentTarget.getBoundingClientRect());
             }}
+            className={CHIP_CLASS}
+            // WHAT IS LEFT INLINE, and why each of the two survived #1009:
+            //
+            // • `--font-mono`, KEPT ON PURPOSE. The other three chips say
+            //   words; this one says an IDENTIFIER (`claude-sonnet-4-5`), and
+            //   mono is the face this app already gives identifiers — the
+            //   completion rows, the code fence's language tag. The SIZE went
+            //   the other way: it was 9.5px against the row's 10px, which was
+            //   never a decision, and half a pixel of extra smallness on the
+            //   chip that was also wearing the dimmest ink is how a control
+            //   ends up reading as a caption. One row, one size.
+            // • the ellipsis trio, because a model id is the only label here
+            //   long enough to need truncating in a narrow card.
+            //
+            // `cursor` is NOT here any more: it tracked `modelBusy`, which is
+            // the same thing `disabled` says, and `.composer-chip:disabled`
+            // now says it once — along with the `--faint` ink this chip used
+            // to wear at ALL times.
             style={{
-              background: 'transparent',
-              border: '1px solid var(--border)',
-              borderRadius: 'var(--radius-chip)',
-              padding: '1px 8px',
-              cursor: modelBusy ? 'default' : 'pointer',
               fontFamily: 'var(--font-mono)',
-              fontSize: 9.5,
-              color: 'var(--faint)',
               overflow: 'hidden',
               textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
               minInlineSize: 0,
             }}
           >
@@ -3556,9 +3562,13 @@ function Composer({
               // pointed at a tab it never had. No session has one now, so the
               // plain statement of fact is the only true thing to say.
               title={t('feedView.modelHintInactive')}
+              // DELIBERATELY NOT `.composer-chip`, and it keeps `--faint`. It
+              // is not a control — dressing an inert label in a button's fill
+              // and edge is #747's mistake pointed the other way. It takes the
+              // row's 10px so the row has one type size, and nothing else.
               style={{
                 fontFamily: 'var(--font-mono)',
-                fontSize: 9.5,
+                fontSize: 10,
                 color: 'var(--faint)',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
@@ -3648,11 +3658,16 @@ function Composer({
                 // identical words, and wipes the session believing nothing has
                 // happened yet. The answer has to be audibly an answer.
                 aria-label={t('feedView.clearConfirmGo')}
+                className={CHIP_CLASS}
+                // The chip's METRICS from the class, its COLOUR from here: the
+                // destructive confirm wears the crashed hue as INK on its own
+                // wash, the tinted-fill shape #221 settled on -- the border
+                // keeps the hue, and an edge is not a word (#246). `data-tone`
+                // is what takes it out of the shared :hover rule, which would
+                // otherwise repaint the ink and the border of the one button
+                // whose colour is the warning (see tokens.css).
+                data-tone="danger"
                 style={{
-                  ...controlChip(false),
-                  // the destructive confirm wears the crashed hue as INK on its
-                  // own wash, the tinted-fill shape #221 settled on -- the
-                  // border keeps the hue, and an edge is not a word (#246)
                   background: CRASHED_WASH,
                   color: 'var(--status-crashed-ink)',
                   border: '1px solid var(--status-crashed)',
@@ -3665,7 +3680,7 @@ function Composer({
                 data-testid="composer-clear-cancel"
                 aria-label={t('feedView.clearConfirmCancel')}
                 onClick={() => setConfirmClear(false)}
-                style={controlChip(false)}
+                className={CHIP_CLASS}
               >
                 {t('grid.menuClearCancel')}
               </button>
@@ -3697,7 +3712,7 @@ function Composer({
                       setCompactBusy(false);
                     });
                   }}
-                  style={controlChip(controlsLock !== null || compactBusy)}
+                  className={CHIP_CLASS}
                 >
                   {t('feedView.compact')}
                 </button>
@@ -3709,7 +3724,7 @@ function Composer({
                   disabled={controlsLock !== null}
                   aria-label={controlName(t, 'grid.menuClear', controlsLock)}
                   onClick={() => setConfirmClear(true)}
-                  style={controlChip(controlsLock !== null)}
+                  className={CHIP_CLASS}
                 >
                   {t('feedView.clear')}
                 </button>

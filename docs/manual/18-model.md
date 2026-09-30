@@ -9,8 +9,9 @@ menu is quicker; the picker asks you to confirm.
 
 ## The quick way: click the model name
 
-At the bottom of a session, next to the autonomy chip, there's a small grey
-button showing the model that session is running. **Click it.**
+At the bottom of a session, next to the autonomy chip, there's a small button
+showing the model that session is running — it looks like the buttons either
+side of it, because it is one. **Click it.**
 
 A short menu drops open — or opens upward, if the session is near the bottom of
 the window — listing the models Claude Code will accept, with a **✓** on the one
