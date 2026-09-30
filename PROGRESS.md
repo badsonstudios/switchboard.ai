@@ -3,6 +3,116 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ DONE — 2026-09-30: **E11 — #861, the blackboard's 100-key cap stops
+> being a one-way door** (PR **#1004**, merged on green CI, issue closed).
+> **Review changed what shipped**, and that is the part worth reading.
+>
+> **THE BUG.** `publish` and `read` existed; nothing removed. So
+> `BLACKBOARD_MAX_KEYS` could be approached and never receded from — a pipeline
+> generating a key per task reached 100 **permanently**, and every new key was
+> refused for the life of the app. #796 filed this deliberately rather than
+> fixing it inline, having rejected *"an empty publish means delete"* because an
+> agent whose own computation returned empty would destroy a sibling's note with
+> nothing able to tell the two apart. **That argument survives intact and the
+> empty-value refusal still stands** — it is about an *accident*, not about
+> removal, and #796's own words were that removal *"should arrive as a deliberate
+> gesture with its own name"*. It now has one.
+>
+> **⭐ THE DESIGN QUESTION THE ISSUE HELD OPEN — "who may remove whose note" —
+> ANSWERED: ANY SESSION MAY REMOVE ANY KEY.** The clause the issue asked it in
+> contained the answer, *"since the namespace is shared and cross-session
+> overwrite is already permitted"*:
+>
+> 1. **No new destructive reach.** Overwrite already lets any session destroy any
+>    other session's content; §5.4, `shared/blackboard.ts` and the manual all say
+>    so deliberately.
+> 2. **Publisher-only removal would not have fixed the cap.** It is reached by a
+>    pipeline generating keys, and those publishers have usually **exited** by
+>    then — `publisherGone` exists because that is the ordinary case. The door
+>    would stay shut in exactly the case that opens it.
+> 3. ~~It is safer than the overwrite already allowed.~~ **WRONG — see below.**
+>
+> **⭐⭐ REVIEW KILLED REASON 3 AND THAT CHANGED THE SHIPPED CODE.** The claim was
+> that a removal leaves the reader #764's honest miss while an overwrite leaves
+> content under an author. True about *reach*, **false about detectability** —
+> and detectability was the entire mitigation. **An overwrite leaves its evidence
+> where the VICTIM sees it** (the next `read` returns content with a changed
+> author; `list` still shows the key). **A removal left none**, anywhere, except
+> the transcript of the session that did it, which no sibling can read. Worse:
+> `blackboard_read`'s miss says the session you are waiting on *"may not have got
+> there yet"* — so after a deletion switchboard was telling a reader, in its own
+> voice, **to keep waiting for something that would never arrive**. That is the
+> confident-wrong-answer shape this epic exists to prevent, introduced by the fix
+> for something else. The conclusion survived on reason 2; the mitigation did not.
+>
+> **SO REMOVALS ARE REMEMBERED — `BLACKBOARD_TOMBSTONE_CAP` (100).** A removed key
+> keeps a tombstone: who took it off and when, **never the value**. `read`'s miss
+> consults it, so the one genuinely misleading path became the most informative
+> one on the class. Bounded and oldest-evicted for `BLACKBOARD_MAX_KEYS`' own
+> reason — an agent looping on generated keys and removing each would otherwise
+> grow it for ever. **A republish clears it**, which is the only way the register
+> could contradict the board.
+>
+> **THE REMOVER IS RECORDED, NEVER COMPARED.** `remove(removerId, key)` takes the
+> caller from the TOKEN — so a tombstone can name a session — and **no branch
+> anywhere tests it against the publisher.** Written down in three places because
+> the day someone adds `if (removerId !== existing.publisherId)`, reason 2 stops
+> being true.
+>
+> **THE OTHER FIVE REVIEW FINDINGS, all taken:**
+>
+> * **A test had pinned a bug as correct.** `renderRemove` composed comma-joined
+>   fragments, so a missing `chars` produced *"…blackboard. published by Alpha."*
+>   — lowercase after a full stop, the exact failure its own comment claimed to
+>   prevent — and the test named *"stays grammatical"* asserted that string.
+>   Every clause now carries its own subject and verb, asserted over **all 8
+>   field subsets mechanically** rather than at two hand-picked points.
+> * The miss branch interpolated the agent's key **raw** while the success branch
+>   two lines below flattened it. Self-injection rather than the cross-session
+>   hazard, but one branch of one function obeying `flat`'s rule and the other
+>   not is how the next person learns the wrong rule. Also capped the key, for
+>   `publish`'s reason plus one of its own: an over-cap key can never match
+>   anything stored, so the only thing it could do is be echoed back whole.
+> * `publisherKnown` added to the receipt — without it an unavailable session
+>   list rendered a raw id as though it were an author, in the one field this
+>   tool leans on.
+> * The receipt reports the **character** ceiling too. That cap needed `remove`
+>   most: overwrite only reclaims room when the new value is smaller, so a board
+>   full of large notes had no way down at all.
+> * **The layering question came back "no violation" but found a real hole.**
+>   Naming `blackboard_remove` inside a policy refusal is the house precedent
+>   (`delivery.ts` names `get_session_output`), and "transport-free" is about
+>   *imports*, which its own test enforces. The exposure was **silent drift** —
+>   rename a tool and those strings point at nothing, with no compile error. A
+>   new test asserts every `blackboard_*` token in a refusal is a real tool.
+>
+> **DECLINED, with a reason:** a host log line for removals. The tombstone reaches
+> the agent that needs it; a log reaches a human reading files afterwards, which
+> is not who was being misled.
+>
+> **Green:** lint · all three typecheck projects · **9,546 unit tests** ·
+> `check:bus` **end to end over the real pipe**, including the tombstone
+> assertion. The two known contention flakes (`git-service`, `win-cmd`) verified
+> green **run alone** — note they still redden when run as a PAIR, so "alone"
+> means alone. All four CI jobs green first run.
+>
+> **Docs:** `docs/manual/02-sessions.md` (its full-board bullet was about to go
+> stale), CHANGELOG **0.8.102** under `Added` (`release-notes.test.js` green at 46
+> after the edit, headings intact), DESIGN §5.4 — where reason 3 is **struck
+> through and corrected rather than deleted**, because the correction is the
+> record.
+>
+> **No `CHANNEL_VERSION` bump**, per that constant's own reasoning: a new word in
+> the vocabulary degrades to one readable "unknown request", while the gate is for
+> envelope changes.
+>
+> **Next up:** **#981** (the composer's height cap does not enforce the room it
+> was offered). **#521 remains OPEN on layer 2** — the Files tab, three costed
+> shapes with the owner, waiting on a design call only he can make; nothing
+> proceeds there until he picks one. **E21-02/03/04 (#904/#716/#740) remain the
+> owner's and are not to be started.** **#997 still wants a probe first.**
+> **#1002** is a new flake sighting filed 2026-09-29 (quiet-hours on Windows CI).
+
 > # ✅ DONE — 2026-09-29: **E25 — #521 layer 1, and the fix had already
 > shipped** (PR **#1000**, merged on green CI). **#521 stays OPEN** — layer 2,
 > the Files tab, is unstarted and gated on a design call only the owner can
