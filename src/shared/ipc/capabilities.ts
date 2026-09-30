@@ -58,6 +58,19 @@ export const CAPABILITIES = [
   // home config. Named for what it DOES, not where the
   // answer is shown — "settings.read" hid a child process.
   'fs.probe', // existence/type of an arbitrary caller-supplied path
+  'fs.list', // the NAMES of the entries in ONE directory, scoped to open
+  // session folders by the same `ReadScope` as `fs.read` (#521
+  // layer 2, §5.35). Sits between the two words above it because
+  // that is where its cost sits: more than `fs.probe`, which
+  // answers one guessed path at a time and cannot ENUMERATE, and
+  // strictly less than `fs.read`, which hands over the bytes of
+  // every file the listing names. Its own word rather than folded
+  // into `fs.read` for the reason this whole vocabulary is split:
+  // a Phase-4 contribution that wants to draw a file tree must
+  // not thereby acquire the power to read every file in it. NOT
+  // the `fs:watch` case — that one reuses `fs.read` because what
+  // it reveals is a subset of the bytes it already grants, and a
+  // list of names is not.
   'fs.read', // the CONTENTS of a file, scoped to open session folders plus
   // what the user picked (P2-E16-01, §5.30). Deliberately NOT
   // folded into `fs.probe`: existence-and-type is strictly less
@@ -235,6 +248,10 @@ export const CHANNEL_CAPABILITIES = {
   // read a file's contents — scope-checked, size-capped and refused in MAIN
   // (P2-E16-01). Its own family, because it belongs to no session.
   'fs:read': 'fs.read',
+  // one level of one directory, for the Files tab (#521 layer 2, §5.35).
+  // `fs.list` and NOT `fs.read`: it answers names, never bytes, and the two are
+  // separately grantable on purpose.
+  'fs:listDir': 'fs.list',
   // the document viewer's `Open file…` (P2-E16-02). It is the ONE path that
   // widens `fs.read`'s scope, and it widens it by asking the user — which is
   // why it is tagged `dialog.open` and not `fs.read`: the power being exercised

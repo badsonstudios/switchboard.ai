@@ -184,3 +184,82 @@ export type FileWatchResult = { readonly ok: true; readonly path: string } | Fil
  * own brand.
  */
 export type FileReadResult = FileReadOk | FileReadRefused;
+
+// --- Listing a directory (#521 layer 2, §5.35 + §5.7 + §5.30) --------------
+//
+// The Files tab's one channel. It is here rather than in a module of its own
+// because it is the same bridge, answered by the same `ReadScope`, and the
+// renderer imports both halves together.
+
+/**
+ * How many entries one directory may hand back.
+ *
+ * THE READ STOPS HERE — this is not a slice of a full listing. A `node_modules`
+ * can hold a hundred thousand entries, and reading all of them to show 500 is
+ * the cost the cap exists to avoid: main stops after `MAX_DIR_ENTRIES + 1`
+ * dirents, uses the extra one as the "there is more" signal, and closes the
+ * handle. The consequence is honest and worth knowing: what you get is the
+ * first 500 entries **in the order the OS reported them**, not the first 500
+ * alphabetically, and the tab says so rather than pretending the folder ends
+ * there.
+ */
+export const MAX_DIR_ENTRIES = 500;
+
+/**
+ * What one row in a listing is.
+ *
+ * `link` IS ITS OWN KIND, and that is the security decision, not a display
+ * nicety: a symlink or a Windows junction inside a session folder can point
+ * anywhere on the machine, so this channel does not follow them. A link is
+ * reported, named, and is neither expandable nor openable from the tree. `other`
+ * is a device, a socket, a FIFO — something that is not a file and not a folder,
+ * shown for the same §5.8 reason a disabled tab is shown.
+ */
+export type DirEntryKind = 'dir' | 'file' | 'link' | 'other';
+
+export interface DirEntry {
+  /** the entry's own name, with no path in it */
+  readonly name: string;
+  /** the absolute path, built from the RESOLVED parent — safe to ask about */
+  readonly path: string;
+  readonly kind: DirEntryKind;
+}
+
+/**
+ * Why a listing did not happen.
+ *
+ * Derived from `FileReadRefusal` rather than written out, so the two channels
+ * cannot drift apart: `ReadScope` answers one vocabulary and both handlers
+ * speak it. `not-a-file` is excluded because it is the wrong question here and
+ * `not-a-directory` is its mirror — you asked to list something that is a file.
+ */
+export type DirListRefusal = Exclude<FileReadRefusal, 'not-a-file'> | 'not-a-directory';
+
+export interface DirListOk {
+  readonly ok: true;
+  /** the RESOLVED directory the entries came from — links collapsed, `..` gone */
+  readonly path: string;
+  readonly entries: readonly DirEntry[];
+  /** there was at least one more entry than the cap allows */
+  readonly truncated: boolean;
+  /** the cap that was applied, so the renderer can SAY it rather than guess */
+  readonly cap: number;
+}
+
+/** What `fs:listDir` answers. Same shape argument as `FileReadResult`. */
+export type DirListResult = DirListOk | { readonly ok: false; readonly reason: DirListRefusal };
+
+/** What a caller sends. `path` absent means "the root itself". */
+export interface DirListRequest {
+  /**
+   * The folder the caller claims to be browsing.
+   *
+   * IT IS NOT TRUSTED AS A GRANT — it is checked against the read scope exactly
+   * like `path` is, and then used as a SECOND, narrower boundary that `path`
+   * must also be inside. Declaring a root cannot widen anything; it can only
+   * refuse more.
+   */
+  readonly root: string;
+  /** the directory to list, at or under `root`; the root when omitted */
+  readonly path?: string;
+}

@@ -39,11 +39,13 @@ function ctx(over: Partial<PanelContext> = {}): PanelContext {
 // would have stayed green while the strip drifted.
 
 describe('the built-in renderer points', () => {
-  it('ships three panels in a fixed order', () => {
-    // Terminal was a fourth, deliberately last. It went with the tab (#873);
-    // the PTY code behind it stayed.
+  it('ships four panels in a fixed order', () => {
+    // Terminal was a fifth, deliberately last. It went with the tab (#873);
+    // the PTY code behind it stayed. `files` arrived with #521 layer 2, AHEAD
+    // of History -- which is a permanently disabled placeholder, and a working
+    // tab behind a dead one reads as the strip trailing off.
     const ids = listPanels(createRendererRegistry()).map((p) => p.id);
-    expect(ids).toEqual(['feed', 'diff', 'history']);
+    expect(ids).toEqual(['feed', 'diff', 'files', 'history']);
   });
 
   it('a tab is never HIDDEN, only greyed — §5.8: you can see what exists', () => {
@@ -52,10 +54,22 @@ describe('the built-in renderer points', () => {
     // also keeps `view.changes` from selecting a tab that isn't there.
     const r = createRendererRegistry();
     const folderless = ctx({ folder: undefined });
-    expect(listPanels(r).map((p) => p.id)).toEqual(['feed', 'diff', 'history']);
-    const diff = listPanels(r).find((p) => p.id === 'diff')!;
-    expect(panelEnabled(diff, folderless)).toBe(false);
-    expect(panelEnabled(diff, ctx())).toBe(true);
+    expect(listPanels(r).map((p) => p.id)).toEqual(['feed', 'diff', 'files', 'history']);
+    // The SAME rule for Files (#521 layer 2): a session with no folder has
+    // nothing to browse, and the tab greys rather than vanishing.
+    for (const id of ['diff', 'files']) {
+      const panel = listPanels(r).find((p) => p.id === id)!;
+      expect(panelEnabled(panel, folderless)).toBe(false);
+      expect(panelEnabled(panel, ctx())).toBe(true);
+    }
+  });
+
+  it('the Files tab carries NO badge - the changed count belongs to Changes', () => {
+    // `ctx.changed` is right there on the context, and a count of changed files
+    // on a Files tab would be the Changes badge in a second place, saying the
+    // same number about a tab that is not about git.
+    const files = listPanels(createRendererRegistry()).find((p) => p.id === 'files')!;
+    expect(panelBadge(files, ctx({ changed: 7 }))).toBeNull();
   });
 
   it('History is shown but not clickable', () => {
@@ -186,12 +200,13 @@ describe('the done-when: extending needs no edit to the consumers', () => {
       manifest: { id: 'panel-notes', displayName: 'Notes', version: '1.0.0', capabilities: ['panel.render'] },
       id: 'notes',
       titleKey: 'x.notes',
-      order: 25, // between Changes and History
+      order: 27, // between Files and History
       render: () => null,
     });
     expect(listPanels(r).map((p) => p.id)).toEqual([
       'feed',
       'diff',
+      'files',
       'notes',
       'history',
     ]);
