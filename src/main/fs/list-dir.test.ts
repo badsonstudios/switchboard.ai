@@ -50,6 +50,10 @@ beforeAll(() => {
   fs.mkdirSync(path.join(ROOT, 'src', 'deep'), { recursive: true });
   fs.mkdirSync(path.join(ROOT, '.git', 'objects'), { recursive: true });
   fs.mkdirSync(path.join(ROOT, 'empty'), { recursive: true });
+  // A `.GIT` in ITS OWN folder, because on a case-insensitive filesystem it
+  // cannot sit beside the `.git` above — the OS would treat them as one name.
+  fs.mkdirSync(path.join(ROOT, 'casefold', '.GIT'), { recursive: true });
+  fs.writeFileSync(path.join(ROOT, 'casefold', 'keep.txt'), 'keep');
   fs.mkdirSync(OUTSIDE, { recursive: true });
   fs.writeFileSync(path.join(ROOT, 'PROGRESS.md'), '# progress\n');
   fs.writeFileSync(path.join(ROOT, 'a.txt'), 'a\n');
@@ -132,17 +136,37 @@ describe('listDirectory — the happy path', () => {
   it('folders before files, then by name', async () => {
     const { result } = await listIn(ROOT);
     if (!result.ok) throw new Error('expected a listing');
-    const kinds = result.entries.map((e) => e.kind);
-    // every dir precedes every non-dir
-    expect(kinds.lastIndexOf('dir')).toBeLessThan(
-      kinds.findIndex((k) => k !== 'dir') === -1 ? Infinity : kinds.findIndex((k) => k !== 'dir')
+    // Said plainly: the listing is already in its own sorted order. The earlier
+    // version of this compared `lastIndexOf('dir')` against a `findIndex` with
+    // an `Infinity` fallback, which was vacuously true for an all-folders
+    // listing and unreadable for every other one.
+    expect(result.entries.map((e) => e.name)).toEqual(
+      [...result.entries].sort(compareEntries).map((e) => e.name)
     );
+    // …and every folder really is ahead of every non-folder
+    const kinds = result.entries.map((e) => e.kind);
+    const firstNonDir = kinds.findIndex((k) => k !== 'dir');
+    if (firstNonDir >= 0) expect(kinds.slice(firstNonDir)).not.toContain('dir');
   });
 
   it('never lists .git', async () => {
     const { result } = await listIn(ROOT);
     if (!result.ok) throw new Error('expected a listing');
     expect(result.entries.map((e) => e.name)).not.toContain('.git');
+  });
+
+  it("...nor `.GIT`, which on Windows IS the git directory", async () => {
+    // The filter was a case-SENSITIVE `Set` on a case-INSENSITIVE filesystem, so
+    // a repo whose directory is spelled `.GIT` had all forty thousand of its
+    // objects listed. Found by review.
+    //
+    // ⚠️ AND THE FIRST VERSION OF THIS TEST PROVED NOTHING: it asserted that no
+    // name lowercased to `.git`, over a fixture that only ever contained a
+    // lowercase one — true before the fix and true after it. It needs a `.GIT`
+    // on disk, which needs its own folder, which is why the fixture has one.
+    const { result } = await listIn(ROOT, path.join(ROOT, 'casefold'));
+    if (!result.ok) throw new Error('expected a listing');
+    expect(result.entries.map((e) => e.name)).toEqual(['keep.txt']);
   });
 
   it('an empty folder is an empty listing, not a refusal', async () => {
@@ -274,6 +298,26 @@ describe('listDirectory — THE CONTAINMENT PROOF', () => {
     });
   });
 
+  it('refuses an absurdly long or deep path WITHOUT resolving it', async () => {
+    // A DENIAL-OF-SERVICE BOUND, not a containment one. `ReadScope.resolve` is
+    // synchronous and walks up one segment at a time on an unresolvable path, so
+    // a 2000-segment string costs ~100ms of frozen main process and a renderer
+    // can fire a thousand of them un-awaited. Measured, and the reason this
+    // guard runs before either resolve.
+    const deep = path.join(ROOT, ...Array<string>(200).fill('x'));
+    expect((await listIn(ROOT, deep)).result).toEqual({ ok: false, reason: 'invalid-path' });
+    const long = `${ROOT}${path.sep}${'x'.repeat(5000)}`;
+    expect((await listIn(ROOT, long)).result).toEqual({ ok: false, reason: 'invalid-path' });
+    // …and the bound applies to the ROOT half too
+    expect((await listIn(long, undefined, [ROOT])).result).toEqual({
+      ok: false,
+      reason: 'invalid-path',
+    });
+    // The bound is far past anything real: a genuine 60-deep path still works.
+    const realDeep = path.join(ROOT, 'src', 'deep');
+    expect((await listIn(ROOT, realDeep)).result.ok).toBe(true);
+  });
+
   it('an empty read scope refuses everything', async () => {
     const { result } = await listIn(ROOT, undefined, []);
     expect(result).toEqual({ ok: false, reason: 'out-of-scope' });
@@ -296,6 +340,84 @@ describe('listDirectory — THE CONTAINMENT PROOF', () => {
       ok: false,
       reason: 'out-of-scope',
     });
+  });
+});
+
+describe('THE NARROWING, ISOLATED — check 3 with nothing behind it', () => {
+  // ⚠️ WHY THIS BLOCK EXISTS, and it was found by MUTATION rather than by
+  // reading: with the containment check above deleted, every escape test in the
+  // block above STILL PASSED. They have to — the read scope holds only `ROOT`,
+  // so `ReadScope` refuses `<base>/secrets` on its own and the narrowing never
+  // gets asked. That is defence in depth working exactly as intended, and it is
+  // also a suite that would have gone green with the new check gone.
+  //
+  // So every escape is run again here with the WHOLE FIXTURE in scope
+  // (`sessionFolders: () => [BASE]`). `ReadScope` now says yes to all of it, and
+  // the only thing left standing between a caller and a sibling folder is the
+  // check this item added. Break it and this block reddens; break `ReadScope`
+  // and the block above reddens. Neither one can pass for the other.
+  const wide = [BASE];
+
+  it('the fixture really IS all in scope now — otherwise this block proves nothing', async () => {
+    // The guard's guard. Without this, a typo in `wide` would make every
+    // assertion below pass for the wrong reason.
+    expect((await listIn(OUTSIDE, OUTSIDE, wide)).result.ok).toBe(true);
+  });
+
+  it('refuses a `..` walk even when the destination is readable', async () => {
+    const { result } = await listIn(ROOT, path.join(ROOT, '..', 'secrets'), wide);
+    expect(result).toEqual({ ok: false, reason: 'out-of-scope' });
+    expect(JSON.stringify(result)).not.toContain('id_rsa');
+  });
+
+  it('refuses a deeper `..` walk whose prefix IS the root', async () => {
+    const { result } = await listIn(ROOT, path.join(ROOT, 'src', '..', '..', 'secrets'), wide);
+    expect(result).toEqual({ ok: false, reason: 'out-of-scope' });
+  });
+
+  it('refuses a sibling whose NAME starts with the root', async () => {
+    const sibling = `${ROOT}-secrets`;
+    fs.mkdirSync(sibling, { recursive: true });
+    expect((await listIn(ROOT, sibling, wide)).result).toEqual({
+      ok: false,
+      reason: 'out-of-scope',
+    });
+  });
+
+  it.runIf(process.platform === 'win32')(
+    'refuses a WINDOWS JUNCTION even when its destination is readable',
+    async () => {
+      // THE ONE THAT MATTERS ON A WINDOWS DEV BOX: a junction needs no
+      // privilege, so it is the escape a real renderer could actually be
+      // pointed at. The requested string is under the root character for
+      // character; only the RESOLVED path is not.
+      if (!junctionWorks) {
+        expect(junctionWorks).toBe(false);
+        return;
+      }
+      const { result } = await listIn(ROOT, path.join(ROOT, 'escape-junction'), wide);
+      expect(result).toEqual({ ok: false, reason: 'out-of-scope' });
+      expect(JSON.stringify(result)).not.toContain('id_rsa');
+    }
+  );
+
+  it('refuses a SYMLINK even when its destination is readable', async () => {
+    if (!symlinkWorks) {
+      expect(symlinkWorks).toBe(false);
+      return;
+    }
+    const { result } = await listIn(ROOT, path.join(ROOT, 'escape-link'), wide);
+    expect(result).toEqual({ ok: false, reason: 'out-of-scope' });
+  });
+
+  it('refuses the root’s own PARENT — the plainest escape of all', async () => {
+    expect((await listIn(ROOT, BASE, wide)).result).toEqual({ ok: false, reason: 'out-of-scope' });
+  });
+
+  it('still allows what it should — the narrowing is not just "no"', async () => {
+    expect((await listIn(ROOT, ROOT, wide)).result.ok).toBe(true);
+    expect((await listIn(ROOT, path.join(ROOT, 'src'), wide)).result.ok).toBe(true);
+    expect((await listIn(ROOT, path.join(ROOT, 'src', 'deep'), wide)).result.ok).toBe(true);
   });
 });
 

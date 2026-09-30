@@ -63,7 +63,7 @@ export type TreeRow =
       readonly key: string;
       readonly depth: number;
       readonly notice: 'loading' | 'empty' | 'truncated' | 'error';
-      /** the folder the notice is about — what a Retry would re-ask for */
+      /** which folder this notice is about — it is not always the row above */
       readonly path: string;
       readonly cap?: number;
       readonly reason?: DirListRefusal;
@@ -98,7 +98,16 @@ export function applyListing(state: TreeState, path: string, result: DirListResu
   const next: DirState = result.ok
     ? { status: 'ready', entries: result.entries, truncated: result.truncated, cap: result.cap }
     : { status: 'error', entries: [], truncated: false, reason: result.reason };
-  return { ...state, dirs: { ...state.dirs, [path]: next } };
+  // A FOLDER THAT IS GONE STOPS BEING OPEN. Otherwise it sits in `expanded` for
+  // the life of the tree and every Refresh and every return-to-view re-asks for
+  // it — one IPC round trip and two main-process `realpath` walks each time,
+  // forever, for a directory that will never come back. `expanded` would also
+  // grow without bound across a long session.
+  const expanded =
+    !result.ok && result.reason === 'not-found' && path !== state.root
+      ? state.expanded.filter((p) => p !== path)
+      : state.expanded;
+  return { ...state, dirs: { ...state.dirs, [path]: next }, expanded };
 }
 
 /**
@@ -116,7 +125,12 @@ export function toggleDir(state: TreeState, dir: string): { state: TreeState; fe
     return { state: { ...state, expanded: state.expanded.filter((p) => p !== dir) }, fetch: false };
   }
   const known = state.dirs[dir];
-  const fetch = !known || known.status === 'error';
+  // `loading` COUNTS AS NEEDING A FETCH, and leaving it out was a way to strand
+  // a folder on a spinner forever: a listing that lost a race and was discarded
+  // leaves the folder `loading` with nobody in flight, and a rule that only
+  // retried `error` meant closing and re-opening it changed nothing. Asking
+  // twice is cheap; a permanent spinner the user cannot clear is not.
+  const fetch = !known || known.status === 'error' || known.status === 'loading';
   const opened: TreeState = { ...state, expanded: [...state.expanded, dir] };
   return { state: fetch ? markLoading(opened, dir) : opened, fetch };
 }
@@ -163,13 +177,17 @@ export function isExpandable(kind: DirEntryKind): boolean {
  */
 export function visibleRows(state: TreeState): TreeRow[] {
   const out: TreeRow[] = [];
+  // A SET, not `isExpanded`'s `includes`, and the difference is measurable: this
+  // is called once per render and the `includes` was once per ENTRY — 500 rows
+  // against 100 open folders is 50,000 string comparisons per paint.
+  const open = new Set(state.expanded);
   const walk = (dir: string, depth: number, seen: readonly string[]): void => {
     // A cycle cannot happen through a link — links have no children here — but
     // it can happen through a bug, and a stack overflow inside a render is the
     // worst possible way to find one out.
     if (seen.includes(dir)) return;
     const st = state.dirs[dir];
-    if (!st || st.status === 'loading') {
+    if (!st) {
       out.push({ type: 'notice', key: `${dir}::loading`, depth, notice: 'loading', path: dir });
       return;
     }
@@ -184,12 +202,19 @@ export function visibleRows(state: TreeState): TreeRow[] {
       });
       return;
     }
-    if (st.entries.length === 0) {
-      out.push({ type: 'notice', key: `${dir}::empty`, depth, notice: 'empty', path: dir });
+    // ⚠️ LOADING WITH ENTRIES STILL DRAWS THE ENTRIES, and getting this wrong is
+    // the whole point of `markLoading` keeping them. An earlier draft returned
+    // here on `status === 'loading'`, which meant every Refresh collapsed the
+    // WHOLE TREE to one "Reading…" row and rebuilt it — the retained entries
+    // were dead data. The unit test even claimed otherwise, because it asserted
+    // on the `DirState` rather than on these rows: the only surface that
+    // matters. A refresh now re-reads underneath what you are looking at.
+    if (st.status === 'loading' && st.entries.length === 0) {
+      out.push({ type: 'notice', key: `${dir}::loading`, depth, notice: 'loading', path: dir });
       return;
     }
     for (const e of st.entries) {
-      const open = isExpandable(e.kind) && isExpanded(state, e.path);
+      const expanded = isExpandable(e.kind) && open.has(e.path);
       out.push({
         type: 'entry',
         key: e.path,
@@ -197,13 +222,15 @@ export function visibleRows(state: TreeState): TreeRow[] {
         name: e.name,
         kind: e.kind,
         depth,
-        expanded: open,
+        expanded,
       });
-      if (open) walk(e.path, depth + 1, [...seen, dir]);
+      if (expanded) walk(e.path, depth + 1, [...seen, dir]);
     }
     if (st.truncated) {
       // LAST, under the entries it is talking about, and never instead of them:
-      // "here are 500 of them" is more useful than "there are too many".
+      // "here are 500 of them" is more useful than "there are too many". Emitted
+      // BEFORE the empty check below, so a listing that somehow came back
+      // truncated-and-empty says the useful thing rather than "nothing here".
       out.push({
         type: 'notice',
         key: `${dir}::truncated`,
@@ -212,6 +239,8 @@ export function visibleRows(state: TreeState): TreeRow[] {
         path: dir,
         cap: st.cap,
       });
+    } else if (st.entries.length === 0) {
+      out.push({ type: 'notice', key: `${dir}::empty`, depth, notice: 'empty', path: dir });
     }
   };
   walk(state.root, 0, []);

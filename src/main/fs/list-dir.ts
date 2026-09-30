@@ -58,6 +58,53 @@ import { isWithinRoot, ReadScope } from './read-scope';
  */
 const NEVER_LISTED = new Set(['.git']);
 
+/**
+ * Is this an entry the tree never shows?
+ *
+ * CASE-FOLDED UNCONDITIONALLY, and the asymmetry is deliberate: on Windows a
+ * repository whose directory is spelled `.GIT` genuinely IS the git directory,
+ * and a case-sensitive check listed all forty thousand of its objects. On Linux
+ * `.GIT` is an ordinary folder that this now hides for no reason — which is the
+ * better of the two ways to be wrong, since one hidden folder on one OS costs
+ * less than a screenful of content-addressed blobs on the other. Folding only
+ * where `HOST_STYLE` says to would be exactly right and is more machinery than a
+ * cosmetic filter earns.
+ */
+const neverListed = (name: string): boolean => NEVER_LISTED.has(name.toLowerCase());
+
+/**
+ * Bounds on the SHAPE of a path, applied before anything resolves it.
+ *
+ * ⚠️ THIS IS A DENIAL-OF-SERVICE GUARD, NOT A CONTAINMENT ONE — containment is
+ * the three checks below and does not depend on it. It is here because
+ * `ReadScope.resolve` is SYNCHRONOUS: an unresolvable path sends it walking up
+ * one segment at a time doing a blocking `realpathSync` per segment, and this
+ * channel asks it twice per call. Measured on the owner's desktop, a
+ * 2000-segment path costs ~106 ms of frozen main process, and a renderer can
+ * fire a thousand un-awaited calls. That is our breakage costing the user every
+ * session in the window, which fail-open forbids.
+ *
+ * Both numbers are far past anything real: the longest path on a Windows box
+ * with long paths enabled is 32,767 characters, and 64 levels of nesting is
+ * deeper than any source tree. Refusing beyond them costs a legitimate caller
+ * nothing.
+ */
+const MAX_PATH_CHARS = 4096;
+const MAX_PATH_SEGMENTS = 64;
+
+function tooBigToResolve(p: unknown): boolean {
+  if (typeof p !== 'string') return false; // not our refusal to make
+  if (p.length > MAX_PATH_CHARS) return true;
+  let segments = 1;
+  for (let i = 0; i < p.length; i += 1) {
+    const c = p.charCodeAt(i);
+    // 47 is `/`, 92 is `\` — written as codes because an escaped backslash in a
+    // character class is the kind of literal this repo has been bitten by.
+    if (c === 47 || c === 92) segments += 1;
+  }
+  return segments > MAX_PATH_SEGMENTS;
+}
+
 export interface ListDirDeps {
   scope: ReadScope;
   log: Logger;
@@ -65,8 +112,6 @@ export interface ListDirDeps {
   cap?: number;
   /** `fs.promises.opendir`, injectable so a test can force a read failure */
   opendir?: (p: string) => Promise<fs.Dir>;
-  /** `fs.promises.stat`, injectable for the same reason */
-  stat?: (p: string) => Promise<fs.Stats>;
 }
 
 /**
@@ -123,15 +168,30 @@ function errorCode(err: unknown): string | undefined {
 export async function listDirectory(req: unknown, deps: ListDirDeps): Promise<DirListResult> {
   const cap = deps.cap ?? MAX_DIR_ENTRIES;
   const opendir = deps.opendir ?? ((p: string) => fs.promises.opendir(p));
-  const stat = deps.stat ?? ((p: string) => fs.promises.stat(p));
 
   const { root, path: target } = (req ?? {}) as Partial<DirListRequest>;
   if (typeof root !== 'string' || root.length === 0) return { ok: false, reason: 'invalid-path' };
+  // The DoS bound, before either resolve. See `tooBigToResolve`: this is not
+  // part of containment, it is what stops a caller spending the main process's
+  // event loop on a path nobody could have meant.
+  if (tooBigToResolve(root) || tooBigToResolve(target)) {
+    return { ok: false, reason: 'invalid-path' };
+  }
 
   // CHECK 1 — is the declared root itself in the read scope? Asked first so a
-  // caller that invents a root is refused before anything is read, and refused
-  // with the same word whether or not the root exists (that is `ReadScope`'s
-  // existence-oracle argument, and it holds here unchanged).
+  // caller that invents a root is refused before anything is read.
+  //
+  // ⚠️ `ReadScope`'s existence-oracle argument is INHERITED BUT NOT PERFECT, and
+  // it is worth being exact rather than repeating the claim. Its `catch` answers
+  // `not-found` only when the nearest resolvable ancestor is itself in scope,
+  // which closes the oracle for any path *spelled* outside the scope. It does
+  // not close it for a path spelled INSIDE the scope that resolves outside it:
+  // given a symlink `<root>/probe` aimed anywhere on the machine, `out-of-scope`
+  // means the target exists and `not-found` means it does not. That predates
+  // this channel and applies equally to `fs:read`, `fs:watch` and `fs:reveal`;
+  // it requires write access inside a session folder, which the agent already
+  // has. It is written down here rather than quietly re-asserted, and it wants
+  // its own item against E16 rather than a fix on this path only.
   const rootDecision = deps.scope.resolve(root);
   if (!rootDecision.ok) return { ok: false, reason: rootDecision.reason };
 
@@ -152,25 +212,28 @@ export async function listDirectory(req: unknown, deps: ListDirDeps): Promise<Di
   }
   const real = targetDecision.path;
 
-  // A file is not a folder, and this is the mirror of `read-file.ts`'s
-  // `not-a-file`. `stat` rather than `lstat`: `real` is already realpath'd, so
-  // there is no link left to be fooled by, and the two agree by construction.
-  try {
-    const st = await stat(real);
-    if (!st.isDirectory()) return { ok: false, reason: 'not-a-directory' };
-  } catch (err) {
-    const code = errorCode(err);
-    return { ok: false, reason: code === 'ENOENT' || code === 'ENOTDIR' ? 'not-found' : 'unreadable' };
-  }
-
   const entries: DirEntry[] = [];
   let truncated = false;
   let dir: fs.Dir;
+  // `opendir` ANSWERS BOTH QUESTIONS, which is why there is no `stat` in front
+  // of it any more. It returns ENOTDIR for a file and ENOENT for a missing path,
+  // so a `stat` first bought nothing and cost a syscall — and it widened the
+  // window between the check and the open. That window is not closed: `real` is
+  // realpath'd, but resolution is not sticky, so a final component replaced with
+  // a junction between `realpath` and here would be followed by the OS. The
+  // exposure is exactly ONE level of names — the next call re-checks and refuses
+  // — and winning the race needs write access inside a session folder, which the
+  // agent already has. Naming it rather than implying it is closed; `openat`-
+  // style handle-relative listing is the real fix and Node does not offer one.
   try {
     dir = await opendir(real);
   } catch (err) {
     const code = errorCode(err);
-    return { ok: false, reason: code === 'ENOENT' || code === 'ENOTDIR' ? 'not-found' : 'unreadable' };
+    return {
+      ok: false,
+      reason:
+        code === 'ENOTDIR' ? 'not-a-directory' : code === 'ENOENT' ? 'not-found' : 'unreadable',
+    };
   }
   try {
     // ONE DIRENT AT A TIME, and the loop stops itself. `readdir` would
@@ -180,7 +243,7 @@ export async function listDirectory(req: unknown, deps: ListDirDeps): Promise<Di
     for (;;) {
       const d = await dir.read();
       if (!d) break;
-      if (NEVER_LISTED.has(d.name)) continue;
+      if (neverListed(d.name)) continue;
       if (entries.length >= cap) {
         truncated = true;
         break;
@@ -196,12 +259,19 @@ export async function listDirectory(req: unknown, deps: ListDirDeps): Promise<Di
     });
     return { ok: false, reason: 'unreadable' };
   } finally {
-    // `Dir` holds an OS handle. The read loop above can leave through four
-    // doors — done, capped, thrown — and every one of them has to come through
-    // here or the app leaks a descriptor per browsed folder. The catch is
-    // because closing an already-closed handle throws `ERR_DIR_CLOSED`, which
-    // would replace a good answer with a crash.
-    await dir.close().catch(() => {});
+    // `Dir` holds an OS HANDLE. The read loop above can leave through three
+    // doors — exhausted, capped, thrown — and every one of them has to come
+    // through here or the app leaks a descriptor per browsed folder.
+    //
+    // Swallowed in BOTH shapes: `close()` on an already-closed handle answers
+    // `ERR_DIR_CLOSED`, which Node rejects with — but a `try` around the call as
+    // well covers it throwing synchronously, and either one escaping a `finally`
+    // would replace a good answer with a rejected `invoke`.
+    try {
+      await dir.close();
+    } catch {
+      /* already closed, or closing failed — there is nothing useful to do */
+    }
   }
 
   entries.sort(compareEntries);

@@ -162,12 +162,19 @@ export function registerFsIpc(deps: FsIpcDeps): FsIpcHandle {
     const result = await listDirectory(req, { scope: deps.scope, log: deps.log, cap: deps.dirCap });
     if (!result.ok) {
       const asked = (req ?? {}) as { root?: unknown; path?: unknown };
+      // CAPPED, like `fs:openExternal`'s url: these are caller-supplied strings
+      // going to a file on disk, and a refuse-by-design loop with a 10 MB `root`
+      // is otherwise a way to write the log full. `path` is OMITTED rather than
+      // stringified when it is absent — a root-only listing is the common case,
+      // and `path: "undefined"` on every one of those lines is noise in exactly
+      // the filter this line exists for.
+      const clip = (v: unknown): string => (typeof v === 'string' ? v : String(v)).slice(0, 200);
       deps.log.warn(`fs:listDir refused: ${result.reason}`, {
-        // BOTH strings, because either one can be the reason: a bad `path` under
-        // a good root and a good `path` under an invented root are different
-        // bugs and land on the same word.
-        root: typeof asked.root === 'string' ? asked.root : String(asked.root),
-        path: typeof asked.path === 'string' ? asked.path : String(asked.path),
+        // BOTH strings when both were sent, because either one can be the
+        // reason: a bad `path` under a good root and a good `path` under an
+        // invented root are different bugs that land on the same word.
+        root: clip(asked.root),
+        ...(asked.path === undefined || asked.path === null ? {} : { path: clip(asked.path) }),
       });
     }
     return result;

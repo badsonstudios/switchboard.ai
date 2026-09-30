@@ -71,6 +71,7 @@ export function FileTree(props: {
   const { t } = useTranslation();
   const list = props.listDir ?? bridgeListDir;
   const [state, setState] = React.useState<TreeState>(() => createTree(props.root));
+  const onOpenFile = props.onOpenFile;
   // Roving tabindex: ONE row is focusable at a time, which is what makes a tree
   // one tab stop instead of one per file (§5.32).
   const [cursor, setCursor] = React.useState<string | null>(null);
@@ -81,59 +82,68 @@ export function FileTree(props: {
   const focusWanted = React.useRef(false);
 
   /**
-   * Fetch one directory into the model.
+   * Which round of asking we are on.
    *
-   * A ref-held guard, not state: two fetches for the same folder in one tick
-   * (open it, then Refresh) must both resolve into the model, and the only thing
-   * that matters is that an answer arriving after unmount is dropped.
+   * Bumped by a root change and by every refresh, and carried into each fetch,
+   * so an answer from a superseded round is DROPPED rather than written over a
+   * fresher one. Without it, two quick presses of Refresh can land round 1's
+   * listing after round 2's and show older data with nothing to say so.
+   *
+   * It doubles as the after-unmount guard, which is why there is no separate
+   * `alive` flag: the cleanup sets it to a value no in-flight fetch is holding.
    */
-  const alive = React.useRef(true);
+  const gen = React.useRef(0);
   React.useEffect(() => {
-    alive.current = true;
     return () => {
-      alive.current = false;
+      gen.current += 1;
     };
   }, []);
 
   const fetchDir = React.useCallback(
-    (dir: string) => {
+    (dir: string, round: number) => {
       const root = props.root;
+      const land = (result: DirListResult): void => {
+        if (gen.current !== round) return;
+        setState((s) => (s.root === root ? applyListing(s, dir, result) : s));
+      };
       void list(root, dir === root ? undefined : dir)
-        .then((result) => {
-          if (alive.current) setState((s) => (s.root === root ? applyListing(s, dir, result) : s));
-        })
-        .catch(() => {
-          // FAIL-OPEN. The bridge rejecting is our breakage, and a tree that
-          // throws must not take the card with it — it shows the same row a
-          // refusal shows, which is honest: we do not have the listing.
-          if (alive.current) {
-            setState((s) =>
-              s.root === root ? applyListing(s, dir, { ok: false, reason: 'unreadable' }) : s
-            );
-          }
-        });
+        .then(land)
+        // FAIL-OPEN. The bridge rejecting is our breakage, and a tree that throws
+        // must not take the card with it — it shows the same row a refusal shows,
+        // which is honest: we do not have the listing.
+        .catch(() => land({ ok: false, reason: 'unreadable' }));
     },
     [list, props.root]
   );
 
   // A new root is a new tree, not a refresh of the old one.
   React.useEffect(() => {
+    gen.current += 1;
+    const round = gen.current;
     setState(createTree(props.root));
     setCursor(null);
-    fetchDir(props.root);
+    fetchDir(props.root, round);
     // fetchDir is keyed on props.root, so this runs exactly once per folder
   }, [props.root, fetchDir]);
 
+  /**
+   * Re-read the root and every open folder.
+   *
+   * THE FETCHES ARE FIRED OUTSIDE THE UPDATER. They used to be inside a
+   * `setState(s => { …fetch…; return s })`, which reads as a tidy way to get at
+   * the current state and is a rule violation with teeth: an updater must be
+   * pure, and React's StrictMode double-invokes it — so every Refresh issued two
+   * listings per open folder, doubling the main-process work behind them. The
+   * open folders come off the render's `state` instead, which is the same list
+   * `invalidate` is about to mark.
+   */
   const refresh = React.useCallback(() => {
+    gen.current += 1;
+    const round = gen.current;
+    const dirs = openDirs(state);
     setState((s) => invalidate(s));
-    // Read the open folders off the state we are refreshing rather than
-    // capturing them: `openDirs` is the model's answer to "what is on screen",
-    // and it is the same list `invalidate` just marked.
-    setState((s) => {
-      for (const dir of openDirs(s)) fetchDir(dir);
-      return s;
-    });
-  }, [fetchDir]);
+    for (const dir of dirs) fetchDir(dir, round);
+  }, [fetchDir, state]);
 
   /**
    * REFRESH ON BECOMING VISIBLE — and this is the whole of the "live" story.
@@ -167,14 +177,26 @@ export function FileTree(props: {
   const open = React.useCallback(
     (row: Extract<TreeRow, { type: 'entry' }>) => {
       if (isExpandable(row.kind)) {
-        const next = toggleDir(state, row.path);
-        setState(next.state);
-        if (next.fetch) fetchDir(row.path);
+        // THE STATE CHANGE IS FUNCTIONAL; only the fetch DECISION reads the
+        // render's copy. `setState(next.state)` over a captured state would
+        // throw away a listing that committed between this render and this
+        // click — a resolved fetch in the same task, or two toggles batched —
+        // and leave the folder `loading` with nobody in flight.
+        //
+        // The decision cannot be read out of the updater (React does not run it
+        // synchronously here), so it is taken from `state`, which can be one
+        // listing stale. That is safe in both directions: a spurious extra
+        // listing is one IPC call, and a MISSED one is recovered because
+        // `toggleDir` refetches a `loading` folder. `toggleDir` is pure, so
+        // StrictMode's second invocation answers identically.
+        const decision = toggleDir(state, row.path);
+        setState((s) => toggleDir(s, row.path).state);
+        if (decision.fetch) fetchDir(row.path, gen.current);
         return;
       }
-      if (isOpenable(row.kind)) props.onOpenFile(row.path);
+      if (isOpenable(row.kind)) onOpenFile(row.path);
     },
-    [state, fetchDir, props]
+    [state, fetchDir, onOpenFile]
   );
 
   const move = (from: string | null, delta: number): void => {
@@ -197,11 +219,14 @@ export function FileTree(props: {
         return;
       case 'Home':
         e.preventDefault();
-        move(null, 0);
+        // `move` clamps, so "go to index 0" and "go to the last index" are the
+        // same call with different anchors. Guarded because this handler is only
+        // attached to entry rows but the array is read before the call.
+        if (entryRows.length > 0) move(entryRows[0].path, 0);
         return;
       case 'End':
         e.preventDefault();
-        move(entryRows[entryRows.length - 1].path, 0);
+        if (entryRows.length > 0) move(entryRows[entryRows.length - 1].path, 0);
         return;
       case 'ArrowRight':
         if (isExpandable(row.kind) && !row.expanded) {

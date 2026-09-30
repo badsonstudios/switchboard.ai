@@ -15,7 +15,7 @@
 //   3. Every request declares the root, so main can refuse.
 //   4. Coming back into view re-lists what is open — the whole of the refresh
 //      story, since there is no directory watch in this app.
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
@@ -214,19 +214,63 @@ describe('the Files tree', () => {
     expect(document.body.querySelector('[data-testid="file-tree-root"]')?.textContent).toBe('/two');
   });
 
-  it('an answer that lands after unmount is dropped, not set on a dead root', async () => {
+  it('an answer that lands after unmount is dropped', async () => {
+    // ⚠️ THIS USED TO ASSERT `console.error` WAS NOT CALLED, which proves
+    // nothing: React 18 removed the unmounted-setState warning, so the test
+    // passed identically with the guard deleted. What it asserts now is that the
+    // late answer reached no DOM — the only observable difference.
     let settle: (r: DirListResult) => void = () => {};
     const list: ListDir = () => new Promise<DirListResult>((res) => (settle = res));
-    const warn = vi.spyOn(console, 'error').mockImplementation(() => {});
     await mount(list);
     const r = root;
     root = null;
     await act(async () => r!.unmount());
+    expect(document.body.querySelector('[data-testid="file-tree"]')).toBeNull();
     await act(async () => {
       settle(ok([entry('late', 'file')]));
     });
-    expect(warn).not.toHaveBeenCalled();
-    warn.mockRestore();
+    expect(document.body.textContent).not.toContain('late');
+    expect(rows()).toHaveLength(0);
+  });
+
+  it('a SUPERSEDED refresh cannot overwrite a fresher one', async () => {
+    // Two presses of Refresh, answered out of order. Without a round token,
+    // round 1's listing lands after round 2's and shows older data with nothing
+    // to say so.
+    const pending: Array<(r: DirListResult) => void> = [];
+    const list: ListDir = () => new Promise<DirListResult>((res) => pending.push(res));
+    await mount(list);
+    pending.shift()!(ok([entry('first', 'file')]));
+    await act(async () => {});
+    expect(rowFor('first')).toBeTruthy();
+
+    const refreshBtn = document.body.querySelector('[data-testid="file-tree-refresh"]');
+    await click(refreshBtn); // round 2
+    await click(refreshBtn); // round 3
+    const [round2, round3] = [pending.shift()!, pending.shift()!];
+    // round 3 answers first…
+    await act(async () => round3(ok([entry('newest', 'file')])));
+    expect(rowFor('newest')).toBeTruthy();
+    // …and round 2's late answer is dropped rather than rewinding the tree
+    await act(async () => round2(ok([entry('stale', 'file')])));
+    expect(rowFor('stale')).toBeFalsy();
+    expect(rowFor('newest')).toBeTruthy();
+  });
+
+  it('a refresh re-reads UNDERNEATH what you are looking at', async () => {
+    // The tree must not blank to a single "Reading…" row while a refresh is in
+    // flight — the whole reason the model keeps the old entries.
+    const pending: Array<(r: DirListResult) => void> = [];
+    const list: ListDir = () => new Promise<DirListResult>((res) => pending.push(res));
+    await mount(list);
+    pending.shift()!(ok([entry('there', 'file')]));
+    await act(async () => {});
+    await click(document.body.querySelector('[data-testid="file-tree-refresh"]'));
+    // …still on screen, with no answer yet
+    expect(rowFor('there')).toBeTruthy();
+    expect(notice('loading')).toBeNull();
+    await act(async () => pending.shift()!(ok([entry('there', 'file'), entry('and-now', 'file')])));
+    expect(rowFor('and-now')).toBeTruthy();
   });
 });
 

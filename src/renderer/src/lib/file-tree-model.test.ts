@@ -81,6 +81,14 @@ describe('visibleRows', () => {
     expect(rows[2]).toMatchObject({ type: 'notice', notice: 'truncated', cap: 500, depth: 0 });
   });
 
+  it('truncated-and-empty says the USEFUL thing, not "nothing here"', () => {
+    // Unreachable with a cap above zero, but the ordering was wrong in
+    // principle: the empty check used to return before the truncation notice.
+    const s = applyListing(createTree(ROOT), ROOT, ok([], true));
+    expect(visibleRows(s)).toHaveLength(1);
+    expect(visibleRows(s)[0]).toMatchObject({ notice: 'truncated' });
+  });
+
   it('an empty folder says so rather than drawing nothing', () => {
     const s = applyListing(createTree(ROOT), ROOT, ok([]));
     expect(visibleRows(s)[0]).toMatchObject({ notice: 'empty' });
@@ -140,6 +148,17 @@ describe('toggleDir', () => {
     expect(toggleDir(s, '/r/src').fetch).toBe(true);
   });
 
+  it('retries a folder stuck on LOADING — a spinner nobody can clear', () => {
+    // The failure this rules out: a listing that lost a race and was discarded
+    // leaves the folder `loading` with nobody in flight. A rule that only
+    // retried `error` meant closing and re-opening it changed nothing, and the
+    // spinner stayed until the toolbar Refresh. Asking twice is cheap.
+    let s = applyListing(createTree(ROOT), ROOT, ok([entry('src', 'dir')]));
+    s = toggleDir(s, '/r/src').state; // now loading, never answered
+    s = toggleDir(s, '/r/src').state; // close
+    expect(toggleDir(s, '/r/src').fetch).toBe(true);
+  });
+
   it('collapsing does not discard what the folder held', () => {
     let s = applyListing(createTree(ROOT), ROOT, ok([entry('src', 'dir')]));
     s = toggleDir(s, '/r/src').state;
@@ -173,10 +192,48 @@ describe('refresh', () => {
     expect(openDirs(s)).toEqual([ROOT]);
   });
 
-  it('markLoading keeps the old entries, so a refresh does not blank the tree', () => {
-    const s = applyListing(createTree(ROOT), ROOT, ok([entry('a', 'file')]));
-    const loading = markLoading(s, ROOT);
-    expect(loading.dirs[ROOT]).toMatchObject({ status: 'loading', entries: [{ name: 'a' }] });
+  it('a refresh does not blank the tree — ASSERTED THROUGH visibleRows', () => {
+    // ⚠️ THIS TEST USED TO ASSERT ON `DirState` and was named the same thing. It
+    // passed while `visibleRows` checked `status === 'loading'` FIRST and
+    // returned, so every Refresh really did collapse the whole tree to one
+    // "Reading…" row and the entries `markLoading` so carefully kept were dead
+    // data. Found by review, and the lesson is the assertion target: the rows
+    // are the only surface that matters.
+    let s = applyListing(createTree(ROOT), ROOT, ok([entry('a', 'dir'), entry('b.txt', 'file')]));
+    s = toggleDir(s, '/r/a').state;
+    s = applyListing(s, '/r/a', ok([entry('inner.txt', 'file', '/r/a')]));
+    const before = visibleRows(s).map((r) => ('name' in r ? r.name : r.notice));
+    expect(before).toEqual(['a', 'inner.txt', 'b.txt']);
+
+    const loading = invalidate(s);
+    expect(loading.dirs[ROOT]).toMatchObject({
+      status: 'loading',
+      entries: [{ name: 'a' }, { name: 'b.txt' }],
+    });
+    // …and the rows are UNCHANGED while the re-read is in flight
+    expect(visibleRows(loading).map((r) => ('name' in r ? r.name : r.notice))).toEqual(before);
+  });
+
+  it('markLoading on a folder we know NOTHING about still shows a spinner', () => {
+    const s = markLoading(createTree(ROOT), ROOT);
+    expect(visibleRows(s)).toEqual([
+      { type: 'notice', key: '/r::loading', depth: 0, notice: 'loading', path: ROOT },
+    ]);
+  });
+
+  it('a folder that is GONE stops being open, so a refresh stops asking for it', () => {
+    let s = applyListing(createTree(ROOT), ROOT, ok([entry('a', 'dir')]));
+    s = toggleDir(s, '/r/a').state;
+    s = applyListing(s, '/r/a', ok([]));
+    expect(openDirs(s).sort()).toEqual(['/r', '/r/a']);
+    // it vanished off disk between one refresh and the next
+    s = applyListing(s, '/r/a', { ok: false, reason: 'not-found' });
+    expect(openDirs(s)).toEqual([ROOT]);
+    // …but a root that goes missing stays the root; there is nothing to fall
+    // back to and dropping it would leave the tree with no subject at all
+    const rootGone = applyListing(s, ROOT, { ok: false, reason: 'not-found' });
+    expect(rootGone.root).toBe(ROOT);
+    expect(visibleRows(rootGone)[0]).toMatchObject({ notice: 'error', reason: 'not-found' });
   });
 });
 
