@@ -19,7 +19,13 @@ import { execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { launchApp, LaunchedApp, registerTempDir, tempProjectFolder } from './fixtures/app';
+import {
+  launchApp,
+  LaunchedApp,
+  readWorkspaceFile,
+  registerTempDir,
+  tempProjectFolder,
+} from './fixtures/app';
 
 /** A tracking pixel's host. `.invalid` can never resolve, belt to the braces. */
 const TRACKER = 'https://tracker.invalid/pixel.gif';
@@ -182,6 +188,48 @@ test.describe('document viewer (P2-E16-02)', () => {
 
     await viewer(w).getByRole('button', { name: 'Rendered', exact: true }).click();
     await expect(rendered(w).locator('h1')).toHaveText('The document viewer');
+  });
+
+  // #1010. The unit tests own the chip's states; what only a real window can
+  // prove is the two halves they cannot reach — that removing the nav actually
+  // WIDENS the document (jsdom has no layout, so `getBoundingClientRect` is all
+  // zeroes there), and that the choice is still made after a quit and a
+  // relaunch, which is the acceptance criterion that decided where the
+  // preference is stored.
+  test('the Outline chip hides the outline, widens the document, and is remembered', async () => {
+    const { folder, doc } = seededProject();
+    a = await launchApp({ seedFolder: folder, seedDocument: doc });
+    const w = a.window;
+    await expect(rendered(w).locator('h1')).toBeVisible();
+
+    const outline = viewer(w).locator('.doc-outline');
+    const chip = viewer(w).getByRole('button', { name: 'Outline', exact: true });
+    await expect(outline).toBeVisible();
+    await expect(chip).toHaveAttribute('aria-pressed', 'true');
+
+    const narrow = (await rendered(w).boundingBox())!.width;
+    await chip.click();
+    await expect(outline).toHaveCount(0);
+    await expect(chip).toHaveAttribute('aria-pressed', 'false');
+    // the outline's width went to the prose, which is the done-when
+    expect((await rendered(w).boundingBox())!.width).toBeGreaterThan(narrow);
+
+    // ...and it survives a quit. The PANEL does not — every `doc-` panel is
+    // dropped from a restored layout on purpose — so the relaunch opens the
+    // document through the same seed seam and finds the preference waiting.
+    const home = a.home;
+    await a.close();
+    expect(readWorkspaceFile(home).ui?.documentOutline).toBe(false);
+
+    a = await launchApp({ seedFolder: folder, seedDocument: doc, home });
+    const w2 = a.window;
+    await expect(rendered(w2).locator('h1')).toBeVisible();
+    await expect(viewer(w2).locator('.doc-outline')).toHaveCount(0);
+    const chip2 = viewer(w2).getByRole('button', { name: 'Outline', exact: true });
+    await expect(chip2).toHaveAttribute('aria-pressed', 'false');
+    // and back on again, so the memory is a preference and not a one-way door
+    await chip2.click();
+    await expect(viewer(w2).locator('.doc-outline')).toBeVisible();
   });
 
   test('a relative link navigates in the viewer; Back returns; a PDF gets the card', async () => {

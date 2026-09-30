@@ -1304,6 +1304,8 @@ export interface PersistedUi {
   presentationPolicy?: { global?: string; cards?: Record<string, string> };
   /** §5.8's focus-stealing policy (P2-E9-10) — global + per-session overrides */
   focusPolicy?: { global?: string; cards?: Record<string, string> };
+  /** §5.30's outline switch (#1010) — absent means shown, which is the default */
+  documentOutline?: boolean;
 }
 
 /**
