@@ -3,6 +3,99 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ WAVE 1 + 2 DONE — 2026-09-30: **five issues merged on green CI**
+> (#1009 PR #1016, #1008 PR #1018, #1010 PR #1015, #941+#942 PR #1021). The
+> orchestration block below has the run’s plan and the merge override; this is
+> what the waves actually produced. **`main` @ `bb0e0c8`.**
+>
+> **⭐ THE PART WORTH READING IS WHAT THE WORK FOUND, NOT WHAT IT SHIPPED.**
+>
+> **#1009 — the faded model chip was a symptom of a token-level failure.**
+> `controlChip()` was a style FUNCTION, so the model chip could decline to call
+> it — and did, hardcoding `--faint`, the DISABLED ink, while enabled. The look
+> is now a class all six call sites wear and the `locked` param is gone (every
+> caller passed it the same value it passed `disabled`). The audit behind cause 2
+> is the finding: **`--border` on `--panel2` measures 1.13:1 nordic / 1.21:1
+> daylight against a 3:1 minimum**, so the chips were near-invisible outlines by
+> arithmetic, not by taste. `--border` was deliberately NOT retuned — it is the
+> app’s hairline everywhere — so a derived `--control-edge` (3.21–9.36:1, all four
+> themes) serves this row only, and **the measured table went onto #685**, where
+> the app-wide version of that decision lives. Enabled ink is `--text` rather
+> than `--muted` and that was deliberate: `--muted` on a filled chip is 4.10:1
+> on nordic, **under AA**, so matching the row at `--muted` would have CREATED a
+> violation. 80% not 75% because 75% lands on exactly 3.00:1 — a bar passed by
+> rounding.
+>
+> **#942 — naming the dispatcher’s outcomes exposed a live bug nobody had filed.**
+> `dispatch` returned `Command | null`, where `null` meant both "no binding
+> matched" and "matched but unavailable". Replacing it with a named
+> `DispatchOutcome` (`ran` / `unavailable` / `unmatched`) revealed that **the
+> popout key bridge raised the main window off the old return’s TRUTHINESS** — a
+> union object would have satisfied that on every keystroke. The rename is what
+> found it.
+>
+> **#1010 — two geometry lessons, and the second one is the transferable one.**
+> Per-panel persistence turned out **impossible**, not merely awkward:
+> `layout.ts`’s `isDerivedPanelId` drops every `doc-` panel from a restored
+> layout and ids are re-minted from 1, so a per-panel key either fails "survives
+> restart" or is read by an unrelated file. It ships GLOBAL (the issue named that
+> as plausible; one line to change). Then the new e2e went red on Windows CI
+> **twice**: first because the orchestrator’s wide-window fix ran AFTER the
+> assertion, and then because **`getByRole` reads the accessibility tree and this
+> item’s own CSS takes the chip out of it under 420px** — so a control hidden by
+> CSS is "not found", not "not visible". The obvious fix (widen the relaunched
+> window) was **tried and rejected on evidence**: 1 failure in 3 repeats, because
+> main restores saved bounds on relaunch and a `setBounds` landing first is
+> silently stomped — a race, not runner geometry. So the relaunch leg stopped
+> needing a geometry at all: it asserts what no width can change (the value in
+> `workspace.json`, a fresh viewer honouring it, the chip located BY TEST ID),
+> and the reflow leg keeps the window it measures. **A smaller true claim beat a
+> third geometry guess.**
+>
+> **#1008 — reuse proved by silence.** The report-a-problem chrome was extracted
+> into a shared `ComposeDialog`; the proof the extraction lost nothing is that
+> that dialog’s 21 tests and its e2e spec are **unchanged and green**. Its own
+> review caught a real crash: a long body containing an emoji threw `URIError`
+> from a clamp index splitting a surrogate pair, ~11% of realistic bodies,
+> deterministic. No `fetch` anywhere in the feature — local-first held literally.
+>
+> **⚠️ DECISIONS MADE FOR DAN, each one line to change, each named in its PR:**
+> #1010 persists globally · #1009’s enabled ink is `--text` and its chips are
+> FILLED (he may find four filled chips too loud — the lever is the fill, not the
+> edge) · #941’s `hidden` sentence names its recovery route and is keyed on the
+> RUNG reached rather than the command · #942 announces for EVERY disabled
+> command, ungated — an app-wide behaviour change the issue asked to have chosen
+> rather than inherited.
+>
+> **Filed mid-run, reported not fixed (the workers’ own finds):** **#1017** no
+> palette entry for the outline toggle · **#1019** report-a-problem carries the
+> same close-while-in-flight guard gap its twin just fixed, plus a dead
+> `report.open` key · **#1020** two non-twin modals can both be `aria-modal` at
+> once · **#1022** a popped-out window hears NONE of #941/#942, because the live
+> region is mounted once at the app root.
+>
+> **⚠️ NOT FILED, PENDING DAN’S CALL:** the document outline — and now its
+> button — vanish entirely under a ≈420px pane (≈ an 1150px window), and for a
+> screen reader the button is ABSENT FROM THE A11Y TREE rather than merely
+> invisible. The default 1280 window clears that threshold by **56px**, a margin
+> nobody had measured. Pre-existing and deliberate at the CSS level, but "the
+> control vanishes rather than greys" is the opposite of the rule the same item
+> followed everywhere else.
+>
+> **Green:** every one of the five merged through **all four CI jobs**. The
+> contention-flake family grew a third member this run — `stream-service` joins
+> `win-cmd` and `git-service`; all verified green run alone, one file per vitest
+> invocation. Docs: `03-session-view.md`, `15-document-viewer.md`, `18-model.md`,
+> `06-keyboard.md`, the Help-menu page, **DESIGN §5.32** (its open exemption
+> replaced by #942’s three decisions), four CHANGELOG entries under
+> `0.8.102 — unreleased`, and four new dogfood rows.
+>
+> **Still running:** **#997** (probe first — "the frame never arrives" is an
+> accepted answer) and **#521 layer 2** (Files tab, shape A, alone in wave 3
+> because it is the only item adding a security surface). **#521 must NOT be
+> auto-closed by its PR** — layer 1 and layer 2 share the issue; the orchestrator
+> closes it deliberately after checking.
+
 > # 🗂️ ORCHESTRATION RUN — started 2026-09-30, **seven issues in three
 > waves**. Dan: *"get these six tickets done in one step without needing me."*
 > **This block is the resume mechanism — the orchestrator is its ONLY writer;
