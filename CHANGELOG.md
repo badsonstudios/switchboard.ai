@@ -127,6 +127,18 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **The four buttons under the prompt box now look like buttons.** The row that
+  carries the autonomy mode, the model, **Compact** and **Clear** was drawn with
+  a hairline outline that all but disappeared against the panel behind it — on
+  the dark theme especially, it was hard to tell there was anything clickable
+  there at all. Each of the four now sits in its own small filled box with an
+  edge you can actually see, and hovering over one lights it up. The model
+  button was also the odd one out in colour: it was permanently painted in the
+  shade the row uses for a button you *can't* press, which made the one control
+  most likely to be missed the faintest thing on the row. All four are written
+  in the same colour now, and fading means what it says — a button is dimmed
+  only while it genuinely can't be used.
+
 - **The conversation no longer gets squeezed to nothing when a permission is
   waiting.** In a short session pane — a small pop-out, a four-way split, a
   splitter dragged up — a permission request arriving under a long prompt left

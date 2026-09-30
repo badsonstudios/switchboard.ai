@@ -273,6 +273,12 @@ confirm first, right there in the row. Both are also in the card's **⋯** menu
 under their full names; see
 [Clearing and compacting](05-slash-commands.md#clearing-and-compacting).
 
+All four are buttons and now look like it: each one sits in its own small
+filled box with a visible edge, they are all written in the same colour, and
+hovering over one lights it up. When a button can't be used — while a session
+is still starting, has ended, or is busy with the thing you just asked for —
+it fades and stops responding, and hovering it tells you why.
+
 **A prompt you haven't sent yet is kept.** Start writing, then switch that card
 to the Changes tab and back, pop it out into its own window, dock it back, or
 quit switchboard entirely — the words are still in the box when you return to

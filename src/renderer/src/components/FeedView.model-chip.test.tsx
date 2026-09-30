@@ -226,3 +226,68 @@ describe('a switch on the wire locks the chip too', () => {
     expect(menu()).toBeNull();
   });
 });
+
+// --- The chip stops dressing as disabled (#1009) ----------------------------
+//
+// Dan, dogfooding: the model chip was "a different, more faded colour than the
+// other three" on the options row. It was — it hardcoded `var(--faint)`, and
+// `--faint` is what `controlChip()` gave a LOCKED control. So the chip #747
+// promoted from label to button spent its whole life in the colour the row uses
+// to say "you cannot press this", which is the same shape as the bug #747 was
+// filed for.
+//
+// The other half of that is the one this file has to own: the chip's busy state
+// dims through `disabled`, and while its enabled ink was already the dim one
+// there was nothing for `disabled` to take away. `FeedView.session-controls`
+// pins the shared treatment across the whole row; these two pin the model
+// chip's own end of it.
+describe('the chip is dressed as what it is (issue 1009)', () => {
+  it('wears the row chip, with no ink of its own', async () => {
+    await mount({ transport: 'stream', model: 'claude-sonnet-5' });
+    expect(chip()!.classList.contains('composer-chip')).toBe(true);
+    // the exact regression: an inline `color` beats the class on specificity,
+    // silently, and jsdom renders no stylesheet — so the absence is the
+    // assertion, not the computed colour
+    expect(chip()!.style.color).toBe('');
+    // …and the mono face IS deliberate (a model id is an identifier), so it
+    // stays. The 9.5px that came with it did not: the row has one size.
+    expect(chip()!.style.fontFamily).toBe('var(--font-mono)');
+    expect(chip()!.style.fontSize).toBe('');
+  });
+
+  it('leaves the busy dimming to the disabled attribute', async () => {
+    let land = (): void => {};
+    (
+      window as unknown as { switchboard: { sessions: { setModel: () => Promise<unknown> } } }
+    ).switchboard.sessions.setModel = () =>
+      new Promise((resolve) => {
+        land = () => resolve({ ok: true, response: {} });
+      });
+    await mount({ transport: 'stream', model: 'claude-sonnet-5' });
+    await tapChip();
+    await act(async () => {
+      host
+        .querySelector<HTMLElement>('[data-model="haiku"]')!
+        .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect((chip() as HTMLButtonElement).disabled).toBe(true);
+    // NOT hand-dimmed. `.composer-chip:disabled` owns the faint ink now, which
+    // is what makes the busy state a visible change rather than a no-op.
+    expect(chip()!.style.color).toBe('');
+    await act(async () => {
+      land();
+      await Promise.resolve();
+    });
+  });
+
+  it('leaves an unswitchable session its label — a chip there would be a lie', async () => {
+    // The inverse of #747, and the reason this span is NOT given the class: it
+    // is not a control, so dressing it with a button's fill and edge would
+    // invite exactly the click the branch exists to prevent. It keeps `--faint`
+    // because it is genuinely inert.
+    await mount({ transport: 'stream', sessionId: '', model: 'claude-sonnet-5' });
+    expect(chip()!.tagName).toBe('SPAN');
+    expect(chip()!.classList.contains('composer-chip')).toBe(false);
+    expect(chip()!.style.color).toBe('var(--faint)');
+  });
+});
