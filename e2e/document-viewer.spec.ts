@@ -22,6 +22,7 @@ import path from 'path';
 import {
   launchApp,
   LaunchedApp,
+  onTestDisplay,
   readWorkspaceFile,
   registerTempDir,
   tempProjectFolder,
@@ -106,9 +107,60 @@ function seededProject(): { folder: string; doc: string } {
 const viewer = (w: Page) => w.locator('[data-testid="document-viewer"]');
 const rendered = (w: Page) => w.locator('[data-testid="doc-rendered"]');
 
+/** `tokens.css`: `@container (max-width: 420px) { .doc-outline { display: none } }`. */
+const OUTLINE_MIN_PANE = 420;
+
 test.describe('document viewer (P2-E16-02)', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
+
+  /**
+   * Give the viewer a pane the outline can actually live in, and SAY SO (#1010).
+   *
+   * `.doc-outline` has carried a `@container (max-width: 420px)` rule since
+   * #530's cramped-pane finding — below that width the outline is navigation
+   * that has stopped serving the thing it navigates, so it yields the whole
+   * pane to the prose. #1010 hides the toolbar chip under the same threshold,
+   * because a control over something already gone reads as broken.
+   *
+   * Which means a small screen leaves the nav IN THE DOM AND HIDDEN and the
+   * chip unclickable — exactly how this test first failed on the Windows CI
+   * runner while passing on the developer's desktop. MEASURED here, one
+   * document beside one session card, 2026-09-30:
+   *
+   *     window 1024 -> pane 348px   outline hidden, chip hidden
+   *     window 1100 -> pane 386px   outline hidden, chip hidden
+   *     window 1280 -> pane 476px   outline shown    <- the default, 56px of luck
+   *     window 1700 -> pane 686px   outline shown
+   *
+   * The pane is roughly the window less ~600px of rail and session card, so the
+   * default 1280 cleared the threshold by a margin no one had measured. This
+   * asks for 1700x950 — the geometry `document-peek.spec.ts`'s ROOMY pane test
+   * already uses and proves CI honours — and then ASSERTS the pane it got, so
+   * the next failure of this kind reads "the pane was too narrow" rather than
+   * "the chip is broken".
+   */
+  async function roomyPane(w: Page): Promise<void> {
+    // Only the WIDTH is under test; the corner rides `onTestDisplay` (#479) so
+    // this is not the one place in the suite that drags the window back onto the
+    // developer's working monitor.
+    await a.app.evaluate(
+      ({ BrowserWindow }, box) => BrowserWindow.getAllWindows()[0]?.setBounds(box),
+      onTestDisplay(a, { x: 20, y: 20, width: 1700, height: 950 })
+    );
+    const paneWidth = (): Promise<number> =>
+      w.evaluate(
+        () => document.querySelector('.doc-rendered-wrap')?.getBoundingClientRect().width ?? -1
+      );
+    await expect
+      .poll(paneWidth, {
+        message:
+          `the viewer pane never grew past ${OUTLINE_MIN_PANE}px, so the outline is ` +
+          'suppressed by its container query and this test cannot say anything ' +
+          'about the Outline chip',
+      })
+      .toBeGreaterThan(OUTLINE_MIN_PANE);
+  }
 
   test('a .md opens rendered, renders hostile input inert, and fetches NOTHING', async () => {
     const { folder, doc } = seededProject();
@@ -199,7 +251,8 @@ test.describe('document viewer (P2-E16-02)', () => {
   test('the Outline chip hides the outline, widens the document, and is remembered', async () => {
     const { folder, doc } = seededProject();
     a = await launchApp({ seedFolder: folder, seedDocument: doc });
-    const w = a.window;
+    let w = a.window;
+    await roomyPane(w);
     await expect(rendered(w).locator('h1')).toBeVisible();
 
     const outline = viewer(w).locator('.doc-outline');
@@ -222,14 +275,18 @@ test.describe('document viewer (P2-E16-02)', () => {
     expect(readWorkspaceFile(home).ui?.documentOutline).toBe(false);
 
     a = await launchApp({ seedFolder: folder, seedDocument: doc, home });
-    const w2 = a.window;
-    await expect(rendered(w2).locator('h1')).toBeVisible();
-    await expect(viewer(w2).locator('.doc-outline')).toHaveCount(0);
-    const chip2 = viewer(w2).getByRole('button', { name: 'Outline', exact: true });
+    w = a.window;
+    await expect(rendered(w).locator('h1')).toBeVisible();
+    await expect(viewer(w).locator('.doc-outline')).toHaveCount(0);
+    const chip2 = viewer(w).getByRole('button', { name: 'Outline', exact: true });
     await expect(chip2).toHaveAttribute('aria-pressed', 'false');
-    // and back on again, so the memory is a preference and not a one-way door
+    // and back on again, so the memory is a preference and not a one-way door.
+    // The bounds are re-applied rather than trusted: window-state DOES restore
+    // them, and if it ever stopped, the outline would be missing here for the
+    // container query's reason and the failure would read as a broken chip.
+    await roomyPane(w);
     await chip2.click();
-    await expect(viewer(w2).locator('.doc-outline')).toBeVisible();
+    await expect(viewer(w).locator('.doc-outline')).toBeVisible();
   });
 
   test('a relative link navigates in the viewer; Back returns; a PDF gets the card', async () => {
