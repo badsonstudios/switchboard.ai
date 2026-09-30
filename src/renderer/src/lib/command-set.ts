@@ -777,6 +777,20 @@ export function buildCommands(deps: CommandDeps): Command[] {
       },
     },
     {
+      // The Files tab (#521 layer 2). Palette-only, like `view.changes` and for
+      // the same reason — there is no chord to spare, and the owner's report was
+      // about a tab he could not find, not a key he could not press.
+      id: 'view.files',
+      titleKey: 'commands.toggleFiles',
+      categoryKey: CATEGORY_VIEW,
+      scope: 'app',
+      enabled: hasActive,
+      disabledReasonKey: 'commands.disabled.noActiveSession',
+      run: (ctx) => {
+        if (ctx.activeCardId) deps.toggleCardView(ctx.activeCardId, 'files');
+      },
+    },
+    {
       // §5.30's `Open file…`. In the VIEW category and not SESSION, because a
       // document viewer belongs to no session — it is a surface the workspace
       // holds, like the rail.

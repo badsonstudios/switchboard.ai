@@ -86,6 +86,7 @@ describe('fs:read', () => {
   it('registers exactly the channels the capability map tags to this family', () => {
     expect(bus.channels()).toEqual([
       'fs:read',
+      'fs:listDir',
       'fs:pickFile',
       'fs:openExternal',
       'fs:openPath',
@@ -191,6 +192,63 @@ function fakeShell() {
     },
   };
 }
+
+describe('fs:listDir (#521 layer 2)', () => {
+  // `list-dir.test.ts` owns the GUARD — every escape attempt, every bound. What
+  // belongs here is the same thing the rest of this file owns: that the handler
+  // obeys it, and that a refusal is WRITTEN DOWN. A scope check nobody can see
+  // the refusals of is a check nobody can debug at 11pm.
+  let bus: ReturnType<typeof fakeBroker>;
+  let rec: ReturnType<typeof recordingLog>;
+
+  beforeEach(() => {
+    bus = fakeBroker();
+    rec = recordingLog();
+    registerFsIpc({
+      broker: bus.broker,
+      log: rec.log,
+      scope: new ReadScope({ sessionFolders: () => [ROOT], log: rec.log }),
+      dirCap: 100,
+    });
+  });
+
+  it('lists a folder in scope', async () => {
+    const r = (await bus.call('fs:listDir', { root: ROOT })) as unknown as {
+      ok: boolean;
+      entries: Array<{ name: string }>;
+    };
+    expect(r.ok).toBe(true);
+    expect(r.entries.map((e) => e.name)).toContain('PROGRESS.md');
+  });
+
+  it('refuses an out-of-scope root — AND logs both strings it was sent', async () => {
+    const r = await bus.call('fs:listDir', { root: OUTSIDE, path: OUTSIDE });
+    expect(r).toEqual({ ok: false, reason: 'out-of-scope' });
+    // nothing about what is in there crossed the bridge
+    expect(JSON.stringify(r)).not.toContain('id_rsa');
+    const line = rec.lines.find((l) => l.msg === 'fs:listDir refused: out-of-scope');
+    expect(line?.level).toBe('warn');
+    // BOTH halves, because either one can be the reason and they land on the
+    // same word: a bad path under a good root is a different bug from a good
+    // path under an invented root.
+    expect(line?.fields).toMatchObject({ root: OUTSIDE, path: OUTSIDE });
+  });
+
+  it('refuses a ../ climb and logs it', async () => {
+    const asked = path.join(ROOT, '..', 'secrets');
+    expect(await bus.call('fs:listDir', { root: ROOT, path: asked })).toEqual({
+      ok: false,
+      reason: 'out-of-scope',
+    });
+    expect(rec.lines.some((l) => l.msg === 'fs:listDir refused: out-of-scope')).toBe(true);
+  });
+
+  it('never rejects, whatever an untyped caller sends', async () => {
+    for (const junk of [undefined, null, 'x', 7, { root: {} }]) {
+      await expect(bus.call('fs:listDir', junk)).resolves.toMatchObject({ ok: false });
+    }
+  });
+});
 
 describe('the document viewer’s shell channels (P2-E16-02)', () => {
   let bus: ReturnType<typeof fakeBroker>;

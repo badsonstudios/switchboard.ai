@@ -235,6 +235,7 @@
     "closeAllConfirm": "Close {count, plural, one {# session} other {# sessions}}? This ends them and removes their cards.{spared, plural, =0 {} one { # pinned session is kept.} other { # pinned sessions are kept.}}",
     "closeAllNothing": "Nothing to close — {count, plural, one {the # open session is pinned} other {all # open sessions are pinned}}.",
     "viewDiff": "Changes",
+    "viewFiles": "Files",
     "viewSession": "Session",
     "viewHistory": "History",
     "hideTerminal": "Hide Terminal",
@@ -446,6 +447,24 @@
   "preflight": {
     "missingCli": "claude CLI not found — install it and log in: npm install -g @anthropic-ai/claude-code, then run `claude` once. New sessions are disabled until then.",
     "version": "claude {version}"
+  },
+  "files": {
+    "treeLabel": "Files in this session's folder",
+    "refresh": "Refresh",
+    "refreshHint": "Read the folder again. The tree also refreshes when you come back to this tab.",
+    "loading": "Reading…",
+    "empty": "Nothing in this folder",
+    "capped": "Only the first {n} entries are shown — this folder has more.",
+    "linkTag": "link",
+    "linkHint": "{name} is a shortcut. switchboard doesn't follow shortcuts out of the session folder, so this one can't be opened here.",
+    "otherHint": "{name} isn't a file or a folder, so there's nothing to open.",
+    "refused": {
+      "invalid-path": "switchboard couldn't make sense of that path.",
+      "out-of-scope": "That folder is outside this session's folder, so switchboard won't read it.",
+      "not-found": "That folder isn't there any more.",
+      "not-a-directory": "That's a file, not a folder.",
+      "unreadable": "switchboard couldn't read that folder — the log has the reason."
+    }
   },
   "git": {
     "branch": "⎇ {branch}",
@@ -990,6 +1009,7 @@
     "cycleLayout": "Layout: next mode (Grid → Focus → Queue)",
     "maximize": "Maximize this session / put the layout back",
     "toggleChanges": "Toggle Changes view",
+    "toggleFiles": "Toggle Files view",
     "toggleRail": "Toggle the sessions rail",
     "toggleEvents": "Show or hide the events drawer",
     "openFile": "Open file… — read a file in the document viewer",

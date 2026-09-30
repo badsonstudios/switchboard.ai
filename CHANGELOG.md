@@ -98,6 +98,19 @@ on the floor, and say so in your PR.
 
 ### Added
 
+- **There's a Files tab now — the session's folder, right there on the card.**
+  It sits between **Changes** and **History**, and it shows what's actually in
+  the folder the session is working in: click a folder to open it, click a file
+  to read it in the app. The keyboard works too — arrows to move, → and ← to
+  open and close a folder, Enter to open a file. One thing worth knowing: **the
+  list doesn't update by itself.** If Claude writes a new file while you're
+  looking at the tab, press **Refresh** — or just switch away and come back,
+  which re-reads it for you. It won't rename, delete or move anything; it's for
+  looking and opening. Very large folders show their first 500 entries and say
+  so rather than trailing off, `.git` is left out, and shortcuts are shown but
+  not followed — the tab stays inside the session's own folder and won't browse
+  out of it.
+
 - **You can now ask for a feature from inside the app.** **Help ▸ Feature
   request…** opens a box: an optional title, and one big field for what you'd
   like switchboard to do. Then you choose how it reaches us — it opens your own

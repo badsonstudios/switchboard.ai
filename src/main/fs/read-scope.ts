@@ -97,10 +97,22 @@ export function isWithinRoot(root: string, target: string, style: PathStyle = HO
   return t.startsWith(boundary);
 }
 
+/**
+ * Why `resolve` said no.
+ *
+ * NARROWER THAN `FileReadRefusal`, and narrowed deliberately (#521 layer 2):
+ * `not-a-file` is `read-file.ts`'s word, decided after the scope check by
+ * looking at what the path turned out to BE, and this module never returns it.
+ * Saying so in the type means a second consumer of the scope — the Files tab's
+ * `listDir`, whose mirror-image refusal is `not-a-directory` — does not have to
+ * carry a dead branch for a case that cannot happen.
+ */
+export type ScopeRefusal = Exclude<FileReadRefusal, 'not-a-file'>;
+
 /** What `ReadScope.resolve` answers. */
 export type ScopeDecision =
   | { readonly ok: true; readonly path: string }
-  | { readonly ok: false; readonly reason: FileReadRefusal };
+  | { readonly ok: false; readonly reason: ScopeRefusal };
 
 export interface ReadScopeDeps {
   /**

@@ -12,6 +12,8 @@ import { RendererRegistry } from './registry-instance';
 import { safely } from './boundary';
 import { DiffPane } from '../components/DiffPane';
 import { FeedView } from '../components/FeedView';
+import { FileTree } from '../components/FileTree';
+import { openDocument } from '../lib/document-open';
 
 const manifest = (id: string, displayName: string) => manifestFor(id, displayName, 'panel.render');
 
@@ -122,6 +124,37 @@ export const sessionPanels: PanelContribution[] = [
         // surface (P2-E17-02) — Ctrl+F on the Changes tab must reach one
         // editor, not whichever one the page happens to hold
         <DiffPane folder={ctx.folder} colorScheme={ctx.colorScheme} cardId={ctx.cardId} />
+      ) : null,
+  },
+  {
+    // The Files tab (#521 layer 2, §5.35), and it is THREE LINES because it is
+    // meant to be: everything real is in `FileTree` and
+    // `lib/file-tree-model.ts`, neither of which knows what a tab is. The owner
+    // chose this placement over a document-area panel knowing tabs are
+    // exclusive, on the condition that moving it later is a new host rather than
+    // a rewrite — so this host is the whole of what would be replaced.
+    manifest: manifest('panel-files', 'Files'),
+    id: 'files',
+    titleKey: 'grid.viewFiles',
+    // Ahead of History, which is a permanently disabled placeholder: a working
+    // tab behind a dead one reads as the strip trailing off.
+    order: 25,
+    // Nothing to browse without a folder — greyed, not hidden, for the reason
+    // the Changes tab directly above is greyed rather than hidden.
+    enabled: (ctx) => !!ctx.folder,
+    // NO BADGE, deliberately. `ctx.changed` is right there and a count of
+    // changed files on a Files tab would be the Changes tab's badge in a second
+    // place, saying the same number about a tab that is not about git.
+    render: (ctx) =>
+      ctx.folder ? (
+        <FileTree
+          root={ctx.folder}
+          active={ctx.visible}
+          // §5.30's placement policy, not a second opinion about it — and the
+          // session id is §5.24 attribution: the viewer wears this card's accent
+          // and a `↳ session` chip.
+          onOpenFile={(p) => openDocument(p, ctx.sessionId)}
+        />
       ) : null,
   },
   {

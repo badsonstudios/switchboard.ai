@@ -16,10 +16,16 @@ import path from 'path';
 import { BrowserWindow, dialog, shell, IpcMainInvokeEvent } from 'electron';
 import { IpcBroker } from '../ipc/broker';
 import type { Logger } from '../log/logger';
-import { MAX_FILE_READ_BYTES, FileReadResult, FileWatchResult } from '../../shared/ipc/fs';
+import {
+  MAX_FILE_READ_BYTES,
+  DirListResult,
+  FileReadResult,
+  FileWatchResult,
+} from '../../shared/ipc/fs';
 import { isAllowedLinkUrl } from '../../shared/link-schemes';
 import { readCappedText } from './read-file';
 import { ReadScope } from './read-scope';
+import { listDirectory } from './list-dir';
 import { FileWatchDeps, FileWatchService } from './file-watch';
 
 /**
@@ -92,6 +98,8 @@ export interface FsIpcDeps {
   getWindow?: () => BrowserWindow | null;
   /** electron's shell + dialog, swapped out in tests */
   shell?: FsShell;
+  /** the Files tab's entry cap, overridable for tests (#521 layer 2) */
+  dirCap?: number;
   /** timing + injection knobs for the live-re-render watch (P2-E16-04) */
   watch?: Pick<
     FileWatchDeps,
@@ -135,6 +143,31 @@ export function registerFsIpc(deps: FsIpcDeps): FsIpcHandle {
         path: decision.path,
         size: result.size,
         cap,
+      });
+    }
+    return result;
+  });
+
+  /**
+   * `fs:listDir` — one level of one directory, for the Files tab (#521 layer 2).
+   *
+   * The guard is `list-dir.ts`'s and the whole argument is written there. What
+   * belongs HERE is the log line, in the same wording every other refusal on
+   * this bridge uses, so one filter still finds them all: a refused listing is
+   * either a link pointing somewhere it should not, a caller declaring a root it
+   * was never granted, or a scope that is wrong — and all three are things you
+   * only find out about if they are written down.
+   */
+  deps.broker.handle('fs:listDir', async (_e, req: unknown): Promise<DirListResult> => {
+    const result = await listDirectory(req, { scope: deps.scope, log: deps.log, cap: deps.dirCap });
+    if (!result.ok) {
+      const asked = (req ?? {}) as { root?: unknown; path?: unknown };
+      deps.log.warn(`fs:listDir refused: ${result.reason}`, {
+        // BOTH strings, because either one can be the reason: a bad `path` under
+        // a good root and a good `path` under an invented root are different
+        // bugs and land on the same word.
+        root: typeof asked.root === 'string' ? asked.root : String(asked.root),
+        path: typeof asked.path === 'string' ? asked.path : String(asked.path),
       });
     }
     return result;

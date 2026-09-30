@@ -402,7 +402,7 @@ target folder instead.
 > |---|---|
 > | a session's "last response" chip | **Shipped** as the **context chip** (E11-10, #799) — §5.5 Level 2 rather than a raw excerpt, which is the better gesture and is what the owner actually uses. |
 > | a terminal text selection | **Moot.** The terminal was retired from the UI on 2026-09-19 (#873) after the owner's 2026-08-20 decision. There is no terminal to select in. |
-> | a file from a session's file tree | **Blocked.** There is no file tree — the **Files** tab is Phase 3 (§5.7, §5.30 v2). Nothing to drag from. |
+> | a file from a session's file tree | **Half-unblocked (2026-09-30, #521 layer 2).** The **Files** tab and its tree now exist (§5.35), so there is finally something to drag *from* — but its rows are not drag sources and nothing carries a path out of them. This is now unbuilt rather than blocked, which is a smaller thing to file. |
 > | a diff hunk | **Unbuilt and unfiled.** The Changes tab has the hunks; nothing makes them a drag source. |
 >
 > The DROP side is in better shape than the drag side: OS files land in a
@@ -1050,6 +1050,16 @@ parent's — not into the parent's transcript (corrected 2026-09-15, #807; see
 > merge-back flows**, **cross-session same-repo conflict warnings**, and the
 > **cross-session review dashboard**.
 >
+> **AMENDED 2026-09-30 (#521 layer 2): the file tree's read-only half shipped
+> early, in Phase 2, because the owner asked for it while dogfooding** — *"I
+> thought we would have another tab called Files that showed the current folder
+> and the files in it."* It is the **Files** tab (§5.35): the session's folder,
+> expanded one level at a time, click a file to open it in the §5.30 viewer. What
+> is still Phase 3 is the half this bullet is actually about — **the VCS
+> decorations**. The tree paints no modified/added/untracked badges, and wiring
+> `GitFileStatus` into its rows is the remaining work, not a rewrite of the
+> tree.
+>
 > **Unscheduled, and two of the three are flagged in this very section as
 > table-stakes that competitors already ship:**
 >
@@ -1543,11 +1553,14 @@ separate features:
   choice (#532); the **file tree and the editable-diff + commit half do not** —
   see §5.7's as-built note, where the tree is Phase 3 and editing is in no phase
   at all. The tab is a read-only diff over a flat file list today.)*
+- **Files** — the session folder's file tree; clicking a file opens it in the
+  §5.30 document viewer. *(**Shipped 2026-09-30, #521 layer 2** — and it is
+  listed HERE, ahead of History, because that is where it sits in the real strip:
+  History is a permanently disabled placeholder, and a working tab behind a dead
+  one reads as the strip trailing off. §5.35 is the section; the §5.7 VCS
+  decorations are still Phase 3.)*
 - **History** — the checkout's recent commits/branch state (read-only GitService
   log view; §5.7).
-- **Files** — the session folder's file tree (§5.7 decorations); clicking a file
-  opens it in the §5.30 document viewer. Listed here because E8-05 already ships
-  the tab as a disabled "soon" and §5.30 is what fills it (added 2026-07-30).
 - **Inspector** — the §5.19 capability pane (Skills / Agents / MCP / Commands),
   present when opened.
 - **Terminal** — the real CLI, always present, **last in the strip**
@@ -1570,7 +1583,8 @@ maximized card); the next mockup pass should show the full strip.
 > and the menu item — leave the code behind."*
 >
 > **What changed.** The strip ships three tabs: **Session**, **Changes**,
-> **History**. Gone with the tab: the `panel-terminal` contribution,
+> **History**. *(Four since 2026-09-30 — **Files** landed between Changes and
+> History, #521 layer 2, §5.35.)* Gone with the tab: the `panel-terminal` contribution,
 > `StreamTerminalNotice`, the `view.terminal` command and its Ctrl+backtick
 > binding, and the registration of the Terminal find provider. Cards holding a
 > stored `transport: 'pty'` are migrated onto the Direct default on next start
@@ -4226,6 +4240,138 @@ exists now and `Ctrl+,` is one keystroke. The premise changed, not the reasoning
   live-switching surfaces with contrast tests across all four themes and an RTL
   path; `theme/tokens.drift.test.ts` and `e2e/theme.spec.ts` are the check.
 
+### 5.35 Files tab — the session's folder, browsable
+
+*Added 2026-09-30 (issue #521 layer 2). The design gate this section closes is
+in the issue's own 2026-09-30 comment; the shape below is the one the owner
+chose.*
+
+**Why it exists, in the owner's words, while dogfooding v0.4.0:** *"I thought we
+would have another tab called Files that showed the current folder and the files
+in it."* §5.7 had promised a per-session file tree since the first design pass
+and §8 had it in Phase 3, behind the document viewer's second half. It moved
+because the ask was small, the surface it needed already existed, and the case is
+the one this app is *for*: **see what the agent's folder holds, and open it
+fast.**
+
+**Shape A, chosen over shape B, and built so B stays a move rather than a
+rewrite.** The two candidates were a **Files tab on the session card** (A) and
+**Files as a document-area panel** (B). A won on cost — the tab strip is already
+a contribution point (§5.23) and a tab is a new `PanelContribution` rather than
+surgery on the card — with **one limitation the owner named as he chose it: view
+tabs are exclusive, so you cannot browse the tree while watching the Session
+view.** That is exactly what B would buy, and it is why *placement-agnostic* is
+a requirement here and not a style note:
+
+- `lib/file-tree-model.ts` is the directory model. **Pure** — no React, no IPC,
+  no card. Expand/collapse, folding a listing in, and the flattened row list
+  including the notices ("reading…", "nothing in this folder", "only the first
+  500 entries", a refusal and its reason) all live there, as a table a fixture
+  can assert.
+- `components/FileTree.tsx` is the view over that model. **Four props and a
+  callback**: the folder, a lister, "am I on screen", and what to do with a
+  clicked file. No `cardId`, no `sessionId`, no `PanelContext`, no dockview, no
+  tab.
+- The panel contribution in `extensibility/panels.tsx` is a **three-line host**.
+  Moving Files into the document area is a second three-line host; if that ever
+  needs more, the split above has decayed and the test that mounts the tree with
+  no card is where it shows.
+
+**Where it sits, and when it is there.** Between **Changes** and **History** —
+ahead of History because History is a permanently disabled placeholder, and a
+working tab behind a dead one reads as the strip trailing off. `enabled` is
+`!!ctx.folder`, so a session with no folder shows the tab **greyed, not hidden**
+(§5.8: you can always see what exists). **No badge**: `ctx.changed` is right
+there on the panel context, and a changed-file count on a Files tab would be the
+Changes badge in a second place, saying the same number about a tab that is not
+about git.
+
+**Where a clicked file lands is not this section's decision.** It routes through
+`lib/document-open.ts` and §5.30's placement rule — one placement policy in the
+app, and the session id goes with it as §5.24 attribution, so the viewer wears
+the card's accent and a `↳ session` chip.
+
+#### The real cost: a directory-listing channel, and what bounds it
+
+**This is the app's first directory enumeration, and it is a new security
+surface.** `fs:listDir` answers **one level of one directory** and is built as a
+**strict narrowing** of §5.30's `fs:read`, never a power beside it. Three checks,
+in order, in **main** — the renderer is not a trust boundary, and a
+renderer-side version of any of this would protect nobody because the caller it
+defends against is the renderer:
+
+1. `ReadScope.resolve(root)` — the folder the caller *says* it is browsing must
+   already be in the read scope.
+2. `ReadScope.resolve(path)` — and so must the directory it wants.
+3. `isWithinRoot(realRoot, realTarget)` — and the second must be **inside the
+   first**.
+
+The first two are §5.30's existing guard, untouched; every decision is made on
+the **resolved real path**, so `..`, a symlink, a junction, a UNC spelling and an
+8.3 short name all normalise before anything is compared. The third is what is
+new, and it is why a **declared root grants nothing**: naming a root can only
+ever refuse more, never less. Stated exactly: **nothing this channel can reach
+was unreachable by `fs:read` before it existed, and within one call it can only
+enumerate inside the root that call declared.**
+
+**Links are not followed, and that is a decision rather than an omission.** A
+symlink or a Windows junction inside a session folder can point at `~/.ssh`.
+Resolving it and checking it is a correct answer that is *harder to prove* than
+declining, so a link is reported as its own kind, is **neither expandable nor
+openable**, and is labelled as one in the row. Asking about a link directly is
+refused by `ReadScope` as well — the two defences are independent on purpose.
+(The cost: a symlinked folder *inside* a project is not browsable through the
+tree. If that ever matters, following links that resolve inside the root is the
+smaller of the two possible widenings, and it is a decision for an owner rather
+than a side effect of a convenience — the same sentence §5.30 wrote about a
+picked file granting its file and not its folder.)
+
+**Bounded, and visibly so.** One level per call — main never walks ahead of the
+tree. The read stops at `MAX_DIR_ENTRIES` (500) dirents rather than materialising
+a hundred-thousand-entry `node_modules` in order to show five hundred of it, so
+the honest consequence is that a capped folder shows **the first 500 entries in
+the order the OS reported them, not the first 500 alphabetically** — and the tab
+**says** it is capped rather than ending quietly. `.git` is not listed at all;
+that is a listing filter and not a security control (a `.git` file was always
+inside the read scope), so what it means is that the tree offers no road there.
+
+**Its own capability, `fs.list`.** Between `fs.probe` and `fs.read` because that
+is where its cost sits: more than probing one guessed path at a time, which
+cannot *enumerate*; strictly less than the bytes of every file a listing names.
+Not folded into `fs.read` for the reason the whole vocabulary is split — a
+Phase-4 contribution that wants to draw a file tree must not thereby acquire the
+power to read it. This is deliberately **not** the `fs:watch` case, which reuses
+`fs.read` because what it reveals is a subset of the bytes it already grants; a
+list of names is not.
+
+#### Refresh: what it does, and what it does not claim
+
+**There is no live tree, and none is claimed.** §5.30's follow-the-file watcher
+(`FileWatchService`) watches **files by signature** — it can tell you a file you
+already have open changed, and it cannot tell you an entry *appeared*. A
+directory watch is new work, with `fs.watch`'s whole unreliability story
+attached, and it is not in this slice.
+
+What the tab has instead: a **Refresh** button, and a **re-list of the root plus
+every open folder when the surface comes back into view**. For the case this
+exists for — glance at what the agent has been writing — coming back to the tab
+*is* the moment the answer is wanted. A closed folder is deliberately not
+re-read: the cost of Refresh should scale with what is on screen, not with how
+much browsing you have done. `docs/manual/21-files.md` says all of this in the
+user's words, because "why didn't the new file show up" is the question this
+design will be asked.
+
+#### Read-only, and the litmus (§4)
+
+The tree **opens files. It does not rename, delete, move, create or drag them.**
+The §5.30 viewer is read-only, so a write half would be a write half with nowhere
+to go, and each of those gestures is its own item with its own confirmation
+story. The litmus check: this hosts nothing it invents — every row is something
+the filesystem already owns, read on demand, kept only for as long as it is on
+screen; it makes the *existing* CLI-and-folder relationship legible rather than
+adding a feature beside it; and the moment it grows a second column of
+affordances it has left the case it was built for.
+
 ## 6. Tech Stack — Decision
 
 **Chosen: Electron + TypeScript + xterm.js + node-pty + Monaco + React.**
@@ -4665,10 +4811,13 @@ mode + session archive v1; fleet snapshots + layout DSL.)*
   confirm gate (§5.25, OQ #14) — moved from Phase 2 (2026-07-21)
 - Worktree create/merge-back flows with review step
 - Cross-session same-repo conflict warnings
-- Document viewer v2 (§5.30, added 2026-07-30): the **Files** tab + file tree
-  (§5.7), the full file-type dispatch (code / image / JSON / CSV / binary card),
-  live re-render follow-tail for append-shaped files, viewer restore across
-  relaunch — planned with the file tree because they are the same surface
+- Document viewer v2 (§5.30, added 2026-07-30): ~~the **Files** tab + file tree
+  (§5.7)~~ — **the tab and the tree shipped in Phase 2 on 2026-09-30 (#521
+  layer 2, §5.35)**, pulled forward by an owner request while dogfooding; what
+  remains of this bullet is the **VCS decorations** on its rows, the full
+  file-type dispatch (code / image / JSON / CSV / binary card), live re-render
+  follow-tail for append-shaped files, and viewer restore across relaunch —
+  still planned together because they are the same surface
 - Usage tracking (§5.13): per-session usage chips, plan-usage meter,
   burn-rate/rate-limit events — **first-party and native**; the ClaudeMon
   shared-library framing was dropped 2026-07-29 (OQ #8 closed)

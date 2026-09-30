@@ -21,7 +21,7 @@ import type {
   TranscriptSearchResult,
 } from '../shared/transcripts';
 import type { PermissionRequestDto, StandingGrants } from '../shared/ipc/permissions';
-import type { FileReadResult, FileWatchNotice } from '../shared/ipc/fs';
+import type { DirListResult, FileReadResult, FileWatchNotice } from '../shared/ipc/fs';
 import type {
   McpAddRequest,
   McpHealthWire,
@@ -1006,6 +1006,21 @@ const api = {
   files: {
     /** absolute path in, at most `MAX_FILE_READ_BYTES` of decoded text out */
     read: (p: string): Promise<FileReadResult> => ipcRenderer.invoke('fs:read', p),
+    /**
+     * ONE LEVEL of one directory, for the Files tab (#521 layer 2, §5.35).
+     *
+     * `root` is the folder the caller is browsing and `dir` the folder inside it
+     * to list — and **`root` grants nothing**. Main checks both against the same
+     * read scope `read` uses and then requires `dir` to be inside `root`, so
+     * naming a root can only ever refuse more. Omit `dir` for the root itself.
+     *
+     * Links are not followed: a symlink or a Windows junction comes back as
+     * `kind: 'link'` and has no children. Capped at `MAX_DIR_ENTRIES` entries,
+     * with `truncated` set when there were more — the cap is something to SAY,
+     * not to apply quietly.
+     */
+    listDir: (root: string, dir?: string): Promise<DirListResult> =>
+      ipcRenderer.invoke('fs:listDir', { root, path: dir }),
     /**
      * The native `Open file…` dialog (P2-E16-02). Resolves the chosen path, or
      * null if the user cancelled. Choosing a file also GRANTS it: main adds it

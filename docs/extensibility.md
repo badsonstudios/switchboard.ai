@@ -576,6 +576,7 @@ because every hit was one of these deliberate seams.
 | `app.window` | display geometry, popout movement, and the right-click menu's labels (#526) — note the labels are one **app-wide** setting, applied to every window, last writer wins |
 | `environment.probe` | runs the CLI to read its version; stats the user's home config |
 | `fs.probe` | existence/type of an arbitrary caller-supplied path |
+| `fs.list` | the **names** of the entries in **one** directory, scope-checked and entry-capped in main (#521 layer 2, DESIGN §5.35). Between the two words either side of it because that is where its cost sits: more than `fs.probe`, which answers one guessed path at a time and cannot enumerate, and strictly less than `fs.read`, which hands over the bytes of every file a listing names. A consumer that wants to draw a file tree must not thereby acquire the power to read the tree |
 | `fs.read` | the **contents** of a file, scope-checked and size-capped in main |
 | `dialog.open` | a **native** file dialog |
 | `update.check` | contacts the release host **over the network** |
@@ -612,6 +613,17 @@ path**, so `../` and a symlink out of the root are refused by construction
 rather than by pattern-matching the string, and the size cap is applied before
 the bytes cross the bridge. A renderer-side version of any of that would protect
 nobody — the caller it defends against is the renderer.
+
+**`fs.list` is the same scope, narrowed once more** (#521 layer 2, §5.35).
+`src/main/fs/list-dir.ts` runs the `ReadScope` check above **twice** — once on
+the root the caller declares it is browsing, once on the directory it wants —
+and then requires the second to be inside the first. Declaring a root therefore
+cannot widen anything; it can only refuse more. Links are **not followed**: a
+symlink or a Windows junction is reported as its own kind and is neither
+expandable nor openable, so the tree has no road out of the root even before
+`ReadScope` gets asked. And the read is bounded — one level per call, never a
+walk, stopping at `MAX_DIR_ENTRIES` dirents rather than reading a
+hundred-thousand-entry `node_modules` in order to show five hundred of it.
 
 ### Two vocabularies, not yet joined
 

@@ -2,8 +2,9 @@
 
 > Status: draft
 
-Each card has three tabs: **Session**, **Changes**, and **History**. Session is
-the one you'll live in.
+Each card has four tabs: **Session**, **Changes**, **Files** and **History**.
+Session is the one you'll live in; **Files** shows what's in the session's folder
+and is covered in [The Files tab](21-files.md).
 
 ## Which session is open
 
