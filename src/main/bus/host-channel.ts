@@ -226,6 +226,7 @@ type HostReply =
   | { ok: true; callerId: string; context: unknown }
   | { ok: true; callerId: string; published: unknown }
   | { ok: true; callerId: string; board: unknown }
+  | { ok: true; callerId: string; removal: unknown }
   | { ok: true; callerId: string; delivery: unknown }
   /**
    * `uncertain` (#765 review): this refusal is "I gave up waiting", not "the
@@ -983,6 +984,22 @@ export class BusHost {
             ? { kind: 'list', rows: result.value }
             : { kind: 'entry', ...result.value };
           return { ok: true, callerId: caller, board };
+        }
+        case 'blackboard_remove': {
+          // `caller`, FROM THE TOKEN — and RECORDED, NEVER CHECKED. Every
+          // session may remove every key, the same reach cross-session overwrite
+          // already has, so nothing here compares the token to the note's
+          // publisher. What the caller is for is the TOMBSTONE: a later reader
+          // of that key is told who took it off, which is the half of #861's
+          // legibility that does not reach the session that did the removing.
+          // Attribution is therefore a property rather than a claim here for
+          // `blackboard_publish`'s reason, even though nothing is gated on it.
+          //
+          // The key goes through untouched: `Blackboard` owns every guard, for
+          // the reason `ref` is not validated here.
+          const result = this.opts.blackboard.remove(caller, args[KEY_ARG]);
+          if (!result.ok) return { ok: false, reason: result.reason };
+          return { ok: true, callerId: caller, removal: result.value };
         }
         case 'send_to_session': {
           // `caller`, from the TOKEN — never anything the child said about

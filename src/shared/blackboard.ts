@@ -17,9 +17,13 @@
 // The litmus statement, stated at the width that is actually true:
 // **publishing never causes execution, delivery or notification in another
 // session.** It can consume shared capacity (the caps below are workspace-wide)
-// and any session may overwrite any key, which is why every answer carries the
-// publisher — see `main/sessions/blackboard.ts` for why that wording was
-// narrowed from the broader claim it started as.
+// and any session may overwrite — or, since #861, REMOVE — any key, which is
+// why every answer carries the publisher. See `main/sessions/blackboard.ts` for
+// why that wording was narrowed from the broader claim it started as, and for
+// why removal is open to every session rather than to the note's author: the
+// power to destroy a sibling's note is one overwrite already had, and restricting
+// removal to the publisher would have left the key cap a one-way door in the one
+// case that reaches it, since the publisher has usually exited by then.
 
 /**
  * The longest key, in characters.
@@ -63,6 +67,30 @@ export const BLACKBOARD_MAX_KEYS = 100;
  * reason, as `SIBLING_INBOX_CAP` beside `SIBLING_INBOX_CHAR_CAP`.
  */
 export const BLACKBOARD_TOTAL_CHAR_CAP = 100_000;
+
+/**
+ * How many REMOVED keys are remembered, so a reader can be told a note was
+ * taken off rather than never written (#861).
+ *
+ * ⚠️ THIS EXISTS BECAUSE REMOVAL CREATED A LIE THAT OVERWRITE NEVER COULD.
+ * `blackboard_read`'s miss tells an agent the session it is waiting on "may not
+ * have got there yet" — true, and the ordinary case. After a removal it is
+ * switchboard, in its own voice, advising an agent to keep waiting for
+ * something that will never arrive. An overwrite cannot produce that: the
+ * reader still gets content, stamped with an author. So the asymmetry is not
+ * reach — removal and overwrite reach equally far — it is that removal is the
+ * only one whose evidence would otherwise exist ONLY in the transcript of the
+ * session that did it.
+ *
+ * A tombstone is the key, who removed it and when. Never the value: the note is
+ * gone, and keeping a shadow copy of it would make "removed" a lie in the other
+ * direction.
+ *
+ * Bounded for `BLACKBOARD_MAX_KEYS`' reason, one shape along — an agent looping
+ * on generated keys and removing each one would otherwise grow this for ever.
+ * Oldest-first eviction: the board's own insertion order, applied to departures.
+ */
+export const BLACKBOARD_TOMBSTONE_CAP = 100;
 
 /** The argument names. One constant per word, read by schema, host and tests. */
 export const KEY_ARG = 'key';

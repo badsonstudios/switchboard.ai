@@ -96,6 +96,21 @@ on the floor, and say so in your PR.
 
 ## 0.8.102 — unreleased
 
+### Added
+
+- **Sessions can now take a note off the shared board.** The board your sessions
+  leave notes on has a limit on how many notes it can hold, and until now
+  nothing could ever come off it — once that limit was reached, every new note
+  was refused for as long as the app stayed open, and the only way out was to
+  quit. A session can now remove a note it no longer needs, which frees the room
+  again. Removing is permanent and can't be undone, and any session can remove
+  any note — the same reach they already had to overwrite one. The session doing
+  it is told exactly which note went and who had left it, so a mistake is
+  visible rather than silent. And a session that later goes looking for a note
+  that was taken off is told that it was, and by whom — without that it would
+  have been told the note simply hadn't been written yet, and could have sat
+  waiting for something that was never coming.
+
 ### Fixed
 
 - **`/usage` can no longer overwrite an answer that was left unfinished.** When
