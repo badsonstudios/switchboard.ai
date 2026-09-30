@@ -245,10 +245,18 @@ know it worked.
 | What you press | What you hear |
 |---|---|
 | `Ctrl+Alt+P` | *"trading-app pinned"*, or *"trading-app unpinned"* |
-| `Ctrl+Shift+↓` / `Ctrl+Shift+↑` | how much of it is showing now — *"trading-app collapsed to the strip"*, *"…stacked with the tabbed sessions"*, *"…expanded"*, *"…hidden"* |
+| `Ctrl+Shift+↓` / `Ctrl+Shift+↑` | how much of it is showing now — *"trading-app collapsed to the strip"*, *"…stacked with the tabbed sessions"*, *"…expanded"* |
 | `Ctrl+Alt+↑` / `Ctrl+Alt+↓` | where the session sits in its group — *"trading-app is now 2 of 5 in Backend"* |
 
-Three things about these that are deliberate:
+**The four commands in the list that do the same thing say it too.** *Collapse
+session to a strip*, *Stack session with the tabbed sessions*, *Expand session to
+its full card* and *Hide session* have no shortcut of their own — the two arrow
+shortcuts above are the quick way — so their only user is somebody who opened the
+command list, typed a title and pressed `Enter`. You now hear the same sentence
+you'd hear from the shortcut, because pressing `Enter` in a list and getting
+silence is exactly as unhelpful.
+
+Four things about these that are deliberate:
 
 - **You hear where it ended up, not what you asked for.** Press `Ctrl+Shift+↑`
   and you're told the size the session actually reached. If something else moved
@@ -258,17 +266,48 @@ Three things about these that are deliberate:
   already at full size, `Ctrl+Shift+↑` answers *"trading-app is already
   expanded"*. Silence would be indistinguishable from a shortcut that has stopped
   working, which is the one thing worse than a shortcut that does nothing.
+- **Hiding a session tells you how to get it back**, because from the keyboard
+  that's the one step you can't simply undo. You hear *"trading-app hidden, still
+  running — use Go to trading-app in the command list to bring it back"*. The
+  session keeps working the whole time; it just isn't in the workspace.
 - **These act on the session you're in, so a session that has left the
   workspace is out of their reach.** Once `Ctrl+Shift+↓` has collapsed a session
   to a strip row, it isn't the session you're in any more and the shortcuts stop
-  applying to it — nothing is announced because nothing was asked. Bring it back
-  by clicking its row in the strip, its row in the Sessions list, or
-  `Ctrl+1`…`Ctrl+9`, and the shortcuts reach it again. That isn't new; it's
+  applying to it — press one and you'll hear *"No session is focused"* (see the
+  next section). Bring it back by clicking its row in the strip, its row in the
+  Sessions list, or `Ctrl+1`…`Ctrl+9`, and the shortcuts reach it again. That
+  isn't new; it's
   [how the ladder has always worked](#working-with-the-focused-session).
 
 Using these from a **popped-out session window** is the exception: the shortcut
 is handed back to the main window and acts there, so the announcement happens in
 the main window too.
+
+## A shortcut that can't be used right now tells you why
+
+Plenty of shortcuts only make sense some of the time. `Ctrl+Alt+P` pins *the
+session you're in*, so with no session focused there's nothing for it to pin;
+*Go to the next session that needs you* has nothing to go to when nothing is
+waiting. Until now, pressing one of those did **absolutely nothing** — no sound,
+no message, no change on screen — which is indistinguishable from a shortcut that
+has broken.
+
+Now it says why, in the same words the command list shows next to the greyed-out
+entry: *"No session is focused"*, *"Nothing is waiting on you"*, *"No sessions
+are open"*. This applies to every shortcut in the app, not a chosen few.
+
+Two things worth knowing:
+
+- **A key nothing is bound to stays completely silent.** If you mistype a
+  shortcut — a modifier off, a wrong letter — you hear nothing, because that
+  isn't a shortcut that can't be used, it's a keystroke switchboard has no
+  opinion about. Only a real shortcut for a real command speaks.
+- **Holding the key down says it once.** Auto-repeat has never triggered a
+  shortcut and it doesn't trigger the message either.
+
+If you'd rather see the reason than hear it, the command list is the other half
+of the same answer: open it with `Ctrl+Shift+P` and anything unavailable is
+greyed out with its reason beside it.
 
 ## Working the rest of the window with the keyboard
 

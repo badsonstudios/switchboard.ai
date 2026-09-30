@@ -4425,7 +4425,9 @@ export function applySubmitPolicy(api: DockviewApi | null, cardId: string): void
  * in one pass: a card comes home to the dock slot it remembers, so two
  * transitions running at once read that slot's group while the other is still
  * creating (or destroying) it. `setCardLadder` below is the fire-and-forget
- * entry point every single-card caller uses — one implementation, two doors.
+ * entry point every single-card caller uses, and `jumpCardLadder` beside it is
+ * the null-safe awaitable one #941's announcement needs — one implementation,
+ * three doors, each named for what its caller needs to know.
  *
  * `focus` is false for a sweep: §5.8 makes showing and focusing two different
  * questions, and a layout mode moving cards around must not also decide where
@@ -4459,17 +4461,42 @@ export function moveCardToRung(
   return Promise.resolve();
 }
 
-/** Put a card on a named rung. Safe on a card with no panel — that is the point.
- *  `why` goes into the breadcrumb; everything the user drives directly is a
- *  `command`, and the rules that move cards on their own name themselves. */
+/**
+ * Put a card on a named rung, TOLERATING A NULL API, and resolve when the
+ * transition is over.
+ *
+ * `moveCardToRung` above is the implementation and is already awaitable; what
+ * this adds is the guard every caller outside a mounted grid needs. It exists as
+ * its own export because of #941: the four palette commands that jump straight
+ * to a rung have to SAY the rung they reached, and `expanded` and `tabbed` are
+ * round trips whose outcome is not known when the call returns — the same reason
+ * `stepCardLadder` below is awaitable for #581. This is the jump to that step.
+ *
+ * `setCardLadder` beside it stays `void` so the callers that have nothing to
+ * announce are unmoved (and so `no-floating-promises` has nothing to say about
+ * them). One implementation, three doors, each named for what its caller needs.
+ */
+export function jumpCardLadder(
+  api: DockviewApi | null,
+  cardId: string,
+  rung: Ladder,
+  why = 'command'
+): Promise<void> {
+  if (!api || !cardId) return Promise.resolve();
+  return moveCardToRung(api, cardId, rung, true, why);
+}
+
+/** Put a card on a named rung, fire and forget. Safe on a card with no panel —
+ *  that is the point. `why` goes into the breadcrumb; everything the user drives
+ *  directly is a `command`, and the rules that move cards on their own name
+ *  themselves. */
 export function setCardLadder(
   api: DockviewApi | null,
   cardId: string,
   rung: Ladder,
   why = 'command'
 ): void {
-  if (!api || !cardId) return;
-  void moveCardToRung(api, cardId, rung, true, why);
+  void jumpCardLadder(api, cardId, rung, why);
 }
 
 /**
@@ -5120,8 +5147,10 @@ export interface GridController {
   /** pop the card out to its own window, or dock it back in (E9-01) */
   popOutCard: (cardId: string) => void;
   /** take the card out of the workspace, remembering its slot (§5.8 ladder).
-   *  The session KEEPS RUNNING and the record survives — this is not a close. */
-  hideCard: (cardId: string) => void;
+   *  The session KEEPS RUNNING and the record survives — this is not a close.
+   *  Resolves when the transition is OVER, which is the moment #941's
+   *  announcement may read the rung it actually reached. */
+  hideCard: (cardId: string) => Promise<void>;
   /** put a card back where it was (§5.8's reveal contract). `focus` is false
    *  for an ATTENTION reveal — see revealCard's own note on why showing and
    *  focusing are two questions. */
@@ -5143,8 +5172,12 @@ export interface GridController {
    * and E9-07's layout modes are meant to drive: a layout MODE is a map of card
    * -> rung applied through this, not a fourth way to rearrange the workspace.
    * Safe on a card with no panel — that is most of the point.
+   *
+   * Resolves when the transition is OVER, for `stepLadder`'s reason below: the
+   * four palette commands that drive this have to say the rung they reached
+   * (#941), and two of the four rungs are round trips.
    */
-  setLadder: (cardId: string, rung: Ladder) => void;
+  setLadder: (cardId: string, rung: Ladder) => Promise<void>;
   /** Step the card one rung down (collapse) or up (expand) — the two bindings.
    *  Resolves when the transition is OVER, which is the moment #581's
    *  announcement may read the rung it actually reached (see `stepCardLadder`). */
@@ -5324,15 +5357,21 @@ export function SessionGrid(props: {
   // commands, the card header and E9-07's layout modes all drive cards that may
   // not be mounted, and there must be exactly one implementation. These are the
   // component's handles on them.
+  // `jumpCardLadder` rather than `setCardLadder` for the first two: #941 wraps
+  // both of these in an announcement that may only read the rung once the
+  // transition is over, so the controller has to hand the promise out.
   const setLadder = useCallback(
-    (cardId: string, rung: Ladder) => setCardLadder(apiRef.current, cardId, rung),
+    (cardId: string, rung: Ladder) => jumpCardLadder(apiRef.current, cardId, rung),
     []
   );
   const stepLadder = useCallback(
     (cardId: string, dir: 'down' | 'up') => stepCardLadder(apiRef.current, cardId, dir),
     []
   );
-  const hideCard = useCallback((cardId: string) => setCardLadder(apiRef.current, cardId, 'hidden'), []);
+  const hideCard = useCallback(
+    (cardId: string) => jumpCardLadder(apiRef.current, cardId, 'hidden'),
+    []
+  );
   const revealCard = useCallback(
     (cardId: string, focus = true) => revealCardPanel(apiRef.current, cardId, focus),
     []
