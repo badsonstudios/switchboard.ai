@@ -289,3 +289,80 @@ describe('the row cannot overflow', () => {
     expect(row!.style.flexWrap).toBe('wrap');
   });
 });
+
+// --- One treatment for the whole row (#1009) --------------------------------
+//
+// Dan, dogfooding: the model chip was "a different, more faded colour than the
+// other three". It was — `var(--faint)`, the DISABLED ink, hardcoded on the
+// enabled control, on the one chip whose entire history (#747) is "it looked
+// like a label and never got clicked". #903 had already given the other three a
+// shared helper and said in as many words that they should "read as the same
+// kind of thing"; the model chip simply declined to call it.
+//
+// So the look moved to ONE CSS CLASS, and these are the tests that keep it
+// there. They assert the class and the ABSENCE of an inline `color`, which is
+// the only shape that reddens on the way this broke: a component writing its
+// own ink wins on specificity, silently, and no rendered-colour assertion in
+// jsdom would see it (the stylesheet is not loaded here, so every chip's
+// computed colour is the empty string either way).
+//
+// `composer-clear-go` is on the list with an exception carved for it and not
+// by accident: it is the destructive confirm, and its crashed ink IS the
+// message (#221/#246). The exception is `data-tone="danger"`, which is also
+// what takes it out of the shared :hover rule.
+describe('every control on the options row wears the same treatment (issue 1009)', () => {
+  /** the four chips of the resting row — autonomy, model, Compact, Clear */
+  const ROW = ['composer-autonomy', 'composer-model', 'composer-compact', 'composer-clear'];
+
+  /** a stream session, so the model chip is the BUTTON rather than a label */
+  const live = { transport: 'stream' as const, model: 'claude-sonnet-4-5', autonomy: 'ask' };
+
+  it('all four are chips, and not one of them paints its own ink', async () => {
+    const host = await mountFeed(live);
+    for (const id of ROW) {
+      const el = btn(host, id);
+      expect(el, `${id} is on the row`).not.toBeNull();
+      expect(el!.classList.contains('composer-chip'), `${id} wears the chip class`).toBe(true);
+      // THE REGRESSION, stated directly: the row's ink is the class's, and a
+      // chip that sets its own has diverged from the other three again.
+      expect(el!.style.color, `${id} must not paint its own ink`).toBe('');
+    }
+  });
+
+  it('the one inline ink is full-auto, because that one is a warning', async () => {
+    const host = await mountFeed({ ...live, autonomy: 'full-auto' });
+    // measured on the chip's own fill in tokens.drift.test.ts — 4.73:1 on
+    // nordic, 5.65:1 on daylight
+    expect(btn(host, 'composer-autonomy')!.style.color).toBe('var(--status-crashed-ink)');
+    // and it is still the ONLY one
+    for (const id of ROW.filter((i) => i !== 'composer-autonomy')) {
+      expect(btn(host, id)!.style.color, `${id}`).toBe('');
+    }
+  });
+
+  it('a busy model chip deadens through the same door the other three use', async () => {
+    // The chip dims via the `disabled` attribute and `.composer-chip:disabled`,
+    // exactly as a locked Compact and Clear do. Before this item it could not:
+    // it was already wearing the dim ink, so its busy state had nothing left to
+    // say. The attribute is the whole contract now, so assert the attribute.
+    const host = await mountFeed({ ...live, controlsLock: 'dead' });
+    for (const id of ['composer-compact', 'composer-clear']) {
+      expect(btn(host, id)!.disabled, `${id} is disabled while locked`).toBe(true);
+      expect(btn(host, id)!.style.color, `${id} does not hand-dim`).toBe('');
+    }
+  });
+
+  it('the confirm pair keeps the chip shape, and only Go keeps its own colour', async () => {
+    const host = await mountFeed(live);
+    await click(btn(host, 'composer-clear'));
+    const go = btn(host, 'composer-clear-go')!;
+    const cancel = btn(host, 'composer-clear-cancel')!;
+    for (const el of [go, cancel]) expect(el.classList.contains('composer-chip')).toBe(true);
+    // Cancel is an ordinary chip; Go is the destructive one and says so, in the
+    // attribute that also excludes it from the shared hover rule
+    expect(cancel.style.color).toBe('');
+    expect(cancel.getAttribute('data-tone')).toBeNull();
+    expect(go.getAttribute('data-tone')).toBe('danger');
+    expect(go.style.color).toBe('var(--status-crashed-ink)');
+  });
+});

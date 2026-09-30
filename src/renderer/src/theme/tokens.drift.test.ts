@@ -820,6 +820,102 @@ describe.each(builtinThemes.map((t) => [t.id, t] as const))(
   }
 );
 
+// --- The composer's options-row chip, in EVERY shipped theme (#1009) --------
+//
+// Four controls — autonomy, model, Compact, Clear — sitting on the composer's
+// `--panel2`. Dan, dogfooding: on nordic "they barely read as buttons". They
+// were `background: transparent` + `1px solid var(--border)`, and `--border` on
+// `--panel2` measures 1.13:1 on nordic and 1.21:1 on daylight. WCAG 1.4.11 asks
+// 3:1 of the visual information that identifies a control, so the outline was
+// carrying an affordance it could not see out of — the same failure #648 found
+// in `--group-frame`, one layer up and on a bigger object.
+//
+// The fix is a filled chip with its own derived edge (`--control-edge`), and
+// these are the promises that makes:
+//
+//   • the EDGE clears 3:1 against every surface it lives between — the chip's
+//     own fill inside it, and both panels it can sit on outside. `--border`
+//     itself is untouched and deliberately so: it is the app's hairline
+//     everywhere, and retuning it to 3:1 to fix one row is #685's job, not
+//     this one's.
+//   • the enabled INK clears AA on the fill. It is `--text` rather than
+//     `--muted` for the reason the accent-less badge above already gives:
+//     `--muted` on `--chip` is 4.10:1 on nordic.
+//   • the DISABLED ink visibly deadens — strictly less contrast than the
+//     enabled one, on the same fill, in every theme. That is the #268 shape,
+//     and it is asserted as a RELATION rather than a number because the value
+//     is exempt from 1.4.3 and a floor here would be invented.
+//   • HOVER actually responds: the fill moves, measurably, and the words stay
+//     readable on the fill it moved to.
+//
+// The row's one exception is the autonomy chip in `full-auto`, which writes the
+// crashed ink as a warning (#246). It used to sit on `--panel2` and now sits on
+// the chip fill, so that pair is measured here too.
+
+const CHIP_FILL = '--chip';
+/** both panels a composer chip can be drawn on — its own row, and a card body */
+const CHIP_OUTSIDE = ['--panel2', '--panel'];
+/** the perceptible floor the hover fill owes against the resting fill */
+const HOVER_STEP = 1.25;
+
+describe.each(builtinThemes.map((t) => [t.id, t] as const))(
+  '%s: the composer options row reads as buttons',
+  (id, theme) => {
+    const tokens = resolved(theme);
+    const hex = (token: string): string => {
+      expect(tokens[token], `${id} ${token} must be #rrggbb to be measured`).toMatch(
+        /^#[0-9a-f]{6}$/i
+      );
+      return tokens[token];
+    };
+
+    it.each(['--chip', ...CHIP_OUTSIDE])('--control-edge on %s clears 3:1', (surface) => {
+      const edge = derivedSurface('--control-edge', id, tokens);
+      expect(
+        ratio(edge, hex(surface)),
+        `${id}: --control-edge on ${surface} (${edge} on ${tokens[surface]})`
+      ).toBeGreaterThanOrEqual(3);
+    });
+
+    it('writes its enabled words at AA on its own fill', () => {
+      expect(
+        ratio(hex('--text'), hex(CHIP_FILL)),
+        `${id}: --text on ${CHIP_FILL} (${tokens['--text']} on ${tokens[CHIP_FILL]})`
+      ).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it('says full-auto at AA on that same fill', () => {
+      expect(
+        ratio(hex('--status-crashed-ink'), hex(CHIP_FILL)),
+        `${id}: --status-crashed-ink on ${CHIP_FILL}`
+      ).toBeGreaterThanOrEqual(4.5);
+    });
+
+    it('deadens a disabled chip rather than merely recolouring it', () => {
+      // The whole of complaint 1 in #1009, turned into a rule: the model chip
+      // wore `--faint` — the DISABLED ink — while enabled, so its busy state
+      // had nothing left to say. This reddens if the two inks ever converge
+      // again, whichever direction they converge from.
+      expect(
+        ratio(hex('--faint'), hex(CHIP_FILL)),
+        `${id}: disabled ink must recede from the enabled one on ${CHIP_FILL}`
+      ).toBeLessThan(ratio(tokens['--text'], tokens[CHIP_FILL]));
+    });
+
+    it('answers a pointer with a fill it can see', () => {
+      const hover = derivedSurface('--control-hover', id, tokens);
+      expect(
+        ratio(hover, hex(CHIP_FILL)),
+        `${id}: --control-hover on ${CHIP_FILL} (${hover} on ${tokens[CHIP_FILL]})`
+      ).toBeGreaterThanOrEqual(HOVER_STEP);
+      expect(
+        ratio(hex('--text'), hover),
+        `${id}: --text on --control-hover (${tokens['--text']} on ${hover})`
+      ).toBeGreaterThanOrEqual(4.5);
+    });
+  }
+);
+
 // --- Words on an ACCENT FIELD, in EVERY shipped theme (#269) ----------------
 //
 // The §5.11 identity badge is the one place a session's accent has words on it,

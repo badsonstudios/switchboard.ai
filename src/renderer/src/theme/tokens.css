@@ -282,6 +282,37 @@
   /* an auto-group's own surface, derived so it tracks both themes for free */
   --auto-surface: color-mix(in srgb, var(--auto-ink) 7%, var(--rail-card));
   --auto-head: color-mix(in srgb, var(--auto-ink) 16%, var(--rail-card));
+  /* A SMALL CONTROL'S EDGE (#1009), and it is deliberately NOT `--border`.
+   *
+   * `--border` is a hairline: it measures 1.13:1 against the composer's own
+   * `--panel2` on nordic and 1.21:1 on daylight, which is why four outlined
+   * chips sitting on that panel did not read as buttons at all. WCAG 1.4.11
+   * asks 3:1 of the visual information that identifies a control, and this is
+   * the same failure #648 found in `--group-frame` one layer up.
+   *
+   * RETUNING `--border` ITSELF WAS THE WRONG FIX and was not attempted: it is
+   * the app's hairline everywhere — card edges, table rules, the code fence,
+   * the composer's own top edge — so moving it to 3:1 repaints the whole app to
+   * solve an affordance problem on one row. That is #685's territory, not this
+   * token's. This one is derived instead, so it costs a theme nothing and can
+   * never disagree with the ink it belongs to.
+   *
+   * THE 80%: the edge is the chip's own label ink pulled back toward the chip's
+   * fill — "an outlined control draws its edge in a quieter version of its
+   * word" — and 80% is the strongest pullback that still clears 3:1 against
+   * every surface the chip touches in every shipped theme. 75% lands on exactly
+   * 3.00:1 on nordic, which is a bar passed by rounding; 80% measures
+   * 3.21-8.87:1 against `--chip`, 3.56-9.36:1 against `--panel2` and
+   * 4.05-10.46:1 against `--panel`. tokens.drift.test.ts asserts all three, in
+   * all four themes.
+   *
+   * THE HOVER FILL is the same move in the opposite direction: the chip's fill
+   * stepped toward its ink, so a pointer gets a real response on light and dark
+   * alike without either theme needing its own rule. The step measures
+   * 1.33-1.89:1 against the resting fill and `--text` stays at 5.90-10.16:1
+   * on it. */
+  --control-edge: color-mix(in srgb, var(--muted) 80%, var(--chip));
+  --control-hover: color-mix(in srgb, var(--muted) 22%, var(--chip));
 }
 
 /* base document styling */
@@ -478,6 +509,72 @@ body {
 .composer-box {
   field-sizing: content;
   overflow-y: auto;
+}
+
+/* THE COMPOSER'S OPTIONS ROW — one treatment for all four controls (#1009).
+ *
+ * Autonomy, model, Compact and Clear are the same kind of thing: a small
+ * control that acts on THIS session. #903 said so and gave three of them a
+ * shared helper; the model chip styled itself and hardcoded `--faint` — the
+ * DISABLED ink — while enabled, so the one control whose whole history is "it
+ * looked like a label and never got clicked" (#747) wore the dimmest colour on
+ * the row. There is one ink now and CSS owns it, which is the only version of
+ * this that cannot drift again: a component cannot quietly opt one chip out of
+ * a rule it never writes.
+ *
+ * IT LIVES HERE RATHER THAN INLINE for this file's own stated rule (see the
+ * header): a `:hover` state an inline background would beat on specificity,
+ * and a token pair carrying a contrast promise tokens.drift.test.ts has to be
+ * able to read.
+ *
+ * FILLED AT REST, not transparent. An outline on a 1.13:1 hairline is not an
+ * affordance — see `--control-edge` — and the fill is what makes the chip a
+ * shape before its edge is a line. `--chip` on `--panel2` is only 1.1:1, so the
+ * fill alone is not the affordance either; the pair is.
+ *
+ * THE INK IS `--text`, NOT `--muted`, and the fill is why. These are 10px
+ * WORDS, so they owe WCAG 4.5:1 — and `--muted` on `--chip` is 4.10:1 on
+ * nordic, under AA. That exact pair has come up twice before and been answered
+ * the same way both times: the urgency lamp's "you are here" state and the
+ * accent-less §5.11 badge both write `--text` the moment they sit on a chip
+ * fill. `--muted` was fine while these chips were transparent on `--panel2`
+ * (4.55:1); it stops being fine the moment they are filled, so it goes.
+ * `--text` measures 8.44-16.48:1 at rest.
+ *
+ * DISABLED is the `disabled` attribute, this dimmer ink and the tooltip that
+ * says why — never colour on its own (DESIGN 5.32). It is `--faint` on `--chip`
+ * exactly as the disabled send button beside it already is, and it is strictly
+ * less contrast than the enabled ink in every theme, which is the promise the
+ * drift test checks rather than the specific value. */
+.composer-chip {
+  background: var(--chip);
+  border: 1px solid var(--control-edge);
+  border-radius: var(--radius-chip);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 10px;
+  padding: 1px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.11s,
+    border-color 0.11s,
+    color 0.11s;
+}
+/* One step toward the ink, fill AND edge together — a pointer should not have
+ * to hunt for the response, and the ink is already `--text` so it has nowhere
+ * brighter to go. `--text` stays at 5.90-10.16:1 on the hovered fill.
+ * `[data-tone='danger']` is excluded on purpose: Clear's confirm button pins
+ * its own wash, ink and border inline (#221/#246), and an inline background
+ * beats this rule while `border-color` would not — which would strip the red
+ * edge off the one button whose colour is the warning and leave the fill. */
+.composer-chip:hover:not(:disabled):not([data-tone='danger']) {
+  background: var(--control-hover);
+  border-color: var(--muted);
+}
+.composer-chip:disabled {
+  color: var(--faint);
+  cursor: default;
 }
 
 /* THE FEED IS DELIBERATELY NOT SKIPPED, AND THAT COST US A CI RED — read this
