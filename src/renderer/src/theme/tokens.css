@@ -1356,6 +1356,12 @@ mark[data-feed-match-current] {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font-ui);
+  /* NAMED, so the header can ask the same width question the outline asks
+     (#1010). The outline's own yield rule is a container query on
+     `.doc-rendered-wrap` further down, and the toolbar chip that turns the
+     outline on and off is NOT inside that element — it is in `.doc-header`,
+     whose nearest container is this one. Same box, same width, one threshold. */
+  container: doc-pane / inline-size;
 }
 .doc-header {
   display: flex;
@@ -1573,6 +1579,18 @@ mark[data-feed-match-current] {
    can hold a 300px one beside a session and a 1600px one on a second monitor. */
 @container (max-width: 420px) {
   .doc-outline {
+    display: none;
+  }
+}
+/* ...and the CHIP goes with it (#1010). The rule above is the app deciding
+   there is no room for an outline; leaving a "Hide outline" toggle in the
+   toolbar under it would offer the reader a control over something that is
+   already gone, which reads as broken. `doc-pane` rather than the unnamed
+   container, because the chip lives in `.doc-header` and the nearest unnamed
+   container to IT is `.doc-viewer` — naming it says so instead of relying on
+   the two boxes happening to be the same width. */
+@container doc-pane (max-width: 420px) {
+  .doc-outline-toggle {
     display: none;
   }
 }

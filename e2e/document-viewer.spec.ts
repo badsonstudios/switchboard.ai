@@ -19,7 +19,14 @@ import { execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { launchApp, LaunchedApp, registerTempDir, tempProjectFolder } from './fixtures/app';
+import {
+  launchApp,
+  LaunchedApp,
+  onTestDisplay,
+  readWorkspaceFile,
+  registerTempDir,
+  tempProjectFolder,
+} from './fixtures/app';
 
 /** A tracking pixel's host. `.invalid` can never resolve, belt to the braces. */
 const TRACKER = 'https://tracker.invalid/pixel.gif';
@@ -100,9 +107,66 @@ function seededProject(): { folder: string; doc: string } {
 const viewer = (w: Page) => w.locator('[data-testid="document-viewer"]');
 const rendered = (w: Page) => w.locator('[data-testid="doc-rendered"]');
 
+/** `tokens.css`: `@container (max-width: 420px) { .doc-outline { display: none } }`. */
+const OUTLINE_MIN_PANE = 420;
+
 test.describe('document viewer (P2-E16-02)', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
+
+  /**
+   * Give the viewer a pane the outline can actually live in, and SAY SO (#1010).
+   *
+   * `.doc-outline` has carried a `@container (max-width: 420px)` rule since
+   * #530's cramped-pane finding — below that width the outline is navigation
+   * that has stopped serving the thing it navigates, so it yields the whole
+   * pane to the prose. #1010 hides the toolbar chip under the same threshold,
+   * because a control over something already gone reads as broken.
+   *
+   * Which means a small screen leaves the nav IN THE DOM AND HIDDEN and the
+   * chip unclickable — exactly how this test first failed on the Windows CI
+   * runner while passing on the developer's desktop. MEASURED here, one
+   * document beside one session card, 2026-09-30:
+   *
+   *     window 1024 -> pane 348px   outline hidden, chip hidden
+   *     window 1100 -> pane 386px   outline hidden, chip hidden
+   *     window 1280 -> pane 476px   outline shown    <- the default, 56px of luck
+   *     window 1700 -> pane 686px   outline shown
+   *
+   * The pane is roughly the window less ~600px of rail and session card, so the
+   * default 1280 cleared the threshold by a margin no one had measured. This
+   * asks for 1700x950 — the geometry `document-peek.spec.ts`'s ROOMY pane test
+   * already uses and proves CI honours — and then ASSERTS the pane it got, so
+   * the next failure of this kind reads "the pane was too narrow" rather than
+   * "the chip is broken".
+   */
+  /**
+   * Put the main window at a size. Only the WIDTH is ever under test here; the
+   * corner rides `onTestDisplay` (#479) so this is not the one place in the
+   * suite that drags the window back onto the developer's working monitor.
+   */
+  async function setBounds(width: number, height: number): Promise<void> {
+    await a.app.evaluate(
+      ({ BrowserWindow }, box) => BrowserWindow.getAllWindows()[0]?.setBounds(box),
+      onTestDisplay(a, { x: 20, y: 20, width, height })
+    );
+  }
+
+  async function roomyPane(w: Page): Promise<void> {
+    await setBounds(1700, 950);
+    const paneWidth = (): Promise<number> =>
+      w.evaluate(
+        () => document.querySelector('.doc-rendered-wrap')?.getBoundingClientRect().width ?? -1
+      );
+    await expect
+      .poll(paneWidth, {
+        message:
+          `the viewer pane never grew past ${OUTLINE_MIN_PANE}px, so the outline is ` +
+          'suppressed by its container query and this test cannot say anything ' +
+          'about the Outline chip',
+      })
+      .toBeGreaterThan(OUTLINE_MIN_PANE);
+  }
 
   test('a .md opens rendered, renders hostile input inert, and fetches NOTHING', async () => {
     const { folder, doc } = seededProject();
@@ -182,6 +246,94 @@ test.describe('document viewer (P2-E16-02)', () => {
 
     await viewer(w).getByRole('button', { name: 'Rendered', exact: true }).click();
     await expect(rendered(w).locator('h1')).toHaveText('The document viewer');
+  });
+
+  // #1010. The unit tests own the chip's states; what only a real window can
+  // prove is the two halves they cannot reach — that removing the nav actually
+  // WIDENS the document (jsdom has no layout, so `getBoundingClientRect` is all
+  // zeroes there), and that the choice is still made after a quit and a
+  // relaunch, which is the acceptance criterion that decided where the
+  // preference is stored.
+  //
+  // THE TWO CLAIMS ARE DELIBERATELY ASKED UNDER DIFFERENT CONDITIONS, after
+  // this test failed twice on CI and once in three local repeats:
+  //
+  //   * the REFLOW needs a pane wide enough to have an outline at all, so that
+  //     half sizes the window first and asserts the size it got (`roomyPane`);
+  //   * the PERSISTENCE needs no geometry, so that half asserts nothing that a
+  //     window width could change — and is run in the NARROW shape on purpose.
+  //
+  // Resizing a just-relaunched window is what could not be made reliable: main
+  // restores the saved bounds and a `setBounds` that lands first is silently
+  // stomped. Rather than guess at a third geometry, the relaunch leg stopped
+  // needing one.
+  test('the Outline chip hides the outline, widens the document, and is remembered', async () => {
+    const { folder, doc } = seededProject();
+    a = await launchApp({ seedFolder: folder, seedDocument: doc });
+    let w = a.window;
+    await roomyPane(w);
+    await expect(rendered(w).locator('h1')).toBeVisible();
+
+    const outline = viewer(w).locator('.doc-outline');
+    const chip = viewer(w).getByRole('button', { name: 'Outline', exact: true });
+    await expect(outline).toBeVisible();
+    await expect(chip).toHaveAttribute('aria-pressed', 'true');
+
+    const withOutline = (await rendered(w).boundingBox())!.width;
+    await chip.click();
+    await expect(outline).toHaveCount(0);
+    await expect(chip).toHaveAttribute('aria-pressed', 'false');
+    // THE CLAIM ONLY A REAL ENGINE CAN SETTLE: the outline's width went to the
+    // prose. jsdom has no layout, so every box there is zero.
+    expect((await rendered(w).boundingBox())!.width).toBeGreaterThan(withOutline);
+
+    // ...and back on again — the whole round trip, here on the window this test
+    // sized itself rather than after a relaunch that resizes itself.
+    await chip.click();
+    await expect(outline).toBeVisible();
+    expect((await rendered(w).boundingBox())!.width).toBe(withOutline);
+
+    // ── and the OFF choice survives a quit ────────────────────────────────
+    //
+    // Turned off again, because that is the state worth persisting: "shown" is
+    // also the default, so a relaunch showing an outline proves nothing.
+    await chip.click();
+    await expect(outline).toHaveCount(0);
+
+    // SHRINK BEFORE THE QUIT, deliberately: `window-state` restores bounds, so
+    // this makes the relaunch come back in the NARROW shape a small-screened CI
+    // runner has anyway — the shape that broke this test's first two versions.
+    // Nothing after the relaunch touches the window's size, which is the other
+    // half of the lesson: `setBounds` on a JUST-RESTORED window races main's
+    // own restore and loses about one run in three (measured), so the relaunch
+    // leg is written to need no geometry at all.
+    await setBounds(1024, 768);
+    const home = a.home;
+    await a.close();
+    // 1. it was written
+    expect(readWorkspaceFile(home).ui?.documentOutline).toBe(false);
+
+    a = await launchApp({ seedFolder: folder, seedDocument: doc, home });
+    w = a.window;
+    // 2. ...and it is read back. The PANEL does not survive — `isDerivedPanelId`
+    // drops every `doc-` panel out of a restored layout on purpose — so this is
+    // the seed seam opening a FRESH viewer, which finds the preference waiting.
+    // Measured on a 1024-wide relaunch: viewer present, body present, pane
+    // 348px, chip in the DOM reading `aria-pressed="false"`.
+    await expect(viewer(w)).toBeVisible();
+    await expect(rendered(w).locator('h1')).toBeVisible();
+    await expect(viewer(w).locator('.doc-outline')).toHaveCount(0);
+    // BY TEST ID, and that is a fix rather than a detail. `getByRole` matches
+    // the ACCESSIBILITY TREE, and #1010's own CSS takes the chip out of it in a
+    // pane under 420px — so on a narrow relaunch the role query resolves to
+    // nothing and the failure reads "element(s) not found", which is exactly
+    // what CI reported. What survives a restart is the remembered STATE, and
+    // asking about it must not depend on the window's width. The chip's a11y
+    // reachability is asserted above, on a pane this test gave room to.
+    await expect(viewer(w).locator('[data-testid="doc-outline-toggle"]')).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    );
   });
 
   test('a relative link navigates in the viewer; Back returns; a PDF gets the card', async () => {

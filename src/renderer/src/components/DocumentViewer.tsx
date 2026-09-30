@@ -46,6 +46,11 @@ import {
   OutlineEntry,
 } from '../lib/document-render';
 import { applyMatches, clearMatches, focusMatch } from '../lib/document-find';
+import {
+  getDocumentOutline,
+  subscribeDocumentOutline,
+  toggleDocumentOutline,
+} from '../lib/document-outline';
 import { findBarState, findQuery } from '../lib/find-bar-state';
 import { findSurfaceKey, publishFindSurface, type DocumentFindSurface } from '../lib/find-surfaces';
 import { openMonacoFind, type FindableEditor } from '../lib/monaco-find';
@@ -381,6 +386,14 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
   const [outline, setOutline] = React.useState<readonly OutlineEntry[]>([]);
   const [frontOpen, setFrontOpen] = React.useState(false);
 
+  // The reader's own off switch for the outline (#1010). GLOBAL, and
+  // `lib/document-outline`'s header says at length why a per-panel key could
+  // not survive a relaunch: a `doc-` panel is dropped from every restored
+  // layout, so its id names a different file next launch.
+  const outlineWanted = React.useSyncExternalStore(subscribeDocumentOutline, getDocumentOutline);
+  const outlineRef = React.useRef<HTMLElement | null>(null);
+  const outlineToggleRef = React.useRef<HTMLButtonElement | null>(null);
+
   // Scroll position per MODE, so the toggle round-trips. Two numbers rather
   // than one shared offset: a rendered line and a source line are not the same
   // distance down the pane, and pretending they are lands you in the wrong
@@ -629,6 +642,45 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
     setMode(next);
   };
 
+  // --- the outline's off switch (#1010) ------------------------------------
+  //
+  // TWO QUESTIONS, deliberately separate. `outlineOffered` is whether there is
+  // an outline to hide at all — the toggle is GREYED, never absent (§5.8, the
+  // same rule the Rendered chip follows for a `.ts`), because a control that
+  // vanishes tells the reader nothing about why. `outlineShown` is the answer
+  // the body actually renders, and it is the AND of "there is one" and "you
+  // want it": a stored `false` must not make a chip appear over a source view,
+  // and three headings must not resurrect an outline the reader turned off.
+  //
+  // `outline` itself is only written by the rendered-body effect, so it holds
+  // the last rendered document's headings while Source is on screen — which is
+  // exactly why `showRendered` is part of both answers rather than just one.
+  const outlineOffered = showRendered && outline.length >= 3;
+  const outlineShown = outlineOffered && outlineWanted;
+
+  /**
+   * Flip it, without stranding a keyboard user in a pane that is about to stop
+   * existing (#1010's a11y done-when).
+   *
+   * The ordinary path cannot strand anyone — the chip is what was clicked, so
+   * the chip has focus and keeps it. This covers the path where the flip
+   * arrives from somewhere else while a heading link is focused: a second
+   * viewer's chip, a popped-out window, or any later caller of
+   * `setDocumentOutline`. Read BEFORE the state change, because once React has
+   * unmounted the nav its `contains` can only ever answer false and the focus
+   * has already fallen to `<body>`.
+   *
+   * `toggleDocumentOutline` rather than `set(!outlineWanted)`: the module reads
+   * the LIVE value, where `outlineWanted` is this render's copy of it. Equal
+   * today, and the difference is the day two windows flip it in the same tick.
+   */
+  const toggleOutline = (): void => {
+    const nav = outlineRef.current;
+    const active = nav?.ownerDocument?.activeElement ?? null;
+    if (nav && active && nav.contains(active)) outlineToggleRef.current?.focus();
+    toggleDocumentOutline();
+  };
+
   // §5.24's lineage convention: the accent is a TINT on the surface (a rule
   // down its leading edge, exactly as a card header wears it), never the ink —
   // the eight accents span 1.8:1 to 3.1:1 on daylight and text on them cannot
@@ -718,6 +770,32 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
             {t('document.source')}
           </button>
         </div>
+        {/* The outline's off switch (#1010, §5.30). BESIDE the mode pair and
+            not inside it: Rendered|Source are two spellings of one question and
+            share a `role="group"`, while this is an independent on/off and
+            would muddy that group's name. A PRESSED TOGGLE rather than a label
+            flipping between "Hide outline" and "Show outline" — the chip then
+            names the thing it controls in both states, and the verb lives in
+            the tooltip where the owner's own words can stay. Greyed, never
+            hidden, when there is nothing to hide (§5.8). */}
+        <button
+          type="button"
+          ref={outlineToggleRef}
+          className="doc-btn doc-outline-toggle"
+          data-testid="doc-outline-toggle"
+          aria-pressed={outlineShown}
+          disabled={!outlineOffered}
+          title={
+            !outlineOffered
+              ? t('document.outlineUnavailable')
+              : outlineShown
+                ? t('document.hideOutline')
+                : t('document.showOutline')
+          }
+          onClick={toggleOutline}
+        >
+          {t('document.outline')}
+        </button>
         <button
           type="button"
           className="doc-btn"
@@ -808,8 +886,13 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
         </div>
       ) : showRendered ? (
         <div className="doc-rendered-wrap">
-          {outline.length >= 3 ? (
-            <nav className="doc-outline" aria-label={t('document.outline')}>
+          {outlineShown ? (
+            // UNMOUNTED, not `display: none`, when the reader turns it off:
+            // `.doc-outline` is a flex item beside a `flex: 1` `.doc-main`, so
+            // taking it out of the tree is what hands its width back to the
+            // document — and it takes the outline's tab stops with it, which a
+            // hidden-but-present nav would not.
+            <nav className="doc-outline" ref={outlineRef} aria-label={t('document.outline')}>
               <div className="doc-outline-title">{t('document.outline')}</div>
               <ul>
                 {outline.map((h) => (
