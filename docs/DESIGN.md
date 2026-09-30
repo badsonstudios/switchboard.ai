@@ -4335,6 +4335,29 @@ the order the OS reported them, not the first 500 alphabetically** — and the t
 that is a listing filter and not a security control (a `.git` file was always
 inside the read scope), so what it means is that the tree offers no road there.
 
+**What is bounded but NOT closed, said out loud.** Three residuals, all of them
+needing write access *inside* a session folder — which the hosted agent already
+has, so none is an escalation, and all three are recorded here rather than left
+for a future reader to rediscover:
+
+- **A one-level check-to-use race.** The target is `realpath`'d and then
+  `opendir`'d by name, because Node offers no handle-relative listing. A final
+  component swapped for a junction in that window would be followed, exposing
+  exactly *one* level of names — the next call re-checks and refuses.
+- **`ReadScope`'s existence oracle is not perfect for a path spelled INSIDE the
+  scope.** Its refusal split closes the oracle for anything spelled outside;
+  given a symlink `<root>/probe` aimed anywhere, `out-of-scope` still means the
+  target exists and `not-found` means it does not. This predates the Files tab
+  and applies equally to `fs:read`, `fs:watch` and `fs:reveal`. It wants its own
+  item against E16, not a fix on this path only.
+- **A denial-of-service bound, which is deliberately not part of containment.**
+  `ReadScope.resolve` is synchronous and walks up one segment at a time on an
+  unresolvable path; measured, a 2000-segment path costs ~106 ms of frozen main
+  process, and a renderer can fire a thousand un-awaited calls. `listDir`
+  therefore refuses a path over 4096 characters or 64 segments *before* either
+  resolve. Containment does not depend on that check, and both numbers are far
+  past anything real.
+
 **Its own capability, `fs.list`.** Between `fs.probe` and `fs.read` because that
 is where its cost sits: more than probing one guessed path at a time, which
 cannot *enumerate*; strictly less than the bytes of every file a listing names.
