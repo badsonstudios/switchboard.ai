@@ -3,6 +3,119 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🏁 ORCHESTRATION RUN COMPLETE — 2026-09-30: **all seven issues done, seven
+> merged on green CI, nine follow-ups filed.** `main` @ `eddc328`.
+> #1009 (PR #1016) · #1008 (PR #1018) · #1010 (PR #1015) · #941+#942 (PR #1021)
+> · #997 (PR #1023) · **#521 layer 2 (PR #1027)**. Waves 1–2 are written up in
+> the entry below; this is wave 3 and the run's verdict.
+>
+> **⭐ #521 IS CLOSED, AND CLOSED BY HAND.** Layer 1 and layer 2 shared the issue,
+> so **no PR was allowed a closing keyword** and the orchestrator closed it after
+> checking — the deliberate opposite of the trap that has fired twice here.
+>
+> **THE FILES TAB'S REAL COST WAS THE CHANNEL, NOT THE TAB**, exactly as the
+> costing predicted. `fs:listDir` is a **new capability** (`fs.list`, placed
+> between `fs.probe` and `fs.read`) and a **strict narrowing** of §5.30's guard:
+> `ReadScope.resolve(root)`, `ReadScope.resolve(path)`, then the new
+> `isWithinRoot(realRoot, realTarget)`. **A declared root grants nothing — naming
+> one can only refuse more.** The guarantee, written down: *nothing this channel
+> can reach was unreachable by `fs:read` before it existed, and within one call it
+> can only enumerate inside the root that call declared.*
+>
+> **⭐⭐ MUTATION IS WHY THE CONTAINMENT TESTS ARE WORTH ANYTHING.** The worker's
+> FIRST suite would have gone **green with the new check deleted** — mutation
+> found that, and the isolated-narrowing battery exists because of it. Five
+> mutations, each reddening a distinct set. A delegated read-only reviewer (every
+> safety clause restated verbatim, including the never-touch-the-real-%TEMP%
+> clause a reviewer once lacked before deleting ~81,600 directories) probed the
+> real Windows API and found **no escape**: parent walks, absolutes, UNC,
+> drive-relative, device names, verbatim and device prefixes, 8.3 short names,
+> trailing dots and spaces, alternate data streams, over-MAX_PATH, NUL bytes,
+> unicode homoglyphs.
+>
+> **A PERFORMANCE BOUND CAME OUT OF THAT REVIEW AND IS NOT PART OF CONTAINMENT:**
+> `ReadScope.resolve` walks up one segment at a time, synchronously, and a
+> 2000-segment path **froze main for ~106 ms, measured** — with a renderer able to
+> fire a thousand un-awaited calls. Hence a path-shape bound (over 4096 chars or
+> 64 segments refused before either resolve), said out loud to be a
+> denial-of-service bound and not a security one.
+>
+> **ITS OWN REVIEW FOUND FOUR REAL BUGS IN ITS OWN CODE**, which is what a
+> self-review is for: Refresh blanked the whole tree to one spinner row **and the
+> test asserted the wrong object, so it passed**; two ways to strand a spinner for
+> ever; StrictMode doubling every refresh; and a superseded refresh able to
+> overwrite a fresher one.
+>
+> **THREE RESIDUALS NAMED RATHER THAN PAPERED OVER — now #1028.** An existence
+> oracle for a path spelled INSIDE the scope (symlink target exists →
+> `out-of-scope`, absent → `not-found`), the synchronous ancestor walk, and a
+> one-level check-to-use race (Node offers no handle-relative listing, so a final
+> component swapped for a junction in that window exposes exactly one level of
+> names; the next call refuses). **The first two predate this channel and reach
+> `fs:read`, `fs:watch`, `fs:openPath` and `fs:reveal` equally.** `read-scope.ts`
+> was deliberately NOT changed: the reviewer's fix would regress the viewer's
+> message for a legitimate broken symlink, which is a trade-off in someone else's
+> feature. `list-dir.ts` states the real limit instead of re-asserting the
+> guarantee — the honest move, and the one to copy.
+>
+> **⚠️ ONE TRADE-OFF FOR DAN, RECORDED NOT FILED:** the tab makes `.env`,
+> `.claude/.env` and any key inside a session folder **discoverable by clicking**,
+> where before you had to know the path. `fs:read` always permitted reading them,
+> and no-general-hidden-file-rule is right for an agent's folder (`.claude`,
+> `.github`, `.env.example` are the most relevant files there) — but
+> discoverability changed and he may want it narrowed.
+>
+> **DESIGN divergence, one, amended rather than left silent:** §5.10 listed Files
+> AFTER History; the real strip puts it **before**, because History is a
+> permanently disabled placeholder and a working tab behind a dead one reads as
+> the strip trailing off. §5.10 now says so, and the order is asserted in
+> `points.test.ts` and in the e2e.
+>
+> **THE RUN'S OWN LESSONS, worth more than any one item:**
+>
+> 1. **Three CI reds this run were tests that only passed because of THIS
+>    desktop's window size.** #981 in the morning, then #1010 twice. The in-tree
+>    precedents to copy are `feed.spec.ts`'s #716/#981 test and
+>    `document-viewer.spec.ts`'s Outline test: **state the geometry precondition
+>    as code, and assert the pane you actually got.**
+> 2. **`getByRole` reads the ACCESSIBILITY TREE**, so a CSS-hidden control is
+>    *not found* rather than *not visible*. Locate by test id when the question is
+>    "is it in the DOM".
+> 3. **"Green alone" is no longer a valid all-clear for `git-service.test.ts`**
+>    (#1025): two workers independently saw its stalled-probe case fail ALONE on
+>    pristine `main`. That phrase is in every worker contract and every session
+>    note, and for that one case it can return a false all-clear.
+> 4. **A smaller true claim beats a bigger flaky one.** #1010's worker tried the
+>    obvious fix, measured it failing 1 run in 3, and narrowed the claim instead.
+>
+> **Nine follow-ups filed mid-run, all from workers' own finds:** #1017 (palette
+> entry for the outline toggle) · #1019 (report-a-problem's guard gap plus a dead
+> key) · #1020 (two non-twin modals both `aria-modal`) · #1022 (a popout hears
+> none of #941/#942) · #1025 (the flake whose green-alone all-clear is unsound) ·
+> #1026 (two more wire flags we read neither spelling of) · #1028 (the
+> `ReadScope` residuals, against E16) · #1029 (a `file-menu` flake sighting).
+>
+> **⚠️ WAITING ON DAN, NEITHER BLOCKING ANYTHING:**
+>
+> 1. **A RELEASE.** `0.8.102` is unreleased and holds **nine** user-facing entries
+>    now. **Every dogfood row this run added says "needs a version bump before you
+>    can install it"** — nothing from today can be hand-tested until he asks for
+>    the cut, and he said not to cut one without asking.
+> 2. **The narrow-pane outline question**, still unfiled: the outline AND its new
+>    button both vanish under a ≈420px pane (≈ an 1150px window), and for a screen
+>    reader the button is ABSENT FROM THE A11Y TREE rather than merely invisible.
+>    The default 1280 window clears that threshold by **56px**, a margin nobody
+>    had measured.
+>
+> **Worktree pool:** `sb-wt-1/2/3` all clean and detached, reusable as-is. Their
+> `node_modules` were stale (Aug 15) at the start of the run and each worker fixed
+> its own with `npm install` — lockfile unchanged in every case.
+>
+> **Next up:** the queue is open and nothing is in flight. The run's own
+> follow-ups are the freshest work (#1017 and #1019 are the two cheapest);
+> **#1028 is the one with teeth** and belongs to E16. **E21-02/03/04
+> (#904/#716/#740) remain the owner's.**
+
 > # ✅ WAVE 1 + 2 DONE — 2026-09-30: **five issues merged on green CI**
 > (#1009 PR #1016, #1008 PR #1018, #1010 PR #1015, #941+#942 PR #1021). The
 > orchestration block below has the run’s plan and the merge override; this is
