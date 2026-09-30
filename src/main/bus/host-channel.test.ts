@@ -657,6 +657,80 @@ describe('the round trip', () => {
       expect(blackboard.size()).toBe(0);
     });
 
+    it('⭐ ONE SESSION REMOVES ANOTHER’S NOTE, over the real host (#861)', async () => {
+      // The #861 decision proved against two SEPARATE authenticated endpoints,
+      // not against one object called twice: the claim is that the reach is
+      // cross-session, so a single-endpoint test would assert nothing about it.
+      const a = await host.registerSession('sb-a');
+      const b = await host.registerSession('sb-b');
+
+      await askHost({
+        ...a,
+        request: { op: 'blackboard_publish', args: { key: 'alphas-note', value: 'mine' } },
+      });
+      expect(blackboard.size()).toBe(1);
+
+      const removed = await askHost({
+        ...b,
+        request: { op: 'blackboard_remove', args: { key: 'alphas-note' } },
+      });
+      expect(removed).toMatchObject({
+        ok: true,
+        // ...and the receipt names ALPHA, the publisher, not Beta who removed
+        // it. That is the field an agent needs to say what it destroyed.
+        removal: { key: 'alphas-note', removed: true, publisherName: 'Alpha' },
+      });
+      expect(blackboard.size()).toBe(0);
+
+      // the note really is gone for a subsequent reader, not merely reported so
+      const read = await askHost({ ...a, request: { op: 'blackboard_read', args: { key: 'alphas-note' } } });
+      const board = read.board as { kind: string; entry: unknown };
+      expect(board.entry).toBeNull();
+    });
+
+    it('⭐ THE VICTIM IS TOLD, not just the remover — the tombstone over the wire (#861)', async () => {
+      // The half of #861's legibility that does not reach the session doing the
+      // removing. Alpha publishes, BETA removes, and ALPHA's later read must say
+      // so — otherwise it is told the note "may not have got there yet" and
+      // waits for something that will never arrive.
+      const a = await host.registerSession('sb-a');
+      const b = await host.registerSession('sb-b');
+
+      await askHost({ ...a, request: { op: 'blackboard_publish', args: { key: 'k', value: 'v' } } });
+      await askHost({ ...b, request: { op: 'blackboard_remove', args: { key: 'k' } } });
+
+      const read = await askHost({ ...a, request: { op: 'blackboard_read', args: { key: 'k' } } });
+      const board = read.board as { entry: unknown; removed?: { removerName: string } };
+      expect(board.entry).toBeNull();
+      // ATTRIBUTED FROM THE TOKEN, like a publisher: the remover is Beta because
+      // that is the endpoint the request authenticated on, not because anything
+      // in `args` said so.
+      expect(board.removed?.removerName).toBe('Beta');
+    });
+
+    it('removing a key nobody published is `ok`, not a refusal (#861)', async () => {
+      const a = await host.registerSession('sb-a');
+      const reply = await askHost({
+        ...a,
+        request: { op: 'blackboard_remove', args: { key: 'never-published' } },
+      });
+      expect(reply).toMatchObject({ ok: true, removal: { removed: false, chars: 0 } });
+    });
+
+    it('a malformed remove key is REFUSED at the host, and destroys nothing (#861)', async () => {
+      // The asymmetry with `blackboard_read` that matters: an absent key there
+      // is the discovery call, and here it must never be a wildcard.
+      const a = await host.registerSession('sb-a');
+      await askHost({ ...a, request: { op: 'blackboard_publish', args: { key: 'keep', value: 'v' } } });
+
+      for (const args of [{ key: 42 }, { key: '   ' }, {}]) {
+        const reply = await askHost({ ...a, request: { op: 'blackboard_remove', args } });
+        expect(reply).toMatchObject({ ok: false });
+        expect(String(reply.reason)).toMatch(/must be a string|cannot be empty/);
+      }
+      expect(blackboard.size()).toBe(1);
+    });
+
     it('a REJECTED query is caught rather than crashing Electron main', async () => {
       // `sessionDiff` never rejects by contract, but that contract belongs to a
       // module this one does not own, and an unhandled rejection out of main

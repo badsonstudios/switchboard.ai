@@ -557,7 +557,8 @@ Tools exposed:
 - `send_to_session(session, message)` → queues a message into a sibling's prompt
   composer (delivery policy below)
 - `get_session_diff(session)` → sibling's current uncommitted diff
-- `publish(key, value)` / `read(key)` → shared scratchpad ("blackboard") for pipelines
+- `publish(key, value)` / `read(key)` / `remove(key)` → shared scratchpad ("blackboard")
+  for pipelines
 
 Now sessions are genuinely aware of each other: the TradingApp agent can *ask* what the
 PropaneMon agent changed. This runs on the subscription like everything else — MCP tool
@@ -620,6 +621,69 @@ calls are just tool calls inside a normal Claude Code session.
 > ("NOBODY HAS BEEN TOLD") and points at `send_to_session` for when a person is what is
 > actually wanted, because the neighbouring tool promising delivery is exactly what makes
 > that mistake available.
+
+> **AS BUILT 2026-09-30 (#861) — `blackboard_remove`, and the cap stops being a
+> one-way door.** #796 shipped `BLACKBOARD_MAX_KEYS` with nothing that could take a key
+> off the board, so the count could be approached and never receded from: a pipeline
+> generating a key per task reached 100 permanently, and every new key was refused for
+> the life of the app. A third tool fixes it.
+>
+> **⭐ ANY SESSION MAY REMOVE ANY KEY, and that was the question #861 held open** —
+> *"who may remove whose note, since the namespace is shared and cross-session overwrite
+> is already permitted"*. That clause is the answer, for three reasons:
+>
+> 1. **It adds no destructive power that does not already exist.** Cross-session
+>    overwrite is permitted and deliberate — this section says so above, and the manual
+>    states it plainly. An overwrite already destroys a sibling's content; this destroys
+>    the same content under a clearer name.
+> 2. **"Only the publisher may remove" would not fix the bug it looks like it fixes.**
+>    The cap is reached by a pipeline generating keys, and those publishers are exactly
+>    the sessions that have since exited — `publisherGone` exists because that is the
+>    ordinary case. Publisher-only removal leaves the door shut precisely when it is
+>    actually hit.
+> 3. ~~It is safer than the overwrite already allowed.~~ **THIS REASON WAS WRONG AND
+>    REVIEW CAUGHT IT — recorded rather than deleted, because the correction is the
+>    interesting part.** The claim was that a removal leaves the reader with #764's
+>    honest miss while an overwrite leaves content under an author. True about *reach*,
+>    false about *detectability*, and detectability was the entire mitigation being
+>    relied on. An **overwrite leaves its evidence where the victim will see it** — the
+>    next `read` returns content with a changed author, and `list` still shows the key.
+>    A **removal left nothing anywhere** except the transcript of the session that did
+>    it, which no sibling can read. Worse, `blackboard_read`'s miss says the session you
+>    are waiting on *"may not have got there yet"* — so after a removal switchboard was
+>    telling a reader, in its own voice, to keep waiting for something that would never
+>    arrive. The conclusion survived (reason 2 is decisive); the mitigation had to change.
+>
+> **⭐ SO REMOVAL IS REMEMBERED. `BLACKBOARD_TOMBSTONE_CAP` (100).** A removed key keeps
+> a tombstone — who took it off and when, **never its value** — and `read`'s miss
+> consults it, so the answer becomes *"a note was there and Beta removed it at T; waiting
+> for it will not help"*. The one genuinely misleading path is now the most informative
+> one on the class. Bounded, oldest-evicted, for `BLACKBOARD_MAX_KEYS`' own reason: an
+> agent looping on generated keys and removing each one would otherwise grow it for ever.
+> A republish **clears** the tombstone, which is the only way the register could
+> contradict the board.
+>
+> **The mitigation is therefore legibility in BOTH directions, and still not a permission
+> check.** The remover's id is passed in and **recorded, never compared** — there is no
+> branch anywhere that tests it against the publisher, and the day one appears reason 2
+> stops being true. The receipt names the key, its size, who had published it, whether
+> that session has since exited, and both ceilings it freed; the tombstone names the
+> remover to everyone else. The removed value is deliberately **not** echoed in either.
+>
+> **The empty-value delete stays refused, and that is not a contradiction.** #796
+> rejected "an empty publish means delete" because an agent whose own computation
+> returned empty would destroy a sibling's note with nothing able to tell the two
+> intentions apart. Building a deliberate delete does not weaken that argument — it
+> answers the other half of it, since #796's own words were that removal *"should arrive
+> as a deliberate gesture with its own name"*. Both now hold.
+>
+> **A missing key is `ok` with `removed: false`**, not a refusal (#764's ordering applied
+> to a mutation), but the flag exists so a receipt can never claim a removal that did not
+> happen. The key is **required** in the schema, unlike `blackboard_read`'s — a keyless
+> read is the discovery call, while a keyless remove could only mean "clear the board",
+> which was deliberately not built. `CHANNEL_VERSION` was **not** bumped, for the reason
+> that constant carries: a new word in the vocabulary degrades to one readable "unknown
+> request", while the gate is for envelope changes.
 
 > **AS BUILT 2026-09-08 (P2-E11-04, #764) — the two READS are shipped.**
 > *(`send_to_session` shipped in #765 — see its as-built note under "Delivery

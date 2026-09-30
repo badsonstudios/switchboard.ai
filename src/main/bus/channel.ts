@@ -38,6 +38,9 @@ export const CHANNEL_VERSION = 1;
  *
  * `send_to_session` (#765) is the first op that WRITES, and it went in without
  * touching `CHANNEL_VERSION` for the reason that constant's comment gives.
+ * `blackboard_remove` (#861) is the first that DESTROYS, and it went in the same
+ * way and for the same reason — the gate is for envelope changes, and a new word
+ * degrades to one readable "unknown request" against an older host.
  */
 export const BUS_OPS = [
   'list_sessions',
@@ -47,6 +50,7 @@ export const BUS_OPS = [
   'get_session_context',
   'blackboard_publish',
   'blackboard_read',
+  'blackboard_remove',
 ] as const;
 
 export type BusOp = (typeof BUS_OPS)[number];

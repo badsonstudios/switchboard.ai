@@ -274,6 +274,44 @@ export const TOOLS: readonly ToolDescriptor[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: 'blackboard_remove',
+    // THE DESCRIPTION LEADS WITH THE PERMANENCE AND WITH THE REACH, because both
+    // are things an agent would otherwise have to discover by doing it. This is
+    // the only destructive tool on the bus, and the note it destroys may belong
+    // to a sibling — an agent that knew neither could clear a pipeline's state
+    // while believing it was tidying its own scratch keys.
+    //
+    // It also names the case it EXISTS for. The key cap's refusal now points
+    // here, and a tool an agent only finds by reading a refusal is a tool that
+    // arrives one failure too late.
+    description:
+      'Take a note off the switchboard blackboard, permanently. Use it to free room when the ' +
+      'board is full — publishing is refused once the key limit is reached, and removing a note ' +
+      'you or another session no longer needs is how that limit comes back down. ' +
+      'THIS CANNOT BE UNDONE: the note is gone and switchboard cannot recover it. ' +
+      'ANY session may remove ANY key, including one another session published, the same way any ' +
+      'session may already overwrite any key — so check with blackboard_read (no key) before ' +
+      'removing something you did not publish yourself. Removing a key nobody published is an ' +
+      'ordinary answer, not an error.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        [KEY_ARG]: {
+          type: 'string',
+          description:
+            'The note to remove, as blackboard_read reported it. Removing a key that is not ' +
+            'there changes nothing and is not an error.',
+        },
+      },
+      // REQUIRED, unlike `blackboard_read`'s key, and that asymmetry is the
+      // point: a keyless read is discovery, while a keyless REMOVE has no
+      // sensible meaning except "clear the board", which #861 deliberately did
+      // not build. Omitting it must be a schema error and never a wildcard.
+      required: [KEY_ARG],
+      additionalProperties: false,
+    },
+  },
 ];
 
 /**
@@ -670,6 +708,102 @@ export function renderPublish(payload: unknown): string {
 }
 
 /**
+ * What became of a `blackboard_remove` (#861), for the agent that did it.
+ *
+ * ── THE RECEIPT IS THE SAFETY MECHANISM, SO IT NAMES THE CASUALTY ───────────
+ *
+ * Removal is open to every session (see `Blackboard.remove` for why), so nothing
+ * on this path refuses a caller for touching a note it did not write. What stops
+ * that being reckless is that the removal cannot be silent: this says WHICH note
+ * went, WHO had written it and HOW BIG it was, in the transcript of the session
+ * that removed it. An agent that has just destroyed the wrong note can therefore
+ * say so and name what to ask for again — which is the difference between an
+ * irreversible action and an unrecoverable one.
+ *
+ * The removed note's VALUE is deliberately not echoed. It is gone, echoing it
+ * would hand back up to 20,000 characters the caller did not ask for, and the
+ * size is what a caller actually needs to judge what it lost.
+ */
+export function renderRemove(payload: unknown): string {
+  const p = asRecord(payload);
+  const key = asText(p.key, '(unnamed)');
+  const keys = typeof p.keys === 'number' ? p.keys : null;
+  const maxKeys = typeof p.maxKeys === 'number' ? p.maxKeys : null;
+  // BOTH CEILINGS, because both refusals now advise removal and an agent
+  // clearing space needs to know which one it is still under. The character
+  // total is the one that needed `remove` most — overwriting only reclaims room
+  // when the new value is smaller — so reporting keys alone left an agent
+  // guessing whether it had freed enough.
+  const totalChars = typeof p.totalChars === 'number' ? p.totalChars : null;
+  const maxChars = typeof p.maxChars === 'number' ? p.maxChars : null;
+  const charRoom =
+    totalChars !== null && maxChars !== null
+      ? ` and ${totalChars.toLocaleString('en-US')} of ${maxChars.toLocaleString('en-US')} characters`
+      : '';
+  const room =
+    keys !== null && maxKeys !== null
+      ? ` The board now holds ${keys} of ${maxKeys} keys${charRoom}.`
+      : '';
+
+  // A MISS READS AS THE ORDINARY ANSWER IT IS, not as a near-failure: the agent
+  // wanted that key gone and that key is gone. Saying "nothing was removed" in
+  // the same breath is what keeps it from being read as a success it was not.
+  if (p.removed !== true) {
+    return (
+      // FLATTENED, like the success branch below. Review caught this raw: the
+      // key is the caller's own argument echoed back to the caller, so it is
+      // self-injection rather than the cross-session hazard `flat` was written
+      // for — but `flat`'s rule is that a renderer is safe on a payload it did
+      // not produce, and one branch of one function obeying it while the other
+      // does not is how the next person learns the wrong rule.
+      `Nothing was on the switchboard blackboard under "${flat(key)}", so nothing was removed. ` +
+      'That is an ordinary answer, not a failure — the key may never have been published, or ' +
+      'another session may already have taken it off.' +
+      room +
+      ' Use blackboard_read with no key to see what is there.'
+    );
+  }
+
+  // EVERY DESCRIPTIVE FIELD IS OPTIONAL, because this renders a payload that
+  // crossed a pipe and `renderSessions`' rule applies: degrade to a readable
+  // line rather than assert a shape.
+  //
+  // ⚠️ EVERY CLAUSE CARRIES ITS OWN SUBJECT AND VERB. The first cut joined them
+  // with commas — "It held N characters, published by X" — which review showed
+  // produces "…blackboard. published by Alpha." the moment `chars` is absent: a
+  // lowercase fragment after a full stop, the exact failure its comment claimed
+  // to prevent. A test had pinned the broken form as correct. Self-standing
+  // sentences cannot be composed wrong, whichever subset survives the pipe.
+  const chars = typeof p.chars === 'number' ? p.chars : null;
+  // `publisherName` is text resolved from a session title, so it is FLATTENED
+  // for `renderBlackboard`'s reason — it is printed in switchboard's own voice,
+  // in a sentence that fences nothing.
+  const who = typeof p.publisherName === 'string' ? flat(p.publisherName) : null;
+  // `publisherKnown === false` means we could not CHECK who published it, so
+  // `publisherName` is a raw session id. Saying "published by sb-3f2a…" as
+  // though that were a name defeats the field this tool leans on, so it is
+  // named as an id instead (#764's third state, one receipt along).
+  const unknownWho = p.publisherKnown === false;
+  const sentences = [
+    chars !== null ? `It held ${chars.toLocaleString('en-US')} characters.` : null,
+    who
+      ? unknownWho
+        ? `switchboard could not check who published it — its session id was ${who}.`
+        : `It was published by ${who}${p.publisherGone === true ? ', which has since finished' : ''}.`
+      : null,
+    typeof p.at === 'string' ? `It had been there since ${flat(p.at)}.` : null,
+  ].filter((s): s is string => s !== null);
+  const detail = sentences.length > 0 ? ` ${sentences.join(' ')}` : '';
+
+  return (
+    `Removed "${flat(key)}" from the switchboard blackboard.${detail}` +
+    ' THIS CANNOT BE UNDONE and the note is not recoverable from switchboard — if that was the ' +
+    'wrong key, say so now and name it, because whoever needs it will have to publish it again.' +
+    room
+  );
+}
+
+/**
  * The blackboard, read (#796) — one note, a miss, or the whole board.
  *
  * ── A MISS IS AN ORDINARY ANSWER AND MUST READ LIKE ONE ─────────────────────
@@ -716,6 +850,28 @@ export function renderBlackboard(payload: unknown): string {
       keys.length > 0
         ? ` The board does hold: ${keys.map((k) => flat(k)).join(', ')}.`
         : ' The blackboard is empty — nothing has been published in this workspace yet.';
+
+    // ⚠️ A REMOVED KEY MUST NOT BE TOLD TO KEEP WAITING (#861). The sentence
+    // below is true of a note that has not been written yet and FALSE of one
+    // that was deleted — and for the deleted case it is switchboard advising an
+    // agent, in its own voice, to wait for something that will never arrive.
+    // That is the failure removal introduced and the tombstone exists to close;
+    // this branch is where the two answers part company.
+    const removed = p.removed === null || p.removed === undefined ? null : asRecord(p.removed);
+    if (removed) {
+      const by =
+        removed.removerKnown === false
+          ? `a session switchboard could not identify (id ${flat(removed.removerName)})`
+          : flat(removed.removerName);
+      const when = typeof removed.at === 'string' ? ` at ${flat(removed.at)}` : '';
+      return (
+        `Nothing is published under that key NOW: a note was there and ${by} removed it${when}. ` +
+        'It is gone and switchboard cannot recover it, so waiting for it will not help — ask ' +
+        'whoever needs it to publish it again, or carry on without it.' +
+        also
+      );
+    }
+
     return (
       'Nothing is published under that key. That is an ordinary answer, not a failure: the session ' +
       `you are waiting on may not have got there yet.${also}`
@@ -831,6 +987,21 @@ const RENDERERS: Record<string, Renderer> = Object.assign(
         'the blackboard. Read the key back before publishing it again',
     },
     blackboard_read: { field: 'board', render: (r) => renderBlackboard(r.board) },
+    blackboard_remove: {
+      field: 'removal',
+      render: (r) => renderRemove(r.removal),
+      // A DESTRUCTIVE WRITE, so it gets its own two openings for
+      // `blackboard_publish`'s reason, pointed the other way. "switchboard could
+      // not answer" is at its worst here: the caller cannot tell whether a note
+      // it may not own still exists, and the wrong assumption in either
+      // direction is bad — believing it is gone leaves a full board, believing
+      // it survived leaves a pipeline reading a note that has vanished.
+      refused: 'Nothing was removed from the blackboard',
+      failed:
+        'switchboard could not confirm whether that note was removed — it may or may not still be ' +
+        'on the blackboard. Read the key back to find out before assuming either way, and do not ' +
+        'publish over it until you know',
+    },
     send_to_session: {
       field: 'delivery',
       render: (r) => renderSend(r.delivery),

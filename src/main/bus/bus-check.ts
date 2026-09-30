@@ -352,8 +352,8 @@ async function main(): Promise<void> {
   const tools = (list.result as { tools?: { name?: string }[] } | undefined)?.tools ?? [];
   const toolNames = tools.map((t) => String(t.name)).sort().join(',');
   check('tools/list offers every bus tool, and nothing else',
-    toolNames === 'blackboard_publish,blackboard_read,get_session_context,get_session_diff,' +
-      'get_session_output,list_sessions,send_to_session',
+    toolNames === 'blackboard_publish,blackboard_read,blackboard_remove,get_session_context,' +
+      'get_session_diff,get_session_output,list_sessions,send_to_session',
     toolNames);
 
   // ── the round trip, over a real endpoint ─────────────────────────────────
@@ -676,6 +676,66 @@ async function main(): Promise<void> {
   // would then silently destroy another session's finding.
   check('…and the note already under that key is untouched',
     /psi drops under load/.test(afterEmpty), afterEmpty);
+
+  // ── #861: removal, over the same real pipe ───────────────────────────────
+  //
+  // The note being removed here is the one PUBLISHED ABOVE and read back three
+  // times, so this proves the whole lifecycle against one key rather than
+  // against a fixture — published, read, listed, and now gone.
+  const removed = await peer.request('tools/call', {
+    name: 'blackboard_remove',
+    arguments: { key: 'regulator-finding' },
+  });
+  const removedText = resultText(removed);
+  check('blackboard_remove round-trips', !isError(removed), removedText);
+  // THE RECEIPT IS THE SAFETY MECHANISM (there is no permission check), so the
+  // end-to-end check is that it actually NAMES what it destroyed rather than
+  // just succeeding. A silent success here would be the failure.
+  check('…naming the note it destroyed and who wrote it',
+    /regulator-finding/.test(removedText) && /published by Switchboard/.test(removedText), removedText);
+  check('…and saying it cannot be undone', /CANNOT BE UNDONE/.test(removedText), removedText);
+  // ...and it does not hand the value back on the way out.
+  check('…without echoing the removed value', !/psi drops under load/.test(removedText), removedText);
+
+  const afterRemove = resultText(
+    await peer.request('tools/call', { name: 'blackboard_read', arguments: {} })
+  );
+  check('…and the board is empty afterwards',
+    /blackboard is empty/.test(afterRemove), afterRemove);
+
+  // THE TOMBSTONE, END TO END. Reading the removed key back must NOT produce
+  // "may not have got there yet" — that sentence is true of a note not written
+  // yet and false of one deleted, and getting it wrong is switchboard advising
+  // an agent to wait for ever. This is the assertion that would have caught the
+  // defect review found, so it belongs in the harness that drives the real pipe.
+  const readRemoved = resultText(
+    await peer.request('tools/call', {
+      name: 'blackboard_read',
+      arguments: { key: 'regulator-finding' },
+    })
+  );
+  check('a read of the REMOVED key says it was removed, and by whom',
+    /removed it/.test(readRemoved) && /Switchboard/.test(readRemoved), readRemoved);
+  check('…and never tells the reader to keep waiting for it',
+    !/may not have got there yet/.test(readRemoved), readRemoved);
+
+  // A SECOND REMOVE OF THE SAME KEY IS ORDINARY, NOT AN ERROR — #764's
+  // ordering applied to a mutation, proven through the real dispatch rather
+  // than only at the policy layer, because `isError` is what the agent sees.
+  const removeAgain = await peer.request('tools/call', {
+    name: 'blackboard_remove',
+    arguments: { key: 'regulator-finding' },
+  });
+  const againText = resultText(removeAgain);
+  check('removing a key that is already gone is not an error',
+    !isError(removeAgain) && /nothing was removed/i.test(againText), againText);
+
+  const badRemove = await peer.request('tools/call', {
+    name: 'blackboard_remove',
+    arguments: { key: '   ' },
+  });
+  check('a malformed remove key is refused rather than treated as a miss',
+    isError(badRemove), resultText(badRemove).slice(0, 200));
 
   // ── a dead host: clean, readable, and FAST ───────────────────────────────
   //

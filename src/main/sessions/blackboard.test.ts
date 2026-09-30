@@ -9,6 +9,7 @@ import { Blackboard } from './blackboard';
 import {
   BLACKBOARD_KEY_CHAR_CAP,
   BLACKBOARD_MAX_KEYS,
+  BLACKBOARD_TOMBSTONE_CAP,
   BLACKBOARD_TOTAL_CHAR_CAP,
   BLACKBOARD_VALUE_CHAR_CAP,
 } from '../../shared/blackboard';
@@ -322,6 +323,300 @@ describe('list', () => {
     b.publish('sb-a', 'zebra', '1');
     b.publish('sb-a', 'apple', '2');
     expect(must(b.list()).map((r) => r.key)).toEqual(['zebra', 'apple']);
+  });
+});
+
+// #861. The cap used to be a one-way door: `BLACKBOARD_MAX_KEYS` could be
+// approached and never receded from, because nothing could take a key off the
+// board. These are mostly about the two things that make a DESTRUCTIVE tool
+// safe here — that it reaches every key on purpose, and that it can never
+// silently claim to have removed something it did not.
+describe('remove', () => {
+  it('takes the note off, and the board shrinks', () => {
+    const b = board();
+    b.publish('sb-a', 'build-status', 'green');
+    expect(b.size()).toBe(1);
+
+    const receipt = must(b.remove('sb-b', 'build-status'));
+    expect(receipt).toMatchObject({ key: 'build-status', removed: true, chars: 5, keys: 0 });
+    expect(b.size()).toBe(0);
+    // ...and the key genuinely reads as absent afterwards, rather than as an
+    // entry holding nothing — which is the shape `publish` refuses to create.
+    expect(must(b.read('build-status')).entry).toBeNull();
+  });
+
+  it('NAMES WHAT IT DESTROYED — publisher and timestamp, not just the key', () => {
+    // The receipt is the whole safety mechanism for this tool (there is no
+    // permission check — see the class), so an agent that removed the wrong
+    // note must be able to say which note, and who to ask for it again.
+    const b = board();
+    b.publish('sb-a', 'schema-decision', 'use uuids');
+    const receipt = must(b.remove('sb-b', 'schema-decision'));
+    expect(receipt.publisherName).toBe('Alpha');
+    expect(receipt.at).toBe('2026-09-18T12:00:00.000Z');
+  });
+
+  it('⭐ ANY SESSION MAY REMOVE ANY KEY — the #861 decision, with the remover ≠ the publisher', () => {
+    // Alpha publishes, BETA removes. The remover id is recorded (see the
+    // tombstone tests below) and never compared to the publisher — the reasoning
+    // is in the class doc: overwrite already reaches every key, and
+    // publisher-only removal would leave the cap shut in the one case that
+    // reaches it, because the publishing session has usually exited by then.
+    const b = board();
+    b.publish('sb-a', 'alphas-note', 'mine');
+    expect(must(b.remove('sb-b', 'alphas-note')).removed).toBe(true);
+    expect(b.size()).toBe(0);
+  });
+
+  it('reports the CHARACTER room as well as the key room', () => {
+    // Review's catch: the total-char refusal advises removal, and that cap
+    // needed it more than the key cap did — overwrite only reclaims room when
+    // the new value is smaller. A receipt reporting keys alone left an agent
+    // clearing space unable to tell whether it had freed enough.
+    const b = board();
+    b.publish('sb-a', 'k', 'x'.repeat(50));
+    const receipt = must(b.remove('sb-b', 'k'));
+    expect(receipt.totalChars).toBe(0);
+    expect(receipt.maxChars).toBe(BLACKBOARD_TOTAL_CHAR_CAP);
+  });
+
+  it('refuses an over-long key instead of echoing it back whole', () => {
+    // Symmetry with `publish`, and not only for tidiness: a key past the cap
+    // cannot match anything that was ever stored, so the only thing an uncapped
+    // one could do is appear in full in the answer we print.
+    const b = board();
+    const huge = 'k'.repeat(BLACKBOARD_KEY_CHAR_CAP + 1);
+    expect(why(b.remove('sb-b', huge))).toMatch(/Nothing was removed|nothing was removed/i);
+    expect(why(b.remove('sb-b', huge))).toMatch(/limit is/);
+  });
+
+  it("removes a note whose publisher has EXITED — the case the cap is reached in", () => {
+    const gone = [session({ id: 'sb-dead', name: 'Ghost', exited: true })];
+    const b = board(gone);
+    b.publish('sb-dead', 'stale', 'from a finished pipeline');
+    const receipt = must(b.remove('sb-b', 'stale'));
+    expect(receipt.removed).toBe(true);
+    // The name still resolves, so the receipt is useful even though nobody can
+    // be asked to republish it.
+    expect(receipt.publisherName).toBe('Ghost');
+  });
+
+  it('a key that was never there is `ok` with removed:false, NOT a refusal', () => {
+    // #764's ordering applied to a mutation: an agent clearing space does not
+    // want a refusal for a key a sibling already dropped. What it must not get
+    // is a receipt that reads as a removal.
+    const b = board();
+    b.publish('sb-a', 'real', 'x');
+    const receipt = must(b.remove('sb-b', 'never-published'));
+    expect(receipt).toMatchObject({ key: 'never-published', removed: false, chars: 0, keys: 1 });
+    expect(receipt.publisherName).toBeUndefined();
+    expect(receipt.at).toBeUndefined();
+    // and it did not take anything else with it
+    expect(b.size()).toBe(1);
+  });
+
+  it('refuses a malformed key rather than treating it as a miss', () => {
+    // The same line `read` draws: a bad *reference* refuses. Silently answering
+    // "nothing was there" for a number would tell an agent its note is gone.
+    const b = board();
+    b.publish('sb-a', 'k', 'v');
+    expect(why(b.remove('sb-b', 42))).toMatch(/must be a string/);
+    expect(why(b.remove('sb-b', '   '))).toMatch(/cannot be empty/);
+    expect(why(b.remove('sb-b', undefined))).toMatch(/must be a string/);
+    expect(b.size()).toBe(1);
+  });
+
+  it('trims the key, so it matches whatever `publish` stored', () => {
+    const b = board();
+    b.publish('sb-a', '  padded  ', 'v');
+    expect(must(b.remove('sb-b', 'padded')).removed).toBe(true);
+    expect(b.size()).toBe(0);
+  });
+
+  it('⭐ REOPENS THE KEY CAP — the one-way door #861 was filed about', () => {
+    const b = board();
+    for (let i = 0; i < BLACKBOARD_MAX_KEYS; i++) b.publish('sb-a', `k${i}`, 'v');
+    expect(b.size()).toBe(BLACKBOARD_MAX_KEYS);
+    // full: a NEW key is refused
+    expect(why(b.publish('sb-a', 'one-more', 'v'))).toMatch(/which is the limit/);
+
+    must(b.remove('sb-b', 'k0'));
+    // ...and now it is not
+    expect(must(b.publish('sb-a', 'one-more', 'v')).keys).toBe(BLACKBOARD_MAX_KEYS);
+  });
+
+  it('frees CHARACTERS too, which overwriting a large note could not always do', () => {
+    // The total cap needed this more than the key cap did: overwrite only
+    // reclaims room when the new value is smaller, so a board full of large
+    // notes had no way down at all.
+    const b = board();
+    const big = 'x'.repeat(BLACKBOARD_VALUE_CHAR_CAP);
+    let n = 0;
+    while (b.publish('sb-a', `big${n}`, big).ok) n++;
+    const refusal = b.publish('sb-a', 'next', big);
+    expect(why(refusal)).toMatch(/character limit|past its/);
+
+    must(b.remove('sb-b', 'big0'));
+    expect(b.publish('sb-a', 'next', big).ok).toBe(true);
+  });
+
+  it('the cap refusal now names the tool that resolves it', () => {
+    // #796 had to cut "use fewer of them" because it was advice nobody could
+    // take. This asserts the advice is back AND is actionable — the refusal
+    // names `blackboard_remove` by the name an agent can actually call.
+    const b = board();
+    for (let i = 0; i < BLACKBOARD_MAX_KEYS; i++) b.publish('sb-a', `k${i}`, 'v');
+    const reason = why(b.publish('sb-a', 'one-more', 'v'));
+    expect(reason).toMatch(/blackboard_remove/);
+    expect(reason).toMatch(/blackboard_read/);
+  });
+
+  it('an empty VALUE is still refused, and still does not delete', () => {
+    // #796's argument survives #861 intact: the two decisions are about
+    // different things. Removal is deliberate now; inferring it from a value
+    // that came back empty by accident is still the path that cannot tell an
+    // intention from a failure.
+    const b = board();
+    b.publish('sb-a', 'k', 'real content');
+    expect(why(b.publish('sb-b', 'k', ''))).toMatch(/nothing to publish/);
+    expect(must(b.read('k')).entry?.value).toBe('real content');
+    expect(b.size()).toBe(1);
+  });
+
+  it('leaves insertion order alone for the keys that survive', () => {
+    const b = board();
+    b.publish('sb-a', 'one', '1');
+    b.publish('sb-a', 'two', '2');
+    b.publish('sb-a', 'three', '3');
+    must(b.remove('sb-b', 'two'));
+    expect(must(b.list()).map((r) => r.key)).toEqual(['one', 'three']);
+  });
+
+  it('a removed key can be published again, and lands at the END', () => {
+    // Worth pinning: an overwrite keeps its original position on purpose, so
+    // the honest question is what a remove-then-republish does. It is a new
+    // key, so it goes to the back — the board reads as the order things were
+    // established, and this WAS established again.
+    const b = board();
+    b.publish('sb-a', 'one', '1');
+    b.publish('sb-a', 'two', '2');
+    must(b.remove('sb-b', 'one'));
+    b.publish('sb-a', 'one', 'again');
+    expect(must(b.list()).map((r) => r.key)).toEqual(['two', 'one']);
+  });
+
+  it('survives a session list that cannot be read (P6 — never throws)', () => {
+    const b = new Blackboard({
+      sessions: () => {
+        throw new Error('nope');
+      },
+      now: () => new Date('2026-09-18T12:00:00.000Z'),
+    });
+    b.publish('sb-a', 'k', 'v');
+    const receipt = must(b.remove('sb-b', 'k'));
+    expect(receipt.removed).toBe(true);
+    // It costs the NAME, not the removal — `publisher`'s fail-open rule.
+    expect(receipt.publisherName).toBe('sb-a');
+    // ...AND IT SAYS SO. Review's catch: without this flag the receipt renders
+    // a raw session id as though it were an author, in the one field this tool
+    // leans on. `publisherKnown` is #764's third state, one receipt along.
+    expect(receipt.publisherKnown).toBe(false);
+  });
+});
+
+// #861, the half that does NOT reach the session doing the removing. Review
+// found that `RemoveReceipt` makes a removal legible to the perpetrator while
+// leaving the VICTIM with nothing — and worse, `read`'s miss tells a waiting
+// agent the note "may not have got there yet", which after a deletion is
+// switchboard advising it to wait for something that will never arrive.
+describe('tombstones — a removed key is remembered, so a reader is not told to wait', () => {
+  it('⭐ a read of a REMOVED key says who removed it and when', () => {
+    const b = board();
+    b.publish('sb-a', 'finding', 'the regulator');
+    must(b.remove('sb-b', 'finding'));
+
+    const got = must(b.read('finding'));
+    expect(got.entry).toBeNull();
+    expect(got.removed).toMatchObject({
+      removerName: 'Beta',
+      removerKnown: true,
+      at: '2026-09-18T12:00:00.000Z',
+    });
+  });
+
+  it('a key that NEVER existed has no tombstone — the two misses stay different', () => {
+    // The distinction is the whole point. Collapsing them would replace one
+    // misleading answer with another.
+    const b = board();
+    expect(must(b.read('never-written')).removed).toBeUndefined();
+  });
+
+  it('NEVER keeps the value — a tombstone that held the note would make "removed" a lie', () => {
+    const b = board();
+    b.publish('sb-a', 'k', 'SECRET-BODY');
+    must(b.remove('sb-b', 'k'));
+    expect(JSON.stringify(must(b.read('k')))).not.toContain('SECRET-BODY');
+  });
+
+  it('republishing CLEARS the tombstone — the register can never contradict the board', () => {
+    const b = board();
+    b.publish('sb-a', 'k', 'first');
+    must(b.remove('sb-b', 'k'));
+    expect(must(b.read('k')).removed).toBeDefined();
+
+    b.publish('sb-a', 'k', 'again');
+    const back = must(b.read('k'));
+    expect(back.entry?.value).toBe('again');
+    // ...and the tombstone is not merely shadowed by the live note, it is gone,
+    // so removing something else cannot resurrect a stale claim about this key.
+    expect(back.removed).toBeUndefined();
+    expect(b.tombstoneCount()).toBe(0);
+  });
+
+  it('⭐ IS BOUNDED — an agent looping on generated keys cannot grow it for ever', () => {
+    // `BLACKBOARD_MAX_KEYS`' argument, one shape along. Without this the
+    // register is the unbounded surface the cap exists to prevent.
+    const b = board();
+    for (let i = 0; i < BLACKBOARD_TOMBSTONE_CAP + 50; i++) {
+      b.publish('sb-a', `k${i}`, 'v');
+      must(b.remove('sb-b', `k${i}`));
+    }
+    expect(b.tombstoneCount()).toBe(BLACKBOARD_TOMBSTONE_CAP);
+    // OLDEST EVICTED, newest kept: the recent departure is the one a reader is
+    // most likely to be waiting on.
+    expect(must(b.read('k0')).removed).toBeUndefined();
+    expect(must(b.read(`k${BLACKBOARD_TOMBSTONE_CAP + 49}`)).removed).toBeDefined();
+  });
+
+  it('a re-removed key moves to the END of the register rather than keeping a stale slot', () => {
+    // Otherwise a key removed early, republished and removed again would be
+    // evicted on its ORIGINAL position — dropping the most recent departure
+    // first, which is the opposite of what the eviction rule is for.
+    const b = board();
+    b.publish('sb-a', 'old', 'v');
+    must(b.remove('sb-b', 'old'));
+    for (let i = 0; i < BLACKBOARD_TOMBSTONE_CAP - 1; i++) {
+      b.publish('sb-a', `f${i}`, 'v');
+      must(b.remove('sb-b', `f${i}`));
+    }
+    // register is full and `old` is the oldest; refresh it
+    b.publish('sb-a', 'old', 'v again');
+    must(b.remove('sb-b', 'old'));
+    b.publish('sb-a', 'newest', 'v');
+    must(b.remove('sb-b', 'newest'));
+
+    expect(must(b.read('old')).removed).toBeDefined();
+    expect(b.tombstoneCount()).toBe(BLACKBOARD_TOMBSTONE_CAP);
+  });
+
+  it('records the remover as UNKNOWN rather than claiming a name it could not check', () => {
+    const b = new Blackboard({
+      sessions: () => ({ ok: false, reason: 'no list' }),
+      now: () => new Date('2026-09-18T12:00:00.000Z'),
+    });
+    b.publish('sb-a', 'k', 'v');
+    must(b.remove('sb-b', 'k'));
+    expect(must(b.read('k')).removed).toMatchObject({ removerName: 'sb-b', removerKnown: false });
   });
 });
 

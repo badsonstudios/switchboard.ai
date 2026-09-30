@@ -50,6 +50,7 @@
 import {
   BLACKBOARD_KEY_CHAR_CAP,
   BLACKBOARD_MAX_KEYS,
+  BLACKBOARD_TOMBSTONE_CAP,
   BLACKBOARD_TOTAL_CHAR_CAP,
   BLACKBOARD_VALUE_CHAR_CAP,
 } from '../../shared/blackboard';
@@ -107,6 +108,80 @@ export interface BlackboardListing {
   chars: number;
 }
 
+/**
+ * What `remove` gives back (#861) — and it is deliberately a RECEIPT FOR A
+ * DESTRUCTION, not a bare acknowledgement.
+ *
+ * Every field except `key` and `keys` describes the note that no longer exists.
+ * That is the point: removal is the one irreversible thing on this class, and
+ * the mitigation that actually fits its failure mode is not a permission check
+ * (see `remove`) but making an accidental removal VISIBLE in the transcript of
+ * the session that did it. An agent that removed the wrong key can say which
+ * note it destroyed, who wrote it, and how big it was — which is what someone
+ * needs to go and ask for it again.
+ */
+/**
+ * What a reader is told about a key that was REMOVED rather than never written
+ * (#861). See `BLACKBOARD_TOMBSTONE_CAP` for why this exists at all.
+ */
+export interface Tombstone {
+  /** Who took it off, as their name stands now — `entryFor`'s rule. */
+  removerName: string;
+  /** …and whether we could check. `BlackboardEntry.publisherKnown`'s third state. */
+  removerKnown: boolean;
+  at: string;
+}
+
+export interface RemoveReceipt {
+  key: string;
+  /**
+   * A note was actually there, and is now gone.
+   *
+   * `false` is an ordinary `ok` answer, not a refusal — see `remove`. Carried
+   * rather than inferred from the other fields so a caller never has to read
+   * "0 characters removed" as either outcome.
+   */
+  removed: boolean;
+  /** How big the removed note was, or 0 when nothing was there. */
+  chars: number;
+  /**
+   * Who had published it, as their name stands NOW — `entryFor`'s rule, for
+   * `entryFor`'s reason. Absent when nothing was removed.
+   */
+  publisherName?: string;
+  /**
+   * We were able to CHECK who published it.
+   *
+   * ⚠️ CARRIED FOR `BlackboardEntry.publisherKnown`'s REASON, and review caught
+   * it missing here. `publisher` fails open, so an unavailable session list
+   * makes `publisherName` fall back to the raw session id — and a receipt that
+   * renders "published by sb-3f2a-…" as though that were a name defeats the one
+   * field this whole tool leans on. The renderer says so in words instead.
+   */
+  publisherKnown?: boolean;
+  /**
+   * …and whether they have since exited, which decides whether anyone can be
+   * asked to publish it again. Absent when nothing was removed.
+   */
+  publisherGone?: boolean;
+  /** When it had been published. Absent when nothing was removed. */
+  at?: string;
+  /** What is left on the board, so a wall-hitting agent can see the room it made. */
+  keys: number;
+  maxKeys: number;
+  /**
+   * …and the CHARACTER total, for the same reason one cap along.
+   *
+   * Review's catch: the total-char refusal now advises removal, and that cap
+   * needed it more than the key cap did — overwriting only reclaims room when
+   * the new value is smaller. Reporting only `keys` left an agent removing notes
+   * to get under the character ceiling with no way to tell whether it had
+   * cleared enough, except to retry the publish and read the refusal again.
+   */
+  totalChars: number;
+  maxChars: number;
+}
+
 /** What `publish` gives back — enough for the agent to know what it did. */
 export interface PublishReceipt {
   key: string;
@@ -148,7 +223,21 @@ export class Blackboard {
    */
   private readonly notes = new Map<string, StoredNote>();
 
+  /**
+   * Keys that were REMOVED, so a later reader is told that rather than being
+   * told to keep waiting (#861). Bounded by `BLACKBOARD_TOMBSTONE_CAP`, oldest
+   * evicted first — see `tomb`.
+   *
+   * Holds no values. A tombstone that kept the note would make "removed" false.
+   */
+  private readonly tombstones = new Map<string, Tombstone>();
+
   constructor(private readonly deps: BlackboardDeps) {}
+
+  /** How many departures are remembered. Observability for the cap. */
+  tombstoneCount(): number {
+    return this.tombstones.size;
+  }
 
   /** How many keys are held. Observability for tests and the caps. */
   size(): number {
@@ -211,14 +300,20 @@ export class Blackboard {
     //
     // ── WHY EMPTY IS NOT "DELETE THIS KEY", WHICH WAS THE OTHER OPTION ───────
     //
-    // Treating it as a delete would be tidier — it would give the key cap below
-    // a release valve, which it currently lacks — and it was rejected because
-    // the failure mode is unrecoverable: an agent whose value came back empty
-    // from its own failed computation would silently destroy ANOTHER session's
-    // note, and nothing on this path could tell the two intentions apart. A
-    // refusal costs a retry; a wrong delete costs the finding. If the cap turns
-    // out to bite in practice, removal should arrive as a deliberate gesture
-    // with its own name, not as a side effect of an empty string.
+    // Treating it as a delete would be tidier and it was rejected because the
+    // failure mode is unrecoverable: an agent whose value came back empty from
+    // its own failed computation would silently destroy ANOTHER session's note,
+    // and nothing on this path could tell the two intentions apart. A refusal
+    // costs a retry; a wrong delete costs the finding.
+    //
+    // ⚠️ **AND THAT ARGUMENT SURVIVED #861, WHICH BUILT THE DELETE.** This
+    // comment used to end "if the cap turns out to bite, removal should arrive
+    // as a deliberate gesture with its own name" — `remove` below IS that
+    // gesture, and this refusal still stands, because the two decisions are
+    // about different things. Removal is now permitted; inferring it from a
+    // string that came back empty by accident is still the one path that cannot
+    // tell an intention from a failure. A caller that means to delete has a
+    // word for it.
     if (value.trim() === '') {
       return {
         ok: false,
@@ -245,11 +340,22 @@ export class Blackboard {
         reason:
           `the blackboard already holds ${this.notes.size} keys, which is the limit ` +
           `(${BLACKBOARD_MAX_KEYS}). Overwriting a key that is already there still works and does ` +
-          'not count against this limit — publish under one of the existing keys instead',
-        // ⚠️ "or use fewer of them" USED TO BE HERE, and review was right that it
-        // is advice the reader cannot take: there is no delete, so the count
-        // never drops for the life of the app. Telling a stuck model to do an
-        // impossible thing is worse than telling it only the thing that works.
+          'not count against this limit — publish under one of the existing keys instead. ' +
+          'Or remove a key you no longer need with blackboard_remove, which frees a slot. ' +
+          'blackboard_read with no key lists what is on the board',
+        // ⚠️ THE HISTORY OF THIS SENTENCE IS THE HISTORY OF THE BUG.
+        //
+        // It first ended "or use fewer of them", and #796's review was right that
+        // this was advice the reader could not take: there was no delete, so the
+        // count never dropped for the life of the app, and telling a stuck model
+        // to do an impossible thing is worse than telling it only the thing that
+        // works. So it was cut, leaving overwrite as the only offer — which was
+        // honest but left the cap a genuine one-way door (#861).
+        //
+        // #861 built the delete, so the advice is actionable for the first time.
+        // It names the TOOL rather than the concept, and it names the listing
+        // tool too, because an agent that has hit this wall needs to know which
+        // keys exist before it can choose one to drop.
       };
     }
 
@@ -264,13 +370,23 @@ export class Blackboard {
         reason:
           `the blackboard holds ${this.totalChars()} characters and this would take it past its ` +
           `${BLACKBOARD_TOTAL_CHAR_CAP}-character limit. It was NOT published. Publish something ` +
-          'shorter, or overwrite a key that is no longer needed',
+          'shorter, overwrite a key that is no longer needed, or remove one with ' +
+          // #861, and this cap needed it MORE than the key cap did: overwriting
+          // only frees room if the new value is smaller, so before `remove`
+          // existed a board full of large notes could not be shrunk at all.
+          'blackboard_remove to free its characters',
       };
     }
 
     const at = (this.deps.now?.() ?? new Date()).toISOString();
     // `set` on an existing key keeps its insertion position — see `notes`.
     this.notes.set(trimmed, { value, publisherId, at });
+    // ...AND THE KEY IS NO LONGER REMOVED (#861). Without this, a key that was
+    // taken off and then published again would still carry its tombstone, and
+    // the register would be ready to tell a future reader "Beta removed this"
+    // about a note that is sitting right there. A tombstone outliving its key is
+    // the one way this register can contradict the board.
+    this.tombstones.delete(trimmed);
     return {
       ok: true,
       value: {
@@ -281,6 +397,150 @@ export class Blackboard {
         maxKeys: BLACKBOARD_MAX_KEYS,
       },
     };
+  }
+
+  /**
+   * Take a note off the board (#861).
+   *
+   * ── ANY SESSION MAY REMOVE ANY KEY, AND THAT IS THE DECISION ───────────────
+   *
+   * #861 held this open as "who may remove whose note, since the namespace is
+   * shared and cross-session overwrite is already permitted". That clause is the
+   * answer, and the three reasons are worth having here rather than in a PR:
+   *
+   *   1. **IT ADDS NO DESTRUCTIVE POWER THAT DOES NOT ALREADY EXIST.** Any
+   *      session may already overwrite any key — §5.4 says so, the header of
+   *      `shared/blackboard.ts` says so, and the manual states it as deliberate.
+   *      An overwrite destroys another session's content today. This destroys
+   *      the same content under a clearer name.
+   *   2. **"ONLY THE PUBLISHER" WOULD NOT FIX THE BUG IT LOOKS LIKE IT FIXES.**
+   *      The cap is reached by a pipeline generating a key per task, and those
+   *      publishers are exactly the sessions that have since exited —
+   *      `BlackboardEntry.publisherGone` exists because that is the ordinary
+   *      case. Publisher-only removal leaves the cap a one-way door precisely
+   *      when it is actually hit, which was the whole of #861.
+   *   3. **IT IS, IN ONE WAY, SAFER THAN THE OVERWRITE WE ALREADY ALLOW.** After
+   *      a removal `read` gives #764's ordinary answer — nothing under that key,
+   *      here are the keys that do exist — which is true and actionable. After a
+   *      hostile overwrite the reader gets content under an author, which reads
+   *      as authoritative. Of the two destructive paths, the one already
+   *      permitted is the one that can mislead.
+   *
+   * **So the mitigation is legibility — but it has to be legible to the RIGHT
+   * SESSION, and the first cut of this got that wrong.** `RemoveReceipt` names
+   * what was destroyed and who wrote it, which serves the session that did the
+   * removing. Review found the asymmetry that argument had glossed over: an
+   * OVERWRITE leaves its evidence where the victim will see it — the next
+   * `read` returns content with a new author attached — while a removal left
+   * nothing anywhere except the perpetrator's own transcript. Worse, `read`'s
+   * miss advises an agent that the session it is waiting on "may not have got
+   * there yet", so after a removal switchboard was telling a reader, in its own
+   * voice, to keep waiting for something that would never arrive. That is the
+   * confident-wrong-answer shape this whole epic is built against, introduced
+   * by the fix for something else.
+   *
+   * **`tombstones` is the answer**: a removed key is remembered — who took it
+   * off and when, never its value — so the miss becomes the most informative
+   * answer on the class rather than the only misleading one.
+   *
+   * ⚠️ `removerId` IS RECORDED AND NEVER CHECKED. It exists so the tombstone can
+   * name a session, not to gate anything; there is no branch below that compares
+   * it to the note's publisher. That distinction is the whole design, so keep it
+   * visible: the day someone adds `if (removerId !== existing.publisherId)`,
+   * reason 2 above stops being true.
+   *
+   * ── A KEY THAT WAS NOT THERE IS `ok`, WITH `removed: false` ────────────────
+   *
+   * `read`'s ordering (#764) applied to a mutation. "Nothing was published under
+   * that key" is an ordinary state, and an agent clearing space does not want a
+   * refusal for a key a sibling already dropped. What it must not get is a
+   * receipt that says something was removed when nothing was — hence the flag,
+   * and hence the keys are returned either way so the answer is actionable.
+   */
+  remove(removerId: string, key: unknown): QueryResult<RemoveReceipt> {
+    // TYPE-GUARDED HERE for `publish`'s reason: every argument is JSON a
+    // language model wrote, and the tool schema is a description rather than an
+    // enforcement mechanism.
+    if (typeof key !== 'string') return { ok: false, reason: 'the key must be a string' };
+    const trimmed = key.trim();
+    if (trimmed === '') return { ok: false, reason: 'the key cannot be empty' };
+    // CAPPED LIKE `publish`'S, and not only for symmetry: an over-cap key can
+    // never match anything that was stored, so the only thing an uncapped one
+    // could do is be echoed back whole in the refusal we print.
+    if (trimmed.length > BLACKBOARD_KEY_CHAR_CAP) {
+      return {
+        ok: false,
+        reason:
+          `that key is ${trimmed.length} characters and the limit is ${BLACKBOARD_KEY_CHAR_CAP}, ` +
+          'so nothing on the blackboard can be stored under it. Nothing was removed',
+      };
+    }
+
+    const existing = this.notes.get(trimmed);
+    if (!existing) {
+      return {
+        ok: true,
+        value: {
+          key: trimmed,
+          removed: false,
+          chars: 0,
+          keys: this.notes.size,
+          maxKeys: BLACKBOARD_MAX_KEYS,
+          totalChars: this.totalChars(),
+          maxChars: BLACKBOARD_TOTAL_CHAR_CAP,
+        },
+      };
+    }
+
+    // ONE session-list lookup, used for BOTH the publisher being reported and
+    // the remover being recorded — `list`'s reason: this runs on Electron's main
+    // thread inside a tool call, and `listSessions` copies its array per call.
+    const list = this.sessionList();
+    // The publisher is resolved BEFORE the delete: it comes from the note's own
+    // `publisherId`, and the receipt is the only place it will ever be said.
+    const who = this.publisher(existing.publisherId, list);
+    const at = (this.deps.now?.() ?? new Date()).toISOString();
+    this.notes.delete(trimmed);
+    this.tomb(trimmed, removerId, at, list);
+    return {
+      ok: true,
+      value: {
+        key: trimmed,
+        removed: true,
+        chars: existing.value.length,
+        publisherName: who.name,
+        publisherKnown: who.known,
+        publisherGone: who.gone,
+        at: existing.at,
+        keys: this.notes.size,
+        maxKeys: BLACKBOARD_MAX_KEYS,
+        totalChars: this.totalChars(),
+        maxChars: BLACKBOARD_TOTAL_CHAR_CAP,
+      },
+    };
+  }
+
+  /**
+   * Record that a key was taken off, evicting the oldest if we are full.
+   *
+   * The remover's NAME is resolved here rather than at read time, unlike a
+   * publisher's. A publisher is usually still around to be renamed; a remover is
+   * being recorded precisely because the thing it touched is gone, and holding
+   * its id to re-resolve later would mean a tombstone that says "sb-3f2a-…"
+   * forever once that session exits — which is most of them.
+   */
+  private tomb(key: string, removerId: string, at: string, list: readonly SessionSummary[] | null): void {
+    const who = this.publisher(removerId, list);
+    // Delete-then-set so a key removed, republished and removed again moves to
+    // the END rather than keeping a stale position and being evicted early.
+    this.tombstones.delete(key);
+    this.tombstones.set(key, { removerName: who.name, removerKnown: who.known, at });
+    while (this.tombstones.size > BLACKBOARD_TOMBSTONE_CAP) {
+      // `Map` iterates in insertion order, so the first key is the oldest.
+      const oldest = this.tombstones.keys().next();
+      if (oldest.done) break;
+      this.tombstones.delete(oldest.value);
+    }
   }
 
   /**
@@ -298,13 +558,22 @@ export class Blackboard {
    * which is `resolve`'s trick: a refusal (or here, a miss) that names the real
    * options is one the agent can act on instead of retrying blind.
    */
-  read(key: unknown): QueryResult<{ entry: BlackboardEntry | null; keys: string[] }> {
+  read(
+    key: unknown
+  ): QueryResult<{ entry: BlackboardEntry | null; keys: string[]; removed?: Tombstone }> {
     if (typeof key !== 'string') return { ok: false, reason: 'the key must be a string' };
     const trimmed = key.trim();
     if (trimmed === '') return { ok: false, reason: 'the key cannot be empty' };
     const note = this.notes.get(trimmed);
     const keys = [...this.notes.keys()];
-    if (!note) return { ok: true, value: { entry: null, keys } };
+    if (!note) {
+      // ⚠️ THE MISS IS WHERE #861 COULD HAVE LIED. Without this, the renderer
+      // tells an agent its sibling "may not have got there yet" — advice to
+      // keep waiting for a note somebody deleted. A tombstone turns the same
+      // branch into the answer that ends the wait.
+      const removed = this.tombstones.get(trimmed);
+      return { ok: true, value: { entry: null, keys, ...(removed ? { removed } : {}) } };
+    }
     return { ok: true, value: { entry: this.entryFor(trimmed, note, this.sessionList()), keys } };
   }
 

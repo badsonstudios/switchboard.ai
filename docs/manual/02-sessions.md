@@ -522,7 +522,8 @@ Sessions can also leave each other **notes**, on a board they all share. (A
 session will usually call it the **blackboard** — that's the same thing.) A
 session pins a note under a short name it picks — *build-status*,
 *schema-decision* — and any other session in the workspace can look that name up
-later, or ask what's on the board if it doesn't know what to look for.
+later, ask what's on the board if it doesn't know what to look for, or take a
+note off once it's no longer needed.
 
 This is for the case where you've deliberately set two or three sessions up to
 work in sequence: one finishes a piece and leaves the result where the next one
@@ -551,9 +552,22 @@ session that's no longer there.
   *any* name, not just the one that pinned it first. That's deliberate: it's how
   a session keeps a running status up to date. A session reading a note is
   always told who left the version it's holding, so it can tell.
+- **A session can also take a note off the board**, and that's permanent —
+  switchboard can't bring it back. Like replacing, *any* session can remove
+  *any* note, not only the one that pinned it. The session doing it is told
+  exactly what it removed and who had left it, so if it takes the wrong one it
+  can say so and name what's been lost.
+- **A session that goes looking for a note that's been taken off is told so** —
+  including which session took it and when. That matters more than it sounds:
+  without it, a session waiting on a note that somebody deleted would be told
+  it simply hadn't arrived yet, and would sit there waiting for something that
+  was never coming. Switchboard remembers the last hundred notes that were
+  removed, which is plenty for work in flight.
 - **The board is shared, so one session can fill it.** A session that pins a
   great many notes can use up the room, and then another session's attempt to
-  pin one is refused — with an explanation, not silently.
+  pin one is refused — with an explanation, not silently. When that happens the
+  refusal now says how to fix it: take a note off that nobody needs any more,
+  and there's room again. Before, a full board stayed full until you quit.
 
 ## Handing one session's work to another
 
