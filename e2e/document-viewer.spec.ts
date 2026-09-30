@@ -140,14 +140,20 @@ test.describe('document viewer (P2-E16-02)', () => {
    * the next failure of this kind reads "the pane was too narrow" rather than
    * "the chip is broken".
    */
-  async function roomyPane(w: Page): Promise<void> {
-    // Only the WIDTH is under test; the corner rides `onTestDisplay` (#479) so
-    // this is not the one place in the suite that drags the window back onto the
-    // developer's working monitor.
+  /**
+   * Put the main window at a size. Only the WIDTH is ever under test here; the
+   * corner rides `onTestDisplay` (#479) so this is not the one place in the
+   * suite that drags the window back onto the developer's working monitor.
+   */
+  async function setBounds(width: number, height: number): Promise<void> {
     await a.app.evaluate(
       ({ BrowserWindow }, box) => BrowserWindow.getAllWindows()[0]?.setBounds(box),
-      onTestDisplay(a, { x: 20, y: 20, width: 1700, height: 950 })
+      onTestDisplay(a, { x: 20, y: 20, width, height })
     );
+  }
+
+  async function roomyPane(w: Page): Promise<void> {
+    await setBounds(1700, 950);
     const paneWidth = (): Promise<number> =>
       w.evaluate(
         () => document.querySelector('.doc-rendered-wrap')?.getBoundingClientRect().width ?? -1
@@ -248,6 +254,19 @@ test.describe('document viewer (P2-E16-02)', () => {
   // zeroes there), and that the choice is still made after a quit and a
   // relaunch, which is the acceptance criterion that decided where the
   // preference is stored.
+  //
+  // THE TWO CLAIMS ARE DELIBERATELY ASKED UNDER DIFFERENT CONDITIONS, after
+  // this test failed twice on CI and once in three local repeats:
+  //
+  //   * the REFLOW needs a pane wide enough to have an outline at all, so that
+  //     half sizes the window first and asserts the size it got (`roomyPane`);
+  //   * the PERSISTENCE needs no geometry, so that half asserts nothing that a
+  //     window width could change — and is run in the NARROW shape on purpose.
+  //
+  // Resizing a just-relaunched window is what could not be made reliable: main
+  // restores the saved bounds and a `setBounds` that lands first is silently
+  // stomped. Rather than guess at a third geometry, the relaunch leg stopped
+  // needing one.
   test('the Outline chip hides the outline, widens the document, and is remembered', async () => {
     const { folder, doc } = seededProject();
     a = await launchApp({ seedFolder: folder, seedDocument: doc });
@@ -260,33 +279,61 @@ test.describe('document viewer (P2-E16-02)', () => {
     await expect(outline).toBeVisible();
     await expect(chip).toHaveAttribute('aria-pressed', 'true');
 
-    const narrow = (await rendered(w).boundingBox())!.width;
+    const withOutline = (await rendered(w).boundingBox())!.width;
     await chip.click();
     await expect(outline).toHaveCount(0);
     await expect(chip).toHaveAttribute('aria-pressed', 'false');
-    // the outline's width went to the prose, which is the done-when
-    expect((await rendered(w).boundingBox())!.width).toBeGreaterThan(narrow);
+    // THE CLAIM ONLY A REAL ENGINE CAN SETTLE: the outline's width went to the
+    // prose. jsdom has no layout, so every box there is zero.
+    expect((await rendered(w).boundingBox())!.width).toBeGreaterThan(withOutline);
 
-    // ...and it survives a quit. The PANEL does not — every `doc-` panel is
-    // dropped from a restored layout on purpose — so the relaunch opens the
-    // document through the same seed seam and finds the preference waiting.
+    // ...and back on again — the whole round trip, here on the window this test
+    // sized itself rather than after a relaunch that resizes itself.
+    await chip.click();
+    await expect(outline).toBeVisible();
+    expect((await rendered(w).boundingBox())!.width).toBe(withOutline);
+
+    // ── and the OFF choice survives a quit ────────────────────────────────
+    //
+    // Turned off again, because that is the state worth persisting: "shown" is
+    // also the default, so a relaunch showing an outline proves nothing.
+    await chip.click();
+    await expect(outline).toHaveCount(0);
+
+    // SHRINK BEFORE THE QUIT, deliberately: `window-state` restores bounds, so
+    // this makes the relaunch come back in the NARROW shape a small-screened CI
+    // runner has anyway — the shape that broke this test's first two versions.
+    // Nothing after the relaunch touches the window's size, which is the other
+    // half of the lesson: `setBounds` on a JUST-RESTORED window races main's
+    // own restore and loses about one run in three (measured), so the relaunch
+    // leg is written to need no geometry at all.
+    await setBounds(1024, 768);
     const home = a.home;
     await a.close();
+    // 1. it was written
     expect(readWorkspaceFile(home).ui?.documentOutline).toBe(false);
 
     a = await launchApp({ seedFolder: folder, seedDocument: doc, home });
     w = a.window;
+    // 2. ...and it is read back. The PANEL does not survive — `isDerivedPanelId`
+    // drops every `doc-` panel out of a restored layout on purpose — so this is
+    // the seed seam opening a FRESH viewer, which finds the preference waiting.
+    // Measured on a 1024-wide relaunch: viewer present, body present, pane
+    // 348px, chip in the DOM reading `aria-pressed="false"`.
+    await expect(viewer(w)).toBeVisible();
     await expect(rendered(w).locator('h1')).toBeVisible();
     await expect(viewer(w).locator('.doc-outline')).toHaveCount(0);
-    const chip2 = viewer(w).getByRole('button', { name: 'Outline', exact: true });
-    await expect(chip2).toHaveAttribute('aria-pressed', 'false');
-    // and back on again, so the memory is a preference and not a one-way door.
-    // The bounds are re-applied rather than trusted: window-state DOES restore
-    // them, and if it ever stopped, the outline would be missing here for the
-    // container query's reason and the failure would read as a broken chip.
-    await roomyPane(w);
-    await chip2.click();
-    await expect(viewer(w).locator('.doc-outline')).toBeVisible();
+    // BY TEST ID, and that is a fix rather than a detail. `getByRole` matches
+    // the ACCESSIBILITY TREE, and #1010's own CSS takes the chip out of it in a
+    // pane under 420px — so on a narrow relaunch the role query resolves to
+    // nothing and the failure reads "element(s) not found", which is exactly
+    // what CI reported. What survives a restart is the remembered STATE, and
+    // asking about it must not depend on the window's width. The chip's a11y
+    // reachability is asserted above, on a pane this test gave room to.
+    await expect(viewer(w).locator('[data-testid="doc-outline-toggle"]')).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    );
   });
 
   test('a relative link navigates in the viewer; Back returns; a PDF gets the card', async () => {
