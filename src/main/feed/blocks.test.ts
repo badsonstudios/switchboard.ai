@@ -109,6 +109,62 @@ describe('deriveIntents — one message, one set of blocks', () => {
     expect(deriveIntents({ type: 'assistant' })).toEqual([]);
     expect(deriveIntents({ type: 'rate_limit_event', foo: 1 })).toEqual([]);
   });
+
+  // #997. The test above pins the TRANSCRIPT spelling. The stream spells the
+  // same flag `is_meta`, and until this landed nothing in `src/` matched that
+  // string at all — so the guard had silently applied to one of the two
+  // transports it is the single reader for.
+  //
+  // These cases are written from the CLI's own outbound wire schemas rather
+  // than from anything observed on our wire: a run against 2.1.280 with
+  // switchboard's exact flag list produced no `is_meta` frame
+  // (`spike/findings/997-is-meta-on-the-stream.md`). They exist so that the
+  // day one arrives the Feed is already right, and so that deleting the
+  // clause is a red suite rather than a silent regression.
+  describe('the stream spelling, is_meta (#997)', () => {
+    it('drops a synthetic assistant frame that would otherwise derive a tool row', () => {
+      // The exact frame the issue was filed about, from the binary's builder:
+      // `model: "<synthetic>"`, a `PushNotification` tool_use, `is_meta: true`.
+      // Without the clause this derives a tool block and the Feed renders a
+      // `PushNotification` row the user was never meant to see.
+      expect(
+        deriveIntents({
+          type: 'assistant',
+          is_meta: true,
+          message: {
+            role: 'assistant',
+            model: '<synthetic>',
+            content: [
+              {
+                type: 'tool_use',
+                id: 'toolu_997',
+                name: 'PushNotification',
+                input: { message: 'Your session is ready', status: 'proactive' },
+              },
+            ],
+          },
+        })
+      ).toEqual([]);
+    });
+
+    it('drops a synthetic user frame too — the wire declares the flag on both shapes', () => {
+      expect(
+        deriveIntents({ type: 'user', is_meta: true, message: { content: 'loop-synthesized' } })
+      ).toEqual([]);
+    });
+
+    it('needs the literal true, so a non-empty string does not silently drop a real line', () => {
+      // Same reason the transcript side is `=== true`: these frames come from
+      // another process, and a truthy test turns a junk value into a
+      // disappeared message. `'false'` is truthy.
+      const intents = deriveIntents({
+        type: 'assistant',
+        is_meta: 'false',
+        message: { role: 'assistant', content: [{ type: 'text', text: 'a real reply' }] },
+      });
+      expect(blocks(intents).map((b) => b.block.text)).toEqual(['a real reply']);
+    });
+  });
 });
 
 // #458. Session find scans the FILE and then has to say which block on screen a
