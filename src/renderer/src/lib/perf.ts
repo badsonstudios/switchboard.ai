@@ -30,6 +30,7 @@ import {
   emptyBatch,
   summarise,
   type PerfBatch,
+  type PerfContext,
   type PerfInteraction,
   type PerfKeystroke,
   type PerfLongTask,
@@ -45,6 +46,13 @@ import {
  * bound in a process that is already the memory-hungry one.
  */
 const MAX_RECENT = 5_000;
+/**
+ * ⚠️ EACH OF THESE NOW CARRIES A CONTEXT OBJECT (#1031) — about 0.3 MB per window
+ * at the cap, held in the process whose memory growth is itself under
+ * investigation (#1013). Accepted rather than overlooked: the capture FILE wants
+ * every one of them, and only the worst reaches the summary screen. If a memory
+ * hunt ever lands here, this is the trade it is looking at.
+ */
 const MAX_RECENT_LONG_TASKS = 2_000;
 
 /** How often a capture batch goes to main. Only ticks while the switch is on. */
@@ -94,6 +102,89 @@ export interface DetailSource {
 export interface PerfHost {
   record: (batch: PerfBatch) => void;
   mainStats: () => Promise<PerfLoopDelay | null>;
+  /**
+   * How many sessions are mid-reply right now (#1031). Optional: a test need not
+   * supply it, and an absent count must read as "not known" rather than as zero.
+   *
+   * Asked for as a CALLBACK and called only from the long-task observer, which
+   * is what keeps the store out of the keystroke path. #1013's central claim is
+   * that renderer cost follows reply activity rather than open-session count;
+   * this is the number that confirms or refutes it.
+   */
+  replyingCount?: () => number;
+}
+
+/** A non-negative count off a raw attribute value; 0 for a missing one. */
+function count(raw: string | null): number {
+  if (raw === null) return 0;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
+/**
+ * What the renderer was holding, read at long-task observation time (#1031).
+ *
+ * ⚠️ EVERY READ IN HERE IS FREE OR NEARLY SO, AND THAT IS A REQUIREMENT, not a
+ * happy accident. `querySelectorAll` and `getAttribute` walk and read; neither
+ * forces style or layout, so this cannot turn an observation into the thing it
+ * is observing. No `getBoundingClientRect`, no `offsetHeight`, nothing that
+ * would make the recorder the reason the app is slow.
+ *
+ * It runs only when the platform has ALREADY finished timing a block of 50ms or
+ * more, so its cost is bounded by how often the app is too busy to redraw —
+ * i.e. it is cheap exactly when it matters that it is cheap, and if long tasks
+ * are so frequent that this matters, the app has a far bigger problem that this
+ * line is there to describe.
+ */
+function sampleContext(): PerfContext | undefined {
+  const ctx: PerfContext = {};
+  try {
+    // The feed publishes these unconditionally (`FeedView`'s `data-perf-*`), so
+    // there is nothing to turn on and no cooperation to arrange. Several cards
+    // means several roots; they are summed because the main thread is shared and
+    // the question is what the WINDOW was holding.
+    const roots = document.querySelectorAll('[data-perf-blocks]');
+    ctx.feeds = roots.length;
+    if (roots.length > 0) {
+      let blocks = 0;
+      let rendered = 0;
+      for (const root of roots) {
+        // ⚠️ THE HAZARD IS `Number(null) === 0`, not a sentinel (review). An
+        // earlier comment here blamed a `-1` that `FeedView` never publishes —
+        // `-1` is `perf-detail`'s own marker for a missing attribute, not the
+        // feed's. The real trap: a root matching `[data-perf-blocks]` with no
+        // `data-perf-rendered` yields `null`, and `Number(null)` is a finite 0
+        // that would be summed as a measurement nobody took. So the RAW
+        // attribute is tested, and a missing one contributes nothing.
+        blocks += count(root.getAttribute('data-perf-blocks'));
+        rendered += count(root.getAttribute('data-perf-rendered'));
+      }
+      ctx.blocks = blocks;
+      ctx.rendered = rendered;
+    }
+  } catch {
+    // A diagnostic that throws into a PerformanceObserver callback is worse than
+    // a diagnostic that reports less.
+  }
+  try {
+    const replying = host?.replyingCount?.();
+    if (typeof replying === 'number' && Number.isFinite(replying)) ctx.replying = replying;
+  } catch {
+    // ditto: the host's own counter must not cost us the rest of the sample
+  }
+  try {
+    // Chromium-only and gated behind a flag in some builds, hence the guard
+    // rather than a type assertion. MB rather than bytes: #1013's number is
+    // "1.2 GB" and nobody reads 1288490188.
+    const mem = (performance as { memory?: { usedJSHeapSize?: number } }).memory;
+    const used = mem?.usedJSHeapSize;
+    if (typeof used === 'number' && Number.isFinite(used)) {
+      ctx.heapMb = Math.round(used / (1024 * 1024));
+    }
+  } catch {
+    // ditto
+  }
+  return Object.keys(ctx).length === 0 ? undefined : ctx;
 }
 
 const interactions = stream<PerfSample>();
@@ -105,6 +196,10 @@ let detail: DetailSource | null = null;
 let flushTimer: ReturnType<typeof setInterval> | null = null;
 let loop: PerfLoopDelay | null = null;
 let installed = false;
+/** when tier 1 was installed, so a replayed long task is not given today's context */
+let installedAt = 0;
+/** one context per observer callback: `undefined` = not yet taken, `null` = none */
+let batchCtx: PerfContext | null | undefined;
 
 const now = (): number => performance.now();
 
@@ -180,7 +275,16 @@ interface ObserveInit extends PerformanceObserverInit {
 function observe(type: string, init: ObserveInit, onEntry: (e: never) => void): void {
   try {
     const ob = new PerformanceObserver((list) => {
-      for (const entry of list.getEntries()) onEntry(entry as never);
+      // One context sample per CALLBACK, shared by every entry in it (#1031).
+      // Cleared here rather than inside the long-task handler so the handler
+      // stays a pure "record this entry" and the batch boundary lives at the
+      // boundary.
+      batchCtx = undefined;
+      try {
+        for (const entry of list.getEntries()) onEntry(entry as never);
+      } finally {
+        batchCtx = undefined;
+      }
     });
     ob.observe({ type, ...init });
     observers.push(ob);
@@ -200,10 +304,27 @@ function observe(type: string, init: ObserveInit, onEntry: (e: never) => void): 
 export function installPerf(h: PerfHost): void {
   if (installed) return;
   installed = true;
+  installedAt = now();
   host = h;
 
   observe('longtask', { buffered: true }, (entry: PerformanceEntry) => {
-    push(longTasks, { at: entry.startTime, ms: entry.duration }, MAX_RECENT_LONG_TASKS);
+    // `buffered: true` replays tasks from before this observer existed, and
+    // sampling the context for those would date-stamp the present onto the past
+    // — a block that happened during start-up would be reported as having
+    // happened with whatever is mounted now. `startTime` is in the same clock as
+    // `now()`, so "did this task end before we installed" is answerable (#1031).
+    const stale = entry.startTime + entry.duration < installedAt;
+    // ONCE PER CALLBACK, not once per entry (review). A batch of N long tasks
+    // would otherwise walk the document N times for N identical answers — and a
+    // batch is likeliest under exactly the load this is here to diagnose.
+    // `batchCtx` is cleared by the wrapper in `observe`.
+    if (!stale && batchCtx === undefined) batchCtx = sampleContext() ?? null;
+    const ctx = stale ? null : batchCtx;
+    push(
+      longTasks,
+      { at: entry.startTime, ms: entry.duration, ...(ctx ? { ctx } : {}) },
+      MAX_RECENT_LONG_TASKS
+    );
   });
 
   // Event Timing. `duration` is the platform's own input-to-next-paint, which
@@ -223,6 +344,8 @@ export function installPerf(h: PerfHost): void {
 export function uninstallPerf(): void {
   for (const ob of observers) ob.disconnect();
   observers = [];
+  installedAt = 0;
+  batchCtx = undefined;
   stopFlushing();
   installed = false;
   host = null;

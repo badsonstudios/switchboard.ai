@@ -965,6 +965,7 @@
     "nothing": "Nothing has been measured in this window yet. Use the app for a minute and open this again.",
     "longTasks": "The app was too busy to redraw {count} times, for {total} ms in total. The longest single stall was {worst} ms.",
     "longTasksNone": "The app was never too busy to redraw.",
+    "longTasksCtx": "During the longest stall: {what}.",
     "loop": "Background work delayed the app by {p50} ms typically and {p99} ms at its worst 1-in-100 moment, peaking at {max} ms.",
     "loopNone": "Background delay has not been measured yet — it is read once a minute.",
     "detailOff": "Detailed capture is off, so keystrokes and layout work were not measured. Turn it on in Settings under Diagnostics.",

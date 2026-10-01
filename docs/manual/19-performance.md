@@ -35,7 +35,13 @@ before one bad moment moves it at all.
 Underneath the table are three more sentences:
 
 - **How often the app was too busy to redraw**, and for how long. This is the
-  direct cause of typing that arrives in clumps.
+  direct cause of typing that arrives in clumps. Underneath it, when the app was
+  able to tell, is **what it was holding during the worst one** — how many
+  sessions were mid-reply, how many conversations were open, how much of them
+  was on screen, and how much memory was in use. That line is the difference
+  between "something was slow" and somewhere to look: a long pause with three
+  sessions replying and four thousand messages loaded is a different problem
+  from the same pause with one quiet session on screen.
 - **Background delay.** The app has a part that manages your sessions behind the
   scenes, separate from what you see. If *that* gets blocked, every window feels
   sluggish at once rather than just the one you are in — so it is worth telling

@@ -211,6 +211,25 @@ on the floor, and say so in your PR.
 
 ### Changed
 
+- **When the app records a slow minute, it now says enough to act on.** Those
+  lines already noted how hard the app was working; they now also record **how
+  long it had been since you last touched the keyboard or mouse**, how much
+  memory the app was using, and — when it can tell — whether the time passed
+  because something was blocking or because the machine itself had stepped away.
+  The first of those matters more than it sounds: a pause while you were away
+  and a pause while you were typing used to look identical afterwards, and on a
+  laptop that sleeps they are easy to confuse. The performance summary also now
+  shows **what the app was holding during its worst pause** — how many sessions
+  were mid-reply, how many conversations were loaded, how much was on screen.
+  Nothing new leaves your machine: this is the same local log and the same
+  report you choose to send.
+
+- **The app asks the system for its process list less often when the system is
+  struggling to answer.** That count is how a pile-up of leftover processes gets
+  spotted, so it is still taken — but on a busy machine it was being asked for
+  every minute and sometimes taking half of one, which is a diagnostic adding to
+  the problem it is there to describe.
+
 - **The note saying `/usage`, `/cost` and `/context` don't show their output has
   been withdrawn from the manual and from v0.8.100's release notes.** It was
   never true. Those commands have printed their answers in the conversation all

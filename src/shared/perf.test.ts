@@ -9,8 +9,10 @@ import {
   sanitizeSummary,
   summarise,
   summaryAsText,
+  describeContext,
   type PerfKeystroke,
   type PerfLongTask,
+  type PerfContext,
   type PerfSample,
 } from './perf';
 
@@ -268,7 +270,10 @@ describe('summaryAsText — what a filed issue and the zip both read (#927)', ()
   const full = (): Parameters<typeof summaryAsText>[0] =>
     summarise({
       interactions: [sample('keystroke', 41), sample('session-switch', 140)],
-      longTasks: [{ at: 1, ms: 90 }],
+      // With a context, for the same reason `busyBatch` has one: the allowlist
+      // walk below is the guard against a new field reaching a public issue, and
+      // it can only guard fields the fixture actually produces (#1031).
+      longTasks: [{ at: 1, ms: 90, ctx: { feeds: 2, blocks: 412, rendered: 120, replying: 3, heapMb: 280 } }],
       keystrokes: [keystroke({ blocks: 412, rendered: 120, layoutReads: 0 })],
       loop: { p50: 1.2, p99: 48, maxMs: 310 },
     });
@@ -396,6 +401,21 @@ describe('summaryAsText — what a filed issue and the zip both read (#927)', ()
       '#739',
       'having',
       'regressed',
+      // the worst long task's context clause (#1031)
+      'during',
+      'worst',
+      'one',
+      'replying',
+      'feeds',
+      'feed',
+      'blocks',
+      'on',
+      'screen',
+      'MB',
+      'heap',
+      'no',
+      'conversations',
+      'mounted',
     ]);
     const words = text
       .replace(/[(),.:]/g, ' ')
@@ -456,5 +476,101 @@ describe('sanitizeSummary — the boundary the issue body sits behind (#927)', (
     });
     expect(out?.loop).toBeNull();
     expect(out?.longTasks.count).toBe(0);
+  });
+});
+
+
+// ── #1031: a long task that says what the app was holding ───────────────────
+//
+// "2000 long tasks, 638,389 ms total" (#1007) names a problem and not one place
+// to look. The context is sampled at observation time, so the summary's job is
+// to carry the WORST one's through to the screen and the issue body intact.
+
+describe('long-task context (#1031)', () => {
+  const task = (at: number, ms: number, ctx?: PerfContext): PerfLongTask => ({ at, ms, ...(ctx ? { ctx } : {}) });
+
+  it('carries the context of the WORST task, not the last one', () => {
+    const summary = summarise({
+      interactions: [],
+      longTasks: [
+        task(0, 60, { blocks: 10 }),
+        task(100, 5_900, { blocks: 4_000, rendered: 80, replying: 3, feeds: 8, heapMb: 1_200 }),
+        task(9_000, 70, { blocks: 12 }),
+      ],
+      keystrokes: null,
+      loop: null,
+    });
+    expect(summary.longTasks.worstMs).toBe(5_900);
+    expect(summary.longTasks.worstCtx).toEqual({
+      blocks: 4_000,
+      rendered: 80,
+      replying: 3,
+      feeds: 8,
+      heapMb: 1_200,
+    });
+  });
+
+  it('leaves the context ABSENT when nothing was sampled — not an empty object', () => {
+    // A capture from a build older than #1031 has durations and no context, and
+    // "not known" must not render as "nothing was mounted".
+    const summary = summarise({
+      interactions: [],
+      longTasks: [task(0, 300)],
+      keystrokes: null,
+      loop: null,
+    });
+    expect(summary.longTasks).not.toHaveProperty('worstCtx');
+  });
+
+  it('describes only the fields it actually has, in a fixed order', () => {
+    expect(describeContext({ replying: 3, feeds: 8, blocks: 4_000, rendered: 80, heapMb: 1_200 })).toBe(
+      '3 replying, 8 feeds, 4000 blocks (80 on screen), 1200 MB heap'
+    );
+    // One feed reads as a feed, and a missing rendered count does not become 0.
+    expect(describeContext({ feeds: 1, blocks: 12 })).toBe('1 feed, 12 blocks');
+    expect(describeContext(undefined)).toBeNull();
+    expect(describeContext({})).toBeNull();
+  });
+
+  it('puts the worst task\'s context on the summary screen', () => {
+    const text = summaryAsText(
+      summarise({
+        interactions: [],
+        longTasks: [task(0, 5_900, { replying: 3, blocks: 4_000, rendered: 80 })],
+        keystrokes: null,
+        loop: null,
+      })
+    );
+    expect(text).toMatch(/during the worst one: 3 replying, 4000 blocks \(80 on screen\)/);
+  });
+
+  it('⭐ rebuilds the context FIELD BY FIELD, so nothing extra reaches a public issue', () => {
+    // This value goes into a GitHub issue body. A context passed through whole
+    // would carry whatever the renderer put on it, and an extra property is
+    // exactly the shape a leak takes.
+    const restored = sanitizeSummary({
+      interactions: [],
+      longTasks: {
+        count: 1,
+        totalMs: 5_900,
+        worstMs: 5_900,
+        worstCtx: { blocks: 4_000, replying: 3, folder: 'C:/Projects/secret', note: 'hello' },
+      },
+      detail: null,
+      loop: null,
+    });
+    expect(restored?.longTasks.worstCtx).toEqual({ blocks: 4_000, replying: 3 });
+    expect(JSON.stringify(restored)).not.toContain('secret');
+    expect(JSON.stringify(restored)).not.toContain('hello');
+  });
+
+  it('drops a context with no recognised field rather than keeping an empty one', () => {
+    const restored = sanitizeSummary({
+      interactions: [],
+      longTasks: { count: 1, totalMs: 5, worstMs: 5, worstCtx: { nonsense: 1 } },
+      detail: null,
+      loop: null,
+    });
+    expect(restored?.longTasks).not.toHaveProperty('worstCtx');
   });
 });

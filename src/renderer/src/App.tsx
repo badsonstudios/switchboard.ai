@@ -863,6 +863,23 @@ export function App(): React.JSX.Element {
     installPerf({
       record: (batch) => bridge.perf?.record?.(batch),
       mainStats: async () => answered(await bridge.perf?.mainStats?.()) ?? null,
+      // #1031: how many sessions were mid-reply when a long task ran. #1013's
+      // central claim is that renderer cost follows STREAMING activity rather
+      // than how many sessions are open, and this is the number that settles it.
+      //
+      // Read through `getState()` rather than from a `useSyncExternalStore`
+      // value, which is what lets this closure live in a `[]`-deps effect and
+      // still be current: the store is synchronous by design (see its header).
+      // It is called only from the long-task observer, so a card arriving or
+      // leaving costs nothing.
+      //
+      // `'working'` only. `'starting'` is also non-idle and a session streaming
+      // its first token may read as that for a moment, so this is a slight
+      // undercount at the very start of a reply — the right primary signal for
+      // #1013's claim, and worth knowing before reading a 0 as "nothing was
+      // replying".
+      replyingCount: () =>
+        sessionStore.getState().sessions.filter((s) => s.status === 'working').length,
     });
     recordColdStart();
     void bridge.settings?.getPerfCapture?.().then((on) => {
