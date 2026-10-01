@@ -3,6 +3,131 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ DONE — 2026-10-01: **E21 — #1031, the slowdown telemetry can now tell
+> starvation from blocking** (PR **#1032**, merged on green CI, issue closed).
+> **No product behaviour changed.** This is instrument work, landed first so the
+> fixes behind it can be measured instead of guessed.
+>
+> **⭐ THE FINDING THAT SHAPED IT: THERE ARE TWO PHENOMENA AND THE LOG COULD NOT
+> SEPARATE THEM.** The owner filed three reports on 2026-09-30 — **#1003**,
+> **#1007**, **#1013** — two carrying real captured telemetry. Read together:
+>
+> * **Signature A** (#1003): `totalCores: 0`, `procs: []`, `lagMaxMs: 3207` to
+>   `4019`. **No CPU used and the 1-second timer missed by three to four
+>   seconds.** One beat reads `lagMaxMs: 3207` beside `loopMaxMs: 32.9`. None
+>   carries `resumedFromSleep`. That is something else on the machine taking the
+>   CPU away — or a clock jump. **App code cannot fix it.**
+> * **Signature B** (#1007, #1013): the renderer ALONE at 0.6–1.0 cores, **2000
+>   long tasks totalling 638,389 ms**, keystroke p95 440ms / worst 5000ms, one
+>   session switch at **103 seconds**, and a **1.2 GB working set after 21 hours**
+>   tracking streaming activity rather than session count. **That one is ours.**
+>
+> A fix aimed at B and validated during an A-shaped incident would look like it
+> worked and have changed nothing. Nothing in the log distinguished them, which is
+> why this item came before any fix.
+>
+> **⚠️ AND THE THREE TICKETS WERE INVISIBLE TO THE QUEUE.** #1003, #1007 and
+> #1013 had **no milestone and no labels** — filed from inside the app via Help ▸
+> Report a problem — so `gh issue list --milestone` never returned them and a
+> full orchestration run went past all three on the day they were filed. They are
+> in Phase 3 now. **Expect the same gap every time he files from the app.**
+>
+> **THE FIVE ADDITIONS, and what each one decides:**
+>
+> 1. **`idleSec` — the field that makes a lag reading mean anything.** 3207ms
+>    with two hours of idle time is not a slowdown anyone experienced; the same
+>    number at zero idle is the entire complaint. **Captured at the WORST TICK**
+>    (`lagIdleSec`), not at beat time — read a minute later it could sit beside a
+>    stall nobody was present for, which is the confusion it exists to remove.
+> 2. **A monotonic cross-check**, logged only when the clocks disagree, compared
+>    **PER TICK** rather than as two maxima. ⚠️ **IT IS ONE-SIDED EVIDENCE and the
+>    docblock says so:** a gap means wall time the monotonic clock did not see;
+>    **agreement means nothing.** Across modern standby `QueryPerformanceCounter`
+>    keeps ticking, so **the case that motivated the gauge is the case it is most
+>    likely to be blind to** — and signature A looks more like modern standby than
+>    S3. A plain NTP correction also reads like a suspend. `spike/probes/1031/`
+>    settles it and **needs a real sleep cycle on the laptop**.
+> 3. **Per-process `rssMb` + `rssTotalMb`**, free from `getAppMetrics`, so
+>    #1013's one Task Manager sighting becomes a curve. Totalled across EVERY
+>    process including the idle ones, because that is where a leaked renderer
+>    sits: quiet and enormous. ⚠️ **The unit is assumed KB and Electron 43's
+>    typings do not document it** — on the hand-test list, because a 1.2 GB
+>    renderer would otherwise log `rssMb: 1`.
+> 4. **Long-task context**, sampled inside the observer callback — **no code on
+>    the keystroke path**, so owner rule 2 and `perf.absent.test.ts` both still
+>    hold. Feeds, blocks, how many on screen, sessions mid-reply, JS heap. "638
+>    seconds of blocking" becomes somewhere to look. Named `replying`, not
+>    `streams`, because the heartbeat already logs `streams` for a different
+>    population.
+> 5. **Census backoff.** In #1007 `tasklist` took 3,458–30,477ms and repeatedly
+>    hit its 30s timeout, once a minute, on the machine it was measuring.
+>
+> **⚠️ #1013's OWN SUGGESTION WAS REJECTED, WITH A REASON** — it proposed scoping
+> the census to our own process tree. The machine-wide count is what this file was
+> built for and what earned its keep: the 2026-09-22 incident ended with 122
+> `node.exe` at idle, 53 stranded copies of one MCP server, and `sysTop` naming
+> them is how it was found. #1007's own `sysTop` reads `conhost.exe: 56,
+> node.exe: 42, cmd.exe: 41` — the orphan problem #1013 confirmed from the other
+> side. Scoping the query would delete that evidence to save one spawn a minute.
+> Backing off keeps every field and cuts the rate only when the cost is real.
+>
+> **⭐⭐ REVIEW FOUND TWO BLOCKERS AND BOTH WERE MEASURED RATHER THAN ARGUED:**
+>
+> * **The census counted every TWO minutes on a healthy machine.** It paced itself
+>   off a due-time set when a count FINISHED, while the timer fires on fixed 60s
+>   boundaries — and `setInterval` fires a hair late, never early. So the due-time
+>   always landed past the next tick, every other tick was skipped, and
+>   `sysEnumEveryMs` stayed **absent, insisting the cadence was one minute**.
+>   Reproduced with the real class before it was believed: three counts in six
+>   minutes. It is a **tick count** now; mutation-proved (reinstating the clock
+>   comparison fails three tests), and **the regression test carries timer jitter
+>   on purpose**, because landing exactly on a boundary is what hid it.
+> * **The manual and CHANGELOG described an on-screen line that did not exist.**
+>   The context reached `summaryAsText` — the zip and the issue body — but the
+>   summary PANEL was never changed. It renders it now, through the same shared
+>   clause, so the screen and the report cannot describe the worst stall
+>   differently.
+>
+> **NINE SHOULD-FIXES TAKEN. The one worth remembering:** a **throwing monotonic
+> clock fabricated a stall that cannot physically happen** — the wall baseline
+> advanced, the monotonic one did not, and the next tick logged a ~1s MONOTONIC
+> stall beside a 0ms wall stall, growing while the throw persisted. The reviewer
+> reproduced it. The baseline is **nullable** now, so a failed read costs one
+> sample instead of inventing one — **and the test written for it found the same
+> bug a second time in `start()`'s prime.** Also: `clockJumped` is wrapped
+> (it is wired straight to a `powerMonitor` listener, where a throw is a modal
+> over the user's work); the context samples **once per callback**, not per entry;
+> and `Number(null) === 0` was the real attribute hazard, not the `-1` sentinel an
+> earlier comment blamed — `FeedView` never publishes `-1`.
+>
+> **⭐ BOTH LOCAL-ONLY ALLOWLIST WALKS WENT RED FIRST, WHICH IS THE GUARD
+> WORKING.** They exist to catch "the field someone adds in six months", and
+> today's field walked straight past them because the fixtures carried no context.
+> Adding one to `busyBatch()` and `full()` made both fail — the capture file on
+> `"ctx"`, the issue body on `"during"` — before the allowlists were extended. The
+> boundary itself was traced and holds: `sanitizeSummary` and `ctxOf` rebuild from
+> a literal key list with a finite-number filter, so no string, extra property or
+> non-finite value can reach a public issue.
+>
+> **Green:** build · lint · all three typecheck projects · **9,823 unit tests**
+> (the one failure the known `win-cmd` contention flake, green alone at 47) · the
+> report and palette e2e specs · **all four CI jobs**. Docs:
+> `docs/manual/19-performance.md`, `docs/manual/11-troubleshooting.md`, CHANGELOG
+> **0.8.102**, a dogfood row, and `spike/probes/1031/`.
+>
+> **⚠️ DELIBERATELY NOT DONE, AND IT IS THE OWNER'S CALL:** auto-arming tier 2
+> when lag crosses a threshold. The case is strong — he cannot predict when the
+> app will be slow, and **#1007, the richest capture this project has, says
+> `Detailed capture was OFF`** — but it softens a rule he set on purpose ("off
+> must mean genuinely absent"). Put to him rather than slipped in.
+>
+> **Next up:** the fixes this item exists to make measurable. **#716** (composer
+> typing lag) and **#740** (feed re-layout) are signature B and are the ones
+> #1013's analysis points at — batch stream events per frame, virtualize the
+> feeds, release rebound transcripts. **#1028** (the `ReadScope` residuals) is the
+> other item with teeth. **#904** Phase 2 wants before/after numbers, which this
+> item is what makes possible.
+
 > # 🏁 ORCHESTRATION RUN COMPLETE — 2026-09-30: **all seven issues done, seven
 > merged on green CI, nine follow-ups filed.** `main` @ `eddc328`.
 > #1009 (PR #1016) · #1008 (PR #1018) · #1010 (PR #1015) · #941+#942 (PR #1021)
