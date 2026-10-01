@@ -1678,15 +1678,31 @@ app
           // comparison against NaN is false — so the busiest minute of the run
           // would be recorded as a quiet one.
           const pct = m.cpu.percentCPUUsage;
+          // Working set, guarded the same way and for the same reason (#1031):
+          // Electron types `memory` as always present, but a metrics entry for a
+          // process that exited between the call and the read has been seen to
+          // carry less than the type promises, and one NaN here would poison the
+          // app-wide total exactly as one NaN percentage would.
+          const ws = m.memory?.workingSetSize;
           return {
             pid: m.pid,
             type: m.type,
             name: m.name,
             percent: Number.isFinite(pct) ? pct : 0,
+            ...(typeof ws === 'number' && Number.isFinite(ws) ? { workingSetKb: ws } : {}),
           };
         }),
       log: createLogger(sink, 'cpu'),
       coreCount: os.cpus().length,
+      // #1031. Monotonic, so a stall and a suspended machine stop reading the
+      // same — `mono`'s docblock has the argument. `performance.now()` in main is
+      // Node's, which is monotonic from process start.
+      mono: () => performance.now(),
+      // #1031. Seconds since the last user input: the field that says whether a
+      // lag reading is a slowdown anyone experienced or a quiet machine's
+      // arithmetic. Fail-open — a throw here must cost the field, not the beat,
+      // and `CpuHeartbeat` already treats it that way.
+      idleSec: () => powerMonitor.getSystemIdleTime(),
       // Load, beside the burn. "2 cores' worth" cannot be read without knowing
       // whether the app was hosting twelve sessions or none at the time.
       counters: () => ({

@@ -26,6 +26,37 @@ export const CENSUS_MS = 60_000;
 /** A count that has not finished by now is abandoned and reported as failed. */
 export const CENSUS_TIMEOUT_MS = 30_000;
 
+/**
+ * A count slower than this means the machine is struggling to spawn at all, and
+ * the next one is deferred (#1031).
+ *
+ * In #1007 this census reported `sysEnumMs` of 3,458–30,477 ms and **repeatedly
+ * hit the 30-second timeout** — on a 12-core laptop, with ~630 processes and an
+ * endpoint-security agent that taxes every spawn. A second's worth of `tasklist`
+ * is a healthy reading on that machine; four is the machine telling us to stop
+ * asking so often.
+ */
+export const CENSUS_SLOW_MS = 4_000;
+
+/**
+ * How far the interval may stretch while counts stay slow, and the step it grows
+ * by.
+ *
+ * ⚠️ WHY BACK OFF RATHER THAN NARROW THE QUERY. #1013 proposed enumerating only
+ * our own process tree instead of the machine. **Rejected, with a reason:** the
+ * machine-wide count is what this file was built for and what earned its keep —
+ * the 2026-09-22 incident ended with 122 `node.exe` at idle, 53 of them stranded
+ * copies of one MCP server, and `sysTop` naming them is how that was found. In
+ * #1007 the same field reads `conhost.exe: 56, node.exe: 42, cmd.exe: 41`, which
+ * is the orphan problem #1013 confirmed from the other side. Scoping the query to
+ * our own children would delete that evidence to save one spawn a minute.
+ *
+ * Backing off keeps every field and cuts the rate precisely when the cost is
+ * real, which is the trade worth making.
+ */
+export const CENSUS_MAX_MS = 600_000;
+export const CENSUS_BACKOFF_STEP = 2;
+
 /** how many image names `sysTop` carries, most common first */
 export const CENSUS_TOP = 5;
 
@@ -98,6 +129,24 @@ export class ProcessCensus {
   private stopped = false;
   private inFlightSince: number | null = null;
   private last: CensusFields = {};
+  /** current cadence; grows while counts are slow, snaps back when one is fast */
+  private everyMs = CENSUS_MS;
+  /**
+   * Ticks still to skip before the next count.
+   *
+   * ⚠️ COUNTED, NOT CLOCKED, AND THE FIRST DRAFT OF THIS WAS A CLOCK COMPARISON
+   * THAT HALVED THE HEALTHY RATE (review). It set a due-time from the moment a
+   * count FINISHED, while the timer fires on fixed 60s boundaries from `start()`
+   * — and `setInterval` fires a hair late, never early. So the due-time always
+   * landed a few hundred milliseconds past the next tick, every other tick was
+   * skipped, and a healthy machine counted every TWO minutes while
+   * `sysEnumEveryMs` stayed absent insisting it was one. Reproduced before it was
+   * believed: three counts in six minutes, no field.
+   *
+   * A tick count cannot drift, cannot be fooled by jitter, and makes the cadence
+   * exactly `everyMs / CENSUS_MS` ticks rather than approximately that.
+   */
+  private skipTicks = 0;
   private readonly enumerate: Enumerate;
   private readonly parse: (out: string) => string[];
   private readonly now: () => number;
@@ -111,8 +160,30 @@ export class ProcessCensus {
   start(): void {
     if (this.timer || this.stopped) return;
     this.sample(); // now, so the first beat has a count rather than nothing
-    this.timer = setInterval(() => this.sample(), CENSUS_MS);
+    // The TIMER still ticks every minute; how often a tick actually counts is
+    // `everyMs`, checked in `tick()`. Keeping one fixed interval and skipping
+    // ticks is deliberately duller than rescheduling a timer per backoff step:
+    // there is one timer to unref, one to clear, and no window in which a
+    // reschedule could lose the chain and stop counting for ever (#1031).
+    this.timer = setInterval(() => this.tick(), CENSUS_MS);
     this.timer.unref?.();
+  }
+
+  /**
+   * The timer body: count, but only if the current cadence says it is due.
+   *
+   * Public for the reason `CpuHeartbeat.beat()` is — a test drives the cadence
+   * directly rather than through a timer it would have to fake. `sample()` stays
+   * the unconditional "count now" that `start()` uses, so the first count after
+   * launch is never deferred by a backoff inherited from nowhere.
+   */
+  tick(): void {
+    if (this.stopped) return;
+    if (this.skipTicks > 0) {
+      this.skipTicks -= 1;
+      return;
+    }
+    this.sample();
   }
 
   stop(): void {
@@ -133,8 +204,14 @@ export class ProcessCensus {
           this.last = err
             ? { sysEnumError: String(err).slice(0, 200), sysEnumMs: Math.round(enumMs) }
             : summarize(this.parse(stdout), enumMs);
+          // A failure counts as slow whatever it says. The failure this guards
+          // against IS the 30-second timeout, and a timeout that reset the
+          // cadence to a minute would keep asking a wedged machine to spawn
+          // every minute for ever (#1031).
+          this.pace(err !== null || enumMs >= CENSUS_SLOW_MS);
         } catch (e) {
           this.last = { sysEnumError: String(e).slice(0, 200) };
+          this.pace(true);
         } finally {
           this.inFlightSince = null;
         }
@@ -144,7 +221,26 @@ export class ProcessCensus {
       // `git/git-service.ts`, #785), so this path is real.
       this.inFlightSince = null;
       this.last = { sysEnumError: String(e).slice(0, 200) };
+      this.pace(true);
     }
+  }
+
+  /**
+   * Set the cadence for the next count: wider while they are slow, straight back
+   * to one a minute as soon as one is fast (#1031).
+   *
+   * RECOVERY IS IMMEDIATE AND BACKOFF IS GRADUAL, not symmetric, and that is the
+   * point. A fast count is positive evidence that spawning is cheap again, so
+   * there is nothing to be cautious about; a slow one is evidence the machine is
+   * in trouble, and the cost of asking again too soon is paid by the user.
+   */
+  private pace(slow: boolean): void {
+    this.everyMs = slow
+      ? Math.min(this.everyMs * CENSUS_BACKOFF_STEP, CENSUS_MAX_MS)
+      : CENSUS_MS;
+    // `- 1` because the tick that triggers the NEXT count is itself one of the
+    // interval's ticks: a cadence of 60s skips nothing, 120s skips one.
+    this.skipTicks = Math.max(0, Math.round(this.everyMs / CENSUS_MS) - 1);
   }
 
   /**
@@ -159,6 +255,11 @@ export class ProcessCensus {
       // otherwise carry a meaningless few-ms figure.
       if (pending >= 1_000) out.sysEnumPendingMs = Math.round(pending);
     }
+    // Only while backed off, so the field's PRESENCE is the signal (#1031). A
+    // reader who sees `sysProcs` unchanged across six beats needs to know
+    // whether the machine is steady or whether we stopped asking — and without
+    // this they would read a stale count as a fresh one.
+    if (this.everyMs !== CENSUS_MS) out.sysEnumEveryMs = this.everyMs;
     return out;
   }
 }

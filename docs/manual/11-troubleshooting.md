@@ -463,6 +463,12 @@ app was working unusually hard, and the performance summary — and the zip wait
 in your folder. If
 someone asks for it, drag it onto the issue or into your email.
 
+Those busy-minute lines also record **how long it had been since you last
+touched the keyboard or mouse**, and **how much memory the app was using**. The
+first matters more than it sounds: a stall while you were away is a very
+different thing from a stall while you were typing, and without that number the
+two look identical afterwards.
+
 ### Filing to GitHub
 
 If you are already signed in with the GitHub command-line tool, this works with

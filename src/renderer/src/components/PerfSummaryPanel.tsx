@@ -18,7 +18,7 @@
 // build" surface and there is no reason for the two to feel different.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import type { PerfSummary } from '../../../shared/perf';
+import { describeContext, type PerfSummary } from '../../../shared/perf';
 
 export function PerfSummaryPanel(props: {
   open: boolean;
@@ -48,6 +48,9 @@ export function PerfSummaryPanel(props: {
 
   const s = props.summary;
   const rows = s?.interactions ?? [];
+  // The same clause the report and the capture file use (`shared/perf.ts`), so
+  // the screen and the zip can never describe the worst stall differently (#1031).
+  const worstCtx = describeContext(s?.longTasks.worstCtx);
 
   return (
     <div
@@ -180,6 +183,22 @@ export function PerfSummaryPanel(props: {
                 })
               : t('perf.longTasksNone')}
           </p>
+
+          {/* What the app was holding during the worst stall (#1031). ON SCREEN
+              and not only in the report, which is the whole point: the line above
+              says something was slow, and this one is the only thing here that
+              says where to look — a six-second stall with three sessions replying
+              and four thousand messages loaded is a different bug from the same
+              stall with one quiet session on it. Absent when nothing was sampled,
+              because "not known" must not render as an empty renderer. */}
+          {worstCtx && (
+            <p
+              data-perf-field="longTasksCtx"
+              style={{ margin: 0, marginBlockStart: -4, paddingInlineStart: 14, color: 'var(--faint)' }}
+            >
+              {t('perf.longTasksCtx', { what: worstCtx })}
+            </p>
+          )}
 
           <p data-perf-field="loop" style={{ margin: 0, color: 'var(--muted)' }}>
             {s?.loop

@@ -56,7 +56,14 @@ const lines = (): Record<string, unknown>[] =>
 function busyBatch(): PerfBatch {
   const b = emptyBatch(12_000);
   b.interactions.push({ name: 'keystroke', ms: 41, at: 11_900 });
-  b.longTasks.push({ at: 11_910, ms: 88 });
+  // WITH a context (#1031), so the `stringLeaves` walk below actually sees the
+  // field this change added — the walk exists to catch "the field someone adds
+  // in six months", and a fixture without one lets today's field walk past it.
+  b.longTasks.push({
+    at: 11_910,
+    ms: 88,
+    ctx: { feeds: 2, blocks: 412, rendered: 120, replying: 3, heapMb: 280 },
+  });
   b.keystrokes.push({
     at: 11_900,
     ms: 41,
@@ -228,6 +235,11 @@ describe('PerfCapture — local-only, asserted rather than promised (#923)', () 
       'blocks',
       'rendered',
       'draftLength',
+      // a long task's context (#1031): the key, and its five numeric fields
+      'ctx',
+      'feeds',
+      'replying',
+      'heapMb',
       'p50',
       'p99',
       'maxMs',
@@ -357,6 +369,63 @@ describe('sanitizeBatch — the local-only guarantee, enforced not trusted (#923
     c.setEnabled(true);
     for (const junk of [undefined, null, 'nope', 7, []])
       expect(() => c.record(junk)).not.toThrow();
+  });
+});
+
+describe('sanitizeBatch — a long task\'s context (#1031)', () => {
+  it('carries the five numbers through to the file', () => {
+    const batch = sanitizeBatch({
+      at: 10,
+      interactions: [],
+      longTasks: [
+        { at: 1, ms: 5_900, ctx: { feeds: 8, blocks: 4_000, rendered: 80, replying: 3, heapMb: 1_200 } },
+      ],
+      keystrokes: [],
+    });
+    expect(batch?.longTasks[0]).toEqual({
+      at: 1,
+      ms: 5_900,
+      ctx: { feeds: 8, blocks: 4_000, rendered: 80, replying: 3, heapMb: 1_200 },
+    });
+  });
+
+  it('⭐ rebuilds it field by field — an extra property is the shape a leak takes', () => {
+    const batch = sanitizeBatch({
+      at: 10,
+      interactions: [],
+      longTasks: [
+        { at: 1, ms: 60, ctx: { blocks: 12, folder: 'C:/Projects/secret', title: 'a prompt' } },
+      ],
+      keystrokes: [],
+    });
+    expect(batch?.longTasks[0].ctx).toEqual({ blocks: 12 });
+    expect(JSON.stringify(batch)).not.toContain('secret');
+    expect(JSON.stringify(batch)).not.toContain('prompt');
+  });
+
+  it('leaves `ctx` off entirely when it is absent, junk, or has no known field', () => {
+    // "Not known" and "nothing was mounted" are different readings of the same
+    // line, and a capture file that implied the second would be lying.
+    for (const ctx of [undefined, null, 'x', 42, [], { nonsense: 1 }]) {
+      const batch = sanitizeBatch({
+        at: 10,
+        interactions: [],
+        longTasks: [{ at: 1, ms: 60, ...(ctx === undefined ? {} : { ctx }) }],
+        keystrokes: [],
+      });
+      expect(batch?.longTasks[0], JSON.stringify(ctx)).not.toHaveProperty('ctx');
+    }
+  });
+
+  it('a long task with a bad context is still RECORDED — the duration is the point', () => {
+    const batch = sanitizeBatch({
+      at: 10,
+      interactions: [],
+      longTasks: [{ at: 1, ms: 5_900, ctx: 'nonsense' }],
+      keystrokes: [],
+    });
+    expect(batch?.longTasks).toHaveLength(1);
+    expect(batch?.longTasks[0].ms).toBe(5_900);
   });
 });
 

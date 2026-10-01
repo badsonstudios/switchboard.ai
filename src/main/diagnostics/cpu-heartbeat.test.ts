@@ -16,6 +16,7 @@ import {
   BUSY_MACHINE_FRACTION,
   LAG_WARN_MS,
   MAX_NAMED,
+  LAG_CLOCK_DISAGREE_MS,
   type CpuProcessSample,
 } from './cpu-heartbeat';
 
@@ -37,6 +38,8 @@ function harness(opts: {
   getMetrics?: () => CpuProcessSample[];
   counters?: () => Record<string, number>;
   now?: () => number;
+  mono?: () => number;
+  idleSec?: () => number;
 }) {
   const log = fakeLog();
   const hb = new CpuHeartbeat({
@@ -45,8 +48,31 @@ function harness(opts: {
     coreCount: opts.coreCount ?? 32,
     now: opts.now,
     counters: opts.counters,
+    mono: opts.mono,
+    idleSec: opts.idleSec,
   });
   return { hb, log };
+}
+
+/**
+ * The fields of the most recent line, whatever level it went out at.
+ *
+ * Ordered by `invocationCallOrder` rather than by concatenating the two mocks,
+ * which is not chronological: a test that emits an `info` beat and then a `warn`
+ * one would otherwise be handed the `info` (review).
+ */
+function lastFields(log: ReturnType<typeof fakeLog>): Record<string, unknown> {
+  const calls = [...log.warn.mock.calls, ...log.info.mock.calls];
+  const orders = [...log.warn.mock.invocationCallOrder, ...log.info.mock.invocationCallOrder];
+  let best = -1;
+  let found: unknown = undefined;
+  orders.forEach((order, i) => {
+    if (order > best) {
+      best = order;
+      found = calls[i]?.[1];
+    }
+  });
+  return (found ?? {}) as Record<string, unknown>;
 }
 
 const proc = (type: string, pid: number, percent: number): CpuProcessSample => ({
@@ -416,5 +442,287 @@ describe('CpuHeartbeat — the lag gauge', () => {
       vi.clearAllTimers();
       vi.useRealTimers();
     }
+  });
+});
+
+
+// ── #1031: the three fields that make a lag reading mean something ──────────
+//
+// #1003's beats read `totalCores: 0`, `procs: []` and `lagMaxMs: 3207` — the app
+// using no CPU and still missing its timer by three seconds. Nothing on that
+// line says whether anybody was at the keyboard, whether the machine was even
+// running, or how big the renderer had grown. These do.
+
+describe('CpuHeartbeat — was anyone there? (#1031)', () => {
+  it('carries system idle time, which is what separates a felt stall from arithmetic', () => {
+    const { hb, log } = harness({ samples: [proc('Tab', 1, 3.1)], idleSec: () => 7_201.4 });
+    expect(hb.beat()?.idleSec).toBe(7201);
+    expect(lastFields(log).idleSec).toBe(7201);
+  });
+
+  it('omits the field entirely when no source was given — never a fabricated zero', () => {
+    const { hb, log } = harness({ samples: [proc('Tab', 1, 3.1)] });
+    expect(hb.beat()?.idleSec).toBeNull();
+    expect(lastFields(log)).not.toHaveProperty('idleSec');
+  });
+
+  it('a throwing idle source costs the field, never the beat', () => {
+    const { hb, log } = harness({
+      samples: [proc('Tab', 1, 3.1)],
+      idleSec: () => {
+        throw new Error('powerMonitor is unavailable');
+      },
+    });
+    const beat = hb.beat();
+    expect(beat).not.toBeNull();
+    expect(beat?.idleSec).toBeNull();
+    // the CPU line is the part we came for and it still went out
+    expect(lastFields(log).totalCores).toBeDefined();
+  });
+});
+
+describe('CpuHeartbeat — two clocks (#1031)', () => {
+  /** drive `LAG_TICK_MS` ticks with wall and monotonic clocks moving apart */
+  function run(opts: { wallStep: number; monoStep: number; ticks?: number }) {
+    let wall = 0;
+    let mono = 0;
+    const h = harness({
+      samples: [proc('Tab', 1, 3.1)],
+      now: () => wall,
+      mono: () => mono,
+    });
+    try {
+      vi.useFakeTimers();
+      h.hb.start();
+      for (let i = 0; i < (opts.ticks ?? 1); i += 1) {
+        wall += opts.wallStep;
+        mono += opts.monoStep;
+        vi.advanceTimersByTime(LAG_TICK_MS);
+      }
+      const beat = h.hb.beat();
+      return { beat, fields: lastFields(h.log) };
+    } finally {
+      // The rest of this file does the same: a throw inside would otherwise leak
+      // fake timers into every test after it.
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  }
+
+  it('stays silent when the two clocks agree — the ordinary beat does not widen', () => {
+    // A stall both clocks saw: genuinely blocked, and one number says it.
+    const { beat, fields } = run({ wallStep: 3_000, monoStep: 3_000 });
+    expect(beat?.lagMaxMs).toBeGreaterThanOrEqual(1_900);
+    expect(beat?.lagMonoMaxMs).toBeGreaterThanOrEqual(1_900);
+    expect(fields).not.toHaveProperty('lagMonoMaxMs');
+  });
+
+  it('logs BOTH when they disagree — wall jumped, monotonic did not', () => {
+    // The shape a suspend makes: real time passed, the counter did not. Before
+    // this the line was indistinguishable from a three-second freeze.
+    const { beat, fields } = run({ wallStep: 3_000, monoStep: 1_000 });
+    expect(beat?.lagMaxMs).toBeGreaterThanOrEqual(1_900);
+    expect(beat?.lagMonoMaxMs).toBeLessThan(LAG_CLOCK_DISAGREE_MS);
+    expect(fields.lagMonoMaxMs).toBe(Math.round(beat!.lagMonoMaxMs!));
+  });
+
+  it('reports null, and logs nothing, when no monotonic source was given', () => {
+    const { hb, log } = harness({ samples: [proc('Tab', 1, 3.1)] });
+    expect(hb.beat()?.lagMonoMaxMs).toBeNull();
+    expect(lastFields(log)).not.toHaveProperty('lagMonoMaxMs');
+  });
+
+  it('re-arms the monotonic baseline on a wake, not just the wall one', () => {
+    // Otherwise the first tick after a resume reports the whole suspend against
+    // the very clock whose job is to say the suspend was not our fault.
+    let wall = 0;
+    let mono = 0;
+    const { hb } = harness({ samples: [proc('Tab', 1, 3.1)], now: () => wall, mono: () => mono });
+    try {
+      vi.useFakeTimers();
+      hb.start();
+      wall += 8 * 3_600_000; // a night asleep
+      mono += 8 * 3_600_000;
+      hb.clockJumped();
+      vi.advanceTimersByTime(LAG_TICK_MS);
+      wall += LAG_TICK_MS;
+      mono += LAG_TICK_MS;
+      vi.advanceTimersByTime(LAG_TICK_MS);
+      const beat = hb.beat();
+      expect(beat?.resumedFromSleep).toBe(true);
+      expect(beat?.lagMonoMaxMs).toBeLessThan(LAG_CLOCK_DISAGREE_MS);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it('⭐ compares the clocks PER TICK — one event cannot mask another', () => {
+    // The first draft compared the two MAXIMA (review): a minute holding a 5s
+    // suspend early and a genuine 5s block later produced two equal maxima, they
+    // "agreed", and the suspend vanished from the line. The gap is per tick.
+    let wall = 0;
+    let mono = 0;
+    const h = harness({ samples: [proc('Tab', 1, 3.1)], now: () => wall, mono: () => mono });
+    try {
+      vi.useFakeTimers();
+      h.hb.start();
+      // tick 1: wall jumps 5s, monotonic does not — the suspend
+      wall += 5_000;
+      mono += 1_000;
+      vi.advanceTimersByTime(LAG_TICK_MS);
+      // tick 2: both jump 5s — a genuine block, and the SAME magnitude
+      wall += 5_000;
+      mono += 5_000;
+      vi.advanceTimersByTime(LAG_TICK_MS);
+      const beat = h.hb.beat();
+      // the two maxima are now equal, which is exactly the masking case...
+      expect(Math.abs((beat?.lagMonoMaxMs ?? 0) - (beat?.lagMaxMs ?? 0))).toBeLessThan(
+        LAG_CLOCK_DISAGREE_MS
+      );
+      // ...and the per-tick gap still reports the suspend
+      expect(beat?.lagClockGapMaxMs).toBeGreaterThanOrEqual(3_900);
+      expect(lastFields(h.log).lagClockGapMs).toBeDefined();
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it('⭐ a THROWING monotonic clock does not fabricate a monotonic-only stall', () => {
+    // Measured in review: when the wall baseline advanced and a throwing `mono()`
+    // left the monotonic one behind, the next tick measured two ticks against a
+    // one-tick baseline and logged a ~1s MONOTONIC stall beside a 0ms wall stall
+    // — physically impossible, and growing while the throw persisted.
+    let wall = 0;
+    let mono = 0;
+    let throwNext = true;
+    const h = harness({
+      samples: [proc('Tab', 1, 3.1)],
+      now: () => wall,
+      mono: () => {
+        if (throwNext) {
+          throwNext = false;
+          throw new Error('hrtime is unavailable');
+        }
+        return mono;
+      },
+    });
+    try {
+      vi.useFakeTimers();
+      h.hb.start();
+      for (let i = 0; i < 5; i += 1) {
+        wall += LAG_TICK_MS;
+        mono += LAG_TICK_MS;
+        vi.advanceTimersByTime(LAG_TICK_MS);
+      }
+      const beat = h.hb.beat();
+      expect(beat?.lagMaxMs).toBeLessThan(LAG_CLOCK_DISAGREE_MS);
+      expect(beat?.lagMonoMaxMs ?? 0).toBeLessThan(LAG_CLOCK_DISAGREE_MS);
+      expect(lastFields(h.log)).not.toHaveProperty('lagMonoMaxMs');
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it('logs the pair at the threshold and stays silent one below it', () => {
+    // Pins `LAG_CLOCK_DISAGREE_MS` itself: without a boundary pair any value in
+    // (0, the test's gap] kept every other clock test green.
+    const at = run({ wallStep: LAG_TICK_MS + LAG_CLOCK_DISAGREE_MS, monoStep: LAG_TICK_MS });
+    expect(at.fields.lagClockGapMs).toBeDefined();
+    const below = run({ wallStep: LAG_TICK_MS + LAG_CLOCK_DISAGREE_MS - 2, monoStep: LAG_TICK_MS });
+    expect(below.fields).not.toHaveProperty('lagClockGapMs');
+  });
+
+  it('never throws out of a powerMonitor listener', () => {
+    // `clockJumped` is wired straight to `powerMonitor.on('resume')`, where an
+    // uncaught throw is an "A JavaScript error occurred" modal on top of whatever
+    // the user was doing when their machine woke up.
+    const { hb } = harness({
+      samples: [],
+      mono: () => {
+        throw new Error('hrtime is unavailable');
+      },
+    });
+    expect(() => hb.clockJumped()).not.toThrow();
+    expect(hb.beat()?.resumedFromSleep).toBe(true); // and the flag still landed
+  });
+});
+
+describe('CpuHeartbeat — idle time is paired with the STALL (#1031)', () => {
+  it('reports the idle reading from the worst tick, not from beat time', () => {
+    // Read at beat time it could be a minute away from the stall it sits beside:
+    // one click at second 59 after an hour away would report `idleSec: 1` next to
+    // a stall nobody was present for, which is the confusion the field exists to
+    // remove (review).
+    let wall = 0;
+    let idle = 3_600; // an hour away...
+    const h = harness({
+      samples: [proc('Tab', 1, 3.1)],
+      now: () => wall,
+      idleSec: () => idle,
+    });
+    try {
+      vi.useFakeTimers();
+      h.hb.start();
+      wall += 4_000; // ...and THIS is when it stalled
+      vi.advanceTimersByTime(LAG_TICK_MS);
+      idle = 1; // the user came back just before the line was written
+      const beat = h.hb.beat();
+      expect(beat?.lagIdleSec).toBe(3_600);
+      expect(beat?.idleSec).toBe(1);
+      expect(lastFields(h.log).lagIdleSec).toBe(3_600);
+    } finally {
+      vi.clearAllTimers();
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps the stall reading off a quiet line', () => {
+    // Drift is a few milliseconds on nearly every tick, so carrying this field
+    // unconditionally would repeat `idleSec` on every quiet beat for ever.
+    const { hb, log } = harness({ samples: [proc('Tab', 1, 3.1)], idleSec: () => 42 });
+    hb.beat();
+    expect(lastFields(log)).not.toHaveProperty('lagIdleSec');
+  });
+});
+
+describe('CpuHeartbeat — how big had it got? (#1031)', () => {
+  const withMem = (type: string, pid: number, percent: number, kb: number): CpuProcessSample => ({
+    type,
+    pid,
+    percent,
+    workingSetKb: kb,
+  });
+
+  it('names each busy process with its working set, in MB', () => {
+    const h = harness({ samples: [withMem('Tab', 1, 3.1, 1_258_291)] });
+    h.hb.beat();
+    const procs = lastFields(h.log).procs as Array<Record<string, unknown>>;
+    // #1013's headline number — a renderer at 1.2 GB — as a field on a line we
+    // were already writing, so the next one is a curve instead of a sighting.
+    expect(procs[0].rssMb).toBe(1229);
+  });
+
+  it('⭐ totals memory across EVERY process, including the ones at zero CPU', () => {
+    // `procs` drops anything idle, which is exactly where a leaked renderer
+    // sits: quiet and enormous. A beat that named no processes would otherwise
+    // carry no memory at all, and that is the minute this field most needs to
+    // describe.
+    const h = harness({
+      samples: [withMem('Tab', 1, 0, 1_048_576), withMem('Browser', 2, 0, 524_288)],
+    });
+    const fields = (h.hb.beat(), lastFields(h.log));
+    expect(fields.procs).toEqual([]); // nothing busy enough to name
+    expect(fields.rssTotalMb).toBe(1536); // ...and 1.5 GB of it all the same
+  });
+
+  it('omits memory entirely when the source does not report it', () => {
+    const h = harness({ samples: [proc('Tab', 1, 3.1)] });
+    h.hb.beat();
+    const fields = lastFields(h.log);
+    expect(fields).not.toHaveProperty('rssTotalMb');
+    expect((fields.procs as Array<Record<string, unknown>>)[0]).not.toHaveProperty('rssMb');
   });
 });

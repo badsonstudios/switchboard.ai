@@ -94,11 +94,63 @@ export interface PerfSample {
   at: number;
 }
 
+/**
+ * What the renderer looked like while a long task was running (#1031).
+ *
+ * SAMPLED AT OBSERVATION TIME, which is the whole design. A long task is by
+ * definition a block the platform has already finished timing at 50ms or more,
+ * so reading a handful of numbers inside that callback costs nothing anybody can
+ * feel — and it puts NO code on the keystroke path, which is the owner's rule
+ * ("off must mean genuinely absent; I don't want the diagnostics to become the
+ * reason it's slow"). `perf.absent.test.ts` still holds.
+ *
+ * Every field is optional because every source can be missing: a window with no
+ * feed mounted publishes no counts, `performance.memory` is Chromium-only, and
+ * the stream count comes from a host callback a test need not supply. An absent
+ * field means "not known", never zero.
+ */
+export interface PerfContext {
+  /** feed roots mounted in this window */
+  feeds?: number;
+  /** blocks those feeds hold between them */
+  blocks?: number;
+  /** how many of those blocks are actually on screen */
+  rendered?: number;
+  /**
+   * Sessions mid-reply right now — #1013's claim is that THIS is what correlates
+   * with cost, rather than how many sessions are open.
+   *
+   * NOT called `streams`, deliberately: the CPU heartbeat already logs `streams`
+   * meaning every live session, and two fields in one feature's output with the
+   * same name and different populations is how a cross-reference misleads
+   * (review).
+   */
+  replying?: number;
+  /**
+   * JS heap in use, MB.
+   *
+   * ⚠️ THE JS HEAP ONLY, and quantised by Chromium for fingerprinting reasons —
+   * it is NOT the figure #1013 reported. That was a 1.2 GB **working set**; the
+   * comparable number is `rssMb` on the CPU heartbeat line. A reader who sets
+   * `heapMb: 280` against 1.2 GB and concludes there is no leak has compared two
+   * different things (review).
+   */
+  heapMb?: number;
+}
+
 /** A main-thread block the platform reported as a long task (>50ms). */
 export interface PerfLongTask {
   /** milliseconds since renderer boot */
   at: number;
   ms: number;
+  /**
+   * The renderer's shape while it ran, when it could be sampled (#1031).
+   *
+   * Absent on a task observed before the context sampler was installed, and on
+   * every task recorded by a build older than #1031 — so a reader must treat
+   * missing as "not known" rather than as an empty renderer.
+   */
+  ctx?: PerfContext;
 }
 
 /**
@@ -173,7 +225,19 @@ export interface PerfStat {
 export interface PerfSummary {
   /** one row per interaction that has at least one sample, worst p95 first */
   interactions: PerfStat[];
-  longTasks: { count: number; totalMs: number; worstMs: number };
+  longTasks: {
+    count: number;
+    totalMs: number;
+    worstMs: number;
+    /**
+     * The context of the WORST long task, when one was sampled (#1031).
+     *
+     * The worst rather than an average, for the reason `lagMaxMs` is a max: one
+     * six-second block inside a quiet hour is the entire signal, and the
+     * question asked of it is "what was the app holding while that happened".
+     */
+    worstCtx?: PerfContext;
+  };
   /**
    * Tier 2's extras, or `null` when the switch is off. `null` and "zero
    * samples" are different sentences and the dialog says different things
@@ -225,6 +289,37 @@ function round(n: number): number {
   return Math.round(n * 10) / 10;
 }
 
+/**
+ * A long task's context as one readable clause, or `null` when nothing was
+ * sampled (#1031).
+ *
+ * Only the fields that are present, in a fixed order, because an absent field
+ * means "not known" and printing `0 blocks` for it would be a measurement
+ * nobody took. `null` rather than an empty string so the caller decides whether
+ * the line appears at all.
+ */
+export function describeContext(ctx: PerfContext | undefined): string | null {
+  if (!ctx) return null;
+  const parts: string[] = [];
+  if (ctx.replying !== undefined) parts.push(`${ctx.replying} replying`);
+  if (ctx.feeds !== undefined) parts.push(`${ctx.feeds} ${ctx.feeds === 1 ? 'feed' : 'feeds'}`);
+  if (ctx.blocks !== undefined) {
+    parts.push(
+      ctx.rendered === undefined
+        ? `${ctx.blocks} blocks`
+        : `${ctx.blocks} blocks (${ctx.rendered} on screen)`
+    );
+  } else if (ctx.rendered !== undefined) {
+    parts.push(`${ctx.rendered} on screen`);
+  }
+  if (ctx.heapMb !== undefined) parts.push(`${ctx.heapMb} MB heap`);
+  if (parts.length === 0) return null;
+  // "0 feeds" on its own reads like a fault in the instrument rather than a fact
+  // about the app, so the one case that produces it gets a sentence instead.
+  if (parts.length === 1 && ctx.feeds === 0) return 'no conversations mounted';
+  return parts.join(', ');
+}
+
 /** Build the on-screen summary from raw samples. */
 export function summarise(input: {
   interactions: readonly PerfSample[];
@@ -256,9 +351,13 @@ export function summarise(input: {
 
   let totalMs = 0;
   let worstMs = 0;
+  let worstCtx: PerfContext | undefined;
   for (const t of input.longTasks) {
     totalMs += t.ms;
-    if (t.ms > worstMs) worstMs = t.ms;
+    if (t.ms > worstMs) {
+      worstMs = t.ms;
+      worstCtx = t.ctx;
+    }
   }
 
   const ks = input.keystrokes;
@@ -283,6 +382,10 @@ export function summarise(input: {
       count: input.longTasks.length,
       totalMs: round(totalMs),
       worstMs: round(worstMs),
+      // Spread only when there is one, so a capture from a build without the
+      // sampler reports an ABSENT context rather than an empty object — "not
+      // known" and "nothing was mounted" are different answers (#1031).
+      ...(worstCtx ? { worstCtx } : {}),
     },
     detail,
     loop: input.loop,
@@ -381,6 +484,12 @@ export function summaryAsText(summary: PerfSummary): string {
       : `  Long tasks: ${summary.longTasks.count}, ${ms(summary.longTasks.totalMs)} total, ` +
           `worst ${ms(summary.longTasks.worstMs)}.`
   );
+  // What the app was holding during the worst one (#1031). On its own line and
+  // only when sampled, because this is the row that says WHERE to look: a worst
+  // block with 4,000 blocks mounted and three sessions streaming is a different
+  // bug from the same block with one idle session on screen.
+  const wc = describeContext(summary.longTasks.worstCtx);
+  if (wc) out.push(`    during the worst one: ${wc}`);
 
   out.push(
     summary.loop === null
@@ -457,6 +566,23 @@ export function sanitizeSummary(raw: unknown): PerfSummary | null {
     count: n(lt.count) ?? 0,
     totalMs: n(lt.totalMs) ?? 0,
     worstMs: n(lt.worstMs) ?? 0,
+    // FIELD BY FIELD, like everything else here, and for this function's own
+    // reason rather than for tidiness: this value reaches a GitHub issue body,
+    // so a context object passed through whole would carry any extra property
+    // the renderer put on it. Five numbers in, nothing else (#1031).
+    ...((): { worstCtx?: PerfContext } => {
+      const c = lt.worstCtx;
+      if (c === null || typeof c !== 'object' || Array.isArray(c)) return {};
+      const src = c as Record<string, unknown>;
+      const out: PerfContext = {};
+      for (const k of ['feeds', 'blocks', 'rendered', 'replying', 'heapMb'] as const) {
+        const v = n(src[k]);
+        if (v !== null) out[k] = v;
+      }
+      // An object with no recognised field is no context at all, and saying so
+      // keeps `describeContext` from printing an empty clause.
+      return Object.keys(out).length === 0 ? {} : { worstCtx: out };
+    })(),
   };
 
   // `null` survives as `null` — "the switch was off" and "it was on and found

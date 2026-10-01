@@ -6,6 +6,11 @@ import {
   namesFromTasklist,
   namesFromPs,
   summarize,
+  CENSUS_MS,
+  CENSUS_SLOW_MS,
+  CENSUS_BACKOFF_STEP,
+  CENSUS_MAX_MS,
+  CENSUS_TIMEOUT_MS,
 } from './process-census';
 
 describe('parsing the platform listers', () => {
@@ -115,6 +120,111 @@ describe('ProcessCensus', () => {
     c.sample();
     c.start();
     expect(m.calls).toBe(0);
+  });
+
+  // ── #1031: back off while the machine cannot spawn ───────────────────────
+  //
+  // In #1007 this census reported 3.4-30.5 SECONDS per count and repeatedly hit
+  // its 30s timeout, once a minute, on the machine it was measuring. Asking a
+  // struggling machine to spawn that often is the diagnostic feeding the thing
+  // it is there to describe.
+
+  it('⭐ counts every tick while counts are FAST — the healthy rate is not halved', () => {
+    // THE REGRESSION TEST FOR A MEASURED BUG (review). The first draft paced
+    // itself by comparing the clock against a due-time set when a count
+    // FINISHED, while the timer fires on fixed boundaries and `setInterval`
+    // fires a hair late — so every other tick was skipped and a healthy machine
+    // counted every two minutes while `sysEnumEveryMs` stayed absent claiming it
+    // was one. The jitter below is the whole point: a real tick never lands
+    // exactly on its boundary.
+    let t = 0;
+    const m = manual();
+    const c = new ProcessCensus({ enumerate: m.enumerate, parse: () => [], now: () => t });
+
+    c.start();
+    expect(m.calls).toBe(1);
+    t += 300; // the count takes a moment, as a real spawn does
+    m.answer(null, '');
+
+    for (let i = 1; i <= 4; i += 1) {
+      t = i * CENSUS_MS + i * 2; // 2ms of timer slop per tick, always late
+      c.tick();
+      expect(m.calls, `tick ${i}`).toBe(i + 1);
+      t += 300;
+      m.answer(null, '');
+    }
+    expect(c.fields().sysEnumEveryMs).toBeUndefined();
+    c.stop();
+  });
+
+  it('widens its cadence after a slow count, and says so in the fields', () => {
+    let t = 0;
+    const m = manual();
+    const c = new ProcessCensus({ enumerate: m.enumerate, parse: () => [], now: () => t });
+
+    c.sample();
+    t += CENSUS_SLOW_MS; // exactly at the threshold counts as slow
+    m.answer(null, '');
+    expect(c.fields().sysEnumEveryMs).toBe(CENSUS_MS * CENSUS_BACKOFF_STEP);
+
+    // A tick at the OLD cadence is now too early and must not spawn...
+    t += CENSUS_MS;
+    c.tick();
+    expect(m.calls).toBe(1);
+
+    // ...and at the new one it does.
+    t += CENSUS_MS;
+    c.tick();
+    expect(m.calls).toBe(2);
+  });
+
+  it('counts a FAILED count as slow — the failure it guards against is the timeout', () => {
+    let t = 0;
+    const m = manual();
+    const c = new ProcessCensus({ enumerate: m.enumerate, parse: () => [], now: () => t });
+    c.sample();
+    t += CENSUS_TIMEOUT_MS;
+    m.answer(new Error('Command failed: tasklist /fo csv /nh'));
+    // A reset to one-a-minute here would keep asking a wedged machine to spawn
+    // every minute for ever, which is exactly #1007's shape.
+    expect(c.fields().sysEnumEveryMs).toBe(CENSUS_MS * CENSUS_BACKOFF_STEP);
+  });
+
+  it('snaps straight back to one a minute on the first fast count', () => {
+    let t = 0;
+    const m = manual();
+    const c = new ProcessCensus({ enumerate: m.enumerate, parse: () => [], now: () => t });
+
+    c.sample();
+    t += CENSUS_SLOW_MS;
+    m.answer(null, '');
+    expect(c.fields().sysEnumEveryMs).toBe(CENSUS_MS * CENSUS_BACKOFF_STEP);
+
+    // Two ticks: the first burns the skip the backoff asked for, the second is
+    // the one that counts.
+    c.tick();
+    c.tick();
+    expect(m.calls).toBe(2);
+    t += 50; // fast: spawning is cheap again
+    m.answer(null, '');
+    // Recovery is immediate where backoff is gradual, and the FIELD GOES AWAY —
+    // its presence is what tells a reader a steady `sysProcs` is fresh rather
+    // than stale.
+    expect(c.fields().sysEnumEveryMs).toBeUndefined();
+  });
+
+  it('cannot back off for ever', () => {
+    let t = 0;
+    const m = manual();
+    const c = new ProcessCensus({ enumerate: m.enumerate, parse: () => [], now: () => t });
+    c.sample();
+    for (let i = 0; i < 20; i += 1) {
+      t += CENSUS_SLOW_MS * 2; // every count is slow, every time
+      m.answer(null, '');
+      // Burn whatever skip the backoff just asked for; the tick after it counts.
+      for (let k = 0; k <= CENSUS_MAX_MS / CENSUS_MS; k += 1) c.tick();
+    }
+    expect(c.fields().sysEnumEveryMs).toBe(CENSUS_MAX_MS);
   });
 
   // The real lister, once, so a platform whose output the parser misreads

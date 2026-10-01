@@ -44,6 +44,7 @@ import {
   batchIsEmpty,
   isPerfInteraction,
   type PerfBatch,
+  type PerfContext,
   type PerfKeystroke,
   type PerfLoopDelay,
 } from '../../shared/perf';
@@ -106,6 +107,26 @@ function asArray(value: unknown): unknown[] {
 }
 
 /**
+ * A long task's context, rebuilt as five optional numbers and nothing else
+ * (#1031) — the same field-by-field rule the whole file follows, applied to the
+ * one nested object in the batch.
+ *
+ * Returned as a spreadable `{ ctx? }` so an absent or unrecognisable context
+ * leaves no `ctx` key at all: "not known" and "an empty renderer" are different
+ * readings, and a capture file that implied the second would be lying.
+ */
+function ctxOf(value: unknown): { ctx?: PerfContext } {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return {};
+  const src = value as Record<string, unknown>;
+  const ctx: PerfContext = {};
+  for (const k of ['feeds', 'blocks', 'rendered', 'replying', 'heapMb'] as const) {
+    const v = num(src[k]);
+    if (v !== null) ctx[k] = v;
+  }
+  return Object.keys(ctx).length === 0 ? {} : { ctx };
+}
+
+/**
  * Rebuild a batch field by field, dropping anything that is not a number we
  * asked for or a name we declared.
  *
@@ -138,7 +159,7 @@ export function sanitizeBatch(raw: unknown): PerfBatch | null {
     const ms = num(t.ms);
     const taskAt = num(t.at);
     if (ms === null || taskAt === null) continue;
-    batch.longTasks.push({ at: taskAt, ms });
+    batch.longTasks.push({ at: taskAt, ms, ...ctxOf(t.ctx) });
   }
 
   for (const item of asArray(r.keystrokes)) {

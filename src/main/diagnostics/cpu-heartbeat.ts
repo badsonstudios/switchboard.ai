@@ -62,6 +62,17 @@ export const BUSY_MACHINE_FRACTION = 0.25;
 /** event-loop lag at or above which the beat is promoted; ~60x the idle floor */
 export const LAG_WARN_MS = 1_000;
 
+/**
+ * How far the wall and monotonic lag figures must differ before the line carries
+ * both (#1031).
+ *
+ * Well above the ~15.6 ms Windows timer resolution the top of this file records,
+ * so ordinary jitter between two reads of two clocks never widens a line, and
+ * far below the 1,000 ms that promotes a beat — a disagreement worth reading is
+ * one that could change the diagnosis.
+ */
+export const LAG_CLOCK_DISAGREE_MS = 250;
+
 /** how many processes the line names, busiest first, so one beat stays one line */
 export const MAX_NAMED = 6;
 
@@ -72,6 +83,25 @@ export interface CpuProcessSample {
   name?: string;
   /** share of the WHOLE MACHINE, 0-100 — see the note at the top of this file */
   percent: number;
+  /**
+   * Working set in KB, when the source reports it (#1031).
+   *
+   * `app.getAppMetrics()` already carries `memory.workingSetSize` and this file
+   * already calls it, so a continuous record of renderer growth costs one more
+   * field on a line we were writing anyway. #1013's headline — a renderer at
+   * **1.2 GB after 21 hours** — was read off Task Manager at one instant by
+   * hand; a single sighting cannot tell a leak from a working set that is simply
+   * large, and a curve can.
+   *
+   * ⚠️ THE UNIT IS ASSUMED KILOBYTES AND IS NOT DOCUMENTED IN ELECTRON 43'S
+   * TYPINGS (review): only `ProcessMemoryInfo` says so outright, while
+   * `MemoryInfo.workingSetSize` says only "the amount of memory currently pinned
+   * to actual physical RAM". If it were bytes, a 1.2 GB renderer would log
+   * `rssMb: 1`. On the hand-off list as a one-line check against Task Manager —
+   * this project's own rule is not to guess a contract, and this is the cheapest
+   * place that rule still has a hole.
+   */
+  workingSetKb?: number;
 }
 
 export interface CpuHeartbeatDeps {
@@ -85,6 +115,50 @@ export interface CpuHeartbeatDeps {
   /** logical cores. Logged, because cores' worth is meaningless without it. */
   coreCount: number;
   now?: () => number;
+  /**
+   * A MONOTONIC clock, for the lag gauge's cross-check (#1031). Optional: the
+   * gauge works without it and simply reports one number instead of two.
+   *
+   * ⚠️ WHY THERE ARE TWO CLOCKS NOW. `lagTick` measures drift against `now`,
+   * which is wall clock — so a stall and a suspended machine are the same
+   * reading. The `resumedFromSleep` flag exists for exactly that and is wired to
+   * `powerMonitor`, but **#1003's 3–4 second lag beats do not carry it**, so
+   * either Windows never emitted `resume` for those transitions (modern standby
+   * frequently does not) or they were genuine stalls. A wall clock cannot say
+   * which.
+   *
+   * ⚠️ IT IS ONE-SIDED EVIDENCE AND MUST BE READ THAT WAY (review). A gap means
+   * wall time passed that the monotonic clock did not see. **Agreement means
+   * nothing at all** — it does not establish that we were blocked. On Windows
+   * this clock is `QueryPerformanceCounter`: across **S3** sleep it does not
+   * advance, so the designed signal appears; across **modern standby (S0ix)**
+   * the counter keeps ticking, so wall and monotonic both advance and no gap
+   * appears. Signature A — 3–4s drift, no `resume` event, laptop — is more
+   * consistent with modern standby than with S3, which means **the case that
+   * motivated this gauge is the case it is most likely to be blind to.** It is
+   * still worth having: it costs one read a second and it converts the beats
+   * where it DOES fire from ambiguous to decided.
+   *
+   * A second producer of a gap, not accounted for anywhere else: a **wall-clock
+   * STEP**. Windows corrects the clock on resume and periodically, and Electron
+   * offers no time-change event, so an NTP correction of a second or two reads
+   * here exactly like a suspend. A gap is "wall time we did not see", never
+   * "the machine slept" — the log says the former and means only that.
+   *
+   * `spike/probes/1031/` settles the S3-vs-S0ix question properly and needs a
+   * real sleep cycle on the owner's laptop to run.
+   */
+  mono?: () => number;
+  /**
+   * Seconds since the last user input, from `powerMonitor.getSystemIdleTime()`
+   * (#1031). Optional and injected for the same reason `getMetrics` is.
+   *
+   * ⭐ THE FIELD THAT MAKES A LAG READING MEAN SOMETHING. `lagMaxMs: 3207` with
+   * two hours of idle time is not a slowdown anyone experienced; the same number
+   * with zero idle time is the entire complaint. Without it every capture mixes
+   * the two and every aggregate over them is meaningless.
+   */
+  idleSec?: () => number;
   /**
    * Extra numbers to carry on every beat — session counts, window counts.
    * "How much work was it being asked to do?" is the first question any capture
@@ -106,8 +180,16 @@ export interface Beat {
   /** the busiest single process, or null when nothing reported */
   busiest: { type: string; pid: number; cores: number } | null;
   lagMaxMs: number;
+  /** the same stall measured monotonically, or null when no mono clock was given */
+  lagMonoMaxMs: number | null;
+  /** worst per-tick wall-minus-monotonic gap, or null without a mono clock */
+  lagClockGapMaxMs: number | null;
   busy: boolean;
   resumedFromSleep: boolean;
+  /** seconds since the last user input at beat time, or null without a source */
+  idleSec: number | null;
+  /** ...and as it was at the worst stall of the minute, which is the useful one */
+  lagIdleSec: number | null;
 }
 
 const coresWorth = (percent: number, coreCount: number): number => (percent * coreCount) / 100;
@@ -121,6 +203,21 @@ export class CpuHeartbeat {
   private stopped = false;
   private lagMaxMs = 0;
   private lagExpectedAt = 0;
+  private lagMonoMaxMs = 0;
+  /**
+   * The monotonic baseline, or `null` for "not armed".
+   *
+   * ⚠️ NULLABLE ON PURPOSE, and a test found why: when the prime in `start()`
+   * threw, a plain `0` baseline made the FIRST tick measure a full tick's
+   * elapsed against zero and report a one-second monotonic stall that never
+   * happened. `null` means "arm on the next tick and measure nothing", so a
+   * failed read costs one sample instead of inventing one.
+   */
+  private monoExpectedAt: number | null = null;
+  /** worst per-tick `wall - monotonic`: wall time the monotonic clock missed */
+  private lagClockGapMaxMs = 0;
+  /** idle seconds as they were at the worst stall of this minute */
+  private lagIdleSec: number | null = null;
   private resumedFromSleep = false;
 
   constructor(private readonly deps: CpuHeartbeatDeps) {}
@@ -144,6 +241,16 @@ export class CpuHeartbeat {
     }
 
     this.lagExpectedAt = now() + LAG_TICK_MS;
+    // Guarded for `getMetrics`'s reason just above, and the test that found this
+    // was aimed at `lagTick`: a throwing clock here would take START-UP down,
+    // which is a spectacular price for an optional cross-check to charge.
+    if (this.deps.mono) {
+      try {
+        this.monoExpectedAt = this.deps.mono() + LAG_TICK_MS;
+      } catch {
+        this.monoExpectedAt = null; // unarmed: the next tick arms it, silently
+      }
+    }
     this.lagTimer = setInterval(() => this.lagTick(), LAG_TICK_MS);
     this.timer = setInterval(() => this.beat(), HEARTBEAT_MS);
 
@@ -179,8 +286,23 @@ export class CpuHeartbeat {
    * the OS says so, not because the number was big.
    */
   clockJumped(): void {
-    this.resumedFromSleep = true;
-    this.lagExpectedAt = (this.deps.now ?? Date.now)() + LAG_TICK_MS;
+    // WRAPPED, for `beat()`'s reason and not a lesser one: this is called
+    // straight from a `powerMonitor` listener, so an uncaught throw here is an
+    // "A JavaScript error occurred" modal on top of whatever the user was doing
+    // at the moment their machine woke up (review).
+    try {
+      this.resumedFromSleep = true;
+      this.lagExpectedAt = (this.deps.now ?? Date.now)() + LAG_TICK_MS;
+      // The monotonic baseline is re-armed too. If it were left alone, the first
+      // tick after a wake would report the whole suspend against the clock whose
+      // entire job is to say the suspend was not our fault (#1031).
+      if (this.deps.mono) this.monoExpectedAt = this.deps.mono() + LAG_TICK_MS;
+    } catch {
+      // Unarmed rather than left stale, for the reason on `monoExpectedAt`.
+      this.monoExpectedAt = null;
+      // The flag is already set, which is the part that matters: the next beat
+      // will say it covered a wake even if re-arming the baselines failed.
+    }
   }
 
   /**
@@ -194,10 +316,60 @@ export class CpuHeartbeat {
       if (this.stopped) return;
       const now = (this.deps.now ?? Date.now)();
       const drift = now - this.lagExpectedAt;
-      if (drift > this.lagMaxMs) this.lagMaxMs = drift;
+      if (drift > this.lagMaxMs) {
+        this.lagMaxMs = drift;
+        // ⭐ IDLE TIME IS CAPTURED HERE, AT THE WORST TICK, not at beat time
+        // (review). Read at beat time it could be up to 60 seconds away from the
+        // stall it sits beside: one click at second 59 after an hour away would
+        // report `idleSec: 1` next to a stall nobody was present for — which is
+        // the exact confusion the field exists to remove. A handful of reads a
+        // minute, usually none.
+        this.lagIdleSec = this.readIdle();
+      }
+
+      // The same tick on a clock that does not follow the wall (#1031), and the
+      // GAP BETWEEN THEM PER TICK — which is the discriminator, not the
+      // difference of the two maxima (review). Those maxima can come from
+      // different ticks: a minute holding a 5s suspend early and a genuine 5s
+      // block later yields two equal maxima, they agree, and the suspend
+      // vanishes. `wallDrift - monoDrift` is the real quantity — wall time the
+      // monotonic clock did not see — and one event cannot be masked by another.
+      const mono = this.deps.mono;
+      let monoNow: number | null = null;
+      if (mono) {
+        monoNow = mono();
+        // Only measure against an ARMED baseline. An unarmed one means the last
+        // read failed, and measuring one tick's elapsed against a stale or zero
+        // baseline is how a stall gets fabricated rather than observed.
+        if (this.monoExpectedAt !== null) {
+          const monoDrift = monoNow - this.monoExpectedAt;
+          if (monoDrift > this.lagMonoMaxMs) this.lagMonoMaxMs = monoDrift;
+          const gap = drift - monoDrift;
+          if (gap > this.lagClockGapMaxMs) this.lagClockGapMaxMs = gap;
+        }
+      }
+
+      // BOTH baselines are re-armed together, at the end, and that is a fix for
+      // a measured fabrication (review): when the wall baseline advanced and a
+      // throwing `mono()` left the monotonic one behind, the next tick measured
+      // two ticks' elapsed against a one-tick baseline and logged a ~1s
+      // MONOTONIC stall with a 0ms wall stall — a physically impossible reading,
+      // growing without bound while the throw persisted.
       this.lagExpectedAt = now + LAG_TICK_MS;
+      if (monoNow !== null) this.monoExpectedAt = monoNow + LAG_TICK_MS;
     } catch {
       // A gauge that can throw into setInterval is a modal over the user's work.
+    }
+  }
+
+  /** Idle seconds, or null — never at the cost of the reading it accompanies. */
+  private readIdle(): number | null {
+    if (!this.deps.idleSec) return null;
+    try {
+      const v = this.deps.idleSec();
+      return Number.isFinite(v) ? Math.round(v) : null;
+    } catch {
+      return null;
     }
   }
 
@@ -231,6 +403,7 @@ export class CpuHeartbeat {
         name: s.name,
         pid: s.pid,
         cores: coresWorth(s.percent, coreCount),
+        workingSetKb: s.workingSetKb,
       }))
       .sort((a, b) => b.cores - a.cores);
 
@@ -241,10 +414,21 @@ export class CpuHeartbeat {
     const top = ranked[0] ?? null;
 
     const lagMaxMs = this.lagMaxMs;
+    const lagMonoMaxMs = this.deps.mono ? this.lagMonoMaxMs : null;
+    const lagClockGapMaxMs = this.deps.mono ? this.lagClockGapMaxMs : null;
+    const lagIdleSec = this.lagIdleSec;
     const resumedFromSleep = this.resumedFromSleep;
     // Max since the LAST beat, so each line describes its own minute.
     this.lagMaxMs = 0;
+    this.lagMonoMaxMs = 0;
+    this.lagClockGapMaxMs = 0;
+    this.lagIdleSec = null;
     this.resumedFromSleep = false;
+
+    // Idle at the moment the LINE is written, which is a different question from
+    // `lagIdleSec` above and is why they are two fields rather than one: this one
+    // says whether anyone was around for the minute in general.
+    const idleSec = this.readIdle();
 
     // Compared on the ROUNDED value, so a line reading `cores: 0.5` is never
     // `info` on one beat and `warn` on the next for a difference the reader
@@ -269,8 +453,42 @@ export class CpuHeartbeat {
           ...(p.name ? { name: p.name } : {}),
           pid: p.pid,
           cores: round1(p.cores),
+          // MB, and only when the source gave us one. Rounded to whole MB
+          // because the question is "is this growing by hundreds" and a decimal
+          // would widen every line for nothing (#1031).
+          ...(p.workingSetKb !== undefined
+            ? { rssMb: Math.round(p.workingSetKb / 1024) }
+            : {}),
         })),
     };
+
+    // ⚠️ MEMORY IS REPORTED FOR THE WHOLE APP, NOT ONLY THE NAMED PROCESSES.
+    // `procs` drops anything at zero CPU, which is exactly where a leaked
+    // renderer sits: idle and enormous. A beat that listed no processes would
+    // otherwise carry no memory at all, and "the app was quiet" is the shape of
+    // minute this field most needs to describe (#1031).
+    //
+    // ⚠️ IT DOUBLE-COUNTS SHARED PAGES and is therefore an UPPER BOUND, useful
+    // as a trend and not as a true footprint (review): the Chromium image itself
+    // is counted once per process. `privateBytes` would be the summable figure
+    // on win32, and is the better field the day this stops being enough.
+    const rssTotalKb = ranked.reduce((a, p) => a + (p.workingSetKb ?? 0), 0);
+    if (rssTotalKb > 0) fields.rssTotalMb = Math.round(rssTotalKb / 1024);
+
+    // Only when a source exists, and only when some tick saw the two clocks
+    // disagree — see `mono`'s docblock. On the overwhelming majority of beats
+    // the gap is a millisecond or two and the line stays the width it was. Both
+    // numbers go out together: the gap is the evidence, the monotonic max is
+    // what makes the line readable beside `lagMaxMs`.
+    if (lagClockGapMaxMs !== null && lagClockGapMaxMs >= LAG_CLOCK_DISAGREE_MS) {
+      fields.lagClockGapMs = Math.round(lagClockGapMaxMs);
+      if (lagMonoMaxMs !== null) fields.lagMonoMaxMs = Math.round(lagMonoMaxMs);
+    }
+    if (idleSec !== null) fields.idleSec = idleSec;
+    // Paired with the stall rather than with the line, and carried only when the
+    // stall was worth promoting — otherwise every quiet minute would repeat a
+    // number that differs from `idleSec` by a rounding error.
+    if (lagIdleSec !== null && lagMaxMs >= LAG_WARN_MS) fields.lagIdleSec = lagIdleSec;
 
     // Only when true, so it is a flag a reader notices rather than noise on
     // every line: the beat covering a wake-up has a lag reading that describes
@@ -295,8 +513,12 @@ export class CpuHeartbeat {
       totalCores,
       busiest: top ? { type: top.type, pid: top.pid, cores: top.cores } : null,
       lagMaxMs,
+      lagMonoMaxMs,
+      lagClockGapMaxMs,
       busy,
       resumedFromSleep,
+      idleSec,
+      lagIdleSec,
     };
   }
 }
