@@ -33,6 +33,14 @@ export interface DirState {
 export interface TreeState {
   /** the folder being browsed — the boundary every request declares */
   readonly root: string;
+  /**
+   * The root as MAIN RESOLVED IT, or `undefined` until its listing lands.
+   *
+   * Every entry's `path` is built from this, not from `root`, so anything that
+   * matches a row path against a reconstructed one has to use this — see
+   * `applyListing` for the Windows-runner bug that proved it.
+   */
+  readonly resolvedRoot?: string;
   /** what we know, keyed by absolute path. The root is always a key. */
   readonly dirs: Readonly<Record<string, DirState>>;
   /**
@@ -107,7 +115,25 @@ export function applyListing(state: TreeState, path: string, result: DirListResu
     !result.ok && result.reason === 'not-found' && path !== state.root
       ? state.expanded.filter((p) => p !== path)
       : state.expanded;
-  return { ...state, dirs: { ...state.dirs, [path]: next }, expanded };
+  /**
+   * ⚠️ **THE ROOT'S *RESOLVED* PATH IS KEPT, AND A WINDOWS CI RUNNER IS WHAT
+   * TAUGHT US TO (E24 Git v2 item 11, found by CI).**
+   *
+   * Main answers with `result.path`: the directory the entries ACTUALLY came
+   * from, links collapsed. Every entry's own `path` is built from it. So on any
+   * machine where the folder we ASKED for is not the folder we got — a symlink, a
+   * junction (this project's own worktree recipe uses them), or an **8.3 short
+   * name** like `C:\Users\RUNNER~1\...`, which `realpath` expands — the tree's
+   * row paths share no prefix with `state.root`.
+   *
+   * That was invisible until something tried to MATCH them: item 11's git badges
+   * are keyed by `<root>/<git path>`, so on the GitHub Windows runner every key
+   * missed and the Files tab drew no badges at all, deterministically, with no
+   * error anywhere. The badge test failed there and passed on every developer
+   * machine, which is the shape of bug this field now exists to remove.
+   */
+  const resolvedRoot = path === state.root && result.ok ? result.path : state.resolvedRoot;
+  return { ...state, dirs: { ...state.dirs, [path]: next }, expanded, resolvedRoot };
 }
 
 /**

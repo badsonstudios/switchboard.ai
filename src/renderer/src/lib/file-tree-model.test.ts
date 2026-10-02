@@ -280,3 +280,55 @@ describe('applyListing', () => {
     expect(s.dirs['/somewhere/else/real']).toBeUndefined();
   });
 });
+
+// The ROOT AS MAIN RESOLVED IT (E24 Git v2 item 11, found by CI).
+//
+// ⚠️ **THE BUG THIS PINS WAS DETERMINISTIC ON A WINDOWS CI RUNNER AND INVISIBLE
+// ON EVERY DEVELOPER MACHINE.** Main answers with the directory the entries
+// ACTUALLY came from — links collapsed — and builds every entry's path from it.
+// Item 11's git badges are keyed by `<root>/<git path>`, so on a runner whose
+// temp directory is an **8.3 short name** (`C:\Users\RUNNER~1\...`, which
+// `realpath` expands) the keys shared no prefix with any row and the Files tab
+// drew NO BADGES AT ALL, with no error anywhere. A junction or a symlink does the
+// same thing — and this project's own worktree recipe uses junctions.
+describe('the resolved root', () => {
+  /** A listing that came from somewhere other than where we asked. */
+  const resolved = (real: string, names: string[]): DirListResult => ({
+    ok: true,
+    path: real,
+    entries: names.map((n) => ({ name: n, path: `${real}/${n}`, kind: 'file' as const })),
+    truncated: false,
+    cap: 500,
+  });
+
+  it('⚠️ IS RECORDED FROM THE ROOT LISTING, not assumed to be what we asked for', () => {
+    const s = applyListing(createTree(ROOT), ROOT, resolved('/real/r', ['a.txt']));
+    expect(s.resolvedRoot).toBe('/real/r');
+    // …and `root` is UNCHANGED, because that is still the folder the session
+    // declared and the key everything else is keyed by.
+    expect(s.root).toBe(ROOT);
+  });
+
+  it('is the asked path when they agree, which is every ordinary case', () => {
+    const s = applyListing(createTree(ROOT), ROOT, ok([entry('a.txt', 'file')]));
+    expect(s.resolvedRoot).toBe(ROOT);
+  });
+
+  it('⚠️ IS NOT SET BY A CHILD LISTING — only the root answers for the root', () => {
+    // A subdirectory can itself be a link, and its resolved path says nothing
+    // about where the root is. Taking it would move the whole tree's key space.
+    let s = applyListing(createTree(ROOT), ROOT, resolved('/real/r', ['src']));
+    s = applyListing(s, '/real/r/src', resolved('/somewhere/else', ['index.ts']));
+    expect(s.resolvedRoot).toBe('/real/r');
+  });
+
+  it('is undefined until the root listing lands, rather than a guess', () => {
+    expect(createTree(ROOT).resolvedRoot).toBeUndefined();
+  });
+
+  it('survives a FAILED child listing', () => {
+    let s = applyListing(createTree(ROOT), ROOT, resolved('/real/r', ['src']));
+    s = applyListing(s, '/real/r/src', { ok: false, reason: 'not-found' });
+    expect(s.resolvedRoot).toBe('/real/r');
+  });
+});

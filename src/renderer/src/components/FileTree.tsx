@@ -92,9 +92,24 @@ export function FileTree(props: {
    * file is modified. An injected prop wins, for tests.
    */
   const shared = React.useSyncExternalStore(subscribeGitStatus, () => getGitStatus(props.root));
+  /**
+   * ⚠️ **KEYED OFF THE ROOT MAIN *RESOLVED*, NOT THE ONE WE ASKED FOR, AND CI IS
+   * WHAT FOUND IT.** Every row's `path` is built by main from the realpath'd
+   * directory, so on a machine where the two differ — a symlink, a junction, or
+   * an **8.3 short name** such as the GitHub Windows runner's
+   * `C:\Users\RUNNER~1\AppData\Local\Temp` — a decoration map keyed by
+   * `props.root` shares no prefix with any row and EVERY badge silently vanishes.
+   * That is what the Files-tab badge test was failing on, deterministically,
+   * while passing on every developer machine.
+   *
+   * `state.resolvedRoot` is `undefined` until the root listing lands, and falling
+   * back to `props.root` for that frame is right: there are no rows to decorate
+   * yet either. The git STATUS is still keyed by `props.root`, which is correct —
+   * that is the folder the session declared and the key the shared store uses.
+   */
   const decorations = React.useMemo(
-    () => props.decorations ?? decorationsFor(props.root, shared),
-    [props.decorations, props.root, shared]
+    () => props.decorations ?? decorationsFor(state.resolvedRoot ?? props.root, shared),
+    [props.decorations, props.root, state.resolvedRoot, shared]
   );
   const onOpenFile = props.onOpenFile;
   // Roving tabindex: ONE row is focusable at a time, which is what makes a tree

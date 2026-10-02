@@ -20,6 +20,7 @@ import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
 import { FileTree, type ListDir } from './FileTree';
+import { putGitStatus, resetGitStatusStore } from '../lib/git-status-store';
 import type { DirEntry, DirListResult } from '../../../shared/ipc/fs';
 
 declare global {
@@ -93,6 +94,9 @@ describe('the Files tree', () => {
     globalThis.IS_REACT_ACT_ENVIRONMENT = true;
     document.body.innerHTML = '';
     opened.length = 0;
+    // The shared store is module state (item 11): a status left behind by one
+    // test would decorate the next one's tree.
+    resetGitStatusStore();
     await initI18nForTests();
   });
 
@@ -279,6 +283,9 @@ describe('the tree as a tree (§5.32)', () => {
     globalThis.IS_REACT_ACT_ENVIRONMENT = true;
     document.body.innerHTML = '';
     opened.length = 0;
+    // The shared store is module state (item 11): a status left behind by one
+    // test would decorate the next one's tree.
+    resetGitStatusStore();
     await initI18nForTests();
   });
 
@@ -378,5 +385,57 @@ describe('the tree as a tree (§5.32)', () => {
       expect(rowFor('a.txt')).toBeDefined();
       expect(document.body.querySelector('.file-vcs')).toBeNull();
     });
+    it('⚠️⚠️ PAINTS BADGES WHEN MAIN RESOLVED THE ROOT TO SOMEWHERE ELSE — the bug CI found', async () => {
+      // ⚠️ **THE BUG THIS PINS, AND WHY NO TEST ABOVE COULD HAVE CAUGHT IT.**
+      // Every test in this block INJECTS the decoration map, so none of them goes
+      // through `decorationsFor` at all — and the bug was in the KEY that function
+      // builds. This one mounts without the prop, so the real path runs.
+      //
+      // Main answers with the directory the entries ACTUALLY came from, links
+      // collapsed, and builds every entry's path from it. The GitHub Windows
+      // runner's temp directory is an **8.3 short name** (`C:\Users\RUNNER~1\…`)
+      // which `realpath` expands — so `props.root` and the row paths shared no
+      // prefix, every key missed, and the Files tab drew NO BADGES AT ALL with no
+      // error anywhere. Deterministic there, invisible on every developer machine.
+      // A junction or a symlink does exactly the same thing, and this project's
+      // own worktree recipe uses junctions.
+      const REAL = '/real/proj';
+      const { list } = recorder({
+        [ROOT]: {
+          ok: true,
+          // the resolved path, which is NOT what we asked for
+          path: REAL,
+          entries: [
+            { name: 'a.txt', path: `${REAL}/a.txt`, kind: 'file' },
+            { name: 'src', path: `${REAL}/src`, kind: 'dir' },
+          ],
+          truncated: false,
+          cap: 500,
+        },
+      });
+      // The status is keyed by the folder the SESSION declared, which is correct:
+      // that is the key the shared store uses everywhere.
+      putGitStatus(ROOT, {
+        isRepo: true,
+        files: [
+          { path: 'a.txt', staged: false, unstaged: true, untracked: false, xy: '.M' },
+          { path: 'src/deep.ts', staged: false, unstaged: true, untracked: false, xy: '.D' },
+        ],
+      });
+      const host = document.createElement('div');
+      document.body.appendChild(host);
+      root = createRoot(host);
+      await act(async () => {
+        root!.render(<FileTree root={ROOT} listDir={list} active onOpenFile={() => undefined} />);
+      });
+
+      // ⭐ THE ASSERTION THAT WAS FAILING ON CI, in a unit test now.
+      expect(rowFor('a.txt')?.querySelector('.file-vcs')?.textContent).toBe('M');
+      // …and the folder roll-up resolves against the same root.
+      const dir = rowFor('src')?.querySelector('.file-vcs');
+      expect(dir?.textContent).toBe('D');
+      expect(dir?.getAttribute('data-rolled-up')).toBe('true');
+    });
+
   });
 });
