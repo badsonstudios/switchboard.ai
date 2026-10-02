@@ -69,11 +69,30 @@ waits for real evidence) · **#743** (`seenNames.clear()` false new-file sweeps)
 needs an SMB dogfood).
 **Do not start the capture-dependent items without the capture.**
 
-### E24 — The write half of git *(§5.7 — the phase's spine)*
-Everything shipped so far is git's READ half (status, diff, log). This is the
-write half, and it must be **one** commit path, not two.
-Worktree create/merge-back flows with a review step · editable diff +
-commit-from-diff (*table-stakes: Crystal shipped it*) · one-click squash-merge to
+### E24 — Git v2: the read half finished, then the write half *(§5.7 — the phase's spine)*
+
+> **📐 DESIGNED 2026-10-02 — read `docs/plans/e24-git-v2-design.md` before
+> touching this epic.** It is the design record: what is actually on screen
+> today (read off the code), the VS Code Git-extension research including the
+> one `git log` format string to copy verbatim, the decision not to take a git
+> library, the structural `diff-` panel decision, and a **15-item work
+> breakdown with a stated order**. `mockups/git-v2.html` is the nine-screen
+> visual; every item names its screen. Scope settled by the owner: **layers 1
+> and 2 together**. Editable diff is **not** built (design §6 records why —
+> hunk + selection staging covers it). Layer 3 below stays gated on the OQ #9
+> spike.
+
+**⚠️ CORRECTED 2026-10-02: the line below used to say the READ half shipped
+"(status, diff, log)". There is no `git log` in the codebase and never was** —
+this epic inherited the claim from DESIGN §5.7's as-built note, which has been
+corrected too. The owner found it by using the app, not by an audit. Finishing
+the read half is therefore part of this epic, not a prerequisite of it.
+
+What shipped is `status` and `diff` only. This epic finishes the read half
+(log, History tab, graph lanes, commit detail, the `diff-` panel family, the
+source-control sidebar) and then adds the write half, which must be **one**
+commit path, not two.
+Worktree create/merge-back flows with a review step · one-click squash-merge to
 main + update-from-main (*table-stakes across Crystal / Claude Squad / Conductor /
 parallel-code*) · cross-session same-repo conflict warnings · port/resource
 conflict Feed warnings.

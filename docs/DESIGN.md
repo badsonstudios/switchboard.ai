@@ -1041,9 +1041,23 @@ parent's — not into the parent's transcript (corrected 2026-09-15, #807; see
 > scheduled, and §8 does not mention them — so no amount of working the queue
 > would ever have reached them.
 >
-> Shipped: **GitService** shelling out to the system `git` (P1-E5), the **Monaco
-> diff viewer** with side-by-side/inline as a per-workspace choice (#532), and the
-> **History** tab's read-only log.
+> Shipped: **GitService** shelling out to the system `git` (P1-E5) and the
+> **Monaco diff viewer** with side-by-side/inline as a per-workspace choice
+> (#532).
+>
+> **⚠️ CORRECTED 2026-10-02 — THIS NOTE CLAIMED A FEATURE THAT DOES NOT EXIST,
+> AND THE AUDIT IS NOT WHAT CAUGHT IT.** The 2026-09-25 line above read "…and the
+> **History** tab's read-only log." There is no `git log` anywhere in the
+> codebase: `GitService` is `root()` / `status()` / `diff()` / `fileVersions()`,
+> and the History tab is `enabled: () => false, render: () => null` in
+> `extensibility/panels.tsx`. **The owner found it by opening the app** — *"the
+> History tab's not working"* — six days after an audit whose entire purpose was
+> to separate shipped from unfiled. `docs/plans/06-phase-3-ide.md`'s E24 then
+> inherited the error verbatim. The lesson is the audit's own: a claim written
+> from the plan rather than from the code is indistinguishable from a shipped
+> feature in any count, and only using the thing tells them apart. The log and
+> the History tab are now **E24 Git v2 items 1 and 2**
+> (`docs/plans/e24-git-v2-design.md` §4).
 >
 > Scheduled, Phase 3 (§8): the **file tree** with VCS decorations (as one epic
 > with document viewer v2 — they are the same surface), **worktree create /
@@ -1075,6 +1089,17 @@ parent's — not into the parent's transcript (corrected 2026-09-15, #807; see
 > next to the worktree flows in Phase 3 and would be cheaper planned with them
 > than bolted on after — the same argument §8 already makes for the file tree.
 > The third is small and belongs with the worktree work for the same reason.
+>
+> **WEIGHED 2026-10-02 (E24 Git v2, `docs/plans/e24-git-v2-design.md` §6).** The
+> write half is now scoped and being built — stage/unstage/discard, one commit
+> path, hunk + selection staging, branch/sync. **Editable diff stays listed here
+> and stays unbuilt, deliberately:** hunk and selection staging cover most of
+> what it is for, and an editable working-tree pane means owning the case where a
+> live agent writes the same file mid-edit (file-watch reconciliation, a dirty
+> indicator, a both-sides-changed policy). Real complexity for a narrow win, and
+> a decision that deserves its own evidence rather than being carried along
+> inside a fifteen-item epic. Squash-merge and the conflict warnings remain
+> layer 3, behind the OQ #9 spike.
 
 ### 5.8 Attention-driven layout
 

@@ -3,6 +3,38 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🚧 IN FLIGHT — 2026-10-02: **E24 — Git v2, fifteen items, layers 1 and 2**
+>
+> **The owner's words: *"I want to get the Git implementation working much
+> better… the History tab's not working… the changes tab works, but everything's
+> kind of just smashed together."*** A design pass ran first and is committed:
+> **`docs/plans/e24-git-v2-design.md`** (the record — findings read off the code,
+> VS Code Git-extension research, the library decision, the structural `diff-`
+> panel decision, and a 15-item breakdown **with a stated order**) plus
+> **`mockups/git-v2.html`** (nine screens; every work item names its screen).
+>
+> **⚠️ THE DESIGN PASS FOUND A DOCUMENTED FEATURE THAT DOES NOT EXIST.** Both
+> `docs/DESIGN.md` §5.7's as-built note and `docs/plans/06-phase-3-ide.md`'s E24
+> claimed the History tab's read-only `git log` had shipped. **There is no `git
+> log` anywhere in the codebase** — `GitService` is `root`/`status`/`diff`/
+> `fileVersions`, and the History tab is `enabled: () => false, render: () =>
+> null`. The second document inherited the error from the first. **The owner found
+> it by opening the app, six days after the audit built to catch exactly this.**
+> Both corrected; §5.7 now records that dogfooding caught it, not the audit.
+>
+> **Decided by the owner, not to be re-opened:** scope is **layers 1 AND 2
+> together** (*a row with a `＋` that does nothing is worse than a row with no
+> `＋`*) · **editable diff is NOT built** (hunk + selection staging covers it;
+> reason in design §6) · **layer 3 stays gated on the OQ #9 spike** ·
+> **no new git library** — system `git` through the hardened `GitService`.
+>
+> **Order being worked:** 1 → 2 → 3 (log, History tab, graph lanes — the dead tab,
+> no write path), then **5** (the `diff-` panel family + pop-out — the structural
+> item), then **6 → 7** together, then 8–11 interleaved, then layer 2 (12–15).
+>
+> **Status:** design record + doc corrections landing first; the 15 issues are
+> filed against milestone **Phase 3 - The IDE** next, then worked one at a time.
+
 > # ✅ DONE — 2026-10-01: **#740 — the feed skips what you cannot see, and
 > still knows how tall it is** (PR **#1034**, merged on green CI, issue closed).
 > This is the first FIX behind #1031's instrument, and the first half of
