@@ -3,6 +3,106 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ DONE — 2026-10-01: **#740 — the feed skips what you cannot see, and
+> still knows how tall it is** (PR **#1034**, merged on green CI, issue closed).
+> This is the first FIX behind #1031's instrument, and the first half of
+> signature B.
+>
+> **THE NUMBERS, AND THEY ARE A TRUE A/B.** 400 blocks, 4× CPU throttle, a long
+> draft in the box, both columns from the **same build and the same run** — the
+> "before" is this branch with the two inline properties stripped off
+> immediately beforehand, not a remembered number from the issue:
+>
+> | | layout ms/key | frame ms/key | long tasks | scrollHeight |
+> |---|---|---|---|---|
+> | **after** | **7.3** | **16.6** | **0** | exact |
+> | before | 28.5 | 43.3 | 3, totalling 157ms | exact |
+> | floor (feed deleted) | 1.7 | 16.6 | 0 | — |
+>
+> **43.3ms is two and a half frames, and that IS "keystrokes appear in
+> bursts".** 16.6ms is one frame: the letter lands on the next paint. #904's
+> phase 2 asked for before/after numbers; this is the first item that has them,
+> because #1031 is what made them possible.
+>
+> **⭐ WHY THIS IS NOT THE ATTEMPT THAT WAS REVERTED.** That one skipped blocks
+> with one global `contain-intrinsic-size: auto 80px`, so an unrendered block
+> contributed a GUESS — scrollHeight +85% at 60 blocks, +127% at 400, a
+> scrollbar more than twice as long as the conversation, and `feed.spec.ts`
+> "switching away and back keeps your reading position" red on Linux CI. Every
+> block now stands on its **own measured** content-box height. **The guess and
+> the measurement cost the SAME 7.3ms** — the guess was never faster, only
+> wrong, and nothing about the speed had to be traded to fix it.
+>
+> **⚠️ AND IT FAILED THAT SAME TEST AGAIN ON THE FIRST RUN, for a different
+> reason that is worth remembering:** dockview DETACHES a background panel, a
+> detached element reports a **0×0** box to every ResizeObserver watching it,
+> and believing that records a height of zero for all 400 blocks at once. It
+> restored 140 where 889 was saved. `isRenderedMeasurement` is the guard, and
+> the INLINE size is what tells "no layout" apart from "an empty block".
+>
+> **THREE THINGS THE PROBES COST, which are the part worth keeping:**
+>
+> 1. **Reading a block's geometry UN-SKIPS it.** Chromium forces a layout
+>    upgrade when script queries geometry inside skipped content, so the obvious
+>    instrument deletes what it measures — two independent witnesses reported
+>    "0 of 342 skipped" in runs where scrollHeight was unarguably standing on
+>    intrinsic sizes. The two probes contradicted each other for four runs. It
+>    is now a load-bearing constraint: the hook never reads geometry at all.
+> 2. **The first cost probe measured the wrong thing and said the bug was
+>    gone.** It timed JS inside the keystroke's dispatch — but #739 removed the
+>    composer's forced synchronous layout, so since then the relayout happens at
+>    FRAME time, outside the dispatch. The metric was blind to the entire item.
+> 3. **A probe that drives the feature it measures will measure its own
+>    interference.** Once the hook shipped, the probe's `normal` row stopped
+>    meaning "as shipped" — its own `clear()` strips exactly the two properties
+>    the hook writes. It reported `appCV: 0` beside an unchanged 26.4ms: the
+>    probe had switched the fix off and then reported the fix did nothing.
+>
+> **⭐⭐ REVIEW FOUND A RED LINT AND A LOAD-BEARING ORDERING, AND WAS WRONG
+> ABOUT ITS THIRD BLOCKER — WHICH WAS SETTLED BY MEASURING IT.**
+>
+> * **Three eslint errors in the new e2e would have failed CI.** The earlier
+>   lint run predated the file.
+> * **The hook call's POSITION in `FeedView` is load-bearing and the comment
+>   called it readability.** Both it and `reconcile` are passive effects, so
+>   hook order fixes ResizeObserver CREATION order, and observers run in
+>   creation order. Inverted, `restore()` reads a scrollHeight measured at the
+>   OLD width, writes a scrollTop the browser clamps, and clears `owesRestore`
+>   so nothing retries — #555 exactly.
+> * **DECLINED WITH THE NUMBER:** review argued the new e2e could not fail
+>   against the reverted implementation, because `auto <length>` prefers the
+>   engine's own remembered size. Sound argument, wrong conclusion — **mutating
+>   `skipStyleFor` to emit `auto 80px` fails the spec by 3,409px**, because
+>   `!bulk` appends most blocks below the fold where they are styled while off
+>   screen and never acquire a remembered size. The suggested strengthening was
+>   taken anyway, since that reasoning depends on the fixture and the claim
+>   should not: the spec now checks **each block's written length against that
+>   block's real height**, not only the totals.
+>
+> **Green:** lint · all three typecheck projects · **9,850 unit tests** (no
+> failures, not even the usual `win-cmd` flake) · the whole feed spec family at
+> **43 of 43** including the new one · **all four CI jobs, Linux included** —
+> which this feature's history says is the only evidence that counts. Docs:
+> `docs/manual/19-performance.md`, CHANGELOG 0.8.102, `tokens.css`'s record
+> rewritten (it told the next reader the opposite of what now ships), and
+> `spike/probes/740/` + `spike/findings/e21-740-feed-skipping.md`.
+>
+> **⚠️ LEFT OPEN, DELIBERATELY, AND IT IS ABOUT THE LAPTOP:** the observers now
+> scale with **blocks × open cards** — eight busy cards is up to 8,000 live
+> ResizeObserver targets gathered every frame, and the probe measured ONE feed.
+> That is an unmeasured cost on exactly the machine this item exists for. Raised
+> in review; **not "mitigated" blind**, because inventing a fix for an unmeasured
+> cost is what this whole item is a reaction to. Filed as a follow-up.
+>
+> **#716 stays OPEN.** Its acceptance bar is met by the numbers above, but it
+> has always asked for the owner's confirmation on the laptop, and that is still
+> outstanding.
+>
+> **Next up:** the rest of #1013's list — batching stream events per frame,
+> memoising markdown per finished message, and checking a status change does not
+> re-render every session card — then the memory half (releasing a transcript
+> rebound after a clear), then **#1028**, the `ReadScope` residuals.
+
 > # ✅ DONE — 2026-10-01: **E21 — #1031, the slowdown telemetry can now tell
 > starvation from blocking** (PR **#1032**, merged on green CI, issue closed).
 > **No product behaviour changed.** This is instrument work, landed first so the
