@@ -49,6 +49,21 @@ interface Exactness {
   total: number;
   /** the feed's own width — how this test knows a resize has actually arrived */
   width: number;
+  /**
+   * The worst gap, over all blocks, between the height the feed WROTE for a
+   * block and the height that block actually has.
+   *
+   * ⚠️ THIS IS THE CLAIM. `skipped === truth` is a consequence of it, and a
+   * consequence can be true for other reasons — `contain-intrinsic-size: auto
+   * <length>` prefers the engine's own last remembered size when it has one,
+   * so a block that was rendered with the property before it was ever skipped
+   * never consults the length at all. Measured: putting the reverted global
+   * `80px` back DOES fail the totals here, by 3,409px, because `!bulk` appends
+   * most blocks below the fold where they are styled while off screen and the
+   * length is the only thing standing in for them. But that depends on the
+   * fixture, and this does not.
+   */
+  worstBlockErrorPx: number;
 }
 
 /**
@@ -60,10 +75,12 @@ interface Exactness {
  */
 const exactness = (w: Page): Promise<Exactness> =>
   w.evaluate(() => {
-    const scroller = [...document.querySelectorAll<HTMLDivElement>('div')].find(
-      (d) => d.getAttribute('data-feed-region') !== null
-    );
-    if (!scroller) throw new Error('no feed region on screen');
+    // Exactly one feed on screen, or "the first scroller that looks like one"
+    // is picking a card arbitrarily and the numbers below belong to whichever
+    // it happened to find.
+    const regions = document.querySelectorAll<HTMLDivElement>('[data-feed-region]');
+    if (regions.length !== 1) throw new Error(`expected one feed region, found ${regions.length}`);
+    const scroller = regions[0];
     const blocks = [...scroller.querySelectorAll<HTMLElement>('[data-feed-block]')];
 
     const skipped = scroller.scrollHeight;
@@ -74,13 +91,40 @@ const exactness = (w: Page): Promise<Exactness> =>
       b.style.contentVisibility = '';
       b.style.containIntrinsicSize = '';
     }
+    // One forced layout with everything rendered — and, in the same pass, what
+    // each block REALLY is, so the written lengths can be checked one by one
+    // rather than only in aggregate. Content-box, because that is the unit
+    // `contain-intrinsic-size` speaks; handing it a border box would double
+    // each block's padding.
     const truth = scroller.scrollHeight;
+    let worstBlockErrorPx = 0;
     blocks.forEach((b, i) => {
-      b.style.contentVisibility = saved[i]![0]!;
-      b.style.containIntrinsicSize = saved[i]![1]!;
+      const written = saved[i][1];
+      if (written) {
+        const cs = getComputedStyle(b);
+        const pad =
+          parseFloat(cs.paddingBlockStart) +
+          parseFloat(cs.paddingBlockEnd) +
+          parseFloat(cs.borderBlockStartWidth) +
+          parseFloat(cs.borderBlockEndWidth);
+        const real = Math.max(0, b.getBoundingClientRect().height - pad);
+        const length = parseFloat(written.replace('auto', '').trim());
+        if (Number.isFinite(length)) {
+          worstBlockErrorPx = Math.max(worstBlockErrorPx, Math.abs(length - real));
+        }
+      }
+      b.style.contentVisibility = saved[i][0]!;
+      b.style.containIntrinsicSize = saved[i][1]!;
     });
 
-    return { skipped, truth, styled, total: blocks.length, width: Math.round(scroller.clientWidth) };
+    return {
+      skipped,
+      truth,
+      styled,
+      total: blocks.length,
+      width: Math.round(scroller.clientWidth),
+      worstBlockErrorPx,
+    };
   });
 
 /**
@@ -95,10 +139,17 @@ const exactness = (w: Page): Promise<Exactness> =>
 function expectExact(r: Exactness, blocks: number): void {
   expect(r.total).toBe(blocks);
   expect(r.styled).toBe(r.total);
-  // "within a pixel or two of the fully-laid-out truth" (#740's done-when).
-  // Two pixels at 400 blocks is five thousandths of a pixel per block; the
-  // reverted attempt was out by 16,272.
-  expect(Math.abs(r.skipped - r.truth)).toBeLessThanOrEqual(2);
+  // THE CLAIM: every block is standing on its own height, not a guess and not
+  // a neighbour's. Half a pixel is `HEIGHT_EPSILON_PX`, the same slack the
+  // module uses to decide a report is not news.
+  expect(r.worstBlockErrorPx).toBeLessThanOrEqual(0.5);
+  // ...and the consequence: "within a pixel or two of the fully-laid-out
+  // truth" (#740's done-when). The budget SCALES, because the error does:
+  // `toFixed(2)` caps per-block rounding at 0.005px and Chromium's LayoutUnit
+  // snapping adds about 0.008px, so a flat 2px is a count-proportional error
+  // measured against a constant — fine at 60 blocks, and a coin toss at 4,000.
+  // Signed errors mostly cancel, so in practice this lands near zero.
+  expect(Math.abs(r.skipped - r.truth)).toBeLessThanOrEqual(Math.max(2, blocks * 0.02));
 }
 
 test.describe.configure({ mode: 'serial' });
@@ -154,7 +205,7 @@ test.describe('the feed skips what is off screen (#740)', () => {
     expect(before.styled).toBe(before.total);
 
     await a.app.evaluate(({ BrowserWindow }) => {
-      const win = BrowserWindow.getAllWindows()[0]!;
+      const win = BrowserWindow.getAllWindows()[0];
       const b = win.getBounds();
       // 0.6 of 1280 is below the app's 800px minimum, so this lands at 800 —
       // which still takes the feed itself from 954px to 459px, and at 459px

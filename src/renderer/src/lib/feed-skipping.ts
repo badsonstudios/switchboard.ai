@@ -29,11 +29,16 @@
 // (`spike/probes/740/feed-relayout.spec.ts`, findings in
 // `spike/findings/e21-740-feed-skipping.md`), 400 blocks, long draft in the box:
 //
-//     mode                     layout ms/key   frame ms/key   scrollHeight err
-//     as shipped                       26.3           39.7            +0.0%
-//     feed removed entirely (floor)     1.4           16.7                —
-//     the reverted global 80px guess     7.1           16.8          +140.8%
-//     each block's own measurement       7.4           16.6            +0.0%
+//     mode                             layout ms/key  frame ms/key  scrollHeight
+//     feature stripped (the before)            28.5          43.3        +0.0%
+//     feed removed entirely (the floor)         1.7          16.6            —
+//     the reverted global 80px guess            7.3          17.9      +140.8%
+//     each block's own measurement (ships)      7.3          16.6        +0.0%
+//
+// ⚠️ ONE RUN, and every other copy of these numbers in the tree quotes the same
+// one — `tokens.css`, `FeedView.tsx` and the findings doc. An earlier draft had
+// three slightly different runs cited in four places, which makes every number
+// look approximate and none of them checkable.
 //
 // So the keystroke's layout bill drops by about three quarters, the frame comes
 // back under its 16.7ms budget — which is what "keystrokes appear in bursts"
@@ -60,7 +65,23 @@
 //     before asking. So nothing here measures a block that already has a
 //     height; the ResizeObserver reports sizes the engine computed anyway.
 //
-//  3. **The feedback loop has to be closed by construction.** We write a
+//  3. **A block whose content changes WHILE SKIPPED does not re-measure, and
+//     that is a real limitation rather than an oversight.** A skipped subtree
+//     is not laid out, so a DOM change inside one produces no resize report.
+//     The in-tree path that does this is the transcript watcher re-emitting a
+//     block when its tool OUT lands (`FeedView`'s `upsertBlock` call): a tool
+//     row that completes below the fold keeps its one-line height until it is
+//     scrolled into view.
+//
+//     Traced against the restore contract, and it is safe in the direction
+//     that matters: the error is always SHORT, and it accumulates at the tail,
+//     i.e. below any saved reading position — so `restore()`'s clamp cannot
+//     bite, and a pinned feed self-heals through the reconcile observer within
+//     a frame or two of the block being rendered. "Exact" above therefore
+//     means exact for content that has not changed unseen, which is every
+//     block the user has ever looked at.
+//
+//  4. **The feedback loop has to be closed by construction.** We write a
 //     CONTENT-box height and observe the CONTENT box, so a skipped block
 //     reports back exactly the number we wrote and nothing happens. Observing
 //     the border box instead would report `height + padding`, we would store
@@ -214,7 +235,10 @@ export class FeedHeights {
   retain(keys: Iterable<string>): number {
     const live = keys instanceof Set ? keys : new Set(keys);
     let dropped = 0;
-    for (const key of [...this.heights.keys()]) {
+    // Deleting from a Map during its own iteration is well defined, so this
+    // does NOT need a copy of the key list — and it runs on every childList
+    // mutation with up to 1,000 keys.
+    for (const key of this.heights.keys()) {
       if (!live.has(key)) {
         this.heights.delete(key);
         dropped += 1;

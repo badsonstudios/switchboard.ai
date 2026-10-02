@@ -673,15 +673,26 @@ export function FeedView(props: {
    * one that measured: skip the off-screen ones, standing each on its own
    * measured height rather than the global guess that reverted the first
    * attempt. 400 blocks, 4x CPU throttle: the keystroke's layout bill goes
-   * 26.3ms -> 7.4ms against a 1.4ms floor, the frame comes back under budget at
-   * 16.6ms, and `scrollHeight` stays EXACT — which is what the restore contract
-   * above rides on. `lib/feed-skipping.ts` carries the measurements.
+   * 28.5ms -> 7.3ms against a 1.7ms floor, the frame goes 43.3ms -> 16.6ms —
+   * i.e. back inside one frame — and `scrollHeight` stays EXACT, which is what
+   * the restore contract above rides on. `lib/feed-skipping.ts` carries the
+   * measurements; every copy of them in the tree quotes the same run.
    *
-   * Placed above the ResizeObserver below rather than below it so the two
-   * cannot be read as one mechanism: that one puts the SCROLLER back where the
-   * user left it, this one decides what the scroller contains. They meet only
-   * at `scrollHeight`, and the whole point of measuring the heights is that
-   * they agree about it.
+   * ⚠️ THIS CALL MUST STAY ABOVE THE `ResizeObserver` EFFECT BELOW, AND THE
+   * REASON IS NOT TIDINESS (found in review).
+   *
+   * Both are passive effects, so the order of the two hook calls fixes the
+   * order the two ResizeObservers are CREATED in — and the spec runs a
+   * document's observers in creation order. That ordering is what makes the
+   * dangerous case safe: a panel re-shown at a new width delivers to this
+   * hook's observer FIRST, which drops every stale height and strips the skip
+   * styling, and only then to `reconcile`'s, so `restore()` reads a
+   * `scrollHeight` built on a real layout.
+   *
+   * Move this below `reconcile` and `restore()` reads a `scrollHeight` still
+   * standing on heights measured at the OLD width, writes a `scrollTop` the
+   * browser clamps, and then clears `owesRestore` so nothing ever retries it.
+   * That is #555 and Dan's 2026-07-26 bug, reproduced exactly.
    */
   useFeedSkipping(scroller, content);
   // Self-healing pin (Dan round 5: cards you SWITCH to sat at the top after

@@ -18,14 +18,20 @@
 // So every height here arrives from a `ResizeObserver`, which reports sizes the
 // engine computed for its own reasons. Nothing in this file forces a layout.
 import React from 'react';
+import { FEED_SEQ_ATTR } from './feed-reveal';
 import { FeedHeights, isRenderedMeasurement, skipStyleFor } from './feed-skipping';
 
-/** the feed's own markup, as `FeedView` writes it */
+/**
+ * The feed's own markup, as `FeedView` writes it.
+ *
+ * `FEED_SEQ_ATTR` is imported rather than respelled: it is the same attribute
+ * the find bar jumps to and the keyboard walk reads, and three copies of a
+ * string is three places for a rename to miss one.
+ */
 const BLOCK_SELECTOR = '[data-feed-block]';
-const SEQ_ATTR = 'data-feed-seq';
 
 function keyOf(el: Element): string | null {
-  return el.getAttribute(SEQ_ATTR);
+  return el.getAttribute(FEED_SEQ_ATTR);
 }
 
 /**
@@ -51,17 +57,22 @@ export function useFeedSkipping(
    * forced layout per token. #739 removed exactly that from the composer;
    * putting one back here would be trading one report for another.
    */
-  const heights = React.useRef(new FeedHeights());
+  // Lazily, both of them: `useRef(new X())` evaluates its argument on EVERY
+  // render and throws the result away, and this component re-renders on every
+  // streamed block.
+  const heights = React.useRef<FeedHeights | null>(null);
+  heights.current ??= new FeedHeights();
   /** blocks already handed to the observer, so a re-sync only costs the new ones */
-  const observed = React.useRef(new WeakSet<Element>());
+  const observed = React.useRef<WeakSet<Element> | null>(null);
+  observed.current ??= new WeakSet<Element>();
 
   React.useEffect(() => {
     const host = content.current;
     const box = scroller.current;
     if (!host || !box) return;
 
-    const map = heights.current;
-    const seen = observed;
+    const map = heights.current!;
+    const seen = observed as React.RefObject<WeakSet<Element>>;
 
     /** apply what we know about one block, and nothing when we know nothing */
     const paint = (el: HTMLElement): void => {
@@ -131,9 +142,23 @@ export function useFeedSkipping(
           continue;
         }
         seen.current.add(el);
+        // ⚠️ A NEW ELEMENT IS NOT ALWAYS A NEW BLOCK, and the difference is a
+        // block that stays unskipped for the rest of the session.
+        //
         // The first delivery for a newly observed element is what MEASURES it:
         // it has no skip styling yet, so it is laid out for real, and the
-        // observer reports that height without anyone having read it.
+        // observer reports that height without anyone having read it. That is
+        // only the whole story when the KEY is new too. React can mount a
+        // fresh element for a key the map already knows — an unmount and
+        // remount inside one commit, which `retain` never sees — and then the
+        // first observation agrees with the stored height, `record` returns
+        // false, and `paint` is never reached.
+        //
+        // Painting it here is safe precisely BECAUSE the key survived: a
+        // `/clear` or a rebind empties the DOM first, so `retain` above has
+        // already dropped those keys and this branch cannot fire with a height
+        // belonging to a different conversation.
+        if (keyOf(el) !== null && map.has(keyOf(el)!)) paint(el);
         ro.observe(el, { box: 'content-box' });
       }
     };
@@ -149,19 +174,36 @@ export function useFeedSkipping(
      * to be unchanged at the new width never fires a resize, so without a fresh
      * first delivery it would sit unmeasured and unskipped for ever.
      *
-     * The user pays nothing new for this: a resize already re-lays-out the
-     * whole feed, which is the cost being re-spent.
+     * ⚠️ AND IT WAITS FOR THE DRAG TO STOP, which an earlier version did not.
+     * The RELAYOUT is free — a resize was paying for one anyway — but the
+     * ~1,600 style writes, two `querySelectorAll`s and 400 re-subscriptions
+     * that come with it are not, and a dockview splitter moves 5-20px per
+     * frame, every frame, for as long as the user holds the mouse down. One
+     * frame of settling collapses a whole drag into a single invalidation at
+     * the width the user actually chose.
      */
+    let settle = 0;
+    const invalidate = (): void => {
+      cancelAnimationFrame(settle);
+      settle = requestAnimationFrame(() => {
+        for (const el of host.querySelectorAll<HTMLElement>(BLOCK_SELECTOR)) {
+          el.style.contentVisibility = '';
+          el.style.containIntrinsicSize = '';
+        }
+        ro.disconnect();
+        seen.current = new WeakSet<Element>();
+        sync();
+      });
+    };
     const widthRo = new ResizeObserver((entries) => {
       const w = entries[0]?.contentRect.width ?? 0;
-      if (!map.setWidth(w)) return;
-      for (const el of host.querySelectorAll<HTMLElement>(BLOCK_SELECTOR)) {
-        el.style.contentVisibility = '';
-        el.style.containIntrinsicSize = '';
-      }
-      ro.disconnect();
-      seen.current = new WeakSet<Element>();
-      sync();
+      // `setWidth` is called on EVERY report, not inside the frame below: it is
+      // the thing that decides whether this width is news at all, and deferring
+      // it would compare each frame of a drag against the previous frame rather
+      // than against the width the heights were measured at — which, at 5px a
+      // frame against a 1px epsilon, is the same answer, but for a reason that
+      // would stop being true the moment the epsilon moved.
+      if (map.setWidth(w)) invalidate();
     });
     widthRo.observe(box, { box: 'content-box' });
 
@@ -180,6 +222,7 @@ export function useFeedSkipping(
     mo.observe(host, { childList: true });
 
     return () => {
+      cancelAnimationFrame(settle);
       mo.disconnect();
       widthRo.disconnect();
       ro.disconnect();

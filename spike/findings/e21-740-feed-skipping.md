@@ -130,14 +130,50 @@ quote them.
 
 ---
 
+## One thing review got wrong, and how that was settled
+
+Review raised as a blocker that the new `e2e/feed-skipping.spec.ts` **could not
+fail against the implementation that was reverted** — the argument being that
+`contain-intrinsic-size: auto <length>` prefers the engine's own last
+remembered size, so a block rendered with the property before it is ever
+skipped never consults the length, and swapping the measured height for the old
+global `80px` would leave the suite green.
+
+The argument is sound and the conclusion is wrong, which is why it was run
+rather than debated: **with `skipStyleFor` mutated to emit `auto 80px`, the spec
+fails by 3,409px.** `!bulk` appends most blocks *below the fold*, so they are
+styled while off screen and never acquire a remembered size — the length is the
+only thing standing in for them.
+
+That said, the suggested strengthening was taken anyway, because the counter-
+argument depends on the fixture and the claim should not: the spec now compares
+**each block's written length against that block's real content-box height**,
+not only the totals. `worstBlockErrorPx <= 0.5`.
+
 ## What is NOT settled
 
 * **Everything here is Windows.** #740 says Windows-only green is not evidence,
   because the reverted attempt was green on Windows and red on Linux CI.
+* **The observer count now scales with blocks × open cards.** Every FeedView
+  observes each of its blocks individually, `upsertBlock` caps at 1,000 per
+  session, and the dogfooding workflow is many cards at once — so eight busy
+  cards is up to 8,000 live ResizeObserver targets gathered every frame. The
+  probe measured ONE feed. This is a real unmeasured cost on exactly the machine
+  the item exists for, and it should be measured before anyone concludes the
+  laptop is fixed. Raised in review; deliberately not "mitigated" blind, because
+  inventing a fix for an unmeasured cost is what this whole item is a reaction
+  to.
 * **Paint containment comes with `content-visibility: auto` whether or not a
   block is skipped**, so anything in a feed renderer that paints outside its own
-  box is clipped now. Nothing in the feed spec family found such a thing; that
-  is absence of evidence from a suite that was not written to look for it.
+  box is clipped now. Reviewed: no `position: fixed/absolute/sticky` anywhere in
+  the feed renderers, and the `:focus-visible` rings use `outline-offset: 1px`
+  against 4px/8px of block padding, so they fit inside the padding box. Nothing
+  in the feed spec family found a problem either — but that suite was not
+  written to look for one.
+* **Nested scrollers inside a block** (a long tool output with its own
+  `overflow: auto`) have not been exercised across a skip. Scrolling one, then
+  scrolling the block out of view and back, is a dogfood step rather than
+  something the suite covers.
 * **The turn dividers and agent captions are siblings of the blocks**, not
   children, so they still lay out unconditionally — 400 of them at 400 turns.
   That is part of the 7.3ms residual against the 1.7ms floor, and it is the next
