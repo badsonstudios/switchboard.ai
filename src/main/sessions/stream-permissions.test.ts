@@ -1696,6 +1696,15 @@ describe('approve all in this file (P2-E22-03, #974)', () => {
     return p;
   };
   const WIN = process.platform === 'win32';
+  /**
+   * ⚠️ **THREE PLATFORMS, NOT TWO, because case folding does not split the way
+   * `!WIN` assumes.** Windows folds, **macOS folds** (APFS and HFS+ are
+   * case-insensitive by default — `HOST_STYLE` in `fs/read-scope.ts` says so and
+   * acts on it), and Linux does not. A test guarded on `!WIN` claims macOS
+   * behaves like Linux, and one did: see the case-folding pair below.
+   */
+  const MAC = process.platform === 'darwin';
+  const LINUX = !WIN && !MAC;
   const ABS = WIN ? 'C:\\p\\src\\a.ts' : '/p/src/a.ts';
   const OTHER = WIN ? 'C:\\p\\src\\b.ts' : '/p/src/b.ts';
 
@@ -1767,12 +1776,41 @@ describe('approve all in this file (P2-E22-03, #974)', () => {
       expect(sent).toHaveLength(1);
     });
 
-    it.runIf(!WIN)('case does NOT fold on a case-sensitive host', () => {
+    /**
+     * ⚠️ **LINUX, NOT "NOT WINDOWS" — AND THAT GUARD WAS WRONG FOR A YEAR OF
+     * macOS RUNS.** This used to be `it.runIf(!WIN)`, which treats *every*
+     * non-Windows host as case-sensitive. **macOS is not**: APFS (and HFS+
+     * before it) is case-insensitive by default, which is exactly what
+     * `HOST_STYLE` in `fs/read-scope.ts` already says in a comment and already
+     * acts on — `caseInsensitive: win32 || darwin`.
+     *
+     * So the production code folded the case on macOS, correctly, and this test
+     * asserted it would not. It is **the only reason `main`'s CI has been red**:
+     * every main run carries a `macos-latest` job that no PR run has, so the
+     * failure never blocked a merge and nobody had to look at it. A permanently
+     * red main is worse than a flaky one — it teaches everybody to stop reading.
+     *
+     * The three platforms are three different facts and all three are now
+     * covered: Windows folds (the test above), macOS folds (the test below),
+     * Linux does not (this one).
+     */
+    it.runIf(LINUX)('case does NOT fold on a case-sensitive host', () => {
       grant(perms, 's1', '/p/src/a.ts');
       perms.offer('s1', canUseTool('req-1', '/p/src/A.ts'));
       // two different files on Linux, and folding them would widen a grant the
       // user never made
       expect(requests).toHaveLength(1);
+    });
+
+    it.runIf(MAC)('case DOES fold on macOS, which is case-insensitive by default', () => {
+      // The case the old guard got wrong, now asserted rather than assumed.
+      // `/p/src/a.ts` and `/p/src/A.ts` are ONE file on a default Mac, so
+      // refusing to fold them would ask the user again for a permission they
+      // have already given — for the same file.
+      grant(perms, 's1', '/p/src/a.ts');
+      perms.offer('s1', canUseTool('req-1', '/p/src/A.ts'));
+      expect(requests).toEqual([]);
+      expect(sent).toHaveLength(1);
     });
 
     it('a `..` segment resolves to the same grant', () => {
