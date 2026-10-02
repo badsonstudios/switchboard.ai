@@ -2295,3 +2295,174 @@ describe('GitService.status from a SUBDIRECTORY (E24 Git v2 item 7)', () => {
   });
   // Real git in a child process, several times per case (#512).
 }, 60_000);
+
+// What one commit changed, against REAL git (E24 Git v2 item 4).
+// `git-commit-files.test.ts` owns the framing against fixture bytes; this owns
+// the half fixtures cannot prove — that real git still emits those two shapes,
+// and that the ROOT COMMIT, which has no parent, is not an empty list.
+describe('GitService.commitFiles (E24 Git v2 item 4)', () => {
+  let hist: string;
+  let head: { id: string; parentIds: string[] };
+  let root: { id: string; parentIds: string[] };
+
+  beforeAll(() => {
+    hist = tempDir('sb-git-commitfiles-');
+    sh(hist, ['init', '-b', 'main']);
+    sh(hist, ['config', 'user.email', 'test@test']);
+    sh(hist, ['config', 'user.name', 'test']);
+    sh(hist, ['config', 'commit.gpgsign', 'false']);
+    fs.mkdirSync(path.join(hist, 'd'), { recursive: true });
+    fs.writeFileSync(path.join(hist, 'f.txt'), 'a\nb\n');
+    fs.writeFileSync(path.join(hist, 'gone.txt'), 'x\n');
+    fs.writeFileSync(
+      path.join(hist, 'd', 'old.txt'),
+      Array.from({ length: 20 }, (_, i) => `line ${i}`).join('\n') + '\n'
+    );
+    sh(hist, ['add', '.']);
+    sh(hist, ['commit', '-m', 'one']);
+    const rootSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: hist, encoding: 'utf8' }).trim();
+    root = { id: rootSha, parentIds: [] };
+    // every shape in one commit: a modification, a deletion, a rename, an addition
+    fs.writeFileSync(path.join(hist, 'f.txt'), 'a\nB\nc\n');
+    fs.rmSync(path.join(hist, 'gone.txt'));
+    sh(hist, ['mv', 'd/old.txt', 'd/new.txt']);
+    fs.writeFileSync(path.join(hist, 'added.txt'), 'n\n');
+    sh(hist, ['add', '-A']);
+    sh(hist, ['commit', '-m', 'two']);
+    const headSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: hist, encoding: 'utf8' }).trim();
+    head = { id: headSha, parentIds: [rootSha] };
+  }, 60_000);
+
+  it('reads every shape of change in one commit, with its numbers (the done-when)', async () => {
+    const { files, unreadable } = await svc.commitFiles(hist, head);
+    expect(unreadable).toBeUndefined();
+    const by = Object.fromEntries(files.map((f) => [f.path, f]));
+    expect(by['f.txt']).toMatchObject({ letter: 'M', insertions: 2, deletions: 1 });
+    expect(by['added.txt']).toMatchObject({ letter: 'A', insertions: 1, deletions: 0 });
+    expect(by['gone.txt']).toMatchObject({ letter: 'D', deletions: 1 });
+    // ⚠️ THE RENAME IS ONE ROW, under its NEW name, and it REMEMBERS where it came
+    // from — two paths in one record on both sides of the read.
+    expect(by['d/new.txt']).toMatchObject({ letter: 'R', from: 'd/old.txt' });
+    expect(by['d/old.txt']).toBeUndefined();
+  });
+
+  it('⚠️ THE ROOT COMMIT lists every file as an addition, not an empty list', async () => {
+    // THE CASE THAT FAILS SILENTLY. A root commit has no parent, so without the
+    // empty-tree substitution `git diff <nothing> <sha>` is not an error that
+    // surfaces — it is an empty answer, and the repository's FIRST commit shows
+    // "changed no files" with nothing anywhere to say why.
+    const { files, unreadable } = await svc.commitFiles(hist, root);
+    expect(unreadable).toBeUndefined();
+    expect(files.length).toBeGreaterThan(0);
+    expect(files.every((f) => f.letter === 'A')).toBe(true);
+    expect(files.map((f) => f.path).sort()).toEqual(['d/old.txt', 'f.txt', 'gone.txt']);
+  });
+
+  it('an EMPTY commit really has no files, and says so by being empty', async () => {
+    // `--allow-empty` is a thing, and "no files" is the honest answer rather than
+    // a failure. The renderer draws a sentence for it rather than an empty box.
+    const empty = tempDir('sb-git-emptycommit-');
+    sh(empty, ['init', '-b', 'main']);
+    sh(empty, ['config', 'user.email', 'test@test']);
+    sh(empty, ['config', 'user.name', 'test']);
+    sh(empty, ['config', 'commit.gpgsign', 'false']);
+    fs.writeFileSync(path.join(empty, 'f.txt'), 'x\n');
+    sh(empty, ['add', '.']);
+    sh(empty, ['commit', '-m', 'init']);
+    sh(empty, ['commit', '--allow-empty', '-m', 'nothing']);
+    const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: empty, encoding: 'utf8' }).trim();
+    const parent = execFileSync('git', ['rev-parse', 'HEAD^'], { cwd: empty, encoding: 'utf8' }).trim();
+    const { files, unreadable } = await svc.commitFiles(empty, { id: sha, parentIds: [parent] });
+    expect(unreadable).toBeUndefined();
+    expect(files).toEqual([]);
+  });
+
+  it('⚠️ a BINARY file in a commit reports binary, not zeroes', async () => {
+    const bin = tempDir('sb-git-commitbin-');
+    sh(bin, ['init', '-b', 'main']);
+    sh(bin, ['config', 'user.email', 'test@test']);
+    sh(bin, ['config', 'user.name', 'test']);
+    sh(bin, ['config', 'commit.gpgsign', 'false']);
+    fs.writeFileSync(path.join(bin, 'b.dat'), Buffer.from([0, 1, 2, 0, 3]));
+    sh(bin, ['add', '.']);
+    sh(bin, ['commit', '-m', 'init']);
+    fs.writeFileSync(path.join(bin, 'b.dat'), Buffer.from([0, 9, 9, 0, 7, 7]));
+    sh(bin, ['commit', '-am', 'change it']);
+    const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: bin, encoding: 'utf8' }).trim();
+    const parent = execFileSync('git', ['rev-parse', 'HEAD^'], { cwd: bin, encoding: 'utf8' }).trim();
+    const { files } = await svc.commitFiles(bin, { id: sha, parentIds: [parent] });
+    expect(files[0]).toMatchObject({ path: 'b.dat', letter: 'M', binary: true });
+  });
+
+  it('a commit we could not read says so, rather than claiming it changed nothing', async () => {
+    const { files, unreadable } = await svc.commitFiles(hist, {
+      id: '0'.repeat(40),
+      parentIds: ['1'.repeat(40)],
+    });
+    expect(files).toEqual([]);
+    expect(unreadable).toBeTruthy();
+  });
+  // Real git in a child process, several times per case (#512).
+}, 60_000);
+
+describe('GitService.fileVersionsAt (E24 Git v2 item 4)', () => {
+  it('returns both sides of a file at two revisions', async () => {
+    const two = tempDir('sb-git-fva-');
+    sh(two, ['init', '-b', 'main']);
+    sh(two, ['config', 'user.email', 'test@test']);
+    sh(two, ['config', 'user.name', 'test']);
+    sh(two, ['config', 'commit.gpgsign', 'false']);
+    fs.writeFileSync(path.join(two, 'f.txt'), 'before\n');
+    sh(two, ['add', '.']);
+    sh(two, ['commit', '-m', 'one']);
+    fs.writeFileSync(path.join(two, 'f.txt'), 'after\n');
+    sh(two, ['commit', '-am', 'two']);
+    const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: two, encoding: 'utf8' }).trim();
+    const parent = execFileSync('git', ['rev-parse', 'HEAD^'], { cwd: two, encoding: 'utf8' }).trim();
+
+    const v = await svc.fileVersionsAt(two, 'f.txt', parent, sha);
+    expect(v.original).toContain('before');
+    expect(v.modified).toContain('after');
+  });
+
+  it('⚠️ an ADDED file has an EMPTY "before", which is what Monaco needs', async () => {
+    // A file added in this commit does not exist at `left`, so `git show` fails —
+    // and empty is exactly what renders as an addition. Which is also why a
+    // failure here cannot be told from an absence, and why neither is an error:
+    // the name-status letter beside it already says which it is.
+    const added = tempDir('sb-git-fva-added-');
+    sh(added, ['init', '-b', 'main']);
+    sh(added, ['config', 'user.email', 'test@test']);
+    sh(added, ['config', 'user.name', 'test']);
+    sh(added, ['config', 'commit.gpgsign', 'false']);
+    fs.writeFileSync(path.join(added, 'first.txt'), 'x\n');
+    sh(added, ['add', '.']);
+    sh(added, ['commit', '-m', 'one']);
+    fs.writeFileSync(path.join(added, 'new.txt'), 'brand new\n');
+    sh(added, ['add', '.']);
+    sh(added, ['commit', '-m', 'two']);
+    const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: added, encoding: 'utf8' }).trim();
+    const parent = execFileSync('git', ['rev-parse', 'HEAD^'], { cwd: added, encoding: 'utf8' }).trim();
+
+    const v = await svc.fileVersionsAt(added, 'new.txt', parent, sha);
+    expect(v.original).toBe('');
+    expect(v.modified).toContain('brand new');
+  });
+
+  it('⚠️ a ROOT commit reads against the EMPTY TREE and every line is an addition', async () => {
+    const r = tempDir('sb-git-fva-root-');
+    sh(r, ['init', '-b', 'main']);
+    sh(r, ['config', 'user.email', 'test@test']);
+    sh(r, ['config', 'user.name', 'test']);
+    sh(r, ['config', 'commit.gpgsign', 'false']);
+    fs.writeFileSync(path.join(r, 'f.txt'), 'the very first line\n');
+    sh(r, ['add', '.']);
+    sh(r, ['commit', '-m', 'root']);
+    const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: r, encoding: 'utf8' }).trim();
+
+    const v = await svc.fileVersionsAt(r, 'f.txt', '4b825dc642cb6eb9a060e54bf8d69288fbee4904', sha);
+    expect(v.original).toBe('');
+    expect(v.modified).toContain('the very first line');
+  });
+  // Real git in a child process, several times per case (#512).
+}, 60_000);

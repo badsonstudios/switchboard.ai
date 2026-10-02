@@ -66,6 +66,33 @@ export interface GitCommitDto {
   references: GitRefDto[];
 }
 
+/**
+ * One file in a commit (E24 Git v2 item 4) — screen 7's expanded row.
+ *
+ * ⚠️ `insertions` and `deletions` are ZERO rather than absent when git had no
+ * number — a pure mode change, or a numstat read that failed beside a
+ * name-status that succeeded. The LETTER is the authority on what happened; the
+ * numbers are a decoration, and `binary` is the one case where drawing them would
+ * be a lie.
+ */
+export interface CommitFileDto {
+  path: string;
+  /** M A D R C T */
+  letter: string;
+  /** where it came from, for a rename or a copy */
+  from?: string;
+  insertions: number;
+  deletions: number;
+  binary?: boolean;
+}
+
+/** `git:commitFiles`' answer, as it crosses the wire. */
+export interface CommitFilesDto {
+  files: CommitFileDto[];
+  /** why this is not a reading of the commit — the same discipline as `GitLog` */
+  unreadable?: string;
+}
+
 export interface GitRefDto {
   kind: 'head' | 'branch' | 'remote' | 'tag' | 'other';
   name: string;

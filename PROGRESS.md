@@ -43,6 +43,60 @@
 > log rather than the audit, §5.7 also records the editable-diff decision, and
 > VS Code's built-in Git extension is `docs/reference-implementations.md` **§4**.
 >
+> **🚧 NOW: item 4 (#1041) — a commit opens to its files, and a file opens its
+> diff AT that commit.** Screen 7. Click a row in the History tab and it expands;
+> click a file and a `gitdiff-` panel opens at `base..sha` — **the third shape
+> item 5 reserved**, and the one its panel refused until this item gave it a
+> loader. Design §3 named all three up front so this added a *caller* rather than
+> a second registry, and it did.
+>
+> **⚠️⚠️ THE DESIGN RECORD ASKS FOR ONE COMMAND AND THAT COMMAND CANNOT WORK.** §4
+> item 4 names `diff --numstat --name-status -z <parent> <sha>`. Measured, in
+> **either** flag order: **`--name-status` wins and the numbers are gone.** The two
+> flags are mutually exclusive, so a file list built from that one command has
+> letters and no `+/−` — and nothing would have reported it, because the output is
+> perfectly well-formed. It is two reads.
+>
+> **AND `--name-status -z` HAS ITS OWN RENAME TRAP, IN A DIFFERENT SHAPE FROM
+> `--numstat`'s.** Measured: `R100` then the old path then the new one, NUL-separated — the status field
+> carries a **similarity score** and is followed by **two** paths. A parser reading
+> "status, path, status, path" takes `d/new.txt` as a status letter and the file
+> after it as its path, and **every row from there on is wrong**. (`--numstat`'s
+> form is different again: an *empty* path field plus two more NUL fields. Two
+> commands, two traps, one `-z`.)
+>
+> **The root commit is handled on BOTH sides** — `diffBaseFor` substitutes git's
+> empty tree for the file list, and the panel does the same for the two blobs.
+> Without it the repository's first commit reads as "changed no files", which is
+> the single most likely wrong answer either half could give, and both the service
+> suite and the e2e now pin it.
+>
+> **`fileVersionsAt` is the `fileVersions` twin for a commit**, and a missing side
+> comes back as an EMPTY STRING deliberately: a file added in this commit does not
+> exist at `left`, and empty is exactly what Monaco renders as an addition. Which
+> is also why a failure there cannot be told from an absence, and why neither is
+> reported — the name-status letter beside it already says which it is.
+>
+> **Two guards for argv**: `isRev` for a revision, and `isCommitRef` which checks
+> **every parent, not just the id** — `diffBaseFor` reaches for `parentIds[0]` and
+> puts it in argv, so an unvalidated parent list is the same injection one step
+> further from the caller, which is where that kind of hole usually lives.
+>
+> **⚠️ AND THE ESCAPE-BYTE TRAP FIRED TWICE MORE — SEVENTH AND EIGHTH:** a Python edit
+> wrote a backslash-zero into a test file as a LITERAL NUL byte, and then writing
+> THIS PARAGRAPH did it again, to this file, four times over. `check-nul` caught both — the only
+> thing in the toolchain that does; eslint parses a NUL, tsc typechecks it, CI
+> goes green. Fixed binary-safely both times, and the lesson is the standing one:
+> **prefer a shape that needs no sentinel.** This paragraph now spells the byte as
+> a word.
+>
+> **Green:** lint · all three typecheck projects · **10,156** unit tests ·
+> `e2e/history-tab.spec.ts` **4 of 4**, including a commit's files from two real
+> git reads and the root commit listing every file as an addition.
+>
+> **✅ Items 1–7 are green on both unit jobs** (run 37033811340); the two e2e jobs
+> were still running when item 4 landed on top.
+
 > **🚧 NOW: items 6 AND 7 (#1043, #1044) — the Changes tab IS the source-control
 > sidebar, and every row has its numbers.** Built together because design §4 says
 > so: *"regrouping the sidebar without per-file stats leaves an empty slot in every

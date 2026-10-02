@@ -19,7 +19,14 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
-import { HistoryPane, HISTORY_PAGE, MAX_HISTORY, type ReadLog, type ReadStatus } from './HistoryPane';
+import {
+  HistoryPane,
+  HISTORY_PAGE,
+  MAX_HISTORY,
+  type ReadCommitFiles,
+  type ReadLog,
+  type ReadStatus,
+} from './HistoryPane';
 import type { GitCommitDto, GitLogDto } from '../lib/git-log-dto';
 import { ipcRefusal } from '../../../shared/ipc/refusal';
 
@@ -65,13 +72,14 @@ function recorder(answers: GitLogDto[] | GitLogDto) {
 }
 
 const noStatus: ReadStatus = async () => ({ isRepo: true, files: [] });
+const noCommitFiles: ReadCommitFiles = async () => ({ files: [] });
 
 /** Fixed clock, so "14m" is a fact about the component and not about today. */
 const NOW = (1_790_000_000 + 840) * 1000;
 
 async function mount(
   readLog: ReadLog,
-  opts: { readStatus?: ReadStatus; active?: boolean } = {}
+  opts: { readStatus?: ReadStatus; active?: boolean; readCommitFiles?: ReadCommitFiles } = {}
 ): Promise<{ setActive: (a: boolean) => Promise<void> }> {
   const host = document.createElement('div');
   document.body.appendChild(host);
@@ -84,6 +92,7 @@ async function mount(
           active={a}
           readLog={readLog}
           readStatus={opts.readStatus ?? noStatus}
+          readCommitFiles={opts.readCommitFiles ?? noCommitFiles}
           now={() => NOW}
         />
       );
@@ -93,6 +102,7 @@ async function mount(
   return { setActive: render };
 }
 
+const all = (sel: string): HTMLElement[] => [...document.body.querySelectorAll<HTMLElement>(sel)];
 const rows = (): HTMLElement[] => [...document.body.querySelectorAll<HTMLElement>('.history-row')];
 const subjects = (): string[] =>
   [...document.body.querySelectorAll<HTMLElement>('.history-subject')].map((e) => e.textContent ?? '');
@@ -534,6 +544,124 @@ describe('the History tab', () => {
     await setActive(true);
     expect(asked.length).toBeGreaterThan(before);
     expect(subjects()).toEqual(['after']);
+  });
+
+  describe('expanding a commit (E24 Git v2 item 4)', () => {
+    const files = {
+      files: [
+        { path: 'src/a.ts', letter: 'M', insertions: 12, deletions: 3 },
+        { path: 'd/new.ts', letter: 'R', from: 'd/old.ts', insertions: 0, deletions: 0 },
+        { path: 'logo.png', letter: 'M', insertions: 0, deletions: 0, binary: true },
+      ],
+    };
+
+    it('shows what the commit changed, with letters and numbers (the done-when)', async () => {
+      const { readLog } = recorder(logOf([commit({ id: 'a1', subject: 'the commit' })]));
+      await mount(readLog, { readCommitFiles: async () => files });
+      expect(one('.history-files')).toBeNull();
+      await click(one('.history-row'));
+      expect(all('.history-file').map((f) => f.dataset.path)).toEqual([
+        'src/a.ts',
+        'd/new.ts',
+        'logo.png',
+      ]);
+      expect(one('.history-file-stat')?.textContent).toContain('+12');
+    });
+
+    it('⚠️ the row is a TOGGLE, and says so', async () => {
+      // Clicking the open row closes it. The alternative — open, then re-fetch —
+      // makes one gesture do different things depending on state it does not show.
+      const { readLog } = recorder(logOf([commit()]));
+      await mount(readLog, { readCommitFiles: async () => files });
+      const row = one('.history-row');
+      expect(row?.getAttribute('aria-expanded')).toBe('false');
+      await click(row);
+      expect(one('.history-row')?.getAttribute('aria-expanded')).toBe('true');
+      await click(one('.history-row'));
+      expect(one('.history-files')).toBeNull();
+    });
+
+    it('⚠️ ONE AT A TIME — opening another closes the first', async () => {
+      // A list whose rows all expand is a list whose rows move under the pointer
+      // as each answer lands. The file list is a detail view; the `gitdiff-` panel
+      // is what two comparisons side by side are for.
+      const { readLog } = recorder(
+        logOf([commit({ id: 'a1', subject: 'first' }), commit({ id: 'b2', subject: 'second' })])
+      );
+      await mount(readLog, { readCommitFiles: async () => files });
+      await click(rows()[0]);
+      expect(all('.history-files')).toHaveLength(1);
+      await click(rows()[1]);
+      expect(all('.history-files')).toHaveLength(1);
+    });
+
+    it('⚠️ a BINARY file says binary, and a zero-and-zero row says NOTHING', async () => {
+      // A pure mode change or a rename with no content change has no lines either
+      // way; `+0 −0` on it would be a number about nothing.
+      const { readLog } = recorder(logOf([commit()]));
+      await mount(readLog, { readCommitFiles: async () => files });
+      await click(one('.history-row'));
+      const stats = all('.history-file-stat').map((s) => s.textContent?.trim() ?? '');
+      expect(stats[1]).toBe('');
+      expect(stats[2]).toContain('binary');
+    });
+
+    it('a RENAME says where it came from', async () => {
+      const { readLog } = recorder(logOf([commit()]));
+      await mount(readLog, { readCommitFiles: async () => files });
+      await click(one('.history-row'));
+      const renamed = all('.history-file').find((f) => f.dataset.path === 'd/new.ts');
+      expect(renamed?.getAttribute('title')).toContain('d/old.ts');
+    });
+
+    it('⚠️ a commit we could NOT read says so, rather than drawing an empty list', async () => {
+      const { readLog } = recorder(logOf([commit()]));
+      await mount(readLog, {
+        readCommitFiles: async () => ({ files: [], unreadable: 'that object is corrupt' }),
+      });
+      await click(one('.history-row'));
+      expect(one('.history-files-unreadable')?.textContent).toContain('that object is corrupt');
+      expect(all('.history-file')).toHaveLength(0);
+    });
+
+    it('an EMPTY commit says it changed no files', async () => {
+      const { readLog } = recorder(logOf([commit({ stats: null })]));
+      await mount(readLog, { readCommitFiles: async () => ({ files: [] }) });
+      await click(one('.history-row'));
+      expect(text()).toContain('changed no files');
+    });
+
+    it('⚠️ a REFUSAL on the wire is reported, not read as "no files"', async () => {
+      const { readLog } = recorder(logOf([commit()]));
+      await mount(readLog, {
+        readCommitFiles: async () => ipcRefusal('git:commitFiles', 'capability-not-held'),
+      });
+      await click(one('.history-row'));
+      expect(one('.history-files-unreadable')).not.toBeNull();
+    });
+
+    it('⚠️ asks git with the OWN parents of the commit — what the empty-tree fallback needs', async () => {
+      const asked: Array<{ id: string; parentIds: string[] }> = [];
+      const { readLog } = recorder(
+        // A HEX id, because `isCommitRef` in main refuses anything else before it
+        // reaches argv — so a fixture with a non-hex id would be testing a request
+        // the real channel would reject.
+        logOf([commit({ id: 'abcdef12', parentIds: [] })])
+      );
+      await mount(readLog, {
+        readCommitFiles: async (_f, c) => {
+          asked.push(c);
+          return { files: [] };
+        },
+      });
+      await click(one('.history-row'));
+      // A ROOT commit — no parents — which is the case that shows an empty diff
+      // for every file if the base is not substituted. Main does the substituting;
+      // what this pins is that the renderer passes the fact along rather than
+      // inventing a parent.
+      expect(asked[0].parentIds).toEqual([]);
+      expect(asked[0].id).toMatch(/^[0-9a-f]{40}$/);
+    });
   });
 
   it('a commit with no message at all still draws a row', async () => {

@@ -157,24 +157,25 @@ export function GitDiffView(props: {
         </button>
       </div>
       <div style={{ flex: 1, minBlockSize: 0, display: 'flex' }}>
-        {/* ⚠️ **ONLY THE WORKING-TREE COMPARISON IS LOADABLE TODAY, AND THIS SAYS
-            SO RATHER THAN DRAWING THE WRONG ONE** (found in review). The loader
-            is `git:fileVersions`, which answers HEAD-vs-disk and nothing else, so
-            a commit target handed to `MonacoDiff` as `working-tree` would have
-            shown the working-tree diff under a tab reading `file @ abc1234`.
-            `diffPanelTitle` already knows how to label a commit, and items 4, 9
-            and 10 are the callers that will make one — so the honest answer until
-            then is a sentence, not a plausible picture of the wrong thing. */}
-        {props.target.right !== WORKING_TREE_RIGHT ? (
-          <div
-            className="git-diff-unsupported"
-            style={{ padding: 10, color: 'var(--muted)', fontSize: 11 }}
-          >
-            {t('diff.commitDiffSoon')}
-          </div>
-        ) : (
+        {/* ⚠️ **THE COMMIT CASE USED TO SAY "coming" HERE, AND ITEM 4 IS WHAT
+            ANSWERED IT.** Until `fileVersionsAt` existed the only loader was
+            `git:fileVersions` — HEAD versus disk — so a commit target handed over
+            as `working-tree` would have drawn the working-tree diff under a tab
+            reading `file @ abc1234`. The union's `kind` is what made adding the
+            second loader a type error at every caller rather than a wrong picture
+            on screen. Item 9's all-changes range is the third. */}
         <MonacoDiff
-          source={{ kind: 'working-tree', folder: props.target.folder, path: props.target.path ?? null }}
+          source={
+            props.target.right === WORKING_TREE_RIGHT
+              ? { kind: 'working-tree', folder: props.target.folder, path: props.target.path ?? null }
+              : {
+                  kind: 'commit',
+                  folder: props.target.folder,
+                  path: props.target.path ?? null,
+                  left: props.target.left,
+                  right: props.target.right,
+                }
+          }
           colorScheme={props.colorScheme}
           // ⚠️ THE PANEL'S OWN ID in the card-id role, which is exactly what a
           // `doc-` panel does for the find bar (#533). A `gitdiff-` panel has no
@@ -187,7 +188,6 @@ export function GitDiffView(props: {
           placeKey={props.panelId}
           onLayout={setBody}
         />
-        )}
       </div>
     </div>
   );

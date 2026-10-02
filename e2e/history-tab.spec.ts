@@ -173,4 +173,52 @@ test.describe('the History tab (E24 Git v2 item 2)', () => {
     await w.getByRole('tab', { name: 'Session', exact: true }).click();
     await expect(w.getByText('No conversation yet')).toBeVisible({ timeout: 10_000 });
   });
+
+  test('⚠️ a commit OPENS to its files, and a file opens its diff at that commit', async () => {
+    // E24 Git v2 item 4, end to end. The unit tests own the two parsers and the
+    // component; what only this can say is that the two REAL git reads agree —
+    // `--name-status` for the letters and `--numstat` for the numbers, which the
+    // design record asked for as one command that cannot produce both.
+    const { folder, subject } = seededRepo();
+    const w = await openHistory(folder);
+    await expect(rows(w).first()).toBeVisible({ timeout: 20_000 });
+
+    const second = w.locator('.history-row').filter({ hasText: 'HISTORY_E2E_SUBJECT' });
+    await second.click();
+    const files = w.locator('.history-file');
+    await expect(files).toHaveCount(1, { timeout: 20_000 });
+    await expect(files.first()).toContainText('README.md');
+    // A real letter and a real number, out of the two reads.
+    await expect(files.first().locator('.history-file-letter')).toHaveText('M');
+    await expect(files.first().locator('.history-file-stat')).toContainText('+');
+
+    // ⭐ THE FILE OPENS A `gitdiff-` PANEL AT THAT COMMIT — the third shape item 5
+    // reserved, and the one its panel refused until this item gave it a loader.
+    await files.first().click();
+    const panel = w.locator('.git-diff-view');
+    await expect(panel).toBeVisible({ timeout: 20_000 });
+    await expect(panel.locator('.monaco-diff-editor')).toBeVisible({ timeout: 20_000 });
+    // Both sides of the commit, not the working tree: the README gained a line in
+    // that commit, so "more" is on the right and absent on the left.
+    await expect(panel).toContainText('more', { timeout: 20_000 });
+    // …and it is NOT the "coming soon" placeholder the panel used to draw.
+    await expect(w.locator('.git-diff-unsupported')).toHaveCount(0);
+    expect(subject).toContain('HISTORY_E2E_SUBJECT');
+  });
+
+  test('⚠️ THE ROOT COMMIT lists its files, rather than looking like it changed nothing', async () => {
+    // The case that fails silently: a root commit has no parent, so without the
+    // empty-tree substitution `git diff` answers nothing and the repository's
+    // FIRST commit reads as "changed no files" with no error anywhere.
+    const { folder } = seededRepo();
+    const w = await openHistory(folder);
+    const first = w.locator('.history-row').filter({ hasText: 'the first commit' });
+    await expect(first).toHaveCount(1, { timeout: 20_000 });
+    await first.click();
+    const files = w.locator('.history-file');
+    await expect(files).toHaveCount(1, { timeout: 20_000 });
+    // Every file in a root commit is an ADDITION against the empty tree.
+    await expect(files.first().locator('.history-file-letter')).toHaveText('A');
+    await expect(w.getByText('changed no files')).toHaveCount(0);
+  });
 });

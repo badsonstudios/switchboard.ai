@@ -50,19 +50,30 @@ import { rememberDiffPlace, readDiffPlace } from '../lib/diff-places';
  * branch in the load effect below rather than a second copy of this file. The
  * others arrive with items 4, 9 and 10.
  *
- * It is a DISCRIMINATED union with one member on purpose. The first draft of this
- * comment named a `loadVersions` function that does not exist, and `GitDiffView`
- * hardcoded `kind: 'working-tree'` whatever its target said — so a commit target
- * would have shown the working-tree diff under a tab labelled `file @ abc1234`
- * (review). `kind` is what makes the unsupported case a type error at the caller
- * instead of a wrong answer on screen.
+ * It is a DISCRIMINATED union, and that is what made adding the second member a
+ * type error at every caller rather than a wrong answer on screen. The first
+ * draft of item 5 hardcoded `kind: 'working-tree'` whatever its target said, so a
+ * commit target would have shown the working-tree diff under a tab labelled
+ * `file @ abc1234` (review). The `commit` member arrived with item 4, and the
+ * all-changes range is item 9's.
  */
-export type DiffSource = {
-  kind: 'working-tree';
-  folder: string;
-  /** git's forward-slash relative path; `null` means nothing is selected yet */
-  path: string | null;
-};
+export type DiffSource =
+  | {
+      kind: 'working-tree';
+      folder: string;
+      /** git's forward-slash relative path; `null` means nothing is selected yet */
+      path: string | null;
+    }
+  | {
+      /** one file at two revisions (E24 Git v2 item 4) */
+      kind: 'commit';
+      folder: string;
+      path: string | null;
+      /** the "before" revision — already the empty tree for a root commit */
+      left: string;
+      /** the "after" revision */
+      right: string;
+    };
 
 /** What the host needs to know to label its own toggle. */
 export interface DiffLayoutState {
@@ -127,6 +138,11 @@ export function MonacoDiff(props: {
   const selected = props.source.path;
   const folder = props.source.folder;
   const placeKey = props.placeKey;
+  const source = props.source;
+  // The two revisions, as primitives, so the load effect's deps are values rather
+  // than an object identity that changes on every parent render.
+  const left = source.kind === 'commit' ? source.left : null;
+  const right = source.kind === 'commit' ? source.right : null;
 
   /**
    * The LINE to put back once the model is in (#562).
@@ -288,7 +304,15 @@ export function MonacoDiff(props: {
   useEffect(() => {
     if (!selected || !editorRef.current) return;
     let cancelled = false; // stale selections / editor disposed mid-load
-    void window.switchboard.git.fileVersions(folder, selected).then((answer) => {
+    // ⚠️ TWO LOADERS, ONE EFFECT. `fileVersions` answers HEAD-vs-disk and nothing
+    // else, so a commit comparison needs `fileVersionsAt` — and a missing side
+    // comes back as an empty string, which is exactly what Monaco needs to render
+    // an addition or a deletion (see `fileVersionsAt`'s own note).
+    const load =
+      left !== null && right !== null
+        ? window.switchboard.git.fileVersionsAt(folder, selected, left, right)
+        : window.switchboard.git.fileVersions(folder, selected);
+    void load.then((answer) => {
       // #650: `v.original` off a refusal is `undefined`, and
       // `monaco.editor.createModel(undefined, ...)` is a throw inside a `.then`
       // nobody catches. Leaving the editor on its previous model is the inert
@@ -335,7 +359,7 @@ export function MonacoDiff(props: {
     return () => {
       cancelled = true;
     };
-  }, [selected, folder, placeKey]);
+  }, [selected, folder, placeKey, left, right]);
 
   /**
    * Record where the reader is, for the next mount (#562).

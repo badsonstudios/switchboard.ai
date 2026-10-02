@@ -66,7 +66,12 @@ export interface FileStats {
  *   sidebar draws them in the same row.
  * - ⚠️ **`--relative`, AND WITHOUT IT THE NUMBERS SILENTLY VANISH FOR ANY SESSION
  *   BELOW THE REPOSITORY ROOT (found in review, measured).** The two commands do
- *   not agree on what a path is relative to:
+ *   not agree on what a path is relative to.
+ *
+ *   ⚠️ **AND IT APPLIES TO THE COMMIT-RANGE FORM TOO**, which is why item 4's file
+ *   list and its numbers both come out folder-relative: a session on a monorepo
+ *   package must see its own paths in a commit's file list, not the repository's.
+ *   Measured table:
  *
  *   | run from | `status --porcelain=v2` | `diff --numstat` |
  *   |---|---|---|
@@ -91,7 +96,7 @@ export interface FileStats {
  *   `log --shortstat` these are load-bearing here and the caller pays the #776
  *   config guard.
  */
-export function numstatArgs(side: 'unstaged' | 'staged'): string[] {
+export function numstatArgs(side: 'unstaged' | 'staged' | { left: string; right: string }): string[] {
   return [
     'diff',
     ...(side === 'staged' ? ['--cached'] : []),
@@ -102,6 +107,12 @@ export function numstatArgs(side: 'unstaged' | 'staged'): string[] {
     '--no-color',
     '--no-textconv',
     '--no-ext-diff',
+    // A COMMIT RANGE (E24 Git v2 item 4), when asked for one. Last, after the
+    // flags, and with no `--` because both sides are revisions and there is no
+    // pathspec — `diffBaseFor` has already substituted the empty tree for a root
+    // commit, which is the case that otherwise shows an empty diff with no
+    // explanation.
+    ...(typeof side === 'object' ? [side.left, side.right] : []),
   ];
 }
 

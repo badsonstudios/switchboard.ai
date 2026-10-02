@@ -87,7 +87,7 @@ import { PushActions } from './events/push-actions';
 import { registerPushIpc } from './events/push-ipc';
 import { SecretStore } from './secrets/store';
 import { GitService } from './git/git-service';
-import { isLogQuery } from './git/git-log';
+import { isCommitRef, isLogQuery, isRev } from './git/git-log';
 import { BusHost } from './bus/host-channel';
 import { SessionQueries, summariesFrom } from './sessions/queries';
 import { resolveMentions } from './sessions/mention-resolve';
@@ -2422,6 +2422,37 @@ app
             unreadable: 'switchboard only reads git for folders it has open as a session',
             commits: [],
           }
+    );
+    // What one commit changed (E24 Git v2 item 4). Scoped like its siblings, and
+    // it REFUSES WITH A REASON rather than an empty list: a bare `[]` would draw
+    // as "this commit changed nothing", which is the confident wrong answer the
+    // empty-tree fallback exists to avoid two layers down.
+    broker.handle('git:commitFiles', (_e, folder: string, commit: unknown) =>
+      knownFolder(folder) && isCommitRef(commit)
+        ? gitService.commitFiles(folder, commit)
+        : {
+            files: [],
+            unreadable: knownFolder(folder)
+              ? 'switchboard could not read that commit reference'
+              : 'switchboard only reads git for folders it has open as a session',
+          }
+    );
+    // One file at two revisions. Path-scoped exactly as `git:fileVersions` is —
+    // the revisions are validated rather than trusted, because they reach argv.
+    broker.handle(
+      'git:fileVersionsAt',
+      (_e, folder: string, file: string, left: unknown, right: unknown) => {
+        if (!knownFolder(folder)) return { original: '', modified: '' };
+        if (!isRev(left) || !isRev(right)) return { original: '', modified: '' };
+        const resolved = path.resolve(folder, file);
+        if (
+          resolved !== path.resolve(folder) &&
+          !resolved.startsWith(path.resolve(folder) + path.sep)
+        ) {
+          return { original: '', modified: '' };
+        }
+        return gitService.fileVersionsAt(folder, file, left, right);
+      }
     );
     broker.handle('git:fileVersions', (_e, folder: string, file: string) => {
       // scope to a known folder AND forbid escaping it (path traversal)

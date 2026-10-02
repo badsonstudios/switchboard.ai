@@ -15,8 +15,14 @@ import path from 'path';
 // that module's header for the second measured launcher case.
 import { killTree } from '../transport/kill-tree';
 import { trackChild } from '../diagnostics/live-children';
-import { type GitCommit, type GitLogQuery, logArgs, parseLog } from './git-log';
+import { type GitCommit, type GitLogQuery, diffBaseFor, logArgs, parseLog } from './git-log';
 import { type FileStats, mergeNumstats, numstatArgs, parseNumstat } from './git-numstat';
+import {
+  type CommitFile,
+  mergeCommitFiles,
+  nameStatusArgs,
+  parseNameStatus,
+} from './git-commit-files';
 import {
   CONFIG_LIST_SCOPED,
   EMPTY_TREE,
@@ -1157,6 +1163,83 @@ export class GitService {
       unreadable: gitSaid(r.err) ?? 'git could not read this repository’s history',
       commits: [],
     };
+  }
+
+  /**
+   * What one commit changed (E24 Git v2 item 4, §5.7) — screen 7's file list.
+   *
+   * ⚠️ **TWO READS, BECAUSE THE DESIGN RECORD'S ONE COMMAND CANNOT WORK.** It asks
+   * for `diff --numstat --name-status`; measured, `--name-status` wins in either
+   * order and the numbers are gone. See `git-commit-files.ts` for the bytes.
+   *
+   * ⚠️ **AND THE ROOT COMMIT IS THE CASE THAT FAILS SILENTLY** — it has no parent,
+   * so `diffBaseFor` substitutes git's empty tree. Without that the repository's
+   * first commit shows an EMPTY file list with no error anywhere, which is the
+   * single most likely wrong answer this method can give.
+   *
+   * No #776 config guard of its own: `diff <rev> <rev>` is commit-to-commit, the
+   * same ground `log --shortstat` was measured on, and it never materialises a
+   * blob through a filter. `guardArgs()` rides on every invocation as always.
+   */
+  async commitFiles(
+    folder: string,
+    commit: { id: string; parentIds: string[] },
+    budgetMs = DIFF_BUDGET_MS
+  ): Promise<{ files: CommitFile[]; unreadable?: string }> {
+    const deadline = Date.now() + budgetMs;
+    const left = (): number => Math.max(1, deadline - Date.now());
+    const base = diffBaseFor(commit);
+    const [letters, numbers] = await Promise.all([
+      this.run(folder, nameStatusArgs(base, commit.id), left()),
+      this.run(folder, numstatArgs({ left: base, right: commit.id }), left()),
+    ]);
+    // ⚠️ THE LETTERS ARE THE ANSWER AND THE NUMBERS ARE A DECORATION. A failed
+    // name-status means we do not know what the commit touched, which is the
+    // question — so that one is reported. A failed numstat costs the `+/−` and
+    // leaves the list, the same asymmetry `status`'s stats read has.
+    if (!letters.ok) {
+      const why =
+        letters.failure === 'timeout'
+          ? `git did not finish reading that commit within ${Math.round(budgetMs / 1000)}s`
+          : letters.failure === 'no-exec'
+            ? await spawnReason(folder)
+            : (gitSaid(letters.err) ?? 'git could not read that commit');
+      return { files: [], unreadable: why };
+    }
+    return {
+      files: mergeCommitFiles(
+        parseNameStatus(letters.out),
+        numbers.ok ? parseNumstat(numbers.out) : EMPTY_NUMSTATS
+      ),
+    };
+  }
+
+  /**
+   * Two sides of one file at two revisions (E24 Git v2 item 4, §5.7).
+   *
+   * The `fileVersions` twin for a COMMIT rather than for the working tree, and the
+   * one thing item 5's diff panel needed before it could honestly show a commit —
+   * until now it said "coming", because `fileVersions` answers HEAD-vs-disk and
+   * nothing else.
+   *
+   * ⚠️ **A MISSING SIDE IS AN EMPTY STRING AND THAT IS CORRECT.** A file added in
+   * this commit does not exist at `left`, and a file deleted in it does not exist
+   * at `right` — `git show` fails for each, and empty is exactly what Monaco needs
+   * to render an addition or a deletion. Which is also why a failure here cannot
+   * be distinguished from an absence, and why neither is reported as an error: the
+   * `name-status` letter beside it already says which it is.
+   */
+  async fileVersionsAt(
+    folder: string,
+    file: string,
+    left: string,
+    right: string
+  ): Promise<FileVersions> {
+    const [before, after] = await Promise.all([
+      this.run(folder, ['show', `${left}:${toGitPath(file)}`]),
+      this.run(folder, ['show', `${right}:${toGitPath(file)}`]),
+    ]);
+    return { original: before.ok ? before.out : '', modified: after.ok ? after.out : '' };
   }
 
   /** HEAD vs working-tree contents for a Monaco diff (E5-02). */

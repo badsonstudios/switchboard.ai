@@ -1103,6 +1103,17 @@ const api = {
       ipcRenderer.invoke('git:log', folder, query ?? {}),
     fileVersions: (folder: string, file: string): Promise<{ original: string; modified: string }> =>
       ipcRenderer.invoke('git:fileVersions', folder, file),
+    /** What one commit changed (E24 Git v2 item 4) — `Promise<unknown>` for #650 */
+    commitFiles: (folder: string, commit: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('git:commitFiles', folder, commit),
+    /** one file at two revisions — the `fileVersions` twin for a commit */
+    fileVersionsAt: (
+      folder: string,
+      file: string,
+      left: string,
+      right: string
+    ): Promise<{ original: string; modified: string }> =>
+      ipcRenderer.invoke('git:fileVersionsAt', folder, file, left, right),
   },
   notifications: {
     getPrefs: (): Promise<NotificationPrefs> => ipcRenderer.invoke('notifications:getPrefs'),

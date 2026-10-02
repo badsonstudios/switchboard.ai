@@ -1,11 +1,9 @@
 # History
 
-> Status: draft — the tab works and this page describes what it does. Clicking a
-> commit open and the Pull/Push buttons on the incoming and outgoing rows are
-> still to come.
+> Status: draft — the tab works and this page describes what it does. The
+> Pull/Push buttons on the incoming and outgoing rows are still to come.
 >
-> TODO: screenshots · opening a commit to see its files · right-click operations
-> on a commit.
+> TODO: screenshots · right-click operations on a commit.
 
 ## What it is
 
@@ -81,6 +79,26 @@ tag can have the same name — `release` as a branch and `release` as a tag are 
 different things, possibly pointing at two different commits. switchboard asks
 git for the long form of every name so it can tell them apart. The branch you
 currently have checked out is marked.
+
+## Opening a commit
+
+Click a commit row and it expands to show what that commit changed: one line per
+file, with a letter for what happened to it and the lines added and removed.
+
+- **Click a file** and its diff for *that commit* opens in its own panel — the
+  file as it was before, beside the file as it was after. That is a different
+  thing from the Changes tab's diff, which is about what has not been committed
+  yet, so the two open as separate panels and neither replaces the other.
+- **One commit at a time.** Opening another closes the first. The file list is a
+  glance, not something to compare side by side — that is what the panels are for,
+  and you can have as many of those open as you like.
+- **A renamed file** shows its new name, and hovering tells you the old one.
+- **A file with no line count** — a binary, or a commit that only changed a
+  file's permissions — shows no number rather than a zero.
+- **The project's very first commit** lists every file in it as an addition. There
+  is nothing before it to compare against, so that is simply what it is.
+- **An empty commit** says *"This commit changed no files"* rather than showing an
+  empty space, which would look like something that failed to load.
 
 ## Commits to pull, commits to push
 

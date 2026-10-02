@@ -277,6 +277,11 @@ export const CHANNEL_CAPABILITIES = {
   // have to request more power than it uses. A reader of the log is a reader of
   // the repository, which is what `git.read` means.
   'git:log': 'git.read',
+  // What one commit changed, and one file at two revisions (E24 Git v2 item 4).
+  // `git.read` for the same reason `git:log` is: both reveal strictly less than
+  // `git:fileVersions` already hands over.
+  'git:commitFiles': 'git.read',
+  'git:fileVersionsAt': 'git.read',
   // the provider's service health as main currently understands it (P2-E14-07)
   'health:get': 'provider.status',
   // the polling switch is an ordinary preference, like the update auto-check

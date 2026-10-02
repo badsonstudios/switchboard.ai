@@ -27,6 +27,7 @@ import {
   isDetached,
   relativeTime,
   syncCounts,
+  type CommitFilesDto,
   type GitCommitDto,
   type GitLogDto,
   type GitRefDto,
@@ -40,17 +41,39 @@ import {
 export { HISTORY_PAGE, MAX_HISTORY };
 import type { GitStatusDto } from '../lib/git-status';
 import { allocateLanes, type LaneRow } from '../lib/git-lanes';
+import { LETTER_INKS } from './ScmSidebar';
+import { letterKey } from '../lib/scm-groups';
+import { openDiff } from '../lib/diff-open';
+/**
+ * git's canonical empty tree.
+ *
+ * Spelled here rather than imported: `repo-config-guard` is a MAIN-process module
+ * (it reaches for `fs`, `os` and `crypto`), and the renderer importing it would
+ * pull all three into the web bundle. One constant copied is the smaller cost —
+ * and it is a git constant, not ours, so it cannot drift.
+ */
+const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 import { LaneGutter, laneGutterWidth } from './LaneGutter';
 
 /** How the pane asks for commits. Injected so a test needs no bridge. */
 export type ReadLog = (folder: string, query: { limit: number; skip: number }) => Promise<unknown>;
 /** How the pane asks for ahead/behind. Same reason. */
 export type ReadStatus = (folder: string) => Promise<unknown>;
+/** How the pane asks what one commit changed (E24 Git v2 item 4). */
+export type ReadCommitFiles = (
+  folder: string,
+  commit: { id: string; parentIds: string[] }
+) => Promise<unknown>;
 
 const bridgeReadLog: ReadLog = (folder, query) => window.switchboard.git.log(folder, query);
 const bridgeReadStatus: ReadStatus = (folder) => window.switchboard.git.status(folder);
+const bridgeReadCommitFiles: ReadCommitFiles = (folder, commit) =>
+  window.switchboard.git.commitFiles(folder, commit);
 
 const REFUSED = 'switchboard could not ask git for more history';
+
+/** The same shape of sentence for a commit that could not be read. */
+const REFUSED_COMMIT = 'switchboard could not ask git what that commit changed';
 
 export function HistoryPane(props: {
   folder: string;
@@ -58,12 +81,16 @@ export function HistoryPane(props: {
   active?: boolean;
   readLog?: ReadLog;
   readStatus?: ReadStatus;
+  readCommitFiles?: ReadCommitFiles;
+  /** the card a diff opened from here is attributed to (§5.24) */
+  sessionId?: string;
   /** the clock, injected — see `relativeTime` for why it is not read in here */
   now?: () => number;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const readLog = props.readLog ?? bridgeReadLog;
   const readStatus = props.readStatus ?? bridgeReadStatus;
+  const readCommitFiles = props.readCommitFiles ?? bridgeReadCommitFiles;
   const now = props.now ?? Date.now;
 
   const [log, setLog] = React.useState<GitLogDto | null>(null);
@@ -103,6 +130,20 @@ export function HistoryPane(props: {
    * threw away a screen of good history to report that there was not more of it.
    */
   const [moreError, setMoreError] = React.useState<string | null>(null);
+  /**
+   * Which commit is expanded, and what it changed (E24 Git v2 item 4) — screen 7.
+   *
+   * ⚠️ **ONE AT A TIME, AND THAT IS A DECISION.** VS Code's
+   * `provideHistoryItemChanges` expands in place and so does this; allowing many
+   * would mean a list whose rows move under the pointer as each answer lands, and
+   * the file list is a detail view rather than something to compare side by side —
+   * that is what the `gitdiff-` panel is for, and every file row opens one.
+   *
+   * Keyed by sha, so a page landing underneath cannot leave the expansion pointing
+   * at a different commit — which an INDEX would.
+   */
+  const [openCommit, setOpenCommit] = React.useState<string | null>(null);
+  const [commitFiles, setCommitFiles] = React.useState<CommitFilesDto | null>(null);
   /**
    * Which round of asking we are on.
    *
@@ -221,6 +262,36 @@ export function HistoryPane(props: {
     () => commits.filter((c) => commitMatches(c, query)),
     [commits, query]
   );
+  /**
+   * Ask what a commit changed, when one is opened.
+   *
+   * ⚠️ **GUARDED BY THE SAME `round` REF AS THE PAGES, and that matters more here**
+   * — a slow commit read landing after the user has opened a different row would
+   * draw one commit's files under another commit's subject, which is a worse lie
+   * than a stale list. And the folder is in the deps, so switching folders drops
+   * the expansion rather than keeping a file list from a different repository.
+   */
+  React.useEffect(() => {
+    if (!openCommit) {
+      setCommitFiles(null);
+      return;
+    }
+    const commit = commits.find((c) => c.id === openCommit);
+    if (!commit) return;
+    const mine = ++round.current;
+    setCommitFiles(null);
+    void readCommitFiles(props.folder, { id: commit.id, parentIds: commit.parentIds })
+      .then((raw) => {
+        if (round.current !== mine) return;
+        const next = answered(raw) as CommitFilesDto | undefined;
+        setCommitFiles(next ?? { files: [], unreadable: REFUSED_COMMIT });
+      })
+      .catch(() => {
+        if (round.current !== mine) return;
+        setCommitFiles({ files: [], unreadable: REFUSED_COMMIT });
+      });
+  }, [openCommit, commits, props.folder, readCommitFiles]);
+
   const sync = syncCounts(status);
   /**
    * The graph, laid out over the UNFILTERED list.
@@ -424,14 +495,30 @@ export function HistoryPane(props: {
           // run of loose text.
           <div role="list">
             {filtered.map((c) => (
-              <CommitRow
-                key={c.id}
-                commit={c}
-                nowMs={nowMs}
-                lane={laneByCommit.get(c.id)}
-                lanes={layout.lanes}
-                gutter={gutter}
-              />
+              <React.Fragment key={c.id}>
+                <CommitRow
+                  commit={c}
+                  nowMs={nowMs}
+                  lane={laneByCommit.get(c.id)}
+                  lanes={layout.lanes}
+                  gutter={gutter}
+                  open={openCommit === c.id}
+                  // ⚠️ A TOGGLE, so clicking the open row closes it. The
+                  // alternative — click to open, click again to re-fetch — makes
+                  // the row's one gesture do a different thing depending on state
+                  // it does not show.
+                  onToggle={() => setOpenCommit((cur) => (cur === c.id ? null : c.id))}
+                />
+                {openCommit === c.id && (
+                  <CommitFiles
+                    files={commitFiles}
+                    folder={props.folder}
+                    commit={c}
+                    gutter={gutter}
+                    sessionId={props.sessionId}
+                  />
+                )}
+              </React.Fragment>
             ))}
           </div>
         )}
@@ -520,6 +607,159 @@ function syncRowStyle(ink: string): React.CSSProperties {
  * can exceed a narrow card: the subject collapses to nothing and then the ROW
  * overflows, which cost exactly what the comment claimed to protect.
  */
+/**
+ * One commit's files, expanded in place (E24 Git v2 item 4) — mockup screen 7.
+ *
+ * ⚠️ **AND CLICKING ONE OPENS A `gitdiff-` PANEL AT `base..sha`, WHICH IS THE
+ * THIRD SHAPE ITEM 5 RESERVED.** Design §3 named all three from the start so
+ * that this item added a CALLER rather than a second registry — and the panel
+ * refused a commit target until this item gave it a loader, which is why the key
+ * includes `left..right`: the same file's working-tree diff and its diff at a
+ * commit are two panels, deliberately.
+ */
+function CommitFiles(props: {
+  files: CommitFilesDto | null;
+  folder: string;
+  commit: GitCommitDto;
+  /** the lane gutter's width, so the file list lines up under its commit */
+  gutter: number;
+  sessionId?: string;
+}): React.JSX.Element {
+  const { t } = useTranslation();
+  /**
+   * The "before" side.
+   *
+   * ⚠️ **THE EMPTY TREE FOR A ROOT COMMIT, AND THIS IS THE CASE THAT FAILS
+   * SILENTLY.** A root commit has no parent, so without the substitution the
+   * repository's FIRST commit shows an empty diff for every file and says nothing
+   * about why. `diffBaseFor` in main does the same substitution for the file list;
+   * this is the renderer half, for the panel the row opens.
+   */
+  const base = props.commit.parentIds[0] ?? EMPTY_TREE;
+  return (
+    <div
+      className="history-files"
+      style={{
+        paddingInlineStart: props.gutter + 8,
+        paddingBlock: 2,
+        background: 'var(--panel2, var(--panel))',
+        borderBlockEnd: '1px solid var(--border)',
+      }}
+    >
+      {props.files === null && (
+        <div style={{ padding: '3px 6px', color: 'var(--muted)', fontSize: 10.5 }}>
+          {t('history.filesLoading')}
+        </div>
+      )}
+      {/* The attention ink, and the same discipline the pane above uses: a commit
+          we could not read says so in git's own words rather than drawing an
+          empty list, which would claim the commit changed nothing. */}
+      {props.files?.unreadable && (
+        <div
+          className="history-files-unreadable"
+          style={{ padding: '3px 6px', color: 'var(--status-needs-input-ink)', fontSize: 10.5 }}
+        >
+          {t('history.filesUnreadable', { reason: props.files.unreadable })}
+        </div>
+      )}
+      {/* ⚠️ AN EMPTY COMMIT REALLY HAS NO FILES, and it is a thing that exists —
+          `--allow-empty`. Saying so beats an empty box, which reads as a load that
+          never finished. */}
+      {props.files && !props.files.unreadable && props.files.files.length === 0 && (
+        <div style={{ padding: '3px 6px', color: 'var(--muted)', fontSize: 10.5 }}>
+          {t('history.filesNone')}
+        </div>
+      )}
+      {props.files?.files.map((f) => (
+        <button
+          key={f.path}
+          type="button"
+          className="history-file"
+          data-path={f.path}
+          title={f.from ? t('history.renamedFrom', { from: f.from }) : f.path}
+          aria-label={t('history.fileLabel', {
+            name: f.path,
+            status: t(`scm.letter.${letterKey(f.letter)}`),
+          })}
+          onClick={() =>
+            openDiff({
+              folder: props.folder,
+              path: f.path,
+              left: base,
+              right: props.commit.id,
+              sessionId: props.sessionId,
+            })
+          }
+          style={{
+            display: 'flex',
+            gap: 5,
+            alignItems: 'baseline',
+            inlineSize: '100%',
+            background: 'transparent',
+            border: 'none',
+            color: 'var(--text)',
+            cursor: 'pointer',
+            padding: '2px 6px',
+            fontSize: 10.5,
+            textAlign: 'left',
+          }}
+        >
+          <span
+            className={`history-file-letter scm-letter-${letterKey(f.letter)}`}
+            aria-hidden="true"
+            style={{
+              flexShrink: 0,
+              inlineSize: 10,
+              textAlign: 'center',
+              color: `var(${LETTER_INKS[f.letter] ?? '--muted'})`,
+              fontFamily: 'var(--font-mono)',
+              fontWeight: 600,
+              fontSize: 9.5,
+            }}
+          >
+            {f.letter}
+          </span>
+          <span
+            style={{
+              flex: 1,
+              minInlineSize: 0,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              direction: 'rtl',
+              textAlign: 'left',
+            }}
+          >
+            {t('diff.pathIsolated', { path: f.path })}
+          </span>
+          {/* ⚠️ BINARY SAYS SO; ZERO-AND-ZERO IS NOT DRAWN AT ALL. A pure mode
+              change has no lines either way, and `+0 −0` on it would be a number
+              about nothing. */}
+          <span
+            className="history-file-stat"
+            style={{ flexShrink: 0, fontFamily: 'var(--font-mono)', fontSize: 9.5 }}
+          >
+            {f.binary ? (
+              <span style={{ color: 'var(--muted)' }}>{t('scm.binary')}</span>
+            ) : f.insertions === 0 && f.deletions === 0 ? (
+              ''
+            ) : (
+              <>
+                <span style={{ color: 'var(--diff-added)' }}>
+                  {t('scm.plus', { n: f.insertions })}
+                </span>{' '}
+                <span style={{ color: 'var(--diff-removed)' }}>
+                  {t('scm.minus', { n: f.deletions })}
+                </span>
+              </>
+            )}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function CommitRow(props: {
   commit: GitCommitDto;
   nowMs: number;
@@ -529,6 +769,9 @@ function CommitRow(props: {
   lanes: number;
   /** the gutter's pixel width, for the fallback box when `lane` is missing */
   gutter: number;
+  /** is this commit's file list showing (E24 Git v2 item 4)? */
+  open: boolean;
+  onToggle: () => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const c = props.commit;
@@ -556,6 +799,19 @@ function CommitRow(props: {
         when: when || t('history.noDate'),
         merge: merge ? t('history.mergeTitle', { count: c.parentIds.length }) : '',
       })}
+      // ⚠️ **A `<button>`'s JOB ON A `<div>`'s ELEMENT WOULD BE §5.32 RULE 1 BROKEN
+      // AGAIN** — which `ScmSidebar` had to fix for its own rows. So the row is a
+      // real button: Enter, Space, focus and the announcement come from the
+      // platform, and `aria-expanded` says what the gesture does.
+      onClick={props.onToggle}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          props.onToggle();
+        }
+      }}
+      tabIndex={0}
+      aria-expanded={props.open}
       style={{
         display: 'flex',
         gap: 6,
@@ -563,6 +819,7 @@ function CommitRow(props: {
         padding: '4px 8px',
         fontSize: 11,
         color: 'var(--text)',
+        cursor: 'pointer',
         // ⚠️ `--border-faint` DOES NOT EXIST, so this used to be
         // `var(--border-faint, transparent)` and every row shipped with no
         // separator at all, in every theme (review). Nothing could have flagged

@@ -756,6 +756,40 @@ export function isLogQuery(value: unknown): value is GitLogQuery {
 }
 
 /**
+ * Is this a revision we will put in argv?
+ *
+ * ⚠️ **THE SAME GUARD `safeRevs` APPLIES, AND FOR THE SAME REASON** — `git`
+ * reads a leading `-` as a flag, and `..` turns one revision into a range. This
+ * is the exported form, because item 4's channels take two revisions from the
+ * renderer and a caller must not have to remember the rule.
+ */
+export function isRev(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    SAFE_REV.test(value) &&
+    !value.startsWith('-') &&
+    !value.includes('..')
+  );
+}
+
+/**
+ * Is this thing off the wire a commit reference — an id and its parents?
+ *
+ * ⚠️ **EVERY PARENT IS CHECKED, NOT JUST THE ID.** `diffBaseFor` reaches for
+ * `parentIds[0]` and puts it in argv, so an unvalidated parent list is the same
+ * injection as an unvalidated ref — one step further from the caller, which is
+ * where this kind of hole usually lives.
+ */
+export function isCommitRef(value: unknown): value is { id: string; parentIds: string[] } {
+  if (value === null || typeof value !== 'object') return false;
+  const c = value as Record<string, unknown>;
+  if (!/^[0-9a-f]{40}$/.test(String(c.id))) return false;
+  if (!Array.isArray(c.parentIds)) return false;
+  return c.parentIds.every((p) => isRev(p));
+}
+
+/**
  * The base to diff a commit against: its first parent, or git's empty tree.
  *
  * ⚠️ **THE ROOT COMMIT IS THE CASE THAT FAILS SILENTLY** (design record §2.1,
