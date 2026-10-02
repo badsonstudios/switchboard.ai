@@ -127,6 +127,7 @@ import { openPopoutWindows, subscribePopoutWindows } from './lib/popout-windows'
 import { openFindBar } from './lib/find-bar-state';
 import { setDocumentOpener } from './lib/document-open';
 import { setDiffOpener } from './lib/diff-open';
+import { setFileHistoryOpener } from './lib/file-history';
 import { openFileStartFolder, rememberOpenedFile } from './lib/open-file-start';
 import { isDocumentPanelId } from './lib/document-panels';
 
@@ -769,9 +770,14 @@ export function App(): React.JSX.Element {
     // beside its twin, so the two have one lifetime: a torn-down window must
     // leave neither arm behind.
     setDiffOpener((target) => grid.current?.openGitDiff(target));
+    // ⏱ — "show me this file's history" (E24 Git v2 item 10). The gesture starts
+    // in the Changes tab and lands in the History tab, which is a DIFFERENT tab
+    // on the same card, so it needs the one verb a panel cannot reach.
+    setFileHistoryOpener((cardId) => grid.current?.toggleCardView(cardId, 'history'));
     return () => {
       setDocumentOpener(null);
       setDiffOpener(null);
+      setFileHistoryOpener(null);
     };
   }, []);
 

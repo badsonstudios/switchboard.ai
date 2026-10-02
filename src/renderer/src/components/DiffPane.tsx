@@ -160,6 +160,7 @@ export function DiffPane(props: {
         selected={selected}
         onSelect={setSelected}
         sessionId={props.sessionId}
+        cardId={props.cardId}
         onRefresh={() => setRefreshes((n) => n + 1)}
       />
       <div style={{ flex: 1, minInlineSize: 0, display: 'flex', flexDirection: 'column' }}>

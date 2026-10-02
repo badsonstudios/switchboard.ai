@@ -44,6 +44,7 @@ import { allocateLanes, type LaneRow } from '../lib/git-lanes';
 import { LETTER_INKS } from './ScmSidebar';
 import { letterKey } from '../lib/scm-groups';
 import { openDiff } from '../lib/diff-open';
+import { clearFileHistory, fileHistoryRequest, subscribeFileHistory } from '../lib/file-history';
 /**
  * git's canonical empty tree.
  *
@@ -56,7 +57,10 @@ const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 import { LaneGutter, laneGutterWidth } from './LaneGutter';
 
 /** How the pane asks for commits. Injected so a test needs no bridge. */
-export type ReadLog = (folder: string, query: { limit: number; skip: number }) => Promise<unknown>;
+export type ReadLog = (
+  folder: string,
+  query: { limit: number; skip: number; path?: string; follow?: boolean }
+) => Promise<unknown>;
 /** How the pane asks for ahead/behind. Same reason. */
 export type ReadStatus = (folder: string) => Promise<unknown>;
 /** How the pane asks what one commit changed (E24 Git v2 item 4). */
@@ -84,6 +88,8 @@ export function HistoryPane(props: {
   readCommitFiles?: ReadCommitFiles;
   /** the card a diff opened from here is attributed to (§5.24) */
   sessionId?: string;
+  /** this card, so ⏱ from the Changes tab can pin this tab to one path (item 10) */
+  cardId?: string;
   /** the clock, injected — see `relativeTime` for why it is not read in here */
   now?: () => number;
 }): React.JSX.Element {
@@ -142,6 +148,19 @@ export function HistoryPane(props: {
    * Keyed by sha, so a page landing underneath cannot leave the expansion pointing
    * at a different commit — which an INDEX would.
    */
+  /**
+   * The path this tab is pinned to, if any (E24 Git v2 item 10).
+   *
+   * ⚠️ **A STORE RATHER THAN STATE, because the gesture starts in ANOTHER TAB.**
+   * ⏱ is on a Changes-tab row, and card tabs are mutually exclusive — so the
+   * request has to outlive this component being unmounted while the user is
+   * looking at the conversation. `lib/file-history` holds it per card and checks
+   * the folder, so a resumed session cannot inherit a path from a different
+   * repository.
+   */
+  const pinned = React.useSyncExternalStore(subscribeFileHistory, () =>
+    fileHistoryRequest(props.cardId, props.folder)
+  );
   const [openCommit, setOpenCommit] = React.useState<string | null>(null);
   const [commitFiles, setCommitFiles] = React.useState<CommitFilesDto | null>(null);
   /**
@@ -173,7 +192,15 @@ export function HistoryPane(props: {
       // unhandled rejection AND `loadingMore` latches `true` for ever: the button
       // sits permanently disabled reading "Reading more…". Fail-open here is to
       // learn nothing and say so, not to hang.
-      void readLog(props.folder, { limit, skip: 0 })
+      // ⚠️ `--follow` WITH THE PATH, which is the whole of `log --follow -- <path>`
+      // from design §4 item 10: without it a rename ENDS a file's history, and the
+      // commits before the `git mv` simply are not there — which reads as "this
+      // file is new" about a file somebody has been editing for a year.
+      void readLog(props.folder, {
+        limit,
+        skip: 0,
+        ...(pinned ? { path: pinned.path, follow: true } : {}),
+      })
         .then((raw) => {
           if (round.current !== mine) return;
           setLoadingMore(false);
@@ -203,7 +230,7 @@ export function HistoryPane(props: {
           if (isMore) setMoreError(REFUSED);
         });
     },
-    [props.folder, readLog]
+    [props.folder, readLog, pinned]
   );
 
   /**
@@ -369,6 +396,65 @@ export function HistoryPane(props: {
         {!branch && detached && (
           <span className="history-detached" style={{ color: 'var(--status-needs-input-ink)' }}>
             {t('history.detached')}
+          </span>
+        )}
+        {/* ⚠️ THE PINNED-PATH CHIP, AND ITS ✕ IS THE ONLY WAY BACK. A filtered
+            history that did not SAY it was filtered would read as a repository
+            with three commits in it — which is the confident wrong answer this
+            whole epic is a correction for, in a new shape. */}
+        {pinned && (
+          <span
+            className="history-pinned"
+            style={{
+              display: 'flex',
+              gap: 4,
+              alignItems: 'center',
+              flexShrink: 0,
+              maxInlineSize: 200,
+              // ⚠️ THE ACCENT IS THE RING, AND THE WORDS TAKE THE NEUTRAL INK —
+              // `tokens.drift.test.ts` caught the first draft spending
+              // `--accent-blue` on `color:` too. Four of the eight accents are
+              // byte-identical to a status hue, so a path written in one reads
+              // on screen as a status about that path. The border carries the
+              // identity; the text is just text.
+              border: '1px solid var(--accent-blue)',
+              borderRadius: 3,
+              color: 'var(--text)',
+              fontFamily: 'var(--font-mono)',
+              fontSize: 9.5,
+              paddingInlineStart: 4,
+            }}
+            title={t('history.pinnedTitle', { path: pinned.path })}
+          >
+            <span
+              style={{
+                minInlineSize: 0,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                direction: 'rtl',
+              }}
+            >
+              {t('diff.pathIsolated', { path: pinned.path })}
+            </span>
+            <button
+              type="button"
+              className="history-unpin"
+              title={t('history.unpin')}
+              aria-label={t('history.unpin')}
+              onClick={() => clearFileHistory(props.cardId)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'inherit',
+                cursor: 'pointer',
+                fontSize: 10,
+                lineHeight: 1,
+                padding: '0 3px',
+              }}
+            >
+              {t('history.unpinIcon')}
+            </button>
           </span>
         )}
         <input

@@ -34,6 +34,7 @@ import {
 import { canOpenDiffs, openDiff } from '../lib/diff-open';
 import { WORKING_TREE_LEFT, WORKING_TREE_RIGHT } from '../lib/diff-panels';
 import { openDocument } from '../lib/document-open';
+import { canShowFileHistory, requestFileHistory } from '../lib/file-history';
 
 /**
  * The ink a status letter wears.
@@ -84,6 +85,8 @@ export function ScmSidebar(props: {
   sessionId?: string;
   /** ask main again — the ⟲ in the header */
   onRefresh: () => void;
+  /** the card, so ⏱ can send this file's history to the History tab (item 10) */
+  cardId?: string;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const [filter, setFilter] = React.useState('');
@@ -336,6 +339,7 @@ export function ScmSidebar(props: {
                       sessionId={props.sessionId}
                       selected={props.selected === row.path}
                       onSelect={props.onSelect}
+                      cardId={props.cardId}
                     />
                   ))}
               </div>
@@ -364,6 +368,7 @@ function Row(props: {
   sessionId?: string;
   selected: boolean;
   onSelect: (path: string) => void;
+  cardId?: string;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const row = props.row;
@@ -517,6 +522,22 @@ function Row(props: {
               }
             >
               {t('diff.openInPanelIcon')}
+            </button>
+          )}
+          {/* ⏱ — this file's history (item 10). It pins the History tab to this
+              path and switches to it; the chip there is how you get back. ABSENT
+              when there is no card to switch or nowhere to switch it, which is the
+              owner's rule about a control with nothing to do. */}
+          {props.cardId && canShowFileHistory() && (
+            <button
+              type="button"
+              className="scm-act"
+              data-testid="scm-row-history"
+              title={t('scm.fileHistory', { file: row.path })}
+              aria-label={t('scm.fileHistory', { file: row.path })}
+              onClick={() => requestFileHistory(props.cardId, props.folder, row.path)}
+            >
+              {t('scm.fileHistoryIcon')}
             </button>
           )}
           <button

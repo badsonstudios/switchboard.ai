@@ -56,8 +56,12 @@ the part that got cut. Now the folder is what shortens, from the *front*, so wha
 you can always read is the filename.
 
 Click a row to see that file before and after. Hover it — or Tab to it — and the
-line counts swap for buttons: **⧉** to open the diff in its own panel, and **↗** to
-open the file itself in the reader.
+line counts swap for buttons: **⧉** to open the diff in its own panel, **↗** to
+open the file itself in the reader, and **⏱** to see that one file's history.
+
+**⏱** switches the card to the **History** tab and filters it to the commits
+that touched that file, with a chip at the top naming it. That is its own
+section of the [History](22-history.md) page, including how to get back.
 
 ### The numbers
 

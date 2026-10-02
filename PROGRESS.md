@@ -28,7 +28,8 @@
 > reason in design §6) · **layer 3 stays gated on the OQ #9 spike** ·
 > **no new git library** — system `git` through the hardened `GitService`.
 >
-> **Order being worked** (1, 2, 3 done): 1 → 2 → 3 (log, History tab, graph lanes — the dead tab,
+> **Order being worked** (1–7, 10, 11 done; 8, 9 and layer 2's 12–15 remain):
+> 1 → 2 → 3 (log, History tab, graph lanes — the dead tab,
 > no write path), then **5** (the `diff-` panel family + pop-out — the structural
 > item), then **6 → 7** together, then 8–11 interleaved, then layer 2 (12–15).
 >
@@ -43,6 +44,56 @@
 > log rather than the audit, §5.7 also records the editable-diff decision, and
 > VS Code's built-in Git extension is `docs/reference-implementations.md` **§4**.
 >
+> **🚧 NOW: item 10 (#1047) — "show me this file's history", the ⏱ on a changed
+> row.** Screen 8. Hover a row in the Changes tab, press ⏱, and the card lands on
+> the History tab filtered to the commits that touched that one path, with a chip
+> naming it and an ✕ that is the only way back.
+>
+> **⚠️ THE SURFACE IS THE EXISTING TAB, FILTERED — NOT A NEW PANEL.** Design §4
+> item 10 asks for `log --follow -- <path>`, which `logArgs` has supported since
+> item 1, and "opens as a panel per commit", which item 4's expanded rows already
+> do. So what was actually missing was a way to point the existing tab at ONE
+> path. A second surface drawing commit rows would have been a second place for
+> the lanes, the ref chips, the paging and the five empty states to drift.
+>
+> **⚠️ AND IT NEEDS TWO THINGS A PANEL CANNOT REACH, WHICH IS WHY IT IS A MODULE
+> SEAM.** The gesture STARTS on the Changes tab and LANDS on the History tab, and
+> card tabs are mutually exclusive — so the tab that asks is unmounted before the
+> tab that answers mounts. `PanelContext` carries no way to switch views, and
+> adding one would widen a contract every panel shares for the benefit of one
+> button. `lib/file-history.ts` is therefore the same shape as `lib/document-open`
+> and `lib/diff-open`: a module the grid installs an opener into, holding one
+> request per card, **surviving the unmount by construction**. With no opener
+> installed it reports false and the row draws no ⏱ at all — the owner's rule
+> about a control that does nothing, applied to the one affordance this adds.
+>
+> **THE FOLDER IS CHECKED, NOT JUST THE CARD.** A card's folder can change — a
+> session resumed somewhere else — and a request left over from the old one would
+> filter the NEW repository by a path that means nothing in it: an empty list with
+> a chip blaming a file that is not there.
+>
+> **⚠️ AND #261's LESSON LANDED IN THE FILE THAT KEEPS RECORDING IT.** Wiring this
+> up found that `extensibility/panels.tsx` **never threaded `sessionId` into
+> `DiffPane`**, though that component has taken one since P2-E16-03 and uses it for
+> §5.24 attribution. The prop was absent, the viewer fell back to no accent and no
+> `↳ session` chip, the tab still worked, and the feature was simply not there — a
+> silent nothing, exactly as that file's own comments predict. Fixed, and item 5's
+> ⧉ and this item's ⏱ both carry it now.
+>
+> **AND THE TOKEN DRIFT TEST EARNED ITS KEEP AGAIN:** the chip's first draft spent
+> `--accent-blue` on `color:` as well as on its border. Four of the eight accents
+> are byte-identical to a status hue, so a path written in one reads on screen as a
+> status *about* that path. The ring carries the identity; the words take the
+> neutral ink.
+>
+> **Green:** lint · all three typecheck projects · **10,204** unit tests
+> (`--maxWorkers=6`; the default worker count times out on this desktop, which is
+> the recorded heavy-npm-contention note, not a new failure) · `e2e/history-tab.spec.ts`
+> **5 of 5**, the fifth being the crossing itself — and its repository is built so
+> that the COUNT is the proof: three commits, one a `git mv`, and ⏱ leaves TWO
+> rows, so the test fails if `--follow` is ever dropped rather than passing on a
+> bare pathspec.
+
 > **🚧 NOW: item 11 (#1048) — git badges on the Files tab, from the SAME status
 > the Changes tab reads.** §5.7's remaining half, the one #521 left behind: *"The
 > tree paints no modified/added/untracked badges, and wiring `GitFileStatus` into

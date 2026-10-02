@@ -131,6 +131,31 @@ is instant. It matches:
 run to paragraphs, a full-text search matches nearly everything, and a filter
 that matches everything is no better than a broken one.
 
+## One file's history
+
+On the **Changes** tab, every row has a small clock button (**⏱**) that appears
+when you hover over it. Click it and switchboard switches you to this tab and
+shows only the commits that touched that file.
+
+You will see a chip at the top of the tab naming the file, like
+`… src/main/git/git-service.ts`, with an **✕** on it. The ✕ is the only way back
+to the whole history — a filtered list that did not say it was filtered would
+look like a project with four commits in it.
+
+A few things worth knowing about it:
+
+- **It follows renames.** If the file used to be called something else, the
+  commits from before the rename are in the list too. This is git's own
+  rename-following, and it is a guess rather than a record — git compares file
+  contents to decide, so a file that was rewritten in the same commit it was
+  renamed in can break the chain.
+- **The counts are the whole commit's, not the file's.** A row saying `+120 −4`
+  means that commit changed 120 lines across everything it touched. Expand the
+  row to see the file's own numbers.
+- **It is per card.** Two cards can be pinned to two different files at once, and
+  the pin is forgotten if the session's folder changes.
+- **Searching still works** and applies on top of the filter.
+
 ## It loads in pages
 
 The tab asks git for fifty commits at a time and offers **Show 50 more** at the

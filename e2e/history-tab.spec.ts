@@ -73,8 +73,49 @@ function seededRepo(): { folder: string; subject: string } {
   return { folder, subject };
 }
 
+/**
+ * A repository shaped for the ⏱ gesture (item 10) — and shaped so that the
+ * assertion can only pass if `--follow` is really on.
+ *
+ * Three commits over two files, the third a `git mv`, and the renamed file left
+ * dirty so it has a row on the Changes tab to press ⏱ on:
+ *
+ *   1. `was-named.txt` and `README.md` created
+ *   2. `other.txt` created — the commit the filter must HIDE
+ *   3. `was-named.txt` renamed to `only-here.txt`
+ *
+ * So the whole history is **three** rows and the filtered history is **two** — 3
+ * and 1. Without `--follow` it would be one row, and that is the point: the count
+ * is the proof the flag survived the trip, not just that a pathspec did.
+ */
+function renamedFileRepo(): { folder: string; pinned: string } {
+  const folder = registerTempDir(fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-pin-')));
+  const git = (...args: string[]): void => {
+    execFileSync('git', args, { cwd: folder, stdio: 'ignore' });
+  };
+  git('init', '-b', 'main');
+  git('config', 'user.email', 'e2e@test');
+  git('config', 'user.name', 'E2E Tester');
+  git('config', 'commit.gpgsign', 'false');
+  // The same global-hooks neutralisation `seededRepo` explains above.
+  const commit = (...args: string[]): void => git('-c', 'core.hooksPath=', 'commit', ...args);
+  fs.writeFileSync(path.join(folder, 'README.md'), '# pin\n');
+  fs.writeFileSync(path.join(folder, 'was-named.txt'), 'one\ntwo\nthree\n');
+  git('add', '.');
+  commit('-m', 'PIN_E2E_FIRST created the file under its old name');
+  fs.writeFileSync(path.join(folder, 'other.txt'), 'nothing to do with it\n');
+  git('add', '.');
+  commit('-m', 'PIN_E2E_UNRELATED a commit the filter must hide');
+  git('mv', 'was-named.txt', 'only-here.txt');
+  commit('-m', 'PIN_E2E_RENAME renamed it, with no content change');
+  // …and dirty, so the Changes tab has a row to press ⏱ on.
+  fs.writeFileSync(path.join(folder, 'only-here.txt'), 'one\ntwo\nthree\nfour\n');
+  return { folder, pinned: 'only-here.txt' };
+}
+
 const viewTabs = (w: Page) => w.locator('[data-testid="view-tabs"]');
 const historyTab = (w: Page) => viewTabs(w).locator('[data-vtab="history"]');
+const changesTab = (w: Page) => viewTabs(w).locator('[data-vtab="diff"]');
 const rows = (w: Page) => w.locator('.history-row');
 
 test.describe('the History tab (E24 Git v2 item 2)', () => {
@@ -220,5 +261,59 @@ test.describe('the History tab (E24 Git v2 item 2)', () => {
     // Every file in a root commit is an ADDITION against the empty tree.
     await expect(files.first().locator('.history-file-letter')).toHaveText('A');
     await expect(w.getByText('changed no files')).toHaveCount(0);
+  });
+
+  test('⚠️ ⏱ ON A CHANGED ROW CROSSES FROM ONE TAB TO THE OTHER, and `--follow` is live', async () => {
+    // E24 Git v2 item 10, and this is the one assertion no unit test can make.
+    // The seam (`lib/file-history.ts`) is unit-tested against an injected opener
+    // and the chip is unit-tested against an injected reader — but the CLAIM is
+    // that a button on ONE tab lands you on ANOTHER, and card tabs are mutually
+    // exclusive, so the tab that presses ⏱ is unmounted before the tab that
+    // answers mounts. Only the real grid, the real view store and the real
+    // `toggleCardView` can say that the request survives the crossing.
+    const { folder, pinned } = renamedFileRepo();
+    const w = await openHistory(folder);
+    // The whole history first, so the filtered count below means something.
+    await expect(rows(w)).toHaveCount(3, { timeout: 20_000 });
+
+    await changesTab(w).first().click();
+    await expect(changesTab(w).first()).toHaveAttribute('aria-selected', 'true', {
+      timeout: 10_000,
+    });
+    const row = w.locator(`.scm-row[data-path="${pinned}"]`);
+    await expect(row).toHaveCount(1, { timeout: 20_000 });
+
+    // ⚠️ THE BUTTON IS HIDDEN AT REST, which is a rule of its own (the acts slot
+    // shipped always-visible once, and the test that was supposed to catch it
+    // asserted on the stylesheet's TEXT). A real browser hover is the only
+    // witness to that, so it is asserted here rather than assumed.
+    await expect(row.locator('[data-testid="scm-row-history"]')).not.toBeVisible();
+    await row.hover();
+    const clock = row.locator('[data-testid="scm-row-history"]');
+    await expect(clock).toBeVisible();
+    await clock.click();
+
+    // ⭐ THE CROSSING: the card is on the History tab now, and it did not get
+    // there by anybody clicking the History tab.
+    await expect(historyTab(w).first()).toHaveAttribute('aria-selected', 'true', {
+      timeout: 10_000,
+    });
+    // The chip says what it is showing — a filtered list that did not say so
+    // would read as a repository with two commits in it.
+    await expect(w.locator('.history-pinned')).toContainText(pinned, { timeout: 20_000 });
+
+    // ⚠️ **TWO ROWS, AND THAT NUMBER IS THE PROOF `--follow` SURVIVED.** Commits 3
+    // and 1 touched this file, commit 1 under its OLD name; the unrelated commit 2
+    // is gone. A pathspec alone would give ONE row, so this count fails if the
+    // flag is ever dropped.
+    await expect(rows(w)).toHaveCount(2, { timeout: 20_000 });
+    await expect(w.locator('.history-row').filter({ hasText: 'PIN_E2E_UNRELATED' })).toHaveCount(0);
+    await expect(w.locator('.history-row').filter({ hasText: 'PIN_E2E_FIRST' })).toHaveCount(1);
+
+    // The ✕ is the ONLY way back, so it is asserted as a way back rather than as
+    // a button that exists.
+    await w.locator('.history-unpin').click();
+    await expect(w.locator('.history-pinned')).toHaveCount(0);
+    await expect(rows(w)).toHaveCount(3, { timeout: 20_000 });
   });
 });

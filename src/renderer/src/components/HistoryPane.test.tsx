@@ -29,6 +29,11 @@ import {
 } from './HistoryPane';
 import type { GitCommitDto, GitLogDto } from '../lib/git-log-dto';
 import { ipcRefusal } from '../../../shared/ipc/refusal';
+import {
+  requestFileHistory,
+  resetFileHistory,
+  setFileHistoryOpener,
+} from '../lib/file-history';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -62,7 +67,8 @@ const logOf = (commits: GitCommitDto[]): GitLogDto => ({ isRepo: true, commits }
 
 /** A reader that records every ask, so "it pages" is assertable. */
 function recorder(answers: GitLogDto[] | GitLogDto) {
-  const asked: Array<{ folder: string; limit: number; skip: number }> = [];
+  const asked: Array<{ folder: string; limit: number; skip: number; path?: string; follow?: boolean }> =
+    [];
   let call = 0;
   const readLog: ReadLog = async (folder, q) => {
     asked.push({ folder, ...q });
@@ -103,6 +109,26 @@ async function mount(
 }
 
 const all = (sel: string): HTMLElement[] => [...document.body.querySelectorAll<HTMLElement>(sel)];
+/** Mounted WITH a card id, which is what a pin is keyed on. */
+async function mountPinned(readLog: ReadLog): Promise<void> {
+  const host = document.createElement('div');
+  document.body.appendChild(host);
+  root = createRoot(host);
+  await act(async () => {
+    root!.render(
+      <HistoryPane
+        folder={FOLDER}
+        active
+        cardId="card-1"
+        readLog={readLog}
+        readStatus={noStatus}
+        readCommitFiles={noCommitFiles}
+        now={() => NOW}
+      />
+    );
+  });
+}
+
 const rows = (): HTMLElement[] => [...document.body.querySelectorAll<HTMLElement>('.history-row')];
 const subjects = (): string[] =>
   [...document.body.querySelectorAll<HTMLElement>('.history-subject')].map((e) => e.textContent ?? '');
@@ -661,6 +687,54 @@ describe('the History tab', () => {
       // inventing a parent.
       expect(asked[0].parentIds).toEqual([]);
       expect(asked[0].id).toMatch(/^[0-9a-f]{40}$/);
+    });
+  });
+
+  describe('pinned to one file (E24 Git v2 item 10)', () => {
+    beforeEach(() => resetFileHistory());
+
+    it('⚠️ asks git with `path` AND `follow`, which is the whole of the item', async () => {
+      // `--follow` without the path is meaningless and `path` without `--follow`
+      // ENDS a file's history at a rename: the commits before the `git mv` simply
+      // are not there, which reads as "this file is new" about a file somebody has
+      // been editing for a year.
+      setFileHistoryOpener(() => undefined);
+      requestFileHistory('card-1', FOLDER, 'src/a.ts');
+      const { readLog, asked } = recorder(logOf([commit()]));
+      await mountPinned(readLog);
+      expect(asked[0]).toMatchObject({ path: 'src/a.ts', follow: true });
+    });
+
+    it('⚠️ SAYS it is filtered, and the chip’s ✕ is the way back', async () => {
+      // A filtered history that did not say so would read as a repository with
+      // three commits in it — the confident wrong answer this epic corrects, in a
+      // new shape.
+      setFileHistoryOpener(() => undefined);
+      requestFileHistory('card-1', FOLDER, 'src/a.ts');
+      const { readLog } = recorder(logOf([commit()]));
+      await mountPinned(readLog);
+      expect(one('.history-pinned')).not.toBeNull();
+      expect(one('.history-pinned')?.getAttribute('title')).toContain('src/a.ts');
+      await click(one('.history-unpin'));
+      expect(one('.history-pinned')).toBeNull();
+    });
+
+    it('asks for the WHOLE history when nothing is pinned', async () => {
+      const { readLog, asked } = recorder(logOf([commit()]));
+      await mountPinned(readLog);
+      expect(asked[0].path).toBeUndefined();
+      expect(one('.history-pinned')).toBeNull();
+    });
+
+    it('⚠️ a pin for a DIFFERENT folder is ignored', async () => {
+      // A resumed session can change a card's folder, and a stale pin would filter
+      // the new repository by a path that means nothing in it.
+      setFileHistoryOpener(() => undefined);
+      requestFileHistory('card-1', '/somewhere-else', 'src/a.ts');
+      const { readLog, asked } = recorder(logOf([commit()]));
+      await mountPinned(readLog);
+      expect(asked[0].path).toBeUndefined();
+      expect(one('.history-pinned')).toBeNull();
     });
   });
 

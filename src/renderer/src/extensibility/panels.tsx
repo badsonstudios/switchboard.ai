@@ -123,8 +123,23 @@ export const sessionPanels: PanelContribution[] = [
       ctx.folder ? (
         // `cardId` so the pane can publish its editor as THIS card's find
         // surface (P2-E17-02) — Ctrl+F on the Changes tab must reach one
-        // editor, not whichever one the page happens to hold
-        <DiffPane folder={ctx.folder} colorScheme={ctx.colorScheme} cardId={ctx.cardId} />
+        // editor, not whichever one the page happens to hold.
+        //
+        // ⚠️ **`sessionId` WAS MISSING, AND THAT IS #261's LESSON LANDING IN THE
+        // FILE THAT KEEPS RECORDING IT** (found while wiring E24 Git v2 item 10).
+        // `DiffPane` has taken a `sessionId` since P2-E16-03 and uses it for §5.24
+        // attribution — a file opened from this tab should wear the session's
+        // accent and a `↳ session` chip. This render site never threaded it, so
+        // the prop was absent, the viewer fell back to no attribution, the tab
+        // still worked, and the feature was simply not there. A silent nothing,
+        // exactly as the Session panel's own comments above predict. Item 5's ⧉
+        // and item 10's ⏱ both carry it now too.
+        <DiffPane
+          folder={ctx.folder}
+          colorScheme={ctx.colorScheme}
+          cardId={ctx.cardId}
+          sessionId={ctx.sessionId}
+        />
       ) : null,
   },
   {
@@ -185,7 +200,16 @@ export const sessionPanels: PanelContribution[] = [
     // tab's badge is about the working tree while anything here would be about
     // the remote — two meanings, one shape.
     render: (ctx) =>
-      ctx.folder ? <HistoryPane folder={ctx.folder} active={ctx.visible} /> : null,
+      ctx.folder ? (
+        <HistoryPane
+          folder={ctx.folder}
+          active={ctx.visible}
+          // `cardId` is how ⏱ in the Changes tab reaches THIS tab (item 10), and
+          // `sessionId` is §5.24 attribution on a diff opened from a commit.
+          cardId={ctx.cardId}
+          sessionId={ctx.sessionId}
+        />
+      ) : null,
   },
   // THE TERMINAL TAB IS GONE (#873, owner call 2026-09-19): *"we don't need the
   // Terminal tab anymore, and we don't need the option to switch to Terminal in
