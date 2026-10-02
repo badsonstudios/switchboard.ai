@@ -53,6 +53,13 @@ import {
   hunkLabel,
   readHunks,
 } from '../lib/git-hunks';
+import {
+  canSync,
+  fetchRemote,
+  needsUpstream,
+  pullRemote,
+  pushRemote,
+} from '../lib/git-sync';
 import { canOpenAllChanges, openAllChanges } from '../lib/allchanges-open';
 import { canOpenDiffs, openDiff } from '../lib/diff-open';
 import { WORKING_TREE_LEFT, WORKING_TREE_RIGHT } from '../lib/diff-panels';
@@ -251,6 +258,50 @@ export function ScmSidebar(props: {
    * stale offers to stage something that is no longer where it says.
    */
   const [hunksFor, setHunksFor] = React.useState<string | null>(null);
+  /**
+   * A sync is in flight (item 15).
+   *
+   * ⚠️ **THE BUTTONS DISABLE WHILE IT RUNS, and that is not polish.** These are
+   * the only commands in the app that reach somebody else's server, so they can
+   * take seconds — and a button that does not show it is busy gets pressed again.
+   * A second `push` while the first is in flight is two pushes.
+   */
+  const [syncing, setSyncing] = React.useState(false);
+  /**
+   * git said this branch has no upstream, so there is a branch to PUBLISH.
+   *
+   * Read off git's own refusal rather than guessed from the status: `ahead` and
+   * `behind` are both absent for an unpublished branch (there is nothing to
+   * compare against), which is indistinguishable from "level with the remote"
+   * until a push has actually been refused.
+   */
+  const [needsPublish, setNeedsPublish] = React.useState(false);
+  const sync = React.useMemo(
+    () =>
+      canSync()
+        ? (verb: 'fetch' | 'pull' | 'push' | 'publish'): void => {
+            setSyncing(true);
+            const call =
+              verb === 'fetch'
+                ? fetchRemote(props.folder)
+                : verb === 'pull'
+                  ? pullRemote(props.folder)
+                  : pushRemote(props.folder, { setUpstream: verb === 'publish' });
+            void call.then((outcome) => {
+              setSyncing(false);
+              setWriteError(outcome.ok ? null : (outcome.reason ?? null));
+              // Offer the publish press only once git has said that is the gap —
+              // and withdraw it the moment it is no longer true.
+              setNeedsPublish(!outcome.ok && needsUpstream(outcome.reason));
+              // ⚠️ ALWAYS REFRESH: a fetch changes `ahead`/`behind` without
+              // touching a file, and those two numbers are the only thing on
+              // screen that would show it happened.
+              props.onRefresh();
+            });
+          }
+        : undefined,
+    [props.folder, props.onRefresh]
+  );
   const onHunks = React.useMemo(
     () =>
       canStageHunks()
@@ -367,6 +418,77 @@ export function ScmSidebar(props: {
           </span>
         )}
         <span style={{ flex: 1 }} />
+        {/* ⚠️ **THE SYNC VERBS (item 15), BESIDE THE COUNTS THEY ACT ON.** Items 2
+            and 6 both drew those counts with NO buttons and said so — *"Pull and
+            Push come with the branch/sync item"* — which is the owner's rule
+            about a control that does nothing, applied to a number. This is that
+            promise being kept.
+
+            ⚠️ **AND EACH VERB IS ABSENT WHEN IT WOULD DO NOTHING**, not greyed:
+            ↓ only with commits to bring down, ↑ only with commits to send. ⟳ is
+            always there, because "is there anything new?" is always a question
+            worth asking — and it is the only one of the three that cannot change
+            this repository. */}
+        {sync && (
+          <>
+            {(props.status?.behind ?? 0) > 0 && (
+              <button
+                type="button"
+                className="scm-act"
+                data-testid="scm-pull"
+                disabled={syncing}
+                title={t('scm.pull', { count: props.status?.behind ?? 0 })}
+                aria-label={t('scm.pull', { count: props.status?.behind ?? 0 })}
+                onClick={() => sync('pull')}
+              >
+                {t('scm.pullIcon')}
+              </button>
+            )}
+            {(props.status?.ahead ?? 0) > 0 && (
+              <button
+                type="button"
+                className="scm-act"
+                data-testid="scm-push"
+                disabled={syncing}
+                title={t('scm.push', { count: props.status?.ahead ?? 0 })}
+                aria-label={t('scm.push', { count: props.status?.ahead ?? 0 })}
+                onClick={() => sync('push')}
+              >
+                {t('scm.pushIcon')}
+              </button>
+            )}
+            {/* ⚠️ **"PUBLISH THIS BRANCH" IS ITS OWN PRESS, offered only once git
+                has said that is what is missing.** A push that failed for want of
+                an upstream is a different thing from one that failed because
+                somebody else pushed first, and quietly retrying with
+                `--set-upstream` would PUBLISH a branch the user had not decided
+                to publish. */}
+            {needsPublish && (
+              <button
+                type="button"
+                className="scm-act"
+                data-testid="scm-publish"
+                disabled={syncing}
+                title={t('scm.pushNew')}
+                aria-label={t('scm.pushNew')}
+                onClick={() => sync('publish')}
+              >
+                {t('scm.pushIcon')}
+              </button>
+            )}
+            <button
+              type="button"
+              className="scm-act"
+              data-testid="scm-fetch"
+              disabled={syncing}
+              title={syncing ? t('scm.busy') : t('scm.fetch')}
+              aria-label={syncing ? t('scm.busy') : t('scm.fetch')}
+              onClick={() => sync('fetch')}
+            >
+              {t('scm.fetchIcon')}
+            </button>
+          </>
+        )}
         <button
           type="button"
           className="diff-btn"

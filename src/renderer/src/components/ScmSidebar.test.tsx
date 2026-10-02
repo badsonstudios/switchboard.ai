@@ -1307,3 +1307,177 @@ describe('staging part of a file (E24 Git v2 item 14)', () => {
     expect(one('.scm-row[data-path="mod.ts"] [data-testid="scm-row-stage"]')).not.toBeNull();
   });
 });
+
+// The sync verbs in the header (E24 Git v2 item 15).
+//
+// ⚠️ **ITEMS 2 AND 6 BOTH DREW THOSE COUNTS WITH NO BUTTONS AND SAID SO** —
+// *"Pull and Push come with the branch/sync item"* — which is the owner's rule
+// about a control that does nothing, applied to a number. These tests are that
+// promise being kept, and the thing they most need to pin is that each verb is
+// ABSENT when it would do nothing rather than greyed.
+describe('the sync verbs (E24 Git v2 item 15)', () => {
+  let calls: string[];
+  let answer: { ok: boolean; reason?: string; applied: number };
+  let refreshes: number;
+
+  function syncBridge(): void {
+    const verb =
+      (name: string) =>
+      (): Promise<unknown> => {
+        calls.push(name);
+        return Promise.resolve(answer);
+      };
+    (window as unknown as { switchboard: unknown }).switchboard = {
+      workspace: { getUi: async () => ({}), setUi: () => undefined },
+      git: {
+        stage: verb('stage'),
+        unstage: verb('unstage'),
+        discard: verb('discard'),
+        fetch: verb('fetch'),
+        pull: verb('pull'),
+        push: verb('push'),
+        checkout: verb('checkout'),
+        createBranch: verb('createBranch'),
+      },
+    };
+  }
+
+  async function mountSync(status: GitStatusDto | null): Promise<void> {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => {
+      root!.render(
+        <ScmSidebar
+          folder={FOLDER}
+          status={status}
+          selected={null}
+          onSelect={(p) => selected.push(p)}
+          onRefresh={() => void refreshes++}
+          cardId="card-1"
+          onConfirm={() => true}
+        />
+      );
+    });
+  }
+
+  const withCounts = (ahead: number, behind: number): GitStatusDto => ({
+    isRepo: true,
+    branch: 'main',
+    ahead,
+    behind,
+    files: [file({ path: 'a.ts', xy: '.M' })],
+  });
+
+  beforeEach(async () => {
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+    document.body.innerHTML = '';
+    selected.length = 0;
+    calls = [];
+    refreshes = 0;
+    answer = { ok: true, applied: 1 };
+    await initI18nForTests();
+    syncBridge();
+    await loadUiState();
+  });
+
+  afterEach(async () => {
+    if (root) {
+      const r = root;
+      root = null;
+      await act(async () => r.unmount());
+    }
+    document.body.innerHTML = '';
+    delete (window as unknown as { switchboard?: unknown }).switchboard;
+  });
+
+  it('⟳ fetches, and the list refreshes afterwards (the done-when)', async () => {
+    // A fetch changes `ahead`/`behind` without touching a file, and those two
+    // numbers are the only thing on screen that would show it happened.
+    await mountSync(withCounts(0, 0));
+    await click(one('[data-testid="scm-fetch"]'));
+    expect(calls).toEqual(['fetch']);
+    expect(refreshes).toBe(1);
+  });
+
+  it('⚠️ ↓ AND ↑ ARE ABSENT WHEN THEY WOULD DO NOTHING, not greyed', async () => {
+    await mountSync(withCounts(0, 0));
+    expect(one('[data-testid="scm-fetch"]')).not.toBeNull();
+    expect(one('[data-testid="scm-pull"]')).toBeNull();
+    expect(one('[data-testid="scm-push"]')).toBeNull();
+  });
+
+  it('…and each appears with the count it acts on', async () => {
+    await mountSync(withCounts(3, 1));
+    expect(one('[data-testid="scm-pull"]')?.getAttribute('aria-label')).toContain('1 commit');
+    expect(one('[data-testid="scm-push"]')?.getAttribute('aria-label')).toContain('3 commits');
+    await click(one('[data-testid="scm-pull"]'));
+    await click(one('[data-testid="scm-push"]'));
+    expect(calls).toEqual(['pull', 'push']);
+  });
+
+  it('⚠️ A REFUSAL IS SHOWN IN GIT’S OWN WORDS', async () => {
+    // For these five, git's refusal is usually the most useful thing on screen:
+    // "Not possible to fast-forward" tells the user exactly what to do next.
+    answer = { ok: false, reason: 'fatal: Not possible to fast-forward, aborting.', applied: 0 };
+    await mountSync(withCounts(1, 1));
+    await click(one('[data-testid="scm-pull"]'));
+    expect(one('.scm-write-error')?.textContent).toContain('fast-forward');
+  });
+
+  it('⚠️⚠️ "PUBLISH THIS BRANCH" APPEARS ONLY ONCE GIT HAS SAID THAT IS THE GAP', async () => {
+    // ⚠️ **AND IT IS A SECOND, EXPLICIT PRESS — never an automatic retry.** A push
+    // that failed for want of an upstream is a different thing from one that
+    // failed because somebody else pushed first, and quietly adding
+    // `--set-upstream` would PUBLISH a branch the user had not decided to publish.
+    answer = {
+      ok: false,
+      reason: 'fatal: The current branch side has no upstream branch.',
+      applied: 0,
+    };
+    await mountSync(withCounts(2, 0));
+    expect(one('[data-testid="scm-publish"]')).toBeNull();
+    await click(one('[data-testid="scm-push"]'));
+    expect(one('[data-testid="scm-publish"]')).not.toBeNull();
+    // the push was NOT retried with the flag behind the user's back
+    expect(calls).toEqual(['push']);
+    // …and pressing publish is the second press
+    answer = { ok: true, applied: 1 };
+    await click(one('[data-testid="scm-publish"]'));
+    expect(calls).toEqual(['push', 'push']);
+    // …and the offer is withdrawn the moment it is no longer true
+    expect(one('[data-testid="scm-publish"]')).toBeNull();
+  });
+
+  it('⚠️ THE BUTTONS DISABLE WHILE A SYNC IS IN FLIGHT', async () => {
+    // These are the only commands in the app that reach somebody else's server,
+    // so they can take seconds — and a button that does not show it is busy gets
+    // pressed again. A second push while the first is in flight is two pushes.
+    let release: (v: unknown) => void = () => undefined;
+    (window as unknown as { switchboard: { git: Record<string, unknown> } }).switchboard.git.fetch =
+      () =>
+        new Promise((r) => {
+          release = r;
+        });
+    await mountSync(withCounts(1, 1));
+    await click(one('[data-testid="scm-fetch"]'));
+    expect((one('[data-testid="scm-fetch"]') as HTMLButtonElement | null)?.disabled).toBe(true);
+    expect((one('[data-testid="scm-pull"]') as HTMLButtonElement | null)?.disabled).toBe(true);
+    await act(async () => release({ ok: true, applied: 1 }));
+    expect((one('[data-testid="scm-fetch"]') as HTMLButtonElement | null)?.disabled).toBe(false);
+  });
+
+  it('⚠️ WITH NO SYNC CHANNELS THERE ARE NO SYNC BUTTONS, not dead ones', async () => {
+    (window as unknown as { switchboard: unknown }).switchboard = {
+      workspace: { getUi: async () => ({}), setUi: () => undefined },
+      git: { stage: async () => answer, unstage: async () => answer, discard: async () => answer },
+    };
+    await mountSync(withCounts(2, 2));
+    expect(one('[data-testid="scm-fetch"]')).toBeNull();
+    expect(one('[data-testid="scm-pull"]')).toBeNull();
+    expect(one('[data-testid="scm-push"]')).toBeNull();
+    // …and the COUNTS are still drawn, which is what items 2 and 6 shipped
+    expect(one('.scm-ahead')).not.toBeNull();
+    expect(one('.scm-behind')).not.toBeNull();
+  });
+});

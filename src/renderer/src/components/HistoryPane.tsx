@@ -45,6 +45,7 @@ import { LETTER_INKS } from './ScmSidebar';
 import { letterKey } from '../lib/scm-groups';
 import { openDiff } from '../lib/diff-open';
 import { clearFileHistory, fileHistoryRequest, subscribeFileHistory } from '../lib/file-history';
+import { canSync, createBranch } from '../lib/git-sync';
 /**
  * git's canonical empty tree.
  *
@@ -79,6 +80,20 @@ const REFUSED = 'switchboard could not ask git for more history';
 /** The same shape of sentence for a commit that could not be read. */
 const REFUSED_COMMIT = 'switchboard could not ask git what that commit changed';
 
+/**
+ * The platform's prompt, as the default for the injected one (item 15).
+ *
+ * ⚠️ **THE SAME ARGUMENT THE DISCARD CONFIRM MAKES**: synchronous, impossible
+ * to mistake for part of the page, and impossible to fail to render — where an
+ * in-app field that something failed to draw would be a branch button that does
+ * nothing. Guarded because `window` is not there in a node-environment test, and
+ * NO PROMPT MEANS NO BRANCH rather than a branch with a name nobody chose.
+ */
+function defaultPrompt(message: string): string | null {
+  const w = (globalThis as { prompt?: (m: string) => string | null }).prompt;
+  return typeof w === 'function' ? w(message) : null;
+}
+
 export function HistoryPane(props: {
   folder: string;
   /** is this tab on screen? drives the refresh-on-return, nothing else */
@@ -92,6 +107,15 @@ export function HistoryPane(props: {
   cardId?: string;
   /** the clock, injected — see `relativeTime` for why it is not read in here */
   now?: () => number;
+  /**
+   * Ask the user for a branch name (item 15).
+   *
+   * ⚠️ **INJECTED, with the platform's `prompt` as the default — the same bargain
+   * the sidebar's discard confirm makes.** A bare `window.prompt` inside this
+   * component would be unmockable, so every test of the branch path would pop a
+   * real dialog or have to stub a global.
+   */
+  onPrompt?: (message: string) => string | null;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const readLog = props.readLog ?? bridgeReadLog;
@@ -136,6 +160,14 @@ export function HistoryPane(props: {
    * threw away a screen of good history to report that there was not more of it.
    */
   const [moreError, setMoreError] = React.useState<string | null>(null);
+  /**
+   * What a branch attempt said, when it failed (item 15).
+   *
+   * Its own state rather than `moreError`'s: that one is about a PAGE of history
+   * and is deliberately non-destructive of the list, while this is about an
+   * action the user took. Two facts, two sentences.
+   */
+  const [branchError, setBranchError] = React.useState<string | null>(null);
   /**
    * Which commit is expanded, and what it changed (E24 Git v2 item 4) — screen 7.
    *
@@ -275,6 +307,39 @@ export function HistoryPane(props: {
    */
   const applied = log?.filteredBy;
   const pathRefused = log?.pathRefused === true;
+
+  /**
+   * Start a branch at a commit (item 15) — the design record's *"create branch
+   * from the graph"*.
+   *
+   * ⚠️ **THE NAME IS ASKED FOR WITH THE PLATFORM'S `prompt`, AND THAT IS THE SAME
+   * BARGAIN THE DISCARD CONFIRM MAKES.** It is synchronous, it cannot be mistaken
+   * for part of the page, and it cannot fail to render — where an in-app field
+   * that something failed to draw would be a branch button that does nothing. An
+   * injected prompt (as the sidebar's confirm is) is how a test drives it, and
+   * how a nicer dialog replaces this later without touching the rest.
+   *
+   * ⚠️ **AND THE NAME IS VALIDATED IN MAIN, NOT HERE.** `isBranchName` is the one
+   * definition — a second copy in the renderer is a second thing that can be
+   * relaxed, which is the argument `git-paths.ts` makes at length.
+   */
+  const onBranch = React.useMemo(
+    () =>
+      canSync()
+        ? (sha: string, displayId: string): void => {
+            const ask = props.onPrompt ?? defaultPrompt;
+            const name = ask(t('scm.newBranchPrompt', { commit: displayId }));
+            if (name === null || name.trim() === '') return;
+            void createBranch(props.folder, name.trim(), sha).then((outcome) => {
+              setBranchError(outcome.ok ? null : (outcome.reason ?? null));
+              // A new branch changes HEAD, so the whole page is a different
+              // question now — and `ahead`/`behind` are gone until it is pushed.
+              if (outcome.ok) fetchPage(HISTORY_PAGE);
+            });
+          }
+        : undefined,
+    [props.folder, props.onPrompt, t, fetchPage]
+  );
 
   // Back on screen: ask again. A history goes stale the moment the session
   // commits anything, and this tab has no watcher — the same trade `FileTree`
@@ -622,6 +687,20 @@ export function HistoryPane(props: {
         {state.kind === 'loading' && (
           <div style={{ padding: 10, color: 'var(--muted)', fontSize: 11 }}>{t('history.loading')}</div>
         )}
+        {/* ⚠️ **A BRANCH THAT WAS NOT CREATED SAYS SO, IN GIT'S OWN WORDS (item
+            15).** The common refusals are *"a branch named 'x' already exists"*
+            and a name git will not take, and both are things the user has to read
+            to fix. `role="status"` so it is announced: the ⑂ that caused it has
+            already lost focus by the time this renders. */}
+        {branchError !== null && (
+          <div
+            className="history-branch-error"
+            role="status"
+            style={{ padding: '4px 8px', color: 'var(--status-needs-input-ink)', fontSize: 10.5 }}
+          >
+            {t('scm.writeFailed', { reason: branchError })}
+          </div>
+        )}
         {/* The attention ink, not `--muted`: this is something being WRONG, where
             the two below it are ordinary facts about a folder. Same reasoning, and
             the same token, as the Changes tab's unreadable branch. */}
@@ -686,6 +765,7 @@ export function HistoryPane(props: {
                   // the row's one gesture do a different thing depending on state
                   // it does not show.
                   onToggle={() => setOpenCommit((cur) => (cur === c.id ? null : c.id))}
+                  onBranch={onBranch}
                 />
                 {openCommit === c.id && (
                   <CommitFiles
@@ -950,6 +1030,13 @@ function CommitRow(props: {
   /** is this commit's file list showing (E24 Git v2 item 4)? */
   open: boolean;
   onToggle: () => void;
+  /**
+   * Start a branch at this commit (item 15), or `undefined` to draw no ⑂.
+   *
+   * Takes the full sha AND the short one: the sha is what git is given, the short
+   * one is what the prompt shows, and the row is the only place that has both.
+   */
+  onBranch?: (sha: string, displayId: string) => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const c = props.commit;
@@ -1110,6 +1197,42 @@ function CommitRow(props: {
       >
         {when}
       </span>
+      {/* ⚠️ **⑂ — "NEW BRANCH FROM HERE" (item 15), AND THIS IS WHERE THE DESIGN
+          RECORD ASKED FOR IT: *"create branch from the graph"*.** The graph is in
+          this tab, so the gesture is on the row that has the commit — rather than
+          a dialog somewhere else that would make the user paste a sha.
+
+          ABSENT when this build cannot branch at all, which is the owner's rule.
+          A SIBLING of the row's button rather than inside it, because the row is
+          a `<button>` and a button inside a button is invalid HTML — the lesson
+          the sidebar's group heading paid for. */}
+      {props.onBranch && (
+        <button
+          type="button"
+          className="history-branch-here"
+          data-testid="history-branch-here"
+          title={t('scm.newBranch')}
+          aria-label={t('scm.newBranch')}
+          onClick={(e) => {
+            // The row is a toggle that expands the commit's files; branching from
+            // it must not also do that.
+            e.stopPropagation();
+            props.onBranch?.(c.id, c.displayId);
+          }}
+          style={{
+            flexShrink: 0,
+            background: 'transparent',
+            border: 'none',
+            color: 'var(--muted)',
+            cursor: 'pointer',
+            fontSize: 10,
+            lineHeight: 1,
+            padding: '0 2px',
+          }}
+        >
+          {t('scm.newBranchIcon')}
+        </button>
+      )}
     </div>
   );
 }

@@ -2516,6 +2516,42 @@ app
     });
     // Partial staging (E24 Git v2 item 14). `hunks` reads the diff a patch is
     // synthesised from; `applyPatch` stages it into the INDEX ONLY.
+    // ── Branch and sync (E24 Git v2 item 15) ────────────────────────────────
+    //
+    // ⚠️ **THE THREE NETWORK VERBS ARE SCOPED BY `knownFolder` LIKE EVERYTHING
+    // ELSE, AND THAT IS WHAT STOPS THEM BEING A GENERAL-PURPOSE NETWORK DOOR.**
+    // They talk to whatever remote the user's own repository names — not to a URL
+    // anybody can pass in, because there is no URL parameter anywhere here. That
+    // is deliberate: `remote add` is not offered, so the set of hosts switchboard
+    // can reach is exactly the set the user already configured with git.
+    broker.handle('git:fetch', (_e, folder: string) => {
+      const refusal = writeScope(folder);
+      return refusal ?? gitService.fetch(folder);
+    });
+    broker.handle('git:pull', (_e, folder: string) => {
+      const refusal = writeScope(folder);
+      return refusal ?? gitService.pull(folder);
+    });
+    broker.handle('git:push', (_e, folder: string, opts: unknown) => {
+      const refusal = writeScope(folder);
+      if (refusal) return refusal;
+      // One flag, read as a boolean — the rule `git:commit` records. Publishing a
+      // branch is not something that should happen because a key appeared in an
+      // object.
+      const o = (opts ?? {}) as Record<string, unknown>;
+      return gitService.push(folder, { setUpstream: o.setUpstream === true });
+    });
+    broker.handle('git:checkout', (_e, folder: string, branch: unknown) => {
+      const refusal = writeScope(folder);
+      return refusal ?? gitService.checkout(folder, branch);
+    });
+    broker.handle('git:createBranch', (_e, folder: string, name: unknown, from: unknown) => {
+      const refusal = writeScope(folder);
+      // The NAME and the SOURCE are both validated in the service, which is where
+      // the branch-name rule lives — re-stating it here would be the second copy
+      // `git-paths.ts` exists to argue against.
+      return refusal ?? gitService.createBranch(folder, name, from);
+    });
     broker.handle('git:hunks', (_e, folder: string, file: string) =>
       knownFolder(folder)
         ? gitService.hunks(folder, file)

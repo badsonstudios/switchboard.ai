@@ -819,4 +819,131 @@ describe('the History tab', () => {
     expect(rows()).toHaveLength(1);
     expect(one('.history-subject')?.textContent).toBe('(no message)');
   });
+  describe('a branch from the graph (E24 Git v2 item 15)', () => {
+    // ⚠️ **THE DESIGN RECORD ASKS FOR THIS *FROM THE GRAPH*** — *"create branch
+    // from the graph"* — so the gesture is on the row that has the commit, rather
+    // than a dialog somewhere else that would make the user paste a sha. What
+    // only a mounted row can answer is that the ⑂ does not also toggle the row
+    // open, and that the SHA it sends is the one it is beside.
+    let made: Array<{ name: string; from?: string }>;
+    let answer: { ok: boolean; reason?: string; applied: number };
+    let asked: string[];
+    let reply: string | null;
+
+    function syncBridge(): void {
+      (window as unknown as { switchboard: unknown }).switchboard = {
+        git: {
+          fetch: async () => answer,
+          pull: async () => answer,
+          push: async () => answer,
+          checkout: async () => answer,
+          createBranch: async (_f: string, name: string, from?: string) => {
+            made.push({ name, from });
+            return answer;
+          },
+        },
+      };
+    }
+
+    async function mountGraph(readLog: ReadLog): Promise<void> {
+      const host = document.createElement('div');
+      document.body.appendChild(host);
+      root = createRoot(host);
+      await act(async () => {
+        root!.render(
+          <HistoryPane
+            folder={FOLDER}
+            active
+            readLog={readLog}
+            readStatus={async () => ({ isRepo: true, files: [] })}
+            now={() => NOW}
+            onPrompt={(m) => {
+              asked.push(m);
+              return reply;
+            }}
+          />
+        );
+      });
+    }
+
+    beforeEach(() => {
+      made = [];
+      asked = [];
+      reply = 'feature/from-the-graph';
+      answer = { ok: true, applied: 1 };
+      syncBridge();
+    });
+
+    afterEach(() => {
+      delete (window as unknown as { switchboard?: unknown }).switchboard;
+    });
+
+    it('⑂ on a row makes a branch AT THAT COMMIT (the done-when)', async () => {
+      const { readLog } = recorder(
+        logOf([commit({ id: 'aaaa1111', displayId: 'aaaa1111' }), commit({ id: 'bbbb2222', displayId: 'bbbb2222' })])
+      );
+      await mountGraph(readLog);
+      const rows = document.body.querySelectorAll('.history-row');
+      await click(rows[1].querySelector('[data-testid="history-branch-here"]'));
+      // ⚠️ **TWO DIFFERENT IDS, AND THAT IS THE POINT OF THE ROW HAVING BOTH.**
+      // The PROMPT names the short one, because that is what the user is looking
+      // at — while git is given the FULL forty-character sha, because a short one
+      // is ambiguous in a big repository and git would have to guess.
+      expect(asked[0]).toContain('bbbb2222');
+      expect(made).toEqual([
+        { name: 'feature/from-the-graph', from: 'bbbb222200000000000000000000000000000000' },
+      ]);
+      expect(made[0].from).toHaveLength(40);
+    });
+
+    it('⚠️ AND DOES NOT ALSO EXPAND THE ROW', async () => {
+      // The row is a toggle that opens the commit's files (item 4). Branching from
+      // it must not do both — a click that does two things is a click somebody
+      // will regret.
+      const { readLog } = recorder(logOf([commit({ id: 'aaaa1111' })]));
+      await mountGraph(readLog);
+      await click(one('[data-testid="history-branch-here"]'));
+      expect(one('.history-files')).toBeNull();
+    });
+
+    it('⚠️ SAYING NOTHING, OR CANCELLING, MAKES NO BRANCH', async () => {
+      const { readLog } = recorder(logOf([commit({ id: 'aaaa1111' })]));
+      await mountGraph(readLog);
+      reply = null; // cancelled
+      await click(one('[data-testid="history-branch-here"]'));
+      expect(made).toEqual([]);
+      reply = '   '; // whitespace only
+      await click(one('[data-testid="history-branch-here"]'));
+      expect(made).toEqual([]);
+    });
+
+    it('trims the name, so a stray space cannot become part of it', async () => {
+      const { readLog } = recorder(logOf([commit({ id: 'aaaa1111' })]));
+      await mountGraph(readLog);
+      reply = '  tidy-name  ';
+      await click(one('[data-testid="history-branch-here"]'));
+      expect(made[0].name).toBe('tidy-name');
+    });
+
+    it('⚠️ A REFUSAL IS SHOWN, in git’s own words', async () => {
+      // The common ones are "a branch named 'x' already exists" and a name git
+      // will not take — both things the user has to read to fix.
+      answer = { ok: false, reason: "fatal: a branch named 'side' already exists", applied: 0 };
+      const { readLog } = recorder(logOf([commit({ id: 'aaaa1111' })]));
+      await mountGraph(readLog);
+      await click(one('[data-testid="history-branch-here"]'));
+      expect(one('.history-branch-error')?.textContent).toContain('already exists');
+      expect(one('.history-branch-error')?.getAttribute('role')).toBe('status');
+    });
+
+    it('⚠️ WITH NO SYNC CHANNELS THERE IS NO ⑂ AT ALL', async () => {
+      (window as unknown as { switchboard: unknown }).switchboard = { git: {} };
+      const { readLog } = recorder(logOf([commit({ id: 'aaaa1111' })]));
+      await mountGraph(readLog);
+      expect(one('[data-testid="history-branch-here"]')).toBeNull();
+      // …and the row is otherwise exactly as it was
+      expect(one('.history-row')).not.toBeNull();
+    });
+  });
+
 });

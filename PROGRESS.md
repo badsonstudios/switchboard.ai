@@ -46,7 +46,68 @@
 >
 > # 🚧 LAYER 2 — THE WRITE HALF
 >
-> **🚧 NOW: item 14 (#1051) — staging part of a file.** Screen 8. `git apply
+> # ✅ ALL FIFTEEN ITEMS BUILT — 2026-10-02
+>
+> **🚧 NOW: item 15 (#1052) — fetch, pull, push, checkout, branch. THE LAST ONE.**
+> Items 2 and 6 both drew the ahead/behind counts with **no buttons** and said so
+> — *"Pull and Push come with the branch/sync item"*, the owner's rule about a
+> control that does nothing applied to a number. This is that promise kept.
+>
+> **⚠️ THE FAILURE MODE THAT MATTERED WAS NOT AN ERROR, IT WAS A HANG.** `git
+> fetch` against a remote that wants credentials waits for a password on a
+> terminal that does not exist, for ever — and our budget would then kill it and
+> report a *timeout*, i.e. a bug that reads as "the network is slow".
+> **`GIT_TERMINAL_PROMPT=0`** is the fix, measured: against an unreachable host it
+> fails in under a second. **And it is deliberately the ONLY variable set** — the
+> user's own credential helper (Credential Manager, the keychain, `gh`) must go on
+> working exactly as it does outside switchboard. That is host-don't-reimplement:
+> stop git asking a terminal we do not have, do not touch how they are
+> authenticated.
+>
+> **PULL IS `--ff-only`, AND THAT IS THE WHOLE DESIGN OF THE BUTTON.** A plain
+> `pull` merges or rebases depending on config, and both can stop halfway with a
+> conflict — leaving a one-click button having started something the user must now
+> finish, with **no surface here for finishing it**. With `--ff-only` it either
+> works completely or changes nothing and says why. Proved against a real diverged
+> remote: refuses, no `MERGE_HEAD`, the other side's file still absent.
+>
+> **PUBLISH IS A SECOND, EXPLICIT PRESS.** A push that failed for want of an
+> upstream is a different thing from one that failed because somebody else pushed
+> first, and quietly retrying with `--set-upstream` would **publish a branch the
+> user had not decided to publish**. The offer appears only once git has said that
+> is the gap (matched on its own distinctive phrase) and is withdrawn the moment
+> it is not.
+>
+> **AND THERE IS NO FORCE-PUSH, not even behind a menu.** It can destroy commits
+> on the remote that exist nowhere else — possibly somebody else's — which puts it
+> past the line this epic draws at discard, and unlike discard no confirm makes it
+> safe. The terminal is where that belongs.
+>
+> **MORE MEASURED FACTS, each of which changed what the surface may claim:**
+> `fetch` with no remote **exits 0 and says nothing**, so "nothing happened" is a
+> SUCCESS and a local-only repository must not be reported as broken · `push` with
+> no upstream exits 128 with a clear message, which is why it is passed through ·
+> `checkout` **carries an uncommitted change across** and refuses only when the
+> switch would clobber it, so it is not the destructive thing it looks like and
+> git's refusal is the protection.
+>
+> **The branch-name rule is about ARGV, not about git:** a leading `-` is refused
+> even though git allows it inside a name, because `--all` and `-D` are flags —
+> the same finding `safeRevs` records, where a character class alone accepted
+> `--all` because `-` has to be IN it for `feature/e24-git-v2`. And `..` is
+> refused because it would turn one ref into a RANGE.
+>
+> **⑂ IS ON THE COMMIT ROW**, which is where the design record asked for it
+> (*"create branch from the graph"*) — and it sends the **full forty-character
+> sha** while the prompt shows the short one, because a short sha is ambiguous in
+> a big repository and git would have to guess.
+>
+> **Green:** lint · all three typecheck projects · **10,494** unit tests ·
+> `e2e/diff.spec.ts` **11 of 11** and `e2e/history-tab.spec.ts` **5 of 5**. The
+> twelve service tests run against a **real remote** — a bare repository on disk —
+> so a push is verified by reading the REMOTE's own log.
+
+> **✅ item 14 (#1051) — staging part of a file.** Screen 8. `git apply
 > --cached` over a patch synthesised from one hunk: **the working tree is never
 > written**, which is the whole safety story and the reason this needs no confirm
 > where item 12's discard does.

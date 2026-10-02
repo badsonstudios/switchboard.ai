@@ -1155,6 +1155,19 @@ const api = {
       patch: string,
       opts?: { reverse?: boolean; zeroContext?: boolean }
     ): Promise<unknown> => ipcRenderer.invoke('git:applyPatch', folder, patch, opts),
+    // ── branch and sync (E24 Git v2 item 15) ──
+    //
+    // The three network verbs can take a while — somebody else's server is the
+    // bound — and main holds a long budget for them. Nothing here can hang the
+    // renderer: every one is an `invoke` that resolves with an outcome.
+    fetch: (folder: string): Promise<unknown> => ipcRenderer.invoke('git:fetch', folder),
+    pull: (folder: string): Promise<unknown> => ipcRenderer.invoke('git:pull', folder),
+    push: (folder: string, opts?: { setUpstream?: boolean }): Promise<unknown> =>
+      ipcRenderer.invoke('git:push', folder, opts),
+    checkout: (folder: string, branch: string): Promise<unknown> =>
+      ipcRenderer.invoke('git:checkout', folder, branch),
+    createBranch: (folder: string, name: string, from?: string): Promise<unknown> =>
+      ipcRenderer.invoke('git:createBranch', folder, name, from),
   },
   notifications: {
     getPrefs: (): Promise<NotificationPrefs> => ipcRenderer.invoke('notifications:getPrefs'),

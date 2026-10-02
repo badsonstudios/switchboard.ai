@@ -254,8 +254,62 @@ one commit, never a second button that also commits:
 - **Skip this project's commit hooks** — the escape hatch for when a hook is
   wrong and you know it.
 
-**What's still missing:** pushing and pulling. The branch line shows how far ahead
-or behind you are; the buttons to do something about it come next.
+## Fetching, pulling, pushing
+
+The branch line at the top has had **↑ 3 ↓ 1** style counts for a while with
+nothing to do about them. Now it has buttons:
+
+| Button | What it does |
+|---|---|
+| **⟳** | **Fetch** — ask the remote what's new. Changes nothing of yours. |
+| **↓** | **Pull** — bring those commits down. Only appears when there are some. |
+| **↑** | **Push** — send your commits up. Only appears when you have some. |
+
+**↓ and ↑ are absent, not greyed, when there's nothing to do.** The counts beside
+them tell you whether there is.
+
+**They disable themselves while they're working.** These are the only things
+switchboard does that talk to another machine, so they can take a few seconds — and
+a button that didn't show it was busy would get pressed twice, which for a push
+means pushing twice.
+
+### Pull either works completely or does nothing
+
+**Pull only fast-forwards.** If your branch and the remote have both moved,
+switchboard won't try to merge them — it says so and changes nothing.
+
+That's deliberate. A normal `git pull` either merges or rebases, and both can stop
+half-way with a conflict. A one-click button that left you in the middle of a merge,
+with no screen in switchboard for finishing it, would be worse than a button that
+declines. So: it tells you, and you deal with it where you normally would.
+
+### Publishing a new branch
+
+A branch you've never pushed has no "upstream", and git refuses to guess which
+remote you meant. When that happens you'll see the message and an extra **↑**
+appears — *"Publish this branch to the remote"*. That's a **second, deliberate
+press**: switchboard won't publish a branch because you pressed Push once.
+
+### Making a branch
+
+On the **History** tab, every commit row has a **⑂** — *"New branch from here"*.
+It asks for a name and starts the branch at that commit, which is what the commit
+graph is for.
+
+Names are checked before git sees them: letters, digits, `.` `_` `/` `-`, and not
+starting with a dash.
+
+### Your credentials work as they always do
+
+switchboard stops git from asking for a password **on a terminal** — there isn't
+one, so it would just hang for ever. It doesn't touch how you're actually
+authenticated: Windows Credential Manager, the macOS keychain, a `gh` helper, an
+SSH key — all exactly as they are outside switchboard.
+
+**What switchboard deliberately won't do:** **force-push**. A force-push can
+destroy commits on the remote that exist nowhere else — possibly somebody else's —
+and there's no confirmation box that makes that safe. That one stays in your
+terminal.
 
 ## Side by side, or inline
 

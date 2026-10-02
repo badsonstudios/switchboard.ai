@@ -20,6 +20,7 @@ import {
   type GitLogQuery,
   appliedPath,
   diffBaseFor,
+  isRev,
   logArgs,
   parseLog,
 } from './git-log';
@@ -43,6 +44,17 @@ import {
   isCommittableMessage,
 } from './git-commit';
 import { type Hunk, applyArgs, hunkDiffArgs, parseDiff } from './git-hunks';
+import {
+  NETWORK_BUDGET_MS,
+  checkoutArgs,
+  createBranchArgs,
+  fetchArgs,
+  isBranchName,
+  networkEnv,
+  pullArgs,
+  pushArgs,
+  refusedBranch,
+} from './git-remote';
 import { type FileStats, mergeNumstats, numstatArgs, parseNumstat } from './git-numstat';
 import {
   type CommitFile,
@@ -1474,6 +1486,97 @@ export class GitService {
     // clean is the state a discard was asking for. Counting them would overstate
     // what happened.
     return { ok: true, applied };
+  }
+
+  // ── BRANCH AND SYNC (E24 Git v2 item 15) ──────────────────────────────────
+  //
+  // ⚠️ **THE ONLY COMMANDS HERE THAT TOUCH THE NETWORK**, and the failure that
+  // matters is a HANG rather than an error — see `networkEnv`. All five report
+  // git's own words, because the useful messages ("Not possible to fast-forward",
+  // "no upstream branch", "Could not resolve host") are all git's.
+
+  /** Update the remote's refs. Touches no file and no branch. */
+  async fetch(folder: string, budgetMs = NETWORK_BUDGET_MS): Promise<GitWriteResult> {
+    return this.network(folder, fetchArgs(), budgetMs);
+  }
+
+  /** Fast-forward this branch to the remote. See `pullArgs` for why `--ff-only`. */
+  async pull(folder: string, budgetMs = NETWORK_BUDGET_MS): Promise<GitWriteResult> {
+    return this.network(folder, pullArgs(), budgetMs);
+  }
+
+  /**
+   * Send this branch to the remote.
+   *
+   * ⚠️ **`setUpstream` IS THE CALLER'S DECISION AND NOT A RETRY HERE.** A push
+   * that failed for want of an upstream is a different thing from one that failed
+   * because somebody else pushed first, and silently adding the flag on failure
+   * would publish a branch the user had not decided to publish.
+   */
+  async push(
+    folder: string,
+    opts: { setUpstream?: boolean } = {},
+    budgetMs = NETWORK_BUDGET_MS
+  ): Promise<GitWriteResult> {
+    return this.network(folder, pushArgs(opts), budgetMs);
+  }
+
+  /** Switch branches. Local, but it goes through the same reporting. */
+  async checkout(folder: string, branch: unknown, budgetMs = WRITE_BUDGET_MS): Promise<GitWriteResult> {
+    if (!isBranchName(branch)) return refusedBranch();
+    return this.network(folder, checkoutArgs(branch), budgetMs, { network: false });
+  }
+
+  /** Make a branch — optionally at a commit the graph pointed at — and switch to it. */
+  async createBranch(
+    folder: string,
+    name: unknown,
+    from?: unknown,
+    budgetMs = WRITE_BUDGET_MS
+  ): Promise<GitWriteResult> {
+    if (!isBranchName(name)) return refusedBranch();
+    // ⚠️ THE SOURCE IS VALIDATED AS A REV, not as a branch name: it comes from the
+    // graph and is usually a 40-character sha, which `isBranchName` would accept
+    // anyway — but a rev may also be `origin/main` or `HEAD~2`, and `isRev` is the
+    // rule that already knows which of those cannot become a flag or a range.
+    if (from !== undefined && !isRev(from)) return refusedBranch();
+    // `isRev` is a type guard, so `from` is already narrowed to `string |
+    // undefined` here — no assertion needed, and lint says so.
+    return this.network(folder, createBranchArgs(name, from), budgetMs, { network: false });
+  }
+
+  /**
+   * One shape for all five: guard, run, quote git.
+   *
+   * `network: false` for the two local verbs — they need no `GIT_TERMINAL_PROMPT`
+   * and giving it to them would imply they reach out, which they do not.
+   */
+  private async network(
+    folder: string,
+    args: string[],
+    budgetMs: number,
+    opts: { network?: boolean } = {}
+  ): Promise<GitWriteResult> {
+    const deadline = Date.now() + budgetMs;
+    const guard = await this.guardEnv(folder, () => Math.max(1, deadline - Date.now()));
+    if (!guard.env) return refused(guard.reason ?? 'switchboard could not make git safe to run here');
+    const env = opts.network === false ? guard.env : networkEnv(guard.env);
+    const r = await this.run(folder, args, Math.max(1, deadline - Date.now()), env);
+    if (r.ok) return { ok: true, applied: 1 };
+    if (r.failure === 'timeout') {
+      return refused(
+        `git did not finish within ${Math.round(budgetMs / 1000)}s — the remote may ` +
+          'be unreachable or very slow'
+      );
+    }
+    if (r.failure === 'no-exec') return refused('switchboard could not run git here');
+    // git's own last word. `fetch`/`pull` put their progress on stderr, so the
+    // LAST non-empty line is the verdict rather than the first.
+    const said = `${r.err}\n${r.out}`
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l !== '');
+    return refused(said[said.length - 1] ?? 'git refused, and said nothing switchboard could pass on');
   }
 
   /**

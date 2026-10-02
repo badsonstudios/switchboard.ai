@@ -320,6 +320,17 @@ export const CHANNEL_CAPABILITIES = {
   // describes our file layout rather than a power.
   'git:hunks': 'git.write',
   'git:applyPatch': 'git.write',
+  // Branch and sync (E24 Git v2 item 15). `git:fetch` arguably only READS — it
+  // updates remote-tracking refs and touches no file — but it is `git.write`
+  // because it is the one capability in this app that makes an OUTBOUND NETWORK
+  // REQUEST on the user's credentials, and that fact has to be legible in a
+  // manifest rather than hidden under a word that means "read the working tree".
+  // The same argument `update.check` and `provider.status` are named for.
+  'git:fetch': 'git.write',
+  'git:pull': 'git.write',
+  'git:push': 'git.write',
+  'git:checkout': 'git.write',
+  'git:createBranch': 'git.write',
   // the provider's service health as main currently understands it (P2-E14-07)
   'health:get': 'provider.status',
   // the polling switch is an ordinary preference, like the update auto-check

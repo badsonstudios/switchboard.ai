@@ -3117,3 +3117,202 @@ describe('GitService partial staging (E24 Git v2 item 14)', () => {
   });
   // Real git in a child process, several times per case (#512).
 }, 60_000);
+
+// Branch and sync against REAL git, with a REAL remote (E24 Git v2 item 15).
+//
+// ⚠️ **THE REMOTE IS A BARE REPOSITORY ON DISK, and that is what makes push and
+// pull testable at all.** A network remote would make this suite depend on
+// somebody else's server; a bare repo in a temp directory is a real remote by
+// every definition git uses — it has refs, it accepts a push, it can be ahead —
+// and it needs no credentials, so the measurement is about OUR commands rather
+// than about a connection.
+describe('GitService branch and sync (E24 Git v2 item 15)', () => {
+  /** A clone with a real upstream, plus the bare remote it came from. */
+  function cloned(): { work: string; bare: string } {
+    const bare = tempDir('sb-git-bare-');
+    sh(bare, ['init', '--bare', '-b', 'main']);
+    const seed = tempDir('sb-git-seed-');
+    sh(seed, ['init', '-b', 'main']);
+    sh(seed, ['config', 'user.email', 's@test']);
+    sh(seed, ['config', 'user.name', 'Sync Tester']);
+    sh(seed, ['config', 'commit.gpgsign', 'false']);
+    sh(seed, ['config', 'core.autocrlf', 'false']);
+    fs.writeFileSync(path.join(seed, 'a.txt'), 'first\n');
+    sh(seed, ['add', '.']);
+    sh(seed, ['-c', 'core.hooksPath=', 'commit', '-m', 'first']);
+    sh(seed, ['remote', 'add', 'origin', toPosix(bare)]);
+    sh(seed, ['push', '-u', 'origin', 'main']);
+
+    const work = tempDir('sb-git-work-');
+    // clone INTO an existing empty directory, which is what `tempDir` hands back
+    sh(work, ['clone', toPosix(bare), '.']);
+    sh(work, ['config', 'user.email', 's@test']);
+    sh(work, ['config', 'user.name', 'Sync Tester']);
+    sh(work, ['config', 'commit.gpgsign', 'false']);
+    sh(work, ['config', 'core.autocrlf', 'false']);
+    return { work, bare };
+  }
+
+  const branchOf = (dir: string): string =>
+    execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim();
+
+  it('fetches, and says nothing happened by succeeding (the done-when)', async () => {
+    const { work } = cloned();
+    expect(await svc.fetch(work)).toEqual({ ok: true, applied: 1 });
+  });
+
+  it('⚠️ A REPOSITORY WITH NO REMOTE IS A SUCCESS, not a failure', async () => {
+    // Measured: `git fetch` with nothing configured exits 0 and says nothing. A
+    // surface that reported that as an error would be wrong about every ordinary
+    // local-only project.
+    const solo = tempDir('sb-git-solo-');
+    sh(solo, ['init', '-b', 'main']);
+    sh(solo, ['config', 'user.email', 's@test']);
+    sh(solo, ['config', 'user.name', 'Sync Tester']);
+    sh(solo, ['config', 'commit.gpgsign', 'false']);
+    fs.writeFileSync(path.join(solo, 'a.txt'), 'x\n');
+    sh(solo, ['add', '.']);
+    sh(solo, ['-c', 'core.hooksPath=', 'commit', '-m', 'only']);
+    expect((await svc.fetch(solo)).ok).toBe(true);
+  });
+
+  it('⚠️⚠️ PUSHES A REAL COMMIT TO A REAL REMOTE, and the remote has it afterwards', async () => {
+    const { work, bare } = cloned();
+    fs.writeFileSync(path.join(work, 'a.txt'), 'second\n');
+    await svc.stage(work, ['a.txt']);
+    expect((await svc.commit(work, 'a second commit')).ok).toBe(true);
+    const r = await svc.push(work);
+    expect(r, `push failed: ${r.reason}`).toEqual({ ok: true, applied: 1 });
+    // ⭐ THE REMOTE'S OWN LOG, which is the only proof the push landed.
+    const remoteLog = execFileSync('git', ['log', '--format=%s', '-1', 'main'], {
+      cwd: bare,
+      encoding: 'utf8',
+    }).trim();
+    expect(remoteLog).toBe('a second commit');
+  });
+
+  it('⚠️ PULLS A COMMIT MADE ELSEWHERE, fast-forward only', async () => {
+    const { work, bare } = cloned();
+    // a second clone stands in for "somebody else"
+    const other = tempDir('sb-git-other-');
+    sh(other, ['clone', toPosix(bare), '.']);
+    sh(other, ['config', 'user.email', 'o@test']);
+    sh(other, ['config', 'user.name', 'Other']);
+    sh(other, ['config', 'commit.gpgsign', 'false']);
+    fs.writeFileSync(path.join(other, 'b.txt'), 'theirs\n');
+    sh(other, ['add', '.']);
+    sh(other, ['-c', 'core.hooksPath=', 'commit', '-m', 'from somebody else']);
+    sh(other, ['push']);
+
+    expect(fs.existsSync(path.join(work, 'b.txt'))).toBe(false);
+    const r = await svc.pull(work);
+    expect(r, `pull failed: ${r.reason}`).toEqual({ ok: true, applied: 1 });
+    expect(fs.existsSync(path.join(work, 'b.txt'))).toBe(true);
+  });
+
+  it('⚠️ AND REFUSES RATHER THAN STARTING A MERGE IT CANNOT FINISH', async () => {
+    // ⚠️ **THE WHOLE DESIGN OF THE PULL BUTTON.** With diverged history a plain
+    // `pull` would merge or rebase — and either can stop halfway with a conflict,
+    // leaving a one-click button having started something the user must now
+    // finish with no surface for it. `--ff-only` either works completely or
+    // changes nothing, and git says which.
+    const { work, bare } = cloned();
+    const other = tempDir('sb-git-other2-');
+    sh(other, ['clone', toPosix(bare), '.']);
+    sh(other, ['config', 'user.email', 'o@test']);
+    sh(other, ['config', 'user.name', 'Other']);
+    sh(other, ['config', 'commit.gpgsign', 'false']);
+    fs.writeFileSync(path.join(other, 'theirs.txt'), 'theirs\n');
+    sh(other, ['add', '.']);
+    sh(other, ['-c', 'core.hooksPath=', 'commit', '-m', 'theirs']);
+    sh(other, ['push']);
+    // …and OURS diverges
+    fs.writeFileSync(path.join(work, 'ours.txt'), 'ours\n');
+    sh(work, ['add', '.']);
+    sh(work, ['-c', 'core.hooksPath=', 'commit', '-m', 'ours']);
+
+    const before = branchOf(work);
+    const r = await svc.pull(work);
+    expect(r.ok).toBe(false);
+    // git's own words, which are the useful ones here
+    expect(r.reason).toMatch(/fast-forward|diverge/i);
+    // ⚠️ AND NOTHING WAS STARTED: no merge in progress, same branch, their file
+    // still absent.
+    expect(branchOf(work)).toBe(before);
+    expect(fs.existsSync(path.join(work, 'theirs.txt'))).toBe(false);
+    expect(fs.existsSync(path.join(work, '.git', 'MERGE_HEAD'))).toBe(false);
+  });
+
+  it('⚠️ A PUSH WITH NO UPSTREAM QUOTES GIT, which tells the user the fix', async () => {
+    // Measured: exit 128, "The current branch ... has no upstream branch".
+    const { work } = cloned();
+    expect((await svc.createBranch(work, 'brand-new')).ok).toBe(true);
+    const r = await svc.push(work);
+    expect(r.ok).toBe(false);
+    expect(r.reason).toMatch(/upstream/i);
+    // …and `setUpstream` is what gets it there
+    const up = await svc.push(work, { setUpstream: true });
+    expect(up, `push -u failed: ${up.reason}`).toEqual({ ok: true, applied: 1 });
+  });
+
+  it('creates a branch and switches to it', async () => {
+    const { work } = cloned();
+    expect(await svc.createBranch(work, 'feature/1052-sync')).toEqual({ ok: true, applied: 1 });
+    expect(branchOf(work)).toBe('feature/1052-sync');
+  });
+
+  it('⚠️ AND CREATES ONE AT A COMMIT THE GRAPH POINTED AT — the design record’s own words', async () => {
+    const { work } = cloned();
+    fs.writeFileSync(path.join(work, 'a.txt'), 'second\n');
+    sh(work, ['add', '.']);
+    sh(work, ['-c', 'core.hooksPath=', 'commit', '-m', 'second']);
+    const first = execFileSync('git', ['rev-parse', 'HEAD~1'], { cwd: work, encoding: 'utf8' }).trim();
+    expect((await svc.createBranch(work, 'from-the-graph', first)).ok).toBe(true);
+    expect(branchOf(work)).toBe('from-the-graph');
+    // …at THAT commit, not at HEAD
+    const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: work, encoding: 'utf8' }).trim();
+    expect(head).toBe(first);
+  });
+
+  it('switches branches, and carries an uncommitted change across', async () => {
+    // Measured: `checkout` only refuses when the switch would CLOBBER the change,
+    // so it is not the destructive operation it looks like.
+    const { work } = cloned();
+    await svc.createBranch(work, 'side');
+    fs.writeFileSync(path.join(work, 'scratch.txt'), 'wip\n');
+    expect(await svc.checkout(work, 'main')).toEqual({ ok: true, applied: 1 });
+    expect(branchOf(work)).toBe('main');
+    expect(fs.existsSync(path.join(work, 'scratch.txt'))).toBe(true);
+  });
+
+  it('⚠️ REFUSES A BRANCH NAME THAT COULD BE A FLAG, before git is run', async () => {
+    const { work } = cloned();
+    const before = branchOf(work);
+    for (const bad of ['--all', '-D', 'main..side', 'has space', '']) {
+      const r = await svc.checkout(work, bad);
+      expect(r.ok, `${bad} was accepted`).toBe(false);
+      expect(r.reason).toContain('branch name');
+    }
+    for (const bad of ['--force', 'a..b']) {
+      expect((await svc.createBranch(work, bad)).ok).toBe(false);
+    }
+    // …and the branch is exactly where it was
+    expect(branchOf(work)).toBe(before);
+  });
+
+  it('⚠️ AND REFUSES A BAD SOURCE REV for a new branch', async () => {
+    const { work } = cloned();
+    const r = await svc.createBranch(work, 'fine-name', '--all');
+    expect(r.ok).toBe(false);
+    expect(branchOf(work)).toBe('main');
+  });
+
+  it('a checkout git itself refuses quotes git', async () => {
+    const { work } = cloned();
+    const r = await svc.checkout(work, 'no-such-branch');
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBeTruthy();
+    expect(branchOf(work)).toBe('main');
+  });
+  // Real git in a child process, several times per case (#512).
+}, 120_000);
