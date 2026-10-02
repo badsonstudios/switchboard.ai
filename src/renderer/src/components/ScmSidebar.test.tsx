@@ -838,3 +838,258 @@ describe('the write verbs (E24 Git v2 item 12)', () => {
     expect(one('.scm-group-unstaged .scm-group-acts')).not.toBeNull();
   });
 });
+
+// The commit box (E24 Git v2 item 13).
+//
+// ⚠️ **"ONE COMMIT PATH, NOT TWO" IS A CLAIM ABOUT WHAT IS ON SCREEN, so it is
+// asserted here rather than left to the comment.** Amend, sign-off and no-verify
+// are modifiers behind the ⋯; there is exactly one button that commits. Two
+// primary buttons that both commit is how somebody amends by accident, and an
+// amend rewrites history.
+//
+// The other thing only a mounted box can answer: **the draft survives.** The list
+// below it re-reads after every stage and every discard, so a half-typed message
+// is at the mercy of every refresh unless it lives somewhere that does not.
+describe('the commit box (E24 Git v2 item 13)', () => {
+  let committed: Array<{ message: string; opts: unknown }>;
+  let answer: { ok: boolean; reason?: string; applied: number };
+  let refreshes: number;
+
+  function commitBridge(): void {
+    (window as unknown as { switchboard: unknown }).switchboard = {
+      workspace: { getUi: async () => ({}), setUi: () => undefined },
+      git: {
+        stage: async () => answer,
+        unstage: async () => answer,
+        discard: async () => answer,
+        commit: async (_f: string, message: string, opts: unknown) => {
+          committed.push({ message, opts });
+          return answer;
+        },
+      },
+    };
+  }
+
+  async function mountCommit(status: GitStatusDto | null): Promise<void> {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => {
+      root!.render(
+        <ScmSidebar
+          folder={FOLDER}
+          status={status}
+          selected={null}
+          onSelect={(p) => selected.push(p)}
+          onRefresh={() => void refreshes++}
+          cardId="card-1"
+          onConfirm={() => true}
+        />
+      );
+    });
+  }
+
+  /** Type into the message box, through the prototype setter React tracks. */
+  async function type(value: string): Promise<void> {
+    const box = one('.scm-commit-message') as HTMLTextAreaElement | null;
+    const d = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value');
+    await act(async () => {
+      if (!box) return;
+      d?.set?.call(box, value);
+      box.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+  }
+
+  /**
+   * Tick one of the ⋯ checkboxes.
+   *
+   * ⚠️ **A PLAIN CLICK, AND NOTHING ELSE.** Setting `.checked` first and then
+   * dispatching defeats React's change tracking — it sees the DOM already
+   * agreeing with what it would have written, so `onChange` never fires and the
+   * flag is silently never set. jsdom runs the checkbox's own activation
+   * behaviour on a click, which toggles `.checked` and fires the event React is
+   * listening for. Three tests here were written the other way and all three
+   * failed, which is the one shape of this mistake that announces itself.
+   */
+  async function tick(id: string): Promise<void> {
+    await click(one(`[data-testid="${id}"]`));
+  }
+
+  const withStaged: GitStatusDto = {
+    isRepo: true,
+    files: [
+      file({ path: 'a.ts', staged: true, unstaged: false, xy: 'M.' }),
+      file({ path: 'b.ts', staged: true, unstaged: false, xy: 'A.' }),
+    ],
+  };
+  const nothingStaged: GitStatusDto = {
+    isRepo: true,
+    files: [file({ path: 'c.ts', xy: '.M' })],
+  };
+
+  beforeEach(async () => {
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+    document.body.innerHTML = '';
+    selected.length = 0;
+    committed = [];
+    refreshes = 0;
+    answer = { ok: true, applied: 1 };
+    await initI18nForTests();
+    commitBridge();
+    await loadUiState();
+  });
+
+  afterEach(async () => {
+    if (root) {
+      const r = root;
+      root = null;
+      await act(async () => r.unmount());
+    }
+    document.body.innerHTML = '';
+    delete (window as unknown as { switchboard?: unknown }).switchboard;
+  });
+
+  it('commits the message that was typed (the done-when)', async () => {
+    await mountCommit(withStaged);
+    await type('a real subject');
+    await click(one('[data-testid="scm-commit"]'));
+    expect(committed).toHaveLength(1);
+    expect(committed[0].message).toBe('a real subject');
+    expect(refreshes).toBe(1);
+  });
+
+  it('⚠️ ONE BUTTON COMMITS, and the modifiers are behind the ⋯', async () => {
+    // "E24's own rule": amend is never a second primary button, because two
+    // buttons that both commit is how somebody rewrites history by accident.
+    await mountCommit(withStaged);
+    expect(all('[data-testid="scm-commit"]')).toHaveLength(1);
+    // the options are not even rendered until the ⋯ is pressed
+    expect(one('[data-testid="scm-commit-amend"]')).toBeNull();
+    await click(one('[data-testid="scm-commit-options"]'));
+    expect(one('[data-testid="scm-commit-amend"]')).not.toBeNull();
+    expect(one('[data-testid="scm-commit-signoff"]')).not.toBeNull();
+    expect(one('[data-testid="scm-commit-noVerify"]')).not.toBeNull();
+    // …and still exactly one thing that commits
+    expect(all('[data-testid="scm-commit"]')).toHaveLength(1);
+  });
+
+  it('the ⋯ options reach git as flags, not as a second command', async () => {
+    await mountCommit(withStaged);
+    await click(one('[data-testid="scm-commit-options"]'));
+    await tick('scm-commit-signoff');
+    await type('signed please');
+    await click(one('[data-testid="scm-commit"]'));
+    expect(committed[0].opts).toMatchObject({ signoff: true });
+  });
+
+  it('⚠️ THE BUTTON IS OFF WITH NO MESSAGE, AND SAYS WHY', async () => {
+    // A disabled button that does not say why is a dead end — and the two
+    // reasons have different fixes.
+    await mountCommit(withStaged);
+    const btn = one('[data-testid="scm-commit"]') as HTMLButtonElement | null;
+    expect(btn?.disabled).toBe(true);
+    expect(btn?.getAttribute('aria-label')).toContain('message');
+    await type('now there is one');
+    expect((one('[data-testid="scm-commit"]') as HTMLButtonElement | null)?.disabled).toBe(false);
+  });
+
+  it('⚠️ AND OFF WITH NOTHING STAGED, with the OTHER reason', async () => {
+    await mountCommit(nothingStaged);
+    await type('a message with nothing to commit');
+    const btn = one('[data-testid="scm-commit"]') as HTMLButtonElement | null;
+    expect(btn?.disabled).toBe(true);
+    expect(btn?.getAttribute('aria-label')).toContain('Stage something');
+  });
+
+  it('⚠️ EXCEPT WHEN AMENDING, which is the commonest use of amend', async () => {
+    // Measured against real git: `commit --amend` with an empty index succeeds —
+    // it replaces the message. A button disabled on "nothing staged" would make
+    // fixing a message you just wrote impossible.
+    await mountCommit(nothingStaged);
+    await type('fixing the last message');
+    expect((one('[data-testid="scm-commit"]') as HTMLButtonElement | null)?.disabled).toBe(true);
+    await click(one('[data-testid="scm-commit-options"]'));
+    await tick('scm-commit-amend');
+    expect((one('[data-testid="scm-commit"]') as HTMLButtonElement | null)?.disabled).toBe(false);
+  });
+
+  it('⚠️ AMEND IS ANNOUNCED AFTER THE MENU CLOSES — the mode outlives the menu', async () => {
+    // Somebody who ticked amend, shut the ⋯ and then pressed a button reading
+    // "Commit" would rewrite a commit without being reminded.
+    await mountCommit(withStaged);
+    await click(one('[data-testid="scm-commit-options"]'));
+    await tick('scm-commit-amend');
+    await click(one('[data-testid="scm-commit-options"]'));
+    expect(one('.scm-amend-on')).not.toBeNull();
+    // …and the button itself says so too, rather than reading "Commit 2 files"
+    expect(one('[data-testid="scm-commit"]')?.textContent).toContain('Amend');
+  });
+
+  it('the button names what a commit will CAPTURE', async () => {
+    await mountCommit(withStaged);
+    expect(one('[data-testid="scm-commit"]')?.textContent).toContain('2 staged files');
+  });
+
+  it('⚠️ THE COUNT IGNORES THE FILTER, because `git commit` does', async () => {
+    // The totals bar follows the filter — that was an item 6 review finding. A
+    // commit does not: it captures the whole index whatever the box is showing,
+    // so a count that followed the filter would promise three files and commit
+    // thirty.
+    await mountCommit(withStaged);
+    await typeIntoFilter('a.ts');
+    expect(all('.scm-row')).toHaveLength(1);
+    expect(one('[data-testid="scm-commit"]')?.textContent).toContain('2 staged files');
+  });
+
+  it('⚠️⚠️ A FAILED COMMIT KEEPS THE MESSAGE — losing it would be unforgivable', async () => {
+    // A hook said no, or nothing was staged. The user's words are the one thing
+    // in this box that cannot be reconstructed.
+    answer = { ok: false, reason: 'LINT FAILED: two problems', applied: 0 };
+    await mountCommit(withStaged);
+    await type('a message worth keeping');
+    await click(one('[data-testid="scm-commit"]'));
+    expect((one('.scm-commit-message') as HTMLTextAreaElement | null)?.value).toBe(
+      'a message worth keeping'
+    );
+    // …and the reason is on screen, in git's own words
+    expect(one('.scm-write-error')?.textContent).toContain('LINT FAILED');
+  });
+
+  it('…and a SUCCESSFUL one clears the box and says what landed', async () => {
+    await mountCommit(withStaged);
+    await type('this one works');
+    await click(one('[data-testid="scm-commit"]'));
+    expect((one('.scm-commit-message') as HTMLTextAreaElement | null)?.value).toBe('');
+    expect(one('.scm-commit-said')?.textContent).toContain('Committed');
+  });
+
+  it('⚠️ Ctrl+Enter COMMITS and plain Enter DOES NOT', async () => {
+    // A commit message has a body as often as not, so Enter has to be a newline.
+    await mountCommit(withStaged);
+    await type('by keyboard');
+    const box = one('.scm-commit-message');
+    await act(async () => {
+      box?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    expect(committed).toHaveLength(0);
+    await act(async () => {
+      box?.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })
+      );
+    });
+    expect(committed).toHaveLength(1);
+  });
+
+  it('⚠️ NO COMMIT CHANNEL MEANS NO BOX AT ALL, not a dead button', async () => {
+    // Asked separately from the row verbs: a build with the three path verbs and
+    // no `commit` would otherwise draw a Commit button that cannot work.
+    (window as unknown as { switchboard: unknown }).switchboard = {
+      workspace: { getUi: async () => ({}), setUi: () => undefined },
+      git: { stage: async () => answer, unstage: async () => answer, discard: async () => answer },
+    };
+    await mountCommit(withStaged);
+    expect(one('.scm-commit')).toBeNull();
+    // …and the row verbs are still there, so the two are really independent
+    expect(one('[data-testid="scm-row-unstage"]')).not.toBeNull();
+  });
+});

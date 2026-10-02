@@ -1129,6 +1129,18 @@ const api = {
     /** ⚠️ DESTRUCTIVE — the confirm is the renderer's, and it is not optional. */
     discard: (folder: string, paths: readonly string[]): Promise<unknown> =>
       ipcRenderer.invoke('git:discard', folder, paths),
+    /**
+     * Make a commit (E24 Git v2 item 13).
+     *
+     * The MESSAGE crosses as a string and is written to git's stdin in main —
+     * never onto a command line, which is the design record's §2.1 finding about
+     * a multi-line body with quotes in it on Windows.
+     */
+    commit: (
+      folder: string,
+      message: string,
+      opts?: { amend?: boolean; signoff?: boolean; noVerify?: boolean }
+    ): Promise<unknown> => ipcRenderer.invoke('git:commit', folder, message, opts),
   },
   notifications: {
     getPrefs: (): Promise<NotificationPrefs> => ipcRenderer.invoke('notifications:getPrefs'),

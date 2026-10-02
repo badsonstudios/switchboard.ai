@@ -28,10 +28,20 @@ export interface WriteOutcome {
 
 type WriteFn = (folder: string, paths: readonly string[]) => Promise<unknown>;
 
+/** What the ⋯ offers — modifiers of the one commit path, never a second one. */
+export interface CommitFlags {
+  amend?: boolean;
+  signoff?: boolean;
+  noVerify?: boolean;
+}
+
+type CommitFn = (folder: string, message: string, opts?: CommitFlags) => Promise<unknown>;
+
 interface GitWriteBridge {
   stage?: WriteFn;
   unstage?: WriteFn;
   discard?: WriteFn;
+  commit?: CommitFn;
 }
 
 /**
@@ -125,6 +135,61 @@ export function discardFiles(folder: string, paths: readonly string[]): Promise<
  * Returned as a KEY plus values rather than a sentence, so the catalog owns the
  * words and the plural is ICU's problem rather than ours.
  */
+/**
+ * Can this build commit?
+ *
+ * ⚠️ **ASKED SEPARATELY FROM `canWriteGit`, EVEN THOUGH ONE CAPABILITY COVERS
+ * BOTH.** They are different surfaces: the row buttons and the commit box appear
+ * and disappear independently, and a build with the three path verbs and no
+ * `commit` would otherwise draw a Commit button that cannot work — the owner's
+ * rule, which this whole layer exists to honour.
+ */
+export function canCommit(): boolean {
+  return typeof bridge()?.commit === 'function';
+}
+
+/**
+ * Make a commit.
+ *
+ * ⚠️ **THE EMPTY-MESSAGE CHECK IS HERE *AND* IN MAIN *AND* IN GIT, and that is
+ * three on purpose.** Git's is the real one (measured: *"Aborting commit due to
+ * empty commit message"*). Main's is so a bad IPC payload cannot reach argv.
+ * This one is so the BUTTON can be disabled — which is the difference between a
+ * surface that tells you the rule and one that lets you break it and then
+ * complains.
+ */
+export async function commitChanges(
+  folder: string,
+  message: string,
+  flags: CommitFlags = {}
+): Promise<WriteOutcome> {
+  const fn = bridge()?.commit;
+  if (typeof fn !== 'function' || !folder) return NO_BRIDGE;
+  if (message.trim() === '') return { ok: false, applied: 0, reason: 'a commit needs a message' };
+  try {
+    const out = answered(await fn(folder, message, flags)) as WriteOutcome | undefined;
+    if (!out || typeof out.ok !== 'boolean') {
+      return { ok: false, applied: 0, reason: 'switchboard was not allowed to commit' };
+    }
+    return out;
+  } catch {
+    return { ok: false, applied: 0, reason: 'switchboard could not reach git' };
+  }
+}
+
+/**
+ * Is there anything for a commit to capture?
+ *
+ * ⚠️ **AMEND IS THE EXCEPTION AND IT IS NOT A SPECIAL CASE, IT IS THE COMMONEST
+ * USE.** Measured: `commit --amend` with an empty index succeeds — it replaces
+ * the message — and fixing a message you just wrote is the main reason anyone
+ * reaches for amend. A button disabled on "nothing staged" would make that
+ * impossible.
+ */
+export function hasSomethingToCommit(stagedCount: number, flags: CommitFlags): boolean {
+  return flags.amend === true || stagedCount > 0;
+}
+
 export function confirmDiscard(paths: readonly string[]): {
   key: string;
   values: { count: number; file: string };

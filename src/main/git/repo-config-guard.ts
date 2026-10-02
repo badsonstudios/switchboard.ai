@@ -152,12 +152,49 @@ export function emptyHooksDir(): string {
  * command that genuinely wants one must opt out deliberately rather than discover
  * it by having worked before.
  */
-export function guardArgs(): string[] {
+/**
+ * ⚠️⚠️ **`hooks: 'allow'` EXISTS FOR EXACTLY ONE CALLER — `commit` — AND THE
+ * REASON IS A HARD CONSTRAINT, NOT A CONVENIENCE (E24 Git v2 item 13).**
+ *
+ * **MEASURED AND ISOLATED:** with `core.hooksPath` pinned at an empty directory,
+ * a repository's own `.git/hooks/pre-commit` **does not run**. (The first attempt
+ * at that measurement was inconclusive because this machine has a GLOBAL
+ * `core.hooksPath` which masks `.git/hooks` entirely — the control had to point
+ * `core.hooksPath` back at `.git/hooks` to isolate our guard's effect.)
+ *
+ * For a READ that is pure safety: `status` and `diff` run constantly, unbidden,
+ * and a repository must not get to execute a program because switchboard glanced
+ * at it. **For a COMMIT it inverts.** A commit that silently skips the user's own
+ * `pre-commit` — their formatter, their linter, their tests — is not a commit;
+ * it is switchboard reimplementing one, which is the **host-don't-reimplement**
+ * hard constraint. And the design record offers **`--no-verify`** as a deliberate
+ * user choice, which is incoherent if hooks never ran in the first place.
+ *
+ * The line is therefore: **a guard that exists because we read UNBIDDEN does not
+ * apply to an action the user explicitly asked for.** A commit is a button press.
+ *
+ * ⚠️ **WHAT IS *NOT* RELAXED, AND MUST NOT BE:** `--literal-pathspecs` and
+ * `core.fsmonitor` stay, and `guardEnv`'s filter-driver neutralisation stays —
+ * and that one is safe to keep because it only disarms **repo-authored** driver
+ * keys, falling back to the trusted global value, so a user's git-lfs goes on
+ * working exactly as it does outside switchboard.
+ */
+export interface GuardOpts {
+  /**
+   * Let the repository's own hooks run. `commit` only.
+   *
+   * Spelled as a word rather than a boolean so that a call site reads
+   * `{ hooks: 'allow' }` — impossible to pass by accident, and impossible to
+   * misread as "hooks: true means guarded".
+   */
+  hooks?: 'allow';
+}
+
+export function guardArgs(opts: GuardOpts = {}): string[] {
   return [
     '-c',
     'core.fsmonitor=false',
-    '-c',
-    `core.hooksPath=${emptyHooksDir()}`,
+    ...(opts.hooks === 'allow' ? [] : ['-c', `core.hooksPath=${emptyHooksDir()}`]),
     '--literal-pathspecs',
   ];
 }

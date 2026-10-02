@@ -34,6 +34,14 @@ import {
   unstageArgs,
   writePaths,
 } from './git-write';
+import {
+  type CommitOptions,
+  COMMIT_BUDGET_MS,
+  commitArgs,
+  commitRefusal,
+  emptyMessageRefusal,
+  isCommittableMessage,
+} from './git-commit';
 import { type FileStats, mergeNumstats, numstatArgs, parseNumstat } from './git-numstat';
 import {
   type CommitFile,
@@ -48,6 +56,7 @@ import {
   configListForScope,
   filterGuardOverrides,
   gitlinkPaths,
+  type GuardOpts,
   guardArgs,
   overrideEnv,
   parseScopedConfig,
@@ -322,12 +331,35 @@ interface GitRun {
   failure: GitFailure | null;
 }
 
+/**
+ * What one invocation needs beyond its arguments.
+ *
+ * An options object rather than two more positionals: `git(cmd, folder, args,
+ * ms, env)` was already at the limit of what a reader can keep straight, and
+ * `input` and `guard` are both things exactly one caller uses.
+ */
+interface GitOpts {
+  /**
+   * Written to git's stdin, then closed.
+   *
+   * ⚠️ **THIS IS HOW A COMMIT MESSAGE TRAVELS, AND THE DESIGN RECORD SAYS
+   * SO FOR A MEASURED REASON** (§2.1): *"Commit messages go in on stdin
+   * (`commit --file=-`), never `-m`. A multi-line body with quotes in it is a
+   * Windows quoting bug waiting to happen."* Measured through this path: a body
+   * containing double quotes, a `$`, a `%` and several lines arrives byte-exact.
+   */
+  input?: string;
+  /** see `GuardOpts` — `{ hooks: 'allow' }` is for `commit` and nothing else */
+  guard?: GuardOpts;
+}
+
 function git(
   command: GitCommand,
   folder: string,
   args: string[],
   timeoutMs = 0,
-  env?: NodeJS.ProcessEnv
+  env?: NodeJS.ProcessEnv,
+  opts: GitOpts = {}
 ): Promise<GitRun> {
   return new Promise((resolve) => {
     // OUR timer, not `execFile`'s `timeout` — see `killTree` for why.
@@ -338,7 +370,7 @@ function git(
     try {
       child = execFile(
         command.file,
-        [...command.prefixArgs, ...guardArgs(), ...args],
+        [...command.prefixArgs, ...guardArgs(opts.guard), ...args],
         {
           cwd: folder,
           encoding: 'utf8',
@@ -371,6 +403,22 @@ function git(
         }
       );
       trackChild('git', child); // the #719 heartbeat's own-children count
+      /**
+       * ⚠️ **THE MESSAGE GOES IN ON STDIN, AND THE PIPE IS CLOSED EVEN IF THE
+       * WRITE FAILS.** `commit --file=-` reads until EOF, so a stdin left open is
+       * a git that waits for ever — which our own budget would then kill and
+       * report as a timeout, i.e. a bug that looks like a slow disk.
+       *
+       * `error` is swallowed deliberately: an EPIPE here means git has already
+       * gone (it refused before reading, which is what an empty message does),
+       * and that failure is reported through the exit code and stderr like every
+       * other. An unhandled `error` on a stdin stream, by contrast, takes the
+       * whole main process down.
+       */
+      if (opts.input !== undefined && child.stdin) {
+        child.stdin.on('error', () => undefined);
+        child.stdin.end(opts.input);
+      }
     } catch {
       // ⚠️ **`execFile` CAN THROW RATHER THAN CALL BACK, AND LINUX IS WHERE IT
       // DOES (#785, found by CI).** Handing it a `cwd` that is a FILE raises
@@ -543,9 +591,10 @@ export class GitService {
     folder: string,
     args: string[],
     timeoutMs?: number,
-    env?: NodeJS.ProcessEnv
+    env?: NodeJS.ProcessEnv,
+    opts?: GitOpts
   ): Promise<GitRun> {
-    return git(this.command, folder, args, timeoutMs, env);
+    return git(this.command, folder, args, timeoutMs, env, opts);
   }
 
   /**
@@ -1409,6 +1458,49 @@ export class GitService {
     // clean is the state a discard was asking for. Counting them would overstate
     // what happened.
     return { ok: true, applied };
+  }
+
+  /**
+   * Make a commit (E24 Git v2 item 13).
+   *
+   * ⚠️ **THE MESSAGE GOES IN ON STDIN**, never on argv — see `git-commit.ts` and
+   * the design record §2.1 for the Windows quoting trap that decided it.
+   *
+   * ⚠️⚠️ **AND `guard: { hooks: 'allow' }` IS THE DELIBERATE PART.** This is the
+   * only call in the service that lifts any #776 guard, and the argument is in
+   * `GuardOpts`: a guard that exists because we read a repository UNBIDDEN does
+   * not apply to a button the user pressed, and a commit that silently skipped
+   * their own `pre-commit` would be switchboard reimplementing `git commit`.
+   * Everything else stays on — including the filter-driver neutralisation, which
+   * is safe to keep because it only disarms REPO-AUTHORED driver keys and leaves
+   * a user's global git-lfs working.
+   */
+  async commit(
+    folder: string,
+    message: unknown,
+    opts: CommitOptions = {},
+    budgetMs = COMMIT_BUDGET_MS
+  ): Promise<GitWriteResult> {
+    if (!isCommittableMessage(message)) return emptyMessageRefusal();
+    const deadline = Date.now() + budgetMs;
+    const guard = await this.guardEnv(folder, () => Math.max(1, deadline - Date.now()));
+    if (!guard.env) return refused(guard.reason ?? 'switchboard could not make git safe to run here');
+    const r = await this.run(
+      folder,
+      commitArgs(opts),
+      Math.max(1, deadline - Date.now()),
+      guard.env,
+      { input: message, guard: { hooks: 'allow' } }
+    );
+    if (r.ok) return { ok: true, applied: 1 };
+    if (r.failure === 'timeout') {
+      return refused(
+        `git did not finish committing within ${Math.round(budgetMs / 1000)}s — a ` +
+          'pre-commit hook may still be running'
+      );
+    }
+    if (r.failure === 'no-exec') return refused('switchboard could not run git here');
+    return refused(commitRefusal(r.err, r.out));
   }
 
   /**

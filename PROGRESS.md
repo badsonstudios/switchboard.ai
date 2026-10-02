@@ -46,7 +46,63 @@
 >
 > # 🚧 LAYER 2 — THE WRITE HALF
 >
-> **🚧 NOW: item 12 (#1049) — `git.write`, and stage / unstage / discard.** The
+> **🚧 NOW: item 13 (#1050) — the commit box.** One commit path, not two: amend,
+> sign-off and no-verify are checkboxes behind a ⋯, never a second primary button.
+> The design record calls that *"E24's own rule"*, and the reason is that two
+> buttons which both commit is how somebody amends by accident — and an amend
+> rewrites history.
+>
+> **THE MESSAGE TRAVELS ON STDIN (`commit --file=-`), NEVER `-m`**, which the
+> design record chose in §2.1 for a measured reason: *"a multi-line body with
+> quotes in it is a Windows quoting bug waiting to happen."* Verified through this
+> exact path with a message carrying `"`, `$`, `%`, a backtick, a semicolon, an
+> ampersand, a pipe and a caret across several lines — every fragment arrives
+> byte-exact in `%B`.
+>
+> **⚠️⚠️ AND THE BIGGEST DECISION IN THE EPIC: A COMMIT RUNS THE USER'S HOOKS.**
+> This is the **only** call in the service that lifts a #776 guard, and it was
+> measured before it was decided. With `core.hooksPath` pinned at an empty
+> directory a repository's own `pre-commit` **does not run** — isolated with a
+> control, because this machine has a GLOBAL `core.hooksPath` that masks
+> `.git/hooks` and made the first attempt at the measurement inconclusive.
+>
+> For a READ that guard is pure safety: `status` and `diff` run **unbidden**, and a
+> repository must not get to execute a program because switchboard glanced at it.
+> **For a COMMIT it inverts.** A commit that silently skipped somebody's formatter,
+> linter or tests is not a commit — it is switchboard reimplementing `git commit`,
+> which the **host-don't-reimplement hard constraint** forbids. And the design
+> record asked for **`--no-verify`** as a user choice, which is incoherent if hooks
+> never ran. **The line: a guard that exists because we read UNBIDDEN does not
+> apply to a button the user pressed.**
+>
+> **WHAT IS NOT RELAXED:** `--literal-pathspecs`, `core.fsmonitor`, and the
+> filter-driver neutralisation — and that last one is safe to keep because it only
+> disarms **repo-authored** driver keys, falling back to the trusted global value,
+> so a user's git-lfs goes on working exactly as it does outside switchboard.
+> **This is Dan's to overrule and it is one line** (`guardArgs({ hooks: 'allow' })`);
+> it is called out in the dogfood tracker as a decision rather than a step.
+>
+> **AMEND CANNOT BE FORGOTTEN:** the menu closes but the mode does not, so the
+> button changes its own words *and* a note appears beneath it. **And amend works
+> with nothing staged**, measured — replacing a message you just wrote is the main
+> reason anyone reaches for it, and a button disabled on "nothing staged" would
+> make that impossible.
+>
+> **A FAILED COMMIT KEEPS THE MESSAGE.** The user's words are the one thing in that
+> box that cannot be reconstructed. **The count on the button ignores the filter**,
+> because `git commit` takes the whole index — a count that followed the filter
+> would promise three files and commit thirty (the opposite of the totals bar,
+> which follows the filter, and that was an item 6 review finding).
+>
+> **THE EMPTY-MESSAGE CHECK IS IN THREE PLACES ON PURPOSE:** git's is the real one
+> (measured — *"Aborting commit due to empty commit message"*), main's stops a bad
+> IPC payload reaching argv, and the renderer's is so the BUTTON can be disabled
+> rather than live and then failing.
+>
+> **Green:** lint · all three typecheck projects · **10,385** unit tests, of which
+> the **15 against real git** are the ones that matter.
+
+> **✅ item 12 (#1049) — `git.write`, and stage / unstage / discard.** The
 > first thing switchboard does that **changes a user's repository**, and the ＋ and
 > ↶ the mockup has been drawing on every row since screen 1 was made. Four items
 > of this epic have carried a comment saying they were *absent rather than drawn

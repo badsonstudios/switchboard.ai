@@ -177,8 +177,55 @@ the list **in git's own words**, because that's the message that tells you what 
 do about it. The list refreshes either way, so what you see is always what's
 really there.
 
-**One thing that is NOT here yet:** committing. These buttons prepare a commit;
-making it is the next piece of work.
+## Committing
+
+Above the filter box there's a message box and a **Commit** button.
+
+Type a message and press **Commit** — or **Ctrl+Enter** (**Cmd+Enter** on a Mac)
+without leaving the box. Plain **Enter** makes a new line, because commit messages
+often have more than one.
+
+**The button tells you what it will capture** — *"Commit 3 staged files"* — and
+that count is of everything you've staged, **not** of what the filter is showing.
+`git commit` takes the whole staged set, so a count that followed the filter would
+promise three files and commit thirty.
+
+**The button is off until it can work, and it says why**: either you haven't
+written a message, or you haven't staged anything. Those are two different
+problems with two different fixes, so they get two different explanations.
+
+**If the commit doesn't happen, you keep your message.** A rejected commit — a
+hook said no, nothing was staged — never costs you the words you wrote.
+
+### Your project's hooks run
+
+If your project has a `pre-commit` hook — a formatter, a linter, a test run —
+**it runs**, exactly as it would if you'd typed `git commit` yourself. If it
+fails, the commit doesn't happen and **you see the hook's own output**, because
+that's the message that tells you what to fix.
+
+This is deliberate, and it's different from everything else switchboard does with
+git. When switchboard *reads* your project — which it does constantly, without
+being asked — it refuses to let the project run any program at all. A commit is
+different: you pressed a button, and a commit that silently skipped your own
+checks wouldn't really be a commit.
+
+### The ⋯ options
+
+Three things sit behind the **⋯** beside the Commit button. They're options on the
+one commit, never a second button that also commits:
+
+- **Amend the last commit** — replaces it instead of adding a new one. ⚠️ **This
+  rewrites history**: if you've already pushed that commit, your next push will
+  need to be forced. Because of that, when amend is on the button *changes its
+  words* and a note appears under it, so you can't forget. Amend also works with
+  nothing staged — fixing a message you just wrote is the main reason to use it.
+- **Add a Signed-off-by line** — appends the trailer some projects require.
+- **Skip this project's commit hooks** — the escape hatch for when a hook is
+  wrong and you know it.
+
+**What's still missing:** pushing and pulling. The branch line shows how far ahead
+or behind you are; the buttons to do something about it come next.
 
 ## Side by side, or inline
 

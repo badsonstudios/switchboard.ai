@@ -2755,3 +2755,199 @@ describe('GitService write half (E24 Git v2 item 12)', () => {
   });
   // Real git in a child process, several times per case (#512).
 }, 60_000);
+
+// Making a commit, against REAL git (E24 Git v2 item 13).
+//
+// ⚠️ **TWO CLAIMS HERE CANNOT BE MADE ANY OTHER WAY, and both were measured
+// before the code was written.**
+//
+//  1. **The message travels on STDIN and arrives byte-exact.** The design record
+//     §2.1 chose `commit --file=-` over `-m` because *"a multi-line body with
+//     quotes in it is a Windows quoting bug waiting to happen"* — so the test
+//     that matters is a message full of exactly the characters that would break
+//     a command line.
+//  2. ⚠️⚠️ **THE USER'S HOOKS RUN.** This is the only place in the service that
+//     lifts a #776 guard, and it is lifted on purpose: a commit that silently
+//     skipped somebody's `pre-commit` would be switchboard reimplementing `git
+//     commit`. A control proves the guard really does suppress a hook, so the
+//     relaxation is shown to be doing something rather than asserted to.
+describe('GitService.commit (E24 Git v2 item 13)', () => {
+  /** A repo with something staged and ready to commit. */
+  function staged(): string {
+    const dir = tempDir('sb-git-commit-');
+    sh(dir, ['init', '-b', 'main']);
+    sh(dir, ['config', 'user.email', 'c@test']);
+    sh(dir, ['config', 'user.name', 'Commit Tester']);
+    sh(dir, ['config', 'commit.gpgsign', 'false']);
+    sh(dir, ['config', 'core.autocrlf', 'false']);
+    fs.writeFileSync(path.join(dir, 'a.txt'), 'first\n');
+    sh(dir, ['add', '.']);
+    sh(dir, ['-c', 'core.hooksPath=', 'commit', '-m', 'base']);
+    fs.writeFileSync(path.join(dir, 'a.txt'), 'second\n');
+    sh(dir, ['add', '.']);
+    return dir;
+  }
+
+  const body = (dir: string): string =>
+    execFileSync('git', ['log', '-1', '--format=%B'], { cwd: dir, encoding: 'utf8' });
+
+  it('commits what is staged (the done-when)', async () => {
+    const dir = staged();
+    const r = await svc.commit(dir, 'a plain subject');
+    expect(r).toEqual({ ok: true, applied: 1 });
+    expect(body(dir)).toContain('a plain subject');
+    // …and the tree is clean afterwards, which is the only proof it really landed
+    expect((await svc.status(dir)).files).toEqual([]);
+  });
+
+  it('⚠️ A MESSAGE FULL OF SHELL METACHARACTERS ARRIVES BYTE-EXACT', async () => {
+    // The whole reason the design record chose stdin over `-m`. Every character
+    // here is one that would need quoting on a command line, and on Windows the
+    // quoting rules differ from POSIX — which is the bug that was being avoided
+    // rather than discovered.
+    const dir = staged();
+    const message = [
+      'A subject with "double quotes" and a $dollar',
+      '',
+      "A body with 'single quotes', 100% percent, a `backtick`,",
+      'a semicolon; an ampersand & a pipe | and a caret ^.',
+      '',
+      'And a trailing line.',
+    ].join('\n');
+    const r = await svc.commit(dir, message);
+    expect(r.ok).toBe(true);
+    const landed = body(dir);
+    for (const fragment of [
+      '"double quotes"',
+      '$dollar',
+      "'single quotes'",
+      '100% percent',
+      '`backtick`',
+      'a semicolon; an ampersand & a pipe | and a caret ^.',
+      'And a trailing line.',
+    ]) {
+      expect(landed, `lost: ${fragment}`).toContain(fragment);
+    }
+  });
+
+  it('⚠️⚠️ THE REPOSITORY’S OWN `pre-commit` HOOK RUNS — with a control that proves the guard suppresses it', async () => {
+    // ⚠️ **THE DECISION THIS PINS.** Everywhere else in the service, a repo's
+    // hooks are suppressed: `status` and `diff` run unbidden and a repository
+    // must not get to execute a program because switchboard glanced at it. A
+    // COMMIT is a button the user pressed, and one that skipped their formatter
+    // or their tests would not be a commit.
+    //
+    // ⚠️ **AND THE CONTROL IS NOT OPTIONAL.** This machine has a GLOBAL
+    // `core.hooksPath`, which masks `.git/hooks` entirely — the first attempt at
+    // this measurement was inconclusive for that reason. So the hook is installed
+    // AND pointed at explicitly, and the suppressed case is demonstrated first.
+    const dir = staged();
+    const hooks = path.join(dir, '.git', 'hooks');
+    fs.mkdirSync(hooks, { recursive: true });
+    const ran = path.join(dir, 'HOOK-RAN');
+    fs.writeFileSync(
+      path.join(hooks, 'pre-commit'),
+      `#!/bin/sh\necho ran > "${toPosix(ran)}"\nexit 0\n`
+    );
+    fs.chmodSync(path.join(hooks, 'pre-commit'), 0o755);
+    // A repo-local `core.hooksPath` so the machine's global one cannot mask it.
+    sh(dir, ['config', 'core.hooksPath', '.git/hooks']);
+
+    // THE CONTROL: with the guard's empty hooks path, it does NOT run.
+    expect(fs.existsSync(ran)).toBe(false);
+    sh(dir, ['-c', `core.hooksPath=${toPosix(path.join(dir, 'no-hooks-here'))}`, 'commit', '-m', 'guarded']);
+    expect(fs.existsSync(ran)).toBe(false);
+
+    // …and through our commit, which lifts exactly that one guard, it DOES.
+    fs.writeFileSync(path.join(dir, 'a.txt'), 'third\n');
+    await svc.stage(dir, ['a.txt']);
+    const r = await svc.commit(dir, 'hooks please');
+    expect(r.ok).toBe(true);
+    expect(fs.existsSync(ran), 'the pre-commit hook did not run').toBe(true);
+  });
+
+  it('⚠️ A FAILING HOOK STOPS THE COMMIT, and its own words come back', async () => {
+    // Which is the point of letting hooks run at all: a `pre-commit` that says no
+    // is the repository's own policy, and the user has to see what it said.
+    const dir = staged();
+    const hooks = path.join(dir, '.git', 'hooks');
+    fs.mkdirSync(hooks, { recursive: true });
+    fs.writeFileSync(
+      path.join(hooks, 'pre-commit'),
+      '#!/bin/sh\necho "LINT FAILED: two problems" >&2\nexit 1\n'
+    );
+    fs.chmodSync(path.join(hooks, 'pre-commit'), 0o755);
+    sh(dir, ['config', 'core.hooksPath', '.git/hooks']);
+    const r = await svc.commit(dir, 'should not land');
+    expect(r.ok).toBe(false);
+    expect(r.reason).toContain('LINT FAILED');
+    // …and nothing was committed.
+    expect(body(dir)).toContain('base');
+  });
+
+  it('…and `--no-verify` is what gets past it, which is why the option exists', async () => {
+    const dir = staged();
+    const hooks = path.join(dir, '.git', 'hooks');
+    fs.mkdirSync(hooks, { recursive: true });
+    fs.writeFileSync(path.join(hooks, 'pre-commit'), '#!/bin/sh\nexit 1\n');
+    fs.chmodSync(path.join(hooks, 'pre-commit'), 0o755);
+    sh(dir, ['config', 'core.hooksPath', '.git/hooks']);
+    expect((await svc.commit(dir, 'blocked')).ok).toBe(false);
+    const r = await svc.commit(dir, 'through anyway', { noVerify: true });
+    expect(r.ok).toBe(true);
+    expect(body(dir)).toContain('through anyway');
+  });
+
+  it('amends the last commit, message and all, with NOTHING staged', async () => {
+    // The commonest reason to reach for amend: fixing a message you just wrote.
+    // Measured to succeed with an empty index.
+    const dir = staged();
+    await svc.commit(dir, 'first try');
+    const r = await svc.commit(dir, 'second thoughts', { amend: true });
+    expect(r.ok).toBe(true);
+    expect(body(dir)).toContain('second thoughts');
+    expect(body(dir)).not.toContain('first try');
+    // and it is still ONE commit on top of base, not two
+    const count = execFileSync('git', ['rev-list', '--count', 'HEAD'], {
+      cwd: dir,
+      encoding: 'utf8',
+    }).trim();
+    expect(count).toBe('2');
+  });
+
+  it('adds a sign-off trailer when asked', async () => {
+    const dir = staged();
+    const r = await svc.commit(dir, 'signed', { signoff: true });
+    expect(r.ok).toBe(true);
+    expect(body(dir)).toContain('Signed-off-by:');
+  });
+
+  it('⚠️ AN EMPTY MESSAGE IS REFUSED BEFORE GIT IS EVEN RUN', async () => {
+    // git refuses it too — measured, "Aborting commit due to empty commit
+    // message" — so this is not the only line of defence. It exists so the BUTTON
+    // can be disabled rather than live and then failing.
+    const dir = staged();
+    for (const empty of ['', '   ', '\n\n', undefined, null, 42]) {
+      const r = await svc.commit(dir, empty);
+      expect(r.ok, `${JSON.stringify(empty)} was accepted`).toBe(false);
+      expect(r.reason).toContain('needs a message');
+    }
+    // nothing was committed by any of them
+    expect(body(dir)).toContain('base');
+  });
+
+  it('⚠️ NOTHING STAGED IS GIT’S OWN REFUSAL, passed through', async () => {
+    const dir = staged();
+    await svc.commit(dir, 'takes the staged change');
+    const r = await svc.commit(dir, 'and now there is nothing');
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBeTruthy();
+  });
+
+  it('a folder that is not a repository says so rather than throwing', async () => {
+    const r = await svc.commit(plain, 'nope');
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBeTruthy();
+  });
+  // Real git in a child process, several times per case (#512).
+}, 60_000);

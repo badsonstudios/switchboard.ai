@@ -34,10 +34,14 @@ import {
 import { buildScmTree, type ScmTreeFolder } from '../lib/scm-tree';
 import { getScmViewMode, setScmViewMode, subscribeScmViewMode } from '../lib/scm-view-mode';
 import {
+  type CommitFlags,
   type WriteOutcome,
+  canCommit,
   canWriteGit,
+  commitChanges,
   confirmDiscard,
   discardFiles,
+  hasSomethingToCommit,
   stageFiles,
   unstageFiles,
 } from '../lib/git-write';
@@ -233,6 +237,20 @@ export function ScmSidebar(props: {
   const paneState = gitPaneState(props.status);
   const groups = React.useMemo(() => buildGroups(props.status, filter), [props.status, filter]);
   /**
+   * How many files a commit would capture.
+   *
+   * ⚠️ **FROM THE UNFILTERED STATUS, AND THAT IS THE OPPOSITE OF THE TOTALS BAR.**
+   * The bar describes the LIST, so it follows the filter — a review finding from
+   * item 6. A commit does not: `git commit` with no pathspec captures the whole
+   * index whatever the box above it is showing, so a count that followed the
+   * filter would promise to commit three files and commit thirty. Counted by
+   * distinct path, because a staged file is one file however many rows it has.
+   */
+  const stagedCount = React.useMemo(
+    () => new Set((props.status?.files ?? []).filter((f) => f.staged && !f.conflicted).map((f) => f.path)).size,
+    [props.status]
+  );
+  /**
    * The status narrowed to what the filter leaves, so the totals describe the list.
    *
    * Built from the groups' own rows rather than by filtering again: two filters
@@ -372,6 +390,31 @@ export function ScmSidebar(props: {
               : t('scm.files', { count: totals.files })}
           </span>
         </div>
+      )}
+
+      {/* ⚠️ **THE COMMIT BOX — ONE COMMIT PATH, NOT TWO (item 13).** The design
+          record calls that "E24's own rule": amend, sign-off and no-verify are
+          MODIFIERS reached behind the ⋯, never a second primary button. Two
+          buttons that both commit is how somebody amends by accident, and an
+          amend rewrites history.
+
+          Above the filter and below the totals, because it is about the whole
+          change set rather than about any row — and because the thing you do
+          after staging is commit, so it sits where your eye already is.
+
+          ⚠️ **ABSENT, NOT DISABLED, when this build cannot commit.** Unlike the
+          row verbs it is asked for separately (`canCommit`), because a build with
+          the three path verbs and no `commit` would otherwise draw a button that
+          cannot work. */}
+      {paneState?.kind === 'files' && canCommit() && (
+        <CommitBox
+          folder={props.folder}
+          staged={stagedCount}
+          onDone={(outcome) => {
+            setWriteError(outcome.ok ? null : (outcome.reason ?? null));
+            props.onRefresh();
+          }}
+        />
       )}
 
       {paneState?.kind === 'files' && (
@@ -1063,6 +1106,231 @@ function Row(props: {
           )}
         </span>
       </span>
+    </div>
+  );
+}
+
+/**
+ * The commit box (E24 Git v2 item 13) — screen 1.
+ *
+ * ⚠️ **ONE COMMIT PATH, NOT TWO, which the design record calls "E24's own
+ * rule".** There is exactly one button that commits. Amend, sign-off and
+ * no-verify are checkboxes behind the ⋯ — modifiers of that one path. Two primary
+ * buttons that both commit is how somebody amends by accident, and an amend
+ * rewrites history: if the commit has been pushed, the next push needs a force.
+ *
+ * ⚠️ **ITS OWN COMPONENT BECAUSE IT HOLDS THE DRAFT, AND THE DRAFT MUST SURVIVE
+ * THE LIST REDRAWING UNDERNEATH IT.** `ScmSidebar` re-renders on every status
+ * refresh — which, since item 12, happens after every stage and every discard —
+ * and a half-typed message living in that component's state would be at the mercy
+ * of all of them.
+ */
+function CommitBox(props: {
+  folder: string;
+  /** how many files a commit would capture, from the UNFILTERED status */
+  staged: number;
+  onDone: (outcome: WriteOutcome) => void;
+}): React.JSX.Element {
+  const { t } = useTranslation();
+  const [message, setMessage] = React.useState('');
+  const [flags, setFlags] = React.useState<CommitFlags>({});
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  const [busy, setBusy] = React.useState(false);
+  /** what the last commit did, so the box says it landed rather than just emptying */
+  const [said, setSaid] = React.useState<string | null>(null);
+
+  const ready = hasSomethingToCommit(props.staged, flags);
+  const hasMessage = message.trim() !== '';
+  /**
+   * Why the button is off, in words, when it is off.
+   *
+   * ⚠️ **A DISABLED BUTTON THAT DOES NOT SAY WHY IS A DEAD END**, and the two
+   * reasons have different fixes: write something, or stage something. `title`
+   * AND `aria-label`, because Chromium never shows a `title` on keyboard focus —
+   * the lesson `GitDiffView`'s layout toggle already records.
+   */
+  const why = !hasMessage ? t('scm.commitNoMessage') : !ready ? t('scm.commitNothing') : undefined;
+
+  const run = React.useCallback(async () => {
+    setBusy(true);
+    const outcome = await commitChanges(props.folder, message, flags);
+    setBusy(false);
+    if (outcome.ok) {
+      // ⚠️ **THE DRAFT IS CLEARED ONLY ON SUCCESS.** A failed commit — a hook said
+      // no, nothing was staged — must not cost the user the message they wrote.
+      setMessage('');
+      setFlags({});
+      setSaid(t('scm.commitDone', { count: Math.max(props.staged, 1) }));
+    } else {
+      setSaid(null);
+    }
+    props.onDone(outcome);
+  }, [props, message, flags, t]);
+
+  const submit = (): void => {
+    if (!hasMessage || !ready || busy) return;
+    void run();
+  };
+
+  return (
+    <div
+      className="scm-commit"
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 3,
+        padding: '4px 6px',
+        borderBlockEnd: '1px solid var(--border)',
+      }}
+    >
+      <textarea
+        className="scm-commit-message"
+        value={message}
+        rows={2}
+        onChange={(e) => {
+          setMessage(e.target.value);
+          setSaid(null);
+        }}
+        onKeyDown={(e) => {
+          // ⚠️ **Ctrl/Cmd+Enter COMMITS, AND PLAIN ENTER DOES NOT.** A commit
+          // message has a body as often as not — this repository's own are mostly
+          // body — so Enter has to be a newline. The placeholder says so, because
+          // a shortcut nobody is told about is a shortcut nobody uses.
+          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            submit();
+          }
+        }}
+        placeholder={t('scm.messagePlaceholder')}
+        aria-label={t('scm.messageLabel')}
+        style={{
+          inlineSize: '100%',
+          resize: 'vertical',
+          background: 'var(--input-bg, var(--card-bg))',
+          color: 'var(--text)',
+          border: '1px solid var(--border)',
+          borderRadius: 4,
+          padding: '3px 6px',
+          fontFamily: 'var(--font-ui)',
+          fontSize: 11,
+        }}
+      />
+      <div style={{ display: 'flex', gap: 4, alignItems: 'center', minInlineSize: 0 }}>
+        <button
+          type="button"
+          className="scm-commit-btn"
+          data-testid="scm-commit"
+          disabled={!hasMessage || !ready || busy}
+          title={why}
+          aria-label={why}
+          onClick={submit}
+          style={{
+            flex: 1,
+            minInlineSize: 0,
+            background: hasMessage && ready ? 'var(--rail-row-selected)' : 'transparent',
+            border: '1px solid var(--border)',
+            borderRadius: 4,
+            color: hasMessage && ready ? 'var(--text)' : 'var(--muted)',
+            cursor: hasMessage && ready && !busy ? 'pointer' : 'default',
+            padding: '3px 6px',
+            fontSize: 11,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {/* The COUNT is on the button, because what a commit will capture is the
+              one thing worth knowing before pressing it — and `git commit` takes
+              the whole index, not whatever the filter is showing. */}
+          {flags.amend
+            ? t('scm.commitAmend')
+            : props.staged > 0
+              ? t('scm.commitCount', { count: props.staged })
+              : t('scm.commit')}
+        </button>
+        <button
+          type="button"
+          className="scm-commit-opts"
+          data-testid="scm-commit-options"
+          aria-expanded={menuOpen}
+          title={t('scm.commitOptions')}
+          aria-label={t('scm.commitOptions')}
+          onClick={() => setMenuOpen((v) => !v)}
+          style={{
+            flexShrink: 0,
+            background: 'transparent',
+            border: '1px solid var(--border)',
+            borderRadius: 4,
+            color: 'var(--muted)',
+            cursor: 'pointer',
+            padding: '3px 5px',
+            fontSize: 11,
+            lineHeight: 1,
+          }}
+        >
+          {t('scm.commitOptionsIcon')}
+        </button>
+      </div>
+      {/* ⚠️ **AMEND IS ANNOUNCED OUTSIDE THE MENU ONCE IT IS ON.** The menu
+          closes; the mode does not. Somebody who ticked amend, shut the ⋯ and
+          then pressed a button reading "Commit" would rewrite a commit without
+          being reminded — so the button changes its own words AND this says it
+          again where the eye lands. */}
+      {flags.amend && !menuOpen && (
+        <span
+          className="scm-amend-on"
+          style={{ color: 'var(--status-needs-input-ink)', fontSize: 9.5 }}
+        >
+          {t('scm.amendOn')}
+        </span>
+      )}
+      {menuOpen && (
+        <div
+          className="scm-commit-menu"
+          role="group"
+          aria-label={t('scm.commitOptions')}
+          style={{ display: 'flex', flexDirection: 'column', gap: 2, paddingBlockStart: 2 }}
+        >
+          {/* Real checkboxes with real labels — §5.32 rule 1. A `div` with a tick
+              glyph would mean reimplementing Space, focus and the announcement,
+              and none of them ever are. */}
+          {(
+            [
+              ['amend', 'scm.optAmend'],
+              ['signoff', 'scm.optSignoff'],
+              ['noVerify', 'scm.optNoVerify'],
+            ] as const
+          ).map(([key, label]) => (
+            <label
+              key={key}
+              style={{
+                display: 'flex',
+                gap: 5,
+                alignItems: 'center',
+                color: 'var(--muted)',
+                fontSize: 10,
+              }}
+            >
+              <input
+                type="checkbox"
+                data-testid={`scm-commit-${key}`}
+                checked={flags[key] === true}
+                onChange={(e) => setFlags((f) => ({ ...f, [key]: e.target.checked }))}
+              />
+              {t(label)}
+            </label>
+          ))}
+        </div>
+      )}
+      {said !== null && (
+        <span
+          className="scm-commit-said"
+          role="status"
+          style={{ color: 'var(--muted)', fontSize: 9.5 }}
+        >
+          {said}
+        </span>
+      )}
     </div>
   );
 }

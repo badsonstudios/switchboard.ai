@@ -2496,6 +2496,24 @@ app
       if (refusal) return refusal;
       return gitService.discard(folder, asPathList(paths));
     });
+    // The commit itself (E24 Git v2 item 13). The message is a string here and
+    // becomes git's STDIN in the service — never argv.
+    broker.handle('git:commit', (_e, folder: string, message: unknown, opts: unknown) => {
+      const refusal = writeScope(folder);
+      if (refusal) return refusal;
+      // ⚠️ **THE FLAGS ARE READ AS BOOLEANS, ONE AT A TIME, RATHER THAN SPREAD.**
+      // Spreading whatever arrived would let a renderer bug — or a Phase-4
+      // contribution — put any key into `CommitOptions`, and the first one that
+      // became a git flag would be an argv injection. `--amend` in particular
+      // rewrites history, so it has to be something that was explicitly asked
+      // for and not something that merely appeared in an object.
+      const o = (opts ?? {}) as Record<string, unknown>;
+      return gitService.commit(folder, message, {
+        amend: o.amend === true,
+        signoff: o.signoff === true,
+        noVerify: o.noVerify === true,
+      });
+    });
     broker.handle('git:fileVersions', (_e, folder: string, file: string) => {
       // scope to a known folder AND forbid escaping it (path traversal)
       if (!knownFolder(folder)) return { original: '', modified: '' };

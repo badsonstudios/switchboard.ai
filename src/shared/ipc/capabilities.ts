@@ -307,6 +307,12 @@ export const CHANNEL_CAPABILITIES = {
   'git:stage': 'git.write',
   'git:unstage': 'git.write',
   'git:discard': 'git.write',
+  // The commit itself (E24 Git v2 item 13). Same capability as the three above:
+  // it is the same power, and a surface that can stage can already decide what a
+  // commit will contain. What makes it different in KIND is `--amend`, which
+  // rewrites history — and what protects that is its place behind a ⋯ rather
+  // than a fifth grant nobody would hold separately.
+  'git:commit': 'git.write',
   // the provider's service health as main currently understands it (P2-E14-07)
   'health:get': 'provider.status',
   // the polling switch is an ordinary preference, like the update auto-check
