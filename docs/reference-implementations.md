@@ -7,13 +7,16 @@ contract is unclear, **there is a working implementation of it sitting on disk.*
 
 This file says where, and how to read it without wasting a session.
 
-There are **three** sources, and they answer different questions. §1 the VS Code
-extension — a known-correct *client*, so it shows what a caller **sends**. §2.1
-the `claude` binary on PATH — the other end of the same contract, so it shows
-what the CLI **does with what it received**. §2.2 `--help` — what the CLI
-**accepts**.
+There are **four** sources, and they answer different questions. §1 the Claude
+Code VS Code extension — a known-correct *client*, so it shows what a caller
+**sends**. §2.1 the `claude` binary on PATH — the other end of the same contract,
+so it shows what the CLI **does with what it received**. §2.2 `--help` — what the
+CLI **accepts**. §4 **VS Code's built-in Git extension** — not a Claude contract
+at all, but the same kind of asset for the *other* CLI we shell out to: a
+known-correct consumer of `git`'s porcelain and plumbing, plus the best worked
+example of source-control information architecture in existence.
 
-Reading any of those three costs nothing. **Running a probe is a different
+Reading any of those four costs nothing. **Running a probe is a different
 thing**: a flag-validation probe (`--permission-mode <v> --version`, §2.3) is
 free, but the probes in §3 send real turns to the real CLI and spend Dan's
 subscription quota. Exhaust the readable sources before you spend one.
@@ -668,3 +671,57 @@ lesson twice more, in new shapes:
   messaged six sessions across four projects. A cwd contains file writes at
   best. If a probe needs no tools, give it none — `--permission-mode default`
   and a prompt with no reason to act.
+
+---
+
+## 4. VS Code's built-in Git extension — the other CLI we shell out to
+
+```
+C:\Users\dheinz\AppData\Local\Programs\Microsoft VS Code\<hash>\resources\app\extensions\git\
+```
+
+Added 2026-10-02 by the E24 Git v2 design pass (`docs/plans/e24-git-v2-design.md`
+§2.1). **This is a different bundle from §1's** — it ships with VS Code itself,
+not with the Claude Code extension — and it answers a different question: not
+"what does a client send the agent CLI", but **"what exactly does a working git
+GUI run, and how does it arrange what comes back"**.
+
+Two files, and they split the work cleanly:
+
+| File | Size | How to read it |
+|---|---|---|
+| `package.json` | ~93 KB | **Plain JSON, readable end to end.** 183 commands, 46 per-file menu entries, 19 per-group, 9 per-commit. This is the information architecture, and it is the more valuable half. |
+| `dist/main.js` | ~757 KB | Minified. §1.1's rules apply — `grep -o` with fixed context widths, never `Read`. This is where the actual command lines live. |
+
+**What `package.json` is good for:** every resource group (`merge` / `index` /
+`workingTree` / `untracked`), every menu contribution point
+(`scmResourceGroup`, `diffEditor/gutter/hunk`, `scm/history/title`,
+`timeline/item/context`, `scm/artifact/context`), and every `when` clause. A
+`when` clause is a *specification of state* — `scmCurrentHistoryItemRefHasRemote`
+tells you the extension distinguishes a tracked branch from an untracked one at
+the UI layer, which is a design fact we would otherwise have to rediscover.
+
+**What `dist/main.js` is good for:** exact argv. The one the design pass took
+verbatim, because getting it wrong fails silently:
+
+```
+git log --format=%H%n%aN%n%aE%n%at%n%ct%n%P%n%D%n%B -z \
+        --shortstat --diff-merges=first-parent
+```
+
+`-z` is load-bearing: a commit body contains newlines, so records cannot be split
+on one. `--shortstat` trails *after* the NUL. `--decorate=full --topo-order
+--stdin` (refnames on stdin) is how it draws more than one branch in one graph.
+
+**The rules are §1.4's, with one addition.** Read contracts, do not copy code
+(this bundle is MIT, but the discipline is about understanding, not licence) —
+and **verify against the `git` on PATH**, because VS Code supports a wide range
+of git versions and guards behaviour by version check. Two of its edge cases are
+worth knowing before you write a single git call, because each one's failure mode
+is a blank screen with no error:
+
+- **Root commits** have no parent, so they diff against the empty tree
+  (`4b825dc642cb6eb9a060e54bf8d69288fbee4904`). Get it wrong and the repo's first
+  commit shows an empty diff and says nothing about why.
+- **Commit messages go in on stdin** (`commit --file=-`), never `-m`. A
+  multi-line body with quotes in it is a Windows quoting bug waiting to happen.

@@ -1,0 +1,1429 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>switchboard.ai — Git v2 Mockup</title>
+<style>
+  :root {
+    --stage: #101114;
+    --panel: #1b1d22;
+    --panel-2: #212329;
+    --panel-3: #262931;
+    --panel-4: #2c2f38;
+    --line: #2d3038;
+    --line-soft: #262932;
+    --text: #dcd9d2;
+    --text-dim: #8b8a84;
+    --text-faint: #63625d;
+
+    --amber: #d9a23f;
+    --amber-glow: rgba(217, 162, 63, 0.16);
+    --amber-line: rgba(217, 162, 63, 0.45);
+    --ok: #6cbf7c;
+    --ok-dim: rgba(108, 191, 124, 0.14);
+    --red: #d96b5a;
+    --red-dim: rgba(217, 107, 90, 0.13);
+    --blue: #64a5dd;
+    --violet: #9d84e8;
+    --teal: #4db8a6;
+    --pink: #e08098;
+
+    /* diff ink — matches src/renderer/src/lib/monaco-theme.ts intent */
+    --add-ink: #6cbf7c;
+    --add-bg: rgba(108, 191, 124, 0.13);
+    --add-bg-strong: rgba(108, 191, 124, 0.24);
+    --del-ink: #d96b5a;
+    --del-bg: rgba(217, 107, 90, 0.12);
+    --del-bg-strong: rgba(217, 107, 90, 0.24);
+
+    /* graph lanes */
+    --l1: #64a5dd; --l2: #6cbf7c; --l3: #d9a23f; --l4: #9d84e8; --l5: #e08098;
+
+    --mono: "Cascadia Code", "JetBrains Mono", "Fira Code", Consolas, "SF Mono", monospace;
+    --ui: -apple-system, "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    --radius: 8px;
+  }
+  :root[data-theme="light"] {
+    --stage: #e6e4de;
+    --panel: #f6f5f1; --panel-2: #fdfcfa; --panel-3: #eceae4; --panel-4: #e2dfd7;
+    --line: #d7d4cb; --line-soft: #e2dfd7;
+    --text: #302f2b; --text-dim: #6f6d66; --text-faint: #9b988f;
+    --amber: #a87718; --amber-glow: rgba(168,119,24,.13); --amber-line: rgba(168,119,24,.5);
+    --ok: #3f8f52; --ok-dim: rgba(63,143,82,.12);
+    --red: #bf4f3d; --red-dim: rgba(191,79,61,.11);
+    --blue: #2f74b5; --violet: #6d51c9; --teal: #22897a; --pink: #c04f6e;
+    --add-ink: #2f7d44; --add-bg: rgba(47,125,68,.11); --add-bg-strong: rgba(47,125,68,.22);
+    --del-ink: #b14633; --del-bg: rgba(177,70,51,.10); --del-bg-strong: rgba(177,70,51,.21);
+    --l1: #2f74b5; --l2: #3f8f52; --l3: #a87718; --l4: #6d51c9; --l5: #c04f6e;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--stage); color: var(--text); font-family: var(--ui); }
+  body { font-size: 13px; line-height: 1.45; }
+
+  /* ───────── page scaffold ───────── */
+  .wrap { max-width: 1480px; margin: 0 auto; padding: 28px 24px 96px; }
+  header.page { display: flex; align-items: flex-end; gap: 18px; flex-wrap: wrap; margin-bottom: 8px; }
+  header.page h1 { font-size: 20px; margin: 0; font-weight: 600; letter-spacing: -0.01em; }
+  header.page .sub { color: var(--text-dim); font-size: 12px; }
+  .themebtn { margin-left: auto; background: var(--panel-2); border: 1px solid var(--line);
+    color: var(--text-dim); border-radius: 6px; padding: 5px 11px; cursor: pointer; font: inherit; font-size: 11px; }
+  .themebtn:hover { color: var(--text); border-color: var(--amber-line); }
+
+  nav.toc { display: flex; gap: 6px; flex-wrap: wrap; margin: 18px 0 10px; }
+  nav.toc a { font-size: 11px; color: var(--text-dim); text-decoration: none; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 999px; padding: 4px 11px; }
+  nav.toc a:hover { color: var(--amber); border-color: var(--amber-line); }
+
+  section.screen { margin-top: 40px; }
+  section.screen > h2 { font-size: 15px; margin: 0 0 4px; font-weight: 600; }
+  section.screen > h2 .num { color: var(--amber); font-family: var(--mono); font-size: 12px; margin-right: 8px; }
+  section.screen > p.note { color: var(--text-dim); font-size: 12px; margin: 0 0 14px; max-width: 94ch; }
+  section.screen > p.note b { color: var(--text); font-weight: 600; }
+
+  .callouts { margin: 12px 0 0; padding: 0; list-style: none; display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 8px; }
+  .callouts li { background: var(--panel); border: 1px solid var(--line); border-left: 2px solid var(--amber);
+    border-radius: 0 6px 6px 0; padding: 8px 11px; font-size: 11.5px; color: var(--text-dim); }
+  .callouts li b { color: var(--text); font-weight: 600; }
+  .callouts li.new { border-left-color: var(--ok); }
+  .callouts li.steal { border-left-color: var(--blue); }
+
+  /* ───────── fake app chrome ───────── */
+  .app { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    overflow: hidden; box-shadow: 0 12px 34px rgba(0,0,0,.28); }
+  .titlebar { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px;
+    background: var(--panel-3); border-bottom: 1px solid var(--line); font-size: 11px; color: var(--text-dim); }
+  .titlebar .dots { display: flex; gap: 5px; margin-right: 4px; }
+  .titlebar .dots i { width: 9px; height: 9px; border-radius: 50%; background: var(--line); display: block; }
+  .titlebar .winbtns { margin-left: auto; display: flex; gap: 2px; color: var(--text-faint); font-family: var(--mono); }
+  .titlebar .winbtns span { padding: 0 7px; }
+
+  .cardhead { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px;
+    background: var(--panel-2); border-bottom: 1px solid var(--line); }
+  .cardhead .lamp { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 7px var(--ok); }
+  .cardhead .name { font-weight: 600; font-size: 12px; }
+  .cardhead .path { color: var(--text-faint); font-family: var(--mono); font-size: 10.5px; }
+
+  .tabstrip { display: flex; align-items: stretch; height: 29px; background: var(--panel-3);
+    border-bottom: 1px solid var(--line); }
+  .tabstrip .tab { display: flex; align-items: center; gap: 6px; padding: 0 13px; font-size: 11.5px;
+    color: var(--text-dim); border-right: 1px solid var(--line-soft); cursor: default; }
+  .tabstrip .tab.on { background: var(--panel); color: var(--text); box-shadow: inset 0 2px 0 var(--amber); }
+  .tabstrip .tab.off { color: var(--text-faint); }
+  .tabstrip .tab .badge { background: var(--amber-glow); color: var(--amber); border-radius: 999px;
+    padding: 0 5px; font-size: 9.5px; font-family: var(--mono); line-height: 15px; }
+  .tabstrip .spacer { flex: 1; border-right: none; }
+
+  /* ───────── source control sidebar ───────── */
+  .scm { display: flex; flex-direction: column; min-width: 0; background: var(--panel); }
+
+  .scmhead { padding: 8px 10px 9px; border-bottom: 1px solid var(--line-soft); }
+  .branchrow { display: flex; align-items: center; gap: 7px; }
+  .branchchip { display: inline-flex; align-items: center; gap: 5px; background: var(--panel-3);
+    border: 1px solid var(--line); border-radius: 5px; padding: 2px 7px; font-size: 11px;
+    font-family: var(--mono); color: var(--text); max-width: 58%; }
+  .branchchip .g { color: var(--text-faint); }
+  .branchchip b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .syncchip { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono);
+    font-size: 10.5px; color: var(--text-dim); background: var(--panel-3); border: 1px solid var(--line);
+    border-radius: 5px; padding: 2px 6px; }
+  .syncchip .up { color: var(--amber); }
+  .syncchip .down { color: var(--blue); }
+  .iconbtn { background: transparent; border: 1px solid transparent; color: var(--text-dim);
+    border-radius: 5px; width: 22px; height: 21px; display: inline-grid; place-items: center;
+    font-size: 11px; cursor: pointer; font-family: var(--mono); }
+  .iconbtn:hover { background: var(--panel-4); color: var(--text); border-color: var(--line); }
+  .scmhead .spacer { flex: 1; }
+
+  .statline { display: flex; align-items: center; gap: 8px; margin-top: 7px; font-family: var(--mono); font-size: 10.5px; }
+  .statline .plus { color: var(--add-ink); }
+  .statline .minus { color: var(--del-ink); }
+  .statline .files { color: var(--text-faint); }
+  .propbar { flex: 1; height: 3px; border-radius: 2px; overflow: hidden; display: flex; background: var(--panel-4); }
+  .propbar i { display: block; height: 100%; }
+
+  .ribbon { display: flex; align-items: center; gap: 7px; margin-top: 8px; padding: 5px 8px;
+    background: var(--amber-glow); border: 1px solid var(--amber-line); border-radius: 5px;
+    font-size: 10.5px; color: var(--text); }
+  .ribbon b { color: var(--amber); }
+
+  .filterrow { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--line-soft); }
+  .filterbox { flex: 1; display: flex; align-items: center; gap: 6px; background: var(--panel-3);
+    border: 1px solid var(--line); border-radius: 5px; padding: 3px 7px; font-size: 11px; color: var(--text-faint); }
+  .seg { display: flex; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+  .seg button { background: var(--panel-3); border: none; color: var(--text-faint); font: inherit;
+    font-size: 10.5px; padding: 3px 7px; cursor: pointer; }
+  .seg button.on { background: var(--panel-4); color: var(--text); }
+
+  .scmbody { flex: 1; overflow: auto; padding-bottom: 8px; }
+
+  .grp { }
+  .grphead { display: flex; align-items: center; gap: 6px; padding: 6px 8px 5px 7px;
+    position: sticky; top: 0; background: var(--panel); border-bottom: 1px solid var(--line-soft); }
+  .grphead .caret { color: var(--text-faint); font-size: 9px; width: 10px; font-family: var(--mono); }
+  .grphead .label { font-size: 10px; letter-spacing: .07em; text-transform: uppercase;
+    color: var(--text-dim); font-weight: 600; }
+  .grphead .count { font-family: var(--mono); font-size: 9.5px; color: var(--text-faint);
+    background: var(--panel-3); border-radius: 999px; padding: 0 5px; }
+  .grphead .acts { margin-left: auto; display: flex; gap: 1px; }
+  .grphead.conflict .label { color: var(--red); }
+  .grphead.conflict { background: var(--red-dim); }
+
+  .row { display: flex; align-items: center; gap: 7px; padding: 3px 8px 3px 17px; cursor: default; position: relative; }
+  .row:hover { background: var(--panel-2); }
+  .row.sel { background: var(--panel-4); box-shadow: inset 2px 0 0 var(--amber); }
+  .row .st { width: 11px; text-align: center; font-family: var(--mono); font-size: 11px; font-weight: 700; flex: none; }
+  .st.M { color: var(--amber); }
+  .st.A { color: var(--add-ink); }
+  .st.D { color: var(--del-ink); }
+  .st.R { color: var(--violet); }
+  .st.U { color: var(--red); }
+  .st.Q { color: var(--teal); }
+  .row .nm { font-family: var(--mono); font-size: 11.5px; color: var(--text); flex: none;
+    max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row.gone .nm { text-decoration: line-through; color: var(--text-dim); }
+  .row .dir { font-family: var(--mono); font-size: 10px; color: var(--text-faint); flex: 1;
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+  .row .mini { font-family: var(--mono); font-size: 9.5px; flex: none; color: var(--text-faint); }
+  .row .mini .p { color: var(--add-ink); }
+  .row .mini .m { color: var(--del-ink); }
+  .row .hov { display: none; gap: 1px; flex: none; }
+  .row:hover .hov, .row.sel .hov { display: flex; }
+  .row:hover .mini, .row.sel .mini { display: none; }
+  .row .sessionchip { font-size: 9px; font-family: var(--mono); color: var(--violet);
+    border: 1px solid var(--violet); border-radius: 3px; padding: 0 3px; opacity: .8; }
+
+  /* tree mode indentation */
+  .row.d1 { padding-left: 29px; } .row.d2 { padding-left: 41px; }
+  .treenode { display: flex; align-items: center; gap: 6px; padding: 3px 8px 3px 17px; }
+  .treenode .caret { color: var(--text-faint); font-size: 9px; font-family: var(--mono); width: 10px; }
+  .treenode .folder { font-family: var(--mono); font-size: 11px; color: var(--text-dim); }
+  .treenode .count { font-family: var(--mono); font-size: 9px; color: var(--text-faint); }
+
+  .commitbox { border-top: 1px solid var(--line); padding: 8px; background: var(--panel-2); }
+  .msgbox { width: 100%; background: var(--panel-3); border: 1px solid var(--line); border-radius: 5px;
+    padding: 6px 8px; font-family: var(--mono); font-size: 11px; color: var(--text); min-height: 46px; }
+  .msgbox .ph { color: var(--text-faint); }
+  .msgfoot { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+  .btn { background: var(--panel-4); border: 1px solid var(--line); color: var(--text); font: inherit;
+    font-size: 11px; border-radius: 5px; padding: 3px 10px; cursor: pointer; }
+  .btn:hover { border-color: var(--amber-line); }
+  .btn.primary { background: var(--amber-glow); border-color: var(--amber-line); color: var(--amber); font-weight: 600; }
+  .btn.split { padding-right: 6px; }
+  .btn.ghost { background: transparent; color: var(--text-dim); }
+  .msgfoot .hint { margin-left: auto; font-size: 10px; color: var(--text-faint); font-family: var(--mono); }
+
+  /* ───────── diff surface ───────── */
+  .diffwrap { display: flex; flex-direction: column; min-width: 0; background: var(--panel); flex: 1; }
+  .difftool { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px;
+    background: var(--panel-2); border-bottom: 1px solid var(--line); }
+  .difftool .fname { font-family: var(--mono); font-size: 11px; color: var(--text); }
+  .difftool .fdir { font-family: var(--mono); font-size: 10px; color: var(--text-faint); }
+  .difftool .spacer { flex: 1; }
+  .difftool .hunknav { display: flex; align-items: center; gap: 2px; font-family: var(--mono);
+    font-size: 10px; color: var(--text-dim); }
+  .popbtn { background: var(--amber-glow); border: 1px solid var(--amber-line); color: var(--amber);
+    border-radius: 5px; font-size: 10.5px; padding: 2px 8px; cursor: pointer; font: inherit; font-weight: 600; }
+
+  .code { font-family: var(--mono); font-size: 11px; line-height: 1.62; overflow: hidden; background: var(--panel); }
+  .cols { display: flex; }
+  .col { flex: 1; min-width: 0; border-right: 1px solid var(--line-soft); }
+  .col:last-child { border-right: none; }
+  .colhead { font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--text-faint);
+    padding: 3px 10px; background: var(--panel-2); border-bottom: 1px solid var(--line-soft); font-family: var(--ui); }
+  .ln { display: flex; min-height: 18px; position: relative; }
+  .ln .gut { width: 38px; flex: none; text-align: right; padding-right: 7px; color: var(--text-faint);
+    font-size: 10px; user-select: none; }
+  .ln .mk { width: 11px; flex: none; text-align: center; color: var(--text-faint); font-size: 10px; }
+  .ln .tx { flex: 1; min-width: 0; white-space: pre; overflow: hidden; padding-right: 8px; }
+  .ln.add { background: var(--add-bg); } .ln.add .mk { color: var(--add-ink); }
+  .ln.del { background: var(--del-bg); } .ln.del .mk { color: var(--del-ink); }
+  .ln.blank { background: repeating-linear-gradient(135deg, var(--panel-2) 0 4px, transparent 4px 8px); }
+  .ln em { font-style: normal; border-radius: 2px; padding: 0 1px; }
+  .ln.add em { background: var(--add-bg-strong); }
+  .ln.del em { background: var(--del-bg-strong); }
+  .hunkhead { background: var(--panel-3); color: var(--text-dim); font-size: 10px; padding: 2px 10px;
+    border-top: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); display: flex; gap: 10px; }
+  .hunkhead .loc { color: var(--blue); }
+  .hunkhead .acts { margin-left: auto; display: flex; gap: 4px; }
+  .hunkhead .acts button { background: var(--panel-4); border: 1px solid var(--line); color: var(--text-dim);
+    border-radius: 4px; font-size: 9.5px; padding: 0 6px; cursor: pointer; font-family: var(--ui); }
+  .hunkhead .acts button:hover { color: var(--amber); border-color: var(--amber-line); }
+  .gutterstage { position: absolute; left: -9px; top: 0; width: 16px; height: 16px; border-radius: 4px;
+    background: var(--amber); color: #15161a; font-size: 11px; display: grid; place-items: center;
+    font-weight: 700; z-index: 2; }
+  .kw { color: var(--violet); } .str { color: var(--teal); } .com { color: var(--text-faint); }
+  .fn { color: var(--amber); } .num2 { color: var(--pink); }
+
+  /* multi-file diff */
+  .mfhead { display: flex; align-items: center; gap: 8px; padding: 5px 10px; background: var(--panel-3);
+    border-top: 1px solid var(--line); border-bottom: 1px solid var(--line-soft); position: sticky; top: 0; }
+  .mfhead .st { width: 11px; text-align: center; font-family: var(--mono); font-weight: 700; font-size: 11px; }
+  .mfhead .nm { font-family: var(--mono); font-size: 11px; }
+  .mfhead .dir { font-family: var(--mono); font-size: 10px; color: var(--text-faint); flex: 1; }
+  .mfhead .mini { font-family: var(--mono); font-size: 9.5px; }
+  .mfcollapsed { padding: 10px; text-align: center; color: var(--text-faint); font-size: 10.5px;
+    background: var(--panel-2); font-family: var(--mono); }
+
+  /* ───────── history / graph ───────── */
+  .hist { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+  .histtool { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--line-soft); }
+  .grow { flex: 1; display: flex; align-items: stretch; min-height: 26px; }
+  .grow:hover { background: var(--panel-2); }
+  .grow.sel { background: var(--panel-4); box-shadow: inset 2px 0 0 var(--amber); }
+  .lane { width: 92px; flex: none; position: relative; }
+  .lane svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .gmeta { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; padding-right: 10px; }
+  .gmeta .subj { font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gmeta .refs { display: flex; gap: 4px; flex: none; }
+  .refchip { font-family: var(--mono); font-size: 9px; border-radius: 3px; padding: 0 5px; line-height: 15px;
+    border: 1px solid; white-space: nowrap; }
+  .refchip.head { color: var(--amber); border-color: var(--amber-line); background: var(--amber-glow); font-weight: 700; }
+  .refchip.local { color: var(--blue); border-color: var(--blue); }
+  .refchip.remote { color: var(--text-dim); border-color: var(--line); }
+  .refchip.tag { color: var(--teal); border-color: var(--teal); }
+  .refchip.wt { color: var(--violet); border-color: var(--violet); }
+  .gmeta .who { font-size: 10.5px; color: var(--text-dim); flex: none; }
+  .gmeta .av { width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center;
+    font-size: 9px; font-weight: 700; flex: none; color: #15161a; }
+  .gmeta .when { font-family: var(--mono); font-size: 10px; color: var(--text-faint); flex: none; width: 56px; text-align: right; }
+  .gmeta .hash { font-family: var(--mono); font-size: 10px; color: var(--text-faint); flex: none; }
+  .gmeta .mini { font-family: var(--mono); font-size: 9.5px; flex: none; width: 74px; text-align: right; }
+
+  .syncgrp { display: flex; align-items: center; gap: 7px; padding: 4px 10px 4px 8px; background: var(--panel-2);
+    border-bottom: 1px solid var(--line-soft); font-size: 10.5px; }
+  .syncgrp .caret { color: var(--text-faint); font-family: var(--mono); font-size: 9px; width: 10px; }
+  .syncgrp.inc { box-shadow: inset 2px 0 0 var(--blue); }
+  .syncgrp.out { box-shadow: inset 2px 0 0 var(--amber); }
+  .syncgrp .label { font-weight: 600; }
+  .syncgrp .acts { margin-left: auto; display: flex; gap: 4px; }
+
+  .cdetail { border-top: 1px solid var(--line); background: var(--panel-2); }
+  .cdetail .top { padding: 8px 10px; display: flex; gap: 10px; align-items: flex-start; }
+  .cdetail .msg { flex: 1; min-width: 0; }
+  .cdetail .msg .s { font-size: 12px; font-weight: 600; }
+  .cdetail .msg .b { font-size: 11px; color: var(--text-dim); font-family: var(--mono); margin-top: 4px; white-space: pre-wrap; }
+  .cdetail .side { flex: none; text-align: right; font-size: 10.5px; color: var(--text-dim); font-family: var(--mono); }
+  .cdetail .flist { border-top: 1px solid var(--line-soft); }
+
+  .dockarea { display: flex; flex: 1; min-width: 0; }
+  .docktabs { display: flex; height: 27px; background: var(--panel-3); border-bottom: 1px solid var(--line); }
+  .docktabs .dt { display: flex; align-items: center; gap: 6px; padding: 0 10px; font-size: 11px;
+    color: var(--text-dim); border-right: 1px solid var(--line-soft); font-family: var(--mono); }
+  .docktabs .dt.on { background: var(--panel); color: var(--text); box-shadow: inset 0 2px 0 var(--blue); }
+  .docktabs .dt .x { color: var(--text-faint); font-size: 10px; }
+  .docktabs .dt .pin { color: var(--amber); font-size: 9px; }
+
+  .ctxmenu { position: absolute; right: 12px; top: 30px; z-index: 20; background: var(--panel-2);
+    border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 10px 26px rgba(0,0,0,.4);
+    padding: 4px; min-width: 212px; font-size: 11.5px; }
+  .ctxmenu .mi { padding: 4px 9px; border-radius: 4px; color: var(--text-dim); display: flex; gap: 10px; }
+  .ctxmenu .mi.hi { background: var(--amber-glow); color: var(--amber); }
+  .ctxmenu .mi kbd { margin-left: auto; font-family: var(--mono); font-size: 9.5px; color: var(--text-faint); }
+  .ctxmenu .sep { height: 1px; background: var(--line); margin: 4px 2px; }
+
+  .caption { font-size: 10.5px; color: var(--text-faint); margin-top: 7px; font-family: var(--mono); }
+  .relpos { position: relative; }
+  .flexrow { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+  .flexrow > * { min-width: 0; }
+
+  table.spec { width: 100%; border-collapse: collapse; font-size: 11.5px; margin-top: 10px; }
+  table.spec th, table.spec td { text-align: left; padding: 5px 9px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+  table.spec th { color: var(--text-dim); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+  table.spec td code { font-family: var(--mono); font-size: 10.5px; color: var(--amber); }
+  table.spec td.y { color: var(--ok); } table.spec td.n { color: var(--red); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="page">
+  <div>
+    <h1>switchboard.ai — Git v2</h1>
+    <div class="sub">Redesign of the Changes tab, the dead History tab, and the pop-out diff window · drawn 2026-10-02</div>
+  </div>
+  <button class="themebtn" onclick="document.documentElement.dataset.theme = document.documentElement.dataset.theme==='dark'?'light':'dark'">◑ theme</button>
+</header>
+
+<nav class="toc">
+  <a href="#s0">0 · what's wrong today</a>
+  <a href="#s1">1 · Changes, regrouped</a>
+  <a href="#s2">2 · tree mode + conflict ribbon</a>
+  <a href="#s3">3 · diff as a dock panel</a>
+  <a href="#s4">4 · popped out to its own window</a>
+  <a href="#s5">5 · all changes, one scroll</a>
+  <a href="#s6">6 · History — the graph</a>
+  <a href="#s7">7 · a commit, opened</a>
+  <a href="#s8">8 · hunk staging</a>
+  <a href="#s9">9 · the git commands behind it</a>
+</nav>
+
+<!-- ══════════════════════════════ 0 ══════════════════════════════ -->
+<section class="screen" id="s0">
+  <h2><span class="num">0</span>What is on screen today</h2>
+  <p class="note">Traced from <b>DiffPane.tsx</b> as it stands. One flat list, a fixed 200px rail, 10px mono paths
+  truncated at the <i>end</i> — so <code>…/FeedView.tsx</code> and <code>…/FeedView.test.tsx</code> look identical —
+  a three-letter word chip for status, and a toolbar whose only two controls are the layout toggle. The History tab is
+  registered with <code>enabled: () =&gt; false</code> and renders <code>null</code>.</p>
+
+  <div class="app" style="max-width: 820px">
+    <div class="cardhead"><span class="lamp"></span><span class="name">switchboard.ai</span>
+      <span class="path">C:\Projects\Switchboard.ai</span></div>
+    <div class="tabstrip">
+      <div class="tab">Session</div>
+      <div class="tab on">Changes <span class="badge">17</span></div>
+      <div class="tab">Files</div>
+      <div class="tab off" title="enabled: () => false">History</div>
+      <div class="tab spacer"></div>
+    </div>
+    <div style="display:flex; height: 230px">
+      <div style="width:200px; border-right:1px solid var(--line); padding:6px; overflow:hidden">
+        <div style="display:flex;gap:6px;align-items:center;padding:4px 6px;border-radius:4px;background:var(--panel-4)">
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:10px">src/renderer/src/compone…</span>
+          <span style="color:var(--text-dim);font-size:10px">↗</span>
+          <span style="font-size:9px;font-family:var(--mono);color:var(--text-dim);background:var(--panel-3);border-radius:4px;padding:0 4px">mod</span>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;padding:4px 6px">
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:10px">src/renderer/src/compone…</span>
+          <span style="color:var(--text-dim);font-size:10px">↗</span>
+          <span style="font-size:9px;font-family:var(--mono);color:var(--text-dim);background:var(--panel-3);border-radius:4px;padding:0 4px">both</span>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;padding:4px 6px">
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:10px">src/main/git/git-service…</span>
+          <span style="color:var(--text-dim);font-size:10px">↗</span>
+          <span style="font-size:9px;font-family:var(--mono);color:var(--add-ink);background:var(--panel-3);border-radius:4px;padding:0 4px">new</span>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;padding:4px 6px">
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono);font-size:10px">docs/plans/06-phase-3-id…</span>
+          <span style="color:var(--text-dim);font-size:10px">↗</span>
+          <span style="font-size:9px;font-family:var(--mono);color:var(--text-dim);background:var(--panel-3);border-radius:4px;padding:0 4px">staged</span>
+        </div>
+        <div style="padding:8px 6px;color:var(--text-faint);font-size:10px;font-family:var(--mono)">…13 more, same shape</div>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column">
+        <div style="display:flex;gap:6px;padding:4px 6px;border-bottom:1px solid var(--line-soft)">
+          <button class="btn" style="font-size:10px">Side by side</button>
+          <button class="btn ghost" style="font-size:10px">Inline</button>
+        </div>
+        <div style="flex:1;display:grid;place-items:center;color:var(--text-faint);font-size:11px">Monaco diff</div>
+      </div>
+    </div>
+  </div>
+
+  <ul class="callouts">
+    <li><b>No grouping.</b> Staged, unstaged, untracked and (if they ever happen) conflicted files are one undifferentiated list. The only hint is a word chip.</li>
+    <li><b>Path truncates the wrong end.</b> The identifying part of a path is its tail; the rail cuts the tail off.</li>
+    <li><b>Nowhere to put the diff but <i>here</i>.</b> Card tabs are exclusive — reading a diff means losing sight of the conversation that produced it.</li>
+    <li><b>No branch, no ahead/behind, no totals, no filter, no actions.</b> Read-only, and silent about where the repo stands.</li>
+    <li><b>History is a disabled placeholder.</b> No <code>git log</code> exists anywhere in <code>GitService</code>. (Both DESIGN §5.7 and the Phase 3 plan currently claim it shipped.)</li>
+  </ul>
+</section>
+
+<!-- ══════════════════════════════ 1 ══════════════════════════════ -->
+<section class="screen" id="s1">
+  <h2><span class="num">1</span>Changes, regrouped — the source-control sidebar</h2>
+  <p class="note">The sidebar's job is <b>triage</b>, not reading. Resource groups come straight from VS Code's
+  <code>scmResourceGroup</code> model (<code>merge</code> / <code>index</code> / <code>workingTree</code> /
+  <code>untracked</code>), each collapsible, each with its own count and its own group actions. Rows are
+  <b>name-first, directory-second</b>, so the thing you're looking for never truncates. Status is one coloured letter.
+  Per-file <code>+/−</code> on the right, swapped for hover actions when you reach for them.</p>
+
+  <div class="flexrow">
+    <div class="app" style="flex: 0 0 420px">
+      <div class="cardhead"><span class="lamp"></span><span class="name">switchboard.ai</span></div>
+      <div class="tabstrip">
+        <div class="tab">Session</div>
+        <div class="tab on">Changes <span class="badge">17</span></div>
+        <div class="tab">Files</div>
+        <div class="tab">History</div>
+        <div class="tab spacer"></div>
+      </div>
+      <div class="scm" style="height: 580px">
+        <div class="scmhead">
+          <div class="branchrow">
+            <span class="branchchip"><span class="g">⑂</span><b>feature/1041-git-v2</b></span>
+            <span class="syncchip"><span class="up">↑3</span> <span class="down">↓1</span></span>
+            <span class="spacer"></span>
+            <button class="iconbtn" title="Sync (pull, then push)">⟳</button>
+            <button class="iconbtn" title="Refresh">⟲</button>
+            <button class="iconbtn" title="More…">⋯</button>
+          </div>
+          <div class="statline">
+            <span class="plus">+1,204</span><span class="minus">−318</span>
+            <span class="propbar">
+              <i style="width:79%;background:var(--add-ink)"></i><i style="width:21%;background:var(--del-ink)"></i>
+            </span>
+            <span class="files">17 files</span>
+          </div>
+        </div>
+
+        <div class="filterrow">
+          <span class="filterbox">⌕ <span>Filter changed files…</span></span>
+          <span class="seg"><button class="on" title="Flat list">☰</button><button title="Folder tree">⊟</button></span>
+          <button class="iconbtn" title="Open all changes in one editor">⧉</button>
+        </div>
+
+        <div class="scmbody">
+          <!-- MERGE / CONFLICT -->
+          <div class="grp">
+            <div class="grphead conflict">
+              <span class="caret">▾</span><span class="label">Merge changes</span><span class="count">1</span>
+              <span class="acts">
+                <button class="iconbtn" title="Open merge editor">⚖</button>
+                <button class="iconbtn" title="Stage all resolved">✓</button>
+              </span>
+            </div>
+            <div class="row">
+              <span class="st U">U</span>
+              <span class="nm">git-service.ts</span>
+              <span class="dir">src/main/git/</span>
+              <span class="mini" style="color:var(--red)">both modified</span>
+              <span class="hov">
+                <button class="iconbtn" title="Open merge editor">⚖</button>
+                <button class="iconbtn" title="Pop out diff">⧉</button>
+                <button class="iconbtn" title="Stage (mark resolved)">＋</button>
+              </span>
+            </div>
+          </div>
+
+          <!-- STAGED -->
+          <div class="grp">
+            <div class="grphead">
+              <span class="caret">▾</span><span class="label">Staged changes</span><span class="count">4</span>
+              <span class="acts">
+                <button class="iconbtn" title="View staged changes in one editor">⧉</button>
+                <button class="iconbtn" title="Unstage all">−</button>
+              </span>
+            </div>
+            <div class="row">
+              <span class="st M">M</span><span class="nm">DiffPane.tsx</span>
+              <span class="dir">src/renderer/src/components/</span>
+              <span class="mini"><span class="p">+218</span> <span class="m">−94</span></span>
+              <span class="hov">
+                <button class="iconbtn" title="Open diff">◫</button><button class="iconbtn" title="Pop out">⧉</button>
+                <button class="iconbtn" title="Unstage">−</button>
+              </span>
+            </div>
+            <div class="row">
+              <span class="st A">A</span><span class="nm">git-log.ts</span>
+              <span class="dir">src/main/git/</span>
+              <span class="mini"><span class="p">+164</span></span>
+              <span class="hov"><button class="iconbtn">◫</button><button class="iconbtn">⧉</button><button class="iconbtn">−</button></span>
+            </div>
+            <div class="row">
+              <span class="st R">R</span><span class="nm">GitChanges.tsx</span>
+              <span class="dir">src/renderer/src/components/ ← DiffPane.tsx</span>
+              <span class="mini"><span class="p">+12</span> <span class="m">−9</span></span>
+              <span class="hov"><button class="iconbtn">◫</button><button class="iconbtn">⧉</button><button class="iconbtn">−</button></span>
+            </div>
+            <div class="row gone">
+              <span class="st D">D</span><span class="nm">diff-layout.ts</span>
+              <span class="dir">src/renderer/src/lib/</span>
+              <span class="mini"><span class="m">−143</span></span>
+              <span class="hov"><button class="iconbtn">◫</button><button class="iconbtn">⧉</button><button class="iconbtn">−</button></span>
+            </div>
+          </div>
+
+          <!-- UNSTAGED -->
+          <div class="grp">
+            <div class="grphead">
+              <span class="caret">▾</span><span class="label">Changes</span><span class="count">10</span>
+              <span class="acts">
+                <button class="iconbtn" title="View all changes in one editor">⧉</button>
+                <button class="iconbtn" title="Discard all changes">↶</button>
+                <button class="iconbtn" title="Stage all changes">＋</button>
+              </span>
+            </div>
+            <div class="row sel">
+              <span class="st M">M</span><span class="nm">panels.tsx</span>
+              <span class="dir">src/renderer/src/extensibility/</span>
+              <span class="hov">
+                <button class="iconbtn" title="Open diff (Enter)">◫</button>
+                <button class="iconbtn" title="Pop out to its own window">⧉</button>
+                <button class="iconbtn" title="Open file">↗</button>
+                <button class="iconbtn" title="Discard changes">↶</button>
+                <button class="iconbtn" title="Stage (Space)">＋</button>
+              </span>
+            </div>
+            <div class="row">
+              <span class="st M">M</span><span class="nm">FeedView.tsx</span>
+              <span class="dir">src/renderer/src/components/</span>
+              <span class="mini"><span class="p">+41</span> <span class="m">−6</span></span>
+              <span class="hov"><button class="iconbtn">◫</button><button class="iconbtn">⧉</button><button class="iconbtn">↶</button><button class="iconbtn">＋</button></span>
+            </div>
+            <div class="row">
+              <span class="st M">M</span><span class="nm">FeedView.test.tsx</span>
+              <span class="dir">src/renderer/src/components/</span>
+              <span class="mini"><span class="p">+88</span></span>
+              <span class="hov"><button class="iconbtn">◫</button><button class="iconbtn">⧉</button><button class="iconbtn">↶</button><button class="iconbtn">＋</button></span>
+            </div>
+            <div class="row">
+              <span class="st M">M</span><span class="nm">git-status.ts</span>
+              <span class="dir">src/renderer/src/lib/</span>
+              <span class="mini"><span class="p">+30</span> <span class="m">−4</span></span>
+              <span class="hov"><button class="iconbtn">◫</button><button class="iconbtn">⧉</button><button class="iconbtn">↶</button><button class="iconbtn">＋</button></span>
+            </div>
+            <div class="row">
+              <span class="st M">M</span><span class="nm">en.json</span>
+              <span class="dir">src/renderer/src/locales/</span>
+              <span class="mini"><span class="p">+57</span> <span class="m">−2</span></span>
+              <span class="hov"><button class="iconbtn">◫</button><button class="iconbtn">⧉</button><button class="iconbtn">↶</button><button class="iconbtn">＋</button></span>
+            </div>
+            <div class="row">
+              <span class="st M">M</span><span class="nm">DESIGN.md</span>
+              <span class="dir">docs/</span>
+              <span class="mini"><span class="p">+64</span> <span class="m">−11</span></span>
+              <span class="hov"><button class="iconbtn">◫</button><button class="iconbtn">⧉</button><button class="iconbtn">↶</button><button class="iconbtn">＋</button></span>
+            </div>
+            <div class="row">
+              <span class="st M">M</span><span class="nm">06-phase-3-ide.md</span>
+              <span class="dir">docs/plans/</span>
+              <span class="mini"><span class="p">+22</span> <span class="m">−3</span></span>
+              <span class="hov"><button class="iconbtn">◫</button><button class="iconbtn">⧉</button><button class="iconbtn">↶</button><button class="iconbtn">＋</button></span>
+            </div>
+            <div class="row">
+              <span class="st M">M</span><span class="nm">capabilities.ts</span>
+              <span class="dir">src/shared/ipc/</span>
+              <span class="mini"><span class="p">+9</span></span>
+              <span class="hov"><button class="iconbtn">◫</button><button class="iconbtn">⧉</button><button class="iconbtn">↶</button><button class="iconbtn">＋</button></span>
+            </div>
+            <div class="row">
+              <span class="st M">M</span><span class="nm">index.ts</span>
+              <span class="dir">src/preload/</span>
+              <span class="mini"><span class="p">+16</span></span>
+              <span class="hov"><button class="iconbtn">◫</button><button class="iconbtn">⧉</button><button class="iconbtn">↶</button><button class="iconbtn">＋</button></span>
+            </div>
+            <div class="row">
+              <span class="st M">M</span><span class="nm">PROGRESS.md</span>
+              <span class="dir">./</span>
+              <span class="mini"><span class="p">+38</span></span>
+              <span class="hov"><button class="iconbtn">◫</button><button class="iconbtn">⧉</button><button class="iconbtn">↶</button><button class="iconbtn">＋</button></span>
+            </div>
+          </div>
+
+          <!-- UNTRACKED -->
+          <div class="grp">
+            <div class="grphead">
+              <span class="caret">▾</span><span class="label">Untracked</span><span class="count">2</span>
+              <span class="acts">
+                <button class="iconbtn" title="View untracked">⧉</button>
+                <button class="iconbtn" title="Delete all untracked">✕</button>
+                <button class="iconbtn" title="Stage all untracked">＋</button>
+              </span>
+            </div>
+            <div class="row">
+              <span class="st Q">?</span><span class="nm">git-v2.html</span><span class="dir">mockups/</span>
+              <span class="mini"><span class="p">+862</span></span>
+              <span class="hov"><button class="iconbtn">◫</button><button class="iconbtn">⧉</button><button class="iconbtn" title="Add to .gitignore">⊘</button><button class="iconbtn">＋</button></span>
+            </div>
+            <div class="row">
+              <span class="st Q">?</span><span class="nm">commit-graph.ts</span><span class="dir">src/renderer/src/lib/</span>
+              <span class="mini"><span class="p">+211</span></span>
+              <span class="hov"><button class="iconbtn">◫</button><button class="iconbtn">⧉</button><button class="iconbtn">⊘</button><button class="iconbtn">＋</button></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="commitbox">
+          <div class="msgbox"><span class="ph">Message — Ctrl+Enter to commit 4 staged files</span></div>
+          <div class="msgfoot">
+            <button class="btn primary split">✓ Commit <span style="opacity:.6">▾</span></button>
+            <button class="btn ghost" title="Stash, amend, sign off, no-verify…">⋯</button>
+            <span class="hint">4 staged · 10 unstaged</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="flex: 1 1 380px">
+      <ul class="callouts" style="grid-template-columns: 1fr">
+        <li class="steal"><b>Stolen: resource groups.</b> VS Code's git extension registers 19 group-level actions
+        keyed on <code>scmResourceGroup</code> and 46 row-level ones. The grouping <i>is</i> the fix for "everything
+        smashed together" — nothing else in this screen matters as much.</li>
+        <li class="steal"><b>Stolen: name + description rows.</b> VS Code renders the basename as the label and the
+        directory as a dimmed description. Reverses which end truncates.</li>
+        <li class="steal"><b>Stolen: hover-only inline actions</b> (<code>inline@1</code> open, <code>inline@2</code>
+        stage/discard). The row stays readable until you aim at it; stats and actions share the same slot.</li>
+        <li class="new"><b>New: status letters, not words.</b> <span class="st M" style="font-family:var(--mono)">M</span>
+        <span class="st A" style="font-family:var(--mono)">A</span>
+        <span class="st D" style="font-family:var(--mono)">D</span>
+        <span class="st R" style="font-family:var(--mono)">R</span>
+        <span class="st U" style="font-family:var(--mono)">U</span>
+        <span class="st Q" style="font-family:var(--mono)">?</span> — git's own vocabulary, coloured, 11px, tooltip
+        carries the word. A rename shows <code>new ← old</code>.</li>
+        <li class="new"><b>New: a header that says where the repo stands.</b> Branch, ahead/behind, totals, and a
+        proportion bar. Today the pane never names the branch — <code>GitStatus</code> already carries
+        <code>branch</code>, <code>ahead</code> and <code>behind</code> and nothing reads them.</li>
+        <li class="new"><b>New: one commit box, one commit path.</b> E24's own rule — "it must be <b>one</b> commit
+        path, not two." The ⋯ holds amend / sign-off / stash, never a second primary button.</li>
+        <li><b>Deliberately absent:</b> the ✕/⧉ icon soup on every row at rest. Row actions appear on hover or
+        keyboard focus, and every one of them is also a palette command.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════ 2 ══════════════════════════════ -->
+<section class="screen" id="s2">
+  <h2><span class="num">2</span>Tree mode, and the cross-session conflict ribbon</h2>
+  <p class="note">Same data, folded by directory, with single-child folders collapsed into one node
+  (<code>src/renderer/src/components</code>, not four nested rows). The ribbon is DESIGN §5.7's
+  <b>cross-session same-repo warning</b> — it belongs here because this is the surface where you are about to stage
+  something another session is also editing.</p>
+
+  <div class="flexrow">
+    <div class="app" style="flex: 0 0 420px">
+      <div class="scm" style="height: 420px">
+        <div class="scmhead">
+          <div class="branchrow">
+            <span class="branchchip"><span class="g">⑂</span><b>feature/1041-git-v2</b></span>
+            <span class="syncchip"><span class="up">↑3</span> <span class="down">↓1</span></span>
+            <span class="spacer"></span>
+            <button class="iconbtn">⟳</button><button class="iconbtn">⟲</button><button class="iconbtn">⋯</button>
+          </div>
+          <div class="ribbon">⚠ <b>2 files</b> here are also uncommitted in <b>TradingApp</b> and <b>sb-wt-2</b>
+            <span style="margin-left:auto;color:var(--text-dim);text-decoration:underline">show</span></div>
+        </div>
+        <div class="filterrow">
+          <span class="filterbox">⌕ <span>Filter changed files…</span></span>
+          <span class="seg"><button title="Flat list">☰</button><button class="on" title="Folder tree">⊟</button></span>
+          <button class="iconbtn">⧉</button>
+        </div>
+        <div class="scmbody">
+          <div class="grphead">
+            <span class="caret">▾</span><span class="label">Changes</span><span class="count">10</span>
+            <span class="acts"><button class="iconbtn">⧉</button><button class="iconbtn">↶</button><button class="iconbtn">＋</button></span>
+          </div>
+          <div class="treenode"><span class="caret">▾</span><span class="folder">docs</span><span class="count">2</span></div>
+          <div class="row d1"><span class="st M">M</span><span class="nm">DESIGN.md</span><span class="dir"></span>
+            <span class="mini"><span class="p">+64</span> <span class="m">−11</span></span></div>
+          <div class="treenode" style="padding-left:29px"><span class="caret">▾</span><span class="folder">plans</span><span class="count">1</span></div>
+          <div class="row d2"><span class="st M">M</span><span class="nm">06-phase-3-ide.md</span><span class="dir"></span>
+            <span class="mini"><span class="p">+22</span> <span class="m">−3</span></span></div>
+          <div class="treenode"><span class="caret">▾</span><span class="folder">src/renderer/src/components</span><span class="count">2</span></div>
+          <div class="row d1"><span class="st M">M</span><span class="nm">FeedView.tsx</span><span class="dir"></span>
+            <span class="sessionchip">↳ TradingApp</span>
+            <span class="mini"><span class="p">+41</span> <span class="m">−6</span></span></div>
+          <div class="row d1"><span class="st M">M</span><span class="nm">FeedView.test.tsx</span><span class="dir"></span>
+            <span class="mini"><span class="p">+88</span></span></div>
+          <div class="treenode"><span class="caret">▾</span><span class="folder">src/renderer/src/extensibility</span><span class="count">1</span></div>
+          <div class="row d1 sel"><span class="st M">M</span><span class="nm">panels.tsx</span><span class="dir"></span>
+            <span class="sessionchip">↳ sb-wt-2</span>
+            <span class="hov"><button class="iconbtn">◫</button><button class="iconbtn">⧉</button><button class="iconbtn">↶</button><button class="iconbtn">＋</button></span></div>
+          <div class="treenode"><span class="caret">▾</span><span class="folder">src/renderer/src/lib</span><span class="count">1</span></div>
+          <div class="row d1"><span class="st M">M</span><span class="nm">git-status.ts</span><span class="dir"></span>
+            <span class="mini"><span class="p">+30</span> <span class="m">−4</span></span></div>
+          <div class="treenode"><span class="caret">▸</span><span class="folder">src/shared/ipc</span><span class="count">1</span></div>
+          <div class="treenode"><span class="caret">▸</span><span class="folder">src/preload</span><span class="count">1</span></div>
+          <div class="row"><span class="st M">M</span><span class="nm">PROGRESS.md</span><span class="dir"></span>
+            <span class="mini"><span class="p">+38</span></span></div>
+        </div>
+      </div>
+    </div>
+    <div style="flex: 1 1 380px">
+      <ul class="callouts" style="grid-template-columns: 1fr">
+        <li class="steal"><b>Stolen: compressed folder nodes.</b> VS Code collapses single-child directories into one
+        row. In this repo that is the difference between 4 rows of chrome and 1.</li>
+        <li class="new"><b>New and ours alone: the <code>↳ session</code> chip.</b> §5.24 attribution, already used by
+        the document viewer, reused to answer "who else is in this file?" Research in §5.7 verified no competitor
+        ships cross-session conflict awareness — Conductor reviews "one workspace at a time".</li>
+        <li><b>The ribbon is advisory, never blocking.</b> Fail-open: if the bus can't answer, no ribbon, and staging
+        still works.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════ 3 ══════════════════════════════ -->
+<section class="screen" id="s3">
+  <h2><span class="num">3</span>The diff is a dock panel, not a tab body</h2>
+  <p class="note">This is the structural change. Today the Monaco diff lives <i>inside</i> the Changes tab, and card
+  tabs are mutually exclusive — so you cannot watch the session and read its diff at once. Instead a diff opens as its
+  own dockview panel in the document area, exactly as a <code>doc-</code> viewer already does: a
+  <code>diff-</code> panel family with the same open/focus registry, the same tab strip, the same drag targets.
+  <b>Pop-out then comes for free</b>, because dockview popout groups are already wired (<code>popout-bounds.ts</code>,
+  <code>app:popoutGeometryChanged</code>).</p>
+
+  <div class="app relpos">
+    <div class="titlebar"><span class="dots"><i></i><i></i><i></i></span>switchboard.ai — Control Room
+      <span class="winbtns"><span>—</span><span>▢</span><span>✕</span></span></div>
+    <div style="display:flex; height: 440px">
+      <!-- session card -->
+      <div style="width: 300px; border-right: 1px solid var(--line); display:flex; flex-direction:column">
+        <div class="cardhead"><span class="lamp"></span><span class="name">switchboard.ai</span></div>
+        <div class="tabstrip">
+          <div class="tab">Session</div><div class="tab on">Changes <span class="badge">17</span></div>
+          <div class="tab">Files</div><div class="tab">History</div><div class="tab spacer"></div>
+        </div>
+        <div class="scm" style="flex:1">
+          <div class="scmhead" style="padding-bottom:7px">
+            <div class="branchrow">
+              <span class="branchchip"><span class="g">⑂</span><b>feature/1041-git-v2</b></span>
+              <span class="syncchip"><span class="up">↑3</span></span><span class="spacer"></span>
+              <button class="iconbtn">⟳</button>
+            </div>
+          </div>
+          <div class="scmbody">
+            <div class="grphead"><span class="caret">▾</span><span class="label">Staged</span><span class="count">4</span>
+              <span class="acts"><button class="iconbtn">⧉</button><button class="iconbtn">−</button></span></div>
+            <div class="row"><span class="st M">M</span><span class="nm">DiffPane.tsx</span><span class="dir">…/components/</span>
+              <span class="mini"><span class="p">+218</span></span></div>
+            <div class="row"><span class="st A">A</span><span class="nm">git-log.ts</span><span class="dir">src/main/git/</span>
+              <span class="mini"><span class="p">+164</span></span></div>
+            <div class="grphead"><span class="caret">▾</span><span class="label">Changes</span><span class="count">10</span>
+              <span class="acts"><button class="iconbtn">⧉</button><button class="iconbtn">＋</button></span></div>
+            <div class="row sel"><span class="st M">M</span><span class="nm">panels.tsx</span><span class="dir">…/extensibility/</span>
+              <span class="hov"><button class="iconbtn">◫</button><button class="iconbtn" style="border-color:var(--amber-line);color:var(--amber)">⧉</button><button class="iconbtn">＋</button></span></div>
+            <div class="row"><span class="st M">M</span><span class="nm">FeedView.tsx</span><span class="dir">…/components/</span>
+              <span class="mini"><span class="p">+41</span></span></div>
+            <div class="row"><span class="st M">M</span><span class="nm">en.json</span><span class="dir">…/locales/</span>
+              <span class="mini"><span class="p">+57</span></span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- document area with diff panels -->
+      <div class="dockarea" style="flex-direction:column">
+        <div class="docktabs">
+          <div class="dt">DESIGN.md <span class="x">✕</span></div>
+          <div class="dt on">◫ panels.tsx <span class="x">✕</span></div>
+          <div class="dt">◫ ⧉ FeedView.tsx <span class="pin">⧉</span></div>
+          <div class="dt">◫ All changes (17) <span class="x">✕</span></div>
+        </div>
+        <div class="diffwrap">
+          <div class="difftool">
+            <span class="st M" style="font-family:var(--mono);font-weight:700">M</span>
+            <span class="fname">panels.tsx</span><span class="fdir">src/renderer/src/extensibility/</span>
+            <span class="spacer"></span>
+            <span class="hunknav"><button class="iconbtn" title="Previous hunk">↑</button>2 / 4<button class="iconbtn" title="Next hunk">↓</button></span>
+            <span class="seg"><button class="on">◫ Split</button><button>≡ Inline</button></span>
+            <button class="iconbtn" title="Ignore whitespace">␠</button>
+            <button class="iconbtn" title="Open file">↗</button>
+            <button class="popbtn" title="Move this diff to its own window">⧉ Pop out</button>
+          </div>
+          <div class="code">
+            <div class="cols">
+              <div class="col"><div class="colhead">HEAD</div></div>
+              <div class="col"><div class="colhead">Working tree — unstaged</div></div>
+            </div>
+            <div class="hunkhead"><span class="loc">@@ −160,12 +160,18 @@</span><span>sessionPanels</span>
+              <span class="acts"><button>↶ Revert hunk</button><button>＋ Stage hunk</button></span></div>
+            <div class="cols">
+              <div class="col">
+                <div class="ln"><span class="gut">160</span><span class="mk"></span><span class="tx">  {</span></div>
+                <div class="ln del"><span class="gut">161</span><span class="mk">−</span><span class="tx">    <span class="com">// Shown but not clickable — §5.8's rule that you can</span></span></div>
+                <div class="ln del"><span class="gut">162</span><span class="mk">−</span><span class="tx">    <span class="com">// always SEE what exists.</span></span></div>
+                <div class="ln del"><span class="gut">163</span><span class="mk">−</span><span class="tx">    manifest: manifest(<span class="str">'panel-history'</span>, <span class="str"><em>'History (placeholder)'</em></span>),</span></div>
+                <div class="ln"><span class="gut">164</span><span class="mk"></span><span class="tx">    id: <span class="str">'history'</span>,</span></div>
+                <div class="ln"><span class="gut">165</span><span class="mk"></span><span class="tx">    titleKey: <span class="str">'grid.viewHistory'</span>,</span></div>
+                <div class="ln"><span class="gut">166</span><span class="mk"></span><span class="tx">    order: <span class="num2">30</span>,</span></div>
+                <div class="ln del"><span class="gut">167</span><span class="mk">−</span><span class="tx">    enabled: () <span class="kw">=&gt;</span> <em>false</em>,</span></div>
+                <div class="ln del"><span class="gut">168</span><span class="mk">−</span><span class="tx">    render: () <span class="kw">=&gt;</span> <em>null</em>,</span></div>
+                <div class="ln blank"><span class="gut"></span><span class="mk"></span><span class="tx"></span></div>
+                <div class="ln blank"><span class="gut"></span><span class="mk"></span><span class="tx"></span></div>
+                <div class="ln"><span class="gut">169</span><span class="mk"></span><span class="tx">  },</span></div>
+              </div>
+              <div class="col">
+                <div class="ln"><span class="gut">160</span><span class="mk"></span><span class="tx">  {</span></div>
+                <div class="ln add"><span class="gut">161</span><span class="mk">+</span><span class="tx">    <span class="com">// The History tab, built (E24-02). §5.7's read half, finally.</span></span></div>
+                <div class="ln add"><span class="gut">162</span><span class="mk">+</span><span class="tx">    manifest: manifest(<span class="str">'panel-history'</span>, <span class="str"><em>'History'</em></span>),</span></div>
+                <div class="ln"><span class="gut">163</span><span class="mk"></span><span class="tx">    id: <span class="str">'history'</span>,</span></div>
+                <div class="ln"><span class="gut">164</span><span class="mk"></span><span class="tx">    titleKey: <span class="str">'grid.viewHistory'</span>,</span></div>
+                <div class="ln"><span class="gut">165</span><span class="mk"></span><span class="tx">    order: <span class="num2">30</span>,</span></div>
+                <div class="ln add"><span class="gut">166</span><span class="mk">+</span><span class="tx">    enabled: (ctx) <span class="kw">=&gt;</span> <em>!!ctx.folder</em>,</span></div>
+                <div class="ln add"><span class="gut">167</span><span class="mk">+</span><span class="tx">    render: (ctx) <span class="kw">=&gt;</span></span></div>
+                <div class="ln add"><span class="gut">168</span><span class="mk">+</span><span class="tx">      ctx.folder ? (</span></div>
+                <div class="ln add"><span class="gut">169</span><span class="mk">+</span><span class="tx">        <span class="fn">&lt;HistoryPane</span> folder={ctx.folder} cardId={ctx.cardId} /&gt;</span></div>
+                <div class="ln add"><span class="gut">170</span><span class="mk">+</span><span class="tx">      ) : null,</span></div>
+                <div class="ln"><span class="gut">171</span><span class="mk"></span><span class="tx">  },</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="ctxmenu">
+      <div class="mi">Open file <kbd>Ctrl+Enter</kbd></div>
+      <div class="mi">Open file at HEAD</div>
+      <div class="sep"></div>
+      <div class="mi hi">Move to New Window <kbd>⧉</kbd></div>
+      <div class="mi">Split right</div>
+      <div class="mi">Split down</div>
+      <div class="sep"></div>
+      <div class="mi">Stage all changes in this file</div>
+      <div class="mi">Discard all changes in this file</div>
+      <div class="sep"></div>
+      <div class="mi">Close</div>
+      <div class="mi">Close all diffs <span style="font-size:9.5px;opacity:.7">(keeps popped-out)</span></div>
+    </div>
+  </div>
+  <div class="caption">Two diff panels + one all-changes panel open beside a document. Tab 3 wears ⧉ — it is already in
+    another window. The right-click menu is dockview's, plus git's own entries.</div>
+
+  <ul class="callouts">
+    <li class="new"><b>New panel family: <code>diff-</code>.</b> Mirrors <code>DOCUMENT_PANEL_PREFIX</code> and
+    <code>planDocumentOpen</code> — keyed on <code>folder + path + left..right</code>, so asking twice focuses the
+    panel you already have instead of opening a second one.</li>
+    <li class="new"><b>Popped-out diffs are spared by bulk close</b>, for the three reasons
+    <code>closableDocuments</code> already gives: popping out <i>is</i> the surviving "keep this one".</li>
+    <li class="steal"><b>Stolen: a diff is a first-class editor.</b> VS Code's <code>git.openChange</code> opens into
+    the editor area, not into the SCM view. Ours never did, and that is why it always felt cramped.</li>
+    <li><b>The Changes tab keeps a diff too</b> — the ◫ button still previews in place for a quick glance. ⧉ is the
+    escalation, not the only route.</li>
+  </ul>
+</section>
+
+<!-- ══════════════════════════════ 4 ══════════════════════════════ -->
+<section class="screen" id="s4">
+  <h2><span class="num">4</span>Popped out — its own OS window, resizable, closable</h2>
+  <p class="note">The explicit ask. A real <code>BrowserWindow</code> via dockview's popout group: move it to the other
+  monitor, resize it, leave it open across tab switches, close it with its own ✕ and the panel returns to the dock.
+  Geometry is saved by the existing <code>popout-bounds</code> plumbing, so it reopens where you left it.</p>
+
+  <div class="flexrow">
+    <div class="app" style="flex: 1 1 540px">
+      <div class="titlebar"><span class="dots"><i></i><i></i><i></i></span>
+        <span style="font-family:var(--mono);color:var(--text)">panels.tsx</span>
+        <span style="color:var(--text-faint)">· switchboard.ai · feature/1041-git-v2</span>
+        <span class="winbtns"><span>—</span><span>▢</span><span>✕</span></span></div>
+      <div class="docktabs"><div class="dt on">◫ panels.tsx <span class="x">✕</span></div>
+        <div class="dt">◫ FeedView.tsx <span class="x">✕</span></div></div>
+      <div class="diffwrap">
+        <div class="difftool">
+          <span class="st M" style="font-family:var(--mono);font-weight:700">M</span>
+          <span class="fname">panels.tsx</span><span class="fdir">src/renderer/src/extensibility/</span>
+          <span class="spacer"></span>
+          <span class="hunknav"><button class="iconbtn">↑</button>2 / 4<button class="iconbtn">↓</button></span>
+          <span class="seg"><button class="on">◫ Split</button><button>≡ Inline</button></span>
+          <button class="iconbtn" title="Ignore whitespace">␠</button>
+          <button class="btn" style="font-size:10px">＋ Stage file</button>
+          <button class="iconbtn" title="Return to main window">⇤</button>
+        </div>
+        <div class="code">
+          <div class="cols">
+            <div class="col"><div class="colhead">HEAD</div></div>
+            <div class="col"><div class="colhead">Working tree — unstaged</div></div>
+          </div>
+          <div class="hunkhead"><span class="loc">@@ −138,6 +138,11 @@</span><span>sessionPanels</span>
+            <span class="acts"><button>↶ Revert hunk</button><button>＋ Stage hunk</button></span></div>
+          <div class="cols">
+            <div class="col">
+              <div class="ln"><span class="gut">138</span><span class="mk"></span><span class="tx">    enabled: (ctx) <span class="kw">=&gt;</span> !!ctx.folder,</span></div>
+              <div class="ln"><span class="gut">139</span><span class="mk"></span><span class="tx">    render: (ctx) <span class="kw">=&gt;</span></span></div>
+              <div class="ln"><span class="gut">140</span><span class="mk"></span><span class="tx">      ctx.folder ? (</span></div>
+              <div class="ln blank"><span class="gut"></span><span class="mk"></span><span class="tx"></span></div>
+              <div class="ln blank"><span class="gut"></span><span class="mk"></span><span class="tx"></span></div>
+              <div class="ln"><span class="gut">141</span><span class="mk"></span><span class="tx">        <span class="fn">&lt;FileTree</span></span></div>
+              <div class="ln"><span class="gut">142</span><span class="mk"></span><span class="tx">          root={ctx.folder}</span></div>
+            </div>
+            <div class="col">
+              <div class="ln"><span class="gut">138</span><span class="mk"></span><span class="tx">    enabled: (ctx) <span class="kw">=&gt;</span> !!ctx.folder,</span></div>
+              <div class="ln"><span class="gut">139</span><span class="mk"></span><span class="tx">    render: (ctx) <span class="kw">=&gt;</span></span></div>
+              <div class="ln"><span class="gut">140</span><span class="mk"></span><span class="tx">      ctx.folder ? (</span></div>
+              <div class="ln add"><span class="gut">141</span><span class="mk">+</span><span class="tx">        <span class="com">// §5.7's VCS decorations (E24-05): the tree paints the</span></span></div>
+              <div class="ln add"><span class="gut">142</span><span class="mk">+</span><span class="tx">        <span class="com">// same letters the Changes tab does, from one source.</span></span></div>
+              <div class="ln"><span class="gut">143</span><span class="mk"></span><span class="tx">        <span class="fn">&lt;FileTree</span></span></div>
+              <div class="ln add"><span class="gut">144</span><span class="mk">+</span><span class="tx">          decorations={ctx.<em>gitDecorations</em>}</span></div>
+            </div>
+          </div>
+          <div class="hunkhead"><span class="loc">@@ −186,3 +191,9 @@</span><span>module scope</span>
+            <span class="acts"><button>↶ Revert hunk</button><button>＋ Stage hunk</button></span></div>
+          <div class="cols">
+            <div class="col">
+              <div class="ln"><span class="gut">186</span><span class="mk"></span><span class="tx">];</span></div>
+              <div class="ln blank"><span class="gut"></span><span class="mk"></span><span class="tx"></span></div>
+            </div>
+            <div class="col">
+              <div class="ln"><span class="gut">191</span><span class="mk"></span><span class="tx">];</span></div>
+              <div class="ln add"><span class="gut">192</span><span class="mk">+</span><span class="tx"><span class="com">// HistoryPane is lazy — monaco is already in the entry chunk;</span></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="flex: 1 1 320px">
+      <ul class="callouts" style="grid-template-columns: 1fr">
+        <li class="new"><b>The popout titlebar names the file, the session and the branch.</b> A window on a second
+        monitor has to say which of eight sessions it came from.</li>
+        <li class="new"><b>⇤ sends it home.</b> Symmetric with ⧉, so the gesture is reversible without hunting
+        for a menu.</li>
+        <li><b>It is a dockview popout group, not a bespoke window.</b> It shares this renderer's context, which is
+        why the Monaco theme, the find surface and the i18n strings all just work — and why there is no second
+        IPC channel to design.</li>
+        <li><b>Known gotchas already paid for:</b> close via <code>window.close()</code> in e2e, tree-kill teardown,
+        and the Linux-xvfb skip. The popout e2e recipe exists; a diff popout inherits it.</li>
+        <li class="new"><b>More than one diff can live in one popout.</b> Drag a second file's diff into the same
+        window and you have a two-tab review window on the side monitor.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════ 5 ══════════════════════════════ -->
+<section class="screen" id="s5">
+  <h2><span class="num">5</span>All changes in one scroll</h2>
+  <p class="note">VS Code's multi-file diff editor (<code>git.viewChanges</code>), which we have no equivalent of.
+  Every changed file stacked in one scrollable panel, each with its own sticky header and its own stage button, large
+  files collapsed until asked for. This is the surface for reviewing what an agent just did — you read top to bottom
+  instead of clicking seventeen files.</p>
+
+  <div class="app">
+    <div class="docktabs"><div class="dt">◫ panels.tsx <span class="x">✕</span></div>
+      <div class="dt on">◫ All changes (17) <span class="x">✕</span></div></div>
+    <div class="diffwrap">
+      <div class="difftool">
+        <span class="fname">All changes</span>
+        <span class="fdir">feature/1041-git-v2 · working tree vs HEAD</span>
+        <span class="spacer"></span>
+        <span class="statline" style="margin:0"><span class="plus">+1,204</span><span class="minus">−318</span>
+          <span class="files">17 files</span></span>
+        <span class="seg"><button class="on">◫ Split</button><button>≡ Inline</button></span>
+        <button class="iconbtn" title="Collapse all">⊟</button>
+        <button class="btn" style="font-size:10px">＋ Stage all</button>
+        <button class="popbtn">⧉ Pop out</button>
+      </div>
+      <div class="code" style="max-height: 460px; overflow: auto">
+        <div class="mfhead"><span class="caret" style="color:var(--text-faint);font-family:var(--mono);font-size:9px">▾</span>
+          <span class="st M">M</span><span class="nm">panels.tsx</span><span class="dir">src/renderer/src/extensibility/</span>
+          <span class="mini"><span class="p">+16</span> <span class="m">−9</span></span>
+          <button class="iconbtn" title="Pop out just this file">⧉</button>
+          <button class="iconbtn" title="Stage this file">＋</button></div>
+        <div class="hunkhead"><span class="loc">@@ −160,12 +160,18 @@</span>
+          <span class="acts"><button>＋ Stage hunk</button></span></div>
+        <div class="cols">
+          <div class="col">
+            <div class="ln del"><span class="gut">163</span><span class="mk">−</span><span class="tx">    manifest: manifest(<span class="str">'panel-history'</span>, <span class="str"><em>'History (placeholder)'</em></span>),</span></div>
+            <div class="ln del"><span class="gut">167</span><span class="mk">−</span><span class="tx">    enabled: () <span class="kw">=&gt;</span> <em>false</em>,</span></div>
+            <div class="ln del"><span class="gut">168</span><span class="mk">−</span><span class="tx">    render: () <span class="kw">=&gt;</span> <em>null</em>,</span></div>
+          </div>
+          <div class="col">
+            <div class="ln add"><span class="gut">162</span><span class="mk">+</span><span class="tx">    manifest: manifest(<span class="str">'panel-history'</span>, <span class="str"><em>'History'</em></span>),</span></div>
+            <div class="ln add"><span class="gut">166</span><span class="mk">+</span><span class="tx">    enabled: (ctx) <span class="kw">=&gt;</span> <em>!!ctx.folder</em>,</span></div>
+            <div class="ln add"><span class="gut">167</span><span class="mk">+</span><span class="tx">    render: (ctx) <span class="kw">=&gt;</span> ctx.folder ? <span class="fn">&lt;HistoryPane</span> … /&gt; : null,</span></div>
+          </div>
+        </div>
+
+        <div class="mfhead"><span class="caret" style="color:var(--text-faint);font-family:var(--mono);font-size:9px">▾</span>
+          <span class="st A">A</span><span class="nm">git-log.ts</span><span class="dir">src/main/git/</span>
+          <span class="mini"><span class="p">+164</span></span>
+          <button class="iconbtn">⧉</button><button class="iconbtn">＋</button></div>
+        <div class="hunkhead"><span class="loc">@@ −0,0 +1,164 @@</span><span>new file</span>
+          <span class="acts"><button>＋ Stage hunk</button></span></div>
+        <div class="cols">
+          <div class="col" style="background:repeating-linear-gradient(135deg, var(--panel-2) 0 4px, transparent 4px 8px)">
+            <div class="ln" style="background:transparent"><span class="gut"></span><span class="mk"></span><span class="tx" style="color:var(--text-faint)">  (new file)</span></div>
+          </div>
+          <div class="col">
+            <div class="ln add"><span class="gut">1</span><span class="mk">+</span><span class="tx"><span class="com">// `git log`, NUL-framed (E24-01). The format is VS Code's, verbatim:</span></span></div>
+            <div class="ln add"><span class="gut">2</span><span class="mk">+</span><span class="tx"><span class="com">// a body may contain newlines, so records cannot be split on one.</span></span></div>
+            <div class="ln add"><span class="gut">3</span><span class="mk">+</span><span class="tx"><span class="kw">export const</span> <span class="fn">LOG_FORMAT</span> = <span class="str">'%H%n%aN%n%aE%n%at%n%ct%n%P%n%D%n%B'</span>;</span></div>
+          </div>
+        </div>
+
+        <div class="mfhead"><span class="caret" style="color:var(--text-faint);font-family:var(--mono);font-size:9px">▸</span>
+          <span class="st M">M</span><span class="nm">en.json</span><span class="dir">src/renderer/src/locales/</span>
+          <span class="mini"><span class="p">+57</span> <span class="m">−2</span></span>
+          <button class="iconbtn">⧉</button><button class="iconbtn">＋</button></div>
+        <div class="mfcollapsed">collapsed — 59 changed lines · click to expand</div>
+
+        <div class="mfhead"><span class="caret" style="color:var(--text-faint);font-family:var(--mono);font-size:9px">▸</span>
+          <span class="st Q">?</span><span class="nm">git-v2.html</span><span class="dir">mockups/</span>
+          <span class="mini"><span class="p">+862</span></span>
+          <button class="iconbtn">⧉</button><button class="iconbtn">＋</button></div>
+        <div class="mfcollapsed">collapsed — 862 added lines, over the 400-line auto-expand budget · click to expand</div>
+
+        <div class="mfhead"><span class="caret" style="color:var(--text-faint);font-family:var(--mono);font-size:9px">▸</span>
+          <span class="st D">D</span><span class="nm">diff-layout.ts</span><span class="dir">src/renderer/src/lib/</span>
+          <span class="mini"><span class="m">−143</span></span>
+          <button class="iconbtn">⧉</button><button class="iconbtn">＋</button></div>
+        <div class="mfcollapsed">collapsed — file deleted · click to expand</div>
+      </div>
+    </div>
+  </div>
+
+  <ul class="callouts">
+    <li class="steal"><b>Stolen outright</b> from <code>git.viewChanges</code> / <code>viewStagedChanges</code> /
+    <code>viewUntrackedChanges</code> — three group-level inline buttons in VS Code, three here, same place.</li>
+    <li class="new"><b>Collapse budget.</b> A file over ~400 changed lines starts collapsed. Monaco models are
+    expensive and an agent's 900-line generated file should not cost you the scroll.</li>
+    <li class="new"><b>Per-file ⧉ inside the stack.</b> Found the one file you care about? Pop just that one out and
+    keep scrolling the rest.</li>
+  </ul>
+</section>
+
+<!-- ══════════════════════════════ 6 ══════════════════════════════ -->
+<section class="screen" id="s6">
+  <h2><span class="num">6</span>History — the tab that does not exist yet</h2>
+  <p class="note">A real commit graph. Lanes drawn from <code>parentIds</code>, incoming/outgoing against the upstream
+  as expandable entries, refs as chips, per-commit <code>files +/−</code>. Searchable by message and author. Right-click
+  a commit for the operations that make it useful — branch from here, tag, cherry-pick, compare.</p>
+
+  <div class="app">
+    <div class="cardhead"><span class="lamp"></span><span class="name">switchboard.ai</span>
+      <span class="path">C:\Projects\Switchboard.ai</span></div>
+    <div class="tabstrip">
+      <div class="tab">Session</div><div class="tab">Changes <span class="badge">17</span></div>
+      <div class="tab">Files</div><div class="tab on">History</div><div class="tab spacer"></div>
+    </div>
+    <div class="hist">
+      <div class="histtool">
+        <span class="branchchip"><span class="g">⑂</span><b>feature/1041-git-v2</b></span>
+        <span class="filterbox" style="max-width:260px">⌕ <span>Search message, author, hash…</span></span>
+        <span class="seg"><button class="on">This branch</button><button>All refs</button><button>⑂ Worktrees</button></span>
+        <span style="flex:1"></span>
+        <button class="iconbtn" title="Fetch all">⇣</button>
+        <button class="iconbtn" title="Pull">↓</button>
+        <button class="iconbtn" title="Push">↑</button>
+      </div>
+
+      <div class="syncgrp inc"><span class="caret">▸</span><span class="label" style="color:var(--blue)">↓ Incoming changes</span>
+        <span class="count" style="font-family:var(--mono);font-size:9.5px;color:var(--text-faint)">1 commit · 2 files</span>
+        <span class="acts"><button class="btn" style="font-size:10px">Pull</button>
+          <button class="iconbtn" title="Open all incoming changes">⧉</button></span></div>
+      <div class="syncgrp out"><span class="caret">▾</span><span class="label" style="color:var(--amber)">↑ Outgoing changes</span>
+        <span class="count" style="font-family:var(--mono);font-size:9.5px;color:var(--text-faint)">3 commits · 11 files</span>
+        <span class="acts"><button class="btn" style="font-size:10px">Push</button>
+          <button class="iconbtn" title="Open all outgoing changes">⧉</button></span></div>
+
+      <div style="max-height:360px;overflow:auto">
+        <!-- uncommitted working changes pill -->
+        <div class="grow">
+          <div class="lane"><svg viewBox="0 0 92 26" preserveAspectRatio="none">
+            <line x1="16" y1="13" x2="16" y2="26" stroke="var(--l1)" stroke-width="2" stroke-dasharray="3 3"/>
+            <circle cx="16" cy="13" r="4.5" fill="none" stroke="var(--amber)" stroke-width="2" stroke-dasharray="2 2"/>
+          </svg></div>
+          <div class="gmeta">
+            <span class="subj" style="color:var(--amber)">Uncommitted changes</span>
+            <span class="refs"><span class="refchip wt">⑂ working tree</span></span>
+            <span style="flex:1"></span>
+            <span class="mini" style="font-family:var(--mono);font-size:9.5px"><span class="p">+1,204</span> <span class="m">−318</span></span>
+            <span class="when">now</span>
+          </div>
+        </div>
+
+        <!-- outgoing 3 -->
+        <div class="grow">
+          <div class="lane"><svg viewBox="0 0 92 26" preserveAspectRatio="none">
+            <line x1="16" y1="0" x2="16" y2="26" stroke="var(--l1)" stroke-width="2"/>
+            <circle cx="16" cy="13" r="4" fill="var(--l1)"/></svg></div>
+          <div class="gmeta">
+            <span class="subj">E24-02: the History tab, built — graph lanes from parentIds</span>
+            <span class="refs"><span class="refchip head">⑂ HEAD → feature/1041-git-v2</span></span>
+            <span style="flex:1"></span>
+            <span class="av" style="background:var(--amber)">D</span><span class="who">danheinz</span>
+            <span class="mini"><span class="p">+412</span> <span class="m">−57</span> <span style="color:var(--text-faint)">9f</span></span>
+            <span class="hash">a3f91c2</span><span class="when">14m</span>
+          </div>
+        </div>
+        <div class="grow">
+          <div class="lane"><svg viewBox="0 0 92 26" preserveAspectRatio="none">
+            <line x1="16" y1="0" x2="16" y2="26" stroke="var(--l1)" stroke-width="2"/>
+            <circle cx="16" cy="13" r="4" fill="var(--l1)"/></svg></div>
+          <div class="gmeta">
+            <span class="subj">E24-01: git log, NUL-framed, with shortstat</span>
+            <span style="flex:1"></span>
+            <span class="av" style="background:var(--amber)">D</span><span class="who">danheinz</span>
+            <span class="mini"><span class="p">+301</span> <span class="m">−12</span> <span style="color:var(--text-faint)">4f</span></span>
+            <span class="hash">7b02e44</span><span class="when">2h</span>
+          </div>
+        </div>
+        <div class="grow sel">
+          <div class="lane"><svg viewBox="0 0 92 26" preserveAspectRatio="none">
+            <line x1="16" y1="0" x2="16" y2="26" stroke="var(--l1)" stroke-width="2"/>
+            <circle cx="16" cy="13" r="4.5" fill="var(--l1)" stroke="var(--text)" stroke-width="1.5"/></svg></div>
+          <div class="gmeta">
+            <span class="subj">E24-00: the OQ #9 worktree spike — findings</span>
+            <span style="flex:1"></span>
+            <span class="av" style="background:var(--amber)">D</span><span class="who">danheinz</span>
+            <span class="mini"><span class="p">+188</span> <span class="m">−3</span> <span style="color:var(--text-faint)">2f</span></span>
+            <span class="hash">1c59ad8</span><span class="when">5h</span>
+          </div>
+        </div>
+
+        <!-- merge commit: two lanes -->
+        <div class="grow">
+          <div class="lane"><svg viewBox="0 0 92 26" preserveAspectRatio="none">
+            <line x1="16" y1="0" x2="16" y2="26" stroke="var(--l1)" stroke-width="2"/>
+            <path d="M36 26 C36 16, 16 20, 16 13" fill="none" stroke="var(--l2)" stroke-width="2"/>
+            <circle cx="16" cy="13" r="4" fill="var(--l1)"/></svg></div>
+          <div class="gmeta">
+            <span class="subj">docs: 740 close-out — the first fix behind the instrument (#1036)</span>
+            <span class="refs"><span class="refchip local">main</span><span class="refchip remote">origin/main</span></span>
+            <span style="flex:1"></span>
+            <span class="av" style="background:var(--amber)">D</span><span class="who">danheinz</span>
+            <span class="mini"><span class="p">+96</span> <span class="m">−4</span> <span style="color:var(--text-faint)">1f</span></span>
+            <span class="hash">5fc9db2</span><span class="when">1d</span>
+          </div>
+        </div>
+        <div class="grow">
+          <div class="lane"><svg viewBox="0 0 92 26" preserveAspectRatio="none">
+            <line x1="16" y1="0" x2="16" y2="26" stroke="var(--l1)" stroke-width="2"/>
+            <line x1="36" y1="0" x2="36" y2="26" stroke="var(--l2)" stroke-width="2"/>
+            <circle cx="36" cy="13" r="4" fill="var(--l2)"/></svg></div>
+          <div class="gmeta">
+            <span class="subj">#740: the feed skips what you cannot see (#1034)</span>
+            <span style="flex:1"></span>
+            <span class="av" style="background:var(--violet)">C</span><span class="who">claude</span>
+            <span class="mini"><span class="p">+274</span> <span class="m">−38</span> <span style="color:var(--text-faint)">7f</span></span>
+            <span class="hash">5a705ea</span><span class="when">1d</span>
+          </div>
+        </div>
+        <div class="grow">
+          <div class="lane"><svg viewBox="0 0 92 26" preserveAspectRatio="none">
+            <line x1="16" y1="0" x2="16" y2="26" stroke="var(--l1)" stroke-width="2"/>
+            <path d="M36 0 C36 10, 16 6, 16 13" fill="none" stroke="var(--l2)" stroke-width="2"/>
+            <line x1="56" y1="0" x2="56" y2="26" stroke="var(--l3)" stroke-width="2"/>
+            <circle cx="16" cy="13" r="4" fill="var(--l1)"/></svg></div>
+          <div class="gmeta">
+            <span class="subj">E21: telemetry can tell starvation from blocking (#1031)</span>
+            <span class="refs"><span class="refchip tag">v0.8.3</span></span>
+            <span style="flex:1"></span>
+            <span class="av" style="background:var(--violet)">C</span><span class="who">claude</span>
+            <span class="mini"><span class="p">+519</span> <span class="m">−121</span> <span style="color:var(--text-faint)">12f</span></span>
+            <span class="hash">e4ff008</span><span class="when">2d</span>
+          </div>
+        </div>
+        <div class="grow">
+          <div class="lane"><svg viewBox="0 0 92 26" preserveAspectRatio="none">
+            <line x1="16" y1="0" x2="16" y2="26" stroke="var(--l1)" stroke-width="2"/>
+            <line x1="56" y1="0" x2="56" y2="26" stroke="var(--l3)" stroke-width="2"/>
+            <circle cx="16" cy="13" r="4" fill="var(--l1)"/></svg></div>
+          <div class="gmeta">
+            <span class="subj">docs: orchestration run close-out — seven done (#1030)</span>
+            <span style="flex:1"></span>
+            <span class="av" style="background:var(--violet)">C</span><span class="who">claude</span>
+            <span class="mini"><span class="p">+142</span> <span style="color:var(--text-faint)">1f</span></span>
+            <span class="hash">d86c50d</span><span class="when">2d</span>
+          </div>
+        </div>
+        <div class="grow">
+          <div class="lane"><svg viewBox="0 0 92 26" preserveAspectRatio="none">
+            <line x1="16" y1="0" x2="16" y2="26" stroke="var(--l1)" stroke-width="2"/>
+            <path d="M56 0 C56 14, 16 8, 16 13" fill="none" stroke="var(--l3)" stroke-width="2"/>
+            <circle cx="16" cy="13" r="4" fill="var(--l1)"/></svg></div>
+          <div class="gmeta">
+            <span class="subj">E20: the orchestrator's four lessons, written down</span>
+            <span class="refs"><span class="refchip wt">⑂ sb-wt-2</span></span>
+            <span style="flex:1"></span>
+            <span class="av" style="background:var(--violet)">C</span><span class="who">claude</span>
+            <span class="mini"><span class="p">+88</span> <span class="m">−6</span> <span style="color:var(--text-faint)">3f</span></span>
+            <span class="hash">b1e7f30</span><span class="when">3d</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <ul class="callouts">
+    <li class="steal"><b>Stolen: the history item model.</b> VS Code's provider returns
+    <code>{id, parentIds, subject, message, author, displayId, timestamp, statistics{files,insertions,deletions},
+    references[]}</code>. That shape is exactly what a lane renderer needs — copy the model, draw our own lanes.</li>
+    <li class="steal"><b>Stolen: incoming/outgoing as first-class rows.</b> Expandable, with Pull/Push on the row and
+    "open all these changes" beside it.</li>
+    <li class="new"><b>New: worktree chips.</b> A <code>⑂ sb-wt-2</code> chip on the commit a sibling worktree sits on.
+    GitLens added a per-worktree pill in June 2026; for an orchestrator running three worktrees it is the single most
+    useful thing the graph can say.</li>
+    <li class="new"><b>New: the working tree is row zero.</b> A dashed ring above HEAD, clickable straight into the
+    all-changes panel — the graph and the Changes tab stop being two unrelated worlds.</li>
+  </ul>
+</section>
+
+<!-- ══════════════════════════════ 7 ══════════════════════════════ -->
+<section class="screen" id="s7">
+  <h2><span class="num">7</span>A commit, opened</h2>
+  <p class="note">Select a commit and its files appear beneath it — same row shape as the Changes tab, same letters,
+  same ⧉. Clicking a file opens <code>commit^..commit</code> for that path as a <code>diff-</code> panel, which can be
+  popped out like any other.</p>
+
+  <div class="app">
+    <div class="hist">
+      <div class="grow sel">
+        <div class="lane"><svg viewBox="0 0 92 26" preserveAspectRatio="none">
+          <line x1="16" y1="0" x2="16" y2="26" stroke="var(--l1)" stroke-width="2"/>
+          <circle cx="16" cy="13" r="4.5" fill="var(--l1)" stroke="var(--text)" stroke-width="1.5"/></svg></div>
+        <div class="gmeta"><span class="subj">#740: the feed skips what you cannot see, and still knows how tall it is (#1034)</span>
+          <span style="flex:1"></span><span class="av" style="background:var(--violet)">C</span><span class="who">claude</span>
+          <span class="hash">5a705ea</span><span class="when">1d</span></div>
+      </div>
+      <div class="cdetail">
+        <div class="top">
+          <div class="msg">
+            <div class="s">#740: the feed skips what you cannot see, and still knows how tall it is (#1034)</div>
+            <div class="b">Every block stands on its own measured content-box height, so scrollHeight
+stays exact. The guess and the measurement cost the same 7.3ms.
+
+Co-Authored-By: Claude Opus 5 &lt;noreply@anthropic.com&gt;</div>
+          </div>
+          <div class="side">
+            <div><span style="color:var(--text-faint)">5a705ea</span> <button class="iconbtn" title="Copy hash">⧉</button></div>
+            <div>claude &lt;noreply@…&gt;</div>
+            <div>2026-10-01 18:42</div>
+            <div style="margin-top:5px"><span class="p" style="color:var(--add-ink)">+274</span>
+              <span class="m" style="color:var(--del-ink)">−38</span> · 7 files</div>
+            <div style="margin-top:6px">
+              <button class="btn" style="font-size:10px">⧉ Open all changes</button>
+              <button class="btn ghost" style="font-size:10px">⋯</button>
+            </div>
+          </div>
+        </div>
+        <div class="flist">
+          <div class="row"><span class="st M">M</span><span class="nm">FeedView.tsx</span>
+            <span class="dir">src/renderer/src/components/</span>
+            <span class="mini"><span class="p">+96</span> <span class="m">−14</span></span>
+            <span class="hov"><button class="iconbtn" title="Open this commit's diff">◫</button>
+              <button class="iconbtn" title="Pop out">⧉</button>
+              <button class="iconbtn" title="This file's history">⏱</button>
+              <button class="iconbtn" title="Open file at this commit">↗</button></span></div>
+          <div class="row"><span class="st A">A</span><span class="nm">feed-skipping.ts</span>
+            <span class="dir">src/renderer/src/lib/</span>
+            <span class="mini"><span class="p">+121</span></span>
+            <span class="hov"><button class="iconbtn">◫</button><button class="iconbtn">⧉</button><button class="iconbtn">⏱</button><button class="iconbtn">↗</button></span></div>
+          <div class="row"><span class="st A">A</span><span class="nm">feed-skipping.test.ts</span>
+            <span class="dir">src/renderer/src/lib/</span>
+            <span class="mini"><span class="p">+44</span></span>
+            <span class="hov"><button class="iconbtn">◫</button><button class="iconbtn">⧉</button><button class="iconbtn">⏱</button><button class="iconbtn">↗</button></span></div>
+          <div class="row"><span class="st M">M</span><span class="nm">feed.spec.ts</span><span class="dir">e2e/</span>
+            <span class="mini"><span class="p">+13</span> <span class="m">−24</span></span>
+            <span class="hov"><button class="iconbtn">◫</button><button class="iconbtn">⧉</button><button class="iconbtn">⏱</button><button class="iconbtn">↗</button></span></div>
+        </div>
+      </div>
+      <div class="grow">
+        <div class="lane"><svg viewBox="0 0 92 26" preserveAspectRatio="none">
+          <line x1="16" y1="0" x2="16" y2="26" stroke="var(--l1)" stroke-width="2"/>
+          <circle cx="16" cy="13" r="4" fill="var(--l1)"/></svg></div>
+        <div class="gmeta"><span class="subj">docs: 1031 close-out — two phenomena, one instrument (#1033)</span>
+          <span style="flex:1"></span><span class="av" style="background:var(--violet)">C</span><span class="who">claude</span>
+          <span class="hash">1a53462</span><span class="when">1d</span></div>
+      </div>
+    </div>
+  </div>
+
+  <ul class="callouts">
+    <li class="steal"><b>Stolen: expand-in-place.</b> VS Code expands a graph row into its file list rather than
+    opening a second pane. Keeps the graph as the spine of the view.</li>
+    <li class="new"><b>New: ⏱ file history.</b> VS Code's Timeline, as a row action — <code>git log --follow</code> on
+    one path. From a commit's file list it is the natural next question.</li>
+    <li><b>Root commits work.</b> Their diff is against git's empty tree
+    (<code>4b825dc…</code>), which is what VS Code's <code>getEmptyTree()</code> exists for. Easy to get wrong, and the
+    failure mode is an empty diff with no explanation.</li>
+  </ul>
+</section>
+
+<!-- ══════════════════════════════ 8 ══════════════════════════════ -->
+<section class="screen" id="s8">
+  <h2><span class="num">8</span>Staging at the granularity that matters</h2>
+  <p class="note">The write half. VS Code puts <code>git.diff.stageHunk</code> in the diff editor's
+  <i>gutter</i> and <code>git.diff.stageSelection</code> on a selection — the two contributions
+  <code>diffEditor/gutter/hunk</code> and <code>diffEditor/gutter/selection</code>. Monaco gives us the gutter hover
+  for free; the git side is <code>git apply --cached</code> over a synthesised one-hunk patch.</p>
+
+  <div class="app" style="max-width: 900px">
+    <div class="diffwrap">
+      <div class="difftool"><span class="st M" style="font-family:var(--mono);font-weight:700">M</span>
+        <span class="fname">FeedView.tsx</span><span class="fdir">src/renderer/src/components/</span>
+        <span class="spacer"></span>
+        <span class="hunknav"><button class="iconbtn">↑</button>1 / 3<button class="iconbtn">↓</button></span>
+        <span class="seg"><button>◫ Split</button><button class="on">≡ Inline</button></span>
+        <button class="btn" style="font-size:10px">＋ Stage file</button>
+        <button class="popbtn">⧉</button></div>
+      <div class="code">
+        <div class="hunkhead"><span class="loc">@@ −412,7 +412,11 @@</span><span>FeedView</span>
+          <span class="acts"><button>↶ Revert hunk</button><button>＋ Stage hunk</button></span></div>
+        <div class="ln"><span class="gut">412</span><span class="mk"></span><span class="tx">  <span class="kw">const</span> rendered = <span class="fn">useSkipList</span>(blocks);</span></div>
+        <div class="ln del"><span class="gut">413</span><span class="mk">−</span><span class="tx">  <span class="kw">return</span> &lt;div className=<span class="str">"feed"</span> style={{ <em>containIntrinsicSize</em>: <span class="str">'auto 80px'</span> }}&gt;</span></div>
+        <div class="ln add" style="position:relative"><span class="gutterstage">＋</span>
+          <span class="gut">413</span><span class="mk">+</span><span class="tx">  <span class="com">// measured, not guessed — a guess made scrollHeight 2.3× too long</span></span></div>
+        <div class="ln add"><span class="gut">414</span><span class="mk">+</span><span class="tx">  <span class="kw">return</span> &lt;div className=<span class="str">"feed"</span>&gt;</span></div>
+        <div class="ln add"><span class="gut">415</span><span class="mk">+</span><span class="tx">    {rendered.<span class="fn">map</span>((b) <span class="kw">=&gt;</span> &lt;<span class="fn">Block</span> key={b.id} height={b.<em>measured</em>} /&gt;)}</span></div>
+        <div class="ln"><span class="gut">416</span><span class="mk"></span><span class="tx">  &lt;/div&gt;;</span></div>
+        <div class="hunkhead"><span class="loc">@@ −598,3 +602,9 @@</span><span>isRenderedMeasurement</span>
+          <span class="acts"><button>↶ Revert hunk</button><button>＋ Stage hunk</button></span></div>
+        <div class="ln" style="background:var(--amber-glow)"><span class="gut">598</span><span class="mk"></span><span class="tx">  <span class="com">// a detached panel reports 0×0 to every ResizeObserver</span></span></div>
+        <div class="ln add" style="background:var(--amber-glow)"><span class="gut">602</span><span class="mk">+</span><span class="tx">  <span class="kw">if</span> (box.inlineSize === <span class="num2">0</span>) <span class="kw">return</span> <em>false</em>; <span class="com">// ← selection</span></span></div>
+        <div class="ln" style="background:var(--amber-glow)"><span class="gut">603</span><span class="mk"></span><span class="tx">  <span class="kw">return</span> <em>true</em>;</span></div>
+        <div class="hunkhead" style="background:var(--amber-glow);border-color:var(--amber-line)">
+          <span style="color:var(--amber)">1 line selected</span>
+          <span class="acts"><button style="color:var(--amber);border-color:var(--amber-line)">↶ Revert selection</button>
+            <button style="color:var(--amber);border-color:var(--amber-line)">＋ Stage selection</button></span></div>
+      </div>
+    </div>
+  </div>
+
+  <ul class="callouts">
+    <li class="steal"><b>Stolen: gutter ＋.</b> Hover a hunk in the gutter, one click stages it. Hunk header buttons as
+    the discoverable twin, since a gutter affordance nobody finds is not a feature.</li>
+    <li class="steal"><b>Stolen: stage selection.</b> Select lines, stage exactly those — the finest granularity git
+    has, and the one an agent's sprawling edit most needs.</li>
+    <li class="new"><b>Editable diff is deliberately <i>not</i> on this screen.</b> §5.7 calls it table-stakes and E24
+    owns it, but a read-only Monaco that stages precisely covers most of the need, and an editable working-tree pane
+    means owning conflict-with-the-agent. Worth deciding on its own, not bundled here.</li>
+    <li><b>Fail-open:</b> a <code>git apply --cached</code> that refuses leaves the index untouched and says what git
+    said. Never a partial stage.</li>
+  </ul>
+</section>
+
+<!-- ══════════════════════════════ 9 ══════════════════════════════ -->
+<section class="screen" id="s9">
+  <h2><span class="num">9</span>The git commands behind it — and why no new library</h2>
+  <p class="note">Everything above is the system <code>git</code> binary through the existing hardened
+  <code>GitService</code> spawn wrapper (budgets, kill-tree, the <code>repo-config-guard</code>). No
+  <code>simple-git</code>, no <code>isomorphic-git</code>, no <code>nodegit</code>. We steal VS Code's command
+  <i>shapes</i>, not a dependency. Formats below are read off VS Code's
+  <code>extensions/git/dist/main.js</code>.</p>
+
+  <table class="spec">
+    <tr><th style="width:21%">Surface</th><th style="width:44%">Command</th><th>Note</th></tr>
+    <tr><td>status <span style="color:var(--ok)">(exists)</span></td>
+      <td><code>status -z -u --porcelain=v1</code></td><td>Already parsed into <code>GitFileStatus</code>.</td></tr>
+    <tr><td>per-file <code>+/−</code> <span style="color:var(--amber)">new</span></td>
+      <td><code>diff --numstat</code> · <code>diff --cached --numstat</code></td>
+      <td>Two calls, merged per path. Binary files report <code>-</code>/<code>-</code>.</td></tr>
+    <tr><td>log / graph <span style="color:var(--red)">missing entirely</span></td>
+      <td><code>log --format=%H%n%aN%n%aE%n%at%n%ct%n%P%n%D%n%B -z --shortstat --diff-merges=first-parent</code></td>
+      <td><b>The one contract worth copying verbatim.</b> <code>-z</code> NUL-frames records so a commit body with
+        newlines in it cannot split a record — and this repo's commit bodies are full of them. <code>--shortstat</code>
+        trails <i>after</i> the NUL.</td></tr>
+    <tr><td>graph for specific refs</td>
+      <td><code>log … --topo-order --decorate=full --stdin</code> ← refnames on stdin</td>
+      <td>How VS Code draws more than one branch in one graph.</td></tr>
+    <tr><td>one commit</td><td><code>show -s --decorate=full --shortstat --format=&lt;above&gt; -z &lt;sha&gt; --</code></td>
+      <td>Same parser, one record.</td></tr>
+    <tr><td>a commit's files</td><td><code>diff --numstat --name-status -z &lt;parent&gt; &lt;sha&gt;</code></td>
+      <td>Root commit: parent is the empty tree, <code>hash-object -t tree /dev/null</code> → <code>4b825dc…</code>.</td></tr>
+    <tr><td>ahead / behind</td><td><code>rev-list --left-right --count @{u}...HEAD</code></td>
+      <td><code>GitStatus</code> already has the fields; nothing populates or reads them.</td></tr>
+    <tr><td>file history</td><td><code>log --follow --format=&lt;above&gt; -z -- &lt;path&gt;</code></td>
+      <td>Powers ⏱ and the Timeline equivalent.</td></tr>
+    <tr><td>stage / unstage file</td><td><code>add -- &lt;path&gt;</code> · <code>reset -q HEAD -- &lt;path&gt;</code></td><td>—</td></tr>
+    <tr><td>stage hunk / selection</td><td><code>apply --cached --unidiff-zero -</code> ← synthesised patch on stdin</td>
+      <td>VS Code synthesises a one-hunk patch and feeds it on stdin. Never touches the worktree.</td></tr>
+    <tr><td>discard</td><td><code>checkout -q -- &lt;path&gt;</code> · <code>clean -f -- &lt;path&gt;</code></td>
+      <td>Destructive — needs a confirm, and the confirm needs to name the file count.</td></tr>
+    <tr><td>commit</td><td><code>commit --file=- </code> ← message on stdin</td>
+      <td>On stdin, never <code>-m</code>: a multi-line body with quotes in it is a quoting bug waiting to happen on
+        Windows.</td></tr>
+    <tr><td>worktrees</td><td><code>worktree list --porcelain</code></td><td>Feeds the ⑂ chips and the worktree filter.</td></tr>
+  </table>
+
+  <ul class="callouts">
+    <li><b>Why not a library.</b> <code>nodegit</code> is native bindings with known Electron memory leaks;
+    <code>isomorphic-git</code> buys browser portability we will never use and is slower on large repos;
+    <code>simple-git</code> is a thin wrapper over the same binary we already spawn, and would replace a wrapper that
+    already does budget-kill, tree-kill and config-guard with one that does none of those.</li>
+    <li><b>Why not a diff renderer.</b> <code>diff2html</code> / <code>react-diff-view</code> /
+    <code>@git-diff-view</code> all render a unified diff to HTML. We have Monaco — the component VS Code itself uses —
+    already in the entry chunk, with word-level diff, synchronised scroll, a real find, and the folding we need for the
+    multi-file view. The only thing Monaco has nothing for is the <b>graph lanes</b>, which is ~200 lines of SVG over
+    <code>parentIds</code> and does not justify a dependency either.</li>
+    <li><b>Every write operation is a new capability</b> in <code>shared/ipc/capabilities.ts</code>:
+    <code>git.write</code> for staging/commit, kept distinct from today's <code>git.read</code>, so a session cannot
+    mutate a repo through a channel that only ever read one.</li>
+  </ul>
+</section>
+
+</div>
+</body>
+</html>
