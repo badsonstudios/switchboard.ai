@@ -78,6 +78,11 @@ The app's four themes collapse to two here: **daylight** gives the diff its
 light colours and the other three give it dark ones. A palette tuned to
 **high-contrast** specifically is a later change.
 
+## See also
+
+The **History** tab beside this one shows the project's commits — what landed,
+when, and which branches and tags point where. See [History](22-history.md).
+
 ## Good to know
 
 - switchboard **shows** you changes — it doesn't commit, push, stage, or revert

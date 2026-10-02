@@ -736,7 +736,12 @@ test.describe('a session card', () => {
     await expect(window.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
     await expect(window.getByRole('tab', { name: 'Session', exact: true })).toBeVisible();
     await expect(window.getByRole('tab', { name: 'Changes' })).toBeVisible();
-    await expect(window.getByText('History', { exact: true })).toBeVisible(); // "soon" tab
+    // History is a REAL tab since E24 Git v2 item 2 — this line carried the
+    // comment `// "soon" tab` while two design documents said its log had
+    // shipped, which is a small museum of the whole problem. Asserted as a tab
+    // with a role now, rather than as text that happens to be on screen; what the
+    // tab CONTAINS is `history-tab.spec.ts`.
+    await expect(window.getByRole('tab', { name: 'History', exact: true })).toBeVisible();
     // Terminal was a fourth, deliberately LAST (owner call 2026-07-22), and it
     // is gone (#873). Asserted as ABSENT rather than simply dropped from the
     // list: a strip that quietly grew it back would otherwise go unnoticed.

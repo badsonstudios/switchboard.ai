@@ -43,7 +43,111 @@
 > log rather than the audit, §5.7 also records the editable-diff decision, and
 > VS Code's built-in Git extension is `docs/reference-implementations.md` **§4**.
 >
-> **🚧 NOW: item 1 (#1038) — `git log` in GitService + `git:log` IPC.** Code and
+> **🚧 NOW: item 2 (#1039) — the History tab itself.** PR **#1053** carries item 1
+> and is green on **both unit jobs including Linux**; item 2 lands on the same
+> branch behind it. Screen 6 minus the lanes: commit rows with ref chips, author,
+> `+/−`, short sha and a relative clock; a branch chip read off `%D` rather than
+> asked for separately; a detached-HEAD warning; a search box; incoming/outgoing
+> rows; fifty-at-a-time paging. `panels.tsx`'s `enabled: () => false,
+> render: () => null` is gone.
+>
+> **⚠️ CI CAUGHT A TEST THAT WAS GREEN ON WINDOWS FOR THE WRONG REASON** — worth
+> recording because it is the trap `spike/findings` keeps writing down. Item 1's
+> hostile-driver test set `filter.clean` **before** `git add`, and `git add` RUNS
+> that filter: on Linux the sentinel was written by the test's own fixture and the
+> assertion failed against a service that had done nothing wrong, while on Windows
+> the same fixture wrote **no sentinel at all** because `<node.exe> <script.js>`
+> is not a runnable git config command there. Broken on one platform and vacuous
+> on the other, and only the broken half announced itself. The config now goes in
+> after the commits, the writer is `sh -c` (which git invokes the same way on
+> both, since git for Windows bundles `sh`), and **each of the three drivers is
+> now shown to be LIVE on the machine before `log` is shown not to reach it**.
+> Also: `cannot spawn` is Windows's wording; Linux says `cannot exec`, so the
+> signature test matches the program's own name instead.
+>
+> **⭐⭐ REVIEW FOUND A BLOCKER THAT HID HISTORY, AND IT WAS REACHABLE ON A REAL
+> REPOSITORY.** Paging re-asks for a bigger window (50 → 100 → 150) and `wanted`
+> was advanced **on the click**. If the bigger read came back refused or
+> unreadable, `wanted` was 100 against `commits.length` 50, so `mayHaveMore` went
+> false, **the Show-more button disappeared, the error replaced the list, and
+> fifty commits were presented as the whole history.** Not theoretical: at the
+> measured ~13 ms per commit against a 15 s budget, the growing window walks into
+> the timeout at roughly a thousand commits — sooner on the laptop — and total work
+> is quadratic (50+100+…+N). Now: `{asked, got}` advances only behind a **landed**
+> page, a failed page keeps the list and puts the reason **beside** the button, and
+> the ceiling says so instead of the button going quiet.
+>
+> **AND SIX MORE, EVERY ONE OF THEM A THING THAT LOOKED FINE:**
+>
+> * **1 January 1970 on any commit git could not date.** git prints `%at` as an
+>   EMPTY LINE for an out-of-range author date, and **`Number('')` is `0`** — not
+>   `NaN`. So the `isFinite` guard the function was proud of never fired and the row
+>   drew a real-looking date. `timestamp` is `number | null` from the parser now,
+>   and the renderer refuses non-positive as well, so neither layer is the only
+>   thing standing between the two.
+> * **The incoming/outgoing rows rendered in EVERY state** — the commit count's bug
+>   exactly, missed in the same pass that fixed it. `git:status` can succeed while
+>   `git:log` is unreadable, so **"↑ 3 commits to push" drew directly above
+>   "switchboard couldn't read this project's history"**: two counts of commits on
+>   top of an admission the commits could not be read.
+> * **A row could push the hash, the stats and the date off the card.** Setting only
+>   `overflowY: auto` leaves `overflow-x` computing to `auto`, so eight ref chips
+>   plus a fixed author column grew a horizontal scrollbar — §1.2 cause 2 (the
+>   Changes tab cutting off the identifying end of a path) in a brand-new tab. The
+>   chips are one shrinking, clipping group now.
+> * **Two CSS custom properties that do not exist**, both failing silently:
+>   `--border-faint` meant **every row shipped with no separator in every theme**,
+>   and `--diff-added-ink` / `--diff-removed-ink` meant the `+/−` never used the
+>   diff palette they exist to share with the Changes tab (the real names are
+>   `--diff-added` / `--diff-removed`). The token drift test reads the token files,
+>   not inline styles, so nothing could have flagged either.
+> * **No `.catch` on either reader**, so a rejected invoke latched `loadingMore`
+>   true for ever — the button permanently disabled, reading "Reading more…".
+> * **`git:status` re-ran for every page**, carrying the whole #776 config guard
+>   (config read, submodule enumeration, several extra git processes) for two
+>   numbers that cannot change between pages of the same history.
+>
+> **AND A COMMENT THAT CLAIMED A TEST THAT DID NOT EXIST** — "the two agreeing is
+> pinned by a test", about `HISTORY_PAGE` vs main's `DEFAULT_LOG_LIMIT`. Writing it
+> turned up a tsconfig fact worth keeping: **`tsconfig.node.json` sets no `--jsx`,
+> so main's suite cannot import a `.tsx` at all**, which is why both constants now
+> live in `lib/git-log-dto.ts` and are re-exported from the component.
+>
+> **TWO THINGS THE ITEM 2 TESTS FOUND IN ITEM 2:**
+>
+> 1. **The commit count rendered in every state, so a repository switchboard
+>    could not read was topped by the words "no commits".** The pane below saying
+>    "we could not find out" and the toolbar above contradicting it with a
+>    confident zero — the exact lie this epic is a correction for, reintroduced
+>    two inches higher up. Gated on the state now, with an end-to-end witness.
+> 2. **A hand-written `{ ok: false, … }` is not an `IpcRefusal`.** `isIpcRefusal`
+>    checks a brand symbol and nothing else, so the refusal test was casting a
+>    plain object to the DTO and asserting against the not-repo branch while
+>    believing it tested the refusal branch. It uses the real builder now.
+>
+> **Deliberate gaps, each with the reason on the line that leaves it:** the
+> incoming/outgoing rows carry **counts and no buttons** (Pull/Push are item 15,
+> and *a row with a `＋` that does nothing is worse than a row with no `＋`*) · the
+> lane gutter is **reserved at zero width** so item 3 fills a hole rather than
+> re-laying every row out · **no row zero** for the working tree, because its real
+> click target is item 9's all-changes panel and `PanelContext` has no
+> `setView` — adding one to put a button somewhere would widen a contract for a
+> destination that does not exist yet.
+>
+> **Three existing tests encoded the placeholder as correct and were flipped, not
+> deleted:** `points.test.ts`'s *"History is shown but not clickable"*, its
+> disabled-fallback case (which now uses a folderless context, so the rule keeps
+> two examples), and `session.spec.ts`'s `// "soon" tab`. A fourth comment, in
+> `find.spec.ts`, said History was "deliberately not clickable" and is why the
+> greyed find-bar path had no end-to-end coverage — **that reason has now expired
+> and is recorded as an open gap** rather than quietly left stale.
+>
+> **Green:** lint · all three typecheck projects · 182 in `src/main/git` · 23
+> component · 22 DTO · the whole `extensibility` family · and a new
+> **`e2e/history-tab.spec.ts`, 2 of 2 against a REAL git repository** in the real
+> app — which is the only test that can say the capability string is right.
+>
+> **Item 1 (#1038) — `git log` in GitService + `git:log` IPC.** Code and
 > tests green locally (lint · all three typecheck projects · **182** in
 > `src/main/git`); the command shape and every edge case were **measured against
 > real git**, not guessed, per the standing rule.

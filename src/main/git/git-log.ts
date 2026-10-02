@@ -64,10 +64,21 @@ export interface GitCommit {
   message: string;
   author: string;
   authorEmail: string;
-  /** author date, seconds since epoch (`%at`) */
-  timestamp: number;
+  /**
+   * Author date, seconds since epoch (`%at`) — or `null` when git printed none.
+   *
+   * ⚠️ **`null` AND NOT `0`, BECAUSE `Number('') === 0` AND THAT IS 1 JANUARY
+   * 1970 (found in review, measured).** A commit object with an out-of-range
+   * author date — writable with `hash-object -t commit -w --literally`, and
+   * produced by tools that are not git — makes git print `%at` as an EMPTY LINE.
+   * The obvious `Number(field)` turns that into zero, which is a real-looking
+   * date, so the row drew `1970-01-01` with a matching tooltip: a confident wrong
+   * fact about the user's project, in the tab built to stop making those. A
+   * `NaN` guard does not catch it, because there is no `NaN`.
+   */
+  timestamp: number | null;
   /** commit date, seconds since epoch (`%ct`) — differs after a rebase */
-  committedTimestamp: number;
+  committedTimestamp: number | null;
   /**
    * `--shortstat`'s numbers, or `null`.
    *
@@ -587,8 +598,8 @@ function parseRecord(chunk: string): GitCommit | null {
     message: body.trimEnd(),
     author,
     authorEmail,
-    timestamp: Number(authored),
-    committedTimestamp: Number(committed),
+    timestamp: epochOrNull(authored),
+    committedTimestamp: epochOrNull(committed),
     stats: null,
     references: parseRefs(decoration),
   };
@@ -626,6 +637,25 @@ function findShaLine(chunk: string): number {
  * full sha, so a collision here can never select the wrong commit.
  */
 const SHORT_SHA = 8;
+
+/**
+ * A `%at` / `%ct` field as seconds since the epoch, or `null`.
+ *
+ * ⚠️ **THE EMPTY STRING IS THE CASE THIS EXISTS FOR** — see `GitCommit.timestamp`.
+ * `Number('')` is `0`, not `NaN`, so the only guard that works is a positive
+ * check. Also bounded to what `Date` can actually hold: a value past ±8.64e15 ms
+ * makes `toISOString()` THROW, and a throw in a renderer row is eaten by the
+ * contribution boundary and costs the whole tab. git will not emit one; the bound
+ * is here because the alternative to a cheap clamp is a blank panel.
+ */
+function epochOrNull(field: string): number | null {
+  const n = Number(field);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n * 1000 > MAX_DATE_MS ? null : n;
+}
+
+/** `Date`'s own range, past which `toISOString()` throws rather than returns. */
+const MAX_DATE_MS = 8.64e15;
 
 function firstLine(body: string): string {
   const nl = body.indexOf('\n');

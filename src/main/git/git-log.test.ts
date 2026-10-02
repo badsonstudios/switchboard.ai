@@ -18,6 +18,10 @@ import {
   parseShortstat,
 } from './git-log';
 import { EMPTY_TREE } from './repo-config-guard';
+// The renderer's copies of the two numbers. Imported ACROSS THE PROCESS BOUNDARY
+// by this test only — the component cannot import a main-process module, so the
+// test is the one place the two can be compared at all.
+import { HISTORY_PAGE, MAX_HISTORY } from '../../renderer/src/lib/git-log-dto';
 
 /**
  * Build one record the way git frames it.
@@ -434,6 +438,17 @@ describe('logArgs', () => {
   it('defaults to fifty commits — the number the measurement chose', () => {
     expect(DEFAULT_LOG_LIMIT).toBe(50);
     expect(logArgs()).toContain('--max-count=50');
+  });
+
+  it('⚠️ AGREES WITH THE RENDERER, which a comment claimed and nothing checked', () => {
+    // `HistoryPane` names its own `HISTORY_PAGE` and `MAX_HISTORY` — it cannot
+    // import a main-process module — and the comment there said "the two agreeing
+    // is pinned by a test" when no such test existed (found in review). Two files
+    // remembering the same number is exactly the shape that drifts: the renderer
+    // would quietly page in fifties while main clamped to something else, and
+    // `mayHaveMore` is computed from the agreement.
+    expect(HISTORY_PAGE).toBe(DEFAULT_LOG_LIMIT);
+    expect(MAX_HISTORY).toBe(MAX_LOG_LIMIT);
   });
 
   it('pages with --skip, and omits it at zero', () => {

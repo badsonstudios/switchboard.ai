@@ -189,10 +189,18 @@ test.describe('Session find (E17-02)', () => {
   });
 
   // The Terminal used to be this file's "a tab with no provider greys the bar"
-  // case. It has one as of P2-E17-03, and the only panel left without a
-  // provider (History) is deliberately not clickable, so the greyed-bar paths —
-  // the reason text, focus landing on the close button, Escape from there —
-  // are asserted in `components/FindBar.test.tsx` instead of here.
+  // case. It has one as of P2-E17-03, and the greyed-bar paths — the reason text,
+  // focus landing on the close button, Escape from there — are asserted in
+  // `components/FindBar.test.tsx` instead of here.
+  //
+  // ⚠️ **AND THE REASON THEY WERE NOT ASSERTED HERE HAS JUST EXPIRED.** This said
+  // "the only panel left without a provider (History) is deliberately not
+  // clickable". History became clickable in E24 Git v2 item 2 and has no find
+  // provider, so the end-to-end greyed-bar path is reachable again for the first
+  // time since #873. Not asserted here yet — two more Git v2 items change what
+  // that tab contains, and a find provider over a commit list is a question worth
+  // answering deliberately rather than as a side effect. Noted so the next reader
+  // knows the gap is open, not closed.
   // "the Terminal is a group of its own, labelled scrollback-only (E17-03)"
   // stood here, and it was the biggest test in this file: the grouped count,
   // the labelled zero that means "not in the last 5,000 lines" rather than "not

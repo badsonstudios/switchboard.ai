@@ -13,6 +13,7 @@ import { safely } from './boundary';
 import { DiffPane } from '../components/DiffPane';
 import { FeedView } from '../components/FeedView';
 import { FileTree } from '../components/FileTree';
+import { HistoryPane } from '../components/HistoryPane';
 import { openDocument } from '../lib/document-open';
 
 const manifest = (id: string, displayName: string) => manifestFor(id, displayName, 'panel.render');
@@ -136,8 +137,10 @@ export const sessionPanels: PanelContribution[] = [
     manifest: manifest('panel-files', 'Files'),
     id: 'files',
     titleKey: 'grid.viewFiles',
-    // Ahead of History, which is a permanently disabled placeholder: a working
-    // tab behind a dead one reads as the strip trailing off.
+    // Was "ahead of History, which is a permanently disabled placeholder: a
+    // working tab behind a dead one reads as the strip trailing off." History
+    // works now (E24 Git v2 item 2), so the order is just the order — Changes,
+    // Files, History, from the working tree outwards to the repository.
     order: 25,
     // Nothing to browse without a folder — greyed, not hidden, for the reason
     // the Changes tab directly above is greyed rather than hidden.
@@ -158,16 +161,31 @@ export const sessionPanels: PanelContribution[] = [
       ) : null,
   },
   {
-    // Shown but not clickable — §5.8's rule that you can always SEE what
-    // exists. It was a hardcoded "soon" span before; as a contribution it is
-    // at least honest about being a placeholder, and deleting it later is one
-    // line here rather than surgery on the strip.
-    manifest: manifest('panel-history', 'History (placeholder)'),
+    // ⚠️ **THIS WAS `enabled: () => false, render: () => null` WHILE TWO DOCUMENTS
+    // SAID ITS READ-ONLY LOG HAD SHIPPED** — `docs/DESIGN.md` §5.7's as-built note
+    // and `docs/plans/06-phase-3-ide.md`'s E24, the second having inherited the
+    // claim from the first. The owner found out by clicking the tab, six days
+    // after the audit built to catch exactly that. E24 Git v2 item 2 is this line
+    // stopping being a lie; `docs/plans/e24-git-v2-design.md` is the record.
+    //
+    // Three lines, like the Files tab above and for the same reason: everything
+    // real is in `HistoryPane` and `lib/git-log-dto.ts`, neither of which knows
+    // what a tab is. If the graph ever wants its own dock panel (design §6, still
+    // open), that is a new host rather than a rewrite.
+    manifest: manifest('panel-history', 'History'),
     id: 'history',
     titleKey: 'grid.viewHistory',
     order: 30,
-    enabled: () => false,
-    render: () => null,
+    // Greyed, not hidden, for a session with no folder — the same rule the two
+    // tabs above follow, and §5.8's: a tab is never hidden, only disabled.
+    enabled: (ctx) => !!ctx.folder,
+    // NO BADGE, deliberately, and the temptation is real: `ctx.changed` is right
+    // there and an ahead-count would look at home on this tab. It would be a
+    // second number about git on a strip that already has one, and the Changes
+    // tab's badge is about the working tree while anything here would be about
+    // the remote — two meanings, one shape.
+    render: (ctx) =>
+      ctx.folder ? <HistoryPane folder={ctx.folder} active={ctx.visible} /> : null,
   },
   // THE TERMINAL TAB IS GONE (#873, owner call 2026-09-19): *"we don't need the
   // Terminal tab anymore, and we don't need the option to switch to Terminal in
