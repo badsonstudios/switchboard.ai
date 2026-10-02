@@ -455,6 +455,7 @@
     "loading": "Reading…",
     "empty": "Nothing in this folder",
     "capped": "Only the first {n} entries are shown — this folder has more.",
+    "vcsUnder": "Something under here is {status}",
     "linkTag": "link",
     "linkHint": "{name} is a shortcut. switchboard doesn't follow shortcuts out of the session folder, so this one can't be opened here.",
     "otherHint": "{name} isn't a file or a folder, so there's nothing to open.",

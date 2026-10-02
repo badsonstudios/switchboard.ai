@@ -43,6 +43,47 @@
 > log rather than the audit, §5.7 also records the editable-diff decision, and
 > VS Code's built-in Git extension is `docs/reference-implementations.md` **§4**.
 >
+> **🚧 NOW: item 11 (#1048) — git badges on the Files tab, from the SAME status
+> the Changes tab reads.** §5.7's remaining half, the one #521 left behind: *"The
+> tree paints no modified/added/untracked badges, and wiring `GitFileStatus` into
+> its rows is the remaining work, not a rewrite of the tree."*
+>
+> **⚠️ AND THE ITEM'S REAL WORK WAS THE WORD "SAME".** Design §4: *"it must read
+> the **same** status source as screen 1 or the two tabs will disagree."* Before
+> this there were already TWO readers of `git:status` — the Changes tab and the
+> card header — two reads, two moments, nothing stopping them disagreeing. A third
+> reader in the tree would have made "the tabs disagree" a matter of timing rather
+> than of design. So `lib/git-status-store.ts` is **one fetch per folder, cached,
+> with subscribers**, and the Changes tab hands its own answer in (`putGitStatus`)
+> because that read includes the per-file numbers — so the two tabs share a
+> **moment**, not merely a shape, and no second `git status` is spent.
+>
+> **A FOLDER IS BADGED BY WHAT IS UNDER IT**, dimmer and marked, because this tree
+> starts COLLAPSED: a tree that marked only changed files would hide every change
+> three folders deep behind an undecorated row. The roll-up takes the strongest
+> letter beneath it, and the order is about the reader rather than about git — a
+> conflict blocks, a deletion is the one nobody expects, untracked is the most
+> harmless thing a folder can hold.
+>
+> **⚠️ AND THE TEST SUITE CAUGHT A REAL FAIL-OPEN GAP, not a test problem.** Three
+> `FileTree` tests went from passing to `Cannot read properties of undefined` the
+> moment the store was wired in: `window.switchboard` is installed by the PRELOAD,
+> so a module-level reader can run before it exists. A tree whose job is to list
+> files must not die because the git bridge is late — no bridge now means no
+> badges, which is a tree that works exactly as it did. And the store reaches
+> through `globalThis`, not `window`, which is the note `lib/document-panels.ts`
+> already carries: `window` is a `ReferenceError` in vitest's node environment, so
+> naming it would have made every test of this module a crash.
+>
+> **The tree stays placement-agnostic** — the decorations are an injected prop with
+> a default that reads the store, so there is still no `cardId`, no `sessionId`, no
+> `PanelContext` in `FileTree`, which its own header states as a requirement of
+> the item that built it.
+>
+> **Green:** lint · all three typecheck projects · **10,185** unit tests ·
+> `e2e/diff.spec.ts` **9 of 9**, the ninth being the acceptance bar itself: one
+> file, one letter, asserted in BOTH tabs in one app.
+
 > **🚧 NOW: item 4 (#1041) — a commit opens to its files, and a file opens its
 > diff AT that commit.** Screen 7. Click a row in the History tab and it expands;
 > click a file and a `gitdiff-` panel opens at `base..sha` — **the third shape

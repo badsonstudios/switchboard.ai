@@ -4,6 +4,27 @@
 
 Every session works in a folder. The **Files** tab shows you what's in it.
 
+## Git badges
+
+A file that git has something to say about carries a letter on the right of its
+row: **M** modified, **A** added, **D** deleted, **R** renamed, **U** untracked,
+**!** in conflict — the same letters the [Changes](08-changes-and-git.md) tab
+uses.
+
+**A folder gets a badge too, for what is inside it**, drawn dimmer and meaning
+"something under here changed". Without that, a change three folders deep would
+be invisible until you had expanded your way down to it — and this tree starts
+collapsed. A folder shows the most important thing beneath it: a conflict beats a
+deletion, which beats a modification, which beats an addition.
+
+**The two tabs cannot disagree.** The badges here and the rows in the Changes tab
+come from one reading of your project, not two — so a file is never modified in
+one tab and clean in the other.
+
+They refresh when you come back to the tab, along with the file list, for the same
+reason: nothing watches your folder in the background. A folder that is not a git
+repository simply has no badges.
+
 ## Opening it
 
 Click **Files** in the row of tabs along the top of a session card — it sits

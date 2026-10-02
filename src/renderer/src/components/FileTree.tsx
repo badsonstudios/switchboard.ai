@@ -16,6 +16,9 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import type { DirListResult } from '../../../shared/ipc/fs';
+import { LETTER_INKS } from './ScmSidebar';
+import { getGitStatus, refreshGitStatus, subscribeGitStatus } from '../lib/git-status-store';
+import { decorationsFor, type Decoration } from '../lib/vcs-decorations';
 import {
   applyListing,
   createTree,
@@ -67,10 +70,32 @@ export function FileTree(props: {
   active?: boolean;
   /** the directory lister, injected so tests need no Electron bridge */
   listDir?: ListDir;
+  /**
+   * The git decorations for this folder, injected (E24 Git v2 item 11).
+   *
+   * ⚠️ **INJECTED SO THE TREE STILL DOES NOT KNOW WHERE IT LIVES.** This file's
+   * header states that as a requirement of the item that built it — no `cardId`,
+   * no `sessionId`, no `PanelContext`. Absent means no decorations, which is a
+   * tree that works exactly as it did; the default reads the shared store, which
+   * is what makes the Files tab and the Changes tab agree (design §4 item 11).
+   */
+  decorations?: Map<string, Decoration>;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const list = props.listDir ?? bridgeListDir;
   const [state, setState] = React.useState<TreeState>(() => createTree(props.root));
+  /**
+   * The decorations, from the ONE shared status (E24 Git v2 item 11).
+   *
+   * `useSyncExternalStore` over the store rather than a fetch of its own, which is
+   * the whole point: two tabs reading one answer cannot disagree about whether a
+   * file is modified. An injected prop wins, for tests.
+   */
+  const shared = React.useSyncExternalStore(subscribeGitStatus, () => getGitStatus(props.root));
+  const decorations = React.useMemo(
+    () => props.decorations ?? decorationsFor(props.root, shared),
+    [props.decorations, props.root, shared]
+  );
   const onOpenFile = props.onOpenFile;
   // Roving tabindex: ONE row is focusable at a time, which is what makes a tree
   // one tab stop instead of one per file (§5.32).
@@ -158,9 +183,24 @@ export function FileTree(props: {
   const wasActive = React.useRef(props.active ?? true);
   React.useEffect(() => {
     const now = props.active ?? true;
-    if (now && !wasActive.current) refresh();
+    if (now && !wasActive.current) {
+      refresh();
+      // ⚠️ AND THE DECORATIONS WITH IT (E24 Git v2 item 11). The listing and the
+      // git status go stale for the same reason — nothing watches the folder — so
+      // refreshing one and not the other would draw today's files with yesterday's
+      // badges. `force` because the store's whole job is to answer the second
+      // asker from cache, and this IS the case that wants a new read.
+      refreshGitStatus(props.root, { force: true });
+    }
     wasActive.current = now;
-  }, [props.active, refresh]);
+  }, [props.active, props.root, refresh]);
+
+  // Ask once per folder on mount. Idempotent in the store, so the Changes tab
+  // mounting in the same frame still produces one `git status` rather than two —
+  // which is the thing a `useEffect` in each component gets wrong.
+  React.useEffect(() => {
+    refreshGitStatus(props.root);
+  }, [props.root]);
 
   const rows = visibleRows(state);
   const entryRows = rows.filter((r): r is Extract<TreeRow, { type: 'entry' }> => r.type === 'entry');
@@ -403,6 +443,34 @@ export function FileTree(props: {
               {row.kind === 'link' && (
                 <span style={{ flex: '0 0 auto', fontSize: 10, color: 'var(--faint)' }}>
                   {t('files.linkTag')}
+                </span>
+              )}
+              {/* ⚠️ THE VCS DECORATION (E24 Git v2 item 11) — §5.7's remaining
+                  half. A ROLLED-UP folder badge is drawn dimmer and in
+                  parentheses, because "something under here changed" and "this
+                  changed" are different facts and a tree that drew them alike
+                  would say every folder up to the root had been edited. */}
+              {decorations.get(row.path) && (
+                <span
+                  className={`file-vcs file-vcs-${decorations.get(row.path)!.key}`}
+                  data-rolled-up={decorations.get(row.path)!.rolledUp ? 'true' : undefined}
+                  title={t(
+                    decorations.get(row.path)!.rolledUp
+                      ? 'files.vcsUnder'
+                      : `scm.letter.${decorations.get(row.path)!.key}`,
+                    { status: t(`scm.letter.${decorations.get(row.path)!.key}`) }
+                  )}
+                  style={{
+                    flex: '0 0 auto',
+                    marginInlineStart: 'auto',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: 10,
+                    fontWeight: decorations.get(row.path)!.rolledUp ? 400 : 600,
+                    opacity: decorations.get(row.path)!.rolledUp ? 0.55 : 1,
+                    color: `var(${LETTER_INKS[decorations.get(row.path)!.letter] ?? '--muted'})`,
+                  }}
+                >
+                  {decorations.get(row.path)!.letter}
                 </span>
               )}
             </div>

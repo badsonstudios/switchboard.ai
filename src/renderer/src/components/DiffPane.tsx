@@ -22,6 +22,7 @@ import { forgetDiffPlace, placeIsStillThere, readDiffPlace } from '../lib/diff-p
 import { type GitStatusDto } from '../lib/git-status';
 import { MonacoDiff, type DiffLayoutState } from './MonacoDiff';
 import { ScmSidebar } from './ScmSidebar';
+import { putGitStatus } from '../lib/git-status-store';
 import { canOpenDiffs, openDiff } from '../lib/diff-open';
 import { WORKING_TREE_LEFT, WORKING_TREE_RIGHT } from '../lib/diff-panels';
 
@@ -77,9 +78,9 @@ export function DiffPane(props: {
     // along; the refresh button is what made the race reachable by a user in one
     // second.
     let cancelled = false;
-    // `true` — ASK FOR THE NUMBERS (item 7). This is the one surface that draws
-    // them, and the two extra `git diff` invocations are why the card header's
-    // poll leaves the flag off. See `GitStatus.stats`.
+    // `true` — ASK FOR THE NUMBERS (item 7). This tab is the one that draws them,
+    // and the two extra `git diff` invocations are why the card header's poll
+    // leaves the flag off. See `GitStatus.stats`.
     void window.switchboard.git.status(props.folder, true).then((s) => {
       if (cancelled) return;
       // `answered` BEFORE the cast (#650). `git:status` is declared
@@ -97,6 +98,13 @@ export function DiffPane(props: {
       const next = answered(s) as GitStatusDto | undefined;
       if (!next) return;
       setStatus(next);
+      // ⚠️ **AND SHARE IT, so the Files tab draws THIS answer (E24 Git v2 item
+      // 11).** Design §4 item 11 asks for "the same status source", and this is
+      // the half that makes it a shared MOMENT rather than merely a shared shape:
+      // this tab's read includes the per-file numbers, so handing it to the store
+      // means the tree's badges and the sidebar's rows cannot disagree about
+      // whether a file is modified — and no second `git status` is spent.
+      putGitStatus(props.folder, next);
       // A REMEMBERED FILE IS ONLY AS GOOD AS THE CHANGE UNDER IT (#562 review).
       // Between leaving the tab and coming back, the change can have been
       // committed, discarded or the file deleted — and `git.fileVersions` does

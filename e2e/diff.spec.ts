@@ -634,4 +634,31 @@ test.describe('Changes tab (Monaco diff pane)', () => {
     await expect.poll(() => app.windows().length, { timeout: 20_000 }).toBe(before);
     await expect(w.locator('.git-diff-view')).toBeVisible({ timeout: 15_000 });
   });
+
+  test('⚠️ the Files tab and the Changes tab AGREE — one status, two surfaces', async () => {
+    // E24 Git v2 item 11, and its acceptance bar is exactly this: design §4 says
+    // the tree "must read the SAME status source as screen 1 or the two tabs will
+    // disagree". The unit tests prove the store fetches once; what only this can
+    // say is that the two tabs really are reading it — the badge in the tree and
+    // the row in the sidebar, for one file, in one app.
+    const folder = tempGitProject();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    await expect(w.locator('[data-testid="view-tabs"]').first()).toBeVisible({ timeout: 25_000 });
+
+    // The Changes tab first, which is the reader that asks for the numbers.
+    await w.locator('[data-testid="view-tabs"] [data-vtab="diff"]').first().click();
+    await expect(w.locator(`.scm-row[data-path="${FILE}"] .scm-letter`)).toHaveText('M', {
+      timeout: 20_000,
+    });
+
+    // …and now the tree, which must say the same thing about the same file.
+    await w.locator('[data-testid="view-tabs"] [data-vtab="files"]').first().click();
+    const treeRow = w.locator(`[data-testid^="file-tree-row-"][data-path$="${FILE}"]`);
+    await expect(treeRow).toHaveCount(1, { timeout: 20_000 });
+    await expect(treeRow.locator('.file-vcs')).toHaveText('M', { timeout: 20_000 });
+    // ⚠️ AND IT IS NOT A ROLL-UP: this is the file's own status, where a folder's
+    // badge would be marked and drawn dimmer.
+    await expect(treeRow.locator('.file-vcs')).not.toHaveAttribute('data-rolled-up', 'true');
+  });
 });
