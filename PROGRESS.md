@@ -32,8 +32,97 @@
 > no write path), then **5** (the `diff-` panel family + pop-out — the structural
 > item), then **6 → 7** together, then 8–11 interleaved, then layer 2 (12–15).
 >
-> **Status:** design record + doc corrections landing first; the 15 issues are
-> filed against milestone **Phase 3 - The IDE** next, then worked one at a time.
+> **FILED, all fifteen, against milestone Phase 3 - The IDE:** **#1038**–**#1052**
+> in §4's order (1 → #1038, 2 → #1039, 3 → #1040, 4 → #1041, 5 → #1042,
+> 6 → #1043, 7 → #1044, 8 → #1045, 9 → #1046, 10 → #1047, 11 → #1048,
+> 12 → #1049, 13 → #1050, 14 → #1051, 15 → #1052). Each body carries the design
+> doc's own wording for that row plus the §2 research it rests on.
+>
+> **✅ The design record and both doc corrections merged — PR #1037**, green on
+> all four CI jobs. DESIGN §5.7 now records that dogfooding caught the phantom
+> log rather than the audit, §5.7 also records the editable-diff decision, and
+> VS Code's built-in Git extension is `docs/reference-implementations.md` **§4**.
+>
+> **🚧 NOW: item 1 (#1038) — `git log` in GitService + `git:log` IPC.** Code and
+> tests green locally (lint · all three typecheck projects · **182** in
+> `src/main/git`); the command shape and every edge case were **measured against
+> real git**, not guessed, per the standing rule.
+>
+> **⭐⭐ REVIEW FOUND A LIVE #776 HOLE THAT NEITHER EXISTING GUARD CLOSES, AND IT
+> WAS SILENT.** `log` is the first command in this service that reads **commit**
+> objects, and a commit can carry a `gpgsig` header. Two repo-local config keys —
+> both squarely inside #776's threat model — then make git **launch a program of
+> the repository's choosing**:
+>
+> ```
+> [log] showSignature = true
+> [gpg] program       = <anything>
+> ```
+>
+> **One spawn per signed commit, `git log` exits 0, and stdout parses perfectly**,
+> so nothing in the answer records that it happened. `guardArgs()` pins
+> `core.fsmonitor` and `core.hooksPath`; `guardEnv()` neutralises `filter.<n>.*`.
+> **Neither touches this** — paying the config guard would not have helped. Closed
+> with `--no-show-signature`, and the forged commit object needs no gpg to build
+> (`git hash-object -t commit -w`), so the test is portable. ⚠️ **The sentinel-file
+> version of that test does not work and the reason is worth keeping:**
+> `gpg.program` is spawned DIRECTLY, not through a shell, so neither
+> `"<node.exe> <script.js>"` nor a `.bat` ever runs — a test built on one would
+> report "it never ran" for a repository where git tried its hardest. The evidence
+> is git's own stderr, and it needs **`spawnSync`**, because `execFileSync` returns
+> only stdout on a zero exit and the first attempt read an empty string and
+> declared the control passed.
+>
+> **AND A SECOND CONFIG KEY THAT TURNED A FULL HISTORY INTO "no commits yet".**
+> `i18n.logOutputEncoding = UTF-16LE` re-encodes the whole stream — every byte
+> followed by a NUL, confirmed with `od -c` — so the parser finds no record
+> anywhere while git exits 0. The design doc's own note that "a NUL cannot be
+> forged from inside a repository" is true of the **message** and false of the
+> **stream**. Closed twice: `--encoding=UTF-8`, and `log()` now treats non-empty
+> output that parsed to zero commits as *unreadable* rather than as an empty
+> history.
+>
+> **⚠️ AND A 48-SECOND FREEZE OF THE MAIN PROCESS, FROM ONE COMMIT MESSAGE.**
+> `message: body.replace(/\s+$/, '')` backtracks per position inside a trailing
+> whitespace run: 60,000 trailing spaces took 818 ms, 120,000 took 6.1 s, **240,000
+> took 48.3 s**. `LOG_BUDGET_MS` cannot save it — it runs in the Electron main
+> process *after* git has returned, with `MAX_GIT_OUTPUT` allowing 32 MB of body.
+> `trimEnd()` is immeasurable. A commit message is a thing a session writes, so
+> this was "our breakage blocks every session" waiting to be typed.
+>
+> **Four more from the same review, all measured:** a **corrupt branch ref** (a
+> zero-byte `.git/refs/heads/main`) was reported as a fresh `git init`, because
+> `rev-parse --verify -q HEAD` fails for both — the positive discriminator is
+> `symbolic-ref -q HEAD`, which exits 0 on an unborn HEAD and 128 on a damaged
+> one · **`--` does not confine a pathspec**: in a monorepo session rooted at
+> `<repo>/sub`, `-- ../secret.txt` listed commits for a file outside the scope, and
+> pathspec magic (`:(exclude)…`) survives the separator too · the recovery path for
+> a malformed record **overwrote the previous commit's correct numbers** with the
+> orphaned diffstat · `--skip=1e21` formatted as `1e+21`, which git refuses.
+>
+> **TWO MEASUREMENTS THAT SHAPED THE API RATHER THAN FIXING A BUG:**
+>
+> 1. **`--shortstat` is 95% of the query.** 100 commits **with** it: 1,331 ms.
+>    Without: **64 ms**. Whole history (941): 2,858 ms. Bare `git --version`,
+>    for the spawn floor: 38 ms. So ~13 ms per commit, because git diffs every
+>    listed commit against its first parent. Hence `stats?: boolean` on the query
+>    and `DEFAULT_LOG_LIMIT = 50` — a hundred would be 1.3 s of spinner on a tab
+>    you just clicked.
+> 2. **`log --shortstat` runs NO filter, textconv or external-diff driver**
+>    (measured with all three configured). So `log` joins `root()` and
+>    `fileVersions()` as a read that skips `guardEnv()` entirely — several git
+>    invocations saved on the History tab's hot path. Pinned by a test that asserts
+>    **no sentinel file appeared**, not that stdout was clean: the first version
+>    checked the output, which a driver that writes a file or dials out passes
+>    unchanged.
+>
+> **The framing itself, measured byte-for-byte:** `<fields>\0\n<shortstat>\n` —
+> the diffstat arrives AFTER the record's NUL, so it belongs to the PREVIOUS
+> commit; and an **empty commit prints no diffstat at all**, so the NUL abuts the
+> next sha. A parser that assumed the line was always there ate the next record.
+> Also: the subcommand `log` was missing from the arg list on the first run, which
+> made every real-history test come back empty with an `unreadable` nobody asked
+> for — there is now a one-line test for it.
 
 > # ✅ DONE — 2026-10-01: **#740 — the feed skips what you cannot see, and
 > still knows how tall it is** (PR **#1034**, merged on green CI, issue closed).

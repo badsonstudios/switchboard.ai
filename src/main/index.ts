@@ -87,6 +87,7 @@ import { PushActions } from './events/push-actions';
 import { registerPushIpc } from './events/push-ipc';
 import { SecretStore } from './secrets/store';
 import { GitService } from './git/git-service';
+import { isLogQuery } from './git/git-log';
 import { BusHost } from './bus/host-channel';
 import { SessionQueries, summariesFrom } from './sessions/queries';
 import { resolveMentions } from './sessions/mention-resolve';
@@ -2395,6 +2396,26 @@ app
             isRepo: false,
             unreadable: 'switchboard only reads git for folders it has open as a session',
             files: [],
+          }
+    );
+    // The commit history (E24 Git v2 item 1, §5.7) — the History tab's engine.
+    //
+    // Scoped by `knownFolder` like `git:status`, and it REFUSES WITH A REASON for
+    // the same cause #785 gave above: a bare empty answer here would draw as
+    // "this repository has no history", which is a confident wrong answer about
+    // the user's project rather than an admission that switchboard declined.
+    //
+    // The query is caller-supplied and every field of it is clamped or validated
+    // in `logArgs` — the limit against `MAX_LOG_LIMIT`, the refs against a
+    // pattern, the path forced behind `--`. Nothing from the renderer reaches
+    // argv unchecked.
+    broker.handle('git:log', (_e, folder: string, query: unknown) =>
+      knownFolder(folder)
+        ? gitService.log(folder, isLogQuery(query) ? query : {})
+        : {
+            isRepo: false,
+            unreadable: 'switchboard only reads git for folders it has open as a session',
+            commits: [],
           }
     );
     broker.handle('git:fileVersions', (_e, folder: string, file: string) => {

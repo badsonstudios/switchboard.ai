@@ -270,6 +270,13 @@ export const CHANNEL_CAPABILITIES = {
   'fs:watch': 'fs.read',
   'fs:unwatch': 'fs.read',
   'git:fileVersions': 'git.read',
+  // The commit history (E24 Git v2 item 1, §5.7). `git.read` and not a word of
+  // its own: it reveals strictly less than `git:fileVersions` already hands over
+  // — commit metadata and line COUNTS, where that channel gives the bytes of a
+  // file at HEAD — and the whole point of the split is that a consumer should not
+  // have to request more power than it uses. A reader of the log is a reader of
+  // the repository, which is what `git.read` means.
+  'git:log': 'git.read',
   // the provider's service health as main currently understands it (P2-E14-07)
   'health:get': 'provider.status',
   // the polling switch is an ordinary preference, like the update auto-check

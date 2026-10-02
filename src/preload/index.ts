@@ -1082,6 +1082,16 @@ const api = {
   },
   git: {
     status: (folder: string): Promise<unknown> => ipcRenderer.invoke('git:status', folder),
+    /**
+     * The commit history (E24 Git v2 item 1, §5.7).
+     *
+     * `Promise<unknown>` for the same reason `status` above is (#650): a channel
+     * can answer with a REFUSAL instead of its payload, so the declared type has
+     * to be the thing that is actually on the wire. Every caller runs `answered()`
+     * and treats a missing field as "learn nothing" rather than as a value.
+     */
+    log: (folder: string, query?: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('git:log', folder, query ?? {}),
     fileVersions: (folder: string, file: string): Promise<{ original: string; modified: string }> =>
       ipcRenderer.invoke('git:fileVersions', folder, file),
   },

@@ -15,6 +15,7 @@ import path from 'path';
 // that module's header for the second measured launcher case.
 import { killTree } from '../transport/kill-tree';
 import { trackChild } from '../diagnostics/live-children';
+import { type GitCommit, type GitLogQuery, logArgs, parseLog } from './git-log';
 import {
   CONFIG_LIST_SCOPED,
   EMPTY_TREE,
@@ -89,6 +90,35 @@ export interface FileVersions {
 }
 
 /**
+ * `git log`'s answer (E24 Git v2 item 1, §5.7).
+ *
+ * Shaped like `GitStatus` and NOT like `diff()`: it answers a PANE, so it
+ * reports a failure in a field rather than throwing. `diff()` throws because its
+ * one consumer is a language model reading prose, where an empty string renders
+ * as "has no uncommitted changes" — a confident wrong answer. The History tab
+ * can draw "we could not read the history, because <git's reason>" and keep the
+ * card alive, which is what fail-open asks for here.
+ */
+export interface GitLog {
+  isRepo: boolean;
+  /** why this is not a reading of the history — same discipline as `GitStatus` */
+  unreadable?: string;
+  /**
+   * This repository has no commits yet.
+   *
+   * ⚠️ **A FACT, NOT A FAILURE, AND IT HAS TO BE SAID SEPARATELY.** `git log`
+   * exits 128 on an unborn HEAD, and with an explicit `HEAD` argument — which
+   * `logArgs` always passes — the message is `fatal: bad revision 'HEAD'`
+   * (measured). That is byte-indistinguishable from a typo'd ref, so matching on
+   * it would report a brand-new `git init` as a broken repository. The answer is
+   * established POSITIVELY instead, by asking `rev-parse --verify -q HEAD` after
+   * the failure.
+   */
+  unborn?: boolean;
+  commits: GitCommit[];
+}
+
+/**
  * How long `diff()` gives git — all three invocations together — before it
  * KILLS it (#772).
  *
@@ -111,6 +141,26 @@ export interface FileVersions {
  * five times that, and reached only by a filesystem that has stopped answering.
  */
 export const DIFF_BUDGET_MS = 10_000;
+
+/**
+ * How long `log()` gets before it is KILLED (E24 Git v2 item 1).
+ *
+ * **BOUNDED, WHERE `status()` DELIBERATELY IS NOT, AND THE DIFFERENCE IS WHAT
+ * THE TIMEOUT WOULD BE A LIE ABOUT.** Killing `status` would report a repository
+ * that is merely slow as one switchboard could not read — a claim about the
+ * user's project. Killing `log` says "we could not read the history within 15
+ * seconds", which is true, specific, and leaves the rest of the card working.
+ *
+ * ⚠️ **GENEROUS BECAUSE `--shortstat` TURNED OUT TO COST FAR MORE THAN EXPECTED.**
+ * Measured on this repository (941 commits, essay-length bodies, Windows 11 with
+ * Defender): **100 commits with the stats took 1,331 ms and without them 64 ms**,
+ * and the whole history with stats took 2,858 ms. That is ~13 ms per commit, and
+ * it is why `DEFAULT_LOG_LIMIT` is 50 and why the stats are a query option at
+ * all — see `STATS_FLAGS` in `git-log.ts` for the table. Fifteen seconds is five
+ * times the slowest full-history read measured, and is reached by a disk that has
+ * stopped answering rather than by a big repository.
+ */
+export const LOG_BUDGET_MS = 15_000;
 
 /**
  * How long the #776 config guard gets on the `status` path, where there is no
@@ -842,6 +892,128 @@ export class GitService {
     return { isRepo: true, text: r.out };
   }
 
+  /**
+   * The commit history (E24 Git v2 item 1, §5.7) — **the thing two documents
+   * said had shipped and no code contained.**
+   *
+   * The command shape and the parser are in `git-log.ts`, where they are pure
+   * and tested against fixture bytes. This method is the part that cannot be:
+   * running git, and deciding what every way it can fail means.
+   *
+   * ⚠️ **NO CONFIG GUARD, AND THAT IS MEASURED RATHER THAN ASSUMED.** `status()`
+   * and `diff()` both pay `guardEnv()` — a config read, a submodule enumeration,
+   * several extra git invocations — because both were measured to run a
+   * repo-configured filter driver (#776). `log --shortstat` was measured NOT to:
+   * with `diff.external`, with a `.gitattributes`-selected `textconv` driver and
+   * with `filter.<n>.clean` all configured, **none of the three ran**, because
+   * `--shortstat` uses git's internal diffstat machinery and never materialises a
+   * blob through a driver. So `log` joins `root()` and `fileVersions()` as a read
+   * that carries only `guardArgs()` — `core.fsmonitor=false` and an empty
+   * `core.hooksPath`, which every invocation in this file gets.
+   *
+   * That is not a free pass for the next person: the moment somebody adds `-p` or
+   * `--numstat` to this command the measurement no longer applies and the guard
+   * is needed. `LOG_FLAGS` says so where the flags are.
+   *
+   * ⚠️ **AN UNBORN HEAD IS A FACT AND IS REPORTED AS ONE.** See `GitLog.unborn`:
+   * with the explicit `HEAD` that `logArgs` always passes, git says `bad
+   * revision 'HEAD'`, which is also what a typo'd ref says. The distinction is
+   * made by asking `rev-parse`, not by reading the message.
+   */
+  async log(folder: string, query: GitLogQuery = {}, budgetMs = LOG_BUDGET_MS): Promise<GitLog> {
+    const deadline = Date.now() + budgetMs;
+    const left = (): number => Math.max(1, deadline - Date.now());
+
+    // The same probe `status()` and `diff()` open with, and the same three-way
+    // reading of it: a folder that is honestly not a repository says so plainly,
+    // and everything else carries git's own reason.
+    const probe = await this.run(folder, ['rev-parse', '--is-inside-work-tree'], left());
+    if (probe.failure === 'timeout') return { isRepo: false, unreadable: logTimedOut(budgetMs), commits: [] };
+    if (probe.failure === 'no-exec') {
+      return { isRepo: false, unreadable: await spawnReason(folder), commits: [] };
+    }
+    if (!probe.ok) {
+      const said = gitSaid(probe.err);
+      if (saysNotARepo(said)) return { isRepo: false, commits: [] };
+      return {
+        isRepo: false,
+        unreadable: said ?? 'git could not tell whether this folder is a repository',
+        commits: [],
+      };
+    }
+    // A bare repository or the inside of a `.git` directory: a clean answer, and
+    // not a failure. It has a history, but no working tree to show it beside.
+    if (!probe.out.trim().startsWith('true')) return { isRepo: false, commits: [] };
+
+    const r = await this.run(folder, logArgs(query), left());
+    if (r.ok) {
+      const commits = parseLog(r.out);
+      // ⚠️ **OUTPUT WE COULD NOT READ IS NOT AN EMPTY HISTORY (found in review,
+      // measured).** `--encoding=UTF-8` closes the one way a repository was shown
+      // to re-frame this stream — `i18n.logOutputEncoding = UTF-16LE`, which puts
+      // a NUL after every byte and makes the parser find no record anywhere — and
+      // this is the belt for the next shape of the same trick. git exits 0, so
+      // without it the History tab draws **"this project has no commits yet"** for
+      // a repository with a thousand of them: a confident wrong answer about the
+      // user's project, which is precisely what this service keeps being corrected
+      // for. Empty output IS an empty answer (`--skip` past the end), so the test
+      // is output-without-commits, not commits-without-output.
+      if (commits.length === 0 && r.out.trim() !== '') {
+        return {
+          isRepo: true,
+          unreadable:
+            'git produced a history switchboard could not read — the repository may be ' +
+            'configured to write its log in an unusual encoding',
+          commits: [],
+        };
+      }
+      return { isRepo: true, commits };
+    }
+
+    if (r.failure === 'timeout') return { isRepo: true, unreadable: logTimedOut(budgetMs), commits: [] };
+    if (r.failure === 'no-exec') return { isRepo: true, unreadable: await spawnReason(folder), commits: [] };
+    if (r.failure === 'too-large') {
+      return {
+        isRepo: true,
+        unreadable:
+          `the history is larger than the ${MAX_GIT_OUTPUT / 1024 / 1024} MB switchboard reads in ` +
+          'one go — ask for fewer commits',
+        commits: [],
+      };
+    }
+    // ONLY NOW, and only on a failure, is the unborn question asked. Putting it
+    // before the log would cost every successful read an extra git process for a
+    // case that happens once in a repository's life.
+    //
+    // ⚠️ **TWO PROBES, BECAUSE ONE OF THEM ANSWERS THE WRONG QUESTION (found in
+    // review, measured).** `rev-parse --verify -q HEAD` failing was the whole test
+    // here, and it fails for more than an unborn HEAD. Measured on a repository
+    // with one commit and a **zero-byte `.git/refs/heads/main`** — the classic
+    // post-crash corruption, and a file an edit-only agent can write:
+    //
+    // | probe | fresh `git init` | corrupt ref |
+    // |---|---|---|
+    // | `rev-parse --verify -q HEAD` | exit 1 | exit 1 |
+    // | `symbolic-ref -q HEAD` | **exit 0**, `refs/heads/main` | **exit 128**, `No such ref: HEAD` |
+    //
+    // So the first probe alone reported a damaged repository as a brand-new one,
+    // which is the same shape of confident wrong answer as the `isRepo` lie #785
+    // was filed for. Unborn is the CONJUNCTION: HEAD does not resolve **and** HEAD
+    // is still a symbolic ref pointing somewhere. The `failure === 'failed'` guard
+    // stays as well — a timeout or an unstartable git says nothing about whether
+    // there are commits.
+    const head = await this.run(folder, ['rev-parse', '--verify', '-q', 'HEAD'], left());
+    if (!head.ok && head.failure === 'failed') {
+      const symbolic = await this.run(folder, ['symbolic-ref', '-q', 'HEAD'], left());
+      if (symbolic.ok) return { isRepo: true, unborn: true, commits: [] };
+    }
+    return {
+      isRepo: true,
+      unreadable: gitSaid(r.err) ?? 'git could not read this repository’s history',
+      commits: [],
+    };
+  }
+
   /** HEAD vs working-tree contents for a Monaco diff (E5-02). */
   async fileVersions(folder: string, file: string): Promise<FileVersions> {
     const head = await this.run(folder, ['show', `HEAD:${toGitPath(file)}`]);
@@ -857,6 +1029,22 @@ export class GitService {
 
 function toGitPath(p: string): string {
   return p.replace(/\\/g, '/');
+}
+
+/**
+ * The one sentence `log()` says about a timeout — in one place, because it is
+ * reachable from three branches and three copies would drift.
+ *
+ * It names the likely cause rather than only the fact. "git did not finish" sends
+ * nobody anywhere; "the repository may be very large, or its disk slow to
+ * respond" is the same hedge `diff()` settled on, and the paging that fixes the
+ * first half is right there in the tab.
+ */
+function logTimedOut(budgetMs: number): string {
+  return (
+    `git did not finish reading the history within ${Math.round(budgetMs / 1000)}s ` +
+    '(the repository may be very large, or its disk slow to respond)'
+  );
 }
 
 /**

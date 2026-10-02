@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll, beforeAll, vi } from 'vitest';
-import { execFileSync, spawn } from 'child_process';
+import { execFileSync, spawn, spawnSync } from 'child_process';
 
 // `spawn` is the REAL one unless a test says otherwise for one call — it is
 // only how `killTree` reaches `taskkill`, and the fallbacks for a taskkill that
@@ -19,6 +19,19 @@ import { tempDir } from '../../test-temp-dirs';
 let repo: string;
 let plain: string;
 const svc = new GitService();
+
+/**
+ * A path git can put in a config value it will EXECUTE.
+ *
+ * git runs these through a shell, where a Windows backslash is an escape
+ * character — so `C:\Program Files\nodejs\node.exe` arrives with `\n` read as a
+ * newline and the command is nonsense. The hostile-driver tests below depend on
+ * the fake driver actually being runnable: a driver that could not start would
+ * pass a test whose whole point is that it never ran.
+ */
+function toPosix(p: string): string {
+  return p.replace(/\\/g, '/');
+}
 
 function sh(cwd: string, args: string[]): void {
   execFileSync('git', args, { cwd, stdio: 'ignore' });
@@ -1596,6 +1609,391 @@ describe('a git switchboard could not READ is not a folder without git (#785)', 
       if (saved.lang === undefined) delete process.env.LANGUAGE;
       else process.env.LANGUAGE = saved.lang;
     }
+  });
+  // Real git in a child process, several times per case (#512).
+}, 60_000);
+
+// The other half of E24 Git v2 item 1. `git-log.test.ts` owns the FRAMING,
+// against fixture bytes; this suite owns the one thing fixtures cannot prove —
+// that real git still emits bytes of that shape, and that every way the
+// invocation can fail lands in the right field.
+describe('GitService.log (E24 Git v2 item 1)', () => {
+  /** A repository with every shape of commit the parser has a branch for. */
+  let hist: string;
+
+  beforeAll(() => {
+    hist = tempDir('sb-git-log-');
+    sh(hist, ['init', '-b', 'main']);
+    sh(hist, ['config', 'user.email', 'log@test']);
+    sh(hist, ['config', 'user.name', 'Log Tester']);
+    fs.writeFileSync(path.join(hist, 'a.txt'), 'one\n');
+    sh(hist, ['add', '.']);
+    sh(hist, ['commit', '-m', 'root commit']);
+    sh(hist, ['tag', 'v1']);
+    // An EMPTY commit: the case that prints no diffstat and abuts the next sha.
+    sh(hist, ['commit', '--allow-empty', '-m', 'empty commit']);
+    sh(hist, ['checkout', '-b', 'side']);
+    fs.writeFileSync(path.join(hist, 's.txt'), 's\n');
+    sh(hist, ['add', '.']);
+    sh(hist, ['commit', '-m', 'on the side branch']);
+    sh(hist, ['checkout', 'main']);
+    fs.writeFileSync(path.join(hist, 'm.txt'), 'm\n');
+    sh(hist, ['add', '.']);
+    sh(hist, ['commit', '-m', 'on main']);
+    // A MERGE, with a body that is nothing but newlines — this repository's own
+    // commit shape, and the reason `-z` is in the command.
+    sh(hist, ['merge', '--no-ff', 'side', '-m', 'merge side\n\nwith a body\n\nand blank lines']);
+  }, 60_000);
+
+  it('is graceful for non-repos, like the rest of this service (the done-when)', async () => {
+    expect(await svc.log(plain)).toEqual({ isRepo: false, commits: [] });
+  });
+
+  it('reads the history real git emits, in the shape the parser expects', async () => {
+    const l = await svc.log(hist);
+    expect(l.isRepo).toBe(true);
+    expect(l.unreadable).toBeUndefined();
+    // five commits: root, empty, side, main, merge
+    expect(l.commits).toHaveLength(5);
+    const subjects = l.commits.map((c) => c.subject);
+    expect(subjects).toContain('merge side');
+    expect(subjects).toContain('root commit');
+    expect(l.commits[0].author).toBe('Log Tester');
+    expect(l.commits[0].authorEmail).toBe('log@test');
+    // Real seconds-since-epoch, not NaN from a misread field.
+    expect(Number.isInteger(l.commits[0].timestamp)).toBe(true);
+    expect(l.commits[0].timestamp).toBeGreaterThan(1_600_000_000);
+  });
+
+  it('a BODY OF BLANK LINES survives a round trip through real git', async () => {
+    const l = await svc.log(hist);
+    const merge = l.commits.find((c) => c.subject === 'merge side');
+    expect(merge).toBeDefined();
+    expect(merge?.message).toContain('with a body');
+    expect(merge?.message).toContain('and blank lines');
+    // Two parents, which is what item 3's lane allocator draws the fork from.
+    expect(merge?.parentIds).toHaveLength(2);
+    // `--diff-merges=first-parent` is what gives it a diffstat at all.
+    expect(merge?.stats).not.toBeNull();
+  });
+
+  it('the ROOT COMMIT has no parents and still carries a diffstat', async () => {
+    const l = await svc.log(hist);
+    const root = l.commits.find((c) => c.subject === 'root commit');
+    expect(root?.parentIds).toEqual([]);
+    expect(root?.stats).toEqual({ files: 1, insertions: 1, deletions: 0 });
+  });
+
+  it('an EMPTY COMMIT reports NO diffstat, and does not swallow its neighbour', async () => {
+    // The measured edge case: `<fields>NUL<next sha>` with no line between. The
+    // second assertion is the one that would fail if the parser ate the next
+    // record — the count above would drop and this subject would vanish.
+    const l = await svc.log(hist);
+    const empty = l.commits.find((c) => c.subject === 'empty commit');
+    expect(empty).toBeDefined();
+    expect(empty?.stats).toBeNull();
+    expect(l.commits.map((c) => c.subject)).toContain('on main');
+  });
+
+  it('decorates with FULL refnames, so a branch and a tag are distinguishable', async () => {
+    const l = await svc.log(hist);
+    const head = l.commits.find((c) => c.references.some((r) => r.isHead));
+    expect(head?.references.some((r) => r.kind === 'branch' && r.name === 'main')).toBe(true);
+    const tagged = l.commits.find((c) => c.subject === 'root commit');
+    expect(tagged?.references).toEqual(
+      expect.arrayContaining([{ kind: 'tag', name: 'v1', full: 'refs/tags/v1' }])
+    );
+  });
+
+  it('honours the limit and pages with skip', async () => {
+    const two = await svc.log(hist, { limit: 2 });
+    expect(two.commits).toHaveLength(2);
+    const skipped = await svc.log(hist, { limit: 2, skip: 2 });
+    expect(skipped.commits).toHaveLength(2);
+    expect(skipped.commits[0].id).not.toBe(two.commits[0].id);
+    // Paging must not overlap, or the tab's "load more" duplicates rows.
+    const ids = new Set([...two.commits, ...skipped.commits].map((c) => c.id));
+    expect(ids.size).toBe(4);
+  });
+
+  it('filters to one path when asked, which is what item 10 is built on', async () => {
+    const l = await svc.log(hist, { path: 's.txt' });
+    const subjects = l.commits.map((c) => c.subject);
+    // The commit that created the file, and nothing that did not touch it.
+    expect(subjects).toContain('on the side branch');
+    expect(subjects).not.toContain('on main');
+    expect(subjects).not.toContain('root commit');
+    // ⚠️ AND THE MERGE IS IN THERE, WHICH IS `--diff-merges=first-parent`'s DOING
+    // — measured, not expected. That flag suppresses the history simplification
+    // which would otherwise hide a merge that is TREESAME to one parent, so a
+    // path-filtered log lists both the commit that made the change and the merge
+    // that brought it to this branch. Asserted rather than worked around: it is
+    // correct for the main history (an "evil merge" that really did change the
+    // file must not be invisible) and it is item 10's decision whether a
+    // per-file timeline wants the merge row. Pinning it here is what stops item
+    // 10 discovering it by surprise.
+    expect(subjects).toContain('merge side');
+  });
+
+  it('`stats: false` still reads the history — it only drops the numbers', async () => {
+    // The cost switch, and the half of it a fixture cannot prove: that the lean
+    // query is still a WORKING query. `--shortstat` is 95% of the wall time
+    // (measured, 1,331 ms of 1,395 ms over 100 commits), so a surface that draws
+    // no numbers should be able to skip it — but not by asking a different
+    // question.
+    const lean = await svc.log(hist, { stats: false });
+    expect(lean.isRepo).toBe(true);
+    expect(lean.unreadable).toBeUndefined();
+    expect(lean.commits).toHaveLength(5);
+    expect(lean.commits.map((c) => c.subject)).toContain('merge side');
+    // Every one of them reports `null`, which is the same shape an empty commit
+    // reports — "we did not ask" and "git said nothing" are indistinguishable to
+    // a consumer, and that is fine because both mean "do not draw a number".
+    expect(lean.commits.every((c) => c.stats === null)).toBe(true);
+    // Refs and parents are metadata, not diff, so they survive — this is what
+    // makes the lean query usable by item 3's lane allocator.
+    const merge = lean.commits.find((c) => c.subject === 'merge side');
+    expect(merge?.parentIds).toHaveLength(2);
+  });
+
+  it('a ref that could be read as a FLAG never reaches argv', async () => {
+    // `git-log.test.ts` pins the guard against the args; this pins that the
+    // guard's fallback produces a WORKING read rather than a git error — the
+    // whole point of dropping to HEAD instead of passing the ref through.
+    const l = await svc.log(hist, { refs: ['--all'] });
+    expect(l.isRepo).toBe(true);
+    expect(l.unreadable).toBeUndefined();
+    expect(l.commits.length).toBeGreaterThan(0);
+  });
+
+  it('a repo with NO COMMITS says so — it is UNBORN, not unreadable', async () => {
+    // With the explicit `HEAD` that `logArgs` always passes, git answers
+    // `fatal: bad revision 'HEAD'` — byte-identical to a typo'd ref (measured).
+    // Matching on that message would report a fresh `git init` as broken. The
+    // distinction is made by asking `rev-parse` after the failure.
+    const unborn = tempDir('sb-git-log-unborn-');
+    sh(unborn, ['init', '-b', 'main']);
+    sh(unborn, ['config', 'user.email', 'test@test']);
+    sh(unborn, ['config', 'user.name', 'test']);
+    const l = await svc.log(unborn);
+    expect(l).toEqual({ isRepo: true, unborn: true, commits: [] });
+    expect(l.unreadable).toBeUndefined();
+  });
+
+  it('a CORRUPT branch ref is not reported as a fresh repository (review)', async () => {
+    // ⚠️ THE BUG THIS PINS, found in review and measured. `rev-parse --verify -q
+    // HEAD` fails for an unborn HEAD AND for a zero-byte `.git/refs/heads/main` —
+    // the classic post-crash corruption, and a file an edit-only agent can write.
+    // With that as the only test, a damaged repository was reported as a brand-new
+    // `git init`: the same shape of confident wrong answer #785 was filed for.
+    // `symbolic-ref -q HEAD` is the positive discriminator — exit 0 on a fresh
+    // init, exit 128 here (measured).
+    const corrupt = tempDir('sb-git-log-corruptref-');
+    sh(corrupt, ['init', '-b', 'main']);
+    sh(corrupt, ['config', 'user.email', 'test@test']);
+    sh(corrupt, ['config', 'user.name', 'test']);
+    fs.writeFileSync(path.join(corrupt, 'f.txt'), 'hello\n');
+    sh(corrupt, ['add', '.']);
+    sh(corrupt, ['commit', '-m', 'init']);
+    // Zero-byte the ref. `git gc` may have packed it, so write the loose file
+    // either way — a zero-byte loose ref shadows a packed one.
+    fs.mkdirSync(path.join(corrupt, '.git', 'refs', 'heads'), { recursive: true });
+    fs.writeFileSync(path.join(corrupt, '.git', 'refs', 'heads', 'main'), '');
+
+    const l = await svc.log(corrupt);
+    expect(l.isRepo).toBe(true);
+    // The fact this test owns: NOT unborn.
+    expect(l.unborn).toBeUndefined();
+    expect(l.unreadable).toBeTruthy();
+  });
+
+  it('⚠️ a repo config cannot make `git log` SPAWN A PROGRAM (review, #776 class)', async () => {
+    // MEASURED IN REVIEW, and it was a live hole. `log` is the first command in
+    // this service that reads COMMIT objects, and a commit can carry a `gpgsig`
+    // header. Two repo-local keys — both inside #776's threat model — then make
+    // git launch anything:
+    //
+    //     [log] showSignature = true
+    //     [gpg] program = <any path>
+    //
+    // One spawn per signed commit, `git log` EXITS 0, and stdout parses
+    // perfectly, so nothing in the answer records that it happened. Neither
+    // `guardArgs()` (fsmonitor + hooksPath) nor `guardEnv()` (filter drivers)
+    // closes it. `--no-show-signature` does.
+    //
+    // The commit object is FORGED rather than signed, because that needs no gpg
+    // on the machine running the test — git does not check that the signature is
+    // real before trying to verify it.
+    const signed = tempDir('sb-git-log-gpg-');
+    sh(signed, ['init', '-b', 'main']);
+    sh(signed, ['config', 'user.email', 'test@test']);
+    sh(signed, ['config', 'user.name', 'test']);
+    fs.writeFileSync(path.join(signed, 'f.txt'), 'one\n');
+    sh(signed, ['add', '.']);
+    sh(signed, ['commit', '-m', 'init']);
+    const tree = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { cwd: signed, encoding: 'utf8' }).trim();
+    const parent = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: signed, encoding: 'utf8' }).trim();
+    const object =
+      `tree ${tree}\nparent ${parent}\n` +
+      'author t <t@t> 1700000000 +0000\ncommitter t <t@t> 1700000000 +0000\n' +
+      'gpgsig -----BEGIN PGP SIGNATURE-----\n \n forged\n -----END PGP SIGNATURE-----\n' +
+      '\nsigned commit\n';
+    const sha = execFileSync('git', ['hash-object', '-t', 'commit', '-w', '--stdin'], {
+      cwd: signed,
+      input: object,
+      encoding: 'utf8',
+    }).trim();
+    sh(signed, ['update-ref', 'refs/heads/main', sha]);
+    // The evidence is git's own stderr. ⚠️ **A SENTINEL FILE WRITTEN BY A FAKE
+    // GPG WAS TRIED FIRST AND DOES NOT WORK** — measured: `gpg.program` is
+    // spawned directly rather than through a shell, so neither
+    // `"<node.exe> <script.js>"` nor a `.bat` ever runs, and a test built on one
+    // would report "it never ran" for a repository where git tried its hardest.
+    // That is the vacuous-verdict trap `spike/findings` keeps recording (#760), so
+    // the assertion is on the thing git demonstrably does say: *"cannot spawn"*.
+    const program = toPosix(path.join(signed, 'definitely-not-a-real-program'));
+    sh(signed, ['config', 'log.showSignature', 'true']);
+    sh(signed, ['config', 'gpg.program', program]);
+
+    /**
+     * git's stderr for one log invocation.
+     *
+     * `spawnSync`, not `execFileSync`: **git EXITS 0 here** — the spawn failure is
+     * a warning, not an error, which is the whole reason this hole was silent —
+     * and `execFileSync` returns only stdout on success, so a first attempt at
+     * this helper read an empty string and reported the control as having passed.
+     */
+    const stderrOf = (args: string[]): string =>
+      String(spawnSync('git', args, { cwd: signed, encoding: 'utf8' }).stderr ?? '');
+
+    // ⚠️ **THE POSITIVE CONTROL FIRST, BECAUSE WITHOUT IT THIS TEST IS VACUOUS.**
+    // A fixture whose forged `gpgsig` header did not take, or a git that ignored
+    // the config key, would sail through the real assertion below while proving
+    // nothing at all. So the hole is DEMONSTRATED — same argv, minus the one flag
+    // — and only then shown to be closed.
+    const unguarded = stderrOf(['log', '--format=%H', '-n', '1', 'HEAD']);
+    expect(unguarded).toContain('cannot spawn');
+    const guarded = stderrOf(['log', '--no-show-signature', '--format=%H', '-n', '1', 'HEAD']);
+    expect(guarded).not.toContain('cannot spawn');
+
+    // And the service, whose argv carries the flag (pinned in `git-log.test.ts`),
+    // reads the signed commit without git reaching for the program at all.
+    const l = await svc.log(signed);
+    expect(l.isRepo).toBe(true);
+    expect(l.unreadable).toBeUndefined();
+    expect(l.commits.map((c) => c.subject)).toContain('signed commit');
+  });
+
+  it('⚠️ a repo config cannot turn the history into "no commits yet" (review)', async () => {
+    // MEASURED IN REVIEW. `i18n.logOutputEncoding = UTF-16LE` re-encodes
+    // everything git writes — every byte followed by a NUL — so the parser finds
+    // no record anywhere while git exits 0. Without `--encoding=UTF-8` the tab
+    // would have drawn "this project has no commits yet" about a repository with
+    // a full history: a confident wrong answer about the user's project.
+    const utf16 = tempDir('sb-git-log-utf16-');
+    sh(utf16, ['init', '-b', 'main']);
+    sh(utf16, ['config', 'user.email', 'test@test']);
+    sh(utf16, ['config', 'user.name', 'test']);
+    fs.writeFileSync(path.join(utf16, 'f.txt'), 'one\n');
+    sh(utf16, ['add', '.']);
+    sh(utf16, ['commit', '-m', 'a real commit']);
+    sh(utf16, ['config', 'i18n.logOutputEncoding', 'UTF-16LE']);
+
+    const l = await svc.log(utf16);
+    expect(l.isRepo).toBe(true);
+    expect(l.unborn).toBeUndefined();
+    expect(l.commits.map((c) => c.subject)).toEqual(['a real commit']);
+  });
+
+  it('does NOT pay the #776 config guard — measured, `--shortstat` runs no driver', async () => {
+    // `status()` and `diff()` both read the repository's config and enumerate its
+    // submodules first, because both were measured to RUN a repo-configured
+    // driver. `log --shortstat` was measured not to: it uses git's internal
+    // diffstat machinery and never materialises a blob through a filter. This
+    // test is the standing proof of that measurement — a hostile repository with
+    // all three kinds of driver configured, whose output must be a clean log.
+    //
+    // If somebody adds `-p` or `--numstat` to the command, THIS is the test that
+    // goes red, and the fix is to pay the guard rather than to relax the test.
+    const hostile = tempDir('sb-git-log-hostile-');
+    sh(hostile, ['init', '-b', 'main']);
+    sh(hostile, ['config', 'user.email', 'test@test']);
+    sh(hostile, ['config', 'user.name', 'test']);
+    fs.writeFileSync(path.join(hostile, 'f.txt'), 'one\n');
+    sh(hostile, ['add', '.']);
+    sh(hostile, ['commit', '-m', 'init']);
+    fs.writeFileSync(path.join(hostile, '.gitattributes'), '*.txt filter=hostile diff=hostile\n');
+    // ⚠️ **EACH DRIVER WRITES A SENTINEL FILE, AND THE FIRST VERSION OF THIS TEST
+    // ONLY CHECKED STDOUT (found in review).** `expect(output).not.toContain
+    // ('PWNED')` proves the ANSWER was not polluted, which is not the claim — a
+    // driver that writes a file, deletes something or dials out passes it
+    // unchanged. #776's threat is execution, so the assertion has to be about
+    // execution.
+    const ran = (name: string): string => path.join(hostile, `${name}-ran.txt`);
+    const writer = (name: string): string => {
+      const js = path.join(hostile, `${name}.js`);
+      fs.writeFileSync(js, `require('fs').writeFileSync(${JSON.stringify(ran(name))}, 'ran');`);
+      return `${toPosix(process.execPath)} ${toPosix(js)}`;
+    };
+    sh(hostile, ['config', 'diff.external', writer('extdiff')]);
+    sh(hostile, ['config', 'diff.hostile.textconv', writer('textconv')]);
+    sh(hostile, ['config', 'filter.hostile.clean', writer('clean')]);
+    fs.writeFileSync(path.join(hostile, 'f.txt'), 'two\n');
+    sh(hostile, ['add', '.']);
+    sh(hostile, ['commit', '-m', 'second']);
+
+    const l = await svc.log(hostile);
+    expect(l.isRepo).toBe(true);
+    expect(l.commits.map((c) => c.subject)).toEqual(['second', 'init']);
+    for (const name of ['extdiff', 'textconv', 'clean']) {
+      expect(fs.existsSync(ran(name))).toBe(false);
+    }
+  });
+
+  it('a TIMEOUT says it timed out, not that the repository is unreadable for another reason', async () => {
+    // The seam the rest of this file uses for the kill paths: a process that
+    // never exits where git would be. `isRepo` stays false because the probe
+    // itself is what timed out — we never got as far as being told it is a repo.
+    const hanging = tempDir('sb-git-log-hang-');
+    const script = path.join(hanging, 'hang.js');
+    fs.writeFileSync(script, 'setInterval(() => {}, 1000);');
+    const stuck = new GitService({ file: process.execPath, prefixArgs: [script] });
+    const l = await stuck.log(hanging, {}, 300);
+    expect(l.unreadable).toMatch(/did not finish reading the history/);
+    expect(l.commits).toEqual([]);
+  });
+
+  it('a BROKEN repository carries git own account of why', async () => {
+    // Same fixture shape as `diff()`'s: a corrupt loose object makes the log
+    // command fail while `rev-parse --is-inside-work-tree` still succeeds. The
+    // answer must not be `unborn` — `rev-parse --verify HEAD` succeeds here, and
+    // calling a damaged repository "has no commits yet" is the confident wrong
+    // answer this service keeps being corrected for.
+    const broken = tempDir('sb-git-log-broken-');
+    sh(broken, ['init', '-b', 'main']);
+    sh(broken, ['config', 'user.email', 'test@test']);
+    sh(broken, ['config', 'user.name', 'test']);
+    fs.writeFileSync(path.join(broken, 'f.txt'), 'hello\n');
+    sh(broken, ['add', '.']);
+    sh(broken, ['commit', '-m', 'init']);
+    const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: broken, encoding: 'utf8' }).trim();
+    const objectPath = path.join(broken, '.git', 'objects', commit.slice(0, 2), commit.slice(2));
+    fs.chmodSync(objectPath, 0o666);
+    fs.writeFileSync(objectPath, 'not a git object');
+
+    const l = await svc.log(broken);
+    expect(l.isRepo).toBe(true);
+    expect(l.unborn).toBeUndefined();
+    expect(l.unreadable).toBeTruthy();
+  });
+
+  it('a BARE repository is not a work tree, and says so plainly', async () => {
+    // It has a history, but no working tree to show it beside. A clean answer,
+    // and not a failure — the same branch `status()` takes.
+    const bare = tempDir('sb-git-log-bare-');
+    sh(bare, ['init', '--bare', '-b', 'main']);
+    const l = await svc.log(bare);
+    expect(l).toEqual({ isRepo: false, commits: [] });
   });
   // Real git in a child process, several times per case (#512).
 }, 60_000);
