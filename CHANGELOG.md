@@ -94,9 +94,141 @@ on the floor, and say so in your PR.
 
 ---
 
-## 0.8.102 — unreleased
+## 0.8.110 — unreleased
 
 ### Added
+
+- **The History tab works — and until now it was an empty tab that two of our
+  own documents said had shipped.** Open a session on a project and click
+  **History**: your commits, newest first, with the message, who made it, how
+  many lines moved, a short hash and how long ago. Down the left is a **commit
+  graph** — a coloured dot per commit, lines joining them, a hollow dot where a
+  merge happened. Branch and tag chips show where things point, and a tag looks
+  different from a branch rather than being guessed at. The search box filters
+  what's loaded, instantly: a word from the message, an author, the first few
+  characters of a hash, or a tag name. It loads fifty commits at a time with a
+  **Show 50 more** at the bottom, because asking for a thousand takes about
+  three seconds and fifty takes well under one. **Click a commit** and it opens
+  to the files it touched; click one of those and you get a diff of that file
+  **as it was in that commit** — not the current one. A couple of things git
+  does that look like bugs and aren't: the very oldest commit shows every file
+  as new (it has nothing to compare against), and a deliberately empty commit
+  shows no line counts rather than a made-up zero.
+
+- **The Changes tab is a proper source-control panel now.** It used to be one
+  flat list where everything was mixed together. Now the files are in named
+  groups with their own counts — *Staged changes*, *Changes*, *Untracked*, and
+  **Merge conflicts at the top** — and each group folds. Rows lead with the
+  **filename** and put the folder after it in grey, which is the other way round
+  from before: the old rows showed the whole path with the end cut off, so
+  `…/components/FeedView.tsx` and `…/FeedView.test.tsx` looked identical. Each
+  row shows a one-letter status in git's own vocabulary and how many lines were
+  added and removed, with a bar at the top adding it all up. There's a filter
+  box, and the top line finally shows **which branch you're on and how far ahead
+  or behind the remote you are** — three numbers the app had been able to work
+  out since it was written and had never shown anyone.
+
+- **The changed files can be a folder tree instead of a flat list.** Two small
+  buttons beside the filter box switch between them, and the choice is
+  remembered. The tree **folds away folders that contain nothing but the next
+  folder**, so you get one row reading `src/renderer/src/components` rather than
+  four nested rows that each hold only one thing. Folders show how many changed
+  files are inside, so folding one never hides how much changed.
+
+- **A diff can leave the tab now — into its own panel, or its own window.** A
+  card's tabs are one-at-a-time, so reading a diff used to cost you sight of the
+  conversation that produced it. There's a **⧉** button beside the
+  Side-by-side/Inline pair: press it and the diff opens as its own panel beside
+  your sessions, with the file's full path along the top. Switch the card back to
+  **Session** and you can read both at once. Inside that panel there's another
+  **⧉** which moves it to a **separate window** — drag it to another monitor if
+  you have one — and the same button brings it back. Asking twice for the same
+  file brings the panel you already have to the front rather than opening a
+  second copy. Diff panels aren't restored when you quit and relaunch, the same
+  as the file reader.
+
+- **Or you can read every change in one scroll.** Beside those buttons is a
+  **⧉** that opens a panel with **every changed file stacked in one scrollable
+  list**, each under a heading that sticks to the top as you pass it. This is for
+  reviewing what an agent just did: you read top to bottom instead of clicking
+  seventeen files. Large files start folded — it opens about 400 changed lines or
+  ten files, whichever comes first — and each folded file says **why** in one
+  line, with a different sentence for "this one file is enormous" than for "the
+  panel ran out above you". Click a heading to open it, or use the toolbar button
+  to fold and unfold everything at once. If you fold something away and the
+  project changes underneath, your folding sticks.
+
+- **One click gets you a single file's history.** Hover a changed row and press
+  the clock: the card switches to **History** showing only the commits that
+  touched that file, with a chip at the top naming it. The chip's **✕** is the
+  way back — a filtered list that didn't say it was filtered would read as a
+  project with four commits in it. **Renames are followed**, so commits from
+  before a file was renamed are in the list too; that's git's own guess rather
+  than a record, so a file rewritten in the same commit it was renamed in can
+  break the chain.
+
+- **The Files tab marks what git changed.** A letter on each changed file, and a
+  dimmer badge on any **folder that contains** a change — which matters because
+  the tree starts collapsed, so without it a change three folders deep would be
+  invisible until you expanded your way down to it. The Files tab and the Changes
+  tab read **one** answer from git rather than asking separately, so they cannot
+  disagree about whether a file has changed.
+
+- **You can stage, unstage and discard from the Changes tab.** Hover a row and
+  you get **＋** to stage, **−** to unstage, and **↶** to discard. Which ones a
+  row gets depends on which group it's in, on purpose: a staged row only offers
+  to unstage (a ＋ would be a button for something already done), and a row in a
+  **merge conflict** offers none of them, because "discard this conflict" could
+  mean three different things and git has a separate command for each. The same
+  buttons sit on each group heading and act on everything in it. **Discarding
+  always asks first, and the question names what's at stake** — one file by name,
+  or a count for a group. It's the only thing switchboard does that can destroy
+  work nothing else has a copy of: a modified file that's been committed can
+  always come back, but a brand-new file you discard is simply gone. If git
+  refuses anything, you get **git's own words**, because that's the message that
+  tells you what to do about it.
+
+- **You can stage part of a file.** Press **⊞** on an unstaged row and you get a
+  list of that file's separate changes — *"From line 42 — +6 −2"* — each with its
+  own **＋**. Stage one and the file appears under both *Staged changes* and
+  *Changes*: the part you picked is ready to commit, the rest isn't. **Nothing on
+  disk is touched** — this only changes what git has recorded as ready, which is
+  why it needs no confirmation. Picking individual *lines* isn't here yet; these
+  are whole blocks of change.
+
+- **You can commit.** There's a message box and a **Commit** button above the
+  filter. The button tells you what it will capture — *"Commit 3 staged files"* —
+  and is switched off until it can work, saying which of the two things is
+  missing. **Ctrl+Enter** commits without leaving the box; plain Enter makes a new
+  line, because commit messages often have more than one. **If the commit doesn't
+  happen you keep your message.** Behind a **⋯** are three options on that one
+  commit — never a second button that also commits: amend the last commit (which
+  rewrites it, so when it's on the button changes its own words and a note
+  appears), add a Signed-off-by line, and skip the project's commit hooks.
+  **Your project's hooks run.** If you have a `pre-commit` that formats or lints
+  or tests, it runs exactly as it would if you'd typed `git commit` yourself —
+  and if it fails, the commit doesn't happen and **you see the hook's own
+  output**. That's deliberate and it's different from everything else switchboard
+  does with git: when it *reads* your project, which it does constantly without
+  being asked, it refuses to let the project run any program at all. A commit is
+  something you pressed a button for.
+
+- **And you can fetch, pull, push and start a branch.** The branch line's ahead
+  and behind counts now have buttons beside them: **⟳** to ask the remote what's
+  new, **↓** to bring commits down, **↑** to send yours up. ↓ and ↑ are absent
+  rather than greyed when there's nothing to do, and they all switch off while
+  they're working, because these are the only things switchboard does that talk
+  to another machine. **Pull only fast-forwards:** if your branch and the remote
+  have both moved it says so and changes nothing, rather than starting a merge
+  there's no screen here to finish. A branch you've never pushed gets an extra
+  **↑** — *"Publish this branch"* — but only after git has said that's what's
+  missing, as a second deliberate press. On the **History** tab every commit row
+  has a **⑂** to start a new branch at that commit. Your credentials work as they
+  always do — switchboard only stops git asking for a password on a terminal that
+  doesn't exist, and doesn't touch your keychain, Credential Manager or SSH key.
+  **There's deliberately no force-push:** it can destroy commits on the remote
+  that exist nowhere else, possibly somebody else's, and no confirmation box
+  makes that safe.
 
 - **There's a Files tab now — the session's folder, right there on the card.**
   It sits between **Changes** and **History**, and it shows what's actually in
@@ -151,6 +283,45 @@ on the floor, and say so in your PR.
   waiting for something that was never coming.
 
 ### Fixed
+
+- **A file in a merge conflict was invisible.** It wasn't listed in the Changes
+  tab and it wasn't counted in the card's changed-files badge — at the one moment
+  you most need to know which files are in trouble. git reports an unmerged file
+  on a line of its own and the app only ever read the three other kinds. Conflicts
+  now get their own group at the top of the list.
+
+- **The per-file line counts silently vanished for any session opened on a
+  subfolder of a project** — a package inside a monorepo, or just any
+  subdirectory. git reports the two sets of paths relative to different places,
+  and they only agree when the folder happens to be the top level, so every
+  `+12 −3` quietly disappeared with no error anywhere. The only symptom was
+  absence.
+
+- **The Files tab's git badges didn't appear if your project folder was reached
+  through a shortcut.** A symlink, a Windows junction, or a short `PROGNA~1`-style
+  path meant the badges were keyed to one spelling of the folder and the files to
+  another, so none of them matched and the tab drew nothing — with no error.
+
+- **⚠️ A project could make switchboard run a program of its choosing, twice
+  over.** Reading a project's commit history turned out to be one way: two lines
+  in the project's own git config and git launches whatever they name, once per
+  signed commit, while reporting complete success. And the guard that stops a
+  project doing the same thing through a file filter was only being applied when
+  the app *read* the project — so staging a file ran it too, and staging is the
+  command that most certainly reads file contents. Both are closed, both were
+  measured rather than argued, and each one's test proves the hole was real before
+  proving it's shut. This is the same kind of problem as the one fixed in 0.8.8x:
+  a session that can edit files shouldn't be able to get the app to run something
+  for it.
+
+- **A project could make a thousand-commit history report "no commits yet".**
+  Two more lines in its own config, and git writes its log in an encoding the app
+  couldn't read — while exiting successfully, so nothing looked wrong. The History
+  tab would have told you your project had no history at all.
+
+- **A single commit message could freeze the whole app for 48 seconds.** One
+  message with a long run of trailing spaces was enough. Found by review before
+  anyone hit it.
 
 - **Typing in a long conversation keeps up with you again.** In a session with
   hundreds of messages, letters used to pause and then arrive in a clump,
