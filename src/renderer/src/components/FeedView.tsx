@@ -7,6 +7,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { blockVisible, FeedBlockDto, showsTimelineDot, upsertBlock, Verbosity } from '../lib/feed';
 import { agentRunHeads, type AgentRunHead } from '../lib/feed-groups';
+import { useFeedSkipping } from '../lib/use-feed-skipping';
 import { autonomyTooltip } from '../lib/autonomy';
 import {
   clearConversation,
@@ -664,6 +665,36 @@ export function FeedView(props: {
     // it (#442).
     syncOffTail();
   }, [pin, restore, syncOffTail]);
+  /**
+   * Let the conversation skip the blocks nobody is looking at (#740).
+   *
+   * The reason a keystroke in a long session is expensive is that any layout
+   * invalidation in this panel re-lays-out EVERY block, and the fix is the only
+   * one that measured: skip the off-screen ones, standing each on its own
+   * measured height rather than the global guess that reverted the first
+   * attempt. 400 blocks, 4x CPU throttle: the keystroke's layout bill goes
+   * 28.5ms -> 7.3ms against a 1.7ms floor, the frame goes 43.3ms -> 16.6ms —
+   * i.e. back inside one frame — and `scrollHeight` stays EXACT, which is what
+   * the restore contract above rides on. `lib/feed-skipping.ts` carries the
+   * measurements; every copy of them in the tree quotes the same run.
+   *
+   * ⚠️ THIS CALL MUST STAY ABOVE THE `ResizeObserver` EFFECT BELOW, AND THE
+   * REASON IS NOT TIDINESS (found in review).
+   *
+   * Both are passive effects, so the order of the two hook calls fixes the
+   * order the two ResizeObservers are CREATED in — and the spec runs a
+   * document's observers in creation order. That ordering is what makes the
+   * dangerous case safe: a panel re-shown at a new width delivers to this
+   * hook's observer FIRST, which drops every stale height and strips the skip
+   * styling, and only then to `reconcile`'s, so `restore()` reads a
+   * `scrollHeight` built on a real layout.
+   *
+   * Move this below `reconcile` and `restore()` reads a `scrollHeight` still
+   * standing on heights measured at the OLD width, writes a `scrollTop` the
+   * browser clamps, and then clears `owesRestore` so nothing ever retries it.
+   * That is #555 and Dan's 2026-07-26 bug, reproduced exactly.
+   */
+  useFeedSkipping(scroller, content);
   // Self-healing pin (Dan round 5: cards you SWITCH to sat at the top after
   // app start): a one-shot pin can land while the panel has no layout yet â€”
   // dockview shows background panels a frame later, restore relayouts, and

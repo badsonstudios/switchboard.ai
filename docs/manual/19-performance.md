@@ -9,6 +9,29 @@ on your own computer, instead of guessing.
 There are two parts: a summary you can read at any time, and a recorder you
 switch on when you want the detail.
 
+## One thing that used to be slow and no longer is
+
+**Typing into a session with hundreds of messages in it.** Letters would pause
+and then arrive in a clump — worse on a slower machine, worse again while
+Claude was replying.
+
+The cause was that the app laid out the *whole* conversation every time
+anything in the panel changed, and a keystroke counts as a change. At four
+hundred messages that was most of a conversation nobody could see.
+
+It now leaves the off-screen parts alone and remembers how tall each one was,
+so they still take up exactly the right amount of room. That matters more than
+it sounds: it is why the scroll bar is still the right length, why **Jump to
+latest** still goes to the right place, and why coming back to a session you
+had scrolled up in still puts you where you were reading. Those were measured,
+not assumed — an earlier attempt at the same speed-up guessed the sizes
+instead, made the scroll bar more than twice too long, and was taken back out.
+
+You do not have to do anything to get this, and nothing about the conversation
+looks different. If typing in a long session still stutters for you, that is
+worth reporting — see **Report a problem** below, and turn capture on first if
+you can.
+
 ## The quick answer: the performance summary
 
 Press **`Ctrl+Shift+P`** and pick **Show performance summary**.

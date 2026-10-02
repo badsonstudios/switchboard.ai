@@ -152,6 +152,19 @@ on the floor, and say so in your PR.
 
 ### Fixed
 
+- **Typing in a long conversation keeps up with you again.** In a session with
+  hundreds of messages, letters used to pause and then arrive in a clump,
+  especially on a slower machine. The reason was that the app was re-measuring
+  the entire conversation every time anything in the panel changed — including
+  every single keystroke — even though almost all of it was scrolled out of
+  sight. It now skips the parts you can't see and remembers exactly how tall
+  each one was, so the scroll bar, the "jump to latest" button and your reading
+  position are all still right to the pixel. Measured on a 400-message
+  conversation with the processor deliberately slowed to a quarter speed: the
+  work behind each keystroke dropped from 28ms to 7ms, and every keystroke now
+  lands within a single frame instead of taking two and a half. Nothing about
+  the conversation looks different — it just stops stuttering.
+
 - **A keyboard shortcut that can't be used right now tells you why instead of
   doing nothing.** Plenty of shortcuts only make sense some of the time —
   pinning needs a session to pin, and "go to the next session that needs you"

@@ -582,8 +582,22 @@ body {
   cursor: default;
 }
 
-/* THE FEED IS DELIBERATELY NOT SKIPPED, AND THAT COST US A CI RED — read this
- * before reaching for `content-visibility` on the conversation (#716).
+/* THE FEED IS SKIPPED NOW, AND IT IS NOT DONE FROM HERE (#740).
+ *
+ * ⚠️ This block said "the feed is deliberately NOT skipped" until #740 shipped,
+ * and the history below is why it took two attempts. The live code is
+ * `lib/feed-skipping.ts` and `lib/use-feed-skipping.ts`: each block carries
+ * `content-visibility: auto` and a `contain-intrinsic-size` equal to its OWN
+ * measured height, written as an inline style by a hook, re-measured when the
+ * pane changes width. It cannot be a rule in this file, and the measurements
+ * below are the reason — a stylesheet has no way to know how tall a block is.
+ *
+ * What shipping it bought, at 400 blocks under a 4x CPU throttle: the layout a
+ * keystroke forces went 28.5ms -> 7.3ms against a 1.7ms floor, the frame went
+ * 43.3ms -> 16.6ms (i.e. back inside one frame), three long tasks went to zero,
+ * and `scrollHeight` stayed exact. `spike/findings/e21-740-feed-skipping.md`.
+ *
+ * ── THE ORIGINAL RECORD, STILL TRUE AND STILL WORTH READING ─────────────────
  *
  * Typing is expensive in a long session because ANY layout invalidation in the
  * panel re-lays-out the whole feed. `.composer-box` above removes the composer's
@@ -614,7 +628,18 @@ body {
  * estimate cannot satisfy it. Any future attempt has to make the intrinsic size
  * REAL — measure each block once and pin its own height, and re-measure when a
  * tool row expands or verbosity changes — which is a small virtualiser and its
- * own piece of work, not a CSS line. */
+ * own piece of work, not a CSS line.
+ *
+ * ── AND THAT IS EXACTLY WHAT #740 BUILT, INCLUDING THE SAME CI RED ──────────
+ *
+ * The measured version brings the +127% to +0.0% at both 60 and 400 blocks,
+ * for the same 7.3ms — the guess was never FASTER than the measurement, only
+ * wrong. But it failed that same reading-position test again on the first run,
+ * for a different reason worth knowing: dockview DETACHES a background panel,
+ * a detached element reports a 0x0 box to every ResizeObserver watching it,
+ * and believing that records a height of zero for all 400 blocks at once.
+ * `isRenderedMeasurement` is the guard; the inline size is what tells "no
+ * layout" apart from "an empty block". */
 
 /* Feed view markdown blocks (P2-E12-06, §5.10) — vars only, theme-safe */
 .feed-md {
