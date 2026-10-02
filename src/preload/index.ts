@@ -1081,7 +1081,16 @@ const api = {
     },
   },
   git: {
-    status: (folder: string): Promise<unknown> => ipcRenderer.invoke('git:status', folder),
+    /**
+     * The working tree's state.
+     *
+     * `withStats` asks for the per-file `+/−` as well (E24 Git v2 item 7) — two
+     * extra `git diff` invocations, so the card header's poll leaves it off and
+     * only the Changes tab pays. Declared `Promise<unknown>` for the #650 reason
+     * every value channel is.
+     */
+    status: (folder: string, withStats?: boolean): Promise<unknown> =>
+      ipcRenderer.invoke('git:status', folder, withStats === true),
     /**
      * The commit history (E24 Git v2 item 1, §5.7).
      *

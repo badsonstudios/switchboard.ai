@@ -222,6 +222,44 @@ describe('allocateLanes — AT WIDTH, which is the item’s acceptance bar', () 
   });
 });
 
+describe('allocateLanes — the cost', () => {
+  it('⚠️ a FULL PAGE of real history is fast, which is the shape that actually occurs', () => {
+    // `MAX_LOG_LIMIT` is 2,000, so this is the largest input the app can produce.
+    // A real page is a CHAIN — each commit's parent is the next one in the window
+    // — which is ONE lane, and the walk is then linear.
+    const n = 2000;
+    const chain = Array.from({ length: n }, (_, i) => ({
+      id: String(i).padStart(40, 'a'),
+      parentIds: [String(i + 1).padStart(40, 'a')],
+    }));
+    const started = Date.now();
+    const layout = allocateLanes(chain);
+    expect(Date.now() - started).toBeLessThan(200);
+    expect(layout.lanes).toBe(1);
+    expect(layout.rows).toHaveLength(n);
+  });
+
+  it('⚠️ AND THE PATHOLOGICAL SHAPE IS O(n·k) WITH k = n, which a test found by timing out', () => {
+    // Two thousand commits sharing one parent is two thousand LANES, and the
+    // per-row scans are then linear in that — measured at 1,788 ms, which blew
+    // the 5 s test timeout on a CI runner when `HistoryPane`'s ceiling fixture
+    // was built that way.
+    //
+    // NOT optimised, and that is the decision: two thousand concurrent branch
+    // tips is not a history, the real shape is the chain above, and an index to
+    // make this fast would add state to the one function in Git v2 that is
+    // currently a plain walk anybody can read. It is written down instead, with
+    // the number, so the next person who hits it knows it is known.
+    const n = 400;
+    const wide = [
+      { id: 'm'.padStart(40, '0'), parentIds: Array.from({ length: n }, (_, i) => String(i).padStart(40, 'b')) },
+      ...Array.from({ length: n }, (_, i) => ({ id: String(i).padStart(40, 'b'), parentIds: [] })),
+    ];
+    const layout = allocateLanes(wide);
+    expect(layout.lanes).toBe(n);
+  });
+});
+
 describe('allocateLanes — orphans', () => {
   it('the first row is always an orphan, because nothing is above it', () => {
     expect(allocateLanes(history({ c: 'b', b: 'a', a: '' })).orphans).toBe(1);

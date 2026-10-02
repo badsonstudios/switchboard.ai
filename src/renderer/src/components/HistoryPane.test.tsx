@@ -454,8 +454,20 @@ describe('the History tab', () => {
       // thousand sibling commits occupy two thousand lanes. The filter keeps the
       // test about the ceiling, and it pins a second true thing: **the ceiling
       // notice is a fact about the PAGE, so a filter does not hide it.**
+      // ⚠️ **A CHAIN, NOT TWO THOUSAND SIBLINGS, AND CI IS WHAT TAUGHT ME THAT.**
+      // The first fixture gave every commit the same parent — so the lane
+      // allocator opened two thousand LANES, which is O(n·k) with k = n, measured
+      // at 1,788 ms locally and over the 5 s test timeout on the runner. It is
+      // also not a history: two thousand concurrent branch tips does not happen.
+      // A chain is what a real page of two thousand commits looks like (one lane),
+      // and it runs in a tenth of the time. `git-lanes.test.ts` still covers the
+      // wide case, at a size that is a test rather than a stress.
       const page = Array.from({ length: MAX_HISTORY }, (_, i) =>
-        commit({ id: `${i}`.padStart(40, 'a'), subject: `commit ${i}` })
+        commit({
+          id: `${i}`.padStart(40, 'a'),
+          parentIds: [`${i + 1}`.padStart(40, 'a')],
+          subject: `commit ${i}`,
+        })
       );
       const { readLog } = recorder(logOf(page));
       await mount(readLog);
@@ -463,7 +475,14 @@ describe('the History tab', () => {
       expect(rows()).toHaveLength(1);
       expect(one('.history-more')).toBeNull();
       expect(one('.history-ceiling')).not.toBeNull();
-    });
+      // ⚠️ **AN EXPLICIT TIMEOUT, BECAUSE THIS TEST REALLY DOES TWO THOUSAND
+      // COMMITS OF WORK.** Measured at ~1.1 s locally after the fixture became a
+      // chain, which is comfortably under vitest's 5 s default here and was NOT
+      // under it on a loaded CI runner — the same lesson `git-service.test.ts`
+      // records as #512 ("7,123 ms for a test that runs in well under a second
+      // locally"). Raising the ceiling for the one test that needs it, rather
+      // than shrinking the claim.
+    }, 30_000);
 
     it('⚠️ does NOT re-run `git status` for every page', async () => {
       // `git:status` carries the whole #776 config guard — a config read, a

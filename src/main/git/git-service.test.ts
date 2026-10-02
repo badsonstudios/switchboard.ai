@@ -2043,3 +2043,255 @@ describe('GitService.log (E24 Git v2 item 1)', () => {
   });
   // Real git in a child process, several times per case (#512).
 }, 60_000);
+
+// The per-file `+/−` against REAL git (E24 Git v2 item 7). `git-numstat.test.ts`
+// owns the framing against fixture bytes; this owns the half fixtures cannot
+// prove — that real git still emits that shape, and that the numbers ride on the
+// status snapshot rather than on a second one that could disagree with it.
+describe('GitService.status with stats (E24 Git v2 item 7)', () => {
+  it('⚠️ asks for NOTHING extra unless told to, which is the whole cost argument', async () => {
+    // `status()` is the card header's changed-count poll, for every card,
+    // repeatedly — and that surface draws no numbers at all. `undefined` is not
+    // `{}`: it says the caller did not pay, where `{}` would say it asked and
+    // nothing has changed.
+    const plainStatus = await svc.status(repo);
+    expect(plainStatus.stats).toBeUndefined();
+  });
+
+  it('counts the two sides SEPARATELY, because the groups draw them separately', async () => {
+    const both = tempDir('sb-git-numstat-');
+    sh(both, ['init', '-b', 'main']);
+    sh(both, ['config', 'user.email', 'test@test']);
+    sh(both, ['config', 'user.name', 'test']);
+    fs.writeFileSync(path.join(both, 'f.txt'), 'a\nb\nc\n');
+    sh(both, ['add', '.']);
+    sh(both, ['commit', '-m', 'init']);
+    // staged: one line changed. then unstaged on TOP of that: one more line.
+    fs.writeFileSync(path.join(both, 'f.txt'), 'a\nB\nc\n');
+    sh(both, ['add', 'f.txt']);
+    fs.writeFileSync(path.join(both, 'f.txt'), 'a\nB\nc\nd\n');
+
+    const s = await svc.status(both, undefined, true);
+    expect(s.stats?.['f.txt']?.staged).toEqual({ insertions: 1, deletions: 1 });
+    expect(s.stats?.['f.txt']?.unstaged).toEqual({ insertions: 1, deletions: 0 });
+  });
+
+  it('⚠️ a RENAME is ONE row, under its NEW name', async () => {
+    // The measured framing case: `0\t0\t\0old\0new\0` — an empty path field and
+    // two more NUL fields after it. A parser that read each NUL chunk as a record
+    // would produce three wrong rows and say nothing. `git mv` is a thing agents
+    // do constantly.
+    const moved = tempDir('sb-git-rename-');
+    sh(moved, ['init', '-b', 'main']);
+    sh(moved, ['config', 'user.email', 'test@test']);
+    sh(moved, ['config', 'user.name', 'test']);
+    fs.writeFileSync(
+      path.join(moved, 'old-name.ts'),
+      Array.from({ length: 20 }, (_, i) => `export const k${i} = ${i};`).join('\n') + '\n'
+    );
+    sh(moved, ['add', '.']);
+    sh(moved, ['commit', '-m', 'init']);
+    sh(moved, ['mv', 'old-name.ts', 'new-name.ts']);
+
+    const s = await svc.status(moved, undefined, true);
+    expect(s.stats?.['new-name.ts']).toBeDefined();
+    // The old name is not a row of its own, and there is no nameless row either.
+    expect(s.stats?.['old-name.ts']).toBeUndefined();
+    expect(Object.keys(s.stats ?? {})).toEqual(['new-name.ts']);
+  });
+
+  it('⚠️ a BINARY file reports binary, not `+0 −0`', async () => {
+    const bin = tempDir('sb-git-binary-');
+    sh(bin, ['init', '-b', 'main']);
+    sh(bin, ['config', 'user.email', 'test@test']);
+    sh(bin, ['config', 'user.name', 'test']);
+    fs.writeFileSync(path.join(bin, 'blob.dat'), Buffer.from([0, 1, 2, 0, 3, 4]));
+    sh(bin, ['add', '.']);
+    sh(bin, ['commit', '-m', 'init']);
+    fs.writeFileSync(path.join(bin, 'blob.dat'), Buffer.from([0, 9, 9, 9, 9, 9, 0, 7]));
+
+    const s = await svc.status(bin, undefined, true);
+    expect(s.stats?.['blob.dat']?.unstaged?.binary).toBe(true);
+  });
+
+  it('an UNTRACKED file has a status row and NO stats, which is correct', async () => {
+    // `git diff` does not see an untracked file at all. The row exists (porcelain
+    // reports it) and has no numbers, so the renderer draws none — rather than a
+    // zero that would read as "this new file is empty".
+    const fresh = tempDir('sb-git-untracked-');
+    sh(fresh, ['init', '-b', 'main']);
+    sh(fresh, ['config', 'user.email', 'test@test']);
+    sh(fresh, ['config', 'user.name', 'test']);
+    fs.writeFileSync(path.join(fresh, 'committed.txt'), 'x\n');
+    sh(fresh, ['add', '.']);
+    sh(fresh, ['commit', '-m', 'init']);
+    fs.writeFileSync(path.join(fresh, 'brand-new.txt'), 'hello\n');
+
+    const s = await svc.status(fresh, undefined, true);
+    expect(s.files.map((f) => f.path)).toContain('brand-new.txt');
+    expect(s.stats?.['brand-new.txt']).toBeUndefined();
+  });
+
+  it('⚠️ the stats come from the SAME snapshot as the file list', async () => {
+    // One call, one guard, one moment. Two round trips would be two snapshots —
+    // the file list from one and the numbers from another, drawn in the SAME ROW
+    // — and a row reading `+12 −3` beside a file that is no longer changed is the
+    // confident wrong answer this surface exists to stop giving. Asserted as the
+    // invariant it implies: every path with stats is a path in the list.
+    const s = await svc.status(repo, undefined, true);
+    const listed = new Set(s.files.map((f) => f.path));
+    for (const p of Object.keys(s.stats ?? {})) {
+      expect(listed.has(p), `${p} has stats but is not in the file list`).toBe(true);
+    }
+  });
+
+  it('⚠️ a stats read that FAILS costs the numbers, never the list', async () => {
+    // The fail-open rule pointing the opposite way from where it points on the
+    // status read itself: `status` is the answer and these are a decoration on
+    // it. A repository whose `diff` cannot run (a corrupt blob) must still list
+    // its files.
+    const broken = tempDir('sb-git-numstat-broken-');
+    sh(broken, ['init', '-b', 'main']);
+    sh(broken, ['config', 'user.email', 'test@test']);
+    sh(broken, ['config', 'user.name', 'test']);
+    fs.writeFileSync(path.join(broken, 'f.txt'), 'hello\n');
+    sh(broken, ['add', '.']);
+    sh(broken, ['commit', '-m', 'init']);
+    const blob = execFileSync('git', ['rev-parse', 'HEAD:f.txt'], { cwd: broken, encoding: 'utf8' }).trim();
+    const objectPath = path.join(broken, '.git', 'objects', blob.slice(0, 2), blob.slice(2));
+    fs.chmodSync(objectPath, 0o666);
+    fs.writeFileSync(objectPath, 'not a git object');
+    fs.writeFileSync(path.join(broken, 'f.txt'), 'changed\n');
+
+    const s = await svc.status(broken, undefined, true);
+    expect(s.isRepo).toBe(true);
+    expect(s.unreadable).toBeUndefined();
+    expect(s.files.map((f) => f.path)).toContain('f.txt');
+    // asked for, so present — and empty, because the read could not answer
+    expect(s.stats).toEqual({});
+  });
+  // Real git in a child process, several times per case (#512).
+}, 60_000);
+
+describe('GitService.status and a MERGE CONFLICT (E24 Git v2 item 6)', () => {
+  it('⚠️ lists a conflicted file at all — it used to be invisible', async () => {
+    // THE PRE-EXISTING BUG THIS PINS. porcelain v2 reports an unmerged entry on
+    // its own `u ` line, and the parser matched only `1 `, `2 ` and `? ` — so a
+    // file in a merge conflict was **not listed in the Changes tab and not
+    // counted in the card header's badge**. The one moment a user most needs to
+    // see which files are in trouble, and the surface said nothing at all.
+    const conflict = tempDir('sb-git-conflict-');
+    sh(conflict, ['init', '-b', 'main']);
+    sh(conflict, ['config', 'user.email', 'test@test']);
+    sh(conflict, ['config', 'user.name', 'test']);
+    sh(conflict, ['config', 'commit.gpgsign', 'false']);
+    fs.writeFileSync(path.join(conflict, 'c.txt'), 'base\n');
+    sh(conflict, ['add', '.']);
+    sh(conflict, ['commit', '-m', 'base']);
+    sh(conflict, ['checkout', '-b', 'side']);
+    fs.writeFileSync(path.join(conflict, 'c.txt'), 'side\n');
+    sh(conflict, ['commit', '-am', 'side']);
+    sh(conflict, ['checkout', 'main']);
+    fs.writeFileSync(path.join(conflict, 'c.txt'), 'main\n');
+    sh(conflict, ['commit', '-am', 'main']);
+    // The merge FAILS, which is the point — `sh` would throw on a non-zero exit.
+    try {
+      sh(conflict, ['merge', 'side']);
+    } catch {
+      /* expected: a conflict */
+    }
+
+    const s = await svc.status(conflict);
+    const row = s.files.find((f) => f.path === 'c.txt');
+    expect(row, 'a conflicted file is not in the list at all').toBeDefined();
+    expect(row?.conflicted).toBe(true);
+    // Both sides true, and neither is a guess: a conflict HAS content in the
+    // index and differs from it in the worktree. So every consumer that asks one
+    // of those two questions gets the honest answer without knowing about
+    // conflicts at all.
+    expect(row?.staged).toBe(true);
+    expect(row?.unstaged).toBe(true);
+    expect(row?.untracked).toBe(false);
+    // `UU` — both sides modified, which is what the sidebar's Merge group reads.
+    expect(row?.xy).toBe('UU');
+  });
+
+  it('an ordinary modification is NOT marked conflicted', async () => {
+    // The other half, so the flag cannot be satisfied by setting it everywhere.
+    const s = await svc.status(repo);
+    expect(s.files.length).toBeGreaterThan(0);
+    expect(s.files.every((f) => !f.conflicted)).toBe(true);
+  });
+  // Real git in a child process, several times per case (#512).
+}, 60_000);
+
+describe('GitService.status from a SUBDIRECTORY (E24 Git v2 item 7)', () => {
+  it('⚠️ the stats still match their rows — two commands, two path bases', async () => {
+    // ⚠️ **THE BUG THIS PINS, AND NOTHING IN THIS SUITE COULD HAVE CAUGHT IT**
+    // because every other fixture points at a repository ROOT. Measured on git
+    // 2.51.0.windows.2, both run with `cwd` = the session folder:
+    //
+    //   | run from      | status --porcelain=v2 | diff --numstat   |
+    //   |---------------|-----------------------|------------------|
+    //   | the repo root | sub/deep/f.txt        | sub/deep/f.txt   |
+    //   | `sub/`        | **deep/f.txt**        | **sub/deep/f.txt** |
+    //
+    // `status` honours `status.relativePaths` (default TRUE) so its paths are
+    // CWD-relative; `diff` is repo-root-relative unless told otherwise. They agree
+    // only when the folder IS the top level. For a session rooted in a monorepo
+    // package — an ordinary shape here — every `stats` key missed every row, so
+    // **every row drew nothing and the totals bar called everything uncounted**,
+    // with no reason anywhere. The only symptom was absence.
+    //
+    // Both sides are pinned now (`--relative` on the diffs, `status.relativePaths`
+    // on the status) rather than left to config, because both keys are
+    // repo-writable and either one flipping would break the match again.
+    const mono = tempDir('sb-git-mono-');
+    sh(mono, ['init', '-b', 'main']);
+    sh(mono, ['config', 'user.email', 'test@test']);
+    sh(mono, ['config', 'user.name', 'test']);
+    fs.mkdirSync(path.join(mono, 'sub', 'deep'), { recursive: true });
+    fs.writeFileSync(path.join(mono, 'sub', 'deep', 'f.txt'), 'a\nb\n');
+    fs.writeFileSync(path.join(mono, 'root.txt'), 'r\n');
+    sh(mono, ['add', '.']);
+    sh(mono, ['commit', '-m', 'init']);
+    fs.writeFileSync(path.join(mono, 'sub', 'deep', 'f.txt'), 'a\nB\nc\n');
+
+    // THE SESSION FOLDER IS THE SUBDIRECTORY, not the repo root.
+    const s = await svc.status(path.join(mono, 'sub'), undefined, true);
+    expect(s.isRepo).toBe(true);
+    // status reports it relative to the folder…
+    expect(s.files.map((f) => f.path)).toEqual(['deep/f.txt']);
+    // …and the numbers are keyed the SAME way, which is the whole assertion.
+    expect(s.stats?.['deep/f.txt']).toEqual({ unstaged: { insertions: 2, deletions: 1 } });
+    // Mutation-proof: the old behaviour keyed them `sub/deep/f.txt`, so asserting
+    // the absence of that spelling is what makes this test fail against it.
+    expect(s.stats?.['sub/deep/f.txt']).toBeUndefined();
+    // And every stats key is a row, which is the invariant the sidebar relies on.
+    const listed = new Set(s.files.map((f) => f.path));
+    for (const p of Object.keys(s.stats ?? {})) expect(listed.has(p)).toBe(true);
+  });
+
+  it('⚠️ a repo-authored `status.relativePaths` cannot break the match', async () => {
+    // Both keys are repo-writable — #776's threat model pointed at a number
+    // rather than at a command. `status.relativePaths=false` would make status
+    // report root-relative paths while the diffs stayed folder-relative, and every
+    // row would silently lose its numbers again.
+    const hostile = tempDir('sb-git-relpath-');
+    sh(hostile, ['init', '-b', 'main']);
+    sh(hostile, ['config', 'user.email', 'test@test']);
+    sh(hostile, ['config', 'user.name', 'test']);
+    fs.mkdirSync(path.join(hostile, 'sub'), { recursive: true });
+    fs.writeFileSync(path.join(hostile, 'sub', 'g.txt'), 'one\n');
+    sh(hostile, ['add', '.']);
+    sh(hostile, ['commit', '-m', 'init']);
+    fs.writeFileSync(path.join(hostile, 'sub', 'g.txt'), 'two\n');
+    sh(hostile, ['config', 'status.relativePaths', 'false']);
+    sh(hostile, ['config', 'diff.relative', 'false']);
+
+    const s = await svc.status(path.join(hostile, 'sub'), undefined, true);
+    expect(s.files.map((f) => f.path)).toEqual(['g.txt']);
+    expect(s.stats?.['g.txt']).toBeDefined();
+  });
+  // Real git in a child process, several times per case (#512).
+}, 60_000);

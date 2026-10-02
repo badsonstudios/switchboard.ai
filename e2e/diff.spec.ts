@@ -211,9 +211,24 @@ test.describe('Changes tab (Monaco diff pane)', () => {
     // the file list is the git status, live: one tracked file, modified
     const entry = w.getByText(FILE, { exact: true });
     await expect(entry).toBeVisible({ timeout: 15_000 });
-    // the VCS badge is the path span's sibling — scoped, because a bare "M"
-    // matches plenty of other single letters on screen
-    await expect(entry.locator('xpath=following-sibling::span')).toHaveText('M');
+    // ⚠️ THE ROW SHAPE CHANGED IN E24 Git v2 ITEM 6 and this assertion changed
+    // with it. It used to read "the VCS badge is the path span's sibling" and
+    // match the word chip `M`; the row is now name-first with a coloured LETTER
+    // ahead of it, so the badge is a PRECEDING sibling and it carries a class.
+    // Located by class rather than by position, because position is what made
+    // this brittle: the empty directory span of a root-level file was its next
+    // sibling and matched instead.
+    await expect(w.locator(`.scm-row[data-path="${FILE}"] .scm-letter`)).toHaveText('M');
+    // ⚠️ **THE VERBS ARE HIDDEN AT REST, AND ONLY AN E2E CAN SAY SO.** The unit
+    // test loads `tokens.css` into jsdom and reads `getComputedStyle`, which is
+    // good — but the version BEFORE it asserted on the stylesheet's TEXT and
+    // passed while an inline `display: flex` in the component overrode the rule
+    // and painted the buttons on every row. This is the same claim against a real
+    // browser with the real cascade.
+    const row = w.locator(`.scm-row[data-path="${FILE}"]`);
+    await expect(row.locator('.scm-row-acts')).not.toBeVisible();
+    await row.hover();
+    await expect(row.locator('.scm-row-acts')).toBeVisible();
 
     await entry.click();
     await expect(diffEditor(w)).toBeVisible({ timeout: 15_000 });

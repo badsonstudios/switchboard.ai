@@ -28,7 +28,7 @@ no page is an unfinished work item.
 | [05 — Slash commands](05-slash-commands.md) | `/clear`, `/compact`, autocomplete, the Clear and Compact buttons, the ⋯ menu | draft |
 | [06 — Keyboard & commands](06-keyboard.md) | Shortcuts, the command list, the palette | draft |
 | [07 — Organizing your workspace](07-workspace.md) | The sidebar, groups, pop-out windows, layout | draft |
-| [08 — Changes & git](08-changes-and-git.md) | The Changes tab, diffs, syntax colouring, branch info | draft |
+| [08 — Changes & git](08-changes-and-git.md) | The Changes tab: the four groups, name-first rows, per-file line counts, the branch and push/pull line, filtering, giving a diff its own panel or window, syntax colouring | draft |
 | [09 — Notifications & events](09-notifications.md) | Sounds, the Events drawer, the lamp strip, when you get told what | draft |
 | [10 — Settings](10-settings.md) | The Settings window (`Ctrl+,`), the chips that stayed on the title bar, and why | current |
 | [11 — Troubleshooting](11-troubleshooting.md) | When a session won't start, hangs, or vanishes; sending a problem report; asking for a feature | draft |

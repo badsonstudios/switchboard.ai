@@ -2383,9 +2383,14 @@ app
       log: busLog,
     });
 
-    broker.handle('git:status', (_e, folder: string) =>
+    broker.handle('git:status', (_e, folder: string, withStats?: unknown) =>
       knownFolder(folder)
-        ? gitService.status(folder)
+        ? // `withStats` is the Changes tab asking for the per-file `+/−` (E24 Git
+          // v2 item 7). Opt-in because this channel is also the card header's
+          // changed-count poll, which draws no numbers — see `status()`'s own
+          // note. Coerced rather than trusted: it decides whether two more `git
+          // diff` invocations run, and nothing else.
+          gitService.status(folder, undefined, withStats === true)
         : // A REFUSAL, AND IT SAYS SO (#785 review). This was a bare
           // `{ isRepo: false }`, which the pane drew as "Not a git repository"
           // for a folder switchboard declined to read — the same lie #785 is

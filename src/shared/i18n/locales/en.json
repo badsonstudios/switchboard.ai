@@ -471,17 +471,49 @@
     "changed": "·{n} changed",
     "ahead": "↑{n}"
   },
+  "scm": {
+    "branch": "⑂ {branch}",
+    "ahead": "↑{count}",
+    "behind": "↓{count}",
+    "aheadTitle": "{count, plural, one {# commit to push} other {# commits to push}}",
+    "behindTitle": "{count, plural, one {# commit to pull} other {# commits to pull}}",
+    "refresh": "Re-read this project's changes",
+    "refreshIcon": "⟲",
+    "plus": "+{n}",
+    "minus": "−{n}",
+    "files": "{count, plural, one {# file} other {# files}}",
+    "filesAtLeast": "{count, plural, one {# file} other {# files}} (some uncounted)",
+    "filterPlaceholder": "Filter changed files…",
+    "filterLabel": "Filter the changed files by path",
+    "noMatches": "No changed file matches “{query}”",
+    "caretOpen": "▾",
+    "caretClosed": "▸",
+    "binary": "binary",
+    "binaryTitle": "git cannot count lines in a binary file",
+    "rowLabel": "{name} in {dir}, {status}",
+    "rowLabelRoot": "{name}, {status}",
+    "group": {
+      "merge": "Merge conflicts",
+      "staged": "Staged changes",
+      "unstaged": "Changes",
+      "untracked": "Untracked"
+    },
+    "letter": {
+      "modified": "modified",
+      "added": "added",
+      "deleted": "deleted",
+      "renamed": "renamed",
+      "copied": "copied",
+      "conflicted": "conflicted",
+      "untracked": "untracked",
+      "typechange": "type changed"
+    }
+  },
   "diff": {
     "tabTitle": "{title} · diff",
     "notRepo": "Not a git repository",
     "unreadable": "switchboard couldn't read this project's git — {reason}",
     "clean": "Working tree clean",
-    "badge": {
-      "new": "A",
-      "modified": "M",
-      "staged": "S",
-      "both": "SM"
-    },
     "openInViewer": "Open {file} in the document viewer",
     "openInViewerIcon": "↗",
     "allChanges": "All changes",

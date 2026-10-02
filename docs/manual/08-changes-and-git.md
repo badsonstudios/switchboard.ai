@@ -12,17 +12,82 @@ If the folder isn't a git repository, the line simply doesn't appear.
 
 ## The Changes tab
 
-Open the **Changes** tab on a card to see what this session has actually done
-to your files: a list of changed files with a badge for each —
+Open the **Changes** tab on a card to see what this session has actually done to
+your files. It used to be one flat list of full file paths; it is now grouped the
+way every git tool groups things.
 
-| Badge | Meaning |
+### The groups
+
+| Group | What is in it |
 |---|---|
-| **A** | New file |
-| **M** | Modified |
-| **S** | Staged |
-| **SM** | Staged, with further unstaged changes |
+| **Merge conflicts** | files git could not merge on its own — **always listed first**, because nothing else can be committed until these are sorted out |
+| **Staged changes** | what a commit would capture right now |
+| **Changes** | what has changed since you staged, or everything if you have staged nothing |
+| **Untracked** | files git has never seen before |
 
-Click a file to see it before and after.
+A group only appears if it has something in it, each shows its own count, and you
+can fold any of them shut by clicking the heading.
+
+**A file can be in two groups at once.** If you staged a change and then edited
+the file again, it appears under both **Staged changes** and **Changes** — with
+*different* numbers in each, because those are two different sets of changes. That
+is not a duplicate; it is the difference between what committing would capture and
+what it would leave behind.
+
+### The rows
+
+Each row is: a coloured letter, the file's **name**, then its folder in grey.
+
+| Letter | Meaning |
+|---|---|
+| **M** | modified |
+| **A** | added |
+| **D** | deleted |
+| **R** | renamed |
+| **C** | copied |
+| **T** | type changed — a file replaced by a symlink or a folder |
+| **U** | untracked |
+| **!** | in conflict |
+
+**The name comes first on purpose.** Before this, rows showed the whole path and
+cut off the end when it didn't fit — which meant `…/components/FeedView.tsx` and
+`…/FeedView.test.tsx` looked identical, and the only part that told them apart was
+the part that got cut. Now the folder is what shortens, from the *front*, so what
+you can always read is the filename.
+
+Click a row to see that file before and after. Hover it — or Tab to it — and the
+line counts swap for buttons: **⧉** to open the diff in its own panel, and **↗** to
+open the file itself in the reader.
+
+### The numbers
+
+Each row shows how many lines were added and removed, and the bar at the top adds
+them up along with a file count.
+
+Some things genuinely have no line count, and switchboard shows nothing rather
+than a zero:
+
+- **An untracked file.** Git doesn't compare a file it has never seen, so there is
+  nothing to count. `+0 −0` would read as "this new file is empty".
+- **A binary file** — an image, a PDF. The row says **binary** instead.
+
+When anything is uncounted, the top bar says **(some uncounted)** rather than
+implying a total it can't know.
+
+### The top line
+
+The header shows the branch (**⑂ main**), and arrows if your branch tracks one on
+a remote: **↑3** for commits you haven't pushed, **↓1** for commits you haven't
+pulled. Neither appears if you're level with the remote — or if your branch doesn't
+track one at all.
+
+**⟲** re-reads the project. Nothing watches your folder in the background, so if
+you've changed files outside the app, that's the button.
+
+### Filtering
+
+Type in the box to narrow the list. It matches the whole path, so `lib/` finds
+everything in a `lib` folder, not just a file called `lib`.
 
 **It remembers where you were.** Leave the Changes tab for the conversation and
 come back, and it reopens on the same file, at the same line —

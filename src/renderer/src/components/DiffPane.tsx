@@ -18,24 +18,12 @@ import {
   subscribeDiffLayout,
   type DiffLayout,
 } from '../lib/diff-layout';
-import { openDocument } from '../lib/document-open';
 import { forgetDiffPlace, placeIsStillThere, readDiffPlace } from '../lib/diff-places';
-import { gitPaneState, type GitFileDto, type GitStatusDto } from '../lib/git-status';
+import { type GitStatusDto } from '../lib/git-status';
 import { MonacoDiff, type DiffLayoutState } from './MonacoDiff';
+import { ScmSidebar } from './ScmSidebar';
 import { canOpenDiffs, openDiff } from '../lib/diff-open';
 import { WORKING_TREE_LEFT, WORKING_TREE_RIGHT } from '../lib/diff-panels';
-
-/**
- * `folder` + git's forward-slash relative path, in the folder's own spelling.
- *
- * git reports `src/main/index.ts` on every platform; main resolves whatever it
- * is handed, so the only thing that matters is that the two halves are joined
- * with a separator the OS will accept — and both accept `/` on Windows.
- */
-function joinPath(folder: string, relative: string): string {
-  const sep = folder.includes('\\') && !folder.includes('/') ? '\\' : '/';
-  return `${folder.replace(/[\\/]+$/, '')}${sep}${relative}`;
-}
 
 export function DiffPane(props: {
   folder: string;
@@ -68,9 +56,32 @@ export function DiffPane(props: {
   // PREFERENCE while the body draws the EFFECTIVE layout — and the whole of #532
   // is that those two can legitimately differ.
   const layoutPref = useSyncExternalStore(subscribeDiffLayout, getDiffLayout);
+  /**
+   * Bumped by the sidebar's ⟲ to re-ask main.
+   *
+   * ⚠️ **A COUNTER, NOT A BOOLEAN OR A CALLBACK.** The status read is an effect
+   * keyed on the folder; a refresh is "run that effect again", and a counter in
+   * its deps is the only spelling of that which cannot miss two presses in a row.
+   * There is no watcher on a repository — the same trade the Files tab makes — so
+   * this is the whole of the manual refresh story.
+   */
+  const [refreshes, setRefreshes] = useState(0);
 
   useEffect(() => {
-    void window.switchboard.git.status(props.folder).then((s) => {
+    // ⚠️ **CANCELLED ON FOLDER CHANGE AND ON REFRESH (found in review).** Without
+    // it, two quick ⟲ presses start two reads — a status plus two diffs each —
+    // whose durations differ, and WHICHEVER FINISHES LAST WINS, which can be the
+    // older snapshot. A folder change mid-flight applied the previous folder's
+    // status, and its `setSelected` reconciliation, to the new one. The sibling
+    // reader of this same channel in `SessionGrid` has carried this flag all
+    // along; the refresh button is what made the race reachable by a user in one
+    // second.
+    let cancelled = false;
+    // `true` — ASK FOR THE NUMBERS (item 7). This is the one surface that draws
+    // them, and the two extra `git diff` invocations are why the card header's
+    // poll leaves the flag off. See `GitStatus.stats`.
+    void window.switchboard.git.status(props.folder, true).then((s) => {
+      if (cancelled) return;
       // `answered` BEFORE the cast (#650). `git:status` is declared
       // `Promise<unknown>`, so this cast is the only thing between the wire and
       // a typed record — and the brand cast into `GitStatusDto` becomes the
@@ -105,14 +116,17 @@ export function DiffPane(props: {
         return null;
       });
     });
-  }, [props.folder, props.cardId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [props.folder, props.cardId, refreshes]);
 
   /**
    * What the body is drawing, as the body reported it.
    *
    * ⚠️ **REPORTED UP RATHER THAN DERIVED HERE, and the narrow verdict is why.**
    * The effective layout depends on the editor's own measured width — which is
-   * not the card's width, because this list takes its 200px off the front first —
+   * not the card's width, because the sidebar takes its 240px off the front first —
    * so only the body can know it. The toolbar below needs the answer to label a
    * toggle whose pressed state is sometimes not what is on screen (#532), and a
    * second measurement up here would be a second answer that could disagree.
@@ -120,115 +134,26 @@ export function DiffPane(props: {
   const [body, setBody] = useState<DiffLayoutState>({ layout: 'side-by-side', narrowed: false });
   const narrowed = body.narrowed;
 
-  const paneState = gitPaneState(status);
-
-  const badge = (f: GitFileDto): string =>
-    f.untracked ? t('diff.badge.new') : f.staged && f.unstaged ? t('diff.badge.both') : f.staged ? t('diff.badge.staged') : t('diff.badge.modified');
+  // ⚠️ `gitPaneState` AND THE BADGE WORDS MOVED TO `ScmSidebar` (items 6 and 7).
+  // The three-state decision belongs with the list that draws it, and the badge
+  // was `mod` / `staged` / `both` / `new` in 9px mono — design §1.2 cause 1, the
+  // ONLY thing distinguishing four kinds of change. It is a coloured letter in a
+  // named group now, which is git's own vocabulary and a shape every git GUI uses.
 
   return (
     <div style={{ blockSize: '100%', display: 'flex', background: 'var(--card-bg)' }}>
-      <div
-        style={{
-          inlineSize: 200,
-          borderInlineEnd: '1px solid var(--border)',
-          overflowY: 'auto',
-          padding: 6,
-          fontSize: 11,
-        }}
-      >
-        {/* ONE decision, in `lib/git-status` — see `gitPaneState` for why
-            `unreadable` has to be checked before `clean` and not after. */}
-        {paneState?.kind === 'unreadable' && (
-          // The attention ink, not `--muted`: this is something being WRONG,
-          // where the other two are ordinary facts about a folder. Same token
-          // the dirty-count uses on the card header, which #246 contrast-checked
-          // for text on this surface.
-          <div style={{ color: 'var(--status-needs-input-ink)' }}>
-            {t('diff.unreadable', { reason: paneState.reason })}
-          </div>
-        )}
-        {paneState?.kind === 'not-repo' && (
-          <div style={{ color: 'var(--muted)' }}>{t('diff.notRepo')}</div>
-        )}
-        {paneState?.kind === 'clean' && (
-          <div style={{ color: 'var(--muted)' }}>{t('diff.clean')}</div>
-        )}
-        {/* GATED ON THE SAME DECISION, so "the pane renders from `gitPaneState`
-            and from nothing else" is true rather than nearly true (review nit).
-            Harmless today — `unreadable` always ships `files: []` — but an
-            unreadable answer that somehow carried files would otherwise draw
-            the reason AND a file list under it. */}
-        {paneState?.kind === 'files' &&
-          status?.files.map((f) => (
-          <div
-            key={f.path}
-            onClick={() => setSelected(f.path)}
-            style={{
-              display: 'flex',
-              gap: 6,
-              alignItems: 'center',
-              padding: '4px 6px',
-              borderRadius: 4,
-              cursor: 'pointer',
-              background: selected === f.path ? 'var(--rail-row-selected)' : 'transparent',
-              color: 'var(--text)',
-            }}
-          >
-            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'var(--font-mono)', fontSize: 10 }}>
-              {f.path}
-            </span>
-            {/* §5.30's "opened from wherever a path already appears", as its
-                OWN control rather than as the path's click target.
-
-                The plan line reads "a path click in the Changes tab's file
-                list", and the literal reading was written and then withdrawn:
-                the whole row already means "show me this file's diff", and
-                turning the file NAME — nearly all of the row — into "open the
-                whole file somewhere else" leaves the tab's primary gesture with
-                a status badge to aim at, and sends a user who wanted a diff to
-                a different panel. That is the calm check failing on a surface
-                that was fine. The viewer is a SECOND question about the same
-                row ("never mind the change, what does this file say now?"), so
-                it gets a second, labelled control. */}
-            <button
-              type="button"
-              className="diff-open-viewer"
-              title={t('diff.openInViewer', { file: f.path })}
-              aria-label={t('diff.openInViewer', { file: f.path })}
-              onClick={(e) => {
-                // the row's own handler would select it into the diff as well —
-                // harmless, but two things happening from one click reads as a
-                // bug even when both are wanted
-                e.stopPropagation();
-                openDocument(joinPath(props.folder, f.path), props.sessionId);
-              }}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--muted)',
-                cursor: 'pointer',
-                fontSize: 10,
-                lineHeight: 1,
-                padding: '0 2px',
-              }}
-            >
-              {t('diff.openInViewerIcon')}
-            </button>
-            <span
-              style={{
-                fontSize: 9,
-                fontFamily: 'var(--font-mono)',
-                color: f.untracked ? 'var(--diff-added)' : 'var(--muted)',
-                background: 'var(--chip)',
-                borderRadius: 4,
-                paddingInline: 4,
-              }}
-            >
-              {badge(f)}
-            </span>
-          </div>
-        ))}
-      </div>
+      {/* The sidebar (E24 Git v2 items 6 and 7). Was a flat 200px list of full
+          relative paths with a word chip — the owner's "everything's kind of just
+          smashed together". `ScmSidebar` owns the groups, the rows, the header and
+          the totals; this pane owns which file the body is showing. */}
+      <ScmSidebar
+        folder={props.folder}
+        status={status}
+        selected={selected}
+        onSelect={setSelected}
+        sessionId={props.sessionId}
+        onRefresh={() => setRefreshes((n) => n + 1)}
+      />
       <div style={{ flex: 1, minInlineSize: 0, display: 'flex', flexDirection: 'column' }}>
         {/* §5.32 rule 1: real `<button>`s, so Enter, Space, focus and the
             announcement all come from the platform. NOT a `radiogroup` — the

@@ -43,6 +43,90 @@
 > log rather than the audit, §5.7 also records the editable-diff decision, and
 > VS Code's built-in Git extension is `docs/reference-implementations.md` **§4**.
 >
+> **🚧 NOW: items 6 AND 7 (#1043, #1044) — the Changes tab IS the source-control
+> sidebar, and every row has its numbers.** Built together because design §4 says
+> so: *"regrouping the sidebar without per-file stats leaves an empty slot in every
+> row."* This is the owner's *"everything's kind of just smashed together"*, and
+> design §1.2's four causes are now all answered — 1 and 2 here, 3 by item 5, and
+> 4 by a header that finally reads three fields `GitStatus` has carried since it
+> was written and **no consumer had ever read**.
+>
+> Four collapsible groups in VS Code's own `scmResourceGroup` vocabulary (merge /
+> staged / unstaged / untracked, **merge always first** because it is the only one
+> that blocks you) · name-first rows, so the directory is what truncates and never
+> the basename · one coloured letter instead of a `mod`/`staged`/`both`/`new` chip
+> in 9px mono · hover-or-focus actions sharing a slot with the numbers · a filter ·
+> a branch and ↑↓ header · a totals bar.
+>
+> **⚠️⚠️ AND IT FOUND A PRE-EXISTING BUG THAT HAD BEEN THERE SINCE THE PARSER WAS
+> WRITTEN: A FILE IN A MERGE CONFLICT WAS INVISIBLE.** porcelain v2 reports an
+> unmerged entry on its own `u ` line, and the parser matched only `1 `, `2 ` and
+> `? ` — so a conflicted file was **not listed in the Changes tab and not counted
+> in the card header's badge**. The one moment a user most needs to see which files
+> are in trouble, and the surface said nothing at all. Now parsed, flagged, and
+> drawn in its own group at the top. The card-header badge gets it for free.
+>
+> **⭐⭐ REVIEW FOUND THREE BLOCKERS, AND THE WORST ONE WAS INVISIBLE BY DESIGN.**
+>
+> 1. **Every per-file number silently vanished for any session below the repository
+>    root.** The two commands do not agree on what a path is relative to —
+>    measured: from `sub/`, `status --porcelain=v2` says **`deep/f.txt`** and
+>    `diff --numstat` says **`sub/deep/f.txt`**. `status` honours
+>    `status.relativePaths` (default true); `diff` is repo-root-relative. They agree
+>    only when the session folder IS the top level. For a monorepo-package session —
+>    an ordinary shape here — every `stats` key missed every row, so **every row
+>    drew nothing and the totals bar called everything uncounted, with no reason
+>    anywhere.** The only symptom was absence. Both sides are PINNED now rather
+>    than left to config, because both keys are repo-writable and either one
+>    flipping breaks the match again — #776's threat model pointed at a number.
+>    ⚠️ **Nothing in the suite could have caught it: every other fixture points at a
+>    repository root.** Two tests now do not.
+> 2. **The hover slot never hid anything, and the test that was meant to catch it
+>    passed anyway.** The component set `display: flex` INLINE on the element
+>    `.scm-row-acts { display: none }` was supposed to hide — and an inline
+>    declaration outranks any author rule without `!important`. So the verbs were
+>    painted on every row at rest, and hovering **removed the numbers and added
+>    nothing**: the slot was doubled at rest and halved on hover, the exact
+>    opposite of the arrangement. **The test asserted on the TEXT of `tokens.css`**
+>    — it proved the rule had been typed, not that it won. Same shape as item 1's
+>    hostile-driver test proving the fixture. It reads `getComputedStyle` with the
+>    stylesheet loaded now, and the e2e hovers a real row in a real browser.
+>    Also changed `display: none` → `visibility: hidden`, because `display: none`
+>    takes the buttons out of the **accessibility tree** too: Tab reaches them,
+>    browse mode never would.
+> 3. **A merge-conflict row read `+0 −0`.** Measured: `diff --numstat` on an
+>    unmerged path emits a real `0	0	<path>` — not `-`, not absence — so the
+>    Merge group, the one the design says matters most, drew two zeros on a file
+>    full of conflict markers, and the totals counted it. A tree whose only changes
+>    were conflicts read `+0 −0 · 3 files` with no hedge at all.
+>
+> **FIVE MORE, EVERY ONE A WRONG NUMBER OR A CONTRADICTION:** the **numstat budget
+> was already spent before it started** — the deadline is set before the status
+> read, which is deliberately UNBOUNDED, so on exactly the enormous-or-network
+> repository that exemption exists for `Math.max(1, …)` turned "no budget left"
+> into a 1 ms timeout, a guaranteed failure dressed as an attempt · the **totals
+> bar drew `+0 −0` when it had no numbers at all**, which is the "absent is not
+> zero" rule the ROWS four lines below it get right · the **bar was computed from
+> the UNFILTERED status**, so a query matching nothing left `+400 −200 · 18 files`
+> sitting above "No changed file matches" — the third instance in this epic of a
+> thing rendering beside a state it contradicts · the **status effect had no
+> cancellation**, so two quick ⟲ presses raced and the older snapshot could win ·
+> and **untracked rows wore `A`**, which is git's letter for a *staged add* and
+> collided with the real staged rows two groups up.
+>
+> **Deliberate gap, and it is the owner's own rule:** screen 1 draws `＋` and `↶`
+> on every row. Both need `git.write` (item 12), so the slot is built, the two
+> verbs that work are in it, and the two that do not are **absent rather than drawn
+> dead**.
+>
+> **One thing the design asked for that turned out not to be needed:** §4 item 6
+> names `rev-list --left-right --count @{u}...HEAD` to fill ahead/behind. Porcelain
+> v2's `# branch.ab` already answers it — the fields were never empty, they were
+> never *read*. A second source could only have disagreed with the first.
+>
+> **Green:** lint · all three typecheck projects · **10,122** unit tests ·
+> `e2e/diff.spec.ts` **8 of 8** plus history and files, **15 of 15** together.
+
 > **🚧 NOW: item 5 (#1042) — the `diff-` panel family. THE STRUCTURAL ITEM, and
 > it is done.** A diff is a dock panel now: ⧉ in the Changes tab opens one file's
 > comparison beside your sessions, ⧉ again sends it to its own OS window, ⇤ brings

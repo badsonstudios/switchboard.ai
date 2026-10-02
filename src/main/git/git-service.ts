@@ -16,6 +16,7 @@ import path from 'path';
 import { killTree } from '../transport/kill-tree';
 import { trackChild } from '../diagnostics/live-children';
 import { type GitCommit, type GitLogQuery, logArgs, parseLog } from './git-log';
+import { type FileStats, mergeNumstats, numstatArgs, parseNumstat } from './git-numstat';
 import {
   CONFIG_LIST_SCOPED,
   EMPTY_TREE,
@@ -31,11 +32,25 @@ import {
 
 export interface GitFileStatus {
   path: string;
-  /** porcelain XY, e.g. "M.", ".M", "??" (untracked) */
+  /** porcelain XY, e.g. "M.", ".M", "??" (untracked), "UU" (conflicted) */
   xy: string;
   staged: boolean;
   unstaged: boolean;
   untracked: boolean;
+  /**
+   * This file is in a merge conflict (E24 Git v2 item 6).
+   *
+   * ⚠️ **NEW, BECAUSE CONFLICTED FILES WERE NOT REPORTED AT ALL.** porcelain v2
+   * puts an unmerged entry on its own `u ` line, and the parser matched only
+   * `1 `, `2 ` and `? ` — so a file in a conflict was invisible in the Changes
+   * tab and uncounted in the card header's badge, at the one moment a user most
+   * needs to know which files are in trouble.
+   *
+   * Optional rather than required so no existing consumer has to change: both
+   * `staged` and `unstaged` are `true` for a conflict, which is the honest answer
+   * to each of those questions on its own.
+   */
+  conflicted?: boolean;
 }
 
 export interface GitStatus {
@@ -80,6 +95,23 @@ export interface GitStatus {
   ahead?: number;
   behind?: number;
   files: GitFileStatus[];
+  /**
+   * Per-file `+/−`, keyed by the same path `files` uses (E24 Git v2 item 7).
+   *
+   * ⚠️ **PRESENT ONLY WHEN ASKED FOR, AND ABSENT IS NOT EMPTY.** `undefined` means
+   * the caller did not pay for it; `{}` means it was asked and nothing has
+   * changed. The sidebar needs the difference to tell "we have no numbers" from
+   * "the numbers are zero" — which is the distinction this whole epic keeps being
+   * corrected for.
+   *
+   * ⚠️ **AND IT RIDES ON `status()` RATHER THAN ON A CHANNEL OF ITS OWN, WHICH IS
+   * THE WHOLE REASON IT IS HERE.** Two round trips would be two snapshots: the
+   * file list from one moment and the numbers from another, drawn in the SAME ROW.
+   * A row reading `+12 −3` beside a file that is no longer changed is exactly the
+   * confident wrong answer this surface exists to stop giving. One call, one #776
+   * guard, one moment.
+   */
+  stats?: Record<string, FileStats>;
 }
 
 export interface FileVersions {
@@ -174,6 +206,26 @@ export const LOG_BUDGET_MS = 15_000;
  * ~12 ms each.
  */
 export const GUARD_BUDGET_MS = 15_000;
+
+/**
+ * How long the two `--numstat` reads get, counted from when THEY start.
+ *
+ * Not a slice of the guard's budget: that one is set before the status read, which
+ * is deliberately unbounded, so by the time the stats run there may be nothing
+ * left of it. Generous because this is the "something is badly wrong" bound and
+ * not a latency target — two diffs of a working tree are the same work `diff()`
+ * budgets at 10 s.
+ */
+const STATS_BUDGET_MS = 10_000;
+
+/**
+ * The answer when a `--numstat` read did not succeed.
+ *
+ * Frozen and shared: a failure here costs the NUMBERS and never the file list
+ * (see `status`'s own note), so this is reached on the fail-open path and must not
+ * be something a caller could write into.
+ */
+const EMPTY_NUMSTATS: ReadonlyMap<string, never> = new Map<string, never>();
 
 /** How much output one git invocation may produce before it is killed. */
 const MAX_GIT_OUTPUT = 32 * 1024 * 1024;
@@ -677,7 +729,21 @@ export class GitService {
    * against got smaller, and the note would otherwise describe an answer this
    * method can no longer give.)
    */
-  async status(folder: string, guardBudgetMs = GUARD_BUDGET_MS): Promise<GitStatus> {
+  async status(
+    folder: string,
+    guardBudgetMs = GUARD_BUDGET_MS,
+    /**
+     * Also read the per-file `+/−` (E24 Git v2 item 7).
+     *
+     * ⚠️ **OPT-IN, AND THE REASON IS THE POLL.** `status()` is called for every
+     * card, repeatedly, to draw the header's changed-count badge — and that
+     * surface shows no numbers at all. Two extra `git diff` invocations per poll
+     * per card, for a figure nobody is looking at, is the cost shape #719 is a
+     * standing warning about. The Changes tab asks; the badge does not. Same
+     * discipline as `GitLogQuery.stats`, and for the same measured reason.
+     */
+    withStats = false
+  ): Promise<GitStatus> {
     const probe = await this.run(folder, ['rev-parse', '--is-inside-work-tree']);
     if (!probe.ok) {
       // git never started: no stderr to read, and the error cannot say whether
@@ -710,7 +776,21 @@ export class GitService {
     // quotePath=off: non-ASCII paths arrive literal, so fileVersions can find them
     const r = await this.run(
       folder,
-      ['-c', 'core.quotePath=off', 'status', '--porcelain=v2', '--branch', '--untracked-files=all'],
+      [
+        '-c',
+        'core.quotePath=off',
+        // ⚠️ **PINNED, BECAUSE THE OTHER SIDE OF THE MATCH DEPENDS ON IT (E24 Git
+        // v2 item 7, found in review).** `status.relativePaths` defaults to true
+        // and is repo-writable; `--numstat --relative` is pinned to agree with
+        // that default. If a repository flipped this, every per-file `+/−` would
+        // silently stop matching its row — see `numstatArgs` for the measurement.
+        '-c',
+        'status.relativePaths=true',
+        'status',
+        '--porcelain=v2',
+        '--branch',
+        '--untracked-files=all',
+      ],
       0,
       guard.env
     );
@@ -728,6 +808,40 @@ export class GitService {
     }
 
     const status: GitStatus = { isRepo: true, files: [] };
+    if (withStats) {
+      // ⚠️ **THE SAME `guard.env` THE STATUS READ USED.** `--numstat` diffs the
+      // WORKING TREE, so unlike `log --shortstat` it really does run a
+      // repo-configured filter driver — measured in #776 for `diff-index`, and
+      // this is the same machinery. Reusing the env the guard already built is
+      // also what keeps this to two extra invocations rather than two plus
+      // another config enumeration.
+      //
+      // ⚠️ **AND A FAILURE HERE COSTS THE NUMBERS, NEVER THE LIST.** `status` is
+      // the answer; these are a decoration on it. Reporting `unreadable` for a
+      // diff that did not run would blank a file list we had already read
+      // successfully — the fail-open rule pointing the opposite way from where it
+      // points on the status read itself.
+      // ⚠️ **THEIR OWN BUDGET, BECAUSE THE GUARD'S WAS ALREADY SPENT (found in
+      // review).** `deadline` is set before the status read, and that read is
+      // deliberately UNBOUNDED — see `status`'s own note about not reporting a
+      // merely-slow repository as unreadable. So on exactly the repository that
+      // note exists for, `deadline - Date.now()` is negative by the time we get
+      // here and `Math.max(1, …)` turned "no budget left" into a 1 ms timeout: a
+      // guaranteed failure dressed up as an attempt.
+      const statsDeadline = Date.now() + STATS_BUDGET_MS;
+      const left = (): number => Math.max(1, statsDeadline - Date.now());
+      const [unstaged, staged] = await Promise.all([
+        this.run(folder, numstatArgs('unstaged'), left(), guard.env),
+        this.run(folder, numstatArgs('staged'), left(), guard.env),
+      ]);
+      // `EMPTY_NUMSTATS` rather than `new Map()` inline: a bare `new Map()` is
+      // `Map<any, any>` to the linter, and silencing that with a cast would be a
+      // cast on the exact value whose emptiness means "the read failed".
+      status.stats = mergeNumstats(
+        unstaged.ok ? parseNumstat(unstaged.out) : EMPTY_NUMSTATS,
+        staged.ok ? parseNumstat(staged.out) : EMPTY_NUMSTATS
+      );
+    }
     for (const line of r.out.split('\n')) {
       if (line.startsWith('# branch.head ')) {
         status.branch = line.slice('# branch.head '.length).trim();
@@ -751,6 +865,37 @@ export class GitService {
           unstaged: xy[1] !== '.',
           untracked: false,
         });
+      } else if (line.startsWith('u ')) {
+        // ⚠️ **AN UNMERGED ENTRY, AND UNTIL NOW IT WAS DROPPED ON THE FLOOR (E24
+        // Git v2 item 6).** porcelain v2 reports a conflict on its own `u ` line,
+        // not as a `1 ` or `2 `, and this parser only ever matched those two and
+        // `? ` — so **a file in a merge conflict was invisible in the Changes
+        // tab**: not listed, not counted in the header badge, nothing. The one
+        // moment a user most needs to see which files are in trouble.
+        //
+        // The shape, measured: `u UU N... <m1> <m2> <m3> <mW> <h1> <h2> <h3>
+        // <path>` — ten fields before the path, where an ordinary entry has eight.
+        // The path is joined back rather than taken as one field because a path
+        // may contain spaces and `core.quotePath=off` means it arrives literal.
+        const parts = line.split(' ');
+        const xy = parts[1];
+        const p = parts.slice(10).join(' ');
+        if (p) {
+          status.files.push({
+            path: p,
+            xy,
+            // ⚠️ **BOTH SIDES TRUE, AND NEITHER IS A GUESS.** A conflicted file
+            // has content in the index AND differs from it in the worktree —
+            // that is what a conflict IS — so every existing consumer that asks
+            // "is this staged" or "is this changed" gets `true`, which is the
+            // honest answer. `conflicted` is what tells the sidebar to put it in
+            // the Merge group rather than in both of the others.
+            staged: true,
+            unstaged: true,
+            untracked: false,
+            conflicted: true,
+          });
+        }
       } else if (line.startsWith('? ')) {
         status.files.push({ path: line.slice(2), xy: '??', staged: false, unstaged: true, untracked: true });
       }
