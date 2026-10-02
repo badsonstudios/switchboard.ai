@@ -566,7 +566,8 @@ because every hit was one of these deliberate seams.
 | `sessions.spawn` | create / resume / close — **starts processes** |
 | `sessions.write` | rename, task label, autonomy, permission decisions |
 | `transcripts.read` | conversation blocks, and **searching the transcript file** (§5.31) |
-| `git.read` | status and file versions |
+| `git.read` | status, file versions, the commit history and what a commit changed |
+| `git.write` | **stage / unstage / discard** — changes the repository, and discard can destroy work no other copy of exists (E24 Git v2 item 12) |
 | `events.read` / `.write` | the attention feed; write is ack/dismiss |
 | `settings.read` / `.write` | preferences, notification prefs, preflight |
 | `workspace.read` / `.write` | layout and ui blob |

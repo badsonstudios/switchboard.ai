@@ -614,3 +614,227 @@ describe('the all-changes entry point (E24 Git v2 item 9)', () => {
     resetAllChangesOpener();
   });
 });
+
+// The write verbs in the sidebar (E24 Git v2 item 12).
+//
+// `lib/git-write.test.ts` owns the seam — the refusals, the bad payloads, what a
+// confirm has to say. This file owns what only a mounted sidebar answers, and the
+// most important of those is a NEGATIVE: **a discard cannot happen without a
+// confirm.** It is the only operation in the app that destroys work no other copy
+// of exists, and the only thing between a stray click and a deleted file is the
+// dialog — so the test that matters is the one where the user says no.
+describe('the write verbs (E24 Git v2 item 12)', () => {
+  let asked: Array<{ verb: string; paths: readonly string[] }>;
+  let answer: { ok: boolean; reason?: string; applied: number };
+  let confirms: string[];
+  let says: boolean;
+  let refreshes: number;
+
+  /** A bridge that records, and answers whatever `answer` currently is. */
+  function writeBridge(): void {
+    const verb =
+      (name: string) =>
+      (_folder: string, paths: readonly string[]): Promise<unknown> => {
+        asked.push({ verb: name, paths });
+        return Promise.resolve(answer);
+      };
+    (window as unknown as { switchboard: unknown }).switchboard = {
+      workspace: { getUi: async () => ({}), setUi: () => undefined },
+      git: { stage: verb('stage'), unstage: verb('unstage'), discard: verb('discard') },
+    };
+  }
+
+  async function mountWritable(status: GitStatusDto | null): Promise<void> {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => {
+      root!.render(
+        <ScmSidebar
+          folder={FOLDER}
+          status={status}
+          selected={null}
+          onSelect={(p) => selected.push(p)}
+          onRefresh={() => void refreshes++}
+          cardId="card-1"
+          onConfirm={(m) => {
+            confirms.push(m);
+            return says;
+          }}
+        />
+      );
+    });
+  }
+
+  const dirty: GitStatusDto = {
+    isRepo: true,
+    files: [
+      file({ path: 'staged.ts', staged: true, unstaged: false, xy: 'M.' }),
+      file({ path: 'mod.ts', xy: '.M' }),
+      file({ path: 'new.ts', untracked: true, xy: '??' }),
+    ],
+  };
+
+  beforeEach(async () => {
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+    document.body.innerHTML = '';
+    selected.length = 0;
+    asked = [];
+    confirms = [];
+    says = true;
+    refreshes = 0;
+    answer = { ok: true, applied: 1 };
+    await initI18nForTests();
+    writeBridge();
+    await loadUiState();
+  });
+
+  afterEach(async () => {
+    if (root) {
+      const r = root;
+      root = null;
+      await act(async () => r.unmount());
+    }
+    document.body.innerHTML = '';
+    delete (window as unknown as { switchboard?: unknown }).switchboard;
+  });
+
+  it('stages one file from its row (the done-when)', async () => {
+    await mountWritable(dirty);
+    await click(one('.scm-row[data-path="mod.ts"] [data-testid="scm-row-stage"]'));
+    expect(asked).toEqual([{ verb: 'stage', paths: ['mod.ts'] }]);
+    // ⚠️ AND IT REFRESHES: nothing watches a repository, so without this the row
+    // stays in the same group with the same letter and a second click repeats it.
+    expect(refreshes).toBe(1);
+  });
+
+  it('⚠️ WHICH VERBS A ROW GETS DEPENDS ON ITS GROUP', async () => {
+    // A staged row can only be UNSTAGED: a ＋ would be a button for something
+    // already done, and a ↶ would discard a change the user deliberately kept.
+    await mountWritable(dirty);
+    const staged = '.scm-row[data-path="staged.ts"] ';
+    expect(one(`${staged}[data-testid="scm-row-unstage"]`)).not.toBeNull();
+    expect(one(`${staged}[data-testid="scm-row-stage"]`)).toBeNull();
+    expect(one(`${staged}[data-testid="scm-row-discard"]`)).toBeNull();
+    const mod = '.scm-row[data-path="mod.ts"] ';
+    expect(one(`${mod}[data-testid="scm-row-stage"]`)).not.toBeNull();
+    expect(one(`${mod}[data-testid="scm-row-discard"]`)).not.toBeNull();
+    expect(one(`${mod}[data-testid="scm-row-unstage"]`)).toBeNull();
+  });
+
+  it('⚠️⚠️ A DISCARD ASKS FIRST, AND "NO" MEANS NOTHING HAPPENS', async () => {
+    // ⚠️ **THE MOST IMPORTANT TEST IN THIS ITEM.** `clean` on an untracked file
+    // destroys work that is in no index, no commit and no reflog. The dialog is
+    // the only thing between a stray click and that, so the case that must hold
+    // is the one where the user declines.
+    says = false;
+    await mountWritable(dirty);
+    await click(one('.scm-row[data-path="new.ts"] [data-testid="scm-row-discard"]'));
+    expect(confirms).toHaveLength(1);
+    expect(asked).toEqual([]);
+    expect(refreshes).toBe(0);
+  });
+
+  it('…and "yes" discards exactly what was named', async () => {
+    await mountWritable(dirty);
+    await click(one('.scm-row[data-path="new.ts"] [data-testid="scm-row-discard"]'));
+    expect(asked).toEqual([{ verb: 'discard', paths: ['new.ts'] }]);
+  });
+
+  it('⚠️ THE CONFIRM NAMES THE FILE for one, and the COUNT for a group', async () => {
+    // Design §4 item 12 verbatim: "Discard is destructive: confirm, naming the
+    // file count." A group heading can mean forty files and does not say which.
+    await mountWritable({
+      isRepo: true,
+      files: [file({ path: 'mod.ts', xy: '.M' }), file({ path: 'other.ts', xy: '.M' })],
+    });
+    await click(one('.scm-row[data-path="mod.ts"] [data-testid="scm-row-discard"]'));
+    expect(confirms[0]).toContain('mod.ts');
+    confirms.length = 0;
+    // ⚠️ TWO files, because the wording SWITCHES on the count: one file is named,
+    // because that is the most useful thing to be told, and many get a count,
+    // because a list of forty names in a dialog is a wall nobody reads. A
+    // one-file group would exercise the first branch again and prove nothing.
+    await click(one('.scm-group-unstaged [data-testid="scm-group-discard"]'));
+    expect(confirms[0]).toContain('2 files');
+    expect(confirms[0]).not.toContain('mod.ts');
+  });
+
+  it('a group verb acts on every row in THAT group and no other', async () => {
+    await mountWritable({
+      isRepo: true,
+      files: [
+        file({ path: 'a.ts', xy: '.M' }),
+        file({ path: 'b.ts', xy: '.M' }),
+        file({ path: 'staged.ts', staged: true, unstaged: false, xy: 'M.' }),
+      ],
+    });
+    await click(one('.scm-group-unstaged [data-testid="scm-group-stage"]'));
+    expect(asked).toEqual([{ verb: 'stage', paths: ['a.ts', 'b.ts'] }]);
+  });
+
+  it('⚠️ A MERGE CONFLICT GETS NO WRITE VERBS AT ALL, on the row or the group', async () => {
+    // Every verb is ambiguous on a conflict — take ours, take theirs, abandon the
+    // merge — and main refuses them by name. Drawing one would be exactly the
+    // dead control this whole item exists to stop drawing.
+    await mountWritable({
+      isRepo: true,
+      files: [file({ path: 'clash.ts', conflicted: true, staged: true, unstaged: true, xy: 'UU' })],
+    });
+    expect(one('.scm-group-merge')).not.toBeNull();
+    expect(one('.scm-group-merge [data-testid="scm-group-stage"]')).toBeNull();
+    expect(one('.scm-group-merge [data-testid="scm-group-discard"]')).toBeNull();
+    expect(one('.scm-row[data-path="clash.ts"] [data-testid="scm-row-stage"]')).toBeNull();
+    expect(one('.scm-row[data-path="clash.ts"] [data-testid="scm-row-discard"]')).toBeNull();
+  });
+
+  it('⚠️ A FAILED WRITE SAYS SO, IN GIT’S OWN WORDS, and still refreshes', async () => {
+    // The whole difference from a read: a refused read leaves a pane drawing
+    // nothing, while a refused write leaves this list drawing a change it thinks
+    // it removed, beside a button that looked like it worked.
+    answer = { ok: false, reason: 'fatal: Unable to create index.lock: File exists', applied: 0 };
+    await mountWritable(dirty);
+    await click(one('.scm-row[data-path="mod.ts"] [data-testid="scm-row-stage"]'));
+    const said = one('.scm-write-error');
+    expect(said?.textContent).toContain('index.lock');
+    expect(said?.getAttribute('role')).toBe('status');
+    // refreshed anyway: a discard is two commands, so a partial failure still
+    // changed the tree and the list has to catch up with what is really there
+    expect(refreshes).toBe(1);
+  });
+
+  it('…and the next write that works clears it', async () => {
+    answer = { ok: false, reason: 'git refused', applied: 0 };
+    await mountWritable(dirty);
+    await click(one('.scm-row[data-path="mod.ts"] [data-testid="scm-row-stage"]'));
+    expect(one('.scm-write-error')).not.toBeNull();
+    answer = { ok: true, applied: 1 };
+    await click(one('.scm-row[data-path="mod.ts"] [data-testid="scm-row-stage"]'));
+    expect(one('.scm-write-error')).toBeNull();
+  });
+
+  it('⚠️ WITH NO WRITE BRIDGE THE BUTTONS ARE ABSENT, not disabled', async () => {
+    // The owner's own rule, and the reason the scope was layers 1 AND 2 together:
+    // "a row with a `＋` that does nothing is worse than a row with no `＋`".
+    (window as unknown as { switchboard: unknown }).switchboard = {
+      workspace: { getUi: async () => ({}), setUi: () => undefined },
+    };
+    await mountWritable(dirty);
+    expect(one('[data-testid="scm-row-stage"]')).toBeNull();
+    expect(one('[data-testid="scm-row-discard"]')).toBeNull();
+    expect(one('[data-testid="scm-group-stage"]')).toBeNull();
+    // …and the three READ verbs are still there, so the slot did not vanish.
+    expect(one('.scm-row[data-path="mod.ts"] .scm-row-acts')).not.toBeNull();
+  });
+
+  it('the group heading is still a real button, and is not nested in another one', async () => {
+    // A `<button>` inside a `<button>` is invalid HTML — browsers reparent it, so
+    // the inner one ends up outside and the layout silently breaks. The verbs are
+    // siblings of the heading for that reason.
+    await mountWritable(dirty);
+    const head = one('.scm-group-unstaged .scm-group-head');
+    expect(head?.tagName).toBe('BUTTON');
+    expect(head?.querySelector('button')).toBeNull();
+    expect(one('.scm-group-unstaged .scm-group-acts')).not.toBeNull();
+  });
+});

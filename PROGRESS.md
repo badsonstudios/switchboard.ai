@@ -44,7 +44,75 @@
 > log rather than the audit, §5.7 also records the editable-diff decision, and
 > VS Code's built-in Git extension is `docs/reference-implementations.md` **§4**.
 >
-> **🚧 NOW: item 9 (#1046) — every change in one scroll.** Screen 5, and the one
+> # 🚧 LAYER 2 — THE WRITE HALF
+>
+> **🚧 NOW: item 12 (#1049) — `git.write`, and stage / unstage / discard.** The
+> first thing switchboard does that **changes a user's repository**, and the ＋ and
+> ↶ the mockup has been drawing on every row since screen 1 was made. Four items
+> of this epic have carried a comment saying they were *absent rather than drawn
+> dead*, because *"a row with a `＋` that does nothing is worse than a row with no
+> `＋`"* — the owner's rule, and the reason the scope was layers 1 AND 2 together.
+>
+> **⚠️ EVERY COMMAND WAS MEASURED BEFORE IT WAS WRITTEN, AND TWO OF THE FOUR
+> FINDINGS CHANGED THE DESIGN:**
+>
+>  1. **`git add -- <path>` is enough for all three shapes** — it stages a
+>     DELETION and an untracked ADD as well as a modification. So no `-A`, and
+>     *not* using it is the safer form: a bug that lost the path list then stages
+>     NOTHING rather than the whole tree.
+>  2. `restore --staged` reverses all three, which is what makes unstage the exact
+>     undo of stage.
+>  3. `restore` restores the worktree from the **INDEX**, so discarding a
+>     working-tree change leaves a STAGED one alone — the correct meaning of
+>     discarding one row rather than the file.
+>  4. ⚠️ **`git restore` REFUSES AN UNTRACKED PATH OUTRIGHT**, so a mixed batch
+>     fails entirely. Discard cannot be one command: it classifies from a fresh
+>     `status` **in main** and runs `clean -f` for the untracked ones.
+>
+> **AND `clean` IS NEVER GIVEN `-d`**, so it cannot remove a directory — only
+> files it was named. Every path comes from `status`, which lists files, so `-d`
+> would buy nothing and would turn a bug in the path list into a recursive delete.
+>
+> **⚠️⚠️ A TEST WRITTEN TO PROVE THE GUARDS HELD FOUND THAT THEY DID NOT — a
+> SECOND #776 hole, in the same epic.** `guardArgs()` rides on every invocation
+> through `run()`, so the fsmonitor pin and the empty hooks path were covered. The
+> **filter drivers** are not: they are neutralised by `guardEnv`, which a caller
+> has to ASK for, and `status` and `diff` were the only two that did. Measured on a
+> real repository: with `filter.evil.clean` in its own config and one line in
+> `.gitattributes`, **`git add` ran the program** — and `add` is the command most
+> certain to read file CONTENTS through a filter, because hashing them into the
+> object store is its whole job. Closed, and pinned with a control that proves the
+> hole was real first.
+>
+> **THE PATH RULE IS NOW ONE DEFINITION** (`git-paths.ts`), because the two halves
+> disagree about what a REFUSAL means and that is exactly why the rule itself must
+> not be stated twice: the read half widens the answer and says so, the write half
+> refuses the whole operation. **All or nothing on a batch** — a destructive
+> operation that silently applied to five of six named files is the worst outcome
+> available here.
+>
+> **A CONFLICTED PATH IS REFUSED BY NAME**, on the row, on the group and in main.
+> "Discard this conflict" has three meanings and git has a command for each;
+> choosing one silently would be switchboard deciding something only the user can,
+> on the one file where being wrong costs most.
+>
+> **The confirm is the platform's `confirm`, deliberately** — synchronous, hard to
+> dismiss by accident, impossible to mistake for part of the page. A styled modal
+> that something fails to render is a discard with no confirm at all. It is
+> injected, so a test can say "the user said yes" and a future in-app dialog is a
+> change to one function. **And no confirm means no discard**, not a discard
+> without one.
+>
+> **A write that FAILS says so, in git's own words** — the whole difference from a
+> read. A refused read leaves a pane drawing nothing; a refused write leaves the
+> list drawing a change it thinks it removed, beside a button that looked like it
+> worked.
+>
+> **Green:** lint · all three typecheck projects · **10,362** unit tests, of which
+> the ten against real git are the ones that matter — and a doc-drift test caught
+> the new capability missing from `docs/extensibility.md` before CI did.
+
+> **✅ item 9 (#1046) — every change in one scroll.** Screen 5, and the one
 > surface §2.3 of the design record lists as something the field has (VS Code's
 > `git.viewChanges`) and we had no equivalent of: every changed file stacked in one
 > scrollable panel with its own sticky header, read top to bottom instead of

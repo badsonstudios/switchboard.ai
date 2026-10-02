@@ -28,6 +28,16 @@ export const CAPABILITIES = [
   // would reintroduce them here, with the channels they guard.
   'transcripts.read',
   'git.read',
+  'git.write', // STAGE, UNSTAGE, DISCARD, COMMIT, and the branch/sync verbs
+  // (E24 Git v2 layer 2, §5.7). Its own capability for the sharpest
+  // reason in this whole vocabulary: everything under `git.read`
+  // reveals what is already on disk, while this CHANGES THE USER'S
+  // REPOSITORY — and one of its verbs, discard, is the only
+  // operation in switchboard that can destroy work no other copy
+  // of exists. A consumer that lists changed files must never
+  // acquire the power to throw them away by holding one grant, and
+  // a future read-only contribution must be able to hold
+  // `git.read` and nothing else.
   'events.read',
   'events.write', // acknowledge / dismiss
   'settings.read',
@@ -282,6 +292,21 @@ export const CHANNEL_CAPABILITIES = {
   // `git:fileVersions` already hands over.
   'git:commitFiles': 'git.read',
   'git:fileVersionsAt': 'git.read',
+  // ⚠️ **THE WRITE HALF (E24 Git v2 item 12), AND THE SPLIT IS THE WHOLE POINT.**
+  // Every channel above reveals what is already on disk; these three CHANGE the
+  // user's repository, and `git:discard` can destroy work no other copy of
+  // exists. A consumer that lists changed files must not acquire the power to
+  // throw them away by holding one grant.
+  //
+  // All three on ONE capability rather than three: they are the same power
+  // (switchboard may alter this repository) and a surface that can stage can
+  // trivially reach the same end state as one that can unstage. Discard is the
+  // one that is genuinely different in kind, and what protects it is a CONFIRM
+  // in the renderer and a refusal on anything ambiguous in main — not a fourth
+  // capability nobody would grant separately.
+  'git:stage': 'git.write',
+  'git:unstage': 'git.write',
+  'git:discard': 'git.write',
   // the provider's service health as main currently understands it (P2-E14-07)
   'health:get': 'provider.status',
   // the polling switch is an ordinary preference, like the update auto-check

@@ -2571,3 +2571,187 @@ describe('a filename is not a pattern (E24 Git v2 item 10)', () => {
   });
   // Real git in a child process, several times per case (#512).
 }, 60_000);
+
+// The write half against REAL git (E24 Git v2 item 12).
+//
+// `git-write.test.ts` owns the argv and the classification against fixtures. This
+// owns the half a fixture cannot prove: that these commands really do what the
+// measurements said, on a real repository, including the destructive one — and
+// that a refusal really leaves the tree alone.
+describe('GitService write half (E24 Git v2 item 12)', () => {
+  /** A repo with one of each shape: modified, deleted, untracked, staged. */
+  function dirty(): string {
+    const dir = tempDir('sb-git-write-');
+    sh(dir, ['init', '-b', 'main']);
+    sh(dir, ['config', 'user.email', 'w@test']);
+    sh(dir, ['config', 'user.name', 'Write Tester']);
+    sh(dir, ['config', 'commit.gpgsign', 'false']);
+    // ⚠️ **`core.autocrlf=false`, AND IT IS THE FIXTURE BEING HONEST RATHER THAN
+    // THE SUBJECT BEING WRONG.** On Windows git converts LF to CRLF on checkout
+    // by default, so `restore` brings a file back with different BYTES than the
+    // test wrote — and the assertions below are about whether the right CONTENT
+    // came back, not about line endings. Pinned rather than normalised at each
+    // comparison, so the test says the same thing on all three platforms.
+    sh(dir, ['config', 'core.autocrlf', 'false']);
+    fs.writeFileSync(path.join(dir, 'mod.txt'), 'one\n');
+    fs.writeFileSync(path.join(dir, 'del.txt'), 'bye\n');
+    fs.writeFileSync(path.join(dir, 'keep.txt'), 'keep\n');
+    sh(dir, ['add', '.']);
+    sh(dir, ['-c', 'core.hooksPath=', 'commit', '-m', 'base']);
+    fs.writeFileSync(path.join(dir, 'mod.txt'), 'one\ntwo\n');
+    fs.rmSync(path.join(dir, 'del.txt'));
+    fs.writeFileSync(path.join(dir, 'new.txt'), 'brand new\n');
+    return dir;
+  }
+
+  /** The porcelain XY for one path, or undefined if it is not listed. */
+  async function xy(dir: string, p: string): Promise<string | undefined> {
+    const s = await svc.status(dir);
+    return s.files.find((f) => f.path === p)?.xy;
+  }
+
+  it('stages a modification, a DELETION and an UNTRACKED file in one call (the done-when)', async () => {
+    const dir = dirty();
+    const r = await svc.stage(dir, ['mod.txt', 'del.txt', 'new.txt']);
+    expect(r).toEqual({ ok: true, applied: 3 });
+    // All three moved to the INDEX column, which is what the measurement said a
+    // plain `add --` does — no `-A` needed.
+    expect(await xy(dir, 'mod.txt')).toBe('M.');
+    expect(await xy(dir, 'del.txt')).toBe('D.');
+    expect(await xy(dir, 'new.txt')).toBe('A.');
+  });
+
+  it('⚠️ UNSTAGE IS THE EXACT UNDO, for all three shapes', async () => {
+    const dir = dirty();
+    await svc.stage(dir, ['mod.txt', 'del.txt', 'new.txt']);
+    const r = await svc.unstage(dir, ['mod.txt', 'del.txt', 'new.txt']);
+    expect(r.ok).toBe(true);
+    expect(await xy(dir, 'mod.txt')).toBe('.M');
+    expect(await xy(dir, 'del.txt')).toBe('.D');
+    // …and the new file goes back to UNTRACKED rather than vanishing.
+    expect(await xy(dir, 'new.txt')).toBe('??');
+    expect(fs.existsSync(path.join(dir, 'new.txt'))).toBe(true);
+  });
+
+  it('⚠️ DISCARD IS TWO COMMANDS AND DOES BOTH JOBS — restore and delete', async () => {
+    // Measured: `git restore` REFUSES an untracked path outright, so a mixed
+    // batch fails entirely unless it is classified first. This is that claim on a
+    // real repository.
+    const dir = dirty();
+    const r = await svc.discard(dir, ['mod.txt', 'del.txt', 'new.txt']);
+    expect(r.ok).toBe(true);
+    expect(r.applied).toBe(3);
+    // the modification is gone…
+    expect(fs.readFileSync(path.join(dir, 'mod.txt'), 'utf8')).toBe('one\n');
+    // …the deleted file is BACK…
+    expect(fs.existsSync(path.join(dir, 'del.txt'))).toBe(true);
+    // …and the untracked file is really gone from disk.
+    expect(fs.existsSync(path.join(dir, 'new.txt'))).toBe(false);
+    const s = await svc.status(dir);
+    expect(s.files).toEqual([]);
+  });
+
+  it('⚠️ DISCARDING A WORKING-TREE CHANGE LEAVES A STAGED ONE ALONE', async () => {
+    // `restore` with no `--source` restores from the INDEX, which is the correct
+    // meaning of discarding one ROW rather than the whole file. Staged-and-edited
+    // is exactly the case the Changes tab draws twice.
+    const dir = dirty();
+    await svc.stage(dir, ['mod.txt']);
+    fs.writeFileSync(path.join(dir, 'mod.txt'), 'one\ntwo\nthree\n');
+    const r = await svc.discard(dir, ['mod.txt']);
+    expect(r.ok).toBe(true);
+    // back to what was STAGED, not back to HEAD
+    expect(fs.readFileSync(path.join(dir, 'mod.txt'), 'utf8')).toBe('one\ntwo\n');
+    expect(await xy(dir, 'mod.txt')).toBe('M.');
+  });
+
+  it('⚠️ REFUSES TO DISCARD A CONFLICTED FILE, by name, and changes nothing', async () => {
+    const dir = tempDir('sb-git-conflict-');
+    sh(dir, ['init', '-b', 'main']);
+    sh(dir, ['config', 'user.email', 'w@test']);
+    sh(dir, ['config', 'user.name', 'Write Tester']);
+    sh(dir, ['config', 'commit.gpgsign', 'false']);
+    const commit = (...args: string[]): void => sh(dir, ['-c', 'core.hooksPath=', 'commit', ...args]);
+    fs.writeFileSync(path.join(dir, 'c.txt'), 'base\n');
+    sh(dir, ['add', '.']);
+    commit('-m', 'base');
+    sh(dir, ['checkout', '-b', 'side']);
+    fs.writeFileSync(path.join(dir, 'c.txt'), 'theirs\n');
+    commit('-am', 'theirs');
+    sh(dir, ['checkout', 'main']);
+    fs.writeFileSync(path.join(dir, 'c.txt'), 'ours\n');
+    commit('-am', 'ours');
+    // the merge is EXPECTED to fail
+    try {
+      sh(dir, ['merge', 'side']);
+    } catch {
+      /* a conflict is the point */
+    }
+    expect(await xy(dir, 'c.txt')).toMatch(/U/);
+
+    const before = fs.readFileSync(path.join(dir, 'c.txt'), 'utf8');
+    const r = await svc.discard(dir, ['c.txt']);
+    expect(r.ok).toBe(false);
+    expect(r.applied).toBe(0);
+    expect(r.reason).toContain('merge conflict');
+    expect(r.reason).toContain('c.txt');
+    // ⚠️ AND THE FILE IS BYTE-IDENTICAL: a refusal that had half-acted would be
+    // the worst outcome available on the one file where being wrong costs most.
+    expect(fs.readFileSync(path.join(dir, 'c.txt'), 'utf8')).toBe(before);
+  });
+
+  it('⚠️ A PATH THAT LEAVES THE FOLDER IS REFUSED AND NOTHING ELSE IN THE BATCH RUNS', async () => {
+    const dir = dirty();
+    const r = await svc.discard(dir, ['mod.txt', '../escape.txt']);
+    expect(r.ok).toBe(false);
+    expect(r.applied).toBe(0);
+    // the GOOD path in the same batch was not acted on either
+    expect(fs.readFileSync(path.join(dir, 'mod.txt'), 'utf8')).toBe('one\ntwo\n');
+  });
+
+  it('a path git does not know needed nothing done, and is not counted', async () => {
+    const dir = dirty();
+    const r = await svc.discard(dir, ['keep.txt']);
+    expect(r).toEqual({ ok: true, applied: 0 });
+    expect(fs.existsSync(path.join(dir, 'keep.txt'))).toBe(true);
+  });
+
+  it('a folder that is not a repository says so rather than throwing', async () => {
+    expect(await svc.stage(plain, ['a.txt'])).toMatchObject({ ok: false, applied: 0 });
+    const d = await svc.discard(plain, ['a.txt']);
+    expect(d.ok).toBe(false);
+    expect(d.reason).toBeTruthy();
+  });
+
+  it('⚠️ QUOTES GIT when git refuses, rather than inventing a sentence', async () => {
+    const dir = dirty();
+    // `restore --staged` on a path with nothing staged is fine; ask git to do
+    // something it really will not: unstage a path that does not exist at all.
+    const r = await svc.unstage(dir, ['nope-does-not-exist.txt']);
+    expect(r.ok).toBe(false);
+    // git's own words, not ours — the message has to be actionable and we do not
+    // know every reason a repository can refuse.
+    expect(r.reason).toMatch(/pathspec|did not match/i);
+  });
+
+  it('⚠️ THE #776 GUARDS STILL RIDE ON A WRITE — a repo cannot make `add` run a program', async () => {
+    // The threat model does not soften because we asked for a change rather than
+    // an answer: a repository that can make `status` run a program can make `add`
+    // run one too, and `add` is the command that actually reads file CONTENTS
+    // through a filter driver.
+    const dir = dirty();
+    const sentinel = path.join(dir, 'RAN');
+    sh(dir, ['config', 'filter.evil.clean', `sh -c "echo ran > '${toPosix(sentinel)}'; cat"`]);
+    fs.writeFileSync(path.join(dir, '.gitattributes'), 'mod.txt filter=evil\n');
+    // THE CONTROL: plain git really does run it.
+    sh(dir, ['add', 'mod.txt']);
+    expect(fs.existsSync(sentinel)).toBe(true);
+    fs.rmSync(sentinel);
+    sh(dir, ['restore', '--staged', 'mod.txt']);
+    // …and ours does not.
+    const r = await svc.stage(dir, ['mod.txt']);
+    expect(r.ok).toBe(true);
+    expect(fs.existsSync(sentinel)).toBe(false);
+  });
+  // Real git in a child process, several times per case (#512).
+}, 60_000);

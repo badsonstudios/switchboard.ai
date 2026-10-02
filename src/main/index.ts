@@ -88,6 +88,7 @@ import { registerPushIpc } from './events/push-ipc';
 import { SecretStore } from './secrets/store';
 import { GitService } from './git/git-service';
 import { isCommitRef, isLogQuery, isRev } from './git/git-log';
+import { type GitWriteResult, asPathList } from './git/git-write';
 import { BusHost } from './bus/host-channel';
 import { SessionQueries, summariesFrom } from './sessions/queries';
 import { resolveMentions } from './sessions/mention-resolve';
@@ -2454,6 +2455,47 @@ app
         return gitService.fileVersionsAt(folder, file, left, right);
       }
     );
+    // ── THE WRITE HALF (E24 Git v2 item 12) ─────────────────────────────────
+    //
+    // ⚠️ **SCOPED BY `knownFolder` LIKE EVERY READ, AND THE SAME SENTENCE IS THE
+    // REFUSAL** — but the shape of the answer is different: a read that is
+    // refused hands back an empty-but-valid payload so a pane can draw nothing,
+    // while a write that is refused must say SO, because the user pressed a
+    // button and something has to tell them it did not happen.
+    //
+    // ⚠️ **AND THE PATHS ARE VALIDATED IN THE SERVICE, NOT HERE.** `writePaths`
+    // refuses a path that leaves the folder or that git would read as pathspec
+    // magic, all-or-nothing, and it does so at the one place that knows what a
+    // refusal means for a write. Re-stating the rule in this file would be the
+    // second copy that `git-paths.ts` exists to prevent.
+    const writeScope = (folder: string): GitWriteResult | null =>
+      knownFolder(folder)
+        ? null
+        : {
+            ok: false,
+            applied: 0,
+            reason: 'switchboard only runs git for folders it has open as a session',
+          };
+    broker.handle('git:stage', (_e, folder: string, paths: unknown) => {
+      const refusal = writeScope(folder);
+      if (refusal) return refusal;
+      return gitService.stage(folder, asPathList(paths));
+    });
+    broker.handle('git:unstage', (_e, folder: string, paths: unknown) => {
+      const refusal = writeScope(folder);
+      if (refusal) return refusal;
+      return gitService.unstage(folder, asPathList(paths));
+    });
+    // ⚠️ **THE DESTRUCTIVE ONE.** The confirm lives in the renderer (it is a
+    // question for a human, and main has no one to ask), and what main owes is
+    // that nothing ambiguous gets through: `discard` re-reads `status` itself to
+    // classify, refuses a conflicted path by name, and never passes `-d` to
+    // `clean` so a directory cannot be removed.
+    broker.handle('git:discard', (_e, folder: string, paths: unknown) => {
+      const refusal = writeScope(folder);
+      if (refusal) return refusal;
+      return gitService.discard(folder, asPathList(paths));
+    });
     broker.handle('git:fileVersions', (_e, folder: string, file: string) => {
       // scope to a known folder AND forbid escaping it (path traversal)
       if (!knownFolder(folder)) return { original: '', modified: '' };

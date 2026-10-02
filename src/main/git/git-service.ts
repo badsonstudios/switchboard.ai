@@ -23,6 +23,17 @@ import {
   logArgs,
   parseLog,
 } from './git-log';
+import {
+  type GitWriteResult,
+  batchPaths,
+  discardTrackedArgs,
+  discardUntrackedArgs,
+  planDiscard,
+  refused,
+  stageArgs,
+  unstageArgs,
+  writePaths,
+} from './git-write';
 import { type FileStats, mergeNumstats, numstatArgs, parseNumstat } from './git-numstat';
 import {
   type CommitFile,
@@ -250,6 +261,17 @@ export const GUARD_BUDGET_MS = 15_000;
  * budgets at 10 s.
  */
 const STATS_BUDGET_MS = 10_000;
+
+/**
+ * How long a WRITE gets — all its invocations together.
+ *
+ * Longer than a read's because the work is different in kind: `add` hashes file
+ * contents into the object store and `clean` deletes from disk, both of which can
+ * be slow on a big batch or a slow volume, where a `status` is mostly reading an
+ * index. Still bounded, for the reason every budget in this file is bounded: a git
+ * that never finishes must not become a surface that never answers.
+ */
+export const WRITE_BUDGET_MS = 30_000;
 
 /**
  * The answer when a `--numstat` read did not succeed.
@@ -1304,6 +1326,153 @@ export class GitService {
     }
     return { original: head.ok ? head.out : '', modified };
   }
+
+  // ── THE WRITE HALF (E24 Git v2 item 12) ───────────────────────────────────
+  //
+  // ⚠️ **THESE ARE THE FIRST COMMANDS IN THIS SERVICE THAT CHANGE THE USER'S
+  // REPOSITORY**, and three things are true of all of them:
+  //
+  //  * **They still carry every #776 guard.** A write runs through the same
+  //    `run()` as a read, so `--literal-pathspecs`, the fsmonitor pin and the
+  //    empty hooks path all apply. The threat model does not soften because we
+  //    asked for a change rather than for an answer — if anything a repository
+  //    that can make `status` run a program can make `add` run one too.
+  //  * **They report git's own words on failure.** A repository can refuse for
+  //    reasons nobody has enumerated — an index lock another agent is holding, an
+  //    unmerged path, a permission, a hook. Inventing a sentence for those would
+  //    make switchboard the authority on something git decided.
+  //  * **They are batched**, because a command line has a length limit and
+  //    Windows' is the small one. See `MAX_PATHS_PER_CALL`.
+
+  /** Stage these paths. */
+  async stage(folder: string, paths: readonly string[], budgetMs = WRITE_BUDGET_MS): Promise<GitWriteResult> {
+    return this.writeBatched(folder, paths, stageArgs, budgetMs);
+  }
+
+  /** Unstage these paths — the exact undo of `stage`. */
+  async unstage(folder: string, paths: readonly string[], budgetMs = WRITE_BUDGET_MS): Promise<GitWriteResult> {
+    return this.writeBatched(folder, paths, unstageArgs, budgetMs);
+  }
+
+  /**
+   * Throw away the working-tree changes to these paths.
+   *
+   * ⚠️ **THE ONE DESTRUCTIVE OPERATION, AND IT IS TWO COMMANDS BECAUSE GIT MADE
+   * IT TWO.** Measured: `git restore` refuses an untracked path outright, so a
+   * mixed batch fails entirely — the classification is not an optimisation, it is
+   * the only way the operation works at all.
+   *
+   * ⚠️ **AND THE CLASSIFICATION COMES FROM A FRESH `status` HERE, NOT FROM THE
+   * RENDERER.** Otherwise main would be deleting files on the renderer's word
+   * about which ones are untracked — and that word is a moment old, so a file
+   * committed since the list was drawn would be `clean`ed while it is in git.
+   */
+  async discard(
+    folder: string,
+    paths: readonly string[],
+    budgetMs = WRITE_BUDGET_MS
+  ): Promise<GitWriteResult> {
+    const safe = writePaths(paths);
+    if (!Array.isArray(safe)) return safe;
+    const deadline = Date.now() + budgetMs;
+    const left = (): number => Math.max(1, deadline - Date.now());
+    const now = await this.status(folder, left());
+    if (now.unreadable) return refused(now.unreadable);
+    if (!now.isRepo) return refused('that folder is not a git repository');
+    const plan = planDiscard(safe, now.files);
+    // ⚠️ **A CONFLICT REFUSES THE WHOLE REQUEST RATHER THAN BEING SKIPPED.**
+    // "Discard this conflict" has three meanings and git has a command for each;
+    // silently doing the other files and saying nothing about this one would be a
+    // partial destructive operation the user was not told about.
+    if (plan.conflicted.length > 0) {
+      return refused(
+        `switchboard will not discard a file that is in a merge conflict ` +
+          `(${plan.conflicted.join(', ')}) — resolve it, or use git to choose a side`
+      );
+    }
+    let applied = 0;
+    if (plan.tracked.length > 0) {
+      const r = await this.writeBatched(folder, plan.tracked, discardTrackedArgs, left());
+      if (!r.ok) return r;
+      applied += r.applied;
+    }
+    if (plan.untracked.length > 0) {
+      const r = await this.writeBatched(folder, plan.untracked, discardUntrackedArgs, left());
+      // ⚠️ THE TRACKED HALF ALREADY HAPPENED, so the count is reported even on a
+      // failure of the second half. A result that said `applied: 0` after
+      // restoring six files would send the user looking for changes that are gone.
+      if (!r.ok) return { ok: false, reason: r.reason, applied };
+      applied += r.applied;
+    }
+    // Paths that are in the request and not in the status are DROPPED silently
+    // only in the sense that they needed nothing done: a file that is already
+    // clean is the state a discard was asking for. Counting them would overstate
+    // what happened.
+    return { ok: true, applied };
+  }
+
+  /**
+   * Run one write over however many invocations the path count needs.
+   *
+   * The batching is here rather than in each verb so that "how many paths fit on
+   * a command line" is answered once — and so a new verb cannot forget it.
+   */
+  private async writeBatched(
+    folder: string,
+    paths: readonly string[],
+    toArgs: (batch: readonly string[]) => string[],
+    budgetMs: number
+  ): Promise<GitWriteResult> {
+    const safe = writePaths(paths);
+    if (!Array.isArray(safe)) return safe;
+    const deadline = Date.now() + budgetMs;
+    /**
+     * ⚠️ **`guardEnv` IS LOAD-BEARING HERE AND THE FIRST VERSION OF THIS METHOD
+     * DID NOT HAVE IT — a #776 hole, found by the test written to prove the
+     * opposite.**
+     *
+     * `guardArgs()` rides on every invocation through `run()`, so the fsmonitor
+     * pin and the empty hooks path were already covered. The FILTER DRIVERS are
+     * not: they are neutralised by `guardEnv`, which a caller has to ask for, and
+     * `status` and `diff` were the only two that did. Measured on a real
+     * repository: with `filter.evil.clean` in its own config and one line in
+     * `.gitattributes`, `git add` ran the program — and `add` is the command that
+     * most certainly reads file CONTENTS through a filter, because hashing them
+     * into the object store is its whole job.
+     *
+     * So the threat model does not soften for a write; if anything this is the
+     * commandment #776 was really about. A guard that cannot be established
+     * refuses the write, which is the same posture `status` takes.
+     */
+    const guard = await this.guardEnv(folder, () => Math.max(1, deadline - Date.now()));
+    if (!guard.env) return refused(guard.reason ?? 'switchboard could not make git safe to run here');
+    let applied = 0;
+    for (const batch of batchPaths(safe)) {
+      const r = await this.run(folder, toArgs(batch), Math.max(1, deadline - Date.now()), guard.env);
+      if (!r.ok) {
+        // git's own words, trimmed. `applied` carries what the EARLIER batches
+        // did, because they really did happen — a half-done write that reported
+        // zero would be worse than one that reports what it managed.
+        const said = r.err.trim().split('\n')[0] ?? '';
+        return {
+          ok: false,
+          reason: said !== '' ? said : writeFailed(r.failure, budgetMs),
+          applied,
+        };
+      }
+      applied += batch.length;
+    }
+    return { ok: true, applied };
+  }
+}
+
+/** What to say when git failed and said nothing we can quote. */
+function writeFailed(failure: GitFailure | null, budgetMs: number): string {
+  if (failure === 'timeout') {
+    return `git did not finish within ${Math.round(budgetMs / 1000)}s`;
+  }
+  if (failure === 'no-exec') return 'switchboard could not run git here';
+  return 'git refused, and said nothing switchboard could pass on';
 }
 
 function toGitPath(p: string): string {

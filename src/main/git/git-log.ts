@@ -21,6 +21,7 @@
 // message cannot contain (measured below).
 
 import { EMPTY_TREE } from './repo-config-guard';
+import { safeGitPath } from './git-paths';
 
 /** Where a `%D` decoration came from. */
 export type GitRefKind = 'head' | 'branch' | 'remote' | 'tag' | 'other';
@@ -411,13 +412,13 @@ const MAX_SKIP = 1_000_000;
  * side to fail to.
  */
 function safePath(raw: string | undefined): string | undefined {
-  if (!raw) return undefined;
-  const p = toGitPath(raw);
-  if (p === '' || p.startsWith(':')) return undefined;
-  // Absolute in either spelling: POSIX root, a UNC share, or a drive letter.
-  if (p.startsWith('/') || /^[A-Za-z]:/.test(p)) return undefined;
-  if (p.split('/').includes('..')) return undefined;
-  return p;
+  // ⚠️ **ONE DEFINITION, IN `git-paths.ts`, SINCE LAYER 2.** The rule is the same
+  // for a read and a write; what differs is what a refusal MEANS, and that
+  // asymmetry is exactly why the rule itself must not be stated twice. Here a
+  // refusal widens the answer and says so (`GitLog.pathRefused`); there it
+  // refuses the whole operation, because a wider write stages — or discards —
+  // files the user did not name.
+  return safeGitPath(raw);
 }
 
 /**
@@ -451,10 +452,6 @@ function safeRevs(refs: readonly string[] | undefined): string[] {
  * contain, and which position a `-` may not occupy.
  */
 const SAFE_REV = /^[A-Za-z0-9_@/{}.+-]+$/;
-
-function toGitPath(p: string): string {
-  return p.replace(/\\/g, '/');
-}
 
 /**
  * Parse the whole of `git log`'s stdout.

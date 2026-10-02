@@ -33,11 +33,39 @@ import {
 } from '../lib/scm-groups';
 import { buildScmTree, type ScmTreeFolder } from '../lib/scm-tree';
 import { getScmViewMode, setScmViewMode, subscribeScmViewMode } from '../lib/scm-view-mode';
+import {
+  type WriteOutcome,
+  canWriteGit,
+  confirmDiscard,
+  discardFiles,
+  stageFiles,
+  unstageFiles,
+} from '../lib/git-write';
 import { canOpenAllChanges, openAllChanges } from '../lib/allchanges-open';
 import { canOpenDiffs, openDiff } from '../lib/diff-open';
 import { WORKING_TREE_LEFT, WORKING_TREE_RIGHT } from '../lib/diff-panels';
 import { openDocument } from '../lib/document-open';
 import { canShowFileHistory, requestFileHistory } from '../lib/file-history';
+
+/**
+ * The platform's confirm, as the default for the injected one.
+ *
+ * ⚠️ **A `window.confirm` IS BLOCKING AND UGLY, AND IT IS STILL THE RIGHT DEFAULT
+ * FOR THIS ONE BUTTON.** It is synchronous, it cannot be dismissed by accident,
+ * and it cannot be mistaken for part of the page — which is exactly what is
+ * wanted in front of the only operation in the app that destroys work. An in-app
+ * dialog is a nicer thing to build and a worse thing to ship first, because a
+ * styled modal that something fails to render is a discard with no confirm at
+ * all. Replacing it is a change to this one function.
+ *
+ * Guarded because `window` is not there in a node-environment test.
+ */
+function defaultConfirm(message: string): boolean {
+  const w = (globalThis as { confirm?: (m: string) => boolean }).confirm;
+  // ⚠️ NO CONFIRM MEANS NO DISCARD, not a discard without a confirm. If the
+  // platform cannot ask, the answer is no.
+  return typeof w === 'function' ? w(message) : false;
+}
 
 /**
  * The ink a status letter wears.
@@ -90,9 +118,29 @@ export function ScmSidebar(props: {
   onRefresh: () => void;
   /** the card, so ⏱ can send this file's history to the History tab (item 10) */
   cardId?: string;
+  /**
+   * Ask the user before throwing work away (E24 Git v2 item 12).
+   *
+   * ⚠️ **INJECTED, AND THE DEFAULT IS THE BROWSER'S `confirm`.** A confirm is a
+   * question for a human, so it cannot live in the module that does the deleting
+   * — and a bare `window.confirm` inside this component would be unmockable, so
+   * every test of the discard path would either pop a real dialog or have to
+   * stub a global. The prop is how a test says "the user said yes" and how a
+   * future in-app dialog replaces the platform one without touching this file.
+   */
+  onConfirm?: (message: string) => boolean;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const [filter, setFilter] = React.useState('');
+  /**
+   * What the last write said, when it failed.
+   *
+   * ⚠️ **A WRITE THAT FAILED MUST SAY SO**, which is the whole difference from a
+   * read: a refused read leaves a pane drawing nothing and the user infers it,
+   * while a refused write leaves the surface drawing a change it thinks it
+   * removed. Cleared by the next successful write and by a refresh.
+   */
+  const [writeError, setWriteError] = React.useState<string | null>(null);
   /**
    * Which groups are folded shut.
    *
@@ -120,6 +168,68 @@ export function ScmSidebar(props: {
    * seam to move it to is `lib/scm-view-mode`, beside the mode itself.
    */
   const [closedDirs, setClosedDirs] = React.useState<Set<string>>(() => new Set());
+  /**
+   * Run a write, then refresh — in that order, always.
+   *
+   * ⚠️ **THE REFRESH IS NOT OPTIONAL AND IT IS NOT A NICETY.** `git status` is
+   * the only thing that knows what the tree looks like now, and nothing in this
+   * app watches a repository. Without it the row the user just staged would sit
+   * in the same group, with the same letter, and a second click would run the
+   * same command again.
+   *
+   * ⚠️ **AND A FAILURE IS SHOWN, NOT SWALLOWED** — the difference between a read
+   * and a write, said once here so no call site has to remember it.
+   */
+  const write = React.useCallback(
+    async (run: () => Promise<WriteOutcome>): Promise<void> => {
+      const outcome = await run();
+      setWriteError(outcome.ok ? null : (outcome.reason ?? null));
+      // Refreshed even on a failure: a discard is two commands, so a partial
+      // failure still changed the tree, and the list has to catch up with what is
+      // really there rather than with what we asked for.
+      props.onRefresh();
+    },
+    [props.onRefresh]
+  );
+
+  /**
+   * Discard, with the confirm that is this item's whole safety story.
+   *
+   * ⚠️ **THE COUNT IS IN THE MESSAGE, which is design §4 item 12 verbatim**:
+   * *"Discard is destructive: confirm, naming the file count."* A dialog reading
+   * "Discard changes?" over a group heading can mean forty files and the heading
+   * does not say which.
+   */
+  const discard = React.useCallback(
+    (paths: readonly string[]): void => {
+      if (paths.length === 0) return;
+      const ask = confirmDiscard(paths);
+      const confirmer = props.onConfirm ?? defaultConfirm;
+      if (!confirmer(t(ask.key, ask.values))) return;
+      void write(() => discardFiles(props.folder, paths));
+    },
+    [props.folder, props.onConfirm, t, write]
+  );
+  /**
+   * The one door every write goes through.
+   *
+   * ⚠️ **ONE CALLBACK FOR THREE VERBS, SO THE CONFIRM AND THE REFRESH CANNOT BE
+   * SKIPPED.** Three separate props would be three chances for a call site to
+   * stage without refreshing, or — the one that matters — to discard without
+   * asking. `undefined` when this build cannot write at all, which is what makes
+   * the buttons ABSENT rather than dead.
+   */
+  const onWrite = React.useMemo(
+    () =>
+      canWriteGit()
+        ? (verb: 'stage' | 'unstage' | 'discard', paths: readonly string[]): void => {
+            if (verb === 'discard') discard(paths);
+            else if (verb === 'stage') void write(() => stageFiles(props.folder, paths));
+            else void write(() => unstageFiles(props.folder, paths));
+          }
+        : undefined,
+    [discard, write, props.folder]
+  );
   const paneState = gitPaneState(props.status);
   const groups = React.useMemo(() => buildGroups(props.status, filter), [props.status, filter]);
   /**
@@ -379,6 +489,25 @@ export function ScmSidebar(props: {
         {paneState?.kind === 'clean' && (
           <div style={{ color: 'var(--muted)', padding: 4 }}>{t('diff.clean')}</div>
         )}
+        {/* ⚠️ **A WRITE THAT FAILED SAYS SO, AND THAT IS THE WHOLE DIFFERENCE
+            FROM A READ.** A refused read leaves a pane drawing nothing and the
+            user infers it; a refused write leaves this list drawing a change it
+            thinks it removed, next to a button that looks like it worked. In
+            git's own words, because a repository can refuse for reasons nobody
+            here has enumerated — an index lock another agent is holding, a hook,
+            a permission — and the user needs the real message to act on it.
+
+            `role="status"` so it is announced rather than only seen: the button
+            that caused it has already lost focus by the time this renders. */}
+        {writeError !== null && (
+          <div
+            className="scm-write-error"
+            role="status"
+            style={{ color: 'var(--status-needs-input-ink)', padding: 4, fontSize: 10.5 }}
+          >
+            {t('scm.writeFailed', { reason: writeError })}
+          </div>
+        )}
         {paneState?.kind === 'files' && filtering && groups.length === 0 && (
           <div className="scm-no-match" style={{ color: 'var(--muted)', padding: 4 }}>
             {t('scm.noMatches', { query: filter })}
@@ -389,6 +518,17 @@ export function ScmSidebar(props: {
             const isClosed = closed.has(group.kind);
             return (
               <div key={group.kind} className={`scm-group scm-group-${group.kind}`}>
+                {/* ⚠️ **THE HEADING AND ITS ACTIONS ARE SIBLINGS, NOT NESTED, AND
+                    THE REASON IS HTML.** The heading is a `<button>` (it folds
+                    the group), and a button inside a button is invalid — browsers
+                    reparent it, so the inner one ends up outside and the layout
+                    silently breaks. Screen 1 draws the verbs on the heading row,
+                    so the ROW is a flex container and the heading takes the slack
+                    inside it. */}
+                <div
+                  className="scm-group-row"
+                  style={{ display: 'flex', alignItems: 'center', minInlineSize: 0 }}
+                >
                 <button
                   type="button"
                   className="scm-group-head"
@@ -429,6 +569,59 @@ export function ScmSidebar(props: {
                     {group.rows.length}
                   </span>
                 </button>
+                {/* ⚠️ **THE GROUP VERBS, AND WHICH ONES A GROUP GETS IS THE SAME
+                    RULE THE ROWS FOLLOW.** Staged → unstage everything.
+                    Unstaged/untracked → discard everything, then stage
+                    everything. **Merge conflicts → NOTHING**, because every verb
+                    is ambiguous on a conflict and main refuses them by name.
+
+                    ⚠️ **AND THE DISCARD HERE IS THE REASON THE CONFIRM NAMES A
+                    COUNT.** "Discard everything in Changes" can be forty files
+                    and the heading does not say so — which is design §4 item 12's
+                    own requirement, and the one place it really earns itself. */}
+                {onWrite && group.kind !== 'merge' && (
+                  <span
+                    className="scm-group-acts"
+                    style={{ display: 'flex', flexShrink: 0, gap: 1, paddingInlineEnd: 2 }}
+                  >
+                    {group.kind === 'staged' ? (
+                      <button
+                        type="button"
+                        className="scm-act"
+                        data-testid="scm-group-unstage"
+                        title={t('scm.unstageGroup', { group: t(`scm.group.${group.kind}`) })}
+                        aria-label={t('scm.unstageGroup', { group: t(`scm.group.${group.kind}`) })}
+                        onClick={() => onWrite('unstage', group.rows.map((r) => r.path))}
+                      >
+                        {t('scm.unstageIcon')}
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="scm-act"
+                          data-testid="scm-group-discard"
+                          title={t('scm.discardGroup', { group: t(`scm.group.${group.kind}`) })}
+                          aria-label={t('scm.discardGroup', { group: t(`scm.group.${group.kind}`) })}
+                          onClick={() => onWrite('discard', group.rows.map((r) => r.path))}
+                        >
+                          {t('scm.discardIcon')}
+                        </button>
+                        <button
+                          type="button"
+                          className="scm-act"
+                          data-testid="scm-group-stage"
+                          title={t('scm.stageGroup', { group: t(`scm.group.${group.kind}`) })}
+                          aria-label={t('scm.stageGroup', { group: t(`scm.group.${group.kind}`) })}
+                          onClick={() => onWrite('stage', group.rows.map((r) => r.path))}
+                        >
+                          {t('scm.stageIcon')}
+                        </button>
+                      </>
+                    )}
+                  </span>
+                )}
+                </div>
                 {/* ⚠️ **THE TWO MODES SHARE `Row`, AND THAT IS THE WHOLE POINT
                     OF ITEM 8 BEING SMALL.** Tree mode adds FOLDER rows and an
                     indent; a file row draws exactly what it draws in the flat
@@ -447,6 +640,7 @@ export function ScmSidebar(props: {
                       selected={props.selected === row.path}
                       onSelect={props.onSelect}
                       cardId={props.cardId}
+                      onWrite={onWrite}
                     />
                   ))}
                 {!isClosed &&
@@ -479,6 +673,7 @@ export function ScmSidebar(props: {
                         // the flat row exists to show. `depth` is what tells the
                         // row to drop it.
                         depth={node.depth}
+                        onWrite={onWrite}
                       />
                     )
                   )}
@@ -605,6 +800,15 @@ function Row(props: {
    * directory is the whole reason the row has a second half.
    */
   depth?: number;
+  /**
+   * Run a write verb on these paths, or `undefined` when this build cannot write
+   * — in which case the row draws no ＋ and no ↶ at all (item 12).
+   *
+   * One callback for three verbs rather than three callbacks: the confirm, the
+   * refresh and the error live in the parent, and three props would be three
+   * chances for one of them to skip a step.
+   */
+  onWrite?: (verb: 'stage' | 'unstage' | 'discard', paths: readonly string[]) => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const row = props.row;
@@ -804,12 +1008,59 @@ function Row(props: {
           >
             {t('diff.openInViewerIcon')}
           </button>
-          {/* ⚠️ **NO `＋` AND NO `↶` YET, AND THAT IS THE OWNER'S OWN RULE.**
-              Screen 1 draws stage and discard on every row; both need the
-              `git.write` capability, which is item 12. *"A row with a `＋` that
-              does nothing is worse than a row with no `＋`"* — so the slot is
-              built, the two verbs that work are in it, and the two that do not are
-              absent rather than drawn dead. */}
+          {/* ⚠️ **↶ AND ＋ — THE SLOT IS FULL AT LAST (item 12).** This comment
+              used to say they were absent *"because a row with a `＋` that does
+              nothing is worse than a row with no `＋`"*, which is the owner's own
+              rule and the reason the scope was layers 1 AND 2 together. They are
+              still absent — not disabled — when the build cannot write at all.
+
+              ⚠️ **AND WHICH VERBS A ROW GETS DEPENDS ON ITS GROUP, because the
+              group is what the row is ABOUT.** A staged row can only be
+              UNSTAGED: offering it a ＋ would be a button for something already
+              done, and offering it ↶ would mean discarding a change the user has
+              deliberately kept. An unstaged or untracked row gets ＋ and ↶. A
+              CONFLICTED row gets neither — `git.write`'s own refusal explains
+              why, and drawing a verb main will refuse is the thing this comment
+              has always been about. */}
+          {props.onWrite && row.group !== 'merge' && (
+            <>
+              {row.group === 'staged' ? (
+                <button
+                  type="button"
+                  className="scm-act"
+                  data-testid="scm-row-unstage"
+                  title={t('scm.unstage', { file: row.path })}
+                  aria-label={t('scm.unstage', { file: row.path })}
+                  onClick={() => props.onWrite?.('unstage', [row.path])}
+                >
+                  {t('scm.unstageIcon')}
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="scm-act"
+                    data-testid="scm-row-discard"
+                    title={t('scm.discard', { file: row.path })}
+                    aria-label={t('scm.discard', { file: row.path })}
+                    onClick={() => props.onWrite?.('discard', [row.path])}
+                  >
+                    {t('scm.discardIcon')}
+                  </button>
+                  <button
+                    type="button"
+                    className="scm-act"
+                    data-testid="scm-row-stage"
+                    title={t('scm.stage', { file: row.path })}
+                    aria-label={t('scm.stage', { file: row.path })}
+                    onClick={() => props.onWrite?.('stage', [row.path])}
+                  >
+                    {t('scm.stageIcon')}
+                  </button>
+                </>
+              )}
+            </>
+          )}
         </span>
       </span>
     </div>

@@ -133,6 +133,53 @@ answering "what did the agent just change?", and a flat list answers that at a
 glance where a tree asks you to expand things first. The tree earns its keep on a
 big change set, which is exactly when you'll want to reach for it.
 
+## Staging, unstaging and discarding
+
+Hover a row and you get up to five buttons. Three of them just show you things
+(⧉, ↗, ⏱); the other two **change your repository**:
+
+| Button | What it does |
+|---|---|
+| **＋** | **Stage** this file — tell git you want this change in the next commit |
+| **−** | **Unstage** it — take it back out |
+| **↶** | **Discard** the change — throw it away |
+
+**Which buttons a row gets depends on which group it's in**, and that's
+deliberate:
+
+- A row under **Staged changes** only gets **−**. A ＋ would be a button for
+  something already done, and a ↶ there would throw away a change you'd
+  deliberately kept.
+- A row under **Changes** or **Untracked** gets **↶** and **＋**.
+- A row under **Merge conflicts** gets **neither**. "Discard this conflict" could
+  mean three different things (keep yours, keep theirs, abandon the merge) and git
+  has a separate command for each — so switchboard doesn't guess. Resolve it, or
+  use git directly.
+
+The same buttons appear on each **group heading**, and there they act on
+everything in that group.
+
+### Discard asks first, and it means it
+
+**Discarding is the only thing switchboard does that can destroy work nothing else
+has a copy of.** A modified file that's already been committed can always be
+brought back; a brand-new file you discard is simply gone — not in git's history,
+not in its index, not recoverable with a git command.
+
+So discard always asks, and **the question names what's at stake**: one file by
+name, or a count for a group. If you say no, nothing happens at all.
+
+### If it doesn't work, it says so
+
+Git can refuse for all sorts of reasons — another program holding the repository's
+index, a file permission, a hook. When that happens you get a line at the top of
+the list **in git's own words**, because that's the message that tells you what to
+do about it. The list refreshes either way, so what you see is always what's
+really there.
+
+**One thing that is NOT here yet:** committing. These buttons prepare a commit;
+making it is the next piece of work.
+
 ## Side by side, or inline
 
 Above the diff there's a pair of buttons: **Side by side** shows the old file

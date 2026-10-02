@@ -1114,6 +1114,21 @@ const api = {
       right: string
     ): Promise<{ original: string; modified: string }> =>
       ipcRenderer.invoke('git:fileVersionsAt', folder, file, left, right),
+    // ── THE WRITE HALF (E24 Git v2 item 12) ─────────────────────────────────
+    //
+    // `Promise<unknown>` like every other channel here, for #650's reason: a
+    // channel can answer with a REFUSAL instead of its payload, so the consumer
+    // runs `answered()` first and treats a missing field as "learn nothing"
+    // rather than as a value. That matters more for a write than for a read — a
+    // refusal mistaken for success would leave the surface saying "staged" about
+    // something that is not.
+    stage: (folder: string, paths: readonly string[]): Promise<unknown> =>
+      ipcRenderer.invoke('git:stage', folder, paths),
+    unstage: (folder: string, paths: readonly string[]): Promise<unknown> =>
+      ipcRenderer.invoke('git:unstage', folder, paths),
+    /** ⚠️ DESTRUCTIVE — the confirm is the renderer's, and it is not optional. */
+    discard: (folder: string, paths: readonly string[]): Promise<unknown> =>
+      ipcRenderer.invoke('git:discard', folder, paths),
   },
   notifications: {
     getPrefs: (): Promise<NotificationPrefs> => ipcRenderer.invoke('notifications:getPrefs'),
