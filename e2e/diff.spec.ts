@@ -661,4 +661,93 @@ test.describe('Changes tab (Monaco diff pane)', () => {
     // badge would be marked and drawn dimmer.
     await expect(treeRow.locator('.file-vcs')).not.toHaveAttribute('data-rolled-up', 'true');
   });
+  test('⚠️ EVERY CHANGE IN ONE SCROLL — and the budget really bounds what mounts', async () => {
+    // E24 Git v2 item 9, end to end. The budget is unit-tested as a rule and the
+    // panel is unit-tested against a stubbed editor; what only this can say is
+    // that the REAL Monaco diff editors mount, stacked, inside one real dockview
+    // panel — which is the only version of the claim that could ever freeze the
+    // app if the policy were wrong.
+    const folder = tempGitProject();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    await expect(w.locator('[data-testid="view-tabs"]').first()).toBeVisible({ timeout: 25_000 });
+    await w.locator('[data-testid="view-tabs"] [data-vtab="diff"]').first().click();
+
+    // The entry point, in the filter row — screen 2's own place for it.
+    const open = w.locator('[data-testid="scm-all-changes"]');
+    await expect(open).toHaveCount(1, { timeout: 20_000 });
+    await open.click();
+
+    const panel = w.locator('.all-changes-view');
+    await expect(panel).toBeVisible({ timeout: 20_000 });
+    // All three changed files of the fixture, stacked, in ONE panel.
+    await expect(panel.locator('.all-changes-file')).toHaveCount(3, { timeout: 20_000 });
+    // …each with its own sticky header naming it.
+    for (const name of [FILE, 'notes.md', 'output.log']) {
+      await expect(panel.locator(`.all-changes-file[data-path="${name}"]`)).toHaveCount(1);
+    }
+    // ⭐ REAL editors, not placeholders: every file here is small, so all three
+    // fit the budget and all three mounted.
+    await expect(panel.locator('.monaco-diff-editor')).toHaveCount(3, { timeout: 25_000 });
+    await expect(panel).toContainText("'howdy'", { timeout: 20_000 });
+
+    // ⭐ THE CLAIM BEHIND THE SURFACE: read it beside the conversation. A card's
+    // tabs are mutually exclusive, so in the tab this is impossible.
+    await w.getByRole('tab', { name: 'Session', exact: true }).click();
+    await expect(w.getByText('No conversation yet')).toBeVisible({ timeout: 10_000 });
+    await expect(panel.locator('.monaco-diff-editor').first()).toBeVisible();
+
+    // Folding is real, and it UNMOUNTS the editor rather than merely hiding it —
+    // which is the whole reason the budget means anything.
+    await panel.locator('[data-testid="all-changes-fold"]').click();
+    await expect(panel.locator('.monaco-diff-editor')).toHaveCount(0, { timeout: 15_000 });
+    await expect(panel.locator('.all-changes-folded')).toHaveCount(3);
+    // One header back open, by itself.
+    await panel.locator('.all-changes-file[data-path="notes.md"] .all-changes-toggle').click();
+    await expect(panel.locator('.monaco-diff-editor')).toHaveCount(1, { timeout: 20_000 });
+
+    // Asking again FOCUSES rather than opening a second copy — one panel per
+    // card, which is why this family needs no registry.
+    // ⚠️ BY `data-vtab`, NOT BY ACCESSIBLE NAME. Playwright's `name` is a
+    // case-insensitive SUBSTRING match, so `{ name: 'Changes' }` now also
+    // matches the dock tab titled "All changes" that this very test opened — a
+    // strict-mode violation, and a reminder that a role query is only as
+    // specific as the strings on screen happen to be.
+    await w.locator('[data-testid="view-tabs"] [data-vtab="diff"]').first().click();
+    await w.locator('[data-testid="scm-all-changes"]').click();
+    await expect(w.locator('.all-changes-view')).toHaveCount(1);
+  });
+
+  test('a file in the stack opens its OWN panel, rather than being a second route', async () => {
+    const folder = tempGitProject();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    await expect(w.locator('[data-testid="view-tabs"]').first()).toBeVisible({ timeout: 25_000 });
+    await w.locator('[data-testid="view-tabs"] [data-vtab="diff"]').first().click();
+    await w.locator('[data-testid="scm-all-changes"]').click();
+    const panel = w.locator('.all-changes-view');
+    await expect(panel.locator('.all-changes-file')).toHaveCount(3, { timeout: 20_000 });
+
+    // ⧉ on one header reaches item 5's `gitdiff-` family — the same seam the
+    // sidebar row uses, so there is ONE route to a single-file diff.
+    await panel
+      .locator(`.all-changes-file[data-path="${FILE}"] [data-testid="all-changes-file-popout"]`)
+      .click();
+    const single = w.locator('.git-diff-view');
+    await expect(single).toBeVisible({ timeout: 20_000 });
+    await expect(single.locator('.monaco-diff-editor')).toBeVisible({ timeout: 20_000 });
+    // …and both panels are OPEN at once, because they are two different
+    // surfaces.
+    //
+    // ⚠️ **ASSERTED ON THE TAB, NOT ON THE BODY, AND THE REASON IS DOCKVIEW.**
+    // Both panels open into the document group, so the second arrives as a TAB
+    // beside the first — and dockview DETACHES an inactive tab's content, so
+    // `.all-changes-view` really is absent from the DOM while the single-file
+    // diff is in front. The first version of this line asserted the body and
+    // failed, which is the test discovering a fact about the host rather than a
+    // bug: "open" and "rendered" are different questions, and the tab is where
+    // the first one is answered.
+    await expect(w.locator('.dv-tab').filter({ hasText: 'All changes' })).toHaveCount(1);
+  });
+
 });

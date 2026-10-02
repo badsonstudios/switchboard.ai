@@ -127,6 +127,7 @@ import { openPopoutWindows, subscribePopoutWindows } from './lib/popout-windows'
 import { openFindBar } from './lib/find-bar-state';
 import { setDocumentOpener } from './lib/document-open';
 import { setDiffOpener } from './lib/diff-open';
+import { setAllChangesOpener } from './lib/allchanges-open';
 import { setFileHistoryOpener } from './lib/file-history';
 import { openFileStartFolder, rememberOpenedFile } from './lib/open-file-start';
 import { isDocumentPanelId } from './lib/document-panels';
@@ -778,10 +779,16 @@ export function App(): React.JSX.Element {
     // this file's history" could show the conversation instead. The module's
     // contract is "switch to it", and only the non-toggling verb can keep it.
     setFileHistoryOpener((cardId) => grid.current?.setCardView(cardId, 'history'));
+    // ⧉ — "everything that changed, in one scroll" (E24 Git v2 item 9). One panel
+    // per card, so the verb takes a card rather than a comparison.
+    setAllChangesOpener((cardId, folder, title) =>
+      grid.current?.openAllChanges(cardId, folder, title)
+    );
     return () => {
       setDocumentOpener(null);
       setDiffOpener(null);
       setFileHistoryOpener(null);
+      setAllChangesOpener(null);
     };
   }, []);
 

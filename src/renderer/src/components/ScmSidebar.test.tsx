@@ -24,6 +24,8 @@ import { act } from 'react';
 import { createRoot, Root } from 'react-dom/client';
 import { initI18nForTests } from '../i18n/test-i18n';
 import { LETTER_INKS, ScmSidebar } from './ScmSidebar';
+import { resetAllChangesOpener, setAllChangesOpener } from '../lib/allchanges-open';
+import { loadUiState } from '../lib/ui-state';
 import type { GitFileDto, GitStatusDto } from '../lib/git-status';
 
 declare global {
@@ -59,6 +61,53 @@ async function mount(status: GitStatusDto | null): Promise<void> {
   });
 }
 
+/**
+ * The workspace `ui` blob behind the preload bridge, for tree mode's preference.
+ *
+ * ⚠️ **NOT `localStorage`** (P2-E15-06): the packaged renderer's origin changes
+ * port every launch, so a pref stored there survives nothing — which is why
+ * `lib/scm-view-mode` reads the blob and why a test of it has to stub one. Shared
+ * with `diff-layout.test.ts`'s harness in shape, deliberately.
+ */
+function stubUi(initial: Record<string, unknown> = {}): { store: Record<string, unknown> } {
+  const state = { store: { ...initial } };
+  (window as unknown as { switchboard: unknown }).switchboard = {
+    workspace: {
+      getUi: async () => state.store,
+      setUi: (v: Record<string, unknown>) => {
+        state.store = { ...v };
+      },
+    },
+  };
+  return state;
+}
+
+/**
+ * The same sidebar, but belonging to a CARD.
+ *
+ * ⚠️ **THE HARNESS ABOVE DELIBERATELY PASSES NO `cardId`, AND THAT IS WHY TWO
+ * BUTTONS ARE INVISIBLE IN MOST OF THIS FILE.** ⏱ (item 10) and ⧉ (item 9) are
+ * both absent without a card to act on — the owner's rule about a control that
+ * does nothing — so a test of either has to say which card it is.
+ */
+async function mountWithCard(status: GitStatusDto | null): Promise<void> {
+  const host = document.createElement('div');
+  document.body.appendChild(host);
+  root = createRoot(host);
+  await act(async () => {
+    root!.render(
+      <ScmSidebar
+        folder={FOLDER}
+        status={status}
+        selected={null}
+        onSelect={(p) => selected.push(p)}
+        onRefresh={() => undefined}
+        cardId="card-1"
+      />
+    );
+  });
+}
+
 const one = (sel: string): HTMLElement | null => document.body.querySelector<HTMLElement>(sel);
 const all = (sel: string): HTMLElement[] => [...document.body.querySelectorAll<HTMLElement>(sel)];
 const text = (): string => document.body.textContent ?? '';
@@ -66,6 +115,27 @@ const text = (): string => document.body.textContent ?? '';
 async function click(el: Element | null | undefined): Promise<void> {
   await act(async () => {
     el?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
+}
+
+/**
+ * Type into the filter box.
+ *
+ * ⚠️ **THROUGH THE PROTOTYPE'S SETTER, AND THAT IS NOT A STYLE CHOICE.** React
+ * tracks the last value it wrote on the node, so a plain `box.value = x` makes the
+ * two agree and the synthetic `change` NEVER FIRES — the test then asserts against
+ * an unfiltered list and passes for the wrong reason. (It did: the tree-mode filter
+ * test below was written the plain way and failed, which is the one shape of this
+ * mistake that announces itself.) Wrapped because an unbound method reference is a
+ * lint error. `HistoryPane.test.tsx` records the same two facts.
+ */
+async function typeIntoFilter(value: string): Promise<void> {
+  const box = one('.scm-filter') as HTMLInputElement | null;
+  const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+  await act(async () => {
+    if (!box) return;
+    descriptor?.set?.call(box, value);
+    box.dispatchEvent(new Event('input', { bubbles: true }));
   });
 }
 
@@ -311,21 +381,13 @@ describe('the source-control sidebar', () => {
       isRepo: true,
       files: [file({ path: 'src/lib/a.ts', xy: '.M' }), file({ path: 'docs/b.md', xy: '.M' })],
     });
-    const box = one('.scm-filter') as HTMLInputElement;
-    // Through the prototype's setter, wrapped: React tracks the last value it
-    // wrote on the node, so a plain `box.value = x` makes the two agree and the
-    // synthetic change never fires. Wrapped because an unbound method reference
-    // is a lint error — `HistoryPane.test.tsx` records the same two facts.
-    const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
-    const typeInto = async (value: string): Promise<void> => {
-      await act(async () => {
-        descriptor?.set?.call(box, value);
-        box.dispatchEvent(new Event('input', { bubbles: true }));
-      });
-    };
-    await typeInto('lib/');
+    // `typeIntoFilter` at module scope, rather than a second copy here: the
+    // prototype-setter trap it documents is the kind of knowledge that must live
+    // in exactly one place, and item 8's own filter test proved it by being
+    // written the plain way first.
+    await typeIntoFilter('lib/');
     expect(all('.scm-row')).toHaveLength(1);
-    await typeInto('aardvark');
+    await typeIntoFilter('aardvark');
     expect(all('.scm-row')).toHaveLength(0);
     expect(one('.scm-no-match')).not.toBeNull();
   });
@@ -353,5 +415,202 @@ describe('the source-control sidebar', () => {
     document.body.innerHTML = '';
     await mount({ isRepo: false, files: [] });
     expect(text()).toContain('Not a git repository');
+  });
+});
+
+// Tree mode (E24 Git v2 item 8) — screen 2.
+//
+// `lib/scm-tree.test.ts` owns the SHAPE: what compresses, what does not, what a
+// count means, how a fold hides. This file owns what only a mounted component
+// answers — that the toggle really switches the list, that a folder row is a real
+// `<button>` carrying its own state, that the two modes SHARE the file row, and
+// that the directory stops being repeated after every name once the folder is the
+// row above it.
+describe('tree mode (E24 Git v2 item 8)', () => {
+  beforeEach(async () => {
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+    document.body.innerHTML = '';
+    selected.length = 0;
+    await initI18nForTests();
+    stubUi();
+    await loadUiState();
+  });
+
+  afterEach(async () => {
+    if (root) {
+      const r = root;
+      root = null;
+      await act(async () => r.unmount());
+    }
+    document.body.innerHTML = '';
+    delete (window as unknown as { switchboard?: unknown }).switchboard;
+  });
+
+  const nested: GitStatusDto = {
+    isRepo: true,
+    files: [
+      file({ path: 'src/renderer/src/components/FeedView.tsx', xy: '.M' }),
+      file({ path: 'src/renderer/src/components/FeedView.test.tsx', xy: '.M' }),
+      file({ path: 'src/preload/index.ts', xy: '.M' }),
+      file({ path: 'PROGRESS.md', xy: '.M' }),
+    ],
+  };
+
+  it('starts on the FLAT list, and the tree button switches it (the done-when)', async () => {
+    await mount(nested);
+    expect(one('[data-testid="scm-mode-flat"]')?.getAttribute('aria-checked')).toBe('true');
+    expect(all('.scm-tree-folder')).toHaveLength(0);
+    await click(one('[data-testid="scm-mode-tree"]'));
+    expect(one('[data-testid="scm-mode-tree"]')?.getAttribute('aria-checked')).toBe('true');
+    expect(all('.scm-tree-folder').length).toBeGreaterThan(0);
+  });
+
+  it('⚠️ COMPRESSES A SINGLE-CHILD CHAIN INTO ONE ROW, which is the item', async () => {
+    await mount(nested);
+    await click(one('[data-testid="scm-mode-tree"]'));
+    const paths = all('.scm-tree-folder').map((el) => el.getAttribute('data-path'));
+    // `src` branches (renderer, preload) so it is a row; below it each side folds.
+    expect(paths).toContain('src');
+    expect(paths).toContain('src/renderer/src/components');
+    expect(paths).toContain('src/preload');
+    // …and the four levels did NOT each become a row.
+    expect(paths).not.toContain('src/renderer');
+    expect(paths).not.toContain('src/renderer/src');
+  });
+
+  it('⚠️ A FOLDER ROW IS A REAL button WITH `aria-expanded`', async () => {
+    // §5.32 rule 1, and the lesson the file row already records: a clickable
+    // `div` means Enter, Space, focus and the announcement all have to be
+    // reimplemented, and none of them ever are.
+    await mount(nested);
+    await click(one('[data-testid="scm-mode-tree"]'));
+    const folder = one('.scm-tree-folder');
+    expect(folder?.tagName).toBe('BUTTON');
+    expect(folder?.getAttribute('aria-expanded')).toBe('true');
+    expect(folder?.getAttribute('aria-label')).toContain('changed file');
+  });
+
+  it('a folder folds and unfolds, and SAYS how much is hidden while folded', async () => {
+    await mount(nested);
+    await click(one('[data-testid="scm-mode-tree"]'));
+    const before = all('.scm-row').length;
+    const src = one('.scm-tree-folder[data-path="src"]');
+    expect(src?.querySelector('.scm-tree-count')?.textContent).toBe('3');
+    await click(src);
+    expect(one('.scm-tree-folder[data-path="src"]')?.getAttribute('aria-expanded')).toBe('false');
+    expect(all('.scm-row').length).toBeLessThan(before);
+    // the count survives the fold — a collapsed folder never understates
+    expect(one('.scm-tree-folder[data-path="src"] .scm-tree-count')?.textContent).toBe('3');
+    await click(one('.scm-tree-folder[data-path="src"]'));
+    expect(all('.scm-row').length).toBe(before);
+  });
+
+  it('⚠️ THE TWO MODES SHARE THE FILE ROW — same letter, same name, same verbs', async () => {
+    // A second row component would be a second place for the letter, the
+    // name-first split, the hover verbs and the selection to drift.
+    await mount(nested);
+    await click(one('[data-testid="scm-mode-tree"]'));
+    const row = one('.scm-row[data-path="src/preload/index.ts"]');
+    expect(row).not.toBeNull();
+    expect(row?.querySelector('.scm-letter')?.textContent).toBe('M');
+    expect(row?.querySelector('.scm-name')?.textContent).toBe('index.ts');
+    expect(row?.querySelector('.scm-row-acts')).not.toBeNull();
+    await click(row?.querySelector('.scm-row-open'));
+    expect(selected).toEqual(['src/preload/index.ts']);
+  });
+
+  it('⚠️ AND IT STOPS REPEATING THE DIRECTORY, because the folder is the row above', async () => {
+    await mount(nested);
+    // flat: the directory is the whole reason the row has a second half
+    expect(one('.scm-row[data-path="src/preload/index.ts"] .scm-dir')).not.toBeNull();
+    await click(one('[data-testid="scm-mode-tree"]'));
+    expect(one('.scm-row[data-path="src/preload/index.ts"] .scm-dir')).toBeNull();
+  });
+
+  it('indents by depth, and STOPS indenting before the filename pays for it', async () => {
+    await mount({
+      isRepo: true,
+      files: [file({ path: 'a/b/c/d/e/f/g/h/i/deep.ts', xy: '.M' })],
+    });
+    await click(one('[data-testid="scm-mode-tree"]'));
+    // one compressed folder row at depth 0, so the file sits at depth 1
+    const row = one('.scm-row[data-path="a/b/c/d/e/f/g/h/i/deep.ts"]');
+    expect(row?.getAttribute('data-depth')).toBe('1');
+    // and the cap holds: nothing is pushed past six levels of indent
+    const px = Number((row?.style.paddingInlineStart ?? '0px').replace('px', ''));
+    expect(px).toBeLessThanOrEqual(6 * 9);
+  });
+
+  it('a root-only change set grows no folders in either mode', async () => {
+    await mount({ isRepo: true, files: [file({ path: 'PROGRESS.md', xy: '.M' })] });
+    await click(one('[data-testid="scm-mode-tree"]'));
+    expect(all('.scm-tree-folder')).toHaveLength(0);
+    expect(all('.scm-row')).toHaveLength(1);
+  });
+
+  it('⚠️ THE FILTER STILL WORKS, and the tree is built from what SURVIVES it', async () => {
+    // The tree is of the filtered rows, not of the repository: a folder row for a
+    // directory whose only file the filter hid would be a count of nothing.
+    await mount(nested);
+    await click(one('[data-testid="scm-mode-tree"]'));
+    await typeIntoFilter('preload');
+    const paths = all('.scm-tree-folder').map((el) => el.getAttribute('data-path'));
+    expect(paths).toContain('src/preload');
+    expect(paths).not.toContain('src/renderer/src/components');
+    expect(all('.scm-row')).toHaveLength(1);
+  });
+
+  it('the mode is a WORKSPACE preference, so a remount comes back in it', async () => {
+    await mount(nested);
+    await click(one('[data-testid="scm-mode-tree"]'));
+    const r = root;
+    root = null;
+    await act(async () => r?.unmount());
+    document.body.innerHTML = '';
+    await mount(nested);
+    expect(one('[data-testid="scm-mode-tree"]')?.getAttribute('aria-checked')).toBe('true');
+    expect(all('.scm-tree-folder').length).toBeGreaterThan(0);
+  });
+});
+
+// Item 9's entry point lives in the same toolbar, so it is tested here rather
+// than in a third file about one button.
+describe('the all-changes entry point (E24 Git v2 item 9)', () => {
+  beforeEach(async () => {
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+    document.body.innerHTML = '';
+    selected.length = 0;
+    await initI18nForTests();
+    stubUi();
+    await loadUiState();
+    resetAllChangesOpener();
+  });
+
+  afterEach(async () => {
+    if (root) {
+      const r = root;
+      root = null;
+      await act(async () => r.unmount());
+    }
+    document.body.innerHTML = '';
+    resetAllChangesOpener();
+    delete (window as unknown as { switchboard?: unknown }).switchboard;
+  });
+
+  it('⚠️ ⧉ OPENS THE ALL-CHANGES PANEL, and is ABSENT with nowhere to open it', async () => {
+    // Item 9's entry point, in screen 2's own place for it. Absent rather than
+    // dead is the owner's rule, applied to a toolbar button this time.
+    await mount({ isRepo: true, files: [file({ path: 'a.ts', xy: '.M' })] });
+    expect(one('[data-testid="scm-all-changes"]')).toBeNull();
+    const asked: Array<[string, string]> = [];
+    setAllChangesOpener((cardId, folder) => asked.push([cardId, folder]));
+    const r = root;
+    root = null;
+    await act(async () => r?.unmount());
+    document.body.innerHTML = '';
+    await mountWithCard({ isRepo: true, files: [file({ path: 'a.ts', xy: '.M' })] });
+    await click(one('[data-testid="scm-all-changes"]'));
+    expect(asked).toEqual([['card-1', FOLDER]]);
+    resetAllChangesOpener();
   });
 });

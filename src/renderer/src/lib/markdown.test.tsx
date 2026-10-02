@@ -2329,6 +2329,11 @@ describe('content cannot NAME one of the app’s own controls (#654)', () => {
       // messages, and nothing it is given reaches the document. Content cannot
       // collide with a name that is never an id.
       'components/ApprovalPreview.tsx: id="approval-diff"',
+      // ⚠️ E24 Git v2 item 9: the `allchanges-` panel, and it needs the boundary
+      // MORE than either of the two below — it mounts up to ten Monaco diff
+      // editors at once, so it is the surface in this epic with the most ways to
+      // throw, and without a boundary any one of them blanks the whole window.
+      'components/SessionGrid.tsx: id="all-changes-panel"',
       'components/SessionGrid.tsx: id="document-viewer"',
       // E24 Git v2 item 5: the `gitdiff-` panel's boundary. A dockview panel has
       // no boundary above it but the renderer ROOT, so a throw inside a diff

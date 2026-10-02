@@ -118,7 +118,14 @@ export function isDerivedPanelId(id: string): boolean {
   // Spelled as a second alternative rather than by loosening the anchor to
   // `/(diff|doc)-/`: an unanchored match would also claim any future panel whose
   // id merely CONTAINS one of those words.
-  return /^(diff|doc|gitdiff)-/.test(id);
+  //
+  // ⚠️ **`allchanges-` IS HERE FROM THE START (E24 Git v2 item 9), BECAUSE ITEM 5
+  // PAID FOR LEARNING IT.** A restored all-changes panel would mount editors on a
+  // folder that may no longer be in the read scope — the same reason the restore
+  // drops `doc-` panels — and the three bugs listed above are what happens to a
+  // derived family that this predicate does not claim. Adding it when the prefix
+  // was minted costs one alternative; discovering it costs a review round.
+  return /^(diff|doc|gitdiff|allchanges)-/.test(id);
 }
 
 /** One serialized dockview GROUP - the `data` of a grid leaf, or of a popout. */

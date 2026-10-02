@@ -195,6 +195,36 @@ export function isDiffPanelId(id: string): boolean {
   return id.startsWith(DIFF_PANEL_PREFIX);
 }
 
+/**
+ * The all-changes panel's id (E24 Git v2 item 9, screen 5).
+ *
+ * ⚠️ **ITS OWN PREFIX, AND IT LIVES HERE RATHER THAN IN A THIRD MODULE** so that
+ * every git panel-id contract is in one file — which is the whole lesson of item
+ * 5, where `diff-` turned out to be taken by #504's relocated Changes tab and the
+ * design record had to be amended. A reader asking "what prefixes are claimed?"
+ * gets one place to look.
+ *
+ * **KEYED BY CARD, not by a sequence.** There is exactly one "everything that
+ * changed" for a folder, so asking twice must focus the panel you have — where a
+ * `gitdiff-` panel is per COMPARISON and a card can want several at once. That is
+ * also why this needs no registry: the id is derivable from the card, so
+ * `getPanel` is the lookup and there is no second copy of the truth to go stale.
+ */
+export const ALL_CHANGES_PREFIX = 'allchanges-';
+
+export function allChangesPanelId(cardId: string): string {
+  return `${ALL_CHANGES_PREFIX}${cardId}`;
+}
+
+export function isAllChangesPanelId(id: string): boolean {
+  return id.startsWith(ALL_CHANGES_PREFIX);
+}
+
+/** Either of the two git panel families — what the dock-area rules ask about. */
+export function isGitPanelId(id: string): boolean {
+  return isDiffPanelId(id) || isAllChangesPanelId(id);
+}
+
 /** The panel is gone. Drop it. */
 export function forgetDiffPanel(id: string): void {
   entries.delete(id);

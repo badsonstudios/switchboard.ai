@@ -31,6 +31,9 @@ import {
   type ScmGroupKind,
   type ScmRow,
 } from '../lib/scm-groups';
+import { buildScmTree, type ScmTreeFolder } from '../lib/scm-tree';
+import { getScmViewMode, setScmViewMode, subscribeScmViewMode } from '../lib/scm-view-mode';
+import { canOpenAllChanges, openAllChanges } from '../lib/allchanges-open';
 import { canOpenDiffs, openDiff } from '../lib/diff-open';
 import { WORKING_TREE_LEFT, WORKING_TREE_RIGHT } from '../lib/diff-panels';
 import { openDocument } from '../lib/document-open';
@@ -98,6 +101,25 @@ export function ScmSidebar(props: {
    * groups that exist change as the working tree does.
    */
   const [closed, setClosed] = React.useState<Set<ScmGroupKind>>(() => new Set());
+  /**
+   * Flat list or folder tree (item 8) — a workspace preference, not card state.
+   *
+   * N sidebars are mounted at once, so React state would be N preferences that
+   * disagree. `lib/scm-view-mode` is the same shape as `lib/diff-layout`.
+   */
+  const mode = React.useSyncExternalStore(subscribeScmViewMode, getScmViewMode);
+  /**
+   * Which FOLDERS are folded, keyed `<group>:<dir>`.
+   *
+   * ⚠️ **COMPONENT STATE, DELIBERATELY, AND THE COST IS NAMED: IT RESETS WHEN YOU
+   * LEAVE THE TAB.** It is the same choice the GROUP headings above already make
+   * (`closed`, right there), so the two behave alike rather than one being sticky
+   * and the other not — and the alternative is a per-repo, per-group set of folder
+   * paths in the workspace blob, which is a lot of persisted state for a reading
+   * posture that changes with every change set. If it turns out to be missed, the
+   * seam to move it to is `lib/scm-view-mode`, beside the mode itself.
+   */
+  const [closedDirs, setClosedDirs] = React.useState<Set<string>>(() => new Set());
   const paneState = gitPaneState(props.status);
   const groups = React.useMemo(() => buildGroups(props.status, filter), [props.status, filter]);
   /**
@@ -243,7 +265,15 @@ export function ScmSidebar(props: {
       )}
 
       {paneState?.kind === 'files' && (
-        <div style={{ padding: '4px 6px', borderBlockEnd: '1px solid var(--border)' }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: 4,
+            alignItems: 'center',
+            padding: '4px 6px',
+            borderBlockEnd: '1px solid var(--border)',
+          }}
+        >
           <input
             type="search"
             className="scm-filter"
@@ -252,7 +282,8 @@ export function ScmSidebar(props: {
             placeholder={t('scm.filterPlaceholder')}
             aria-label={t('scm.filterLabel')}
             style={{
-              inlineSize: '100%',
+              flex: 1,
+              minInlineSize: 0,
               background: 'var(--input-bg, var(--card-bg))',
               color: 'var(--text)',
               border: '1px solid var(--border)',
@@ -261,6 +292,74 @@ export function ScmSidebar(props: {
               fontSize: 11,
             }}
           />
+          {/* ☰ / ⊟ — flat list or folder tree (item 8), screen 2's own control in
+              screen 2's own place.
+
+              ⚠️ **A RADIO GROUP, NOT TWO BUTTONS AND NOT A CHECKBOX.** Two
+              buttons would leave a screen reader with no way to hear which one is
+              in force, and §5.32 rule 1 is that a composite role goes on only
+              where it is true — this is exactly one of two, which is what
+              `radiogroup` means. `aria-checked` is the state; the lit background
+              is the same fact drawn. */}
+          <span
+            className="scm-mode"
+            role="radiogroup"
+            aria-label={t('scm.modeLabel')}
+            style={{ display: 'flex', flexShrink: 0, gap: 1 }}
+          >
+            {(['flat', 'tree'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                role="radio"
+                className="scm-mode-btn"
+                data-testid={`scm-mode-${m}`}
+                aria-checked={mode === m}
+                title={t(`scm.mode.${m}`)}
+                aria-label={t(`scm.mode.${m}`)}
+                onClick={() => setScmViewMode(m)}
+                style={{
+                  background: mode === m ? 'var(--rail-row-selected)' : 'transparent',
+                  border: '1px solid var(--border)',
+                  borderRadius: 3,
+                  color: mode === m ? 'var(--text)' : 'var(--muted)',
+                  cursor: 'pointer',
+                  fontSize: 10,
+                  lineHeight: 1,
+                  padding: '3px 4px',
+                }}
+              >
+                {t(`scm.modeIcon.${m}`)}
+              </button>
+            ))}
+          </span>
+          {/* ⧉ — every change in one scrollable panel (item 9), in screen 2's own
+              place for it. ABSENT without a card to open it for or anywhere to
+              open it, which is the owner's rule about a control that does
+              nothing. */}
+          {props.cardId && canOpenAllChanges() && (
+            <button
+              type="button"
+              className="scm-mode-btn"
+              data-testid="scm-all-changes"
+              title={t('scm.allChanges')}
+              aria-label={t('scm.allChanges')}
+              onClick={() => openAllChanges(props.cardId, props.folder, t('allChanges.title'))}
+              style={{
+                flexShrink: 0,
+                background: 'transparent',
+                border: '1px solid var(--border)',
+                borderRadius: 3,
+                color: 'var(--muted)',
+                cursor: 'pointer',
+                fontSize: 10,
+                lineHeight: 1,
+                padding: '3px 4px',
+              }}
+            >
+              {t('scm.allChangesIcon')}
+            </button>
+          )}
         </div>
       )}
 
@@ -330,7 +429,15 @@ export function ScmSidebar(props: {
                     {group.rows.length}
                   </span>
                 </button>
+                {/* ⚠️ **THE TWO MODES SHARE `Row`, AND THAT IS THE WHOLE POINT
+                    OF ITEM 8 BEING SMALL.** Tree mode adds FOLDER rows and an
+                    indent; a file row draws exactly what it draws in the flat
+                    list — same letter, same name-first split, same hover verbs,
+                    same selection. A second row component would be a second
+                    place for all of that to drift, which is the mistake the
+                    History tab's own item was shaped to avoid. */}
                 {!isClosed &&
+                  mode === 'flat' &&
                   group.rows.map((row) => (
                     <Row
                       key={`${group.kind}:${row.path}`}
@@ -342,11 +449,131 @@ export function ScmSidebar(props: {
                       cardId={props.cardId}
                     />
                   ))}
+                {!isClosed &&
+                  mode === 'tree' &&
+                  buildScmTree(group.rows, closedDirs, `${group.kind}:`).map((node) =>
+                    node.type === 'folder' ? (
+                      <FolderRow
+                        key={node.key}
+                        node={node}
+                        onToggle={() =>
+                          setClosedDirs((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(node.key)) next.delete(node.key);
+                            else next.add(node.key);
+                            return next;
+                          })
+                        }
+                      />
+                    ) : (
+                      <Row
+                        key={node.key}
+                        row={node.row}
+                        folder={props.folder}
+                        sessionId={props.sessionId}
+                        selected={props.selected === node.row.path}
+                        onSelect={props.onSelect}
+                        cardId={props.cardId}
+                        // ⚠️ IN A TREE THE FOLDER IS ON THE ROW ABOVE, so repeating
+                        // it after every name is noise — and it is the one thing
+                        // the flat row exists to show. `depth` is what tells the
+                        // row to drop it.
+                        depth={node.depth}
+                      />
+                    )
+                  )}
               </div>
             );
           })}
       </div>
     </div>
+  );
+}
+
+/**
+ * How far in a row at this depth sits.
+ *
+ * ⚠️ **CAPPED, because a tree in a 240px rail runs out of room before a monorepo
+ * runs out of nesting.** Past the cap the rows stop moving right rather than
+ * squeezing the filename — which is the thing design §1.2 cause 2 says must never
+ * be the part that is lost. The folder row above still says where you are.
+ */
+const INDENT_PX = 9;
+const MAX_INDENT_DEPTH = 6;
+function indentPx(depth: number | undefined): number {
+  if (depth === undefined) return 0;
+  return Math.min(depth, MAX_INDENT_DEPTH) * INDENT_PX;
+}
+
+/**
+ * One folder, in tree mode.
+ *
+ * A real `<button>` with `aria-expanded`, for the reason the file row below gives
+ * at length: a clickable `div` means reimplementing Enter, Space, focus and the
+ * announcement, and the group headings above already learned that lesson.
+ *
+ * ⚠️ **IT CARRIES ITS COUNT, which is what makes folding it safe** — a collapsed
+ * folder still says how much is hidden, so a folded tree never understates a
+ * change set. And the LABEL is the compressed path, which can be several segments:
+ * `src/renderer/src/components` is one row here rather than four.
+ */
+function FolderRow(props: { node: ScmTreeFolder; onToggle: () => void }): React.JSX.Element {
+  const { t } = useTranslation();
+  const node = props.node;
+  return (
+    <button
+      type="button"
+      className="scm-tree-folder"
+      data-path={node.path}
+      data-depth={node.depth}
+      aria-expanded={node.open}
+      aria-label={t('scm.folderLabel', { path: node.path, count: node.count })}
+      title={node.path}
+      onClick={props.onToggle}
+      style={{
+        display: 'flex',
+        gap: 5,
+        alignItems: 'center',
+        inlineSize: '100%',
+        background: 'transparent',
+        border: 'none',
+        borderRadius: 4,
+        color: 'var(--text)',
+        cursor: 'pointer',
+        padding: '3px 4px',
+        paddingInlineStart: 4 + indentPx(node.depth),
+        fontSize: 10.5,
+        textAlign: 'left',
+        minInlineSize: 0,
+      }}
+    >
+      <span aria-hidden="true" style={{ flexShrink: 0, color: 'var(--muted)' }}>
+        {node.open ? t('scm.caretOpen') : t('scm.caretClosed')}
+      </span>
+      {/* The compressed path, truncated from the FRONT — the tail of
+          `src/renderer/src/components` is the part that locates you, exactly as
+          with a file row's directory. */}
+      <span
+        className="scm-tree-name"
+        style={{
+          flex: 1,
+          minInlineSize: 0,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          direction: 'rtl',
+          textAlign: 'left',
+        }}
+      >
+        {t('diff.pathIsolated', { path: node.label })}
+      </span>
+      <span
+        className="scm-tree-count"
+        style={{ flexShrink: 0, color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: 10 }}
+      >
+        {node.count}
+      </span>
+    </button>
   );
 }
 
@@ -369,14 +596,25 @@ function Row(props: {
   selected: boolean;
   onSelect: (path: string) => void;
   cardId?: string;
+  /**
+   * How deep in the tree this row sits, or `undefined` in the flat list.
+   *
+   * ⚠️ **ITS PRESENCE IS ALSO WHAT HIDES THE DIRECTORY**, and that is one prop
+   * doing two jobs on purpose: in a tree the folder is the row ABOVE, so
+   * repeating it after every name is noise — while in the flat list that same
+   * directory is the whole reason the row has a second half.
+   */
+  depth?: number;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const row = props.row;
   const statusWord = t(`scm.letter.${letterKey(row.letter)}`);
+  const inTree = props.depth !== undefined;
   return (
     <div
       className="scm-row"
       data-path={row.path}
+      data-depth={props.depth}
       style={{
         display: 'flex',
         gap: 4,
@@ -384,6 +622,7 @@ function Row(props: {
         borderRadius: 4,
         background: props.selected ? 'var(--rail-row-selected)' : 'transparent',
         minInlineSize: 0,
+        paddingInlineStart: indentPx(props.depth),
       }}
     >
       <button
@@ -453,7 +692,7 @@ function Row(props: {
             directory produced a span containing two invisible code points — which
             is an empty box in the layout and, worse, something a text selector
             matches. Found by an e2e asserting on a sibling span. */}
-        {row.dir !== '' && (
+        {row.dir !== '' && !inTree && (
         <span
           className="scm-dir"
           style={{

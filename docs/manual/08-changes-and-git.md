@@ -103,6 +103,36 @@ as the app is running; a restart starts fresh.
 When there's nothing to show you'll see **Working tree clean**, or **Not a git
 repository** if that's the situation.
 
+### A flat list, or a folder tree
+
+Beside the filter box are two small buttons: **☰** for a flat list and **⊟** for a
+folder tree. The flat list is the default, and the choice is remembered for the
+whole app, not just the one session.
+
+The tree groups the changed files by folder, and it **collapses folders that have
+only one thing in them** — so you get one row reading
+`src/renderer/src/components` rather than four nested rows that each contain
+nothing but the next. Click a folder to fold it; the number on the right tells you
+how many changed files are inside, so a folded folder never hides how much
+changed.
+
+A few things worth knowing:
+
+- **In tree mode the rows stop repeating the folder**, because the folder is the
+  row above them. In the flat list the folder is shown after each name, which is
+  the point of that mode.
+- **The rows are otherwise identical** — same letter, same numbers, same buttons
+  when you hover.
+- **The filter still works**, and the tree is built from what survives it: you
+  will not see a folder whose only changed file the filter has hidden.
+- **Which folders you have folded is forgotten when you leave the tab.** The
+  flat-or-tree choice is remembered; the folding is not.
+
+**Why flat is the default**, when a tree might look tidier: this tab is mostly
+answering "what did the agent just change?", and a flat list answers that at a
+glance where a tree asks you to expand things first. The tree earns its keep on a
+big change set, which is exactly when you'll want to reach for it.
+
 ## Side by side, or inline
 
 Above the diff there's a pair of buttons: **Side by side** shows the old file
@@ -155,6 +185,52 @@ Things worth knowing:
   you were reading don't.
 - **One gap, so you aren't surprised by it:** `Ctrl+F` doesn't work inside a diff
   panel yet. In the Changes tab it does. That's being fixed separately.
+
+## Everything in one scroll — ⧉
+
+Beside the flat-or-tree buttons there's a **⧉**. It opens a panel containing
+**every changed file, stacked in one scroll** — each with its own heading that
+sticks to the top as you pass it, so you always know which file you're in.
+
+This is the surface for reading what an agent just did. Instead of clicking
+seventeen files one at a time, you scroll from top to bottom.
+
+Like a single diff, it's a panel rather than a tab, so you can read it **beside
+the conversation** rather than instead of it.
+
+### Large files start folded, and say why
+
+Opening a comparison is real work for the app — about as much per file as the
+Changes tab does for the one file you clicked. So the panel decides, before it
+opens, how much to show immediately:
+
+- It opens files until it has shown **about 400 changed lines**, or **ten
+  files**, whichever comes first.
+- Everything else starts **folded**, with one line saying why — *"folded to keep
+  this panel quick to open"*.
+- A single file bigger than that whole allowance says something different:
+  *"4,312 changed lines — too large to open with everything else"*. That's a
+  different fact and it gets a different sentence.
+- **A folded file never costs you the information that it changed.** Its
+  heading, its status letter and its line counts are all still there.
+
+Click any heading to open or fold that file. The **⊟** button in the toolbar
+folds everything at once, and becomes **⊞** to open it all again.
+
+**Your folding sticks.** If you fold a huge file away and the panel notices the
+project changed underneath it, that file stays folded — it won't spring back
+open.
+
+### The rest of the toolbar
+
+- **Split / Inline** works as it does in the Changes tab, for every file at once.
+- **⧉** on a single file's heading opens just that file in its own panel — handy
+  when you want to keep one file in view while scrolling the rest.
+- **⧉** at the far right moves the whole panel into its own window.
+
+**What isn't here yet:** the **＋ Stage** buttons the design sketches for each
+file. They need the ability to change your repository, which switchboard doesn't
+have yet, so they're left out rather than drawn and dead.
 
 ## Syntax colouring
 

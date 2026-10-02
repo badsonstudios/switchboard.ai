@@ -44,7 +44,125 @@
 > log rather than the audit, §5.7 also records the editable-diff decision, and
 > VS Code's built-in Git extension is `docs/reference-implementations.md` **§4**.
 >
-> **🚧 NOW: item 10 (#1047) — "show me this file's history", the ⏱ on a changed
+> **🚧 NOW: item 9 (#1046) — every change in one scroll.** Screen 5, and the one
+> surface §2.3 of the design record lists as something the field has (VS Code's
+> `git.viewChanges`) and we had no equivalent of: every changed file stacked in one
+> scrollable panel with its own sticky header, read top to bottom instead of
+> clicking seventeen files.
+>
+> **⚠️ AND IT IS THE ONE PANEL IN THIS EPIC THAT CAN COST SOMETHING IF IT IS
+> WRONG.** Every expanded file is a real Monaco diff editor — the same object the
+> Changes tab mounts exactly one of. Seventeen is seventeen models and seventeen
+> tokenizers in one frame. So `lib/multi-file-diff.ts` decides what starts open
+> BEFORE anything mounts, and the component only draws that decision: **~400
+> changed lines** (the design record's own number, and the tilde is in the record
+> because it is a judgement) **or ten editors, whichever comes first.** Two bounds
+> because one cannot do it: `git diff` has no count for an untracked or binary
+> file, so a hundred new files would each cost 0 lines and still be a hundred
+> editors.
+>
+> **THE THREE REASONS A FILE IS FOLDED ARE THREE SENTENCES**, which is the same
+> discipline as the History tab's five empty states: *"this one is enormous"* and
+> *"the panel ran out above you"* are different facts about the user's project, and
+> a single "collapsed" would make the budget look arbitrary. A file the USER folded
+> gets no explanation, because none is owed.
+>
+> **A huge file does not spend the budget it never used** (a running total that
+> charged for an unmounted editor would fold the whole rest of the panel), the
+> user's folds **win over a recompute** in both directions, and a panel that opens
+> entirely folded **says so** rather than looking broken.
+>
+> **⚠️ TWO REAL BUGS THE TESTS FOUND, both of the "looks fine, is wrong" kind.**
+> The stat used `t('scm.plus', { count })` where the string is a plain `+{n}` — so
+> the raw ICU template rendered on screen, verbatim; the sidebar's own convention
+> is what caught it. And **`IdentityTab` reads `params.cardId` to mean "this tab IS
+> that card's"**, so putting a `cardId` in the panel's params made its dock tab
+> render the SESSION's name — two tabs with one name, beside each other, which is
+> item 5's prefix collision in the tab strip instead of the id space. That file's
+> own comment states the rule ("a DERIVED tab carries no cardId, so its dockview
+> title still wins") and an e2e is what caught me breaking it.
+>
+> **`allchanges-` IS IN `isDerivedPanelId` FROM THE DAY THE PREFIX WAS MINTED**,
+> because item 5 paid for learning that the other way: a restored panel would mount
+> editors on a folder that may no longer be in the read scope, on top of the three
+> bugs that function records. And it needs **no registry** — one panel per card
+> means the id is derivable, so `getPanel` is the whole lookup and there is no
+> second copy of the truth to go stale.
+>
+> **Green:** lint · all three typecheck projects · **10,304** unit tests ·
+> `e2e/diff.spec.ts` **11 of 11**, the two new ones being real Monaco editors
+> stacked in a real dockview panel — and folding shown to UNMOUNT them rather than
+> hide them, which is the only version of the claim that could ever have frozen the
+> app.
+
+> **✅ item 8 (#1045) — tree mode, with single-child folders compressed.**
+> Screen 2. A ☰ / ⊟ pair beside the filter box; the tree groups changed files by
+> folder and folds a chain that contains nothing but the next level, so
+> `src/renderer/src/components` is ONE row rather than four of pure chrome.
+>
+> **THE DESIGN RECORD TOLD ME TO CHECK FOR REUSE AND THE ANSWER IS NO, with a
+> reason rather than a preference.** §4 item 8: *"`FileTree`'s model may be
+> reusable — check before writing a second one."* `lib/file-tree-model.ts` is a
+> **lazy browser of the filesystem**: its state is keyed by absolute path with a
+> `loading | ready | error` per directory, `toggleDir` returns `{ state, fetch }`
+> because opening a folder is a question for main, and `visibleRows` emits four
+> kinds of NOTICE row. This tree has none of those problems — the input is an
+> already-complete path list from one `git status`, nothing to fetch, nothing in
+> flight, nothing that can fail — and it needs **single-child compression**, which
+> the filesystem tree must never do, because showing `src/renderer/src` as one row
+> in a real directory browser misreports where a file lives and breaks "open this
+> folder". Reuse would have meant synthesising `DirState`s for directories we are
+> not listing to inherit a fetch protocol with nothing to fetch. So:
+> `lib/scm-tree.ts`, pure, beside `scm-groups.ts`.
+>
+> **THE COMPRESSION RULE HAS TWO LIMITS AND BOTH ARE TESTED**, because getting
+> either wrong moves a file to a directory it is not in: a folder with one child
+> directory **and a file of its own** is not compressible (the file has to be drawn
+> somewhere), and a folder with one **file** is not compression at all (folding
+> those together would put a status letter on a place).
+>
+> **THE TWO MODES SHARE `Row`**, which is the whole reason this item is small: tree
+> mode adds folder rows and an indent, and a file row draws exactly what it draws
+> flat. A second row component would be a second place for the letter, the
+> name-first split, the hover verbs and the selection to drift.
+>
+> **FLAT IS THE DEFAULT, which disagrees with the mockup on purpose** (screen 2
+> draws the tree lit). The tab answers *"what did the agent just change?"*, and a
+> flat list answers it at a glance where a tree asks you to expand first. The mode
+> is a workspace preference (`lib/scm-view-mode.ts`, the same shape as
+> `lib/diff-layout.ts`) because N sidebars are mounted at once; the FOLDING is
+> component state, like the group headings beside it, and the cost — it resets when
+> you leave the tab — is named rather than discovered.
+>
+> **⚠️ AND CI CAUGHT TWO THINGS A SPOT CHECK COULD NOT, on BOTH platforms, which
+> is what said it was the suite and not the runner.** Thirteen e2e tests were
+> timing out at 30s on one locator: since item 6 the row's verbs are
+> `visibility: hidden` at rest, and **that removes them from the ACCESSIBILITY
+> TREE** — so `getByRole` resolves to nothing and the hover cannot even be aimed
+> from the button outwards. The chain has to start at the row, by CSS. **The CSS
+> comment claimed the opposite** ("keeps it discoverable") and is corrected: the
+> rule is there for a stable row width, and the access story is `:focus-within`.
+> One spec was also still looking for `button.diff-open-viewer`, the old sidebar's
+> class and the last reference to it anywhere.
+>
+> **⚠️⚠️ AND THE SAME RED RUN CAUGHT ME MAKING A REAL BUG WORSE.** §5.24
+> attribution resolves through `sessionStore.getCardTitle`, which matches on
+> `sessions[].id` — **the CARD id** — while the value is called `sessionId` at
+> every step down to the dockview panel's *persisted* `params.sessionId`. A live id
+> there resolves to nothing, and nothing is indistinguishable from absence. It has
+> gone wrong **three times**: the Files tab has passed the live id since #521; item
+> 10 gave the Changes tab the same, taking the prop from ABSENT to WRONG; and the
+> relocated Changes host passed the CORRECT card id, review read the name and
+> called it a bug, **I agreed and removed it**, and `document-peek.spec.ts` is what
+> said otherwise. All three pass a card id now, `lib/document-open.ts` carries the
+> warning where the meaning is defined, and **#1055 is re-scoped from "a bug" to
+> the rename** — including the layout migration the persisted key needs.
+>
+> **Green so far:** lint · all three typecheck projects · 54 tests across the three
+> new/changed files (17 on the tree's rules, 8 on the preference, 29 on the
+> rendered sidebar) · the document specs 16 of 16. Full suites running.
+
+> **✅ item 10 (#1047) — "show me this file's history", the ⏱ on a changed
 > row.** Screen 8. Hover a row in the Changes tab, press ⏱, and the card lands on
 > the History tab filtered to the commits that touched that one path, with a chip
 > naming it and an ✕ that is the only way back.

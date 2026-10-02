@@ -481,6 +481,18 @@
     "refresh": "Re-read this project's changes",
     "fileHistory": "Show the history of {file}",
     "fileHistoryIcon": "⏱",
+    "allChangesIcon": "⧉",
+    "allChanges": "Open every change in one scrollable panel",
+    "modeLabel": "How to list the changed files",
+    "mode": {
+      "flat": "Flat list",
+      "tree": "Folder tree"
+    },
+    "modeIcon": {
+      "flat": "☰",
+      "tree": "⊟"
+    },
+    "folderLabel": "{path}, {count, plural, one {# changed file} other {# changed files}}",
     "refreshIcon": "⟲",
     "plus": "+{n}",
     "minus": "−{n}",
@@ -511,6 +523,22 @@
       "untracked": "untracked",
       "typechange": "type changed"
     }
+  },
+  "allChanges": {
+    "title": "All changes",
+    "scope": "working tree vs HEAD",
+    "scopeBranch": "{branch} · working tree vs HEAD",
+    "totals": "+{plus} −{minus} · {count, plural, one {# file} other {# files}}",
+    "collapseAll": "Collapse every file",
+    "collapseAllIcon": "⊟",
+    "expandAll": "Expand every file",
+    "expandAllIcon": "⊞",
+    "fileLabel": "{name}, {status} — show or hide its changes",
+    "allFolded": "{count, plural, one {The one file here is} other {All # files here are}} folded — open one to read it",
+    "foldedHuge": "{count, plural, other {# changed lines}} — too large to open with everything else; click to read it",
+    "foldedBudget": "Folded to keep this panel quick to open — click to read it",
+    "foldedCount": "Folded because enough files were already open — click to read it",
+    "foldedByYou": "Click to read it"
   },
   "diff": {
     "tabTitle": "{title} · diff",
