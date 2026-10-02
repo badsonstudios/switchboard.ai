@@ -1451,6 +1451,13 @@ mark[data-feed-match-current] {
   font-size: 11px;
   padding: 2px 6px;
   cursor: pointer;
+  /* ⚠️ A BUTTON IN A FLEX TOOLBAR MUST NOT SHRINK (E24 Git v2 item 5, found in
+     review). Without this the diff panel's toolbar squeezed the buttons and
+     wrapped their labels before it truncated the path beside them — so the
+     ellipsis the path declares never fired, and the panel's one piece of
+     identifying information was the first thing lost in a narrow pane. Linux CI
+     renders these ~5% wider, which is where it would have shown up first. */
+  flex-shrink: 0;
 }
 .doc-btn:hover:not(:disabled),
 .diff-btn:hover:not(:disabled) {

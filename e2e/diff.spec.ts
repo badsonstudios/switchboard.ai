@@ -533,4 +533,90 @@ test.describe('Changes tab (Monaco diff pane)', () => {
     await expect(popout.locator('.dv-tab').filter({ hasText: '· diff' })).toHaveCount(0);
     expect(app.windows().length, 'the diff opened a window of its own').toBe(2);
   });
+
+  // ───────────────────────────── E24 Git v2 item 5 ────────────────────────────
+  //
+  // ⚠️ **THE STRUCTURAL ITEM, AND ITS CLAIM IS ABOUT TWO SURFACES BEING VISIBLE
+  // AT ONCE.** Design §1.2 cause 3: card tabs are mutually exclusive, so reading
+  // a diff inside one costs you sight of the conversation that produced it. These
+  // two tests are the only place that can be checked, because it is a fact about
+  // dockview and the real window rather than about a component.
+
+  test('⚠️ ⧉ moves the diff OUT of the tab, so the conversation stays visible', async () => {
+    // ⚠️ **THE CARD'S OWN Changes TAB, NOT `openChanges()`.** That helper opens
+    // #504's relocated panel (`diff-<cardId>`) from the rail's context menu,
+    // which is ALREADY out of the tab strip — so a test built on it cannot say
+    // anything about the constraint this item removes. The claim is about a
+    // surface that is mutually exclusive with the Session view, and that is the
+    // in-card tab. Found by writing the test against the wrong harness first.
+    const folder = tempGitProject();
+    a = await launchApp({ seedFolder: folder });
+    const w = a.window;
+    await expect(w.locator('[data-testid="view-tabs"]').first()).toBeVisible({ timeout: 25_000 });
+    await w.locator('[data-testid="view-tabs"] [data-vtab="diff"]').first().click();
+    await w.getByText(FILE, { exact: true }).click();
+    await expect(diffEditor(w)).toBeVisible({ timeout: 15_000 });
+
+    // The escalation. ABSENT until a file is picked, which is the owner's rule
+    // about a control with nothing to do — asserted as a count so a missing
+    // button reads as missing rather than as "not visible".
+    const popout = w.locator('[data-testid="diff-popout"]');
+    await expect(popout).toHaveCount(1);
+    await popout.click();
+
+    // A panel of its OWN, in the document area — not a tab inside the session's
+    // group, which is the rule `documentHomeGroup` enforces and the reason the
+    // prefix is `gitdiff-` and not `diff-`.
+    const panel = w.locator('.git-diff-view');
+    await expect(panel).toBeVisible({ timeout: 15_000 });
+    // …with a real diff in it, computed by the real worker: the same assertions
+    // the in-tab pane earns above, now inside the panel.
+    await expect(panel.locator('.monaco-diff-editor')).toBeVisible({ timeout: 15_000 });
+    await expect(panel).toContainText("'howdy'", { timeout: 15_000 });
+    await expect(panel.locator('.line-insert')).not.toHaveCount(0, { timeout: 15_000 });
+
+    // ⭐ THE CLAIM: the Session view and the diff are on screen TOGETHER. Inside
+    // the tab that is impossible however the pane is drawn.
+    await w.getByRole('tab', { name: 'Session', exact: true }).click();
+    await expect(w.getByText('No conversation yet')).toBeVisible({ timeout: 10_000 });
+    await expect(panel.locator('.monaco-diff-editor')).toBeVisible();
+
+    // Asking again FOCUSES rather than opening a second copy — `planDiffOpen`'s
+    // rule, through the real dockview.
+    await w.getByRole('tab', { name: 'Changes' }).click();
+    await w.locator('[data-testid="diff-popout"]').click();
+    await expect(w.locator('.git-diff-view')).toHaveCount(1);
+  });
+
+  test('the diff panel pops out to its own window, and docks back', async () => {
+    // A SECOND OS WINDOW, so the same skip every other popout test in this repo
+    // opens with — including the one sixty lines above. Found missing by review;
+    // without it this fails under the Linux runner's xvfb.
+    skipPopoutOnLinux();
+    const { w } = await openChanges();
+    const app = a!.app;
+    await w.getByText(FILE, { exact: true }).click();
+    await w.locator('[data-testid="diff-popout"]').click();
+    await expect(w.locator('.git-diff-view')).toBeVisible({ timeout: 15_000 });
+
+    const before = app.windows().length;
+    await w.locator('[data-testid="git-diff-popout"]').click();
+    // A WINDOW, which is what design §3 promises and what dockview's popout
+    // group gives us for free. Polled rather than asserted once: `addPopoutGroup`
+    // is async and the window arrives a tick later.
+    await expect
+      .poll(() => app.windows().length, { timeout: 20_000 })
+      .toBe(before + 1);
+
+    // The same control now reads "dock back" — one gesture in two directions,
+    // which is what the document viewer's header does and why there is one
+    // button rather than two with one of them always dead.
+    const win = app.windows().find((p) => p !== w)!;
+    const dockBack = win.locator('[data-testid="git-diff-popout"]');
+    await expect(dockBack).toBeVisible({ timeout: 20_000 });
+    await expect(dockBack).toHaveAttribute('aria-label', /back in the main window/);
+    await dockBack.click();
+    await expect.poll(() => app.windows().length, { timeout: 20_000 }).toBe(before);
+    await expect(w.locator('.git-diff-view')).toBeVisible({ timeout: 15_000 });
+  });
 });

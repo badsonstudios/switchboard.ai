@@ -106,6 +106,13 @@ describe('prunePopoutGroups (#494)', () => {
   it('names the derived ids, and only those', () => {
     expect(isDerivedPanelId('doc-1')).toBe(true);
     expect(isDerivedPanelId('diff-abc')).toBe(true);
+    // ⚠️ `gitdiff-` TOO, AND ITS ABSENCE WAS THREE BUGS (E24 Git v2 item 5, found
+    // in review). The pattern is anchored, so `gitdiff-1` did not match `diff-`
+    // and a per-comparison diff panel therefore survived a relaunch it was never
+    // meant to survive: the registry's `seq` restarts at 0, so the next ⧉ minted
+    // an id dockview already had, `addPanel` threw, and the first click after
+    // every restart did nothing. See `isDerivedPanelId` for the other two.
+    expect(isDerivedPanelId('gitdiff-1')).toBe(true);
     expect(isDerivedPanelId('session-abc')).toBe(false);
     expect(isDerivedPanelId('seed-1')).toBe(false);
     // a prefix, not a substring: an id that merely starts with the letters

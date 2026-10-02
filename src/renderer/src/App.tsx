@@ -126,6 +126,7 @@ import { toggleDiffLayout } from './lib/diff-layout';
 import { openPopoutWindows, subscribePopoutWindows } from './lib/popout-windows';
 import { openFindBar } from './lib/find-bar-state';
 import { setDocumentOpener } from './lib/document-open';
+import { setDiffOpener } from './lib/diff-open';
 import { openFileStartFolder, rememberOpenedFile } from './lib/open-file-start';
 import { isDocumentPanelId } from './lib/document-panels';
 
@@ -764,7 +765,14 @@ export function App(): React.JSX.Element {
     // is the only thing that knows which session a path belongs to, and §5.24's
     // attribution is exactly that answer travelling with the request.
     setDocumentOpener((file, sessionId) => grid.current?.openDocument(file, sessionId));
-    return () => setDocumentOpener(null);
+    // The same seam for a `gitdiff-` panel (E24 Git v2 item 5). Installed here,
+    // beside its twin, so the two have one lifetime: a torn-down window must
+    // leave neither arm behind.
+    setDiffOpener((target) => grid.current?.openGitDiff(target));
+    return () => {
+      setDocumentOpener(null);
+      setDiffOpener(null);
+    };
   }, []);
 
   useEffect(() => {

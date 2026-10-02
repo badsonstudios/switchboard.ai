@@ -43,6 +43,84 @@
 > log rather than the audit, §5.7 also records the editable-diff decision, and
 > VS Code's built-in Git extension is `docs/reference-implementations.md` **§4**.
 >
+> **🚧 NOW: item 5 (#1042) — the `diff-` panel family. THE STRUCTURAL ITEM, and
+> it is done.** A diff is a dock panel now: ⧉ in the Changes tab opens one file's
+> comparison beside your sessions, ⧉ again sends it to its own OS window, ⇤ brings
+> it back. The owner's actual request — read a diff while watching the
+> conversation that produced it — which inside a card tab is impossible however
+> the pane is drawn, because tabs are mutually exclusive.
+>
+> **The Monaco wiring MOVED, verbatim, and that was the point.** `MonacoDiff` now
+> holds the editor, the narrow-pane verdict, the theme, the §5.31 find publication
+> and the `diff-places` scroll memory — every effect carried across with its
+> comments, because each of those comments records a bug already paid for once.
+> `e2e/diff.spec.ts`'s six existing tests are the proof it is behaviour-preserving
+> and all six still pass.
+>
+> **⚠️⚠️ THE DESIGN RECORD SAID `diff-<n>` AND THE DESIGN WAS WRONG: `diff-` IS
+> ALREADY TAKEN.** `SessionGrid`'s existing `openDiff` verb mints `diff-<cardId>`
+> for #504's "the whole Changes tab, relocated into the document area". **FOUR**
+> things read that prefix and every one would have been confused — so the family is
+> `gitdiff-`, the design record is amended, and the amendment exists because §1.1
+> of that very document is about two files claiming a feature that did not exist.
+>
+> **⭐⭐ REVIEW FOUND THE FOURTH, AND IT WAS THE ONLY NON-SELF-HEALING ONE.**
+> `isDerivedPanelId` is `/^(diff|doc)-/` and **anchored**, so `gitdiff-` panels
+> were not "derived" and therefore **survived a relaunch they were never meant to
+> survive**. Then: the registry's `seq` restarts at 0 each renderer, so the first ⧉
+> after a restart minted an id dockview already had, `addPanel` threw, and the
+> catch swallowed the click — **the first click after every restart did nothing and
+> the second worked**, which is the worst possible shape of bug. Plus the restored
+> panel was a ghost the registry could not see (so asking again opened a SECOND
+> panel on one comparison — the exact failure the registry exists to prevent), and
+> it re-read `git:fileVersions` on a folder that may no longer be in the read
+> scope, which is the reason the restore's own comment gives for dropping `doc-`.
+>
+> **AND A SECOND STRUCTURAL GAP: A NEW SESSION CARD COULD LAND AS A TAB ON TOP OF
+> THE DIFF YOU WERE READING.** `isDocumentArea` tested only `doc-`, and #462's
+> mirror rule ("a session must not displace what you are reading either") is read
+> off that one predicate — so it simply did not cover this surface. The same
+> omission made the SECOND ⧉ able to open in a different group from the first,
+> because `documentHomeGroup` prefers `isDocumentArea` and then falls through to
+> `api.groups[0]`. One predicate, read from both sides, is why it was one fix.
+>
+> **Four more, all real:** the extraction **lost `pendingLine.current = null`** and
+> left a comment claiming `forgetDiffPlace` covers it — it cannot, the ref is
+> seeded in a `useRef` INITIALISER that runs once, and child effects now run before
+> parent ones so the race got likelier · `diff-places` **leaked an entry per panel
+> open/close** into a 20-entry cap now shared with card ids, so ~20 cycles would
+> silently evict every card's remembered position · the toolbar's path had
+> `flex: 1` (basis **zero**), so in a narrow panel it collapsed to nothing and the
+> BUTTONS wrapped instead — the panel's one piece of identifying information was
+> the first casualty, and the ellipsis never fired · the new pop-out e2e was
+> missing `skipPopoutOnLinux()`, which every other second-window test in the repo
+> opens with.
+>
+> **⚠️ AND ONE PROMISE IS ONLY HALF KEPT, SAID OUT LOUD RATHER THAN DISCOVERED.**
+> Design §3 says the find publication "moves into the panel body intact". True of
+> the Changes tab; **half true of the panel** — the surface is published and nothing
+> reads it, because `Ctrl+F`'s route runs through `activeCardId` /
+> `activeDocumentId` and both know only `session-` and `doc-` panels. **Find in a
+> diff panel is inert.** Filed as **#1054**, named in the manual so a user is not
+> left wondering, and the two halves that are easy to get wrong later — unpublishing
+> on unmount, and the slot separation that stops two diffs of one card overwriting
+> each other — are in.
+>
+> **Also as built:** the component is `GitDiffView`, not `DiffPanel`, because
+> `SessionGrid` already has a local `DiffPanel` (the `diff-<cardId>` wrapper) and
+> two things of that name is how a reader edits the wrong file. And a commit-range
+> target now says *"coming"* rather than drawing the working-tree diff under a tab
+> labelled `file @ abc1234`, which is what it would have done — the loader is
+> `git:fileVersions` and answers HEAD-vs-disk only.
+>
+> **Green:** lint · all three typecheck projects · **10,042** unit tests ·
+> `e2e/diff.spec.ts` **8 of 8**, including the claim itself (the Session view and
+> the diff on screen together) and a real second OS window popping out and docking
+> back.
+>
+> **✅ Items 1, 2 and 3 are GREEN ON ALL FOUR CI JOBS** (run 37022557966) — so the
+> earlier `feed-tail-pin` red was the flake it looked like.
+
 > **🚧 NOW: item 3 (#1040) — the commit graph.** `lib/git-lanes.ts` is the pure
 > allocator — a topological walk with a lane-reservation scheme, ~200 lines, no
 > dependency, exactly as design §2.2 predicted — and `LaneGutter.tsx` is the SVG.

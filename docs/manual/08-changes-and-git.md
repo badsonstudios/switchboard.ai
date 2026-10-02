@@ -50,8 +50,42 @@ One exception, and only for genuinely tiny panes: squeeze the Changes tab below
 about 400 pixels and two columns would hold roughly 18 characters each, which
 isn't a diff. Below that width it's drawn inline whatever you chose, and the
 tab tells you so — *Too narrow for two columns*. The button stays selected;
-widen the card, hide the sessions rail with **Ctrl+B**, or pop the session out
-into its own window, and the second column comes back on its own.
+**the quickest fix is the ⧉ button described below** — or widen the card, hide
+the sessions rail with **Ctrl+B**, or pop the session out into its own window,
+and the second column comes back on its own.
+
+## Giving a diff its own space — ⧉
+
+A card's tabs are one-at-a-time: while you're reading a diff in the Changes tab
+you can't see the conversation that produced it. The **⧉** button, beside the
+side-by-side / inline pair, fixes that. Click it with a file selected and that
+file's diff opens as **its own panel** next to your sessions — so the diff and
+the conversation are on screen together, and the diff gets the width it wants.
+
+Inside that panel there's a **⧉** of its own, which moves it to **a separate
+window** — another monitor, if you have one. The same button then reads **⇤** to
+put it back.
+
+Things worth knowing:
+
+- **The Changes tab still works exactly as it did.** ⧉ is an extra route, not a
+  replacement: clicking a file still shows its diff in place. If you never press
+  ⧉, nothing about the tab has changed.
+- **Asking twice doesn't open twice.** Press ⧉ again for the same file and
+  switchboard brings the panel you already have to the front — and raises its
+  window if it's in one.
+- **The panel shows the file's full path** along the top, because a tab is only
+  wide enough for the name and `index.ts` is the commonest name there is.
+- **It's one file, fixed.** A panel shows the comparison it was opened on for as
+  long as it's open; clicking a different file in the Changes tab opens a new
+  panel rather than re-pointing the one you were reading.
+- **A diff panel never opens as a tab inside a session**, and a new session never
+  opens on top of one.
+- **Closing the app closes them.** Diff panels aren't restored on the next launch
+  — the same as the file reader. Your sessions and layout come back; the diffs
+  you were reading don't.
+- **One gap, so you aren't surprised by it:** `Ctrl+F` doesn't work inside a diff
+  panel yet. In the Changes tab it does. That's being fixed separately.
 
 ## Syntax colouring
 

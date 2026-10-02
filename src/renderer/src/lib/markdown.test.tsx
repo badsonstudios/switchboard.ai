@@ -2324,12 +2324,17 @@ describe('content cannot NAME one of the app’s own controls (#654)', () => {
     // test's shape: NOT `toEqual([])`, because a bare zero would have to be
     // maintained by deleting the rule.
     expect(offenders.sort()).toEqual([
-      // Both of these are a React PROP called `id`, not a DOM attribute —
+      // All three of these are a React PROP called `id`, not a DOM attribute —
       // `ContributionBoundary` uses it to name a contribution point in its error
       // messages, and nothing it is given reaches the document. Content cannot
       // collide with a name that is never an id.
       'components/ApprovalPreview.tsx: id="approval-diff"',
       'components/SessionGrid.tsx: id="document-viewer"',
+      // E24 Git v2 item 5: the `gitdiff-` panel's boundary. A dockview panel has
+      // no boundary above it but the renderer ROOT, so a throw inside a diff
+      // panel would blank every session pane in the window — the same argument
+      // the `document-viewer` entry above rests on.
+      'components/SessionGrid.tsx: id="git-diff-panel"',
     ]);
   });
 });

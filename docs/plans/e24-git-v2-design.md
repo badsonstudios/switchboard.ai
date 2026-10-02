@@ -156,11 +156,44 @@ the same time, and it costs almost nothing because the pattern is already proved
 - `closableDocuments()` already encodes "popped-out ones are spared by bulk
   close", with the reasoning written down.
 
-So v2 adds a `diff-` panel family that mirrors all of it:
+So v2 adds a diff panel family that mirrors all of it:
 
 ```
-openDiffPanel({ folder, path, left, right, sessionId })  →  diff-<n>
+openDiff({ folder, path, left, right, sessionId })  →  gitdiff-<n>
 ```
+
+> **⚠️ AMENDED AS BUILT (item 5, 2026-10-02): THE PREFIX IS `gitdiff-`, NOT
+> `diff-`, AND THIS PARAGRAPH SAID `diff-` BECAUSE THE DESIGN PASS DID NOT KNOW
+> THE NAME WAS TAKEN.** `SessionGrid`'s existing `openDiff` controller verb already
+> mints `diff-<cardId>` — #504's "the whole Changes tab, relocated into the
+> document area" — and **three** things read that prefix, all of which would have
+> been confused: `documentHomeGroup` excludes groups containing `/^(session|diff)-/`
+> from being the document area (so the new panels would have been barred from the
+> area they open into), the colour-scheme heal loop matches it, and a
+> "is the active panel a diff?" question would have claimed an open Changes tab.
+>
+> A fourth, found only in review: **`isDerivedPanelId` is `/^(diff|doc)-/` and is
+> ANCHORED**, so a `gitdiff-` panel was not "derived" and therefore survived a
+> relaunch it was never meant to survive — after which the registry's `seq`
+> restarted at 0, `addPanel` threw on an id dockview already had, and the first ⧉
+> after every restart silently did nothing.
+>
+> This amendment exists because §1.1 of this very document is about two files
+> claiming a feature that did not exist. A design record that still named the wrong
+> prefix would hand items 9 and 10 the same mistake.
+>
+> **Also as built:** the component is `GitDiffView`, not `DiffPanel` — `SessionGrid`
+> already has a local `DiffPanel` (the `diff-<cardId>` wrapper), and two things of
+> that name is how a reader edits the wrong file.
+>
+> **And one promise is only half kept.** "The find-surface publication (§5.31)…
+> moves into the panel body intact" is true of the Changes tab and only half true
+> of the panel: `MonacoDiff` publishes a surface under the panel's own slot, and
+> nothing reads it, because `Ctrl+F`'s route runs through `activeCardId` /
+> `activeDocumentId` and both know only `session-` and `doc-` panels. Find in a
+> popped-out diff is therefore inert. Filed as a follow-up rather than bolted on:
+> the publication and the slot separation are the halves that must not be added
+> later, and they are in.
 
 keyed on `folder + path + left..right`, so asking twice focuses the panel you
 already have. Three shapes of diff panel, one family:
