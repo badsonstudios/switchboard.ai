@@ -1093,3 +1093,217 @@ describe('the commit box (E24 Git v2 item 13)', () => {
     expect(one('[data-testid="scm-row-unstage"]')).not.toBeNull();
   });
 });
+
+// The hunk list (E24 Git v2 item 14).
+//
+// ⚠️ **THE CLAIM ONLY A MOUNTED LIST CAN ANSWER IS THAT IT RELOADS.** Staging one
+// hunk MOVES the others: their line numbers shift, so a list left as it was would
+// offer to stage something that is no longer where it says — and that patch is
+// refused, or lands somewhere else. Everything else here is about the ⊞ being
+// absent where it would be meaningless.
+describe('staging part of a file (E24 Git v2 item 14)', () => {
+  let reads: number;
+  let applied: string[];
+  let answer: { ok: boolean; reason?: string; applied: number };
+  let hunkAnswer: unknown;
+  let refreshes: number;
+
+  const dto = {
+    header: ['diff --git a/mod.ts b/mod.ts', '--- a/mod.ts', '+++ b/mod.ts'],
+    hunks: [
+      {
+        header: '@@ -1,2 +1,2 @@',
+        lines: ['-one', '+ONE', ' two'],
+        oldStart: 1,
+        oldCount: 2,
+        newStart: 1,
+        newCount: 2,
+      },
+      {
+        header: '@@ -9,2 +9,2 @@',
+        lines: [' nine', '-ten', '+TEN'],
+        oldStart: 9,
+        oldCount: 2,
+        newStart: 9,
+        newCount: 2,
+      },
+    ],
+  };
+
+  function hunkBridge(): void {
+    (window as unknown as { switchboard: unknown }).switchboard = {
+      workspace: { getUi: async () => ({}), setUi: () => undefined },
+      git: {
+        stage: async () => answer,
+        unstage: async () => answer,
+        discard: async () => answer,
+        hunks: async () => {
+          reads++;
+          return hunkAnswer;
+        },
+        applyPatch: async (_f: string, patch: string) => {
+          applied.push(patch);
+          return answer;
+        },
+      },
+    };
+  }
+
+  async function mountHunks(status: GitStatusDto | null): Promise<void> {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    root = createRoot(host);
+    await act(async () => {
+      root!.render(
+        <ScmSidebar
+          folder={FOLDER}
+          status={status}
+          selected={null}
+          onSelect={(p) => selected.push(p)}
+          onRefresh={() => void refreshes++}
+          cardId="card-1"
+          onConfirm={() => true}
+        />
+      );
+    });
+  }
+
+  const dirty: GitStatusDto = {
+    isRepo: true,
+    files: [
+      file({ path: 'mod.ts', xy: '.M' }),
+      file({ path: 'new.ts', untracked: true, xy: '??' }),
+      file({ path: 'staged.ts', staged: true, unstaged: false, xy: 'M.' }),
+    ],
+  };
+
+  beforeEach(async () => {
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+    document.body.innerHTML = '';
+    selected.length = 0;
+    reads = 0;
+    applied = [];
+    refreshes = 0;
+    answer = { ok: true, applied: 1 };
+    hunkAnswer = dto;
+    await initI18nForTests();
+    hunkBridge();
+    await loadUiState();
+  });
+
+  afterEach(async () => {
+    if (root) {
+      const r = root;
+      root = null;
+      await act(async () => r.unmount());
+    }
+    document.body.innerHTML = '';
+    delete (window as unknown as { switchboard?: unknown }).switchboard;
+  });
+
+  it('⊞ on an unstaged row lists that file’s hunks (the done-when)', async () => {
+    await mountHunks(dirty);
+    expect(one('.scm-hunks')).toBeNull();
+    await click(one('.scm-row[data-path="mod.ts"] [data-testid="scm-row-hunks"]'));
+    expect(one('.scm-hunks')).not.toBeNull();
+    expect(all('.scm-hunk')).toHaveLength(2);
+    // …named by WHERE and HOW MUCH, not by the `@@` line
+    expect(one('.scm-hunk-label')?.textContent).toContain('line 1');
+    expect(text()).not.toContain('@@ -1,2');
+  });
+
+  it('⚠️ ONLY ON AN UNSTAGED TRACKED ROW — git has no hunks for the others', async () => {
+    // An untracked file has no parts to split: git has never seen it, so its
+    // "diff" is nothing. A staged row's remaining change is on the OTHER side.
+    await mountHunks(dirty);
+    expect(one('.scm-row[data-path="mod.ts"] [data-testid="scm-row-hunks"]')).not.toBeNull();
+    expect(one('.scm-row[data-path="new.ts"] [data-testid="scm-row-hunks"]')).toBeNull();
+    expect(one('.scm-row[data-path="staged.ts"] [data-testid="scm-row-hunks"]')).toBeNull();
+  });
+
+  it('stages exactly the hunk whose ＋ was pressed', async () => {
+    await mountHunks(dirty);
+    await click(one('.scm-row[data-path="mod.ts"] [data-testid="scm-row-hunks"]'));
+    await click(all('.scm-hunk')[1].querySelector('[data-testid="scm-hunk-stage"]'));
+    expect(applied).toHaveLength(1);
+    expect(applied[0]).toContain('+TEN');
+    expect(applied[0]).not.toContain('+ONE');
+  });
+
+  it('⚠️⚠️ AND RELOADS AFTERWARDS, because staging one hunk MOVES the others', async () => {
+    // ⚠️ **THE CLAIM ONLY A MOUNTED LIST CAN MAKE.** Their line numbers shift, so
+    // a list left as it was offers to stage something no longer where it says —
+    // and that patch is refused, or lands somewhere else.
+    await mountHunks(dirty);
+    await click(one('.scm-row[data-path="mod.ts"] [data-testid="scm-row-hunks"]'));
+    expect(reads).toBe(1);
+    await click(one('[data-testid="scm-hunk-stage"]'));
+    expect(reads).toBe(2);
+    // …and the file list is refreshed too, so the groups catch up
+    expect(refreshes).toBe(1);
+  });
+
+  it('…and reloads even when the apply FAILED, because the tree may have moved anyway', async () => {
+    answer = { ok: false, reason: 'error: patch does not apply', applied: 0 };
+    await mountHunks(dirty);
+    await click(one('.scm-row[data-path="mod.ts"] [data-testid="scm-row-hunks"]'));
+    await click(one('[data-testid="scm-hunk-stage"]'));
+    expect(reads).toBe(2);
+    expect(text()).toContain('does not apply');
+  });
+
+  it('⚠️ NOTHING LEFT TO STAGE IS A SENTENCE, not an empty box', async () => {
+    hunkAnswer = { header: [], hunks: [] };
+    await mountHunks(dirty);
+    await click(one('.scm-row[data-path="mod.ts"] [data-testid="scm-row-hunks"]'));
+    expect(one('.scm-hunks-none')).not.toBeNull();
+    expect(all('.scm-hunk')).toHaveLength(0);
+  });
+
+  it('⚠️ AND A REFUSAL IS NOT THE SAME AS "no hunks"', async () => {
+    // A surface that drew the same thing for both would tell a user their change
+    // had vanished.
+    hunkAnswer = null;
+    await mountHunks(dirty);
+    await click(one('.scm-row[data-path="mod.ts"] [data-testid="scm-row-hunks"]'));
+    expect(one('.scm-hunks-none')).toBeNull();
+    expect(one('.scm-hunks')?.textContent).toContain("Couldn't read");
+  });
+
+  it('pressing ⊞ again closes it, and the ✕ closes it too', async () => {
+    await mountHunks(dirty);
+    const open = (): Promise<void> =>
+      click(one('.scm-row[data-path="mod.ts"] [data-testid="scm-row-hunks"]'));
+    await open();
+    expect(one('.scm-hunks')).not.toBeNull();
+    await open();
+    expect(one('.scm-hunks')).toBeNull();
+    await open();
+    await click(one('[data-testid="scm-hunks-close"]'));
+    expect(one('.scm-hunks')).toBeNull();
+  });
+
+  it('⚠️ SWITCHING FILES REMOUNTS THE LIST, so it is never another file’s hunks', async () => {
+    await mountHunks({
+      isRepo: true,
+      files: [file({ path: 'mod.ts', xy: '.M' }), file({ path: 'other.ts', xy: '.M' })],
+    });
+    await click(one('.scm-row[data-path="mod.ts"] [data-testid="scm-row-hunks"]'));
+    expect(reads).toBe(1);
+    await click(one('.scm-row[data-path="other.ts"] [data-testid="scm-row-hunks"]'));
+    // a fresh read for the new file rather than the old list left on screen
+    expect(reads).toBe(2);
+    expect(one('.scm-hunks')?.textContent).toContain('other.ts');
+  });
+
+  it('⚠️ WITH NO HUNK CHANNELS THE ⊞ IS ABSENT, not dead', async () => {
+    (window as unknown as { switchboard: unknown }).switchboard = {
+      workspace: { getUi: async () => ({}), setUi: () => undefined },
+      git: { stage: async () => answer, unstage: async () => answer, discard: async () => answer },
+    };
+    await mountHunks(dirty);
+    expect(one('[data-testid="scm-row-hunks"]')).toBeNull();
+    // …and the other row verbs are still there, so the two are independent
+    expect(one('.scm-row[data-path="mod.ts"] [data-testid="scm-row-stage"]')).not.toBeNull();
+  });
+});

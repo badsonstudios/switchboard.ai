@@ -16,6 +16,7 @@ import { GitService } from './git-service';
 // them in one file — a guard test that cannot fail without the guard proves
 // nothing, which is the lesson the #776 hostile-driver tests learned the hard way.
 import { guardArgs } from './repo-config-guard';
+import { patchFor } from './git-hunks';
 // `DIFF_BUDGET_MS`'s place in the bus's deadline cascade is pinned in
 // `bus-tools.test.ts`, beside the rest of the cascade.
 import { tempDir } from '../../test-temp-dirs';
@@ -2948,6 +2949,171 @@ describe('GitService.commit (E24 Git v2 item 13)', () => {
     const r = await svc.commit(plain, 'nope');
     expect(r.ok).toBe(false);
     expect(r.reason).toBeTruthy();
+  });
+  // Real git in a child process, several times per case (#512).
+}, 60_000);
+
+// Partial staging against REAL git (E24 Git v2 item 14).
+//
+// ⚠️ **THE ONLY THING THAT PROVES A SYNTHESISED PATCH IS RIGHT IS GIT ACCEPTING
+// IT.** `git-hunks.test.ts` asserts the arithmetic; this drives the bytes through
+// `git apply --cached` and then checks the three facts that matter:
+//
+//   1. the INDEX holds exactly the chosen change,
+//   2. the WORKING TREE is untouched,
+//   3. the REST of the change is still unstaged.
+//
+// A patch whose counts are merely *off* can land at an offset rather than being
+// refused — and then the index holds something the user never chose, silently.
+// Nothing but real `apply` can rule that out.
+describe('GitService partial staging (E24 Git v2 item 14)', () => {
+  /** Ten numbered lines committed, with the first and last changed on disk. */
+  function twoHunks(): string {
+    const dir = tempDir('sb-git-hunk-');
+    sh(dir, ['init', '-b', 'main']);
+    sh(dir, ['config', 'user.email', 'h@test']);
+    sh(dir, ['config', 'user.name', 'Hunk Tester']);
+    sh(dir, ['config', 'commit.gpgsign', 'false']);
+    sh(dir, ['config', 'core.autocrlf', 'false']);
+    fs.writeFileSync(
+      path.join(dir, 'f.txt'),
+      'one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n'
+    );
+    sh(dir, ['add', '.']);
+    sh(dir, ['-c', 'core.hooksPath=', 'commit', '-m', 'base']);
+    fs.writeFileSync(
+      path.join(dir, 'f.txt'),
+      'ONE\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nTEN\n'
+    );
+    return dir;
+  }
+
+  const cached = (dir: string): string =>
+    execFileSync('git', ['diff', '--cached', '--no-color', '--', 'f.txt'], {
+      cwd: dir,
+      encoding: 'utf8',
+    });
+
+  it('reads the file’s hunks (the done-when)', async () => {
+    const dir = twoHunks();
+    const h = await svc.hunks(dir, 'f.txt');
+    expect(h.unreadable).toBeUndefined();
+    expect(h.hunks).toHaveLength(2);
+    expect(h.hunks[0].lines).toContain('+ONE');
+    expect(h.hunks[1].lines).toContain('+TEN');
+    // the header a patch needs came back with them
+    expect(h.header?.some((l) => l.startsWith('diff --git'))).toBe(true);
+  });
+
+  it('⚠️⚠️ STAGES ONE HUNK: the index gets it, the WORKING TREE IS UNTOUCHED, the rest stays unstaged', async () => {
+    const dir = twoHunks();
+    const h = await svc.hunks(dir, 'f.txt');
+    const patch = patchFor({ header: h.header ?? [], hunks: h.hunks }, [h.hunks[0]]);
+    const r = await svc.applyPatch(dir, patch);
+    expect(r).toEqual({ ok: true, applied: 1 });
+
+    // 1. the INDEX holds the first change and NOT the second
+    const staged = cached(dir);
+    expect(staged).toContain('+ONE');
+    expect(staged).not.toContain('+TEN');
+
+    // 2. ⚠️ THE WORKING TREE IS EXACTLY AS THE USER LEFT IT — the entire safety
+    //    story of this item, and the reason it needs no confirm.
+    const onDisk = fs.readFileSync(path.join(dir, 'f.txt'), 'utf8');
+    expect(onDisk.startsWith('ONE\n')).toBe(true);
+    expect(onDisk.trimEnd().endsWith('TEN')).toBe(true);
+
+    // 3. the rest is still unstaged: `MM` is staged-AND-further-modified
+    const s = await svc.status(dir);
+    expect(s.files.find((f) => f.path === 'f.txt')?.xy).toBe('MM');
+  });
+
+  it('⚠️ AND REVERSE-APPLYING THE SAME PATCH UNSTAGES IT AGAIN', async () => {
+    const dir = twoHunks();
+    const h = await svc.hunks(dir, 'f.txt');
+    const patch = patchFor({ header: h.header ?? [], hunks: h.hunks }, [h.hunks[0]]);
+    expect((await svc.applyPatch(dir, patch)).ok).toBe(true);
+    expect((await svc.applyPatch(dir, patch, { reverse: true })).ok).toBe(true);
+    expect(cached(dir)).toBe('');
+    // …and the working tree STILL has both changes
+    expect(fs.readFileSync(path.join(dir, 'f.txt'), 'utf8').startsWith('ONE\n')).toBe(true);
+  });
+
+  // ⚠️⚠️ **A LINE-LEVEL SELECTION TEST USED TO BE HERE, AND REMOVING IT IS THE
+  // POINT RATHER THAN A GAP.** It drove a hand-built sub-hunk through real `git
+  // apply`; the patch was ACCEPTED and the index came out holding `two/ONE/three`
+  // for a selection that asked for `ONE/two/three`. The algorithm is structurally
+  // wrong, not nearly right — `git-hunks.test.ts` keeps the counter-example and
+  // names the mechanism selection actually needs (per-line zero-context hunks).
+  // Shipping whole-hunk staging without it is a deliberate scope reduction.
+
+  it('⚠️ A PATCH THAT CANNOT APPLY LEAVES THE INDEX BYTE-IDENTICAL, and quotes git', async () => {
+    // git's own guarantee rather than ours — but asserted, because the design
+    // record asks for it and because "the index is untouched" is the claim a user
+    // has to be able to rely on after a failure.
+    const dir = twoHunks();
+    await svc.stage(dir, ['f.txt']);
+    const before = cached(dir);
+    const nonsense = [
+      'diff --git a/f.txt b/f.txt',
+      '--- a/f.txt',
+      '+++ b/f.txt',
+      '@@ -1,2 +1,2 @@',
+      '-this line is not in the file',
+      '+replacement',
+      ' two',
+      '',
+    ].join('\n');
+    const r = await svc.applyPatch(dir, nonsense);
+    expect(r.ok).toBe(false);
+    expect(r.applied).toBe(0);
+    // git's words, not ours
+    expect(r.reason).toMatch(/does not apply|patch failed/i);
+    expect(cached(dir)).toBe(before);
+  });
+
+  it('an empty or whitespace patch is refused before git is run', async () => {
+    const dir = twoHunks();
+    for (const nothing of ['', '   ', '\n']) {
+      const r = await svc.applyPatch(dir, nothing);
+      expect(r.ok).toBe(false);
+      expect(r.reason).toContain('nothing to apply');
+    }
+  });
+
+  it('a file with nothing unstaged has NO hunks, which is a fact and not a failure', async () => {
+    const dir = twoHunks();
+    await svc.stage(dir, ['f.txt']);
+    const h = await svc.hunks(dir, 'f.txt');
+    expect(h.unreadable).toBeUndefined();
+    expect(h.hunks).toEqual([]);
+  });
+
+  it('⚠️ REFUSES A PATH IT WOULD NOT ACT ON, with the same rule as every other write', async () => {
+    const dir = twoHunks();
+    const h = await svc.hunks(dir, '../escape.txt');
+    expect(h.unreadable).toBeTruthy();
+    expect(h.hunks).toEqual([]);
+  });
+
+  it('⚠️ THE #776 GUARDS RIDE ON `apply` TOO — a repo cannot make it run a program', async () => {
+    // `apply --cached` writes blobs into the object store, so it is a clean-filter
+    // path exactly as `add` is. Same control shape as item 12's.
+    const dir = twoHunks();
+    const sentinel = path.join(dir, 'RAN');
+    sh(dir, ['config', 'filter.evil.clean', `sh -c "echo ran > '${toPosix(sentinel)}'; cat"`]);
+    fs.writeFileSync(path.join(dir, '.gitattributes'), 'f.txt filter=evil\n');
+    // THE CONTROL: plain git really does run it.
+    sh(dir, ['add', 'f.txt']);
+    expect(fs.existsSync(sentinel)).toBe(true);
+    fs.rmSync(sentinel);
+    sh(dir, ['restore', '--staged', 'f.txt']);
+
+    const h = await svc.hunks(dir, 'f.txt');
+    const patch = patchFor({ header: h.header ?? [], hunks: h.hunks }, [h.hunks[0]]);
+    const r = await svc.applyPatch(dir, patch);
+    expect(r.ok, `apply refused: ${r.reason}`).toBe(true);
+    expect(fs.existsSync(sentinel)).toBe(false);
   });
   // Real git in a child process, several times per case (#512).
 }, 60_000);

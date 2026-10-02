@@ -313,6 +313,13 @@ export const CHANNEL_CAPABILITIES = {
   // rewrites history — and what protects that is its place behind a ⋯ rather
   // than a fifth grant nobody would hold separately.
   'git:commit': 'git.write',
+  // Partial staging (E24 Git v2 item 14). `git:hunks` READS a diff and could
+  // have been `git.read` on the letter of it — it is `git.write` because it
+  // exists only to be handed back to `git:applyPatch`, and a capability split
+  // that let a consumer hold half of one operation would be a split that
+  // describes our file layout rather than a power.
+  'git:hunks': 'git.write',
+  'git:applyPatch': 'git.write',
   // the provider's service health as main currently understands it (P2-E14-07)
   'health:get': 'provider.status',
   // the polling switch is an ordinary preference, like the update auto-check

@@ -46,7 +46,72 @@
 >
 > # 🚧 LAYER 2 — THE WRITE HALF
 >
-> **🚧 NOW: item 13 (#1050) — the commit box.** One commit path, not two: amend,
+> **🚧 NOW: item 14 (#1051) — staging part of a file.** Screen 8. `git apply
+> --cached` over a patch synthesised from one hunk: **the working tree is never
+> written**, which is the whole safety story and the reason this needs no confirm
+> where item 12's discard does.
+>
+> **EVERY BEHAVIOUR MEASURED FIRST, and two of the four findings are things I did
+> not have to build:**
+>
+>  1. a one-hunk patch over a two-hunk diff stages exactly that hunk, leaves the
+>     file on disk alone, and moves `status` to `MM`;
+>  2. ⚠️ **A PATCH THAT CANNOT APPLY LEAVES THE INDEX BYTE-IDENTICAL — git's own
+>     guarantee.** The design record asks that *"a refusal leaves the index
+>     untouched and quotes git"*; the first half is free, so the work was the
+>     quoting;
+>  3. `apply --cached -R` reverse-applies, which is how a hunk is unstaged;
+>  4. no `index ..` line is needed in a synthesised patch.
+>
+> **⚠️⚠️ AND A SCOPE REDUCTION, WHICH IS THE MOST IMPORTANT THING ON THIS BLOCK.
+> LINE-LEVEL SELECTION IS NOT SHIPPED. It was built, it applied cleanly, and it
+> PUT THE WRONG CONTENT IN THE INDEX.** The naive algorithm — the one every
+> description of this problem reaches for — drops an unselected `+` and turns an
+> unselected `-` into context. That is correct line by line and wrong as a whole,
+> **because git groups ALL deletions before ALL additions**:
+>
+> ```
+> @@ -1,3 +1,3 @@
+> -one
+> -two        <- all deletions first...
+> +ONE        <- ...then the additions
+> +TWO
+>  three
+> ```
+>
+> Picking *"delete `one`" + "add `ONE`"* turns `-two` into context, which lands
+> **between** `-one` and `+ONE`. Both sides' counts are right, so **`git apply`
+> ACCEPTS it** — and the index came out holding `two/ONE/three` for a user who
+> asked for `ONE/two/three`. **Not a refusal: a silent wrong answer in the user's
+> index**, found by a test that asserted the index CONTENT rather than the diff.
+> Reordering does not rescue it either — it fixes that case and breaks the mirror,
+> and the old side's line order is checked against the file so it cannot be
+> permuted.
+>
+> **AND IT EXPLAINS WHAT `--unidiff-zero` WAS REALLY FOR.** An earlier draft of
+> this item called passing it conditionally a *"deliberate deviation, strictly
+> safer"*. That had the reason backwards: **per-line zero-context hunks are the
+> mechanism selection needs**, and that flag is what lets apply accept them.
+> **Filed as #1056** with the counter-example and the mechanism named; both facts
+> are kept as tests so nobody re-implements the naive version.
+>
+> **A UI CHOICE WORTH FLAGGING:** screen 8 draws `＋ Stage hunk` on a band INSIDE
+> the diff. This is a LIST beneath it, because interactive bands inside Monaco
+> mean view zones re-measured on every fold, every layout toggle and every re-diff
+> — and one wrong measurement puts the button beside the wrong change, which is
+> the one failure this item cannot have. Moving it inside is a refinement of this
+> surface, not a different feature.
+>
+> **A bug the tests found:** the apply's error was being wiped by the reload that
+> follows every apply, so a hunk that failed to stage would have shown no reason
+> at all — the exact failure item 12's write-error line exists to prevent. Two
+> states now, and the apply's wins.
+>
+> **Green:** lint · all three typecheck projects · **10,441** unit tests, of which
+> the **8 against real git** assert the index, the working tree AND the remaining
+> unstaged change on every staging.
+
+> **✅ item 13 (#1050) — the commit box.** One commit path, not two: amend,
 > sign-off and no-verify are checkboxes behind a ⋯, never a second primary button.
 > The design record calls that *"E24's own rule"*, and the reason is that two
 > buttons which both commit is how somebody amends by accident — and an amend

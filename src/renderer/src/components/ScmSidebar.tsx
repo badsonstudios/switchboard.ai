@@ -45,6 +45,14 @@ import {
   stageFiles,
   unstageFiles,
 } from '../lib/git-write';
+import {
+  type HunkDto,
+  type HunksDto,
+  applyOneHunk,
+  canStageHunks,
+  hunkLabel,
+  readHunks,
+} from '../lib/git-hunks';
 import { canOpenAllChanges, openAllChanges } from '../lib/allchanges-open';
 import { canOpenDiffs, openDiff } from '../lib/diff-open';
 import { WORKING_TREE_LEFT, WORKING_TREE_RIGHT } from '../lib/diff-panels';
@@ -234,6 +242,22 @@ export function ScmSidebar(props: {
         : undefined,
     [discard, write, props.folder]
   );
+  /**
+   * Which file's hunks are open (item 14), or `null`.
+   *
+   * ⚠️ **ONE AT A TIME, which is the same rule the History tab's expanded commit
+   * follows.** Two open hunk lists would be two sets of line numbers shifting
+   * under each other as either is staged — and a hunk list whose numbers are
+   * stale offers to stage something that is no longer where it says.
+   */
+  const [hunksFor, setHunksFor] = React.useState<string | null>(null);
+  const onHunks = React.useMemo(
+    () =>
+      canStageHunks()
+        ? (path: string): void => setHunksFor((p) => (p === path ? null : path))
+        : undefined,
+    []
+  );
   const paneState = gitPaneState(props.status);
   const groups = React.useMemo(() => buildGroups(props.status, filter), [props.status, filter]);
   /**
@@ -406,6 +430,24 @@ export function ScmSidebar(props: {
           row verbs it is asked for separately (`canCommit`), because a build with
           the three path verbs and no `commit` would otherwise draw a button that
           cannot work. */}
+      {/* ⚠️ **THE HUNK LIST (item 14), BELOW THE GROUPS AND ABOVE NOTHING.** It
+          belongs to one FILE, so it sits at the bottom of the pane where the
+          file list ends rather than inside a row — a row that grew a list would
+          push every row below it as the user scrolled past.
+
+          Keyed by the path so switching files REMOUNTS it: the hunks are a
+          different file's, and a stale list offers to stage something that is
+          not there. */}
+      {paneState?.kind === 'files' && hunksFor !== null && (
+        <HunkList
+          key={hunksFor}
+          folder={props.folder}
+          path={hunksFor}
+          onChanged={props.onRefresh}
+          onClose={() => setHunksFor(null)}
+        />
+      )}
+
       {paneState?.kind === 'files' && canCommit() && (
         <CommitBox
           folder={props.folder}
@@ -684,6 +726,7 @@ export function ScmSidebar(props: {
                       onSelect={props.onSelect}
                       cardId={props.cardId}
                       onWrite={onWrite}
+                      onHunks={onHunks}
                     />
                   ))}
                 {!isClosed &&
@@ -717,6 +760,7 @@ export function ScmSidebar(props: {
                         // row to drop it.
                         depth={node.depth}
                         onWrite={onWrite}
+                        onHunks={onHunks}
                       />
                     )
                   )}
@@ -852,6 +896,8 @@ function Row(props: {
    * chances for one of them to skip a step.
    */
   onWrite?: (verb: 'stage' | 'unstage' | 'discard', paths: readonly string[]) => void;
+  /** open this file's hunk list (item 14), or `undefined` to draw no ⊞ */
+  onHunks?: (path: string) => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const row = props.row;
@@ -1090,6 +1136,22 @@ function Row(props: {
                   >
                     {t('scm.discardIcon')}
                   </button>
+                  {/* ⊞ — stage PART of this file (item 14). Only on an unstaged
+                      TRACKED row: git has no hunks for a file it has never seen,
+                      so an untracked row would offer to split something that has
+                      no parts. Absent when the build cannot do it at all. */}
+                  {props.onHunks && row.group === 'unstaged' && (
+                    <button
+                      type="button"
+                      className="scm-act"
+                      data-testid="scm-row-hunks"
+                      title={t('scm.hunks')}
+                      aria-label={t('scm.hunks')}
+                      onClick={() => props.onHunks?.(row.path)}
+                    >
+                      {t('scm.hunksIcon')}
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="scm-act"
@@ -1331,6 +1393,188 @@ function CommitBox(props: {
           {said}
         </span>
       )}
+    </div>
+  );
+}
+
+/**
+ * Staging part of a file (E24 Git v2 item 14) — screen 8.
+ *
+ * ⚠️ **A LIST OF HUNKS, NOT HUNK HEADERS INSIDE MONACO, and that is a deliberate
+ * choice rather than a shortcut.** Screen 8 draws `＋ Stage hunk` on a band
+ * between the code. Monaco's diff editor owns its own viewport, its own folding
+ * and its own line decorations; injecting interactive bands into it means view
+ * zones positioned by line number, re-measured on every fold, every layout toggle
+ * and every re-diff — and getting one wrong puts a button next to the wrong
+ * change, which is the one failure this item cannot have.
+ *
+ * So the hunks are listed beneath the diff, each saying where it starts and how
+ * much it changes, each with its own ＋. The diff above is unchanged and still
+ * does the reading. A band inside Monaco is a later refinement of this surface,
+ * not a different feature.
+ *
+ * ⚠️ **AND NO CONFIRM, which is the difference from item 12's ↶.** Everything
+ * here applies to the INDEX only — measured, the file on disk is never written —
+ * so nothing can be lost and the same button undoes it.
+ */
+function HunkList(props: {
+  folder: string;
+  path: string;
+  /** re-read the status after a change, so the groups catch up */
+  onChanged: () => void;
+  onClose: () => void;
+}): React.JSX.Element {
+  const { t } = useTranslation();
+  const [dto, setDto] = React.useState<HunksDto | null>(null);
+  /**
+   * Two errors, not one, and a test is what forced them apart.
+   *
+   * ⚠️ **THE APPLY'S ERROR WAS BEING WIPED BY THE RELOAD THAT FOLLOWS IT.** Every
+   * apply is followed by a re-read (the hunks have MOVED), and the re-read
+   * succeeds — so a single `failed` was set to the refusal and then immediately
+   * cleared to `null`. The user would have seen a hunk that did not stage and no
+   * reason anywhere, which is the exact failure item 12's write-error line exists
+   * to prevent. `readFailed` is about the LIST; `applyFailed` is about the last
+   * button press, and it is the one that wins on screen.
+   */
+  const [readFailed, setReadFailed] = React.useState<string | null>(null);
+  const [applyFailed, setApplyFailed] = React.useState<string | null>(null);
+  const failed = applyFailed ?? readFailed;
+  const [busy, setBusy] = React.useState(false);
+  /**
+   * Which round of asking we are on.
+   *
+   * The same guard every reader in this epic carries: an answer from a superseded
+   * round must be DROPPED rather than written over a fresher one. Reachable here
+   * by staging a hunk while the previous read is still in flight.
+   */
+  const round = React.useRef(0);
+
+  const reload = React.useCallback(() => {
+    const mine = ++round.current;
+    void readHunks(props.folder, props.path).then((next) => {
+      if (round.current !== mine) return;
+      // `null` is "we learned nothing", which is NOT "no hunks" — a file with
+      // nothing unstaged really has an empty list, and drawing the same thing for
+      // both would tell a user their change had vanished.
+      if (next === null) setReadFailed(t('scm.hunkUnreadable', { reason: '' }));
+      else {
+        setReadFailed(next.unreadable ? t('scm.hunkUnreadable', { reason: next.unreadable }) : null);
+        setDto(next);
+      }
+    });
+  }, [props.folder, props.path, t]);
+
+  React.useEffect(() => {
+    reload();
+    return () => {
+      ++round.current;
+    };
+  }, [reload]);
+
+  const act = async (hunk: HunkDto, reverse: boolean): Promise<void> => {
+    if (!dto || busy) return;
+    setBusy(true);
+    const outcome = await applyOneHunk(props.folder, dto, hunk, { reverse });
+    setBusy(false);
+    setApplyFailed(outcome.ok ? null : (outcome.reason ?? null));
+    // ⚠️ RELOADED EITHER WAY. The hunks have MOVED if one of them was staged, so
+    // a list left as it was would offer to stage a hunk that no longer exists at
+    // those line numbers — and that patch would be refused, or worse applied
+    // somewhere else.
+    reload();
+    props.onChanged();
+  };
+
+  return (
+    <div
+      className="scm-hunks"
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 2,
+        borderBlockStart: '1px solid var(--border)',
+        padding: '4px 6px',
+        maxBlockSize: 180,
+        overflowY: 'auto',
+      }}
+    >
+      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+        <span
+          style={{
+            flex: 1,
+            minInlineSize: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+            color: 'var(--muted)',
+            fontSize: 10,
+          }}
+        >
+          {t('scm.hunksTitle', { file: props.path })}
+        </span>
+        <button
+          type="button"
+          className="scm-act"
+          data-testid="scm-hunks-close"
+          title={t('scm.hunkClose')}
+          aria-label={t('scm.hunkClose')}
+          onClick={props.onClose}
+        >
+          {t('history.unpinIcon')}
+        </button>
+      </div>
+      {failed !== null && (
+        <span role="status" style={{ color: 'var(--status-needs-input-ink)', fontSize: 10 }}>
+          {failed}
+        </span>
+      )}
+      {dto !== null && dto.hunks.length === 0 && failed === null && (
+        <span className="scm-hunks-none" style={{ color: 'var(--muted)', fontSize: 10 }}>
+          {t('scm.hunkNone')}
+        </span>
+      )}
+      {dto?.hunks.map((hunk, i) => {
+        const label = hunkLabel(hunk);
+        return (
+          <div
+            // ⚠️ KEYED BY INDEX *AND* HEADER. The header alone is not unique — two
+            // hunks of one file can have identical `@@` lines after a change — and
+            // the index alone would let React reuse a row for a different hunk
+            // once the list shifts under a staging.
+            key={`${i}:${hunk.header}`}
+            className="scm-hunk"
+            data-hunk={hunk.header}
+            style={{ display: 'flex', gap: 4, alignItems: 'center', minInlineSize: 0 }}
+          >
+            <span
+              className="scm-hunk-label"
+              style={{
+                flex: 1,
+                minInlineSize: 0,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+                fontFamily: 'var(--font-mono)',
+                fontSize: 9.5,
+              }}
+            >
+              {t(label.key, label.values)}
+            </span>
+            <button
+              type="button"
+              className="scm-act"
+              data-testid="scm-hunk-stage"
+              disabled={busy}
+              title={t('scm.hunkStage')}
+              aria-label={t('scm.hunkStage')}
+              onClick={() => void act(hunk, false)}
+            >
+              {t('scm.stageIcon')}
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 }

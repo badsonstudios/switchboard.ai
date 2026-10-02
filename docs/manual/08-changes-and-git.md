@@ -177,6 +177,36 @@ the list **in git's own words**, because that's the message that tells you what 
 do about it. The list refreshes either way, so what you see is always what's
 really there.
 
+### Staging part of a file
+
+Sometimes one file holds two unrelated changes and you only want to commit one.
+Hover a row under **Changes** and press **⊞**.
+
+A list appears at the bottom of the pane, one line per *part* of the file — each
+saying where it starts and how much it changes (*"From line 42 — +6 −2"*). Press
+**＋** beside a part to stage just that part.
+
+Afterwards the file appears under **both** *Staged changes* and *Changes*: the
+part you picked is ready to commit, and the rest isn't.
+
+A few things worth knowing:
+
+- **Nothing on disk is touched.** Staging a part only changes what git has
+  recorded as ready — your file is exactly as you left it. That's why this has no
+  confirmation step, unlike discarding.
+- **The list refreshes after every ＋**, because staging one part moves the
+  others.
+- **⊞ only appears on unstaged, already-tracked files.** A brand-new file has no
+  "parts" — git has never seen it — and a staged row's remaining change is on the
+  other side of the list.
+- **If git won't apply something, you'll see git's own words.** It also leaves
+  everything exactly as it was — a refused patch changes nothing.
+
+**What isn't here yet: picking individual LINES.** The parts are whole blocks of
+change. Line-by-line picking needs a different mechanism, and the first attempt at
+it was found to stage *the wrong lines* while looking like it worked — so it's
+been left out rather than shipped. That's tracked separately.
+
 ## Committing
 
 Above the filter box there's a message box and a **Commit** button.

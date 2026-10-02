@@ -2514,6 +2514,29 @@ app
         noVerify: o.noVerify === true,
       });
     });
+    // Partial staging (E24 Git v2 item 14). `hunks` reads the diff a patch is
+    // synthesised from; `applyPatch` stages it into the INDEX ONLY.
+    broker.handle('git:hunks', (_e, folder: string, file: string) =>
+      knownFolder(folder)
+        ? gitService.hunks(folder, file)
+        : {
+            unreadable: 'switchboard only runs git for folders it has open as a session',
+            hunks: [],
+          }
+    );
+    broker.handle('git:applyPatch', (_e, folder: string, patch: unknown, opts: unknown) => {
+      const refusal = writeScope(folder);
+      if (refusal) return refusal;
+      // ⚠️ **THE FLAGS ARE READ ONE AT A TIME, never spread** — the same rule
+      // `git:commit` records. `--unidiff-zero` in particular disables apply's
+      // context check, so it must be something explicitly asked for and not
+      // something that merely appeared in an object.
+      const o = (opts ?? {}) as Record<string, unknown>;
+      return gitService.applyPatch(folder, typeof patch === 'string' ? patch : '', {
+        reverse: o.reverse === true,
+        zeroContext: o.zeroContext === true,
+      });
+    });
     broker.handle('git:fileVersions', (_e, folder: string, file: string) => {
       // scope to a known folder AND forbid escaping it (path traversal)
       if (!knownFolder(folder)) return { original: '', modified: '' };

@@ -42,6 +42,7 @@ import {
   emptyMessageRefusal,
   isCommittableMessage,
 } from './git-commit';
+import { type Hunk, applyArgs, hunkDiffArgs, parseDiff } from './git-hunks';
 import { type FileStats, mergeNumstats, numstatArgs, parseNumstat } from './git-numstat';
 import {
   type CommitFile,
@@ -201,6 +202,21 @@ export interface GitLog {
   /** a path WAS asked for and we would not pass it, so this is the whole history */
   pathRefused?: boolean;
   commits: GitCommit[];
+}
+
+/**
+ * One file's diff, split into hunks (E24 Git v2 item 14).
+ *
+ * Shaped like `GitLog` and `GitStatus` rather than throwing: it answers a pane, so
+ * a failure goes in a FIELD. And an EMPTY hunk list is a fact (nothing unstaged in
+ * that file) rather than a failure — the distinction `historyPaneState` and
+ * `gitPaneState` both exist to keep.
+ */
+export interface GitHunks {
+  unreadable?: string;
+  /** the `diff --git` / `---` / `+++` lines, verbatim — a patch needs them */
+  header?: string[];
+  hunks: Hunk[];
 }
 
 /**
@@ -1458,6 +1474,69 @@ export class GitService {
     // clean is the state a discard was asking for. Counting them would overstate
     // what happened.
     return { ok: true, applied };
+  }
+
+  /**
+   * One file's diff, split into hunks (E24 Git v2 item 14).
+   *
+   * Worktree against index with FULL context, because the context is what a
+   * re-synthesised patch is checked against.
+   */
+  async hunks(folder: string, file: string, budgetMs = WRITE_BUDGET_MS): Promise<GitHunks> {
+    const args = hunkDiffArgs(file);
+    if (!args) return { unreadable: 'switchboard will not act on that path', hunks: [] };
+    const deadline = Date.now() + budgetMs;
+    const guard = await this.guardEnv(folder, () => Math.max(1, deadline - Date.now()));
+    if (!guard.env) return { unreadable: guard.reason ?? 'switchboard could not make git safe to run here', hunks: [] };
+    const r = await this.run(folder, args, Math.max(1, deadline - Date.now()), guard.env);
+    if (!r.ok) {
+      const said = r.err.trim().split('\n')[0] ?? '';
+      return { unreadable: said !== '' ? said : 'git could not produce that diff', hunks: [] };
+    }
+    const parsed = parseDiff(r.out);
+    // ⚠️ **NO HUNKS IS A FACT, NOT A FAILURE.** A file with nothing unstaged — the
+    // user staged it a second ago — has an empty diff, and reporting that as
+    // unreadable would put an error on screen about something that is simply done.
+    return { header: [...parsed.header], hunks: parsed.hunks.map((h) => ({ ...h, lines: [...h.lines] })) };
+  }
+
+  /**
+   * Stage (or unstage) part of a file.
+   *
+   * ⚠️ **IT NEVER TOUCHES THE WORKING TREE** — `--cached`, measured: a one-hunk
+   * patch over a two-hunk diff left the file on disk exactly as the user had it
+   * and moved `git status` to `MM`. That is the entire safety story of this item,
+   * and it is why the destructive-confirm machinery from item 12 is not needed
+   * here: nothing can be lost.
+   *
+   * ⚠️ **AND A REFUSAL LEAVES THE INDEX BYTE-IDENTICAL, which is git's own
+   * guarantee rather than ours** — measured with a deliberately wrong hunk:
+   * *"patch does not apply"*, exit 1, and `git diff --cached` identical before and
+   * after. So what is left to do is quote git, which is what the design record
+   * asks for.
+   */
+  async applyPatch(
+    folder: string,
+    patch: string,
+    opts: { reverse?: boolean; zeroContext?: boolean } = {},
+    budgetMs = WRITE_BUDGET_MS
+  ): Promise<GitWriteResult> {
+    if (typeof patch !== 'string' || patch.trim() === '') return refused('there was nothing to apply');
+    const deadline = Date.now() + budgetMs;
+    const guard = await this.guardEnv(folder, () => Math.max(1, deadline - Date.now()));
+    if (!guard.env) return refused(guard.reason ?? 'switchboard could not make git safe to run here');
+    const r = await this.run(
+      folder,
+      applyArgs(opts),
+      Math.max(1, deadline - Date.now()),
+      guard.env,
+      { input: patch }
+    );
+    if (r.ok) return { ok: true, applied: 1 };
+    // git's own words: "patch does not apply", "corrupt patch at line N" — both
+    // are things the user (or we) need to see rather than a sentence of ours.
+    const said = r.err.trim().split('\n').filter((l) => l !== '');
+    return refused(said[said.length - 1] ?? 'git would not apply that change');
   }
 
   /**

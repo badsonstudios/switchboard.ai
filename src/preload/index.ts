@@ -1141,6 +1141,20 @@ const api = {
       message: string,
       opts?: { amend?: boolean; signoff?: boolean; noVerify?: boolean }
     ): Promise<unknown> => ipcRenderer.invoke('git:commit', folder, message, opts),
+    /** One file's hunks, for partial staging (E24 Git v2 item 14) */
+    hunks: (folder: string, file: string): Promise<unknown> =>
+      ipcRenderer.invoke('git:hunks', folder, file),
+    /**
+     * Apply a synthesised patch to the INDEX ONLY.
+     *
+     * ⚠️ The working tree is never written, which is why this needs no confirm —
+     * unlike `discard`, nothing reachable through here can be lost.
+     */
+    applyPatch: (
+      folder: string,
+      patch: string,
+      opts?: { reverse?: boolean; zeroContext?: boolean }
+    ): Promise<unknown> => ipcRenderer.invoke('git:applyPatch', folder, patch, opts),
   },
   notifications: {
     getPrefs: (): Promise<NotificationPrefs> => ipcRenderer.invoke('notifications:getPrefs'),
