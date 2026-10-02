@@ -7,6 +7,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { blockVisible, FeedBlockDto, showsTimelineDot, upsertBlock, Verbosity } from '../lib/feed';
 import { agentRunHeads, type AgentRunHead } from '../lib/feed-groups';
+import { useFeedSkipping } from '../lib/use-feed-skipping';
 import { autonomyTooltip } from '../lib/autonomy';
 import {
   clearConversation,
@@ -664,6 +665,25 @@ export function FeedView(props: {
     // it (#442).
     syncOffTail();
   }, [pin, restore, syncOffTail]);
+  /**
+   * Let the conversation skip the blocks nobody is looking at (#740).
+   *
+   * The reason a keystroke in a long session is expensive is that any layout
+   * invalidation in this panel re-lays-out EVERY block, and the fix is the only
+   * one that measured: skip the off-screen ones, standing each on its own
+   * measured height rather than the global guess that reverted the first
+   * attempt. 400 blocks, 4x CPU throttle: the keystroke's layout bill goes
+   * 26.3ms -> 7.4ms against a 1.4ms floor, the frame comes back under budget at
+   * 16.6ms, and `scrollHeight` stays EXACT — which is what the restore contract
+   * above rides on. `lib/feed-skipping.ts` carries the measurements.
+   *
+   * Placed above the ResizeObserver below rather than below it so the two
+   * cannot be read as one mechanism: that one puts the SCROLLER back where the
+   * user left it, this one decides what the scroller contains. They meet only
+   * at `scrollHeight`, and the whole point of measuring the heights is that
+   * they agree about it.
+   */
+  useFeedSkipping(scroller, content);
   // Self-healing pin (Dan round 5: cards you SWITCH to sat at the top after
   // app start): a one-shot pin can land while the panel has no layout yet â€”
   // dockview shows background panels a frame later, restore relayouts, and
