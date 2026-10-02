@@ -28,12 +28,970 @@
 > reason in design §6) · **layer 3 stays gated on the OQ #9 spike** ·
 > **no new git library** — system `git` through the hardened `GitService`.
 >
-> **Order being worked:** 1 → 2 → 3 (log, History tab, graph lanes — the dead tab,
+> **Order being worked** (1–7, 10, 11 done; 8, 9 and layer 2's 12–15 remain):
+> 1 → 2 → 3 (log, History tab, graph lanes — the dead tab,
 > no write path), then **5** (the `diff-` panel family + pop-out — the structural
 > item), then **6 → 7** together, then 8–11 interleaved, then layer 2 (12–15).
 >
-> **Status:** design record + doc corrections landing first; the 15 issues are
-> filed against milestone **Phase 3 - The IDE** next, then worked one at a time.
+> **FILED, all fifteen, against milestone Phase 3 - The IDE:** **#1038**–**#1052**
+> in §4's order (1 → #1038, 2 → #1039, 3 → #1040, 4 → #1041, 5 → #1042,
+> 6 → #1043, 7 → #1044, 8 → #1045, 9 → #1046, 10 → #1047, 11 → #1048,
+> 12 → #1049, 13 → #1050, 14 → #1051, 15 → #1052). Each body carries the design
+> doc's own wording for that row plus the §2 research it rests on.
+>
+> **✅ The design record and both doc corrections merged — PR #1037**, green on
+> all four CI jobs. DESIGN §5.7 now records that dogfooding caught the phantom
+> log rather than the audit, §5.7 also records the editable-diff decision, and
+> VS Code's built-in Git extension is `docs/reference-implementations.md` **§4**.
+>
+> # 🚧 LAYER 2 — THE WRITE HALF
+>
+> # ✅ ALL FIFTEEN ITEMS BUILT — 2026-10-02
+>
+> **🚧 NOW: item 15 (#1052) — fetch, pull, push, checkout, branch. THE LAST ONE.**
+> Items 2 and 6 both drew the ahead/behind counts with **no buttons** and said so
+> — *"Pull and Push come with the branch/sync item"*, the owner's rule about a
+> control that does nothing applied to a number. This is that promise kept.
+>
+> **⚠️ THE FAILURE MODE THAT MATTERED WAS NOT AN ERROR, IT WAS A HANG.** `git
+> fetch` against a remote that wants credentials waits for a password on a
+> terminal that does not exist, for ever — and our budget would then kill it and
+> report a *timeout*, i.e. a bug that reads as "the network is slow".
+> **`GIT_TERMINAL_PROMPT=0`** is the fix, measured: against an unreachable host it
+> fails in under a second. **And it is deliberately the ONLY variable set** — the
+> user's own credential helper (Credential Manager, the keychain, `gh`) must go on
+> working exactly as it does outside switchboard. That is host-don't-reimplement:
+> stop git asking a terminal we do not have, do not touch how they are
+> authenticated.
+>
+> **PULL IS `--ff-only`, AND THAT IS THE WHOLE DESIGN OF THE BUTTON.** A plain
+> `pull` merges or rebases depending on config, and both can stop halfway with a
+> conflict — leaving a one-click button having started something the user must now
+> finish, with **no surface here for finishing it**. With `--ff-only` it either
+> works completely or changes nothing and says why. Proved against a real diverged
+> remote: refuses, no `MERGE_HEAD`, the other side's file still absent.
+>
+> **PUBLISH IS A SECOND, EXPLICIT PRESS.** A push that failed for want of an
+> upstream is a different thing from one that failed because somebody else pushed
+> first, and quietly retrying with `--set-upstream` would **publish a branch the
+> user had not decided to publish**. The offer appears only once git has said that
+> is the gap (matched on its own distinctive phrase) and is withdrawn the moment
+> it is not.
+>
+> **AND THERE IS NO FORCE-PUSH, not even behind a menu.** It can destroy commits
+> on the remote that exist nowhere else — possibly somebody else's — which puts it
+> past the line this epic draws at discard, and unlike discard no confirm makes it
+> safe. The terminal is where that belongs.
+>
+> **MORE MEASURED FACTS, each of which changed what the surface may claim:**
+> `fetch` with no remote **exits 0 and says nothing**, so "nothing happened" is a
+> SUCCESS and a local-only repository must not be reported as broken · `push` with
+> no upstream exits 128 with a clear message, which is why it is passed through ·
+> `checkout` **carries an uncommitted change across** and refuses only when the
+> switch would clobber it, so it is not the destructive thing it looks like and
+> git's refusal is the protection.
+>
+> **The branch-name rule is about ARGV, not about git:** a leading `-` is refused
+> even though git allows it inside a name, because `--all` and `-D` are flags —
+> the same finding `safeRevs` records, where a character class alone accepted
+> `--all` because `-` has to be IN it for `feature/e24-git-v2`. And `..` is
+> refused because it would turn one ref into a RANGE.
+>
+> **⑂ IS ON THE COMMIT ROW**, which is where the design record asked for it
+> (*"create branch from the graph"*) — and it sends the **full forty-character
+> sha** while the prompt shows the short one, because a short sha is ambiguous in
+> a big repository and git would have to guess.
+>
+> **Green:** lint · all three typecheck projects · **10,494** unit tests ·
+> `e2e/diff.spec.ts` **11 of 11** and `e2e/history-tab.spec.ts` **5 of 5**. The
+> twelve service tests run against a **real remote** — a bare repository on disk —
+> so a push is verified by reading the REMOTE's own log.
+
+> **✅ item 14 (#1051) — staging part of a file.** Screen 8. `git apply
+> --cached` over a patch synthesised from one hunk: **the working tree is never
+> written**, which is the whole safety story and the reason this needs no confirm
+> where item 12's discard does.
+>
+> **EVERY BEHAVIOUR MEASURED FIRST, and two of the four findings are things I did
+> not have to build:**
+>
+>  1. a one-hunk patch over a two-hunk diff stages exactly that hunk, leaves the
+>     file on disk alone, and moves `status` to `MM`;
+>  2. ⚠️ **A PATCH THAT CANNOT APPLY LEAVES THE INDEX BYTE-IDENTICAL — git's own
+>     guarantee.** The design record asks that *"a refusal leaves the index
+>     untouched and quotes git"*; the first half is free, so the work was the
+>     quoting;
+>  3. `apply --cached -R` reverse-applies, which is how a hunk is unstaged;
+>  4. no `index ..` line is needed in a synthesised patch.
+>
+> **⚠️⚠️ AND A SCOPE REDUCTION, WHICH IS THE MOST IMPORTANT THING ON THIS BLOCK.
+> LINE-LEVEL SELECTION IS NOT SHIPPED. It was built, it applied cleanly, and it
+> PUT THE WRONG CONTENT IN THE INDEX.** The naive algorithm — the one every
+> description of this problem reaches for — drops an unselected `+` and turns an
+> unselected `-` into context. That is correct line by line and wrong as a whole,
+> **because git groups ALL deletions before ALL additions**:
+>
+> ```
+> @@ -1,3 +1,3 @@
+> -one
+> -two        <- all deletions first...
+> +ONE        <- ...then the additions
+> +TWO
+>  three
+> ```
+>
+> Picking *"delete `one`" + "add `ONE`"* turns `-two` into context, which lands
+> **between** `-one` and `+ONE`. Both sides' counts are right, so **`git apply`
+> ACCEPTS it** — and the index came out holding `two/ONE/three` for a user who
+> asked for `ONE/two/three`. **Not a refusal: a silent wrong answer in the user's
+> index**, found by a test that asserted the index CONTENT rather than the diff.
+> Reordering does not rescue it either — it fixes that case and breaks the mirror,
+> and the old side's line order is checked against the file so it cannot be
+> permuted.
+>
+> **AND IT EXPLAINS WHAT `--unidiff-zero` WAS REALLY FOR.** An earlier draft of
+> this item called passing it conditionally a *"deliberate deviation, strictly
+> safer"*. That had the reason backwards: **per-line zero-context hunks are the
+> mechanism selection needs**, and that flag is what lets apply accept them.
+> **Filed as #1056** with the counter-example and the mechanism named; both facts
+> are kept as tests so nobody re-implements the naive version.
+>
+> **A UI CHOICE WORTH FLAGGING:** screen 8 draws `＋ Stage hunk` on a band INSIDE
+> the diff. This is a LIST beneath it, because interactive bands inside Monaco
+> mean view zones re-measured on every fold, every layout toggle and every re-diff
+> — and one wrong measurement puts the button beside the wrong change, which is
+> the one failure this item cannot have. Moving it inside is a refinement of this
+> surface, not a different feature.
+>
+> **A bug the tests found:** the apply's error was being wiped by the reload that
+> follows every apply, so a hunk that failed to stage would have shown no reason
+> at all — the exact failure item 12's write-error line exists to prevent. Two
+> states now, and the apply's wins.
+>
+> **Green:** lint · all three typecheck projects · **10,441** unit tests, of which
+> the **8 against real git** assert the index, the working tree AND the remaining
+> unstaged change on every staging.
+
+> **✅ item 13 (#1050) — the commit box.** One commit path, not two: amend,
+> sign-off and no-verify are checkboxes behind a ⋯, never a second primary button.
+> The design record calls that *"E24's own rule"*, and the reason is that two
+> buttons which both commit is how somebody amends by accident — and an amend
+> rewrites history.
+>
+> **THE MESSAGE TRAVELS ON STDIN (`commit --file=-`), NEVER `-m`**, which the
+> design record chose in §2.1 for a measured reason: *"a multi-line body with
+> quotes in it is a Windows quoting bug waiting to happen."* Verified through this
+> exact path with a message carrying `"`, `$`, `%`, a backtick, a semicolon, an
+> ampersand, a pipe and a caret across several lines — every fragment arrives
+> byte-exact in `%B`.
+>
+> **⚠️⚠️ AND THE BIGGEST DECISION IN THE EPIC: A COMMIT RUNS THE USER'S HOOKS.**
+> This is the **only** call in the service that lifts a #776 guard, and it was
+> measured before it was decided. With `core.hooksPath` pinned at an empty
+> directory a repository's own `pre-commit` **does not run** — isolated with a
+> control, because this machine has a GLOBAL `core.hooksPath` that masks
+> `.git/hooks` and made the first attempt at the measurement inconclusive.
+>
+> For a READ that guard is pure safety: `status` and `diff` run **unbidden**, and a
+> repository must not get to execute a program because switchboard glanced at it.
+> **For a COMMIT it inverts.** A commit that silently skipped somebody's formatter,
+> linter or tests is not a commit — it is switchboard reimplementing `git commit`,
+> which the **host-don't-reimplement hard constraint** forbids. And the design
+> record asked for **`--no-verify`** as a user choice, which is incoherent if hooks
+> never ran. **The line: a guard that exists because we read UNBIDDEN does not
+> apply to a button the user pressed.**
+>
+> **WHAT IS NOT RELAXED:** `--literal-pathspecs`, `core.fsmonitor`, and the
+> filter-driver neutralisation — and that last one is safe to keep because it only
+> disarms **repo-authored** driver keys, falling back to the trusted global value,
+> so a user's git-lfs goes on working exactly as it does outside switchboard.
+> **This is Dan's to overrule and it is one line** (`guardArgs({ hooks: 'allow' })`);
+> it is called out in the dogfood tracker as a decision rather than a step.
+>
+> **AMEND CANNOT BE FORGOTTEN:** the menu closes but the mode does not, so the
+> button changes its own words *and* a note appears beneath it. **And amend works
+> with nothing staged**, measured — replacing a message you just wrote is the main
+> reason anyone reaches for it, and a button disabled on "nothing staged" would
+> make that impossible.
+>
+> **A FAILED COMMIT KEEPS THE MESSAGE.** The user's words are the one thing in that
+> box that cannot be reconstructed. **The count on the button ignores the filter**,
+> because `git commit` takes the whole index — a count that followed the filter
+> would promise three files and commit thirty (the opposite of the totals bar,
+> which follows the filter, and that was an item 6 review finding).
+>
+> **THE EMPTY-MESSAGE CHECK IS IN THREE PLACES ON PURPOSE:** git's is the real one
+> (measured — *"Aborting commit due to empty commit message"*), main's stops a bad
+> IPC payload reaching argv, and the renderer's is so the BUTTON can be disabled
+> rather than live and then failing.
+>
+> **Green:** lint · all three typecheck projects · **10,385** unit tests, of which
+> the **15 against real git** are the ones that matter.
+
+> **✅ item 12 (#1049) — `git.write`, and stage / unstage / discard.** The
+> first thing switchboard does that **changes a user's repository**, and the ＋ and
+> ↶ the mockup has been drawing on every row since screen 1 was made. Four items
+> of this epic have carried a comment saying they were *absent rather than drawn
+> dead*, because *"a row with a `＋` that does nothing is worse than a row with no
+> `＋`"* — the owner's rule, and the reason the scope was layers 1 AND 2 together.
+>
+> **⚠️ EVERY COMMAND WAS MEASURED BEFORE IT WAS WRITTEN, AND TWO OF THE FOUR
+> FINDINGS CHANGED THE DESIGN:**
+>
+>  1. **`git add -- <path>` is enough for all three shapes** — it stages a
+>     DELETION and an untracked ADD as well as a modification. So no `-A`, and
+>     *not* using it is the safer form: a bug that lost the path list then stages
+>     NOTHING rather than the whole tree.
+>  2. `restore --staged` reverses all three, which is what makes unstage the exact
+>     undo of stage.
+>  3. `restore` restores the worktree from the **INDEX**, so discarding a
+>     working-tree change leaves a STAGED one alone — the correct meaning of
+>     discarding one row rather than the file.
+>  4. ⚠️ **`git restore` REFUSES AN UNTRACKED PATH OUTRIGHT**, so a mixed batch
+>     fails entirely. Discard cannot be one command: it classifies from a fresh
+>     `status` **in main** and runs `clean -f` for the untracked ones.
+>
+> **AND `clean` IS NEVER GIVEN `-d`**, so it cannot remove a directory — only
+> files it was named. Every path comes from `status`, which lists files, so `-d`
+> would buy nothing and would turn a bug in the path list into a recursive delete.
+>
+> **⚠️⚠️ A TEST WRITTEN TO PROVE THE GUARDS HELD FOUND THAT THEY DID NOT — a
+> SECOND #776 hole, in the same epic.** `guardArgs()` rides on every invocation
+> through `run()`, so the fsmonitor pin and the empty hooks path were covered. The
+> **filter drivers** are not: they are neutralised by `guardEnv`, which a caller
+> has to ASK for, and `status` and `diff` were the only two that did. Measured on a
+> real repository: with `filter.evil.clean` in its own config and one line in
+> `.gitattributes`, **`git add` ran the program** — and `add` is the command most
+> certain to read file CONTENTS through a filter, because hashing them into the
+> object store is its whole job. Closed, and pinned with a control that proves the
+> hole was real first.
+>
+> **THE PATH RULE IS NOW ONE DEFINITION** (`git-paths.ts`), because the two halves
+> disagree about what a REFUSAL means and that is exactly why the rule itself must
+> not be stated twice: the read half widens the answer and says so, the write half
+> refuses the whole operation. **All or nothing on a batch** — a destructive
+> operation that silently applied to five of six named files is the worst outcome
+> available here.
+>
+> **A CONFLICTED PATH IS REFUSED BY NAME**, on the row, on the group and in main.
+> "Discard this conflict" has three meanings and git has a command for each;
+> choosing one silently would be switchboard deciding something only the user can,
+> on the one file where being wrong costs most.
+>
+> **The confirm is the platform's `confirm`, deliberately** — synchronous, hard to
+> dismiss by accident, impossible to mistake for part of the page. A styled modal
+> that something fails to render is a discard with no confirm at all. It is
+> injected, so a test can say "the user said yes" and a future in-app dialog is a
+> change to one function. **And no confirm means no discard**, not a discard
+> without one.
+>
+> **A write that FAILS says so, in git's own words** — the whole difference from a
+> read. A refused read leaves a pane drawing nothing; a refused write leaves the
+> list drawing a change it thinks it removed, beside a button that looked like it
+> worked.
+>
+> **Green:** lint · all three typecheck projects · **10,362** unit tests, of which
+> the ten against real git are the ones that matter — and a doc-drift test caught
+> the new capability missing from `docs/extensibility.md` before CI did.
+
+> **✅ item 9 (#1046) — every change in one scroll.** Screen 5, and the one
+> surface §2.3 of the design record lists as something the field has (VS Code's
+> `git.viewChanges`) and we had no equivalent of: every changed file stacked in one
+> scrollable panel with its own sticky header, read top to bottom instead of
+> clicking seventeen files.
+>
+> **⚠️ AND IT IS THE ONE PANEL IN THIS EPIC THAT CAN COST SOMETHING IF IT IS
+> WRONG.** Every expanded file is a real Monaco diff editor — the same object the
+> Changes tab mounts exactly one of. Seventeen is seventeen models and seventeen
+> tokenizers in one frame. So `lib/multi-file-diff.ts` decides what starts open
+> BEFORE anything mounts, and the component only draws that decision: **~400
+> changed lines** (the design record's own number, and the tilde is in the record
+> because it is a judgement) **or ten editors, whichever comes first.** Two bounds
+> because one cannot do it: `git diff` has no count for an untracked or binary
+> file, so a hundred new files would each cost 0 lines and still be a hundred
+> editors.
+>
+> **THE THREE REASONS A FILE IS FOLDED ARE THREE SENTENCES**, which is the same
+> discipline as the History tab's five empty states: *"this one is enormous"* and
+> *"the panel ran out above you"* are different facts about the user's project, and
+> a single "collapsed" would make the budget look arbitrary. A file the USER folded
+> gets no explanation, because none is owed.
+>
+> **A huge file does not spend the budget it never used** (a running total that
+> charged for an unmounted editor would fold the whole rest of the panel), the
+> user's folds **win over a recompute** in both directions, and a panel that opens
+> entirely folded **says so** rather than looking broken.
+>
+> **⚠️ TWO REAL BUGS THE TESTS FOUND, both of the "looks fine, is wrong" kind.**
+> The stat used `t('scm.plus', { count })` where the string is a plain `+{n}` — so
+> the raw ICU template rendered on screen, verbatim; the sidebar's own convention
+> is what caught it. And **`IdentityTab` reads `params.cardId` to mean "this tab IS
+> that card's"**, so putting a `cardId` in the panel's params made its dock tab
+> render the SESSION's name — two tabs with one name, beside each other, which is
+> item 5's prefix collision in the tab strip instead of the id space. That file's
+> own comment states the rule ("a DERIVED tab carries no cardId, so its dockview
+> title still wins") and an e2e is what caught me breaking it.
+>
+> **`allchanges-` IS IN `isDerivedPanelId` FROM THE DAY THE PREFIX WAS MINTED**,
+> because item 5 paid for learning that the other way: a restored panel would mount
+> editors on a folder that may no longer be in the read scope, on top of the three
+> bugs that function records. And it needs **no registry** — one panel per card
+> means the id is derivable, so `getPanel` is the whole lookup and there is no
+> second copy of the truth to go stale.
+>
+> **Green:** lint · all three typecheck projects · **10,304** unit tests ·
+> `e2e/diff.spec.ts` **11 of 11**, the two new ones being real Monaco editors
+> stacked in a real dockview panel — and folding shown to UNMOUNT them rather than
+> hide them, which is the only version of the claim that could ever have frozen the
+> app.
+
+> **✅ item 8 (#1045) — tree mode, with single-child folders compressed.**
+> Screen 2. A ☰ / ⊟ pair beside the filter box; the tree groups changed files by
+> folder and folds a chain that contains nothing but the next level, so
+> `src/renderer/src/components` is ONE row rather than four of pure chrome.
+>
+> **THE DESIGN RECORD TOLD ME TO CHECK FOR REUSE AND THE ANSWER IS NO, with a
+> reason rather than a preference.** §4 item 8: *"`FileTree`'s model may be
+> reusable — check before writing a second one."* `lib/file-tree-model.ts` is a
+> **lazy browser of the filesystem**: its state is keyed by absolute path with a
+> `loading | ready | error` per directory, `toggleDir` returns `{ state, fetch }`
+> because opening a folder is a question for main, and `visibleRows` emits four
+> kinds of NOTICE row. This tree has none of those problems — the input is an
+> already-complete path list from one `git status`, nothing to fetch, nothing in
+> flight, nothing that can fail — and it needs **single-child compression**, which
+> the filesystem tree must never do, because showing `src/renderer/src` as one row
+> in a real directory browser misreports where a file lives and breaks "open this
+> folder". Reuse would have meant synthesising `DirState`s for directories we are
+> not listing to inherit a fetch protocol with nothing to fetch. So:
+> `lib/scm-tree.ts`, pure, beside `scm-groups.ts`.
+>
+> **THE COMPRESSION RULE HAS TWO LIMITS AND BOTH ARE TESTED**, because getting
+> either wrong moves a file to a directory it is not in: a folder with one child
+> directory **and a file of its own** is not compressible (the file has to be drawn
+> somewhere), and a folder with one **file** is not compression at all (folding
+> those together would put a status letter on a place).
+>
+> **THE TWO MODES SHARE `Row`**, which is the whole reason this item is small: tree
+> mode adds folder rows and an indent, and a file row draws exactly what it draws
+> flat. A second row component would be a second place for the letter, the
+> name-first split, the hover verbs and the selection to drift.
+>
+> **FLAT IS THE DEFAULT, which disagrees with the mockup on purpose** (screen 2
+> draws the tree lit). The tab answers *"what did the agent just change?"*, and a
+> flat list answers it at a glance where a tree asks you to expand first. The mode
+> is a workspace preference (`lib/scm-view-mode.ts`, the same shape as
+> `lib/diff-layout.ts`) because N sidebars are mounted at once; the FOLDING is
+> component state, like the group headings beside it, and the cost — it resets when
+> you leave the tab — is named rather than discovered.
+>
+> **⚠️ AND CI CAUGHT TWO THINGS A SPOT CHECK COULD NOT, on BOTH platforms, which
+> is what said it was the suite and not the runner.** Thirteen e2e tests were
+> timing out at 30s on one locator: since item 6 the row's verbs are
+> `visibility: hidden` at rest, and **that removes them from the ACCESSIBILITY
+> TREE** — so `getByRole` resolves to nothing and the hover cannot even be aimed
+> from the button outwards. The chain has to start at the row, by CSS. **The CSS
+> comment claimed the opposite** ("keeps it discoverable") and is corrected: the
+> rule is there for a stable row width, and the access story is `:focus-within`.
+> One spec was also still looking for `button.diff-open-viewer`, the old sidebar's
+> class and the last reference to it anywhere.
+>
+> **⚠️⚠️ AND THE SAME RED RUN CAUGHT ME MAKING A REAL BUG WORSE.** §5.24
+> attribution resolves through `sessionStore.getCardTitle`, which matches on
+> `sessions[].id` — **the CARD id** — while the value is called `sessionId` at
+> every step down to the dockview panel's *persisted* `params.sessionId`. A live id
+> there resolves to nothing, and nothing is indistinguishable from absence. It has
+> gone wrong **three times**: the Files tab has passed the live id since #521; item
+> 10 gave the Changes tab the same, taking the prop from ABSENT to WRONG; and the
+> relocated Changes host passed the CORRECT card id, review read the name and
+> called it a bug, **I agreed and removed it**, and `document-peek.spec.ts` is what
+> said otherwise. All three pass a card id now, `lib/document-open.ts` carries the
+> warning where the meaning is defined, and **#1055 is re-scoped from "a bug" to
+> the rename** — including the layout migration the persisted key needs.
+>
+> **Green so far:** lint · all three typecheck projects · 54 tests across the three
+> new/changed files (17 on the tree's rules, 8 on the preference, 29 on the
+> rendered sidebar) · the document specs 16 of 16. Full suites running.
+
+> **✅ item 10 (#1047) — "show me this file's history", the ⏱ on a changed
+> row.** Screen 8. Hover a row in the Changes tab, press ⏱, and the card lands on
+> the History tab filtered to the commits that touched that one path, with a chip
+> naming it and an ✕ that is the only way back.
+>
+> **⚠️ THE SURFACE IS THE EXISTING TAB, FILTERED — NOT A NEW PANEL.** Design §4
+> item 10 asks for `log --follow -- <path>`, which `logArgs` has supported since
+> item 1, and "opens as a panel per commit", which item 4's expanded rows already
+> do. So what was actually missing was a way to point the existing tab at ONE
+> path. A second surface drawing commit rows would have been a second place for
+> the lanes, the ref chips, the paging and the five empty states to drift.
+>
+> **⚠️ AND IT NEEDS TWO THINGS A PANEL CANNOT REACH, WHICH IS WHY IT IS A MODULE
+> SEAM.** The gesture STARTS on the Changes tab and LANDS on the History tab, and
+> card tabs are mutually exclusive — so the tab that asks is unmounted before the
+> tab that answers mounts. `PanelContext` carries no way to switch views, and
+> adding one would widen a contract every panel shares for the benefit of one
+> button. `lib/file-history.ts` is therefore the same shape as `lib/document-open`
+> and `lib/diff-open`: a module the grid installs an opener into, holding one
+> request per card, **surviving the unmount by construction**. With no opener
+> installed it reports false and the row draws no ⏱ at all — the owner's rule
+> about a control that does nothing, applied to the one affordance this adds.
+>
+> **THE FOLDER IS CHECKED, NOT JUST THE CARD.** A card's folder can change — a
+> session resumed somewhere else — and a request left over from the old one would
+> filter the NEW repository by a path that means nothing in it: an empty list with
+> a chip blaming a file that is not there.
+>
+> **⚠️ AND #261's LESSON LANDED IN THE FILE THAT KEEPS RECORDING IT.** Wiring this
+> up found that `extensibility/panels.tsx` **never threaded `sessionId` into
+> `DiffPane`**, though that component has taken one since P2-E16-03 and uses it for
+> §5.24 attribution. The prop was absent, the viewer fell back to no accent and no
+> `↳ session` chip, the tab still worked, and the feature was simply not there — a
+> silent nothing, exactly as that file's own comments predict. Fixed, and item 5's
+> ⧉ and this item's ⏱ both carry it now.
+>
+> **AND THE TOKEN DRIFT TEST EARNED ITS KEEP AGAIN:** the chip's first draft spent
+> `--accent-blue` on `color:` as well as on its border. Four of the eight accents
+> are byte-identical to a status hue, so a path written in one reads on screen as a
+> status *about* that path. The ring carries the identity; the words take the
+> neutral ink.
+>
+> **⚠️⚠️ REVIEW FOUND A SECOND #776-CLASS HOLE, AND IT IS THE ONE THIS EPIC EXISTS
+> TO STOP: A FILENAME IS NOT A PATTERN.** A git pathspec is **wildcard-matched by
+> default**. Measured in a two-file repo:
+>
+> ```
+> git log --oneline --follow -- 'file[1].txt'
+>   COMMIT_FOR_bracket     <- correct
+>   COMMIT_FOR_file1       <- A DIFFERENT FILE
+> ```
+>
+> So ⏱ on `file[1].txt` — a legal name on all three platforms, and what a browser
+> gives a duplicate download — listed **another file's commits under a chip saying
+> it was showing only this one**. And under #776's threat model the filename is
+> attacker-chosen, so a file named `*` turned ⏱ into the entire repository. Closed
+> with **`--literal-pathspecs` in `guardArgs()`** — the guard, not `logArgs`,
+> because it is a global option and because the posture is the same one: a
+> repository's own contents must never acquire argv semantics. Measured as a no-op
+> for every other command the service runs. **Pinned with positive controls** that
+> show the hole was real before showing it is shut, which is the lesson the first
+> hostile-driver test had to learn twice.
+>
+> **AND THE STAND-IN GIT HAD TO LEARN THE NEW FLAG.** Two bounded-diff tests went
+> red with *"git could not tell whether that folder is a repository"* — the fake
+> git consumed `-c` PAIRS and nothing else, so `--literal-pathspecs` became its
+> `args[0]` and every subcommand branch missed. A failure in the harness that
+> looked exactly like a failure in the subject; it consumes any leading option now,
+> which is what real git does. **The baseline was checked before concluding** —
+> green without the flag, red with it, so it really was mine.
+>
+> **⚠️ AND THE SECOND BLOCKER WAS THE CHIP ITSELF LYING.** It was drawn from the
+> REQUEST, so when `safePath` refused a path the pane showed **the whole
+> repository's history under a chip naming one file** — not a missing answer, a
+> confident wrong one, one level up from the bug the epic started with. The answer
+> carries its own filter now: `GitLog.filteredBy` / `pathRefused`, set from ONE
+> place (`appliedPath`) and spread over the finished answer by a wrapper, so none
+> of `log`'s eight return paths can forget. A refused path gets **words** rather
+> than silence.
+>
+> **Four more from the same review, all fixed:** the chip's one explanatory
+> sentence was in a hover-only `title` on a non-focusable span, so no words
+> anywhere reached a keyboard or a screen reader (`role="status"` + `aria-label`
+> + a ⌕ glyph now) · a pinned EMPTY answer reused *"Nothing to show"* with *"no
+> commits"* above it — about the project, over a question about one file (it names
+> the path and says git has never seen it) · a stale pin was **hidden rather than
+> dropped**, so it could resurrect when a session was resumed back in its original
+> folder, and nothing pruned a closed card · and the ⏱ opener was installed on
+> `toggleCardView`, so *"show me the history"* could show the conversation — there
+> is a non-toggling `setCardView` now.
+>
+> **One finding was WRONG and is recorded as such:** review claimed
+> `tokens.drift.test.ts` cannot have caught the accent-on-words slip because it
+> reads only token files. It reads **every renderer `.css`/`.ts`/`.tsx`
+> recursively, inline styles included**, and it failed by this file's name. The
+> comment and the paragraph above stand.
+>
+> **And one is filed rather than fixed (#1055):** the relocated Changes panel is
+> handed its **card id in the `sessionId` prop** — `openDiff` builds `diff-<cardId>`
+> — so §5.24 attribution there has always been silently absent. Item 10 fixed the
+> `cardId` half (that surface had no ⏱ at all) and **dropped** the wrong value
+> rather than passing it on, because a wrong answer is worse than a missing one.
+> The real fix needs a card→live accessor the store does not expose.
+>
+> **Green:** lint · all three typecheck projects · **10,236** unit tests
+> (`--maxWorkers=6`; the default worker count times out on this desktop, which is
+> the recorded heavy-npm-contention note, not a new failure) · `e2e/history-tab.spec.ts`
+> **5 of 5** and `e2e/diff.spec.ts` **9 of 9** — the fifth history test being the
+> crossing itself, and its repository is built so that the COUNT is the proof:
+> three commits, one a `git mv`, and ⏱ leaves TWO rows, so the test fails if
+> `--follow` is ever dropped rather than passing on a bare pathspec.
+
+> **🚧 NOW: item 11 (#1048) — git badges on the Files tab, from the SAME status
+> the Changes tab reads.** §5.7's remaining half, the one #521 left behind: *"The
+> tree paints no modified/added/untracked badges, and wiring `GitFileStatus` into
+> its rows is the remaining work, not a rewrite of the tree."*
+>
+> **⚠️ AND THE ITEM'S REAL WORK WAS THE WORD "SAME".** Design §4: *"it must read
+> the **same** status source as screen 1 or the two tabs will disagree."* Before
+> this there were already TWO readers of `git:status` — the Changes tab and the
+> card header — two reads, two moments, nothing stopping them disagreeing. A third
+> reader in the tree would have made "the tabs disagree" a matter of timing rather
+> than of design. So `lib/git-status-store.ts` is **one fetch per folder, cached,
+> with subscribers**, and the Changes tab hands its own answer in (`putGitStatus`)
+> because that read includes the per-file numbers — so the two tabs share a
+> **moment**, not merely a shape, and no second `git status` is spent.
+>
+> **A FOLDER IS BADGED BY WHAT IS UNDER IT**, dimmer and marked, because this tree
+> starts COLLAPSED: a tree that marked only changed files would hide every change
+> three folders deep behind an undecorated row. The roll-up takes the strongest
+> letter beneath it, and the order is about the reader rather than about git — a
+> conflict blocks, a deletion is the one nobody expects, untracked is the most
+> harmless thing a folder can hold.
+>
+> **⚠️ AND THE TEST SUITE CAUGHT A REAL FAIL-OPEN GAP, not a test problem.** Three
+> `FileTree` tests went from passing to `Cannot read properties of undefined` the
+> moment the store was wired in: `window.switchboard` is installed by the PRELOAD,
+> so a module-level reader can run before it exists. A tree whose job is to list
+> files must not die because the git bridge is late — no bridge now means no
+> badges, which is a tree that works exactly as it did. And the store reaches
+> through `globalThis`, not `window`, which is the note `lib/document-panels.ts`
+> already carries: `window` is a `ReferenceError` in vitest's node environment, so
+> naming it would have made every test of this module a crash.
+>
+> **The tree stays placement-agnostic** — the decorations are an injected prop with
+> a default that reads the store, so there is still no `cardId`, no `sessionId`, no
+> `PanelContext` in `FileTree`, which its own header states as a requirement of
+> the item that built it.
+>
+> **Green:** lint · all three typecheck projects · **10,185** unit tests ·
+> `e2e/diff.spec.ts` **9 of 9**, the ninth being the acceptance bar itself: one
+> file, one letter, asserted in BOTH tabs in one app.
+
+> **🚧 NOW: item 4 (#1041) — a commit opens to its files, and a file opens its
+> diff AT that commit.** Screen 7. Click a row in the History tab and it expands;
+> click a file and a `gitdiff-` panel opens at `base..sha` — **the third shape
+> item 5 reserved**, and the one its panel refused until this item gave it a
+> loader. Design §3 named all three up front so this added a *caller* rather than
+> a second registry, and it did.
+>
+> **⚠️⚠️ THE DESIGN RECORD ASKS FOR ONE COMMAND AND THAT COMMAND CANNOT WORK.** §4
+> item 4 names `diff --numstat --name-status -z <parent> <sha>`. Measured, in
+> **either** flag order: **`--name-status` wins and the numbers are gone.** The two
+> flags are mutually exclusive, so a file list built from that one command has
+> letters and no `+/−` — and nothing would have reported it, because the output is
+> perfectly well-formed. It is two reads.
+>
+> **AND `--name-status -z` HAS ITS OWN RENAME TRAP, IN A DIFFERENT SHAPE FROM
+> `--numstat`'s.** Measured: `R100` then the old path then the new one, NUL-separated — the status field
+> carries a **similarity score** and is followed by **two** paths. A parser reading
+> "status, path, status, path" takes `d/new.txt` as a status letter and the file
+> after it as its path, and **every row from there on is wrong**. (`--numstat`'s
+> form is different again: an *empty* path field plus two more NUL fields. Two
+> commands, two traps, one `-z`.)
+>
+> **The root commit is handled on BOTH sides** — `diffBaseFor` substitutes git's
+> empty tree for the file list, and the panel does the same for the two blobs.
+> Without it the repository's first commit reads as "changed no files", which is
+> the single most likely wrong answer either half could give, and both the service
+> suite and the e2e now pin it.
+>
+> **`fileVersionsAt` is the `fileVersions` twin for a commit**, and a missing side
+> comes back as an EMPTY STRING deliberately: a file added in this commit does not
+> exist at `left`, and empty is exactly what Monaco renders as an addition. Which
+> is also why a failure there cannot be told from an absence, and why neither is
+> reported — the name-status letter beside it already says which it is.
+>
+> **Two guards for argv**: `isRev` for a revision, and `isCommitRef` which checks
+> **every parent, not just the id** — `diffBaseFor` reaches for `parentIds[0]` and
+> puts it in argv, so an unvalidated parent list is the same injection one step
+> further from the caller, which is where that kind of hole usually lives.
+>
+> **⚠️ AND THE ESCAPE-BYTE TRAP FIRED TWICE MORE — SEVENTH AND EIGHTH:** a Python edit
+> wrote a backslash-zero into a test file as a LITERAL NUL byte, and then writing
+> THIS PARAGRAPH did it again, to this file, four times over. `check-nul` caught both — the only
+> thing in the toolchain that does; eslint parses a NUL, tsc typechecks it, CI
+> goes green. Fixed binary-safely both times, and the lesson is the standing one:
+> **prefer a shape that needs no sentinel.** This paragraph now spells the byte as
+> a word.
+>
+> **Green:** lint · all three typecheck projects · **10,156** unit tests ·
+> `e2e/history-tab.spec.ts` **4 of 4**, including a commit's files from two real
+> git reads and the root commit listing every file as an addition.
+>
+> **✅ Items 1–7 are green on both unit jobs** (run 37033811340); the two e2e jobs
+> were still running when item 4 landed on top.
+
+> **🚧 NOW: items 6 AND 7 (#1043, #1044) — the Changes tab IS the source-control
+> sidebar, and every row has its numbers.** Built together because design §4 says
+> so: *"regrouping the sidebar without per-file stats leaves an empty slot in every
+> row."* This is the owner's *"everything's kind of just smashed together"*, and
+> design §1.2's four causes are now all answered — 1 and 2 here, 3 by item 5, and
+> 4 by a header that finally reads three fields `GitStatus` has carried since it
+> was written and **no consumer had ever read**.
+>
+> Four collapsible groups in VS Code's own `scmResourceGroup` vocabulary (merge /
+> staged / unstaged / untracked, **merge always first** because it is the only one
+> that blocks you) · name-first rows, so the directory is what truncates and never
+> the basename · one coloured letter instead of a `mod`/`staged`/`both`/`new` chip
+> in 9px mono · hover-or-focus actions sharing a slot with the numbers · a filter ·
+> a branch and ↑↓ header · a totals bar.
+>
+> **⚠️⚠️ AND IT FOUND A PRE-EXISTING BUG THAT HAD BEEN THERE SINCE THE PARSER WAS
+> WRITTEN: A FILE IN A MERGE CONFLICT WAS INVISIBLE.** porcelain v2 reports an
+> unmerged entry on its own `u ` line, and the parser matched only `1 `, `2 ` and
+> `? ` — so a conflicted file was **not listed in the Changes tab and not counted
+> in the card header's badge**. The one moment a user most needs to see which files
+> are in trouble, and the surface said nothing at all. Now parsed, flagged, and
+> drawn in its own group at the top. The card-header badge gets it for free.
+>
+> **⭐⭐ REVIEW FOUND THREE BLOCKERS, AND THE WORST ONE WAS INVISIBLE BY DESIGN.**
+>
+> 1. **Every per-file number silently vanished for any session below the repository
+>    root.** The two commands do not agree on what a path is relative to —
+>    measured: from `sub/`, `status --porcelain=v2` says **`deep/f.txt`** and
+>    `diff --numstat` says **`sub/deep/f.txt`**. `status` honours
+>    `status.relativePaths` (default true); `diff` is repo-root-relative. They agree
+>    only when the session folder IS the top level. For a monorepo-package session —
+>    an ordinary shape here — every `stats` key missed every row, so **every row
+>    drew nothing and the totals bar called everything uncounted, with no reason
+>    anywhere.** The only symptom was absence. Both sides are PINNED now rather
+>    than left to config, because both keys are repo-writable and either one
+>    flipping breaks the match again — #776's threat model pointed at a number.
+>    ⚠️ **Nothing in the suite could have caught it: every other fixture points at a
+>    repository root.** Two tests now do not.
+> 2. **The hover slot never hid anything, and the test that was meant to catch it
+>    passed anyway.** The component set `display: flex` INLINE on the element
+>    `.scm-row-acts { display: none }` was supposed to hide — and an inline
+>    declaration outranks any author rule without `!important`. So the verbs were
+>    painted on every row at rest, and hovering **removed the numbers and added
+>    nothing**: the slot was doubled at rest and halved on hover, the exact
+>    opposite of the arrangement. **The test asserted on the TEXT of `tokens.css`**
+>    — it proved the rule had been typed, not that it won. Same shape as item 1's
+>    hostile-driver test proving the fixture. It reads `getComputedStyle` with the
+>    stylesheet loaded now, and the e2e hovers a real row in a real browser.
+>    Also changed `display: none` → `visibility: hidden`, because `display: none`
+>    takes the buttons out of the **accessibility tree** too: Tab reaches them,
+>    browse mode never would.
+> 3. **A merge-conflict row read `+0 −0`.** Measured: `diff --numstat` on an
+>    unmerged path emits a real `0	0	<path>` — not `-`, not absence — so the
+>    Merge group, the one the design says matters most, drew two zeros on a file
+>    full of conflict markers, and the totals counted it. A tree whose only changes
+>    were conflicts read `+0 −0 · 3 files` with no hedge at all.
+>
+> **FIVE MORE, EVERY ONE A WRONG NUMBER OR A CONTRADICTION:** the **numstat budget
+> was already spent before it started** — the deadline is set before the status
+> read, which is deliberately UNBOUNDED, so on exactly the enormous-or-network
+> repository that exemption exists for `Math.max(1, …)` turned "no budget left"
+> into a 1 ms timeout, a guaranteed failure dressed as an attempt · the **totals
+> bar drew `+0 −0` when it had no numbers at all**, which is the "absent is not
+> zero" rule the ROWS four lines below it get right · the **bar was computed from
+> the UNFILTERED status**, so a query matching nothing left `+400 −200 · 18 files`
+> sitting above "No changed file matches" — the third instance in this epic of a
+> thing rendering beside a state it contradicts · the **status effect had no
+> cancellation**, so two quick ⟲ presses raced and the older snapshot could win ·
+> and **untracked rows wore `A`**, which is git's letter for a *staged add* and
+> collided with the real staged rows two groups up.
+>
+> **Deliberate gap, and it is the owner's own rule:** screen 1 draws `＋` and `↶`
+> on every row. Both need `git.write` (item 12), so the slot is built, the two
+> verbs that work are in it, and the two that do not are **absent rather than drawn
+> dead**.
+>
+> **One thing the design asked for that turned out not to be needed:** §4 item 6
+> names `rev-list --left-right --count @{u}...HEAD` to fill ahead/behind. Porcelain
+> v2's `# branch.ab` already answers it — the fields were never empty, they were
+> never *read*. A second source could only have disagreed with the first.
+>
+> **Green:** lint · all three typecheck projects · **10,122** unit tests ·
+> `e2e/diff.spec.ts` **8 of 8** plus history and files, **15 of 15** together.
+
+> **🚧 NOW: item 5 (#1042) — the `diff-` panel family. THE STRUCTURAL ITEM, and
+> it is done.** A diff is a dock panel now: ⧉ in the Changes tab opens one file's
+> comparison beside your sessions, ⧉ again sends it to its own OS window, ⇤ brings
+> it back. The owner's actual request — read a diff while watching the
+> conversation that produced it — which inside a card tab is impossible however
+> the pane is drawn, because tabs are mutually exclusive.
+>
+> **The Monaco wiring MOVED, verbatim, and that was the point.** `MonacoDiff` now
+> holds the editor, the narrow-pane verdict, the theme, the §5.31 find publication
+> and the `diff-places` scroll memory — every effect carried across with its
+> comments, because each of those comments records a bug already paid for once.
+> `e2e/diff.spec.ts`'s six existing tests are the proof it is behaviour-preserving
+> and all six still pass.
+>
+> **⚠️⚠️ THE DESIGN RECORD SAID `diff-<n>` AND THE DESIGN WAS WRONG: `diff-` IS
+> ALREADY TAKEN.** `SessionGrid`'s existing `openDiff` verb mints `diff-<cardId>`
+> for #504's "the whole Changes tab, relocated into the document area". **FOUR**
+> things read that prefix and every one would have been confused — so the family is
+> `gitdiff-`, the design record is amended, and the amendment exists because §1.1
+> of that very document is about two files claiming a feature that did not exist.
+>
+> **⭐⭐ REVIEW FOUND THE FOURTH, AND IT WAS THE ONLY NON-SELF-HEALING ONE.**
+> `isDerivedPanelId` is `/^(diff|doc)-/` and **anchored**, so `gitdiff-` panels
+> were not "derived" and therefore **survived a relaunch they were never meant to
+> survive**. Then: the registry's `seq` restarts at 0 each renderer, so the first ⧉
+> after a restart minted an id dockview already had, `addPanel` threw, and the
+> catch swallowed the click — **the first click after every restart did nothing and
+> the second worked**, which is the worst possible shape of bug. Plus the restored
+> panel was a ghost the registry could not see (so asking again opened a SECOND
+> panel on one comparison — the exact failure the registry exists to prevent), and
+> it re-read `git:fileVersions` on a folder that may no longer be in the read
+> scope, which is the reason the restore's own comment gives for dropping `doc-`.
+>
+> **AND A SECOND STRUCTURAL GAP: A NEW SESSION CARD COULD LAND AS A TAB ON TOP OF
+> THE DIFF YOU WERE READING.** `isDocumentArea` tested only `doc-`, and #462's
+> mirror rule ("a session must not displace what you are reading either") is read
+> off that one predicate — so it simply did not cover this surface. The same
+> omission made the SECOND ⧉ able to open in a different group from the first,
+> because `documentHomeGroup` prefers `isDocumentArea` and then falls through to
+> `api.groups[0]`. One predicate, read from both sides, is why it was one fix.
+>
+> **Four more, all real:** the extraction **lost `pendingLine.current = null`** and
+> left a comment claiming `forgetDiffPlace` covers it — it cannot, the ref is
+> seeded in a `useRef` INITIALISER that runs once, and child effects now run before
+> parent ones so the race got likelier · `diff-places` **leaked an entry per panel
+> open/close** into a 20-entry cap now shared with card ids, so ~20 cycles would
+> silently evict every card's remembered position · the toolbar's path had
+> `flex: 1` (basis **zero**), so in a narrow panel it collapsed to nothing and the
+> BUTTONS wrapped instead — the panel's one piece of identifying information was
+> the first casualty, and the ellipsis never fired · the new pop-out e2e was
+> missing `skipPopoutOnLinux()`, which every other second-window test in the repo
+> opens with.
+>
+> **⚠️ AND ONE PROMISE IS ONLY HALF KEPT, SAID OUT LOUD RATHER THAN DISCOVERED.**
+> Design §3 says the find publication "moves into the panel body intact". True of
+> the Changes tab; **half true of the panel** — the surface is published and nothing
+> reads it, because `Ctrl+F`'s route runs through `activeCardId` /
+> `activeDocumentId` and both know only `session-` and `doc-` panels. **Find in a
+> diff panel is inert.** Filed as **#1054**, named in the manual so a user is not
+> left wondering, and the two halves that are easy to get wrong later — unpublishing
+> on unmount, and the slot separation that stops two diffs of one card overwriting
+> each other — are in.
+>
+> **Also as built:** the component is `GitDiffView`, not `DiffPanel`, because
+> `SessionGrid` already has a local `DiffPanel` (the `diff-<cardId>` wrapper) and
+> two things of that name is how a reader edits the wrong file. And a commit-range
+> target now says *"coming"* rather than drawing the working-tree diff under a tab
+> labelled `file @ abc1234`, which is what it would have done — the loader is
+> `git:fileVersions` and answers HEAD-vs-disk only.
+>
+> **Green:** lint · all three typecheck projects · **10,042** unit tests ·
+> `e2e/diff.spec.ts` **8 of 8**, including the claim itself (the Session view and
+> the diff on screen together) and a real second OS window popping out and docking
+> back.
+>
+> **✅ Items 1, 2 and 3 are GREEN ON ALL FOUR CI JOBS** (run 37022557966) — so the
+> earlier `feed-tail-pin` red was the flake it looked like.
+
+> **🚧 NOW: item 3 (#1040) — the commit graph.** `lib/git-lanes.ts` is the pure
+> allocator — a topological walk with a lane-reservation scheme, ~200 lines, no
+> dependency, exactly as design §2.2 predicted — and `LaneGutter.tsx` is the SVG.
+> **Tested at FIVE and EIGHT lanes, which is the item's own acceptance bar**, plus
+> the row that only exists past lane 1: four curves arriving into one dot, and
+> `pass` naming the four lanes a row does *not* touch.
+>
+> **⚠️ A TEST FOUND A QUADRATIC DOM BUG BY RUNNING OUT OF MEMORY.** The clamp that
+> keeps a wide history inside a six-column gutter was applied to the **x
+> coordinate** and not to the **element count**, so a row whose `pass` named two
+> thousand lanes emitted two thousand `<line>` elements with 1,994 of them stacked
+> invisibly in the last column. `HistoryPane`'s ceiling test — two thousand sibling
+> commits, therefore two thousand lanes — **exhausted the V8 heap the moment the
+> gutter landed**, which is the only reason anyone noticed. Bounded at the drawing
+> layer now (`firstByColumn`), because `pass` is geometry truth and must not be
+> trimmed.
+>
+> **AND A SECOND ONE INSIDE THE FIX:** keeping the *first-seen* lane per column let
+> a **clamped** lane steal a real one's column — given `[7, 6, 5]`, lane 7 claimed
+> column 5 and lane 5, the only one of the three the gutter can place honestly, was
+> dropped. It keeps the **lowest** lane now, which is order-independent.
+>
+> **Also:** `LANE_INKS`'s first draft opened with **`--accent`, which does not
+> exist** — the palette is `--accent-blue` and seven siblings. Caught by a test
+> written *because* of item 2's two invented tokens, and that test is now the
+> standing check: `tokens.drift.test.ts` reads the token files and cannot see an
+> inline style, so nothing else compares the two sides.
+>
+> **Item 2 (#1039) — the History tab itself.** PR **#1053** carries items 1 and 2
+> and is green on **both unit jobs including Linux**. Screen 6: commit rows with ref chips, author,
+> `+/−`, short sha and a relative clock; a branch chip read off `%D` rather than
+> asked for separately; a detached-HEAD warning; a search box; incoming/outgoing
+> rows; fifty-at-a-time paging. `panels.tsx`'s `enabled: () => false,
+> render: () => null` is gone.
+>
+> **⚠️ CI CAUGHT A TEST THAT WAS GREEN ON WINDOWS FOR THE WRONG REASON** — worth
+> recording because it is the trap `spike/findings` keeps writing down. Item 1's
+> hostile-driver test set `filter.clean` **before** `git add`, and `git add` RUNS
+> that filter: on Linux the sentinel was written by the test's own fixture and the
+> assertion failed against a service that had done nothing wrong, while on Windows
+> the same fixture wrote **no sentinel at all** because `<node.exe> <script.js>`
+> is not a runnable git config command there. Broken on one platform and vacuous
+> on the other, and only the broken half announced itself. The config now goes in
+> after the commits, the writer is `sh -c` (which git invokes the same way on
+> both, since git for Windows bundles `sh`), and **each of the three drivers is
+> now shown to be LIVE on the machine before `log` is shown not to reach it**.
+> Also: `cannot spawn` is Windows's wording; Linux says `cannot exec`, so the
+> signature test matches the program's own name instead.
+>
+> **⭐⭐ REVIEW FOUND A BLOCKER THAT HID HISTORY, AND IT WAS REACHABLE ON A REAL
+> REPOSITORY.** Paging re-asks for a bigger window (50 → 100 → 150) and `wanted`
+> was advanced **on the click**. If the bigger read came back refused or
+> unreadable, `wanted` was 100 against `commits.length` 50, so `mayHaveMore` went
+> false, **the Show-more button disappeared, the error replaced the list, and
+> fifty commits were presented as the whole history.** Not theoretical: at the
+> measured ~13 ms per commit against a 15 s budget, the growing window walks into
+> the timeout at roughly a thousand commits — sooner on the laptop — and total work
+> is quadratic (50+100+…+N). Now: `{asked, got}` advances only behind a **landed**
+> page, a failed page keeps the list and puts the reason **beside** the button, and
+> the ceiling says so instead of the button going quiet.
+>
+> **AND SIX MORE, EVERY ONE OF THEM A THING THAT LOOKED FINE:**
+>
+> * **1 January 1970 on any commit git could not date.** git prints `%at` as an
+>   EMPTY LINE for an out-of-range author date, and **`Number('')` is `0`** — not
+>   `NaN`. So the `isFinite` guard the function was proud of never fired and the row
+>   drew a real-looking date. `timestamp` is `number | null` from the parser now,
+>   and the renderer refuses non-positive as well, so neither layer is the only
+>   thing standing between the two.
+> * **The incoming/outgoing rows rendered in EVERY state** — the commit count's bug
+>   exactly, missed in the same pass that fixed it. `git:status` can succeed while
+>   `git:log` is unreadable, so **"↑ 3 commits to push" drew directly above
+>   "switchboard couldn't read this project's history"**: two counts of commits on
+>   top of an admission the commits could not be read.
+> * **A row could push the hash, the stats and the date off the card.** Setting only
+>   `overflowY: auto` leaves `overflow-x` computing to `auto`, so eight ref chips
+>   plus a fixed author column grew a horizontal scrollbar — §1.2 cause 2 (the
+>   Changes tab cutting off the identifying end of a path) in a brand-new tab. The
+>   chips are one shrinking, clipping group now.
+> * **Two CSS custom properties that do not exist**, both failing silently:
+>   `--border-faint` meant **every row shipped with no separator in every theme**,
+>   and `--diff-added-ink` / `--diff-removed-ink` meant the `+/−` never used the
+>   diff palette they exist to share with the Changes tab (the real names are
+>   `--diff-added` / `--diff-removed`). The token drift test reads the token files,
+>   not inline styles, so nothing could have flagged either.
+> * **No `.catch` on either reader**, so a rejected invoke latched `loadingMore`
+>   true for ever — the button permanently disabled, reading "Reading more…".
+> * **`git:status` re-ran for every page**, carrying the whole #776 config guard
+>   (config read, submodule enumeration, several extra git processes) for two
+>   numbers that cannot change between pages of the same history.
+>
+> **AND A COMMENT THAT CLAIMED A TEST THAT DID NOT EXIST** — "the two agreeing is
+> pinned by a test", about `HISTORY_PAGE` vs main's `DEFAULT_LOG_LIMIT`. Writing it
+> turned up a tsconfig fact worth keeping: **`tsconfig.node.json` sets no `--jsx`,
+> so main's suite cannot import a `.tsx` at all**, which is why both constants now
+> live in `lib/git-log-dto.ts` and are re-exported from the component.
+>
+> **TWO THINGS THE ITEM 2 TESTS FOUND IN ITEM 2:**
+>
+> 1. **The commit count rendered in every state, so a repository switchboard
+>    could not read was topped by the words "no commits".** The pane below saying
+>    "we could not find out" and the toolbar above contradicting it with a
+>    confident zero — the exact lie this epic is a correction for, reintroduced
+>    two inches higher up. Gated on the state now, with an end-to-end witness.
+> 2. **A hand-written `{ ok: false, … }` is not an `IpcRefusal`.** `isIpcRefusal`
+>    checks a brand symbol and nothing else, so the refusal test was casting a
+>    plain object to the DTO and asserting against the not-repo branch while
+>    believing it tested the refusal branch. It uses the real builder now.
+>
+> **Deliberate gaps, each with the reason on the line that leaves it:** the
+> incoming/outgoing rows carry **counts and no buttons** (Pull/Push are item 15,
+> and *a row with a `＋` that does nothing is worse than a row with no `＋`*) · the
+> lane gutter is **reserved at zero width** so item 3 fills a hole rather than
+> re-laying every row out · **no row zero** for the working tree, because its real
+> click target is item 9's all-changes panel and `PanelContext` has no
+> `setView` — adding one to put a button somewhere would widen a contract for a
+> destination that does not exist yet.
+>
+> **Three existing tests encoded the placeholder as correct and were flipped, not
+> deleted:** `points.test.ts`'s *"History is shown but not clickable"*, its
+> disabled-fallback case (which now uses a folderless context, so the rule keeps
+> two examples), and `session.spec.ts`'s `// "soon" tab`. A fourth comment, in
+> `find.spec.ts`, said History was "deliberately not clickable" and is why the
+> greyed find-bar path had no end-to-end coverage — **that reason has now expired
+> and is recorded as an open gap** rather than quietly left stale.
+>
+> **Green:** lint · all three typecheck projects · 182 in `src/main/git` · 23
+> component · 22 DTO · the whole `extensibility` family · and a new
+> **`e2e/history-tab.spec.ts`, 2 of 2 against a REAL git repository** in the real
+> app — which is the only test that can say the capability string is right.
+>
+> **Item 1 (#1038) — `git log` in GitService + `git:log` IPC.** Code and
+> tests green locally (lint · all three typecheck projects · **182** in
+> `src/main/git`); the command shape and every edge case were **measured against
+> real git**, not guessed, per the standing rule.
+>
+> **⭐⭐ REVIEW FOUND A LIVE #776 HOLE THAT NEITHER EXISTING GUARD CLOSES, AND IT
+> WAS SILENT.** `log` is the first command in this service that reads **commit**
+> objects, and a commit can carry a `gpgsig` header. Two repo-local config keys —
+> both squarely inside #776's threat model — then make git **launch a program of
+> the repository's choosing**:
+>
+> ```
+> [log] showSignature = true
+> [gpg] program       = <anything>
+> ```
+>
+> **One spawn per signed commit, `git log` exits 0, and stdout parses perfectly**,
+> so nothing in the answer records that it happened. `guardArgs()` pins
+> `core.fsmonitor` and `core.hooksPath`; `guardEnv()` neutralises `filter.<n>.*`.
+> **Neither touches this** — paying the config guard would not have helped. Closed
+> with `--no-show-signature`, and the forged commit object needs no gpg to build
+> (`git hash-object -t commit -w`), so the test is portable. ⚠️ **The sentinel-file
+> version of that test does not work and the reason is worth keeping:**
+> `gpg.program` is spawned DIRECTLY, not through a shell, so neither
+> `"<node.exe> <script.js>"` nor a `.bat` ever runs — a test built on one would
+> report "it never ran" for a repository where git tried its hardest. The evidence
+> is git's own stderr, and it needs **`spawnSync`**, because `execFileSync` returns
+> only stdout on a zero exit and the first attempt read an empty string and
+> declared the control passed.
+>
+> **AND A SECOND CONFIG KEY THAT TURNED A FULL HISTORY INTO "no commits yet".**
+> `i18n.logOutputEncoding = UTF-16LE` re-encodes the whole stream — every byte
+> followed by a NUL, confirmed with `od -c` — so the parser finds no record
+> anywhere while git exits 0. The design doc's own note that "a NUL cannot be
+> forged from inside a repository" is true of the **message** and false of the
+> **stream**. Closed twice: `--encoding=UTF-8`, and `log()` now treats non-empty
+> output that parsed to zero commits as *unreadable* rather than as an empty
+> history.
+>
+> **⚠️ AND A 48-SECOND FREEZE OF THE MAIN PROCESS, FROM ONE COMMIT MESSAGE.**
+> `message: body.replace(/\s+$/, '')` backtracks per position inside a trailing
+> whitespace run: 60,000 trailing spaces took 818 ms, 120,000 took 6.1 s, **240,000
+> took 48.3 s**. `LOG_BUDGET_MS` cannot save it — it runs in the Electron main
+> process *after* git has returned, with `MAX_GIT_OUTPUT` allowing 32 MB of body.
+> `trimEnd()` is immeasurable. A commit message is a thing a session writes, so
+> this was "our breakage blocks every session" waiting to be typed.
+>
+> **Four more from the same review, all measured:** a **corrupt branch ref** (a
+> zero-byte `.git/refs/heads/main`) was reported as a fresh `git init`, because
+> `rev-parse --verify -q HEAD` fails for both — the positive discriminator is
+> `symbolic-ref -q HEAD`, which exits 0 on an unborn HEAD and 128 on a damaged
+> one · **`--` does not confine a pathspec**: in a monorepo session rooted at
+> `<repo>/sub`, `-- ../secret.txt` listed commits for a file outside the scope, and
+> pathspec magic (`:(exclude)…`) survives the separator too · the recovery path for
+> a malformed record **overwrote the previous commit's correct numbers** with the
+> orphaned diffstat · `--skip=1e21` formatted as `1e+21`, which git refuses.
+>
+> **TWO MEASUREMENTS THAT SHAPED THE API RATHER THAN FIXING A BUG:**
+>
+> 1. **`--shortstat` is 95% of the query.** 100 commits **with** it: 1,331 ms.
+>    Without: **64 ms**. Whole history (941): 2,858 ms. Bare `git --version`,
+>    for the spawn floor: 38 ms. So ~13 ms per commit, because git diffs every
+>    listed commit against its first parent. Hence `stats?: boolean` on the query
+>    and `DEFAULT_LOG_LIMIT = 50` — a hundred would be 1.3 s of spinner on a tab
+>    you just clicked.
+> 2. **`log --shortstat` runs NO filter, textconv or external-diff driver**
+>    (measured with all three configured). So `log` joins `root()` and
+>    `fileVersions()` as a read that skips `guardEnv()` entirely — several git
+>    invocations saved on the History tab's hot path. Pinned by a test that asserts
+>    **no sentinel file appeared**, not that stdout was clean: the first version
+>    checked the output, which a driver that writes a file or dials out passes
+>    unchanged.
+>
+> **The framing itself, measured byte-for-byte:** `<fields>\0\n<shortstat>\n` —
+> the diffstat arrives AFTER the record's NUL, so it belongs to the PREVIOUS
+> commit; and an **empty commit prints no diffstat at all**, so the NUL abuts the
+> next sha. A parser that assumed the line was always there ate the next record.
+> Also: the subcommand `log` was missing from the arg list on the first run, which
+> made every real-history test come back empty with an `unreadable` nobody asked
+> for — there is now a one-line test for it.
 
 > # ✅ DONE — 2026-10-01: **#740 — the feed skips what you cannot see, and
 > still knows how tall it is** (PR **#1034**, merged on green CI, issue closed).

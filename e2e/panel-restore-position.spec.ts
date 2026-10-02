@@ -322,13 +322,26 @@ test.describe('scroll-holding panels under a dockview move (#562)', () => {
     await sized(a);
 
     // open both files in the viewer, from the Changes tab's own control
+    //
+    // ⚠️ **TWO THINGS CHANGED UNDER THIS TEST IN E24 GIT V2 AND CI FOUND BOTH.**
+    // `button.diff-open-viewer` was the OLD sidebar's class and item 6 rewrote
+    // that component — this was the only reference left anywhere, so the locator
+    // matched nothing and the count assertion timed out. And the verbs are now
+    // `visibility: hidden` until their row is hovered or focused, so each one has
+    // to be hovered before it can be clicked; Playwright does not hover to make
+    // an element actionable.
     await w.getByRole('tab', { name: 'Changes' }).first().click();
-    const openInViewer = w.locator('button.diff-open-viewer');
-    await expect(openInViewer).toHaveCount(2, { timeout: 30_000 });
-    await openInViewer.nth(0).click();
+    const rows = w.locator('.scm-row');
+    await expect(rows).toHaveCount(2, { timeout: 30_000 });
+    const openNth = async (n: number): Promise<void> => {
+      const row = rows.nth(n);
+      await row.hover();
+      await row.locator('button[aria-label^="Open "][aria-label$="in the document viewer"]').click();
+    };
+    await openNth(0);
     await expect(w.locator('[data-testid="doc-scroll"]')).toBeVisible({ timeout: 30_000 });
     await w.getByRole('tab', { name: 'Changes' }).first().click();
-    await openInViewer.nth(1).click();
+    await openNth(1);
     await expect(w.locator('.dv-tab').filter({ hasText: 'beta.md' })).toBeVisible({
       timeout: 30_000,
     });

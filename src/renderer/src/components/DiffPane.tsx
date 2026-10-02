@@ -1,54 +1,30 @@
-// Diff viewer pane (P1-E5-02): read-only Monaco diff + file list with VCS
-// badges, one pane per session. Workers are bundled by Vite (?worker) — no
-// CDN, CSP stays 'self'.
+// Diff viewer pane (P1-E5-02): a file list with VCS badges, and the diff body
+// beside it. One pane per session.
 //
-// #191 — the monaco entry point is `edcore.main`, the core editor with NO
-// languages, and the tokenizers are put back one by one by `monaco-languages`.
-// The bare `monaco-editor` entry would also register the rich TS/JSON/CSS/HTML
-// language services, which demand their own web workers and throw uncaught
-// against the single plain worker below. The full reasoning, and the numbers,
-// are in `lib/monaco-languages.ts` — read that before changing this import.
-import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+// ⚠️ **THE MONACO WIRING LEFT THIS FILE (E24 Git v2 item 5) AND NOTHING ABOUT IT
+// CHANGED.** Design record §3 turns a diff into a dock panel, which means the
+// same editor has two hosts: this tab's in-place preview and a `gitdiff-` panel. So
+// the editor, the find publication (§5.31), the `diff-places` scroll memory, the
+// theme handling and the narrow-pane verdict all moved to `MonacoDiff` —
+// verbatim, comments and all, because each of those comments records a bug that
+// was paid for once already. What is LEFT here is the thing a dock panel does not
+// have: the file list, and the decision of which file to show.
+import React, { useEffect, useState, useSyncExternalStore } from 'react';
 import { answered } from '../../../shared/ipc/refusal';
 import { useTranslation } from 'react-i18next';
-import * as monaco from 'monaco-editor/esm/vs/editor/edcore.main';
-import '../lib/monaco-languages';
-// The single worker, assigned on import. Extracted by #972, which needed it a
-// third time — see `lib/monaco-worker.ts` for why it is a side effect and not an
-// `install()` anyone could forget to call.
-import '../lib/monaco-worker';
-import { languageForPath } from '../lib/diff-language';
 import {
-  effectiveDiffLayout,
   getDiffLayout,
-  isTooNarrowForColumns,
   setDiffLayout,
   subscribeDiffLayout,
   type DiffLayout,
 } from '../lib/diff-layout';
-import { defineDiffThemes, DIFF_THEME } from '../lib/monaco-theme';
-import { findSurfaceKey, publishFindSurface, type MonacoFindSurface } from '../lib/find-surfaces';
-import { openMonacoFind } from '../lib/monaco-find';
-import { openDocument } from '../lib/document-open';
-import {
-  forgetDiffPlace,
-  placeIsStillThere,
-  readDiffPlace,
-  rememberDiffPlace,
-} from '../lib/diff-places';
-import { gitPaneState, type GitFileDto, type GitStatusDto } from '../lib/git-status';
-
-/**
- * `folder` + git's forward-slash relative path, in the folder's own spelling.
- *
- * git reports `src/main/index.ts` on every platform; main resolves whatever it
- * is handed, so the only thing that matters is that the two halves are joined
- * with a separator the OS will accept — and both accept `/` on Windows.
- */
-function joinPath(folder: string, relative: string): string {
-  const sep = folder.includes('\\') && !folder.includes('/') ? '\\' : '/';
-  return `${folder.replace(/[\\/]+$/, '')}${sep}${relative}`;
-}
+import { forgetDiffPlace, placeIsStillThere, readDiffPlace } from '../lib/diff-places';
+import { type GitStatusDto } from '../lib/git-status';
+import { MonacoDiff, type DiffLayoutState } from './MonacoDiff';
+import { ScmSidebar } from './ScmSidebar';
+import { putGitStatus } from '../lib/git-status-store';
+import { canOpenDiffs, openDiff } from '../lib/diff-open';
+import { WORKING_TREE_LEFT, WORKING_TREE_RIGHT } from '../lib/diff-panels';
 
 export function DiffPane(props: {
   folder: string;
@@ -75,40 +51,38 @@ export function DiffPane(props: {
   const [selected, setSelected] = useState<string | null>(
     () => readDiffPlace(props.cardId)?.selected ?? null
   );
-  const hostRef = useRef<HTMLDivElement | null>(null);
-  const editorRef = useRef<monaco.editor.IStandaloneDiffEditor | null>(null);
-  /**
-   * The LINE to put back once the model is in (#562).
-   *
-   * A ref, and consumed once: the restore has to happen AFTER `setModel` — which
-   * is inside an async `then` — and it must not fire again on every later
-   * selection, or picking a fresh file would drop the reader somewhere in the
-   * middle of it instead of at the top.
-   */
-  const pendingLine = useRef<number | null>(readDiffPlace(props.cardId)?.line ?? null);
-  /** pending restore frames, cancelled on unmount so nothing touches a disposed
-   *  editor (the sibling effect in `DocumentViewer` does the same) */
-  const rafs = useRef<number[]>([]);
-  useEffect(() => {
-    return () => {
-      rafs.current.forEach((id) => cancelAnimationFrame(id));
-      rafs.current = [];
-    };
-  }, []);
   // Workspace-wide, not per-card (#532): "how I read a diff" is a habit, not a
-  // property of one session, and the palette command has no card in hand.
+  // property of one session, and the palette command has no card in hand. Read
+  // here as well as in the body, because the TOGGLE's pressed state is the
+  // PREFERENCE while the body draws the EFFECTIVE layout — and the whole of #532
+  // is that those two can legitimately differ.
   const layoutPref = useSyncExternalStore(subscribeDiffLayout, getDiffLayout);
-  // The VERDICT, not the pixel count: a splitter drag then re-renders this
-  // component (file list, badges, every row's button) only when the answer
-  // flips, rather than on every frame. See `isTooNarrowForColumns`.
-  const [tooNarrow, setTooNarrow] = useState(false);
-  const layout = effectiveDiffLayout(layoutPref, tooNarrow);
-  /** the preference is side-by-side but the pane cannot carry it — the toggle
-   *  has to SAY so, or it reads as a button that does nothing (#532) */
-  const narrowed = layoutPref === 'side-by-side' && layout === 'inline';
+  /**
+   * Bumped by the sidebar's ⟲ to re-ask main.
+   *
+   * ⚠️ **A COUNTER, NOT A BOOLEAN OR A CALLBACK.** The status read is an effect
+   * keyed on the folder; a refresh is "run that effect again", and a counter in
+   * its deps is the only spelling of that which cannot miss two presses in a row.
+   * There is no watcher on a repository — the same trade the Files tab makes — so
+   * this is the whole of the manual refresh story.
+   */
+  const [refreshes, setRefreshes] = useState(0);
 
   useEffect(() => {
-    void window.switchboard.git.status(props.folder).then((s) => {
+    // ⚠️ **CANCELLED ON FOLDER CHANGE AND ON REFRESH (found in review).** Without
+    // it, two quick ⟲ presses start two reads — a status plus two diffs each —
+    // whose durations differ, and WHICHEVER FINISHES LAST WINS, which can be the
+    // older snapshot. A folder change mid-flight applied the previous folder's
+    // status, and its `setSelected` reconciliation, to the new one. The sibling
+    // reader of this same channel in `SessionGrid` has carried this flag all
+    // along; the refresh button is what made the race reachable by a user in one
+    // second.
+    let cancelled = false;
+    // `true` — ASK FOR THE NUMBERS (item 7). This tab is the one that draws them,
+    // and the two extra `git diff` invocations are why the card header's poll
+    // leaves the flag off. See `GitStatus.stats`.
+    void window.switchboard.git.status(props.folder, true).then((s) => {
+      if (cancelled) return;
       // `answered` BEFORE the cast (#650). `git:status` is declared
       // `Promise<unknown>`, so this cast is the only thing between the wire and
       // a typed record — and the brand cast into `GitStatusDto` becomes the
@@ -124,6 +98,13 @@ export function DiffPane(props: {
       const next = answered(s) as GitStatusDto | undefined;
       if (!next) return;
       setStatus(next);
+      // ⚠️ **AND SHARE IT, so the Files tab draws THIS answer (E24 Git v2 item
+      // 11).** Design §4 item 11 asks for "the same status source", and this is
+      // the half that makes it a shared MOMENT rather than merely a shared shape:
+      // this tab's read includes the per-file numbers, so handing it to the store
+      // means the tree's badges and the sidebar's rows cannot disagree about
+      // whether a file is modified — and no second `git status` is spent.
+      putGitStatus(props.folder, next);
       // A REMEMBERED FILE IS ONLY AS GOOD AS THE CHANGE UNDER IT (#562 review).
       // Between leaving the tab and coming back, the change can have been
       // committed, discarded or the file deleted — and `git.fileVersions` does
@@ -134,304 +115,54 @@ export function DiffPane(props: {
         if (!cur) return cur;
         const paths = next.files.map((f) => f.path);
         if (placeIsStillThere({ selected: cur, line: 1 }, paths)) return cur;
-        pendingLine.current = null;
+        // ⚠️ `pendingLine.current = null` stood here and MOVED WITH THE EDITOR
+        // (E24 Git v2 item 5). `forgetDiffPlace` is what the body reads its
+        // remembered line from, so clearing the record is what clears the
+        // pending restore — the ref was belt to that braces and is now inside
+        // `MonacoDiff`, which is also where it is consumed.
         forgetDiffPlace(props.cardId);
         return null;
       });
     });
-  }, [props.folder, props.cardId]);
-
-  // Built ONCE per pane. `colorScheme` used to be in these deps, which meant a
-  // theme switch disposed the editor AND both models and built an empty one —
-  // and nothing put the models back, because the effect below only re-runs
-  // when the SELECTION changes. Switching theme with a file open therefore
-  // blanked the diff until you clicked another file. Monaco's standalone theme
-  // is global and swappable in place (`setTheme`, next effect), so there was
-  // never a reason to rebuild the editor for it.
-  useEffect(() => {
-    if (!hostRef.current) return;
-    // `vs` / `vs-dark` with the handful of below-AA token colours corrected —
-    // see lib/monaco-theme.ts for the measurements. Here and not at module
-    // load: `defineTheme` builds monaco's theme service, which reaches for
-    // `CSS.escape`, and jsdom has no `CSS` — so a module-load call takes down
-    // every unit test that merely IMPORTS the panel registry. Idempotent, and
-    // a theme has to exist before `createDiffEditor` names it, so immediately
-    // before is also the only place it has to be.
-    defineDiffThemes(monaco.editor);
-    const editor = monaco.editor.createDiffEditor(hostRef.current, {
-      readOnly: true,
-      renderSideBySide: layout === 'side-by-side',
-      // WE own the narrow-pane rule, not Monaco (#532). Left on — its default —
-      // this quietly forces the inline view under 900px, which is where an
-      // ordinary Changes tab in a 1280px window lives, so the pane had asked
-      // for side-by-side since P1-E5-02 and never once got it. The full
-      // reckoning is in lib/diff-layout's header; the short version is that a
-      // rule the user cannot see is worse than one drawn a little narrow.
-      useInlineViewWhenSpaceIsLimited: false,
-      automaticLayout: true,
-      minimap: { enabled: false },
-      theme: DIFF_THEME[props.colorScheme],
-    });
-    editorRef.current = editor;
-    return () => {
-      editor.getModel()?.original.dispose();
-      editor.getModel()?.modified.dispose();
-      editor.dispose();
-      editorRef.current = null;
-    };
-    // deliberately empty: `colorScheme` and `layout` are READ here for the
-    // initial paint but are not dependencies — the effects below own every
-    // change to them, and rebuilding this editor would drop both models
-  }, []);
-
-  // Live, in place — `updateOptions` is how a diff editor changes shape without
-  // being rebuilt, and rebuilding would blank the pane (see the note above).
-  useEffect(() => {
-    editorRef.current?.updateOptions({ renderSideBySide: layout === 'side-by-side' });
-  }, [layout]);
-
-  // How wide the DIFF is, which is not how wide the card is — the file list
-  // takes its 200px off the front first. Measured rather than derived, because
-  // the same pane renders in a full-width card, a half-width one and a popout.
-  useEffect(() => {
-    const host = hostRef.current;
-    // jsdom and older embedders have no ResizeObserver; without it the verdict
-    // stays `false` and the preference is simply honoured — a degrade, not a
-    // break (fail-open)
-    if (!host || typeof ResizeObserver === 'undefined') return;
-    const measure = (widthPx: number): void => {
-      // A HIDDEN dockview tab observes 0×0 (`content.js` sets `display: none`
-      // on the inactive panel). Treating that as a measurement would clear the
-      // narrow verdict while the tab is away and paint one frame of two
-      // columns on the way back — so a non-measurement leaves the last real
-      // answer standing.
-      if (widthPx > 0) setTooNarrow(isTooNarrowForColumns(Math.round(widthPx)));
-    };
-    const ro = new ResizeObserver((entries) => {
-      measure(entries[0]?.contentRect.width ?? host.clientWidth);
-    });
-    ro.observe(host);
-    measure(host.clientWidth);
-    return () => ro.disconnect();
-  }, []);
-
-  useEffect(() => {
-    // global by design: monaco's standalone theme is per-page, and every diff
-    // pane in a window is showing the same app theme anyway
-    monaco.editor.setTheme(DIFF_THEME[props.colorScheme]);
-  }, [props.colorScheme]);
-
-  // Session find, delegated (P2-E17-02, §5.31). Monaco HAS a find — a good one,
-  // with regex, whole-word, replace and match marks down the scrollbar — and
-  // §5.31 names it as a thing not to reimplement. So the Changes tab's Ctrl+F
-  // opens Monaco's widget and our bar stays out of the way entirely.
-  useEffect(() => {
-    if (!props.cardId) return;
-    // The editor is built on mount but no file is selected until the user
-    // picks one, and a find over a model-less editor opens a widget that can
-    // never match anything. `ready()` is what lets the provider grey the bar
-    // with a reason instead of handing off into nothing.
-    const modified = (): monaco.editor.ICodeEditor | null =>
-      editorRef.current?.getModifiedEditor() ?? null;
-    const surface: MonacoFindSurface = {
-      kind: 'monaco',
-      ready: (): boolean => !!modified()?.getModel(),
-      // `lib/monaco-find`, shared with the document viewer's source body since
-      // #533: two surfaces in this app are Monaco editors and both delegate
-      // find to it, so the hand-off is written once.
-      openFind: (term: string): boolean => openMonacoFind(modified(), term),
-    };
-    return publishFindSurface(findSurfaceKey(props.cardId, 'diff'), surface);
-  }, [props.cardId]);
-
-  useEffect(() => {
-    if (!selected || !editorRef.current) return;
-    let cancelled = false; // stale selections / editor disposed mid-load
-    void window.switchboard.git.fileVersions(props.folder, selected).then((answer) => {
-      // #650: `v.original` off a refusal is `undefined`, and
-      // `monaco.editor.createModel(undefined, ...)` is a throw inside a `.then`
-      // nobody catches. Leaving the editor on its previous model is the inert
-      // choice, and it matches what `cancelled` does one line down.
-      const v = answered(answer);
-      const ed = editorRef.current;
-      if (cancelled || !ed || !v) return;
-      const old = ed.getModel();
-      // Same language on both sides — they are two versions of one file, and a
-      // mismatch would colour the "before" pane differently from the "after".
-      // Unknown extensions come back `plaintext`, which is what the pane did
-      // for EVERY file before #191.
-      const language = languageForPath(selected);
-      ed.setModel({
-        original: monaco.editor.createModel(v.original, language),
-        modified: monaco.editor.createModel(v.modified, language),
-      });
-      old?.original.dispose();
-      old?.modified.dispose();
-      // Put the reader back where they were (#562). AFTER the model, because an
-      // editor with no content clamps any offset to 0, and ONCE — the ref is
-      // consumed, so a later re-selection of the same file opens at the top like
-      // the fresh choice it is.
-      //
-      // By LINE, not by pixels: side-by-side inserts alignment view zones for
-      // deleted lines after the async diff computation, and the layout mode is
-      // workspace-wide (#532), so the same pixel offset is a different place in
-      // either case. `getTopForLineNumber` asks the editor where that line is
-      // NOW.
-      const line = pendingLine.current;
-      pendingLine.current = null;
-      // one frame later: the editor has the model but has not laid it out yet
-      const id = requestAnimationFrame(() => {
-        const me = ed.getModifiedEditor();
-        if (line && line > 1) me.setScrollTop(me.getTopForLineNumber(line));
-        // ...and NOW stamp, with a model in and a real viewport to read. A file
-        // picked and never scrolled is still a place — the common one — and this
-        // is the first moment the answer is trustworthy.
-        const top = me.getVisibleRanges()[0]?.startLineNumber;
-        if (top) rememberDiffPlace(props.cardId, { selected, line: top });
-      });
-      rafs.current.push(id);
-    });
     return () => {
       cancelled = true;
     };
-  }, [selected, props.folder]);
+  }, [props.folder, props.cardId, refreshes]);
 
   /**
-   * Record where the reader is, for the next mount (#562).
+   * What the body is drawing, as the body reported it.
    *
-   * On the MODIFIED editor: it is the side a reader follows, and in side-by-side
-   * the two are scroll-synchronised anyway. Re-subscribed per selection because
-   * the handler CLOSES OVER `selected` — the emitter itself survives a
-   * `setModel` (it lives on the widget, not the view model), so this is about
-   * the closure and not about the editor's lifetime.
-   *
-   * NOTHING IS STAMPED HERE ON ARRIVAL, and that is the review's finding: this
-   * effect runs the moment `selected` changes, which is BEFORE the async
-   * `fileVersions` round trip swaps the model. At that instant the editor is
-   * still showing the PREVIOUS file — so stamping would file the old file's line
-   * under the new file's name, and on a fresh mount it would stamp Monaco's
-   * "no model" answer over the very place the mount is about to restore. The
-   * load effect above stamps instead, once the model is in.
+   * ⚠️ **REPORTED UP RATHER THAN DERIVED HERE, and the narrow verdict is why.**
+   * The effective layout depends on the editor's own measured width — which is
+   * not the card's width, because the sidebar takes its 240px off the front first —
+   * so only the body can know it. The toolbar below needs the answer to label a
+   * toggle whose pressed state is sometimes not what is on screen (#532), and a
+   * second measurement up here would be a second answer that could disagree.
    */
-  useEffect(() => {
-    const ed = editorRef.current;
-    if (!ed || !selected || !props.cardId) return;
-    const d = ed.getModifiedEditor().onDidScrollChange(() => {
-      const top = ed.getModifiedEditor().getVisibleRanges()[0]?.startLineNumber;
-      if (top) rememberDiffPlace(props.cardId, { selected, line: top });
-    });
-    return () => d.dispose();
-  }, [selected, props.cardId]);
+  const [body, setBody] = useState<DiffLayoutState>({ layout: 'side-by-side', narrowed: false });
+  const narrowed = body.narrowed;
 
-  const paneState = gitPaneState(status);
-
-  const badge = (f: GitFileDto): string =>
-    f.untracked ? t('diff.badge.new') : f.staged && f.unstaged ? t('diff.badge.both') : f.staged ? t('diff.badge.staged') : t('diff.badge.modified');
+  // ⚠️ `gitPaneState` AND THE BADGE WORDS MOVED TO `ScmSidebar` (items 6 and 7).
+  // The three-state decision belongs with the list that draws it, and the badge
+  // was `mod` / `staged` / `both` / `new` in 9px mono — design §1.2 cause 1, the
+  // ONLY thing distinguishing four kinds of change. It is a coloured letter in a
+  // named group now, which is git's own vocabulary and a shape every git GUI uses.
 
   return (
     <div style={{ blockSize: '100%', display: 'flex', background: 'var(--card-bg)' }}>
-      <div
-        style={{
-          inlineSize: 200,
-          borderInlineEnd: '1px solid var(--border)',
-          overflowY: 'auto',
-          padding: 6,
-          fontSize: 11,
-        }}
-      >
-        {/* ONE decision, in `lib/git-status` — see `gitPaneState` for why
-            `unreadable` has to be checked before `clean` and not after. */}
-        {paneState?.kind === 'unreadable' && (
-          // The attention ink, not `--muted`: this is something being WRONG,
-          // where the other two are ordinary facts about a folder. Same token
-          // the dirty-count uses on the card header, which #246 contrast-checked
-          // for text on this surface.
-          <div style={{ color: 'var(--status-needs-input-ink)' }}>
-            {t('diff.unreadable', { reason: paneState.reason })}
-          </div>
-        )}
-        {paneState?.kind === 'not-repo' && (
-          <div style={{ color: 'var(--muted)' }}>{t('diff.notRepo')}</div>
-        )}
-        {paneState?.kind === 'clean' && (
-          <div style={{ color: 'var(--muted)' }}>{t('diff.clean')}</div>
-        )}
-        {/* GATED ON THE SAME DECISION, so "the pane renders from `gitPaneState`
-            and from nothing else" is true rather than nearly true (review nit).
-            Harmless today — `unreadable` always ships `files: []` — but an
-            unreadable answer that somehow carried files would otherwise draw
-            the reason AND a file list under it. */}
-        {paneState?.kind === 'files' &&
-          status?.files.map((f) => (
-          <div
-            key={f.path}
-            onClick={() => setSelected(f.path)}
-            style={{
-              display: 'flex',
-              gap: 6,
-              alignItems: 'center',
-              padding: '4px 6px',
-              borderRadius: 4,
-              cursor: 'pointer',
-              background: selected === f.path ? 'var(--rail-row-selected)' : 'transparent',
-              color: 'var(--text)',
-            }}
-          >
-            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'var(--font-mono)', fontSize: 10 }}>
-              {f.path}
-            </span>
-            {/* §5.30's "opened from wherever a path already appears", as its
-                OWN control rather than as the path's click target.
-
-                The plan line reads "a path click in the Changes tab's file
-                list", and the literal reading was written and then withdrawn:
-                the whole row already means "show me this file's diff", and
-                turning the file NAME — nearly all of the row — into "open the
-                whole file somewhere else" leaves the tab's primary gesture with
-                a status badge to aim at, and sends a user who wanted a diff to
-                a different panel. That is the calm check failing on a surface
-                that was fine. The viewer is a SECOND question about the same
-                row ("never mind the change, what does this file say now?"), so
-                it gets a second, labelled control. */}
-            <button
-              type="button"
-              className="diff-open-viewer"
-              title={t('diff.openInViewer', { file: f.path })}
-              aria-label={t('diff.openInViewer', { file: f.path })}
-              onClick={(e) => {
-                // the row's own handler would select it into the diff as well —
-                // harmless, but two things happening from one click reads as a
-                // bug even when both are wanted
-                e.stopPropagation();
-                openDocument(joinPath(props.folder, f.path), props.sessionId);
-              }}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'var(--muted)',
-                cursor: 'pointer',
-                fontSize: 10,
-                lineHeight: 1,
-                padding: '0 2px',
-              }}
-            >
-              {t('diff.openInViewerIcon')}
-            </button>
-            <span
-              style={{
-                fontSize: 9,
-                fontFamily: 'var(--font-mono)',
-                color: f.untracked ? 'var(--diff-added)' : 'var(--muted)',
-                background: 'var(--chip)',
-                borderRadius: 4,
-                paddingInline: 4,
-              }}
-            >
-              {badge(f)}
-            </span>
-          </div>
-        ))}
-      </div>
+      {/* The sidebar (E24 Git v2 items 6 and 7). Was a flat 200px list of full
+          relative paths with a word chip — the owner's "everything's kind of just
+          smashed together". `ScmSidebar` owns the groups, the rows, the header and
+          the totals; this pane owns which file the body is showing. */}
+      <ScmSidebar
+        folder={props.folder}
+        status={status}
+        selected={selected}
+        onSelect={setSelected}
+        sessionId={props.sessionId}
+        cardId={props.cardId}
+        onRefresh={() => setRefreshes((n) => n + 1)}
+      />
       <div style={{ flex: 1, minInlineSize: 0, display: 'flex', flexDirection: 'column' }}>
         {/* §5.32 rule 1: real `<button>`s, so Enter, Space, focus and the
             announcement all come from the platform. NOT a `radiogroup` — the
@@ -465,8 +196,61 @@ export function DiffPane(props: {
               </button>
             );
           })}
+          {/* ⧉ — THE ESCALATION, AND DESIGN §3 IS EXPLICIT THAT IT IS NOT THE
+              ONLY ROUTE: *"The Changes tab KEEPS an in-place preview (◫) — ⧉ is
+              the escalation."* So this sits beside the layout toggle rather than
+              replacing the click that selects a file, and the tab keeps working
+              exactly as it did for anyone who never presses it.
+
+              It is the owner's actual request: read a diff while watching the
+              conversation that produced it. Card tabs are mutually exclusive, so
+              inside this tab that is impossible however the pane is drawn.
+
+              ⚠️ **ABSENT, NOT DISABLED, WHEN THERE IS NOWHERE TO OPEN ONE.**
+              `canOpenDiffs()` is false before the grid installs its opener and in
+              a test with no grid at all. The owner's rule — *a row with a `＋`
+              that does nothing is worse than a row with no `＋`* — says a button
+              with no destination should not be drawn, and here it costs nothing
+              to leave out because the in-place preview is already the answer. */}
+          {/* ⚠️ `canOpenDiffs()` IS READ DURING RENDER AND IS NOT REACTIVE, which
+              is safe only because of the `selected &&` in front of it: the opener
+              is installed by `App`'s mount effect, and nothing can have picked a
+              file before that. Said out loud because the next person to drop the
+              `selected` guard would make the button disappear for the life of the
+              pane and have no idea why (review). */}
+          {selected && canOpenDiffs() && (
+            <button
+              type="button"
+              className="diff-btn"
+              data-testid="diff-popout"
+              title={t('diff.openInPanel', { file: selected })}
+              aria-label={t('diff.openInPanel', { file: selected })}
+              onClick={() =>
+                openDiff({
+                  folder: props.folder,
+                  path: selected,
+                  left: WORKING_TREE_LEFT,
+                  right: WORKING_TREE_RIGHT,
+                  sessionId: props.sessionId,
+                })
+              }
+            >
+              {t('diff.openInPanelIcon')}
+            </button>
+          )}
         </div>
-        <div ref={hostRef} style={{ flex: 1, minBlockSize: 0 }} />
+        {/* The diff body — the same `MonacoDiff` a `gitdiff-` dock panel hosts.
+            `findSlot` is the default (`'diff'`), which is the key Ctrl+F has
+            looked for on this tab since P2-E17-02; the panel uses its own. */}
+        <div style={{ flex: 1, minBlockSize: 0, display: 'flex' }}>
+          <MonacoDiff
+            source={{ kind: 'working-tree', folder: props.folder, path: selected }}
+            colorScheme={props.colorScheme}
+            cardId={props.cardId}
+            placeKey={props.cardId}
+            onLayout={setBody}
+          />
+        </div>
       </div>
     </div>
   );

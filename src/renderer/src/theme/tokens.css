@@ -1451,6 +1451,13 @@ mark[data-feed-match-current] {
   font-size: 11px;
   padding: 2px 6px;
   cursor: pointer;
+  /* ⚠️ A BUTTON IN A FLEX TOOLBAR MUST NOT SHRINK (E24 Git v2 item 5, found in
+     review). Without this the diff panel's toolbar squeezed the buttons and
+     wrapped their labels before it truncated the path beside them — so the
+     ellipsis the path declares never fired, and the panel's one piece of
+     identifying information was the first thing lost in a narrow pane. Linux CI
+     renders these ~5% wider, which is where it would have shown up first. */
+  flex-shrink: 0;
 }
 .doc-btn:hover:not(:disabled),
 .diff-btn:hover:not(:disabled) {
@@ -1785,4 +1792,84 @@ mark[data-feed-match-current] {
 .doc-source-wrap {
   padding: 0;
   overflow: hidden;
+}
+
+/* ───────── the source-control sidebar (E24 Git v2 items 6 and 7) ─────────
+ *
+ * ⚠️ THE NUMBERS AND THE ACTIONS SHARE ONE SLOT, which is VS Code's `inline@1` /
+ * `inline@2` arrangement and design §2.1's note: the row stays READABLE AT REST
+ * and the verbs appear when you reach for them. Done in CSS rather than React
+ * state so it costs no render per hover — and `:focus-within` is what makes the
+ * verbs reachable BY KEYBOARD, which a hover-only rule would not be. A row whose
+ * buttons only exist under a pointer is a row a keyboard user cannot act on.
+ */
+.scm-row-acts {
+  display: flex;
+  gap: 1px;
+  /* ⚠️ **`visibility`, NOT `display: none`** — but NOT for the reason this comment
+   * used to give, and the correction matters because these comments are the
+   * institutional memory.
+   *
+   * **THE OLD CLAIM WAS WRONG:** it said `visibility: hidden` "keeps it out of the
+   * tab order while leaving it discoverable" in the accessibility tree. It does
+   * not. `visibility: hidden` removes an element from the accessibility tree just
+   * as `display: none` does — MEASURED, by Playwright's `getByRole` being unable
+   * to resolve these buttons at all until the row is hovered, which is what broke
+   * three older e2e specs and is how the error was found.
+   *
+   * **WHAT IT IS ACTUALLY FOR, and it is still the right choice:** it keeps the
+   * row's width stable, so nothing shifts under the pointer on hover — where
+   * `display: none` would reflow the row as the pointer crossed it.
+   *
+   * **AND THE ACCESS STORY IS `:focus-within`, NOT DISCOVERABILITY.** The row's own
+   * `.scm-row-open` button is always visible and focusable; focusing it reveals
+   * this slot, and Tab then reaches the verbs. So a keyboard and screen-reader
+   * user gets to them by moving through the list, which is how a list of files is
+   * read — they are simply not announced while merely browsing a row the user has
+   * not landed on. That is the same bargain VS Code's own SCM rows make.
+   *
+   * ⚠️ AND NOTHING MAY SET `display` INLINE ON THIS ELEMENT: an inline declaration
+   * outranks this rule, which is precisely how the first version shipped with the
+   * verbs visible at rest. */
+  visibility: hidden;
+}
+.scm-row:hover .scm-row-acts,
+.scm-row:focus-within .scm-row-acts {
+  visibility: visible;
+}
+.scm-row:hover .scm-row-stat,
+.scm-row:focus-within .scm-row-stat {
+  display: none;
+}
+/* The numbers and the verbs occupy the same column, so the row does not change
+ * width when they swap — which would make the whole list twitch as the pointer
+ * crosses it. */
+.scm-row-rest {
+  display: grid;
+}
+.scm-row-rest > * {
+  grid-area: 1 / 1;
+  justify-self: end;
+  align-self: center;
+}
+.scm-row:hover,
+.scm-row:focus-within {
+  background: var(--control-hover);
+}
+.scm-act {
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 3px;
+}
+.scm-act:hover:not(:disabled) {
+  background: var(--chip);
+  color: var(--text);
+}
+.scm-group-head:hover {
+  background: var(--control-hover);
 }

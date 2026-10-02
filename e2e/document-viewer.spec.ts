@@ -406,7 +406,14 @@ test.describe('opening a document from the Changes tab (P2-E16-02)', () => {
 
     // the ROW still belongs to the diff; the viewer has its own labelled button
     await expect(w.getByText(file, { exact: true })).toBeVisible({ timeout: 15_000 });
-    await w.getByRole('button', { name: `Open ${file} in the document viewer` }).click();
+    // ⚠️ HOVER THE ROW FIRST, AND REACH IT BY CSS. Since item 6 the row's verbs
+    // are `visibility: hidden` until the row is hovered or focused — which also
+    // removes them from the ACCESSIBILITY TREE, so `getByRole` resolves to
+    // nothing and the chain cannot start at the button. CI found this, on both
+    // platforms.
+    const row = w.locator('.scm-row').filter({ hasText: file }).first();
+    await row.hover();
+    await row.locator(`button[aria-label="Open ${file} in the document viewer"]`).click();
 
     await expect(viewer(w)).toBeVisible();
     await expect(w.locator('[data-testid="doc-name"]')).toHaveText(file);

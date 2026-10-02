@@ -41,9 +41,13 @@ function ctx(over: Partial<PanelContext> = {}): PanelContext {
 describe('the built-in renderer points', () => {
   it('ships four panels in a fixed order', () => {
     // Terminal was a fifth, deliberately last. It went with the tab (#873);
-    // the PTY code behind it stayed. `files` arrived with #521 layer 2, AHEAD
-    // of History -- which is a permanently disabled placeholder, and a working
-    // tab behind a dead one reads as the strip trailing off.
+    // the PTY code behind it stayed. `files` arrived with #521 layer 2.
+    //
+    // This comment used to end "AHEAD of History -- which is a permanently
+    // disabled placeholder, and a working tab behind a dead one reads as the strip
+    // trailing off." History works as of E24 Git v2 item 2, so the order is now
+    // simply the order: the conversation, then the working tree, then the files in
+    // it, then the repository behind them.
     const ids = listPanels(createRendererRegistry()).map((p) => p.id);
     expect(ids).toEqual(['feed', 'diff', 'files', 'history']);
   });
@@ -72,9 +76,27 @@ describe('the built-in renderer points', () => {
     expect(panelBadge(files, ctx({ changed: 7 }))).toBeNull();
   });
 
-  it('History is shown but not clickable', () => {
+  it('⚠️ History is CLICKABLE now — it was a placeholder and two documents said it had shipped', () => {
+    // This test used to read `toBe(false)` and was named "History is shown but
+    // not clickable". It was right about the code and the code was wrong about
+    // the product: `docs/DESIGN.md` §5.7 and `docs/plans/06-phase-3-ide.md`'s E24
+    // both claimed the History tab's read-only log had shipped while this
+    // assertion pinned it as permanently dead. The owner found out by clicking
+    // the tab. E24 Git v2 items 1 and 2 built it; this is the assertion flipped.
     const history = listPanels(createRendererRegistry()).find((p) => p.id === 'history')!;
-    expect(panelEnabled(history, ctx())).toBe(false);
+    expect(panelEnabled(history, ctx())).toBe(true);
+    // And greyed without a folder, like the two tabs beside it — §5.8's rule that
+    // a tab is never hidden, only disabled.
+    expect(panelEnabled(history, ctx({ folder: undefined }))).toBe(false);
+  });
+
+  it('the History tab carries NO badge either, and the reason is different from Files’', () => {
+    // Files declines `ctx.changed` because that number belongs to Changes. History
+    // declines it because anything it could count would be about the REMOTE —
+    // commits to pull or push — while the Changes badge is about the working tree.
+    // Two meanings, one shape, on one strip.
+    const history = listPanels(createRendererRegistry()).find((p) => p.id === 'history')!;
+    expect(panelBadge(history, ctx({ changed: 7 }))).toBeNull();
   });
 
   it('a panel whose enabled() THROWS is greyed, not fatal', () => {
@@ -189,7 +211,13 @@ describe('choosing the active panel', () => {
     // Changes remembered, then the folder went away: rendering it would give a
     // blank card body with no tab lit and nothing explaining why
     expect(active(all, 'diff', ctx({ folder: undefined }))).toBe('feed');
-    expect(active(all, 'history', ctx())).toBe('feed');
+    // History used to be the permanently-disabled case here and is now enabled
+    // (E24 Git v2 item 2), so the folderless context is what makes it the DISABLED
+    // one. Kept as a second example rather than deleted: the rule is about any
+    // disabled panel, and a rule with one example is a rule that can be satisfied
+    // by accident.
+    expect(active(all, 'history', ctx({ folder: undefined }))).toBe('feed');
+    expect(active(all, 'history', ctx())).toBe('history');
   });
 });
 

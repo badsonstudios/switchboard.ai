@@ -28,6 +28,16 @@ export const CAPABILITIES = [
   // would reintroduce them here, with the channels they guard.
   'transcripts.read',
   'git.read',
+  'git.write', // STAGE, UNSTAGE, DISCARD, COMMIT, and the branch/sync verbs
+  // (E24 Git v2 layer 2, §5.7). Its own capability for the sharpest
+  // reason in this whole vocabulary: everything under `git.read`
+  // reveals what is already on disk, while this CHANGES THE USER'S
+  // REPOSITORY — and one of its verbs, discard, is the only
+  // operation in switchboard that can destroy work no other copy
+  // of exists. A consumer that lists changed files must never
+  // acquire the power to throw them away by holding one grant, and
+  // a future read-only contribution must be able to hold
+  // `git.read` and nothing else.
   'events.read',
   'events.write', // acknowledge / dismiss
   'settings.read',
@@ -270,6 +280,57 @@ export const CHANNEL_CAPABILITIES = {
   'fs:watch': 'fs.read',
   'fs:unwatch': 'fs.read',
   'git:fileVersions': 'git.read',
+  // The commit history (E24 Git v2 item 1, §5.7). `git.read` and not a word of
+  // its own: it reveals strictly less than `git:fileVersions` already hands over
+  // — commit metadata and line COUNTS, where that channel gives the bytes of a
+  // file at HEAD — and the whole point of the split is that a consumer should not
+  // have to request more power than it uses. A reader of the log is a reader of
+  // the repository, which is what `git.read` means.
+  'git:log': 'git.read',
+  // What one commit changed, and one file at two revisions (E24 Git v2 item 4).
+  // `git.read` for the same reason `git:log` is: both reveal strictly less than
+  // `git:fileVersions` already hands over.
+  'git:commitFiles': 'git.read',
+  'git:fileVersionsAt': 'git.read',
+  // ⚠️ **THE WRITE HALF (E24 Git v2 item 12), AND THE SPLIT IS THE WHOLE POINT.**
+  // Every channel above reveals what is already on disk; these three CHANGE the
+  // user's repository, and `git:discard` can destroy work no other copy of
+  // exists. A consumer that lists changed files must not acquire the power to
+  // throw them away by holding one grant.
+  //
+  // All three on ONE capability rather than three: they are the same power
+  // (switchboard may alter this repository) and a surface that can stage can
+  // trivially reach the same end state as one that can unstage. Discard is the
+  // one that is genuinely different in kind, and what protects it is a CONFIRM
+  // in the renderer and a refusal on anything ambiguous in main — not a fourth
+  // capability nobody would grant separately.
+  'git:stage': 'git.write',
+  'git:unstage': 'git.write',
+  'git:discard': 'git.write',
+  // The commit itself (E24 Git v2 item 13). Same capability as the three above:
+  // it is the same power, and a surface that can stage can already decide what a
+  // commit will contain. What makes it different in KIND is `--amend`, which
+  // rewrites history — and what protects that is its place behind a ⋯ rather
+  // than a fifth grant nobody would hold separately.
+  'git:commit': 'git.write',
+  // Partial staging (E24 Git v2 item 14). `git:hunks` READS a diff and could
+  // have been `git.read` on the letter of it — it is `git.write` because it
+  // exists only to be handed back to `git:applyPatch`, and a capability split
+  // that let a consumer hold half of one operation would be a split that
+  // describes our file layout rather than a power.
+  'git:hunks': 'git.write',
+  'git:applyPatch': 'git.write',
+  // Branch and sync (E24 Git v2 item 15). `git:fetch` arguably only READS — it
+  // updates remote-tracking refs and touches no file — but it is `git.write`
+  // because it is the one capability in this app that makes an OUTBOUND NETWORK
+  // REQUEST on the user's credentials, and that fact has to be legible in a
+  // manifest rather than hidden under a word that means "read the working tree".
+  // The same argument `update.check` and `provider.status` are named for.
+  'git:fetch': 'git.write',
+  'git:pull': 'git.write',
+  'git:push': 'git.write',
+  'git:checkout': 'git.write',
+  'git:createBranch': 'git.write',
   // the provider's service health as main currently understands it (P2-E14-07)
   'health:get': 'provider.status',
   // the polling switch is an ordinary preference, like the update auto-check

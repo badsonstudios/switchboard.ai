@@ -1081,9 +1081,93 @@ const api = {
     },
   },
   git: {
-    status: (folder: string): Promise<unknown> => ipcRenderer.invoke('git:status', folder),
+    /**
+     * The working tree's state.
+     *
+     * `withStats` asks for the per-file `+/−` as well (E24 Git v2 item 7) — two
+     * extra `git diff` invocations, so the card header's poll leaves it off and
+     * only the Changes tab pays. Declared `Promise<unknown>` for the #650 reason
+     * every value channel is.
+     */
+    status: (folder: string, withStats?: boolean): Promise<unknown> =>
+      ipcRenderer.invoke('git:status', folder, withStats === true),
+    /**
+     * The commit history (E24 Git v2 item 1, §5.7).
+     *
+     * `Promise<unknown>` for the same reason `status` above is (#650): a channel
+     * can answer with a REFUSAL instead of its payload, so the declared type has
+     * to be the thing that is actually on the wire. Every caller runs `answered()`
+     * and treats a missing field as "learn nothing" rather than as a value.
+     */
+    log: (folder: string, query?: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('git:log', folder, query ?? {}),
     fileVersions: (folder: string, file: string): Promise<{ original: string; modified: string }> =>
       ipcRenderer.invoke('git:fileVersions', folder, file),
+    /** What one commit changed (E24 Git v2 item 4) — `Promise<unknown>` for #650 */
+    commitFiles: (folder: string, commit: unknown): Promise<unknown> =>
+      ipcRenderer.invoke('git:commitFiles', folder, commit),
+    /** one file at two revisions — the `fileVersions` twin for a commit */
+    fileVersionsAt: (
+      folder: string,
+      file: string,
+      left: string,
+      right: string
+    ): Promise<{ original: string; modified: string }> =>
+      ipcRenderer.invoke('git:fileVersionsAt', folder, file, left, right),
+    // ── THE WRITE HALF (E24 Git v2 item 12) ─────────────────────────────────
+    //
+    // `Promise<unknown>` like every other channel here, for #650's reason: a
+    // channel can answer with a REFUSAL instead of its payload, so the consumer
+    // runs `answered()` first and treats a missing field as "learn nothing"
+    // rather than as a value. That matters more for a write than for a read — a
+    // refusal mistaken for success would leave the surface saying "staged" about
+    // something that is not.
+    stage: (folder: string, paths: readonly string[]): Promise<unknown> =>
+      ipcRenderer.invoke('git:stage', folder, paths),
+    unstage: (folder: string, paths: readonly string[]): Promise<unknown> =>
+      ipcRenderer.invoke('git:unstage', folder, paths),
+    /** ⚠️ DESTRUCTIVE — the confirm is the renderer's, and it is not optional. */
+    discard: (folder: string, paths: readonly string[]): Promise<unknown> =>
+      ipcRenderer.invoke('git:discard', folder, paths),
+    /**
+     * Make a commit (E24 Git v2 item 13).
+     *
+     * The MESSAGE crosses as a string and is written to git's stdin in main —
+     * never onto a command line, which is the design record's §2.1 finding about
+     * a multi-line body with quotes in it on Windows.
+     */
+    commit: (
+      folder: string,
+      message: string,
+      opts?: { amend?: boolean; signoff?: boolean; noVerify?: boolean }
+    ): Promise<unknown> => ipcRenderer.invoke('git:commit', folder, message, opts),
+    /** One file's hunks, for partial staging (E24 Git v2 item 14) */
+    hunks: (folder: string, file: string): Promise<unknown> =>
+      ipcRenderer.invoke('git:hunks', folder, file),
+    /**
+     * Apply a synthesised patch to the INDEX ONLY.
+     *
+     * ⚠️ The working tree is never written, which is why this needs no confirm —
+     * unlike `discard`, nothing reachable through here can be lost.
+     */
+    applyPatch: (
+      folder: string,
+      patch: string,
+      opts?: { reverse?: boolean; zeroContext?: boolean }
+    ): Promise<unknown> => ipcRenderer.invoke('git:applyPatch', folder, patch, opts),
+    // ── branch and sync (E24 Git v2 item 15) ──
+    //
+    // The three network verbs can take a while — somebody else's server is the
+    // bound — and main holds a long budget for them. Nothing here can hang the
+    // renderer: every one is an `invoke` that resolves with an outcome.
+    fetch: (folder: string): Promise<unknown> => ipcRenderer.invoke('git:fetch', folder),
+    pull: (folder: string): Promise<unknown> => ipcRenderer.invoke('git:pull', folder),
+    push: (folder: string, opts?: { setUpstream?: boolean }): Promise<unknown> =>
+      ipcRenderer.invoke('git:push', folder, opts),
+    checkout: (folder: string, branch: string): Promise<unknown> =>
+      ipcRenderer.invoke('git:checkout', folder, branch),
+    createBranch: (folder: string, name: string, from?: string): Promise<unknown> =>
+      ipcRenderer.invoke('git:createBranch', folder, name, from),
   },
   notifications: {
     getPrefs: (): Promise<NotificationPrefs> => ipcRenderer.invoke('notifications:getPrefs'),

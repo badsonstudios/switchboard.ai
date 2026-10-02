@@ -87,6 +87,8 @@ import { PushActions } from './events/push-actions';
 import { registerPushIpc } from './events/push-ipc';
 import { SecretStore } from './secrets/store';
 import { GitService } from './git/git-service';
+import { isCommitRef, isLogQuery, isRev } from './git/git-log';
+import { type GitWriteResult, asPathList } from './git/git-write';
 import { BusHost } from './bus/host-channel';
 import { SessionQueries, summariesFrom } from './sessions/queries';
 import { resolveMentions } from './sessions/mention-resolve';
@@ -2382,9 +2384,14 @@ app
       log: busLog,
     });
 
-    broker.handle('git:status', (_e, folder: string) =>
+    broker.handle('git:status', (_e, folder: string, withStats?: unknown) =>
       knownFolder(folder)
-        ? gitService.status(folder)
+        ? // `withStats` is the Changes tab asking for the per-file `+/−` (E24 Git
+          // v2 item 7). Opt-in because this channel is also the card header's
+          // changed-count poll, which draws no numbers — see `status()`'s own
+          // note. Coerced rather than trusted: it decides whether two more `git
+          // diff` invocations run, and nothing else.
+          gitService.status(folder, undefined, withStats === true)
         : // A REFUSAL, AND IT SAYS SO (#785 review). This was a bare
           // `{ isRepo: false }`, which the pane drew as "Not a git repository"
           // for a folder switchboard declined to read — the same lie #785 is
@@ -2397,6 +2404,175 @@ app
             files: [],
           }
     );
+    // The commit history (E24 Git v2 item 1, §5.7) — the History tab's engine.
+    //
+    // Scoped by `knownFolder` like `git:status`, and it REFUSES WITH A REASON for
+    // the same cause #785 gave above: a bare empty answer here would draw as
+    // "this repository has no history", which is a confident wrong answer about
+    // the user's project rather than an admission that switchboard declined.
+    //
+    // The query is caller-supplied and every field of it is clamped or validated
+    // in `logArgs` — the limit against `MAX_LOG_LIMIT`, the refs against a
+    // pattern, the path forced behind `--`. Nothing from the renderer reaches
+    // argv unchecked.
+    broker.handle('git:log', (_e, folder: string, query: unknown) =>
+      knownFolder(folder)
+        ? gitService.log(folder, isLogQuery(query) ? query : {})
+        : {
+            isRepo: false,
+            unreadable: 'switchboard only reads git for folders it has open as a session',
+            commits: [],
+          }
+    );
+    // What one commit changed (E24 Git v2 item 4). Scoped like its siblings, and
+    // it REFUSES WITH A REASON rather than an empty list: a bare `[]` would draw
+    // as "this commit changed nothing", which is the confident wrong answer the
+    // empty-tree fallback exists to avoid two layers down.
+    broker.handle('git:commitFiles', (_e, folder: string, commit: unknown) =>
+      knownFolder(folder) && isCommitRef(commit)
+        ? gitService.commitFiles(folder, commit)
+        : {
+            files: [],
+            unreadable: knownFolder(folder)
+              ? 'switchboard could not read that commit reference'
+              : 'switchboard only reads git for folders it has open as a session',
+          }
+    );
+    // One file at two revisions. Path-scoped exactly as `git:fileVersions` is —
+    // the revisions are validated rather than trusted, because they reach argv.
+    broker.handle(
+      'git:fileVersionsAt',
+      (_e, folder: string, file: string, left: unknown, right: unknown) => {
+        if (!knownFolder(folder)) return { original: '', modified: '' };
+        if (!isRev(left) || !isRev(right)) return { original: '', modified: '' };
+        const resolved = path.resolve(folder, file);
+        if (
+          resolved !== path.resolve(folder) &&
+          !resolved.startsWith(path.resolve(folder) + path.sep)
+        ) {
+          return { original: '', modified: '' };
+        }
+        return gitService.fileVersionsAt(folder, file, left, right);
+      }
+    );
+    // ── THE WRITE HALF (E24 Git v2 item 12) ─────────────────────────────────
+    //
+    // ⚠️ **SCOPED BY `knownFolder` LIKE EVERY READ, AND THE SAME SENTENCE IS THE
+    // REFUSAL** — but the shape of the answer is different: a read that is
+    // refused hands back an empty-but-valid payload so a pane can draw nothing,
+    // while a write that is refused must say SO, because the user pressed a
+    // button and something has to tell them it did not happen.
+    //
+    // ⚠️ **AND THE PATHS ARE VALIDATED IN THE SERVICE, NOT HERE.** `writePaths`
+    // refuses a path that leaves the folder or that git would read as pathspec
+    // magic, all-or-nothing, and it does so at the one place that knows what a
+    // refusal means for a write. Re-stating the rule in this file would be the
+    // second copy that `git-paths.ts` exists to prevent.
+    const writeScope = (folder: string): GitWriteResult | null =>
+      knownFolder(folder)
+        ? null
+        : {
+            ok: false,
+            applied: 0,
+            reason: 'switchboard only runs git for folders it has open as a session',
+          };
+    broker.handle('git:stage', (_e, folder: string, paths: unknown) => {
+      const refusal = writeScope(folder);
+      if (refusal) return refusal;
+      return gitService.stage(folder, asPathList(paths));
+    });
+    broker.handle('git:unstage', (_e, folder: string, paths: unknown) => {
+      const refusal = writeScope(folder);
+      if (refusal) return refusal;
+      return gitService.unstage(folder, asPathList(paths));
+    });
+    // ⚠️ **THE DESTRUCTIVE ONE.** The confirm lives in the renderer (it is a
+    // question for a human, and main has no one to ask), and what main owes is
+    // that nothing ambiguous gets through: `discard` re-reads `status` itself to
+    // classify, refuses a conflicted path by name, and never passes `-d` to
+    // `clean` so a directory cannot be removed.
+    broker.handle('git:discard', (_e, folder: string, paths: unknown) => {
+      const refusal = writeScope(folder);
+      if (refusal) return refusal;
+      return gitService.discard(folder, asPathList(paths));
+    });
+    // The commit itself (E24 Git v2 item 13). The message is a string here and
+    // becomes git's STDIN in the service — never argv.
+    broker.handle('git:commit', (_e, folder: string, message: unknown, opts: unknown) => {
+      const refusal = writeScope(folder);
+      if (refusal) return refusal;
+      // ⚠️ **THE FLAGS ARE READ AS BOOLEANS, ONE AT A TIME, RATHER THAN SPREAD.**
+      // Spreading whatever arrived would let a renderer bug — or a Phase-4
+      // contribution — put any key into `CommitOptions`, and the first one that
+      // became a git flag would be an argv injection. `--amend` in particular
+      // rewrites history, so it has to be something that was explicitly asked
+      // for and not something that merely appeared in an object.
+      const o = (opts ?? {}) as Record<string, unknown>;
+      return gitService.commit(folder, message, {
+        amend: o.amend === true,
+        signoff: o.signoff === true,
+        noVerify: o.noVerify === true,
+      });
+    });
+    // Partial staging (E24 Git v2 item 14). `hunks` reads the diff a patch is
+    // synthesised from; `applyPatch` stages it into the INDEX ONLY.
+    // ── Branch and sync (E24 Git v2 item 15) ────────────────────────────────
+    //
+    // ⚠️ **THE THREE NETWORK VERBS ARE SCOPED BY `knownFolder` LIKE EVERYTHING
+    // ELSE, AND THAT IS WHAT STOPS THEM BEING A GENERAL-PURPOSE NETWORK DOOR.**
+    // They talk to whatever remote the user's own repository names — not to a URL
+    // anybody can pass in, because there is no URL parameter anywhere here. That
+    // is deliberate: `remote add` is not offered, so the set of hosts switchboard
+    // can reach is exactly the set the user already configured with git.
+    broker.handle('git:fetch', (_e, folder: string) => {
+      const refusal = writeScope(folder);
+      return refusal ?? gitService.fetch(folder);
+    });
+    broker.handle('git:pull', (_e, folder: string) => {
+      const refusal = writeScope(folder);
+      return refusal ?? gitService.pull(folder);
+    });
+    broker.handle('git:push', (_e, folder: string, opts: unknown) => {
+      const refusal = writeScope(folder);
+      if (refusal) return refusal;
+      // One flag, read as a boolean — the rule `git:commit` records. Publishing a
+      // branch is not something that should happen because a key appeared in an
+      // object.
+      const o = (opts ?? {}) as Record<string, unknown>;
+      return gitService.push(folder, { setUpstream: o.setUpstream === true });
+    });
+    broker.handle('git:checkout', (_e, folder: string, branch: unknown) => {
+      const refusal = writeScope(folder);
+      return refusal ?? gitService.checkout(folder, branch);
+    });
+    broker.handle('git:createBranch', (_e, folder: string, name: unknown, from: unknown) => {
+      const refusal = writeScope(folder);
+      // The NAME and the SOURCE are both validated in the service, which is where
+      // the branch-name rule lives — re-stating it here would be the second copy
+      // `git-paths.ts` exists to argue against.
+      return refusal ?? gitService.createBranch(folder, name, from);
+    });
+    broker.handle('git:hunks', (_e, folder: string, file: string) =>
+      knownFolder(folder)
+        ? gitService.hunks(folder, file)
+        : {
+            unreadable: 'switchboard only runs git for folders it has open as a session',
+            hunks: [],
+          }
+    );
+    broker.handle('git:applyPatch', (_e, folder: string, patch: unknown, opts: unknown) => {
+      const refusal = writeScope(folder);
+      if (refusal) return refusal;
+      // ⚠️ **THE FLAGS ARE READ ONE AT A TIME, never spread** — the same rule
+      // `git:commit` records. `--unidiff-zero` in particular disables apply's
+      // context check, so it must be something explicitly asked for and not
+      // something that merely appeared in an object.
+      const o = (opts ?? {}) as Record<string, unknown>;
+      return gitService.applyPatch(folder, typeof patch === 'string' ? patch : '', {
+        reverse: o.reverse === true,
+        zeroContext: o.zeroContext === true,
+      });
+    });
     broker.handle('git:fileVersions', (_e, folder: string, file: string) => {
       // scope to a known folder AND forbid escaping it (path traversal)
       if (!knownFolder(folder)) return { original: '', modified: '' };

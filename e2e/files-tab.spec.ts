@@ -112,8 +112,10 @@ test.describe('the Files tab (#521 layer 2)', () => {
     const { w, folder } = await openFiles();
 
     // IN ITS PLACE: Session, Changes, Files, History. Read off the real strip
-    // rather than asserted one tab at a time, because the ORDER is the claim —
-    // Files ahead of the permanently disabled History tab.
+    // rather than asserted one tab at a time, because the ORDER is the claim.
+    // It used to read "Files ahead of the permanently disabled History tab";
+    // History works as of E24 Git v2 item 2, so the order is now simply the
+    // order — working tree, then files, then the repository.
     const order = await w.evaluate(() =>
       [...document.querySelectorAll('[data-testid="view-tabs"] [role="tab"]')].map(
         (el) => (el as HTMLElement).dataset.vtab

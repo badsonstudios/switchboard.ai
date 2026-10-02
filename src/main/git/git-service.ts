@@ -16,12 +16,60 @@ import path from 'path';
 import { killTree } from '../transport/kill-tree';
 import { trackChild } from '../diagnostics/live-children';
 import {
+  type GitCommit,
+  type GitLogQuery,
+  appliedPath,
+  diffBaseFor,
+  isRev,
+  logArgs,
+  parseLog,
+} from './git-log';
+import {
+  type GitWriteResult,
+  batchPaths,
+  discardTrackedArgs,
+  discardUntrackedArgs,
+  planDiscard,
+  refused,
+  stageArgs,
+  unstageArgs,
+  writePaths,
+} from './git-write';
+import {
+  type CommitOptions,
+  COMMIT_BUDGET_MS,
+  commitArgs,
+  commitRefusal,
+  emptyMessageRefusal,
+  isCommittableMessage,
+} from './git-commit';
+import { type Hunk, applyArgs, hunkDiffArgs, parseDiff } from './git-hunks';
+import {
+  NETWORK_BUDGET_MS,
+  checkoutArgs,
+  createBranchArgs,
+  fetchArgs,
+  isBranchName,
+  networkEnv,
+  pullArgs,
+  pushArgs,
+  refusedBranch,
+} from './git-remote';
+import { type FileStats, mergeNumstats, numstatArgs, parseNumstat } from './git-numstat';
+import {
+  type CommitFile,
+  mergeCommitFiles,
+  nameStatusArgs,
+  parseNameStatus,
+} from './git-commit-files';
+import {
   CONFIG_LIST_SCOPED,
   EMPTY_TREE,
   type ScopedConfigEntry,
   configListForScope,
   filterGuardOverrides,
   gitlinkPaths,
+  type GuardOpts,
   guardArgs,
   overrideEnv,
   parseScopedConfig,
@@ -30,11 +78,25 @@ import {
 
 export interface GitFileStatus {
   path: string;
-  /** porcelain XY, e.g. "M.", ".M", "??" (untracked) */
+  /** porcelain XY, e.g. "M.", ".M", "??" (untracked), "UU" (conflicted) */
   xy: string;
   staged: boolean;
   unstaged: boolean;
   untracked: boolean;
+  /**
+   * This file is in a merge conflict (E24 Git v2 item 6).
+   *
+   * ⚠️ **NEW, BECAUSE CONFLICTED FILES WERE NOT REPORTED AT ALL.** porcelain v2
+   * puts an unmerged entry on its own `u ` line, and the parser matched only
+   * `1 `, `2 ` and `? ` — so a file in a conflict was invisible in the Changes
+   * tab and uncounted in the card header's badge, at the one moment a user most
+   * needs to know which files are in trouble.
+   *
+   * Optional rather than required so no existing consumer has to change: both
+   * `staged` and `unstaged` are `true` for a conflict, which is the honest answer
+   * to each of those questions on its own.
+   */
+  conflicted?: boolean;
 }
 
 export interface GitStatus {
@@ -79,6 +141,23 @@ export interface GitStatus {
   ahead?: number;
   behind?: number;
   files: GitFileStatus[];
+  /**
+   * Per-file `+/−`, keyed by the same path `files` uses (E24 Git v2 item 7).
+   *
+   * ⚠️ **PRESENT ONLY WHEN ASKED FOR, AND ABSENT IS NOT EMPTY.** `undefined` means
+   * the caller did not pay for it; `{}` means it was asked and nothing has
+   * changed. The sidebar needs the difference to tell "we have no numbers" from
+   * "the numbers are zero" — which is the distinction this whole epic keeps being
+   * corrected for.
+   *
+   * ⚠️ **AND IT RIDES ON `status()` RATHER THAN ON A CHANNEL OF ITS OWN, WHICH IS
+   * THE WHOLE REASON IT IS HERE.** Two round trips would be two snapshots: the
+   * file list from one moment and the numbers from another, drawn in the SAME ROW.
+   * A row reading `+12 −3` beside a file that is no longer changed is exactly the
+   * confident wrong answer this surface exists to stop giving. One call, one #776
+   * guard, one moment.
+   */
+  stats?: Record<string, FileStats>;
 }
 
 export interface FileVersions {
@@ -86,6 +165,70 @@ export interface FileVersions {
   original: string;
   /** working-tree content (empty for deletions) */
   modified: string;
+}
+
+/**
+ * `git log`'s answer (E24 Git v2 item 1, §5.7).
+ *
+ * Shaped like `GitStatus` and NOT like `diff()`: it answers a PANE, so it
+ * reports a failure in a field rather than throwing. `diff()` throws because its
+ * one consumer is a language model reading prose, where an empty string renders
+ * as "has no uncommitted changes" — a confident wrong answer. The History tab
+ * can draw "we could not read the history, because <git's reason>" and keep the
+ * card alive, which is what fail-open asks for here.
+ */
+export interface GitLog {
+  isRepo: boolean;
+  /** why this is not a reading of the history — same discipline as `GitStatus` */
+  unreadable?: string;
+  /**
+   * This repository has no commits yet.
+   *
+   * ⚠️ **A FACT, NOT A FAILURE, AND IT HAS TO BE SAID SEPARATELY.** `git log`
+   * exits 128 on an unborn HEAD, and with an explicit `HEAD` argument — which
+   * `logArgs` always passes — the message is `fatal: bad revision 'HEAD'`
+   * (measured). That is byte-indistinguishable from a typo'd ref, so matching on
+   * it would report a brand-new `git init` as a broken repository. The answer is
+   * established POSITIVELY instead, by asking `rev-parse --verify -q HEAD` after
+   * the failure.
+   */
+  unborn?: boolean;
+  /**
+   * The pathspec this reading was ACTUALLY filtered by, if any.
+   *
+   * ⚠️ **THE ANSWER CARRIES ITS OWN FILTER, AND IT HAS TO (found in review).** The
+   * History tab drew its "showing only this file" chip off the REQUEST, so when
+   * `safePath` refused a path the pane showed **the whole repository's history
+   * under a chip naming one file** — the one shape worse than an empty list, and
+   * the exact confident-wrong-answer this epic is a correction for. `safePath`'s
+   * own comment justified its silent widening with *"nothing user-reachable
+   * produces these shapes"*, and item 10 broke that premise: the path now comes
+   * out of a repository's own `status` output and is clicked by a user. A filename
+   * beginning with `:` is legal on macOS and Linux and is refused as pathspec
+   * magic.
+   *
+   * Same discipline as `unreadable` above — what we could not do goes in a field,
+   * so no reader can mistake a wider answer for the narrow one it asked for.
+   */
+  filteredBy?: string;
+  /** a path WAS asked for and we would not pass it, so this is the whole history */
+  pathRefused?: boolean;
+  commits: GitCommit[];
+}
+
+/**
+ * One file's diff, split into hunks (E24 Git v2 item 14).
+ *
+ * Shaped like `GitLog` and `GitStatus` rather than throwing: it answers a pane, so
+ * a failure goes in a FIELD. And an EMPTY hunk list is a fact (nothing unstaged in
+ * that file) rather than a failure — the distinction `historyPaneState` and
+ * `gitPaneState` both exist to keep.
+ */
+export interface GitHunks {
+  unreadable?: string;
+  /** the `diff --git` / `---` / `+++` lines, verbatim — a patch needs them */
+  header?: string[];
+  hunks: Hunk[];
 }
 
 /**
@@ -113,6 +256,26 @@ export interface FileVersions {
 export const DIFF_BUDGET_MS = 10_000;
 
 /**
+ * How long `log()` gets before it is KILLED (E24 Git v2 item 1).
+ *
+ * **BOUNDED, WHERE `status()` DELIBERATELY IS NOT, AND THE DIFFERENCE IS WHAT
+ * THE TIMEOUT WOULD BE A LIE ABOUT.** Killing `status` would report a repository
+ * that is merely slow as one switchboard could not read — a claim about the
+ * user's project. Killing `log` says "we could not read the history within 15
+ * seconds", which is true, specific, and leaves the rest of the card working.
+ *
+ * ⚠️ **GENEROUS BECAUSE `--shortstat` TURNED OUT TO COST FAR MORE THAN EXPECTED.**
+ * Measured on this repository (941 commits, essay-length bodies, Windows 11 with
+ * Defender): **100 commits with the stats took 1,331 ms and without them 64 ms**,
+ * and the whole history with stats took 2,858 ms. That is ~13 ms per commit, and
+ * it is why `DEFAULT_LOG_LIMIT` is 50 and why the stats are a query option at
+ * all — see `STATS_FLAGS` in `git-log.ts` for the table. Fifteen seconds is five
+ * times the slowest full-history read measured, and is reached by a disk that has
+ * stopped answering rather than by a big repository.
+ */
+export const LOG_BUDGET_MS = 15_000;
+
+/**
  * How long the #776 config guard gets on the `status` path, where there is no
  * outer deadline to sit inside.
  *
@@ -124,6 +287,37 @@ export const DIFF_BUDGET_MS = 10_000;
  * ~12 ms each.
  */
 export const GUARD_BUDGET_MS = 15_000;
+
+/**
+ * How long the two `--numstat` reads get, counted from when THEY start.
+ *
+ * Not a slice of the guard's budget: that one is set before the status read, which
+ * is deliberately unbounded, so by the time the stats run there may be nothing
+ * left of it. Generous because this is the "something is badly wrong" bound and
+ * not a latency target — two diffs of a working tree are the same work `diff()`
+ * budgets at 10 s.
+ */
+const STATS_BUDGET_MS = 10_000;
+
+/**
+ * How long a WRITE gets — all its invocations together.
+ *
+ * Longer than a read's because the work is different in kind: `add` hashes file
+ * contents into the object store and `clean` deletes from disk, both of which can
+ * be slow on a big batch or a slow volume, where a `status` is mostly reading an
+ * index. Still bounded, for the reason every budget in this file is bounded: a git
+ * that never finishes must not become a surface that never answers.
+ */
+export const WRITE_BUDGET_MS = 30_000;
+
+/**
+ * The answer when a `--numstat` read did not succeed.
+ *
+ * Frozen and shared: a failure here costs the NUMBERS and never the file list
+ * (see `status`'s own note), so this is reached on the fail-open path and must not
+ * be something a caller could write into.
+ */
+const EMPTY_NUMSTATS: ReadonlyMap<string, never> = new Map<string, never>();
 
 /** How much output one git invocation may produce before it is killed. */
 const MAX_GIT_OUTPUT = 32 * 1024 * 1024;
@@ -165,12 +359,35 @@ interface GitRun {
   failure: GitFailure | null;
 }
 
+/**
+ * What one invocation needs beyond its arguments.
+ *
+ * An options object rather than two more positionals: `git(cmd, folder, args,
+ * ms, env)` was already at the limit of what a reader can keep straight, and
+ * `input` and `guard` are both things exactly one caller uses.
+ */
+interface GitOpts {
+  /**
+   * Written to git's stdin, then closed.
+   *
+   * ⚠️ **THIS IS HOW A COMMIT MESSAGE TRAVELS, AND THE DESIGN RECORD SAYS
+   * SO FOR A MEASURED REASON** (§2.1): *"Commit messages go in on stdin
+   * (`commit --file=-`), never `-m`. A multi-line body with quotes in it is a
+   * Windows quoting bug waiting to happen."* Measured through this path: a body
+   * containing double quotes, a `$`, a `%` and several lines arrives byte-exact.
+   */
+  input?: string;
+  /** see `GuardOpts` — `{ hooks: 'allow' }` is for `commit` and nothing else */
+  guard?: GuardOpts;
+}
+
 function git(
   command: GitCommand,
   folder: string,
   args: string[],
   timeoutMs = 0,
-  env?: NodeJS.ProcessEnv
+  env?: NodeJS.ProcessEnv,
+  opts: GitOpts = {}
 ): Promise<GitRun> {
   return new Promise((resolve) => {
     // OUR timer, not `execFile`'s `timeout` — see `killTree` for why.
@@ -181,7 +398,7 @@ function git(
     try {
       child = execFile(
         command.file,
-        [...command.prefixArgs, ...guardArgs(), ...args],
+        [...command.prefixArgs, ...guardArgs(opts.guard), ...args],
         {
           cwd: folder,
           encoding: 'utf8',
@@ -214,6 +431,22 @@ function git(
         }
       );
       trackChild('git', child); // the #719 heartbeat's own-children count
+      /**
+       * ⚠️ **THE MESSAGE GOES IN ON STDIN, AND THE PIPE IS CLOSED EVEN IF THE
+       * WRITE FAILS.** `commit --file=-` reads until EOF, so a stdin left open is
+       * a git that waits for ever — which our own budget would then kill and
+       * report as a timeout, i.e. a bug that looks like a slow disk.
+       *
+       * `error` is swallowed deliberately: an EPIPE here means git has already
+       * gone (it refused before reading, which is what an empty message does),
+       * and that failure is reported through the exit code and stderr like every
+       * other. An unhandled `error` on a stdin stream, by contrast, takes the
+       * whole main process down.
+       */
+      if (opts.input !== undefined && child.stdin) {
+        child.stdin.on('error', () => undefined);
+        child.stdin.end(opts.input);
+      }
     } catch {
       // ⚠️ **`execFile` CAN THROW RATHER THAN CALL BACK, AND LINUX IS WHERE IT
       // DOES (#785, found by CI).** Handing it a `cwd` that is a FILE raises
@@ -386,9 +619,10 @@ export class GitService {
     folder: string,
     args: string[],
     timeoutMs?: number,
-    env?: NodeJS.ProcessEnv
+    env?: NodeJS.ProcessEnv,
+    opts?: GitOpts
   ): Promise<GitRun> {
-    return git(this.command, folder, args, timeoutMs, env);
+    return git(this.command, folder, args, timeoutMs, env, opts);
   }
 
   /**
@@ -627,7 +861,21 @@ export class GitService {
    * against got smaller, and the note would otherwise describe an answer this
    * method can no longer give.)
    */
-  async status(folder: string, guardBudgetMs = GUARD_BUDGET_MS): Promise<GitStatus> {
+  async status(
+    folder: string,
+    guardBudgetMs = GUARD_BUDGET_MS,
+    /**
+     * Also read the per-file `+/−` (E24 Git v2 item 7).
+     *
+     * ⚠️ **OPT-IN, AND THE REASON IS THE POLL.** `status()` is called for every
+     * card, repeatedly, to draw the header's changed-count badge — and that
+     * surface shows no numbers at all. Two extra `git diff` invocations per poll
+     * per card, for a figure nobody is looking at, is the cost shape #719 is a
+     * standing warning about. The Changes tab asks; the badge does not. Same
+     * discipline as `GitLogQuery.stats`, and for the same measured reason.
+     */
+    withStats = false
+  ): Promise<GitStatus> {
     const probe = await this.run(folder, ['rev-parse', '--is-inside-work-tree']);
     if (!probe.ok) {
       // git never started: no stderr to read, and the error cannot say whether
@@ -660,7 +908,21 @@ export class GitService {
     // quotePath=off: non-ASCII paths arrive literal, so fileVersions can find them
     const r = await this.run(
       folder,
-      ['-c', 'core.quotePath=off', 'status', '--porcelain=v2', '--branch', '--untracked-files=all'],
+      [
+        '-c',
+        'core.quotePath=off',
+        // ⚠️ **PINNED, BECAUSE THE OTHER SIDE OF THE MATCH DEPENDS ON IT (E24 Git
+        // v2 item 7, found in review).** `status.relativePaths` defaults to true
+        // and is repo-writable; `--numstat --relative` is pinned to agree with
+        // that default. If a repository flipped this, every per-file `+/−` would
+        // silently stop matching its row — see `numstatArgs` for the measurement.
+        '-c',
+        'status.relativePaths=true',
+        'status',
+        '--porcelain=v2',
+        '--branch',
+        '--untracked-files=all',
+      ],
       0,
       guard.env
     );
@@ -678,6 +940,40 @@ export class GitService {
     }
 
     const status: GitStatus = { isRepo: true, files: [] };
+    if (withStats) {
+      // ⚠️ **THE SAME `guard.env` THE STATUS READ USED.** `--numstat` diffs the
+      // WORKING TREE, so unlike `log --shortstat` it really does run a
+      // repo-configured filter driver — measured in #776 for `diff-index`, and
+      // this is the same machinery. Reusing the env the guard already built is
+      // also what keeps this to two extra invocations rather than two plus
+      // another config enumeration.
+      //
+      // ⚠️ **AND A FAILURE HERE COSTS THE NUMBERS, NEVER THE LIST.** `status` is
+      // the answer; these are a decoration on it. Reporting `unreadable` for a
+      // diff that did not run would blank a file list we had already read
+      // successfully — the fail-open rule pointing the opposite way from where it
+      // points on the status read itself.
+      // ⚠️ **THEIR OWN BUDGET, BECAUSE THE GUARD'S WAS ALREADY SPENT (found in
+      // review).** `deadline` is set before the status read, and that read is
+      // deliberately UNBOUNDED — see `status`'s own note about not reporting a
+      // merely-slow repository as unreadable. So on exactly the repository that
+      // note exists for, `deadline - Date.now()` is negative by the time we get
+      // here and `Math.max(1, …)` turned "no budget left" into a 1 ms timeout: a
+      // guaranteed failure dressed up as an attempt.
+      const statsDeadline = Date.now() + STATS_BUDGET_MS;
+      const left = (): number => Math.max(1, statsDeadline - Date.now());
+      const [unstaged, staged] = await Promise.all([
+        this.run(folder, numstatArgs('unstaged'), left(), guard.env),
+        this.run(folder, numstatArgs('staged'), left(), guard.env),
+      ]);
+      // `EMPTY_NUMSTATS` rather than `new Map()` inline: a bare `new Map()` is
+      // `Map<any, any>` to the linter, and silencing that with a cast would be a
+      // cast on the exact value whose emptiness means "the read failed".
+      status.stats = mergeNumstats(
+        unstaged.ok ? parseNumstat(unstaged.out) : EMPTY_NUMSTATS,
+        staged.ok ? parseNumstat(staged.out) : EMPTY_NUMSTATS
+      );
+    }
     for (const line of r.out.split('\n')) {
       if (line.startsWith('# branch.head ')) {
         status.branch = line.slice('# branch.head '.length).trim();
@@ -701,6 +997,37 @@ export class GitService {
           unstaged: xy[1] !== '.',
           untracked: false,
         });
+      } else if (line.startsWith('u ')) {
+        // ⚠️ **AN UNMERGED ENTRY, AND UNTIL NOW IT WAS DROPPED ON THE FLOOR (E24
+        // Git v2 item 6).** porcelain v2 reports a conflict on its own `u ` line,
+        // not as a `1 ` or `2 `, and this parser only ever matched those two and
+        // `? ` — so **a file in a merge conflict was invisible in the Changes
+        // tab**: not listed, not counted in the header badge, nothing. The one
+        // moment a user most needs to see which files are in trouble.
+        //
+        // The shape, measured: `u UU N... <m1> <m2> <m3> <mW> <h1> <h2> <h3>
+        // <path>` — ten fields before the path, where an ordinary entry has eight.
+        // The path is joined back rather than taken as one field because a path
+        // may contain spaces and `core.quotePath=off` means it arrives literal.
+        const parts = line.split(' ');
+        const xy = parts[1];
+        const p = parts.slice(10).join(' ');
+        if (p) {
+          status.files.push({
+            path: p,
+            xy,
+            // ⚠️ **BOTH SIDES TRUE, AND NEITHER IS A GUESS.** A conflicted file
+            // has content in the index AND differs from it in the worktree —
+            // that is what a conflict IS — so every existing consumer that asks
+            // "is this staged" or "is this changed" gets `true`, which is the
+            // honest answer. `conflicted` is what tells the sidebar to put it in
+            // the Merge group rather than in both of the others.
+            staged: true,
+            unstaged: true,
+            untracked: false,
+            conflicted: true,
+          });
+        }
       } else if (line.startsWith('? ')) {
         status.files.push({ path: line.slice(2), xy: '??', staged: false, unstaged: true, untracked: true });
       }
@@ -842,6 +1169,229 @@ export class GitService {
     return { isRepo: true, text: r.out };
   }
 
+  /**
+   * The commit history (E24 Git v2 item 1, §5.7) — **the thing two documents
+   * said had shipped and no code contained.**
+   *
+   * The command shape and the parser are in `git-log.ts`, where they are pure
+   * and tested against fixture bytes. This method is the part that cannot be:
+   * running git, and deciding what every way it can fail means.
+   *
+   * ⚠️ **NO CONFIG GUARD, AND THAT IS MEASURED RATHER THAN ASSUMED.** `status()`
+   * and `diff()` both pay `guardEnv()` — a config read, a submodule enumeration,
+   * several extra git invocations — because both were measured to run a
+   * repo-configured filter driver (#776). `log --shortstat` was measured NOT to:
+   * with `diff.external`, with a `.gitattributes`-selected `textconv` driver and
+   * with `filter.<n>.clean` all configured, **none of the three ran**, because
+   * `--shortstat` uses git's internal diffstat machinery and never materialises a
+   * blob through a driver. So `log` joins `root()` and `fileVersions()` as a read
+   * that carries only `guardArgs()` — `core.fsmonitor=false` and an empty
+   * `core.hooksPath`, which every invocation in this file gets.
+   *
+   * That is not a free pass for the next person: the moment somebody adds `-p` or
+   * `--numstat` to this command the measurement no longer applies and the guard
+   * is needed. `LOG_FLAGS` says so where the flags are.
+   *
+   * ⚠️ **AN UNBORN HEAD IS A FACT AND IS REPORTED AS ONE.** See `GitLog.unborn`:
+   * with the explicit `HEAD` that `logArgs` always passes, git says `bad
+   * revision 'HEAD'`, which is also what a typo'd ref says. The distinction is
+   * made by asking `rev-parse`, not by reading the message.
+   */
+  /**
+   * ⚠️ **ONE WRAPPER, SO NO RETURN PATH CAN FORGET TO SAY WHAT IT FILTERED BY.**
+   * `log` answers from eight places (not a repo, unreadable, timeout, too large,
+   * unborn, read-but-unparseable, and two successes), and the field that matters
+   * here — "is this really only one file's history?" — is a property of the QUERY
+   * rather than of the outcome. Spreading it over the finished answer is why a
+   * refused path cannot come back looking like an applied one; adding it to each
+   * `return` individually is the version of this that goes stale on the ninth.
+   */
+  async log(folder: string, query: GitLogQuery = {}, budgetMs = LOG_BUDGET_MS): Promise<GitLog> {
+    const applied = appliedPath(query);
+    const filter: Pick<GitLog, 'filteredBy' | 'pathRefused'> =
+      applied === null
+        ? {}
+        : 'refused' in applied
+          ? { pathRefused: true }
+          : { filteredBy: applied.path };
+    return { ...(await this.readLog(folder, query, budgetMs)), ...filter };
+  }
+
+  private async readLog(
+    folder: string,
+    query: GitLogQuery = {},
+    budgetMs = LOG_BUDGET_MS
+  ): Promise<GitLog> {
+    const deadline = Date.now() + budgetMs;
+    const left = (): number => Math.max(1, deadline - Date.now());
+
+    // The same probe `status()` and `diff()` open with, and the same three-way
+    // reading of it: a folder that is honestly not a repository says so plainly,
+    // and everything else carries git's own reason.
+    const probe = await this.run(folder, ['rev-parse', '--is-inside-work-tree'], left());
+    if (probe.failure === 'timeout') return { isRepo: false, unreadable: logTimedOut(budgetMs), commits: [] };
+    if (probe.failure === 'no-exec') {
+      return { isRepo: false, unreadable: await spawnReason(folder), commits: [] };
+    }
+    if (!probe.ok) {
+      const said = gitSaid(probe.err);
+      if (saysNotARepo(said)) return { isRepo: false, commits: [] };
+      return {
+        isRepo: false,
+        unreadable: said ?? 'git could not tell whether this folder is a repository',
+        commits: [],
+      };
+    }
+    // A bare repository or the inside of a `.git` directory: a clean answer, and
+    // not a failure. It has a history, but no working tree to show it beside.
+    if (!probe.out.trim().startsWith('true')) return { isRepo: false, commits: [] };
+
+    const r = await this.run(folder, logArgs(query), left());
+    if (r.ok) {
+      const commits = parseLog(r.out);
+      // ⚠️ **OUTPUT WE COULD NOT READ IS NOT AN EMPTY HISTORY (found in review,
+      // measured).** `--encoding=UTF-8` closes the one way a repository was shown
+      // to re-frame this stream — `i18n.logOutputEncoding = UTF-16LE`, which puts
+      // a NUL after every byte and makes the parser find no record anywhere — and
+      // this is the belt for the next shape of the same trick. git exits 0, so
+      // without it the History tab draws **"this project has no commits yet"** for
+      // a repository with a thousand of them: a confident wrong answer about the
+      // user's project, which is precisely what this service keeps being corrected
+      // for. Empty output IS an empty answer (`--skip` past the end), so the test
+      // is output-without-commits, not commits-without-output.
+      if (commits.length === 0 && r.out.trim() !== '') {
+        return {
+          isRepo: true,
+          unreadable:
+            'git produced a history switchboard could not read — the repository may be ' +
+            'configured to write its log in an unusual encoding',
+          commits: [],
+        };
+      }
+      return { isRepo: true, commits };
+    }
+
+    if (r.failure === 'timeout') return { isRepo: true, unreadable: logTimedOut(budgetMs), commits: [] };
+    if (r.failure === 'no-exec') return { isRepo: true, unreadable: await spawnReason(folder), commits: [] };
+    if (r.failure === 'too-large') {
+      return {
+        isRepo: true,
+        unreadable:
+          `the history is larger than the ${MAX_GIT_OUTPUT / 1024 / 1024} MB switchboard reads in ` +
+          'one go — ask for fewer commits',
+        commits: [],
+      };
+    }
+    // ONLY NOW, and only on a failure, is the unborn question asked. Putting it
+    // before the log would cost every successful read an extra git process for a
+    // case that happens once in a repository's life.
+    //
+    // ⚠️ **TWO PROBES, BECAUSE ONE OF THEM ANSWERS THE WRONG QUESTION (found in
+    // review, measured).** `rev-parse --verify -q HEAD` failing was the whole test
+    // here, and it fails for more than an unborn HEAD. Measured on a repository
+    // with one commit and a **zero-byte `.git/refs/heads/main`** — the classic
+    // post-crash corruption, and a file an edit-only agent can write:
+    //
+    // | probe | fresh `git init` | corrupt ref |
+    // |---|---|---|
+    // | `rev-parse --verify -q HEAD` | exit 1 | exit 1 |
+    // | `symbolic-ref -q HEAD` | **exit 0**, `refs/heads/main` | **exit 128**, `No such ref: HEAD` |
+    //
+    // So the first probe alone reported a damaged repository as a brand-new one,
+    // which is the same shape of confident wrong answer as the `isRepo` lie #785
+    // was filed for. Unborn is the CONJUNCTION: HEAD does not resolve **and** HEAD
+    // is still a symbolic ref pointing somewhere. The `failure === 'failed'` guard
+    // stays as well — a timeout or an unstartable git says nothing about whether
+    // there are commits.
+    const head = await this.run(folder, ['rev-parse', '--verify', '-q', 'HEAD'], left());
+    if (!head.ok && head.failure === 'failed') {
+      const symbolic = await this.run(folder, ['symbolic-ref', '-q', 'HEAD'], left());
+      if (symbolic.ok) return { isRepo: true, unborn: true, commits: [] };
+    }
+    return {
+      isRepo: true,
+      unreadable: gitSaid(r.err) ?? 'git could not read this repository’s history',
+      commits: [],
+    };
+  }
+
+  /**
+   * What one commit changed (E24 Git v2 item 4, §5.7) — screen 7's file list.
+   *
+   * ⚠️ **TWO READS, BECAUSE THE DESIGN RECORD'S ONE COMMAND CANNOT WORK.** It asks
+   * for `diff --numstat --name-status`; measured, `--name-status` wins in either
+   * order and the numbers are gone. See `git-commit-files.ts` for the bytes.
+   *
+   * ⚠️ **AND THE ROOT COMMIT IS THE CASE THAT FAILS SILENTLY** — it has no parent,
+   * so `diffBaseFor` substitutes git's empty tree. Without that the repository's
+   * first commit shows an EMPTY file list with no error anywhere, which is the
+   * single most likely wrong answer this method can give.
+   *
+   * No #776 config guard of its own: `diff <rev> <rev>` is commit-to-commit, the
+   * same ground `log --shortstat` was measured on, and it never materialises a
+   * blob through a filter. `guardArgs()` rides on every invocation as always.
+   */
+  async commitFiles(
+    folder: string,
+    commit: { id: string; parentIds: string[] },
+    budgetMs = DIFF_BUDGET_MS
+  ): Promise<{ files: CommitFile[]; unreadable?: string }> {
+    const deadline = Date.now() + budgetMs;
+    const left = (): number => Math.max(1, deadline - Date.now());
+    const base = diffBaseFor(commit);
+    const [letters, numbers] = await Promise.all([
+      this.run(folder, nameStatusArgs(base, commit.id), left()),
+      this.run(folder, numstatArgs({ left: base, right: commit.id }), left()),
+    ]);
+    // ⚠️ THE LETTERS ARE THE ANSWER AND THE NUMBERS ARE A DECORATION. A failed
+    // name-status means we do not know what the commit touched, which is the
+    // question — so that one is reported. A failed numstat costs the `+/−` and
+    // leaves the list, the same asymmetry `status`'s stats read has.
+    if (!letters.ok) {
+      const why =
+        letters.failure === 'timeout'
+          ? `git did not finish reading that commit within ${Math.round(budgetMs / 1000)}s`
+          : letters.failure === 'no-exec'
+            ? await spawnReason(folder)
+            : (gitSaid(letters.err) ?? 'git could not read that commit');
+      return { files: [], unreadable: why };
+    }
+    return {
+      files: mergeCommitFiles(
+        parseNameStatus(letters.out),
+        numbers.ok ? parseNumstat(numbers.out) : EMPTY_NUMSTATS
+      ),
+    };
+  }
+
+  /**
+   * Two sides of one file at two revisions (E24 Git v2 item 4, §5.7).
+   *
+   * The `fileVersions` twin for a COMMIT rather than for the working tree, and the
+   * one thing item 5's diff panel needed before it could honestly show a commit —
+   * until now it said "coming", because `fileVersions` answers HEAD-vs-disk and
+   * nothing else.
+   *
+   * ⚠️ **A MISSING SIDE IS AN EMPTY STRING AND THAT IS CORRECT.** A file added in
+   * this commit does not exist at `left`, and a file deleted in it does not exist
+   * at `right` — `git show` fails for each, and empty is exactly what Monaco needs
+   * to render an addition or a deletion. Which is also why a failure here cannot
+   * be distinguished from an absence, and why neither is reported as an error: the
+   * `name-status` letter beside it already says which it is.
+   */
+  async fileVersionsAt(
+    folder: string,
+    file: string,
+    left: string,
+    right: string
+  ): Promise<FileVersions> {
+    const [before, after] = await Promise.all([
+      this.run(folder, ['show', `${left}:${toGitPath(file)}`]),
+      this.run(folder, ['show', `${right}:${toGitPath(file)}`]),
+    ]);
+    return { original: before.ok ? before.out : '', modified: after.ok ? after.out : '' };
+  }
+
   /** HEAD vs working-tree contents for a Monaco diff (E5-02). */
   async fileVersions(folder: string, file: string): Promise<FileVersions> {
     const head = await this.run(folder, ['show', `HEAD:${toGitPath(file)}`]);
@@ -853,10 +1403,370 @@ export class GitService {
     }
     return { original: head.ok ? head.out : '', modified };
   }
+
+  // ── THE WRITE HALF (E24 Git v2 item 12) ───────────────────────────────────
+  //
+  // ⚠️ **THESE ARE THE FIRST COMMANDS IN THIS SERVICE THAT CHANGE THE USER'S
+  // REPOSITORY**, and three things are true of all of them:
+  //
+  //  * **They still carry every #776 guard.** A write runs through the same
+  //    `run()` as a read, so `--literal-pathspecs`, the fsmonitor pin and the
+  //    empty hooks path all apply. The threat model does not soften because we
+  //    asked for a change rather than for an answer — if anything a repository
+  //    that can make `status` run a program can make `add` run one too.
+  //  * **They report git's own words on failure.** A repository can refuse for
+  //    reasons nobody has enumerated — an index lock another agent is holding, an
+  //    unmerged path, a permission, a hook. Inventing a sentence for those would
+  //    make switchboard the authority on something git decided.
+  //  * **They are batched**, because a command line has a length limit and
+  //    Windows' is the small one. See `MAX_PATHS_PER_CALL`.
+
+  /** Stage these paths. */
+  async stage(folder: string, paths: readonly string[], budgetMs = WRITE_BUDGET_MS): Promise<GitWriteResult> {
+    return this.writeBatched(folder, paths, stageArgs, budgetMs);
+  }
+
+  /** Unstage these paths — the exact undo of `stage`. */
+  async unstage(folder: string, paths: readonly string[], budgetMs = WRITE_BUDGET_MS): Promise<GitWriteResult> {
+    return this.writeBatched(folder, paths, unstageArgs, budgetMs);
+  }
+
+  /**
+   * Throw away the working-tree changes to these paths.
+   *
+   * ⚠️ **THE ONE DESTRUCTIVE OPERATION, AND IT IS TWO COMMANDS BECAUSE GIT MADE
+   * IT TWO.** Measured: `git restore` refuses an untracked path outright, so a
+   * mixed batch fails entirely — the classification is not an optimisation, it is
+   * the only way the operation works at all.
+   *
+   * ⚠️ **AND THE CLASSIFICATION COMES FROM A FRESH `status` HERE, NOT FROM THE
+   * RENDERER.** Otherwise main would be deleting files on the renderer's word
+   * about which ones are untracked — and that word is a moment old, so a file
+   * committed since the list was drawn would be `clean`ed while it is in git.
+   */
+  async discard(
+    folder: string,
+    paths: readonly string[],
+    budgetMs = WRITE_BUDGET_MS
+  ): Promise<GitWriteResult> {
+    const safe = writePaths(paths);
+    if (!Array.isArray(safe)) return safe;
+    const deadline = Date.now() + budgetMs;
+    const left = (): number => Math.max(1, deadline - Date.now());
+    const now = await this.status(folder, left());
+    if (now.unreadable) return refused(now.unreadable);
+    if (!now.isRepo) return refused('that folder is not a git repository');
+    const plan = planDiscard(safe, now.files);
+    // ⚠️ **A CONFLICT REFUSES THE WHOLE REQUEST RATHER THAN BEING SKIPPED.**
+    // "Discard this conflict" has three meanings and git has a command for each;
+    // silently doing the other files and saying nothing about this one would be a
+    // partial destructive operation the user was not told about.
+    if (plan.conflicted.length > 0) {
+      return refused(
+        `switchboard will not discard a file that is in a merge conflict ` +
+          `(${plan.conflicted.join(', ')}) — resolve it, or use git to choose a side`
+      );
+    }
+    let applied = 0;
+    if (plan.tracked.length > 0) {
+      const r = await this.writeBatched(folder, plan.tracked, discardTrackedArgs, left());
+      if (!r.ok) return r;
+      applied += r.applied;
+    }
+    if (plan.untracked.length > 0) {
+      const r = await this.writeBatched(folder, plan.untracked, discardUntrackedArgs, left());
+      // ⚠️ THE TRACKED HALF ALREADY HAPPENED, so the count is reported even on a
+      // failure of the second half. A result that said `applied: 0` after
+      // restoring six files would send the user looking for changes that are gone.
+      if (!r.ok) return { ok: false, reason: r.reason, applied };
+      applied += r.applied;
+    }
+    // Paths that are in the request and not in the status are DROPPED silently
+    // only in the sense that they needed nothing done: a file that is already
+    // clean is the state a discard was asking for. Counting them would overstate
+    // what happened.
+    return { ok: true, applied };
+  }
+
+  // ── BRANCH AND SYNC (E24 Git v2 item 15) ──────────────────────────────────
+  //
+  // ⚠️ **THE ONLY COMMANDS HERE THAT TOUCH THE NETWORK**, and the failure that
+  // matters is a HANG rather than an error — see `networkEnv`. All five report
+  // git's own words, because the useful messages ("Not possible to fast-forward",
+  // "no upstream branch", "Could not resolve host") are all git's.
+
+  /** Update the remote's refs. Touches no file and no branch. */
+  async fetch(folder: string, budgetMs = NETWORK_BUDGET_MS): Promise<GitWriteResult> {
+    return this.network(folder, fetchArgs(), budgetMs);
+  }
+
+  /** Fast-forward this branch to the remote. See `pullArgs` for why `--ff-only`. */
+  async pull(folder: string, budgetMs = NETWORK_BUDGET_MS): Promise<GitWriteResult> {
+    return this.network(folder, pullArgs(), budgetMs);
+  }
+
+  /**
+   * Send this branch to the remote.
+   *
+   * ⚠️ **`setUpstream` IS THE CALLER'S DECISION AND NOT A RETRY HERE.** A push
+   * that failed for want of an upstream is a different thing from one that failed
+   * because somebody else pushed first, and silently adding the flag on failure
+   * would publish a branch the user had not decided to publish.
+   */
+  async push(
+    folder: string,
+    opts: { setUpstream?: boolean } = {},
+    budgetMs = NETWORK_BUDGET_MS
+  ): Promise<GitWriteResult> {
+    return this.network(folder, pushArgs(opts), budgetMs);
+  }
+
+  /** Switch branches. Local, but it goes through the same reporting. */
+  async checkout(folder: string, branch: unknown, budgetMs = WRITE_BUDGET_MS): Promise<GitWriteResult> {
+    if (!isBranchName(branch)) return refusedBranch();
+    return this.network(folder, checkoutArgs(branch), budgetMs, { network: false });
+  }
+
+  /** Make a branch — optionally at a commit the graph pointed at — and switch to it. */
+  async createBranch(
+    folder: string,
+    name: unknown,
+    from?: unknown,
+    budgetMs = WRITE_BUDGET_MS
+  ): Promise<GitWriteResult> {
+    if (!isBranchName(name)) return refusedBranch();
+    // ⚠️ THE SOURCE IS VALIDATED AS A REV, not as a branch name: it comes from the
+    // graph and is usually a 40-character sha, which `isBranchName` would accept
+    // anyway — but a rev may also be `origin/main` or `HEAD~2`, and `isRev` is the
+    // rule that already knows which of those cannot become a flag or a range.
+    if (from !== undefined && !isRev(from)) return refusedBranch();
+    // `isRev` is a type guard, so `from` is already narrowed to `string |
+    // undefined` here — no assertion needed, and lint says so.
+    return this.network(folder, createBranchArgs(name, from), budgetMs, { network: false });
+  }
+
+  /**
+   * One shape for all five: guard, run, quote git.
+   *
+   * `network: false` for the two local verbs — they need no `GIT_TERMINAL_PROMPT`
+   * and giving it to them would imply they reach out, which they do not.
+   */
+  private async network(
+    folder: string,
+    args: string[],
+    budgetMs: number,
+    opts: { network?: boolean } = {}
+  ): Promise<GitWriteResult> {
+    const deadline = Date.now() + budgetMs;
+    const guard = await this.guardEnv(folder, () => Math.max(1, deadline - Date.now()));
+    if (!guard.env) return refused(guard.reason ?? 'switchboard could not make git safe to run here');
+    const env = opts.network === false ? guard.env : networkEnv(guard.env);
+    const r = await this.run(folder, args, Math.max(1, deadline - Date.now()), env);
+    if (r.ok) return { ok: true, applied: 1 };
+    if (r.failure === 'timeout') {
+      return refused(
+        `git did not finish within ${Math.round(budgetMs / 1000)}s — the remote may ` +
+          'be unreachable or very slow'
+      );
+    }
+    if (r.failure === 'no-exec') return refused('switchboard could not run git here');
+    // git's own last word. `fetch`/`pull` put their progress on stderr, so the
+    // LAST non-empty line is the verdict rather than the first.
+    const said = `${r.err}\n${r.out}`
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l !== '');
+    return refused(said[said.length - 1] ?? 'git refused, and said nothing switchboard could pass on');
+  }
+
+  /**
+   * One file's diff, split into hunks (E24 Git v2 item 14).
+   *
+   * Worktree against index with FULL context, because the context is what a
+   * re-synthesised patch is checked against.
+   */
+  async hunks(folder: string, file: string, budgetMs = WRITE_BUDGET_MS): Promise<GitHunks> {
+    const args = hunkDiffArgs(file);
+    if (!args) return { unreadable: 'switchboard will not act on that path', hunks: [] };
+    const deadline = Date.now() + budgetMs;
+    const guard = await this.guardEnv(folder, () => Math.max(1, deadline - Date.now()));
+    if (!guard.env) return { unreadable: guard.reason ?? 'switchboard could not make git safe to run here', hunks: [] };
+    const r = await this.run(folder, args, Math.max(1, deadline - Date.now()), guard.env);
+    if (!r.ok) {
+      const said = r.err.trim().split('\n')[0] ?? '';
+      return { unreadable: said !== '' ? said : 'git could not produce that diff', hunks: [] };
+    }
+    const parsed = parseDiff(r.out);
+    // ⚠️ **NO HUNKS IS A FACT, NOT A FAILURE.** A file with nothing unstaged — the
+    // user staged it a second ago — has an empty diff, and reporting that as
+    // unreadable would put an error on screen about something that is simply done.
+    return { header: [...parsed.header], hunks: parsed.hunks.map((h) => ({ ...h, lines: [...h.lines] })) };
+  }
+
+  /**
+   * Stage (or unstage) part of a file.
+   *
+   * ⚠️ **IT NEVER TOUCHES THE WORKING TREE** — `--cached`, measured: a one-hunk
+   * patch over a two-hunk diff left the file on disk exactly as the user had it
+   * and moved `git status` to `MM`. That is the entire safety story of this item,
+   * and it is why the destructive-confirm machinery from item 12 is not needed
+   * here: nothing can be lost.
+   *
+   * ⚠️ **AND A REFUSAL LEAVES THE INDEX BYTE-IDENTICAL, which is git's own
+   * guarantee rather than ours** — measured with a deliberately wrong hunk:
+   * *"patch does not apply"*, exit 1, and `git diff --cached` identical before and
+   * after. So what is left to do is quote git, which is what the design record
+   * asks for.
+   */
+  async applyPatch(
+    folder: string,
+    patch: string,
+    opts: { reverse?: boolean; zeroContext?: boolean } = {},
+    budgetMs = WRITE_BUDGET_MS
+  ): Promise<GitWriteResult> {
+    if (typeof patch !== 'string' || patch.trim() === '') return refused('there was nothing to apply');
+    const deadline = Date.now() + budgetMs;
+    const guard = await this.guardEnv(folder, () => Math.max(1, deadline - Date.now()));
+    if (!guard.env) return refused(guard.reason ?? 'switchboard could not make git safe to run here');
+    const r = await this.run(
+      folder,
+      applyArgs(opts),
+      Math.max(1, deadline - Date.now()),
+      guard.env,
+      { input: patch }
+    );
+    if (r.ok) return { ok: true, applied: 1 };
+    // git's own words: "patch does not apply", "corrupt patch at line N" — both
+    // are things the user (or we) need to see rather than a sentence of ours.
+    const said = r.err.trim().split('\n').filter((l) => l !== '');
+    return refused(said[said.length - 1] ?? 'git would not apply that change');
+  }
+
+  /**
+   * Make a commit (E24 Git v2 item 13).
+   *
+   * ⚠️ **THE MESSAGE GOES IN ON STDIN**, never on argv — see `git-commit.ts` and
+   * the design record §2.1 for the Windows quoting trap that decided it.
+   *
+   * ⚠️⚠️ **AND `guard: { hooks: 'allow' }` IS THE DELIBERATE PART.** This is the
+   * only call in the service that lifts any #776 guard, and the argument is in
+   * `GuardOpts`: a guard that exists because we read a repository UNBIDDEN does
+   * not apply to a button the user pressed, and a commit that silently skipped
+   * their own `pre-commit` would be switchboard reimplementing `git commit`.
+   * Everything else stays on — including the filter-driver neutralisation, which
+   * is safe to keep because it only disarms REPO-AUTHORED driver keys and leaves
+   * a user's global git-lfs working.
+   */
+  async commit(
+    folder: string,
+    message: unknown,
+    opts: CommitOptions = {},
+    budgetMs = COMMIT_BUDGET_MS
+  ): Promise<GitWriteResult> {
+    if (!isCommittableMessage(message)) return emptyMessageRefusal();
+    const deadline = Date.now() + budgetMs;
+    const guard = await this.guardEnv(folder, () => Math.max(1, deadline - Date.now()));
+    if (!guard.env) return refused(guard.reason ?? 'switchboard could not make git safe to run here');
+    const r = await this.run(
+      folder,
+      commitArgs(opts),
+      Math.max(1, deadline - Date.now()),
+      guard.env,
+      { input: message, guard: { hooks: 'allow' } }
+    );
+    if (r.ok) return { ok: true, applied: 1 };
+    if (r.failure === 'timeout') {
+      return refused(
+        `git did not finish committing within ${Math.round(budgetMs / 1000)}s — a ` +
+          'pre-commit hook may still be running'
+      );
+    }
+    if (r.failure === 'no-exec') return refused('switchboard could not run git here');
+    return refused(commitRefusal(r.err, r.out));
+  }
+
+  /**
+   * Run one write over however many invocations the path count needs.
+   *
+   * The batching is here rather than in each verb so that "how many paths fit on
+   * a command line" is answered once — and so a new verb cannot forget it.
+   */
+  private async writeBatched(
+    folder: string,
+    paths: readonly string[],
+    toArgs: (batch: readonly string[]) => string[],
+    budgetMs: number
+  ): Promise<GitWriteResult> {
+    const safe = writePaths(paths);
+    if (!Array.isArray(safe)) return safe;
+    const deadline = Date.now() + budgetMs;
+    /**
+     * ⚠️ **`guardEnv` IS LOAD-BEARING HERE AND THE FIRST VERSION OF THIS METHOD
+     * DID NOT HAVE IT — a #776 hole, found by the test written to prove the
+     * opposite.**
+     *
+     * `guardArgs()` rides on every invocation through `run()`, so the fsmonitor
+     * pin and the empty hooks path were already covered. The FILTER DRIVERS are
+     * not: they are neutralised by `guardEnv`, which a caller has to ask for, and
+     * `status` and `diff` were the only two that did. Measured on a real
+     * repository: with `filter.evil.clean` in its own config and one line in
+     * `.gitattributes`, `git add` ran the program — and `add` is the command that
+     * most certainly reads file CONTENTS through a filter, because hashing them
+     * into the object store is its whole job.
+     *
+     * So the threat model does not soften for a write; if anything this is the
+     * commandment #776 was really about. A guard that cannot be established
+     * refuses the write, which is the same posture `status` takes.
+     */
+    const guard = await this.guardEnv(folder, () => Math.max(1, deadline - Date.now()));
+    if (!guard.env) return refused(guard.reason ?? 'switchboard could not make git safe to run here');
+    let applied = 0;
+    for (const batch of batchPaths(safe)) {
+      const r = await this.run(folder, toArgs(batch), Math.max(1, deadline - Date.now()), guard.env);
+      if (!r.ok) {
+        // git's own words, trimmed. `applied` carries what the EARLIER batches
+        // did, because they really did happen — a half-done write that reported
+        // zero would be worse than one that reports what it managed.
+        const said = r.err.trim().split('\n')[0] ?? '';
+        return {
+          ok: false,
+          reason: said !== '' ? said : writeFailed(r.failure, budgetMs),
+          applied,
+        };
+      }
+      applied += batch.length;
+    }
+    return { ok: true, applied };
+  }
+}
+
+/** What to say when git failed and said nothing we can quote. */
+function writeFailed(failure: GitFailure | null, budgetMs: number): string {
+  if (failure === 'timeout') {
+    return `git did not finish within ${Math.round(budgetMs / 1000)}s`;
+  }
+  if (failure === 'no-exec') return 'switchboard could not run git here';
+  return 'git refused, and said nothing switchboard could pass on';
 }
 
 function toGitPath(p: string): string {
   return p.replace(/\\/g, '/');
+}
+
+/**
+ * The one sentence `log()` says about a timeout — in one place, because it is
+ * reachable from three branches and three copies would drift.
+ *
+ * It names the likely cause rather than only the fact. "git did not finish" sends
+ * nobody anywhere; "the repository may be very large, or its disk slow to
+ * respond" is the same hedge `diff()` settled on, and the paging that fixes the
+ * first half is right there in the tab.
+ */
+function logTimedOut(budgetMs: number): string {
+  return (
+    `git did not finish reading the history within ${Math.round(budgetMs / 1000)}s ` +
+    '(the repository may be very large, or its disk slow to respond)'
+  );
 }
 
 /**

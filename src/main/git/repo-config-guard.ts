@@ -115,8 +115,88 @@ export function emptyHooksDir(): string {
  * somewhere absolute and empty — and keeping both is what covers a hook we have
  * not enumerated, or one a later git adds.
  */
-export function guardArgs(): string[] {
-  return ['-c', 'core.fsmonitor=false', '-c', `core.hooksPath=${emptyHooksDir()}`];
+/**
+ * ⚠️ **AND `--literal-pathspecs`, WHICH IS HERE BECAUSE A FILENAME IS NOT A
+ * PATTERN (found in review of E24 Git v2 item 10, measured).**
+ *
+ * A git pathspec is **wildcard-matched by default** — `*`, `?` and `[…]` are live
+ * in it. Every path this service passes to git comes out of git's own `status` or
+ * `log` output and names exactly one file, so glob semantics are never wanted and
+ * are a way to get a **confidently wrong answer**. Measured in a two-file repo:
+ *
+ * ```
+ * git log --oneline --follow -- 'file[1].txt'
+ *   COMMIT_FOR_bracket     <- correct
+ *   COMMIT_FOR_file1       <- A DIFFERENT FILE
+ * git --literal-pathspecs log --oneline --follow -- 'file[1].txt'
+ *   COMMIT_FOR_bracket     <- correct, alone
+ * ```
+ *
+ * `file[1].txt` is legal on all three platforms and is the shape a browser gives
+ * a duplicate download; `*.orig` and `a?.txt` are legal on macOS and Linux. So
+ * the ⏱ gesture on an everyday filename listed commits that never touched it,
+ * under a chip saying it was showing only that file — and **under #776's threat
+ * model the filename is attacker-chosen**, which makes a file named `*` turn ⏱
+ * into "the entire repository". (Measured: as a literal pathspec `*` matches
+ * nothing, because no file is named that.)
+ *
+ * It lives in the GUARD rather than in `logArgs` for two reasons: it is a GLOBAL
+ * option and must precede the subcommand, which is exactly where these already
+ * sit; and it is the same posture as the two above it — a repository's own
+ * contents must never acquire argv semantics. Measured as a no-op for every other
+ * command this service runs (`status --porcelain=v2`, `diff --numstat`,
+ * `show <rev>:<path>`, `rev-parse`), none of which passes a pathspec at all.
+ *
+ * ⚠️ **The consequence for a future caller: a glob pathspec will not work.** That
+ * is the correct default here — nothing in this app lets a user type one — but a
+ * command that genuinely wants one must opt out deliberately rather than discover
+ * it by having worked before.
+ */
+/**
+ * ⚠️⚠️ **`hooks: 'allow'` EXISTS FOR EXACTLY ONE CALLER — `commit` — AND THE
+ * REASON IS A HARD CONSTRAINT, NOT A CONVENIENCE (E24 Git v2 item 13).**
+ *
+ * **MEASURED AND ISOLATED:** with `core.hooksPath` pinned at an empty directory,
+ * a repository's own `.git/hooks/pre-commit` **does not run**. (The first attempt
+ * at that measurement was inconclusive because this machine has a GLOBAL
+ * `core.hooksPath` which masks `.git/hooks` entirely — the control had to point
+ * `core.hooksPath` back at `.git/hooks` to isolate our guard's effect.)
+ *
+ * For a READ that is pure safety: `status` and `diff` run constantly, unbidden,
+ * and a repository must not get to execute a program because switchboard glanced
+ * at it. **For a COMMIT it inverts.** A commit that silently skips the user's own
+ * `pre-commit` — their formatter, their linter, their tests — is not a commit;
+ * it is switchboard reimplementing one, which is the **host-don't-reimplement**
+ * hard constraint. And the design record offers **`--no-verify`** as a deliberate
+ * user choice, which is incoherent if hooks never ran in the first place.
+ *
+ * The line is therefore: **a guard that exists because we read UNBIDDEN does not
+ * apply to an action the user explicitly asked for.** A commit is a button press.
+ *
+ * ⚠️ **WHAT IS *NOT* RELAXED, AND MUST NOT BE:** `--literal-pathspecs` and
+ * `core.fsmonitor` stay, and `guardEnv`'s filter-driver neutralisation stays —
+ * and that one is safe to keep because it only disarms **repo-authored** driver
+ * keys, falling back to the trusted global value, so a user's git-lfs goes on
+ * working exactly as it does outside switchboard.
+ */
+export interface GuardOpts {
+  /**
+   * Let the repository's own hooks run. `commit` only.
+   *
+   * Spelled as a word rather than a boolean so that a call site reads
+   * `{ hooks: 'allow' }` — impossible to pass by accident, and impossible to
+   * misread as "hooks: true means guarded".
+   */
+  hooks?: 'allow';
+}
+
+export function guardArgs(opts: GuardOpts = {}): string[] {
+  return [
+    '-c',
+    'core.fsmonitor=false',
+    ...(opts.hooks === 'allow' ? [] : ['-c', `core.hooksPath=${emptyHooksDir()}`]),
+    '--literal-pathspecs',
+  ];
 }
 
 /**

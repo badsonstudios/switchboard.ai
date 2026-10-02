@@ -126,6 +126,9 @@ import { toggleDiffLayout } from './lib/diff-layout';
 import { openPopoutWindows, subscribePopoutWindows } from './lib/popout-windows';
 import { openFindBar } from './lib/find-bar-state';
 import { setDocumentOpener } from './lib/document-open';
+import { setDiffOpener } from './lib/diff-open';
+import { setAllChangesOpener } from './lib/allchanges-open';
+import { setFileHistoryOpener } from './lib/file-history';
 import { openFileStartFolder, rememberOpenedFile } from './lib/open-file-start';
 import { isDocumentPanelId } from './lib/document-panels';
 
@@ -764,7 +767,29 @@ export function App(): React.JSX.Element {
     // is the only thing that knows which session a path belongs to, and §5.24's
     // attribution is exactly that answer travelling with the request.
     setDocumentOpener((file, sessionId) => grid.current?.openDocument(file, sessionId));
-    return () => setDocumentOpener(null);
+    // The same seam for a `gitdiff-` panel (E24 Git v2 item 5). Installed here,
+    // beside its twin, so the two have one lifetime: a torn-down window must
+    // leave neither arm behind.
+    setDiffOpener((target) => grid.current?.openGitDiff(target));
+    // ⏱ — "show me this file's history" (E24 Git v2 item 10). The gesture starts
+    // in the Changes tab and lands in the History tab, which is a DIFFERENT tab
+    // on the same card, so it needs the one verb a panel cannot reach.
+    // ⚠️ `setCardView`, NOT `toggleCardView` (found in review): asked for the view
+    // a card is already on, the toggle returns to the Session view — so "show me
+    // this file's history" could show the conversation instead. The module's
+    // contract is "switch to it", and only the non-toggling verb can keep it.
+    setFileHistoryOpener((cardId) => grid.current?.setCardView(cardId, 'history'));
+    // ⧉ — "everything that changed, in one scroll" (E24 Git v2 item 9). One panel
+    // per card, so the verb takes a card rather than a comparison.
+    setAllChangesOpener((cardId, folder, title) =>
+      grid.current?.openAllChanges(cardId, folder, title)
+    );
+    return () => {
+      setDocumentOpener(null);
+      setDiffOpener(null);
+      setFileHistoryOpener(null);
+      setAllChangesOpener(null);
+    };
   }, []);
 
   useEffect(() => {

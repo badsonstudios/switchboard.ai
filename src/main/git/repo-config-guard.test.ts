@@ -253,9 +253,30 @@ describe('gitlinkPaths', () => {
   });
 });
 
-describe('guardArgs — the two that ride on every invocation', () => {
+describe('guardArgs — what rides on every invocation', () => {
   it('turns fsmonitor off by config, not by hoping', () => {
     expect(guardArgs().slice(0, 2)).toEqual(['-c', 'core.fsmonitor=false']);
+  });
+
+  it('⚠️ ASKS GIT TO READ EVERY PATHSPEC LITERALLY', () => {
+    // A pathspec is wildcard-matched by DEFAULT, so `file[1].txt` — a legal name
+    // on all three platforms, and what a browser gives a duplicate download —
+    // also matched `file1.txt`, and ⏱ on it listed another file's commits under a
+    // chip naming this one. Under #776's threat model the filename is
+    // attacker-chosen, so a file named `*` turned ⏱ into the whole repository.
+    expect(guardArgs()).toContain('--literal-pathspecs');
+  });
+
+  it('⚠️ EVERY GUARD IS A **GLOBAL** OPTION, so none of them can land after a subcommand', () => {
+    // The ordering is the contract with `GitService.run`, which splices this list
+    // between the binary and the subcommand. A guard that was not a global option
+    // would be read as an argument TO `log` and change its meaning — and
+    // `--literal-pathspecs` in particular is silently ignored after the
+    // subcommand, which would restore the glob behaviour with nothing to show it.
+    for (const arg of guardArgs()) {
+      if (arg === '-c' || arg.includes('=')) continue;
+      expect(arg).toMatch(/^--(literal-pathspecs|icase-pathspecs|no-optional-locks)$/);
+    }
   });
 
   it('points core.hooksPath at an ABSOLUTE path', () => {

@@ -42,6 +42,21 @@ import {
   isDocumentPanelId,
   planDocumentOpen,
 } from '../lib/document-panels';
+import { AllChangesView } from './AllChangesView';
+import { GitDiffView, diffPanelTitle } from './GitDiffView';
+import {
+  ALL_CHANGES_PREFIX,
+  DIFF_PANEL_PREFIX,
+  allChangesPanelId,
+  forgetDiffPanel,
+  isDiffPanelId,
+  isGitPanelId,
+  planDiffOpen,
+  type DiffTarget,
+} from '../lib/diff-panels';
+import { getDiffLayout, subscribeDiffLayout } from '../lib/diff-layout';
+import { forgetDiffPlace } from '../lib/diff-places';
+import { forgetCardFileHistory } from '../lib/file-history';
 import { UsageStrip } from './UsageStrip';
 import { GitContext } from './GitContext';
 import type { GitStatusDto } from '../lib/git-status';
@@ -2784,16 +2799,33 @@ function overlayBtn(primary: boolean): React.CSSProperties {
 function DiffPanel(
   props: IDockviewPanelProps<{ folder?: string; colorScheme?: string }>
 ): React.JSX.Element {
+  // FROM THE PANEL ID, not a new param. `openDiff` encodes the card in
+  // `diff-<cardId>` and reading it back costs nothing, where threading a param
+  // would leave every Changes tab already in a restored layout without it. The
+  // id is the fact; the param would be a copy.
+  const cardId = /^diff-(.+)$/.exec(props.api.id)?.[1];
   return (
     <DiffPane
       folder={props.params?.folder ?? ''}
       colorScheme={props.params?.colorScheme === 'light' ? 'light' : 'dark'}
-      // FROM THE PANEL ID, not a new param. `openDiff` already encodes the card
-      // in `diff-<cardId>` and reading it back costs nothing, where threading a
-      // `cardId` param would edit the one function another item is currently
-      // holding — and would leave every Changes tab already in a restored
-      // layout without it. The id is the fact; the param would be a copy.
-      sessionId={/^diff-(.+)$/.exec(props.api.id)?.[1]}
+      // ⚠️ **`cardId` WAS MISSING HERE, SO THIS SURFACE HAD NO ⏱ (found in review
+      // of item 10).** `ScmSidebar` draws the clock only with a card to switch,
+      // so the relocated Changes pane had ⧉ and ↗ and silently not the third
+      // verb, with nothing explaining the difference. The id already held the
+      // answer.
+      cardId={cardId}
+      // ⚠️⚠️ **AND THE SAME VALUE GOES TO `sessionId`, WHICH IS A MISNOMER, NOT A
+      // BUG — I REMOVED IT ONCE AND AN E2E CAUGHT ME.** The prop is named
+      // `sessionId` the whole way down (`openDocument` → `planDocumentOpen` →
+      // the dockview panel's persisted `params.sessionId`), but the value §5.24
+      // attribution needs is a **CARD** id: the viewer resolves it with
+      // `sessionStore.getCardTitle`, which matches on `sessions[].id`, the card
+      // id. Review read the name, called it a bug, and I agreed and dropped it —
+      // which turned a working attribution chip into a missing one until
+      // `document-peek.spec.ts` went red. The name is wrong; the value was
+      // always right. See `lib/document-open.ts` for the one place that now says
+      // so, and issue 1055 for the rename.
+      sessionId={cardId}
     />
   );
 }
@@ -2825,7 +2857,20 @@ function documentTabTitle(filePath: string): string {
  * difference between them.
  */
 const isDocumentArea = (g: DockviewGroupPanel): boolean =>
-  g.panels.some((p) => p.id.startsWith('doc-'));
+  // ⚠️ **A `gitdiff-` PANEL COUNTS, AND LEAVING IT OUT WAS TWO BUGS (E24 Git v2
+  // item 5, found in review).** Both halves of the sentence above broke for a
+  // group that held only diff panels:
+  //
+  //  * a NEW SESSION CARD could land as a tab on top of the diff you were
+  //    reading, because `sessionCardHome` refuses `isDocumentArea(g)` and this
+  //    said no — which is #462's rule failing for a surface it should cover;
+  //  * the SECOND ⧉ could open in a different group from the first, because
+  //    `documentHomeGroup` prefers `isDocumentArea` and then falls through to
+  //    `api.groups[0]` — so `openGitDiffPanel`'s promise to land "beside whatever
+  //    is already open" held only once a *document* was open.
+  //
+  // One predicate, read from both sides, is exactly why this was one fix.
+  g.panels.some((p) => p.id.startsWith('doc-') || isGitPanelId(p.id));
 
 /**
  * The DOCUMENT AREA: the group a viewer may open into (§5.30, P2-E16-03).
@@ -3063,8 +3108,15 @@ function slotGroup(
  *  placements refuse an empty shell on the strength of it — see the paragraph
  *  above about why the question has to be this coarse. */
 function viewerIsPoppedOut(api: DockviewApi): boolean {
+  // `gitdiff-` here too, and for the reason the paragraph above gives: a
+  // popped-out diff leaves an empty dock-back husk in the grid, and a card
+  // allowed to revive that husk gets the diff handed back to it as a tab beside
+  // itself the moment the window closes — which is the scenario this function
+  // exists to prevent, for the other popped-out surface (review).
   return api.panels.some(
-    (p) => p.id.startsWith('doc-') && p.group.api.location.type === 'popout'
+    (p) =>
+      (p.id.startsWith('doc-') || isGitPanelId(p.id)) &&
+      p.group.api.location.type === 'popout'
   );
 }
 
@@ -3487,6 +3539,226 @@ function closableDocumentIds(api: DockviewApi | null): string[] {
   );
 }
 
+/**
+ * Pop a diff panel out to its own OS window, or dock it back (E24 Git v2 item 5).
+ *
+ * `popOutDocumentPanel` with nothing changed but the name, and the duplication is
+ * deliberate rather than lazy: the two are the same four lines today and the
+ * reasons they might diverge are different (a document has back/forward state to
+ * preserve; a diff has two editor models to keep alive), so a shared helper would
+ * be a joint nobody could safely cut later. Dockview's native "Move to New
+ * Window" on the tab's context menu keeps working either way — this is the
+ * explicit button design §3 asks for, "for discoverability".
+ */
+export function popOutDiffPanel(api: DockviewApi | null, panelId: string): void {
+  const panel = api?.getPanel(panelId);
+  if (!api || !panel) return;
+  const loc = panel.api.location;
+  if (loc.type === 'popout') {
+    loc.getWindow()?.close();
+    return;
+  }
+  const popoutUrl = new URL('popout.html', window.location.href).toString();
+  void api.addPopoutGroup(panel, { popoutUrl });
+}
+
+/**
+ * Open a `gitdiff-` panel for one comparison (E24 Git v2 item 5, design §3).
+ *
+ * The shape is `openDocumentPanel`'s, down to the self-heal: the DECISION
+ * (focus / create) is `lib/diff-panels`', and this is only the dockview half.
+ *
+ * `documentHomeGroup` is what makes it land BESIDE whatever is already open in
+ * the document area rather than in a group of its own each time — and the reason
+ * `gitdiff-` is not spelled `diff-` is that this function would otherwise never
+ * find that group. See `DIFF_PANEL_PREFIX`.
+ */
+function openGitDiffPanel(
+  api: DockviewApi | null,
+  target: DiffTarget,
+  colorScheme: 'light' | 'dark'
+): void {
+  if (!api || !target.folder) return;
+  const plan = planDiffOpen(target);
+  if (plan.action === 'focus') {
+    const panel = api.getPanel(plan.id);
+    if (panel) {
+      panel.focus();
+      // ...AND RAISE THE WINDOW IT LIVES IN, if that is not this one. `focus()`
+      // ends in "make this panel active in its group", and a popped-out panel is
+      // alone in its group and therefore already active — so asking for a
+      // comparison that is open in another WINDOW would be a literal no-op: no
+      // second tab (correct) and nothing whatsoever on screen (not). The same
+      // case `openDocumentPanel` records, and the same fix.
+      const loc = panel.api.location;
+      if (loc.type === 'popout') raisePopoutWindow(panel, loc.getWindow());
+      return;
+    }
+    // The registry believes in a panel dockview does not have — only reachable
+    // if a removal never reported. Correct the registry and open properly rather
+    // than dropping the user's click on the floor (fail-open).
+    forgetDiffPanel(plan.id);
+    openGitDiffPanel(api, target, colorScheme);
+    return;
+  }
+  try {
+    api.addPanel({
+      id: plan.id,
+      component: 'gitDiffPanel',
+      title: diffPanelTitle(target),
+      params: { target, colorScheme },
+      position: { referenceGroup: documentHomeGroup(api) },
+    });
+  } catch (err) {
+    // `addPanel` throwing means no panel was ever created, so `onDidRemovePanel`
+    // will never fire for it — the registry would keep an entry for a panel that
+    // does not exist, and the next request for that same comparison would
+    // `focus` a ghost instead of opening it.
+    forgetDiffPanel(plan.id);
+    console.error('[diff] could not open a diff panel', err);
+  }
+}
+
+/**
+ * The diff panel's dockview wrapper.
+ *
+ * `DocumentViewerPanel` minus everything a comparison does not have: no history
+ * stack, no session attribution (a `gitdiff-` panel can be of a commit with no
+ * session behind it), no title to set from inside. What is left is the two facts
+ * only dockview knows — where the panel IS, and how to move it.
+ */
+function GitDiffPanelHost(
+  props: IDockviewPanelProps<{ target?: DiffTarget; colorScheme?: string }>
+): React.JSX.Element {
+  const api = props.api;
+  const containerApi = props.containerApi;
+  // Where the panel IS, kept live: the toolbar's one control has to read "dock
+  // back" the instant the window opens, and dockview is the authority on that.
+  const [poppedOut, setPoppedOut] = React.useState(() => api.location.type === 'popout');
+  React.useEffect(() => {
+    setPoppedOut(api.location.type === 'popout');
+    const d = api.onDidLocationChange(() => setPoppedOut(api.location.type === 'popout'));
+    return () => d.dispose();
+  }, [api]);
+  const onPopoutToggle = React.useCallback(
+    () => popOutDiffPanel(containerApi, api.id),
+    [api, containerApi]
+  );
+  const layoutPref = React.useSyncExternalStore(subscribeDiffLayout, getDiffLayout);
+  const target = props.params?.target;
+  // A panel with no target is unreachable — `openGitDiffPanel` is the only thing
+  // that mints one and it refuses a folderless target — but a layout restored
+  // from disk hands `params` back verbatim, and an empty panel is better than a
+  // throw that blanks the window.
+  if (!target?.folder) return <div />;
+  return (
+    // The same `ContributionBoundary` argument `DocumentViewerPanel` records: a
+    // dockview panel has no other boundary above it but the renderer ROOT, so a
+    // throw in here would blank every session pane in the window.
+    <ContributionBoundary id="git-diff-panel">
+      <GitDiffView
+        target={target}
+        colorScheme={props.params?.colorScheme === 'light' ? 'light' : 'dark'}
+        poppedOut={poppedOut}
+        onPopoutToggle={onPopoutToggle}
+        panelId={api.id}
+        layoutPref={layoutPref}
+      />
+    </ContributionBoundary>
+  );
+}
+
+/**
+ * Open (or focus) the all-changes panel for a card (E24 Git v2 item 9).
+ *
+ * ⚠️ **NO REGISTRY, UNLIKE `gitdiff-`, AND THAT IS THE SHAPE OF THE THING.** There
+ * is exactly one "everything that changed" per card, so the id is derivable —
+ * `allchanges-<cardId>` — and `getPanel` is the whole lookup. A `gitdiff-` panel
+ * is per COMPARISON and a card can want several at once, which is why that family
+ * needs a map; keeping a second copy of the truth here could only go stale.
+ */
+function openAllChangesPanel(
+  api: DockviewApi | null,
+  cardId: string,
+  folder: string,
+  colorScheme: 'light' | 'dark',
+  // The tab's label, passed in because this is module scope and `t` comes from
+  // `useTranslation` — the same reason `openGitDiffPanel` takes a pure
+  // `diffPanelTitle` rather than translating in here.
+  title: string
+): void {
+  if (!api || !cardId || !folder) return;
+  const id = allChangesPanelId(cardId);
+  const existing = api.getPanel(id);
+  if (existing) {
+    existing.focus();
+    // ...AND RAISE ITS WINDOW, the case `openGitDiffPanel` records: a popped-out
+    // panel is alone in its group and therefore already active, so `focus()`
+    // alone would be a literal no-op with nothing on screen.
+    const loc = existing.api.location;
+    if (loc.type === 'popout') raisePopoutWindow(existing, loc.getWindow());
+    return;
+  }
+  try {
+    api.addPanel({
+      id,
+      component: 'allChangesPanel',
+      title,
+      // ⚠️ **`sessionId`, AND ON NO ACCOUNT `cardId`.** `IdentityTab` reads
+      // `params.cardId` to mean "this tab IS that card's", and resolves the
+      // store's title from it — so a `cardId` here made the panel's tab render
+      // the SESSION's name, identical to the session card's own tab beside it.
+      // Two tabs with one name, which is the collision item 5's prefix rename
+      // was about, in the tab strip instead of the id space. `IdentityTab`'s own
+      // comment states the rule ("a DERIVED tab carries no cardId, so its
+      // dockview title still wins") and an e2e is what caught me breaking it.
+      // The value is the same card id either way — see `lib/document-open.ts`
+      // on why this chain calls one `sessionId`.
+      params: { folder, colorScheme, sessionId: cardId },
+      position: { referenceGroup: documentHomeGroup(api) },
+    });
+  } catch (err) {
+    console.error('[diff] could not open the all-changes panel', err);
+  }
+}
+
+/** The all-changes panel's dockview wrapper — `GitDiffPanelHost`'s twin. */
+function AllChangesPanelHost(
+  props: IDockviewPanelProps<{ folder?: string; colorScheme?: string; sessionId?: string }>
+): React.JSX.Element {
+  const api = props.api;
+  const containerApi = props.containerApi;
+  const [poppedOut, setPoppedOut] = React.useState(() => api.location.type === 'popout');
+  React.useEffect(() => {
+    setPoppedOut(api.location.type === 'popout');
+    const d = api.onDidLocationChange(() => setPoppedOut(api.location.type === 'popout'));
+    return () => d.dispose();
+  }, [api]);
+  const onPopoutToggle = React.useCallback(
+    () => popOutDiffPanel(containerApi, api.id),
+    [api, containerApi]
+  );
+  const layoutPref = React.useSyncExternalStore(subscribeDiffLayout, getDiffLayout);
+  const folder = props.params?.folder;
+  // Unreachable through `openAllChangesPanel`, which refuses a folderless card —
+  // but a layout restored from disk hands `params` back verbatim, and an empty
+  // panel is better than a throw that blanks the window.
+  if (!folder) return <div />;
+  return (
+    <ContributionBoundary id="all-changes-panel">
+      <AllChangesView
+        folder={folder}
+        colorScheme={props.params?.colorScheme === 'light' ? 'light' : 'dark'}
+        poppedOut={poppedOut}
+        onPopoutToggle={onPopoutToggle}
+        panelId={api.id}
+        layoutPref={layoutPref}
+        cardId={props.params?.sessionId}
+      />
+    </ContributionBoundary>
+  );
+}
+
 function DocumentViewerPanel(
   props: IDockviewPanelProps<{
     path?: string;
@@ -3635,6 +3907,8 @@ const components = {
   sessionCard: SessionCardPanel,
   diffPane: DiffPanel,
   documentViewer: DocumentViewerPanel,
+  gitDiffPanel: GitDiffPanelHost,
+  allChangesPanel: AllChangesPanelHost,
 };
 
 /**
@@ -4320,6 +4594,10 @@ export function forgetClosedCard(cardId: string): void {
   // below cannot retire for us: main has nothing to forget. Left behind, it is
   // a rail row for a card with no panel.
   sessionStore.clearCardNotStarted(cardId);
+  // ...and its pinned file-history request (E24 Git v2 item 10). A module seam
+  // rather than the store, but the same shape of per-card record, and a map
+  // nothing prunes is the kind of leak only a profiler ever reports.
+  forgetCardFileHistory(cardId);
   void window.switchboard.sessions.closeCard(cardId);
 }
 
@@ -5100,6 +5378,29 @@ export interface GridController {
    * nor in a popped-out viewer's window — see the implementation's note.
    */
   openDocument: (absolutePath: string, sessionId?: string) => void;
+  /**
+   * Open one COMPARISON as its own dock panel (E24 Git v2 item 5, design §3).
+   *
+   * The same contract as `openDocument` and for the same reasons: a new panel
+   * beside the ones already open, a comparison that is already open is FOCUSED
+   * rather than opened twice, and nothing is ever replaced. What identifies it is
+   * `folder + path + left..right` — see `diffKey` — so one file's working-tree
+   * diff and the same file at a commit are two panels, deliberately.
+   *
+   * ⚠️ NOT the same thing as `openDiff`, two verbs above, and the names are
+   * uncomfortably close: that one relocates a session's whole CHANGES TAB into
+   * the document area (#504, `diff-<cardId>`), while this one opens ONE
+   * comparison (`gitdiff-<n>`) and may have no session behind it at all.
+   */
+  openGitDiff: (target: DiffTarget) => void;
+  /**
+   * Open (or focus) the card's all-changes panel (E24 Git v2 item 9, screen 5).
+   *
+   * ONE per card, which is why this takes a card rather than a target: there is
+   * exactly one "everything that changed" for a folder, so asking twice focuses
+   * the panel you have. Contrast `openGitDiff`, which is per COMPARISON.
+   */
+  openAllChanges: (cardId: string, folder: string, title: string) => void;
   /** card id of the active session panel, or null (E9-01 command context) */
   activeCardId: () => string | null;
   /**
@@ -5144,6 +5445,20 @@ export interface GridController {
    *  back to the Session view (E9-01). `view.terminal` was the original caller
    *  and went with its tab in #873 — `view.changes` is what uses it now. */
   toggleCardView: (cardId: string, view: PanelId) => void;
+  /**
+   * Switch a card's view and do NOT toggle — the verb for a caller that means
+   * "be on this tab" rather than "flip this tab".
+   *
+   * ⚠️ **ITEM 10's ⏱ WAS INSTALLED ON THE TOGGLE, SO "SHOW ME THE HISTORY" COULD
+   * SHOW THE CONVERSATION (found in review).** `file-history`'s contract is *pin
+   * this path and switch to it*, and the toggle cannot keep that promise: asked
+   * for the view a card is already on, it returns to the Session view instead.
+   * Not reachable from the Changes tab, because the first click unmounts the row
+   * that would send the second — but reachable from the relocated Changes panel,
+   * which can be on screen while the card's view is already `history`, and from
+   * any future caller (a command, the Files tab, a dispatch).
+   */
+  setCardView: (cardId: string, view: PanelId) => void;
   /** pop the card out to its own window, or dock it back in (E9-01) */
   popOutCard: (cardId: string) => void;
   /** take the card out of the workspace, remembering its slot (§5.8 ladder).
@@ -5858,6 +6173,11 @@ export function SessionGrid(props: {
           view: current === view && view !== DEFAULT_PANEL_ID ? DEFAULT_PANEL_ID : view,
         });
       },
+      // The non-toggling twin, and the same straight-at-the-store route — see
+      // the interface for why ⏱ needed it.
+      setCardView: (cardId, view) => {
+        sessionStore.setPresentation(cardId, { view });
+      },
       popOutCard: (cardId) => popOutCardPanel(apiRef.current, cardId),
       restoreRescuedPopouts: () => {
         const api = apiRef.current;
@@ -5928,6 +6248,9 @@ export function SessionGrid(props: {
       },
       openDocument: (filePath, sessionId) =>
         openDocumentPanel(apiRef.current, filePath, props.colorScheme, sessionId),
+      openGitDiff: (target) => openGitDiffPanel(apiRef.current, target, props.colorScheme),
+      openAllChanges: (cardId, folder, title) =>
+        openAllChangesPanel(apiRef.current, cardId, folder, props.colorScheme, title),
     };
     // eslint's exhaustive-deps plugin isn't installed; deps kept accurate by hand
   }, [props.controller, addSessionCard, newSession, hideCard, revealCard, setLadder, stepLadder, props.colorScheme, t]);
@@ -5949,7 +6272,17 @@ export function SessionGrid(props: {
     for (const panel of api.panels) {
       // A document viewer took its scheme the same way and needs the same heal
       // — Monaco's theme in its source body is scheme-dependent.
-      if (panel.id.startsWith('diff-') || panel.id.startsWith('doc-')) {
+      // `gitdiff-` as well as `diff-` (E24 Git v2 item 5): a per-comparison
+      // panel takes its scheme as a param at `addPanel` exactly as the other two
+      // do, so without this a diff panel keeps whatever skin it was born with
+      // through every later theme switch — and Monaco's diff theme is
+      // scheme-dependent.
+      if (
+        panel.id.startsWith('diff-') ||
+        panel.id.startsWith('doc-') ||
+        panel.id.startsWith(DIFF_PANEL_PREFIX) ||
+        panel.id.startsWith(ALL_CHANGES_PREFIX)
+      ) {
         panel.api.updateParameters({ colorScheme: props.colorScheme });
       }
     }
@@ -6088,6 +6421,20 @@ export function SessionGrid(props: {
         // A closed viewer leaves the registry (P2-E16-03) — otherwise it keeps
         // an entry for a panel dockview no longer has, and asking for that file
         // again would `focus` a ghost instead of opening it.
+        // The same for a closed diff panel (E24 Git v2 item 5): without it the
+        // registry keeps an entry for a panel dockview no longer has, and asking
+        // for that comparison again would `focus` a ghost. `openGitDiffPanel`
+        // self-heals through its own `forgetDiffPanel`, but a click later.
+        if (isDiffPanelId(panel.id)) {
+          forgetDiffPanel(panel.id);
+          // ⚠️ **AND ITS REMEMBERED SCROLL PLACE (found in review).** `diff-places`
+          // is capped at twenty entries, oldest first, and it is now shared
+          // between CARD ids and PANEL ids — so without this, about twenty
+          // open/close cycles of diff panels would silently evict every card's
+          // remembered Changes-tab position. A panel that is gone has no place to
+          // keep; a card that is still open does.
+          forgetDiffPlace(panel.id);
+        }
         if (panel.id.startsWith('doc-')) {
           forgetDocumentPanel(panel.id);
           return;

@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll, beforeAll, vi } from 'vitest';
-import { execFileSync, spawn } from 'child_process';
+import { execFileSync, spawn, spawnSync } from 'child_process';
 
 // `spawn` is the REAL one unless a test says otherwise for one call — it is
 // only how `killTree` reaches `taskkill`, and the fallbacks for a taskkill that
@@ -12,6 +12,11 @@ vi.mock('child_process', async (importOriginal) => {
 import fs from 'fs';
 import path from 'path';
 import { GitService } from './git-service';
+// The guards themselves, so the pathspec cases can run git WITH them and WITHOUT
+// them in one file — a guard test that cannot fail without the guard proves
+// nothing, which is the lesson the #776 hostile-driver tests learned the hard way.
+import { guardArgs } from './repo-config-guard';
+import { patchFor } from './git-hunks';
 // `DIFF_BUDGET_MS`'s place in the bus's deadline cascade is pinned in
 // `bus-tools.test.ts`, beside the rest of the cascade.
 import { tempDir } from '../../test-temp-dirs';
@@ -19,6 +24,19 @@ import { tempDir } from '../../test-temp-dirs';
 let repo: string;
 let plain: string;
 const svc = new GitService();
+
+/**
+ * A path git can put in a config value it will EXECUTE.
+ *
+ * git runs these through a shell, where a Windows backslash is an escape
+ * character — so `C:\Program Files\nodejs\node.exe` arrives with `\n` read as a
+ * newline and the command is nonsense. The hostile-driver tests below depend on
+ * the fake driver actually being runnable: a driver that could not start would
+ * pass a test whose whole point is that it never ran.
+ */
+function toPosix(p: string): string {
+  return p.replace(/\\/g, '/');
+}
 
 function sh(cwd: string, args: string[]): void {
   execFileSync('git', args, { cwd, stdio: 'ignore' });
@@ -236,8 +254,20 @@ describe('GitService.diff is BOUNDED (#772)', () => {
     fs.writeFileSync(pidFile, String(process.pid));
     // Real git consumes its own pre-subcommand options; so must the stand-in,
     // now that every invocation carries \`-c core.fsmonitor=false\` (#776).
+    //
+    // ⚠️ **AND NOT ONLY \`-c\` PAIRS (E24 Git v2 item 10).** This loop used to
+    // consume exactly those, so when \`guardArgs()\` gained the FLAG
+    // \`--literal-pathspecs\` the stand-in stopped recognising its own
+    // subcommand: \`args[0]\` was the flag, every \`args[0] === 'rev-parse'\`
+    // branch missed, and two bounded-diff tests failed with "git could not tell
+    // whether that folder is a repository". The failure was in the harness and
+    // looked exactly like a failure in the subject. Consuming ANY leading option
+    // is what real git does and is what this has to do.
     const args = raw.slice();
-    while (args.length && args[0] === '-c') args.splice(0, 2);
+    while (args.length && args[0].startsWith('-')) {
+      if (args[0] === '-c') args.splice(0, 2);
+      else args.splice(0, 1);
+    }
     const hang = () => setInterval(() => {}, 60000);
     if (mode === 'hang-probe') return hang();
     // The #776 guard's config read: hanging in one mode, and otherwise
@@ -1599,3 +1629,1690 @@ describe('a git switchboard could not READ is not a folder without git (#785)', 
   });
   // Real git in a child process, several times per case (#512).
 }, 60_000);
+
+// The other half of E24 Git v2 item 1. `git-log.test.ts` owns the FRAMING,
+// against fixture bytes; this suite owns the one thing fixtures cannot prove —
+// that real git still emits bytes of that shape, and that every way the
+// invocation can fail lands in the right field.
+describe('GitService.log (E24 Git v2 item 1)', () => {
+  /** A repository with every shape of commit the parser has a branch for. */
+  let hist: string;
+
+  beforeAll(() => {
+    hist = tempDir('sb-git-log-');
+    sh(hist, ['init', '-b', 'main']);
+    sh(hist, ['config', 'user.email', 'log@test']);
+    sh(hist, ['config', 'user.name', 'Log Tester']);
+    fs.writeFileSync(path.join(hist, 'a.txt'), 'one\n');
+    sh(hist, ['add', '.']);
+    sh(hist, ['commit', '-m', 'root commit']);
+    sh(hist, ['tag', 'v1']);
+    // An EMPTY commit: the case that prints no diffstat and abuts the next sha.
+    sh(hist, ['commit', '--allow-empty', '-m', 'empty commit']);
+    sh(hist, ['checkout', '-b', 'side']);
+    fs.writeFileSync(path.join(hist, 's.txt'), 's\n');
+    sh(hist, ['add', '.']);
+    sh(hist, ['commit', '-m', 'on the side branch']);
+    sh(hist, ['checkout', 'main']);
+    fs.writeFileSync(path.join(hist, 'm.txt'), 'm\n');
+    sh(hist, ['add', '.']);
+    sh(hist, ['commit', '-m', 'on main']);
+    // A MERGE, with a body that is nothing but newlines — this repository's own
+    // commit shape, and the reason `-z` is in the command.
+    sh(hist, ['merge', '--no-ff', 'side', '-m', 'merge side\n\nwith a body\n\nand blank lines']);
+  }, 60_000);
+
+  it('is graceful for non-repos, like the rest of this service (the done-when)', async () => {
+    expect(await svc.log(plain)).toEqual({ isRepo: false, commits: [] });
+  });
+
+  it('reads the history real git emits, in the shape the parser expects', async () => {
+    const l = await svc.log(hist);
+    expect(l.isRepo).toBe(true);
+    expect(l.unreadable).toBeUndefined();
+    // five commits: root, empty, side, main, merge
+    expect(l.commits).toHaveLength(5);
+    const subjects = l.commits.map((c) => c.subject);
+    expect(subjects).toContain('merge side');
+    expect(subjects).toContain('root commit');
+    expect(l.commits[0].author).toBe('Log Tester');
+    expect(l.commits[0].authorEmail).toBe('log@test');
+    // Real seconds-since-epoch, not NaN from a misread field.
+    expect(Number.isInteger(l.commits[0].timestamp)).toBe(true);
+    expect(l.commits[0].timestamp).toBeGreaterThan(1_600_000_000);
+  });
+
+  it('a BODY OF BLANK LINES survives a round trip through real git', async () => {
+    const l = await svc.log(hist);
+    const merge = l.commits.find((c) => c.subject === 'merge side');
+    expect(merge).toBeDefined();
+    expect(merge?.message).toContain('with a body');
+    expect(merge?.message).toContain('and blank lines');
+    // Two parents, which is what item 3's lane allocator draws the fork from.
+    expect(merge?.parentIds).toHaveLength(2);
+    // `--diff-merges=first-parent` is what gives it a diffstat at all.
+    expect(merge?.stats).not.toBeNull();
+  });
+
+  it('the ROOT COMMIT has no parents and still carries a diffstat', async () => {
+    const l = await svc.log(hist);
+    const root = l.commits.find((c) => c.subject === 'root commit');
+    expect(root?.parentIds).toEqual([]);
+    expect(root?.stats).toEqual({ files: 1, insertions: 1, deletions: 0 });
+  });
+
+  it('an EMPTY COMMIT reports NO diffstat, and does not swallow its neighbour', async () => {
+    // The measured edge case: `<fields>NUL<next sha>` with no line between. The
+    // second assertion is the one that would fail if the parser ate the next
+    // record — the count above would drop and this subject would vanish.
+    const l = await svc.log(hist);
+    const empty = l.commits.find((c) => c.subject === 'empty commit');
+    expect(empty).toBeDefined();
+    expect(empty?.stats).toBeNull();
+    expect(l.commits.map((c) => c.subject)).toContain('on main');
+  });
+
+  it('decorates with FULL refnames, so a branch and a tag are distinguishable', async () => {
+    const l = await svc.log(hist);
+    const head = l.commits.find((c) => c.references.some((r) => r.isHead));
+    expect(head?.references.some((r) => r.kind === 'branch' && r.name === 'main')).toBe(true);
+    const tagged = l.commits.find((c) => c.subject === 'root commit');
+    expect(tagged?.references).toEqual(
+      expect.arrayContaining([{ kind: 'tag', name: 'v1', full: 'refs/tags/v1' }])
+    );
+  });
+
+  it('honours the limit and pages with skip', async () => {
+    const two = await svc.log(hist, { limit: 2 });
+    expect(two.commits).toHaveLength(2);
+    const skipped = await svc.log(hist, { limit: 2, skip: 2 });
+    expect(skipped.commits).toHaveLength(2);
+    expect(skipped.commits[0].id).not.toBe(two.commits[0].id);
+    // Paging must not overlap, or the tab's "load more" duplicates rows.
+    const ids = new Set([...two.commits, ...skipped.commits].map((c) => c.id));
+    expect(ids.size).toBe(4);
+  });
+
+  it('filters to one path when asked, which is what item 10 is built on', async () => {
+    const l = await svc.log(hist, { path: 's.txt' });
+    const subjects = l.commits.map((c) => c.subject);
+    // The commit that created the file, and nothing that did not touch it.
+    expect(subjects).toContain('on the side branch');
+    expect(subjects).not.toContain('on main');
+    expect(subjects).not.toContain('root commit');
+    // ⚠️ AND THE MERGE IS IN THERE, WHICH IS `--diff-merges=first-parent`'s DOING
+    // — measured, not expected. That flag suppresses the history simplification
+    // which would otherwise hide a merge that is TREESAME to one parent, so a
+    // path-filtered log lists both the commit that made the change and the merge
+    // that brought it to this branch. Asserted rather than worked around: it is
+    // correct for the main history (an "evil merge" that really did change the
+    // file must not be invisible) and it is item 10's decision whether a
+    // per-file timeline wants the merge row. Pinning it here is what stops item
+    // 10 discovering it by surprise.
+    expect(subjects).toContain('merge side');
+  });
+
+  it('`stats: false` still reads the history — it only drops the numbers', async () => {
+    // The cost switch, and the half of it a fixture cannot prove: that the lean
+    // query is still a WORKING query. `--shortstat` is 95% of the wall time
+    // (measured, 1,331 ms of 1,395 ms over 100 commits), so a surface that draws
+    // no numbers should be able to skip it — but not by asking a different
+    // question.
+    const lean = await svc.log(hist, { stats: false });
+    expect(lean.isRepo).toBe(true);
+    expect(lean.unreadable).toBeUndefined();
+    expect(lean.commits).toHaveLength(5);
+    expect(lean.commits.map((c) => c.subject)).toContain('merge side');
+    // Every one of them reports `null`, which is the same shape an empty commit
+    // reports — "we did not ask" and "git said nothing" are indistinguishable to
+    // a consumer, and that is fine because both mean "do not draw a number".
+    expect(lean.commits.every((c) => c.stats === null)).toBe(true);
+    // Refs and parents are metadata, not diff, so they survive — this is what
+    // makes the lean query usable by item 3's lane allocator.
+    const merge = lean.commits.find((c) => c.subject === 'merge side');
+    expect(merge?.parentIds).toHaveLength(2);
+  });
+
+  it('a ref that could be read as a FLAG never reaches argv', async () => {
+    // `git-log.test.ts` pins the guard against the args; this pins that the
+    // guard's fallback produces a WORKING read rather than a git error — the
+    // whole point of dropping to HEAD instead of passing the ref through.
+    const l = await svc.log(hist, { refs: ['--all'] });
+    expect(l.isRepo).toBe(true);
+    expect(l.unreadable).toBeUndefined();
+    expect(l.commits.length).toBeGreaterThan(0);
+  });
+
+  it('a repo with NO COMMITS says so — it is UNBORN, not unreadable', async () => {
+    // With the explicit `HEAD` that `logArgs` always passes, git answers
+    // `fatal: bad revision 'HEAD'` — byte-identical to a typo'd ref (measured).
+    // Matching on that message would report a fresh `git init` as broken. The
+    // distinction is made by asking `rev-parse` after the failure.
+    const unborn = tempDir('sb-git-log-unborn-');
+    sh(unborn, ['init', '-b', 'main']);
+    sh(unborn, ['config', 'user.email', 'test@test']);
+    sh(unborn, ['config', 'user.name', 'test']);
+    const l = await svc.log(unborn);
+    expect(l).toEqual({ isRepo: true, unborn: true, commits: [] });
+    expect(l.unreadable).toBeUndefined();
+  });
+
+  it('a CORRUPT branch ref is not reported as a fresh repository (review)', async () => {
+    // ⚠️ THE BUG THIS PINS, found in review and measured. `rev-parse --verify -q
+    // HEAD` fails for an unborn HEAD AND for a zero-byte `.git/refs/heads/main` —
+    // the classic post-crash corruption, and a file an edit-only agent can write.
+    // With that as the only test, a damaged repository was reported as a brand-new
+    // `git init`: the same shape of confident wrong answer #785 was filed for.
+    // `symbolic-ref -q HEAD` is the positive discriminator — exit 0 on a fresh
+    // init, exit 128 here (measured).
+    const corrupt = tempDir('sb-git-log-corruptref-');
+    sh(corrupt, ['init', '-b', 'main']);
+    sh(corrupt, ['config', 'user.email', 'test@test']);
+    sh(corrupt, ['config', 'user.name', 'test']);
+    fs.writeFileSync(path.join(corrupt, 'f.txt'), 'hello\n');
+    sh(corrupt, ['add', '.']);
+    sh(corrupt, ['commit', '-m', 'init']);
+    // Zero-byte the ref. `git gc` may have packed it, so write the loose file
+    // either way — a zero-byte loose ref shadows a packed one.
+    fs.mkdirSync(path.join(corrupt, '.git', 'refs', 'heads'), { recursive: true });
+    fs.writeFileSync(path.join(corrupt, '.git', 'refs', 'heads', 'main'), '');
+
+    const l = await svc.log(corrupt);
+    expect(l.isRepo).toBe(true);
+    // The fact this test owns: NOT unborn.
+    expect(l.unborn).toBeUndefined();
+    expect(l.unreadable).toBeTruthy();
+  });
+
+  it('⚠️ a repo config cannot make `git log` SPAWN A PROGRAM (review, #776 class)', async () => {
+    // MEASURED IN REVIEW, and it was a live hole. `log` is the first command in
+    // this service that reads COMMIT objects, and a commit can carry a `gpgsig`
+    // header. Two repo-local keys — both inside #776's threat model — then make
+    // git launch anything:
+    //
+    //     [log] showSignature = true
+    //     [gpg] program = <any path>
+    //
+    // One spawn per signed commit, `git log` EXITS 0, and stdout parses
+    // perfectly, so nothing in the answer records that it happened. Neither
+    // `guardArgs()` (fsmonitor + hooksPath) nor `guardEnv()` (filter drivers)
+    // closes it. `--no-show-signature` does.
+    //
+    // The commit object is FORGED rather than signed, because that needs no gpg
+    // on the machine running the test — git does not check that the signature is
+    // real before trying to verify it.
+    const signed = tempDir('sb-git-log-gpg-');
+    sh(signed, ['init', '-b', 'main']);
+    sh(signed, ['config', 'user.email', 'test@test']);
+    sh(signed, ['config', 'user.name', 'test']);
+    fs.writeFileSync(path.join(signed, 'f.txt'), 'one\n');
+    sh(signed, ['add', '.']);
+    sh(signed, ['commit', '-m', 'init']);
+    const tree = execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { cwd: signed, encoding: 'utf8' }).trim();
+    const parent = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: signed, encoding: 'utf8' }).trim();
+    const object =
+      `tree ${tree}\nparent ${parent}\n` +
+      'author t <t@t> 1700000000 +0000\ncommitter t <t@t> 1700000000 +0000\n' +
+      'gpgsig -----BEGIN PGP SIGNATURE-----\n \n forged\n -----END PGP SIGNATURE-----\n' +
+      '\nsigned commit\n';
+    const sha = execFileSync('git', ['hash-object', '-t', 'commit', '-w', '--stdin'], {
+      cwd: signed,
+      input: object,
+      encoding: 'utf8',
+    }).trim();
+    sh(signed, ['update-ref', 'refs/heads/main', sha]);
+    // The evidence is git's own stderr. ⚠️ **A SENTINEL FILE WRITTEN BY A FAKE
+    // GPG WAS TRIED FIRST AND DOES NOT WORK** — measured: `gpg.program` is
+    // spawned directly rather than through a shell, so neither
+    // `"<node.exe> <script.js>"` nor a `.bat` ever runs, and a test built on one
+    // would report "it never ran" for a repository where git tried its hardest.
+    // That is the vacuous-verdict trap `spike/findings` keeps recording (#760), so
+    // the assertion is on the thing git demonstrably does say: *"cannot spawn"*.
+    const program = toPosix(path.join(signed, 'definitely-not-a-real-program'));
+    sh(signed, ['config', 'log.showSignature', 'true']);
+    sh(signed, ['config', 'gpg.program', program]);
+
+    /**
+     * git's stderr for one log invocation.
+     *
+     * `spawnSync`, not `execFileSync`: **git EXITS 0 here** — the spawn failure is
+     * a warning, not an error, which is the whole reason this hole was silent —
+     * and `execFileSync` returns only stdout on success, so a first attempt at
+     * this helper read an empty string and reported the control as having passed.
+     */
+    const stderrOf = (args: string[]): string =>
+      String(spawnSync('git', args, { cwd: signed, encoding: 'utf8' }).stderr ?? '');
+
+    // ⚠️ **THE POSITIVE CONTROL FIRST, BECAUSE WITHOUT IT THIS TEST IS VACUOUS.**
+    // A fixture whose forged `gpgsig` header did not take, or a git that ignored
+    // the config key, would sail through the real assertion below while proving
+    // nothing at all. So the hole is DEMONSTRATED — same argv, minus the one flag
+    // — and only then shown to be closed.
+    //
+    // ⚠️ **MATCHED ON THE PROGRAM'S OWN NAME, NOT ON GIT'S WORDING (found by CI).**
+    // The first version asserted `'cannot spawn'`, which is what git says on
+    // Windows; Linux says `fatal: cannot exec '<path>'`. The claim this test owns
+    // is "git reached for the program", and the program's name is the part of the
+    // sentence that is the same everywhere.
+    const unguarded = stderrOf(['log', '--format=%H', '-n', '1', 'HEAD']);
+    expect(unguarded).toContain('definitely-not-a-real-program');
+    const guarded = stderrOf(['log', '--no-show-signature', '--format=%H', '-n', '1', 'HEAD']);
+    expect(guarded).not.toContain('definitely-not-a-real-program');
+
+    // And the service, whose argv carries the flag (pinned in `git-log.test.ts`),
+    // reads the signed commit without git reaching for the program at all.
+    const l = await svc.log(signed);
+    expect(l.isRepo).toBe(true);
+    expect(l.unreadable).toBeUndefined();
+    expect(l.commits.map((c) => c.subject)).toContain('signed commit');
+  });
+
+  it('⚠️ a repo config cannot turn the history into "no commits yet" (review)', async () => {
+    // MEASURED IN REVIEW. `i18n.logOutputEncoding = UTF-16LE` re-encodes
+    // everything git writes — every byte followed by a NUL — so the parser finds
+    // no record anywhere while git exits 0. Without `--encoding=UTF-8` the tab
+    // would have drawn "this project has no commits yet" about a repository with
+    // a full history: a confident wrong answer about the user's project.
+    const utf16 = tempDir('sb-git-log-utf16-');
+    sh(utf16, ['init', '-b', 'main']);
+    sh(utf16, ['config', 'user.email', 'test@test']);
+    sh(utf16, ['config', 'user.name', 'test']);
+    fs.writeFileSync(path.join(utf16, 'f.txt'), 'one\n');
+    sh(utf16, ['add', '.']);
+    sh(utf16, ['commit', '-m', 'a real commit']);
+    sh(utf16, ['config', 'i18n.logOutputEncoding', 'UTF-16LE']);
+
+    const l = await svc.log(utf16);
+    expect(l.isRepo).toBe(true);
+    expect(l.unborn).toBeUndefined();
+    expect(l.commits.map((c) => c.subject)).toEqual(['a real commit']);
+  });
+
+  it('does NOT pay the #776 config guard — measured, `--shortstat` runs no driver', async () => {
+    // `status()` and `diff()` both read the repository's config and enumerate its
+    // submodules first, because both were measured to RUN a repo-configured
+    // driver. `log --shortstat` was measured not to: it uses git's internal
+    // diffstat machinery and never materialises a blob through a filter. This
+    // test is the standing proof of that measurement — a hostile repository with
+    // all three kinds of driver configured, whose output must be a clean log.
+    //
+    // If somebody adds `-p` or `--numstat` to the command, THIS is the test that
+    // goes red, and the fix is to pay the guard rather than to relax the test.
+    const hostile = tempDir('sb-git-log-hostile-');
+    sh(hostile, ['init', '-b', 'main']);
+    sh(hostile, ['config', 'user.email', 'test@test']);
+    sh(hostile, ['config', 'user.name', 'test']);
+    fs.writeFileSync(path.join(hostile, 'f.txt'), 'one\n');
+    sh(hostile, ['add', '.']);
+    sh(hostile, ['commit', '-m', 'init']);
+    fs.writeFileSync(path.join(hostile, 'f.txt'), 'two\n');
+    sh(hostile, ['add', '.']);
+    sh(hostile, ['commit', '-m', 'second']);
+
+    // ⚠️ **EACH DRIVER WRITES A SENTINEL FILE, AND THE FIRST VERSION OF THIS TEST
+    // ONLY CHECKED STDOUT (found in review).** `expect(output).not.toContain
+    // ('PWNED')` proves the ANSWER was not polluted, which is not the claim — a
+    // driver that writes a file, deletes something or dials out passes it
+    // unchanged. #776's threat is execution, so the assertion has to be about
+    // execution.
+    //
+    // ⚠️ **AND THE CONFIG GOES IN *AFTER* THE COMMITS, WHICH IS WHAT CI CAUGHT.**
+    // It used to be set before `git add`, and `git add` RUNS `filter.clean` — so
+    // on Linux the sentinel was written by this test's own fixture and the
+    // assertion failed against a service that had done nothing wrong. On Windows
+    // the same fixture wrote no sentinel at all, for a third reason (the writer
+    // command was not runnable there), so the test was simultaneously broken and
+    // vacuous on the two platforms. Nothing below this line runs git except the
+    // controls and the subject.
+    const ran = (name: string): string => path.join(hostile, `${name}-ran.txt`);
+    // `sh -c`, because that is how git invokes a config-supplied command on BOTH
+    // platforms — git for Windows bundles `sh`. A `<node.exe> <script.js>` pair is
+    // not runnable there, which is exactly how the Windows arm of this test came
+    // to prove nothing.
+    const writer = (name: string): string => `sh -c "echo ran > '${toPosix(ran(name))}'; cat"`;
+    fs.writeFileSync(path.join(hostile, '.gitattributes'), '*.txt filter=hostile diff=hostile\n');
+    sh(hostile, ['config', 'diff.external', writer('extdiff')]);
+    sh(hostile, ['config', 'diff.hostile.textconv', writer('textconv')]);
+    sh(hostile, ['config', 'filter.hostile.clean', writer('clean')]);
+
+    // ⚠️ **POSITIVE CONTROLS, BECAUSE "NOTHING RAN" IS THE EASIEST RESULT IN THE
+    // WORLD TO GET FOR THE WRONG REASON.** A writer that cannot start, an
+    // attribute that does not match, a config key spelled wrong: each produces an
+    // untouched sentinel and a green test. So each driver is first shown to be
+    // live on THIS machine, through a git command that is known to reach it, and
+    // only then is `log` shown not to.
+    fs.writeFileSync(path.join(hostile, 'f.txt'), 'three\n');
+    sh(hostile, ['add', 'f.txt']); // runs filter.clean
+    expect(fs.existsSync(ran('clean'))).toBe(true);
+    // Plain `git diff`, with none of our flags: `diff.external` wins over
+    // textconv, so this proves the external driver and leaves textconv's own
+    // control to the absence of `--no-textconv` below.
+    execFileSync('git', ['diff', 'HEAD~1', 'HEAD'], { cwd: hostile, stdio: 'ignore' });
+    expect(fs.existsSync(ran('extdiff'))).toBe(true);
+    execFileSync('git', ['--no-pager', 'diff', '--no-ext-diff', 'HEAD~1', 'HEAD'], {
+      cwd: hostile,
+      stdio: 'ignore',
+    });
+    expect(fs.existsSync(ran('textconv'))).toBe(true);
+
+    // Clean slate, and put the worktree back where the commits left it so `log`
+    // sees the repository the controls did.
+    for (const name of ['extdiff', 'textconv', 'clean']) fs.unlinkSync(ran(name));
+    sh(hostile, ['reset', '--hard', 'HEAD']);
+    for (const name of ['extdiff', 'textconv', 'clean']) {
+      // `reset --hard` runs `smudge`, not these three — asserted rather than
+      // assumed, so a surprise there is attributed to `reset` and not to `log`.
+      expect(fs.existsSync(ran(name))).toBe(false);
+    }
+
+    const l = await svc.log(hostile);
+    expect(l.isRepo).toBe(true);
+    expect(l.commits.map((c) => c.subject)).toEqual(['second', 'init']);
+    for (const name of ['extdiff', 'textconv', 'clean']) {
+      expect(fs.existsSync(ran(name))).toBe(false);
+    }
+  });
+
+  it('a TIMEOUT says it timed out, not that the repository is unreadable for another reason', async () => {
+    // The seam the rest of this file uses for the kill paths: a process that
+    // never exits where git would be. `isRepo` stays false because the probe
+    // itself is what timed out — we never got as far as being told it is a repo.
+    const hanging = tempDir('sb-git-log-hang-');
+    const script = path.join(hanging, 'hang.js');
+    fs.writeFileSync(script, 'setInterval(() => {}, 1000);');
+    const stuck = new GitService({ file: process.execPath, prefixArgs: [script] });
+    const l = await stuck.log(hanging, {}, 300);
+    expect(l.unreadable).toMatch(/did not finish reading the history/);
+    expect(l.commits).toEqual([]);
+  });
+
+  it('a BROKEN repository carries git own account of why', async () => {
+    // Same fixture shape as `diff()`'s: a corrupt loose object makes the log
+    // command fail while `rev-parse --is-inside-work-tree` still succeeds. The
+    // answer must not be `unborn` — `rev-parse --verify HEAD` succeeds here, and
+    // calling a damaged repository "has no commits yet" is the confident wrong
+    // answer this service keeps being corrected for.
+    const broken = tempDir('sb-git-log-broken-');
+    sh(broken, ['init', '-b', 'main']);
+    sh(broken, ['config', 'user.email', 'test@test']);
+    sh(broken, ['config', 'user.name', 'test']);
+    fs.writeFileSync(path.join(broken, 'f.txt'), 'hello\n');
+    sh(broken, ['add', '.']);
+    sh(broken, ['commit', '-m', 'init']);
+    const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: broken, encoding: 'utf8' }).trim();
+    const objectPath = path.join(broken, '.git', 'objects', commit.slice(0, 2), commit.slice(2));
+    fs.chmodSync(objectPath, 0o666);
+    fs.writeFileSync(objectPath, 'not a git object');
+
+    const l = await svc.log(broken);
+    expect(l.isRepo).toBe(true);
+    expect(l.unborn).toBeUndefined();
+    expect(l.unreadable).toBeTruthy();
+  });
+
+  it('a BARE repository is not a work tree, and says so plainly', async () => {
+    // It has a history, but no working tree to show it beside. A clean answer,
+    // and not a failure — the same branch `status()` takes.
+    const bare = tempDir('sb-git-log-bare-');
+    sh(bare, ['init', '--bare', '-b', 'main']);
+    const l = await svc.log(bare);
+    expect(l).toEqual({ isRepo: false, commits: [] });
+  });
+  // Real git in a child process, several times per case (#512).
+}, 60_000);
+
+// The per-file `+/−` against REAL git (E24 Git v2 item 7). `git-numstat.test.ts`
+// owns the framing against fixture bytes; this owns the half fixtures cannot
+// prove — that real git still emits that shape, and that the numbers ride on the
+// status snapshot rather than on a second one that could disagree with it.
+describe('GitService.status with stats (E24 Git v2 item 7)', () => {
+  it('⚠️ asks for NOTHING extra unless told to, which is the whole cost argument', async () => {
+    // `status()` is the card header's changed-count poll, for every card,
+    // repeatedly — and that surface draws no numbers at all. `undefined` is not
+    // `{}`: it says the caller did not pay, where `{}` would say it asked and
+    // nothing has changed.
+    const plainStatus = await svc.status(repo);
+    expect(plainStatus.stats).toBeUndefined();
+  });
+
+  it('counts the two sides SEPARATELY, because the groups draw them separately', async () => {
+    const both = tempDir('sb-git-numstat-');
+    sh(both, ['init', '-b', 'main']);
+    sh(both, ['config', 'user.email', 'test@test']);
+    sh(both, ['config', 'user.name', 'test']);
+    fs.writeFileSync(path.join(both, 'f.txt'), 'a\nb\nc\n');
+    sh(both, ['add', '.']);
+    sh(both, ['commit', '-m', 'init']);
+    // staged: one line changed. then unstaged on TOP of that: one more line.
+    fs.writeFileSync(path.join(both, 'f.txt'), 'a\nB\nc\n');
+    sh(both, ['add', 'f.txt']);
+    fs.writeFileSync(path.join(both, 'f.txt'), 'a\nB\nc\nd\n');
+
+    const s = await svc.status(both, undefined, true);
+    expect(s.stats?.['f.txt']?.staged).toEqual({ insertions: 1, deletions: 1 });
+    expect(s.stats?.['f.txt']?.unstaged).toEqual({ insertions: 1, deletions: 0 });
+  });
+
+  it('⚠️ a RENAME is ONE row, under its NEW name', async () => {
+    // The measured framing case: `0\t0\t\0old\0new\0` — an empty path field and
+    // two more NUL fields after it. A parser that read each NUL chunk as a record
+    // would produce three wrong rows and say nothing. `git mv` is a thing agents
+    // do constantly.
+    const moved = tempDir('sb-git-rename-');
+    sh(moved, ['init', '-b', 'main']);
+    sh(moved, ['config', 'user.email', 'test@test']);
+    sh(moved, ['config', 'user.name', 'test']);
+    fs.writeFileSync(
+      path.join(moved, 'old-name.ts'),
+      Array.from({ length: 20 }, (_, i) => `export const k${i} = ${i};`).join('\n') + '\n'
+    );
+    sh(moved, ['add', '.']);
+    sh(moved, ['commit', '-m', 'init']);
+    sh(moved, ['mv', 'old-name.ts', 'new-name.ts']);
+
+    const s = await svc.status(moved, undefined, true);
+    expect(s.stats?.['new-name.ts']).toBeDefined();
+    // The old name is not a row of its own, and there is no nameless row either.
+    expect(s.stats?.['old-name.ts']).toBeUndefined();
+    expect(Object.keys(s.stats ?? {})).toEqual(['new-name.ts']);
+  });
+
+  it('⚠️ a BINARY file reports binary, not `+0 −0`', async () => {
+    const bin = tempDir('sb-git-binary-');
+    sh(bin, ['init', '-b', 'main']);
+    sh(bin, ['config', 'user.email', 'test@test']);
+    sh(bin, ['config', 'user.name', 'test']);
+    fs.writeFileSync(path.join(bin, 'blob.dat'), Buffer.from([0, 1, 2, 0, 3, 4]));
+    sh(bin, ['add', '.']);
+    sh(bin, ['commit', '-m', 'init']);
+    fs.writeFileSync(path.join(bin, 'blob.dat'), Buffer.from([0, 9, 9, 9, 9, 9, 0, 7]));
+
+    const s = await svc.status(bin, undefined, true);
+    expect(s.stats?.['blob.dat']?.unstaged?.binary).toBe(true);
+  });
+
+  it('an UNTRACKED file has a status row and NO stats, which is correct', async () => {
+    // `git diff` does not see an untracked file at all. The row exists (porcelain
+    // reports it) and has no numbers, so the renderer draws none — rather than a
+    // zero that would read as "this new file is empty".
+    const fresh = tempDir('sb-git-untracked-');
+    sh(fresh, ['init', '-b', 'main']);
+    sh(fresh, ['config', 'user.email', 'test@test']);
+    sh(fresh, ['config', 'user.name', 'test']);
+    fs.writeFileSync(path.join(fresh, 'committed.txt'), 'x\n');
+    sh(fresh, ['add', '.']);
+    sh(fresh, ['commit', '-m', 'init']);
+    fs.writeFileSync(path.join(fresh, 'brand-new.txt'), 'hello\n');
+
+    const s = await svc.status(fresh, undefined, true);
+    expect(s.files.map((f) => f.path)).toContain('brand-new.txt');
+    expect(s.stats?.['brand-new.txt']).toBeUndefined();
+  });
+
+  it('⚠️ the stats come from the SAME snapshot as the file list', async () => {
+    // One call, one guard, one moment. Two round trips would be two snapshots —
+    // the file list from one and the numbers from another, drawn in the SAME ROW
+    // — and a row reading `+12 −3` beside a file that is no longer changed is the
+    // confident wrong answer this surface exists to stop giving. Asserted as the
+    // invariant it implies: every path with stats is a path in the list.
+    const s = await svc.status(repo, undefined, true);
+    const listed = new Set(s.files.map((f) => f.path));
+    for (const p of Object.keys(s.stats ?? {})) {
+      expect(listed.has(p), `${p} has stats but is not in the file list`).toBe(true);
+    }
+  });
+
+  it('⚠️ a stats read that FAILS costs the numbers, never the list', async () => {
+    // The fail-open rule pointing the opposite way from where it points on the
+    // status read itself: `status` is the answer and these are a decoration on
+    // it. A repository whose `diff` cannot run (a corrupt blob) must still list
+    // its files.
+    const broken = tempDir('sb-git-numstat-broken-');
+    sh(broken, ['init', '-b', 'main']);
+    sh(broken, ['config', 'user.email', 'test@test']);
+    sh(broken, ['config', 'user.name', 'test']);
+    fs.writeFileSync(path.join(broken, 'f.txt'), 'hello\n');
+    sh(broken, ['add', '.']);
+    sh(broken, ['commit', '-m', 'init']);
+    const blob = execFileSync('git', ['rev-parse', 'HEAD:f.txt'], { cwd: broken, encoding: 'utf8' }).trim();
+    const objectPath = path.join(broken, '.git', 'objects', blob.slice(0, 2), blob.slice(2));
+    fs.chmodSync(objectPath, 0o666);
+    fs.writeFileSync(objectPath, 'not a git object');
+    fs.writeFileSync(path.join(broken, 'f.txt'), 'changed\n');
+
+    const s = await svc.status(broken, undefined, true);
+    expect(s.isRepo).toBe(true);
+    expect(s.unreadable).toBeUndefined();
+    expect(s.files.map((f) => f.path)).toContain('f.txt');
+    // asked for, so present — and empty, because the read could not answer
+    expect(s.stats).toEqual({});
+  });
+  // Real git in a child process, several times per case (#512).
+}, 60_000);
+
+describe('GitService.status and a MERGE CONFLICT (E24 Git v2 item 6)', () => {
+  it('⚠️ lists a conflicted file at all — it used to be invisible', async () => {
+    // THE PRE-EXISTING BUG THIS PINS. porcelain v2 reports an unmerged entry on
+    // its own `u ` line, and the parser matched only `1 `, `2 ` and `? ` — so a
+    // file in a merge conflict was **not listed in the Changes tab and not
+    // counted in the card header's badge**. The one moment a user most needs to
+    // see which files are in trouble, and the surface said nothing at all.
+    const conflict = tempDir('sb-git-conflict-');
+    sh(conflict, ['init', '-b', 'main']);
+    sh(conflict, ['config', 'user.email', 'test@test']);
+    sh(conflict, ['config', 'user.name', 'test']);
+    sh(conflict, ['config', 'commit.gpgsign', 'false']);
+    fs.writeFileSync(path.join(conflict, 'c.txt'), 'base\n');
+    sh(conflict, ['add', '.']);
+    sh(conflict, ['commit', '-m', 'base']);
+    sh(conflict, ['checkout', '-b', 'side']);
+    fs.writeFileSync(path.join(conflict, 'c.txt'), 'side\n');
+    sh(conflict, ['commit', '-am', 'side']);
+    sh(conflict, ['checkout', 'main']);
+    fs.writeFileSync(path.join(conflict, 'c.txt'), 'main\n');
+    sh(conflict, ['commit', '-am', 'main']);
+    // The merge FAILS, which is the point — `sh` would throw on a non-zero exit.
+    try {
+      sh(conflict, ['merge', 'side']);
+    } catch {
+      /* expected: a conflict */
+    }
+
+    const s = await svc.status(conflict);
+    const row = s.files.find((f) => f.path === 'c.txt');
+    expect(row, 'a conflicted file is not in the list at all').toBeDefined();
+    expect(row?.conflicted).toBe(true);
+    // Both sides true, and neither is a guess: a conflict HAS content in the
+    // index and differs from it in the worktree. So every consumer that asks one
+    // of those two questions gets the honest answer without knowing about
+    // conflicts at all.
+    expect(row?.staged).toBe(true);
+    expect(row?.unstaged).toBe(true);
+    expect(row?.untracked).toBe(false);
+    // `UU` — both sides modified, which is what the sidebar's Merge group reads.
+    expect(row?.xy).toBe('UU');
+  });
+
+  it('an ordinary modification is NOT marked conflicted', async () => {
+    // The other half, so the flag cannot be satisfied by setting it everywhere.
+    const s = await svc.status(repo);
+    expect(s.files.length).toBeGreaterThan(0);
+    expect(s.files.every((f) => !f.conflicted)).toBe(true);
+  });
+  // Real git in a child process, several times per case (#512).
+}, 60_000);
+
+describe('GitService.status from a SUBDIRECTORY (E24 Git v2 item 7)', () => {
+  it('⚠️ the stats still match their rows — two commands, two path bases', async () => {
+    // ⚠️ **THE BUG THIS PINS, AND NOTHING IN THIS SUITE COULD HAVE CAUGHT IT**
+    // because every other fixture points at a repository ROOT. Measured on git
+    // 2.51.0.windows.2, both run with `cwd` = the session folder:
+    //
+    //   | run from      | status --porcelain=v2 | diff --numstat   |
+    //   |---------------|-----------------------|------------------|
+    //   | the repo root | sub/deep/f.txt        | sub/deep/f.txt   |
+    //   | `sub/`        | **deep/f.txt**        | **sub/deep/f.txt** |
+    //
+    // `status` honours `status.relativePaths` (default TRUE) so its paths are
+    // CWD-relative; `diff` is repo-root-relative unless told otherwise. They agree
+    // only when the folder IS the top level. For a session rooted in a monorepo
+    // package — an ordinary shape here — every `stats` key missed every row, so
+    // **every row drew nothing and the totals bar called everything uncounted**,
+    // with no reason anywhere. The only symptom was absence.
+    //
+    // Both sides are pinned now (`--relative` on the diffs, `status.relativePaths`
+    // on the status) rather than left to config, because both keys are
+    // repo-writable and either one flipping would break the match again.
+    const mono = tempDir('sb-git-mono-');
+    sh(mono, ['init', '-b', 'main']);
+    sh(mono, ['config', 'user.email', 'test@test']);
+    sh(mono, ['config', 'user.name', 'test']);
+    fs.mkdirSync(path.join(mono, 'sub', 'deep'), { recursive: true });
+    fs.writeFileSync(path.join(mono, 'sub', 'deep', 'f.txt'), 'a\nb\n');
+    fs.writeFileSync(path.join(mono, 'root.txt'), 'r\n');
+    sh(mono, ['add', '.']);
+    sh(mono, ['commit', '-m', 'init']);
+    fs.writeFileSync(path.join(mono, 'sub', 'deep', 'f.txt'), 'a\nB\nc\n');
+
+    // THE SESSION FOLDER IS THE SUBDIRECTORY, not the repo root.
+    const s = await svc.status(path.join(mono, 'sub'), undefined, true);
+    expect(s.isRepo).toBe(true);
+    // status reports it relative to the folder…
+    expect(s.files.map((f) => f.path)).toEqual(['deep/f.txt']);
+    // …and the numbers are keyed the SAME way, which is the whole assertion.
+    expect(s.stats?.['deep/f.txt']).toEqual({ unstaged: { insertions: 2, deletions: 1 } });
+    // Mutation-proof: the old behaviour keyed them `sub/deep/f.txt`, so asserting
+    // the absence of that spelling is what makes this test fail against it.
+    expect(s.stats?.['sub/deep/f.txt']).toBeUndefined();
+    // And every stats key is a row, which is the invariant the sidebar relies on.
+    const listed = new Set(s.files.map((f) => f.path));
+    for (const p of Object.keys(s.stats ?? {})) expect(listed.has(p)).toBe(true);
+  });
+
+  it('⚠️ a repo-authored `status.relativePaths` cannot break the match', async () => {
+    // Both keys are repo-writable — #776's threat model pointed at a number
+    // rather than at a command. `status.relativePaths=false` would make status
+    // report root-relative paths while the diffs stayed folder-relative, and every
+    // row would silently lose its numbers again.
+    const hostile = tempDir('sb-git-relpath-');
+    sh(hostile, ['init', '-b', 'main']);
+    sh(hostile, ['config', 'user.email', 'test@test']);
+    sh(hostile, ['config', 'user.name', 'test']);
+    fs.mkdirSync(path.join(hostile, 'sub'), { recursive: true });
+    fs.writeFileSync(path.join(hostile, 'sub', 'g.txt'), 'one\n');
+    sh(hostile, ['add', '.']);
+    sh(hostile, ['commit', '-m', 'init']);
+    fs.writeFileSync(path.join(hostile, 'sub', 'g.txt'), 'two\n');
+    sh(hostile, ['config', 'status.relativePaths', 'false']);
+    sh(hostile, ['config', 'diff.relative', 'false']);
+
+    const s = await svc.status(path.join(hostile, 'sub'), undefined, true);
+    expect(s.files.map((f) => f.path)).toEqual(['g.txt']);
+    expect(s.stats?.['g.txt']).toBeDefined();
+  });
+  // Real git in a child process, several times per case (#512).
+}, 60_000);
+
+// What one commit changed, against REAL git (E24 Git v2 item 4).
+// `git-commit-files.test.ts` owns the framing against fixture bytes; this owns
+// the half fixtures cannot prove — that real git still emits those two shapes,
+// and that the ROOT COMMIT, which has no parent, is not an empty list.
+describe('GitService.commitFiles (E24 Git v2 item 4)', () => {
+  let hist: string;
+  let head: { id: string; parentIds: string[] };
+  let root: { id: string; parentIds: string[] };
+
+  beforeAll(() => {
+    hist = tempDir('sb-git-commitfiles-');
+    sh(hist, ['init', '-b', 'main']);
+    sh(hist, ['config', 'user.email', 'test@test']);
+    sh(hist, ['config', 'user.name', 'test']);
+    sh(hist, ['config', 'commit.gpgsign', 'false']);
+    fs.mkdirSync(path.join(hist, 'd'), { recursive: true });
+    fs.writeFileSync(path.join(hist, 'f.txt'), 'a\nb\n');
+    fs.writeFileSync(path.join(hist, 'gone.txt'), 'x\n');
+    fs.writeFileSync(
+      path.join(hist, 'd', 'old.txt'),
+      Array.from({ length: 20 }, (_, i) => `line ${i}`).join('\n') + '\n'
+    );
+    sh(hist, ['add', '.']);
+    sh(hist, ['commit', '-m', 'one']);
+    const rootSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: hist, encoding: 'utf8' }).trim();
+    root = { id: rootSha, parentIds: [] };
+    // every shape in one commit: a modification, a deletion, a rename, an addition
+    fs.writeFileSync(path.join(hist, 'f.txt'), 'a\nB\nc\n');
+    fs.rmSync(path.join(hist, 'gone.txt'));
+    sh(hist, ['mv', 'd/old.txt', 'd/new.txt']);
+    fs.writeFileSync(path.join(hist, 'added.txt'), 'n\n');
+    sh(hist, ['add', '-A']);
+    sh(hist, ['commit', '-m', 'two']);
+    const headSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: hist, encoding: 'utf8' }).trim();
+    head = { id: headSha, parentIds: [rootSha] };
+  }, 60_000);
+
+  it('reads every shape of change in one commit, with its numbers (the done-when)', async () => {
+    const { files, unreadable } = await svc.commitFiles(hist, head);
+    expect(unreadable).toBeUndefined();
+    const by = Object.fromEntries(files.map((f) => [f.path, f]));
+    expect(by['f.txt']).toMatchObject({ letter: 'M', insertions: 2, deletions: 1 });
+    expect(by['added.txt']).toMatchObject({ letter: 'A', insertions: 1, deletions: 0 });
+    expect(by['gone.txt']).toMatchObject({ letter: 'D', deletions: 1 });
+    // ⚠️ THE RENAME IS ONE ROW, under its NEW name, and it REMEMBERS where it came
+    // from — two paths in one record on both sides of the read.
+    expect(by['d/new.txt']).toMatchObject({ letter: 'R', from: 'd/old.txt' });
+    expect(by['d/old.txt']).toBeUndefined();
+  });
+
+  it('⚠️ THE ROOT COMMIT lists every file as an addition, not an empty list', async () => {
+    // THE CASE THAT FAILS SILENTLY. A root commit has no parent, so without the
+    // empty-tree substitution `git diff <nothing> <sha>` is not an error that
+    // surfaces — it is an empty answer, and the repository's FIRST commit shows
+    // "changed no files" with nothing anywhere to say why.
+    const { files, unreadable } = await svc.commitFiles(hist, root);
+    expect(unreadable).toBeUndefined();
+    expect(files.length).toBeGreaterThan(0);
+    expect(files.every((f) => f.letter === 'A')).toBe(true);
+    expect(files.map((f) => f.path).sort()).toEqual(['d/old.txt', 'f.txt', 'gone.txt']);
+  });
+
+  it('an EMPTY commit really has no files, and says so by being empty', async () => {
+    // `--allow-empty` is a thing, and "no files" is the honest answer rather than
+    // a failure. The renderer draws a sentence for it rather than an empty box.
+    const empty = tempDir('sb-git-emptycommit-');
+    sh(empty, ['init', '-b', 'main']);
+    sh(empty, ['config', 'user.email', 'test@test']);
+    sh(empty, ['config', 'user.name', 'test']);
+    sh(empty, ['config', 'commit.gpgsign', 'false']);
+    fs.writeFileSync(path.join(empty, 'f.txt'), 'x\n');
+    sh(empty, ['add', '.']);
+    sh(empty, ['commit', '-m', 'init']);
+    sh(empty, ['commit', '--allow-empty', '-m', 'nothing']);
+    const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: empty, encoding: 'utf8' }).trim();
+    const parent = execFileSync('git', ['rev-parse', 'HEAD^'], { cwd: empty, encoding: 'utf8' }).trim();
+    const { files, unreadable } = await svc.commitFiles(empty, { id: sha, parentIds: [parent] });
+    expect(unreadable).toBeUndefined();
+    expect(files).toEqual([]);
+  });
+
+  it('⚠️ a BINARY file in a commit reports binary, not zeroes', async () => {
+    const bin = tempDir('sb-git-commitbin-');
+    sh(bin, ['init', '-b', 'main']);
+    sh(bin, ['config', 'user.email', 'test@test']);
+    sh(bin, ['config', 'user.name', 'test']);
+    sh(bin, ['config', 'commit.gpgsign', 'false']);
+    fs.writeFileSync(path.join(bin, 'b.dat'), Buffer.from([0, 1, 2, 0, 3]));
+    sh(bin, ['add', '.']);
+    sh(bin, ['commit', '-m', 'init']);
+    fs.writeFileSync(path.join(bin, 'b.dat'), Buffer.from([0, 9, 9, 0, 7, 7]));
+    sh(bin, ['commit', '-am', 'change it']);
+    const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: bin, encoding: 'utf8' }).trim();
+    const parent = execFileSync('git', ['rev-parse', 'HEAD^'], { cwd: bin, encoding: 'utf8' }).trim();
+    const { files } = await svc.commitFiles(bin, { id: sha, parentIds: [parent] });
+    expect(files[0]).toMatchObject({ path: 'b.dat', letter: 'M', binary: true });
+  });
+
+  it('a commit we could not read says so, rather than claiming it changed nothing', async () => {
+    const { files, unreadable } = await svc.commitFiles(hist, {
+      id: '0'.repeat(40),
+      parentIds: ['1'.repeat(40)],
+    });
+    expect(files).toEqual([]);
+    expect(unreadable).toBeTruthy();
+  });
+  // Real git in a child process, several times per case (#512).
+}, 60_000);
+
+describe('GitService.fileVersionsAt (E24 Git v2 item 4)', () => {
+  it('returns both sides of a file at two revisions', async () => {
+    const two = tempDir('sb-git-fva-');
+    sh(two, ['init', '-b', 'main']);
+    sh(two, ['config', 'user.email', 'test@test']);
+    sh(two, ['config', 'user.name', 'test']);
+    sh(two, ['config', 'commit.gpgsign', 'false']);
+    fs.writeFileSync(path.join(two, 'f.txt'), 'before\n');
+    sh(two, ['add', '.']);
+    sh(two, ['commit', '-m', 'one']);
+    fs.writeFileSync(path.join(two, 'f.txt'), 'after\n');
+    sh(two, ['commit', '-am', 'two']);
+    const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: two, encoding: 'utf8' }).trim();
+    const parent = execFileSync('git', ['rev-parse', 'HEAD^'], { cwd: two, encoding: 'utf8' }).trim();
+
+    const v = await svc.fileVersionsAt(two, 'f.txt', parent, sha);
+    expect(v.original).toContain('before');
+    expect(v.modified).toContain('after');
+  });
+
+  it('⚠️ an ADDED file has an EMPTY "before", which is what Monaco needs', async () => {
+    // A file added in this commit does not exist at `left`, so `git show` fails —
+    // and empty is exactly what renders as an addition. Which is also why a
+    // failure here cannot be told from an absence, and why neither is an error:
+    // the name-status letter beside it already says which it is.
+    const added = tempDir('sb-git-fva-added-');
+    sh(added, ['init', '-b', 'main']);
+    sh(added, ['config', 'user.email', 'test@test']);
+    sh(added, ['config', 'user.name', 'test']);
+    sh(added, ['config', 'commit.gpgsign', 'false']);
+    fs.writeFileSync(path.join(added, 'first.txt'), 'x\n');
+    sh(added, ['add', '.']);
+    sh(added, ['commit', '-m', 'one']);
+    fs.writeFileSync(path.join(added, 'new.txt'), 'brand new\n');
+    sh(added, ['add', '.']);
+    sh(added, ['commit', '-m', 'two']);
+    const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: added, encoding: 'utf8' }).trim();
+    const parent = execFileSync('git', ['rev-parse', 'HEAD^'], { cwd: added, encoding: 'utf8' }).trim();
+
+    const v = await svc.fileVersionsAt(added, 'new.txt', parent, sha);
+    expect(v.original).toBe('');
+    expect(v.modified).toContain('brand new');
+  });
+
+  it('⚠️ a ROOT commit reads against the EMPTY TREE and every line is an addition', async () => {
+    const r = tempDir('sb-git-fva-root-');
+    sh(r, ['init', '-b', 'main']);
+    sh(r, ['config', 'user.email', 'test@test']);
+    sh(r, ['config', 'user.name', 'test']);
+    sh(r, ['config', 'commit.gpgsign', 'false']);
+    fs.writeFileSync(path.join(r, 'f.txt'), 'the very first line\n');
+    sh(r, ['add', '.']);
+    sh(r, ['commit', '-m', 'root']);
+    const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: r, encoding: 'utf8' }).trim();
+
+    const v = await svc.fileVersionsAt(r, 'f.txt', '4b825dc642cb6eb9a060e54bf8d69288fbee4904', sha);
+    expect(v.original).toBe('');
+    expect(v.modified).toContain('the very first line');
+  });
+  // Real git in a child process, several times per case (#512).
+}, 60_000);
+
+// A FILENAME IS NOT A PATTERN (found in review of E24 Git v2 item 10).
+//
+// ⚠️ **A git pathspec is WILDCARD-MATCHED BY DEFAULT**, so the ⏱ gesture on an
+// everyday filename listed commits that never touched it, under a chip saying it
+// was showing only that one file. `--literal-pathspecs` rides in `guardArgs()`
+// now; `repo-config-guard.test.ts` pins that it is in the list, and this pins
+// what it does to REAL git — including a positive control proving the hole was
+// real, because a guard test that cannot fail without the guard proves nothing.
+describe('a filename is not a pattern (E24 Git v2 item 10)', () => {
+  let globby: string;
+
+  beforeAll(() => {
+    globby = tempDir('sb-git-glob-');
+    sh(globby, ['init', '-b', 'main']);
+    sh(globby, ['config', 'user.email', 'glob@test']);
+    sh(globby, ['config', 'user.name', 'Glob Tester']);
+    sh(globby, ['config', 'commit.gpgsign', 'false']);
+    // Two files whose names a GLOB cannot tell apart: `file[1].txt` as a pattern
+    // is the character class `[1]`, which matches `file1.txt`.
+    fs.writeFileSync(path.join(globby, 'file1.txt'), 'plain\n');
+    sh(globby, ['add', '.']);
+    sh(globby, ['commit', '-m', 'TOUCHED_file1']);
+    fs.writeFileSync(path.join(globby, 'file[1].txt'), 'bracketed\n');
+    sh(globby, ['add', '.']);
+    sh(globby, ['commit', '-m', 'TOUCHED_bracket']);
+  }, 60_000);
+
+  it('⚠️ `file[1].txt` GETS ITS OWN HISTORY, not another file’s', async () => {
+    const l = await svc.log(globby, { path: 'file[1].txt', follow: true });
+    expect(l.unreadable).toBeUndefined();
+    expect(l.commits.map((c) => c.subject)).toEqual(['TOUCHED_bracket']);
+    // …and the answer SAYS what it filtered by, so the chip cannot overclaim.
+    expect(l.filteredBy).toBe('file[1].txt');
+    expect(l.pathRefused).toBeUndefined();
+  });
+
+  it('⚠️ THE POSITIVE CONTROL: the same repository, read as a glob, gives the wrong answer', () => {
+    // Without this the test above would pass on a git that had never globbed.
+    // Run directly, with no guard, so the hole is demonstrated rather than
+    // asserted — and if a future git stops globging by default this test is what
+    // tells us, rather than the fix silently becoming decoration.
+    const asGlob = execFileSync('git', ['log', '--format=%s', '--follow', '--', 'file[1].txt'], {
+      cwd: globby,
+      encoding: 'utf8',
+    })
+      .trim()
+      .split('\n');
+    expect(asGlob).toContain('TOUCHED_file1');
+    expect(asGlob.length).toBeGreaterThan(1);
+  });
+
+  it('⚠️ A FILE NAMED `*` DOES NOT BECOME THE WHOLE REPOSITORY', () => {
+    // The #776 reading: under that threat model the filename is attacker-chosen,
+    // so this is the shape that turns ⏱ into "every commit". As a literal
+    // pathspec it matches nothing, because no file is named that.
+    const literal = execFileSync(
+      'git',
+      [...guardArgs(), 'log', '--format=%s', '--', '*'],
+      { cwd: globby, encoding: 'utf8' }
+    ).trim();
+    expect(literal).toBe('');
+    // …and the control, again: as a glob it is the entire history.
+    const asGlob = execFileSync('git', ['log', '--format=%s', '--', '*'], {
+      cwd: globby,
+      encoding: 'utf8',
+    }).trim();
+    expect(asGlob.split('\n').length).toBe(2);
+  });
+
+  it('⚠️ A PATH THE SERVICE WOULD NOT PASS SAYS SO, rather than widening in silence', async () => {
+    // `safePath` refuses pathspec magic, and a filename beginning with `:` is
+    // legal on macOS and Linux — so this is reachable by clicking ⏱ there. The
+    // list really is the whole history; what matters is that the answer admits
+    // it, because the chip is drawn from this field.
+    const l = await svc.log(globby, { path: ':notes.md', follow: true });
+    expect(l.pathRefused).toBe(true);
+    expect(l.filteredBy).toBeUndefined();
+    // the WHOLE history came back, which is exactly why it has to be flagged
+    expect(l.commits).toHaveLength(2);
+  });
+
+  it('no path asked for is neither filtered nor refused', async () => {
+    const l = await svc.log(globby);
+    expect(l.filteredBy).toBeUndefined();
+    expect(l.pathRefused).toBeUndefined();
+  });
+  // Real git in a child process, several times per case (#512).
+}, 60_000);
+
+// The write half against REAL git (E24 Git v2 item 12).
+//
+// `git-write.test.ts` owns the argv and the classification against fixtures. This
+// owns the half a fixture cannot prove: that these commands really do what the
+// measurements said, on a real repository, including the destructive one — and
+// that a refusal really leaves the tree alone.
+describe('GitService write half (E24 Git v2 item 12)', () => {
+  /** A repo with one of each shape: modified, deleted, untracked, staged. */
+  function dirty(): string {
+    const dir = tempDir('sb-git-write-');
+    sh(dir, ['init', '-b', 'main']);
+    sh(dir, ['config', 'user.email', 'w@test']);
+    sh(dir, ['config', 'user.name', 'Write Tester']);
+    sh(dir, ['config', 'commit.gpgsign', 'false']);
+    // ⚠️ **`core.autocrlf=false`, AND IT IS THE FIXTURE BEING HONEST RATHER THAN
+    // THE SUBJECT BEING WRONG.** On Windows git converts LF to CRLF on checkout
+    // by default, so `restore` brings a file back with different BYTES than the
+    // test wrote — and the assertions below are about whether the right CONTENT
+    // came back, not about line endings. Pinned rather than normalised at each
+    // comparison, so the test says the same thing on all three platforms.
+    sh(dir, ['config', 'core.autocrlf', 'false']);
+    fs.writeFileSync(path.join(dir, 'mod.txt'), 'one\n');
+    fs.writeFileSync(path.join(dir, 'del.txt'), 'bye\n');
+    fs.writeFileSync(path.join(dir, 'keep.txt'), 'keep\n');
+    sh(dir, ['add', '.']);
+    sh(dir, ['-c', 'core.hooksPath=', 'commit', '-m', 'base']);
+    fs.writeFileSync(path.join(dir, 'mod.txt'), 'one\ntwo\n');
+    fs.rmSync(path.join(dir, 'del.txt'));
+    fs.writeFileSync(path.join(dir, 'new.txt'), 'brand new\n');
+    return dir;
+  }
+
+  /** The porcelain XY for one path, or undefined if it is not listed. */
+  async function xy(dir: string, p: string): Promise<string | undefined> {
+    const s = await svc.status(dir);
+    return s.files.find((f) => f.path === p)?.xy;
+  }
+
+  it('stages a modification, a DELETION and an UNTRACKED file in one call (the done-when)', async () => {
+    const dir = dirty();
+    const r = await svc.stage(dir, ['mod.txt', 'del.txt', 'new.txt']);
+    expect(r).toEqual({ ok: true, applied: 3 });
+    // All three moved to the INDEX column, which is what the measurement said a
+    // plain `add --` does — no `-A` needed.
+    expect(await xy(dir, 'mod.txt')).toBe('M.');
+    expect(await xy(dir, 'del.txt')).toBe('D.');
+    expect(await xy(dir, 'new.txt')).toBe('A.');
+  });
+
+  it('⚠️ UNSTAGE IS THE EXACT UNDO, for all three shapes', async () => {
+    const dir = dirty();
+    await svc.stage(dir, ['mod.txt', 'del.txt', 'new.txt']);
+    const r = await svc.unstage(dir, ['mod.txt', 'del.txt', 'new.txt']);
+    expect(r.ok).toBe(true);
+    expect(await xy(dir, 'mod.txt')).toBe('.M');
+    expect(await xy(dir, 'del.txt')).toBe('.D');
+    // …and the new file goes back to UNTRACKED rather than vanishing.
+    expect(await xy(dir, 'new.txt')).toBe('??');
+    expect(fs.existsSync(path.join(dir, 'new.txt'))).toBe(true);
+  });
+
+  it('⚠️ DISCARD IS TWO COMMANDS AND DOES BOTH JOBS — restore and delete', async () => {
+    // Measured: `git restore` REFUSES an untracked path outright, so a mixed
+    // batch fails entirely unless it is classified first. This is that claim on a
+    // real repository.
+    const dir = dirty();
+    const r = await svc.discard(dir, ['mod.txt', 'del.txt', 'new.txt']);
+    expect(r.ok).toBe(true);
+    expect(r.applied).toBe(3);
+    // the modification is gone…
+    expect(fs.readFileSync(path.join(dir, 'mod.txt'), 'utf8')).toBe('one\n');
+    // …the deleted file is BACK…
+    expect(fs.existsSync(path.join(dir, 'del.txt'))).toBe(true);
+    // …and the untracked file is really gone from disk.
+    expect(fs.existsSync(path.join(dir, 'new.txt'))).toBe(false);
+    const s = await svc.status(dir);
+    expect(s.files).toEqual([]);
+  });
+
+  it('⚠️ DISCARDING A WORKING-TREE CHANGE LEAVES A STAGED ONE ALONE', async () => {
+    // `restore` with no `--source` restores from the INDEX, which is the correct
+    // meaning of discarding one ROW rather than the whole file. Staged-and-edited
+    // is exactly the case the Changes tab draws twice.
+    const dir = dirty();
+    await svc.stage(dir, ['mod.txt']);
+    fs.writeFileSync(path.join(dir, 'mod.txt'), 'one\ntwo\nthree\n');
+    const r = await svc.discard(dir, ['mod.txt']);
+    expect(r.ok).toBe(true);
+    // back to what was STAGED, not back to HEAD
+    expect(fs.readFileSync(path.join(dir, 'mod.txt'), 'utf8')).toBe('one\ntwo\n');
+    expect(await xy(dir, 'mod.txt')).toBe('M.');
+  });
+
+  it('⚠️ REFUSES TO DISCARD A CONFLICTED FILE, by name, and changes nothing', async () => {
+    const dir = tempDir('sb-git-conflict-');
+    sh(dir, ['init', '-b', 'main']);
+    sh(dir, ['config', 'user.email', 'w@test']);
+    sh(dir, ['config', 'user.name', 'Write Tester']);
+    sh(dir, ['config', 'commit.gpgsign', 'false']);
+    const commit = (...args: string[]): void => sh(dir, ['-c', 'core.hooksPath=', 'commit', ...args]);
+    fs.writeFileSync(path.join(dir, 'c.txt'), 'base\n');
+    sh(dir, ['add', '.']);
+    commit('-m', 'base');
+    sh(dir, ['checkout', '-b', 'side']);
+    fs.writeFileSync(path.join(dir, 'c.txt'), 'theirs\n');
+    commit('-am', 'theirs');
+    sh(dir, ['checkout', 'main']);
+    fs.writeFileSync(path.join(dir, 'c.txt'), 'ours\n');
+    commit('-am', 'ours');
+    // the merge is EXPECTED to fail
+    try {
+      sh(dir, ['merge', 'side']);
+    } catch {
+      /* a conflict is the point */
+    }
+    expect(await xy(dir, 'c.txt')).toMatch(/U/);
+
+    const before = fs.readFileSync(path.join(dir, 'c.txt'), 'utf8');
+    const r = await svc.discard(dir, ['c.txt']);
+    expect(r.ok).toBe(false);
+    expect(r.applied).toBe(0);
+    expect(r.reason).toContain('merge conflict');
+    expect(r.reason).toContain('c.txt');
+    // ⚠️ AND THE FILE IS BYTE-IDENTICAL: a refusal that had half-acted would be
+    // the worst outcome available on the one file where being wrong costs most.
+    expect(fs.readFileSync(path.join(dir, 'c.txt'), 'utf8')).toBe(before);
+  });
+
+  it('⚠️ A PATH THAT LEAVES THE FOLDER IS REFUSED AND NOTHING ELSE IN THE BATCH RUNS', async () => {
+    const dir = dirty();
+    const r = await svc.discard(dir, ['mod.txt', '../escape.txt']);
+    expect(r.ok).toBe(false);
+    expect(r.applied).toBe(0);
+    // the GOOD path in the same batch was not acted on either
+    expect(fs.readFileSync(path.join(dir, 'mod.txt'), 'utf8')).toBe('one\ntwo\n');
+  });
+
+  it('a path git does not know needed nothing done, and is not counted', async () => {
+    const dir = dirty();
+    const r = await svc.discard(dir, ['keep.txt']);
+    expect(r).toEqual({ ok: true, applied: 0 });
+    expect(fs.existsSync(path.join(dir, 'keep.txt'))).toBe(true);
+  });
+
+  it('a folder that is not a repository says so rather than throwing', async () => {
+    expect(await svc.stage(plain, ['a.txt'])).toMatchObject({ ok: false, applied: 0 });
+    const d = await svc.discard(plain, ['a.txt']);
+    expect(d.ok).toBe(false);
+    expect(d.reason).toBeTruthy();
+  });
+
+  it('⚠️ QUOTES GIT when git refuses, rather than inventing a sentence', async () => {
+    const dir = dirty();
+    // `restore --staged` on a path with nothing staged is fine; ask git to do
+    // something it really will not: unstage a path that does not exist at all.
+    const r = await svc.unstage(dir, ['nope-does-not-exist.txt']);
+    expect(r.ok).toBe(false);
+    // git's own words, not ours — the message has to be actionable and we do not
+    // know every reason a repository can refuse.
+    expect(r.reason).toMatch(/pathspec|did not match/i);
+  });
+
+  it('⚠️ THE #776 GUARDS STILL RIDE ON A WRITE — a repo cannot make `add` run a program', async () => {
+    // The threat model does not soften because we asked for a change rather than
+    // an answer: a repository that can make `status` run a program can make `add`
+    // run one too, and `add` is the command that actually reads file CONTENTS
+    // through a filter driver.
+    const dir = dirty();
+    const sentinel = path.join(dir, 'RAN');
+    sh(dir, ['config', 'filter.evil.clean', `sh -c "echo ran > '${toPosix(sentinel)}'; cat"`]);
+    fs.writeFileSync(path.join(dir, '.gitattributes'), 'mod.txt filter=evil\n');
+    // THE CONTROL: plain git really does run it.
+    sh(dir, ['add', 'mod.txt']);
+    expect(fs.existsSync(sentinel)).toBe(true);
+    fs.rmSync(sentinel);
+    sh(dir, ['restore', '--staged', 'mod.txt']);
+    // …and ours does not.
+    const r = await svc.stage(dir, ['mod.txt']);
+    expect(r.ok).toBe(true);
+    expect(fs.existsSync(sentinel)).toBe(false);
+  });
+  // Real git in a child process, several times per case (#512).
+}, 60_000);
+
+// Making a commit, against REAL git (E24 Git v2 item 13).
+//
+// ⚠️ **TWO CLAIMS HERE CANNOT BE MADE ANY OTHER WAY, and both were measured
+// before the code was written.**
+//
+//  1. **The message travels on STDIN and arrives byte-exact.** The design record
+//     §2.1 chose `commit --file=-` over `-m` because *"a multi-line body with
+//     quotes in it is a Windows quoting bug waiting to happen"* — so the test
+//     that matters is a message full of exactly the characters that would break
+//     a command line.
+//  2. ⚠️⚠️ **THE USER'S HOOKS RUN.** This is the only place in the service that
+//     lifts a #776 guard, and it is lifted on purpose: a commit that silently
+//     skipped somebody's `pre-commit` would be switchboard reimplementing `git
+//     commit`. A control proves the guard really does suppress a hook, so the
+//     relaxation is shown to be doing something rather than asserted to.
+describe('GitService.commit (E24 Git v2 item 13)', () => {
+  /** A repo with something staged and ready to commit. */
+  function staged(): string {
+    const dir = tempDir('sb-git-commit-');
+    sh(dir, ['init', '-b', 'main']);
+    sh(dir, ['config', 'user.email', 'c@test']);
+    sh(dir, ['config', 'user.name', 'Commit Tester']);
+    sh(dir, ['config', 'commit.gpgsign', 'false']);
+    sh(dir, ['config', 'core.autocrlf', 'false']);
+    fs.writeFileSync(path.join(dir, 'a.txt'), 'first\n');
+    sh(dir, ['add', '.']);
+    sh(dir, ['-c', 'core.hooksPath=', 'commit', '-m', 'base']);
+    fs.writeFileSync(path.join(dir, 'a.txt'), 'second\n');
+    sh(dir, ['add', '.']);
+    return dir;
+  }
+
+  const body = (dir: string): string =>
+    execFileSync('git', ['log', '-1', '--format=%B'], { cwd: dir, encoding: 'utf8' });
+
+  it('commits what is staged (the done-when)', async () => {
+    const dir = staged();
+    const r = await svc.commit(dir, 'a plain subject');
+    expect(r).toEqual({ ok: true, applied: 1 });
+    expect(body(dir)).toContain('a plain subject');
+    // …and the tree is clean afterwards, which is the only proof it really landed
+    expect((await svc.status(dir)).files).toEqual([]);
+  });
+
+  it('⚠️ A MESSAGE FULL OF SHELL METACHARACTERS ARRIVES BYTE-EXACT', async () => {
+    // The whole reason the design record chose stdin over `-m`. Every character
+    // here is one that would need quoting on a command line, and on Windows the
+    // quoting rules differ from POSIX — which is the bug that was being avoided
+    // rather than discovered.
+    const dir = staged();
+    const message = [
+      'A subject with "double quotes" and a $dollar',
+      '',
+      "A body with 'single quotes', 100% percent, a `backtick`,",
+      'a semicolon; an ampersand & a pipe | and a caret ^.',
+      '',
+      'And a trailing line.',
+    ].join('\n');
+    const r = await svc.commit(dir, message);
+    expect(r.ok).toBe(true);
+    const landed = body(dir);
+    for (const fragment of [
+      '"double quotes"',
+      '$dollar',
+      "'single quotes'",
+      '100% percent',
+      '`backtick`',
+      'a semicolon; an ampersand & a pipe | and a caret ^.',
+      'And a trailing line.',
+    ]) {
+      expect(landed, `lost: ${fragment}`).toContain(fragment);
+    }
+  });
+
+  it('⚠️⚠️ THE REPOSITORY’S OWN `pre-commit` HOOK RUNS — with a control that proves the guard suppresses it', async () => {
+    // ⚠️ **THE DECISION THIS PINS.** Everywhere else in the service, a repo's
+    // hooks are suppressed: `status` and `diff` run unbidden and a repository
+    // must not get to execute a program because switchboard glanced at it. A
+    // COMMIT is a button the user pressed, and one that skipped their formatter
+    // or their tests would not be a commit.
+    //
+    // ⚠️ **AND THE CONTROL IS NOT OPTIONAL.** This machine has a GLOBAL
+    // `core.hooksPath`, which masks `.git/hooks` entirely — the first attempt at
+    // this measurement was inconclusive for that reason. So the hook is installed
+    // AND pointed at explicitly, and the suppressed case is demonstrated first.
+    const dir = staged();
+    const hooks = path.join(dir, '.git', 'hooks');
+    fs.mkdirSync(hooks, { recursive: true });
+    const ran = path.join(dir, 'HOOK-RAN');
+    fs.writeFileSync(
+      path.join(hooks, 'pre-commit'),
+      `#!/bin/sh\necho ran > "${toPosix(ran)}"\nexit 0\n`
+    );
+    fs.chmodSync(path.join(hooks, 'pre-commit'), 0o755);
+    // A repo-local `core.hooksPath` so the machine's global one cannot mask it.
+    sh(dir, ['config', 'core.hooksPath', '.git/hooks']);
+
+    // THE CONTROL: with the guard's empty hooks path, it does NOT run.
+    expect(fs.existsSync(ran)).toBe(false);
+    sh(dir, ['-c', `core.hooksPath=${toPosix(path.join(dir, 'no-hooks-here'))}`, 'commit', '-m', 'guarded']);
+    expect(fs.existsSync(ran)).toBe(false);
+
+    // …and through our commit, which lifts exactly that one guard, it DOES.
+    fs.writeFileSync(path.join(dir, 'a.txt'), 'third\n');
+    await svc.stage(dir, ['a.txt']);
+    const r = await svc.commit(dir, 'hooks please');
+    expect(r.ok).toBe(true);
+    expect(fs.existsSync(ran), 'the pre-commit hook did not run').toBe(true);
+  });
+
+  it('⚠️ A FAILING HOOK STOPS THE COMMIT, and its own words come back', async () => {
+    // Which is the point of letting hooks run at all: a `pre-commit` that says no
+    // is the repository's own policy, and the user has to see what it said.
+    const dir = staged();
+    const hooks = path.join(dir, '.git', 'hooks');
+    fs.mkdirSync(hooks, { recursive: true });
+    fs.writeFileSync(
+      path.join(hooks, 'pre-commit'),
+      '#!/bin/sh\necho "LINT FAILED: two problems" >&2\nexit 1\n'
+    );
+    fs.chmodSync(path.join(hooks, 'pre-commit'), 0o755);
+    sh(dir, ['config', 'core.hooksPath', '.git/hooks']);
+    const r = await svc.commit(dir, 'should not land');
+    expect(r.ok).toBe(false);
+    expect(r.reason).toContain('LINT FAILED');
+    // …and nothing was committed.
+    expect(body(dir)).toContain('base');
+  });
+
+  it('…and `--no-verify` is what gets past it, which is why the option exists', async () => {
+    const dir = staged();
+    const hooks = path.join(dir, '.git', 'hooks');
+    fs.mkdirSync(hooks, { recursive: true });
+    fs.writeFileSync(path.join(hooks, 'pre-commit'), '#!/bin/sh\nexit 1\n');
+    fs.chmodSync(path.join(hooks, 'pre-commit'), 0o755);
+    sh(dir, ['config', 'core.hooksPath', '.git/hooks']);
+    expect((await svc.commit(dir, 'blocked')).ok).toBe(false);
+    const r = await svc.commit(dir, 'through anyway', { noVerify: true });
+    expect(r.ok).toBe(true);
+    expect(body(dir)).toContain('through anyway');
+  });
+
+  it('amends the last commit, message and all, with NOTHING staged', async () => {
+    // The commonest reason to reach for amend: fixing a message you just wrote.
+    // Measured to succeed with an empty index.
+    const dir = staged();
+    await svc.commit(dir, 'first try');
+    const r = await svc.commit(dir, 'second thoughts', { amend: true });
+    expect(r.ok).toBe(true);
+    expect(body(dir)).toContain('second thoughts');
+    expect(body(dir)).not.toContain('first try');
+    // and it is still ONE commit on top of base, not two
+    const count = execFileSync('git', ['rev-list', '--count', 'HEAD'], {
+      cwd: dir,
+      encoding: 'utf8',
+    }).trim();
+    expect(count).toBe('2');
+  });
+
+  it('adds a sign-off trailer when asked', async () => {
+    const dir = staged();
+    const r = await svc.commit(dir, 'signed', { signoff: true });
+    expect(r.ok).toBe(true);
+    expect(body(dir)).toContain('Signed-off-by:');
+  });
+
+  it('⚠️ AN EMPTY MESSAGE IS REFUSED BEFORE GIT IS EVEN RUN', async () => {
+    // git refuses it too — measured, "Aborting commit due to empty commit
+    // message" — so this is not the only line of defence. It exists so the BUTTON
+    // can be disabled rather than live and then failing.
+    const dir = staged();
+    for (const empty of ['', '   ', '\n\n', undefined, null, 42]) {
+      const r = await svc.commit(dir, empty);
+      expect(r.ok, `${JSON.stringify(empty)} was accepted`).toBe(false);
+      expect(r.reason).toContain('needs a message');
+    }
+    // nothing was committed by any of them
+    expect(body(dir)).toContain('base');
+  });
+
+  it('⚠️ NOTHING STAGED IS GIT’S OWN REFUSAL, passed through', async () => {
+    const dir = staged();
+    await svc.commit(dir, 'takes the staged change');
+    const r = await svc.commit(dir, 'and now there is nothing');
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBeTruthy();
+  });
+
+  it('a folder that is not a repository says so rather than throwing', async () => {
+    const r = await svc.commit(plain, 'nope');
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBeTruthy();
+  });
+  // Real git in a child process, several times per case (#512).
+}, 60_000);
+
+// Partial staging against REAL git (E24 Git v2 item 14).
+//
+// ⚠️ **THE ONLY THING THAT PROVES A SYNTHESISED PATCH IS RIGHT IS GIT ACCEPTING
+// IT.** `git-hunks.test.ts` asserts the arithmetic; this drives the bytes through
+// `git apply --cached` and then checks the three facts that matter:
+//
+//   1. the INDEX holds exactly the chosen change,
+//   2. the WORKING TREE is untouched,
+//   3. the REST of the change is still unstaged.
+//
+// A patch whose counts are merely *off* can land at an offset rather than being
+// refused — and then the index holds something the user never chose, silently.
+// Nothing but real `apply` can rule that out.
+describe('GitService partial staging (E24 Git v2 item 14)', () => {
+  /** Ten numbered lines committed, with the first and last changed on disk. */
+  function twoHunks(): string {
+    const dir = tempDir('sb-git-hunk-');
+    sh(dir, ['init', '-b', 'main']);
+    sh(dir, ['config', 'user.email', 'h@test']);
+    sh(dir, ['config', 'user.name', 'Hunk Tester']);
+    sh(dir, ['config', 'commit.gpgsign', 'false']);
+    sh(dir, ['config', 'core.autocrlf', 'false']);
+    fs.writeFileSync(
+      path.join(dir, 'f.txt'),
+      'one\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nten\n'
+    );
+    sh(dir, ['add', '.']);
+    sh(dir, ['-c', 'core.hooksPath=', 'commit', '-m', 'base']);
+    fs.writeFileSync(
+      path.join(dir, 'f.txt'),
+      'ONE\ntwo\nthree\nfour\nfive\nsix\nseven\neight\nnine\nTEN\n'
+    );
+    return dir;
+  }
+
+  const cached = (dir: string): string =>
+    execFileSync('git', ['diff', '--cached', '--no-color', '--', 'f.txt'], {
+      cwd: dir,
+      encoding: 'utf8',
+    });
+
+  it('reads the file’s hunks (the done-when)', async () => {
+    const dir = twoHunks();
+    const h = await svc.hunks(dir, 'f.txt');
+    expect(h.unreadable).toBeUndefined();
+    expect(h.hunks).toHaveLength(2);
+    expect(h.hunks[0].lines).toContain('+ONE');
+    expect(h.hunks[1].lines).toContain('+TEN');
+    // the header a patch needs came back with them
+    expect(h.header?.some((l) => l.startsWith('diff --git'))).toBe(true);
+  });
+
+  it('⚠️⚠️ STAGES ONE HUNK: the index gets it, the WORKING TREE IS UNTOUCHED, the rest stays unstaged', async () => {
+    const dir = twoHunks();
+    const h = await svc.hunks(dir, 'f.txt');
+    const patch = patchFor({ header: h.header ?? [], hunks: h.hunks }, [h.hunks[0]]);
+    const r = await svc.applyPatch(dir, patch);
+    expect(r).toEqual({ ok: true, applied: 1 });
+
+    // 1. the INDEX holds the first change and NOT the second
+    const staged = cached(dir);
+    expect(staged).toContain('+ONE');
+    expect(staged).not.toContain('+TEN');
+
+    // 2. ⚠️ THE WORKING TREE IS EXACTLY AS THE USER LEFT IT — the entire safety
+    //    story of this item, and the reason it needs no confirm.
+    const onDisk = fs.readFileSync(path.join(dir, 'f.txt'), 'utf8');
+    expect(onDisk.startsWith('ONE\n')).toBe(true);
+    expect(onDisk.trimEnd().endsWith('TEN')).toBe(true);
+
+    // 3. the rest is still unstaged: `MM` is staged-AND-further-modified
+    const s = await svc.status(dir);
+    expect(s.files.find((f) => f.path === 'f.txt')?.xy).toBe('MM');
+  });
+
+  it('⚠️ AND REVERSE-APPLYING THE SAME PATCH UNSTAGES IT AGAIN', async () => {
+    const dir = twoHunks();
+    const h = await svc.hunks(dir, 'f.txt');
+    const patch = patchFor({ header: h.header ?? [], hunks: h.hunks }, [h.hunks[0]]);
+    expect((await svc.applyPatch(dir, patch)).ok).toBe(true);
+    expect((await svc.applyPatch(dir, patch, { reverse: true })).ok).toBe(true);
+    expect(cached(dir)).toBe('');
+    // …and the working tree STILL has both changes
+    expect(fs.readFileSync(path.join(dir, 'f.txt'), 'utf8').startsWith('ONE\n')).toBe(true);
+  });
+
+  // ⚠️⚠️ **A LINE-LEVEL SELECTION TEST USED TO BE HERE, AND REMOVING IT IS THE
+  // POINT RATHER THAN A GAP.** It drove a hand-built sub-hunk through real `git
+  // apply`; the patch was ACCEPTED and the index came out holding `two/ONE/three`
+  // for a selection that asked for `ONE/two/three`. The algorithm is structurally
+  // wrong, not nearly right — `git-hunks.test.ts` keeps the counter-example and
+  // names the mechanism selection actually needs (per-line zero-context hunks).
+  // Shipping whole-hunk staging without it is a deliberate scope reduction.
+
+  it('⚠️ A PATCH THAT CANNOT APPLY LEAVES THE INDEX BYTE-IDENTICAL, and quotes git', async () => {
+    // git's own guarantee rather than ours — but asserted, because the design
+    // record asks for it and because "the index is untouched" is the claim a user
+    // has to be able to rely on after a failure.
+    const dir = twoHunks();
+    await svc.stage(dir, ['f.txt']);
+    const before = cached(dir);
+    const nonsense = [
+      'diff --git a/f.txt b/f.txt',
+      '--- a/f.txt',
+      '+++ b/f.txt',
+      '@@ -1,2 +1,2 @@',
+      '-this line is not in the file',
+      '+replacement',
+      ' two',
+      '',
+    ].join('\n');
+    const r = await svc.applyPatch(dir, nonsense);
+    expect(r.ok).toBe(false);
+    expect(r.applied).toBe(0);
+    // git's words, not ours
+    expect(r.reason).toMatch(/does not apply|patch failed/i);
+    expect(cached(dir)).toBe(before);
+  });
+
+  it('an empty or whitespace patch is refused before git is run', async () => {
+    const dir = twoHunks();
+    for (const nothing of ['', '   ', '\n']) {
+      const r = await svc.applyPatch(dir, nothing);
+      expect(r.ok).toBe(false);
+      expect(r.reason).toContain('nothing to apply');
+    }
+  });
+
+  it('a file with nothing unstaged has NO hunks, which is a fact and not a failure', async () => {
+    const dir = twoHunks();
+    await svc.stage(dir, ['f.txt']);
+    const h = await svc.hunks(dir, 'f.txt');
+    expect(h.unreadable).toBeUndefined();
+    expect(h.hunks).toEqual([]);
+  });
+
+  it('⚠️ REFUSES A PATH IT WOULD NOT ACT ON, with the same rule as every other write', async () => {
+    const dir = twoHunks();
+    const h = await svc.hunks(dir, '../escape.txt');
+    expect(h.unreadable).toBeTruthy();
+    expect(h.hunks).toEqual([]);
+  });
+
+  it('⚠️ THE #776 GUARDS RIDE ON `apply` TOO — a repo cannot make it run a program', async () => {
+    // `apply --cached` writes blobs into the object store, so it is a clean-filter
+    // path exactly as `add` is. Same control shape as item 12's.
+    const dir = twoHunks();
+    const sentinel = path.join(dir, 'RAN');
+    sh(dir, ['config', 'filter.evil.clean', `sh -c "echo ran > '${toPosix(sentinel)}'; cat"`]);
+    fs.writeFileSync(path.join(dir, '.gitattributes'), 'f.txt filter=evil\n');
+    // THE CONTROL: plain git really does run it.
+    sh(dir, ['add', 'f.txt']);
+    expect(fs.existsSync(sentinel)).toBe(true);
+    fs.rmSync(sentinel);
+    sh(dir, ['restore', '--staged', 'f.txt']);
+
+    const h = await svc.hunks(dir, 'f.txt');
+    const patch = patchFor({ header: h.header ?? [], hunks: h.hunks }, [h.hunks[0]]);
+    const r = await svc.applyPatch(dir, patch);
+    expect(r.ok, `apply refused: ${r.reason}`).toBe(true);
+    expect(fs.existsSync(sentinel)).toBe(false);
+  });
+  // Real git in a child process, several times per case (#512).
+}, 60_000);
+
+// Branch and sync against REAL git, with a REAL remote (E24 Git v2 item 15).
+//
+// ⚠️ **THE REMOTE IS A BARE REPOSITORY ON DISK, and that is what makes push and
+// pull testable at all.** A network remote would make this suite depend on
+// somebody else's server; a bare repo in a temp directory is a real remote by
+// every definition git uses — it has refs, it accepts a push, it can be ahead —
+// and it needs no credentials, so the measurement is about OUR commands rather
+// than about a connection.
+describe('GitService branch and sync (E24 Git v2 item 15)', () => {
+  /** A clone with a real upstream, plus the bare remote it came from. */
+  function cloned(): { work: string; bare: string } {
+    const bare = tempDir('sb-git-bare-');
+    sh(bare, ['init', '--bare', '-b', 'main']);
+    const seed = tempDir('sb-git-seed-');
+    sh(seed, ['init', '-b', 'main']);
+    sh(seed, ['config', 'user.email', 's@test']);
+    sh(seed, ['config', 'user.name', 'Sync Tester']);
+    sh(seed, ['config', 'commit.gpgsign', 'false']);
+    sh(seed, ['config', 'core.autocrlf', 'false']);
+    fs.writeFileSync(path.join(seed, 'a.txt'), 'first\n');
+    sh(seed, ['add', '.']);
+    sh(seed, ['-c', 'core.hooksPath=', 'commit', '-m', 'first']);
+    sh(seed, ['remote', 'add', 'origin', toPosix(bare)]);
+    sh(seed, ['push', '-u', 'origin', 'main']);
+
+    const work = tempDir('sb-git-work-');
+    // clone INTO an existing empty directory, which is what `tempDir` hands back
+    sh(work, ['clone', toPosix(bare), '.']);
+    sh(work, ['config', 'user.email', 's@test']);
+    sh(work, ['config', 'user.name', 'Sync Tester']);
+    sh(work, ['config', 'commit.gpgsign', 'false']);
+    sh(work, ['config', 'core.autocrlf', 'false']);
+    return { work, bare };
+  }
+
+  const branchOf = (dir: string): string =>
+    execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim();
+
+  it('fetches, and says nothing happened by succeeding (the done-when)', async () => {
+    const { work } = cloned();
+    expect(await svc.fetch(work)).toEqual({ ok: true, applied: 1 });
+  });
+
+  it('⚠️ A REPOSITORY WITH NO REMOTE IS A SUCCESS, not a failure', async () => {
+    // Measured: `git fetch` with nothing configured exits 0 and says nothing. A
+    // surface that reported that as an error would be wrong about every ordinary
+    // local-only project.
+    const solo = tempDir('sb-git-solo-');
+    sh(solo, ['init', '-b', 'main']);
+    sh(solo, ['config', 'user.email', 's@test']);
+    sh(solo, ['config', 'user.name', 'Sync Tester']);
+    sh(solo, ['config', 'commit.gpgsign', 'false']);
+    fs.writeFileSync(path.join(solo, 'a.txt'), 'x\n');
+    sh(solo, ['add', '.']);
+    sh(solo, ['-c', 'core.hooksPath=', 'commit', '-m', 'only']);
+    expect((await svc.fetch(solo)).ok).toBe(true);
+  });
+
+  it('⚠️⚠️ PUSHES A REAL COMMIT TO A REAL REMOTE, and the remote has it afterwards', async () => {
+    const { work, bare } = cloned();
+    fs.writeFileSync(path.join(work, 'a.txt'), 'second\n');
+    await svc.stage(work, ['a.txt']);
+    expect((await svc.commit(work, 'a second commit')).ok).toBe(true);
+    const r = await svc.push(work);
+    expect(r, `push failed: ${r.reason}`).toEqual({ ok: true, applied: 1 });
+    // ⭐ THE REMOTE'S OWN LOG, which is the only proof the push landed.
+    const remoteLog = execFileSync('git', ['log', '--format=%s', '-1', 'main'], {
+      cwd: bare,
+      encoding: 'utf8',
+    }).trim();
+    expect(remoteLog).toBe('a second commit');
+  });
+
+  it('⚠️ PULLS A COMMIT MADE ELSEWHERE, fast-forward only', async () => {
+    const { work, bare } = cloned();
+    // a second clone stands in for "somebody else"
+    const other = tempDir('sb-git-other-');
+    sh(other, ['clone', toPosix(bare), '.']);
+    sh(other, ['config', 'user.email', 'o@test']);
+    sh(other, ['config', 'user.name', 'Other']);
+    sh(other, ['config', 'commit.gpgsign', 'false']);
+    fs.writeFileSync(path.join(other, 'b.txt'), 'theirs\n');
+    sh(other, ['add', '.']);
+    sh(other, ['-c', 'core.hooksPath=', 'commit', '-m', 'from somebody else']);
+    sh(other, ['push']);
+
+    expect(fs.existsSync(path.join(work, 'b.txt'))).toBe(false);
+    const r = await svc.pull(work);
+    expect(r, `pull failed: ${r.reason}`).toEqual({ ok: true, applied: 1 });
+    expect(fs.existsSync(path.join(work, 'b.txt'))).toBe(true);
+  });
+
+  it('⚠️ AND REFUSES RATHER THAN STARTING A MERGE IT CANNOT FINISH', async () => {
+    // ⚠️ **THE WHOLE DESIGN OF THE PULL BUTTON.** With diverged history a plain
+    // `pull` would merge or rebase — and either can stop halfway with a conflict,
+    // leaving a one-click button having started something the user must now
+    // finish with no surface for it. `--ff-only` either works completely or
+    // changes nothing, and git says which.
+    const { work, bare } = cloned();
+    const other = tempDir('sb-git-other2-');
+    sh(other, ['clone', toPosix(bare), '.']);
+    sh(other, ['config', 'user.email', 'o@test']);
+    sh(other, ['config', 'user.name', 'Other']);
+    sh(other, ['config', 'commit.gpgsign', 'false']);
+    fs.writeFileSync(path.join(other, 'theirs.txt'), 'theirs\n');
+    sh(other, ['add', '.']);
+    sh(other, ['-c', 'core.hooksPath=', 'commit', '-m', 'theirs']);
+    sh(other, ['push']);
+    // …and OURS diverges
+    fs.writeFileSync(path.join(work, 'ours.txt'), 'ours\n');
+    sh(work, ['add', '.']);
+    sh(work, ['-c', 'core.hooksPath=', 'commit', '-m', 'ours']);
+
+    const before = branchOf(work);
+    const r = await svc.pull(work);
+    expect(r.ok).toBe(false);
+    // git's own words, which are the useful ones here
+    expect(r.reason).toMatch(/fast-forward|diverge/i);
+    // ⚠️ AND NOTHING WAS STARTED: no merge in progress, same branch, their file
+    // still absent.
+    expect(branchOf(work)).toBe(before);
+    expect(fs.existsSync(path.join(work, 'theirs.txt'))).toBe(false);
+    expect(fs.existsSync(path.join(work, '.git', 'MERGE_HEAD'))).toBe(false);
+  });
+
+  it('⚠️ A PUSH WITH NO UPSTREAM QUOTES GIT, which tells the user the fix', async () => {
+    // Measured: exit 128, "The current branch ... has no upstream branch".
+    const { work } = cloned();
+    expect((await svc.createBranch(work, 'brand-new')).ok).toBe(true);
+    const r = await svc.push(work);
+    expect(r.ok).toBe(false);
+    expect(r.reason).toMatch(/upstream/i);
+    // …and `setUpstream` is what gets it there
+    const up = await svc.push(work, { setUpstream: true });
+    expect(up, `push -u failed: ${up.reason}`).toEqual({ ok: true, applied: 1 });
+  });
+
+  it('creates a branch and switches to it', async () => {
+    const { work } = cloned();
+    expect(await svc.createBranch(work, 'feature/1052-sync')).toEqual({ ok: true, applied: 1 });
+    expect(branchOf(work)).toBe('feature/1052-sync');
+  });
+
+  it('⚠️ AND CREATES ONE AT A COMMIT THE GRAPH POINTED AT — the design record’s own words', async () => {
+    const { work } = cloned();
+    fs.writeFileSync(path.join(work, 'a.txt'), 'second\n');
+    sh(work, ['add', '.']);
+    sh(work, ['-c', 'core.hooksPath=', 'commit', '-m', 'second']);
+    const first = execFileSync('git', ['rev-parse', 'HEAD~1'], { cwd: work, encoding: 'utf8' }).trim();
+    expect((await svc.createBranch(work, 'from-the-graph', first)).ok).toBe(true);
+    expect(branchOf(work)).toBe('from-the-graph');
+    // …at THAT commit, not at HEAD
+    const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: work, encoding: 'utf8' }).trim();
+    expect(head).toBe(first);
+  });
+
+  it('switches branches, and carries an uncommitted change across', async () => {
+    // Measured: `checkout` only refuses when the switch would CLOBBER the change,
+    // so it is not the destructive operation it looks like.
+    const { work } = cloned();
+    await svc.createBranch(work, 'side');
+    fs.writeFileSync(path.join(work, 'scratch.txt'), 'wip\n');
+    expect(await svc.checkout(work, 'main')).toEqual({ ok: true, applied: 1 });
+    expect(branchOf(work)).toBe('main');
+    expect(fs.existsSync(path.join(work, 'scratch.txt'))).toBe(true);
+  });
+
+  it('⚠️ REFUSES A BRANCH NAME THAT COULD BE A FLAG, before git is run', async () => {
+    const { work } = cloned();
+    const before = branchOf(work);
+    for (const bad of ['--all', '-D', 'main..side', 'has space', '']) {
+      const r = await svc.checkout(work, bad);
+      expect(r.ok, `${bad} was accepted`).toBe(false);
+      expect(r.reason).toContain('branch name');
+    }
+    for (const bad of ['--force', 'a..b']) {
+      expect((await svc.createBranch(work, bad)).ok).toBe(false);
+    }
+    // …and the branch is exactly where it was
+    expect(branchOf(work)).toBe(before);
+  });
+
+  it('⚠️ AND REFUSES A BAD SOURCE REV for a new branch', async () => {
+    const { work } = cloned();
+    const r = await svc.createBranch(work, 'fine-name', '--all');
+    expect(r.ok).toBe(false);
+    expect(branchOf(work)).toBe('main');
+  });
+
+  it('a checkout git itself refuses quotes git', async () => {
+    const { work } = cloned();
+    const r = await svc.checkout(work, 'no-such-branch');
+    expect(r.ok).toBe(false);
+    expect(r.reason).toBeTruthy();
+    expect(branchOf(work)).toBe('main');
+  });
+  // Real git in a child process, several times per case (#512).
+}, 120_000);

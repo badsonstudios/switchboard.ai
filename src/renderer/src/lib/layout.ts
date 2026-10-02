@@ -99,7 +99,33 @@ export interface RescuedPopout {
  *  The one spelling of the DERIVED rule; the caller's full predicate adds the
  *  `session-`-with-no-record half, which needs state this module has none of. */
 export function isDerivedPanelId(id: string): boolean {
-  return /^(diff|doc)-/.test(id);
+  // ⚠️ **`gitdiff-` IS NAMED SEPARATELY BECAUSE THE ANCHOR DOES NOT REACH IT**
+  // (E24 Git v2 item 5, found in review). `/^(diff|doc)-/` is anchored, so a
+  // `gitdiff-<n>` panel did not match and therefore was NOT derived — which, for
+  // a panel family that is entirely derived, was three bugs at once:
+  //
+  //  * `planDiffOpen`'s `seq` restarts at 0 in every renderer, so the first ⧉
+  //    after a relaunch mints `gitdiff-1`, `addPanel` throws "panel already
+  //    exists", and the click is swallowed by the catch. The SECOND click works,
+  //    which is the worst possible shape of bug.
+  //  * The restored panel is a ghost the registry cannot see, so asking for that
+  //    comparison opens a SECOND panel on it — the duplicate-tab failure this
+  //    whole registry exists to prevent.
+  //  * A restored panel re-reads `git:fileVersions` on a folder that may no
+  //    longer be in the read scope, which is the exact reason the restore's own
+  //    comment gives for dropping `doc-` panels.
+  //
+  // Spelled as a second alternative rather than by loosening the anchor to
+  // `/(diff|doc)-/`: an unanchored match would also claim any future panel whose
+  // id merely CONTAINS one of those words.
+  //
+  // ⚠️ **`allchanges-` IS HERE FROM THE START (E24 Git v2 item 9), BECAUSE ITEM 5
+  // PAID FOR LEARNING IT.** A restored all-changes panel would mount editors on a
+  // folder that may no longer be in the read scope — the same reason the restore
+  // drops `doc-` panels — and the three bugs listed above are what happens to a
+  // derived family that this predicate does not claim. Adding it when the prefix
+  // was minted costs one alternative; discovering it costs a review round.
+  return /^(diff|doc|gitdiff|allchanges)-/.test(id);
 }
 
 /** One serialized dockview GROUP - the `data` of a grid leaf, or of a popout. */

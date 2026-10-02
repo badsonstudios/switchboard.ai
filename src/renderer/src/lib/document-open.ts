@@ -47,7 +47,30 @@ export function canOpenDocuments(): boolean {
  * Returns false when nothing is listening, so a caller can leave its own
  * affordance disabled rather than offering a click that does nothing.
  */
-export function openDocument(absolutePath: string, sessionId?: string): boolean {
+/**
+ * ⚠️⚠️ **THE SECOND ARGUMENT IS A **CARD** ID, THOUGH EVERY NAME ON THIS PATH
+ * SAYS `sessionId`. READ THIS BEFORE PASSING ONE.**
+ *
+ * §5.24 attribution is resolved by `sessionStore.getCardTitle` /
+ * `getCardAccent`, which match on `sessions[].id` — **the card id**. A LIVE
+ * session id resolves to nothing there, and "nothing" is exactly what absence
+ * looks like: the chip is simply not drawn, the viewer works, and nobody reports
+ * it.
+ *
+ * The name is `sessionId` because it is the dockview panel's persisted
+ * `params.sessionId` (`lib/document-panels.ts`) and renaming a persisted key is a
+ * migration. **So the name is wrong and the value must be a card id anyway** —
+ * issue 1055 is the rename.
+ *
+ * **THIS HAS NOW BITTEN THREE TIMES**, which is why the warning is this loud:
+ * `PanelContext.sessionId` is documented as *"the LIVE session id — churns on
+ * resume"*, so two call sites in `extensibility/panels.tsx` passed it and
+ * attributed nothing; and a reviewer reading the name in `SessionGrid`'s
+ * relocated-Changes host called a correct value a bug, which I removed before an
+ * e2e caught it. **Pass `ctx.cardId`.**
+ */
+export function openDocument(absolutePath: string, attributionCardId?: string): boolean {
+  const sessionId = attributionCardId;
   if (!opener || typeof absolutePath !== 'string' || absolutePath.length === 0) return false;
   try {
     opener(absolutePath, sessionId);
