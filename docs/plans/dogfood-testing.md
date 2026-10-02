@@ -8,7 +8,18 @@
 > When Dan asks "what should I test?", answer FROM this file: the UNTESTED
 > and RE-TEST sections, phrased as steps + expected result.
 
-Last updated: 2026-10-02 (third pass) — **⭐⭐⭐ THE TOP THREE ROWS ARE ALL YOURS, and together they are the whole of *"I want to get the Git implementation working much better"*:** the Changes tab is regrouped, a diff can leave the tab, and the History tab exists. **Step 11 of the top row is the one I most want tested** — a session opened on a SUBFOLDER of a repository, where every per-file number used to vanish silently. Seventeen user-facing entries, still waiting on **a version bump**.
+Last updated: 2026-10-02 (fourth pass) — **⭐⭐⭐ GIT V2 IS DONE: ALL FIFTEEN ITEMS, and the Changes tab can now STAGE, DISCARD AND COMMIT.** The top five rows are the write half plus the two surfaces that finish the read half. ⚠️ **USE A SCRATCH REPO for the top rows** — they change your repository, and one of them (discard on an untracked file) destroys work nothing else has a copy of.
+
+**IF YOU ONLY DO FOUR THINGS, DO THESE:**
+
+1. **Press ↶ on a row and say NO to the dialog.** Nothing at all should happen. (#1049 step 5)
+2. **Put a failing `pre-commit` hook in a scratch repo and commit.** It should STOP the commit and show the hook's own words — and that is a deliberate decision I want your view on, because everywhere else switchboard refuses to let a repo run anything. (#1050 step 7)
+3. **Make the history diverge and press ↓.** It must REFUSE and change nothing rather than starting a merge there is no screen here to finish. (#1052 step 5)
+4. **Open a session on a SUBFOLDER of a repository** and check the per-file `+/−` numbers are there. They used to vanish silently. (#1043 step 11)
+
+Twenty-two user-facing entries, still waiting on **a version bump**.
+
+Previously 2026-10-02 (third pass) — **⭐⭐⭐ THE TOP THREE ROWS ARE ALL YOURS, and together they are the whole of *"I want to get the Git implementation working much better"*:** the Changes tab is regrouped, a diff can leave the tab, and the History tab exists. **Step 11 of the top row is the one I most want tested** — a session opened on a SUBFOLDER of a repository, where every per-file number used to vanish silently. Seventeen user-facing entries, still waiting on **a version bump**.
 
 Previously 2026-10-02 (second pass) — **⭐⭐ THE TOP TWO ROWS ARE BOTH YOURS: the diff can leave the tab now, and the History tab exists.** Between them they are the two halves of *"the History tab's not working... everything's kind of just smashed together"*. Sixteen user-facing entries below, still waiting on **a version bump before you can install any of it**.
 

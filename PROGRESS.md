@@ -3,7 +3,36 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🚧 IN FLIGHT — 2026-10-02: **E24 — Git v2, fifteen items, layers 1 and 2**
+> # ✅ MERGED — 2026-10-02: **E24 Git v2, all fifteen items, layers 1 and 2**
+>
+> **PR #1053 squash-merged on green CI** (`7c4eeb5`); **#1038–#1052 all closed**.
+> Four jobs green. ⚠️ **NOT RELEASED** — the version bump is manual, so nothing
+> below is on Dan's machine until one happens (`gh release list` is the check).
+>
+> **THREE FOLLOW-UPS ARE OPEN AND DELIBERATE**, each filed with its reason rather
+> than left as a gap in a closed epic:
+>
+> * **#1054** — `Ctrl+F` is inert inside a `gitdiff-` panel. The surface is
+>   published; the provider only knows `session-` and `doc-` ids.
+> * **#1055** — the §5.24 attribution id is a CARD id while every name on its path
+>   says `sessionId`. Three call sites had got it wrong; all three pass a card id
+>   now, and the issue is the RENAME, including the layout migration the persisted
+>   key needs.
+> * **#1056** — line-level staging. **Built, measured putting the WRONG content in
+>   the index, and dropped.** It needs per-line zero-context hunks, which is what
+>   `--unidiff-zero` was really for.
+>
+> **AND TWO WINDOWS-ONLY CI FLAKES WERE SEEN, both pre-existing and both
+> timing-sensitive** — #772's taskkill-fallback test, and `feed-tail-pin`'s own
+> *"this test is passing for the wrong reason"* self-guard at 551ms against a
+> 500ms stimulus budget. Neither touches git. Both passed on a rerun of the same
+> commit, which is what identified them as flakes rather than as red code.
+>
+> **Next:** Phase 3's queue, and **layer 3 of E24 stays gated on the OQ #9
+> spike** (worktree create/merge-back, squash-merge, cross-session conflict
+> warnings) exactly as decided at the start.
+
+> # 📒 THE RECORD — **E24 — Git v2, fifteen items, layers 1 and 2**
 >
 > **The owner's words: *"I want to get the Git implementation working much
 > better… the History tab's not working… the changes tab works, but everything's
