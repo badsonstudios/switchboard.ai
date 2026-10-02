@@ -12,6 +12,10 @@ vi.mock('child_process', async (importOriginal) => {
 import fs from 'fs';
 import path from 'path';
 import { GitService } from './git-service';
+// The guards themselves, so the pathspec cases can run git WITH them and WITHOUT
+// them in one file — a guard test that cannot fail without the guard proves
+// nothing, which is the lesson the #776 hostile-driver tests learned the hard way.
+import { guardArgs } from './repo-config-guard';
 // `DIFF_BUDGET_MS`'s place in the bus's deadline cascade is pinned in
 // `bus-tools.test.ts`, beside the rest of the cascade.
 import { tempDir } from '../../test-temp-dirs';
@@ -249,8 +253,20 @@ describe('GitService.diff is BOUNDED (#772)', () => {
     fs.writeFileSync(pidFile, String(process.pid));
     // Real git consumes its own pre-subcommand options; so must the stand-in,
     // now that every invocation carries \`-c core.fsmonitor=false\` (#776).
+    //
+    // ⚠️ **AND NOT ONLY \`-c\` PAIRS (E24 Git v2 item 10).** This loop used to
+    // consume exactly those, so when \`guardArgs()\` gained the FLAG
+    // \`--literal-pathspecs\` the stand-in stopped recognising its own
+    // subcommand: \`args[0]\` was the flag, every \`args[0] === 'rev-parse'\`
+    // branch missed, and two bounded-diff tests failed with "git could not tell
+    // whether that folder is a repository". The failure was in the harness and
+    // looked exactly like a failure in the subject. Consuming ANY leading option
+    // is what real git does and is what this has to do.
     const args = raw.slice();
-    while (args.length && args[0] === '-c') args.splice(0, 2);
+    while (args.length && args[0].startsWith('-')) {
+      if (args[0] === '-c') args.splice(0, 2);
+      else args.splice(0, 1);
+    }
     const hang = () => setInterval(() => {}, 60000);
     if (mode === 'hang-probe') return hang();
     // The #776 guard's config read: hanging in one mode, and otherwise
@@ -2463,6 +2479,95 @@ describe('GitService.fileVersionsAt (E24 Git v2 item 4)', () => {
     const v = await svc.fileVersionsAt(r, 'f.txt', '4b825dc642cb6eb9a060e54bf8d69288fbee4904', sha);
     expect(v.original).toBe('');
     expect(v.modified).toContain('the very first line');
+  });
+  // Real git in a child process, several times per case (#512).
+}, 60_000);
+
+// A FILENAME IS NOT A PATTERN (found in review of E24 Git v2 item 10).
+//
+// ⚠️ **A git pathspec is WILDCARD-MATCHED BY DEFAULT**, so the ⏱ gesture on an
+// everyday filename listed commits that never touched it, under a chip saying it
+// was showing only that one file. `--literal-pathspecs` rides in `guardArgs()`
+// now; `repo-config-guard.test.ts` pins that it is in the list, and this pins
+// what it does to REAL git — including a positive control proving the hole was
+// real, because a guard test that cannot fail without the guard proves nothing.
+describe('a filename is not a pattern (E24 Git v2 item 10)', () => {
+  let globby: string;
+
+  beforeAll(() => {
+    globby = tempDir('sb-git-glob-');
+    sh(globby, ['init', '-b', 'main']);
+    sh(globby, ['config', 'user.email', 'glob@test']);
+    sh(globby, ['config', 'user.name', 'Glob Tester']);
+    sh(globby, ['config', 'commit.gpgsign', 'false']);
+    // Two files whose names a GLOB cannot tell apart: `file[1].txt` as a pattern
+    // is the character class `[1]`, which matches `file1.txt`.
+    fs.writeFileSync(path.join(globby, 'file1.txt'), 'plain\n');
+    sh(globby, ['add', '.']);
+    sh(globby, ['commit', '-m', 'TOUCHED_file1']);
+    fs.writeFileSync(path.join(globby, 'file[1].txt'), 'bracketed\n');
+    sh(globby, ['add', '.']);
+    sh(globby, ['commit', '-m', 'TOUCHED_bracket']);
+  }, 60_000);
+
+  it('⚠️ `file[1].txt` GETS ITS OWN HISTORY, not another file’s', async () => {
+    const l = await svc.log(globby, { path: 'file[1].txt', follow: true });
+    expect(l.unreadable).toBeUndefined();
+    expect(l.commits.map((c) => c.subject)).toEqual(['TOUCHED_bracket']);
+    // …and the answer SAYS what it filtered by, so the chip cannot overclaim.
+    expect(l.filteredBy).toBe('file[1].txt');
+    expect(l.pathRefused).toBeUndefined();
+  });
+
+  it('⚠️ THE POSITIVE CONTROL: the same repository, read as a glob, gives the wrong answer', () => {
+    // Without this the test above would pass on a git that had never globbed.
+    // Run directly, with no guard, so the hole is demonstrated rather than
+    // asserted — and if a future git stops globging by default this test is what
+    // tells us, rather than the fix silently becoming decoration.
+    const asGlob = execFileSync('git', ['log', '--format=%s', '--follow', '--', 'file[1].txt'], {
+      cwd: globby,
+      encoding: 'utf8',
+    })
+      .trim()
+      .split('\n');
+    expect(asGlob).toContain('TOUCHED_file1');
+    expect(asGlob.length).toBeGreaterThan(1);
+  });
+
+  it('⚠️ A FILE NAMED `*` DOES NOT BECOME THE WHOLE REPOSITORY', () => {
+    // The #776 reading: under that threat model the filename is attacker-chosen,
+    // so this is the shape that turns ⏱ into "every commit". As a literal
+    // pathspec it matches nothing, because no file is named that.
+    const literal = execFileSync(
+      'git',
+      [...guardArgs(), 'log', '--format=%s', '--', '*'],
+      { cwd: globby, encoding: 'utf8' }
+    ).trim();
+    expect(literal).toBe('');
+    // …and the control, again: as a glob it is the entire history.
+    const asGlob = execFileSync('git', ['log', '--format=%s', '--', '*'], {
+      cwd: globby,
+      encoding: 'utf8',
+    }).trim();
+    expect(asGlob.split('\n').length).toBe(2);
+  });
+
+  it('⚠️ A PATH THE SERVICE WOULD NOT PASS SAYS SO, rather than widening in silence', async () => {
+    // `safePath` refuses pathspec magic, and a filename beginning with `:` is
+    // legal on macOS and Linux — so this is reachable by clicking ⏱ there. The
+    // list really is the whole history; what matters is that the answer admits
+    // it, because the chip is drawn from this field.
+    const l = await svc.log(globby, { path: ':notes.md', follow: true });
+    expect(l.pathRefused).toBe(true);
+    expect(l.filteredBy).toBeUndefined();
+    // the WHOLE history came back, which is exactly why it has to be flagged
+    expect(l.commits).toHaveLength(2);
+  });
+
+  it('no path asked for is neither filtered nor refused', async () => {
+    const l = await svc.log(globby);
+    expect(l.filteredBy).toBeUndefined();
+    expect(l.pathRefused).toBeUndefined();
   });
   // Real git in a child process, several times per case (#512).
 }, 60_000);

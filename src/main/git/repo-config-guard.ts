@@ -115,8 +115,51 @@ export function emptyHooksDir(): string {
  * somewhere absolute and empty — and keeping both is what covers a hook we have
  * not enumerated, or one a later git adds.
  */
+/**
+ * ⚠️ **AND `--literal-pathspecs`, WHICH IS HERE BECAUSE A FILENAME IS NOT A
+ * PATTERN (found in review of E24 Git v2 item 10, measured).**
+ *
+ * A git pathspec is **wildcard-matched by default** — `*`, `?` and `[…]` are live
+ * in it. Every path this service passes to git comes out of git's own `status` or
+ * `log` output and names exactly one file, so glob semantics are never wanted and
+ * are a way to get a **confidently wrong answer**. Measured in a two-file repo:
+ *
+ * ```
+ * git log --oneline --follow -- 'file[1].txt'
+ *   COMMIT_FOR_bracket     <- correct
+ *   COMMIT_FOR_file1       <- A DIFFERENT FILE
+ * git --literal-pathspecs log --oneline --follow -- 'file[1].txt'
+ *   COMMIT_FOR_bracket     <- correct, alone
+ * ```
+ *
+ * `file[1].txt` is legal on all three platforms and is the shape a browser gives
+ * a duplicate download; `*.orig` and `a?.txt` are legal on macOS and Linux. So
+ * the ⏱ gesture on an everyday filename listed commits that never touched it,
+ * under a chip saying it was showing only that file — and **under #776's threat
+ * model the filename is attacker-chosen**, which makes a file named `*` turn ⏱
+ * into "the entire repository". (Measured: as a literal pathspec `*` matches
+ * nothing, because no file is named that.)
+ *
+ * It lives in the GUARD rather than in `logArgs` for two reasons: it is a GLOBAL
+ * option and must precede the subcommand, which is exactly where these already
+ * sit; and it is the same posture as the two above it — a repository's own
+ * contents must never acquire argv semantics. Measured as a no-op for every other
+ * command this service runs (`status --porcelain=v2`, `diff --numstat`,
+ * `show <rev>:<path>`, `rev-parse`), none of which passes a pathspec at all.
+ *
+ * ⚠️ **The consequence for a future caller: a glob pathspec will not work.** That
+ * is the correct default here — nothing in this app lets a user type one — but a
+ * command that genuinely wants one must opt out deliberately rather than discover
+ * it by having worked before.
+ */
 export function guardArgs(): string[] {
-  return ['-c', 'core.fsmonitor=false', '-c', `core.hooksPath=${emptyHooksDir()}`];
+  return [
+    '-c',
+    'core.fsmonitor=false',
+    '-c',
+    `core.hooksPath=${emptyHooksDir()}`,
+    '--literal-pathspecs',
+  ];
 }
 
 /**

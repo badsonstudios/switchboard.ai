@@ -63,7 +63,11 @@ function commit(over: Partial<GitCommitDto> = {}): GitCommitDto {
   };
 }
 
-const logOf = (commits: GitCommitDto[]): GitLogDto => ({ isRepo: true, commits });
+const logOf = (commits: GitCommitDto[], extra: Partial<GitLogDto> = {}): GitLogDto => ({
+  isRepo: true,
+  commits,
+  ...extra,
+});
 
 /** A reader that records every ask, so "it pages" is assertable. */
 function recorder(answers: GitLogDto[] | GitLogDto) {
@@ -711,12 +715,81 @@ describe('the History tab', () => {
       // new shape.
       setFileHistoryOpener(() => undefined);
       requestFileHistory('card-1', FOLDER, 'src/a.ts');
-      const { readLog } = recorder(logOf([commit()]));
+      // TWO answers, because ✕ really does refetch: the filtered page, then the
+      // whole history. A single fixed answer would have the stub keep saying
+      // `filteredBy` after the unpin, and the assertion below would be about the
+      // test rather than about the pane.
+      const { readLog } = recorder([
+        logOf([commit()], { filteredBy: 'src/a.ts' }),
+        logOf([commit(), commit({ id: 'b2' })]),
+      ]);
       await mountPinned(readLog);
       expect(one('.history-pinned')).not.toBeNull();
       expect(one('.history-pinned')?.getAttribute('title')).toContain('src/a.ts');
       await click(one('.history-unpin'));
       expect(one('.history-pinned')).toBeNull();
+    });
+
+    it('⚠️ THE SENTENCE IS ANNOUNCED, not left in a hover-only `title`', async () => {
+      // The chip's visible content is a bidi-isolated path truncated from the
+      // front, inside `direction: rtl` — so without this NO WORDS anywhere said
+      // the list was a subset. A `title` on a non-focusable span reaches a mouse
+      // and nothing else, which is the lesson `CommitRow` in this same file
+      // already records.
+      setFileHistoryOpener(() => undefined);
+      requestFileHistory('card-1', FOLDER, 'src/a.ts');
+      const { readLog } = recorder(logOf([commit()], { filteredBy: 'src/a.ts' }));
+      await mountPinned(readLog);
+      const chip = one('.history-pinned');
+      expect(chip?.getAttribute('role')).toBe('status');
+      expect(chip?.getAttribute('aria-label')).toContain('Showing only the commits');
+      expect(chip?.getAttribute('aria-label')).toContain('src/a.ts');
+    });
+
+    it('⚠️⚠️ THE CHIP IS DRAWN FROM THE ANSWER, SO IT CANNOT CLAIM A FILTER THAT DID NOT HAPPEN', async () => {
+      // ⚠️ **THE BUG THIS PINS, AND IT IS THE WORST SHAPE IN THE ITEM.** The chip
+      // keyed off the REQUEST, so when main refused the path the pane showed the
+      // WHOLE repository's history under a chip naming one file. Not a missing
+      // answer — a confident wrong one, which is exactly what this epic exists to
+      // stop. A pin is held here and the answer says it was refused.
+      setFileHistoryOpener(() => undefined);
+      requestFileHistory('card-1', FOLDER, ':notes.md');
+      const { readLog } = recorder([
+        logOf([commit(), commit({ id: 'b2' })], { pathRefused: true }),
+        logOf([commit(), commit({ id: 'b2' })]),
+      ]);
+      await mountPinned(readLog);
+      expect(one('.history-pinned')).toBeNull();
+      expect(one('.history-pin-refused')?.textContent).toContain("won't filter by that filename");
+      // …and the way out is still there, because the pin itself still stands.
+      await click(one('.history-unpin'));
+      expect(one('.history-pin-refused')).toBeNull();
+    });
+
+    it('⚠️ AND A PIN WHOSE PAGE HAS NOT LANDED YET DRAWS NO CHIP EITHER', async () => {
+      // The second way the request and the answer disagree: the moment between
+      // pinning and the page that honours it. The list on screen is NOT one
+      // file's history yet, so saying it is would be wrong for that frame.
+      setFileHistoryOpener(() => undefined);
+      requestFileHistory('card-1', FOLDER, 'src/a.ts');
+      const { readLog } = recorder(logOf([commit()]));
+      await mountPinned(readLog);
+      expect(one('.history-pinned')).toBeNull();
+    });
+
+    it('⚠️ AN EMPTY PINNED ANSWER IS ABOUT THE FILE, NOT ABOUT THE PROJECT', async () => {
+      // The most likely thing to press ⏱ on: the Changes tab lists UNTRACKED
+      // files, and git has no history for a file it has never seen. "Nothing to
+      // show" over a thousand-commit repository is ambiguous about whose answer
+      // it is — and the toolbar said "no commits" beside it.
+      setFileHistoryOpener(() => undefined);
+      requestFileHistory('card-1', FOLDER, 'src/brand-new.ts');
+      const { readLog } = recorder(logOf([], { filteredBy: 'src/brand-new.ts' }));
+      await mountPinned(readLog);
+      expect(one('.history-empty')?.textContent).toContain('src/brand-new.ts');
+      expect(one('.history-empty')?.textContent).toContain('never seen');
+      expect(document.body.textContent).toContain('no commits touched this file');
+      expect(document.body.textContent).not.toContain('Nothing to show');
     });
 
     it('asks for the WHOLE history when nothing is pinned', async () => {

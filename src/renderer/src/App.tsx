@@ -773,7 +773,11 @@ export function App(): React.JSX.Element {
     // ⏱ — "show me this file's history" (E24 Git v2 item 10). The gesture starts
     // in the Changes tab and lands in the History tab, which is a DIFFERENT tab
     // on the same card, so it needs the one verb a panel cannot reach.
-    setFileHistoryOpener((cardId) => grid.current?.toggleCardView(cardId, 'history'));
+    // ⚠️ `setCardView`, NOT `toggleCardView` (found in review): asked for the view
+    // a card is already on, the toggle returns to the Session view — so "show me
+    // this file's history" could show the conversation instead. The module's
+    // contract is "switch to it", and only the non-toggling verb can keep it.
+    setFileHistoryOpener((cardId) => grid.current?.setCardView(cardId, 'history'));
     return () => {
       setDocumentOpener(null);
       setDiffOpener(null);

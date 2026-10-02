@@ -9,6 +9,7 @@ import {
   canShowFileHistory,
   clearFileHistory,
   fileHistoryRequest,
+  forgetCardFileHistory,
   requestFileHistory,
   resetFileHistory,
   setFileHistoryOpener,
@@ -44,6 +45,31 @@ describe('the file-history seam', () => {
     requestFileHistory('card-1', '/old', 'a.ts');
     expect(fileHistoryRequest('card-1', '/old')?.path).toBe('a.ts');
     expect(fileHistoryRequest('card-1', '/new')).toBeNull();
+  });
+
+  it('⚠️ A STALE PIN IS DROPPED, NOT MERELY HIDDEN — it must not resurrect', () => {
+    // ⚠️ **THE BUG THIS PINS (found in review).** Returning `null` on a folder
+    // mismatch while LEAVING the entry in the map made the pin unreachable but
+    // alive: the chip correctly vanishes, so the user cannot clear something they
+    // cannot see — and if the session is later resumed back in the original
+    // folder the History tab silently re-pins itself to a file nobody clicked.
+    setFileHistoryOpener(() => undefined);
+    requestFileHistory('card-1', '/old', 'a.ts');
+    // the card moves…
+    expect(fileHistoryRequest('card-1', '/new')).toBeNull();
+    // …and moving BACK does not bring the pin with it.
+    expect(fileHistoryRequest('card-1', '/old')).toBeNull();
+  });
+
+  it('a closed card is forgotten, so the map does not grow for the renderer’s life', () => {
+    setFileHistoryOpener(() => undefined);
+    requestFileHistory('card-1', '/proj', 'a.ts');
+    requestFileHistory('card-2', '/proj', 'b.ts');
+    forgetCardFileHistory('card-1');
+    expect(fileHistoryRequest('card-1', '/proj')).toBeNull();
+    // …and only that card: the grid calls this per closed card.
+    expect(fileHistoryRequest('card-2', '/proj')?.path).toBe('b.ts');
+    expect(() => forgetCardFileHistory(undefined)).not.toThrow();
   });
 
   it('one request per card, and cards do not share', () => {

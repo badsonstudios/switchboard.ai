@@ -155,6 +155,14 @@ A few things worth knowing about it:
 - **It is per card.** Two cards can be pinned to two different files at once, and
   the pin is forgotten if the session's folder changes.
 - **Searching still works** and applies on top of the filter.
+- **A brand-new file has no history, and the tab says so by name.** Git has
+  nothing to tell you about a file it has never seen, so you get *"No commits have
+  touched …"* rather than a bare "nothing here".
+- **A few filenames cannot be filtered on, and switchboard tells you instead of
+  guessing.** A name starting with a colon means something special to git, so
+  rather than quietly show you a different answer, the tab says it won't filter by
+  that name and shows the whole history. You will only ever see this on a Mac or
+  on Linux — Windows does not allow those names.
 
 ## It loads in pages
 

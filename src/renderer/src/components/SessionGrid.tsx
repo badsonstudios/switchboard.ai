@@ -52,6 +52,7 @@ import {
 } from '../lib/diff-panels';
 import { getDiffLayout, subscribeDiffLayout } from '../lib/diff-layout';
 import { forgetDiffPlace } from '../lib/diff-places';
+import { forgetCardFileHistory } from '../lib/file-history';
 import { UsageStrip } from './UsageStrip';
 import { GitContext } from './GitContext';
 import type { GitStatusDto } from '../lib/git-status';
@@ -2794,16 +2795,31 @@ function overlayBtn(primary: boolean): React.CSSProperties {
 function DiffPanel(
   props: IDockviewPanelProps<{ folder?: string; colorScheme?: string }>
 ): React.JSX.Element {
+  // FROM THE PANEL ID, not a new param. `openDiff` encodes the card in
+  // `diff-<cardId>` and reading it back costs nothing, where threading a param
+  // would leave every Changes tab already in a restored layout without it. The
+  // id is the fact; the param would be a copy.
+  const cardId = /^diff-(.+)$/.exec(props.api.id)?.[1];
   return (
     <DiffPane
       folder={props.params?.folder ?? ''}
       colorScheme={props.params?.colorScheme === 'light' ? 'light' : 'dark'}
-      // FROM THE PANEL ID, not a new param. `openDiff` already encodes the card
-      // in `diff-<cardId>` and reading it back costs nothing, where threading a
-      // `cardId` param would edit the one function another item is currently
-      // holding — and would leave every Changes tab already in a restored
-      // layout without it. The id is the fact; the param would be a copy.
-      sessionId={/^diff-(.+)$/.exec(props.api.id)?.[1]}
+      // ⚠️ **`cardId` WAS MISSING HERE, SO THIS SURFACE HAD NO ⏱ (found in review
+      // of item 10).** `ScmSidebar` draws the clock only with a card to switch,
+      // so the relocated Changes pane had ⧉ and ↗ and silently not the third
+      // verb, with nothing explaining the difference. The id already held the
+      // answer.
+      cardId={cardId}
+      // ⚠️ **AND THE `sessionId` THIS USED TO PASS WAS A CARD ID — a pre-existing
+      // bug this fix uncovered rather than caused.** `openDiff` builds the id from
+      // `sessionStore.cardIdForLive(liveId)`, so the suffix is a CARD id, and
+      // feeding it to a prop that looks a session up by live id finds nothing:
+      // §5.24 attribution on this panel has always been silently absent. Passing
+      // it on as a session id would be worse than passing nothing — it is a wrong
+      // answer rather than a missing one — so it is dropped here and filed as
+      // issue 1055, which needs a card→live accessor the store does not expose.
+      // #261's lesson in its purest form: the prop was present, wrong, and
+      // harmless-looking.
     />
   );
 }
@@ -4480,6 +4496,10 @@ export function forgetClosedCard(cardId: string): void {
   // below cannot retire for us: main has nothing to forget. Left behind, it is
   // a rail row for a card with no panel.
   sessionStore.clearCardNotStarted(cardId);
+  // ...and its pinned file-history request (E24 Git v2 item 10). A module seam
+  // rather than the store, but the same shape of per-card record, and a map
+  // nothing prunes is the kind of leak only a profiler ever reports.
+  forgetCardFileHistory(cardId);
   void window.switchboard.sessions.closeCard(cardId);
 }
 
@@ -5319,6 +5339,20 @@ export interface GridController {
    *  back to the Session view (E9-01). `view.terminal` was the original caller
    *  and went with its tab in #873 — `view.changes` is what uses it now. */
   toggleCardView: (cardId: string, view: PanelId) => void;
+  /**
+   * Switch a card's view and do NOT toggle — the verb for a caller that means
+   * "be on this tab" rather than "flip this tab".
+   *
+   * ⚠️ **ITEM 10's ⏱ WAS INSTALLED ON THE TOGGLE, SO "SHOW ME THE HISTORY" COULD
+   * SHOW THE CONVERSATION (found in review).** `file-history`'s contract is *pin
+   * this path and switch to it*, and the toggle cannot keep that promise: asked
+   * for the view a card is already on, it returns to the Session view instead.
+   * Not reachable from the Changes tab, because the first click unmounts the row
+   * that would send the second — but reachable from the relocated Changes panel,
+   * which can be on screen while the card's view is already `history`, and from
+   * any future caller (a command, the Files tab, a dispatch).
+   */
+  setCardView: (cardId: string, view: PanelId) => void;
   /** pop the card out to its own window, or dock it back in (E9-01) */
   popOutCard: (cardId: string) => void;
   /** take the card out of the workspace, remembering its slot (§5.8 ladder).
@@ -6032,6 +6066,11 @@ export function SessionGrid(props: {
         sessionStore.setPresentation(cardId, {
           view: current === view && view !== DEFAULT_PANEL_ID ? DEFAULT_PANEL_ID : view,
         });
+      },
+      // The non-toggling twin, and the same straight-at-the-store route — see
+      // the interface for why ⏱ needed it.
+      setCardView: (cardId, view) => {
+        sessionStore.setPresentation(cardId, { view });
       },
       popOutCard: (cardId) => popOutCardPanel(apiRef.current, cardId),
       restoreRescuedPopouts: () => {

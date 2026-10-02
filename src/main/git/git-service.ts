@@ -15,7 +15,14 @@ import path from 'path';
 // that module's header for the second measured launcher case.
 import { killTree } from '../transport/kill-tree';
 import { trackChild } from '../diagnostics/live-children';
-import { type GitCommit, type GitLogQuery, diffBaseFor, logArgs, parseLog } from './git-log';
+import {
+  type GitCommit,
+  type GitLogQuery,
+  appliedPath,
+  diffBaseFor,
+  logArgs,
+  parseLog,
+} from './git-log';
 import { type FileStats, mergeNumstats, numstatArgs, parseNumstat } from './git-numstat';
 import {
   type CommitFile,
@@ -153,6 +160,26 @@ export interface GitLog {
    * the failure.
    */
   unborn?: boolean;
+  /**
+   * The pathspec this reading was ACTUALLY filtered by, if any.
+   *
+   * ⚠️ **THE ANSWER CARRIES ITS OWN FILTER, AND IT HAS TO (found in review).** The
+   * History tab drew its "showing only this file" chip off the REQUEST, so when
+   * `safePath` refused a path the pane showed **the whole repository's history
+   * under a chip naming one file** — the one shape worse than an empty list, and
+   * the exact confident-wrong-answer this epic is a correction for. `safePath`'s
+   * own comment justified its silent widening with *"nothing user-reachable
+   * produces these shapes"*, and item 10 broke that premise: the path now comes
+   * out of a repository's own `status` output and is clicked by a user. A filename
+   * beginning with `:` is legal on macOS and Linux and is refused as pathspec
+   * magic.
+   *
+   * Same discipline as `unreadable` above — what we could not do goes in a field,
+   * so no reader can mistake a wider answer for the narrow one it asked for.
+   */
+  filteredBy?: string;
+  /** a path WAS asked for and we would not pass it, so this is the whole history */
+  pathRefused?: boolean;
   commits: GitCommit[];
 }
 
@@ -1071,7 +1098,31 @@ export class GitService {
    * revision 'HEAD'`, which is also what a typo'd ref says. The distinction is
    * made by asking `rev-parse`, not by reading the message.
    */
+  /**
+   * ⚠️ **ONE WRAPPER, SO NO RETURN PATH CAN FORGET TO SAY WHAT IT FILTERED BY.**
+   * `log` answers from eight places (not a repo, unreadable, timeout, too large,
+   * unborn, read-but-unparseable, and two successes), and the field that matters
+   * here — "is this really only one file's history?" — is a property of the QUERY
+   * rather than of the outcome. Spreading it over the finished answer is why a
+   * refused path cannot come back looking like an applied one; adding it to each
+   * `return` individually is the version of this that goes stale on the ninth.
+   */
   async log(folder: string, query: GitLogQuery = {}, budgetMs = LOG_BUDGET_MS): Promise<GitLog> {
+    const applied = appliedPath(query);
+    const filter: Pick<GitLog, 'filteredBy' | 'pathRefused'> =
+      applied === null
+        ? {}
+        : 'refused' in applied
+          ? { pathRefused: true }
+          : { filteredBy: applied.path };
+    return { ...(await this.readLog(folder, query, budgetMs)), ...filter };
+  }
+
+  private async readLog(
+    folder: string,
+    query: GitLogQuery = {},
+    budgetMs = LOG_BUDGET_MS
+  ): Promise<GitLog> {
     const deadline = Date.now() + budgetMs;
     const left = (): number => Math.max(1, deadline - Date.now());
 

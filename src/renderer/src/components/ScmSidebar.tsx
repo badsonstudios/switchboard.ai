@@ -527,7 +527,23 @@ function Row(props: {
           {/* ⏱ — this file's history (item 10). It pins the History tab to this
               path and switches to it; the chip there is how you get back. ABSENT
               when there is no card to switch or nowhere to switch it, which is the
-              owner's rule about a control with nothing to do. */}
+              owner's rule about a control with nothing to do.
+
+              TWO THINGS ABOUT THIS, BOTH NOTED IN REVIEW AND BOTH DELIBERATE:
+
+              `canShowFileHistory()` is read during render with no subscription,
+              so a Changes tab that renders before `App`'s mount effect installs
+              the opener draws no ⏱ and heals on the next render (the status
+              fetch). `canOpenDiffs()` two buttons up has had exactly this shape
+              since item 5; a subscription for a value that flips once per
+              renderer lifetime would be machinery for nothing.
+
+              And the boolean `requestFileHistory` returns is DISCARDED on
+              purpose. It is false only when the grid itself threw, and in that
+              case the pin still stands (the module's own test pins that), so the
+              user who switches tabs by hand still gets the answer. Saying
+              something would mean a toast about an internal failure the user
+              cannot act on. The silence is the decision, not an oversight. */}
           {props.cardId && canShowFileHistory() && (
             <button
               type="button"

@@ -315,6 +315,27 @@ export const MAX_LOG_LIMIT = 2_000;
  * So `safePath` refuses both, and refuses an absolute path for the same reason
  * it refuses `..`.
  */
+/**
+ * What `logArgs` will actually filter this reading by.
+ *
+ * ⚠️ **EXISTS SO THE ANSWER CAN CARRY ITS OWN FILTER (found in review).** The
+ * caller cannot tell from `logArgs`' output whether the path it asked for
+ * survived `safePath`, and the History tab was drawing its chip off the REQUEST —
+ * so a refused path produced the whole history under a chip naming one file.
+ * `GitLog.filteredBy` / `GitLog.pathRefused` are set from this, which is the
+ * single place that decides, so the two cannot drift.
+ *
+ * `null` means no path was asked for at all, which is a different answer from
+ * "asked for and refused".
+ */
+export function appliedPath(
+  query: GitLogQuery = {}
+): { path: string } | { refused: true } | null {
+  if (query.path === undefined || query.path === '') return null;
+  const spec = safePath(query.path);
+  return spec !== undefined ? { path: spec } : { refused: true };
+}
+
 export function logArgs(query: GitLogQuery = {}): string[] {
   const limit = clampLimit(query.limit);
   // The SUBCOMMAND is part of this list, the way `CONFIG_LIST_SCOPED` carries

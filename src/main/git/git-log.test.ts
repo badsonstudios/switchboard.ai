@@ -10,6 +10,7 @@ import { describe, it, expect } from 'vitest';
 import {
   DEFAULT_LOG_LIMIT,
   MAX_LOG_LIMIT,
+  appliedPath,
   diffBaseFor,
   isLogQuery,
   logArgs,
@@ -558,5 +559,61 @@ describe('diffBaseFor', () => {
     // Get this wrong and the repository's first commit renders as "changed
     // nothing", with no error anywhere to say otherwise.
     expect(diffBaseFor({ parentIds: [] })).toBe(EMPTY_TREE);
+  });
+});
+
+// What the ANSWER has to say about its own filter (found in review of item 10).
+//
+// ⚠️ **THE HISTORY TAB DREW ITS CHIP FROM THE REQUEST**, so a path `safePath`
+// refused produced the WHOLE repository's history under a chip naming one file —
+// a confident wrong answer, which is worse than the empty list it replaced.
+// `appliedPath` is the one place that decides, so `GitLog.filteredBy` and the
+// pathspec `logArgs` emits cannot drift apart.
+/**
+ * A single backslash, spelled as a CODE POINT and never as an escape.
+ *
+ * ⚠️ **THE RECORDED TRAP IN THIS REPOSITORY, AND IT FIRED WRITING THESE VERY
+ * TESTS.** A scripted edit turned a two-character escape into a one-character one:
+ * the dedicated case below became `'src\a.ts'`, which JavaScript reads as
+ * `srca.ts`, and the loop above became a string holding a BACKSPACE. Both still
+ * compiled and both quietly tested nothing — one of them failed only because the
+ * assertion happened to be specific enough to notice. A named constant cannot be
+ * eaten by a shell, which is the shape to prefer over getting the escaping right.
+ */
+const BACKSLASH = String.fromCharCode(92);
+
+describe('appliedPath — the answer carries its own filter', () => {
+  it('reports the path that will really be passed', () => {
+    expect(appliedPath({ path: 'src/a.ts' })).toEqual({ path: 'src/a.ts' });
+  });
+
+  it('⚠️ REPORTS A REFUSAL AS A REFUSAL, not as "no filter"', () => {
+    // The two are different answers and the pane needs to tell them apart: one
+    // means "this is the whole history because you asked for it", the other means
+    // "this is the whole history and you did not".
+    expect(appliedPath({ path: ':notes.md' })).toEqual({ refused: true });
+    expect(appliedPath({ path: '../secret.txt' })).toEqual({ refused: true });
+    expect(appliedPath({ path: '/etc/passwd' })).toEqual({ refused: true });
+    expect(appliedPath({})).toBeNull();
+    expect(appliedPath({ path: '' })).toBeNull();
+  });
+
+  it('⚠️ AGREES WITH `logArgs` ON EVERY SHAPE — that agreement is the whole point', () => {
+    const shapes = ['a.ts', 'src/a.ts', ':magic', '../up', 'C:/abs', '', `a${BACKSLASH}b.ts`];
+    for (const path of shapes) {
+      const applied = appliedPath({ path });
+      const args = logArgs({ path });
+      const emitted = args.slice(args.lastIndexOf('--') + 1);
+      if (applied !== null && 'path' in applied) expect(emitted).toEqual([applied.path]);
+      else expect(emitted).toEqual([]);
+    }
+  });
+
+  it('a backslash is folded, and the FOLDED form is what is reported', () => {
+    // `toGitPath` turns a Windows separator into git's. On macOS and Linux a
+    // backslash is a legal character IN a filename, so this is a real (and
+    // flagged) limitation rather than a universal truth — but the answer must at
+    // least report the path git was actually given, not the one asked for.
+    expect(appliedPath({ path: `src${BACKSLASH}a.ts` })).toEqual({ path: 'src/a.ts' });
   });
 });

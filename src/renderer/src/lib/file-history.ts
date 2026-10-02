@@ -65,7 +65,17 @@ export function subscribeFileHistory(fn: () => void): () => void {
 export function fileHistoryRequest(cardId: string | undefined, folder: string): Request | null {
   if (!cardId) return null;
   const held = requests.get(cardId);
-  return held && held.folder === folder ? held : null;
+  if (!held) return null;
+  if (held.folder === folder) return held;
+  // ⚠️ **DROPPED, NOT MERELY HIDDEN (found in review).** Returning `null` and
+  // leaving the entry in place made a stale pin RESURRECTABLE: the chip correctly
+  // vanishes when the folder changes, so the user cannot clear a pin they cannot
+  // see — and if the session is later resumed back in the original folder the
+  // History tab silently re-pins itself to a file nobody clicked. Deleting here
+  // needs no `notify()`: the snapshot this call returns is already `null`, which
+  // is the change every subscriber would have been told about.
+  requests.delete(cardId);
+  return null;
 }
 
 /**
@@ -93,6 +103,19 @@ export function requestFileHistory(cardId: string | undefined, folder: string, p
 export function clearFileHistory(cardId: string | undefined): void {
   if (!cardId) return;
   if (requests.delete(cardId)) notify();
+}
+
+/**
+ * Forget a card entirely — what `SessionGrid.forgetClosedCard` calls.
+ *
+ * ⚠️ **WITHOUT THIS, A CLOSED CARD'S PIN LIVED FOR THE RENDERER'S LIFETIME
+ * (found in review).** A small leak rather than a wrong answer, but the grid
+ * already has the hook for exactly this shape of per-card module state, and a map
+ * nothing prunes is the kind of thing that is only ever noticed by a profiler.
+ */
+export function forgetCardFileHistory(cardId: string | undefined): void {
+  if (!cardId) return;
+  requests.delete(cardId);
 }
 
 /** Test seam — a fresh renderer has no requests, and neither should a test. */

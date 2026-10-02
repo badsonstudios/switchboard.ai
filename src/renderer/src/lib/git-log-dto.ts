@@ -47,6 +47,18 @@ export interface GitLogDto {
   unreadable?: string;
   /** this repository has no commits yet: a fact, not a failure */
   unborn?: boolean;
+  /**
+   * The path this reading was ACTUALLY filtered by (see `GitLog.filteredBy`).
+   *
+   * ⚠️ **THE CHIP IS DRAWN FROM THIS, NOT FROM THE REQUEST (found in review).**
+   * Drawing it from what was asked for meant a path main would not pass produced
+   * the WHOLE history under a chip naming one file — worse than an empty list,
+   * because it is a confident wrong answer about the user's project rather than a
+   * missing one.
+   */
+  filteredBy?: string;
+  /** a path was asked for and main would not pass it, so this is everything */
+  pathRefused?: boolean;
   commits: GitCommitDto[];
 }
 

@@ -263,6 +263,19 @@ export function HistoryPane(props: {
     fetchStatus();
   }, [props.folder, fetchPage, fetchStatus]);
 
+  /**
+   * What this reading was ACTUALLY filtered by, and whether a path was refused.
+   *
+   * ⚠️ **BOTH COME OFF THE ANSWER, WHICH IS THE WHOLE FIX (found in review).**
+   * `pinned` is what the user ASKED for; these two are what git was given. They
+   * differ in two reachable ways — main refusing the path, and the moment between
+   * a pin and the page that honours it — and in both of those the list on screen
+   * is NOT one file's history. Keying the chip off the request made the pane say
+   * it was in exactly the cases where it was not.
+   */
+  const applied = log?.filteredBy;
+  const pathRefused = log?.pathRefused === true;
+
   // Back on screen: ask again. A history goes stale the moment the session
   // commits anything, and this tab has no watcher — the same trade `FileTree`
   // makes, and for the same reason (a watch per card per repository is a cost
@@ -401,10 +414,28 @@ export function HistoryPane(props: {
         {/* ⚠️ THE PINNED-PATH CHIP, AND ITS ✕ IS THE ONLY WAY BACK. A filtered
             history that did not SAY it was filtered would read as a repository
             with three commits in it — which is the confident wrong answer this
-            whole epic is a correction for, in a new shape. */}
-        {pinned && (
+            whole epic is a correction for, in a new shape.
+
+            ⚠️⚠️ **DRAWN FROM THE ANSWER, NOT FROM THE REQUEST (found in review).**
+            The first version keyed off `pinned`, so when main's `safePath`
+            refused a path the pane rendered the WHOLE history under a chip
+            naming one file — the same confident wrong answer, one level up. The
+            chip now cannot claim a filter that did not happen: `filteredBy` is
+            what git was actually given, and `pathRefused` gets WORDS of its own
+            rather than silence. */}
+        {applied && (
           <span
             className="history-pinned"
+            role="status"
+            // ⚠️ **THE SENTENCE GOES WHERE IT IS ANNOUNCED, WHICH IS NOT A `title`
+            // (found in review — and `CommitRow` below already records this
+            // lesson).** A `title` on a non-focusable span reaches a mouse and
+            // nothing else, and the chip's visible content is a bidi-isolated path
+            // truncated from the front: no words anywhere said the list was a
+            // subset. The label carries the sentence, and the ⌕ glyph makes the
+            // filtering visible at a glance instead of inferred from a border.
+            aria-label={t('history.pinnedTitle', { path: applied })}
+            title={t('history.pinnedTitle', { path: applied })}
             style={{
               display: 'flex',
               gap: 4,
@@ -413,10 +444,11 @@ export function HistoryPane(props: {
               maxInlineSize: 200,
               // ⚠️ THE ACCENT IS THE RING, AND THE WORDS TAKE THE NEUTRAL INK —
               // `tokens.drift.test.ts` caught the first draft spending
-              // `--accent-blue` on `color:` too. Four of the eight accents are
-              // byte-identical to a status hue, so a path written in one reads
-              // on screen as a status about that path. The border carries the
-              // identity; the text is just text.
+              // `--accent-blue` on `color:` too (it reads every renderer source,
+              // inline styles included, and failed by this file's name). Four of
+              // the eight accents are byte-identical to a status hue, so a path
+              // written in one reads on screen as a status about that path. The
+              // border carries the identity; the text is just text.
               border: '1px solid var(--accent-blue)',
               borderRadius: 3,
               color: 'var(--text)',
@@ -424,8 +456,10 @@ export function HistoryPane(props: {
               fontSize: 9.5,
               paddingInlineStart: 4,
             }}
-            title={t('history.pinnedTitle', { path: pinned.path })}
           >
+            <span aria-hidden="true" style={{ color: 'var(--muted)' }}>
+              {t('history.pinnedIcon')}
+            </span>
             <span
               style={{
                 minInlineSize: 0,
@@ -435,8 +469,47 @@ export function HistoryPane(props: {
                 direction: 'rtl',
               }}
             >
-              {t('diff.pathIsolated', { path: pinned.path })}
+              {t('diff.pathIsolated', { path: applied })}
             </span>
+            <button
+              type="button"
+              className="history-unpin"
+              title={t('history.unpin')}
+              aria-label={t('history.unpin')}
+              onClick={() => clearFileHistory(props.cardId)}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'inherit',
+                cursor: 'pointer',
+                fontSize: 10,
+                lineHeight: 1,
+                padding: '0 3px',
+              }}
+            >
+              {t('history.unpinIcon')}
+            </button>
+          </span>
+        )}
+        {/* ⚠️ A PATH MAIN WOULD NOT PASS GETS WORDS, NOT SILENCE. `safePath`
+            refuses a leading `:` (pathspec magic) and `..`, and a filename
+            beginning with `:` is legal on macOS and Linux — so this is reachable
+            by clicking ⏱ on an ordinary file there. Saying it plainly is the only
+            honest option: the list below really is the whole history. */}
+        {pathRefused && (
+          <span
+            className="history-pin-refused"
+            role="status"
+            style={{
+              display: 'flex',
+              gap: 4,
+              alignItems: 'center',
+              flexShrink: 0,
+              color: 'var(--status-needs-input-ink)',
+              fontSize: 9.5,
+            }}
+          >
+            {t('history.pinRefused')}
             <button
               type="button"
               className="history-unpin"
@@ -486,11 +559,17 @@ export function HistoryPane(props: {
             could not find out" and the toolbar above contradicting it with a
             confident zero. Exactly the lie this epic is a correction for,
             reintroduced two inches higher up. */}
+        {/* ⚠️ **AND IT SAYS WHOSE COUNT IT IS WHEN A PATH IS PINNED (found in
+            review).** Pinned, `history.count` with zero reads **"no commits"** —
+            a confident statement about a thousand-commit project, two inches
+            above a line about one file. The pinned wording is about the file. */}
         {state.kind === 'commits' && (
           <span style={{ color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: 10 }}>
-            {query.trim() === ''
-              ? t('history.count', { count: commits.length })
-              : t('history.countFiltered', { shown: filtered.length, total: commits.length })}
+            {query.trim() !== ''
+              ? t('history.countFiltered', { shown: filtered.length, total: commits.length })
+              : applied
+                ? t('history.countPinned', { count: commits.length })
+                : t('history.count', { count: commits.length })}
           </span>
         )}
       </div>
@@ -568,9 +647,22 @@ export function HistoryPane(props: {
             a validation, so a reply missing `commits` lands here via `?? []`), and
             a claim about the user's project is not the thing to say about our own
             surprise. */}
+        {/* ⚠️ **AND A PINNED EMPTY ANSWER IS ABOUT THE FILE, NOT ABOUT THE
+            PROJECT (found in review).** This is the single most likely thing to
+            press ⏱ on: the Changes tab lists UNTRACKED files, and git has no
+            history at all for a file it has never seen. "Nothing to show" in a
+            thousand-commit repository is ambiguous about whose answer it is — so
+            the pinned case names the path and says why. */}
         {state.kind === 'commits' && filtered.length === 0 && (
-          <div style={{ padding: 10, color: 'var(--muted)', fontSize: 11 }}>
-            {commits.length === 0 ? t('history.nothingToShow') : t('history.noMatches', { query })}
+          <div
+            className="history-empty"
+            style={{ padding: 10, color: 'var(--muted)', fontSize: 11 }}
+          >
+            {commits.length > 0
+              ? t('history.noMatches', { query })
+              : applied
+                ? t('history.nonePinned', { path: applied })
+                : t('history.nothingToShow')}
           </div>
         )}
         {state.kind === 'commits' && filtered.length > 0 && (

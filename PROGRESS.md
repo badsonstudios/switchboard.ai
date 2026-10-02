@@ -86,13 +86,75 @@
 > status *about* that path. The ring carries the identity; the words take the
 > neutral ink.
 >
-> **Green:** lint · all three typecheck projects · **10,204** unit tests
+> **⚠️⚠️ REVIEW FOUND A SECOND #776-CLASS HOLE, AND IT IS THE ONE THIS EPIC EXISTS
+> TO STOP: A FILENAME IS NOT A PATTERN.** A git pathspec is **wildcard-matched by
+> default**. Measured in a two-file repo:
+>
+> ```
+> git log --oneline --follow -- 'file[1].txt'
+>   COMMIT_FOR_bracket     <- correct
+>   COMMIT_FOR_file1       <- A DIFFERENT FILE
+> ```
+>
+> So ⏱ on `file[1].txt` — a legal name on all three platforms, and what a browser
+> gives a duplicate download — listed **another file's commits under a chip saying
+> it was showing only this one**. And under #776's threat model the filename is
+> attacker-chosen, so a file named `*` turned ⏱ into the entire repository. Closed
+> with **`--literal-pathspecs` in `guardArgs()`** — the guard, not `logArgs`,
+> because it is a global option and because the posture is the same one: a
+> repository's own contents must never acquire argv semantics. Measured as a no-op
+> for every other command the service runs. **Pinned with positive controls** that
+> show the hole was real before showing it is shut, which is the lesson the first
+> hostile-driver test had to learn twice.
+>
+> **AND THE STAND-IN GIT HAD TO LEARN THE NEW FLAG.** Two bounded-diff tests went
+> red with *"git could not tell whether that folder is a repository"* — the fake
+> git consumed `-c` PAIRS and nothing else, so `--literal-pathspecs` became its
+> `args[0]` and every subcommand branch missed. A failure in the harness that
+> looked exactly like a failure in the subject; it consumes any leading option now,
+> which is what real git does. **The baseline was checked before concluding** —
+> green without the flag, red with it, so it really was mine.
+>
+> **⚠️ AND THE SECOND BLOCKER WAS THE CHIP ITSELF LYING.** It was drawn from the
+> REQUEST, so when `safePath` refused a path the pane showed **the whole
+> repository's history under a chip naming one file** — not a missing answer, a
+> confident wrong one, one level up from the bug the epic started with. The answer
+> carries its own filter now: `GitLog.filteredBy` / `pathRefused`, set from ONE
+> place (`appliedPath`) and spread over the finished answer by a wrapper, so none
+> of `log`'s eight return paths can forget. A refused path gets **words** rather
+> than silence.
+>
+> **Four more from the same review, all fixed:** the chip's one explanatory
+> sentence was in a hover-only `title` on a non-focusable span, so no words
+> anywhere reached a keyboard or a screen reader (`role="status"` + `aria-label`
+> + a ⌕ glyph now) · a pinned EMPTY answer reused *"Nothing to show"* with *"no
+> commits"* above it — about the project, over a question about one file (it names
+> the path and says git has never seen it) · a stale pin was **hidden rather than
+> dropped**, so it could resurrect when a session was resumed back in its original
+> folder, and nothing pruned a closed card · and the ⏱ opener was installed on
+> `toggleCardView`, so *"show me the history"* could show the conversation — there
+> is a non-toggling `setCardView` now.
+>
+> **One finding was WRONG and is recorded as such:** review claimed
+> `tokens.drift.test.ts` cannot have caught the accent-on-words slip because it
+> reads only token files. It reads **every renderer `.css`/`.ts`/`.tsx`
+> recursively, inline styles included**, and it failed by this file's name. The
+> comment and the paragraph above stand.
+>
+> **And one is filed rather than fixed (#1055):** the relocated Changes panel is
+> handed its **card id in the `sessionId` prop** — `openDiff` builds `diff-<cardId>`
+> — so §5.24 attribution there has always been silently absent. Item 10 fixed the
+> `cardId` half (that surface had no ⏱ at all) and **dropped** the wrong value
+> rather than passing it on, because a wrong answer is worse than a missing one.
+> The real fix needs a card→live accessor the store does not expose.
+>
+> **Green:** lint · all three typecheck projects · **10,236** unit tests
 > (`--maxWorkers=6`; the default worker count times out on this desktop, which is
 > the recorded heavy-npm-contention note, not a new failure) · `e2e/history-tab.spec.ts`
-> **5 of 5**, the fifth being the crossing itself — and its repository is built so
-> that the COUNT is the proof: three commits, one a `git mv`, and ⏱ leaves TWO
-> rows, so the test fails if `--follow` is ever dropped rather than passing on a
-> bare pathspec.
+> **5 of 5** and `e2e/diff.spec.ts` **9 of 9** — the fifth history test being the
+> crossing itself, and its repository is built so that the COUNT is the proof:
+> three commits, one a `git mv`, and ⏱ leaves TWO rows, so the test fails if
+> `--follow` is ever dropped rather than passing on a bare pathspec.
 
 > **🚧 NOW: item 11 (#1048) — git badges on the Files tab, from the SAME status
 > the Changes tab reads.** §5.7's remaining half, the one #521 left behind: *"The
