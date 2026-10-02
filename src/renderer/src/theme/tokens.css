@@ -1806,13 +1806,27 @@ mark[data-feed-match-current] {
 .scm-row-acts {
   display: flex;
   gap: 1px;
-  /* ⚠️ **`visibility`, NOT `display: none` (found in review).** `display: none`
-   * removes the buttons from the ACCESSIBILITY TREE as well as from the page, so a
-   * screen-reader user browsing the list would never be told the row has an
-   * "open in panel" action at all — Tab would reach it, browse mode would not.
-   * `visibility: hidden` hides it visually and keeps it out of the tab order while
-   * leaving it discoverable. It also keeps the row's width stable, so nothing
-   * shifts under the pointer on hover.
+  /* ⚠️ **`visibility`, NOT `display: none`** — but NOT for the reason this comment
+   * used to give, and the correction matters because these comments are the
+   * institutional memory.
+   *
+   * **THE OLD CLAIM WAS WRONG:** it said `visibility: hidden` "keeps it out of the
+   * tab order while leaving it discoverable" in the accessibility tree. It does
+   * not. `visibility: hidden` removes an element from the accessibility tree just
+   * as `display: none` does — MEASURED, by Playwright's `getByRole` being unable
+   * to resolve these buttons at all until the row is hovered, which is what broke
+   * three older e2e specs and is how the error was found.
+   *
+   * **WHAT IT IS ACTUALLY FOR, and it is still the right choice:** it keeps the
+   * row's width stable, so nothing shifts under the pointer on hover — where
+   * `display: none` would reflow the row as the pointer crossed it.
+   *
+   * **AND THE ACCESS STORY IS `:focus-within`, NOT DISCOVERABILITY.** The row's own
+   * `.scm-row-open` button is always visible and focusable; focusing it reveals
+   * this slot, and Tab then reaches the verbs. So a keyboard and screen-reader
+   * user gets to them by moving through the list, which is how a list of files is
+   * read — they are simply not announced while merely browsing a row the user has
+   * not landed on. That is the same bargain VS Code's own SCM rows make.
    *
    * ⚠️ AND NOTHING MAY SET `display` INLINE ON THIS ELEMENT: an inline declaration
    * outranks this rule, which is precisely how the first version shipped with the

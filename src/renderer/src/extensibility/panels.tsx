@@ -138,7 +138,15 @@ export const sessionPanels: PanelContribution[] = [
           folder={ctx.folder}
           colorScheme={ctx.colorScheme}
           cardId={ctx.cardId}
-          sessionId={ctx.sessionId}
+          // ⚠️⚠️ **`ctx.cardId`, NOT `ctx.sessionId`, AND THE PROP NAME LIES.**
+          // §5.24 attribution resolves through `sessionStore.getCardTitle`, which
+          // matches on the CARD id — while `PanelContext.sessionId` is documented
+          // three lines from here as *"the LIVE session id — churns on resume"*.
+          // The first version of this fix passed the live id: the prop went from
+          // ABSENT to WRONG, which is worse, and it looks identical on screen
+          // because an unresolved id draws no chip. `lib/document-open.ts` carries
+          // the full warning; issue 1055 is the rename that ends it.
+          sessionId={ctx.cardId}
         />
       ) : null,
   },
@@ -169,9 +177,15 @@ export const sessionPanels: PanelContribution[] = [
           root={ctx.folder}
           active={ctx.visible}
           // §5.30's placement policy, not a second opinion about it — and the
-          // session id is §5.24 attribution: the viewer wears this card's accent
-          // and a `↳ session` chip.
-          onOpenFile={(p) => openDocument(p, ctx.sessionId)}
+          // second argument is §5.24 attribution: the viewer wears this card's
+          // accent and a `↳ session` chip.
+          //
+          // ⚠️ **`ctx.cardId`, AND IT WAS `ctx.sessionId` UNTIL AN E2E EXPOSED
+          // THE WHOLE FAMILY OF THIS MISTAKE.** Attribution resolves on the CARD
+          // id; the live id this used to pass resolves to nothing, so a file
+          // opened from the Files tab has silently worn no attribution since
+          // #521. `lib/document-open.ts` carries the warning.
+          onOpenFile={(p) => openDocument(p, ctx.cardId)}
         />
       ) : null,
   },

@@ -120,9 +120,33 @@ async function palette(w: Page, title: string): Promise<void> {
   await w.keyboard.press('Enter');
 }
 
-/** The ↗ at the end of a Changes row: "never mind the diff, show me the file". */
+/**
+ * The ↗ at the end of a Changes row: "never mind the diff, show me the file".
+ *
+ * ⚠️ **THE ROW HAS TO BE HOVERED FIRST, and CI is what said so.** Since E24 Git
+ * v2 item 6 the row's action slot is `visibility: hidden` at rest — a deliberate,
+ * reviewed decision (the verbs replace the line counts on hover or focus, and
+ * `visibility` rather than `display: none` so they stay in the accessibility
+ * tree). Playwright's actionability check requires a VISIBLE element and does not
+ * hover to get one, so this helper silently became a 30-second timeout in every
+ * test that used it — on BOTH platforms, which is how it was clear this was the
+ * helper and not something Linux-specific.
+ *
+ * ⚠️ **AND `getByRole` CANNOT SEE IT AT ALL UNTIL THEN**, which is the part that
+ * matters for writing one of these: `visibility: hidden` removes an element from
+ * the ACCESSIBILITY TREE, so a role query resolves to nothing and the hover cannot
+ * even be aimed from the button outwards. The chain has to start at the row, by
+ * CSS, because a CSS selector matches the DOM whatever its visibility.
+ *
+ * A keyboard user is unaffected: focusing the row's own always-visible button
+ * fires `:focus-within` and reveals the slot, which `ScmSidebar.test.tsx` pins.
+ */
 async function openInViewer(w: Page, file: string): Promise<void> {
-  await w.getByRole('button', { name: `Open ${file} in the document viewer` }).click();
+  // ⚠️ THE ROW FIRST, AND BY CSS — `getByRole` cannot find the button at all
+  // while it is hidden, so the chain has to start from something visible.
+  const row = w.locator('.scm-row').filter({ hasText: file }).first();
+  await row.hover();
+  await row.locator(`button[aria-label="Open ${file} in the document viewer"]`).click();
 }
 
 /**

@@ -2810,16 +2810,18 @@ function DiffPanel(
       // verb, with nothing explaining the difference. The id already held the
       // answer.
       cardId={cardId}
-      // ⚠️ **AND THE `sessionId` THIS USED TO PASS WAS A CARD ID — a pre-existing
-      // bug this fix uncovered rather than caused.** `openDiff` builds the id from
-      // `sessionStore.cardIdForLive(liveId)`, so the suffix is a CARD id, and
-      // feeding it to a prop that looks a session up by live id finds nothing:
-      // §5.24 attribution on this panel has always been silently absent. Passing
-      // it on as a session id would be worse than passing nothing — it is a wrong
-      // answer rather than a missing one — so it is dropped here and filed as
-      // issue 1055, which needs a card→live accessor the store does not expose.
-      // #261's lesson in its purest form: the prop was present, wrong, and
-      // harmless-looking.
+      // ⚠️⚠️ **AND THE SAME VALUE GOES TO `sessionId`, WHICH IS A MISNOMER, NOT A
+      // BUG — I REMOVED IT ONCE AND AN E2E CAUGHT ME.** The prop is named
+      // `sessionId` the whole way down (`openDocument` → `planDocumentOpen` →
+      // the dockview panel's persisted `params.sessionId`), but the value §5.24
+      // attribution needs is a **CARD** id: the viewer resolves it with
+      // `sessionStore.getCardTitle`, which matches on `sessions[].id`, the card
+      // id. Review read the name, called it a bug, and I agreed and dropped it —
+      // which turned a working attribution chip into a missing one until
+      // `document-peek.spec.ts` went red. The name is wrong; the value was
+      // always right. See `lib/document-open.ts` for the one place that now says
+      // so, and issue 1055 for the rename.
+      sessionId={cardId}
     />
   );
 }
