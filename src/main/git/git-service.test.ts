@@ -1871,10 +1871,16 @@ describe('GitService.log (E24 Git v2 item 1)', () => {
     // the config key, would sail through the real assertion below while proving
     // nothing at all. So the hole is DEMONSTRATED — same argv, minus the one flag
     // — and only then shown to be closed.
+    //
+    // ⚠️ **MATCHED ON THE PROGRAM'S OWN NAME, NOT ON GIT'S WORDING (found by CI).**
+    // The first version asserted `'cannot spawn'`, which is what git says on
+    // Windows; Linux says `fatal: cannot exec '<path>'`. The claim this test owns
+    // is "git reached for the program", and the program's name is the part of the
+    // sentence that is the same everywhere.
     const unguarded = stderrOf(['log', '--format=%H', '-n', '1', 'HEAD']);
-    expect(unguarded).toContain('cannot spawn');
+    expect(unguarded).toContain('definitely-not-a-real-program');
     const guarded = stderrOf(['log', '--no-show-signature', '--format=%H', '-n', '1', 'HEAD']);
-    expect(guarded).not.toContain('cannot spawn');
+    expect(guarded).not.toContain('definitely-not-a-real-program');
 
     // And the service, whose argv carries the flag (pinned in `git-log.test.ts`),
     // reads the signed commit without git reaching for the program at all.
@@ -1922,25 +1928,65 @@ describe('GitService.log (E24 Git v2 item 1)', () => {
     fs.writeFileSync(path.join(hostile, 'f.txt'), 'one\n');
     sh(hostile, ['add', '.']);
     sh(hostile, ['commit', '-m', 'init']);
-    fs.writeFileSync(path.join(hostile, '.gitattributes'), '*.txt filter=hostile diff=hostile\n');
+    fs.writeFileSync(path.join(hostile, 'f.txt'), 'two\n');
+    sh(hostile, ['add', '.']);
+    sh(hostile, ['commit', '-m', 'second']);
+
     // ⚠️ **EACH DRIVER WRITES A SENTINEL FILE, AND THE FIRST VERSION OF THIS TEST
     // ONLY CHECKED STDOUT (found in review).** `expect(output).not.toContain
     // ('PWNED')` proves the ANSWER was not polluted, which is not the claim — a
     // driver that writes a file, deletes something or dials out passes it
     // unchanged. #776's threat is execution, so the assertion has to be about
     // execution.
+    //
+    // ⚠️ **AND THE CONFIG GOES IN *AFTER* THE COMMITS, WHICH IS WHAT CI CAUGHT.**
+    // It used to be set before `git add`, and `git add` RUNS `filter.clean` — so
+    // on Linux the sentinel was written by this test's own fixture and the
+    // assertion failed against a service that had done nothing wrong. On Windows
+    // the same fixture wrote no sentinel at all, for a third reason (the writer
+    // command was not runnable there), so the test was simultaneously broken and
+    // vacuous on the two platforms. Nothing below this line runs git except the
+    // controls and the subject.
     const ran = (name: string): string => path.join(hostile, `${name}-ran.txt`);
-    const writer = (name: string): string => {
-      const js = path.join(hostile, `${name}.js`);
-      fs.writeFileSync(js, `require('fs').writeFileSync(${JSON.stringify(ran(name))}, 'ran');`);
-      return `${toPosix(process.execPath)} ${toPosix(js)}`;
-    };
+    // `sh -c`, because that is how git invokes a config-supplied command on BOTH
+    // platforms — git for Windows bundles `sh`. A `<node.exe> <script.js>` pair is
+    // not runnable there, which is exactly how the Windows arm of this test came
+    // to prove nothing.
+    const writer = (name: string): string => `sh -c "echo ran > '${toPosix(ran(name))}'; cat"`;
+    fs.writeFileSync(path.join(hostile, '.gitattributes'), '*.txt filter=hostile diff=hostile\n');
     sh(hostile, ['config', 'diff.external', writer('extdiff')]);
     sh(hostile, ['config', 'diff.hostile.textconv', writer('textconv')]);
     sh(hostile, ['config', 'filter.hostile.clean', writer('clean')]);
-    fs.writeFileSync(path.join(hostile, 'f.txt'), 'two\n');
-    sh(hostile, ['add', '.']);
-    sh(hostile, ['commit', '-m', 'second']);
+
+    // ⚠️ **POSITIVE CONTROLS, BECAUSE "NOTHING RAN" IS THE EASIEST RESULT IN THE
+    // WORLD TO GET FOR THE WRONG REASON.** A writer that cannot start, an
+    // attribute that does not match, a config key spelled wrong: each produces an
+    // untouched sentinel and a green test. So each driver is first shown to be
+    // live on THIS machine, through a git command that is known to reach it, and
+    // only then is `log` shown not to.
+    fs.writeFileSync(path.join(hostile, 'f.txt'), 'three\n');
+    sh(hostile, ['add', 'f.txt']); // runs filter.clean
+    expect(fs.existsSync(ran('clean'))).toBe(true);
+    // Plain `git diff`, with none of our flags: `diff.external` wins over
+    // textconv, so this proves the external driver and leaves textconv's own
+    // control to the absence of `--no-textconv` below.
+    execFileSync('git', ['diff', 'HEAD~1', 'HEAD'], { cwd: hostile, stdio: 'ignore' });
+    expect(fs.existsSync(ran('extdiff'))).toBe(true);
+    execFileSync('git', ['--no-pager', 'diff', '--no-ext-diff', 'HEAD~1', 'HEAD'], {
+      cwd: hostile,
+      stdio: 'ignore',
+    });
+    expect(fs.existsSync(ran('textconv'))).toBe(true);
+
+    // Clean slate, and put the worktree back where the commits left it so `log`
+    // sees the repository the controls did.
+    for (const name of ['extdiff', 'textconv', 'clean']) fs.unlinkSync(ran(name));
+    sh(hostile, ['reset', '--hard', 'HEAD']);
+    for (const name of ['extdiff', 'textconv', 'clean']) {
+      // `reset --hard` runs `smudge`, not these three — asserted rather than
+      // assumed, so a surprise there is attributed to `reset` and not to `log`.
+      expect(fs.existsSync(ran(name))).toBe(false);
+    }
 
     const l = await svc.log(hostile);
     expect(l.isRepo).toBe(true);
