@@ -150,6 +150,41 @@ argument depends on the fixture and the claim should not: the spec now compares
 **each block's written length against that block's real content-box height**,
 not only the totals. `worstBlockErrorPx <= 0.5`.
 
+## 5. Did it slow the ARRIVAL path? No — measured, because the suspicion was reasonable
+
+The docs-only close-out PR for #740 failed `e2e/feed-tail-pin.spec.ts` on
+Windows CI, on that test's own premise assertion: *"the first block landed
+after the 500ms gesture window had closed"*. That assertion times a 200-block
+`!bulk` burst, and the identical code had passed the identical job forty
+minutes earlier — so it is nondeterministic. But "probably a flake" is not an
+answer when the change under suspicion is a **perf** change, and the shape of
+the suspicion was specific: `useFeedSkipping` runs `sync()` from a
+`MutationObserver` on every childList change, and `sync()` is O(blocks), so if
+React commits per block a burst of n blocks is O(n²).
+
+`spike/probes/740/burst-cost.spec.ts` times a `!bulk 200` from submit to the
+last block on screen — the same quantity the failing assertion measures —
+against a feed that is already growing:
+
+| blocks after the burst | hook ON | hook OFF |
+|---|---|---|
+| 201 | 165ms | 158ms |
+| 402 | 209ms | 200ms |
+| 603 | 215ms | 218ms |
+| 804 | 254ms | 216ms |
+| 1,000 | 207ms | 217ms |
+| 1,000 (repeat) | 233ms | 240ms |
+
+**Indistinguishable, and flat rather than quadratic** — the two columns cross
+each other twice. The feared O(n²) does not materialise because the mutation
+observer coalesces a burst into very few callbacks. The CI failure is the
+runner, not this change.
+
+Worth keeping anyway: at ~200 blocks the burst is ~165ms on this desktop
+against a 500ms budget, so **that assertion has about a 3× margin on a fast
+machine** — which is why a loaded shared runner can eat it, and why it will do
+so again regardless of what lands near it.
+
 ## What is NOT settled
 
 * **Everything here is Windows.** #740 says Windows-only green is not evidence,
