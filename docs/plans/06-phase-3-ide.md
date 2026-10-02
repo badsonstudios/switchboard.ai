@@ -92,6 +92,47 @@ What shipped is `status` and `diff` only. This epic finishes the read half
 (log, History tab, graph lanes, commit detail, the `diff-` panel family, the
 source-control sidebar) and then adds the write half, which must be **one**
 commit path, not two.
+
+---
+
+**✅ LAYERS 1 AND 2 ARE DONE — ALL FIFTEEN ITEMS, merged 2026-10-02 in PR #1053
+(`7c4eeb5`). #1038–#1052 closed.** ⚠️ **Not released**; the version bump is
+manual. `PROGRESS.md` carries the per-item record, and
+`docs/plans/dogfood-testing.md` has a row per item with what to hand-test.
+
+**What is on screen now:** `git log` + the History tab + the commit graph ·
+commit detail expanding to its files, each opening a diff **at that commit** ·
+the `gitdiff-` panel family with pop-out (the prefix is **`gitdiff-`**, not
+`diff-` — that one was already taken by #504, and the design record is amended) ·
+the Changes tab as a real source-control sidebar with resource groups, per-file
+`+/−`, a filter, a branch/ahead-behind header and a totals bar · a folder tree
+with single-child folders compressed · every change in one scroll · per-file
+history (⏱) · VCS badges on the Files tab from **one** shared status · and the
+write half: stage / unstage / discard, partial staging, the commit box, and
+fetch / pull / push / branch.
+
+**Three follow-ups are open, each filed with its reason rather than left as a gap
+in a closed epic:** **#1054** (`Ctrl+F` inert in a `gitdiff-` panel) · **#1055**
+(the §5.24 attribution id is a CARD id while every name says `sessionId` — the
+rename, including a layout migration) · **#1056** (line-level staging: built,
+measured putting the **wrong content** in the index, dropped; it needs per-line
+zero-context hunks).
+
+**Two security holes of the #776 class were found and closed inside this epic,
+both by tests written to prove the opposite:** a repo config making `git log`
+spawn a program through `gpg.program`, and the filter-driver guard not applying to
+the write path, so `git add` ran a program of the repository's choosing. Both have
+controls proving the hole was real before proving it is shut.
+
+**And one decision the owner may want to overrule, which is one line:** a commit
+deliberately **runs the repository's own hooks** (`guardArgs({ hooks: 'allow' })`).
+Everywhere else a read refuses to let a repository execute anything; a commit is a
+button the user pressed, and one that silently skipped their `pre-commit` would be
+reimplementing `git commit`.
+
+**Layer 3 (below) is untouched and still gated on the OQ #9 spike.**
+
+---
 Worktree create/merge-back flows with a review step · one-click squash-merge to
 main + update-from-main (*table-stakes across Crystal / Claude Squad / Conductor /
 parallel-code*) · cross-session same-repo conflict warnings · port/resource

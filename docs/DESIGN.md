@@ -1059,6 +1059,37 @@ parent's — not into the parent's transcript (corrected 2026-09-15, #807; see
 > the History tab are now **E24 Git v2 items 1 and 2**
 > (`docs/plans/e24-git-v2-design.md` §4).
 >
+> **✅ AND THEY SHIPPED, ALONG WITH THE WHOLE OF E24's LAYERS 1 AND 2 — all
+> fifteen items, merged 2026-10-02 (PR #1053, `7c4eeb5`; #1038–#1052 closed).**
+> ⚠️ **Not released** — the version bump is manual.
+>
+> This section's as-built is therefore now: `GitService` with **`log`,
+> `commitFiles`, `fileVersionsAt`, `hunks`** beside the original four, plus the
+> **write half** (`stage`, `unstage`, `discard`, `commit`, `applyPatch`, `fetch`,
+> `pull`, `push`, `checkout`, `createBranch`) on a new **`git.write`** capability.
+> On screen: the **History tab** with a real commit graph; commit detail opening a
+> diff **at that commit**; the **`gitdiff-` panel family** with pop-out; the
+> Changes tab as a **source-control sidebar** (resource groups, per-file `+/−`, a
+> filter, branch/ahead-behind, a totals bar); a **folder tree** with single-child
+> folders compressed; **every change in one scroll**; **per-file history**; the
+> **VCS decorations** this bullet is about — from ONE shared status, so the Files
+> and Changes tabs cannot disagree; and the write verbs including a **commit box**
+> and **fetch / pull / push / branch**.
+>
+> **The prefix is `gitdiff-`, not `diff-`**: that one was already taken by #504's
+> relocated Changes tab, which the design record did not know and which only
+> surfaced when the panel family was built. Recorded here because a prefix is a
+> contract.
+>
+> **EDITABLE DIFF IS STILL IN NO PHASE, AND THAT IS NOW A DECISION RATHER THAN AN
+> OMISSION** (design record §6, the owner's call): hunk staging covers the need it
+> was listed for. What shipped is whole-**hunk** staging; **line-level** selection
+> is **#1056**, filed because it was built and then measured putting the *wrong
+> content* in the index while `git apply` accepted the patch.
+>
+> **Layer 3 — worktree create/merge-back, squash-merge, cross-session conflict
+> warnings — is untouched and still gated on the OQ #9 spike**, as scoped.
+>
 > Scheduled, Phase 3 (§8): the **file tree** with VCS decorations (as one epic
 > with document viewer v2 — they are the same surface), **worktree create /
 > merge-back flows**, **cross-session same-repo conflict warnings**, and the
