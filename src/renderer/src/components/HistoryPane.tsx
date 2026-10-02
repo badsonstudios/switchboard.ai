@@ -11,11 +11,10 @@
 // `lib/git-log-dto.ts` (pure, tested without React), the bridge call is injected
 // so a test needs no Electron, and the component paints rows and answers keys.
 //
-// ⚠️ **THE LANES ARE ITEM 3 AND THE GAP IS RESERVED, NOT FORGOTTEN.** Screen 6
-// draws an SVG lane gutter down the left of every row. Each row here reserves that
-// column at the same width, so item 3 fills a hole rather than re-laying the rows
-// out — and until it does, the rows are flush and read as a list, which is what a
-// list with no graph should look like.
+// ⚠️ **THE LANES LANDED (item 3), AND THE GAP ITEM 2 RESERVED IS WHAT THEY FILLED.**
+// The geometry is `lib/git-lanes.ts` — a pure topological walk tested at eight
+// lanes without a DOM — and the ink is `LaneGutter`. Nothing about the rows moved
+// to make room, which was the point of reserving the column up front.
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { answered } from '../../../shared/ipc/refusal';
@@ -40,6 +39,8 @@ import {
 // these two against main's own `DEFAULT_LOG_LIMIT` / `MAX_LOG_LIMIT` lives there.
 export { HISTORY_PAGE, MAX_HISTORY };
 import type { GitStatusDto } from '../lib/git-status';
+import { allocateLanes, type LaneRow } from '../lib/git-lanes';
+import { LaneGutter, laneGutterWidth } from './LaneGutter';
 
 /** How the pane asks for commits. Injected so a test needs no bridge. */
 export type ReadLog = (folder: string, query: { limit: number; skip: number }) => Promise<unknown>;
@@ -50,16 +51,6 @@ const bridgeReadLog: ReadLog = (folder, query) => window.switchboard.git.log(fol
 const bridgeReadStatus: ReadStatus = (folder) => window.switchboard.git.status(folder);
 
 const REFUSED = 'switchboard could not ask git for more history';
-
-/**
- * The width of the lane gutter item 3 will draw into.
- *
- * Reserved from the start so that landing the graph does not move every row. 0
- * today — see the file header: a list with no graph should look like a list, not
- * like a graph with the graph missing. Item 3 changes this one number and fills
- * the column.
- */
-const LANE_GUTTER = 0;
 
 export function HistoryPane(props: {
   folder: string;
@@ -231,6 +222,25 @@ export function HistoryPane(props: {
     [commits, query]
   );
   const sync = syncCounts(status);
+  /**
+   * The graph, laid out over the UNFILTERED list.
+   *
+   * ⚠️ **AND THAT IS THE ONLY CORRECT CHOICE.** The lanes come from `parentIds`,
+   * so a layout computed over filtered rows would be drawing a different
+   * repository: hide the merge and its two branches become two unconnected stubs,
+   * hide a commit in the middle of a branch and the line through it breaks. So the
+   * geometry is of the whole page and the FILTER hides rows out of it — which is
+   * why a filtered list shows gaps in the graph, and why that is honest rather
+   * than broken. Memoised on the ids, since typing in the search box must not
+   * re-walk it.
+   */
+  const layout = React.useMemo(() => allocateLanes(commits), [commits]);
+  const laneByCommit = React.useMemo(() => {
+    const map = new Map<string, LaneRow>();
+    for (const r of layout.rows) map.set(r.id, r);
+    return map;
+  }, [layout]);
+  const gutter = laneGutterWidth(layout.lanes);
   const branch = currentBranch(commits);
   const detached = isDetached(commits);
   /**
@@ -414,7 +424,14 @@ export function HistoryPane(props: {
           // run of loose text.
           <div role="list">
             {filtered.map((c) => (
-              <CommitRow key={c.id} commit={c} nowMs={nowMs} />
+              <CommitRow
+                key={c.id}
+                commit={c}
+                nowMs={nowMs}
+                lane={laneByCommit.get(c.id)}
+                lanes={layout.lanes}
+                gutter={gutter}
+              />
             ))}
           </div>
         )}
@@ -503,7 +520,16 @@ function syncRowStyle(ink: string): React.CSSProperties {
  * can exceed a narrow card: the subject collapses to nothing and then the ROW
  * overflows, which cost exactly what the comment claimed to protect.
  */
-function CommitRow(props: { commit: GitCommitDto; nowMs: number }): React.JSX.Element {
+function CommitRow(props: {
+  commit: GitCommitDto;
+  nowMs: number;
+  /** this commit's geometry — absent only if the layout and the list disagree */
+  lane?: LaneRow;
+  /** how many lanes the whole page needs — NOT pixels; the gutter converts */
+  lanes: number;
+  /** the gutter's pixel width, for the fallback box when `lane` is missing */
+  gutter: number;
+}): React.JSX.Element {
   const { t } = useTranslation();
   const c = props.commit;
   const merge = c.parentIds.length > 1;
@@ -545,8 +571,16 @@ function CommitRow(props: { commit: GitCommitDto; nowMs: number }): React.JSX.El
         minInlineSize: 0,
       }}
     >
-      {/* Item 3's lane gutter. Zero-width today; see LANE_GUTTER. */}
-      {LANE_GUTTER > 0 && <span style={{ inlineSize: LANE_GUTTER, flexShrink: 0 }} aria-hidden="true" />}
+      {/* The lane gutter. ⚠️ The width is reserved EVEN WITHOUT a row to draw —
+          `lane` can only be absent if the layout and the list disagree, which
+          nothing should cause, and a row that then lost its gutter would knock
+          every dot below it out of line. An empty box of the right size is the
+          fail-open shape. */}
+      {props.lane ? (
+        <LaneGutter row={props.lane} width={props.lanes} />
+      ) : (
+        <span style={{ inlineSize: props.gutter, flexShrink: 0 }} aria-hidden="true" />
+      )}
       <span
         className="history-subject"
         style={{

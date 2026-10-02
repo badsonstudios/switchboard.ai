@@ -446,11 +446,21 @@ describe('the History tab', () => {
     it('⚠️ the CEILING says so rather than the button going quiet', async () => {
       // Without this, the last click returned the same rows and the button
       // vanished with no explanation — which reads as a broken button.
+      //
+      // ⚠️ **FILTERED DOWN TO ONE VISIBLE ROW, AND THAT IS NOT COSMETIC.** Rendering
+      // all two thousand rows in jsdom exhausted the heap once the lane gutter
+      // landed — which is how the real bug behind it was found: the gutter drew one
+      // `<line>` per LANE rather than per visible column, and this fixture's two
+      // thousand sibling commits occupy two thousand lanes. The filter keeps the
+      // test about the ceiling, and it pins a second true thing: **the ceiling
+      // notice is a fact about the PAGE, so a filter does not hide it.**
       const page = Array.from({ length: MAX_HISTORY }, (_, i) =>
         commit({ id: `${i}`.padStart(40, 'a'), subject: `commit ${i}` })
       );
       const { readLog } = recorder(logOf(page));
       await mount(readLog);
+      await type(one('.history-search') as HTMLInputElement, 'commit 1777');
+      expect(rows()).toHaveLength(1);
       expect(one('.history-more')).toBeNull();
       expect(one('.history-ceiling')).not.toBeNull();
     });

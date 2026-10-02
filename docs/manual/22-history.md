@@ -1,11 +1,11 @@
 # History
 
-> Status: draft — the tab works and this page describes what it does. The commit
-> graph's lanes, clicking a commit open, and the Pull/Push buttons on the
-> incoming and outgoing rows are still to come.
+> Status: draft — the tab works and this page describes what it does. Clicking a
+> commit open and the Pull/Push buttons on the incoming and outgoing rows are
+> still to come.
 >
-> TODO: screenshots · what the lanes down the left of the rows mean · opening a
-> commit to see its files · right-click operations on a commit.
+> TODO: screenshots · opening a commit to see its files · right-click operations
+> on a commit.
 
 ## What it is
 
@@ -29,6 +29,37 @@ specific commit rather than on a branch — usually because something checked ou
 a commit, a tag, or a half-finished rebase. Commits made in that state belong to
 no branch, so they are easy to lose. switchboard says so plainly rather than
 leaving you to notice that the branch name is missing.
+
+## The graph down the left
+
+Each row has a coloured dot, and lines joining the dots. That is the shape of your
+project's history:
+
+- **A straight vertical line** is one line of work carrying on.
+- **A line splitting into two**, read downwards, is a branch starting.
+- **Two lines joining into one dot**, read downwards, is where those branches came
+  from — the commit they both grew out of.
+- **A hollow dot** is a merge: a commit with more than one parent.
+- **The colour identifies the column, not the branch.** Six colours, reused left to
+  right. It is there so your eye can follow one line down the page, not so you can
+  tell `main` from `feature/x` by its colour — branch names are the chips on the
+  rows.
+- **A line that stops at the bottom of the list** does not mean the history ends.
+  It means the list does; press **Show 50 more**.
+- **A line that stops at a dot with nothing below it** is the project's very first
+  commit. That one really is the end.
+
+**The graph is drawn over all the commits that are loaded, not over the ones your
+filter leaves on screen.** So with a filter on, you will see gaps in the lines.
+That is honest rather than broken: the alternative is redrawing a different shape
+of history for every search, which would show branches joining commits they never
+came from.
+
+**A very wide history shares the last column.** The gutter can draw six lines side
+by side; a project with more branches open at once than that puts the extras in the
+last column, and the row says so when you hover it. It is rare — one or two columns
+is normal, even in a busy project — because the graph reuses a column the moment a
+branch is merged.
 
 ## What a row tells you
 

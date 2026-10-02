@@ -139,6 +139,17 @@ test.describe('the History tab (E24 Git v2 item 2)', () => {
     // Real numbers out of `--shortstat`, and a real abbreviated sha.
     await expect(w.locator('.history-stats').first()).toContainText('+');
     await expect(w.locator('.history-hash').first()).toHaveText(/^[0-9a-f]{8}$/);
+
+    // THE GRAPH (item 3), end to end. The allocator is unit-tested at eight
+    // lanes; what only this can say is that the geometry reaches the DOM at all
+    // and that it is drawn from `parentIds` that survived the trip.
+    await expect(w.locator('.history-lane')).toHaveCount(2);
+    // One dot per row…
+    await expect(w.locator('.history-lane circle')).toHaveCount(2);
+    // …and the two rows differ exactly where they should: the newest commit has
+    // only a line BELOW its dot and the root has only one ABOVE. Counted rather
+    // than measured, because the count is the claim — three lines total, not four.
+    await expect(w.locator('.history-lane line')).toHaveCount(2);
   });
 
   test('a folder that is not a repository says so, and does not break the card', async () => {

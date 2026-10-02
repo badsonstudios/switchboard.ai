@@ -28,7 +28,7 @@
 > reason in design §6) · **layer 3 stays gated on the OQ #9 spike** ·
 > **no new git library** — system `git` through the hardened `GitService`.
 >
-> **Order being worked:** 1 → 2 → 3 (log, History tab, graph lanes — the dead tab,
+> **Order being worked** (1, 2, 3 done): 1 → 2 → 3 (log, History tab, graph lanes — the dead tab,
 > no write path), then **5** (the `diff-` panel family + pop-out — the structural
 > item), then **6 → 7** together, then 8–11 interleaved, then layer 2 (12–15).
 >
@@ -43,9 +43,36 @@
 > log rather than the audit, §5.7 also records the editable-diff decision, and
 > VS Code's built-in Git extension is `docs/reference-implementations.md` **§4**.
 >
-> **🚧 NOW: item 2 (#1039) — the History tab itself.** PR **#1053** carries item 1
-> and is green on **both unit jobs including Linux**; item 2 lands on the same
-> branch behind it. Screen 6 minus the lanes: commit rows with ref chips, author,
+> **🚧 NOW: item 3 (#1040) — the commit graph.** `lib/git-lanes.ts` is the pure
+> allocator — a topological walk with a lane-reservation scheme, ~200 lines, no
+> dependency, exactly as design §2.2 predicted — and `LaneGutter.tsx` is the SVG.
+> **Tested at FIVE and EIGHT lanes, which is the item's own acceptance bar**, plus
+> the row that only exists past lane 1: four curves arriving into one dot, and
+> `pass` naming the four lanes a row does *not* touch.
+>
+> **⚠️ A TEST FOUND A QUADRATIC DOM BUG BY RUNNING OUT OF MEMORY.** The clamp that
+> keeps a wide history inside a six-column gutter was applied to the **x
+> coordinate** and not to the **element count**, so a row whose `pass` named two
+> thousand lanes emitted two thousand `<line>` elements with 1,994 of them stacked
+> invisibly in the last column. `HistoryPane`'s ceiling test — two thousand sibling
+> commits, therefore two thousand lanes — **exhausted the V8 heap the moment the
+> gutter landed**, which is the only reason anyone noticed. Bounded at the drawing
+> layer now (`firstByColumn`), because `pass` is geometry truth and must not be
+> trimmed.
+>
+> **AND A SECOND ONE INSIDE THE FIX:** keeping the *first-seen* lane per column let
+> a **clamped** lane steal a real one's column — given `[7, 6, 5]`, lane 7 claimed
+> column 5 and lane 5, the only one of the three the gutter can place honestly, was
+> dropped. It keeps the **lowest** lane now, which is order-independent.
+>
+> **Also:** `LANE_INKS`'s first draft opened with **`--accent`, which does not
+> exist** — the palette is `--accent-blue` and seven siblings. Caught by a test
+> written *because* of item 2's two invented tokens, and that test is now the
+> standing check: `tokens.drift.test.ts` reads the token files and cannot see an
+> inline style, so nothing else compares the two sides.
+>
+> **Item 2 (#1039) — the History tab itself.** PR **#1053** carries items 1 and 2
+> and is green on **both unit jobs including Linux**. Screen 6: commit rows with ref chips, author,
 > `+/−`, short sha and a relative clock; a branch chip read off `%D` rather than
 > asked for separately; a detached-HEAD warning; a search box; incoming/outgoing
 > rows; fifty-at-a-time paging. `panels.tsx`'s `enabled: () => false,
