@@ -4,8 +4,9 @@
 // envelope, and the Anthropic streaming events the SDK's own accumulator inside
 // the VS Code extension consumes (`message_start` / `content_block_start` /
 // `content_block_delta` / `content_block_stop`, addressed by `index`).
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { StreamFeed } from './stream-feed';
+import { STREAM_COALESCE_MS } from './buffer';
 import { FeedBlock } from './blocks';
 import {
   LOCAL_COMMAND_TEXT,
@@ -72,8 +73,70 @@ describe('token-by-token assistant text', () => {
     expect(feed.blocks(SID)).toHaveLength(1);
     expect(texts()).toEqual(['Hello world']);
     expect(new Set(seen.map((b) => b.seq))).toEqual(new Set([1]));
-    expect(seen).toHaveLength(4); // creation + three deltas
+    // creation only: the three deltas are HELD (#1013), and the buffer above —
+    // which a mounting panel reads — already has all of them
+    expect(seen).toHaveLength(1);
+    feed.forgetSession(SID); // pays what is owed
+    expect(seen).toHaveLength(2);
+    expect(seen.at(-1)!.text).toBe('Hello world');
     expect(seen.at(-1)!.streaming).toBe(true);
+  });
+
+  describe('a token does not cost a message (#1013)', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('a burst of deltas inside one window reaches the renderer ONCE, whole', () => {
+      feed.offer(SID, ev({ type: 'content_block_start', index: 0, content_block: { type: 'text' } }));
+      for (let i = 0; i < 100; i++) feed.offer(SID, textDelta('ab'));
+      expect(seen).toHaveLength(1); // the block opening, and nothing since
+      vi.advanceTimersByTime(STREAM_COALESCE_MS);
+      expect(seen).toHaveLength(2);
+      expect(seen.at(-1)!.text).toBe('ab'.repeat(100));
+      // …and the window is not a one-off: the next burst is held and paid too
+      feed.offer(SID, textDelta('!'));
+      feed.offer(SID, textDelta('!'));
+      vi.advanceTimersByTime(STREAM_COALESCE_MS);
+      expect(seen).toHaveLength(3);
+      expect(seen.at(-1)!.text).toBe('ab'.repeat(100) + '!!');
+    });
+
+    it('a block that STOPS is told at once, with every token it was owed', () => {
+      feed.offer(SID, ev({ type: 'content_block_start', index: 0, content_block: { type: 'text' } }));
+      feed.offer(SID, textDelta('Hello'));
+      feed.offer(SID, ev({ type: 'content_block_stop', index: 0 }));
+      expect(seen.at(-1)).toMatchObject({ text: 'Hello', streaming: false });
+      // and the held re-emit was paid by that one — nothing arrives late
+      const n = seen.length;
+      vi.advanceTimersByTime(STREAM_COALESCE_MS * 2);
+      expect(seen).toHaveLength(n);
+    });
+
+    it('a held re-emit never overwrites the message that superseded it', () => {
+      feed.offer(SID, ev({ type: 'content_block_start', index: 0, content_block: { type: 'text' } }));
+      feed.offer(SID, textDelta('Hello wor'));
+      // the message lands INSIDE the window, with the delta still owed
+      feed.offer(SID, assistant([{ type: 'text', text: 'Hello world' }]));
+      vi.advanceTimersByTime(STREAM_COALESCE_MS * 2);
+      expect(emitted(1)!.text).toBe('Hello world');
+      expect(emitted(1)!.streaming).not.toBe(true);
+    });
+
+    it('a held re-emit does not survive a /clear', () => {
+      feed.offer(SID, { type: 'system', subtype: 'init', session_id: CONV });
+      feed.offer(SID, ev({ type: 'content_block_start', index: 0, content_block: { type: 'text' } }));
+      feed.offer(SID, textDelta('old conversation'));
+      feed.offer(SID, { type: 'system', subtype: 'init', session_id: 'another-conversation' });
+      expect(resets).toHaveLength(1);
+      const n = seen.length;
+      vi.advanceTimersByTime(STREAM_COALESCE_MS * 2);
+      // nothing from before the wipe arrives after it
+      expect(seen).toHaveLength(n);
+    });
   });
 
   it('the assistant message SUPERSEDES the streamed block, and the RENDERER sees it', () => {

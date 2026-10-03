@@ -573,7 +573,10 @@ export class StreamFeed {
           this.open(s, index, { type: delta?.type === 'thinking_delta' ? 'thinking' : 'text' });
         if (!block) return;
         block.text = ((block.text ?? '') + piece).slice(0, TEXT_CAP);
-        s.buffer.update(block);
+        // NOT `update`: this runs once per token, and an immediate re-emit of
+        // the whole block per token is what #1013 measured. See
+        // `STREAM_COALESCE_MS`.
+        s.buffer.updateSoon(block);
         return;
       }
       case 'content_block_stop':
@@ -864,6 +867,9 @@ export class StreamFeed {
     // register is the one piece of per-session state that would otherwise sit
     // there for the life of the process.
     this.refs?.forget(sessionId);
+    // pay what is owed first: the last tokens of a session that died mid-turn
+    // are still text the user should see
+    this.sessions.get(sessionId)?.buffer.flush();
     this.sessions.delete(sessionId);
   }
 }

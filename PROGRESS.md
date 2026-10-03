@@ -3,6 +3,53 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🚧 NOW — 2026-10-03: **getting the app ready for a second developer by Monday 2026-10-05**
+>
+> **The owner's words: *"Monday I'm going to turn you over to Tanner… he's good
+> at design, so he's probably going to rework your interface. I don't really want
+> to do a whole lot with the interface… Feature-wise, I want to have everything
+> ready so he can actually use Switchboard AI and get off of VS Code."***
+>
+> **So the filter for this weekend is "can somebody who is not the owner do a
+> day's work here without opening VS Code", and NOT the Phase 3 epic order.**
+> Nothing in E35 (tab ergonomics) or E36 (attention legibility) is touched —
+> that is exactly the ground a designer will want to walk first.
+>
+> **THREE DECISIONS THE OWNER MADE TODAY, not to be re-opened:**
+>
+> 1. **Perf first** — the renderer's cost while sessions stream (#1013).
+> 2. **Build a minimal file SAVE path.** ⚠️ **The app cannot edit a file at
+>    all**: the only Monaco instance (`DocumentSource.tsx`) is hard-coded
+>    `readOnly`, and there is no IPC channel that writes a project file. View,
+>    diff, stage, commit — yes. Type a character — no. That is the largest
+>    remaining reason to keep VS Code open. **Not started, not yet filed.**
+> 3. **No first-run tour (#966 stays unbuilt) — write a "day one" manual page
+>    instead.** A coach-mark tour is UI he would rework. **Not started.**
+>
+> **Then, in this order:** the hour-one bugs a new user hits — **#1003** (Clear
+> conversation needed twice), **#670** (`[object Object]` in ~50 error paths) —
+> and a hand pass over his likely path against the dogfood tracker.
+>
+> **✅ ITEM 1, STEP 1 — streaming re-emits are coalesced (refs #1013).**
+> E23 was recorded as *"blocked on the owner's laptop capture"*. **#1013 IS a
+> capture** (8 sessions, renderer at 0.7–1.0 cores, lag to 2.7s), so the gate was
+> already open and nobody had re-read it.
+>
+> **MEASURED, `spike/findings/1013-streaming-hot-path.md`:** every token re-sent
+> its WHOLE block over IPC and re-rendered the feed. A 16,000-character reply was
+> **4,001 messages and 32.43 MB** — 2,027× its own size, quadratic. Holding the
+> re-emit 50ms (`FeedBuffer.updateSoon`) makes it **1,335 messages and 10.83 MB**,
+> re-measured on the shipped code.
+>
+> * ⚠️ **The first suspect was innocent.** `upsertBlock` looked expensive (two
+>   scans and a 1,000-element copy per message) and measures **4µs**. The probe
+>   exists so that nobody optimises it.
+> * ⚠️ **3× is a COUNT, not a verdict.** The probe counts messages in node; it
+>   cannot say what a feed render costs. Whether this is enough is the owner's
+>   `lagMaxMs` with several sessions streaming — the tracker's top row.
+> * **#1013 and #716 stay OPEN.** **#1062** is the measured next step: send only
+>   the new text (184× fewer bytes), which is a protocol change and was kept out.
+
 > # ✅ MERGED — 2026-10-02: **E24 Git v2, all fifteen items, layers 1 and 2**
 >
 > **PR #1053 squash-merged on green CI** (`7c4eeb5`); **#1038–#1052 all closed**.

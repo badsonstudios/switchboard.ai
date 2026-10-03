@@ -34,9 +34,30 @@ import { BLOCK_CAP, BlockOrigin, DerivedBlock, FeedBlock, originOf, stamp } from
  */
 export const MAX_THINKING_GAP_MS = 10 * 60_000;
 
+/**
+ * How long a block that is taking tokens may wait before it is re-emitted
+ * (#1013).
+ *
+ * Every `content_block_delta` used to re-emit its block at once, and a re-emit
+ * carries the WHOLE accumulated text — so a turn cost one IPC message and one
+ * feed render per token, and bytes quadratic in its length. MEASURED
+ * (`spike/probes/1013`): a 16,000-character reply was 4,001 messages and 32 MB
+ * on the wire. Holding the re-emit for 50ms makes that 3x fewer messages and
+ * 3x fewer bytes at 60 tokens/sec, and 20 updates a second still reads as
+ * streaming.
+ *
+ * Only the token path waits (`updateSoon`). Everything that says a block has
+ * CHANGED STATE — it opened, it stopped, a result attached, the message
+ * superseded it — still goes out at once.
+ */
+export const STREAM_COALESCE_MS = 50;
+
 export class FeedBuffer {
   private readonly items: FeedBlock[] = [];
   private seq = 0;
+  /** seq -> the block owed a re-emit by `updateSoon`, and the timer that pays it */
+  private readonly owed = new Map<number, FeedBlock>();
+  private owedTimer: ReturnType<typeof setTimeout> | undefined;
   /** tool_use id -> the block awaiting its result (bounded, see `remember`) */
   private readonly awaitingResult = new Map<string, FeedBlock>();
   /** see `silently` */
@@ -71,7 +92,41 @@ export class FeedBuffer {
   }
 
   private fire(b: FeedBlock): void {
+    // Whatever was owed for this seq is paid by this emit, which is at least as
+    // new. Dropping it here is also what stops a STALE object going out late:
+    // `replace` swaps in a new block under the same seq, and a held re-emit of
+    // the old one would overwrite the authoritative message with the deltas.
+    this.owed.delete(b.seq);
     if (!this.muted) this.emit(b);
+  }
+
+  /**
+   * Re-emit a block that is taking tokens — within `STREAM_COALESCE_MS`, not now.
+   *
+   * The block is mutated in place by its owner, so whenever this is paid it
+   * carries everything that arrived in between; nothing is lost by waiting,
+   * only the intermediate copies.
+   */
+  updateSoon(block: FeedBlock): void {
+    this.owed.set(block.seq, block);
+    if (this.owedTimer !== undefined) return;
+    this.owedTimer = setTimeout(() => this.flush(), STREAM_COALESCE_MS);
+    // a held re-emit must never be what keeps the process alive at quit
+    this.owedTimer.unref?.();
+  }
+
+  /** Pay every held re-emit now. */
+  flush(): void {
+    if (this.owedTimer !== undefined) clearTimeout(this.owedTimer);
+    this.owedTimer = undefined;
+    for (const b of [...this.owed.values()]) this.fire(b);
+  }
+
+  /** Forget every held re-emit without paying it — the blocks are going away. */
+  private disown(): void {
+    if (this.owedTimer !== undefined) clearTimeout(this.owedTimer);
+    this.owedTimer = undefined;
+    this.owed.clear();
   }
 
   /** Add a block, assign it a seq, and emit it. */
@@ -188,6 +243,9 @@ export class FeedBuffer {
    * push, so the two stay in step.
    */
   reset(): void {
+    // a re-emit held across the reset would land AFTER the renderer dropped its
+    // blocks, and put one bubble of the old conversation back
+    this.disown();
     this.items.length = 0;
     this.seq = 0;
     this.awaitingResult.clear();
