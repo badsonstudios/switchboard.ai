@@ -1146,6 +1146,8 @@
   },
   "commands": {
     "perfSummary": "Show performance summary",
+    "userManual": "User manual",
+    "manualMissing": "The user manual is not installed with this build",
     "reportProblem": "Report a problem…",
     "featureRequest": "Feature request…",
     "jumpTo": "Go to session {n}",

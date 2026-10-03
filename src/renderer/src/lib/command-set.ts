@@ -75,6 +75,8 @@ export interface CommandDeps {
   checkForUpdates: () => void;
   /** pick a file and open it in a §5.30 document viewer (E16-02) */
   openFile: () => void;
+  /** Help ▸ User manual — opens the bundled manual in the document viewer */
+  userManual: () => void;
   /** Help ▸ Report a problem… — opens the report dialog (#815) */
   reportProblem: () => void;
   /** Help ▸ Feature request… — opens the feature-request dialog (#1008) */
@@ -820,6 +822,20 @@ export function buildCommands(deps: CommandDeps): Command[] {
       binding: 'Mod+O',
       scope: 'typing-ok',
       run: () => deps.openFile(),
+    },
+    {
+      // Help ▸ User manual. The MENU delivers this same id, so the palette and
+      // the menu are one implementation — `app.reportProblem`'s arrangement.
+      //
+      // `typing-ok` for its reason too: a menu click is not typing, and the
+      // moment you want the manual is the moment you are stuck in front of a
+      // composer. No binding — F1 would be the convention, and a focused
+      // terminal's keys are the CLI's.
+      id: 'app.userManual',
+      titleKey: 'commands.userManual',
+      categoryKey: CATEGORY_HELP,
+      scope: 'typing-ok',
+      run: () => deps.userManual(),
     },
     {
       // Help ▸ Report a problem… (#815). The MENU delivers this same id rather

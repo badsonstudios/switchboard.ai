@@ -17,6 +17,14 @@ page **before the PR opens** — while the feature is fresh. That's Step 8 of
 Drafts are fine. Placeholders are fine. Silence is not: a shipped feature with
 no page is an unfinished work item.
 
+**The app carries a copy.** Every numbered page here is installed with
+switchboard.ai and opens from **Help ▸ User manual**, starting at Day one (this
+index and `_template.md` are not — they are about writing the manual). That is why links
+between pages are plain relative links to a neighbouring file (`02-sessions.md`,
+never `../something`): they have to work from inside the installed folder,
+where nothing but these pages exists. A test fails on a link that points
+anywhere else.
+
 ## Contents
 
 | Page | Covers | Status |
@@ -32,11 +40,11 @@ no page is an unfinished work item.
 | [08 — Changes & git](08-changes-and-git.md) | The Changes tab: the four groups, name-first rows, per-file line counts, the branch and push/pull line, filtering, giving a diff its own panel or window, syntax colouring | draft |
 | [09 — Notifications & events](09-notifications.md) | Sounds, the Events drawer, the lamp strip, when you get told what | draft |
 | [10 — Settings](10-settings.md) | The Settings window (`Ctrl+,`), the chips that stayed on the title bar, and why | current |
-| [11 — Troubleshooting](11-troubleshooting.md) | When a session won't start, hangs, or vanishes; sending a problem report; asking for a feature | draft |
+| [11 — Troubleshooting](11-troubleshooting.md) | The Help menu; when a session won't start, hangs, or vanishes; sending a problem report; asking for a feature | draft |
 | [12 — Direct mode](12-direct-mode.md) | How sessions talk to Claude: fixes the `.claude` double-prompt, costs you the terminal | draft |
 | [13 — Updates](13-updates.md) | When it checks for a new version, what the release box offers, what Skip means | draft |
 | [14 — Is it me or is it them?](14-provider-status.md) | The status dot, provider incidents, and the "several sessions just hit errors" strip | draft |
-| [15 — Reading files in the app](15-document-viewer.md) | Opening a file, rendered Markdown, source view, find, what won't be shown | draft |
+| [15 — Reading files in the app](15-document-viewer.md) | Opening a file, rendered Markdown, source view, find, reading this manual in the app, what won't be shown | draft |
 | [16 — Finding something](16-find.md) | `Ctrl+F` over a session: the find bar, the results list, what it searches that you can't see | draft |
 | [17 — MCP servers](17-mcp-servers.md) | `/mcp`: what tools a session is wired to, which scope each comes from, adding and removing them, and why one is waiting on you | current |
 | [18 — Choosing a model](18-model.md) | Switching a session between Opus, Sonnet and Haiku mid-conversation — the one-click menu on the model name and the fuller `/model` picker — and why the tick is sometimes missing | draft |

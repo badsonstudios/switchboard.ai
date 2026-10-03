@@ -64,7 +64,7 @@ import {
   setLadderAloud,
   stepLadderAloud,
 } from './lib/session-voice';
-import { sayUnavailable } from './lib/command-voice';
+import { sayManualMissing, sayUnavailable } from './lib/command-voice';
 import { DEFAULT_SOUND } from '../../shared/sounds';
 // #440: a refused call RESOLVES a truthy object — read every bridge answer
 // through one of these, never as a bare boolean. See shared/ipc/refusal.ts.
@@ -1875,6 +1875,23 @@ export function App(): React.JSX.Element {
               // the one call in the app that ends in a native modal: an IPC
               // refusal resolves rather than rejects, so this is defensive — but
               // an unhandled rejection behind a dialog is a bad place to learn
+              .catch(() => {});
+          },
+          // Help ▸ User manual. Main answers where the bundled manual's first
+          // page is and grants its FOLDER, so the links between pages open in
+          // the viewer like any other. Null means this build has no manual on
+          // disk: main has logged why, and the live region says so here — a
+          // menu item that did nothing at all is indistinguishable from one
+          // that is broken (#942's argument, for a command that DID run).
+          userManual: () => {
+            void bridge.files
+              ?.manual?.()
+              .then((page) => {
+                // #440: a refusal is a truthy object, not a path.
+                const file = answered(page);
+                if (file) grid.current?.openDocument(file);
+                else sayManualMissing();
+              })
               .catch(() => {});
           },
           closeAllDocuments: () => grid.current?.closeAllDocuments(),

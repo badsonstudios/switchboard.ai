@@ -78,3 +78,14 @@ const t: Translate = (key, vars) => String(i18next.t(key, vars));
 export function sayUnavailable(cmd: UnavailableCommand): void {
   announce(unavailableSaid(t, cmd));
 }
+
+/**
+ * Help ▸ User manual ran and there is no manual on disk: say so.
+ *
+ * The same argument as above, for a command that was ENABLED: the item was
+ * clicked, main looked, and nothing opened. Main logs the reason; without this
+ * the user's side of it is a menu item that does nothing, which reads as broken.
+ */
+export function sayManualMissing(): void {
+  announce(t('commands.manualMissing'));
+}

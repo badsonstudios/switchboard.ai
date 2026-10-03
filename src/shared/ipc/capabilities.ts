@@ -267,6 +267,10 @@ export const CHANNEL_CAPABILITIES = {
   // why it is tagged `dialog.open` and not `fs.read`: the power being exercised
   // is "put an OS dialog in front of the user", and the grant is its result.
   'fs:pickFile': 'dialog.open',
+  // Help ▸ User manual: where the bundled manual's first page is. `fs.read`,
+  // because what it does is put the app's OWN manual folder in that scope —
+  // the caller names no path, so it cannot be aimed anywhere else.
+  'fs:manual': 'fs.read',
   // a link inside a rendered document, handed to the browser (P2-E16-02)
   'fs:openExternal': 'shell.openExternal',
   // the §5.30 escape hatch: the file itself, in the user's own tools

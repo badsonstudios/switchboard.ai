@@ -48,6 +48,7 @@ import { registerGroupIpc } from './workspace/group-ipc';
 import { registerMcpIpc } from './mcp/ipc';
 import { samePath } from './mcp/config';
 import { registerFsIpc } from './fs/ipc';
+import { bundledManualDir } from './fs/manual-dir';
 import { ReadScope } from './fs/read-scope';
 import { IpcBroker } from './ipc/broker';
 import { allCapabilities, Channel } from '../shared/ipc/capabilities';
@@ -1908,6 +1909,13 @@ app
               log.app.warn('menu report-problem could not reach the renderer');
             }
           },
+          // Help ▸ User manual. The line above, for its reason — the viewer is
+          // the renderer's, and `fs:manual` is what grants the folder.
+          userManual: () => {
+            if (!acceleratorDeps(false).deliver('app.userManual')) {
+              log.app.warn('menu user-manual could not reach the renderer');
+            }
+          },
           // Help ▸ Feature request… (#1008). The line above, for its reason.
           featureRequest: () => {
             if (!acceleratorDeps(false).deliver('app.featureRequest')) {
@@ -2613,6 +2621,18 @@ app
       log: fsLog,
       scope: readScope,
       getWindow: () => currentWindow,
+      // Help ▸ User manual. The installer copies `docs/manual` beside the app
+      // as REAL FILES (`extraResources` in electron-builder.js) rather than
+      // into the asar: the read scope decides on `realpath`, the viewer follows
+      // the file with a directory watch, and Open externally hands a path to
+      // another program — none of which an archive member can answer. A dev run
+      // reads the repo's own copy, so the page being written is the page shown.
+      manualDir: () =>
+        bundledManualDir({
+          packaged: app.isPackaged,
+          resourcesPath: process.resourcesPath,
+          appPath: app.getAppPath(),
+        }),
     });
     broker.handle('notifications:getPrefs', () => workspace.getNotificationPrefs());
     broker.handle('notifications:setPrefs', (_e, p: Partial<NotificationPrefs>) => {

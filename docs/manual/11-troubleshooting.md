@@ -12,6 +12,18 @@ hovering it tells you what that page says.
 Full details, including the "several sessions just hit errors" strip and how to
 turn the check off: [Is it me or is it them?](14-provider-status.md).
 
+## The Help menu
+
+Four things live under **Help** at the top of the window, and all four are in
+the command list too (`Ctrl+Shift+P`):
+
+| Entry | What it does |
+|---|---|
+| **User Manual** | Opens this manual inside the app, starting at [Day one](00-day-one.md). The links between pages work, and it is the copy that shipped with the version you are running. See [Reading files in the app](15-document-viewer.md). |
+| **Check for Updates…** | Asks whether there is a newer version right now. See [Updates](13-updates.md). |
+| **Report a Problem…** | Collects the logs and sends them with your description — [below](#sending-a-problem-report). |
+| **Feature Request…** | The same box without the logs, for something you wish the app did — [below](#asking-for-a-feature). |
+
 ## Which version am I running?
 
 **Before you chase any bug, check you're looking at the build you think you

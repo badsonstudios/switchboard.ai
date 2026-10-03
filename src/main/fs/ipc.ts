@@ -13,11 +13,13 @@
 // either a link pointing somewhere it should not, or a scope that is wrong —
 // and both are things you only find out about if they are written down.
 import { errorText } from '../../shared/error-text';
+import fs from 'fs';
 import path from 'path';
 import { BrowserWindow, dialog, shell, IpcMainInvokeEvent } from 'electron';
 import { IpcBroker } from '../ipc/broker';
 import type { Logger } from '../log/logger';
 import {
+  MANUAL_ENTRY_PAGE,
   MAX_FILE_READ_BYTES,
   DirListResult,
   FileReadResult,
@@ -99,6 +101,14 @@ export interface FsIpcDeps {
   getWindow?: () => BrowserWindow | null;
   /** electron's shell + dialog, swapped out in tests */
   shell?: FsShell;
+  /**
+   * Where the bundled user manual lives on THIS install — the installer's
+   * resources folder when packaged, `docs/manual` in the repo otherwise. A
+   * thunk the composition root supplies, because knowing which of those it is
+   * means asking `app`, and this module is tested without one. Absent, Help ▸
+   * User manual answers null.
+   */
+  manualDir?: () => string | null;
   /** the Files tab's entry cap, overridable for tests (#521 layer 2) */
   dirCap?: number;
   /** timing + injection knobs for the live-re-render watch (P2-E16-04) */
@@ -213,6 +223,50 @@ export function registerFsIpc(deps: FsIpcDeps): FsIpcHandle {
     if (!picked) return null;
     deps.scope.addPicked(picked);
     return picked;
+  });
+
+  /**
+   * Help ▸ User manual — where the manual's first page is, having granted the
+   * folder it sits in.
+   *
+   * THE FOLDER, not the page: every manual page links to its neighbours, and a
+   * one-file grant would make each of those links a refusal. `addBundled` has
+   * the argument for why that is not the widening `fs:pickFile` declines to
+   * make. The renderer sends NOTHING here — it cannot name a folder to be
+   * granted, only ask where the manual is.
+   *
+   * Answers the RESOLVED path, so the `fs:read` that follows is asking for the
+   * same string the scope holds. Null — and a log line — when the folder or
+   * the page is not on disk: a build that forgot to ship it should say so in
+   * the one place someone will look, rather than open a "file isn't there"
+   * page with no explanation.
+   *
+   * THE PAGE IS LOOKED FOR BEFORE THE FOLDER IS GRANTED (found in review). The
+   * other order leaves a root behind when the answer is null — a folder that is
+   * not a manual, readable for the rest of the run, with nothing on screen to
+   * show for it. A grant is only made for a folder that has the page in it.
+   */
+  deps.broker.handle('fs:manual', (): string | null => {
+    const dir = deps.manualDir?.() ?? null;
+    let hasPage = false;
+    try {
+      hasPage = !!dir && fs.statSync(path.join(dir, MANUAL_ENTRY_PAGE)).isFile();
+    } catch {
+      hasPage = false; // not there, or not ours to look at — the same answer
+    }
+    if (!dir || !hasPage || !deps.scope.addBundled(dir)) {
+      deps.log.warn('fs:manual refused: the bundled manual is not on disk', {
+        dir,
+        page: MANUAL_ENTRY_PAGE,
+      });
+      return null;
+    }
+    const decision = deps.scope.resolve(path.join(dir, MANUAL_ENTRY_PAGE));
+    if (!decision.ok) {
+      deps.log.warn(`fs:manual refused: ${decision.reason}`, { dir, page: MANUAL_ENTRY_PAGE });
+      return null;
+    }
+    return decision.path;
   });
 
   /** A link out of a rendered document. Scheme-checked, and refused loudly. */

@@ -7,6 +7,10 @@ in it. This page is the shortest path: install it, open a project, give Claude
 something to do, answer what it asks you, then look over what it did and commit
 it. Every step links to the page that covers it properly.
 
+**This manual is inside the app.** Choose **Help ▸ User manual** and this page
+opens beside your sessions; the links on it open the other pages in the same
+place, and the `‹` button takes you back.
+
 ## What this is, in one paragraph
 
 switchboard.ai is one window that holds many Claude Code conversations at once,

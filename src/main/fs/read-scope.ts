@@ -166,6 +166,8 @@ function errorCode(err: unknown): string | undefined {
  */
 export class ReadScope {
   private readonly picked = new Set<string>();
+  /** folders the APP ships and granted itself — see `addBundled` */
+  private readonly bundled = new Set<string>();
   private readonly realpath: (p: string) => string;
 
   constructor(private readonly deps: ReadScopeDeps) {
@@ -194,8 +196,38 @@ export class ReadScope {
   }
 
   /**
-   * Every root, RESOLVED — realpath'd session folders plus the picked set,
-   * which is stored resolved already.
+   * Add a folder the APP ITSELF ships — today exactly one, the bundled user
+   * manual behind Help ▸ User manual.
+   *
+   * A FOLDER, where a pick is a file, and that is the point: the manual's
+   * pages link to each other, and a one-file grant refuses every one of those
+   * links (the "picked file grants that file" note above). It is not the
+   * widening that note declines to make, because nothing here is the user's:
+   * the folder is the installer's own, its contents are ours, and the caller
+   * is main — the renderer cannot name a folder to this method, it can only
+   * ask for the manual and be told where it is.
+   *
+   * A SEPARATE SET from `picked`, so `pickedPaths()` and the "widened by the
+   * user" log line stay true statements about what the user did.
+   *
+   * Answers whether the grant was made, because unlike a pick the caller has
+   * something to do about a no — a manual that is not on disk is a menu item
+   * that must say so rather than open an error page.
+   */
+  addBundled(dir: string): boolean {
+    if (typeof dir !== 'string' || dir.length === 0) return false;
+    const real = this.tryRealpath(path.resolve(dir));
+    if (!real) return false;
+    if (!this.bundled.has(real)) {
+      this.bundled.add(real);
+      this.deps.log.info('fs read scope includes a bundled folder', { path: real });
+    }
+    return true;
+  }
+
+  /**
+   * Every root, RESOLVED — realpath'd session folders plus the picked and
+   * bundled sets, which are stored resolved already.
    *
    * One reading of the session list, and deduplicated, because the list
    * `index.ts` supplies is the union of the live sessions and the persisted
@@ -217,7 +249,7 @@ export class ReadScope {
       const real = this.tryRealpath(resolved);
       if (real) out.push(real);
     }
-    out.push(...this.picked);
+    out.push(...this.picked, ...this.bundled);
     return out;
   }
 

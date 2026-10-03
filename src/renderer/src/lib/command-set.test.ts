@@ -54,6 +54,7 @@ function deps(): CommandDeps & DepMocks {
     openFile: vi.fn(),
     reportProblem: vi.fn(),
     featureRequest: vi.fn(),
+    userManual: vi.fn(),
   showPerfSummary: vi.fn(),
     closeAllDocuments: vi.fn(),
     openSettings: vi.fn<CommandDeps['openSettings']>(),
@@ -362,6 +363,10 @@ describe('seed command set (E9-01)', () => {
     // channel, and the moment anyone thinks "I wish it did X" is the moment
     // they are using the app, very often with a composer focused. No binding.
     //
+    // `app.userManual` joined them with Help ▸ User manual, the same way: the
+    // menu delivers it down the accelerator channel, and the moment anyone
+    // wants the manual is the moment they are stuck in front of a composer.
+    //
     // Anything else in this list is a bug — and NO scope whatsoever fires inside
     // a terminal (proven in commands.test.ts), which is what leaves the hosted
     // CLI's own `ctrl+o` alone.
@@ -370,6 +375,7 @@ describe('seed command set (E9-01)', () => {
       'app.featureRequest',
       'app.perfSummary',
       'app.reportProblem',
+      'app.userManual',
       'find.open',
       'palette.open',
       'view.openFile',
