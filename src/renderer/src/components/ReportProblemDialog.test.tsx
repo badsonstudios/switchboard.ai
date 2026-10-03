@@ -277,6 +277,59 @@ describe('what happens when Send report is pressed', () => {
   });
 });
 
+describe('a send still in flight when the dialog is simply CLOSED (#1019)', () => {
+  // The twin's gap, ported with its fix (#1008). The guard used to bump only on
+  // a re-open, so a send that settled after a plain Cancel still believed the
+  // dialog was its own.
+  function deferred(): { promise: Promise<ReportResult>; resolve: (r: ReportResult) => void } {
+    let resolve!: (r: ReportResult) => void;
+    const promise = new Promise<ReportResult>((r) => (resolve = r));
+    return { promise, resolve };
+  }
+  async function sendThenClose(): Promise<ReturnType<typeof deferred>> {
+    const first = deferred();
+    handlers.onSubmit.mockImplementationOnce(() => first.promise);
+    await render(true);
+    await type(field('subject')!, 'first');
+    await click(submitButton());
+    await render(false);
+    return first;
+  }
+
+  it('a late SUCCESS does not close a second time, which would steal focus back', async () => {
+    // Cancel while the report is being filed, click into a composer, and the
+    // late success used to run `close()` again — whose focus restore yanks the
+    // caret out of wherever you went.
+    const first = await sendThenClose();
+    expect(handlers.onClose).not.toHaveBeenCalled();
+    await act(async () => first.resolve(ok({ url: 'https://x/7' })));
+    expect(handlers.onClose).not.toHaveBeenCalled();
+    // the report WAS sent, and the issue it filed is real — it still opens
+    expect(handlers.onOpenIssue).toHaveBeenCalledWith('https://x/7');
+  });
+
+  // The two below passed before the fix as well — a re-open has always reset
+  // the form. They are here because the fix MOVED the line that does it, and a
+  // port that broke the re-open case while fixing the close case would
+  // otherwise go unnoticed.
+  it('a late FAILURE is not waiting on screen the next time it opens', async () => {
+    const first = await sendThenClose();
+    await act(async () => first.resolve(ok({ ok: false, problem: 'network' })));
+    await render(true);
+    expect(host.querySelector('[data-report-result]')).toBeNull();
+    // and the fresh dialog is usable: a subject arms the button
+    await type(field('subject')!, 'second');
+    expect(submitButton().disabled).toBe(false);
+  });
+
+  it('a send that never settles does not leave the next opening stuck on "working"', async () => {
+    await sendThenClose();
+    await render(true);
+    await type(field('subject')!, 'second');
+    expect(submitButton().disabled).toBe(false);
+  });
+});
+
 describe('a send still in flight when the dialog is closed and re-opened', () => {
   // The dialog stays MOUNTED while closed, so without a guard the old send's
   // settlement lands in the fresh dialog: closing it, printing an old error,
