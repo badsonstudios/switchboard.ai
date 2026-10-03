@@ -23,14 +23,40 @@
 >    `readOnly`, and there is no IPC channel that writes a project file. View,
 >    diff, stage, commit — yes. Type a character — no. That is the largest
 >    remaining reason to keep VS Code open. **Not started, not yet filed.**
+>
+>    ⛔ **BLOCKED ON THE OWNER, and this is a blocker, not a gate.** The choice
+>    was offered before anybody had read `docs/PHILOSOPHY.md` §5, which rejects
+>    *"a built-in code editor"* BY NAME — *"users have editors. Monaco stays
+>    read-only + diff-only"* — and `DocumentSource.tsx`'s header repeats it as
+>    *"READ-ONLY, PERMANENTLY"*. Building a save path is a §6 AMENDMENT, which
+>    only the owner can make. **Asked 2026-10-03; NOT YET ANSWERED.** The
+>    recommendation given: amend narrowly — *"edit and save one open file"*, not
+>    *"become an editor"*. **Do not build it, and do not treat item 2 above as
+>    the answer** — it was chosen without this fact.
 > 3. **No first-run tour (#966 stays unbuilt) — write a "day one" manual page
 >    instead.** A coach-mark tour is UI he would rework. **Not started.**
 >
-> **Then, in this order:** the hour-one bugs a new user hits — **#1003** (Clear
-> conversation needed twice), **#670** (`[object Object]` in ~50 error paths) —
-> and a hand pass over his likely path against the dogfood tracker.
+> **THE ORDER BEFORE THE RELEASE TANNER INSTALLS** (put to the owner 2026-10-03;
+> his reply was *"Great"*):
 >
-> **✅ ITEM 1, STEP 1 — streaming re-emits are coalesced (refs #1013).**
+> 1. **The day-one manual page** (`docs/manual/`). If the editing question is
+>    still open when it is written, write it as READ-ONLY — hand edits happen in
+>    his own editor via "Open externally" — and adjust that paragraph later.
+> 2. **#670** — `[object Object]` in ~50 error paths.
+> 3. **#1003** — Clear conversation needed twice. ⚠️ The report's diagnostic
+>    bundle is NOT on the dev desktop (it was filed from another machine), so
+>    this needs a REPRO; the existing first-clear e2e passes. If it cannot be
+>    reproduced, say so and leave it open rather than guess a fix.
+> 4. **Changelog check, then the version bump** — the bump is the owner's call.
+>    A cut on Sunday 2026-10-04 leaves him a day with it before Monday.
+>
+> **Deliberately NOT in this release:** **#1062** (a protocol change the day
+> before a new user arrives — and the owner's hand-test of step 1 decides whether
+> it is needed at all) and anything visual.
+>
+> **✅ ITEM 1, STEP 1 — MERGED 2026-10-03, PR #1063 (`f0d3da6`), green on all
+> four CI jobs. ⚠️ NOT RELEASED** — the owner will hand-test it after the cut.
+> Streaming re-emits are coalesced (refs #1013).
 > E23 was recorded as *"blocked on the owner's laptop capture"*. **#1013 IS a
 > capture** (8 sessions, renderer at 0.7–1.0 cores, lag to 2.7s), so the gate was
 > already open and nobody had re-read it.
