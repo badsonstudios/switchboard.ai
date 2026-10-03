@@ -57,7 +57,7 @@
 >    one**: it answers a non-primitive with the caller's fallback, so it would
 >    have turned every real `Error` into an empty string. **#255, the umbrella
 >    that was waiting on this, is still open and is the owner's to close.**
-> 3. **✅ #1003 — REPRODUCED, a fix MERGED, and the issue deliberately LEFT
+> 3. **✅ #1003 — REPRODUCED, a fix MERGED (PR #1067), and the issue deliberately LEFT
 >    OPEN.** ⚠️ **The bundle WAS available — it is attached to the issue itself**
 >    as a comment; "not on the dev desktop" was true of the file path in the
 >    body and nobody had scrolled down. Its log shows the first Clear was never
