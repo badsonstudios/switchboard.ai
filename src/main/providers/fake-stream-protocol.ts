@@ -11,6 +11,7 @@
 // Every message shape is copied from what the REAL CLI emitted during S-10
 // (`spike/s10/probe-*.cjs` + the findings note), not invented.
 
+import { errorText } from '../../shared/error-text';
 import { ASK_USER_QUESTION_TOOL } from '../../shared/ask-user-question';
 import { asDisplayString } from '../../shared/display-string';
 import { FAKE_SESSION_ID } from './fake-stream-ids';
@@ -1108,7 +1109,7 @@ export class FakeStreamProtocol {
         this.host.writeFile(filePath, asDisplayString(req.input.content));
         said = `wrote ${filePath}`;
       } catch (e) {
-        said = `failed to write ${filePath}: ${String(e)}`;
+        said = `failed to write ${filePath}: ${errorText(e)}`;
       }
     } else {
       said = `denied write to ${filePath}`;

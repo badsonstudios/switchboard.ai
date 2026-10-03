@@ -31,6 +31,7 @@
 // whose tick only moved on the next prompt would read as a control that did not
 // work. The CLI's own next `init` overwrites it either way, so the optimistic
 // value is a bridge, never an authority.
+import { errorText } from '../../shared/error-text';
 import { Logger } from '../log/logger';
 
 export class StreamModel {
@@ -75,7 +76,7 @@ export class StreamModel {
       } catch (err) {
         // A listener that throws is not allowed to cost the store its write or
         // its other listeners — the write already happened above.
-        this.log?.error('stream model listener threw', { sessionId, error: String(err) });
+        this.log?.error('stream model listener threw', { sessionId, error: errorText(err) });
       }
     }
   }

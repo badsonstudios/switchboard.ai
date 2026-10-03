@@ -26,6 +26,7 @@
 //
 // The GitHub API host, for this repo's releases, and nothing else (PHILOSOPHY
 // local-first; §E19's own note). No telemetry, no version-ping, no analytics.
+import { errorText } from '../../shared/error-text';
 import { UpdateCheckResult, UpdateFailureReason } from '../../shared/update';
 import { isNewerVersion, normalizeVersion, parseVersion } from './version';
 import { resolveUpdateToken, TokenSource } from './token';
@@ -149,7 +150,7 @@ export async function checkForUpdate(deps: CheckDeps): Promise<UpdateCheckResult
     try {
       res = await doFetch(endpoint, { headers, signal: abort.signal, redirect: 'follow' });
     } catch (err) {
-      deps.log?.('update check could not reach the release host', { error: String(err) });
+      deps.log?.('update check could not reach the release host', { error: errorText(err) });
       return fail(currentVersion, checkedAt, 'failed', 'network');
     }
 
@@ -165,7 +166,7 @@ export async function checkForUpdate(deps: CheckDeps): Promise<UpdateCheckResult
     } catch (err) {
       // An aborted body read lands here too, which is right: a feed that stops
       // mid-answer told us nothing usable.
-      deps.log?.('update check got a response it could not read', { error: String(err) });
+      deps.log?.('update check got a response it could not read', { error: errorText(err) });
       return fail(currentVersion, checkedAt, 'failed', 'bad-response');
     }
     if (!Array.isArray(body)) {

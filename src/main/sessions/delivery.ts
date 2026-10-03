@@ -37,6 +37,7 @@
 // TRANSPORT-FREE like `queries.ts`: no Electron, no IPC, no MCP. The window and
 // the manager arrive as functions, so every branch here is unit-testable and
 // `check:bus` can drive the real class through the real bus child.
+import { errorText } from '../../shared/error-text';
 import crypto from 'crypto';
 import type { Logger } from '../log/logger';
 import type { SessionStatus } from '../../shared/sessions';
@@ -244,7 +245,7 @@ export class SiblingDelivery {
       } catch (err) {
         this.deps.log.error('send_to_session: automatic submit threw', {
           sessionId: target.id,
-          error: String(err),
+          error: errorText(err),
         });
       }
       if (took) {
@@ -317,7 +318,7 @@ export class SiblingDelivery {
     } catch (err) {
       // An unreadable preference is OFF. Fail-safe here outranks fail-open:
       // the cost of wrongly holding is one keypress.
-      this.deps.log.warn('send_to_session: could not read auto-accept', { cardId, error: String(err) });
+      this.deps.log.warn('send_to_session: could not read auto-accept', { cardId, error: errorText(err) });
     }
     if (!accepts) return { go: false };
     if (!AUTO_SUBMIT_STATUSES.has(target.status)) return { go: false, held: 'not-ready' };
@@ -367,7 +368,7 @@ export class SiblingDelivery {
       try {
         pushed = this.deps.push(message);
       } catch (err) {
-        this.deps.log.error('send_to_session: push threw', { cardId, error: String(err) });
+        this.deps.log.error('send_to_session: push threw', { cardId, error: errorText(err) });
       }
       if (!pushed) settle({ kind: 'no-window' });
     });

@@ -65,6 +65,7 @@
 // never come out longer than `pollMs`. And the answer to a slow share is still
 // not to skip the scope re-resolve, which `read-scope.ts` has already explained
 // once cannot be replaced by a cheap string pre-check.
+import { errorText } from '../../shared/error-text';
 import fs from 'fs';
 import path from 'path';
 import type { Logger } from '../log/logger';
@@ -514,7 +515,7 @@ export class FileWatchService {
       );
     } catch (err) {
       handle = null;
-      this.deps.log.debug('fs watch factory threw', { dir: entry.dir, error: String(err) });
+      this.deps.log.debug('fs watch factory threw', { dir: entry.dir, error: errorText(err) });
     }
     entry.handle = handle;
     if (handle) {
@@ -556,7 +557,7 @@ export class FileWatchService {
     } catch {
       /* already gone */
     }
-    this.degrade(entry, String(err));
+    this.degrade(entry, errorText(err));
   }
 
   /**
@@ -771,7 +772,7 @@ export class FileWatchService {
       } catch (err) {
         // A push that throws must not take the other viewers of the same file
         // with it — the `emit` rule from `transcripts/watcher.ts`.
-        this.deps.log.warn('fs watch push failed', { path: file.path, error: String(err) });
+        this.deps.log.warn('fs watch push failed', { path: file.path, error: errorText(err) });
       }
     }
   }
@@ -818,7 +819,7 @@ export class FileWatchService {
     try {
       handle?.close();
     } catch (err) {
-      this.deps.log.debug('fs watch close failed', { dir: entry.dir, error: String(err) });
+      this.deps.log.debug('fs watch close failed', { dir: entry.dir, error: errorText(err) });
     }
     this.deps.log.info('fs directory watch closed', { dir: entry.dir });
   }

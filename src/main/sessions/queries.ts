@@ -41,6 +41,7 @@
 // because an agent told "no such session" or "ambiguous: 2 matches" retries
 // usefully, while one handed `[]` concludes its sibling did nothing and moves
 // on believing it.
+import { errorText } from '../../shared/error-text';
 import { DISPLAY_CAPS } from '../feed/blocks';
 import { blocksFrom, renderBlock, sliceTail } from './transcript-blocks';
 import {
@@ -808,10 +809,10 @@ export class SessionQueries {
       // repository" is the same confident lie the ambiguity refusal exists to
       // avoid: the caller would conclude there is nothing to see.
       //
-      // `.message`, not `String(err)` (#785 review): these are written as
+      // `.message`, not `errorText(err)` (#785 review): these are written as
       // sentences for a reader now — "could not read the diff: Error: that
       // folder no longer exists" put a stack-trace word in the middle of one.
-      const why = err instanceof Error ? err.message : String(err);
+      const why = err instanceof Error ? err.message : errorText(err);
       return { ok: false, reason: `could not read the diff: ${why}` };
     }
     const overflow = got.text.length > DIFF_CHAR_CAP;

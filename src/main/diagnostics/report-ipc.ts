@@ -16,6 +16,7 @@
 // It also has no choice: the renderer cannot reach the network at all
 // (`connect-src 'self'`), so the POST could not happen there even if we wanted
 // it to. The window collects a subject and a description; main does the rest.
+import { errorText } from '../../shared/error-text';
 import { shell } from 'electron';
 import { IpcBroker } from '../ipc/broker';
 import type { Logger } from '../log/logger';
@@ -184,7 +185,7 @@ export function registerReportIpc(deps: ReportIpcDeps): void {
       try {
         sh.showItemInFolder(bundle.path);
       } catch (err) {
-        log.warn('could not reveal the bundle', { error: String(err) });
+        log.warn('could not reveal the bundle', { error: errorText(err) });
       }
     }
 
@@ -196,7 +197,7 @@ export function registerReportIpc(deps: ReportIpcDeps): void {
       try {
         await sh.openExternal(mailtoFor(subject, bundle.path));
       } catch (err) {
-        log.warn('could not open the mail client', { error: String(err) });
+        log.warn('could not open the mail client', { error: errorText(err) });
         // Reported, not swallowed (#896): the dialog closes on success, so a
         // mail app that never opened would take the user's words with it.
         return { ok: false, destination, url: null, number: null, bundle, problem: 'mail-failed' };

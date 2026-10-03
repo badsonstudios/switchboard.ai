@@ -20,6 +20,7 @@
 //
 // Everything else here is the ordinary fail-open contract: a typed error, never
 // a half-written file left behind, and a cancel that actually stops the socket.
+import { errorText } from '../../shared/error-text';
 import fs from 'fs';
 import path from 'path';
 import { Readable } from 'stream';
@@ -204,7 +205,7 @@ export async function downloadAsset(opts: DownloadOptions): Promise<number> {
     await unlinkQuietly(opts.dest);
     if (opts.signal?.aborted) throw new DownloadError('network', 'cancelled');
     if (err instanceof DownloadError) throw err;
-    throw new DownloadError(writeFailure(err), `the download did not complete: ${String(err)}`);
+    throw new DownloadError(writeFailure(err), `the download did not complete: ${errorText(err)}`);
   } finally {
     opts.signal?.removeEventListener('abort', onAbort);
   }
@@ -251,7 +252,7 @@ async function resolve(opts: DownloadOptions, doFetch: typeof fetch): Promise<Re
       res = await doFetch(url, { headers, redirect: 'manual', signal: abort.signal });
     } catch (err) {
       if (opts.signal?.aborted) throw new DownloadError('network', 'cancelled');
-      throw new DownloadError('network', `could not reach the asset host: ${String(err)}`);
+      throw new DownloadError('network', `could not reach the asset host: ${errorText(err)}`);
     } finally {
       clearTimeout(timer);
     }
@@ -332,7 +333,7 @@ export async function fetchAssetText(
   } catch (err) {
     if (err instanceof DownloadError) throw err;
     if (opts.signal?.aborted) throw new DownloadError('network', 'cancelled');
-    throw new DownloadError('network', `the sidecar did not arrive: ${String(err)}`);
+    throw new DownloadError('network', `the sidecar did not arrive: ${errorText(err)}`);
   }
   return Buffer.concat(chunks).toString('utf8');
 }

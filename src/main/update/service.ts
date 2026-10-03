@@ -5,6 +5,7 @@
 // FAIL-OPEN, everywhere and without exception. A dead feed, a missing `gh`, a
 // hostile response, a quit mid-flight — every one of them is a log line and a
 // record. Nothing here can block a session, and nothing here throws.
+import { errorText } from '../../shared/error-text';
 import { UpdateCheckResult, UpdatePrefs, UpdateStatus } from '../../shared/update';
 import { checkForUpdate, CheckDeps } from './checker';
 import type { TokenSource } from './token';
@@ -233,7 +234,7 @@ export class UpdateService {
       // `as UpdateCheckResult`, which reads as a no-op assertion and is not).
       .catch((err: unknown): UpdateCheckResult => {
         this.deps.log.warn('update check threw — treating as a failed check', {
-          error: String(err),
+          error: errorText(err),
         });
         return {
           ok: false,
@@ -268,10 +269,10 @@ export class UpdateService {
       // must not switch update checks off for good.
       if (Number.isFinite(last) && last <= now && now - last < DAILY_MS) return;
       void this.check(false, { push: true }).catch((err: unknown) =>
-        this.deps.log.warn('scheduled update check failed', { error: String(err) })
+        this.deps.log.warn('scheduled update check failed', { error: errorText(err) })
       );
     } catch (err) {
-      this.deps.log.warn('update timer tick failed', { error: String(err) });
+      this.deps.log.warn('update timer tick failed', { error: errorText(err) });
     }
   }
 

@@ -27,6 +27,7 @@
 //      play it (`unplayable`, driven by the renderer's `audio:failed`). Sending
 //      to a window is fire-and-forget, so without that report a machine with no
 //      audio device would be silent while every log line said "taken".
+import { errorText } from '../../shared/error-text';
 import type { Logger } from '../log/logger';
 import { AudioChannelName } from '../../shared/sounds';
 import { announcementFor } from './notification-text';
@@ -141,7 +142,7 @@ export class SoundActions {
     try {
       return fn();
     } catch (err) {
-      this.deps.log?.warn('an audio notification threw', { error: String(err) });
+      this.deps.log?.warn('an audio notification threw', { error: errorText(err) });
       return onThrow;
     }
   }

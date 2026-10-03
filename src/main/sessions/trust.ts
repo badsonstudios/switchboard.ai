@@ -10,6 +10,7 @@
 // This edits the user's real ~/.claude.json — so: merge (never clobber),
 // atomic write (tmp + rename), and fail-open (any error just leaves the trust
 // dialog in place, no harm).
+import { errorText } from '../../shared/error-text';
 import fs from 'fs';
 import { randomUUID } from 'crypto';
 import os from 'os';
@@ -134,7 +135,7 @@ export function ensureFolderTrusted(
     return true;
   } catch (err) {
     // fail-open: the session just shows the trust dialog as normal
-    log?.warn('auto-trust skipped', { folder, error: String(err) });
+    log?.warn('auto-trust skipped', { folder, error: errorText(err) });
     return false;
   }
 }

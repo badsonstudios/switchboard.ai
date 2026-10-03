@@ -114,6 +114,13 @@ on the floor, and say so in your PR.
   and the text still streams in as before. This is the first step on "the app
   gets sluggish with many sessions", not the whole of it.
 
+- **An error message no longer reads `[object Object]`.** When something failed
+  with a reason that was not an ordinary error — a refused request, a reply
+  from another program — the reason was thrown away and those two words were
+  shown or logged in its place, in about 170 places. You now get the reason
+  itself: its message if it has one, its details if it does not. Ordinary
+  error messages read exactly as they did.
+
 ## 0.8.110 — 2026-10-02
 
 ### Added

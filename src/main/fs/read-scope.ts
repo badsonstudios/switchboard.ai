@@ -21,6 +21,7 @@
 // `root/link-to-etc/passwd` — the string starts with the root, and the bytes
 // come from somewhere else entirely. That is the whole bug class, and resolving
 // first is the whole fix.
+import { errorText } from '../../shared/error-text';
 import fs from 'fs';
 import path from 'path';
 import type { Logger } from '../log/logger';
@@ -234,7 +235,7 @@ export class ReadScope {
       return this.deps.sessionFolders();
     } catch (err) {
       this.deps.log.warn('fs read scope could not list session folders — refusing everything', {
-        error: String(err),
+        error: errorText(err),
       });
       return [];
     }

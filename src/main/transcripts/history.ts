@@ -42,6 +42,7 @@
 // A transcript that will not read is a row with no description, never a lost
 // listing: the id, the folder and the last-active time are still true, and the
 // user can still recognise a conversation by when they had it.
+import { errorText } from '../../shared/error-text';
 import fs from 'fs';
 import path from 'path';
 import {
@@ -214,7 +215,7 @@ function everyProject(projectsRoot: string): Found | { status: 'unknown'; reason
     // `unknown` even for ENOENT, for `conversationDirs`' reason: a missing root
     // is evidence we are not looking where the CLI writes, not evidence that the
     // user has no history.
-    return { status: 'unknown', reason: `${projectsRoot}: ${String(err)}` };
+    return { status: 'unknown', reason: `${projectsRoot}: ${errorText(err)}` };
   }
   const all = entries.filter((d) => d.isDirectory());
   let truncated = all.length > MAX_HISTORY_DIRS;

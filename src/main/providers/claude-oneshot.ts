@@ -45,6 +45,7 @@
 // it is not a leap of faith: `win-cmd.test.ts` builds a real `.cmd` and asserts
 // `['a', '', 'b']` round-trips byte-exact. If it did not, the labeler would
 // silently receive all 33 tools — the loudest possible silent failure.
+import { errorText } from '../../shared/error-text';
 import { ChildProcess, spawn } from 'child_process';
 import { resolveCliPath } from './claude';
 import { execSpec } from '../transport/win-cmd';
@@ -161,8 +162,8 @@ export function runContainedPrompt(
       // injection — which is why the call is guarded rather than trusted.
       spec = execSpec(cli, args);
     } catch (err) {
-      deps.log.warn('one-shot argv refused', { error: String(err) });
-      resolve({ ok: false, failure: 'spawn-failed', ms: ms(), detail: String(err) });
+      deps.log.warn('one-shot argv refused', { error: errorText(err) });
+      resolve({ ok: false, failure: 'spawn-failed', ms: ms(), detail: errorText(err) });
       return;
     }
 
@@ -178,8 +179,8 @@ export function runContainedPrompt(
     } catch (err) {
       // `spawn` reports some failures as an 'error' event and THROWS others
       // (ENOMEM and friends) — the same asymmetry `killTree` documents.
-      deps.log.warn('one-shot spawn threw', { error: String(err) });
-      resolve({ ok: false, failure: 'spawn-failed', ms: ms(), detail: String(err) });
+      deps.log.warn('one-shot spawn threw', { error: errorText(err) });
+      resolve({ ok: false, failure: 'spawn-failed', ms: ms(), detail: errorText(err) });
       return;
     }
     trackChild('oneshot', child); // the #719 heartbeat's own-children count
@@ -227,8 +228,8 @@ export function runContainedPrompt(
     }
 
     child.on('error', (e) => {
-      deps.log.warn('one-shot failed to start', { error: String(e) });
-      finish({ ok: false, failure: 'spawn-failed', ms: ms(), detail: String(e) });
+      deps.log.warn('one-shot failed to start', { error: errorText(e) });
+      finish({ ok: false, failure: 'spawn-failed', ms: ms(), detail: errorText(e) });
     });
 
     child.on('close', (code) => {

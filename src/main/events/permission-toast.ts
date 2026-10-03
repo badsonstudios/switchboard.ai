@@ -15,6 +15,7 @@
 // the routing, the withdrawal and the dead-session case be unit-tested without
 // a desktop, which matters because the one thing NO automated test can do is
 // press a button on a real OS toast.
+import { errorText } from '../../shared/error-text';
 import type { Logger } from '../log/logger';
 import type { PermissionRequest } from '../../shared/ipc/permissions';
 import { ASK_USER_QUESTION_TOOL, parseAskUserQuestion } from '../../shared/ask-user-question';
@@ -175,7 +176,7 @@ export class PermissionToasts {
       this.deps.log?.warn('a permission toast decision threw', {
         requestId,
         decision,
-        error: String(err),
+        error: errorText(err),
       });
     }
     // Both outcomes are logged at the level they deserve: a delivered verdict
@@ -209,7 +210,7 @@ export class PermissionToasts {
     } catch (err) {
       this.deps.log?.warn('raising the window from a permission toast failed', {
         requestId,
-        error: String(err),
+        error: errorText(err),
       });
     }
     // The toast has done its job; the window is the surface now.
@@ -249,7 +250,7 @@ export class PermissionToasts {
     } catch (err) {
       this.deps.log?.warn('withdrawing a permission toast failed', {
         requestId,
-        error: String(err),
+        error: errorText(err),
       });
     }
   }

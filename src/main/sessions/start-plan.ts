@@ -17,6 +17,7 @@
 // degrades that one capability to absent — it never takes the session start
 // down with it, because a session that will not start is worse than a session
 // with no transcript pane (PHILOSOPHY: our breakage must not block a session).
+import { errorText } from '../../shared/error-text';
 import {
   HookSettingsHost,
   McpAttachmentHost,
@@ -252,7 +253,7 @@ export function planSessionStart(input: StartPlanInput, host: HookSettingsHost):
     try {
       return fn();
     } catch (err) {
-      degraded(`provider capability "${what}" threw: ${String(err)}`);
+      degraded(`provider capability "${what}" threw: ${errorText(err)}`);
       return undefined;
     }
   };
@@ -532,7 +533,7 @@ export function planSessionStart(input: StartPlanInput, host: HookSettingsHost):
           return caps.titles!.titleFrom(line);
         } catch (err) {
           titlesBroken = true;
-          degraded(`provider capability "titles.titleFrom" threw: ${String(err)}`);
+          degraded(`provider capability "titles.titleFrom" threw: ${errorText(err)}`);
           return undefined;
         }
       }
@@ -562,7 +563,7 @@ export function planSessionStart(input: StartPlanInput, host: HookSettingsHost):
           try {
             host.releaseHookSettings(id);
           } catch (err) {
-            degraded(`hook host "releaseHookSettings" threw: ${String(err)}`);
+            degraded(`hook host "releaseHookSettings" threw: ${errorText(err)}`);
           }
         }
       : undefined,
@@ -589,7 +590,7 @@ export function planSessionStart(input: StartPlanInput, host: HookSettingsHost):
             try {
               input.mcpHost!.releaseSession(id);
             } catch (err) {
-              degraded(`session bus "releaseSession" threw: ${String(err)}`);
+              degraded(`session bus "releaseSession" threw: ${errorText(err)}`);
             }
           }
         : undefined,

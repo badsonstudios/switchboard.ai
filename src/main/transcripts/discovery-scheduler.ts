@@ -36,6 +36,7 @@
 // (`GIVEN_UP_MS`) and so is the reprieve — see `noteSwept`'s return value and
 // `quietRungDue`, which are this module's half of it. The watcher still owns the
 // question of which sessions have stopped looking; this module only owns when.
+import { errorText } from '../../shared/error-text';
 import fs from 'fs';
 import { Logger } from '../log/logger';
 
@@ -254,7 +255,7 @@ export class DiscoverySchedule {
     try {
       st.handle?.close();
     } catch (err) {
-      this.opts.log.debug('transcript discovery watch close failed', { root, err: String(err) });
+      this.opts.log.debug('transcript discovery watch close failed', { root, err: errorText(err) });
     }
     this.roots.delete(key);
   }
@@ -441,7 +442,7 @@ export class DiscoverySchedule {
       try {
         st.handle?.close();
       } catch (err) {
-        this.opts.log.debug('transcript discovery watch close failed', { root, err: String(err) });
+        this.opts.log.debug('transcript discovery watch close failed', { root, err: errorText(err) });
       }
       st.handle = null;
     }
@@ -485,7 +486,7 @@ export class DiscoverySchedule {
       );
     } catch (err) {
       handle = null;
-      this.opts.log.debug('transcript discovery watch factory threw', { root, err: String(err) });
+      this.opts.log.debug('transcript discovery watch factory threw', { root, err: errorText(err) });
     }
     if (!handle) {
       this.markWatchFailed(root, 'watch could not be created', now);
@@ -582,7 +583,7 @@ export class DiscoverySchedule {
     // No monotonic source here — the error arrives on the watcher's own
     // callback, not on a poll tick — and `failedAt` only gates the re-arm, so
     // wall time is good enough. A clock jump costs at most one extra retry.
-    this.markWatchFailed(root, String(err), Date.now());
+    this.markWatchFailed(root, errorText(err), Date.now());
   }
 
   /** Downgrade to the flat fallback. Logged once per root: a watch that dies

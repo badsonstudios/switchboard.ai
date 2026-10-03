@@ -3,6 +3,7 @@
 // HookListener wires into it in P1-E2-05). Every transition is logged with
 // sessionId (queryable per the E1-05 logging contract) and observable via
 // subscription.
+import { errorText } from '../../shared/error-text';
 import { randomUUID } from 'crypto';
 import { ContributionRegistry } from '../../shared/extensibility/registry';
 import { MainContributions, SpawnRecipe } from '../extensibility/contributions';
@@ -378,7 +379,7 @@ export class SessionManager {
     } catch (err) {
       this.log.warn('could not release session settings after a failed start', {
         sessionId: id,
-        error: String(err),
+        error: errorText(err),
       });
     }
     // …and the bus endpoint `mcpConfigFor` opened as a side effect (#763
@@ -391,7 +392,7 @@ export class SessionManager {
     } catch (err) {
       this.log.warn('could not release the session bus after a failed start', {
         sessionId: id,
-        error: String(err),
+        error: errorText(err),
       });
     }
   }
@@ -523,7 +524,7 @@ export class SessionManager {
     try {
       proc = transport.spawn({ id, command: recipe.command, args: recipe.args, cwd: identity.folder, env: recipe.env });
     } catch (err) {
-      this.log.error('session spawn failed', { sessionId: id, folder: identity.folder, transport: kind, error: String(err) });
+      this.log.error('session spawn failed', { sessionId: id, folder: identity.folder, transport: kind, error: errorText(err) });
       this.abandonStart(id, opts?.releaseSettingsFor, opts?.releaseMcpFor);
       throw err; // no orphan record: it was never added
     }
@@ -677,7 +678,7 @@ export class SessionManager {
             l(id, m);
           } catch (err) {
             // a broken subscriber must never take the pump down (P6)
-            this.log.error('stream message listener threw', { sessionId: id, error: String(err) });
+            this.log.error('stream message listener threw', { sessionId: id, error: errorText(err) });
           }
         }
       });
@@ -692,7 +693,7 @@ export class SessionManager {
         try {
           l({ sessionId: id, code, crashed });
         } catch (err) {
-          this.log.error('exit listener threw', { sessionId: id, error: String(err) });
+          this.log.error('exit listener threw', { sessionId: id, error: errorText(err) });
         }
       }
       // The CLI is gone, so its `settings.json` and the directory holding it
@@ -931,7 +932,7 @@ export class SessionManager {
     try {
       suppress = this.permissionHoldSuppressor(id, msg) === true;
     } catch (err) {
-      this.log.error('permission-hold suppressor threw', { sessionId: id, error: String(err) });
+      this.log.error('permission-hold suppressor threw', { sessionId: id, error: errorText(err) });
       return false;
     }
     if (suppress) {
@@ -963,7 +964,7 @@ export class SessionManager {
         l(change);
       } catch (err) {
         // a broken subscriber must never take the session core down (P6)
-        this.log.error('status listener threw', { sessionId: id, error: String(err) });
+        this.log.error('status listener threw', { sessionId: id, error: errorText(err) });
       }
     }
   }
@@ -976,7 +977,7 @@ export class SessionManager {
       try {
         l(id, nativeId, cause);
       } catch (err) {
-        this.log.error('native-id listener threw', { sessionId: id, error: String(err) });
+        this.log.error('native-id listener threw', { sessionId: id, error: errorText(err) });
       }
     }
   }

@@ -18,6 +18,7 @@
 // E14-04's Allow/Deny toast is the same `os-toast` type carrying buttons: the
 // handler reads `action.buttons`, and a rule that doesn't set them behaves
 // exactly as it does today.
+import { errorText } from '../../shared/error-text';
 import type { Logger } from '../log/logger';
 import type { FeedEvent } from './feed';
 import type { SuppressedEvent } from '../../shared/suppressed';
@@ -92,7 +93,7 @@ export class RuleActionRegistry {
       this.log?.warn('a notification action failed', {
         action: action.type,
         ruleId: ctx.rule.id,
-        error: String(err),
+        error: errorText(err),
       });
     };
     try {
@@ -230,7 +231,7 @@ export class RulesEngine {
       });
     } catch (err) {
       // notifying is best-effort; never let it break the session flow
-      this.deps.log?.warn('the notification rules engine threw', { error: String(err) });
+      this.deps.log?.warn('the notification rules engine threw', { error: errorText(err) });
     }
     return ran;
   }
@@ -264,7 +265,7 @@ export class RulesEngine {
       });
     } catch (err) {
       this.deps.log?.warn('a suppressed notification could not be recorded', {
-        error: String(err),
+        error: errorText(err),
       });
     }
   }

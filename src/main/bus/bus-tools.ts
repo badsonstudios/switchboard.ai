@@ -12,6 +12,7 @@
 // `SessionQueries`, no IPC. `bus-tools.test.ts` asserts that against the source
 // text of the whole child bundle, because the value is not that it is true
 // today but that it stays true after everyone stops looking.
+import { errorText } from '../../shared/error-text';
 import { DETAIL_ARG, MESSAGE_ARG, SESSION_ARG } from './channel';
 // A constant-only module with no imports of its own, so it is safe in the child
 // graph for the reason `sibling-message` is — and the levels an agent is OFFERED
@@ -1144,7 +1145,7 @@ export function makeCallTool(
 
 function messageOf(err: unknown): string {
   const m = (err as Error | undefined)?.message;
-  return typeof m === 'string' && m !== '' ? m : String(err);
+  return typeof m === 'string' && m !== '' ? m : errorText(err);
 }
 
 /**

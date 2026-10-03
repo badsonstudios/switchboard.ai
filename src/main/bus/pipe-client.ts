@@ -25,6 +25,7 @@
 // any failure to reach the host is one condition with one message. The code
 // travels on `HostError.detail`, which goes to stderr for a human and NOT into
 // the tool content a model reads (see `hostError` at the foot of this file).
+import { errorText } from '../../shared/error-text';
 import fs from 'node:fs';
 import net from 'node:net';
 import { CHANNEL_VERSION } from './channel';
@@ -176,6 +177,6 @@ export interface HostError extends Error {
 function hostError(message: string, err: unknown): HostError {
   const e = new Error(message) as HostError;
   const code = (err as NodeJS.ErrnoException | undefined)?.code;
-  e.detail = code ?? String(err);
+  e.detail = code ?? errorText(err);
   return e;
 }

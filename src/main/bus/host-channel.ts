@@ -26,6 +26,7 @@
 // cannot address a sibling's endpoint even if it wanted to. The cost is one
 // listener per live session, which is tens of handles at the scale this app
 // runs at.
+import { errorText } from '../../shared/error-text';
 import crypto from 'crypto';
 import fs from 'fs';
 import net from 'net';
@@ -304,7 +305,7 @@ export class BusHost {
     // A listener that throws after `listen` resolves would otherwise reach the
     // process's uncaught handler and take the app down over a broken pipe.
     server.on('error', (err) =>
-      this.opts.log.warn('bus endpoint error', { sessionId, error: String(err) })
+      this.opts.log.warn('bus endpoint error', { sessionId, error: errorText(err) })
     );
 
     try {
@@ -329,7 +330,7 @@ export class BusHost {
       // no bus" and "this session's bus failed to open" are different facts,
       // and only the caller knows whether a session should still start. #763
       // owns that decision (P6 says it must start anyway) and MUST catch this.
-      throw new Error(`could not open the session bus endpoint: ${String(err)}`);
+      throw new Error(`could not open the session bus endpoint: ${errorText(err)}`);
     }
 
     // `/tmp` is world-writable on Linux, so the socket file is narrowed the
@@ -339,7 +340,7 @@ export class BusHost {
       try {
         fs.chmodSync(pipePath, 0o600);
       } catch (err) {
-        this.opts.log.warn('could not restrict the bus socket file', { sessionId, error: String(err) });
+        this.opts.log.warn('could not restrict the bus socket file', { sessionId, error: errorText(err) });
       }
     }
 
@@ -402,7 +403,7 @@ export class BusHost {
     try {
       reg.server.close();
     } catch (err) {
-      this.opts.log.warn('could not close the bus endpoint', { sessionId, error: String(err) });
+      this.opts.log.warn('could not close the bus endpoint', { sessionId, error: errorText(err) });
     }
     // `close()` stops new connections but leaves established ones running, and
     // a child mid-call would otherwise hold the handle open indefinitely. It
@@ -497,7 +498,7 @@ export class BusHost {
     } catch (err) {
       this.opts.log.error('the session bus could not be attached', {
         sessionId,
-        error: String(err),
+        error: errorText(err),
       });
       return null;
     }
@@ -511,13 +512,13 @@ export class BusHost {
       // which is an ordinary restart, so logging it at `error` would put
       // "this session has no siblings" in front of the user on a path where
       // nothing went wrong (review of #763).
-      const cancelled = String(err).includes('torn down while its bus endpoint was opening');
+      const cancelled = errorText(err).includes('torn down while its bus endpoint was opening');
       const level = cancelled ? 'info' : 'error';
       this.opts.log[level](
         cancelled
           ? 'bus attach abandoned — the session was torn down while it was opening'
           : 'the session bus endpoint failed to open — this session has no siblings',
-        { sessionId, error: String(err) }
+        { sessionId, error: errorText(err) }
       );
     });
     return launch;
@@ -556,7 +557,7 @@ export class BusHost {
       // #290's directory sweep takes it in the end. That is why there is no
       // start-up sweep here to match `HookListener`'s (#282).
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-        this.opts.log.warn('could not remove the bus token file', { sessionId, error: String(err) });
+        this.opts.log.warn('could not remove the bus token file', { sessionId, error: errorText(err) });
       }
     }
   }
@@ -571,7 +572,7 @@ export class BusHost {
       fs.unlinkSync(pipePath);
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-        this.opts.log.warn('could not remove the bus socket file', { error: String(err) });
+        this.opts.log.warn('could not remove the bus socket file', { error: errorText(err) });
       }
     }
   }
@@ -679,7 +680,7 @@ export class BusHost {
     try {
       reply = await this.withDeadline(sessionId, this.answer(sessionId, line));
     } catch (err) {
-      this.opts.log.error('bus answer threw', { sessionId, error: String(err) });
+      this.opts.log.error('bus answer threw', { sessionId, error: errorText(err) });
       // `uncertain`: a throw says nothing about how far a WRITE got.
       reply = { ok: false, reason: 'switchboard could not answer this request', uncertain: true };
     }
@@ -729,7 +730,7 @@ export class BusHost {
         },
         (err: unknown) => {
           clearTimeout(timer);
-          this.opts.log.error('bus answer rejected', { sessionId, error: String(err) });
+          this.opts.log.error('bus answer rejected', { sessionId, error: errorText(err) });
           resolve({ ok: false, reason: 'switchboard could not answer this request', uncertain: true });
         }
       );
@@ -1021,7 +1022,7 @@ export class BusHost {
         }
       }
     } catch (err) {
-      this.opts.log.error('session query threw on the bus path', { sessionId, op, error: String(err) });
+      this.opts.log.error('session query threw on the bus path', { sessionId, op, error: errorText(err) });
       // `uncertain` for the reason the deadline's refusal carries it: a throw
       // after a successful submit is a write that WENT, reported as a failure.
       return { ok: false, reason: `switchboard could not answer ${op}`, uncertain: true };
@@ -1069,7 +1070,7 @@ export class BusHost {
     try {
       sock.end(JSON.stringify(reply) + '\n');
     } catch (err) {
-      this.opts.log.debug('bus reply could not be written', { error: String(err) });
+      this.opts.log.debug('bus reply could not be written', { error: errorText(err) });
       sock.destroy();
       return;
     }

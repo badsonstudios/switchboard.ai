@@ -10,6 +10,7 @@
 // for every window. No cache: the scan runs only when the popup opens and
 // reads a handful of tiny files, and always-fresh means a just-added command
 // shows up immediately.
+import { errorText } from '../../shared/error-text';
 import { promises as fsp } from 'fs';
 import path from 'path';
 import { mergeCommands, SlashCommand, SlashCommandSource } from '../../shared/slash-commands';
@@ -72,7 +73,7 @@ async function scanCommandsDir(
     // genuinely has no commands", which is how a transient scan failure becomes
     // an unexplainable "my commands vanished" (#145 had to rule this out by
     // hand, for want of exactly this line).
-    if (!isMissing(err)) log?.(`slash-command scan failed for ${dir}: ${String(err)}`);
+    if (!isMissing(err)) log?.(`slash-command scan failed for ${dir}: ${errorText(err)}`);
     return out;
   }
   for (const e of entries) {
@@ -90,7 +91,7 @@ async function scanCommandsDir(
         });
       }
     } catch (err) {
-      log?.(`slash-command scan skipped ${path.join(dir, e.name)}: ${String(err)}`);
+      log?.(`slash-command scan skipped ${path.join(dir, e.name)}: ${errorText(err)}`);
     }
   }
   return out;
@@ -107,7 +108,7 @@ async function scanSkillsDir(
   try {
     entries = await fsp.readdir(dir, { withFileTypes: true });
   } catch (err) {
-    if (!isMissing(err)) log?.(`skill scan failed for ${dir}: ${String(err)}`);
+    if (!isMissing(err)) log?.(`skill scan failed for ${dir}: ${errorText(err)}`);
     return out;
   }
   for (const e of entries) {
@@ -117,7 +118,7 @@ async function scanSkillsDir(
       if (fm === null) continue; // no SKILL.md -> not a skill
       out.push({ name: fm.name ?? e.name, source, description: fm.description });
     } catch (err) {
-      log?.(`skill scan skipped ${path.join(dir, e.name)}: ${String(err)}`);
+      log?.(`skill scan skipped ${path.join(dir, e.name)}: ${errorText(err)}`);
     }
   }
   return out;
@@ -145,7 +146,7 @@ async function readFrontmatter(
   } catch (err) {
     // absent is meaningful here ("not a skill"), anything else is a real read
     // failure that would otherwise silently cost a command — see scanCommandsDir
-    if (!isMissing(err)) log?.(`slash-command read failed for ${file}: ${String(err)}`);
+    if (!isMissing(err)) log?.(`slash-command read failed for ${file}: ${errorText(err)}`);
     return null;
   } finally {
     await fh?.close();

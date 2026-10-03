@@ -6,6 +6,7 @@
 //          fail-open forwarder (dead listener costs nothing).
 //   S-06:  status hooks ack instantly and carry "timeout": 10 so a wedged
 //          listener costs at most 10s once; Stop is the done authority.
+import { errorText } from '../../shared/error-text';
 import http from 'http';
 import { randomBytes } from 'crypto';
 import fs from 'fs';
@@ -267,7 +268,7 @@ export class HookListener {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
         this.opts.log.warn('could not remove hook token file', {
           sessionId,
-          error: String(err),
+          error: errorText(err),
         });
       }
       return false;
@@ -344,7 +345,7 @@ export class HookListener {
       // directory, so only something outside us (permissions, EMFILE) gets
       // here. Fail-open regardless — the listener coming up outranks tidiness.
       this.opts.log.warn('could not scan state dir for orphaned hook tokens', {
-        error: String(err),
+        error: errorText(err),
       });
       return;
     }

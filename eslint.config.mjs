@@ -50,6 +50,22 @@ const EFFECT_BODY_RULES = [
   },
 ];
 
+// #670: `String(err)` on a catch variable renders a thrown plain object as the
+// literal text `[object Object]`. `no-base-to-string` cannot see it — it runs
+// with `checkUnknown: false`, and a catch variable is `unknown` — so the ~170
+// sites were converted by hand and this is what keeps them converted. It keys
+// on the NAME, which is all an untyped selector has; every catch variable in
+// this tree is `e`, `err`, `error` or `<something>Err(or)`.
+const ERROR_STRING_RULE = {
+  selector:
+    "CallExpression[callee.name='String'][arguments.length=1] > Identifier.arguments[name=/^(e|err|error|ex|[A-Za-z]+Err|[A-Za-z]+Error)$/]",
+  message:
+    "String(err) renders a thrown plain object as '[object Object]' — use errorText(err) from src/shared/error-text.ts (#670).",
+};
+
+/** the `no-restricted-syntax` entries every block under src/ carries */
+const BASE_SYNTAX_RULES = [...EFFECT_BODY_RULES, ERROR_STRING_RULE];
+
 export default tseslint.config(
   { ignores: ['out/**', 'dist/**', 'node_modules/**', 'spike/**', '.claude/**'] },
   eslint.configs.recommended,
@@ -68,7 +84,7 @@ export default tseslint.config(
   {
     // effect-cleanup guard applies everywhere (see EFFECT_BODY_RULES above)
     files: ['src/**/*.{ts,tsx}'],
-    rules: { 'no-restricted-syntax': ['error', ...EFFECT_BODY_RULES] },
+    rules: { 'no-restricted-syntax': ['error', ...BASE_SYNTAX_RULES] },
   },
   {
     // §5.23 + P2-E15-04: every IPC channel goes through the broker, which is
@@ -80,7 +96,7 @@ export default tseslint.config(
     rules: {
       'no-restricted-syntax': [
         'error',
-        ...EFFECT_BODY_RULES,
+        ...BASE_SYNTAX_RULES,
         {
           selector: "ImportSpecifier[imported.name='ipcMain']",
           message:
@@ -117,7 +133,7 @@ export default tseslint.config(
     // what #618 was filed about.
     files: ['src/{shared,preload}/**/*.{ts,tsx,mts,cts}'],
     rules: {
-      'no-restricted-syntax': ['error', ...EFFECT_BODY_RULES],
+      'no-restricted-syntax': ['error', ...BASE_SYNTAX_RULES],
       'no-restricted-imports': [
         'error',
         {
@@ -135,7 +151,7 @@ export default tseslint.config(
     rules: {
       'no-restricted-syntax': [
         'error',
-        ...EFFECT_BODY_RULES,
+        ...BASE_SYNTAX_RULES,
         {
           selector: `Literal[value=/${HEX_COLOR}/]`,
           message: HEX_MESSAGE,

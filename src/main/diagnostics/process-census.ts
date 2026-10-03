@@ -18,6 +18,7 @@
 // as `sysEnumPendingMs`, which is the loudest datum this file can produce.
 // Every failure is logged as a field and swallowed: this is a diagnostic, and
 // a diagnostic must never be why the app misbehaves (P6).
+import { errorText } from '../../shared/error-text';
 import { execFile } from 'child_process';
 
 /** How often to count. Matches the heartbeat, so each beat carries a fresh one. */
@@ -202,7 +203,7 @@ export class ProcessCensus {
         try {
           const enumMs = this.now() - t0;
           this.last = err
-            ? { sysEnumError: String(err).slice(0, 200), sysEnumMs: Math.round(enumMs) }
+            ? { sysEnumError: errorText(err).slice(0, 200), sysEnumMs: Math.round(enumMs) }
             : summarize(this.parse(stdout), enumMs);
           // A failure counts as slow whatever it says. The failure this guards
           // against IS the 30-second timeout, and a timeout that reset the
@@ -210,7 +211,7 @@ export class ProcessCensus {
           // every minute for ever (#1031).
           this.pace(err !== null || enumMs >= CENSUS_SLOW_MS);
         } catch (e) {
-          this.last = { sysEnumError: String(e).slice(0, 200) };
+          this.last = { sysEnumError: errorText(e).slice(0, 200) };
           this.pace(true);
         } finally {
           this.inFlightSince = null;
@@ -220,7 +221,7 @@ export class ProcessCensus {
       // execFile THROWS some failures instead of calling back (see
       // `git/git-service.ts`, #785), so this path is real.
       this.inFlightSince = null;
-      this.last = { sysEnumError: String(e).slice(0, 200) };
+      this.last = { sysEnumError: errorText(e).slice(0, 200) };
       this.pace(true);
     }
   }
