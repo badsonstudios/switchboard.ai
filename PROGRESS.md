@@ -42,10 +42,20 @@
 > **THE ORDER BEFORE THE RELEASE TANNER INSTALLS** (put to the owner 2026-10-03;
 > his reply was *"Great"*). **ALL FOUR ARE DONE AS OF 2026-10-03.**
 >
-> ⚠️ **NO RELEASE YET — the owner, 2026-10-03: *"We're not going to do a release
-> just yet… I still have all weekend to work on this. I'd still like to get some
-> more items in or fixes in."*** So `0.8.111 — unreleased` stays open and keeps
-> collecting entries; the bump is still his call, later.
+> ✅ **RELEASED: v0.8.111, 2026-10-03** (`7a4777b`, PR #1077) — the owner, once
+> the weekend list was done: *"Go ahead and post a release."* A plain patch
+> step. Installer and `.sha256` sidecar both published, and the **published**
+> pair downloaded and verified to match by hand, because the updater refuses an
+> asset it cannot verify. `0.8.112 — unreleased` is open and empty.
+>
+> ⚠️ **WHAT THE RELEASE DID NOT PROVE: that Help ▸ User Manual works in the
+> INSTALLED app.** The release workflow builds and publishes; nothing launches
+> the installer build and clicks Help. The owner's first click after updating
+> is that test — the tracker's row for it says what to expect.
+>
+> *(Earlier the same day he had said "We're not going to do a release just
+> yet… I'd still like to get some more items in or fixes in", which is why the
+> five items below were built first.)*
 >
 > **THE WEEKEND QUEUE (owner, 2026-10-03) — in this order, each its own branch
 > and PR, merged on green CI, each with a changelog entry under `0.8.111 —
@@ -62,7 +72,7 @@
 > | 5 | **#504** and **#508** — a diff landing in the document area; the viewer's copy button in a popped-out window | ✅ **DONE, both — they land with the PR that carries this line. THE LIST IS FINISHED.** |
 >
 > **✅ THE LIST IS DONE, 2026-10-03 — PRs #1070, #1073, #1074, #1075 and the one
-> that carries this line. THE NEXT MOVE IS THE OWNER'S: the version bump.**
+> that carries this line — AND RELEASED AS v0.8.111 the same day.**
 >
 > **CHANGELOG CHECKED AGAINST EVERYTHING MERGED SINCE v0.8.110:** every merge a
 > user can see has an entry under `0.8.111 — unreleased` — two under Added (the
@@ -245,7 +255,7 @@
 > it is needed at all) and anything visual.
 >
 > **✅ ITEM 1, STEP 1 — MERGED 2026-10-03, PR #1063 (`f0d3da6`), green on all
-> four CI jobs. ⚠️ NOT RELEASED** — the owner will hand-test it after the cut.
+> four CI jobs. RELEASED in v0.8.111** — the owner's hand-test is the tracker's row.
 > Streaming re-emits are coalesced (refs #1013).
 > E23 was recorded as *"blocked on the owner's laptop capture"*. **#1013 IS a
 > capture** (8 sessions, renderer at 0.7–1.0 cores, lag to 2.7s), so the gate was
