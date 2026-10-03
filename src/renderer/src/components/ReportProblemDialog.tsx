@@ -104,17 +104,25 @@ export function ReportProblemDialog(props: ReportProblemDialogProps): React.JSX.
   const [tokenRefused, setTokenRefused] = React.useState(false);
   const [result, setResult] = React.useState<ReportResult | null>(null);
   /**
-   * Which send is the CURRENT one. Bumped by every send and every re-open, and
-   * checked when a send settles: a report still in flight when the dialog was
-   * closed and re-opened must not reach into the fresh one — closing it,
-   * printing an old error in it, or clearing `busy` under a second send, which
-   * would re-arm the button and let a third press file a duplicate issue.
+   * Which send is the CURRENT one. Bumped by every send, every CLOSE and every
+   * re-open, and checked when a send settles: a report still in flight when the
+   * dialog went away must not reach back into it or into the fresh one —
+   * closing it, printing an old error in it, or clearing `busy` under a second
+   * send, which would re-arm the button and let a third press file a duplicate
+   * issue.
    */
   const attempt = React.useRef(0);
 
   React.useEffect(() => {
-    if (!props.open) return;
+    // BUMPED BEFORE THE `open` GUARD (#1019), so CLOSING invalidates an
+    // in-flight send too and not only re-opening — the fix #1008 made in the
+    // twin. Cancel while a report is still being filed, click into a composer,
+    // and a late success used to run `close()` a second time, whose focus
+    // restore yanks the caret out of wherever the user went; a late failure set
+    // an error line on a dialog nobody was looking at. The report itself is
+    // unaffected: it was sent, and a filed issue still opens (see `submit`).
     attempt.current += 1;
+    if (!props.open) return;
     // A re-open starts clean. A half-typed token left in the box from last time
     // is a credential on screen for no reason, and a stale success line would
     // claim something was filed that was not.
@@ -150,8 +158,9 @@ export function ReportProblemDialog(props: ReportProblemDialogProps): React.JSX.
       }))
       .then((r) => {
         if (attempt.current !== mine) {
-          // A send from an earlier opening. The issue it filed is real, so it
-          // may still open; this dialog, though, is no longer its business.
+          // A send from an earlier opening, or one the dialog was closed on.
+          // The issue it filed is real, so it may still open; this dialog,
+          // though, is no longer its business.
           if (reportProblem(r) === null && r.url) props.onOpenIssue?.(r.url);
           return;
         }

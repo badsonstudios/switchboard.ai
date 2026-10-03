@@ -1055,7 +1055,6 @@
   },
   "report": {
     "title": "Report a problem",
-    "open": "Report a problem…",
     "intro": "This collects your logs into a zip and files a report. Nothing is sent until you press the button.",
     "subject": "Subject",
     "subjectPlaceholder": "What went wrong, in a few words",

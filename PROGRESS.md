@@ -57,14 +57,24 @@
 > |---|---|---|
 > | 1 | **Help ▸ User manual** (#1069) | ✅ **MERGED — PR #1070** |
 > | 2 | **#1054** — `Ctrl+F` does nothing in a git diff panel | ✅ **MERGED** |
-> | 3 | **#588** — a plan-mode Direct session may show a permission bar, against the manual. **Measured; the MANUAL was wrong, the code is right** | ✅ **DONE — it lands with the PR that carries this line** |
-> | 4 | **#1019** — Report a problem can be closed while a send is in flight | ⏭️ **NEXT** |
-> | 5 | **#504** and **#508**, if time allows — a diff landing in the document area; the viewer's copy button in a popped-out window | queued |
+> | 3 | **#588** — a plan-mode Direct session may show a permission bar, against the manual. **Measured; the MANUAL was wrong, the code is right** | ✅ **MERGED** |
+> | 4 | **#1019** — Report a problem can be closed while a send is in flight | ✅ **DONE — it lands with the PR that carries this line** |
+> | 5 | **#504** and **#508**, if time allows — a diff landing in the document area; the viewer's copy button in a popped-out window | ⏭️ **NEXT** |
 >
 > **NOT TO BE STARTED:** #1062 (protocol change), #966 (tour), #1056 (line
 > staging), #965 (the full HTML manual), anything visual, anything in tab
 > ergonomics or attention styling. **#1003 is open on purpose** — it needs the
 > owner's laptop, and the tracker's re-test row says what to look for.
+>
+> **ITEM 4, AS BUILT — Report a problem closed mid-send (#1019).** A port of
+> the fix #1008 made in the twin: the in-flight guard now bumps on CLOSE as
+> well as on re-open, so a send that settles after a plain Cancel no longer
+> runs `close()` a second time (whose focus restore yanked the caret out of
+> wherever the user had gone) or sets an error on a dialog nobody is looking
+> at. The report is still sent and a filed issue still opens. **One of the
+> three new tests fails without the fix; the other two passed before and pin
+> the re-open case the fix moved a line under.** The dead `report.open` string
+> the issue also named is deleted — nothing read it.
 >
 > **ITEM 3, AS MEASURED — plan mode and the permission bar (#588).** Seven real
 > turns against claude 2.1.288 (`spike/findings/588-plan-mode-permission-bar.md`).

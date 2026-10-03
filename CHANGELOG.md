@@ -112,6 +112,12 @@ on the floor, and say so in your PR.
   the diff editor's own find box, in the main window and in a popped-out diff
   window alike.
 
+- **Closing Report a problem while it is still sending no longer pulls you
+  back.** If you pressed Send and then closed the box before the report had
+  gone through, the app would "close" it a second time when the send finished
+  — which moved the cursor out of whatever you had clicked into since. The
+  report itself was always sent, and still is.
+
 - **The manual now says what approving a plan does.** It said a plan-mode
   session "stays read-only whatever you click". It doesn't, and shouldn't: a
   plan session asks whether to go ahead with its plan, and **Allow** on that

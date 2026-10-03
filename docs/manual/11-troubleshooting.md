@@ -453,6 +453,11 @@ the dialog stays open with the reason written next to the button, and
 everything you typed is still there, so you can pick another option and send
 again.
 
+**Closing the box while it is still sending does not cancel the report.** It is
+already on its way: a GitHub issue that gets filed still opens in your browser,
+and nothing else happens — the app does not pull you back to where you were
+when you pressed Send.
+
 **Whichever you choose, the zip is always written and always shown to you in
 Explorer.** It contains your log files, your workspace file, a short summary of
 your build and machine, and — if the app has been recording them — the

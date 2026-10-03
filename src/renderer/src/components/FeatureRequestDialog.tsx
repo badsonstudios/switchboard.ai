@@ -87,7 +87,7 @@ export function FeatureRequestDialog(props: FeatureRequestDialogProps): React.JS
     // composer, and a late success would otherwise run `close()` a second time
     // — whose focus restore yanks the caret out of wherever the user went — or
     // set a failure line on a dialog nobody is looking at. (The report dialog
-    // guards only the re-open case; same latent defect, not fixed here.)
+    // had the same gap and got the same fix in #1019.)
     attempt.current += 1;
     if (!props.open) return;
     // A re-open starts clean: a stale failure line would report a send that is
