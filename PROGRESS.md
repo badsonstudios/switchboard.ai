@@ -6,8 +6,32 @@
 > # ✅ MERGED — 2026-10-02: **E24 Git v2, all fifteen items, layers 1 and 2**
 >
 > **PR #1053 squash-merged on green CI** (`7c4eeb5`); **#1038–#1052 all closed**.
-> Four jobs green. ⚠️ **NOT RELEASED** — the version bump is manual, so nothing
-> below is on Dan's machine until one happens (`gh release list` is the check).
+>
+> ✅ **AND IT IS RELEASED: v0.8.110, 2026-10-03** (`0e9d715`, PR #1060). The
+> owner chose a bigger patch step over the default `0.8.102` — `CHANGELOG.md` says
+> a batch bigger than an ordinary patch is *"a question, not a decision"*, and this
+> one is fifteen items of the phase's spine epic. Installer and `.sha256` sidecar
+> both published, and the **published** pair verified to match by hand, because
+> E19-04 refuses an asset it cannot verify — so a mismatched sidecar is a release
+> nothing can auto-update to.
+>
+> **TWO THINGS FOUND WHILE CHECKING WHAT WAS LEFT BEFORE THE CUT, and both were
+> real:**
+>
+> * ⚠️ **The changelog had NOT ONE Git v2 entry** (#1058). That file's own header
+>   says the release workflow reads it for the notes and the in-app update dialog
+>   shows them to the USER — so a cut would have shipped notes about the Files tab
+>   and said nothing about the History tab, staging or committing. **Nothing in CI
+>   could have caught it:** `release-notes.test.js` checks the heading exists,
+>   ranks above `package.json`, and matches the lock — all structural. *"A merged
+>   feature has no entry"* is invisible to it.
+> * ⚠️ **`main`'s CI had been red on EVERY run, and this was the only reason**
+>   (#1059). One test guard read `it.runIf(!WIN)` — "not Windows means
+>   case-sensitive" — which is false for macOS, whose default filesystem folds
+>   case; `HOST_STYLE` already knew that and the production code was right. Main
+>   carries a `macos-latest` job that no PR run has, so it never blocked a merge
+>   and nobody had to look: 10,486 passing, 1 failing, forever. **main is now green
+>   on all five jobs for the first time.**
 >
 > **THREE FOLLOW-UPS ARE OPEN AND DELIBERATE**, each filed with its reason rather
 > than left as a gap in a closed epic:
@@ -4430,7 +4454,8 @@
 >
 > **Working-copy gotcha, recorded because it cost time:** rewriting files with
 > Python on Windows converted them to CRLF, which broke `native-dialog.test.ts` —
-> its comment-stripping regex cannot match past a ``. `.gitattributes`
+> its comment-stripping regex cannot match past a `
+`. `.gitattributes`
 > normalises to LF in the repo so the committed diff was always clean; only the
 > working copy was wrong, so it would have passed CI and failed locally forever.
 >
