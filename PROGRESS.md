@@ -58,13 +58,58 @@
 > | 1 | **Help ▸ User manual** (#1069) | ✅ **MERGED — PR #1070** |
 > | 2 | **#1054** — `Ctrl+F` does nothing in a git diff panel | ✅ **MERGED** |
 > | 3 | **#588** — a plan-mode Direct session may show a permission bar, against the manual. **Measured; the MANUAL was wrong, the code is right** | ✅ **MERGED** |
-> | 4 | **#1019** — Report a problem can be closed while a send is in flight | ✅ **DONE — it lands with the PR that carries this line** |
-> | 5 | **#504** and **#508**, if time allows — a diff landing in the document area; the viewer's copy button in a popped-out window | ⏭️ **NEXT** |
+> | 4 | **#1019** — Report a problem can be closed while a send is in flight | ✅ **MERGED** |
+> | 5 | **#504** and **#508** — a diff landing in the document area; the viewer's copy button in a popped-out window | ✅ **DONE, both — they land with the PR that carries this line. THE LIST IS FINISHED.** |
+>
+> **✅ THE LIST IS DONE, 2026-10-03 — PRs #1070, #1073, #1074, #1075 and the one
+> that carries this line. THE NEXT MOVE IS THE OWNER'S: the version bump.**
+>
+> **CHANGELOG CHECKED AGAINST EVERYTHING MERGED SINCE v0.8.110:** every merge a
+> user can see has an entry under `0.8.111 — unreleased` — two under Added (the
+> manual in the app, the Day one page) and eight under Fixed (streaming cost,
+> `[object Object]`, the Clear status, and this weekend's five). #1061, #1064
+> and #1068 were docs-only. ⚠️ **Five of this weekend's entries had been filed
+> under Added when they are fixes** — each was inserted after the one before
+> it — and were moved under Fixed in the last PR.
+>
+> **WHAT THE OWNER SHOULD LOOK AT BEFORE TANNER DOES, in this order:**
+>
+> 1. **#1071 — the plan-approval bar shows the plan as ONE LINE of escaped
+>    text, and offers Allow all on it.** Found by item 3's measurement, not
+>    fixed because it is interface work. If Tanner works in plan mode on
+>    Monday, this is the first rough edge he meets.
+> 2. **Help ▸ User Manual in the INSTALLED app** — the one thing item 1 could not
+>    check with a machine. It has its own row in the tracker's Untested table.
+> 3. **#1072** — the mode chip still says `plan` after a plan is approved.
 >
 > **NOT TO BE STARTED:** #1062 (protocol change), #966 (tour), #1056 (line
 > staging), #965 (the full HTML manual), anything visual, anything in tab
 > ergonomics or attention styling. **#1003 is open on purpose** — it needs the
 > owner's laptop, and the tracker's re-test row says what to look for.
+>
+> **ITEM 5, AS BUILT — two small ones, both reproduced before they were fixed.**
+>
+> * **#504 — a Changes tab landing among the documents.** `openDiff` only
+>   overrode dockview's "the active group" default when that group was not in
+>   the grid at all; a document area IS in the grid, so with a viewer or a diff
+>   panel focused the session's Changes tab opened as a tab beside the
+>   documents. When the active group is not a session's, it now goes to the
+>   SESSION'S OWN GROUP if that is on screen, and otherwise through
+>   `sessionCardHome` (#462's predicate). **The own-group step came from
+>   review:** `sessionCardHome` alone picked the FIRST session group, which in a
+>   split layout is not necessarily this session's. The e2e reads which tab strip the tab is in and MEASURES it
+>   (the issue's own done-when), and failed on the old bundle with *"the
+>   Changes tab joined the document area"*.
+> * **#508 — Copy in a popped-out document.** Confirmed rather than "likely":
+>   the handler used the module's `navigator`, which is the main window's, so in
+>   a popped-out viewer the button flashed "Copied" over a clipboard nothing had
+>   written to. It now calls `runCopy`, the feed's own-window helper.
+>   ⚠️ **The issue asked for a test "in the popout lane" and it got a UNIT test
+>   instead, on purpose:** an e2e would have to read the real system clipboard,
+>   which this suite never touches (it belongs to whoever is at the machine).
+>   The unit test moves the mounted viewer's DOM into a second document — what
+>   dockview does — and asserts THAT window's clipboard was written and the
+>   main one's was not. It fails without the fix.
 >
 > **ITEM 4, AS BUILT — Report a problem closed mid-send (#1019).** A port of
 > the fix #1008 made in the twin: the in-flight guard now bumps on CLOSE as
@@ -100,8 +145,8 @@
 >   reproduces the measured exchange. No app behaviour changed.
 > * **The shield chip's own tooltip carried the wrong sentence too** (*"stands
 >   whatever you click here"*) and is corrected.
-> * ⚠️ **THREE THINGS FOUND AND FILED, NOT FIXED — all are interface or product
->   questions:** **Allow all (this session) is offered on the plan bar**, and
+> * ⚠️ **THREE THINGS FOUND AND FILED (#1071, #1072), NOT FIXED — all are
+>   interface or product questions:** **Allow all (this session) is offered on the plan bar**, and
 >   pressing it approves the plan AND every write after it for that run (the
 >   manual now says so); the card's mode chip goes on saying `plan` after the
 >   CLI has left plan mode (nothing reads the CLI's `status` message); and

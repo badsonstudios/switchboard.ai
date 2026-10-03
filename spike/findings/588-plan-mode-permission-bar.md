@@ -112,17 +112,17 @@ run it was declined"*). #948 measured the same thing with a longer prompt.
 
 **The card's mode chip does not follow the session out of plan mode.** The CLI
 announces `permissionMode: default` and nothing in the app reads it, so the chip
-goes on saying `plan` for a session that is now asking about writes. Filed, not
-fixed — it is interface work.
+goes on saying `plan` for a session that is now asking about writes. Filed as
+#1072, not fixed — it is interface work.
 
 **The bar shows the plan as one line of escaped text** — the Markdown with its
 line breaks written out as backslash-n. A real plan is paragraphs, so the thing
-being approved is hard to read at exactly the moment it matters. Filed, not
-fixed, for the same reason.
+being approved is hard to read at exactly the moment it matters. Filed as
+#1071, not fixed, for the same reason.
 
 **Allow all (this session) is offered on the plan-approval bar.** See item 5.
 Whether a plan should be approvable "for everything after it" in one press is a
-product question; it is recorded on the same issue as the bar's rendering.
+product question; it is recorded on #1071 with the bar's rendering.
 
 Aside, not chased: G shows a `Read` outside the session folder is NOT asked about
 at `default` on this build, for a file under the user's temp folder. The manual's
