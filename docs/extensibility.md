@@ -74,7 +74,7 @@ actually serve it.
 | `feed-block-renderer` | `FeedBlockRendererContribution` | `feed-block-{todos,bash,edit,tool,thinking,user,markdown}` — one per transcript block shape |
 | `status-bar-item` | `StatusBarItemContribution` | `status-{session-count,usage,service-health,cli-version,theme}` |
 | `theme` | `ThemeContribution` | `theme-{nordic,daylight,high-contrast,soft-contrast}` — the picker and the status bar list from here |
-| `find-provider` | `FindProviderContribution` | `find-session`, `find-changes`, `find-document`. `find-terminal` is written and exported but **no longer registered** (#873): find dispatches to the focused panel's provider, and there is no Terminal panel left to focus |
+| `find-provider` | `FindProviderContribution` | `find-session`, `find-changes`, `find-gitdiff`, `find-document`. `find-gitdiff` (#1054) is `find-changes` for a diff in a panel of its own, under that panel's own slot. `find-terminal` is gone (unregistered by #873, deleted by #952): find dispatches to the focused panel's provider, and there is no Terminal panel left to focus |
 
 `theme` (P2-E15-05) is the first **data-only** point: every other contribution
 hands over a function — build these commands, render this block — and this one

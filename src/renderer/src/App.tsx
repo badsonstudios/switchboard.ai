@@ -131,6 +131,7 @@ import { setAllChangesOpener } from './lib/allchanges-open';
 import { setFileHistoryOpener } from './lib/file-history';
 import { openFileStartFolder, rememberOpenedFile } from './lib/open-file-start';
 import { isDocumentPanelId } from './lib/document-panels';
+import { isDiffPanelId } from './lib/diff-panels';
 
 // One stable subscribe identity for every useSyncExternalStore call below.
 // An inline arrow is a new function each render, and React unsubscribes and
@@ -1818,7 +1819,13 @@ export function App(): React.JSX.Element {
             // (It would answer "not popped out", which is accidentally right —
             // `activeCardId` already refuses a popped-out card — and being
             // right by accident is how the next reader gets misled.)
-            if (isDocumentPanelId(targetId) && grid.current?.isPanelPoppedOut(targetId)) {
+            //
+            // A `gitdiff-` DIFF PANEL is the same case (#1054): its id is a
+            // panel id too, and Monaco's find opens in the window the panel is in.
+            if (
+              (isDocumentPanelId(targetId) || isDiffPanelId(targetId)) &&
+              grid.current?.isPanelPoppedOut(targetId)
+            ) {
               raisedOtherWindowRef.current = true;
             }
           },
@@ -1968,6 +1975,8 @@ export function App(): React.JSX.Element {
       // window has to say where it came from. Absent (this window, and the
       // palette) means "the active panel", which is the answer it always was.
       activeDocumentId: grid.current?.activeDocumentId(sourceWindow) ?? null,
+      // …and the third (#1054): a `gitdiff-` diff panel, by the same rule.
+      activeDiffPanelId: grid.current?.activeDiffPanelId(sourceWindow) ?? null,
       // How many documents `Close all documents` would take (#543) — asked of
       // the grid for the same reason `activeGroupId` is resolved here: the
       // palette's enabled state and the keyboard's come from ONE read, so an

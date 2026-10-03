@@ -323,6 +323,39 @@ describe('seed command set (E9-01)', () => {
     expect(d.openFind).toHaveBeenCalledWith('doc-3');
   });
 
+  it('find.open also takes a focused DIFF PANEL (#1054)', () => {
+    // The same bug one panel kind over: a `gitdiff-` panel is neither a card
+    // nor a document, both resolvers answered null, and Ctrl+F over a diff in
+    // its own panel was a disabled command.
+    const d = deps();
+    const find = byId(buildCommands(d), 'find.open');
+    const overDiff = {
+      sessions: [],
+      activeCardId: null,
+      activeDiffPanelId: 'gitdiff-2',
+      activeGroupId: null,
+      attentionCount: 0,
+    };
+    expect(find.enabled?.(overDiff)).toBe(true);
+    find.run(overDiff);
+    expect(d.openFind).toHaveBeenCalledWith('gitdiff-2');
+  });
+
+  it('a popped-out diff panel wins over the card active back in the grid (#1054)', () => {
+    // Both are live only when the keystroke came from the panel's own window;
+    // opening the bar on the card would put it in a window nobody is looking at.
+    const d = deps();
+    const find = byId(buildCommands(d), 'find.open');
+    find.run({
+      sessions: [],
+      activeCardId: 'card-7',
+      activeDiffPanelId: 'gitdiff-2',
+      activeGroupId: null,
+      attentionCount: 0,
+    });
+    expect(d.openFind).toHaveBeenCalledWith('gitdiff-2');
+  });
+
   it('exactly SIX commands may fire while the user is typing, and they are named', () => {
     // The rule is *never steal a keystroke a text surface should get*, and the
     // list of chords that qualify is short and closed. `palette.open` (E9-02)

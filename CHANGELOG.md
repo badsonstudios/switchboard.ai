@@ -106,6 +106,12 @@ on the floor, and say so in your PR.
   only as files in the source repository — somebody who had only the installer
   could not read it at all.
 
+- **`Ctrl+F` works in a diff panel.** A diff you had moved into a panel of its
+  own (⧉ in the Changes tab, or a file opened from History) ignored `Ctrl+F`
+  completely, though the same diff inside the Changes tab did not. It now opens
+  the diff editor's own find box, in the main window and in a popped-out diff
+  window alike.
+
 - **A "Day one" page in the manual, for someone who has never seen the app.**
   Install, open a project, start a session, answer what Claude asks, review the
   changes and commit them — one page, in that order, with a link to the full

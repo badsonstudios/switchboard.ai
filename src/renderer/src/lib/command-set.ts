@@ -224,10 +224,17 @@ export function buildCommands(deps: CommandDeps): Command[] {
       categoryKey: CATEGORY_VIEW,
       binding: 'Mod+F',
       scope: 'typing-ok',
-      enabled: (ctx: CommandContext) => hasActive(ctx) || !!ctx.activeDocumentId,
+      //
+      // A `gitdiff-` DIFF PANEL is the third target (#1054), for the document's
+      // reason and with the document's precedence over a card: it is its own
+      // dockview panel, in either window, and the thing being read. It can
+      // never be live together with a document — one panel is active, and a
+      // popout window shows one.
+      enabled: (ctx: CommandContext) =>
+        hasActive(ctx) || !!ctx.activeDocumentId || !!ctx.activeDiffPanelId,
       disabledReasonKey: 'commands.disabled.noFindTarget',
       run: (ctx: CommandContext) => {
-        const target = ctx.activeDocumentId ?? ctx.activeCardId;
+        const target = ctx.activeDocumentId ?? ctx.activeDiffPanelId ?? ctx.activeCardId;
         if (target) deps.openFind(target);
       },
     },

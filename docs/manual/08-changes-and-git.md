@@ -361,8 +361,10 @@ Things worth knowing:
 - **Closing the app closes them.** Diff panels aren't restored on the next launch
   — the same as the file reader. Your sessions and layout come back; the diffs
   you were reading don't.
-- **One gap, so you aren't surprised by it:** `Ctrl+F` doesn't work inside a diff
-  panel yet. In the Changes tab it does. That's being fixed separately.
+- **`Ctrl+F` works in a diff panel**, exactly as it does in the Changes tab: it
+  opens the diff editor's own find box, with regular expressions and match
+  marks down the scrollbar. It works in a popped-out diff window too, and opens
+  the box in that window. See [Finding something](16-find.md).
 
 ## Everything in one scroll — ⧉
 

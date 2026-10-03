@@ -103,15 +103,12 @@ export function MonacoDiff(props: {
    * Which find slot to publish under — `'diff'` for the Changes tab, something
    * else for a dock panel, so two diffs of one card do not overwrite each other.
    *
-   * ⚠️ **THE PANEL'S SLOT IS PUBLISHED AND NOTHING READS IT YET** (E24 Git v2 item
-   * 5, stated by review rather than discovered later). `Ctrl+F` reaches a surface
-   * through a registered find PROVIDER plus `activeCardId` / `activeDocumentId`,
-   * and all three of those only know `session-` and `doc-` panels — so find in a
-   * `gitdiff-` panel is inert today. The publication is kept because it is the
-   * correct half and because unpublishing on unmount is the part that must not be
-   * bolted on later; the slot separation is kept because two diffs of one card
-   * sharing a key would mean the second to mount silently overwrites the first,
-   * and that bug would land the day the provider is wired. Filed as a follow-up.
+   * The panel's slot (`'gitdiff'`) is read by `find-gitdiff` since #1054; until
+   * then it was published and inert, because `Ctrl+F`'s route only knew
+   * `session-` and `doc-` panels. The slot separation is the part that mattered
+   * all along: two diffs of one card sharing a key would mean the second to
+   * mount silently overwrites the first, and `Ctrl+F` would reach whichever
+   * editor registered last rather than the one on screen.
    */
   findSlot?: string;
   /**
