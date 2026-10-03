@@ -75,7 +75,12 @@
 > second copy. ⚠️ **The e2e clicks the PATH LABEL, not the editor, and that is
 > the point:** a focused Monaco answers `Ctrl+F` by itself, so a test that
 > clicked the diff would have passed with the route still dead. Both new e2e
-> tests were run against the OLD bundle first and failed there. **Not done, on
+> tests were run against the OLD bundle first and failed there. **Review moved
+> two things:** a bar opened while the diff was still loading stayed greyed
+> after it loaded (the surface publishes on mount and nothing announced the
+> model arriving — `findSurfaceChanged`), and the which-window rule moved to
+> `lib/standalone-panels` with a unit test, because its only coverage was a
+> popout e2e the Linux runner skips. **Not done, on
 > purpose:** the all-changes panel (`allchanges-`) still has no find — its
 > comment says that is deliberate (many editors, no one surface) and the issue
 > does not ask for it.

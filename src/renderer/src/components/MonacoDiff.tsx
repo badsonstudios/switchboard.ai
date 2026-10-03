@@ -36,7 +36,12 @@ import {
   type DiffLayout,
 } from '../lib/diff-layout';
 import { defineDiffThemes, DIFF_THEME } from '../lib/monaco-theme';
-import { findSurfaceKey, publishFindSurface, type MonacoFindSurface } from '../lib/find-surfaces';
+import {
+  findSurfaceChanged,
+  findSurfaceKey,
+  publishFindSurface,
+  type MonacoFindSurface,
+} from '../lib/find-surfaces';
 import { openMonacoFind } from '../lib/monaco-find';
 import { rememberDiffPlace, readDiffPlace } from '../lib/diff-places';
 
@@ -329,6 +334,9 @@ export function MonacoDiff(props: {
       });
       old?.original.dispose();
       old?.modified.dispose();
+      // The find surface just became `ready()` (#1054): a bar that was opened
+      // while this was loading is greyed, and nothing else would tell it.
+      findSurfaceChanged();
       // Put the reader back where they were (#562). AFTER the model, because an
       // editor with no content clamps any offset to 0, and ONCE — the ref is
       // consumed, so a later re-selection of the same file opens at the top like

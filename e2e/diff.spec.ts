@@ -688,7 +688,11 @@ test.describe('Changes tab (Monaco diff pane)', () => {
     // user into another window, so this is the half that needs the source
     // window passed rather than inferred.
     await expect(panel.locator('.find-widget.visible')).toHaveCount(1, { timeout: 10_000 });
+    // delegated: no bar of ours in the window that could have had one…
+    await expect(win.locator('[data-testid="find-bar"]')).toHaveCount(0);
+    // …and nothing opened back in the main window either
     await expect(w.locator('[data-testid="find-bar"]')).toHaveCount(0);
+    await expect(w.locator('.find-widget.visible')).toHaveCount(0);
 
     await win.evaluate(() => window.close());
     await expect(w.locator('.git-diff-view')).toBeVisible({ timeout: 15_000 });

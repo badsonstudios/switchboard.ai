@@ -126,6 +126,7 @@ import { AUTO_ACCEPT_LIMIT, AUTO_ACCEPT_WINDOW_MS } from '../../../shared/siblin
 import { pruneAttachmentDrafts } from '../lib/composer-attachment-draft';
 import { setDraggedCard } from '../lib/drag-context';
 import { findBarState, subscribeFindBar } from '../lib/find-bar-state';
+import { activeStandalonePanelId } from '../lib/standalone-panels';
 import { FindBar } from './FindBar';
 import {
   clearConversation,
@@ -3628,41 +3629,6 @@ function openGitDiffPanel(
  * session behind it), no title to set from inside. What is left is the two facts
  * only dockview knows — where the panel IS, and how to move it.
  */
-/**
- * The panel that has the user's attention, when it is one of a given kind that
- * is neither a session card nor one of its tabs — `activeDocumentId`'s rule,
- * written once so the diff panel (#1054) cannot drift from it.
- *
- * With a `sourceWindow`: the panel SHOWN in the popout group that window
- * belongs to, or null — never the grid's active panel, which does not follow
- * the user into another OS window. Without one: the grid's active panel.
- */
-function activeStandalonePanelId(
-  api: DockviewApi | null,
-  sourceWindow: Window | undefined,
-  isKind: (panelId: string) => boolean
-): string | null {
-  if (!api) return null;
-  if (sourceWindow) {
-    for (const group of api.groups) {
-      const loc = group.api.location;
-      if (loc.type !== 'popout') continue;
-      let win: Window | null = null;
-      try {
-        win = loc.getWindow() ?? null;
-      } catch {
-        win = null; // torn down between the lookup and the read
-      }
-      if (win !== sourceWindow) continue;
-      const shown = group.activePanel;
-      return shown && isKind(shown.id) ? shown.id : null;
-    }
-    return null;
-  }
-  const panel = api.activePanel;
-  return panel && isKind(panel.id) ? panel.id : null;
-}
-
 function GitDiffPanelHost(
   props: IDockviewPanelProps<{ target?: DiffTarget; colorScheme?: string }>
 ): React.JSX.Element {

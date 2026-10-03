@@ -1203,7 +1203,7 @@
       "noSessions": "No sessions are open",
       "noDocuments": "No documents to close — popped-out ones are kept",
       "noActiveSession": "No session is focused",
-      "noFindTarget": "No session, document or diff is focused",
+      "noFindTarget": "Nothing that can be searched is focused — click a session, a document or a single diff",
       "emptyQueue": "Nothing is waiting on you",
       "noActiveGroup": "The focused session is not in a group"
     },
