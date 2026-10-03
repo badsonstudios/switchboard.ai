@@ -1,3 +1,4 @@
+import { errorText } from '../shared/error-text';
 import {
   app,
   BrowserWindow,
@@ -187,7 +188,7 @@ if (!isPrimaryInstance) {
     } catch (err) {
       // A second launch must never be able to take the running app down. The
       // log line is best-effort too: `sink` does not exist until `whenReady`.
-      if (sink) log.app.warn('second-instance handling failed', { error: String(err) });
+      if (sink) log.app.warn('second-instance handling failed', { error: errorText(err) });
     }
   });
 }
@@ -411,7 +412,7 @@ const acceleratorDeps = makeAcceleratorDeps({
     pushToRenderer(currentWindow, 'app:accelerator', { commandId, fromPopout });
     return true;
   },
-  onError: (err) => log.app.warn('terminal accelerator failed', { error: String(err) }),
+  onError: (err) => log.app.warn('terminal accelerator failed', { error: errorText(err) }),
 });
 
 /**
@@ -430,7 +431,7 @@ const contextMenuDeps: ContextMenuDeps = makeContextMenuDeps({
   labels: () => contextMenuLabels,
   windowFor: (contents) => BrowserWindow.fromWebContents(contents),
   build: (template) => Menu.buildFromTemplate(template),
-  onError: (err) => log.ui.warn('context menu failed', { error: String(err) }),
+  onError: (err) => log.ui.warn('context menu failed', { error: errorText(err) }),
 });
 
 function trackWindowGeometry(win: BrowserWindow): void {
@@ -683,7 +684,7 @@ function createWindow(): BrowserWindow {
       }
     } catch (err) {
       // geometry is a nicety; never let it block a close
-      log.app.warn('popout geometry flush failed', { error: String(err) });
+      log.app.warn('popout geometry flush failed', { error: errorText(err) });
     }
   });
   // A window that can no longer answer a permission hold has to say so.
@@ -843,7 +844,7 @@ app
         RENDERER_ORIGIN = staticServer.origin;
         log.app.info('renderer served over loopback', { origin: RENDERER_ORIGIN });
       } catch (err) {
-        log.app.error('static server failed; falling back to file://', { error: String(err) });
+        log.app.error('static server failed; falling back to file://', { error: errorText(err) });
       }
     }
     // Header-based CSP for every window in the default session — main and
@@ -855,7 +856,7 @@ app
       session.defaultSession,
       rendererOrigin,
       !!DEV_URL,
-      (err) => log.app.error('csp header listener failed', { error: String(err) })
+      (err) => log.app.error('csp header listener failed', { error: errorText(err) })
     );
     // The IPC choke point (P2-E15-04). Every channel registers through it, in
     // both directions; it refuses a call whose caller does not hold the
@@ -1326,7 +1327,7 @@ app
     try {
       manager.sweepOrphanStateDirs();
     } catch (err) {
-      log.app.warn('session state dir sweep failed', { error: String(err) });
+      log.app.warn('session state dir sweep failed', { error: errorText(err) });
     }
     // Is there anyone to ask? A destroyed window or a crashed renderer means no
     // (P2-E15-09). A RELOADING renderer is neither, so the pending-holds replay
@@ -1461,7 +1462,7 @@ app
         try {
           release();
         } catch (err) {
-          log.app.error('releasing held permissions failed', { channel: what, error: String(err) });
+          log.app.error('releasing held permissions failed', { channel: what, error: errorText(err) });
         }
       }
     };
@@ -1477,7 +1478,7 @@ app
         .resolve('provider-adapter', defaultProviderId())
         ?.capabilities?.transcripts?.projectsRoot();
     } catch (err) {
-      log.app.warn('default provider transcripts root failed', { error: String(err) });
+      log.app.warn('default provider transcripts root failed', { error: errorText(err) });
     }
     const transcripts = new TranscriptWatcher({
       projectsRoot: seedRoot,
@@ -1498,7 +1499,7 @@ app
     });
     void hooks.start().catch((err) => {
       // hooks are an accelerator, not the authority — start-failure degrades
-      log.app.error('hook listener failed to start', { error: String(err) });
+      log.app.error('hook listener failed to start', { error: errorText(err) });
     });
     // ── update checks (P2-E19-03, §E19) ──────────────────────────────────
     //
@@ -1567,7 +1568,7 @@ app
         log: updateLog,
       });
     } catch (err) {
-      log.app.warn('the post-update handshake could not be resolved', { error: String(err) });
+      log.app.warn('the post-update handshake could not be resolved', { error: errorText(err) });
     }
     // The download/verify/install half (E19-04). Constructed before the
     // service, which asks it whether an install is running before it prompts.
@@ -1631,7 +1632,7 @@ app
     // runs before the first window — so the sweep is unconditional.
     void installer
       .sweep()
-      .catch((err: unknown) => log.app.warn('the installer sweep failed', { error: String(err) }));
+      .catch((err: unknown) => log.app.warn('the installer sweep failed', { error: errorText(err) }));
     const updates = new UpdateService({
       currentVersion: app.getVersion(),
       getPrefs: () => workspace.getUpdatePrefs(),
@@ -1840,7 +1841,7 @@ app
       // should be "nothing happened".
       void shell
         .openExternal(url)
-        .catch((err: unknown) => log.app.warn('could not open the release page', { error: String(err) }));
+        .catch((err: unknown) => log.app.warn('could not open the release page', { error: errorText(err) }));
       return true;
     });
 
@@ -1895,7 +1896,7 @@ app
             void updates
               .check(true, { push: true })
               .catch((err: unknown) =>
-                log.app.warn('menu update check failed', { error: String(err) })
+                log.app.warn('menu update check failed', { error: errorText(err) })
               ),
           // Help ▸ Report a problem… (#815). THROUGH THE COMMAND REGISTRY, for
           // `openFile`'s reason: the dialog belongs to the renderer, and a menu
@@ -2205,7 +2206,7 @@ app
         } catch (err) {
           rulesLog.warn('suppressed push failed; the record is still held', {
             id: record.id,
-            error: String(err),
+            error: errorText(err),
           });
         }
       },

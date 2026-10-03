@@ -8,6 +8,7 @@
 //   - tolerant reader: malformed/unknown lines counted, never thrown
 //   - transcript is TELEMETRY authority (tokens, tools, files); status
 //     authority is hooks (E2-05)
+import { errorText } from '../../shared/error-text';
 import fs from 'fs';
 import path from 'path';
 import { StringDecoder } from 'string_decoder';
@@ -1250,7 +1251,7 @@ export class TranscriptWatcher {
       } catch (err) {
         this.opts.log.error('transcript listener threw', {
           sessionId: w.sessionId,
-          error: String(err),
+          error: errorText(err),
         });
       }
     }
@@ -2114,7 +2115,7 @@ export class TranscriptWatcher {
       tail.catchingUp = false;
       this.opts.log.error('catch-up could not be scheduled', {
         sessionId: w.sessionId,
-        error: String(err),
+        error: errorText(err),
       });
     }
   }
@@ -2125,7 +2126,7 @@ export class TranscriptWatcher {
       try {
         l(sessionId, block);
       } catch (err) {
-        this.opts.log.error('block listener threw', { sessionId, error: String(err) });
+        this.opts.log.error('block listener threw', { sessionId, error: errorText(err) });
       }
     }
   }

@@ -24,6 +24,7 @@
 // right bet anyway — it is why deleting the other one changed nothing the renderer
 // can see — and `PermissionRequest` now comes straight from the shared boundary
 // type rather than being re-exported through the listener.
+import { errorText } from '../../shared/error-text';
 import { randomBytes } from 'crypto';
 import path from 'path';
 import { MAX_DENIAL_REASON_CHARS, type PermissionRequest } from '../../shared/ipc/permissions';
@@ -372,7 +373,7 @@ export class StreamPermissions {
       return this.opts.hasLiveWindow?.() !== false;
     } catch (err) {
       this.log.warn('window liveness check threw — treating as no window', {
-        error: String(err),
+        error: errorText(err),
       });
       return false;
     }
@@ -441,7 +442,7 @@ export class StreamPermissions {
     } catch (err) {
       this.log.warn('answer-surface probe threw — holding the request anyway', {
         sessionId,
-        error: String(err),
+        error: errorText(err),
       });
       return true;
     }
@@ -830,7 +831,7 @@ export class StreamPermissions {
         l({ ...request });
       } catch (err) {
         // a broken subscriber must never strand the CLI (P6)
-        this.log.error('permission request listener threw', { requestId, error: String(err) });
+        this.log.error('permission request listener threw', { requestId, error: errorText(err) });
       }
     }
   }
@@ -1112,7 +1113,7 @@ export class StreamPermissions {
     try {
       json = JSON.stringify(updatedInput);
     } catch (err) {
-      this.log.warn('ignoring updatedInput that will not serialise', { ...where, error: String(err) });
+      this.log.warn('ignoring updatedInput that will not serialise', { ...where, error: errorText(err) });
       return undefined;
     }
     if (typeof json !== 'string') return undefined;
@@ -1493,7 +1494,7 @@ export class StreamPermissions {
       } catch (err) {
         this.log.warn('folder lookup threw — treating the path as unresolvable', {
           sessionId,
-          error: String(err),
+          error: errorText(err),
         });
         return null;
       }
@@ -1572,7 +1573,7 @@ export class StreamPermissions {
       try {
         l(requestId);
       } catch (err) {
-        this.log.error('permission resolved listener threw', { requestId, error: String(err) });
+        this.log.error('permission resolved listener threw', { requestId, error: errorText(err) });
       }
     }
   }

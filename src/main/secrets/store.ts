@@ -34,6 +34,7 @@
 // 3. **Fail-open, like everything on the notification path (P6).** Every method
 //    swallows its own failure and answers "no": a corrupt secrets file costs
 //    the phone push and nothing else.
+import { errorText } from '../../shared/error-text';
 import fs from 'fs';
 import path from 'path';
 import type { Logger } from '../log/logger';
@@ -82,7 +83,7 @@ export class SecretStore {
     try {
       return this.opts.crypto.isEncryptionAvailable();
     } catch (err) {
-      this.opts.log?.warn('the OS credential store could not be reached', { error: String(err) });
+      this.opts.log?.warn('the OS credential store could not be reached', { error: errorText(err) });
       return false;
     }
   }
@@ -112,7 +113,7 @@ export class SecretStore {
     try {
       encoded = this.opts.crypto.encryptString(trimmed).toString('base64');
     } catch (err) {
-      this.opts.log?.warn('a credential could not be encrypted', { key, error: String(err) });
+      this.opts.log?.warn('a credential could not be encrypted', { key, error: errorText(err) });
       return false;
     }
     const entries = { ...this.read(), [key]: encoded };
@@ -139,7 +140,7 @@ export class SecretStore {
       // A file from another machine or another OS user. Expected, not broken.
       this.opts.log?.warn('a stored credential could not be read back', {
         key,
-        error: String(err),
+        error: errorText(err),
       });
       value = null;
     }
@@ -194,7 +195,7 @@ export class SecretStore {
       // Missing is the first-run case and by far the common one, so only a
       // file that EXISTS and would not parse is worth a line.
       if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT')
-        this.opts.log?.warn('the credential file could not be read', { error: String(err) });
+        this.opts.log?.warn('the credential file could not be read', { error: errorText(err) });
       this.entries = {};
     }
     return this.entries;
@@ -215,7 +216,7 @@ export class SecretStore {
       this.entries = entries;
       return true;
     } catch (err) {
-      this.opts.log?.warn('the credential file could not be written', { error: String(err) });
+      this.opts.log?.warn('the credential file could not be written', { error: errorText(err) });
       try {
         fs.rmSync(tmp, { force: true });
       } catch {

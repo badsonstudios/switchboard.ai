@@ -41,6 +41,7 @@
 // a throw becomes a renderer's problem, so this is where it is turned into an
 // answer. The steps AFTER a successful spawn are left as they are: by then the
 // session is live, and answering `null` would strand it.
+import { errorText } from '../../shared/error-text';
 import { BrowserWindow, dialog } from 'electron';
 import fs from 'fs';
 import { SessionManager, SessionRecord } from './session-manager';
@@ -497,7 +498,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
       log.warn('a session teardown step failed; releasing the rest anyway', {
         sessionId: liveId,
         step: name,
-        error: String(err),
+        error: errorText(err),
       });
     }
   };
@@ -856,7 +857,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         // `runContainedPrompt` is documented never to reject, so this is the
         // belt on top of the braces: a throw from the persist/publish half must
         // not become an unhandled rejection in Electron main.
-        log.warn('ai label failed after the run', { cardId, error: String(err) });
+        log.warn('ai label failed after the run', { cardId, error: errorText(err) });
       })
       .finally(() => {
         const s = aiLabelState.get(cardId);
@@ -1714,7 +1715,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           log.warn('reaping a dead session failed; starting the new one anyway', {
             cardId: opts.cardId,
             sessionId: liveId,
-            error: String(err),
+            error: errorText(err),
           });
         }
       }
@@ -2068,7 +2069,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
           cardId: opts.cardId,
           folder: opts.folder,
           provider: identity.providerId,
-          error: String(err),
+          error: errorText(err),
         });
         // AND THE BRIEFING WAS ALREADY SPENT, which is worth its own line rather
         // than being inferred from the two above. The card shows "never started"
@@ -2336,7 +2337,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         } catch (err) {
           log.warn('could not announce an adopted conversation', {
             cardId: opts.cardId,
-            error: String(err),
+            error: errorText(err),
           });
         }
       }
@@ -2432,7 +2433,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
             sessionId: record.id,
             cardId: opts.cardId,
             templateId: dispatch.template.id,
-            error: String(err),
+            error: errorText(err),
           });
         }
       }
@@ -2503,7 +2504,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
       // The drop is refused with a notice and the session is untouched.
       log.warn('sessions:contextOffer failed; the drop will be refused', {
         ref,
-        error: String(err),
+        error: errorText(err),
       });
       return null;
     }
@@ -2519,7 +2520,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     } catch (err) {
       log.warn('sessions:resolveMentions failed; the draft will be sent as typed', {
         sessionId,
-        error: String(err),
+        error: errorText(err),
       });
       return null;
     }
@@ -2555,7 +2556,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
       projectsRoot = caps?.transcripts?.projectsRoot() ?? '';
     } catch (err) {
       log.warn('transcripts:history could not resolve the transcripts root', {
-        error: String(err),
+        error: errorText(err),
       });
     }
     // A provider that declares no transcripts has no history to show, and that
@@ -2589,8 +2590,8 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     } catch (err) {
       // P6: a scan that threw must not reject the renderer's promise. The picker
       // shows the reason and the user can still start a new session.
-      log.warn('transcripts:history failed', { scope, folder, error: String(err) });
-      return { status: 'unknown' as const, reason: String(err) };
+      log.warn('transcripts:history failed', { scope, folder, error: errorText(err) });
+      return { status: 'unknown' as const, reason: errorText(err) };
     }
   });
 
@@ -2625,7 +2626,7 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     const known = await deps
       .slashCommands(rec.identity.folder, rec.identity.providerId)
       .catch((err) => {
-        log.warn('slash-command scan failed', { sessionId: liveId, error: String(err) });
+        log.warn('slash-command scan failed', { sessionId: liveId, error: errorText(err) });
         return [] as SlashCommand[];
       });
     const cli = streamCommands?.commandsFor(liveId);

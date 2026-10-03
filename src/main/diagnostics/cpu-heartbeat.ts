@@ -21,6 +21,7 @@
 // and `coreCount`, it doubles the size of the line, and every reader who sees
 // it is one step from reasoning in the unit this file exists to get away from.
 // `spike/findings/719-cpu-metrics.md` is the record.
+import { errorText } from '../../shared/error-text';
 import type { Logger } from '../log/logger';
 
 /**
@@ -385,7 +386,7 @@ export class CpuHeartbeat {
       return this.emit();
     } catch (err) {
       try {
-        this.deps.log.warn('cpu heartbeat tick failed', { error: String(err) });
+        this.deps.log.warn('cpu heartbeat tick failed', { error: errorText(err) });
       } catch {
         // the logger itself is gone; there is nowhere left to say so
       }
@@ -499,7 +500,7 @@ export class CpuHeartbeat {
       try {
         Object.assign(fields, this.deps.counters());
       } catch (err) {
-        fields.countersError = String(err);
+        fields.countersError = errorText(err);
       }
     }
 

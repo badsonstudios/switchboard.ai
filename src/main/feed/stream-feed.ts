@@ -48,6 +48,7 @@
 // shared derivation's handling of it is the transcript path's, not ours. #156 is
 // fixed on both, by different routes to the same block.
 // ---------------------------------------------------------------------------
+import { errorText } from '../../shared/error-text';
 import { Logger } from '../log/logger';
 import { toolCategory } from '../../shared/tool-taxonomy';
 import {
@@ -521,7 +522,7 @@ export class StreamFeed {
       try {
         l(sessionId, 'clear');
       } catch (err) {
-        this.log?.error('feed reset listener threw', { sessionId, error: String(err) });
+        this.log?.error('feed reset listener threw', { sessionId, error: errorText(err) });
       }
     }
   }
@@ -825,7 +826,7 @@ export class StreamFeed {
         l(sessionId, block);
       } catch (err) {
         // a broken subscriber must never take the feed down (P6)
-        this.log?.error('block listener threw', { sessionId, error: String(err) });
+        this.log?.error('block listener threw', { sessionId, error: errorText(err) });
       }
     }
   }

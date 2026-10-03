@@ -38,6 +38,7 @@
 // radiogroup, Cancel/commit semantics — is `ContextDropDialog`'s, which is
 // `ModelPickerDialog`'s, which is `SettingsDialog`'s. Two modals that behave
 // differently is a bug report waiting to happen.
+import { errorText } from '../../../shared/error-text';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import type { DispatchOptions, DispatchPrepared } from '../../../shared/dispatch-wire';
@@ -193,7 +194,7 @@ export function DispatchDialog(props: DispatchDialogProps): React.JSX.Element {
         // away mid-call. Shown rather than swallowed: a Dispatch button that does
         // nothing at all is the one outcome with no explanation in it.
         setBusy(false);
-        setFailed({ ok: false, reason: String(err) });
+        setFailed({ ok: false, reason: errorText(err) });
       });
   };
 

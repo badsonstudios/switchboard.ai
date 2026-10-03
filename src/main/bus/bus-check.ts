@@ -39,6 +39,7 @@
 // came out of the derivation, and `git diff` really runs.
 //
 // Run with: npm run check:bus   (after npm run build)
+import { errorText } from '../../shared/error-text';
 import { ChildProcess, execFileSync, spawn } from 'child_process';
 import fs from 'fs';
 import os from 'os';
@@ -819,7 +820,7 @@ function discard(dir: string): void {
   try {
     fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
   } catch (err) {
-    console.log(`[bus-check]      could not remove ${dir} (${String(err)}) — the temp sweeper will`);
+    console.log(`[bus-check]      could not remove ${dir} (${errorText(err)}) — the temp sweeper will`);
   }
 }
 

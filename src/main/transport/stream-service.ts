@@ -10,6 +10,7 @@
 //
 // Wired into the app since P2-E18-08a (`main/index.ts` constructs it beside
 // PtyService); it is also driven directly by unit tests and `fake-stream-check`.
+import { errorText } from '../../shared/error-text';
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import { buildEnv } from './env';
 import { killTree } from './kill-tree';
@@ -164,7 +165,7 @@ export class StreamSession {
     // lesson PtyService records for PTY writes). An unhandled 'error' on a
     // stream is a process-level crash, so it is absorbed here.
     this.proc.stdin.on('error', (err) => {
-      this.diag('stdin-write-failed', String(err));
+      this.diag('stdin-write-failed', errorText(err));
     });
 
     const settle = (code: number): void => {
@@ -330,7 +331,7 @@ export class StreamSession {
     try {
       this.proc.stdin.write(encodeFrame(msg));
     } catch (err) {
-      this.diag('stdin-write-failed', String(err));
+      this.diag('stdin-write-failed', errorText(err));
     }
   }
 

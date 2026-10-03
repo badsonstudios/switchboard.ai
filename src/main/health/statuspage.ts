@@ -24,6 +24,7 @@
 // every poll reads an HTML redirect body and the dot sits on "unknown" forever.
 // The base stays the DESIGN one: it is the documented address, and following
 // its own redirect is how a rename is supposed to be absorbed.
+import { errorText } from '../../shared/error-text';
 import {
   ServiceHealthReason,
   ServiceHealthState,
@@ -196,7 +197,7 @@ export async function probeStatuspage(deps: ProbeDeps = {}): Promise<StatuspageP
       try {
         res = await doFetch(`${base}${path}`, { headers, signal: abort.signal, redirect: 'follow' });
       } catch (err) {
-        deps.log?.('provider status: could not reach the status page', { error: String(err), path });
+        deps.log?.('provider status: could not reach the status page', { error: errorText(err), path });
         return null;
       }
       if (!res.ok) {
@@ -208,7 +209,7 @@ export async function probeStatuspage(deps: ProbeDeps = {}): Promise<StatuspageP
       } catch (err) {
         // An aborted body read lands here too, which is right: a page that
         // stopped mid-answer told us nothing usable.
-        deps.log?.('provider status: unreadable answer', { error: String(err), path });
+        deps.log?.('provider status: unreadable answer', { error: errorText(err), path });
         return null;
       }
     };

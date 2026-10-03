@@ -4,6 +4,7 @@
 // Pure, and deliberately not inline in App: the flattening has two rules that
 // only matter once there is more than one contributor, and both were invisible
 // while `App.tsx` simply called `buildCommands(deps)`.
+import { errorText } from '../../../shared/error-text';
 import { Command } from '../lib/commands';
 import { CommandDeps } from '../lib/command-set';
 import { RendererRegistry } from '../bootstrap';
@@ -46,7 +47,7 @@ export function buildContributedCommands(
     try {
       built = set.build(deps);
     } catch (err) {
-      onProblem({ setId, kind: 'threw', detail: String(err) });
+      onProblem({ setId, kind: 'threw', detail: errorText(err) });
       continue; // one broken contributor must not cost the user every command
     }
     for (const command of built) {

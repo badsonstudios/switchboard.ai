@@ -16,6 +16,7 @@
 // says so on screen rather than only in the log (#207),
 // debounced save-soon for churny callers, and a version dispatch on the way in
 // (§5.26) — a file from a FUTURE version is shown but never written back.
+import { errorText } from '../../shared/error-text';
 import fs from 'fs';
 import path from 'path';
 import { Rectangle } from 'electron';
@@ -918,7 +919,7 @@ export class WorkspaceStore {
             // the stack, not just the message: this catch is also the net for a
             // sanitizer that chokes on a hand-edited file, and there the frame
             // IS the diagnosis (a JSON syntax error reads the same either way)
-            error: err instanceof Error && err.stack ? err.stack : String(err),
+            error: err instanceof Error && err.stack ? err.stack : errorText(err),
             ...aside,
           },
         });
@@ -1033,7 +1034,7 @@ export class WorkspaceStore {
         return { dest };
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code === 'EEXIST') continue;
-        return { error: String(err) }; // best-effort, but no longer secret
+        return { error: errorText(err) }; // best-effort, but no longer secret
       }
     }
     return { error: `no unused set-aside name beside ${base}` };
@@ -1189,7 +1190,7 @@ export class WorkspaceStore {
         .map((e) => e.name)
         .sort(); // fixed-width ISO stamps: name order IS chronological order
     } catch (readErr) {
-      return { pruneListError: String(readErr) }; // distinct from a failed DELETE
+      return { pruneListError: errorText(readErr) }; // distinct from a failed DELETE
     }
     // Two of the five slots are already committed — `justWritten` and the spared
     // oldest — so the newest survivors number MAX_SET_ASIDES - 2, and starting
@@ -1204,7 +1205,7 @@ export class WorkspaceStore {
       } catch (rmErr) {
         // a file someone else already deleted is not a failure to delete it
         if ((rmErr as NodeJS.ErrnoException).code === 'ENOENT') continue;
-        errors.push(String(rmErr));
+        errors.push(errorText(rmErr));
       }
     }
     return {
@@ -1744,7 +1745,7 @@ export class WorkspaceStore {
    */
   private saveFailed(err: unknown): void {
     this.saveFailures++;
-    const error = String(err);
+    const error = errorText(err);
     // #165's line, unchanged, and still said the first time. Not repeated per
     // retry: a disk that has stopped taking writes would otherwise fill the log
     // with one identical line every ten seconds for the life of the process.

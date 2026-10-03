@@ -23,6 +23,7 @@
 // still one session's latest state; the held requests come from the store's
 // whole-fleet ledger (see `lib/events-v2`), not from the event. Above the rows,
 // the three filters §5.12 names: All · Needed · By session.
+import { errorText } from '../../../shared/error-text';
 import type { HistoryRepairNotice } from '../../../shared/history-repair';
 import type { Digest } from '../lib/digest';
 import type { PermissionRequestDto } from '../../../shared/ipc/permissions';
@@ -1333,9 +1334,9 @@ function DispatchActions(props: {
         setState({ at: 'idle', reason: t(`events.dispatch.refused.${r.reasonKey}`), detail: r.detail });
       })
       // The channel itself failing is the one case main cannot phrase for us —
-      // and `String(err)` is a stack, not a sentence, so the user gets ours.
+      // and `errorText(err)` is a stack, not a sentence, so the user gets ours.
       .catch((err: unknown) => {
-        setState({ at: 'idle', reason: t('events.dispatch.refused.channel'), detail: String(err) });
+        setState({ at: 'idle', reason: t('events.dispatch.refused.channel'), detail: errorText(err) });
       });
   };
   return (

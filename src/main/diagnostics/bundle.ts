@@ -20,6 +20,7 @@
 // a bundle that is missing the log is much better than no bundle, and a bundle
 // silently missing it is much worse than either, because the reader assumes
 // the evidence was collected.
+import { errorText } from '../../shared/error-text';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
@@ -117,7 +118,7 @@ function filesIn(dir: string, skipped: SkippedEntry[]): string[] {
       .map((e) => e.name);
   } catch (err) {
     // A missing logs dir is an ordinary first-boot state, not an error.
-    skipped.push({ name: path.basename(dir), reason: `could not list: ${String(err)}` });
+    skipped.push({ name: path.basename(dir), reason: `could not list: ${errorText(err)}` });
     return [];
   }
 }
@@ -136,7 +137,7 @@ function readOrSkip(full: string, label: string, skipped: SkippedEntry[]): Buffe
   try {
     return fs.readFileSync(full);
   } catch (err) {
-    skipped.push({ name: label, reason: String(err) });
+    skipped.push({ name: label, reason: errorText(err) });
     return null;
   }
 }
@@ -221,7 +222,7 @@ export async function buildBundle(deps: BundleDeps): Promise<BundleResult> {
       ok: false,
       path: null,
       bytes: 0,
-      skipped: [...skipped, { name: 'the bundle itself', reason: String(err) }],
+      skipped: [...skipped, { name: 'the bundle itself', reason: errorText(err) }],
       problem: 'bundle-failed',
     };
   }

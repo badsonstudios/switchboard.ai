@@ -1,6 +1,7 @@
 // Session grid (P1-E3-01): Dockview-powered card grid. Cards are placeholders
 // until E3-02 wires terminals in. Layout serializes to the workspace store on
 // every change and restores on boot.
+import { errorText } from '../../../shared/error-text';
 import React, { useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -3422,7 +3423,7 @@ async function newSessionIn(
     await addSessionCardTo(api, folder, { into: stillOpen });
   } catch (e) {
     // our breakage must be visible, not mute (fail-open)
-    onError(String(e));
+    onError(errorText(e));
   }
 }
 
@@ -6639,7 +6640,7 @@ export function SessionGrid(props: {
             // nothing in it" — the two look identical from outside, and a restore
             // that throws part-way loses every popout with it. Say so; the
             // renderer console is forwarded into switchboard.log (#165).
-            console.error(`[layout] restore failed: ${String(err)}`);
+            console.error(`[layout] restore failed: ${errorText(err)}`);
             // ...and every remembered slot went with it (#657) — see below.
             sessionStore.forgetSlots();
           }
@@ -6679,7 +6680,7 @@ export function SessionGrid(props: {
         report();
       } catch (err) {
         // the renderer console is forwarded into switchboard.log (#165)
-        console.error(`[grid] bring-up failed: ${String(err)}`);
+        console.error(`[grid] bring-up failed: ${errorText(err)}`);
       } finally {
         // The grid is up and the restore is finished: layout sweeps may run
         // (E9-07). One 'react' pass now applies a restored mode

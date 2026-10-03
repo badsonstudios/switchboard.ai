@@ -57,6 +57,7 @@
 // may be aimed at a real per-user state directory — the run-10 incident behind
 // `withTempDirAt`'s comment (a sweeper pointed at a live `%TEMP%`, ~81,600
 // directories gone) is what that rule is made of.
+import { errorText } from '../../shared/error-text';
 import fs from 'fs';
 import path from 'path';
 import type { Logger } from '../log/logger';
@@ -158,7 +159,7 @@ export function removeSessionStateDir(stateDir: string, sessionId: string, log: 
     // One line and nothing more. A directory that will not go is disk
     // housekeeping — the startup sweep gets it next time — and must never be
     // why a teardown step, a card close or an exit notification fails.
-    log.warn('could not remove session state dir', { sessionId, error: String(err) });
+    log.warn('could not remove session state dir', { sessionId, error: errorText(err) });
     return false;
   }
 }
@@ -234,7 +235,7 @@ export function sweepOrphanSessionStateDirs(
     // Expected on a first run: nothing has made `stateDir` yet. ENOENT is not
     // worth a line; anything else (permissions, EMFILE) is worth exactly one.
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-      log.warn('could not scan state dir for orphaned session dirs', { error: String(err) });
+      log.warn('could not scan state dir for orphaned session dirs', { error: errorText(err) });
     }
     return result;
   }

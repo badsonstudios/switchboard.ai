@@ -11,6 +11,7 @@
 // quiet `unknown` and a debug line. Nothing in this file can refuse, delay or
 // change anything a session does; the whole feature is a dot, a tooltip, a
 // notice and a strip.
+import { errorText } from '../../shared/error-text';
 import {
   ServiceHealthPrefs,
   ServiceHealthStatus,
@@ -254,7 +255,7 @@ export class ServiceHealthService {
     } catch (err) {
       // `probeStatuspage` does not throw; a stubbed one might, and an unhandled
       // rejection in main is an error modal — the opposite of fail-open.
-      this.deps.log.warn('provider status poll threw', { error: String(err) });
+      this.deps.log.warn('provider status poll threw', { error: errorText(err) });
       probe = {
         state: 'unknown',
         reason: 'network',
@@ -390,7 +391,7 @@ export class ServiceHealthService {
     } catch (err) {
       // no window, a destroyed one, a crashed renderer — none of them is this
       // feature's problem to solve
-      this.deps.log.debug?.('provider status push failed', { error: String(err) });
+      this.deps.log.debug?.('provider status push failed', { error: errorText(err) });
     }
   }
 }

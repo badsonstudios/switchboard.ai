@@ -12,6 +12,7 @@
 // in the app. That matters more here than for a mutation: a refused read is
 // either a link pointing somewhere it should not, or a scope that is wrong —
 // and both are things you only find out about if they are written down.
+import { errorText } from '../../shared/error-text';
 import path from 'path';
 import { BrowserWindow, dialog, shell, IpcMainInvokeEvent } from 'electron';
 import { IpcBroker } from '../ipc/broker';
@@ -226,7 +227,7 @@ export function registerFsIpc(deps: FsIpcDeps): FsIpcHandle {
     // "nothing happened". Same guard as `update:openExternal`.
     void sh
       .openExternal(url as string)
-      .catch((err: unknown) => deps.log.warn('fs:openExternal failed', { error: String(err) }));
+      .catch((err: unknown) => deps.log.warn('fs:openExternal failed', { error: errorText(err) }));
     return true;
   });
 

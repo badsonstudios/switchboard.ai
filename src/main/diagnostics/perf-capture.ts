@@ -37,6 +37,7 @@
  * asserts it by walking every string in a real line rather than by trusting
  * this paragraph.
  */
+import { errorText } from '../../shared/error-text';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -277,7 +278,7 @@ export class PerfCapture {
       this.bytes += size;
     } catch (err) {
       this.deps.log.warn('could not write the performance capture', {
-        error: err instanceof Error ? err.message : String(err),
+        error: err instanceof Error ? err.message : errorText(err),
       });
     }
   }
@@ -311,7 +312,7 @@ export class PerfCapture {
       // this instrument exists to record.
       this.rotationBroken = true;
       this.deps.log.warn('could not rotate the performance capture — it will grow past its cap', {
-        error: err instanceof Error ? err.message : String(err),
+        error: err instanceof Error ? err.message : errorText(err),
       });
     }
   }

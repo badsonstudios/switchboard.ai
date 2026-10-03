@@ -21,6 +21,7 @@
 // garbage: the session starts anyway with the empty Session view it has today.
 // A resumed card showing no history is a disappointment; a resumed card that
 // will not start is a bug.
+import { errorText } from '../../shared/error-text';
 import fs from 'fs';
 import { Logger } from '../log/logger';
 import { conversationFile } from '../transcripts/paths';
@@ -362,7 +363,7 @@ export function replayResumedHistory(
     // P6: our breakage never blocks a session. The card starts either way.
     log.warn('could not replay the resumed conversation', {
       sessionId: args.sessionId,
-      error: String(err),
+      error: errorText(err),
     });
     return 0;
   }

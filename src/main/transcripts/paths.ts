@@ -7,6 +7,7 @@
 // this file exist" inverts the dependency the seam exists to establish (the
 // host asks the adapter, not the other way round). `watcher.ts` re-exports both
 // so existing consumers are unaffected.
+import { errorText } from '../../shared/error-text';
 import fs from 'fs';
 import path from 'path';
 
@@ -97,7 +98,7 @@ export function locateConversation(
     try {
       if (fs.statSync(full).isFile()) return { status: 'found', file: full };
     } catch (err) {
-      if (!isMissing(err)) couldNotLook ||= `${full}: ${String(err)}`;
+      if (!isMissing(err)) couldNotLook ||= `${full}: ${errorText(err)}`;
     }
   }
   return couldNotLook ? { status: 'unknown', reason: couldNotLook } : { status: 'absent' };
@@ -165,7 +166,7 @@ export function listConversations(projectsRoot: string, folder: string): Convers
     try {
       names = fs.readdirSync(dir);
     } catch (err) {
-      return { status: 'unknown', reason: `${dir}: ${String(err)}` };
+      return { status: 'unknown', reason: `${dir}: ${errorText(err)}` };
     }
     // checked BEFORE the stat loop — the point is not to pay for it
     if (names.length > MAX_LISTED_CONVERSATIONS) {
@@ -193,7 +194,7 @@ export function listConversations(projectsRoot: string, folder: string): Convers
         // missing it is not a listing whose "newest unclaimed" means anything.
         // Same rule as the directory: uncertainty is reported, never silently
         // dropped.
-        if (!isMissing(err)) return { status: 'unknown', reason: `${file}: ${String(err)}` };
+        if (!isMissing(err)) return { status: 'unknown', reason: `${file}: ${errorText(err)}` };
       }
     }
   }
@@ -218,7 +219,7 @@ function conversationDirs(
     // launch, a profile still mounting), and treating it as absence would
     // condemn every card in the workspace at once on the strength of one
     // failed readdir.
-    return { status: 'unknown', reason: `${projectsRoot}: ${String(err)}` };
+    return { status: 'unknown', reason: `${projectsRoot}: ${errorText(err)}` };
   }
   const dirs: string[] = [];
   for (const d of entries) {

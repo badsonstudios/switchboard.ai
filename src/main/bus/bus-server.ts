@@ -30,6 +30,7 @@
 // is at best an unmeasured variant of that. Staying up and answering
 // `initialize` costs nothing and turns the misconfiguration into a tool error
 // the agent can read, instead of a stall nobody can see.
+import { errorText } from '../../shared/error-text';
 import { BUS_SERVER_NAME } from './bus-paths';
 import { apply, makeCallTool, TOOLS } from './bus-tools';
 import { LineReader, dispatch, parseLine } from './protocol';
@@ -70,7 +71,7 @@ const options = {
 process.stdout.on('error', () => process.exit(0));
 process.stdin.on('error', () => process.exit(0));
 process.on('uncaughtException', (err) => {
-  log('uncaught exception — exiting:', String(err));
+  log('uncaught exception — exiting:', errorText(err));
   process.exit(0);
 });
 
@@ -78,7 +79,7 @@ function send(msg: unknown): void {
   try {
     process.stdout.write(JSON.stringify(msg) + '\n');
   } catch (err) {
-    log('could not write to stdout:', String(err));
+    log('could not write to stdout:', errorText(err));
   }
 }
 
@@ -91,7 +92,7 @@ process.stdin.on('data', (chunk: string) => {
       log('unparseable line, ignored');
       continue;
     }
-    apply(dispatch(msg, options), send, (err) => log('tool handler rejected — this is a bug:', String(err)));
+    apply(dispatch(msg, options), send, (err) => log('tool handler rejected — this is a bug:', errorText(err)));
   }
   if (reader.hasOverflowed()) {
     // Past this point we cannot tell where a message ends, so continuing would

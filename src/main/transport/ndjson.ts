@@ -8,6 +8,8 @@
 // Split out from StreamService because framing is the part with the interesting
 // failure modes and it deserves to be testable without spawning anything.
 
+import { errorText } from '../../shared/error-text';
+
 /** A decoded line, or the reason it could not be decoded. */
 export type FrameResult<T> = { ok: true; value: T } | { ok: false; raw: string; error: string };
 
@@ -62,7 +64,7 @@ export class NdjsonDecoder<T = unknown> {
         // A torn or garbled line must NOT take the pump down: one bad message
         // costs one message, and the session keeps running (P6 fail-open).
         this.parseFailures++;
-        out.push({ ok: false, raw: line, error: String(e) });
+        out.push({ ok: false, raw: line, error: errorText(e) });
       }
     }
 

@@ -35,6 +35,7 @@
 // an ICU parse error inside one message costs that message, not the toast, and
 // certainly not the main process — an exception on an OS notification callback
 // is a crash dialog (P6).
+import { errorText } from '../shared/error-text';
 import i18next, { type i18n as I18nInstance } from 'i18next';
 import {
   configureI18nBase,
@@ -106,7 +107,7 @@ export async function createMainI18n(deps: MainI18nDeps): Promise<MainI18n> {
     // — which looks exactly like a missing translation rather than a broken
     // process, and is the kind of thing that survives three releases.
     deps.log?.error('main i18n failed to initialise; notifications will be raw English', {
-      error: String(err),
+      error: errorText(err),
     });
   }
 
@@ -136,7 +137,7 @@ export async function createMainI18n(deps: MainI18nDeps): Promise<MainI18n> {
       // or the last-ditch fallback is safer than the real one.
       return typeof out === 'string' ? out : englishString(key);
     } catch (err) {
-      warn('a main-process string failed to translate', { key, error: String(err) });
+      warn('a main-process string failed to translate', { key, error: errorText(err) });
       // The English source beats an empty notification and beats a throw. ICU
       // arguments come through unexpanded here, which is ugly and is meant to
       // be: it is a broken-catalog symptom, not a state to be comfortable in.

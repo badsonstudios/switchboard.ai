@@ -19,6 +19,7 @@
 // FAIL-OPEN, like everything else in this path. Every exit is a record; the
 // user's fallback is always "open the release page in a browser", which is
 // exactly where they were before this item existed.
+import { errorText } from '../../shared/error-text';
 import fs from 'fs';
 import path from 'path';
 import {
@@ -126,7 +127,7 @@ export class UpdateInstaller {
         // future edit which forgets that becomes a log line instead of an
         // unhandled rejection in the main process.
         this.deps.log.warn('the update install threw — treating as a failed install', {
-          error: String(err),
+          error: errorText(err),
         });
         return this.emit(result, 'failed', { reason: 'network' });
       })
@@ -179,7 +180,7 @@ export class UpdateInstaller {
       } catch (err) {
         this.deps.log.debug('a staged installer could not be swept', {
           file: name,
-          error: String(err),
+          error: errorText(err),
         });
       }
     }
@@ -213,7 +214,7 @@ export class UpdateInstaller {
     try {
       await fs.promises.mkdir(this.deps.updateDir, { recursive: true });
     } catch (err) {
-      this.deps.log.warn('could not create the update staging directory', { error: String(err) });
+      this.deps.log.warn('could not create the update staging directory', { error: errorText(err) });
       return this.emit(result, 'failed', { reason: 'disk' });
     }
 
@@ -293,7 +294,7 @@ export class UpdateInstaller {
     } catch (err) {
       this.deps.setPrefs({ pendingUpdateVersion: '' });
       await unlinkQuietly(dest);
-      this.deps.log.warn('handing over to the installer threw', { error: String(err) });
+      this.deps.log.warn('handing over to the installer threw', { error: errorText(err) });
       return this.emit(result, 'failed', { reason: 'launch' });
     }
     if (launched === 'quit') return this.last as UpdateInstallStatus;
@@ -336,7 +337,7 @@ export class UpdateInstaller {
     } catch (err) {
       // The window died mid-download. Nothing here is worth taking the install
       // path down for.
-      this.deps.log.debug('could not push an install status', { error: String(err) });
+      this.deps.log.debug('could not push an install status', { error: errorText(err) });
     }
     return status;
   }

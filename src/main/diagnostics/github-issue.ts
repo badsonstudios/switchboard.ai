@@ -24,6 +24,7 @@
 // key, so there is nothing to deduplicate against. The neighbouring case — a
 // 201 whose body we cannot parse — IS handled, and is reported as created
 // precisely so it does not invite the same duplicate.
+import { errorText } from '../../shared/error-text';
 import { resolveUpdateToken, type TokenSource } from '../update/token';
 import { REPORT_REPO, type ReportProblem } from '../../shared/diagnostics';
 import type { LogFields } from '../log/logger';
@@ -122,7 +123,7 @@ export async function createIssue(deps: CreateIssueDeps): Promise<CreateIssueRes
       });
     } catch (err) {
       // Offline, DNS, TLS, or our own abort. One outcome for the user.
-      deps.log?.('issue could not reach github', { error: String(err) });
+      deps.log?.('issue could not reach github', { error: errorText(err) });
       return fail('network');
     }
 
@@ -140,7 +141,7 @@ export async function createIssue(deps: CreateIssueDeps): Promise<CreateIssueRes
       // not reported as a failure — it is reported as a success we cannot link
       // to, which is the truth.
       deps.log?.('github accepted the issue but its answer could not be read', {
-        error: String(err),
+        error: errorText(err),
       });
       return { ok: true, url: null, number: null };
     }

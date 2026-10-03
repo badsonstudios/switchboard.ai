@@ -30,6 +30,7 @@
 // BOUNDED. One level per call, never a walk, and the READ stops at the cap —
 // see `MAX_DIR_ENTRIES`. `.git` is not listed, so there is no route into it from
 // the tree.
+import { errorText } from '../../shared/error-text';
 import fs from 'fs';
 import path from 'path';
 import type { Logger } from '../log/logger';
@@ -255,7 +256,7 @@ export async function listDirectory(req: unknown, deps: ListDirDeps): Promise<Di
     // mid-walk, a permission that changed) is `unreadable`, not a throw.
     deps.log.warn('fs:listDir failed part-way through a directory', {
       path: real,
-      error: String(err),
+      error: errorText(err),
     });
     return { ok: false, reason: 'unreadable' };
   } finally {

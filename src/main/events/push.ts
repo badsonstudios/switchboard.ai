@@ -23,6 +23,7 @@
 // it can reach a log line or the setup dialog. Pushover echoes the token it
 // rejected in its own error body — which is reasonable of them and unacceptable
 // of us.
+import { errorText } from '../../shared/error-text';
 import {
   NTFY_DEFAULT_SERVER,
   PushSendResult,
@@ -202,7 +203,7 @@ async function post(
     }
     return { ok: res.ok, status: res.status, body };
   } catch (err) {
-    return { ok: false, error: String(err) };
+    return { ok: false, error: errorText(err) };
   } finally {
     clearTimeout(timer);
   }

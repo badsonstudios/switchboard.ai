@@ -50,6 +50,7 @@
 // **Everything here is fail-open (P4/P6).** A harvest that throws must not cost
 // the reviewer its `done`, and an inject that refuses says why. Nothing in this
 // module can stop a session.
+import { errorText } from '../../shared/error-text';
 import type { Logger } from '../log/logger';
 import type { FeedBlock } from '../feed/blocks';
 import {
@@ -302,7 +303,7 @@ export class DispatchResults {
       // failure — the review itself is still on the reviewer's card.
       this.deps.log.error('harvesting a dispatch result threw', {
         sessionId: reviewer,
-        error: String(err),
+        error: errorText(err),
       });
     }
   }
@@ -359,7 +360,7 @@ export class DispatchResults {
     } catch (err) {
       this.deps.log.warn('could not read a dispatched session’s feed', {
         sessionId: reviewer,
-        error: String(err),
+        error: errorText(err),
       });
       return { text: '', truncated: false };
     }
@@ -445,7 +446,7 @@ export class DispatchResults {
       // answers `gone`, which is the state this call exists to improve on.
       this.deps.log.warn('could not mark a dispatch result delivered', {
         sessionId: reviewer,
-        error: String(err),
+        error: errorText(err),
       });
     }
     this.deps.log.info('dispatch result injected', {
