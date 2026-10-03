@@ -72,9 +72,11 @@
 >   overrode dockview's "the active group" default when that group was not in
 >   the grid at all; a document area IS in the grid, so with a viewer or a diff
 >   panel focused the session's Changes tab opened as a tab beside the
->   documents. It now goes through `sessionCardHome` — the place a card of that
->   session would land, by #462's predicate — whenever the active group is not
->   a session's. The e2e reads which tab strip the tab is in and MEASURES it
+>   documents. When the active group is not a session's, it now goes to the
+>   SESSION'S OWN GROUP if that is on screen, and otherwise through
+>   `sessionCardHome` (#462's predicate). **The own-group step came from
+>   review:** `sessionCardHome` alone picked the FIRST session group, which in a
+>   split layout is not necessarily this session's. The e2e reads which tab strip the tab is in and MEASURES it
 >   (the issue's own done-when), and failed on the old bundle with *"the
 >   Changes tab joined the document area"*.
 > * **#508 — Copy in a popped-out document.** Confirmed rather than "likely":

@@ -2911,11 +2911,14 @@ const isDocumentArea = (g: DockviewGroupPanel): boolean =>
  * sessions rather than over them.
  *
  * `openDiff` does not go through this, and SHOULD NOT — a Changes tab is a
- * session's own surface. It routes through `sessionCardHome` instead (#434's
- * `gridRefGroup`, narrowed by #504 to refuse the document area): the same
- * E8-04 rule with the opposite husk policy. A diff may revive a session's
- * dock-back husk (it IS that session's surface); a viewer never does (the husk
- * is still, unmistakably, a session's group).
+ * session's own surface. It goes to the session's own group when that is on
+ * screen, and otherwise through `sessionCardHome` (#434's `gridRefGroup`,
+ * narrowed by #504 to refuse the document area): the same E8-04 rule with the
+ * opposite husk policy. A diff may revive a session's dock-back husk (it IS
+ * that session's surface) — except while a viewer or a diff panel is out in
+ * its own window, when `sessionCardHome` refuses every empty shell for a card
+ * and a Changes tab alike. A viewer never revives one (the husk is still,
+ * unmistakably, a session's group).
  */
 function documentHomeGroup(api: DockviewApi): DockviewGroupPanel {
   const eligible = api.groups.filter(
@@ -3005,7 +3008,7 @@ function activeSessionGroup(api: DockviewApi): DockviewGroupPanel | null {
  */
 function gridRefGroup(
   api: DockviewApi,
-  eligible: (g: DockviewGroupPanel) => boolean = () => true
+  eligible: (g: DockviewGroupPanel) => boolean
 ): DockviewApi['groups'][number] {
   const candidates = api.groups.filter((g) => g.api.location.type === 'grid' && eligible(g));
   const visible = candidates.find((g) => g.api.isVisible);
@@ -6260,21 +6263,30 @@ export function SessionGrid(props: {
         // default put a session's Changes tab AMONG THE DOCUMENTS whenever a
         // viewer or a diff panel had focus — the mirror rule #462 gave session
         // cards ("a session must not displace what you are reading"), broken
-        // by the one session surface that did not go through it. When the
-        // active group will not do, the answer is `sessionCardHome`: the same
-        // place a card of this session would land, by the same predicate.
+        // by the one session surface that did not go through it.
+        //
+        // WHEN THE ACTIVE GROUP WILL NOT DO, THE SESSION'S OWN GROUP IS ASKED
+        // FIRST (found in review). `sessionCardHome` answers "the first visible
+        // session group", which with two session groups side by side is not
+        // necessarily THIS session's — and for a group the user built by
+        // dragging a document in beside the card, it refuses the very group the
+        // card is sitting in and makes a new one. The card's own group, when it
+        // is on screen in the grid, is the one place that is always right.
+        // `sessionCardHome` is what is left: the card is popped out or hidden,
+        // so the tab goes where a card of that session would.
         const active = api.activeGroup;
-        const inSessionGrid =
-          !!active &&
-          active.api.location.type === 'grid' &&
-          active.api.isVisible &&
-          !isDocumentArea(active);
+        const onScreen = (g: DockviewGroupPanel | undefined): g is DockviewGroupPanel =>
+          !!g && g.api.location.type === 'grid' && g.api.isVisible;
+        const inSessionGrid = onScreen(active) && !isDocumentArea(active);
+        const own = api.getPanel(`session-${cardId}`)?.group;
         api.addPanel({
           id: `diff-${cardId}`,
           component: 'diffPane',
           title: t('diff.tabTitle', { title }),
           params: { folder, colorScheme: props.colorScheme },
-          position: inSessionGrid ? undefined : { referenceGroup: sessionCardHome(api) },
+          position: inSessionGrid
+            ? undefined
+            : { referenceGroup: onScreen(own) ? own : sessionCardHome(api) },
         });
       },
       openDocument: (filePath, sessionId) =>

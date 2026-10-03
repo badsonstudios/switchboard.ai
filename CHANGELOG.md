@@ -115,8 +115,7 @@ on the floor, and say so in your PR.
 - **"Open changes" no longer lands among your documents.** If a document or a
   diff panel was the thing you had last clicked, opening a session's Changes
   tab from the Sessions list put it in with the documents instead of with the
-  session. It now opens beside the session it belongs to, wherever your focus
-  was.
+  session. It now opens beside the session it belongs to.
 
 - **Copy works on a code block in a popped-out document.** In a document you
   had moved to its own window, the **Copy** button on a code block said

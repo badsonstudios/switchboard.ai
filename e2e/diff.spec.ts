@@ -598,6 +598,13 @@ test.describe('Changes tab (Monaco diff pane)', () => {
     expect(groups.found, 'both tabs are on screen').toBe(true);
     expect(groups.sameGroup, 'the Changes tab joined the document area').toBe(false);
     expect(groups.diffGroupTabs.some((text) => text.includes(FILE))).toBe(false);
+    // WITH ITS SESSION, which is the other half of the claim: "not among the
+    // documents" would also be satisfied by a brand-new group holding nothing
+    // else, and that is not where a session's Changes tab belongs.
+    expect(
+      groups.diffGroupTabs.some((text) => text.includes(title) && !text.includes('· diff')),
+      `the Changes tab is beside its session's own tab — saw ${JSON.stringify(groups.diffGroupTabs)}`
+    ).toBe(true);
     // GEOMETRY, not `toBeVisible()`: a panel in a hidden dock-back husk is in
     // the DOM and "visible" at one pixel wide (#434 measured 1.33px).
     expect(groups.width).toBeGreaterThan(200);

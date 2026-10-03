@@ -400,6 +400,12 @@ describe('links inside a rendered document', () => {
 });
 
 describe('the Copy button on a code block (#508)', () => {
+  // jsdom ships no clipboard, and the rest of this file relies on that being
+  // true: take ours away again rather than leave it for whoever runs next.
+  afterEach(() => {
+    delete (window.navigator as unknown as { clipboard?: unknown }).clipboard;
+  });
+
   const FENCED = ['# Build', '', '```bash', 'npm run build', '```', ''].join(String.fromCharCode(10));
 
   /** a clipboard on one window's navigator, and what was written to it */
