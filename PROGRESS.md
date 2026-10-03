@@ -122,8 +122,8 @@
 >   reproduces the measured exchange. No app behaviour changed.
 > * **The shield chip's own tooltip carried the wrong sentence too** (*"stands
 >   whatever you click here"*) and is corrected.
-> * ⚠️ **THREE THINGS FOUND AND FILED, NOT FIXED — all are interface or product
->   questions:** **Allow all (this session) is offered on the plan bar**, and
+> * ⚠️ **THREE THINGS FOUND AND FILED (#1071, #1072), NOT FIXED — all are
+>   interface or product questions:** **Allow all (this session) is offered on the plan bar**, and
 >   pressing it approves the plan AND every write after it for that run (the
 >   manual now says so); the card's mode chip goes on saying `plan` after the
 >   CLI has left plan mode (nothing reads the CLI's `status` message); and
