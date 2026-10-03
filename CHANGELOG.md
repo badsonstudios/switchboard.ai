@@ -121,6 +121,14 @@ on the floor, and say so in your PR.
   itself: its message if it has one, its details if it does not. Ordinary
   error messages read exactly as they did.
 
+- **Clear pressed right after a session opens no longer looks like it did
+  nothing.** A session picking up an earlier conversation has to load it
+  first, which on a long conversation or a slow machine can take many seconds.
+  A Clear pressed in that time was always going to run — it waits in line —
+  but the card went back to *idle* while it waited, so it looked ignored and
+  got pressed again. The card now stays on *working* until the Clear has
+  actually happened. The wait itself is unchanged.
+
 ## 0.8.110 — 2026-10-02
 
 ### Added
