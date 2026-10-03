@@ -106,10 +106,38 @@ describe('state machine vs the recorded real cycle (S-06 artifact)', () => {
       changed: false,
       note: 'compacting',
     });
-    // real (re)starts still read idle
-    expect(transition('working', { kind: 'hook', event: 'SessionStart', source: 'startup' }).status).toBe('idle');
-    expect(transition('working', { kind: 'hook', event: 'SessionStart', source: 'resume' }).status).toBe('idle');
+    // a `/clear` finishing, and a SessionStart that names no source, still read idle
+    expect(transition('working', { kind: 'hook', event: 'SessionStart', source: 'clear' }).status).toBe('idle');
     expect(transition('working', { kind: 'hook', event: 'SessionStart' }).status).toBe('idle');
+  });
+
+  it('a prompt sent while the CLI is still starting stays "working" when start-up reports in (#1003)', () => {
+    // The reported sequence, read off the diagnostic bundle: a resumed card is
+    // promoted to idle at the spawn, the user presses Clear 5 s later, and the
+    // CLI — still loading the conversation — reports its start-up 1.6 s after
+    // that. The `/clear` is queued, not dropped, so the card must not say
+    // "ready" while it is outstanding.
+    let status = transition('starting', { kind: 'transport-ready' }).status;
+    expect(status).toBe('idle');
+    status = transition(status, { kind: 'prompt-sent' }).status;
+    expect(status).toBe('working');
+    for (const source of ['resume', 'startup']) {
+      expect(transition(status, { kind: 'hook', event: 'SessionStart', source })).toMatchObject({
+        status: 'working',
+        changed: false,
+        note: 'prompt-queued-during-startup',
+      });
+    }
+    // …and the queued `/clear` finishing is what ends it
+    expect(transition(status, { kind: 'hook', event: 'SessionStart', source: 'clear' }).status).toBe('idle');
+    expect(transition(status, { kind: 'stream', event: 'result' }).status).toBe('done');
+  });
+
+  it('start-up with nothing queued still reads idle (Dan 2026-07-22: resumed sessions claimed to be working at boot)', () => {
+    for (const from of ['starting', 'idle'] as const) {
+      expect(transition(from, { kind: 'hook', event: 'SessionStart', source: 'resume' }).status).toBe('idle');
+      expect(transition(from, { kind: 'hook', event: 'SessionStart', source: 'startup' }).status).toBe('idle');
+    }
   });
 
   it('done is turn-terminal: idle notifications and keystrokes never revive it', () => {
