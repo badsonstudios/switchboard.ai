@@ -40,7 +40,9 @@ import {
 } from '../lib/document-kind';
 import { classifyHref } from '../lib/document-link';
 import {
+  chipForFailedImage,
   decorateDocument,
+  rememberImageSize,
   splitFrontMatter,
   DecorationLabels,
   OutlineEntry,
@@ -421,6 +423,16 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
       classifyHref(href, current)
     );
     host.replaceChildren(fragment);
+    // A picture main refused — out of scope, gone, not really a picture —
+    // becomes the same chip a remote image gets. `error` does not bubble, so
+    // this listens in the capture phase, on the host the pictures live in.
+    const onImageError = (e: Event): void => void chipForFailedImage(e.target, labels);
+    host.addEventListener('error', onImageError, true);
+    // …and one that loaded says how big it is, so the NEXT time this picture is
+    // rendered — a live re-render, a toggle back from Source, a move into a
+    // popped-out window — the room is already there and the reader stays put.
+    const onImageLoad = (e: Event): void => void rememberImageSize(e.target);
+    host.addEventListener('load', onImageLoad, true);
     setOutline(found);
     if (scrollRef.current) scrollRef.current.scrollTop = scrollMemo.current.rendered;
     // The marks belonged to the OLD document — `replaceChildren` just deleted
@@ -436,6 +448,10 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
     if (findBarState().openOn === props.panelId && q.term && mainRef.current) {
       applyMatches(mainRef.current, q.term, q);
     }
+    return () => {
+      host.removeEventListener('error', onImageError, true);
+      host.removeEventListener('load', onImageLoad, true);
+    };
   }, [showRendered, renderedHtml, labels, current, props.panelId]);
 
   /**

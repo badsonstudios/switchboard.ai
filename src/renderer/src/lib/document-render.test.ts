@@ -9,8 +9,13 @@
 import { describe, it, expect } from 'vitest';
 import { renderMarkdown } from './markdown';
 import { classifyHref } from './document-link';
+import { DOC_IMAGE_SCHEME, docImagePath } from '../../../shared/doc-image';
 import {
+  chipForFailedImage,
   decorateDocument,
+  decorateImages,
+  forgetImageSizes,
+  rememberImageSize,
   splitFrontMatter,
   slugify,
   fenceLanguage,
@@ -98,7 +103,7 @@ describe('hostile markdown renders INERT (§5.29, the done-when)', () => {
   });
 });
 
-describe('images become chips and issue no request', () => {
+describe('images: a local picture is shown, everything else is a chip', () => {
   it('a remote <img> is REPLACED, not hidden — there is no src left to fetch', () => {
     const host = render('![a cat](https://evil.test/pixel.gif)');
     expect(host.querySelectorAll('img')).toHaveLength(0);
@@ -110,11 +115,149 @@ describe('images become chips and issue no request', () => {
     expect(open?.getAttribute('data-doc-external')).toBe('https://evil.test/pixel.gif');
   });
 
-  it('a LOCAL image gets the chip too, with no browser button', () => {
-    const host = render('![diagram](./diagram.png)');
+  it('a LOCAL picture is shown, through the scoped scheme and nothing else (#1080)', () => {
+    const host = render('![diagram](./img/diagram.png)');
+    expect(host.querySelector('.doc-image-chip')).toBeNull();
+    const img = host.querySelector('img');
+    expect(img?.className).toBe('doc-image');
+    expect(img?.getAttribute('alt')).toBe('diagram');
+    // the path resolved against the DOCUMENT, carried whole in the query
+    const src = img?.getAttribute('src') ?? '';
+    expect(src.startsWith(`${DOC_IMAGE_SCHEME}://`)).toBe(true);
+    expect(docImagePath(src)).toBe('/home/dan/sb/docs/img/diagram.png');
+  });
+
+  it('…and it is a NEW element: nothing the document wrote on its own survives', () => {
+    const host = render(
+      '<img src="shot.png" alt="shot" width="320" height="4000" id="x" class="mine" title="t" usemap="#m">'
+    );
+    const img = host.querySelector('img');
+    expect(img?.getAttributeNames().sort()).toEqual(
+      ['alt', 'class', 'data-doc-image-src', 'data-doc-image-width', 'src', 'width'].sort()
+    );
+    expect(img?.getAttribute('class')).toBe('doc-image');
+    expect(img?.getAttribute('width')).toBe('320');
+  });
+
+  it('a width that is not plain pixels is dropped', () => {
+    for (const width of ['100%', '9999999', '-5', '1e3', 'calc(1px)', '0', '0000', '012']) {
+      const host = render(`<img src="shot.png" width="${width}">`);
+      expect(host.querySelector('img')?.hasAttribute('width')).toBe(false);
+    }
+  });
+
+  it('a local path that is not a picture by name stays a chip, with no button', () => {
+    for (const src of ['./notes.txt', './diagram', '../.ssh/id_rsa', './a.png.exe']) {
+      const host = render(`![x](${src})`);
+      expect(host.querySelectorAll('img')).toHaveLength(0);
+      expect(host.querySelector('.doc-image-open')).toBeNull();
+      expect(host.querySelector('.doc-image-chip')?.getAttribute('title')).toBe(src);
+    }
+  });
+
+  it('no scheme gets an <img> — not data:, not file:, and not our OWN', () => {
+    // The last one is the forgery: a document that spells the scheme itself
+    // must not get a picture out of it. DOMPurify drops the unknown scheme, and
+    // what is left has no path to classify.
+    for (const src of [
+      'data:image/png;base64,iVBORw0KGgo=',
+      'file:///etc/passwd.png',
+      `${DOC_IMAGE_SCHEME}://local/?path=%2Fetc%2Fshadow.png`,
+      'https://evil.test/pixel.png',
+    ]) {
+      const host = render(`<img src="${src}" alt="x">`);
+      expect(host.querySelectorAll('img')).toHaveLength(0);
+      expect(host.querySelector('.doc-image-chip')).not.toBeNull();
+    }
+  });
+
+  it('a document cannot pre-fill the fallback: data-doc-image-src is ours', () => {
+    const host = render(
+      '<img src="a.png" data-doc-image-src="https://evil.test/x" class="doc-image">'
+    );
+    expect(host.querySelector('img')?.getAttribute('data-doc-image-src')).toBe('a.png');
+  });
+
+  it('without a classifier everything is a chip — the direct callers', () => {
+    const host = document.createElement('div');
+    host.innerHTML = '<img src="./diagram.png" alt="d">';
+    decorateImages(host, LABELS);
     expect(host.querySelectorAll('img')).toHaveLength(0);
-    expect(host.querySelector('.doc-image-open')).toBeNull();
     expect(host.querySelector('.doc-image-chip')?.getAttribute('title')).toBe('./diagram.png');
+  });
+
+  it('a picture that fails to load becomes the chip it would otherwise have been', () => {
+    const host = render('![the shot](./gone.png)');
+    const img = host.querySelector('img');
+    expect(chipForFailedImage(img, LABELS)).toBe(true);
+    expect(host.querySelectorAll('img')).toHaveLength(0);
+    const chip = host.querySelector('.doc-image-chip');
+    expect(chip?.getAttribute('title')).toBe('./gone.png');
+    expect(chip?.textContent).toContain('the shot');
+    // …and only OUR pictures: a stray error from anything else changes nothing
+    const other = document.createElement('img');
+    host.append(other);
+    expect(chipForFailedImage(other, LABELS)).toBe(false);
+    expect(chipForFailedImage(null, LABELS)).toBe(false);
+    expect(host.querySelectorAll('img')).toHaveLength(1);
+  });
+
+  describe('a picture keeps its room across renders', () => {
+    /** jsdom loads nothing, so say what a loaded picture would say. */
+    const loadedAt = (img: Element, w: number, h: number): void => {
+      Object.defineProperty(img, 'naturalWidth', { value: w, configurable: true });
+      Object.defineProperty(img, 'naturalHeight', { value: h, configurable: true });
+    };
+    const MD = '![a](./a.png)\n\n<img src="b.png" width="100">\n\n![c](./c.png)';
+
+    it('a picture seen for the first time has nothing reserved', () => {
+      forgetImageSizes();
+      const [a, b] = [...render(MD).querySelectorAll('img')];
+      expect(a.hasAttribute('width')).toBe(false);
+      expect(a.hasAttribute('height')).toBe(false);
+      // the document's own width is there from the start; the height is not
+      expect(b.getAttribute('width')).toBe('100');
+      expect(b.hasAttribute('height')).toBe(false);
+    });
+
+    it('once loaded, the NEXT render of it arrives already sized', () => {
+      forgetImageSizes();
+      const [a, b] = [...render(MD).querySelectorAll('img')];
+      loadedAt(a, 800, 400);
+      loadedAt(b, 800, 400);
+      expect(rememberImageSize(a)).toBe(true);
+      expect(rememberImageSize(b)).toBe(true);
+      // a fresh render — no predecessor in the DOM to copy from, which is the
+      // toggle back from Source and the second visit, not only the live re-render
+      const [a2, b2, c2] = [...render(MD).querySelectorAll('img')];
+      expect([a2.getAttribute('width'), a2.getAttribute('height')]).toEqual(['800', '400']);
+      // the document's own width wins, and the height follows the real ratio
+      expect([b2.getAttribute('width'), b2.getAttribute('height')]).toEqual(['100', '50']);
+      // never loaded, so there is nothing to reserve
+      expect(c2.hasAttribute('height')).toBe(false);
+    });
+
+    it('a picture that CHANGED is corrected the moment it loads, not pinned', () => {
+      forgetImageSizes();
+      const [first] = [...render('![chart](./chart.png)').querySelectorAll('img')];
+      loadedAt(first, 400, 200);
+      rememberImageSize(first);
+      // the agent regenerates the chart three times as wide and touches the doc
+      const [second] = [...render('![chart](./chart.png)').querySelectorAll('img')];
+      expect(second.getAttribute('width')).toBe('400');
+      loadedAt(second, 1200, 300);
+      rememberImageSize(second);
+      expect([second.getAttribute('width'), second.getAttribute('height')]).toEqual(['1200', '300']);
+    });
+
+    it('only our own loaded pictures are remembered', () => {
+      forgetImageSizes();
+      const [a] = [...render(MD).querySelectorAll('img')];
+      expect(rememberImageSize(a)).toBe(false); // not loaded: no natural size
+      expect(rememberImageSize(document.createElement('img'))).toBe(false);
+      expect(rememberImageSize(null)).toBe(false);
+      expect(render(MD).querySelector('img')?.hasAttribute('height')).toBe(false);
+    });
   });
 
   it('stripMedia removes media handed to it DIRECTLY — belt-and-braces (#625)', () => {

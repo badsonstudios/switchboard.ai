@@ -6,6 +6,7 @@ import {
   net,
   Notification,
   powerMonitor,
+  protocol,
   safeStorage,
   screen,
   session,
@@ -48,6 +49,7 @@ import { registerGroupIpc } from './workspace/group-ipc';
 import { registerMcpIpc } from './mcp/ipc';
 import { samePath } from './mcp/config';
 import { registerFsIpc } from './fs/ipc';
+import { registerDocImageProtocol } from './fs/doc-image';
 import { bundledManualDir } from './fs/manual-dir';
 import { ReadScope } from './fs/read-scope';
 import { IpcBroker } from './ipc/broker';
@@ -2634,6 +2636,16 @@ app
           appPath: app.getAppPath(),
         }),
     });
+    // Pictures inside a rendered document (#1080, §5.30): the one scheme
+    // `img-src` allows beyond our own origin, answered from the SAME read scope
+    // `fs:read` uses. On the default session's protocol, which is the session
+    // the main window and every dockview popout live in. Fail-open: if the
+    // registration throws, pictures fall back to chips and nothing else moves.
+    try {
+      registerDocImageProtocol(protocol, { scope: readScope, log: fsLog });
+    } catch (err) {
+      fsLog.warn('document image scheme could not be registered', { error: errorText(err) });
+    }
     broker.handle('notifications:getPrefs', () => workspace.getNotificationPrefs());
     broker.handle('notifications:setPrefs', (_e, p: Partial<NotificationPrefs>) => {
       workspace.setNotificationPrefs(p);

@@ -2396,3 +2396,39 @@ describe('there is exactly one markdown pipeline', () => {
     expect(STREAMING_ATTR.startsWith('data-')).toBe(true);
   });
 });
+
+describe('nothing but the viewer can ask for a document picture (#1080)', () => {
+  // `img-src` allows ONE scheme beyond our own origin, and it is only safe to
+  // allow because the sole thing that writes it is the viewer's own image pass.
+  // The feed and the update dialog render this same output with NO image pass,
+  // so whatever survives here reaches a live `<img>` there. `src` was always
+  // covered — DOMPurify drops an unknown scheme — but its URI check reads only
+  // the START of a value, and `srcset` is a LIST: a leading comma, or a first
+  // candidate that is harmless, walks the scheme straight past it. Found in
+  // review, on the shipped sanitizer, before it shipped.
+  const FORGED = 'sb-doc-image://local/?path=%2Fhome%2Fdan%2Fsb%2Fshot.png';
+  const UNC = 'sb-doc-image://local/?path=%5C%5Cevil.test%5Cshare%5Cx.png';
+
+  for (const payload of [
+    `<img src="${FORGED}">`,
+    `![x](${FORGED})`,
+    `<img srcset=",${FORGED}">`,
+    `<img src="x.png" srcset="x.png 1x, ${FORGED} 2x">`,
+    `<img src="x.png" srcset=",${UNC}" sizes="100vw">`,
+    `<picture><source srcset="${FORGED}"><img src="x.png"></picture>`,
+    `<table background="${FORGED}"><tr><td background=",${FORGED}">x</td></tr></table>`,
+    `<a href="${FORGED}">x</a>`,
+  ]) {
+    it(`the scheme does not survive: ${payload.slice(0, 48)}`, () => {
+      expect(renderMarkdown(payload)).not.toContain('sb-doc-image');
+    });
+  }
+
+  it('because `srcset` and `sizes` are forbidden outright — markdown writes neither', () => {
+    expect(SANITIZE_CONFIG.FORBID_ATTR).toContain('srcset');
+    expect(SANITIZE_CONFIG.FORBID_ATTR).toContain('sizes');
+    expect(renderMarkdown('<img src="x.png" srcset="y.png 2x" sizes="50vw">')).not.toMatch(
+      /srcset|sizes/
+    );
+  });
+});

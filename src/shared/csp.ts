@@ -20,11 +20,23 @@
 // directive list, so they cannot drift, and identical policies intersect to
 // themselves.
 
+import { DOC_IMAGE_SCHEME } from './doc-image';
+
 // Directives a <meta> CSP cannot carry: the browser IGNORES them there and
 // logs an error saying so — which our renderer-console bridge would then write
 // into switchboard.log on every launch, reading like a CSP failure to whoever
 // is triaging. The meta backstop is rendered without them.
 const META_IGNORED = ['frame-ancestors', 'report-uri', 'report-to', 'sandbox'];
+
+// Pictures: our own origin, plus the ONE scheme main answers for a local image
+// inside a rendered document (#1080, §5.30 — `shared/doc-image.ts`). That
+// scheme can only name a file the read scope already allows, and nothing in a
+// document — or an agent's reply in the feed — can spell it: DOMPurify drops an
+// unknown scheme from `src`, `srcset` is forbidden outright because its URI
+// check does not survive a list (`markdown.tsx`, and the test that pins it),
+// and the viewer builds its own `<img>`. NOT `data:`, NOT `blob:`, NOT `https:` —
+// a remote image stays a chip, because fetching it is a beacon (§5.30, P8).
+const IMG_SRC = `img-src 'self' ${DOC_IMAGE_SCHEME}:`;
 
 const PROD_DIRECTIVES = [
   "default-src 'self'",
@@ -39,6 +51,7 @@ const PROD_DIRECTIVES = [
   // 'self' covers the worker we do create. Allowing blob: for a case the code
   // makes impossible would be the one directive weaker than the meta tag this
   // item replaced.
+  IMG_SRC,
   "object-src 'none'",
   "base-uri 'none'",
   "form-action 'none'",
@@ -66,6 +79,7 @@ export const CSP_DEV = [
   "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
   "connect-src 'self' ws://localhost:* ws://127.0.0.1:* http://localhost:* http://127.0.0.1:*",
+  IMG_SRC,
   "object-src 'none'",
   "base-uri 'none'",
   "form-action 'none'",

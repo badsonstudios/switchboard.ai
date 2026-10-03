@@ -88,6 +88,13 @@ describe('the policies', () => {
     }
     // no worker-src override: default-src 'self' governs the (same-origin)
     // Vite worker, exactly as before
+    // Pictures (#1080): our origin plus the ONE scoped scheme, in both modes —
+    // and none of the sources that would let a document fetch or smuggle one.
+    for (const policy of [CSP_PROD, CSP_PROD_META, CSP_DEV]) {
+      expect(policy).toContain("img-src 'self' sb-doc-image:;");
+      expect(policy).not.toContain('data:');
+      expect(policy).not.toContain('https:');
+    }
     expect(CSP_PROD).not.toContain('worker-src');
     expect(CSP_PROD).not.toContain('blob:');
   });

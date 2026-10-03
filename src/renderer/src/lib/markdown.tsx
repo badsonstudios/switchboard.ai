@@ -824,6 +824,15 @@ export const SANITIZE_CONFIG: SanitizeConfig = {
     'popovertargetaction',
     'inert',
     'tabindex',
+    // #1080. `img-src` gained the one scheme a document picture rides on, and
+    // the feed and the update dialog put this output in a live `<img>` with no
+    // image pass of their own. DOMPurify's URI check reads only the START of a
+    // value and `srcset` is a LIST — `srcset=",sb-doc-image://…"` survived it,
+    // measured on the shipped sanitizer. Markdown writes neither attribute, so
+    // both go, and `src` (one URL, checked whole) is the only source an image
+    // can name.
+    'srcset',
+    'sizes',
   ],
   // The tag half (#612, extended by #625 and #654). Same shape as `FORBID_ATTR`
   // and for the same reason: every one of these is an ordinary member of the html

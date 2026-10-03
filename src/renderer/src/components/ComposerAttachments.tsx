@@ -7,11 +7,12 @@
 //
 // WHY THE PREVIEW IS PAINTED ONTO A CANVAS AND NOT PUT IN AN `<img src>`
 // ---------------------------------------------------------------------
-// Our CSP is `default-src 'self'` with no `img-src` (`shared/csp.ts`), so an
-// `<img>` pointing at a `data:` or `blob:` URL is REFUSED — that is not an
-// oversight, it is the same policy §5.30 leans on to stop a markdown file
-// fetching a tracking pixel, and `document-render.ts` already accepts a chip
-// instead of an image for exactly this reason.
+// Our CSP's `img-src` is our own origin plus the one scoped scheme for a
+// picture inside a document (`shared/csp.ts`, #1080), so an `<img>` pointing at
+// a `data:` or `blob:` URL is REFUSED — that is not an oversight, it is the
+// same policy §5.30 leans on to stop a markdown file fetching a tracking pixel,
+// and `document-render.ts` still gives a remote image a chip for exactly this
+// reason.
 //
 // A canvas is not subject to it at all: `createImageBitmap` decodes BYTES WE
 // ALREADY HOLD and `drawImage` paints them. Nothing is fetched, no URL exists,
