@@ -96,6 +96,14 @@ on the floor, and say so in your PR.
 
 ## 0.8.111 — unreleased
 
+### Added
+
+- **A "Day one" page in the manual, for someone who has never seen the app.**
+  Install, open a project, start a session, answer what Claude asks, review the
+  changes and commit them — one page, in that order, with a link to the full
+  page for each step. It also says plainly what you still need another tool
+  for: typing into a file, resolving a merge conflict, a terminal of your own.
+
 ### Fixed
 
 - **The app works less hard while Claude is writing.** Every word of a reply

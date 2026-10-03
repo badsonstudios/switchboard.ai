@@ -47,7 +47,7 @@ same result, no dialog.
 - **Sessions** (left) — every session you have open, with a colored status dot.
   Click one to jump to it.
 - **The grid** (middle) — the session cards themselves. Each has its own tabs:
-  Session, Changes, History.
+  Session, Changes, Files, History.
 - **Events** (right) — what needs you right now. Empty is good; it says
   "Nothing needs you right now".
 - **Status bar** (bottom) — how many sessions are open, total tokens and
