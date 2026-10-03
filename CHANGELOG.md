@@ -96,6 +96,16 @@ on the floor, and say so in your PR.
 
 ## 0.8.111 — unreleased
 
+### Fixed
+
+- **The app works less hard while Claude is writing.** Every word of a reply
+  used to be sent to the window as a fresh copy of the whole reply so far, and
+  redrawn — so a long answer cost thousands of redraws, and several sessions
+  writing at once could make typing and dragging lag. Updates are now batched
+  twenty times a second: a long reply costs about a third of the work it did,
+  and the text still streams in as before. This is the first step on "the app
+  gets sluggish with many sessions", not the whole of it.
+
 ## 0.8.110 — 2026-10-02
 
 ### Added
