@@ -47,17 +47,53 @@
 > more items in or fixes in."*** So `0.8.111 — unreleased` stays open and keeps
 > collecting entries; the bump is still his call, later.
 >
-> **HE ALSO ASKED FOR THE MANUAL IN THE APP: *"if I go to Help… select the manual
-> there and it'll pop it up."*** Today the manual is 24 Markdown files in
-> `docs/manual/` that are **not in the installer at all** — a user who was not
-> handed the repo cannot read them. #965 is the full HTML manual and is big
-> (audit, render, screenshots). **The short route, not yet filed or built:** ship
-> the folder with the installer and add **Help ▸ User manual**, opening
-> `00-day-one.md` in the app's own document viewer, which already renders
-> Markdown. ⚠️ **The one real piece of work is the read scope:** a file opened
-> on its own is "that file only" and links to its neighbours are refused
-> (`15-document-viewer.md` says so), so the manual folder has to be granted as a
-> folder or every link on the day-one page is dead.
+> **THE WEEKEND QUEUE (owner, 2026-10-03) — in this order, each its own branch
+> and PR, merged on green CI, each with a changelog entry under `0.8.111 —
+> unreleased` and a tracker row. When the list is done, or something only the
+> owner can decide turns up: check the changelog covers everything merged since
+> v0.8.110, and stop with a report.**
+>
+> | # | Item | State |
+> |---|---|---|
+> | 1 | **Help ▸ User manual** (#1069) | ✅ **DONE — it lands with the PR that carries this line** |
+> | 2 | **#1054** — `Ctrl+F` does nothing in a git diff panel | ⏭️ **NEXT** |
+> | 3 | **#588** — a plan-mode Direct session may show a permission bar, against the manual. **Measure the CLI first**; fix whichever of the code and the manual is wrong | queued |
+> | 4 | **#1019** — Report a problem can be closed while a send is in flight | queued |
+> | 5 | **#504** and **#508**, if time allows — a diff landing in the document area; the viewer's copy button in a popped-out window | queued |
+>
+> **NOT TO BE STARTED:** #1062 (protocol change), #966 (tour), #1056 (line
+> staging), #965 (the full HTML manual), anything visual, anything in tab
+> ergonomics or attention styling. **#1003 is open on purpose** — it needs the
+> owner's laptop, and the tracker's re-test row says what to look for.
+>
+> **ITEM 1, AS BUILT — the manual is in the app.** The owner: *"if I go to
+> Help… select the manual there and it'll pop it up."* Until now it was Markdown
+> in `docs/manual/` that was **not in the installer at all**.
+>
+> * The installer copies the numbered pages to `resources/manual` as **real
+>   files, not asar members** (`extraResources`) — the read scope decides on
+>   `realpath`, the viewer follows the file with a directory watch, and Open
+>   externally hands a path to another program. `_template.md` and `README.md`
+>   are not shipped: they are about writing the manual.
+> * **Help ▸ User Manual** (first in the menu) and the palette's **User manual**
+>   deliver one command, `app.userManual`, which opens `00-day-one.md` in the
+>   document viewer. Read-only, like every other file.
+> * ⚠️ **The read scope is the real work, as predicted.** A new `fs:manual`
+>   channel **takes no path from the caller**: main grants its own manual
+>   FOLDER (`ReadScope.addBundled`, a set kept apart from the user's picks) and
+>   answers where the first page is. So the links between pages work and the
+>   grant cannot be aimed anywhere else. **Review moved one thing:** the page is
+>   looked for BEFORE the folder is granted, so a folder that is not a manual
+>   never becomes a root.
+> * **A test now fails on any manual link that leaves the shipped folder** —
+>   `../DESIGN.md` would be dead for everyone who was not handed the repo.
+> * ⚠️ **NOT VERIFIED BY A MACHINE: the installed app.** `npm run package --
+>   --dir` was run and `resources/manual` holds the 23 pages, and a unit test
+>   holds the two paths against each other — but no test launches a packaged
+>   build and clicks Help. That is the tracker's top row, after the bump.
+> * A manual that is missing from a build is logged in main and SAID through
+>   the live region; it is not a visible toast, because there isn't one and
+>   adding it is interface work.
 >
 > 1. **✅ The day-one manual page — MERGED, PR #1065.**
 >    `docs/manual/00-day-one.md`, listed first in the manual's index. **File
