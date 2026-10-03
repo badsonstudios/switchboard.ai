@@ -18,35 +18,51 @@
 > **THREE DECISIONS THE OWNER MADE TODAY, not to be re-opened:**
 >
 > 1. **Perf first** — the renderer's cost while sessions stream (#1013).
-> 2. **Build a minimal file SAVE path.** ⚠️ **The app cannot edit a file at
->    all**: the only Monaco instance (`DocumentSource.tsx`) is hard-coded
->    `readOnly`, and there is no IPC channel that writes a project file. View,
->    diff, stage, commit — yes. Type a character — no. That is the largest
->    remaining reason to keep VS Code open. **Not started, not yet filed.**
+> 2. ~~Build a minimal file SAVE path.~~ **WITHDRAWN BY THE OWNER, 2026-10-03 —
+>    THE APP STAYS READ-ONLY. NOT TO BE RE-OPENED.** His words, once
+>    `docs/PHILOSOPHY.md` §5 had been put in front of him: ***"We do not want a
+>    code editor. This is not a code editing tool. The file editor is mainly
+>    just to view files. If you want to open it externally, then you can. It'll
+>    pop open whatever is associated with that file type, and you can edit
+>    it."*** So §5 stands exactly as written (*"users have editors. Monaco stays
+>    read-only + diff-only"*), nothing is amended, and nothing is filed.
 >
->    ⛔ **BLOCKED ON THE OWNER, and this is a blocker, not a gate.** The choice
->    was offered before anybody had read `docs/PHILOSOPHY.md` §5, which rejects
->    *"a built-in code editor"* BY NAME — *"users have editors. Monaco stays
->    read-only + diff-only"* — and `DocumentSource.tsx`'s header repeats it as
->    *"READ-ONLY, PERMANENTLY"*. Building a save path is a §6 AMENDMENT, which
->    only the owner can make. **Asked 2026-10-03; NOT YET ANSWERED.** The
->    recommendation given: amend narrowly — *"edit and save one open file"*, not
->    *"become an editor"*. **Do not build it, and do not treat item 2 above as
->    the answer** — it was chosen without this fact.
+>    ⚠️ **How this went wrong, so it does not go wrong again:** the save path
+>    was OFFERED as an option before anybody had read §5, which rejects *"a
+>    built-in code editor"* BY NAME, and he picked it without that fact. A
+>    choice put to the owner that the constitution already answers is not a
+>    choice. **Read `PHILOSOPHY.md` §5 before offering one.**
+>
+>    The day-one page already says this the right way round (step 4: read-only,
+>    hand edits via **Open externally**), so nothing in the manual changes.
 > 3. **No first-run tour (#966 stays unbuilt) — write a "day one" manual page
 >    instead.** A coach-mark tour is UI he would rework. **✅ Written — see 1
 >    below.**
 >
 > **THE ORDER BEFORE THE RELEASE TANNER INSTALLS** (put to the owner 2026-10-03;
-> his reply was *"Great"*). **ALL FOUR ARE DONE AS OF 2026-10-03, and the next
-> move is the owner's: the version bump.**
+> his reply was *"Great"*). **ALL FOUR ARE DONE AS OF 2026-10-03.**
+>
+> ⚠️ **NO RELEASE YET — the owner, 2026-10-03: *"We're not going to do a release
+> just yet… I still have all weekend to work on this. I'd still like to get some
+> more items in or fixes in."*** So `0.8.111 — unreleased` stays open and keeps
+> collecting entries; the bump is still his call, later.
+>
+> **HE ALSO ASKED FOR THE MANUAL IN THE APP: *"if I go to Help… select the manual
+> there and it'll pop it up."*** Today the manual is 24 Markdown files in
+> `docs/manual/` that are **not in the installer at all** — a user who was not
+> handed the repo cannot read them. #965 is the full HTML manual and is big
+> (audit, render, screenshots). **The short route, not yet filed or built:** ship
+> the folder with the installer and add **Help ▸ User manual**, opening
+> `00-day-one.md` in the app's own document viewer, which already renders
+> Markdown. ⚠️ **The one real piece of work is the read scope:** a file opened
+> on its own is "that file only" and links to its neighbours are refused
+> (`15-document-viewer.md` says so), so the manual folder has to be granted as a
+> folder or every link on the day-one page is dead.
 >
 > 1. **✅ The day-one manual page — MERGED, PR #1065.**
 >    `docs/manual/00-day-one.md`, listed first in the manual's index. **File
 >    editing is written as READ-ONLY** (hand edits via "Open externally"),
->    because the question above is still unanswered. If the answer is "amend",
->    step 4 and the *What you still need another tool for* list are the two
->    places to change. ⚠️ **One sentence is from memory, not from a screen:**
+>    which is now the settled answer (decision 2 above). ⚠️ **One sentence is from memory, not from a screen:**
 >    what Windows shows for the unsigned installer (*"Windows protected your
 >    PC"* → More info → Run anyway). It carries a `TODO`; a machine that has
 >    never run the installer is the only thing that can confirm it.
