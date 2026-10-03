@@ -100,6 +100,12 @@ thing you'd do by hand, and they work the same in either mode.
   once it has ended** — with a note saying which. That's true of both the
   buttons and the ⋯ menu; they're the same two actions, so they're unavailable
   at the same times and for the same reasons.
+- **Clear pressed right after a session opens can take a few seconds.** A
+  session that is picking up an earlier conversation has to load it first, and
+  on a long conversation or a slow machine that takes a while. Your Clear isn't
+  lost — it runs the moment loading finishes — and the card says **working**
+  until it has. Pressing it again isn't needed (and does no harm: the second
+  one clears a conversation that's already empty).
 - On a narrow card the row wraps onto a second line rather than pushing
   anything off the end.
 - `/clear` gives no visible reply from Claude Code itself. That's expected; the

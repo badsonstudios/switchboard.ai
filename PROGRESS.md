@@ -34,21 +34,52 @@
 >    *"become an editor"*. **Do not build it, and do not treat item 2 above as
 >    the answer** — it was chosen without this fact.
 > 3. **No first-run tour (#966 stays unbuilt) — write a "day one" manual page
->    instead.** A coach-mark tour is UI he would rework. **Not started.**
+>    instead.** A coach-mark tour is UI he would rework. **✅ Written — see 1
+>    below.**
 >
 > **THE ORDER BEFORE THE RELEASE TANNER INSTALLS** (put to the owner 2026-10-03;
-> his reply was *"Great"*):
+> his reply was *"Great"*). **ALL FOUR ARE DONE AS OF 2026-10-03, and the next
+> move is the owner's: the version bump.**
 >
-> 1. **The day-one manual page** (`docs/manual/`). If the editing question is
->    still open when it is written, write it as READ-ONLY — hand edits happen in
->    his own editor via "Open externally" — and adjust that paragraph later.
-> 2. **#670** — `[object Object]` in ~50 error paths.
-> 3. **#1003** — Clear conversation needed twice. ⚠️ The report's diagnostic
->    bundle is NOT on the dev desktop (it was filed from another machine), so
->    this needs a REPRO; the existing first-clear e2e passes. If it cannot be
->    reproduced, say so and leave it open rather than guess a fix.
-> 4. **Changelog check, then the version bump** — the bump is the owner's call.
->    A cut on Sunday 2026-10-04 leaves him a day with it before Monday.
+> 1. **✅ The day-one manual page — MERGED, PR #1065.**
+>    `docs/manual/00-day-one.md`, listed first in the manual's index. **File
+>    editing is written as READ-ONLY** (hand edits via "Open externally"),
+>    because the question above is still unanswered. If the answer is "amend",
+>    step 4 and the *What you still need another tool for* list are the two
+>    places to change. ⚠️ **One sentence is from memory, not from a screen:**
+>    what Windows shows for the unsigned installer (*"Windows protected your
+>    PC"* → More info → Run anyway). It carries a `TODO`; a machine that has
+>    never run the installer is the only thing that can confirm it.
+> 2. **✅ #670 — MERGED, PR #1066, and the issue is closed.** The decision it
+>    asked for: one helper (`errorText`, `src/shared/error-text.ts`) plus a lint
+>    rule so the idiom cannot come back. ⚠️ **It was 173 sites in 55 files, not
+>    ~50.** And **`asDisplayString` — the helper the issue named — was the wrong
+>    one**: it answers a non-primitive with the caller's fallback, so it would
+>    have turned every real `Error` into an empty string. **#255, the umbrella
+>    that was waiting on this, is still open and is the owner's to close.**
+> 3. **✅ #1003 — REPRODUCED, a fix MERGED (PR #1067), and the issue deliberately LEFT
+>    OPEN.** ⚠️ **The bundle WAS available — it is attached to the issue itself**
+>    as a comment; "not on the dev desktop" was true of the file path in the
+>    body and nobody had scrolled down. Its log shows the first Clear was never
+>    lost: the card had resumed a 996-entry conversation, the CLI was still
+>    loading it (5–30 s on that laptop), and the Clear **waited in line**. The
+>    CLI's own start-up hook then flipped the card `working → idle` with the
+>    Clear still outstanding — so it read as "nothing happened", he pressed
+>    again, and both ran back to back. **Measured on the real CLI, 2 of 2:** two
+>    clears sent inside a 12 s start-up reproduce the log frame for frame
+>    (`spike/findings/1003-clear-during-startup.md`). **The fix is one arm of
+>    the state machine:** a start-up `SessionStart` no longer answers `working`
+>    with `idle`. **NOT fixed, on purpose:** the wait itself (that is the CLI
+>    loading), and readiness still means "the spawn succeeded" — holding a card
+>    at `starting` until the hook lands would make a lost hook fatal, which is a
+>    design decision. **OPEN because the laptop was not measured:** this machine
+>    starts in ~1 s and had to be slowed artificially. The tracker's RE-TEST row
+>    says what to look for there.
+> 4. **✅ Changelog checked — every merge since v0.8.110 that a user can see has
+>    an entry** under `0.8.111 — unreleased`: the streaming work (#1063), the
+>    day-one page, `[object Object]`, and the Clear status. #1061 and #1064 were
+>    docs-only. **READY FOR A VERSION BUMP, which is the owner's call.** A cut on
+>    Sunday 2026-10-04 leaves Tanner a day with it before Monday.
 >
 > **Deliberately NOT in this release:** **#1062** (a protocol change the day
 > before a new user arrives — and the owner's hand-test of step 1 decides whether

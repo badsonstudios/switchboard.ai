@@ -162,6 +162,25 @@ export function transition(current: SessionStatus, ev: SessionEvent): Transition
           // the turn resumes seconds later, so the status must not move
           // (review P1 #11: the working banner vanished during compacts).
           if (ev.source === 'compact') return stay('compacting');
+          // A prompt sent BEFORE the CLI finished starting is still owed an
+          // answer (#1003). `transport-ready` promotes a stream session to
+          // idle at the spawn, so the composer and the Clear button are live
+          // while the CLI is still loading the conversation it was asked to
+          // resume — measured at 5–30 s on the reporter's machine. Anything
+          // written in that window is QUEUED, not dropped: the CLI runs it
+          // the moment start-up ends (`spike/findings/1003-clear-during-
+          // startup.md`). This hook is that start-up reporting in, and it
+          // used to answer `working` with `idle` — a card that said "ready"
+          // with a `/clear` outstanding, which the user read as "it did
+          // nothing", pressed again, and got two.
+          //
+          // Narrow on purpose. `working` this early can ONLY be our own
+          // `prompt-sent`: the CLI cannot have run a turn before it started.
+          // And `clear` is not in the list — after a `/clear` this hook IS the
+          // end of the work, and `idle` is right.
+          if (current === 'working' && (ev.source === 'startup' || ev.source === 'resume')) {
+            return stay('prompt-queued-during-startup');
+          }
           // Otherwise (startup/resume/clear) the session is up and its TUI
           // is (about to be) ready — that's IDLE, not "working" (Dan
           // 2026-07-22: three resumed sessions all claimed to be working at
