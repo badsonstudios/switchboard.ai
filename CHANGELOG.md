@@ -98,6 +98,14 @@ on the floor, and say so in your PR.
 
 ### Added
 
+- **The manual is in the app: Help ▸ User manual.** It opens the "Day one" page
+  beside your sessions, in the same reader every other file uses, and the links
+  on it open the other pages. The manual is installed with the app, so it
+  describes the version you are running and needs no network. It is also in the
+  command list (`Ctrl+Shift+P`, type *manual*). Before this the manual existed
+  only as files in the source repository — somebody who had only the installer
+  could not read it at all.
+
 - **A "Day one" page in the manual, for someone who has never seen the app.**
   Install, open a project, start a session, answer what Claude asks, review the
   changes and commit them — one page, in that order, with a link to the full

@@ -23,6 +23,13 @@
  */
 export const MAX_FILE_READ_BYTES = 2 * 1024 * 1024;
 
+/**
+ * The page Help ▸ User manual opens — the one written for somebody who has
+ * never seen the app. Shared so the packaging test can assert the installer
+ * really carries the file main is going to look for.
+ */
+export const MANUAL_ENTRY_PAGE = '00-day-one.md';
+
 /** Why a read did not happen. Every one of these is logged in main. */
 export type FileReadRefusal =
   /** not a string, empty, relative, or containing a NUL — nothing was touched */

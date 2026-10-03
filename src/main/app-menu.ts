@@ -48,6 +48,12 @@ export interface MenuActions {
    */
   featureRequest?: () => void;
   /**
+   * Help > User Manual. `reportProblem`'s arrangement: the document viewer is
+   * the renderer's, so this delivers a command id and the menu and the palette
+   * are one implementation.
+   */
+  userManual?: () => void;
+  /**
    * File > Open File… (#569).
    *
    * Deliberately NOT "show a dialog here". The renderer already owns this
@@ -188,6 +194,11 @@ export function buildMenuTemplate(
   // once-in-a-while actions (`app-menu.test.ts` asserts the menu claims none of
   // the two the renderer needs).
   const help: MenuItemConstructorOptions[] = [];
+  if (actions.userManual) {
+    // FIRST, because it is the entry a new user opens Help looking for. No
+    // ellipsis: it opens a document, it does not ask for anything first.
+    help.push({ label: 'User Manual', click: () => actions.userManual?.() });
+  }
   if (actions.checkForUpdates) {
     help.push({ label: 'Check for Updates…', click: () => actions.checkForUpdates?.() });
   }

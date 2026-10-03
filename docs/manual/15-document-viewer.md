@@ -154,6 +154,25 @@ What you get in the rendered view:
   switchboard.ai it could read one file, not a folder. Pick the neighbour the
   same way, or open a session in that folder.
 
+  The manual is the one exception, because it is switchboard.ai's own folder
+  rather than one of yours — see the next section.
+
+## The manual opens here too
+
+**Help ▸ User manual** opens the manual's first page, [Day one](00-day-one.md),
+in a document tab like any other file. (It is in the command list as well:
+`Ctrl+Shift+P`, type *manual*.)
+
+- **The links between pages work.** Every page of the manual can be reached
+  from the first one, and `‹` and `›` take you back and forward.
+- **It is the copy that came with your version.** The pages are installed
+  alongside the app, so what you read describes the build you are running, and
+  it works with no network connection.
+- **It is read-only, like everything else here.** **Open externally** and
+  **Reveal in folder** work on a manual page as they do on any file.
+- **Asking for it twice doesn't open it twice.** If the manual is already open,
+  its tab comes to the front.
+
 ### Turning the outline off
 
 Next to `Rendered | Source` there is an **Outline** button. It is switched on,

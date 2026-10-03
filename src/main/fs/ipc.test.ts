@@ -12,7 +12,7 @@ import fs from 'fs';
 import path from 'path';
 import { tempDir } from '../../test-temp-dirs';
 import { Logger } from '../log/logger';
-import { FileReadResult } from '../../shared/ipc/fs';
+import { FileReadResult, MANUAL_ENTRY_PAGE } from '../../shared/ipc/fs';
 import { FsIpcHandle, registerFsIpc } from './ipc';
 import { ReadScope } from './read-scope';
 
@@ -88,6 +88,7 @@ describe('fs:read', () => {
       'fs:read',
       'fs:listDir',
       'fs:pickFile',
+      'fs:manual',
       'fs:openExternal',
       'fs:openPath',
       'fs:reveal',
@@ -504,5 +505,104 @@ describe('fs:watch / fs:unwatch (P2-E16-04)', () => {
     handle.stop();
     expect(handle.watchStats()).toMatchObject({ files: 0, viewers: 0 });
     expect(closed).toBe(1);
+  });
+});
+
+describe('fs:manual (Help ▸ User manual)', () => {
+  // A folder OUTSIDE every session root, which is what the installed manual is.
+  const MANUAL = path.join(BASE, 'resources', 'manual');
+  fs.mkdirSync(MANUAL, { recursive: true });
+  fs.writeFileSync(path.join(MANUAL, MANUAL_ENTRY_PAGE), '# day one\n\n[next](02-sessions.md)\n');
+  fs.writeFileSync(path.join(MANUAL, '02-sessions.md'), '# sessions\n');
+
+  let bus: ReturnType<typeof fakeBroker>;
+  let rec: ReturnType<typeof recordingLog>;
+  const register = (manualDir?: () => string | null): void => {
+    bus = fakeBroker();
+    rec = recordingLog();
+    registerFsIpc({
+      broker: bus.broker,
+      log: rec.log,
+      scope: new ReadScope({ sessionFolders: () => [ROOT], log: rec.log }),
+      manualDir,
+    });
+  };
+
+  it('answers the first page, and the read that follows succeeds', async () => {
+    register(() => MANUAL);
+    const page = (await bus.call('fs:manual')) as unknown as string;
+    expect(path.basename(page)).toBe(MANUAL_ENTRY_PAGE);
+    expect(await bus.call('fs:read', page)).toMatchObject({ ok: true });
+  });
+
+  it('grants the FOLDER — a link to a neighbouring page is readable', async () => {
+    register(() => MANUAL);
+    const neighbour = path.join(MANUAL, '02-sessions.md');
+    // not before anyone has asked for the manual…
+    expect(await bus.call('fs:read', neighbour)).toEqual({ ok: false, reason: 'out-of-scope' });
+    await bus.call('fs:manual');
+    // …and afterwards, yes: this is the whole reason it is not a one-file grant
+    expect(await bus.call('fs:read', neighbour)).toMatchObject({ ok: true, text: '# sessions\n' });
+  });
+
+  it('grants NOTHING above the manual folder', async () => {
+    register(() => MANUAL);
+    await bus.call('fs:manual');
+    expect(await bus.call('fs:read', path.join(OUTSIDE, 'id_rsa'))).toEqual({
+      ok: false,
+      reason: 'out-of-scope',
+    });
+    expect(await bus.call('fs:read', path.join(MANUAL, '..', '..', 'secrets', 'id_rsa'))).toEqual({
+      ok: false,
+      reason: 'out-of-scope',
+    });
+  });
+
+  it('takes no path from the caller — an argument cannot aim the grant', async () => {
+    register(() => MANUAL);
+    await bus.call('fs:manual', OUTSIDE);
+    expect(await bus.call('fs:read', path.join(OUTSIDE, 'id_rsa'))).toEqual({
+      ok: false,
+      reason: 'out-of-scope',
+    });
+  });
+
+  it('answers null AND logs when the folder is not on disk, or was never wired', async () => {
+    const refused = (): boolean =>
+      rec.lines.some((l) => l.level === 'warn' && l.msg.startsWith('fs:manual refused'));
+    register(() => path.join(BASE, 'resources', 'no-such-manual'));
+    expect(await bus.call('fs:manual')).toBe(null);
+    expect(refused()).toBe(true);
+    register();
+    expect(await bus.call('fs:manual')).toBe(null);
+    expect(refused()).toBe(true);
+    register(() => null);
+    expect(await bus.call('fs:manual')).toBe(null);
+    expect(refused()).toBe(true);
+  });
+
+  it('a folder WITHOUT the first page is refused, logged — and NOT granted', async () => {
+    // The order matters and this is what pins it: granting first and looking
+    // second would answer null here and still leave the folder readable for the
+    // rest of the run, with nothing on screen to show for it.
+    const notAManual = path.join(BASE, 'resources', 'not-a-manual');
+    fs.mkdirSync(notAManual, { recursive: true });
+    fs.writeFileSync(path.join(notAManual, 'private.md'), 'not yours\n');
+    register(() => notAManual);
+    expect(await bus.call('fs:manual')).toBe(null);
+    expect(rec.lines.some((l) => l.level === 'warn' && l.msg.startsWith('fs:manual refused'))).toBe(
+      true
+    );
+    expect(await bus.call('fs:read', path.join(notAManual, 'private.md'))).toEqual({
+      ok: false,
+      reason: 'out-of-scope',
+    });
+  });
+
+  it('a first page that is a FOLDER is not a page', async () => {
+    const odd = path.join(BASE, 'resources', 'odd-manual');
+    fs.mkdirSync(path.join(odd, MANUAL_ENTRY_PAGE), { recursive: true });
+    register(() => odd);
+    expect(await bus.call('fs:manual')).toBe(null);
   });
 });

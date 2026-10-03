@@ -340,6 +340,47 @@ describe('the picked set — the seam for the native dialog (§5.30)', () => {
   });
 });
 
+describe('the bundled set — a folder the app ships (Help ▸ User manual)', () => {
+  it('grants the FOLDER, so one page can link to the next', () => {
+    const scope = scopeWith({});
+    expect(scope.addBundled(OUTSIDE)).toBe(true);
+    expect(scope.resolve(outside('00-day-one.md')).ok).toBe(true);
+    expect(scope.resolve(outside('02-sessions.md')).ok).toBe(true);
+    // …and nothing above it
+    expect(scope.resolve(path.join(OUTSIDE, '..', 'elsewhere.md'))).toEqual({
+      ok: false,
+      reason: 'out-of-scope',
+    });
+  });
+
+  it('is NOT a pick: the picked set stays a record of what the user chose', () => {
+    const scope = scopeWith({});
+    scope.addBundled(OUTSIDE);
+    expect(scope.pickedPaths()).toEqual([]);
+  });
+
+  it('is stored RESOLVED, so a link out of the folder is still refused', () => {
+    // the folder itself reached through an alias is the real folder…
+    const scope = scopeWith({
+      links: { [outside('alias')]: outside('real'), [outside('real', 'escape.md')]: inRoot('..', 'x') },
+    });
+    expect(scope.addBundled(outside('alias'))).toBe(true);
+    expect(scope.resolve(outside('real', 'page.md')).ok).toBe(true);
+    // …and a member that RESOLVES somewhere else is judged on where it lands
+    expect(scope.resolve(outside('real', 'escape.md'))).toEqual({
+      ok: false,
+      reason: 'out-of-scope',
+    });
+  });
+
+  it('answers false for a folder that is not there, and grants nothing', () => {
+    const scope = scopeWith({ missing: [outside('vanished')] });
+    expect(scope.addBundled(outside('vanished'))).toBe(false);
+    expect(scope.addBundled('')).toBe(false);
+    expect(scope.roots()).toEqual(scopeWith({}).roots());
+  });
+});
+
 // ── the same rule, against a real filesystem ───────────────────────────────
 //
 // The fake resolver above proves the RULE; this proves the WIRING — that the

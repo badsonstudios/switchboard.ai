@@ -91,6 +91,24 @@ module.exports = {
   ],
 
   /**
+   * The user manual, beside the app (Help ▸ User manual).
+   *
+   * `extraResources` and not another line in `files`: that would put the pages
+   * INSIDE app.asar, and the document viewer reads through a scope check built
+   * on `realpath`, follows the open file with a directory watch, and offers
+   * Open externally — an archive member is not a path any of those can use.
+   * Out here they are ordinary files in `resources/manual`, read-only in the
+   * app like every other file.
+   *
+   * Markdown only, and not the two files that are about WRITING the manual:
+   * `_template.md` is a page's skeleton and `README.md` is the contributors'
+   * index and house style. No page links to either.
+   */
+  extraResources: [
+    { from: 'docs/manual', to: 'manual', filter: ['*.md', '!_template.md', '!README.md'] },
+  ],
+
+  /**
    * No `asarUnpack` (#952).
    *
    * node-pty needed it — Windows cannot LoadLibrary a .node or a .dll out of a

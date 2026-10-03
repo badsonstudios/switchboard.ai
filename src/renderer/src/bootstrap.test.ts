@@ -44,6 +44,7 @@ function noopDeps(): CommandDeps {
     openFile: () => {},
     reportProblem: () => {},
     featureRequest: () => {},
+    userManual: () => {},
   showPerfSummary: () => {},
     closeAllDocuments: () => {},
     openSettings: () => {},

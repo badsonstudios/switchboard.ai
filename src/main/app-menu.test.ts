@@ -113,6 +113,31 @@ describe('Help ▸ Check for Updates… (P2-E19-03)', () => {
     expect(featureRequest).toHaveBeenCalledTimes(1);
   });
 
+  it('Help ▸ User Manual is the FIRST Help entry, and RUNS what the app wired', () => {
+    // First because it is what a new user opens Help looking for — ahead of
+    // the three entries that are about something having gone wrong or missing.
+    const userManual = vi.fn();
+    const template = buildMenuTemplate('win32', {
+      checkForUpdates: () => {},
+      reportProblem: () => {},
+      featureRequest: () => {},
+      userManual,
+    });
+    const help = template.find((m) => m.label === 'Help')?.submenu as MenuItemConstructorOptions[];
+    expect(help.map((i) => i.label)).toEqual([
+      'User Manual',
+      'Check for Updates…',
+      'Report a Problem…',
+      'Feature Request…',
+    ]);
+    help[0].click?.(undefined as never, undefined, undefined as never);
+    expect(userManual).toHaveBeenCalledTimes(1);
+    // and, like every Help entry, it is not added when nothing is wired
+    const bare = buildMenuTemplate('win32', { reportProblem: () => {} });
+    const bareHelp = bare.find((m) => m.label === 'Help')?.submenu as MenuItemConstructorOptions[];
+    expect(bareHelp.map((i) => i.label)).not.toContain('User Manual');
+  });
+
   it('Report a Problem and Feature Request are TWO entries, in that order (#1008)', () => {
     // Two errands, not one dialog with a third radio in it: one carries
     // evidence and wants logs attached, the other is a sentence somebody

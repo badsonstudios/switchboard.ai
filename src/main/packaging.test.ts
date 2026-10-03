@@ -16,6 +16,8 @@ import fs from 'fs';
 import path from 'path';
 import { APP_USER_MODEL_ID } from '../shared/app-identity';
 import { BUNDLED_INTO_MAIN } from '../build/bundled-deps';
+import { MANUAL_ENTRY_PAGE } from '../shared/ipc/fs';
+import { bundledManualDir, MANUAL_RESOURCE_DIR } from './fs/manual-dir';
 
 const root = process.cwd();
 const read = (f: string) => fs.readFileSync(path.join(root, f), 'utf8');
@@ -53,6 +55,8 @@ const pkg = JSON.parse(read('package.json')) as {
 const nsis = config.nsis as Record<string, unknown>;
 const win = config.win as Record<string, unknown>;
 const files = config.files as string[];
+/** Markdown in `docs/manual` that is about WRITING the manual, not part of it. */
+const NOT_SHIPPED = ['_template.md', 'README.md'];
 
 describe('packaging config (P2-E19-01)', () => {
   it('is reachable as `npm run package`', () => {
@@ -181,6 +185,55 @@ describe('packaging config (P2-E19-01)', () => {
   it('ships the build output and the manifest', () => {
     expect(files).toContain('out/**');
     expect(files).toContain('package.json');
+  });
+
+  it('ships the user manual BESIDE the app, where Help ▸ User manual looks for it', () => {
+    // Three things have to agree and nothing else checks that they do: the
+    // folder the installer copies, the folder main opens when packaged, and the
+    // page it opens first. Get one wrong and the dev build — which reads
+    // `docs/manual` directly — keeps working while the installed app's Help
+    // item does nothing.
+    const extra = config.extraResources as Array<{ from: string; to: string; filter: string[] }>;
+    const manual = extra.find((r) => r.to === MANUAL_RESOURCE_DIR);
+    expect(manual).toBeDefined();
+    expect(manual?.from).toBe('docs/manual');
+    // real files, not asar members: the scope check, the file watch and Open
+    // externally all need a path the OS can answer
+    expect(files.some((f) => f.includes('docs/manual'))).toBe(false);
+    expect(manual?.filter).toContain('*.md');
+    // the page-writing skeleton is not a page, and neither is the index that
+    // tells CONTRIBUTORS how pages get written
+    for (const notAPage of NOT_SHIPPED) expect(manual?.filter).toContain(`!${notAPage}`);
+    expect(fs.existsSync(path.join(root, 'docs/manual', MANUAL_ENTRY_PAGE))).toBe(true);
+    // and main looks in the same place the installer puts it: `extraResources`
+    // lands under the resources folder, and an unpackaged run reads the repo
+    const args = { resourcesPath: path.join('R', 'resources'), appPath: path.join('A', 'repo') };
+    expect(bundledManualDir({ ...args, packaged: true })).toBe(
+      path.join('R', 'resources', manual?.to ?? '')
+    );
+    expect(bundledManualDir({ ...args, packaged: false })).toBe(
+      path.join('A', 'repo', manual?.from ?? '')
+    );
+  });
+
+  it('every link between manual pages lands on a page the installer ships', () => {
+    // The folder is granted so these links work; a link OUT of it — to
+    // `../DESIGN.md`, say — would be a dead one for every user who was not
+    // handed the repository, and so would a link to the skeleton.
+    const dir = path.join(root, 'docs/manual');
+    const pages = fs.readdirSync(dir).filter((f) => f.endsWith('.md') && !NOT_SHIPPED.includes(f));
+    expect(pages).toContain(MANUAL_ENTRY_PAGE);
+    const dead: string[] = [];
+    for (const page of pages) {
+      const text = fs.readFileSync(path.join(dir, page), 'utf8');
+      // `](target)` and `](target "title")` — the target ends at whitespace
+      for (const m of text.matchAll(/\]\(([^)\s]+)[^)]*\)/g)) {
+        const target = m[1].split('#')[0];
+        if (!target || /^[a-z][a-z0-9+.-]*:/i.test(target)) continue; // anchor or a URL
+        if (!pages.includes(target)) dead.push(`${page} -> ${m[1]}`);
+      }
+    }
+    expect(dead).toEqual([]);
   });
 });
 

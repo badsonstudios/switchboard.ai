@@ -1037,6 +1037,13 @@ const api = {
     pickFile: (startIn?: string): Promise<string | null> =>
       ipcRenderer.invoke('fs:pickFile', startIn),
     /**
+     * Help ▸ User manual. Resolves the path of the bundled manual's first
+     * page, or null if this build has no manual on disk. Takes no argument on
+     * purpose: main grants read access to its own manual folder — so the links
+     * between pages work — and a caller cannot point that grant anywhere.
+     */
+    manual: (): Promise<string | null> => ipcRenderer.invoke('fs:manual'),
+    /**
      * A link out of a rendered document, into the user's browser. Resolves
      * FALSE for any scheme but `http`, `https` and `mailto` — a `javascript:`
      * or `file:` href does nothing at all.
