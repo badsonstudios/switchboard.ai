@@ -55,6 +55,7 @@ import { findBarState, findQuery } from '../lib/find-bar-state';
 import { findSurfaceKey, publishFindSurface, type DocumentFindSurface } from '../lib/find-surfaces';
 import { openMonacoFind, type FindableEditor } from '../lib/monaco-find';
 import { answered } from '../../../shared/ipc/refusal';
+import { runCopy } from '../lib/feed-code';
 
 const DocumentSource = React.lazy(() => import('./DocumentSource'));
 
@@ -595,12 +596,15 @@ export function DocumentViewer(props: DocumentViewerProps): React.JSX.Element {
       const copy = target.closest<HTMLElement>('[data-doc-copy]');
       if (copy) {
         const code = copy.closest('.doc-code')?.querySelector('pre')?.textContent ?? '';
-        void navigator.clipboard?.writeText(code).catch(() => {});
-        const before = copy.textContent;
-        copy.textContent = t('document.copied');
-        window.setTimeout(() => {
-          if (copy.isConnected) copy.textContent = before;
-        }, 1200);
+        // THE BUTTON'S OWN WINDOW (#508), which is `runCopy`'s whole reason to
+        // exist. This used the module's `navigator` — the MAIN window's — and a
+        // viewer popped out into its own window is DOM in another document
+        // with this JavaScript still running here: the main document is not
+        // the focused one when the click lands over there, and `writeText`
+        // rejects on an unfocused document. The button flashed "Copied" and
+        // the clipboard was untouched. The feed learned this in #477; the
+        // viewer's button predates the lesson.
+        runCopy(copy, code, t('document.copied'));
         return;
       }
       const image = target.closest<HTMLElement>('[data-doc-external]');

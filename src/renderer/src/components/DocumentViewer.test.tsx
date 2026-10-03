@@ -399,6 +399,58 @@ describe('links inside a rendered document', () => {
   });
 });
 
+describe('the Copy button on a code block (#508)', () => {
+  const FENCED = ['# Build', '', '```bash', 'npm run build', '```', ''].join(String.fromCharCode(10));
+
+  /** a clipboard on one window's navigator, and what was written to it */
+  function clipboardOn(win: Window): ReturnType<typeof vi.fn> {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(win.navigator, 'clipboard', { value: { writeText }, configurable: true });
+    return writeText;
+  }
+
+  it('copies the code, exactly, and says so', async () => {
+    const writeText = clipboardOn(window);
+    answer = () => ok(FENCED);
+    await mount('/home/dan/sb/BUILD.md');
+    const button = q('[data-doc-copy]');
+    expect(button).not.toBeNull();
+    await click(button);
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(String(writeText.mock.calls[0][0]).trim()).toBe('npm run build');
+    expect(button?.textContent).toBe('Copied');
+  });
+
+  it('in a POPPED-OUT viewer it uses THAT window’s clipboard, not the main one’s', async () => {
+    // What dockview does to a popped-out panel, reproduced: the DOM moves into
+    // another window's document and the JavaScript stays where it was. The
+    // main window's document is then not the focused one, and the browser
+    // refuses a clipboard write from an unfocused document — so reaching for
+    // the module's own `navigator` flashed "Copied" over a clipboard nobody
+    // had written to.
+    const main = clipboardOn(window);
+    const frame = document.createElement('iframe');
+    document.body.appendChild(frame);
+    const popout = frame.contentWindow as Window;
+    popout.document.write('<!doctype html><html><body></body></html>');
+    popout.document.close();
+    const theirs = clipboardOn(popout);
+
+    answer = () => ok(FENCED);
+    await mount('/home/dan/sb/BUILD.md');
+    await act(async () => {
+      popout.document.body.appendChild(popout.document.adoptNode(host));
+    });
+    const button = host.querySelector('[data-doc-copy]');
+    expect(button?.ownerDocument).toBe(popout.document);
+    await click(button);
+
+    expect(theirs).toHaveBeenCalledTimes(1);
+    expect(String(theirs.mock.calls[0][0]).trim()).toBe('npm run build');
+    expect(main).not.toHaveBeenCalled();
+  });
+});
+
 describe('the rest of the v1 markdown scope', () => {
   it('shows an outline once a document has enough headings to need one', async () => {
     answer = () => ok('# A\n\n## B\n\n## C\n\ntext\n');

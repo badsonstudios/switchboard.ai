@@ -58,13 +58,35 @@
 > | 1 | **Help ▸ User manual** (#1069) | ✅ **MERGED — PR #1070** |
 > | 2 | **#1054** — `Ctrl+F` does nothing in a git diff panel | ✅ **MERGED** |
 > | 3 | **#588** — a plan-mode Direct session may show a permission bar, against the manual. **Measured; the MANUAL was wrong, the code is right** | ✅ **MERGED** |
-> | 4 | **#1019** — Report a problem can be closed while a send is in flight | ✅ **DONE — it lands with the PR that carries this line** |
-> | 5 | **#504** and **#508**, if time allows — a diff landing in the document area; the viewer's copy button in a popped-out window | ⏭️ **NEXT** |
+> | 4 | **#1019** — Report a problem can be closed while a send is in flight | ✅ **MERGED** |
+> | 5 | **#504** and **#508** — a diff landing in the document area; the viewer's copy button in a popped-out window | ✅ **DONE, both — they land with the PR that carries this line. THE LIST IS FINISHED.** |
 >
 > **NOT TO BE STARTED:** #1062 (protocol change), #966 (tour), #1056 (line
 > staging), #965 (the full HTML manual), anything visual, anything in tab
 > ergonomics or attention styling. **#1003 is open on purpose** — it needs the
 > owner's laptop, and the tracker's re-test row says what to look for.
+>
+> **ITEM 5, AS BUILT — two small ones, both reproduced before they were fixed.**
+>
+> * **#504 — a Changes tab landing among the documents.** `openDiff` only
+>   overrode dockview's "the active group" default when that group was not in
+>   the grid at all; a document area IS in the grid, so with a viewer or a diff
+>   panel focused the session's Changes tab opened as a tab beside the
+>   documents. It now goes through `sessionCardHome` — the place a card of that
+>   session would land, by #462's predicate — whenever the active group is not
+>   a session's. The e2e reads which tab strip the tab is in and MEASURES it
+>   (the issue's own done-when), and failed on the old bundle with *"the
+>   Changes tab joined the document area"*.
+> * **#508 — Copy in a popped-out document.** Confirmed rather than "likely":
+>   the handler used the module's `navigator`, which is the main window's, so in
+>   a popped-out viewer the button flashed "Copied" over a clipboard nothing had
+>   written to. It now calls `runCopy`, the feed's own-window helper.
+>   ⚠️ **The issue asked for a test "in the popout lane" and it got a UNIT test
+>   instead, on purpose:** an e2e would have to read the real system clipboard,
+>   which this suite never touches (it belongs to whoever is at the machine).
+>   The unit test moves the mounted viewer's DOM into a second document — what
+>   dockview does — and asserts THAT window's clipboard was written and the
+>   main one's was not. It fails without the fix.
 >
 > **ITEM 4, AS BUILT — Report a problem closed mid-send (#1019).** A port of
 > the fix #1008 made in the twin: the in-flight guard now bumps on CLOSE as

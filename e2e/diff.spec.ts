@@ -549,6 +549,63 @@ test.describe('Changes tab (Monaco diff pane)', () => {
     expect(app.windows().length, 'the diff opened a window of its own').toBe(2);
   });
 
+  test('a Changes tab opened while a DOCUMENT is focused lands with the sessions, not among the documents (#504)', async () => {
+    // #504, the mirror of the rule above. `openDiff` only overrode dockview's
+    // default — "the active group" — when that group was not in the grid at
+    // all. A document area IS in the grid, so with a viewer focused the
+    // session's Changes tab opened as a tab AMONG THE DOCUMENTS: a session's own
+    // surface in the one place a session never goes.
+    const folder = tempGitProject();
+    a = await launchApp({ seedFolder: folder, seedDocument: path.join(folder, FILE) });
+    const w = a.window;
+    const title = path.basename(folder);
+    await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
+    const viewer = w.locator('[data-testid="document-viewer"]');
+    await expect(viewer).toBeVisible({ timeout: 25_000 });
+
+    // FOCUS THE DOCUMENT, which is the whole precondition: its group is now the
+    // active one. The file's name in the header is not a control.
+    await w.locator('[data-testid="doc-name"]').click();
+
+    await w.locator('nav [draggable="true"]', { hasText: title }).first().click({ button: 'right' });
+    await w.getByRole('menuitem', { name: 'Open changes' }).click();
+    const diffTab = w.locator('.dv-tab', { hasText: '· diff' });
+    await expect(diffTab).toHaveCount(1, { timeout: 15_000 });
+
+    // WHICH GROUP, read off the DOM rather than asked of our own code: the tab
+    // strip the diff tab is in must not be the one the document's tab is in.
+    const groups = await w.evaluate((docName) => {
+      const groupOf = (needle: string): Element | null => {
+        const tab = [...document.querySelectorAll('.dv-tab')].find((el) =>
+          (el.textContent ?? '').includes(needle)
+        );
+        return tab?.closest('.dv-groupview') ?? null;
+      };
+      const diffGroup = groupOf('· diff');
+      const docGroup = groupOf(docName);
+      const box = diffGroup?.getBoundingClientRect();
+      return {
+        found: !!diffGroup && !!docGroup,
+        sameGroup: diffGroup === docGroup,
+        // the tabs sharing the diff's strip — it should be WITH the session
+        diffGroupTabs: diffGroup
+          ? [...diffGroup.querySelectorAll('.dv-tab')].map((el) => el.textContent ?? '')
+          : [],
+        width: box?.width ?? 0,
+        height: box?.height ?? 0,
+      };
+    }, FILE);
+    expect(groups.found, 'both tabs are on screen').toBe(true);
+    expect(groups.sameGroup, 'the Changes tab joined the document area').toBe(false);
+    expect(groups.diffGroupTabs.some((text) => text.includes(FILE))).toBe(false);
+    // GEOMETRY, not `toBeVisible()`: a panel in a hidden dock-back husk is in
+    // the DOM and "visible" at one pixel wide (#434 measured 1.33px).
+    expect(groups.width).toBeGreaterThan(200);
+    expect(groups.height).toBeGreaterThan(200);
+    // …and the document is still there, untouched
+    await expect(w.locator('.dv-tab', { hasText: FILE })).toHaveCount(1);
+  });
+
   // ───────────────────────────── E24 Git v2 item 5 ────────────────────────────
   //
   // ⚠️ **THE STRUCTURAL ITEM, AND ITS CLAIM IS ABOUT TWO SURFACES BEING VISIBLE
