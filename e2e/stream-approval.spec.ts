@@ -107,6 +107,53 @@ test.describe('Direct-mode permissions (P2-E18-14)', () => {
     expect(await heldIds(w)).toEqual([]);
   });
 
+  // #588. The manual said, for two months, that plan mode "never asks in-app";
+  // then that it asks, but stays read-only "whatever you click". Measured
+  // against the real CLI, neither was right: a plan-mode session asks for ONE
+  // thing — `ExitPlanMode`, "approve this plan" — and Allow is what takes it out
+  // of plan mode. So the bar MUST appear (with no terminal there is nowhere else
+  // for a plan to be approved), and both answers have to arrive.
+  //
+  // The fake reproduces the measured exchange (`!permplan`); the router's own
+  // rules are in `stream-permissions.test.ts`. What only a window can show is
+  // that the request is put in front of the user with the PLAN in it — a bar
+  // that named the tool and hid the plan would be asking someone to approve a
+  // thing they cannot read.
+  test('a plan is put in front of you to approve, and both answers reach the CLI', async () => {
+    test.setTimeout(120_000);
+    const folder = tempProjectFolder();
+    a = await launchApp({ seedFolder: folder, env: DIRECT });
+    const w = a.window;
+    await expect(w.getByText(path.basename(folder)).first()).toBeVisible({ timeout: 25_000 });
+    const box = w.getByPlaceholder(/Prompt this session/);
+
+    await box.click();
+    await box.fill('!permplan PLAN-MARKER-ONE');
+    await box.press('Enter');
+    await expect(w.getByText('Allow ExitPlanMode?')).toBeVisible({ timeout: 30_000 });
+    // the plan itself is on the bar, not just the tool's name
+    await expect(w.getByText(/PLAN-MARKER-ONE/).first()).toBeVisible();
+    await expect(railRow(w, 'needs-permission')).toHaveCount(1, { timeout: 15_000 });
+    // a plan is not a "sensitive file", and the real request does not say so
+    await expect(w.getByText(/sensitive file/)).toHaveCount(0);
+
+    // DENY: the session stays in plan mode and says so.
+    await w.getByRole('button', { name: 'Deny', exact: true }).click();
+    await expect(w.getByText(/PLAN DENIED/)).toBeVisible({ timeout: 30_000 });
+    await expect(w.getByText('Allow ExitPlanMode?')).toHaveCount(0);
+    await expect(railRow(w, 'needs-permission')).toHaveCount(0, { timeout: 15_000 });
+
+    // ALLOW: approving the plan is what lets the work start.
+    await box.click();
+    await box.fill('!permplan PLAN-MARKER-TWO');
+    await box.press('Enter');
+    await expect(w.getByText('Allow ExitPlanMode?')).toBeVisible({ timeout: 30_000 });
+    await w.getByRole('button', { name: 'Allow', exact: true }).click();
+    await expect(w.getByText(/PLAN APPROVED/)).toBeVisible({ timeout: 30_000 });
+    await expect(railRow(w, 'needs-permission')).toHaveCount(0, { timeout: 15_000 });
+    expect(await heldIds(w)).toEqual([]);
+  });
+
   // P2-E22-02 (#973). Deny ABOVE proves the verdict reaches the CLI; this proves
   // the user's WORDS do, and that they arrive wrapped in the framing rather than
   // instead of it.

@@ -13,6 +13,7 @@
 
 import { errorText } from '../../shared/error-text';
 import { ASK_USER_QUESTION_TOOL } from '../../shared/ask-user-question';
+import { EXIT_PLAN_MODE_TOOL } from '../../shared/plan-mode';
 import { asDisplayString } from '../../shared/display-string';
 import { FAKE_SESSION_ID } from './fake-stream-ids';
 
@@ -743,6 +744,23 @@ export class FakeStreamProtocol {
       return;
     }
 
+    // THE PLAN-MODE REQUEST (#588) — `ExitPlanMode`, which is "approve this plan".
+    //
+    // Measured against the real CLI (`spike/findings/588-plan-mode-permission-
+    // bar.md`): it is the ONE thing a plan-mode session asks permission for, it
+    // carries the plan as `input.plan` and none of the `decision_reason`
+    // furniture, and an Allow takes the session OUT of plan mode — announced as a
+    // `system`/`status` message whose `permissionMode` is `default`. A Deny leaves
+    // it where it was. Both halves are reproduced here so an e2e can hold the bar
+    // and both answers without spending a turn.
+    //
+    // `!permplan <marker…>` — the marker lands in the plan text.
+    if (text.startsWith('!permplan')) {
+      const marker = text.slice(9).trim() || 'do the thing';
+      this.askPermission(EXIT_PLAN_MODE_TOOL, { plan: `# Plan\n\n1. ${marker}` });
+      return;
+    }
+
     // A MULTIEDIT permission — ONE request carrying N changes (#972).
     //
     // `!permedit a b c` raises three SEPARATE `Edit` requests, which is a different
@@ -1100,6 +1118,25 @@ export class FakeStreamProtocol {
       return;
     }
 
+    // "Approve this plan" (#588). Allowed: the CLI leaves plan mode and SAYS SO
+    // before it carries on; denied: it stays, and reports.
+    if (req.toolName === EXIT_PLAN_MODE_TOOL) {
+      if (inner.behavior === 'allow') {
+        this.emit({
+          type: 'system',
+          subtype: 'status',
+          session_id: this.sessionId,
+          permissionMode: 'default',
+          uuid: this.sessionId,
+        });
+        this.emitAssistantText('PLAN APPROVED — left plan mode');
+      } else {
+        this.emitAssistantText('PLAN DENIED — still in plan mode');
+      }
+      this.emitResult();
+      return;
+    }
+
     const filePath = asDisplayString(req.input.file_path);
     let said = '';
     if (inner.behavior === 'allow') {
@@ -1142,7 +1179,9 @@ export class FakeStreamProtocol {
     // suggest, because it is not asking for permission. A fake that attached
     // "which is a sensitive file" to a question would have the panel rendering
     // a safety warning nobody sent.
-    const question = toolName === ASK_USER_QUESTION_TOOL;
+    // …and neither does `ExitPlanMode` (#588's capture): a plan is not a
+    // sensitive file, and the real request says nothing of the kind.
+    const question = toolName === ASK_USER_QUESTION_TOOL || toolName === EXIT_PLAN_MODE_TOOL;
     // Shape copied verbatim from S-10 probe B's captured control_request,
     // including `decision_reason_type: 'safetyCheck'` and the suggestion —
     // those are exactly what P2-E18-07 has to render.

@@ -324,13 +324,36 @@ the little mode marker in a card's header.
 | Mode | What runs without asking you | What still stops for you |
 |---|---|---|
 | **ask** | Reading files inside the session's folder. | Everything else: file changes, shell commands, web fetches, and reading anything outside the folder. The safe default. |
-| **plan** | Reading and exploring. | Claude writes you a plan and changes nothing until you approve it. Claude Code enforces that block itself. |
+| **plan** | Reading and exploring. | Claude writes you a plan and changes nothing until you approve it. Claude Code enforces that block itself. See [Approving a plan](#approving-a-plan). |
 | **auto-edit** | File edits inside the session's folder. | Shell commands, web fetches, and reading anything outside the folder. |
 | **full-auto** | Everything. | Almost nothing — see below. |
 
 Changing the mode applies **the next time the session starts or resumes** —
 Claude Code can't switch modes mid-flight. The chip in the title bar sets the
 mode that *new* sessions start at; each session keeps its own after that.
+
+### Approving a plan
+
+A session in **plan** mode reads, thinks, and then asks you one thing: whether
+to go ahead with the plan it wrote. That question arrives as an approval bar,
+like any other — it reads **Allow ExitPlanMode?** (Claude Code's own name for
+"leave plan mode"), with the plan underneath.
+
+- **Allow approves the plan, and the session leaves plan mode.** From then on it
+  behaves as an **ask** session does: it starts the work, and each file change
+  or command comes to you as its own approval. Approving the plan is not
+  approving the edits.
+- **Deny keeps it in plan mode.** Nothing is changed. Claude tells you it was
+  turned down, and you can say what you want different — **Deny with
+  feedback…** puts your reason in front of it.
+- **It is the only thing a plan session asks you.** While it is planning there
+  are no approvals for commands or edits, because it does not attempt any.
+- **It lasts until the session next starts.** The mode chip still says **plan**,
+  and the next time the session starts or resumes it is back in plan mode,
+  planning before it touches anything.
+
+One thing to know: the bar shows the plan on a single line, so a long plan is
+hard to read there. That is a known rough edge.
 
 ### What full-auto really is
 
@@ -388,13 +411,14 @@ decides to ask; it does not keep a list of its own.
 
 ## Good to know
 
-- **Plan mode now asks in-app like every other mode.** It used to be the one
-  exception: approving in switchboard would have overridden Claude Code's own
-  plan-mode write block, so plan sessions were left entirely to the CLI. That is
-  no longer how answers reach Claude Code — an approval now goes *through* its
-  permission system rather than around it, so plan mode's write block stands
-  whatever you click, and there is no reason to leave you out of the loop. **Plan
-  mode is still read-only**; nothing you can click in switchboard makes it not.
+- **Plan mode asks you one thing, and your answer counts.** A plan session
+  changes nothing while it is planning — Claude Code enforces that itself, and
+  no approval is asked for because no change is attempted. What it does ask is
+  whether to go ahead with the plan, and **Allow on that bar is what ends the
+  read-only part**: the session leaves plan mode and starts the work, asking
+  about each change as it goes. See [Approving a plan](#approving-a-plan).
+  (Earlier versions of this page said plan mode never asks in the app, and then
+  that it stays read-only whatever you click. Neither was right.)
 - **Nothing is ever auto-approved by switchboard.** The only thing that answers
   *allow* without showing you the question is **Allow all (this session)**, and
   that is you having answered it in advance. Everything else, if it can't reach

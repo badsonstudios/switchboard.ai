@@ -108,10 +108,10 @@ file changes are unaffected.
 
 ## What is still being worked out
 
-Some parts of Claude Code have no equivalent outside a terminal yet — plan-mode
-approval and multiple-choice questions are the two being looked at. Those are
-still being built, and until they are, a session that hits one has to be told to
-carry on another way.
+The two things that used to be listed here both work now. **Multiple-choice
+questions** appear as a panel you answer in the app, and **approving a plan**
+is an ordinary approval bar — see
+[Approving a plan](04-approvals-and-autonomy.md#approving-a-plan).
 
 There is no longer a fallback to switch to, so if something breaks, say so —
 that is now the only way it gets found.

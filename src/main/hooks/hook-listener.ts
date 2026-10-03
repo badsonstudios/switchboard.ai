@@ -108,6 +108,10 @@ export interface HookListenerOptions {
 // the control channel a plan-mode session's requests are held in-app and that is
 // safe, because an allow is answered into the CLI's own enforcement.
 //
+// Measured since (#588): "requests" is one request — `ExitPlanMode`, the CLI's
+// plan-approval prompt — and an Allow on it is what takes the session out of
+// plan mode. Safe is not the same as read-only-whatever-you-click.
+//
 // What survives with teeth is narrower and already built, in
 // `sessions/stream-permissions.ts`: a DISPATCHED session asking to leave plan
 // mode is refused at once, because nobody is watching it. That is a different

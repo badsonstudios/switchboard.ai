@@ -2552,6 +2552,15 @@ approval UI entirely rather than decorating it.
 > plan-mode session's requests are held in-app, and that is safe. The CLI's own
 > plan enforcement remains authoritative, which is the half that never changed.
 >
+> **MEASURED 2026-10-03 (#588), and the sentence above needs one qualifier.** A
+> plan-mode session sends exactly ONE kind of request — `ExitPlanMode`, the
+> plan-approval prompt — and **an in-app Allow on it takes the session out of
+> plan mode** (the CLI announces `permissionMode: default`). That is the CLI's
+> own behaviour, not a bypass, and it is why the bar must be shown: with no
+> terminal it is the only place a plan can be approved. But "safe" does not mean
+> "read-only whatever you click", which is what the manual had come to say.
+> `spike/findings/588-plan-mode-permission-bar.md`.
+>
 > **What survives with teeth is narrower and already built:** a **dispatched**
 > session asking to leave plan mode is refused at once, because nobody is
 > watching it (`sessions/stream-permissions.ts`, #948's probe). If you came here
