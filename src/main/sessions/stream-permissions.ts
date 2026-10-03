@@ -140,8 +140,10 @@ function isQuestion(tool: string): boolean {
  *
  * So for a session nobody is watching, holding this for five minutes buys exactly
  * the answer it will get at the end of the five minutes.
+ *
+ * The constant itself lives in `shared/plan-mode` since #588, because the fake
+ * provider has to be able to raise the same request.
  */
-export { EXIT_PLAN_MODE_TOOL };
 
 /**
  * Is this the `answers` map the CLI actually accepts? (#563)
@@ -514,9 +516,10 @@ export class StreamPermissions {
     //    retired it: an allow here is answered INTO the CLI's enforcement.
     //
     //    ⚠️ WHAT THAT DOES AND DOES NOT MEAN, measured by #588
-    //    (`spike/findings/588-plan-mode-permission-bar.md`): `ExitPlanMode` is
-    //    the ONLY request a plan-mode session sends, it is the CLI's own
-    //    plan-approval prompt, and **an Allow on it LEAVES plan mode** — the CLI
+    //    (`spike/findings/588-plan-mode-permission-bar.md`): ordered to run a
+    //    command or write a file, a plan-mode session asked for NEITHER — it
+    //    sent `ExitPlanMode`, the CLI's own plan-approval prompt — and **an
+    //    Allow on it LEAVES plan mode**: the CLI
     //    announces `permissionMode: default` and the writes follow, each asked
     //    about. So this sentence used to end "so plan mode's write-block stands",
     //    which is true while the plan is unapproved and false after an Allow.

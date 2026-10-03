@@ -334,8 +334,8 @@ mode that *new* sessions start at; each session keeps its own after that.
 
 ### Approving a plan
 
-A session in **plan** mode reads, thinks, and then asks you one thing: whether
-to go ahead with the plan it wrote. That question arrives as an approval bar,
+A session in **plan** mode reads, thinks, and then asks you whether to go ahead
+with the plan it wrote. That question arrives as an approval bar,
 like any other — it reads **Allow ExitPlanMode?** (Claude Code's own name for
 "leave plan mode"), with the plan underneath.
 
@@ -343,14 +343,19 @@ like any other — it reads **Allow ExitPlanMode?** (Claude Code's own name for
   behaves as an **ask** session does: it starts the work, and each file change
   or command comes to you as its own approval. Approving the plan is not
   approving the edits.
+- **Allow all (this session) approves the plan *and* everything after it.** The
+  button means here what it means on any bar: you will not be asked again until
+  this session next starts. On a plan, that is the plan and every change that
+  follows from it.
 - **Deny keeps it in plan mode.** Nothing is changed. Claude tells you it was
   turned down, and you can say what you want different — **Deny with
   feedback…** puts your reason in front of it.
-- **It is the only thing a plan session asks you.** While it is planning there
-  are no approvals for commands or edits, because it does not attempt any.
-- **It lasts until the session next starts.** The mode chip still says **plan**,
-  and the next time the session starts or resumes it is back in plan mode,
-  planning before it touches anything.
+- **While it is planning, you are not asked about commands or edits**, because
+  it does not attempt any. It can still ask you a *question*, the way any
+  session can.
+- **The mode chip still says plan afterwards.** The chip shows the mode the
+  session is *started* in, and that has not changed; it does not follow the
+  session out of plan mode.
 
 One thing to know: the bar shows the plan on a single line, so a long plan is
 hard to read there. That is a known rough edge.
@@ -411,12 +416,12 @@ decides to ask; it does not keep a list of its own.
 
 ## Good to know
 
-- **Plan mode asks you one thing, and your answer counts.** A plan session
-  changes nothing while it is planning — Claude Code enforces that itself, and
-  no approval is asked for because no change is attempted. What it does ask is
-  whether to go ahead with the plan, and **Allow on that bar is what ends the
-  read-only part**: the session leaves plan mode and starts the work, asking
-  about each change as it goes. See [Approving a plan](#approving-a-plan).
+- **Plan mode asks you to approve the plan, and your answer counts.** A plan
+  session changes nothing while it is planning — Claude Code enforces that
+  itself, and no approval is asked for because no change is attempted. What it
+  does ask is whether to go ahead with the plan, and **Allow on that bar is what
+  ends the read-only part**: the session leaves plan mode and starts the work,
+  asking about each change as it goes. See [Approving a plan](#approving-a-plan).
   (Earlier versions of this page said plan mode never asks in the app, and then
   that it stays read-only whatever you click. Neither was right.)
 - **Nothing is ever auto-approved by switchboard.** The only thing that answers

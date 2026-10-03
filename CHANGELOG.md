@@ -113,11 +113,12 @@ on the floor, and say so in your PR.
   window alike.
 
 - **The manual now says what approving a plan does.** It said a plan-mode
-  session "stays read-only whatever you click". It doesn't, and shouldn't: the
-  one thing a plan session asks is whether to go ahead with its plan, and
-  **Allow** on that bar takes it out of plan mode and starts the work (each
-  change still asked about). Checked against Claude Code itself rather than
-  reasoned. Nothing in the app's behaviour changed — the page did. The Direct
+  session "stays read-only whatever you click". It doesn't, and shouldn't: a
+  plan session asks whether to go ahead with its plan, and **Allow** on that
+  bar takes it out of plan mode and starts the work (each change still asked
+  about). Checked against Claude Code itself rather than reasoned. Nothing in
+  the app's behaviour changed — the page did, and so did the description that
+  appears when you hover the shield chip on **plan**. The Direct
   mode page also stopped listing plan approval and multiple-choice questions as
   unfinished; both work.
 

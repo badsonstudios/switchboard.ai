@@ -24,8 +24,18 @@
  *      itself asked about afterwards?
  *   D  CONTROL — `default` mode, the mutating shell command, everything allowed.
  *      If no file appears here either, A's clean tree proves nothing.
+ *   E  plan, prompt orders a QUESTION through `AskUserQuestion`. Does that
+ *      request arrive in plan mode? (Denied — only its arrival is the answer.)
+ *   F  plan, prompt orders a `Read` of a file OUTSIDE the folder. Is that asked
+ *      about in plan mode?
+ *   G  CONTROL for F — the same outside `Read` at `default`. Without it, "plan
+ *      mode did not ask" cannot be told from "this path is never asked about".
  *
- * Costs four real turns. No `--bg`. Transcripts, plan files and temp folders
+ * E and F exist because review caught A–C being read as "plan mode asks for
+ * exactly one thing": they ordered only a command and an edit, so that sentence
+ * was wider than its evidence.
+ *
+ * Costs seven real turns. No `--bg`. Transcripts, plan files and temp folders
  * are removed at the end.
  */
 import { spawn, execFileSync } from 'node:child_process';
@@ -227,7 +237,8 @@ function runStream(args, cwd, prompt, { timeoutMs = 150_000, answer }) {
   });
 }
 
-const allowAllButExit = (tool) => (tool === 'ExitPlanMode' ? 'deny' : 'allow');
+const allowAllButExit = (tool) =>
+  tool === 'ExitPlanMode' || tool === 'AskUserQuestion' ? 'deny' : 'allow';
 const allowAll = () => 'allow';
 
 const BASH_PROMPT =
@@ -238,6 +249,18 @@ const WRITE_PROMPT =
   'Use the Write tool to create a file called canary-write.txt in this folder ' +
   'containing the single word canary. Do it right now; do not just describe it. ' +
   'Then tell me in one line whether the file was created.';
+
+const QUESTION_PROMPT =
+  'Before doing anything else, use the AskUserQuestion tool to ask me one ' +
+  'multiple-choice question: which colour I prefer, red or blue. Do not answer ' +
+  'it yourself and do not write a plan first.';
+/** A file in a DIFFERENT temp folder — outside the session's own. */
+function outsideFile() {
+  const dir = mkdtempSync(join(tmpdir(), 'sb588-outside-'));
+  const file = join(dir, 'outside.txt');
+  writeFileSync(file, ['outside-canary', 'second line', ''].join(String.fromCharCode(10)));
+  return { dir, file };
+}
 
 function say(label, r, files) {
   console.log(`\n── ${label}`);
@@ -307,7 +330,7 @@ function cleanup() {
 }
 
 async function main() {
-  const only = (process.env.ONLY ?? 'ABCD').toUpperCase();
+  const only = (process.env.ONLY ?? 'ABCDEFG').toUpperCase();
   const version = execFileSync(CLI, ['--version'], { encoding: 'utf8' }).trim();
   const findings = { cli: CLI, version, when: new Date().toISOString(), trials: [] };
   if (only.includes('A')) {
@@ -321,6 +344,25 @@ async function main() {
   }
   if (only.includes('D')) {
     findings.trials.push(await trial('D  CONTROL default mode, mutating Bash, allow everything', 'default', BASH_PROMPT, allowAll));
+  }
+  if (only.includes('E')) {
+    findings.trials.push(await trial('E  plan, ordered to ask a question (AskUserQuestion denied)', 'plan', QUESTION_PROMPT, allowAllButExit));
+  }
+  for (const [letter, mode, label] of [
+    ['F', 'plan', 'F  plan, ordered to Read a file OUTSIDE the folder'],
+    ['G', 'default', 'G  CONTROL default mode, the same outside Read'],
+  ]) {
+    if (!only.includes(letter)) continue;
+    const out = outsideFile();
+    const readPrompt =
+      `Use the Read tool to read the file ${out.file} right now and tell me its ` +
+      'first line. Do not write a plan first.';
+    findings.trials.push(await trial(label, mode, readPrompt, allowAllButExit));
+    try {
+      rmSync(out.dir, { recursive: true, force: true });
+    } catch {
+      /* disposable */
+    }
   }
   findings.cleanup = cleanup();
   console.log('\n──────── FINDINGS (json) ────────');

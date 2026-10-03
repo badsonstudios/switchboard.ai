@@ -131,8 +131,12 @@ test.describe('Direct-mode permissions (P2-E18-14)', () => {
     await box.fill('!permplan PLAN-MARKER-ONE');
     await box.press('Enter');
     await expect(w.getByText('Allow ExitPlanMode?')).toBeVisible({ timeout: 30_000 });
-    // the plan itself is on the bar, not just the tool's name
-    await expect(w.getByText(/PLAN-MARKER-ONE/).first()).toBeVisible();
+    // The plan itself is on the bar, not just the tool's name. Matched on the
+    // plan's own HEADING together with the marker: the marker alone is also in
+    // the prompt that asked for it, which is echoed in the conversation, and
+    // would pass with the bar showing no plan at all.
+    await expect(w.getByText(/# Plan.*PLAN-MARKER-ONE/)).toHaveCount(1);
+    await expect(w.getByText(/# Plan.*PLAN-MARKER-ONE/)).toBeVisible();
     await expect(railRow(w, 'needs-permission')).toHaveCount(1, { timeout: 15_000 });
     // a plan is not a "sensitive file", and the real request does not say so
     await expect(w.getByText(/sensitive file/)).toHaveCount(0);
