@@ -61,6 +61,27 @@
 > | 4 | **#1019** — Report a problem can be closed while a send is in flight | ✅ **MERGED** |
 > | 5 | **#504** and **#508** — a diff landing in the document area; the viewer's copy button in a popped-out window | ✅ **DONE, both — they land with the PR that carries this line. THE LIST IS FINISHED.** |
 >
+> **✅ THE LIST IS DONE, 2026-10-03 — PRs #1070, #1073, #1074, #1075 and the one
+> that carries this line. THE NEXT MOVE IS THE OWNER'S: the version bump.**
+>
+> **CHANGELOG CHECKED AGAINST EVERYTHING MERGED SINCE v0.8.110:** every merge a
+> user can see has an entry under `0.8.111 — unreleased` — two under Added (the
+> manual in the app, the Day one page) and eight under Fixed (streaming cost,
+> `[object Object]`, the Clear status, and this weekend's five). #1061, #1064
+> and #1068 were docs-only. ⚠️ **Five of this weekend's entries had been filed
+> under Added when they are fixes** — each was inserted after the one before
+> it — and were moved under Fixed in the last PR.
+>
+> **WHAT THE OWNER SHOULD LOOK AT BEFORE TANNER DOES, in this order:**
+>
+> 1. **#1071 — the plan-approval bar shows the plan as ONE LINE of escaped
+>    text, and offers Allow all on it.** Found by item 3's measurement, not
+>    fixed because it is interface work. If Tanner works in plan mode on
+>    Monday, this is the first rough edge he meets.
+> 2. **Help ▸ User Manual in the INSTALLED app** — the one thing item 1 could not
+>    check with a machine. It has its own row in the tracker's Untested table.
+> 3. **#1072** — the mode chip still says `plan` after a plan is approved.
+>
 > **NOT TO BE STARTED:** #1062 (protocol change), #966 (tour), #1056 (line
 > staging), #965 (the full HTML manual), anything visual, anything in tab
 > ergonomics or attention styling. **#1003 is open on purpose** — it needs the

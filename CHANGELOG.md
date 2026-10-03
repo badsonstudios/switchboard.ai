@@ -106,6 +106,14 @@ on the floor, and say so in your PR.
   only as files in the source repository — somebody who had only the installer
   could not read it at all.
 
+- **A "Day one" page in the manual, for someone who has never seen the app.**
+  Install, open a project, start a session, answer what Claude asks, review the
+  changes and commit them — one page, in that order, with a link to the full
+  page for each step. It also says plainly what you still need another tool
+  for: typing into a file, resolving a merge conflict, a terminal of your own.
+
+### Fixed
+
 - **`Ctrl+F` works in a diff panel.** A diff you had moved into a panel of its
   own (⧉ in the Changes tab, or a file opened from History) ignored `Ctrl+F`
   completely, though the same diff inside the Changes tab did not. It now opens
@@ -136,14 +144,6 @@ on the floor, and say so in your PR.
   appears when you hover the shield chip on **plan**. The Direct
   mode page also stopped listing plan approval and multiple-choice questions as
   unfinished; both work.
-
-- **A "Day one" page in the manual, for someone who has never seen the app.**
-  Install, open a project, start a session, answer what Claude asks, review the
-  changes and commit them — one page, in that order, with a link to the full
-  page for each step. It also says plainly what you still need another tool
-  for: typing into a file, resolving a merge conflict, a terminal of your own.
-
-### Fixed
 
 - **The app works less hard while Claude is writing.** Every word of a reply
   used to be sent to the window as a fresh copy of the whole reply so far, and
