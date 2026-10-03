@@ -17,7 +17,7 @@ Last updated: 2026-10-02 (fourth pass) — **⭐⭐⭐ GIT V2 IS DONE: ALL FIFTE
 3. **Make the history diverge and press ↓.** It must REFUSE and change nothing rather than starting a merge there is no screen here to finish. (#1052 step 5)
 4. **Open a session on a SUBFOLDER of a repository** and check the per-file `+/−` numbers are there. They used to vanish silently. (#1043 step 11)
 
-Twenty-two user-facing entries, still waiting on **a version bump**.
+✅ **v0.8.110 IS RELEASED (2026-10-03) — so all twenty-two entries below are INSTALLABLE NOW.** Nothing here is waiting on a version bump any more; **Help ▸ Check for updates** will offer it.
 
 Previously 2026-10-02 (third pass) — **⭐⭐⭐ THE TOP THREE ROWS ARE ALL YOURS, and together they are the whole of *"I want to get the Git implementation working much better"*:** the Changes tab is regrouped, a diff can leave the tab, and the History tab exists. **Step 11 of the top row is the one I most want tested** — a session opened on a SUBFOLDER of a repository, where every per-file number used to vanish silently. Seventeen user-facing entries, still waiting on **a version bump**.
 
