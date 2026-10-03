@@ -55,9 +55,9 @@
 >
 > | # | Item | State |
 > |---|---|---|
-> | 1 | **Help ▸ User manual** (#1069) | ✅ **DONE — it lands with the PR that carries this line** |
-> | 2 | **#1054** — `Ctrl+F` does nothing in a git diff panel | ⏭️ **NEXT** |
-> | 3 | **#588** — a plan-mode Direct session may show a permission bar, against the manual. **Measure the CLI first**; fix whichever of the code and the manual is wrong | queued |
+> | 1 | **Help ▸ User manual** (#1069) | ✅ **MERGED — PR #1070** |
+> | 2 | **#1054** — `Ctrl+F` does nothing in a git diff panel | ✅ **DONE — it lands with the PR that carries this line** |
+> | 3 | **#588** — a plan-mode Direct session may show a permission bar, against the manual. **Measure the CLI first**; fix whichever of the code and the manual is wrong | ⏭️ **NEXT** |
 > | 4 | **#1019** — Report a problem can be closed while a send is in flight | queued |
 > | 5 | **#504** and **#508**, if time allows — a diff landing in the document area; the viewer's copy button in a popped-out window | queued |
 >
@@ -65,6 +65,25 @@
 > staging), #965 (the full HTML manual), anything visual, anything in tab
 > ergonomics or attention styling. **#1003 is open on purpose** — it needs the
 > owner's laptop, and the tracker's re-test row says what to look for.
+>
+> **ITEM 2, AS BUILT — `Ctrl+F` in a diff panel (#1054).** The issue's three
+> parts, all three: a fourth find provider (`find-gitdiff`, delegated to Monaco
+> like the Changes tab's) under the slot the panel already published; a
+> `FindBar` in `GitDiffPanelHost`; and `GridController.activeDiffPanelId()`
+> threaded through the command context, so `find.open` is enabled over the
+> panel at all. `activeDocumentId`'s body became a shared helper rather than a
+> second copy. ⚠️ **The e2e clicks the PATH LABEL, not the editor, and that is
+> the point:** a focused Monaco answers `Ctrl+F` by itself, so a test that
+> clicked the diff would have passed with the route still dead. Both new e2e
+> tests were run against the OLD bundle first and failed there. **Review moved
+> two things:** a bar opened while the diff was still loading stayed greyed
+> after it loaded (the surface publishes on mount and nothing announced the
+> model arriving — `findSurfaceChanged`), and the which-window rule moved to
+> `lib/standalone-panels` with a unit test, because its only coverage was a
+> popout e2e the Linux runner skips. **Not done, on
+> purpose:** the all-changes panel (`allchanges-`) still has no find — its
+> comment says that is deliberate (many editors, no one surface) and the issue
+> does not ask for it.
 >
 > **ITEM 1, AS BUILT — the manual is in the app.** The owner: *"if I go to
 > Help… select the manual there and it'll pop it up."* Until now it was Markdown

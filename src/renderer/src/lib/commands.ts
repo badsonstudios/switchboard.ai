@@ -54,6 +54,16 @@ export interface CommandContext {
    */
   activeDocumentId?: string | null;
   /**
+   * Panel id of the focused `gitdiff-` DIFF panel, if any (#1054).
+   *
+   * A third answer, and deliberately not folded into either of the two above:
+   * a diff panel is neither a card nor a document, and a field whose name says
+   * "document" answering with a diff is how the next reader closes the wrong
+   * thing. `find.open` is the only command that reads it. Optional for
+   * `activeDocumentId`'s reason.
+   */
+  activeDiffPanelId?: string | null;
+  /**
    * How many §5.30 documents a bulk close would actually take right now (#543).
    *
    * "Closable", not "open", and the difference is the whole point: a popped-out

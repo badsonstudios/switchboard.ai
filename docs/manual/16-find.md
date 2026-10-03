@@ -95,6 +95,19 @@ hands off entirely.
   scrollbar). Our bar gets out of the way rather than putting a second, worse
   find on top of a good one. Nothing else is searched while you're on this tab.
 
+## Diff panels
+
+A diff you have given [a panel of its own](08-changes-and-git.md) — with **⧉**
+in the Changes tab, or by opening a file from the History tab — gets `Ctrl+F`
+too. Click the panel, press it, and the diff editor's own find box opens, the
+same hand-off the Changes tab makes. Only that diff is searched.
+
+It works in a popped-out diff window as well: the find box opens in that
+window, over the diff you are reading.
+
+If the diff is still loading, a small bar says so instead of opening a find box
+over nothing. Press `Ctrl+F` again once the diff is on screen.
+
 ## Documents
 
 A [document tab](15-document-viewer.md) gets the same `Ctrl+F` — press it with
@@ -139,8 +152,8 @@ where the document is.
 
 ## If something goes wrong
 
-- **`Ctrl+F` does nothing** — check that a session card actually has focus
-  (click it). `Ctrl+Shift+P` → **Find in session** always works.
+- **`Ctrl+F` does nothing** — check that a session card, a document or a diff
+  panel actually has focus (click it). `Ctrl+Shift+P` → **Find in session** always works.
 - **"Nothing to search yet"** — the session hasn't written anything down. That
   happens before the first prompt; ask it something and try again.
 - **"This match is earlier than the conversation on screen"** — that one match

@@ -178,6 +178,20 @@ export function publishFindSurface(key: string, surface: FindSurface): () => voi
   };
 }
 
+/**
+ * A published surface's ANSWERS changed — tell the readers (#1054).
+ *
+ * Publication says a surface EXISTS; it says nothing about `ready()`, which is
+ * a plain read with nobody subscribed to it. A diff editor publishes on mount
+ * and gets its model a moment later, so a bar opened in between said "this
+ * diff hasn't finished loading" and went on saying it after the diff was on
+ * screen — until something unrelated re-rendered it. This is the nudge: same
+ * registry, same subscribers, no new surface.
+ */
+export function findSurfaceChanged(): void {
+  announce();
+}
+
 /** The surface for a card's panel, or null when it has not mounted/published. */
 export function findSurfaceFor(key: string): FindSurface | null {
   return surfaces.get(key) ?? null;

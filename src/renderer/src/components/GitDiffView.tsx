@@ -52,14 +52,11 @@ export function GitDiffView(props: {
    * This panel's own dockview id — the `cardId` role for the find registry and
    * the key the scroll position is remembered under.
    *
-   * ⚠️ **FIND IS NOT REACHABLE IN THIS PANEL YET, and saying so is the point.**
-   * The surface is published under its own slot (see `MonacoDiff.findSlot`) and
-   * no provider reads it, because `Ctrl+F`'s route goes through `activeCardId` /
-   * `activeDocumentId`, which know only `session-` and `doc-` panels. The slot
-   * separation is still right — it is what stops two diffs of one card
-   * overwriting each other the day the provider lands — but the earlier version
-   * of this comment described a collision that cannot currently happen, which is
-   * the kind of sentence this whole epic exists to stop writing.
+   * FIND REACHES THIS PANEL SINCE #1054. The surface is published under its
+   * own slot (see `MonacoDiff.findSlot`), `find-gitdiff` reads it, and
+   * `GridController.activeDiffPanelId()` is how `Ctrl+F` learns the panel has
+   * the user's attention. The slot separation is what stops two diffs of one
+   * card overwriting each other, which that item would otherwise have shipped.
    */
   panelId: string;
   /** the layout preference, read by the host so the toggle is a controlled pair */

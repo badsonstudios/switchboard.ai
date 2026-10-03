@@ -9,6 +9,7 @@ import type { RendererRegistry } from './registry-instance';
 import { registerBuiltinContributions } from '../bootstrap';
 import {
   changesFindProvider,
+  gitDiffFindProvider,
   documentFindProvider,
   findMode,
   findProviderFor,
@@ -58,13 +59,14 @@ function hit(over: Partial<TranscriptSearchResult['hits'][number]> = {}): Transc
 }
 
 describe('the find-provider point (P2-E17-02, §5.23)', () => {
-  it('registers §5.31’s named registrants (#533, #952)', () => {
-    // Four shipped at #533; three remain. `find-terminal` was UNREGISTERED with
-    // the Terminal tab (#873) — find dispatches to the focused panel's provider,
-    // and there was no Terminal panel left to focus — and DELETED with the
-    // transport (#952). Three is the whole roster, not a subset.
+  it('registers §5.31’s named registrants (#533, #952, #1054)', () => {
+    // Four shipped at #533. `find-terminal` was UNREGISTERED with the Terminal
+    // tab (#873) — find dispatches to the focused panel's provider, and there
+    // was no Terminal panel left to focus — and DELETED with the transport
+    // (#952), leaving three. #1054 made it four again: a diff in a panel of its
+    // own publishes its own slot, and nothing was registered to read it.
     const ids = listFindProviders(fresh()).map((p) => p.manifest.id);
-    expect(ids).toEqual(['find-session', 'find-changes', 'find-document']);
+    expect(ids).toEqual(['find-session', 'find-changes', 'find-gitdiff', 'find-document']);
   });
 
   it('resolves a provider BY PANEL, which is how one Ctrl+F serves every view', () => {
@@ -328,6 +330,47 @@ describe('the Changes provider delegates to Monaco (§5.31: do not reimplement i
       'find.unavailable.diffNotReady',
     );
     expect(changesFindProvider.unavailableKey({ sessionId: 's1', surface: ready })).toBeNull();
+  });
+});
+
+describe('a diff in a panel of its own has a provider too (#1054)', () => {
+  it('is registered under the slot the panel publishes, and is not the Changes tab’s', () => {
+    // `GitDiffView` publishes under `gitdiff`; with nothing registered for that
+    // slot the bar's answer was "no provider" and Ctrl+F did nothing at all.
+    const p = findProviderFor(fresh(), 'gitdiff');
+    expect(p?.manifest.id).toBe('find-gitdiff');
+    // two registrants, two slots: a card's Changes tab and a diff panel of the
+    // same session must not resolve to one key
+    expect(p).not.toBe(findProviderFor(fresh(), 'diff'));
+  });
+
+  it('delegates to Monaco, exactly as the Changes tab does', () => {
+    expect(gitDiffFindProvider.mode).toBe('delegated');
+    expect(gitDiffFindProvider.search).toBeUndefined();
+    const openFind = vi.fn().mockReturnValue(true);
+    const ok = gitDiffFindProvider.delegate?.(
+      { sessionId: '', surface: { kind: 'monaco', ready: () => true, openFind } as FindSurface },
+      { term: 'howdy' },
+    );
+    expect(ok).toBe(true);
+    expect(openFind).toHaveBeenCalledWith('howdy');
+  });
+
+  it('needs NO session — a diff of a commit has none behind it', () => {
+    const ready = { kind: 'monaco', ready: () => true, openFind: () => true } as FindSurface;
+    expect(gitDiffFindProvider.unavailableKey({ sessionId: '', surface: ready })).toBeNull();
+  });
+
+  it('greys with its own reason while the diff is still loading', () => {
+    // NOT the Changes tab's sentence, which says "open a changed file" — a
+    // panel is of one comparison and there is no file list in it to open from.
+    const notReady = { kind: 'monaco', ready: () => false, openFind: () => false } as FindSurface;
+    expect(gitDiffFindProvider.unavailableKey({ sessionId: '', surface: null })).toBe(
+      'find.unavailable.diffPanelNotReady',
+    );
+    expect(gitDiffFindProvider.unavailableKey({ sessionId: '', surface: notReady })).toBe(
+      'find.unavailable.diffPanelNotReady',
+    );
   });
 });
 

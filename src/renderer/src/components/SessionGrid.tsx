@@ -126,6 +126,7 @@ import { AUTO_ACCEPT_LIMIT, AUTO_ACCEPT_WINDOW_MS } from '../../../shared/siblin
 import { pruneAttachmentDrafts } from '../lib/composer-attachment-draft';
 import { setDraggedCard } from '../lib/drag-context';
 import { findBarState, subscribeFindBar } from '../lib/find-bar-state';
+import { activeStandalonePanelId } from '../lib/standalone-panels';
 import { FindBar } from './FindBar';
 import {
   clearConversation,
@@ -3646,6 +3647,9 @@ function GitDiffPanelHost(
     [api, containerApi]
   );
   const layoutPref = React.useSyncExternalStore(subscribeDiffLayout, getDiffLayout);
+  // Is the find bar open on THIS panel (#1054)? Published by `find.open`, with
+  // the `gitdiff-` panel id in the cardId role — `DocumentViewerPanel`'s shape.
+  const findBar = React.useSyncExternalStore(subscribeFindBar, findBarState);
   const target = props.params?.target;
   // A panel with no target is unreachable — `openGitDiffPanel` is the only thing
   // that mints one and it refuses a folderless target — but a layout restored
@@ -3653,19 +3657,37 @@ function GitDiffPanelHost(
   // throw that blanks the window.
   if (!target?.folder) return <div />;
   return (
-    // The same `ContributionBoundary` argument `DocumentViewerPanel` records: a
-    // dockview panel has no other boundary above it but the renderer ROOT, so a
-    // throw in here would blank every session pane in the window.
-    <ContributionBoundary id="git-diff-panel">
-      <GitDiffView
-        target={target}
-        colorScheme={props.params?.colorScheme === 'light' ? 'light' : 'dark'}
-        poppedOut={poppedOut}
-        onPopoutToggle={onPopoutToggle}
-        panelId={api.id}
-        layoutPref={layoutPref}
-      />
-    </ContributionBoundary>
+    // POSITIONED, because the bar is absolute and must move nothing underneath
+    // it — the same box `DocumentViewerPanel` puts it in.
+    <div style={{ position: 'relative', blockSize: '100%' }}>
+      {/* The same `ContributionBoundary` argument `DocumentViewerPanel` records:
+          a dockview panel has no other boundary above it but the renderer ROOT,
+          so a throw in here would blank every session pane in the window. */}
+      <ContributionBoundary id="git-diff-panel">
+        <GitDiffView
+          target={target}
+          colorScheme={props.params?.colorScheme === 'light' ? 'light' : 'dark'}
+          poppedOut={poppedOut}
+          onPopoutToggle={onPopoutToggle}
+          panelId={api.id}
+          layoutPref={layoutPref}
+        />
+      </ContributionBoundary>
+      {/* Find over the diff (#1054, §5.31). The provider is DELEGATED, so what
+          this mounts hands straight to Monaco's own find and closes itself;
+          the bar is only ever SEEN greyed, saying the diff has not loaded.
+          No `sessionId` — a diff panel can be of a commit with no session
+          behind it. Outside the boundary, as the document's is. */}
+      {findBar.openOn === api.id && (
+        <FindBar
+          cardId={api.id}
+          panelId="gitdiff"
+          panelTitleKey="grid.viewDiff"
+          // clear of `.diff-toolbar`, whose controls are the only ones here
+          insetBlockStart={34}
+        />
+      )}
+    </div>
   );
 }
 
@@ -5428,6 +5450,12 @@ export interface GridController {
    * inferred.
    */
   activeDocumentId: (sourceWindow?: Window) => string | null;
+  /**
+   * The focused `gitdiff-` diff panel's id, or null (#1054). `activeDocumentId`
+   * for the other kind of panel that is neither a card nor a session's tab:
+   * the same rule, including which window the keystroke came from.
+   */
+  activeDiffPanelId: (sourceWindow?: Window) => string | null;
   /** is this panel in its own OS window right now? (#533 — see App's openFind) */
   isPanelPoppedOut: (panelId: string) => boolean;
   /** close a card the way the tab ✕ does — including its confirm (E9-01) */
@@ -6079,28 +6107,15 @@ export function SessionGrid(props: {
       // NOT "the grid's active panel": a keystroke from a window holding a
       // session card must keep behaving exactly as it did before (#533 changed
       // documents, not cards).
-      activeDocumentId: (sourceWindow) => {
-        const api = apiRef.current;
-        if (!api) return null;
-        if (sourceWindow) {
-          for (const group of api.groups) {
-            const loc = group.api.location;
-            if (loc.type !== 'popout') continue;
-            let win: Window | null = null;
-            try {
-              win = loc.getWindow() ?? null;
-            } catch {
-              win = null; // torn down between the lookup and the read
-            }
-            if (win !== sourceWindow) continue;
-            const shown = group.activePanel;
-            return shown && isDocumentPanelId(shown.id) ? shown.id : null;
-          }
-          return null;
-        }
-        const panel = api.activePanel;
-        return panel && isDocumentPanelId(panel.id) ? panel.id : null;
-      },
+      activeDocumentId: (sourceWindow) =>
+        activeStandalonePanelId(apiRef.current, sourceWindow, isDocumentPanelId),
+      // A DIFF PANEL, by the document's rule exactly (#1054): its find is
+      // Monaco's own, inside the panel dockview moved, so it is reachable in
+      // either window and the window the keystroke came from is an argument.
+      // A separate method rather than a wider `isDocumentPanelId`, because the
+      // callers that close and count documents read that predicate too.
+      activeDiffPanelId: (sourceWindow) =>
+        activeStandalonePanelId(apiRef.current, sourceWindow, isDiffPanelId),
       isPanelPoppedOut: (panelId) =>
         apiRef.current?.getPanel(panelId)?.api.location.type === 'popout',
       closeCard: (cardId) => {

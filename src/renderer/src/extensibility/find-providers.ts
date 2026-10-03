@@ -258,6 +258,33 @@ export const changesFindProvider: FindProviderContribution = {
   },
 };
 
+/**
+ * A diff in a panel of its own — `gitdiff-` (#1054).
+ *
+ * `find-changes` again, under the slot that panel publishes: the same Monaco
+ * diff editor, handed the same way, greyed for the same reason. It is a second
+ * registrant rather than a second `panelId` on the first because the registry
+ * is keyed by panel id, and the two surfaces are deliberately NOT one key: a
+ * `gitdiff-` panel's id plays the card role (as a `doc-` panel's does), and two
+ * diffs of one session sharing the `diff` slot is exactly the overwrite
+ * `MonacoDiff.findSlot` exists to prevent.
+ *
+ * Like the document viewer, registering this was the smaller half. What made
+ * Ctrl+F do nothing over the panel was the command context, which speaks in
+ * cards and documents — see `GridController.activeDiffPanelId()`.
+ */
+export const gitDiffFindProvider: FindProviderContribution = {
+  manifest: manifest('find-gitdiff', 'Diff panel find (Monaco)'),
+  panelId: 'gitdiff',
+  labelKey: 'grid.viewDiff',
+  order: 30,
+  mode: 'delegated',
+  unavailableKey: (ctx) => (monacoSurface(ctx)?.ready() ? null : 'find.unavailable.diffPanelNotReady'),
+  delegate(ctx: FindContext, query: FindQuery): boolean {
+    return monacoSurface(ctx)?.openFind(query.term) ?? false;
+  },
+};
+
 // ── THE TERMINAL PROVIDER IS GONE (#952) ────────────────────────────────────
 //
 // `terminalFindProvider` searched xterm's scrollback (P2-E17-03) and, after
@@ -389,12 +416,13 @@ export const documentFindProvider: FindProviderContribution = {
   },
 };
 
-// Three registrants since #952, which is the whole roster rather than a subset.
-// A fourth, `terminalFindProvider`, was unregistered by #873 and deleted here —
-// see the note where it used to be.
+// Four registrants since #1054 gave the `gitdiff-` panel its own. (Three after
+// #952: `terminalFindProvider` was unregistered by #873 and deleted there — see
+// the note where it used to be.)
 export const findProviders: FindProviderContribution[] = [
   sessionFindProvider,
   changesFindProvider,
+  gitDiffFindProvider,
   documentFindProvider,
 ];
 

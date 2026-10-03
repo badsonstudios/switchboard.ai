@@ -635,6 +635,69 @@ test.describe('Changes tab (Monaco diff pane)', () => {
     await expect(w.locator('.git-diff-view')).toBeVisible({ timeout: 15_000 });
   });
 
+  test('Ctrl+F in a diff panel opens the editor’s own find (#1054)', async () => {
+    // It did NOTHING: the panel published a find surface under its own slot and
+    // no provider read it, and the command that Ctrl+F runs was disabled over
+    // any panel that was neither a session card nor a document.
+    const { w } = await openChanges();
+    await w.getByText(FILE, { exact: true }).click();
+    await w.locator('[data-testid="diff-popout"]').click();
+    const panel = w.locator('.git-diff-view');
+    await expect(panel.locator('.monaco-diff-editor')).toBeVisible({ timeout: 15_000 });
+    await expect(panel).toContainText("'howdy'", { timeout: 15_000 });
+
+    // THE PATH, NOT THE EDITOR. A click inside Monaco focuses it, and a focused
+    // Monaco answers Ctrl+F by itself — which would pass with the route still
+    // broken. The path label is not a control: the panel becomes the active
+    // one and focus stays outside the editor, which is the case that was dead.
+    await panel.locator('.git-diff-path').click();
+    await expect(panel.locator('.find-widget.visible')).toHaveCount(0);
+    await w.keyboard.press('Control+f');
+    await expect(panel.locator('.find-widget.visible')).toHaveCount(1, { timeout: 10_000 });
+    // DELEGATED: our own bar steps out of the way rather than sitting on top of
+    // a better find.
+    await expect(w.locator('[data-testid="find-bar"]')).toHaveCount(0);
+  });
+
+  test('Ctrl+F in a POPPED-OUT diff panel opens find in that window (#1054)', async () => {
+    skipPopoutOnLinux();
+    const { w } = await openChanges();
+    const app = a!.app;
+    await w.getByText(FILE, { exact: true }).click();
+    await w.locator('[data-testid="diff-popout"]').click();
+    await expect(w.locator('.git-diff-view')).toBeVisible({ timeout: 15_000 });
+    await w.locator('[data-testid="git-diff-popout"]').click();
+    // by URL, not "the other one": devtools would also satisfy `!== w`
+    await expect
+      .poll(() => app.windows().filter((p) => p.url().includes('popout.html')).length, {
+        timeout: 20_000,
+      })
+      .toBe(1);
+    const win = app.windows().find((p) => p.url().includes('popout.html'))!;
+    await win.waitForLoadState('domcontentloaded');
+    const panel = win.locator('.git-diff-view');
+    await expect(panel.locator('.monaco-diff-editor')).toBeVisible({ timeout: 20_000 });
+    await expect(panel).toContainText("'howdy'", { timeout: 15_000 });
+
+    // Click the window first — `document-find.spec`'s note: a popout Page that
+    // has never been interacted with receives no key presses at all. The path
+    // again, so the editor is not what has focus.
+    await panel.locator('.git-diff-path').click();
+    await win.keyboard.press('Control+f');
+    // THERE, where the diff is — dockview's active panel does not follow the
+    // user into another window, so this is the half that needs the source
+    // window passed rather than inferred.
+    await expect(panel.locator('.find-widget.visible')).toHaveCount(1, { timeout: 10_000 });
+    // delegated: no bar of ours in the window that could have had one…
+    await expect(win.locator('[data-testid="find-bar"]')).toHaveCount(0);
+    // …and nothing opened back in the main window either
+    await expect(w.locator('[data-testid="find-bar"]')).toHaveCount(0);
+    await expect(w.locator('.find-widget.visible')).toHaveCount(0);
+
+    await win.evaluate(() => window.close());
+    await expect(w.locator('.git-diff-view')).toBeVisible({ timeout: 15_000 });
+  });
+
   test('⚠️ the Files tab and the Changes tab AGREE — one status, two surfaces', async () => {
     // E24 Git v2 item 11, and its acceptance bar is exactly this: design §4 says
     // the tree "must read the SAME status source as screen 1 or the two tabs will

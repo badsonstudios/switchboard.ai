@@ -1203,7 +1203,7 @@
       "noSessions": "No sessions are open",
       "noDocuments": "No documents to close — popped-out ones are kept",
       "noActiveSession": "No session is focused",
-      "noFindTarget": "No session or document is focused",
+      "noFindTarget": "Nothing that can be searched is focused — click a session, a document or a single diff",
       "emptyQueue": "Nothing is waiting on you",
       "noActiveGroup": "The focused session is not in a group"
     },
@@ -1337,6 +1337,7 @@
       "noProvider": "Find doesn't work on the {view} tab yet.",
       "noSession": "There is no session here to search.",
       "diffNotReady": "The diff hasn't loaded yet — open a changed file and try again.",
+      "diffPanelNotReady": "This diff hasn't finished loading, so there's nothing to search yet.",
       "noDocument": "There is no document here to search.",
       "documentNotReady": "This document hasn't finished opening, so there's nothing to search yet.",
       "failed": "Find isn't available on this tab right now."
