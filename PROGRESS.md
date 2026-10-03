@@ -56,15 +56,48 @@
 > | # | Item | State |
 > |---|---|---|
 > | 1 | **Help ▸ User manual** (#1069) | ✅ **MERGED — PR #1070** |
-> | 2 | **#1054** — `Ctrl+F` does nothing in a git diff panel | ✅ **DONE — it lands with the PR that carries this line** |
-> | 3 | **#588** — a plan-mode Direct session may show a permission bar, against the manual. **Measure the CLI first**; fix whichever of the code and the manual is wrong | ⏭️ **NEXT** |
-> | 4 | **#1019** — Report a problem can be closed while a send is in flight | queued |
+> | 2 | **#1054** — `Ctrl+F` does nothing in a git diff panel | ✅ **MERGED** |
+> | 3 | **#588** — a plan-mode Direct session may show a permission bar, against the manual. **Measured; the MANUAL was wrong, the code is right** | ✅ **DONE — it lands with the PR that carries this line** |
+> | 4 | **#1019** — Report a problem can be closed while a send is in flight | ⏭️ **NEXT** |
 > | 5 | **#504** and **#508**, if time allows — a diff landing in the document area; the viewer's copy button in a popped-out window | queued |
 >
 > **NOT TO BE STARTED:** #1062 (protocol change), #966 (tour), #1056 (line
 > staging), #965 (the full HTML manual), anything visual, anything in tab
 > ergonomics or attention styling. **#1003 is open on purpose** — it needs the
 > owner's laptop, and the tracker's re-test row says what to look for.
+>
+> **ITEM 3, AS MEASURED — plan mode and the permission bar (#588).** Seven real
+> turns against claude 2.1.288 (`spike/findings/588-plan-mode-permission-bar.md`).
+> **A plan-mode Direct session DOES show a bar: `ExitPlanMode`, the CLI asking
+> you to approve the plan — and Allow on it takes the session OUT of plan mode**
+> (the CLI announces `permissionMode: default`, then asks about each write).
+> While planning, no `Bash` or `Write` request was sent, even when the prompt
+> ordered one. ⚠️ **NOT "exactly one thing":** the first write-up said so and
+> review caught it — a QUESTION is asked in plan mode like anywhere else
+> (measured), and other request kinds were not probed.
+>
+> * ⚠️ **The manual was wrong and the code was right.** The page said plan mode
+>   *"stays read-only whatever you click"* — reasoned by #952, never measured,
+>   because #948's probes only ever DENIED. Corrected in the approvals page (a
+>   new "Approving a plan" section) and the Direct mode page, which was also
+>   still calling plan approval and multiple-choice questions unfinished.
+> * ⚠️ **The issue's own done-when offered a plan-mode REFUSAL on the stream
+>   path, and it was not built — deliberately.** That refusal existed because a
+>   hook allow bypassed the CLI's permission system. Here the request IS the
+>   CLI's plan-approval prompt; refusing it in-app would leave a plan with
+>   nowhere to be approved. The dispatched-session refusal (#948) is untouched.
+> * **Held by a zero-token e2e:** the fake provider learned `!permplan`, which
+>   reproduces the measured exchange. No app behaviour changed.
+> * **The shield chip's own tooltip carried the wrong sentence too** (*"stands
+>   whatever you click here"*) and is corrected.
+> * ⚠️ **THREE THINGS FOUND AND FILED, NOT FIXED — all are interface or product
+>   questions:** **Allow all (this session) is offered on the plan bar**, and
+>   pressing it approves the plan AND every write after it for that run (the
+>   manual now says so); the card's mode chip goes on saying `plan` after the
+>   CLI has left plan mode (nothing reads the CLI's `status` message); and
+>   **the bar shows the plan as one line of escaped text** (`plan="# Plan\n\n1. …"`), which is hard to read
+>   at exactly the moment it is being approved. **The second one matters for a
+>   new user who works in plan mode; the owner should look at it.**
 >
 > **ITEM 2, AS BUILT — `Ctrl+F` in a diff panel (#1054).** The issue's three
 > parts, all three: a fourth find provider (`find-gitdiff`, delegated to Monaco

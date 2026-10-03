@@ -428,7 +428,7 @@
     "full-auto": "🛡 full-auto",
     "desc": {
       "ask": "ask — every tool call comes to you first: file changes, shell commands, web fetches. Full gatekeeping, and the safe default.",
-      "plan": "plan — Claude reads, explores and writes you a plan, but changes nothing until you approve it. The block is Claude Code's own and stands whatever you click here; what you will be asked is whether to let it leave plan mode.",
+      "plan": "plan — Claude reads, explores and writes you a plan, but changes nothing until you approve it. The block is Claude Code's own. What you will be asked is whether to go ahead with the plan — and Allow on that is what ends it: the session leaves plan mode and starts the work, asking about each change.",
       "auto-edit": "auto-edit — Claude edits files inside the session's folder without asking you, and runs the housekeeping commands that go with it — mkdir, touch, mv, cp, rm, sed. Anything heavier still comes to you. This is Claude Code's acceptEdits, exactly as it behaves on its own; if you want every command to stop for you, use ask.",
       "full-auto": "full-auto — nothing comes to you. Every tool call runs the moment Claude asks for it, including writes outside the session's folder. This is Claude Code's bypassPermissions, the mode --dangerously-skip-permissions turns on: deny rules in your settings still block, a few things always need a person (a question for you, rm on a critical path), and nothing else stops anything. It is not a sandbox."
     },
