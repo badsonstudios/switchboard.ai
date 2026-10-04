@@ -96,6 +96,18 @@ on the floor, and say so in your PR.
 
 ## 0.8.113 — unreleased
 
+### Changed
+
+- **Picking a past conversation opens it in the session you picked it from.**
+  The **🕘** button in a session's header used to open the conversation you
+  chose in a *new* session beside the old one, which was easy to miss — you
+  could end up working in a different session without realising. Now the
+  session you clicked from simply switches to that conversation: same card,
+  same name, same place. The conversation you were in is still in the list, so
+  going back is the same two clicks. It will not interrupt a session that is
+  working or waiting on you — the list says so and you pick again once it is
+  free. A conversation from a different folder still opens a session of its own.
+
 ## 0.8.112 — 2026-10-03
 
 ### Added

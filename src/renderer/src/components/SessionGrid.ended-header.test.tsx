@@ -40,7 +40,14 @@ import { DEFAULT_LAYOUT } from '../lib/layout-mode';
 import { registerBuiltinContributions } from '../bootstrap';
 import { rendererRegistry } from '../extensibility/registry-instance';
 import type { IDockviewPanelProps } from 'dockview-react';
-import { SessionGrid, endedCopy, endedPill, type CardParams } from './SessionGrid';
+import {
+  SessionGrid,
+  endedCopy,
+  endedPill,
+  samePickFolder,
+  switchRefusalKey,
+  type CardParams,
+} from './SessionGrid';
 
 declare global {
   var IS_REACT_ACT_ENVIRONMENT: boolean;
@@ -400,5 +407,28 @@ describe('a refused card puts itself in the rail (#687)', () => {
     await mountCard();
 
     expect(sessionStore.getRailOrder().flat.find((s) => s.id === 'c1')).toBeUndefined();
+  });
+});
+
+describe('a pick from a card\'s own history (#1090)', () => {
+  it('the same folder is the same folder, however it was spelled', () => {
+    expect(samePickFolder('C:\\Projects\\sb', 'C:\\Projects\\sb')).toBe(true);
+    expect(samePickFolder('C:\\Projects\\sb\\', 'c:/projects/sb')).toBe(true);
+    expect(samePickFolder('/home/dan/sb/', '/home/dan/sb')).toBe(true);
+  });
+
+  it('another project is not — that pick still opens a card of its own', () => {
+    expect(samePickFolder('C:\\Projects\\sb', 'C:\\Projects\\sb-2')).toBe(false);
+    expect(samePickFolder('/home/dan/sb', '/home/dan/other')).toBe(false);
+    expect(samePickFolder('/home/dan/sb', undefined)).toBe(false);
+    expect(samePickFolder('', '')).toBe(false);
+  });
+
+  it('every refusal has a sentence, and they are three different ones', () => {
+    expect(switchRefusalKey('busy')).toBe('sessionHistory.switchBusy');
+    expect(switchRefusalKey('held')).toBe('sessionHistory.claimedHint');
+    for (const reason of ['unavailable', 'no-card', 'bad-request'] as const) {
+      expect(switchRefusalKey(reason)).toBe('sessionHistory.openFailed');
+    }
   });
 });

@@ -64,6 +64,29 @@ import type { TransportKind } from './transport';
  * eight names until #618; it is `RailCardStatus` — `CardStatus` plus the one
  * name the renderer mints for itself — as of #687.
  */
+/**
+ * Why a card could not be moved to a picked conversation (#1090, §5.33).
+ *
+ * Every one of these is decided BEFORE the card is touched, so a refusal
+ * leaves the session exactly as it was — the renderer only has to say why.
+ */
+export type SwitchConversationRefusal =
+  /** not a card id and a conversation id — nothing was looked at */
+  | 'bad-request'
+  /** main has no such card */
+  | 'no-card'
+  /** the card's session is working, or waiting on an answer from the user */
+  | 'busy'
+  /** another card has that conversation open */
+  | 'held'
+  /** the conversation is not there to resume, in this card's folder */
+  | 'unavailable';
+
+/** What `sessions:switchConversation` answers. */
+export type SwitchConversationResult =
+  | { readonly ok: true; readonly changed: boolean }
+  | { readonly ok: false; readonly reason: SwitchConversationRefusal };
+
 export type SessionStatus =
   | 'starting'
   | 'working'

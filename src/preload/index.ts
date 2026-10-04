@@ -39,6 +39,7 @@ import type {
 import type {
   AutonomyMode,
   SessionCardWire,
+  SwitchConversationResult,
   SessionRecordWire,
   SessionSummary,
   StatusChange,
@@ -400,6 +401,13 @@ const api = {
       ipcRenderer.invoke('sessions:renameCard', cardId, title),
     closeCard: (cardId: string): Promise<void> => ipcRenderer.invoke('sessions:closeCard', cardId),
     dropLive: (cardId: string): Promise<void> => ipcRenderer.invoke('sessions:dropLive', cardId),
+    /**
+     * Open a past conversation IN this card (#1090). Refused, with the reason,
+     * while the card is busy, when another card holds the conversation, or when
+     * it is not there to resume — and a refusal changes nothing.
+     */
+    switchConversation: (cardId: string, conversationId: string): Promise<SwitchConversationResult> =>
+      ipcRenderer.invoke('sessions:switchConversation', { cardId, conversationId }),
     setTaskLabel: (cardId: string, label: string): Promise<void> =>
       ipcRenderer.invoke('sessions:setTaskLabel', cardId, label),
     setAutonomy: (cardId: string, autonomy: AutonomyMode): Promise<void> =>

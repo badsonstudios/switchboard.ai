@@ -3,6 +3,36 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ 2026-10-04: **#1090 — a pick from a card's history opens IN that card**
+>
+> **Owner, 2026-10-04:** *"whenever I click History and click on something
+> inside the history, it opens a new session. I don't want it to open a new
+> session. I want to be in the same session."* **This REVERSES his own
+> 2026-09-16 decision in DESIGN §5.33**, which is amended with the quote. Done
+> on `feature/1090-history-in-same-card`.
+>
+> * New channel `sessions:switchConversation`; the fence in `start-plan.ts`
+>   (a start cannot move a card) is untouched. The card RELEASES the
+>   conversation it leaves, so the way back is pickable.
+> * **Judgment calls:** a busy session (working / waiting on a permission or a
+>   question) REFUSES the pick rather than being interrupted; a pick from
+>   another folder still opens a new card; `+ session` is unchanged.
+>
+> ⚠️ **#1088 / PR #1089 (feed grouped by task label) IS NOT DONE AND IS A
+> DRAFT — do not merge it, and do not believe its own PROGRESS entry.** Built in
+> another session (2026-10-04) and reviewed there: its e2e fails on both
+> platforms (`stream-resume.spec.ts:118`, every attempt), it records no label
+> history (every block is stamped with the CURRENT label, live blocks with
+> none), the headers are not clickable, and it has no tests, no manual page and
+> hard-coded English. Its branch also carries an unverified README rewrite and a
+> `PROGRESS.md` line saying "DONE". **A QUESTION TO THE OWNER IS STILL OPEN:**
+> when he said "History shows every tool call as a separate line", did he mean
+> the conversation view (what #1089 changed) or the history PICKER? The answer
+> decides whether #1089 is rebuilt or closed.
+>
+> **Next up:** the owner's answer on #1088. Then the remaining 15 manual pages'
+> pictures. ⚠️ Flakes #1079 and #1025 cost three CI re-runs on 2026-10-03.
+
 > # ✅ 2026-10-03 (evening): **pictures in Markdown (#1080) and the manual with a Contents page and screenshots (#1082) — both owner requests, both done**
 >
 > ✅ **RELEASED: v0.8.112, 2026-10-03** (`5a408c2`, PR #1086) — the owner, once

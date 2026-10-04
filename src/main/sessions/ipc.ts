@@ -56,7 +56,12 @@ import type { BusHost } from '../bus/host-channel';
 import { IpcBroker } from '../ipc/broker';
 import { Channel } from '../../shared/ipc/capabilities';
 import type { PermissionRequest } from '../../shared/ipc/permissions';
-import { isAutonomyMode, type SessionCardWire } from '../../shared/sessions';
+import {
+  isAutonomyMode,
+  type SessionCardWire,
+  type SwitchConversationRefusal,
+  type SwitchConversationResult,
+} from '../../shared/sessions';
 import type { ProviderCapabilities } from '../extensibility/contributions';
 import { TranscriptWatcher } from '../transcripts/watcher';
 import { searchTranscripts } from '../transcripts/search';
@@ -829,6 +834,11 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
     // against ~14 seconds later, which is plenty of time for the owner to type
     // a label of their own.
     const ownerAtStart = labelSourceOf(card);
+    // …and WHICH CONVERSATION this label is about (#1090). A card can be moved
+    // to another conversation while the run is out, and a phrase describing the
+    // one it left must not land on it — the instant label only fills a blank,
+    // so a wrong one written here would stay.
+    const conversationAtStart = card.nativeSessionId;
     const startedLines = snap?.lines ?? 0;
     aiLabelState.set(cardId, { lastRunAt: Date.now(), lastLines: startedLines, inFlight: true });
 
@@ -838,6 +848,10 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
         // have become the user's while we were waiting.
         const fresh = deps.persist.list().find((s) => s.id === cardId);
         if (!fresh) return;
+        if (fresh.nativeSessionId !== conversationAtStart) {
+          log.debug('ai label dropped: the card moved to another conversation', { cardId });
+          return;
+        }
         const label = res.ok ? acceptAiLabel(fresh, res.text, ownerAtStart) : null;
         if (label === null) return;
         deps.persist.upsert({ ...fresh, taskLabel: label, labelSource: 'auto' });
@@ -2767,6 +2781,114 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
 
   // drop only the live session (restart): keep the record so it can respawn
   broker.handle('sessions:dropLive', (_e, cardId: string) => dropLiveForCard(cardId));
+
+  // ── A PAST CONVERSATION, OPENED IN THE CARD THE USER PICKED IT FROM (#1090) ──
+  //
+  // §5.33 as amended 2026-10-04. The picker used to open a NEW card every time
+  // ("going back should never cost the session you are in"), and the owner's
+  // experience of that was a second session he did not know he was in. So a
+  // pick made from a card's own history button now REPLACES that card's
+  // conversation, and this is the one place that is allowed to happen.
+  //
+  // IT IS ITS OWN CHANNEL, NOT A FLAG ON `sessions:create`, and the reason is
+  // the fence in `start-plan.ts`: a `requestedConversationId` is honoured only
+  // for a card with no conversation of its own, precisely so that no message
+  // can move an existing card into another conversation as a side effect of
+  // starting it. That stays true. Moving a card is this handler's whole job,
+  // it does nothing else, and everything it could get wrong is checked BEFORE
+  // the card is touched — a refusal leaves the session exactly as it was.
+  //
+  // WHAT HAPPENS TO THE CONVERSATION THE CARD WAS IN: nothing. Its transcript
+  // is the CLI's and stays on disk. The card lets go of its whole chain rather
+  // than demoting it to an ancestor, because a conversation this card still
+  // claimed would show in the history list as "open in a card" and could not
+  // be picked — the way back would be the one row that does not work.
+  //
+  // The renderer re-arms the card's lazy spawn on `ok`, and that start resumes
+  // the picked id as the card's OWN stored conversation, by the ordinary path.
+  broker.handle('sessions:switchConversation', (_e, req: unknown): SwitchConversationResult => {
+    const { cardId, conversationId } = (req ?? {}) as { cardId?: unknown; conversationId?: unknown };
+    const no = (reason: SwitchConversationRefusal): SwitchConversationResult => {
+      log.warn(`sessions:switchConversation refused: ${reason}`, {
+        cardId: typeof cardId === 'string' ? cardId.slice(0, 80) : typeof cardId,
+      });
+      return { ok: false, reason };
+    };
+    if (typeof cardId !== 'string' || typeof conversationId !== 'string') return no('bad-request');
+    // an id crossing from the renderer is untrusted input (§5.29)
+    if (!isConversationId(conversationId)) return no('bad-request');
+    const card = deps.persist.list().find((s) => s.id === cardId);
+    if (!card) return no('no-card');
+    // already there — nothing to do, and not worth restarting a session over
+    if (card.nativeSessionId === conversationId) return { ok: true, changed: false };
+
+    // A session in the middle of something is not interrupted. The turn in
+    // flight would be lost, and a held permission would be answered by a kill.
+    // `starting` is NOT busy: nothing has been asked of it yet, and a card that
+    // was only just opened is exactly where "no, the other one" gets said.
+    for (const [liveId, cid] of cardOfLive) {
+      if (cid !== cardId) continue;
+      const status = manager.get(liveId)?.status;
+      if (status === 'working' || status === 'needs-permission' || status === 'needs-input') {
+        return no('busy');
+      }
+    }
+
+    // ONE CARD PER CONVERSATION — `sessions:create`'s guard for a pick, word
+    // for word, ceded ids included (#539).
+    const heldByAnother = deps.persist
+      .list()
+      .some(
+        (s) =>
+          s.id !== cardId &&
+          [...resumeCandidates(s), ...(s.cededNativeIds ?? [])].includes(conversationId)
+      );
+    if (heldByAnother) return no('held');
+
+    // …and it has to really be there, IN THIS CARD'S FOLDER. A card is bound to
+    // its folder, so a conversation from another project is not something this
+    // card can become; the renderer opens those in a card of their own.
+    let resumable = false;
+    try {
+      const caps = deps.capabilitiesOf(card.identity.providerId);
+      const root = caps?.transcripts?.projectsRoot();
+      resumable =
+        !!caps?.resume &&
+        caps.resume.canResume({
+          projectsRoot: root ?? '',
+          folder: card.identity.folder,
+          nativeSessionId: conversationId,
+        }) === true;
+    } catch (err) {
+      log.warn('sessions:switchConversation could not ask the provider', { error: errorText(err) });
+    }
+    if (!resumable) return no('unavailable');
+
+    // Point of no return. The live session goes first, so nothing is still
+    // writing the old conversation's id back onto the card while it changes.
+    dropLiveForCard(cardId);
+    const fresh = deps.persist.list().find((s) => s.id === cardId) ?? card;
+    // an id this card is being handed is not one it has given away
+    const ceded = (fresh.cededNativeIds ?? []).filter((id) => id !== conversationId);
+    deps.persist.upsert({
+      ...fresh,
+      nativeSessionId: conversationId,
+      nativeSessionLineage: undefined,
+      // `undefined`, never `[]` — the shape the store loads (see `recordNativeId`)
+      cededNativeIds: ceded.length > 0 ? ceded : undefined,
+      // The numbers were the conversation it left. `sessions:create` hands a
+      // card's stored usage back as the strip's starting point, so keeping
+      // them would show the old conversation's totals over the new one until
+      // its first snapshot.
+      usage: undefined,
+      cliCost: undefined,
+    });
+    // The label described the conversation the card just left (#886's rule).
+    clearAutoLabel(cardId, 'the card was moved to another conversation');
+    cardsChanged();
+    log.info('sessions:switchConversation moved a card', { cardId, conversation: conversationId });
+    return { ok: true, changed: true };
+  });
 
   // ── `sessions:setTransport` IS GONE (#952) ─────────────────────────────────
   //
