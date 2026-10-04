@@ -106,6 +106,8 @@ function harness(
     watchAccepts?: boolean;
     /** live session ids the manager should claim to know (P2-E18-08b) */
     liveIds?: string[];
+    /** what the manager reports every live session's status as (#1090) */
+    status?: string;
     /** what the `.claude/` scan + curated builtins return (P2-E18-09) */
     known?: SlashCommand[];
     /** the CLI's own list, off the stream (P2-E18-09) — the real class, so the
@@ -246,7 +248,7 @@ function harness(
   const record = {
     id: 'live-1',
     identity: { title: 't', folder, providerId: 'generic' },
-    status: 'starting',
+    status: opts.status ?? 'starting',
     createdAt: '',
     exitCode: null,
     // What the fake manager REPORTS a live session is on. It defaulted to `'pty'`
@@ -1013,6 +1015,161 @@ describe('session history (P2-E20-01, §5.33)', () => {
       h.call('sessions:create', { cardId: 'card-1', folder, title: 't' });
       expect(h.created).toHaveLength(1);
       expect(h.created[0].resumeSessionId).toBeUndefined();
+    });
+  });
+
+  // #1090 — §5.33 as amended 2026-10-04: a pick made from a CARD'S history
+  // opens the conversation in that card. The owner found himself in a second
+  // session he had not asked for; this is the channel that stops that.
+  describe('sessions:switchConversation — a pick opens IN the card', () => {
+    const own = (over: Partial<PersistedSession> = {}): PersistedSession =>
+      priorCard({ folder, nativeSessionId: 'mine', nativeSessionLineage: ['older'], ...over });
+    const move = (h: ReturnType<typeof harness>, conversationId: unknown, cardId: unknown = 'card-1') =>
+      h.call('sessions:switchConversation', { cardId, conversationId });
+
+    it('moves the card, ends its session, and the next start resumes the pick', () => {
+      seedConversation('mine', folder);
+      seedConversation('other', folder);
+      const h = harness(caps(), folder, { prior: own(), status: 'idle' });
+      h.call('sessions:create', { cardId: 'card-1', folder, title: 't' });
+      expect(h.created[0].resumeSessionId).toBe('mine');
+
+      expect(move(h, 'other')).toEqual({ ok: true, changed: true });
+      // the session that was running is gone…
+      expect(h.removed).toHaveLength(1);
+      // …the card now points at the pick, and at NOTHING else: the conversation
+      // it left is free to be picked again rather than claimed as an ancestor
+      const card = h.cards.find((c) => c.id === 'card-1');
+      expect(card?.nativeSessionId).toBe('other');
+      expect(card?.nativeSessionLineage).toBeUndefined();
+
+      // the renderer re-arms the card; that start is an ordinary resume
+      h.call('sessions:create', { cardId: 'card-1', folder, title: 't' });
+      expect(h.created[1].resumeSessionId).toBe('other');
+    });
+
+    it('a LATE word from the session it ended cannot move the card back', () => {
+      // The property the whole design rests on. The old session is killed, and
+      // a kill is not instant: its id announcement or a snapshot can still be
+      // in flight. If either could write the card, the pick would be demoted to
+      // an ancestor and the next start would reopen the conversation it left.
+      seedConversation('mine', folder);
+      seedConversation('other', folder);
+      const h = harness(caps(), folder, { prior: own(), status: 'idle' });
+      const rec = h.call('sessions:create', { cardId: 'card-1', folder, title: 't' }) as { id: string };
+      expect(move(h, 'other')).toEqual({ ok: true, changed: true });
+
+      h.fireNativeId(rec.id, 'mine');
+      h.fireSnapshot({ sessionId: rec.id, title: 'A label about the old conversation' });
+
+      const card = h.cards.find((c) => c.id === 'card-1');
+      expect(card?.nativeSessionId).toBe('other');
+      expect(card?.nativeSessionLineage).toBeUndefined();
+      expect(card?.taskLabel ?? '').toBe('');
+    });
+
+    it('lets go of the numbers and of a ceded copy of the pick, and keeps a label the user typed', () => {
+      seedConversation('other', folder);
+      const h = harness(caps(), folder, {
+        prior: own({
+          cededNativeIds: ['other', 'given-away'],
+          taskLabel: 'mine, typed',
+          labelSource: 'user',
+          usage: { input: 9, output: 9, cacheRead: 0, cacheCreate: 0 },
+        }),
+      });
+      expect(move(h, 'other')).toEqual({ ok: true, changed: true });
+      const card = h.cards.find((c) => c.id === 'card-1');
+      expect(card?.cededNativeIds).toEqual(['given-away']);
+      expect(card?.usage).toBeUndefined();
+      expect(card?.taskLabel).toBe('mine, typed');
+    });
+
+    it('the conversation it left can be picked again — the way back works', async () => {
+      seedConversation('mine', folder);
+      seedConversation('other', folder);
+      const h = harness(caps(), folder, { prior: own() });
+      move(h, 'other');
+      const a = (await h.call('transcripts:history', { scope: 'folder', folder })) as {
+        rows: { nativeId: string; claimed: boolean }[];
+      };
+      expect(a.rows.find((r) => r.nativeId === 'mine')?.claimed).toBe(false);
+      expect(a.rows.find((r) => r.nativeId === 'other')?.claimed).toBe(true);
+      expect(move(h, 'mine')).toEqual({ ok: true, changed: true });
+    });
+
+    it('picking the conversation the card is already in changes nothing', () => {
+      seedConversation('mine', folder);
+      const h = harness(caps(), folder, { prior: own(), status: 'idle' });
+      h.call('sessions:create', { cardId: 'card-1', folder, title: 't' });
+      expect(move(h, 'mine')).toEqual({ ok: true, changed: false });
+      expect(h.removed).toHaveLength(0);
+    });
+
+    // EVERY REFUSAL LEAVES THE CARD AND ITS SESSION EXACTLY AS THEY WERE.
+    const untouched = (h: ReturnType<typeof harness>): void => {
+      expect(h.removed).toHaveLength(0);
+      expect(h.cards.find((c) => c.id === 'card-1')?.nativeSessionId).toBe('mine');
+    };
+
+    for (const status of ['working', 'needs-permission', 'needs-input']) {
+      it(`refuses while the session is ${status}, and interrupts nothing`, () => {
+        seedConversation('other', folder);
+        const h = harness(caps(), folder, { prior: own(), status });
+        h.call('sessions:create', { cardId: 'card-1', folder, title: 't' });
+        expect(move(h, 'other')).toEqual({ ok: false, reason: 'busy' });
+        untouched(h);
+      });
+    }
+
+    it('refuses a conversation another card holds', () => {
+      seedConversation('taken', folder);
+      const h = harness(caps(), folder, {
+        prior: own(),
+        otherCards: [priorCard({ folder, id: 'card-2', nativeSessionId: 'taken' })],
+      });
+      expect(move(h, 'taken')).toEqual({ ok: false, reason: 'held' });
+      untouched(h);
+    });
+
+    it('refuses a conversation that is not on disk in THIS card\'s folder', () => {
+      // …which is also what a pick from another project is: a card is bound to
+      // its folder, so the renderer opens those in a card of their own.
+      seedConversation('elsewhere', path.join(folder, 'another-project'));
+      const h = harness(caps(), folder, { prior: own() });
+      expect(move(h, 'never-existed')).toEqual({ ok: false, reason: 'unavailable' });
+      expect(move(h, 'elsewhere')).toEqual({ ok: false, reason: 'unavailable' });
+      untouched(h);
+    });
+
+    it('refuses an id that is not shaped like one, a card it does not know, and junk', () => {
+      const h = harness(caps(), folder, { prior: own() });
+      expect(move(h, '../../etc/passwd')).toEqual({ ok: false, reason: 'bad-request' });
+      expect(move(h, 42)).toEqual({ ok: false, reason: 'bad-request' });
+      expect(move(h, 'other', 'no-such-card')).toEqual({ ok: false, reason: 'no-card' });
+      expect(h.call('sessions:switchConversation', undefined)).toEqual({ ok: false, reason: 'bad-request' });
+      untouched(h);
+    });
+
+    it('a provider that cannot resume cannot honour it, and one that throws is a refusal', () => {
+      const none = harness({}, folder, { prior: own() });
+      expect(move(none, 'other')).toEqual({ ok: false, reason: 'unavailable' });
+      const throwing = harness(
+        { resume: { canResume: () => { throw new Error('boom'); } } },
+        folder,
+        { prior: own() }
+      );
+      expect(move(throwing, 'other')).toEqual({ ok: false, reason: 'unavailable' });
+    });
+
+    it('create still will not move a card that has a conversation — only this channel does', () => {
+      // The fence in `start-plan.ts` stands: a `resumeConversationId` on an
+      // existing card is ignored, so no start can move a card as a side effect.
+      seedConversation('mine', folder);
+      seedConversation('other', folder);
+      const h = harness(caps(), folder, { prior: own() });
+      h.call('sessions:create', { cardId: 'card-1', folder, title: 't', resumeConversationId: 'other' });
+      expect(h.created[0].resumeSessionId).toBe('mine');
     });
   });
 });

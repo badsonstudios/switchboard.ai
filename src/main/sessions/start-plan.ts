@@ -50,11 +50,14 @@ export interface StartPlanInput {
    * its ancestors, or the repair sweep's guess at what it lost. This one was
    * chosen, which changes two things.
    *
-   * It is honoured ONLY for a card with no conversation of its own. The picker
-   * always opens a NEW card (§5.33: "the card you clicked from is untouched"),
-   * so a card that already has a chain is not a pick target — and refusing it
-   * here means no future caller can turn a pick into a way to move an existing
-   * card into somebody else's conversation, whatever the renderer sends.
+   * It is honoured ONLY for a card with no conversation of its own. On THIS
+   * path a pick always belongs to a new card, so a card that already has a
+   * chain is not a pick target — and refusing it here means no session START
+   * can move an existing card into another conversation, whatever the renderer
+   * sends. (Since #1090 a pick from a card's own history does move that card;
+   * that is `sessions:switchConversation`, a channel that does nothing else and
+   * re-points the card BEFORE the start, so it arrives here as the card's own
+   * stored conversation and this rule is not bent to allow it.)
    *
    * It is still asked about through `resume.canResume`, like every other
    * candidate: a picked id is untrusted renderer input and a stale one makes

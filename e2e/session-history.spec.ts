@@ -7,8 +7,10 @@
 // dialog against a stubbed bridge (`SessionHistoryDialog.test.tsx`). None of
 // them can see the real preload, the real channel, or a REAL `--resume` reaching
 // a real spawn from a row the user clicked. They also cannot see the thing this
-// feature is most likely to get wrong: that picking opens a SECOND card and
-// leaves the first alone.
+// feature is most likely to get wrong, which since #1090 is the OPPOSITE of what
+// it was: a pick made from a card's own history opens the conversation IN THAT
+// CARD. It used to open a second card and leave the first alone, and the owner's
+// experience of that was a session he did not know he had switched into.
 //
 // The transcript is written into the isolated temp home before launch, which is
 // the same seam several other specs use (`providers/fake.ts` says so in its own
@@ -41,7 +43,7 @@ test.describe('session history (#836)', () => {
     await a?.cleanup();
   });
 
-  test('lists a past conversation, filters it, and opens it in a NEW card', async () => {
+  test('lists a past conversation, filters it, and opens it IN THE SAME CARD (#1090)', async () => {
     test.setTimeout(180_000);
     const folder = tempProjectFolder();
     const home = registerTempDir(fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-hist-')));
@@ -101,25 +103,34 @@ test.describe('session history (#836)', () => {
 
     await rows.first().click();
 
-    // A SECOND card (§5.33) — not a re-pointing of the first.
-    await expect.poll(cardCount, { timeout: 25_000 }).toBe(2);
+    // THE SAME CARD (§5.33 as amended, #1090) — no second one appears. Polled
+    // for a moment rather than read once, because "a card did not appear" is
+    // only a claim once there has been time for one to.
+    await expect(w.locator('[data-history-dialog]')).toHaveCount(0, { timeout: 15_000 });
+    await w.waitForTimeout(1_500);
+    expect(await cardCount()).toBe(1);
 
-    // ...and it really is IN that conversation rather than being a fresh session
-    // that merely opened beside it. Two independent pieces of evidence, both of
-    // which can ONLY come from the seeded transcript: its opening prompt is
-    // replayed into the new card's Session view, and the card wears the
-    // conversation's own `ai-title`.
+    // ...and it really is IN that conversation rather than being the session it
+    // was a moment ago. Two independent pieces of evidence, both of which can
+    // ONLY come from the seeded transcript: its opening prompt is replayed into
+    // the card's Session view, and the card wears the conversation's own
+    // `ai-title`.
     await expect(w.getByText('what did we decide about the cache')).toBeVisible({
       timeout: 25_000,
     });
     await expect(w.getByText(TITLE).first()).toBeVisible();
 
-    // The card we clicked FROM is untouched: still there, still under its own
-    // name. (The new one is `<name>-2`, so an exact match tells them apart.)
+    // …and it is RUNNING there: the session the pick ended must not be read as
+    // "the session died", which would put an ended overlay over a live card.
+    await expect(w.locator('[data-testid="card-overlay"]')).toHaveCount(0);
+
+    // Still one card, still under its own name — it was re-pointed, not replaced.
+    expect(await cardCount()).toBe(1);
     await expect(w.getByText(path.basename(folder), { exact: true }).first()).toBeVisible();
 
-    // Reopening the picker now shows it as SPOKEN FOR. This is the guard that
-    // stops two cards appending to one transcript, seen from the outside.
+    // Reopening the picker shows that conversation as the one this card is IN:
+    // inert, because picking the conversation you are already looking at is
+    // nothing to do, and because one conversation is only ever open once.
     await w.locator('[data-testid="card-history"]').first().click();
     await expect(w.locator('[data-history-dialog]')).toBeVisible({ timeout: 15_000 });
     await expect(w.locator('[data-history-row][aria-disabled="true"]')).toHaveCount(1);

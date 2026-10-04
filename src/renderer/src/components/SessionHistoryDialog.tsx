@@ -46,6 +46,12 @@ export function SessionHistoryDialog(props: {
    * dead end they have to Escape out of and start again.
    */
   onNewConversation?: () => void;
+  /**
+   * Why the last pick did not happen (#1090). A pick made from a card opens
+   * the conversation IN that card, which main can refuse — and the dialog is
+   * still open when it does, so this is where the reason is said.
+   */
+  notice?: string;
 }): React.JSX.Element | null {
   const { t, i18n } = useTranslation();
   const [query, setQuery] = React.useState('');
@@ -268,6 +274,22 @@ export function SessionHistoryDialog(props: {
           </button>
         </div>
 
+        {/* A pick main refused (#1090). Above the list and `role="alert"`, so
+            it is seen and heard without the list moving under the pointer. */}
+        {props.notice && (
+          <div
+            data-history-notice
+            role="alert"
+            style={{
+              padding: '8px 14px',
+              color: 'var(--status-crashed-ink)',
+              fontSize: 12,
+              borderBlockEnd: '1px solid var(--border)',
+            }}
+          >
+            {props.notice}
+          </div>
+        )}
         <div data-history-rows id={`${listId}rows`} role="listbox" aria-label={t('sessionHistory.title')} style={{ overflowY: 'auto' }}>
           {loading && (
             <div data-history-loading style={{ padding: 14, color: 'var(--muted)', fontSize: 12 }}>

@@ -4218,6 +4218,28 @@ previous session" should never cost the one they are in. Two entry points: the
 card's chrome, and the `+ session` flow after a folder is chosen. v1 is search
 plus description; branch/worktree filters, rename and fork nesting wait.
 
+**⚠️ REVERSED FOR THE CARD'S OWN BUTTON (owner, 2026-10-04, #1090).** *"Whenever
+I go back in history, it opens up a new session. I don't want to open a new
+session… Right now we're in a different session, and I didn't realize it."* The
+"never costs the one they are in" reasoning protected against a loss that does
+not happen — the conversation a card leaves is on disk and one pick away — and
+its price was a second session nobody asked for. So:
+
+- A pick made from **a card's history button, in that card's folder, opens in
+  that card.** Its conversation is replaced; the card, its name and its place
+  stay. The conversation it left is released entirely (not kept as an
+  ancestor), so it is pickable again from the same list.
+- **A busy session is not interrupted.** Working, or waiting on a permission or
+  a question, refuses the pick and says why; the turn in flight would otherwise
+  be lost and a held permission answered by a kill.
+- **A pick from another folder still opens a new card.** A card is bound to its
+  folder.
+- **The `+ session` picker is unchanged** — there is no card yet to open it in.
+- It is its own channel (`sessions:switchConversation`), not a flag on
+  `sessions:create`: the start plan's rule that a `requestedConversationId` is
+  honoured only for a card with no conversation of its own still stands, so no
+  session start can move a card as a side effect.
+
 **Boundaries.** An entry that cannot be resumed — folder gone, transcript
 unreadable — explains itself rather than failing on click (the rule §5.4's
 refusals follow). The listing respects `MAX_LISTED_CONVERSATIONS`: a folder past

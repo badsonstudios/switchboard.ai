@@ -318,7 +318,8 @@
     "truncated": "Showing the {count} most recent. Some projects were skipped.",
     "lastActive": "Last active {when}",
     "openFailed": "That conversation couldn't be opened. It may have been deleted, or its folder may be gone.",
-    "newConversation": "Start a new conversation instead"
+    "newConversation": "Start a new conversation instead",
+    "switchBusy": "This session is in the middle of something. Wait for it to finish or answer what it is asking, then pick again."
   },
   "sounds": {
     "auto": "Automatic",

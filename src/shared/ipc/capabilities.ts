@@ -458,6 +458,10 @@ export const CHANNEL_CAPABILITIES = {
   'sessions:currentModel': 'sessions.read',
   'sessions:setModel': 'sessions.write',
   'sessions:dropLive': 'sessions.spawn',
+  // Move a card to a past conversation picked from ITS OWN history (#1090).
+  // `sessions.spawn` like `dropLive`: it ends the card's live session and
+  // decides what the next one resumes, which is the power that tag names.
+  'sessions:switchConversation': 'sessions.spawn',
   'sessions:isDirectory': 'fs.probe',
   // What the app repaired about a card's conversation history this run (#539) —
   // adopted or ceded. `sessions.read`: it says which card is in which

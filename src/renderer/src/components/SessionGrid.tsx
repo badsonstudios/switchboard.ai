@@ -135,7 +135,11 @@ import {
   sessionControlLock,
 } from '../lib/session-controls';
 import { type TransportKind } from '../../../shared/transport';
-import type { AutonomyMode, SessionStatus } from '../../../shared/sessions';
+import type {
+  AutonomyMode,
+  SessionStatus,
+  SwitchConversationRefusal,
+} from '../../../shared/sessions';
 import { srOnly } from './sr-only';
 import {
   dropRetired,
@@ -267,6 +271,28 @@ export type CardEnded =
        */
       pickRefused?: boolean;
     };
+
+/**
+ * Is a picked conversation's folder this card's folder (#1090)?
+ *
+ * Separators and case are folded because the two strings come from different
+ * places — the card's from the dialog that created it, the row's from the
+ * transcript directory's own record — and on Windows one path has several
+ * spellings. A wrong "no" only costs the old behaviour (a new card); main
+ * decides for real, on the provider's answer.
+ */
+export function samePickFolder(a: string, b: string | undefined): boolean {
+  if (!a || !b) return false;
+  const fold = (p: string): string => p.replace(/[\\/]+/g, '/').replace(/\/+$/, '').toLowerCase();
+  return fold(a) === fold(b);
+}
+
+/** The sentence for a pick main refused (#1090). */
+export function switchRefusalKey(reason: SwitchConversationRefusal): string {
+  if (reason === 'busy') return 'sessionHistory.switchBusy';
+  if (reason === 'held') return 'sessionHistory.claimedHint';
+  return 'sessionHistory.openFailed';
+}
 
 /**
  * The i18n keys the ended overlay renders, for one `CardEnded` (#355).
@@ -536,6 +562,16 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
   // nothing outside this card opens it, and a card that unmounts while it is up
   // has taken the surface it was anchored to with it.
   const [historyOpen, setHistoryOpen] = React.useState(false);
+  // why the last pick from this card's history did not happen (#1090)
+  const [historyNotice, setHistoryNotice] = React.useState<string | undefined>(undefined);
+  // A pick main has not answered yet. A second pick in that gap is dropped:
+  // the busy check would pass it (the old session is already gone) and its
+  // re-arm could race the start the first one caused.
+  const pickPending = React.useRef(false);
+  // The live session a pick is switching AWAY from. Main ends it before this
+  // component has let go of it, so its exit arrives while `live` still names
+  // it — and must not be read as "the session died".
+  const switchingFrom = React.useRef<string | null>(null);
   const cardId = props.params?.cardId;
   // PRESENTATION STATE LIVES IN THE STORE (P2-E15-08, AR-P1-5), not here.
   //
@@ -1102,6 +1138,8 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
     if (!live) return;
     return window.switchboard.sessions.onExited((e) => {
       if (e.sessionId !== live.id) return;
+      // ended on purpose, by a pick from this card's history (#1090)
+      if (e.sessionId === switchingFrom.current) return;
       setEnded({ kind: 'exited', code: e.code, crashed: e.crashed });
       // The THIRD way a session's held requests stop being answerable, and the
       // one that reaches neither `forgetCardLiveIds` nor main's teardown (#239):
@@ -1964,7 +2002,10 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
             <button
               data-testid="card-history"
               data-no-maximize
-              onClick={() => setHistoryOpen(true)}
+              onClick={() => {
+                setHistoryNotice(undefined);
+                setHistoryOpen(true);
+              }}
               title={t('sessionHistory.open')}
               aria-label={t('sessionHistory.open')}
               style={cheadBtn}
@@ -1975,18 +2016,60 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               <SessionHistoryDialog
                 open
                 folder={folder}
+                notice={historyNotice}
                 onClose={() => setHistoryOpen(false)}
                 onPick={(pick) => {
-                  setHistoryOpen(false);
-                  // A NEW card, in the conversation's OWN folder — which is not
-                  // necessarily this card's, once the list is widened to every
-                  // project. Placed like the card ＋ places one: into this
-                  // window when the card is popped out, and by the grid's own
-                  // rules when it is not.
-                  void addSessionCardTo(props.containerApi, pick.folder, {
-                    into: poppedOut ? props.api.group : null,
-                    resumeConversationId: pick.nativeId,
-                  });
+                  // IN THIS CARD (#1090, §5.33 as amended 2026-10-04). The owner
+                  // picked from a card's history and found himself in a second
+                  // session he had not asked for — so a pick made HERE replaces
+                  // this card's conversation. The one it was in stays in history.
+                  //
+                  // A conversation from ANOTHER project still gets a card of its
+                  // own: a card is bound to its folder, and a session cannot be
+                  // moved to a different one.
+                  if (!cardId || !samePickFolder(pick.folder, folder)) {
+                    setHistoryOpen(false);
+                    void addSessionCardTo(props.containerApi, pick.folder, {
+                      into: poppedOut ? props.api.group : null,
+                      resumeConversationId: pick.nativeId,
+                    });
+                    return;
+                  }
+                  // The dialog STAYS OPEN until main answers: a refusal changes
+                  // nothing about the session, and the dialog is where the
+                  // reason can be said next to the list it is about.
+                  if (pickPending.current) return;
+                  pickPending.current = true;
+                  switchingFrom.current = live?.id ?? null;
+                  const refused = (reason: SwitchConversationRefusal): void => {
+                    pickPending.current = false;
+                    switchingFrom.current = null;
+                    setHistoryNotice(t(switchRefusalKey(reason)));
+                  };
+                  void window.switchboard.sessions
+                    .switchConversation(cardId, pick.nativeId)
+                    .then((answer) => {
+                      const result = answered(answer);
+                      if (!result?.ok) return refused(result ? result.reason : 'unavailable');
+                      pickPending.current = false;
+                      setHistoryOpen(false);
+                      if (!result.changed) {
+                        switchingFrom.current = null;
+                        return;
+                      }
+                      // MAIN ALREADY ENDED THE OLD SESSION, so this is the
+                      // renderer's half of a restart and nothing more: let go
+                      // of the old binding and re-arm the lazy spawn, which
+                      // resumes the picked conversation as the card's own. Not
+                      // `restartSelf` — its `dropLive` would be a second kill
+                      // sent after the fact, with nothing left for it to end
+                      // but whatever starts next.
+                      sessionStore.forgetCardLiveIds(cardId);
+                      setEnded(null);
+                      setLive(null);
+                      spawning.current = false;
+                    })
+                    .catch(() => refused('unavailable'));
                 }}
               />
             )}

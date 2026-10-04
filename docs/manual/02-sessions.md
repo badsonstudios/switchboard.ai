@@ -40,14 +40,23 @@ newest first.
 2. Start typing to narrow the list down. It searches the descriptions.
 3. Click the one you want, or move to it with the arrow keys and press Enter.
 
-It opens in a **new** card, in its own folder. The session you clicked from
-carries on untouched — going back to an old conversation never costs you the one
-you are in.
+It opens **in the session you clicked from**. The card stays where it is, under
+the same name, and its conversation is replaced by the one you picked — you do
+not end up with a second session beside the first. The conversation you were in
+is not lost: it is saved like every other, and it is in this same list the next
+time you open it, so going back is the same two clicks.
+
+Because it replaces what the session is doing, **it will not interrupt a session
+that is in the middle of something**. If Claude is working, or is waiting for
+you to answer a permission request or a question, the list stays open and says
+so. Let it finish, or answer it, and pick again.
 
 To look further afield, click **This folder** at the top of the list and it
 becomes **All projects**: every conversation on your machine, with the folder
-each one belongs to shown beside it. Picking one still opens it in its own
-folder, wherever that is.
+each one belongs to shown beside it. A conversation from a **different folder**
+is the one case that opens a new card — a session belongs to its folder and
+cannot be moved to another one — and the session you clicked from carries on
+untouched.
 
 You are offered the same list when you start a session with **+ session**, right
 after you pick a folder — but only when that folder has conversations in it
@@ -57,8 +66,10 @@ does `Esc`.
 Two things the list will tell you rather than hide:
 
 - **"already open"** beside a greyed-out conversation means a card in your
-  workspace already has it. You cannot open it twice, because both cards would
-  write into the same conversation and tangle it. Go to the card that has it.
+  workspace already has it — including the one you are looking at, which shows
+  its own conversation this way. You cannot open it twice, because both cards
+  would write into the same conversation and tangle it. Go to the card that has
+  it.
 - If a folder's conversations **can't be listed** — the folder has been moved,
   or it holds more conversations than switchboard will scan at once — the list
   says so and why, instead of pretending the folder is empty.
