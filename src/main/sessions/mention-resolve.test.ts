@@ -8,8 +8,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { SessionQueries, type DiffSource } from './queries';
-import { renderOutput, CONTENT_FENCE } from '../bus/bus-tools';
-import { resolveMentions } from './mention-resolve';
+import { quoted, renderOutput, CONTENT_FENCE } from '../bus/bus-tools';
+import { mentionedSessions, resolveMentions } from './mention-resolve';
 import { AT_ESCAPE_NOTE } from '../../shared/at-mentions';
 import { findContextSections } from '../../shared/injected-context';
 import type { SessionSummary } from '../../shared/sessions';
@@ -51,41 +51,103 @@ function queries(sessions: SessionSummary[], outputs: Record<string, string[]> =
   return new SessionQueries({ list: () => sessions, transcriptFor: (id) => files.get(id) ?? null, git: noDiff });
 }
 
-const run = (q: SessionQueries, text: string) => resolveMentions(q, renderOutput, text, OWN.id);
+// The real wiring's fence (`main/index.ts`), so a brief is marked as DATA here
+// exactly as it is in the app.
+const run = (q: SessionQueries, text: string) =>
+  resolveMentions(q, renderOutput, text, OWN.id, { fence: quoted });
 
 describe('resolveMentions — a live session', () => {
-  it("injects that session's output AHEAD of the prose, attributed, fenced, and with #764's wording", () => {
+  it('injects a BRIEF on that session ahead of the prose — fenced, attributed, facts first (#1092)', () => {
     const q = queries([OWN, TRADING], { 'live-a': ['the fix was a null check in parse()'] });
     const r = run(q, "take @TradingApp's fix and apply it here");
     if (!r.ok) throw new Error(r.refusals.join('; '));
 
     const [block, prose] = [r.prompt.slice(0, r.prompt.lastIndexOf('\n\n')), r.prompt.slice(r.prompt.lastIndexOf('\n\n') + 2)];
-    // the SAME text the bus tool would have returned for this session
-    const direct = q.sessionOutput('live-a');
-    if (!direct.ok) throw new Error(direct.reason);
-    expect(block).toBe(renderOutput(direct.value));
-    expect(block).toContain('Recent output from TradingApp [id live-a]');
-    expect(block).toContain('Long individual messages and tool results are shortened.');
-    expect(block).toContain(CONTENT_FENCE);
+    expect(block.startsWith('# Brief on "TradingApp" (session)')).toBe(true);
+    // The app's FACTS come first and sit OUTSIDE the data fence; what the
+    // session said is inside it. A reader can tell which is which.
+    const fence = block.indexOf(CONTENT_FENCE);
+    expect(block.indexOf('## Facts')).toBeLessThan(fence);
+    expect(fence).toBeLessThan(block.indexOf('## Recent conversation'));
+    expect(block.indexOf('the fix was a null check in parse()')).toBeGreaterThan(fence);
+    expect(block).toContain('- **Session:** TradingApp (claude-code) — id live-a');
+    expect(block).toContain('- **Folder:** C:/p/trading');
+    expect(block).toContain('- **State:** finished its turn and is idle');
+    // …what it said is there, and so is the way to get more
     expect(block).toContain('the fix was a null check in parse()');
+    expect(block).toContain('`get_session_output`');
     // the prose: every word the user typed, with the mention out of `@` shape
     expect(prose).toBe(`take "TradingApp" (session)'s fix and apply it here`);
   });
 
   it('a session with NO transcript yet is an ok answer that says so — not a throw, not silence', () => {
     const r = run(queries([OWN, TRADING]), 'what is @TradingApp doing');
-    expect(r).toEqual({
-      ok: true,
-      prompt: `TradingApp [id live-a] has not produced any readable output yet.\n\nwhat is "TradingApp" (session) doing`,
-    });
+    if (!r.ok) throw new Error('expected a send');
+    expect(r.prompt).toContain('Nothing has been said in this session yet.');
+    expect(r.prompt.endsWith('what is "TradingApp" (session) doing')).toBe(true);
   });
 
   it('resolves case-insensitively, the way `resolve` does, and prints back what the user typed', () => {
     const r = run(queries([OWN, TRADING], { 'live-a': ['done'] }), 'ask @tradingapp');
     // The BLOCK names the session as the list spells it; the prose keeps the
     // user's own words, minus the `@` shape.
-    expect(r.ok && r.prompt.includes('Recent output from TradingApp [id live-a]')).toBe(true);
+    expect(r.ok && r.prompt.includes('# Brief on "TradingApp" (session)')).toBe(true);
     expect(r.ok && r.prompt.endsWith('ask "tradingapp" (session)')).toBe(true);
+  });
+
+  it('says so, loudly, when the mentioned session shares the READER\'s folder', () => {
+    // The one fact that can break the reader: two sessions in one working tree
+    // share a branch and each other's uncommitted changes.
+    // same case, different separators: true on every filesystem
+    const twin = summary({ id: 'live-c', name: 'Twin', folder: 'C:\\p\\beta\\' });
+    const shared = run(queries([OWN, twin], { 'live-c': ['x'] }), 'see @Twin');
+    expect(shared.ok && shared.prompt.includes('It shares your folder')).toBe(true);
+    const apart = run(queries([OWN, TRADING], { 'live-a': ['x'] }), 'see @TradingApp');
+    expect(apart.ok && apart.prompt.includes('shares your folder')).toBe(false);
+  });
+
+  it('states the branch and the uncommitted count the caller looked up — and nothing when it could not', () => {
+    const q = queries([OWN, TRADING], { 'live-a': ['x'] });
+    const asked: string[] = [];
+    const known = resolveMentions(q, renderOutput, 'see @TradingApp', OWN.id, {
+      git: (folder) => {
+        asked.push(folder);
+        return { branch: 'feature/x', changed: 3, untracked: 0 };
+      },
+    });
+    expect(asked).toEqual(['C:/p/trading']);
+    expect(known.ok && known.prompt.includes('- **Git:** on branch `feature/x`, 3 tracked files with uncommitted changes')).toBe(true);
+
+    const unknown = resolveMentions(q, renderOutput, 'see @TradingApp', OWN.id, { git: () => undefined });
+    expect(unknown.ok && unknown.prompt.includes('**Git:**')).toBe(false);
+    // a lookup that THROWS is a fact we do not have, never a refused send
+    const thrown = resolveMentions(q, renderOutput, 'see @TradingApp', OWN.id, {
+      git: () => {
+        throw new Error('git exploded');
+      },
+    });
+    expect(thrown.ok && thrown.prompt.includes('# Brief on')).toBe(true);
+    expect(thrown.ok && thrown.prompt.includes('**Git:**')).toBe(false);
+  });
+
+  it('a wiring WITHOUT the handoff package still sends the plain recent output (#764)', () => {
+    const q = queries([OWN, TRADING], { 'live-a': ['the old way'] });
+    const narrow = {
+      listSessions: q.listSessions.bind(q),
+      resolve: q.resolve.bind(q),
+      sessionOutput: q.sessionOutput.bind(q),
+    };
+    const r = resolveMentions(narrow, renderOutput, 'see @TradingApp', OWN.id);
+    const direct = q.sessionOutput('live-a');
+    if (!r.ok || !direct.ok) throw new Error('expected a send');
+    expect(r.prompt.startsWith(renderOutput(direct.value))).toBe(true);
+    expect(r.prompt).toContain('Recent output from TradingApp [id live-a]');
+  });
+
+  it('mentionedSessions names the OTHER sessions a draft resolves to, once each', () => {
+    const q = queries([OWN, TRADING]);
+    expect(mentionedSessions(q, 'ask @TradingApp and @tradingapp, not @Beta or @nobody', OWN.id).map((x) => x.id)).toEqual(['live-a']);
+    expect(mentionedSessions(q, 'no mentions here', OWN.id)).toEqual([]);
   });
 
   it('a SESSION ID resolves too — the escape hatch the ambiguous refusal offers', () => {
@@ -240,17 +302,20 @@ describe('resolveMentions — what the injected block carries (#832, #830)', () 
     // `@tradingapp` — a spelling that resolves but is not the session's own.
     // Hex, like the real `ContextRefs.mint` — the marker's own pattern only
     // accepts hex, which is itself one more thing a forger has to get right.
-    const r = resolveMentions(q, renderOutput, 'ping @tradingapp', OWN.id, () => {
-      const ref = `0000000${refs.length}`;
-      refs.push(ref);
-      return ref;
+    const r = resolveMentions(q, renderOutput, 'ping @tradingapp', OWN.id, {
+      fence: quoted,
+      mint: () => {
+        const ref = `0000000${refs.length}`;
+        refs.push(ref);
+        return ref;
+      },
     });
     if (!r.ok) throw new Error('expected a send');
     const [found] = findContextSections(r.prompt, (ref) => refs.includes(ref));
     expect(found?.name).toBe('TradingApp');
     expect(found?.start).toBe(0);
-    // The fence is INSIDE the envelope: this wraps `renderOutput`, it does not
-    // replace it.
+    // The fence is INSIDE the envelope: this wraps the fenced brief, it does
+    // not replace the fence.
     expect(r.prompt.slice(found?.start, found?.end)).toContain(CONTENT_FENCE);
   });
 

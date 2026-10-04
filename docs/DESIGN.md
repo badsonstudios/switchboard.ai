@@ -452,6 +452,28 @@ Before sending, switchboard.ai resolves `@TradingApp` from the Session Bus (last
 messages, or a named artifact) and injects it as context ahead of the prompt text.
 Autocomplete popup lists live sessions by name/color.
 
+> **A mention hands over a BRIEF, not the raw tail (#1092, 2026-10-04).** The
+> first session to receive one reported what the tail was like: the other
+> session's closing report was the useful part, the tool output was a file it
+> could read for itself, the owner's own prompt had been trimmed off the front,
+> and what it most needed — the branch, whether the two sessions shared a
+> working tree, whether the other was still running — it had to go and find.
+> So `mention-resolve.ts` now builds `renderMentionBrief`: **facts stated by the
+> app** (name, id, folder, state, branch and uncommitted count, a warning when
+> the sessions share a folder), then the #766 package's goal / instructions /
+> plan / files, then the recent conversation with **prompts and replies in full
+> and each tool call as one line**, then the three query tools by name. On a
+> real 80-block transcript that carried 15 replies and 3 prompts where the tail
+> had carried 2 and 0, in fewer characters. No model writes it; the envelope is
+> unchanged; a wiring without the package still sends the #764 output. **Two
+> rules from review:** the data fence goes round the transcript's text ONLY —
+> the facts sit outside it, so a transcript carrying its own `## Facts` cannot
+> pass for the app's — and a brief is capped at 18,000 characters with fixed
+> shares for the asked-for sections, because a block that does not fit the
+> prompt's 40k is left out whole and an uncapped brief would have injected
+> nothing on exactly the long sessions it is for. *Not built:* asking the source session to write its own handoff — the
+> one option where a model authors the text, and the owner's call.
+>
 > **As built (#797, #798, 2026-09-15).** The popup lists `summariesFrom` — the
 > bus's own list. At send, a draft that may mention a session goes to main
 > (`sessions:resolveMentions`, gated `transcripts.read`), where the finder

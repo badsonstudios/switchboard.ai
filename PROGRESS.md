@@ -3,6 +3,27 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ 2026-10-04: **#1092 — `@Name` hands over a brief, not the tail of a screen**
+>
+> **Owner, after his first cross-session handoff:** *"Is there any way to make
+> this so you have more information or more context? … create a ticket for
+> this, and let's improve this with everything you're saying here."* The
+> receiving session's own account of what was missing is the issue body. Done on
+> `feature/1092-mention-brief`.
+>
+> * `sessions/mention-brief.ts` (`renderMentionBrief`): facts → what it was
+>   asked (the #766 package's goal / instructions / plan / files) → the recent
+>   conversation with tool calls as one-liners → how to get more.
+>   `sessionOutput` gained `compactTools`. The resolve step is now ASYNC, to
+>   look up each mentioned folder's branch under a 1.5 s budget.
+> * **Measured on the real transcript this came from:** 2 replies and 0 prompts
+>   in the old handoff; 15 and 3 in the brief, in fewer characters.
+> * **NOT BUILT, AND THE OWNER'S CALL:** asking the source session to WRITE its
+>   own handoff. It is the one option where a model authors the text (§5.5).
+> * The context-chip drag (the three-fidelity dialog) is untouched.
+>
+> **#1090 merged as PR #1091** (2026-10-04) — see the entry below.
+
 > # ✅ 2026-10-04: **#1090 — a pick from a card's history opens IN that card**
 >
 > **Owner, 2026-10-04:** *"whenever I click History and click on something

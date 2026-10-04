@@ -207,6 +207,27 @@ describe('sessionOutput', () => {
     expect(r.value.text.indexOf('fix the bug')).toBeLessThan(r.value.text.indexOf('on it'));
   });
 
+  it('compactTools gives each tool call ONE line, without what it printed (#1092)', () => {
+    // For a brief: what was SAID in full, and a tool call as a pointer. The
+    // default stays as it was — an agent asking for output wants the output.
+    const q = make([
+      userLine('fix the bug'),
+      toolLine('t1', 'Bash', { command: 'npm test' }),
+      toolResultLine('t1', 'all green\nand forty more lines'),
+      assistantLine('fixed, tests pass'),
+    ]);
+    const compact = q.sessionOutput('TradingApp', undefined, { compactTools: true });
+    if (!compact.ok) throw new Error(compact.reason);
+    expect(compact.value.text).toContain('User: fix the bug');
+    expect(compact.value.text).toContain('[Bash]');
+    expect(compact.value.text).toContain('npm test');
+    expect(compact.value.text).toContain('Claude: fixed, tests pass');
+    expect(compact.value.text).not.toContain('all green');
+    expect(compact.value.text).not.toContain('->');
+    const full = q.sessionOutput('TradingApp');
+    expect(full.ok && full.value.text.includes('-> all green')).toBe(true);
+  });
+
   it('a session with NO transcript answers empty and ok — not a refusal, not a throw', () => {
     const q = new SessionQueries({
       list: () => [session()],
