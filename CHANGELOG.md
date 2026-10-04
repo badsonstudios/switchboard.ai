@@ -96,6 +96,17 @@ on the floor, and say so in your PR.
 
 ## 0.8.112 — unreleased
 
+### Added
+
+- **Pictures in a Markdown document are shown.** A screenshot or diagram that
+  sits in the project next to the document — `![shot](img/shot.png)` — now
+  appears in the rendered page, sized to fit the column, instead of as a small
+  chip with its name. PNG, JPEG, GIF, WebP, AVIF, BMP, ICO and SVG. It works in
+  a popped-out document and in the manual too. **Pictures hosted on the web are
+  still not loaded** — they keep the chip and its **Open in browser** button,
+  because fetching one tells its author you read the file. A picture outside
+  the session's folder, or one that is missing, also stays a chip.
+
 ## 0.8.111 — 2026-10-03
 
 ### Added

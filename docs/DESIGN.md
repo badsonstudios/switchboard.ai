@@ -3768,6 +3768,12 @@ some.
   telemetry) in the one place a user would never think to look.
 - Local images are served through a scoped protocol handler that resolves the
   path and refuses anything outside the document's root, symlinks included.
+  *(Built 2026-10-03, #1080 — v1 shipped a chip for local images too. As built:
+  the scheme is `sb-doc-image:`, the ONE addition to `img-src`; "the document's
+  root" is the `fs.read` scope itself — open session folders, picked files, the
+  bundled manual — rather than a second per-document rule; it serves only an
+  allow-list of picture extensions, capped at 20 MiB; and a picture it refuses
+  falls back to the chip. `data:` and `blob:` stay refused.)*
 - `http`/`https`/`mailto` links open in the OS browser via `shell.openExternal`
   against a scheme allowlist; every other scheme is refused. No in-app
   navigation to remote content, ever.

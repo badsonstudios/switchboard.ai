@@ -19,6 +19,7 @@
 // gone.
 import { DOC_DECORATION, stripDecorationNamespace } from './decoration-guard';
 import { TASK_GLYPH } from './markdown';
+import { docImageMime, docImageUrl } from '../../../shared/doc-image';
 
 export interface OutlineEntry {
   readonly id: string;
@@ -233,46 +234,182 @@ function lead(node: ChildNode | null): ChildNode | null {
 }
 
 /**
- * Every image becomes a chip, and the `<img>` is DELETED.
+ * The chip that stands in for a picture we do not show.
  *
- * §5.30 asks for this for the remote case — "CSP stays `'self'`, so remote
- * images do not load — they render as a click-to-load chip" — and v1 gives a
- * LOCAL image the same chip, which is the one place this item lands short of
- * the design. Rendering a local image needs the scoped protocol handler §5.30
- * describes ("resolves the path and refuses anything outside the document's
- * root, symlinks included"), which is main-process infrastructure this item
- * does not build; until it exists, `file:` is refused by the CSP just as
- * `https:` is, and a chip that says so beats a broken-image glyph that does
- * not. The chip carries the source in its tooltip either way, and for an
- * http(s) image it carries a button that opens it in the browser — which is
- * what "load it" can honestly mean while the CSP holds.
+ * Exported because there are two moments a chip is wanted: when the decoration
+ * decides not to offer an `<img>` at all (a remote source, a scheme nobody
+ * allowed), and LATER, when one we did offer fails to load — out of scope,
+ * missing, not really a picture — and the viewer swaps it for this rather than
+ * leaving a broken-image glyph (`chipForFailedImage`).
  */
-export function decorateImages(root: ParentNode, labels: DecorationLabels): void {
+export function imageChip(
+  doc: Document,
+  src: string,
+  alt: string,
+  labels: DecorationLabels
+): HTMLElement {
+  const chip = doc.createElement('span');
+  chip.className = 'doc-image-chip';
+  chip.setAttribute('title', src);
+  const icon = doc.createElement('span');
+  icon.className = 'doc-image-icon';
+  icon.setAttribute('aria-hidden', 'true');
+  icon.textContent = '▣';
+  const name = doc.createElement('span');
+  name.className = 'doc-image-name';
+  name.textContent = alt.trim().length > 0 ? alt : (src.split(/[\\/]/).pop() ?? labels.image);
+  chip.append(icon, name);
+  if (/^https?:/i.test(src)) {
+    const open = doc.createElement('button');
+    open.type = 'button';
+    open.className = 'doc-image-open';
+    open.textContent = labels.openInBrowser;
+    open.setAttribute('data-doc-external', src);
+    chip.append(open);
+  }
+  return chip;
+}
+
+/** A `width` a document may ask for: plain pixels, nothing else. */
+const IMAGE_WIDTH_RE = /^[1-9]\d{0,3}$/;
+
+/**
+ * A LOCAL picture is shown; every other image becomes a chip. Either way the
+ * document's own `<img>` is DELETED.
+ *
+ * §5.30, both halves. "CSP stays `'self'`, so remote images do not load — they
+ * render as a click-to-load chip": a tracking pixel is a beacon and a
+ * read-receipt, so an http(s) source is never fetched, and the chip's button
+ * opens it in the browser — which is what "load it" can honestly mean. And
+ * "Local images are served through a scoped protocol handler": a source that
+ * is a PATH (`classify` answers `relative`, with the path resolved against the
+ * document) and is a picture by name gets a NEW `<img>` pointing at
+ * `shared/doc-image.ts`'s scheme, which main answers only for a file the read
+ * scope allows. v1 gave a local image the chip too, because that handler did
+ * not exist; #1080 built it.
+ *
+ * A NEW ELEMENT, NOT THE DOCUMENT'S. Nothing the document wrote on its `<img>`
+ * survives except the alt text and a plain pixel `width` — a hand-sized
+ * screenshot is the one thing real READMEs do with a bare `<img>`. `height` is
+ * dropped: the stylesheet keeps the aspect ratio, and `markdown.tsx` records
+ * what `<img width="1" height="4000">` does to a page.
+ *
+ * WITHOUT `classify` — the direct callers and their tests — everything is a
+ * chip, which is the safe reading of "I was not told where this document is".
+ */
+export function decorateImages(
+  root: ParentNode,
+  labels: DecorationLabels,
+  classify?: (href: string | null) => { kind: string; target: string }
+): void {
   for (const img of [...root.querySelectorAll('img')]) {
     const doc = img.ownerDocument;
     const src = img.getAttribute('src') ?? '';
     const alt = img.getAttribute('alt') ?? '';
-    const chip = doc.createElement('span');
-    chip.className = 'doc-image-chip';
-    chip.setAttribute('title', src);
-    const icon = doc.createElement('span');
-    icon.className = 'doc-image-icon';
-    icon.setAttribute('aria-hidden', 'true');
-    icon.textContent = '▣';
-    const name = doc.createElement('span');
-    name.className = 'doc-image-name';
-    name.textContent = alt.trim().length > 0 ? alt : (src.split(/[\\/]/).pop() ?? labels.image);
-    chip.append(icon, name);
-    if (/^https?:/i.test(src)) {
-      const open = doc.createElement('button');
-      open.type = 'button';
-      open.className = 'doc-image-open';
-      open.textContent = labels.openInBrowser;
-      open.setAttribute('data-doc-external', src);
-      chip.append(open);
+    const where = classify?.(src);
+    if (where?.kind !== 'relative' || !docImageMime(where.target)) {
+      img.replaceWith(imageChip(doc, src, alt, labels));
+      continue;
     }
-    img.replaceWith(chip);
+    const picture = doc.createElement('img');
+    picture.className = 'doc-image';
+    picture.setAttribute('src', docImageUrl(where.target));
+    picture.setAttribute('alt', alt);
+    // What the fallback chip is built from, should the load fail. In OUR
+    // namespace, so a document cannot arrive with one already filled in.
+    picture.setAttribute('data-doc-image-src', src);
+    const width = img.getAttribute('width') ?? '';
+    if (IMAGE_WIDTH_RE.test(width)) {
+      // Kept apart from the `width` attribute itself, which `sizeImage` also
+      // writes: this is what the DOCUMENT asked for, and it always wins.
+      picture.setAttribute('data-doc-image-width', width);
+      picture.setAttribute('width', width);
+    }
+    sizeImage(picture, imageSizes.get(picture.getAttribute('src') ?? ''));
+    img.replaceWith(picture);
   }
+}
+
+/**
+ * Swap a picture that failed to load for the chip it would otherwise have been.
+ *
+ * Out of scope, gone, too large, or a text file with a `.png` name — main says
+ * which in its log, and the reader gets the same honest chip a remote image
+ * gets instead of a broken-image glyph. Answers false for anything that is not
+ * one of our own `<img>`s, so a stray `error` event changes nothing.
+ */
+export function chipForFailedImage(target: EventTarget | null, labels: DecorationLabels): boolean {
+  const img = target as HTMLElement | null;
+  if (!img || img.nodeName !== 'IMG' || !img.classList?.contains('doc-image')) return false;
+  img.replaceWith(
+    imageChip(
+      img.ownerDocument,
+      img.getAttribute('data-doc-image-src') ?? '',
+      img.getAttribute('alt') ?? '',
+      labels
+    )
+  );
+  return true;
+}
+
+/**
+ * The size each picture loaded at, by the URL it was asked for with.
+ *
+ * WHY IT IS REMEMBERED AT ALL. A fresh `<img>` is zero pixels tall until its
+ * bytes arrive, and the viewer puts the reader back where they were the moment
+ * the body is replaced — so a document with pictures above the reader would
+ * collapse, clamp the scroll position, and grow back with the reader somewhere
+ * else. A chip had its height immediately; a picture does not. Writing the
+ * last known size onto the new element as `width`/`height` gives Chromium an
+ * aspect ratio to lay out with before anything loads.
+ *
+ * MODULE-LEVEL, not read off the outgoing DOM, because the outgoing DOM is only
+ * there for one of the cases: a live re-render has a predecessor to copy from,
+ * but a toggle back from Source and a second visit to a document do not.
+ *
+ * Bounded by being emptied — a size is a hint, and losing every hint costs one
+ * jump on the next render, not a wrong picture.
+ */
+const imageSizes = new Map<string, { w: number; h: number }>();
+const MAX_REMEMBERED_IMAGES = 500;
+
+/** Write `size` onto a picture, under the width the document asked for if any. */
+function sizeImage(img: Element, size: { w: number; h: number } | undefined): void {
+  if (!size) return;
+  const asked = Number(img.getAttribute('data-doc-image-width'));
+  const width = asked > 0 ? asked : size.w;
+  img.setAttribute('width', String(width));
+  img.setAttribute('height', String(Math.round((width * size.h) / size.w)));
+}
+
+/**
+ * A picture loaded: remember its size, and correct the element to it.
+ *
+ * CORRECTED, not merely recorded. The size written at render time is the one
+ * the picture had LAST time, and an agent that regenerates a chart at three
+ * times the width must not have it pinned at the old one — so the moment the
+ * new bytes are in, the element says what they actually are. Left on the
+ * element afterwards, rather than removed, because dockview moving a viewer
+ * into its own window makes the picture load again, and the room has to still
+ * be there while it does.
+ *
+ * Answers false for anything that is not one of our own loaded `<img>`s.
+ */
+export function rememberImageSize(target: EventTarget | null): boolean {
+  const img = target as HTMLImageElement | null;
+  if (!img || img.nodeName !== 'IMG' || !img.classList?.contains('doc-image')) return false;
+  const src = img.getAttribute('src');
+  if (!src || !(img.naturalWidth > 0) || !(img.naturalHeight > 0)) return false;
+  if (imageSizes.size >= MAX_REMEMBERED_IMAGES && !imageSizes.has(src)) imageSizes.clear();
+  const size = { w: img.naturalWidth, h: img.naturalHeight };
+  imageSizes.set(src, size);
+  sizeImage(img, size);
+  return true;
+}
+
+/** Forget every remembered size — the tests' reset, and nothing else's. */
+export function forgetImageSizes(): void {
+  imageSizes.clear();
 }
 
 /**
@@ -397,7 +534,7 @@ export function decorateDocument(
   stripOurNamespace(content);
   // Images and media next: every other pass is cosmetic, and if one of them
   // throws we still want the fetching elements gone.
-  decorateImages(content, labels);
+  decorateImages(content, labels, classifyHref);
   stripMedia(content, labels);
   decorateLinks(content, classifyHref);
   const outline = decorateHeadings(content);

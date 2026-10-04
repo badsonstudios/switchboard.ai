@@ -3,6 +3,14 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # 🔨 IN PROGRESS — 2026-10-03: **#1080, pictures inline in a rendered Markdown document**
+>
+> **Owner request, same day:** *"When we preview a Markdown, we should be able
+> to have inline images in it."* Branch `feature/1080-markdown-inline-images`.
+> LOCAL images only, through the scoped handler DESIGN §5.30 always described
+> and nobody built; **remote images stay a chip** (§5.30 + P8, not re-opened).
+> The plan is on the issue.
+
 > # 🚧 NOW — 2026-10-03: **getting the app ready for a second developer by Monday 2026-10-05**
 >
 > **The owner's words: *"Monday I'm going to turn you over to Tanner… he's good

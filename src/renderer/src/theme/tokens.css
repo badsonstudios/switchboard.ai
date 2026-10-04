@@ -1747,6 +1747,15 @@ mark[data-feed-match-current] {
   margin: 0 0 10px;
   max-inline-size: 100%;
 }
+/* A local picture, shown (#1080). Never wider than the reading column, and the
+ * height always follows the width — so a `width`/`height` pair on the element
+ * is an aspect ratio to reserve room with, never a box a document can dictate. */
+.doc-md .doc-image {
+  max-inline-size: 100%;
+  block-size: auto;
+  vertical-align: middle;
+  border-radius: 4px;
+}
 .doc-image-chip,
 .doc-media-chip {
   display: inline-flex;

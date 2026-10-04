@@ -257,11 +257,26 @@ into your own tools is always one click away.
 
 - **Nothing is ever saved from here.** The viewer cannot edit, and there is no
   setting that makes it. Use your editor.
-- **Images in a document are not loaded.** A picture in a Markdown file shows as
-  a small chip with its name. For a picture hosted on the web, the chip has an
-  **Open in browser** button. This is deliberate: switchboard.ai never makes a
-  network request on your behalf, and an image in a file someone else wrote is
-  the easiest possible way to find out that you read it.
+- **Pictures that live in your project are shown; pictures on the web are not.**
+  A screenshot or diagram saved alongside a Markdown file, and referred to from
+  it the usual Markdown way — an exclamation mark, a label in square brackets,
+  then the path to the picture in round ones — appears in the rendered page,
+  never wider than the text column. PNG, JPEG, GIF, WebP, AVIF, BMP, ICO and SVG all work,
+  up to 20 MB each. If the document is rewritten while you are reading it, the
+  pictures stay put.
+
+  A picture **hosted on the web** shows as a small chip with its name and an
+  **Open in browser** button instead. This is deliberate: switchboard.ai never
+  makes a network request on your behalf, and an image in a file someone else
+  wrote is the easiest possible way to find out that you read it.
+
+  A picture also stays a chip when it is **missing**, when it **isn't really a
+  picture**, or when it is **outside the session's folder**. That last one has
+  a consequence worth knowing: a file you opened with **Open file…** from
+  somewhere that is *not* inside one of your sessions' folders was granted as
+  that one file, so the pictures beside it are not shown — the same rule that
+  stops its links to neighbouring files from opening. Open a session on the
+  folder and they appear.
 - **A document is shown in your theme, not its own.** Markdown files can contain
   raw HTML, and that HTML can carry styling of its own. The viewer ignores it, so
   a document can't place something over the app's controls, hide text under it,
