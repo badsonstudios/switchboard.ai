@@ -5,10 +5,16 @@
 
 > # ✅ 2026-10-03 (evening): **pictures in Markdown (#1080) and the manual with a Contents page and screenshots (#1082) — both owner requests, both done**
 >
-> **Next up:** the owner asked for a release once these are in — *"create
-> another release so I can see the new manual"*. **Cut 0.8.112** (a plain patch
-> step). After it: the remaining 15 manual pages get pictures from the same
-> script. Nothing else is claimed.
+> ✅ **RELEASED: v0.8.112, 2026-10-03** (`5a408c2`, PR #1086) — the owner, once
+> these were in: *"create another release so I can see the new manual."* A
+> plain patch step. Installer and `.sha256` sidecar both published, and the
+> published pair downloaded and verified to match by hand. `0.8.113 —
+> unreleased` is open and empty.
+>
+> **Next up:** nothing is claimed. The natural follow-on is the remaining 15
+> manual pages, which get pictures from the same script. ⚠️ **#1079 (the
+> `feed-tail-pin` flake) hard-failed two of this evening's four Windows e2e
+> runs** — it cost two re-runs and will keep costing them until it is fixed.
 >
 > * **#1080 — a local picture in a rendered Markdown document is shown.** PR
 >   #1081, merged. The scoped image handler DESIGN §5.30 always described:
@@ -27,9 +33,10 @@
 >   (`SWITCHBOARD_FAKE_SCRIPT`) and draws the callouts as DOM. **Regenerate
 >   after the interface is reworked; never edit a PNG by hand.** The owner
 >   chose: core pages first, dark theme.
->   ⚠️ **NOT PROVEN: that the INSTALLER carries `img/`.** The filter was read
->   against the packaging library's source and looks right; nobody has built an
->   installer and looked. The tracker's row for #1082 has it as step 6.
+>   **The packaged app carries `img/`** — checked on an unpacked build
+>   (`npm run package -- --dir`): 24 pages and nine pictures under
+>   `resources/manual`. ⚠️ What no machine did is open Help in the INSTALLED
+>   app and look; the tracker's row for #1082 has it as step 6.
 > * **Filed from what the pictures showed, not fixed (interface work):**
 >   **#1083** (card header collides at a narrow width) and **#1084** (status
 >   bar counts an open document as a session).
