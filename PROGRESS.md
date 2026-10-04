@@ -3,13 +3,36 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🔨 IN PROGRESS — 2026-10-03: **#1080, pictures inline in a rendered Markdown document**
+> # ✅ 2026-10-03 (evening): **pictures in Markdown (#1080) and the manual with a Contents page and screenshots (#1082) — both owner requests, both done**
 >
-> **Owner request, same day:** *"When we preview a Markdown, we should be able
-> to have inline images in it."* Branch `feature/1080-markdown-inline-images`.
-> LOCAL images only, through the scoped handler DESIGN §5.30 always described
-> and nobody built; **remote images stay a chip** (§5.30 + P8, not re-opened).
-> The plan is on the issue.
+> **Next up:** the owner asked for a release once these are in — *"create
+> another release so I can see the new manual"*. **Cut 0.8.112** (a plain patch
+> step). After it: the remaining 15 manual pages get pictures from the same
+> script. Nothing else is claimed.
+>
+> * **#1080 — a local picture in a rendered Markdown document is shown.** PR
+>   #1081, merged. The scoped image handler DESIGN §5.30 always described:
+>   one scheme added to `img-src`, answered from the `fs.read` scope. **Remote
+>   images stay a chip** (§5.30 + P8, not re-opened). ⚠️ **Review found two
+>   real holes before it shipped, both fixed in the PR:** `srcset` walked the
+>   new scheme past the sanitizer (which would have reached the feed), and a
+>   network path made main contact the host before deciding. CI's one red was
+>   the known flake #1079; the re-run was green.
+> * **#1082 — the manual opens at Contents, every page links back, and eight
+>   core pages have annotated screenshots.** The owner's own words are on the
+>   issue. `MANUAL_ENTRY_PAGE` is now `contents.md`; `README.md` stays the
+>   contributors' index. **Pictures are GENERATED** — `npm run manual:shots`
+>   runs `e2e/manual-shots.spec.ts` (skipped everywhere else), which stages a
+>   made-up project through the stream fake's new scripted turns
+>   (`SWITCHBOARD_FAKE_SCRIPT`) and draws the callouts as DOM. **Regenerate
+>   after the interface is reworked; never edit a PNG by hand.** The owner
+>   chose: core pages first, dark theme.
+>   ⚠️ **NOT PROVEN: that the INSTALLER carries `img/`.** The filter was read
+>   against the packaging library's source and looks right; nobody has built an
+>   installer and looked. The tracker's row for #1082 has it as step 6.
+> * **Filed from what the pictures showed, not fixed (interface work):**
+>   **#1083** (card header collides at a narrow width) and **#1084** (status
+>   bar counts an open document as a session).
 
 > # 🚧 NOW — 2026-10-03: **getting the app ready for a second developer by Monday 2026-10-05**
 >
