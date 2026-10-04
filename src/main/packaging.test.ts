@@ -252,6 +252,8 @@ describe('packaging config (P2-E19-01)', () => {
     const onDisk = fs.existsSync(imgDir)
       ? fs.readdirSync(imgDir).map((f) => `img/${f}`)
       : [];
+    // there ARE pictures — an empty folder would pass everything below
+    expect(onDisk.length).toBeGreaterThan(0);
     // an orphan is a megabyte in every installer for a picture nobody sees
     expect(onDisk.filter((f) => !shown.has(f))).toEqual([]);
     // and the installer's filter is `img/*.png` — anything else would not ship

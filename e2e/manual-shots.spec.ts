@@ -35,6 +35,7 @@ const WINDOW = { width: 1360, height: 860 };
 // ── the made-up world ────────────────────────────────────────────────────────
 
 const PROMPT_FEATURE = 'Add a dark mode toggle to the settings page';
+const PROMPT_FOLLOW_UP = 'Yes — remember it between visits';
 const PROMPT_BUILD = 'Run the production build and fix whatever breaks';
 
 const SETTINGS_BEFORE = `import { Toggle } from '../components/Toggle';
@@ -115,10 +116,9 @@ function plainProject(parent: string, name: string, readme: string): string {
 }
 
 /** What the stand-in for Claude says to each prompt — see `FakeScriptedTurn`. */
-function script(shop: string): Record<string, unknown> {
+function script(billing: string): Record<string, unknown> {
   // What the feed PRINTS. A tidy made-up path, not the temp folder the run
   // really used — that one has the machine's user name in it.
-  void shop;
   const settings = 'C:\\Projects\\acme-storefront\\src\\pages\\SettingsPage.tsx';
   return {
     [PROMPT_FEATURE]: {
@@ -166,7 +166,10 @@ function script(shop: string): Record<string, unknown> {
       permission: {
         tool: 'Edit',
         input: {
-          file_path: 'C:\\Projects\\billing-api\\.env.production',
+          // A REAL path inside the run's own temp folder: if the request is ever
+          // allowed, the stand-in writes the file, and it must land somewhere the
+          // sweep will take it. `tidy` shows the temp parent as a projects folder.
+          file_path: path.join(billing, '.env.production'),
           old_string: 'PAYMENTS_TIMEOUT_MS=3000',
           new_string: 'PAYMENTS_TIMEOUT_MS=8000',
         },
@@ -315,6 +318,7 @@ async function around(w: Page, targets: Locator[], pad = 28): Promise<Clip> {
     x2 = Math.max(x2, b.x + b.width);
     y2 = Math.max(y2, b.y + b.height);
   }
+  if (!Number.isFinite(x1)) throw new Error('manual shot: nothing on screen to frame');
   const size = w.viewportSize() ?? WINDOW;
   const x = Math.max(0, x1 - pad);
   const y = Math.max(0, y1 - pad);
@@ -339,6 +343,9 @@ async function tidy(w: Page, tempParent: string): Promise<void> {
     for (let n = walker.nextNode(); n; n = walker.nextNode()) {
       const text = n.nodeValue ?? '';
       if (text.includes('claude-fake-1')) n.nodeValue = text.replace('claude-fake-1', 'opus');
+      // the build stamp beside the version — a commit hash that dates the
+      // picture to one developer's working tree and says nothing to a reader
+      else if (/^[0-9a-f]{7,10}\*?$/.test(text.trim())) n.nodeValue = '';
       // …and the temp folder the run really used, which has the user name of
       // whoever generated the pictures in it
       else if (text.includes(parent)) n.nodeValue = text.split(parent).join('C:\\Projects');
@@ -357,7 +364,7 @@ test.describe('manual screenshots (#1082)', () => {
     const shop = storefront(parent);
     const billing = plainProject(parent, 'billing-api', '# Billing API\n\nInvoices and payments.\n');
     const scriptFile = path.join(parent, 'script.json');
-    fs.writeFileSync(scriptFile, JSON.stringify(script(shop)), 'utf8');
+    fs.writeFileSync(scriptFile, JSON.stringify(script(billing)), 'utf8');
 
     a = await launchApp({
       seedFolder: shop,
@@ -389,15 +396,6 @@ test.describe('manual screenshots (#1082)', () => {
     // ── a session that has done some work ────────────────────────────────────
     await composer.click();
     await composer.fill(PROMPT_FEATURE);
-    await shot(
-      w,
-      'prompt-box',
-      [
-        { target: composer, label: 'Type what you want, then press Enter', side: 'top' },
-        { target: autonomy, label: 'How much it may do without asking', side: 'bottom' },
-      ],
-      await around(w, [composer, autonomy], 64)
-    );
     await composer.press('Enter');
     await expect(w.getByText('Want me to store it?')).toBeVisible({ timeout: 30_000 });
     await tidy(w, parent);
@@ -407,6 +405,20 @@ test.describe('manual screenshots (#1082)', () => {
       { target: w.getByText('normal', { exact: true }), label: 'How much detail to show', side: 'left' },
       { target: composer, label: 'Your next message', side: 'top', alignEnd: true },
     ]);
+
+    await composer.click();
+    await composer.fill(PROMPT_FOLLOW_UP);
+    await tidy(w, parent);
+    await shot(
+      w,
+      'prompt-box',
+      [
+        { target: composer, label: 'Type what you want, then press Enter', side: 'top' },
+        { target: autonomy, label: 'How much it may do without asking', side: 'bottom' },
+      ],
+      await around(w, [composer, autonomy], 64)
+    );
+    await composer.fill('');
 
     // ── the Changes tab, and one file's diff ─────────────────────────────────
     await tabs.getByText(/^Changes/).click();
@@ -422,7 +434,7 @@ test.describe('manual screenshots (#1082)', () => {
     await w.waitForTimeout(1200);
     await tidy(w, parent);
     await shot(w, 'changes-diff', [
-      { target: w.locator('.monaco-diff-editor').first(), label: 'Before on the left, after on the right', side: 'top' },
+      { target: w.locator('.monaco-diff-editor').first(), label: 'Before on the left, after on the right', side: 'bottom' },
     ]);
 
     // ── reading a file in the app ────────────────────────────────────────────
