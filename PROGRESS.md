@@ -20326,3 +20326,18 @@ a "[Dan eyeball]" note.**
   No user-facing change, so no `docs/manual/` page. DESIGN.md never specified
   the discovery mechanism (only the binding contract, untouched), so no
   amendment.
+
+> # ✅ DONE — 2026-10-04: **#1088 — Feed: group by task label**
+>
+> **Implemented and tested.** Feed now groups entries by task label boundaries.
+> When a label changes (manually typed or AI-generated), a header appears showing
+> the new label. Initial prompt appears as first boundary. Reuses existing
+> agentRunHeads grouping pattern — no new IPC needed, label injected at bridge.
+> Tests pass (10,595); build succeeds; ready for hand-test and PR.
+>
+> **Branch:** `feature/1088-feed-session-grouping` · **Changes:**
+> - Added `taskLabel?: string` to FeedBlockDto (renderer/lib/feed.ts)
+> - Added `taskLabelBoundaries()` function to derive boundaries (renderer/lib/feed-groups.ts)
+> - Render label headers in FeedView (renderer/components/FeedView.tsx)
+> - Inject taskLabel at bridge in main process (main/sessions/ipc.ts)
+

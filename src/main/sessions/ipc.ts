@@ -1351,9 +1351,16 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
   });
   broker.handle('transcripts:blocks', (_e, liveId: string) => {
     if (typeof liveId !== 'string') return [];
-    return isStream(liveId) && deps.streamFeed
+    const blocks = isStream(liveId) && deps.streamFeed
       ? deps.streamFeed.blocks(liveId)
       : transcripts.blocks(liveId);
+
+    // Inject taskLabel into each block for feed grouping (#1088)
+    const cardId = cardOfLive.get(liveId);
+    const card = cardId ? deps.persist.list().find((s) => s.id === cardId) : null;
+    const taskLabel = card?.taskLabel || undefined;
+
+    return blocks.map((b) => ({ ...b, taskLabel }));
   });
   // Session find (P2-E17-01, §5.31): scan the transcript FILE, in main.
   //

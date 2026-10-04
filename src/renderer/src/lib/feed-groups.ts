@@ -44,6 +44,11 @@ export interface AgentRunHead {
   discriminator?: string;
 }
 
+export interface TaskLabelBoundary {
+  /** the label for this boundary; undefined or empty means "no label yet" */
+  label?: string;
+}
+
 /**
  * A maximal consecutive span of sidechain blocks belonging to one agent.
  *
@@ -186,4 +191,33 @@ export function agentRunHeads(
     heads.set(r.headSeq, head);
   }
   return heads;
+}
+
+/**
+ * Which blocks start a new task label boundary (#1088).
+ *
+ * When the task label changes, a new boundary starts. This maps block seq
+ * to the label that begins at that block. Similar to `agentRunHeads`, this
+ * returns a flat map keyed by seq, and FeedView renders a header before
+ * blocks where the seq appears as a key.
+ */
+export function taskLabelBoundaries(
+  visible: readonly FeedBlockDto[],
+): Map<number, TaskLabelBoundary> {
+  const boundaries = new Map<number, TaskLabelBoundary>();
+  let prevLabel: string | undefined;
+  let isFirstBlock = true;
+
+  for (const b of visible) {
+    const currentLabel = b.taskLabel ?? '';
+
+    // Always mark the first block (even if no label yet), or when label changes
+    if (isFirstBlock || currentLabel !== prevLabel) {
+      boundaries.set(b.seq, { label: currentLabel || undefined });
+      prevLabel = currentLabel;
+      isFirstBlock = false;
+    }
+  }
+
+  return boundaries;
 }

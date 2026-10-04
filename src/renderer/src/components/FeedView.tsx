@@ -6,7 +6,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { blockVisible, FeedBlockDto, showsTimelineDot, upsertBlock, Verbosity } from '../lib/feed';
-import { agentRunHeads, type AgentRunHead } from '../lib/feed-groups';
+import { agentRunHeads, taskLabelBoundaries, type AgentRunHead, type TaskLabelBoundary } from '../lib/feed-groups';
 import { useFeedSkipping } from '../lib/use-feed-skipping';
 import { autonomyTooltip } from '../lib/autonomy';
 import {
@@ -916,6 +916,7 @@ export function FeedView(props: {
   // feed's re-render cost is #740's, and one pass over a list already being
   // walked is not the part worth changing blind.
   const agentHeads = agentRunHeads(visibleBlocks, blocks);
+  const labelBoundaries = taskLabelBoundaries(visibleBlocks);
   return (
     // `data-perf-*`: how big this conversation is, and how much of it is on
     // screen, published for E21's detailed capture (#923). The whole premise of
@@ -1106,6 +1107,33 @@ export function FeedView(props: {
                     An agent's NAME is announced nowhere else at all: hide it
                     and a screen reader gives three interleaved agents as one
                     voice, which is this item's own bug for a different reader. */}
+                {(() => {
+                  const labelBoundary = labelBoundaries.get(b.seq);
+                  if (labelBoundary) {
+                    const label = labelBoundary.label || '';
+                    return (
+                      <div
+                        className="task-label-divider"
+                        data-task-label={label}
+                        style={{
+                          padding: '8px 12px',
+                          marginBlock: '8px 4px',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          color: 'var(--muted)',
+                          borderBlockStart: '1px solid var(--border)',
+                          background: 'var(--panel2)',
+                          cursor: 'pointer',
+                          userSelect: 'none',
+                        }}
+                        title={`Jump to: ${label || 'start of session'}`}
+                      >
+                        {label || '(no label)'}
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
                 {(() => {
                   const head = agentHeads.get(b.seq);
                   return head ? <div className="agent-divider">{agentCaption(t, head)}</div> : null;

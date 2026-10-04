@@ -65,6 +65,11 @@ export interface FeedBlockDto {
    * the run, never off its first block.
    */
   agentName?: string;
+  /**
+   * The session's task label when this block was created (#1088). Used to group
+   * feed entries by label boundaries — when the label changes, a new group starts.
+   */
+  taskLabel?: string;
   ts?: string;
   /** tokens are still arriving into this block (P2-E18-10, stream sessions) */
   streaming?: boolean;
