@@ -271,7 +271,7 @@ export interface SessionIpcDeps {
    * `main/index.ts` hands it the bus's own `SessionQueries` and `renderOutput`.
    * Optional: a wiring without one sends every draft exactly as typed.
    */
-  resolveMentions?: (text: string, ownSessionId: string) => MentionPrompt;
+  resolveMentions?: (text: string, ownSessionId: string) => MentionPrompt | Promise<MentionPrompt>;
 }
 
 /**
@@ -2529,14 +2529,23 @@ export function registerSessionIpc(deps: SessionIpcDeps): SessionIpcHandle {
       return refuse('sessions:resolveMentions', 'sessionId and text are required');
     }
     if (!deps.resolveMentions) return { ok: true, prompt: text } satisfies MentionPrompt;
-    try {
-      return deps.resolveMentions(text, sessionId);
-    } catch (err) {
+    const failed = (err: unknown): null => {
       log.warn('sessions:resolveMentions failed; the draft will be sent as typed', {
         sessionId,
         error: errorText(err),
       });
       return null;
+    };
+    try {
+      // A wiring may answer LATER (#1092: the real one looks up each mentioned
+      // folder's git state first). A rejection is the same fail-open as a throw.
+      const answer = deps.resolveMentions(text, sessionId);
+      // any thenable, not only a native Promise
+      return typeof (answer as { then?: unknown } | null)?.then === 'function'
+        ? Promise.resolve(answer).catch(failed)
+        : answer;
+    } catch (err) {
+      return failed(err);
     }
   });
 

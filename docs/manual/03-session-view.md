@@ -242,17 +242,36 @@ The box at the bottom sends straight to the real Claude Code session:
   typing at the end of the `@`-word, so clicking into a name you already wrote
   and pressing Enter just sends. An `@` inside ordinary text, like an email
   address, opens nothing and stays exactly as you typed it.
-- **A mention brings that session's recent work with it.** When you send
-  "take `@TradingApp`'s fix and apply it here", switchboard.ai looks up
-  TradingApp's recent conversation and puts it in front of your message, marked
-  as coming from TradingApp. In what's sent, your `@TradingApp` becomes
+- **A mention brings a brief on that session with it.** When you send
+  "take `@TradingApp`'s fix and apply it here", switchboard.ai puts a short
+  brief on TradingApp in front of your message, marked as coming from
+  TradingApp. In what's sent, your `@TradingApp` becomes
   `"TradingApp" (session)` — the rest of your words are unchanged. (Claude would
   otherwise read `@TradingApp` as a *file* called TradingApp.) You'll see all of
   it in your turn in the conversation, so nothing is added behind your back.
-  Very long messages and tool output are shortened, and only the most recent
-  part of the conversation comes along. If you mention several sessions at once
-  and the total is too long, the ones you mentioned first come along and a line
-  in your message says which were left out.
+  If you mention several sessions at once and the total is too long, the ones
+  you mentioned first come along and a line in your message says which were
+  left out.
+
+  The brief is put together by the app — no AI writes it — and it has four
+  parts, in this order:
+
+  1. **The facts.** Which session, which folder, whether it is working, waiting
+     on you, idle, or has stopped running; which git branch its folder is on and
+     how many files have uncommitted changes. **If that session works in the
+     same folder as the one you are typing in, the brief says so in bold**,
+     because two sessions in one folder share one set of files and one branch.
+  2. **What it was asked to do** — its first prompt, what you asked for along
+     the way, its to-do list, and the files it read and changed.
+  3. **The recent conversation** — what you typed and what it replied, in full,
+     with each tool it ran shown as a single line rather than everything the
+     tool printed. That leaves room for many more turns of actual conversation.
+  4. **How to get more.** The receiving session is told it can ask switchboard
+     for the other session's full output or its uncommitted changes, so it
+     fetches detail when it needs it instead of being handed everything.
+
+  Only the recent end of a long conversation comes along, and the brief says
+  when older turns were left out.
   - **It arrives folded up.** In the conversation, what came from TradingApp
     shows as a single **Context from TradingApp** row — click it to read the
     whole thing, click again to fold it away. Your own question sits underneath,

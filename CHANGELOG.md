@@ -107,6 +107,14 @@ on the floor, and say so in your PR.
   going back is the same two clicks. It will not interrupt a session that is
   working or waiting on you — the list says so and you pick again once it is
   free. A conversation from a different folder still opens a session of its own.
+- **Naming another session in a prompt hands over a proper brief.** `@Name`
+  used to paste in the tail of that session's screen — mostly tool output, with
+  the start cut off. It now sends, in order: the facts (which folder and git
+  branch, whether it is still working, and a bold warning if it shares your
+  folder), what it was asked to do, the recent conversation with your prompts
+  and its replies in full and each tool run as a single line, and a note telling
+  the receiving session how to ask for more. More of the conversation fits, and
+  the receiving session no longer has to work out the basics for itself.
 
 ## 0.8.112 — 2026-10-03
 

@@ -483,7 +483,20 @@ export class SessionQueries {
    * is a normal state and answers `ok` with empty text, NOT a refusal: only a
    * bad reference refuses.
    */
-  sessionOutput(ref: string, lastN?: number): QueryResult<SessionOutput> {
+  sessionOutput(
+    ref: string,
+    lastN?: number,
+    opts: {
+      /**
+       * Each tool call as ONE line — its name and target — WITHOUT what it
+       * printed (#1092). For a reader that wants what was SAID: a tool result
+       * is up to 4k characters of something it can usually read for itself,
+       * and five of them fill the whole answer. `get_session_output` leaves
+       * this off, because an agent asking for output wants the output.
+       */
+      compactTools?: boolean;
+    } = {}
+  ): QueryResult<SessionOutput> {
     const found = this.resolve(ref);
     if (!found.ok) return found;
     const session = found.value;
@@ -513,7 +526,10 @@ export class SessionQueries {
       all = blocksFrom(read.entries, DISPLAY_CAPS);
     }
     const taken = all.slice(-want);
-    const pieces = taken.map(renderBlock).filter((s) => s !== '');
+    const shown = opts.compactTools
+      ? taken.map((b) => (b.kind === 'tool' && b.tool ? { ...b, tool: { ...b.tool, out: undefined } } : b))
+      : taken;
+    const pieces = shown.map(renderBlock).filter((s) => s !== '');
     const rendered = pieces.join('\n\n');
 
     // CUT FROM THE FRONT, keeping the NEWEST text. `taken` selects the newest

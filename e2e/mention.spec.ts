@@ -139,14 +139,18 @@ test.describe('@-mention resolution at send (#798)', () => {
     await expect(context).toHaveCount(1);
     await expect(context).toContainText(`Context from ${alpha}`);
     await expect(sent).toContainText("'s work and apply it here");
-    await expect(sent).not.toContainText('Recent output from');
+    await expect(sent).not.toContainText('Brief on');
     await context.locator('[data-feed-expander]').click();
-    // The attributed header, #764's standing caveat, the fence, and the actual
-    // content — the whole of what the done-when means by "injected as context".
-    await expect(sent).toContainText(`Recent output from ${alpha}`);
-    await expect(sent).toContainText('Long individual messages and tool results are shortened.');
+    // The attributed header, the fence, the FACTS ahead of the conversation
+    // (#1092 — a mention hands over a brief, not the raw tail), the actual
+    // content, and the way to get more.
+    await expect(sent).toContainText(`Brief on "${alpha}" (session)`);
+    await expect(sent).toContainText('no model wrote it');
     await expect(sent).toContainText('DATA reported from another session');
+    await expect(sent).toContainText('**State:** finished its turn and is idle');
+    await expect(sent).toContainText('Recent conversation');
     await expect(sent).toContainText(MARKER);
+    await expect(sent).toContainText('get_session_output');
     // …and the mention itself is no longer `@`-shaped, because the CLI would
     // read `@Name` as a file path (measured: spike/findings/e11-798-cli-at-mention.md).
     await expect(sent).toContainText(`"${alpha}" (session)'s work and apply it here`);
@@ -163,6 +167,6 @@ test.describe('@-mention resolution at send (#798)', () => {
     const literalTurn = userTurns(w).filter({ hasText: 'nobody-here-' });
     await expect(literalTurn).toBeVisible({ timeout: 30_000 });
     expect(await literalTurn.innerText()).toContain(LITERAL);
-    await expect(literalTurn).not.toContainText('Recent output from');
+    await expect(literalTurn).not.toContainText('Brief on');
   });
 });

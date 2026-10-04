@@ -95,9 +95,10 @@ import { isCommitRef, isLogQuery, isRev } from './git/git-log';
 import { type GitWriteResult, asPathList } from './git/git-write';
 import { BusHost } from './bus/host-channel';
 import { SessionQueries, summariesFrom } from './sessions/queries';
-import { resolveMentions } from './sessions/mention-resolve';
+import { mentionedSessions, resolveMentions } from './sessions/mention-resolve';
+import { createMentionGitLookup } from './sessions/mention-git';
 import { buildContextOffer } from './sessions/context-drop';
-import { renderOutput } from './bus/bus-tools';
+import { quoted, renderOutput } from './bus/bus-tools';
 import { SiblingDelivery } from './sessions/delivery';
 import { Blackboard } from './sessions/blackboard';
 import { pushSiblingMessage, registerDeliveryIpc } from './sessions/delivery-ipc';
@@ -2310,6 +2311,8 @@ app
     const knownFolder = (folder: string): boolean =>
       manager.list().some((s) => path.resolve(s.identity.folder) === path.resolve(folder));
     const gitService = new GitService();
+    // the branch a mentioned session's folder is on, for its brief (#1092)
+    const mentionGit = createMentionGitLookup((folder) => gitService.status(folder));
 
     // ── the Session Bus (§5.4; #761 built the answers, #762 the channel, #763
     //    is the first wiring of either) ──────────────────────────────────────
@@ -2850,10 +2853,23 @@ app
       // The ref is minted against the RECEIVING session (#830): that is the
       // session whose Feed will be asked to fold the block, and a register keyed
       // by anything else would answer a question nobody asked.
-      resolveMentions: (text, ownSessionId) =>
-        resolveMentions(sessionQueries, renderOutput, text, ownSessionId, () =>
-          contextRefs.mint(ownSessionId)
-        ),
+      //
+      // ASYNC since #1092, for one reason: a brief states which BRANCH the
+      // mentioned session's folder is on and how many files it has uncommitted,
+      // and asking git is not instant. `mention-git.ts` owns the rules — one
+      // read per folder, a short budget, and a folder that does not answer in
+      // time is simply not described. Only mentioned sessions are asked about,
+      // so a draft with no `@` costs nothing.
+      resolveMentions: async (text, ownSessionId) => {
+        const git = await mentionGit.lookup(
+          mentionedSessions(sessionQueries, text, ownSessionId).map((s) => s.folder)
+        );
+        return resolveMentions(sessionQueries, renderOutput, text, ownSessionId, {
+          mint: () => contextRefs.mint(ownSessionId),
+          fence: quoted,
+          git: (folder) => git.get(folder),
+        });
+      },
       // The context chip's drop dialog (P2-E11-10) — the SAME `sessionQueries`
       // the bus tools, `@Name` and `get_session_output` answer from, so a chip
       // dragged across the screen and an agent asking about the same session
