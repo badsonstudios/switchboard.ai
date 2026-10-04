@@ -1,3 +1,5 @@
+<p align="right"><a href="contents.md">☰ Contents</a></p>
+
 # Settings
 
 > Status: current
@@ -259,3 +261,7 @@ without being asked, which is why they sit together.
 
 TODO: a notification-rules editor (which would replace hand-editing the
 `quietHours` override) is not built yet.
+
+---
+
+[← Back to Contents](contents.md)

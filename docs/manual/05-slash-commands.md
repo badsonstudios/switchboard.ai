@@ -1,3 +1,5 @@
+<p align="right"><a href="contents.md">☰ Contents</a></p>
+
 # Slash commands
 
 > Status: draft
@@ -110,3 +112,7 @@ thing you'd do by hand, and they work the same in either mode.
   anything off the end.
 - `/clear` gives no visible reply from Claude Code itself. That's expected; the
   divider in the Session tab is your confirmation.
+
+---
+
+[← Back to Contents](contents.md)

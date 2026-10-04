@@ -24,11 +24,13 @@
 export const MAX_FILE_READ_BYTES = 2 * 1024 * 1024;
 
 /**
- * The page Help ▸ User manual opens — the one written for somebody who has
- * never seen the app. Shared so the packaging test can assert the installer
- * really carries the file main is going to look for.
+ * The page Help ▸ User manual opens — the Contents page, so every other page
+ * is one click away (owner, 2026-10-03; it was Day one, which is a walk
+ * through one day and a poor place to look something up from). Shared so the
+ * packaging test can assert the installer really carries the file main is
+ * going to look for.
  */
-export const MANUAL_ENTRY_PAGE = '00-day-one.md';
+export const MANUAL_ENTRY_PAGE = 'contents.md';
 
 /** Why a read did not happen. Every one of these is logged in main. */
 export type FileReadRefusal =

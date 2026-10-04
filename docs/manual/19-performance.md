@@ -1,3 +1,5 @@
+<p align="right"><a href="contents.md">☰ Contents</a></p>
+
 # When it feels slow
 
 > Status: current
@@ -176,3 +178,7 @@ it".
    longer the better, because the interesting moments are rare.
 4. Send the file, or read it yourself: it is one JSON object per line, and the
    last line is the most recent.
+
+---
+
+[← Back to Contents](contents.md)

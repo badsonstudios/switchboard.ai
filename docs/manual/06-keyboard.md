@@ -1,3 +1,5 @@
+<p align="right"><a href="contents.md">☰ Contents</a></p>
+
 # Keyboard & commands
 
 > Status: draft
@@ -470,3 +472,7 @@ mouse, from anywhere.
   the count on the status bar (bottom right), and if it says none, there's
   nowhere to go. It also stands down while you're typing in the prompt box, so
   you don't get yanked away mid-sentence — click out of the box first.
+
+---
+
+[← Back to Contents](contents.md)

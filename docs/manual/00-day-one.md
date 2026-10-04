@@ -1,3 +1,5 @@
+<p align="right"><a href="contents.md">☰ Contents</a></p>
+
 # Day one
 
 > Status: draft
@@ -7,9 +9,11 @@ in it. This page is the shortest path: install it, open a project, give Claude
 something to do, answer what it asks you, then look over what it did and commit
 it. Every step links to the page that covers it properly.
 
-**This manual is inside the app.** Choose **Help ▸ User manual** and this page
-opens beside your sessions; the links on it open the other pages in the same
-place, and the `‹` button takes you back.
+**This manual is inside the app.** Choose **Help ▸ User manual** and its
+Contents page opens beside your sessions; this page is the first one listed
+there. Links open the other pages in the same place, the `‹` button takes you
+back one page, and **☰ Contents** at the top right of every page takes you back
+to the list.
 
 ## What this is, in one paragraph
 
@@ -19,6 +23,10 @@ the real `claude` command you already have, on your own subscription. What it
 adds is everything around the conversation: seeing which session needs you,
 answering permission requests without hunting for a terminal, and reading,
 staging and committing the changes when the work is done.
+
+![The whole window: the Sessions list on the left, one session open in the middle, and its prompt box at the bottom](img/overview.png)
+
+*The whole window. The numbers match the labels.*
 
 ## 1. Install
 
@@ -58,6 +66,10 @@ a version, and restart switchboard.
 
 ## 2. Open a project and start a session
 
+![The + session button, above the open session](img/new-session-button.png)
+
+*Where a new session starts.*
+
 1. Click **+ session** in the middle of the window.
 2. Pick your project folder.
 3. A card appears. It says *starting* for a moment, then *idle*.
@@ -87,6 +99,10 @@ terminal — click **🕘** in the card's header.
 More: [Sessions](02-sessions.md), [The session view](03-session-view.md).
 
 ## 3. Answer what Claude asks you
+
+![A session asking permission to edit a file, with the change shown and the Allow and Deny buttons](img/approval-bar.png)
+
+*A request waiting for you. The change it wants to make is shown before you answer.*
 
 By default a session runs in **ask** mode: Claude can read files in the project
 on its own, and stops to ask before it changes a file or runs a command.
@@ -119,6 +135,10 @@ More: [Approvals & autonomy](04-approvals-and-autonomy.md).
 
 ## 4. Look at files
 
+![The Files tab on the left with README.md picked, and the file shown rendered on the right](img/document-viewer.png)
+
+*A file opened from the Files tab.*
+
 The tabs along the top of each card are **Session**, **Changes**, **Files** and
 **History**.
 
@@ -141,6 +161,14 @@ are two ways to change one:
 More: [The Files tab](21-files.md), [Reading files in the app](15-document-viewer.md).
 
 ## 5. Review what changed
+
+![The Changes tab listing three changed files, with the commit box above them](img/changes-tab.png)
+
+*The Changes tab.*
+
+![One changed file opened as a side-by-side comparison](img/changes-diff.png)
+
+*Clicking a file shows what changed in it.*
 
 Open the **Changes** tab on the card. It lists every file that differs from the
 last commit, grouped the way git groups them:
@@ -218,3 +246,7 @@ Being straight about it, so you don't go looking:
   [Is it me or is it them?](14-provider-status.md)
 - **Something looks like a bug** — **Help ▸ Report a problem…** collects the logs
   and files the report for you. Say what you did and what you expected.
+
+---
+
+[← Back to Contents](contents.md)

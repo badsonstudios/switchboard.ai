@@ -1,3 +1,5 @@
+<p align="right"><a href="contents.md">☰ Contents</a></p>
+
 # Getting started
 
 > Status: draft
@@ -25,6 +27,10 @@ yet).
 
 ## Your first session
 
+![The + session button, above the open session](img/new-session-button.png)
+
+*Where a new session starts.*
+
 1. Click **+ session** in the middle of the window.
 2. Pick the project folder you want Claude to work in.
 3. A card appears and Claude starts up inside it. The first moments show
@@ -35,6 +41,10 @@ You can also drag a folder from your file manager straight onto the window —
 same result, no dialog.
 
 ## What you're looking at
+
+![The whole window: the Sessions list on the left, one session open in the middle, and its prompt box at the bottom](img/overview.png)
+
+*The whole window. The numbers match the labels.*
 
 - **Title bar** (top) — the version and build code on the left (click it to see
   exactly which build you're running — see
@@ -69,3 +79,7 @@ same result, no dialog.
   [Direct mode](12-direct-mode.md) and there is no terminal inside the app to
   drop into, so the fallback is a terminal of your own: run `claude` in the same
   project folder. It is the same CLI, with the same conversation history.
+
+---
+
+[← Back to Contents](contents.md)

@@ -1,3 +1,5 @@
+<p align="right"><a href="contents.md">☰ Contents</a></p>
+
 # History
 
 > Status: draft — the tab works and this page describes what it does. The
@@ -221,3 +223,7 @@ nothing else: the session keeps running and the other tabs keep working.
 - **The author name on a row is the name the project supplies.** Git lets a
   project map one name onto another, so treat it as a label rather than as proof
   of who did something.
+
+---
+
+[← Back to Contents](contents.md)

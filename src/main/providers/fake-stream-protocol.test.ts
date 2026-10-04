@@ -1363,3 +1363,65 @@ describe('`/clear` rotates the conversation (#752)', () => {
     expect(out.filter((m) => m.type === 'user')).toHaveLength(0);
   });
 });
+
+describe('a scripted turn (#1082) — what the pictures in the manual are taken of', () => {
+  const scripted = (turns: Record<string, unknown>): FakeStreamProtocol =>
+    new FakeStreamProtocol(
+      { ...host, script: (prompt) => turns[prompt] as ReturnType<NonNullable<FakeStreamHost['script']>> },
+      (m) => out.push(m)
+    );
+  const toolNames = (): string[] =>
+    out
+      .filter((m) => m.type === 'assistant')
+      .flatMap((m) => (m.message as { content: Array<{ type: string; name?: string }> }).content)
+      .filter((c) => c.type === 'tool_use')
+      .map((c) => c.name ?? '');
+
+  it('answers an ordinary sentence with the words, tools and results it was given', () => {
+    const p = scripted({
+      'Add a toggle': {
+        say: 'On it.',
+        tools: [
+          { id: 't1', name: 'Read', input: { file_path: '/work/a.ts' } },
+          { id: 't2', name: 'Bash', input: { command: 'npm test' }, result: '4 passed' },
+        ],
+        then: 'Done.',
+      },
+    });
+    p.handle(userMsg('Add a toggle'));
+    expect(assistantText()).toBe('On it.');
+    expect(toolNames()).toEqual(['Read', 'Bash']);
+    const results = out
+      .filter((m) => m.type === 'user')
+      .flatMap(
+        (m) =>
+          (m.message as { content: Array<{ type?: string; tool_use_id?: string; content?: string }> })
+            .content
+      )
+      .filter((c) => c.type === 'tool_result');
+    // one result, for the one call that had one — stitched by ITS id
+    expect(results).toEqual([{ type: 'tool_result', tool_use_id: 't2', content: '4 passed' }]);
+    expect(JSON.stringify(out)).toContain('Done.');
+    expect(JSON.stringify(out)).not.toContain('FAKE-REPLY');
+    expect(types().at(-1)).toBe('result:success');
+  });
+
+  it('can end the turn HELD on a permission instead of finishing it', () => {
+    const p = scripted({
+      'Run the build': { say: 'Starting.', permission: { tool: 'Bash', input: { command: 'npm run build' } } },
+    });
+    p.handle(userMsg('Run the build'));
+    const req = out.find((m) => m.type === 'control_request') as { request: { tool_name: string } };
+    expect(req.request.tool_name).toBe('Bash');
+    expect(types()).not.toContain('result:success');
+  });
+
+  it('a prompt the script does not name gets the ordinary fake, verbs included', () => {
+    const p = scripted({ 'Add a toggle': { say: 'On it.' } });
+    p.handle(userMsg('something else'));
+    expect(assistantText()).toBe('FAKE-REPLY: something else');
+    out.length = 0;
+    p.handle(userMsg('!tools'));
+    expect(toolNames()).toEqual(['Bash', 'Edit', 'Read', 'TodoWrite']);
+  });
+});

@@ -18,8 +18,17 @@ Drafts are fine. Placeholders are fine. Silence is not: a shipped feature with
 no page is an unfinished work item.
 
 **The app carries a copy.** Every numbered page here is installed with
-switchboard.ai and opens from **Help ▸ User manual**, starting at Day one (this
-index and `_template.md` are not — they are about writing the manual). That is why links
+switchboard.ai and opens from **Help ▸ User manual**, starting at
+`contents.md` — the reader's contents page (this index and `_template.md` are
+not shipped — they are about writing the manual). **A new page needs a row in
+`contents.md` as well as in the table below, and the Contents link at its top
+and bottom that `_template.md` carries**; a test fails without either.
+
+**Pictures live in `img/` and are generated, not hand-made.**
+`e2e/manual-shots.spec.ts` launches the real app with made-up but believable
+data, draws the arrows and labels, and writes the PNGs. Regenerate them with
+`npm run manual:shots` after the interface changes; never edit one by hand,
+because the next run overwrites it. A picture no page shows fails a test. That is why links
 between pages are plain relative links to a neighbouring file (`02-sessions.md`,
 never `../something`): they have to work from inside the installed folder,
 where nothing but these pages exists. A test fails on a link that points

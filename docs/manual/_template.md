@@ -1,3 +1,5 @@
+<p align="right"><a href="contents.md">☰ Contents</a></p>
+
 # <Feature name, as a user would say it>
 
 > Status: stub | draft | current
@@ -23,3 +25,7 @@ implementation detail.>
 ## If something goes wrong
 
 - **<Symptom in the reader's words>** — <what to check or do.>
+
+---
+
+[← Back to Contents](contents.md)

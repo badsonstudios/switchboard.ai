@@ -1,3 +1,5 @@
+<p align="right"><a href="contents.md">☰ Contents</a></p>
+
 # Choosing a model
 
 Every session runs on a model — Opus, Sonnet, Haiku and so on. You can change
@@ -93,3 +95,7 @@ has **stopped** — there is nothing running to switch.
 Whichever way you opened it, a refusal leaves the session exactly as it was and
 stays on screen so you can read it — the quick menu holds itself open for that
 reason.
+
+---
+
+[← Back to Contents](contents.md)

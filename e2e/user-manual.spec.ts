@@ -43,7 +43,7 @@ test.describe('Help ▸ User manual', () => {
   let a: LaunchedApp;
   test.afterEach(async () => a?.cleanup());
 
-  test('the Help menu opens day one in the viewer, and a link to another page works', async () => {
+  test('the Help menu opens the Contents page, and a link to another page works — and back', async () => {
     test.setTimeout(90_000);
     const folder = tempProjectFolder();
     a = await launchApp({ seedFolder: folder, env: { SWITCHBOARD_FAKE_PROVIDER: 'stream' } });
@@ -53,9 +53,9 @@ test.describe('Help ▸ User manual', () => {
     // THE MENU, not the palette — this is the half that crosses processes.
     expect(await clickUserManual(a)).toBe(true);
     await expect(viewer(w)).toBeVisible({ timeout: 10_000 });
-    await expect(docName(w)).toHaveText('00-day-one.md');
+    await expect(docName(w)).toHaveText('contents.md');
     // rendered Markdown, not a wall of source
-    await expect(rendered(w).locator('h1')).toHaveText('Day one');
+    await expect(rendered(w).locator('h1')).toHaveText('switchboard.ai — User manual');
 
     // A LINK TO A NEIGHBOUR. Refused — "out of scope" — if only the one file
     // had been granted, since the manual is nowhere near the seeded folder.
@@ -63,14 +63,32 @@ test.describe('Help ▸ User manual', () => {
     await expect(docName(w)).toHaveText('02-sessions.md');
     await expect(rendered(w).locator('h1')).toHaveText('Sessions');
 
+    // THE PICTURES LOAD (#1082) — from the manual's own `img/` folder, through
+    // the scoped image scheme, in a folder that is nowhere near a session.
+    const picture = rendered(w).locator('img.doc-image').first();
+    await expect
+      .poll(() => picture.evaluate((i) => (i as HTMLImageElement).naturalWidth), {
+        message: "the Sessions page's first picture never loaded",
+      })
+      .toBeGreaterThan(0);
+    await expect(rendered(w).locator('.doc-image-chip')).toHaveCount(0);
+
+    // EVERY PAGE HAS A WAY BACK TO CONTENTS, at the top and at the bottom.
+    const home = rendered(w).getByRole('link', { name: /Contents/ });
+    await expect(home).toHaveCount(2);
+    await home.first().click();
+    await expect(docName(w)).toHaveText('contents.md');
+    await viewer(w).getByRole('button', { name: 'Back', exact: true }).click();
+    await expect(docName(w)).toHaveText('02-sessions.md');
+
     // …and Back returns, like any other document.
     await viewer(w).getByRole('button', { name: 'Back', exact: true }).click();
-    await expect(docName(w)).toHaveText('00-day-one.md');
+    await expect(docName(w)).toHaveText('contents.md');
 
     // READ-ONLY, like every other file: Source view is Monaco with typing off.
     await viewer(w).getByRole('button', { name: 'Source', exact: true }).click();
     const lines = w.locator('[data-testid="doc-source"] .view-lines');
-    await expect(lines).toContainText('# Day one');
+    await expect(lines).toContainText('# switchboard.ai — User manual');
     await lines.click();
     await w.keyboard.type('EDITED');
     await expect(lines).not.toContainText('EDITED');
@@ -86,13 +104,13 @@ test.describe('Help ▸ User manual', () => {
     await w.keyboard.press('Control+Shift+P');
     await w.keyboard.type('User manual');
     await w.keyboard.press('Enter');
-    await expect(docName(w)).toHaveText('00-day-one.md', { timeout: 10_000 });
+    await expect(docName(w)).toHaveText('contents.md', { timeout: 10_000 });
 
     // The menu, with the manual already open: it comes to the front. It does
     // not stack a second copy. Counted on the TAB STRIP — an inactive tab's
     // body is not in the DOM, so counting viewers could not see a duplicate —
     // and after the round trip to main and back has had time to land one.
-    const manualTabs = w.locator('.dv-tabs-container .dv-tab', { hasText: '00-day-one.md' });
+    const manualTabs = w.locator('.dv-tabs-container .dv-tab', { hasText: 'contents.md' });
     await expect(manualTabs).toHaveCount(1);
     expect(await clickUserManual(a)).toBe(true);
     await w.waitForTimeout(750);

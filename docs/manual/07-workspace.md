@@ -1,8 +1,14 @@
+<p align="right"><a href="contents.md">☰ Contents</a></p>
+
 # Organizing your workspace
 
 > Status: draft
 
 ## The Sessions list
+
+![The Sessions list, with one session marked done and one marked needs you](img/sessions-list.png)
+
+*Each row says what its session is doing.*
 
 Down the left edge: every session you have, sorted into groups. It's built to
 answer two questions without you having to read it properly — *what group is
@@ -595,3 +601,7 @@ same reason as above.
 - The only thing that moves in the sessions list is the working ring. Nothing
   blinks or pulses — if something has caught your eye there, it's because a
   session genuinely changed state.
+
+---
+
+[← Back to Contents](contents.md)

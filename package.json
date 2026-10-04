@@ -21,6 +21,7 @@
     "e2e:only": "playwright test",
     "e2e:headed": "npm run build && playwright test --headed",
     "e2e:ui": "playwright test --ui",
+    "manual:shots": "npm run build && node scripts/manual-shots.js",
     "lint": "node scripts/check-nul.js && eslint .",
     "sweep:temp": "node scripts/sweep-temp-orphans.js",
     "check:adapter": "node scripts/run-electron-node.js out/main/adapter-check.js",

@@ -230,10 +230,53 @@ describe('packaging config (P2-E19-01)', () => {
       for (const m of text.matchAll(/\]\(([^)\s]+)[^)]*\)/g)) {
         const target = m[1].split('#')[0];
         if (!target || /^[a-z][a-z0-9+.-]*:/i.test(target)) continue; // anchor or a URL
+        // a picture (#1082): shipped from `img/`, and it has to be on disk
+        if (/^img\/[^/]+\.png$/.test(target) && fs.existsSync(path.join(dir, target))) continue;
         if (!pages.includes(target)) dead.push(`${page} -> ${m[1]}`);
       }
     }
     expect(dead).toEqual([]);
+  });
+
+  it('ships the pictures the pages show, and no picture nothing shows (#1082)', () => {
+    const extra = config.extraResources as Array<{ to: string; filter: string[] }>;
+    expect(extra.find((r) => r.to === MANUAL_RESOURCE_DIR)?.filter).toContain('img/*.png');
+    const dir = path.join(root, 'docs/manual');
+    const pages = fs.readdirSync(dir).filter((f) => f.endsWith('.md') && !NOT_SHIPPED.includes(f));
+    const shown = new Set<string>();
+    for (const page of pages) {
+      const text = fs.readFileSync(path.join(dir, page), 'utf8');
+      for (const m of text.matchAll(/\]\((img\/[^)\s]+)\)/g)) shown.add(m[1]);
+    }
+    const imgDir = path.join(dir, 'img');
+    const onDisk = fs.existsSync(imgDir)
+      ? fs.readdirSync(imgDir).map((f) => `img/${f}`)
+      : [];
+    // there ARE pictures — an empty folder would pass everything below
+    expect(onDisk.length).toBeGreaterThan(0);
+    // an orphan is a megabyte in every installer for a picture nobody sees
+    expect(onDisk.filter((f) => !shown.has(f))).toEqual([]);
+    // and the installer's filter is `img/*.png` — anything else would not ship
+    expect(onDisk.filter((f) => !f.endsWith('.png'))).toEqual([]);
+  });
+
+  it('every page has a way back to Contents, at the top and at the bottom (#1082)', () => {
+    // Owner, 2026-10-03. Help ▸ User manual opens Contents; a page you reached
+    // from it — or from a link three pages deep — must not be a dead end.
+    const dir = path.join(root, 'docs/manual');
+    const pages = fs
+      .readdirSync(dir)
+      .filter((f) => f.endsWith('.md') && !NOT_SHIPPED.includes(f) && f !== MANUAL_ENTRY_PAGE);
+    const missing: string[] = [];
+    for (const page of pages) {
+      const lines = fs.readFileSync(path.join(dir, page), 'utf8').trimEnd().split(/\r?\n/);
+      if (!lines[0].includes(`href="${MANUAL_ENTRY_PAGE}"`)) missing.push(`${page}: top`);
+      if (!lines[lines.length - 1].includes(`(${MANUAL_ENTRY_PAGE})`)) missing.push(`${page}: bottom`);
+    }
+    expect(missing).toEqual([]);
+    // …and Contents itself reaches every page
+    const contents = fs.readFileSync(path.join(dir, MANUAL_ENTRY_PAGE), 'utf8');
+    expect(pages.filter((page) => !contents.includes(`(${page})`))).toEqual([]);
   });
 });
 

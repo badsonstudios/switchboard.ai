@@ -1,3 +1,5 @@
+<p align="right"><a href="contents.md">☰ Contents</a></p>
+
 # The Files tab
 
 > Status: draft
@@ -100,3 +102,7 @@ request against the folder the session was opened in, and checks it against
 where a path *really* leads rather than how it's spelled. That's also why
 shortcuts aren't followed: a shortcut inside your project can point anywhere on
 the machine, and the app would rather show you it exists than open it.
+
+---
+
+[← Back to Contents](contents.md)

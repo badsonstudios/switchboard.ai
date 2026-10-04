@@ -1,3 +1,5 @@
+<p align="right"><a href="contents.md">☰ Contents</a></p>
+
 # Troubleshooting
 
 > Status: draft
@@ -19,7 +21,7 @@ the command list too (`Ctrl+Shift+P`):
 
 | Entry | What it does |
 |---|---|
-| **User Manual** | Opens this manual inside the app, starting at [Day one](00-day-one.md). The links between pages work, and it is the copy that shipped with the version you are running. See [Reading files in the app](15-document-viewer.md). |
+| **User Manual** | Opens this manual inside the app, starting at its [Contents](contents.md) page. The links between pages work, and it is the copy that shipped with the version you are running. See [Reading files in the app](15-document-viewer.md). |
 | **Check for Updates…** | Asks whether there is a newer version right now. See [Updates](13-updates.md). |
 | **Report a Problem…** | Collects the logs and sends them with your description — [below](#sending-a-problem-report). |
 | **Feature Request…** | The same box without the logs, for something you wish the app did — [below](#asking-for-a-feature). |
@@ -551,3 +553,7 @@ option.
 **Very long requests are trimmed**, and say so where they were cut — web
 addresses and mail links can only carry so much. If you're writing an essay,
 send a short version this way and follow up with the rest in a reply.
+
+---
+
+[← Back to Contents](contents.md)

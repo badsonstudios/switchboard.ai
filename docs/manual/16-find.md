@@ -1,3 +1,5 @@
+<p align="right"><a href="contents.md">☰ Contents</a></p>
+
 # Finding something in a session
 
 > Status: draft
@@ -170,3 +172,7 @@ where the document is.
   on.
 - **The search stopped early** — a very large session hit a time limit. What's
   shown is real, just not all of it; a narrower term will finish.
+
+---
+
+[← Back to Contents](contents.md)
