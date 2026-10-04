@@ -1,3 +1,5 @@
+<p align="right"><a href="contents.md">☰ Contents</a></p>
+
 # 12 — Direct mode
 
 This page explains how switchboard talks to Claude Code, and what that costs.
@@ -277,3 +279,7 @@ disk, so replies landed in chunks a moment behind.)
 
 See also: [04 — Approvals & autonomy](04-approvals-and-autonomy.md) ·
 [11 — Troubleshooting](11-troubleshooting.md)
+
+---
+
+[← Back to Contents](contents.md)

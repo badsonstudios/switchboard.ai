@@ -1,3 +1,5 @@
+<p align="right"><a href="contents.md">☰ Contents</a></p>
+
 # MCP servers
 
 > Status: current
@@ -294,3 +296,7 @@ isn't installed, or a script that isn't executable all land here.
 **A server you added isn't listed at all.** Check which project you added it to.
 Servers added "just you" are tied to a specific project folder, and the panel
 shows the session you're currently in.
+
+---
+
+[← Back to Contents](contents.md)

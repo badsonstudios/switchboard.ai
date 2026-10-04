@@ -1,3 +1,5 @@
+<p align="right"><a href="contents.md">☰ Contents</a></p>
+
 # The session view
 
 > Status: draft
@@ -31,6 +33,10 @@ Double-click an empty part of the header to maximize the session. Double-click
 again to put the layout back.
 
 ## The Session tab
+
+![A session after one turn: the tabs across the top, the steps Claude took, its answer, and the prompt box](img/session-view.png)
+
+*One finished turn, read top to bottom.*
 
 This is the conversation, rendered to be read rather than scrolled past:
 
@@ -199,6 +205,10 @@ a little longer on "Looking for…" — switchboard waits until it can tell the 
 conversations apart rather than guessing and showing you the wrong one.
 
 ## Talking to the session
+
+![The prompt box with a request typed in, and the row of chips under it](img/prompt-box.png)
+
+*The prompt box and the chips under it.*
 
 The box at the bottom sends straight to the real Claude Code session:
 
@@ -581,3 +591,7 @@ on those, run `claude` yourself in a terminal for that piece of work.
   it without it disappearing.
 - The boxes and the margin dots are drawn from your theme, so they stay legible
   whichever one you're on.
+
+---
+
+[← Back to Contents](contents.md)

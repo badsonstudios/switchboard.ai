@@ -1,3 +1,5 @@
+<p align="right"><a href="contents.md">☰ Contents</a></p>
+
 # Notifications & events
 
 > Status: draft
@@ -699,3 +701,7 @@ Consequences worth knowing:
 
 TODO: there is no rules *editor* yet — the per-session checkbox is the only rule
 you can write from the UI, so the `quietHours` override is a hand-edit for now.
+
+---
+
+[← Back to Contents](contents.md)

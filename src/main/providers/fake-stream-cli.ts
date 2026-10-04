@@ -14,7 +14,7 @@
 import fs from 'fs';
 import path from 'path';
 import { spawnSync } from 'child_process';
-import { FakeStreamProtocol } from './fake-stream-protocol';
+import { FakeScriptedTurn, FakeStreamProtocol } from './fake-stream-protocol';
 import { claimFakeSessionId } from './fake-stream-ids';
 import { asDisplayString } from '../../shared/display-string';
 import { slugForCwd } from '../transcripts/paths';
@@ -100,6 +100,19 @@ const sessionId = resumedFrom || claimFakeSessionId(idsDir);
 const proto = new FakeStreamProtocol(
   {
     cwd: () => process.cwd(),
+    // Scripted turns (#1082): `SWITCHBOARD_FAKE_SCRIPT` names a JSON file of
+    // `{ "<prompt>": FakeScriptedTurn }`. Read per prompt and fail-open — a
+    // missing or malformed file is simply no script, and the verbs still work.
+    script: (prompt) => {
+      const file = process.env.SWITCHBOARD_FAKE_SCRIPT;
+      if (!file) return undefined;
+      try {
+        const all = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, FakeScriptedTurn>;
+        return Object.prototype.hasOwnProperty.call(all, prompt) ? all[prompt] : undefined;
+      } catch {
+        return undefined;
+      }
+    },
     writeFile: (p, content) => {
       fs.mkdirSync(path.dirname(p), { recursive: true });
       fs.writeFileSync(p, content);

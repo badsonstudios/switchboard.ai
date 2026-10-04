@@ -1,3 +1,5 @@
+<p align="right"><a href="contents.md">☰ Contents</a></p>
+
 # Changes & git
 
 > Status: draft
@@ -11,6 +13,14 @@ commits you're ahead of the remote (**↑2**). It updates as Claude works.
 If the folder isn't a git repository, the line simply doesn't appear.
 
 ## The Changes tab
+
+![The Changes tab listing three changed files, with the commit box above them](img/changes-tab.png)
+
+*The Changes tab.*
+
+![One changed file opened as a side-by-side comparison](img/changes-diff.png)
+
+*Clicking a file shows what changed in it.*
 
 Open the **Changes** tab on a card to see what this session has actually done to
 your files. It used to be one flat list of full file paths; it is now grouped the
@@ -500,3 +510,7 @@ has lost my work" when the real problem is a disconnected drive.
 Nothing else in the app changes when this happens: the session keeps running,
 and the git line on the session's card simply goes quiet rather than showing you
 a branch and a change count it couldn't actually check.
+
+---
+
+[← Back to Contents](contents.md)

@@ -1,3 +1,5 @@
+<p align="right"><a href="contents.md">☰ Contents</a></p>
+
 # Approvals & autonomy
 
 > Status: draft
@@ -7,6 +9,10 @@ right inside the session card — no window switching, no hunting for which
 terminal is blinking.
 
 ## Answering a request
+
+![A session asking permission to edit a file, with the change shown and the Allow and Deny buttons](img/approval-bar.png)
+
+*A request waiting for you. The change it wants to make is shown before you answer.*
 
 A review bar appears just above the prompt box: **Allow \<tool\>?**, with the
 file or command it names, and underneath it **what the request would actually
@@ -465,3 +471,7 @@ decides to ask; it does not keep a list of its own.
 - **The hover is the short version of this page.** Every mode control carries a
   description of what the mode does; if you only ever read one thing about
   autonomy, read the one on **full-auto**.
+
+---
+
+[← Back to Contents](contents.md)

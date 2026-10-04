@@ -1,3 +1,5 @@
+<p align="right"><a href="contents.md">☰ Contents</a></p>
+
 # Reading files in the app
 
 > Status: draft
@@ -13,6 +15,10 @@ purpose. switchboard.ai is not an editor and is not becoming one.
 <!-- screenshot: PROGRESS.md open in the viewer, rendered, with the outline on the left -->
 
 ## Opening a file
+
+![The Files tab on the left with README.md picked, and the file shown rendered on the right](img/document-viewer.png)
+
+*A file opened from the Files tab.*
 
 The quickest way in is the **File** menu at the top left — **File › Open File…**
 — or **Ctrl+O** from anywhere in the app. The browser starts in the folder of
@@ -159,12 +165,16 @@ What you get in the rendered view:
 
 ## The manual opens here too
 
-**Help ▸ User manual** opens the manual's first page, [Day one](00-day-one.md),
-in a document tab like any other file. (It is in the command list as well:
+**Help ▸ User manual** opens the manual's [Contents](contents.md) page in a
+document tab like any other file. (It is in the command list as well:
 `Ctrl+Shift+P`, type *manual*.)
 
-- **The links between pages work.** Every page of the manual can be reached
-  from the first one, and `‹` and `›` take you back and forward.
+- **The links between pages work.** Contents lists every page; every page has
+  a **☰ Contents** link at its top right and another at the bottom to bring you
+  back; and `‹` and `›` step back and forward one page at a time.
+- **The pictures are of made-up projects.** They were taken of the real app,
+  with arrows and numbered labels drawn on top; the sessions, files and
+  conversations in them are invented.
 - **It is the copy that came with your version.** The pages are installed
   alongside the app, so what you read describes the build you are running, and
   it works with no network connection.
@@ -384,3 +394,7 @@ into your own tools is always one click away.
   `http`, `https`, `mailto`, or a path to another file in the project are
   ignored on purpose. A document you didn't write should not be able to make the
   app do things.
+
+---
+
+[← Back to Contents](contents.md)

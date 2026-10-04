@@ -106,6 +106,18 @@ on the floor, and say so in your PR.
   still not loaded** — they keep the chip and its **Open in browser** button,
   because fetching one tells its author you read the file. A picture outside
   the session's folder, or one that is missing, also stays a chip.
+- **The manual has pictures.** Day one, Getting started, Sessions, The session
+  view, Approvals, Workspace, Changes & git and Reading files now show the app
+  itself, with numbered labels pointing at the button or panel the text is
+  talking about — where **+ session** is, what a request for permission looks
+  like, where Commit lives. The projects and conversations in them are made up.
+  The remaining pages follow.
+
+### Changed
+
+- **Help ▸ User Manual opens a Contents page** instead of Day one, so every
+  page is one click away. Every page now has a **☰ Contents** link at its top
+  right and another at the bottom that brings you back.
 
 ## 0.8.111 — 2026-10-03
 

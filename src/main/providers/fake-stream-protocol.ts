@@ -75,8 +75,44 @@ export const FAKE_QUESTION_MANY = {
 };
 
 /** The side effects the protocol needs, injected so tests can observe them. */
+/** One tool call in a turn, and what came back from it if anything did. */
+export interface FakeToolCall {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+  /** the tool's output — a `tool_result` is emitted for every call that has one */
+  result?: string;
+}
+
+/**
+ * A scripted answer to one prompt (#1082).
+ *
+ * Every other stimulus here is a `!verb`, which is right for a test and wrong
+ * for a PICTURE: the manual's screenshots are taken of this fake, and a feed
+ * whose first line is `!tools` followed by `STREAM_PROSE answer` teaches a
+ * reader nothing about what a session looks like. A script maps an ordinary
+ * sentence to an ordinary-looking turn, built from the same emitters the verbs
+ * use — so the wire shapes stay the measured ones and only the words change.
+ */
+export interface FakeScriptedTurn {
+  /** prose before anything else, as its own assistant message */
+  say?: string;
+  /** tool calls, in order */
+  tools?: FakeToolCall[];
+  /** prose after the tool calls */
+  then?: string;
+  /** end the turn HELD on this request instead of finishing it */
+  permission?: { tool: string; input: Record<string, unknown> };
+}
+
 export interface FakeStreamHost {
   cwd(): string;
+  /**
+   * The scripted turn for this exact prompt, if there is one (#1082). Optional
+   * like the two below: every unit test and every spec that does not ask for a
+   * script gets the verbs and `FAKE-REPLY:` exactly as before.
+   */
+  script?(prompt: string): FakeScriptedTurn | undefined;
   writeFile(absPath: string, content: string): void;
   stderr(line: string): void;
   exit(code: number): void;
@@ -125,6 +161,34 @@ export interface FakeStreamHost {
    */
   nextSessionId?(): string;
 }
+
+// EVERY call carries an `id`, including the three whose results never come
+// back. The real API never emits a `tool_use` without one, and a fake that
+// omitted them could not stitch a result onto more than one block even if a
+// test wanted it to — `blocks.ts` keys `toolUseId` off exactly this field.
+// A fake missing something the real thing does is a fake that hides a bug.
+const DEFAULT_TOOL_CALLS: FakeToolCall[] = [
+  {
+    id: 'toolu_fake_bash',
+    name: 'Bash',
+    // two lines on purpose: a COLLAPSED section still shows its first line,
+    // so only a second one can tell open from shut (feed.spec.ts's lesson)
+    input: { command: 'echo STREAM_CMD\nSTREAM_CMD_LINE2', description: 'Stream check' },
+    // the one call whose result comes back — the Bash box's OUT section
+    result: 'STREAM_OUTPUT\nSTREAM_OUT_LINE2',
+  },
+  {
+    id: 'toolu_fake_edit',
+    name: 'Edit',
+    input: { file_path: 'C:/tmp/stream.ts', old_string: 'STREAM_OLD', new_string: 'STREAM_NEW' },
+  },
+  { id: 'toolu_fake_read', name: 'Read', input: { file_path: 'C:/tmp/stream.md' } },
+  {
+    id: 'toolu_fake_todo',
+    name: 'TodoWrite',
+    input: { todos: [{ content: 'first stream step', status: 'completed' }] },
+  },
+];
 
 export class FakeStreamProtocol {
   private readonly pending = new Map<
@@ -445,6 +509,23 @@ export class FakeStreamProtocol {
     if (this.opts.resumedFrom && !this.resumeNoted) {
       this.resumeNoted = true;
       this.emitAssistantText(`RESUMED-FROM:${this.opts.resumedFrom}`);
+    }
+
+    // A scripted turn (#1082) — see `FakeScriptedTurn`. Before the verbs, so a
+    // script can never be shadowed by one, and absent unless the host has one.
+    const scripted = this.host.script?.(text);
+    if (scripted) {
+      if (scripted.say) this.emitAssistantText(scripted.say, true, false);
+      if (scripted.permission) {
+        this.askPermission(scripted.permission.tool, scripted.permission.input);
+        return; // the turn continues when the answer arrives
+      }
+      if (scripted.tools?.length) {
+        this.emitToolTurn(scripted.tools, scripted.then ?? '');
+        return;
+      }
+      this.emitResult();
+      return;
     }
 
     if (text.startsWith('!exit ')) {
@@ -890,35 +971,10 @@ export class FakeStreamProtocol {
    * identically if the prose came first, so a prose-first turn could not tell
    * the two apart. Everything else about the shape is the measured one.
    */
-  private emitToolTurn(): void {
-    /** the one call whose result comes back — the Bash box's OUT section */
-    const bashId = 'toolu_fake_bash';
-    // EVERY call carries an `id`, including the three whose results never come
-    // back. The real API never emits a `tool_use` without one, and a fake that
-    // omitted them could not stitch a result onto more than one block even if a
-    // test wanted it to — `blocks.ts` keys `toolUseId` off exactly this field.
-    // A fake missing something the real thing does is a fake that hides a bug.
-    const calls: Array<{ id: string; name: string; input: Record<string, unknown> }> = [
-      {
-        id: bashId,
-        name: 'Bash',
-        // two lines on purpose: a COLLAPSED section still shows its first line,
-        // so only a second one can tell open from shut (feed.spec.ts's lesson)
-        input: { command: 'echo STREAM_CMD\nSTREAM_CMD_LINE2', description: 'Stream check' },
-      },
-      {
-        id: 'toolu_fake_edit',
-        name: 'Edit',
-        input: { file_path: 'C:/tmp/stream.ts', old_string: 'STREAM_OLD', new_string: 'STREAM_NEW' },
-      },
-      { id: 'toolu_fake_read', name: 'Read', input: { file_path: 'C:/tmp/stream.md' } },
-      {
-        id: 'toolu_fake_todo',
-        name: 'TodoWrite',
-        input: { todos: [{ content: 'first stream step', status: 'completed' }] },
-      },
-    ];
-
+  private emitToolTurn(
+    calls: FakeToolCall[] = DEFAULT_TOOL_CALLS,
+    prose = 'STREAM_PROSE answer'
+  ): void {
     // ONE api message for the whole turn — its tool calls AND the prose below
     // share this id, which is what a message split across several lines looks
     // like (see `newMessageId`).
@@ -949,15 +1005,17 @@ export class FakeStreamProtocol {
 
     // prose LAST, so "the tools rendered above the answer" is a claim the test
     // can make rather than an accident of the fake sending text first
-    const prose = 'STREAM_PROSE answer';
-    this.ev({ type: 'content_block_start', index, content_block: { type: 'text', text: '' } });
-    for (const piece of prose.match(/[\s\S]{1,8}/g) ?? []) {
-      this.ev({ type: 'content_block_delta', index, delta: { type: 'text_delta', text: piece } });
+    // (a scripted turn may have none — #1082)
+    if (prose) {
+      this.ev({ type: 'content_block_start', index, content_block: { type: 'text', text: '' } });
+      for (const piece of prose.match(/[\s\S]{1,8}/g) ?? []) {
+        this.ev({ type: 'content_block_delta', index, delta: { type: 'text_delta', text: piece } });
+      }
+      const proseMessage = { role: 'assistant', id, content: [{ type: 'text', text: prose }] };
+      this.emit({ type: 'assistant', message: proseMessage, session_id: this.sessionId, parent_tool_use_id: null });
+      this.transcribe('assistant', proseMessage);
+      this.ev({ type: 'content_block_stop', index });
     }
-    const proseMessage = { role: 'assistant', id, content: [{ type: 'text', text: prose }] };
-    this.emit({ type: 'assistant', message: proseMessage, session_id: this.sessionId, parent_tool_use_id: null });
-    this.transcribe('assistant', proseMessage);
-    this.ev({ type: 'content_block_stop', index });
     this.ev({ type: 'message_delta', delta: { stop_reason: 'tool_use' } });
     this.ev({ type: 'message_stop' });
 
@@ -967,18 +1025,15 @@ export class FakeStreamProtocol {
     // messages; see `onUser`), and a tool result is the CLI's own output. A
     // fake that marked this too would teach a host to drop its tool results as
     // duplicates.
-    const resultMessage = {
-      role: 'user',
-      content: [
-        {
-          type: 'tool_result',
-          tool_use_id: bashId,
-          content: 'STREAM_OUTPUT\nSTREAM_OUT_LINE2',
-        },
-      ],
-    };
-    this.emit({ type: 'user', message: resultMessage, session_id: this.sessionId, parent_tool_use_id: null });
-    this.transcribe('user', resultMessage);
+    for (const call of calls) {
+      if (call.result === undefined) continue;
+      const resultMessage = {
+        role: 'user',
+        content: [{ type: 'tool_result', tool_use_id: call.id, content: call.result }],
+      };
+      this.emit({ type: 'user', message: resultMessage, session_id: this.sessionId, parent_tool_use_id: null });
+      this.transcribe('user', resultMessage);
+    }
     this.emitResult();
   }
 

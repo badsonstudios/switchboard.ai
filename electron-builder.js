@@ -100,12 +100,17 @@ module.exports = {
    * Out here they are ordinary files in `resources/manual`, read-only in the
    * app like every other file.
    *
-   * Markdown only, and not the two files that are about WRITING the manual:
-   * `_template.md` is a page's skeleton and `README.md` is the contributors'
-   * index and house style. No page links to either.
+   * The pages and their pictures (`img/`, #1082), and not the two files that
+   * are about WRITING the manual: `_template.md` is a page's skeleton and
+   * `README.md` is the contributors' index and house style. No page links to
+   * either.
    */
   extraResources: [
-    { from: 'docs/manual', to: 'manual', filter: ['*.md', '!_template.md', '!README.md'] },
+    {
+      from: 'docs/manual',
+      to: 'manual',
+      filter: ['*.md', 'img/*.png', '!_template.md', '!README.md'],
+    },
   ],
 
   /**

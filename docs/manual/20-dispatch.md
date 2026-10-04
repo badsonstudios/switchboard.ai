@@ -1,3 +1,5 @@
+<p align="right"><a href="contents.md">☰ Contents</a></p>
+
 # 20 — Handing work to a fresh session
 
 Sometimes the most useful thing you can do with finished work is show it to
@@ -256,3 +258,7 @@ session-archive work in a later release.
 - **Nothing dispatches on its own.** There is no rule that sends a review off
   when a session finishes, and a session cannot dispatch another one by itself.
   Every dispatch is a button you pressed.
+
+---
+
+[← Back to Contents](contents.md)

@@ -1,3 +1,5 @@
+<p align="right"><a href="contents.md">☰ Contents</a></p>
+
 # Is it me or is it them?
 
 > Status: draft
@@ -75,3 +77,7 @@ The request carries the app's name and version, the way a browser identifies
 itself, and that's all. No account, no identifier, and nothing about your
 sessions, your files or your work. Nothing is uploaded, and the app never sends
 anything back.
+
+---
+
+[← Back to Contents](contents.md)

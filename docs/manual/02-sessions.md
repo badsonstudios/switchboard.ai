@@ -1,3 +1,5 @@
+<p align="right"><a href="contents.md">☰ Contents</a></p>
+
 # Sessions
 
 > Status: draft
@@ -7,6 +9,10 @@ Each one gets a card in the middle of the window and a row in the Sessions list
 on the left.
 
 ## Starting a session
+
+![The + session button, above the open session](img/new-session-button.png)
+
+*Where a new session starts.*
 
 Three ways, all equivalent:
 
@@ -218,6 +224,10 @@ the chip again and the auto labels come straight back; nothing was thrown away.
   given a color yet shows a plain grey dot.
 
 ## Status at a glance
+
+![The Sessions list, with one session marked done and one marked needs you](img/sessions-list.png)
+
+*Each row says what its session is doing.*
 
 Every session shows one of these:
 
@@ -697,3 +707,7 @@ Two things worth knowing, because they're different from the drag:
 - Quitting the app while sessions are mid-task pops up a warning listing them,
   with **Quit anyway** and **Cancel**. Cancel is the default.
 - Closing a session clears its entries from Events.
+
+---
+
+[← Back to Contents](contents.md)

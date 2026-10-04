@@ -1,3 +1,5 @@
+<p align="right"><a href="contents.md">☰ Contents</a></p>
+
 # Updates
 
 > Status: draft
@@ -220,3 +222,7 @@ GitHub's own address. The actual file comes from a storage server GitHub
 redirects to, and your credentials are deliberately not sent there — they
 aren't needed, and handing them to a machine that didn't ask for them isn't
 something an app should do quietly.
+
+---
+
+[← Back to Contents](contents.md)
