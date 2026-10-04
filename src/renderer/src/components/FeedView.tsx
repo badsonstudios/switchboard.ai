@@ -6,7 +6,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { blockVisible, FeedBlockDto, showsTimelineDot, upsertBlock, Verbosity } from '../lib/feed';
-import { agentRunHeads, taskLabelBoundaries, type AgentRunHead, type TaskLabelBoundary } from '../lib/feed-groups';
+import { agentRunHeads, taskLabelBoundaries, type AgentRunHead } from '../lib/feed-groups';
 import { useFeedSkipping } from '../lib/use-feed-skipping';
 import { autonomyTooltip } from '../lib/autonomy';
 import {
