@@ -57,6 +57,10 @@
 >   then the row is cut at its end; nothing wraps. **A holding fix** on ground a
 >   designer is about to rework — no redesign. New e2e at three widths (it
 >   fails on the old layout); the manual's pictures regenerated from the script.
+>   **Merged as PR #1101.**
+> * ✅ **#1084 — the status bar counts sessions, not open panels.** Done on
+>   `feature/1084-status-bar-count`. It was handed the grid's PANEL list, and a
+>   document or a diff is a panel. It now reads the list the rail counts.
 > * **Filed, at the owner's request:** **#1098** (the `@Name` shared-folder
 >   warning compares folders, not git working trees) and **#1099** (a refused
 >   history pick clears the search box; the "held" refusal reuses a tooltip).
