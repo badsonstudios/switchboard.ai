@@ -319,7 +319,8 @@
     "lastActive": "Last active {when}",
     "openFailed": "That conversation couldn't be opened. It may have been deleted, or its folder may be gone.",
     "newConversation": "Start a new conversation instead",
-    "switchBusy": "This session is in the middle of something. Wait for it to finish or answer what it is asking, then pick again."
+    "switchBusy": "This session is in the middle of something. Wait for it to finish or answer what it is asking, then pick again.",
+    "switchHeld": "That conversation was not opened here: another session card opened it after this list was drawn. Opening it twice would write to one conversation from two places. Pick a different one, or go to the card that has it."
   },
   "sounds": {
     "auto": "Automatic",

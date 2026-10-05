@@ -111,6 +111,11 @@ on the floor, and say so in your PR.
   project and one working in a subfolder of it are on one branch and see each
   other's uncommitted changes; the handoff said nothing about it because the
   two folder names were different. It now says "It shares your working tree".
+- **A history pick that is refused no longer wipes what you typed in the
+  search box.** If the session was busy, or another card had just opened that
+  conversation, the list jumped back to everything and your search was gone.
+  It now stays as you left it, and the "another card has it" message says what
+  actually happened instead of repeating the hover text of a greyed-out row.
 
 ## 0.8.113 — 2026-10-04
 

@@ -116,6 +116,18 @@ export function SessionHistoryDialog(props: {
     input.current?.focus();
   }, [props.open]);
 
+  // THE SEARCH IS FORGOTTEN WHEN THE DIALOG CLOSES, AND NOT BEFORE (#1099). It
+  // used to be cleared in `pick()`, on the way out — but a pick made from a card
+  // can be REFUSED, and then the dialog is still open, saying why, over a list
+  // that had just jumped back to everything in the folder with the search the
+  // user typed gone. Whether a pick closes the dialog is the parent's answer,
+  // so this waits for the parent to give it.
+  React.useEffect(() => {
+    if (props.open) return;
+    setQuery('');
+    setScope('folder');
+  }, [props.open]);
+
   // A fresh query never parks the selection past the end of the shorter list.
   React.useEffect(() => {
     setSelected(0);
@@ -153,8 +165,7 @@ export function SessionHistoryDialog(props: {
   const pick = (row: ConversationRow | undefined): void => {
     // A claimed row is inert rather than absent — see the header.
     if (!row || row.claimed) return;
-    setQuery('');
-    setScope('folder');
+    // Nothing is reset here: see the effect on `props.open` above.
     props.onPick({ nativeId: row.nativeId, folder: row.folder });
   };
 

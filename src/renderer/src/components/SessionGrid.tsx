@@ -290,7 +290,11 @@ export function samePickFolder(a: string, b: string | undefined): boolean {
 /** The sentence for a pick main refused (#1090). */
 export function switchRefusalKey(reason: SwitchConversationRefusal): string {
   if (reason === 'busy') return 'sessionHistory.switchBusy';
-  if (reason === 'held') return 'sessionHistory.claimedHint';
+  // Its OWN sentence, not `claimedHint` (#1099). That one is the hover text of a
+  // greyed-out row — it describes a row you are pointing at. This is said after
+  // a pick that looked available and was not: the row was free when the list
+  // was drawn and another card has taken the conversation since.
+  if (reason === 'held') return 'sessionHistory.switchHeld';
   return 'sessionHistory.openFailed';
 }
 
