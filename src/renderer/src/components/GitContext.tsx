@@ -28,7 +28,7 @@ export function GitContext(props: { status: GitStatusDto | null }): React.JSX.El
         // -ink, never the raw hue: this is the dirty-file count as TEXT on the
         // card header, and the hue measured 1.80:1 there on daylight (#246,
         // the same defect #221 fixed one line up in the same header)
-        <span style={{ color: 'var(--status-needs-input-ink)' }}>
+        <span style={{ color: 'var(--status-needs-input-ink)', flexShrink: 0 }}>
           {t('git.changed', { n: changed })}
         </span>
       )}

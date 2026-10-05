@@ -2492,10 +2492,13 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
               onBlur={(e) => {
                 if (!e.currentTarget.contains(e.relatedTarget)) setTabFocus(null);
               }}
-              // a flex item does not shrink below its content unless told to;
-              // without this the tabs would push the git chip and the usage
-              // strip off a narrow card instead of crowding as they used to
-              style={{ display: 'flex', alignItems: 'flex-end', gap: 3, minInlineSize: 0 }}
+              // THE TABS KEEP THEIR SIZE, AND THE READOUTS GIVE WAY (#1083). This
+              // was `minInlineSize: 0`, so on a narrow card the strip shrank
+              // while its tabs did not: the last one was drawn straight over the
+              // plan counter beside it. The tabs are how you get around the card
+              // and the readouts are things to glance at, so it is the readouts
+              // that are cut short — see the wrapper below.
+              style={{ display: 'flex', alignItems: 'flex-end', gap: 3, flexShrink: 0 }}
             >
               {panels.map((p) => {
                 const on = panelEnabled(p, panelCtx);
@@ -2540,23 +2543,48 @@ function SessionCardPanel(props: IDockviewPanelProps<CardParams>): React.JSX.Ele
             </div>
 
             <span style={{ flex: 1, minInlineSize: 8 }} />
-            {plan && (
-              <span
-                title={t('grid.planTitle')}
-                style={{ color: 'var(--status-working-ink)', fontSize: 10, fontFamily: 'var(--font-mono)' }}
-              >
-                {t('grid.plan', { done: plan.completed, total: plan.total })}
-              </span>
-            )}
-            <GitContext status={git} />
-            {usage && (
-              <UsageStrip
-                usage={usage.usage}
-                model={usage.model}
-                cliCost={usage.cliCost}
-                inline
-              />
-            )}
+            {/* The readouts, as ONE item that may be narrower than what is in it
+                (#1083). On a card with room this changes nothing. On a narrow
+                one the branch name shortens first (it is the only one that
+                already knows how, in `GitContext`), then the row is cut at its
+                end — and nothing wraps onto a second line or lands on a tab. */}
+            <span
+              data-testid="view-readouts"
+              style={{
+                display: 'flex',
+                alignItems: 'flex-end',
+                gap: 3,
+                flex: '0 1 auto',
+                minInlineSize: 0,
+                overflow: 'hidden',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {plan && (
+                <span
+                  title={t('grid.planTitle')}
+                  style={{
+                    color: 'var(--status-working-ink)',
+                    fontSize: 10,
+                    fontFamily: 'var(--font-mono)',
+                    flexShrink: 0,
+                  }}
+                >
+                  {t('grid.plan', { done: plan.completed, total: plan.total })}
+                </span>
+              )}
+              <GitContext status={git} />
+              {usage && (
+                <span style={{ display: 'inline-flex', flexShrink: 0 }}>
+                  <UsageStrip
+                    usage={usage.usage}
+                    model={usage.model}
+                    cliCost={usage.cliCost}
+                    inline
+                  />
+                </span>
+              )}
+            </span>
           </div>
           {/* active view */}
           <div style={{ flex: 1, minBlockSize: 0, position: 'relative' }}>
