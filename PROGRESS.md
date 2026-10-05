@@ -48,7 +48,15 @@
 >   before, 168 of 168 pass after; nine deliberate breakages of the code are
 >   each caught.** ⚠️ The TITLED failure (`taskkill that cannot even START`)
 >   was not reproduced here — only the budget-ceiling one was. Its likely
->   mechanism is gone, but that is an inference.
+>   mechanism is gone, but that is an inference. **Merged as PR #1100.**
+>   **All three flakes on the owner's list are now closed.**
+> * ✅ **#1083 — a narrow card's tabs no longer run into its readouts.** Done on
+>   `feature/1083-card-header-overlap`. The tab strip could shrink and its tabs
+>   could not, so the last tab was drawn over the plan counter. The tabs now
+>   keep their size and the readouts give way: the branch name shortens first,
+>   then the row is cut at its end; nothing wraps. **A holding fix** on ground a
+>   designer is about to rework — no redesign. New e2e at three widths (it
+>   fails on the old layout); the manual's pictures regenerated from the script.
 > * **Filed, at the owner's request:** **#1098** (the `@Name` shared-folder
 >   warning compares folders, not git working trees) and **#1099** (a refused
 >   history pick clears the search box; the "held" refusal reuses a tooltip).
