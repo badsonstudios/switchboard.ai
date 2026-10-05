@@ -44,7 +44,7 @@ import { test, expect, Page } from '@playwright/test';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { launchApp, LaunchedApp, registerTempDir, streamPrompter } from './fixtures/app';
+import { launchApp, LaunchedApp, preparedStreamPrompt, registerTempDir } from './fixtures/app';
 
 /** the dual-capable fake, asked for nothing — i.e. the app's own default */
 const DIRECT = { SWITCHBOARD_FAKE_PROVIDER: 'stream' };
@@ -62,6 +62,14 @@ const tailGap = (w: Page): Promise<number> =>
   });
 
 const jump = (w: Page) => w.locator('[data-feed-jump-latest]');
+
+/** what the page itself saw, on the clock `FeedView` reads its gesture window from */
+interface Pin967Timing {
+  /** the pointer-down that opened the window */
+  down: number;
+  /** the first block of the reply reaching the DOM */
+  first: number;
+}
 
 test.describe.configure({ mode: 'serial' });
 
@@ -200,29 +208,69 @@ test.describe('the feed has a way back to the tail — with a conversation (#442
     await wheelToBottom(w);
     await expect(jump(w)).toHaveCount(0);
 
+    // ⚠️ EVERYTHING THAT CAN BE DONE BEFORE THE CLICK IS DONE BEFORE THE CLICK
+    // (#1079). The window this test has to land inside is 500ms and it opens at
+    // the pointer-down, so nothing may sit between that and the prompt except the
+    // prompt: the session is looked up here, the timing probe is installed here,
+    // and the pointer is already where it is going to press.
+    const name = `PIN967_`;
+    const send = await preparedStreamPrompt(a, path.basename(folder));
+    await w.evaluate((prefix) => {
+      const seen: Pin967Timing = { down: 0, first: 0 };
+      (window as unknown as { __pin967: Pin967Timing }).__pin967 = seen;
+      // capture phase, so this is stamped before React's `onPointerDown` and the
+      // measured window is never SHORTER than the one `FeedView` opened
+      document
+        .querySelector('[data-feed-region]')
+        ?.addEventListener('pointerdown', () => (seen.down = Date.now()), {
+          capture: true,
+          once: true,
+        });
+      const watch = new MutationObserver((records) => {
+        for (const r of records) {
+          const nodes = r.type === 'characterData' ? [r.target] : [...r.addedNodes];
+          if (nodes.some((n) => n.textContent?.includes(prefix))) {
+            seen.first = Date.now();
+            watch.disconnect();
+            return;
+          }
+        }
+      });
+      watch.observe(document.body, { childList: true, subtree: true, characterData: true });
+    }, name);
+    const region = await w.locator('[data-feed-region]').boundingBox();
+    if (!region) throw new Error('the conversation region has no box to click in');
+    await w.mouse.move(region.x + 5, region.y + 5);
+
     // A click that is emphatically NOT a scroll. On the region itself rather than
     // a control, so nothing expands and the only thing this can be testing is the
     // pointer-down → gesture-window path.
-    const clickedAt = Date.now();
-    await w.locator('[data-feed-region]').click({ position: { x: 5, y: 5 } });
-
+    //
     // …and the session talks INSIDE the gesture window, which is the whole point.
     //
-    // ⚠️ THROUGH THE BRIDGE, NOT THE COMPOSER, and the premise assertion below is how
-    // that was discovered. The first version typed into the composer — click, fill,
-    // Enter, a CDP round trip each — and the block landed ~900ms after the click, well
-    // past `GESTURE_MS`. The test passed, and it was passing for the wrong reason: the
-    // window had already closed, so the old rule would have kept the pin too.
-    // `submitPrompt` is one round trip and lands inside it.
+    // ⚠️ THE PROMPT GOES OUT BETWEEN THE PRESS AND THE RELEASE, THROUGH THE BRIDGE.
+    // Two earlier versions were each passing or failing for the wrong reason, and
+    // the premise assertion below is how both were found:
+    //
+    //   * typed into the composer — click, fill, Enter, a CDP round trip each — and
+    //     the block landed ~900ms after the click, well past `GESTURE_MS`. Green,
+    //     because the window had closed and the old rule would have kept the pin too.
+    //   * `locator.click()` then `streamPrompter` (#1079) — the release, the click's
+    //     own bookkeeping and a `sessions.cards()` lookup all ran on the clock before
+    //     the prompt left. ~200ms on a dev machine; 500-572ms on windows-latest,
+    //     which reddened two runs in four.
+    //
+    // Now ONE round trip separates the gesture from the prompt.
+    //
     // 200 blocks, not one: the bug needs the tail to be FAR AWAY at the moment the
     // scroll event is sampled, which is what "Claude is working constantly" means.
     // One block lands and the pin catches up before anything can be misread —
     // measured: the mutation test below passes with a single block, i.e. a
     // one-block stimulus cannot tell the fix from its absence.
-    const name = `PIN967_`;
-    await streamPrompter(a)(path.basename(folder), `!bulk 200 ${name}`);
+    await w.mouse.down();
+    await send(`!bulk 200 ${name}`);
+    await w.mouse.up();
     await expect(w.getByText(`${name}200`, { exact: true })).toBeAttached({ timeout: 60_000 });
-    const firstBlockAt = Date.now();
     await w.waitForTimeout(700); // the pin lands on the next frame; give it several
     expect(await tailGap(w)).toBeLessThan(40);
 
@@ -235,12 +283,26 @@ test.describe('the feed has a way back to the tail — with a conversation (#442
     // ⚠️ ASSERT THE PREMISE, OR THIS TEST CAN STOP TESTING ANYTHING (found in
     // review). Everything above only discriminates while the FIRST block lands
     // inside `GESTURE_MS` — 500ms, `FeedView`'s constant. On a loaded runner the
-    // click, the fill, the Enter, a CDP round trip and the fake's reply can exceed
-    // that, the window closes, and the OLD rule would have repinned too: green for
-    // the wrong reason, silently, for ever. So the test says out loud what it needed
-    // rather than hoping for it.
+    // round trip and the fake's reply can exceed that, the window closes, and the
+    // OLD rule would have repinned too: green for the wrong reason, silently, for
+    // ever. So the test says out loud what it needed rather than hoping for it.
+    //
+    // ⚠️ MEASURED IN THE RENDERER, ON `FeedView`'S OWN CLOCK (#1079). This used to
+    // be two `Date.now()` calls in the TEST process, the second taken after
+    // Playwright had polled its way to block 200 of 200 — so it timed the click's
+    // release, 200 renders and a poll interval, and called the total "the first
+    // block". The window is `Date.now() - lastGesture` inside the page; this is the
+    // same subtraction, from the pointer-down the page saw to the first block the
+    // page drew.
+    const seen = await w.evaluate(
+      () => (window as unknown as { __pin967: Pin967Timing }).__pin967
+    );
+    expect(seen.down, 'the page never saw the pointer-down this test is about').toBeGreaterThan(0);
+    expect(seen.first, 'the page never saw the first block arrive').toBeGreaterThan(0);
+    // printed on a green run too: the margin is the thing to watch on a slow runner
+    console.log(`#967 premise: first block ${seen.first - seen.down}ms after the pointer-down (limit 500)`);
     expect(
-      firstBlockAt - clickedAt,
+      seen.first - seen.down,
       'the first block landed after the 500ms gesture window had closed, so this ' +
         'test no longer exercises the #967 path at all — it is passing for the wrong ' +
         'reason. Make the stimulus faster rather than relaxing this.'
