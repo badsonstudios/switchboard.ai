@@ -67,8 +67,11 @@ const jump = (w: Page) => w.locator('[data-feed-jump-latest]');
 interface Pin967Timing {
   /** the pointer-down that opened the window */
   down: number;
-  /** the first block of the reply reaching the DOM */
+  /** the first block of the REPLY reaching the conversation */
   first: number;
+  /** the first scroll event after it — the instant `FeedView` reads its window */
+  sampled: number;
+  stop?: () => void;
 }
 
 test.describe.configure({ mode: 'serial' });
@@ -216,27 +219,43 @@ test.describe('the feed has a way back to the tail — with a conversation (#442
     const name = `PIN967_`;
     const send = await preparedStreamPrompt(a, path.basename(folder));
     await w.evaluate((prefix) => {
-      const seen: Pin967Timing = { down: 0, first: 0 };
-      (window as unknown as { __pin967: Pin967Timing }).__pin967 = seen;
+      const feed = document.querySelector('[data-feed-region]');
+      if (!feed) throw new Error('no conversation region to time');
+      const seen: Pin967Timing = { down: 0, first: 0, sampled: 0 };
+      (window as unknown as { __pin967?: Pin967Timing }).__pin967 = seen;
       // capture phase, so this is stamped before React's `onPointerDown` and the
       // measured window is never SHORTER than the one `FeedView` opened
-      document
-        .querySelector('[data-feed-region]')
-        ?.addEventListener('pointerdown', () => (seen.down = Date.now()), {
-          capture: true,
-          once: true,
-        });
+      feed.addEventListener('pointerdown', () => (seen.down = Date.now()), {
+        capture: true,
+        once: true,
+      });
+      // ⚠️ A DIGIT AFTER THE PREFIX, AND ONLY INSIDE THE CONVERSATION (review). The
+      // prompt is echoed into the feed as the user's own bubble — `!bulk 200
+      // PIN967_` — a mutation ahead of the reply, and a bare prefix match stopped
+      // the clock on THAT. `PIN967_1` is something only the reply can say.
+      const reply = new RegExp(`${prefix}\\d`);
       const watch = new MutationObserver((records) => {
         for (const r of records) {
           const nodes = r.type === 'characterData' ? [r.target] : [...r.addedNodes];
-          if (nodes.some((n) => n.textContent?.includes(prefix))) {
+          if (nodes.some((n) => reply.test(n.textContent ?? ''))) {
             seen.first = Date.now();
             watch.disconnect();
             return;
           }
         }
       });
-      watch.observe(document.body, { childList: true, subtree: true, characterData: true });
+      watch.observe(feed, { childList: true, subtree: true, characterData: true });
+      // The window is not read when a block is drawn: it is read in `onScroll`, a
+      // frame or more later, when the pin moves the scroller. THAT is the instant
+      // that has to fall inside 500ms, so that is the instant recorded.
+      const onScroll = (): void => {
+        if (seen.first && !seen.sampled) seen.sampled = Date.now();
+      };
+      feed.addEventListener('scroll', onScroll, { capture: true });
+      seen.stop = () => {
+        watch.disconnect();
+        feed.removeEventListener('scroll', onScroll, { capture: true });
+      };
     }, name);
     const region = await w.locator('[data-feed-region]').boundingBox();
     if (!region) throw new Error('the conversation region has no box to click in');
@@ -268,8 +287,13 @@ test.describe('the feed has a way back to the tail — with a conversation (#442
     // measured: the mutation test below passes with a single block, i.e. a
     // one-block stimulus cannot tell the fix from its absence.
     await w.mouse.down();
-    await send(`!bulk 200 ${name}`);
-    await w.mouse.up();
+    try {
+      await send(`!bulk 200 ${name}`);
+    } finally {
+      // one app for the whole serial file: a refused prompt must not leave it
+      // with a button held for every test after this one
+      await w.mouse.up();
+    }
     await expect(w.getByText(`${name}200`, { exact: true })).toBeAttached({ timeout: 60_000 });
     await w.waitForTimeout(700); // the pin lands on the next frame; give it several
     expect(await tailGap(w)).toBeLessThan(40);
@@ -291,18 +315,27 @@ test.describe('the feed has a way back to the tail — with a conversation (#442
     // be two `Date.now()` calls in the TEST process, the second taken after
     // Playwright had polled its way to block 200 of 200 — so it timed the click's
     // release, 200 renders and a poll interval, and called the total "the first
-    // block". The window is `Date.now() - lastGesture` inside the page; this is the
-    // same subtraction, from the pointer-down the page saw to the first block the
-    // page drew.
-    const seen = await w.evaluate(
-      () => (window as unknown as { __pin967: Pin967Timing }).__pin967
-    );
+    // block". The window is `Date.now() - lastGesture`, evaluated inside the page's
+    // `onScroll`; this is that subtraction, from the pointer-down the page saw to
+    // the first scroll event after the reply's first block was drawn.
+    const seen = await w.evaluate(() => {
+      const holder = window as unknown as { __pin967?: Pin967Timing };
+      const t = holder.__pin967;
+      t?.stop?.();
+      delete holder.__pin967;
+      return t ? { down: t.down, first: t.first, sampled: t.sampled } : null;
+    });
+    if (!seen) throw new Error('the timing probe was never installed');
     expect(seen.down, 'the page never saw the pointer-down this test is about').toBeGreaterThan(0);
-    expect(seen.first, 'the page never saw the first block arrive').toBeGreaterThan(0);
+    expect(seen.first, 'the page never saw the first block of the reply').toBeGreaterThan(0);
+    expect(seen.sampled, 'the conversation never scrolled after the reply began').toBeGreaterThan(0);
     // printed on a green run too: the margin is the thing to watch on a slow runner
-    console.log(`#967 premise: first block ${seen.first - seen.down}ms after the pointer-down (limit 500)`);
+    console.log(
+      `#967 premise: first block ${seen.first - seen.down}ms after the pointer-down, ` +
+        `window read at ${seen.sampled - seen.down}ms (limit 500)`
+    );
     expect(
-      seen.first - seen.down,
+      seen.sampled - seen.down,
       'the first block landed after the 500ms gesture window had closed, so this ' +
         'test no longer exercises the #967 path at all — it is passing for the wrong ' +
         'reason. Make the stimulus faster rather than relaxing this.'

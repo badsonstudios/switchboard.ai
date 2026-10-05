@@ -19,9 +19,11 @@
 >   Playwright had seen block 200 of 200, with a session lookup in between. Now
 >   the lookup happens first, the prompt goes out between mouse-down and
 >   mouse-up, and the premise is measured in the renderer on `FeedView`'s own
->   clock. **The limit is still 500 ms.** Measured on the desktop: ~170-220 ms
->   before, **13-59 ms after** (46 runs, 16 of them with four apps running at
->   once).
+>   clock, at the first scroll after the reply's first block (the instant the
+>   window is actually read). **The limit is still 500 ms.** Measured on the
+>   desktop: ~170-220 ms before, **23-99 ms after** over 30 runs, and 32-184 ms
+>   over 16 more with four apps running at once. Review caught the first cut
+>   timing the echo of the prompt rather than the reply; fixed before it shipped.
 
 > # ✅ RELEASED: v0.8.113, 2026-10-04 (`d519734`, PR #1094)
 >
