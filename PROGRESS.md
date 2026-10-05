@@ -3,6 +3,25 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
+> # ✅ RELEASED: v0.8.114, 2026-10-05 (`76386f1`, PR #1110)
+>
+> The owner, once the list below was reported done: *"Yep, go ahead and cut a
+> release."* A plain patch step. Installer and `.sha256` sidecar both
+> published, and the published pair downloaded and verified to match by hand.
+> `0.8.115 — unreleased` is open and empty.
+>
+> **In it:** a picture on every page of the manual (#1103); a narrow session's
+> tabs no longer overlap its readouts (#1083); the status bar counts sessions
+> (#1084); `@Name` warns about a shared git working tree (#1098); a refused
+> history pick keeps the search (#1099). All five have rows in the tracker's
+> Untested table. Three flaky tests fixed (#1079, #1025, #835) — **nine PR CI
+> runs in a row went green first time, with no re-run.**
+>
+> **Next up — nothing is claimed. THE SAME THREE THINGS ARE WAITING ON THE
+> OWNER** (listed under v0.8.113 below): #1088 / draft PR #1089, a self-written
+> handoff, and "stop it and switch" on a busy history pick. Unclaimed and filed
+> from the manual's pictures: #1104 and #1105.
+
 > # ✅ 2026-10-04 (later): **the flake batch, the rough edges, the manual's pictures — owner's list, all eight merged**
 >
 > The owner's order for this session: the three flaky tests first (#1079,
@@ -88,9 +107,8 @@
 >   milestone name in `.claude/CLAUDE.md` and the `/startup` skill.
 >
 > **THE OWNER'S LIST FOR THIS SESSION IS DONE. Next up: nothing is claimed.**
-> Still waiting on him: the three decisions under v0.8.113 below. Nothing here
-> is in a release — 0.8.114 is open with six entries and he has not asked for
-> a cut.
+> Still waiting on him: the three decisions under v0.8.113 below. **All of it
+> shipped in v0.8.114** — see the entry above.
 > * **Filed, at the owner's request:** **#1098** (the `@Name` shared-folder
 >   warning compares folders, not git working trees) and **#1099** (a refused
 >   history pick clears the search box; the "held" refusal reuses a tooltip).
