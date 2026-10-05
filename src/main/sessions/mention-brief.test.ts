@@ -208,6 +208,47 @@ describe('the facts', () => {
     expect(head({ readerFolder: 'C:/p/other' })).not.toContain(warn);
     expect(head()).not.toContain(warn);
   });
+
+  it('warns about a shared WORKING TREE when the folders differ (#1098)', () => {
+    const head = (f?: BriefFacts): string => buildMentionBrief(pkg(), said('x'), f, WIN32_STYLE).head;
+    const tree = 'It shares your working tree';
+    // The case the folder comparison could not see: the reader is in a
+    // subfolder of the checkout the mentioned session works at the top of.
+    const nested = head({ readerFolder: 'C:/p/trading/packages/a', tree: 'C:/p/trading', readerTree: 'c:\\p\\trading' });
+    expect(nested).toContain(tree);
+    expect(nested).toContain('(C:/p/trading)');
+    expect(nested).not.toContain('It shares your folder');
+    // The SAME folder keeps its own sentence — one warning, not two.
+    const same = head({ readerFolder: 'C:/p/trading', tree: 'C:/p/trading', readerTree: 'C:/p/trading' });
+    expect(same).toContain('It shares your folder');
+    expect(same).not.toContain(tree);
+    // Two LINKED worktrees of one repository: different toplevels, different files.
+    expect(head({ readerFolder: 'C:/p/trading-wt', tree: 'C:/p/trading', readerTree: 'C:/p/trading-wt' })).not.toContain('⚠');
+  });
+
+  it('one folder under TWO SPELLINGS is still warned about, and not called a different folder (#1098 review)', () => {
+    // A junction or a symlink: the two sessions' folder strings differ, git
+    // resolves both to one real directory. The warning must fire, and the app
+    // must not state that the folders are different places — it compared names.
+    const h = buildMentionBrief(
+      pkg(),
+      said('x'),
+      { readerFolder: 'D:/link-to-trading', tree: 'C:/p/trading', readerTree: 'C:/p/trading' },
+      WIN32_STYLE
+    ).head;
+    expect(h).toContain('It shares your working tree');
+    expect(h).toContain('a different path from yours');
+    expect(h).not.toMatch(/folder is not yours/);
+  });
+
+  it('an UNKNOWN tree never invents a warning, and never swallows the folder one (#1098)', () => {
+    const head = (f?: BriefFacts): string => buildMentionBrief(pkg(), said('x'), f, WIN32_STYLE).head;
+    // one side unread (not a repository, git missing, budget spent): nothing to compare
+    expect(head({ readerFolder: 'C:/p/trading/packages/a', tree: 'C:/p/trading' })).not.toContain('⚠');
+    expect(head({ readerFolder: 'C:/p/trading/packages/a', readerTree: 'C:/p/trading' })).not.toContain('⚠');
+    // …and the plain comparison still speaks when git said nothing at all
+    expect(head({ readerFolder: 'C:/p/trading' })).toContain('It shares your folder');
+  });
 });
 
 describe('it always fits — a brief that did not would inject nothing at all', () => {
@@ -221,10 +262,16 @@ describe('it always fits — a brief that did not would inject nothing at all', 
     });
 
   it('the worst case stays inside its cap, and two of them fit one prompt', () => {
+    // …with the LONGER of the two warnings: the working-tree one prints a path
+    // (#1098), so the worst case is a reader in another folder of one very
+    // deeply nested checkout.
     const parts = buildMentionBrief(worst(), said(long(20_000, 'c'), true), {
-      readerFolder: 'C:/p/trading',
+      readerFolder: `C:/${long(500, 'r')}`,
       git: { branch: long(300, 'b'), changed: 9, untracked: 9 },
+      tree: `C:/${long(500, 't')}`,
+      readerTree: `C:/${long(500, 't')}`,
     });
+    expect(parts.head).toContain('It shares your working tree');
     const bare = parts.head.length + parts.body.length + parts.more.length;
     expect(bare).toBeLessThanOrEqual(BRIEF_CHAR_CAP);
 

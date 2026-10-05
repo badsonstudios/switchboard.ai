@@ -73,7 +73,8 @@ export const BRIEF_CHAR_CAP = 18_000;
 /**
  * What each asked-for section may take. Fixed shares, so the conversation — the
  * part the brief exists to carry — is never left with scraps: these sum to
- * 7,000, the app's own lines are under 2,000, and the rest is the conversation's.
+ * 7,000, the app's own lines are under 3,000 at their very longest (a 400-character
+ * folder and a 400-character working tree), and the rest is the conversation's.
  */
 const SECTION_CAP: Record<'goal' | 'instructions' | 'plan' | 'files', number> = {
   goal: 1_500,
@@ -105,6 +106,14 @@ export interface BriefFacts {
   readerFolder?: string;
   /** the mentioned session's checkout, or undefined when it is not known */
   git?: BriefGitFacts;
+  /**
+   * The root of the git working tree each folder is in (#1098) — git's own
+   * `--show-toplevel`, or undefined when it could not be read in time. BOTH are
+   * needed for the comparison; with either missing the brief falls back to
+   * comparing the folders themselves.
+   */
+  tree?: string;
+  readerTree?: string;
 }
 
 /** The three parts of a brief. The caller fences `body` and only `body`. */
@@ -139,6 +148,31 @@ export function sameFolder(
     return style.caseInsensitive ? flat.toLowerCase() : flat;
   };
   return fold(a) === fold(b);
+}
+
+/**
+ * Do the two sessions work in ONE working tree — and if so, is it obvious?
+ *
+ * ⚠️ **TREES, NOT FOLDERS (#1098).** This used to be `sameFolder` and nothing
+ * else, so a session in `repo/packages/a` and one in `repo` — one checkout, one
+ * branch, each other's uncommitted changes — were told nothing, in exactly the
+ * case where the two folder names give no hint of it. Git's toplevel is the
+ * thing that is actually shared.
+ *
+ * Two LINKED worktrees of one repository have different toplevels and different
+ * files, and are correctly `'no'`.
+ *
+ * Unknown never invents a warning and never swallows one: without BOTH
+ * toplevels this is the folder comparison it always was.
+ */
+export function sharesWorkingTree(
+  folder: string | undefined,
+  facts: BriefFacts,
+  style: PathStyle = HOST_STYLE
+): 'no' | 'same-folder' | 'same-tree' {
+  if (sameFolder(folder, facts.readerFolder, style)) return 'same-folder';
+  if (facts.tree && facts.readerTree && sameFolder(facts.tree, facts.readerTree, style)) return 'same-tree';
+  return 'no';
 }
 
 /**
@@ -223,12 +257,27 @@ export function buildMentionBrief(
   head.push(`- **State:** ${statusSentence(session)}`);
   const git = gitSentence(facts.git);
   if (git) head.push(`- **Git:** ${git}`);
-  if (sameFolder(session.folder, facts.readerFolder, style)) {
-    // The one fact that can break the READER rather than merely inform it.
+  // The one fact that can break the READER rather than merely inform it.
+  const shared = sharesWorkingTree(session.folder, facts, style);
+  if (shared === 'same-folder') {
     head.push(
       '- **⚠ It shares your folder.** That session and you work in ONE working tree: ' +
         'the branch it checked out is the branch you are on, and its uncommitted ' +
         'changes are in your files. Run `git status` before you change anything.'
+    );
+  } else if (shared === 'same-tree') {
+    // Said differently, because here the folder line above looks like someone
+    // else's — which is the whole reason this case needs saying at all.
+    //
+    // "A different PATH", not "a different folder" (review): all that was
+    // compared is two spellings. Git resolves a junction or a symlink to the
+    // real directory, so two sessions on ONE folder under two names land here
+    // too, and the app's own voice may not say they are in different places.
+    head.push(
+      `- **⚠ It shares your working tree.** Its folder is a different path from yours, but both are inside ONE ` +
+        `git checkout (${oneLine(facts.tree ?? '')}): the branch it checked out is the branch you ` +
+        'are on, and its uncommitted changes show up in your `git status`. Run `git status` ' +
+        'before you change anything.'
     );
   }
   head.push(`- **How much of it this saw:** ${COVERAGE_LINE[pkg.coverage]}`);

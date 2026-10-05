@@ -106,6 +106,28 @@ describe('resolveMentions — a live session', () => {
     expect(apart.ok && apart.prompt.includes('shares your folder')).toBe(false);
   });
 
+  it('…and when it shares the reader’s WORKING TREE from a different folder (#1098)', () => {
+    // `C:/p/beta` (the reader) and `C:/p/beta/packages/api`: two folder names,
+    // one checkout. The folder comparison said nothing here.
+    const inner = summary({ id: 'live-d', name: 'Inner', folder: 'C:/p/beta/packages/api' });
+    const q = queries([OWN, inner], { 'live-d': ['x'] });
+    const withTree = (tree: (folder: string) => string | undefined) =>
+      resolveMentions(q, renderOutput, 'see @Inner', OWN.id, { fence: quoted, tree });
+    const shared = withTree(() => 'C:/p/beta');
+    expect(shared.ok && shared.prompt.includes('It shares your working tree')).toBe(true);
+    // the READER's own tree is asked for too, by its own folder
+    const asked: string[] = [];
+    withTree((folder) => (asked.push(folder), 'C:/p/beta'));
+    expect(asked.sort()).toEqual(['C:/p/beta', 'C:/p/beta/packages/api']);
+    // nothing known, nothing claimed — and a lookup that throws is nothing known
+    const unknown = withTree(() => undefined);
+    expect(unknown.ok && unknown.prompt.includes('shares your')).toBe(false);
+    const threw = withTree(() => {
+      throw new Error('lookup broke');
+    });
+    expect(threw.ok && threw.prompt.includes('shares your')).toBe(false);
+  });
+
   it('states the branch and the uncommitted count the caller looked up — and nothing when it could not', () => {
     const q = queries([OWN, TRADING], { 'live-a': ['x'] });
     const asked: string[] = [];

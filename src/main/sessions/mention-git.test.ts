@@ -1,6 +1,17 @@
 // Which branch a mentioned folder is on, found out in time or not at all (#1092).
 import { describe, it, expect, vi } from 'vitest';
-import { createMentionGitLookup, gitFactsFrom, type GitStatusLike } from './mention-git';
+import { execFileSync } from 'child_process';
+import fs from 'fs';
+import path from 'path';
+import { GitService } from '../git/git-service';
+import { sharesWorkingTree } from './mention-brief';
+import { tempDir } from '../../test-temp-dirs';
+import {
+  createMentionGitLookup,
+  createMentionTreeLookup,
+  gitFactsFrom,
+  type GitStatusLike,
+} from './mention-git';
 
 const repo = (over: Partial<GitStatusLike> = {}): GitStatusLike => ({
   isRepo: true,
@@ -87,4 +98,61 @@ describe('createMentionGitLookup', () => {
     expect((await createMentionGitLookup(status).lookup([])).size).toBe(0);
     expect(status).not.toHaveBeenCalled();
   });
+});
+
+describe('createMentionTreeLookup (#1098)', () => {
+  it('answers each folder’s working-tree root once, and leaves out a folder that has none', async () => {
+    const root = vi.fn(async (folder: string) => (folder === 'plain' ? null : 'C:/p/repo'));
+    const got = await createMentionTreeLookup(root).lookup(['C:/p/repo', 'C:/p/repo/packages/a', 'plain', 'C:/p/repo']);
+    expect(root).toHaveBeenCalledTimes(3);
+    expect(got.get('C:/p/repo')).toBe('C:/p/repo');
+    expect(got.get('C:/p/repo/packages/a')).toBe('C:/p/repo');
+    expect(got.has('plain')).toBe(false);
+  });
+
+  it('a root that is slow, or throws, is a folder nothing is known about', async () => {
+    vi.useFakeTimers();
+    const root = (folder: string): Promise<string | null> =>
+      folder === 'slow' ? new Promise(() => {}) : Promise.reject(new Error('git exploded'));
+    const pending = createMentionTreeLookup(root, 1_500).lookup(['slow', 'broken']);
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect((await pending).size).toBe(0);
+  });
+});
+
+// The cases above hand the lookup made-up roots. This asks REAL git, because the
+// whole of #1098 rests on what `--show-toplevel` actually answers: the same
+// string for a folder and its subfolder, a different one for a linked worktree,
+// and nothing for a folder outside any repository.
+describe('the working-tree comparison, against real git (#1098)', () => {
+  it('a subfolder shares its checkout; a linked worktree and a plain folder do not', async () => {
+    const repo = tempDir('sb-1098-repo-');
+    const git = (cwd: string, args: string[]): void => {
+      execFileSync('git', args, { cwd, stdio: 'ignore', windowsHide: true });
+    };
+    git(repo, ['init', '-b', 'main']);
+    git(repo, ['config', 'user.email', 'test@test']);
+    git(repo, ['config', 'user.name', 'test']);
+    const sub = path.join(repo, 'packages', 'a');
+    fs.mkdirSync(sub, { recursive: true });
+    fs.writeFileSync(path.join(sub, 'x.txt'), 'x\n');
+    git(repo, ['add', '.']);
+    git(repo, ['commit', '-m', 'init']);
+    const linked = path.join(tempDir('sb-1098-wt-'), 'wt');
+    git(repo, ['worktree', 'add', '-b', 'other', linked]);
+    const plain = tempDir('sb-1098-plain-');
+
+    const svc = new GitService();
+    const roots = await createMentionTreeLookup((f) => svc.root(f, 20_000), 20_000).lookup([repo, sub, linked, plain]);
+    const shares = (reader: string, other: string): string =>
+      sharesWorkingTree(other, { readerFolder: reader, tree: roots.get(other), readerTree: roots.get(reader) });
+
+    expect(shares(sub, repo)).toBe('same-tree');
+    expect(shares(repo, sub)).toBe('same-tree');
+    expect(shares(repo, repo)).toBe('same-folder');
+    expect(shares(linked, repo)).toBe('no');
+    expect(shares(linked, sub)).toBe('no');
+    expect(roots.has(plain)).toBe(false);
+    expect(shares(plain, repo)).toBe('no');
+  }, 30_000);
 });

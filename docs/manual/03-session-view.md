@@ -261,6 +261,11 @@ The box at the bottom sends straight to the real Claude Code session:
      how many files have uncommitted changes. **If that session works in the
      same folder as the one you are typing in, the brief says so in bold**,
      because two sessions in one folder share one set of files and one branch.
+     It says the same when the two folders are different but belong to one git
+     checkout — one session at the top of a project and another in a subfolder
+     of it, for instance — since those share a branch and each other's
+     uncommitted changes just as much. Two separate git worktrees of one
+     project do not share files, and get no warning.
   2. **What it was asked to do** — its first prompt, what you asked for along
      the way, its to-do list, and the files it read and changed.
   3. **The recent conversation** — what you typed and what it replied, in full,

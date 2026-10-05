@@ -52,6 +52,8 @@ export interface MentionExtras {
   fence?: (body: string) => string;
   /** a folder's checkout, when the caller found out in time; undefined = unknown */
   git?: (folder: string) => BriefGitFacts | undefined;
+  /** a folder's working-tree root (#1098), on the same terms; asked of the READER's folder too */
+  tree?: (folder: string) => string | undefined;
 }
 
 /**
@@ -158,6 +160,8 @@ function answerFor(
       {
         ...(reader ? { readerFolder: reader.folder } : {}),
         ...(extras.git ? { git: safeGit(extras.git, found.value.folder) } : {}),
+        ...(extras.tree ? { tree: safeGit(extras.tree, found.value.folder) } : {}),
+        ...(extras.tree && reader ? { readerTree: safeGit(extras.tree, reader.folder) } : {}),
       },
       extras.fence
     );
@@ -181,10 +185,7 @@ function answerFor(
 }
 
 /** A git lookup that threw is a fact we do not have — never a refused send. */
-function safeGit(
-  git: (folder: string) => BriefGitFacts | undefined,
-  folder: string
-): BriefGitFacts | undefined {
+function safeGit<T>(git: (folder: string) => T | undefined, folder: string): T | undefined {
   try {
     return git(folder);
   } catch {

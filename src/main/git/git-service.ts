@@ -838,9 +838,16 @@ export class GitService {
     return entries;
   }
 
-  /** repo toplevel for a folder, or null when not a repo / no git */
-  async root(folder: string): Promise<string | null> {
-    const r = await this.run(folder, ['rev-parse', '--show-toplevel']);
+  /**
+   * repo toplevel for a folder, or null when not a repo / no git.
+   *
+   * `budgetMs` kills a git that has not answered by then (0 = no bound, which
+   * is what this always was). The `@Name` brief passes one (#1098): it stops
+   * WAITING after its own budget either way, and without this the git it had
+   * stopped waiting for would be left running.
+   */
+  async root(folder: string, budgetMs = 0): Promise<string | null> {
+    const r = await this.run(folder, ['rev-parse', '--show-toplevel'], budgetMs);
     const top = r.out.trim();
     return r.ok && top ? top : null;
   }

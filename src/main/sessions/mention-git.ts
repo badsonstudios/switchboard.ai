@@ -47,6 +47,11 @@ export interface MentionGitLookup {
   lookup(folders: readonly string[]): Promise<Map<string, BriefGitFacts>>;
 }
 
+export interface MentionTreeLookup {
+  /** each folder's working-tree root; a folder with none, or that did not answer in time, is absent */
+  lookup(folders: readonly string[]): Promise<Map<string, string>>;
+}
+
 /**
  * Look folders up under a budget, sharing one read between concurrent askers.
  *
@@ -62,29 +67,53 @@ export function createMentionGitLookup(
   status: (folder: string) => Promise<GitStatusLike>,
   budgetMs: number = MENTION_GIT_BUDGET_MS
 ): MentionGitLookup {
-  const inFlight = new Map<string, Promise<BriefGitFacts | undefined>>();
-  const read = (folder: string): Promise<BriefGitFacts | undefined> => {
+  return budgeted(async (folder) => gitFactsFrom(await status(folder)), budgetMs);
+}
+
+/**
+ * Which working tree each folder is in (#1098) — the same rules as the lookup
+ * above, for the same reasons, about a different fact.
+ *
+ * The brief's loudest line is "it shares your working tree", and two folders
+ * share one exactly when git gives them the same toplevel. `root` answers
+ * `null` for a folder that is not in a repository, and that folder is absent
+ * from the answer like one that was too slow: unknown is not compared.
+ */
+export function createMentionTreeLookup(
+  root: (folder: string) => Promise<string | null>,
+  budgetMs: number = MENTION_GIT_BUDGET_MS
+): MentionTreeLookup {
+  return budgeted(async (folder) => (await root(folder)) || undefined, budgetMs);
+}
+
+/** One read per folder, shared while in flight, and never waited on past the budget. */
+function budgeted<T>(
+  ask: (folder: string) => Promise<T | undefined>,
+  budgetMs: number
+): { lookup(folders: readonly string[]): Promise<Map<string, T>> } {
+  const inFlight = new Map<string, Promise<T | undefined>>();
+  const read = (folder: string): Promise<T | undefined> => {
     const running = inFlight.get(folder);
     if (running) return running;
     const started = Promise.resolve()
-      .then(() => status(folder))
-      .then(gitFactsFrom, () => undefined)
+      .then(() => ask(folder))
+      .catch(() => undefined)
       .finally(() => inFlight.delete(folder));
     inFlight.set(folder, started);
     return started;
   };
   return {
     async lookup(folders) {
-      const out = new Map<string, BriefGitFacts>();
+      const out = new Map<string, T>();
       await Promise.all(
         [...new Set(folders)].map(async (folder) => {
           let timer: ReturnType<typeof setTimeout> | undefined;
           const late = new Promise<undefined>((resolve) => {
             timer = setTimeout(() => resolve(undefined), budgetMs);
           });
-          const facts = await Promise.race([read(folder), late]);
+          const answer = await Promise.race([read(folder), late]);
           clearTimeout(timer);
-          if (facts) out.set(folder, facts);
+          if (answer !== undefined) out.set(folder, answer);
         })
       );
       return out;
