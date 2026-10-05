@@ -26,6 +26,29 @@ let plain: string;
 const svc = new GitService();
 
 /**
+ * Wait, in REAL time, for something a child process does — usable while the
+ * test holds a fake clock (#1025).
+ *
+ * The cases that need git to run out of budget used to hand it a small real
+ * one (250 ms, 400 ms) and hope the stand-in's earlier invocations fitted
+ * inside it. Each of those is a `node` start, and on a loaded Windows machine
+ * two of them do not fit in 250 ms — so the budget ran out one step EARLY and
+ * the test got a different, equally correct refusal. They now give git a budget
+ * nothing real can spend, wait here until the stand-in says it has reached the
+ * step that matters, and then move the clock themselves.
+ *
+ * Captured at import, before any test can install a fake `setTimeout`.
+ */
+const realSetTimeout = setTimeout;
+async function reached(what: string, check: () => boolean, ms = 20_000): Promise<void> {
+  const until = performance.now() + ms;
+  while (!check()) {
+    if (performance.now() > until) throw new Error(`the stand-in never reached: ${what}`);
+    await new Promise((r) => realSetTimeout(r, 10));
+  }
+}
+
+/**
  * A path git can put in a config value it will EXECUTE.
  *
  * git runs these through a shell, where a Windows backslash is an escape
@@ -1479,10 +1502,23 @@ describe('a git switchboard could not READ is not a folder without git (#785)', 
     // restart, that their git was too old and to upgrade it. #785 is what made
     // the sentence specific enough for that to be a lie worth stopping.
     //
-    // Driven by giving the guard a budget the hanging probe cannot fit in. The
-    // repo names a driver, so the probe is actually reached.
-    const svcSlow = hangingProbeGit();
-    const first = await svcSlow.status(tempDir('sb-785-hang-a-'), 250);
+    // The repo names a driver, so the probe is actually reached.
+    //
+    // ⚠️ ON A CLOCK THE TEST MOVES, NOT A 250 ms BUDGET (#1025). The guard's
+    // budget is SHARED: the config read and the submodule read spend it before
+    // the probe gets what is left. Each is a `node` start, so under load — and,
+    // measured, sometimes ALONE on a pristine `main` — they outlasted 250 ms,
+    // the budget ran out on the config read, and the refusal was the other
+    // correct sentence ("could not enumerate"). The test was racing its own
+    // stand-in. Now the budget is one no real work can spend, the stand-in says
+    // when it is IN the stall, and only then does the clock jump past it.
+    const { svc: svcSlow, stalled } = hangingProbeGit();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    const reading = svcSlow.status(tempDir('sb-785-hang-a-'), 60_000);
+    await reached('the capability probe', () => fs.existsSync(stalled));
+    vi.advanceTimersByTime(60_000);
+    const first = await reading;
+    vi.useRealTimers();
     expect(first.unreadable).toMatch(/could not check/);
     expect(first.unreadable).not.toMatch(/too old/);
 
@@ -1502,7 +1538,7 @@ describe('a git switchboard could not READ is not a folder without git (#785)', 
    * checkout having one bad moment, which is the shape the review blocker
    * turned into a permanent verdict.
    */
-  function hangingProbeGit(): GitService {
+  function hangingProbeGit(): { svc: GitService; stalled: string } {
     const dir = tempDir('sb-785-hangprobe-');
     const script = path.join(dir, 'fake-git.js');
     const stalled = path.join(dir, 'stalled-once');
@@ -1542,7 +1578,7 @@ describe('a git switchboard could not READ is not a folder without git (#785)', 
         if (sub === 'status') return process.stdout.write('# branch.head main\\n');
       })();`
     );
-    return new GitService({ file: process.execPath, prefixArgs: [script, stalled] });
+    return { svc: new GitService({ file: process.execPath, prefixArgs: [script, stalled] }), stalled };
   }
 
   it('git or the folder vanishing MID-READ keeps its diagnosis', async () => {
