@@ -61,6 +61,15 @@
 > * ✅ **#1084 — the status bar counts sessions, not open panels.** Done on
 >   `feature/1084-status-bar-count`. It was handed the grid's PANEL list, and a
 >   document or a diff is a panel. It now reads the list the rail counts.
+>   **Merged as PR #1102.**
+> * ✅ **#1098 — the `@Name` brief warns about a shared git WORKING TREE.** Done
+>   on `feature/1098-shared-working-tree`. It compared folder strings, so a
+>   session in `repo/packages/a` and one in `repo` got no warning. The resolve
+>   step now reads each mentioned folder's toplevel and the reader's, beside the
+>   status read and under the same 1.5 s budget. Linked worktrees stay
+>   un-warned; an unread toplevel falls back to the folder comparison. A test
+>   asks REAL git. Review made the sentence say "a different path", not "not
+>   yours" — git resolves a junction, so one folder under two names lands here.
 > * **Filed, at the owner's request:** **#1098** (the `@Name` shared-folder
 >   warning compares folders, not git working trees) and **#1099** (a refused
 >   history pick clears the search box; the "held" refusal reuses a tooltip).
