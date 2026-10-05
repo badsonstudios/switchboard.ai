@@ -2792,7 +2792,11 @@ export function App(): React.JSX.Element {
         />
       </div>
       <StatusBar
-        count={cards.length}
+        // SESSIONS, not `cards` (#1084). `cards` is dockview's PANEL list, and an
+        // open document or diff is a panel: one session beside one README read
+        // "2 sessions" down here while the rail's footer, a few inches up, said
+        // 1. Same list the rail counts, so the two cannot disagree.
+        count={sessions.length}
         theme={theme}
         serviceHealth={serviceHealth}
         cliVersion={cliVersion}
