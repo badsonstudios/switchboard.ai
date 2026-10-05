@@ -76,6 +76,20 @@
 >   answered; it is now cleared when the dialog closes. The "held by another
 >   card" refusal has its own sentence. **Left alone, and said on the issue:**
 >   after a "held" refusal the row still looks pickable until the list reopens.
+>   **Merged as PR #1107.**
+> * ✅ **#1103 — a picture on each of the remaining 15 manual pages.** Done on
+>   `docs/manual-shots-remaining`. Three new stages in
+>   `e2e/manual-shots.spec.ts`; the update box and the provider-status dot each
+>   get an app of their own because their feeds are read at boot. All 24
+>   pictures regenerate from `npm run manual:shots`. **Filed from what the
+>   pictures showed, not fixed:** #1104 (white scrollbar in Settings and the
+>   palette under a dark theme) and #1105 (the Events edge tab covers the git
+>   letter in the Files tab).
+>
+> **THE OWNER'S LIST FOR THIS SESSION IS DONE. Next up: nothing is claimed.**
+> Still waiting on him: the three decisions under v0.8.113 below. Nothing here
+> is in a release — 0.8.114 is open with six entries and he has not asked for
+> a cut.
 > * **Filed, at the owner's request:** **#1098** (the `@Name` shared-folder
 >   warning compares folders, not git working trees) and **#1099** (a refused
 >   history pick clears the search box; the "held" refusal reuses a tooltip).
