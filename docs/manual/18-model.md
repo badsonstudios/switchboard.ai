@@ -11,6 +11,8 @@ menu is quicker; the picker asks you to confirm.
 
 ## The quick way: click the model name
 
+![The model menu open above the model name under the prompt box, with the model in use ticked](img/model-menu.png)
+
 At the bottom of a session, next to the autonomy chip, there's a small button
 showing the model that session is running — it looks like the buttons either
 side of it, because it is one. **Click it.**

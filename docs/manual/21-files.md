@@ -8,6 +8,8 @@ Every session works in a folder. The **Files** tab shows you what's in it.
 
 ## Git badges
 
+![The Files tab with a folder opened, and a letter at the right-hand edge of each changed file and folder](img/files-tab.png)
+
 A file that git has something to say about carries a letter on the right of its
 row: **M** modified, **A** added, **D** deleted, **R** renamed, **U** untracked,
 **!** in conflict — the same letters the [Changes](08-changes-and-git.md) tab

@@ -12,6 +12,8 @@ On a Mac, use **⌘** everywhere this page says **Ctrl**.
 
 ## Searching the conversation
 
+![The find bar over a conversation, showing one of six matches, with the current match highlighted](img/find.png)
+
 1. Click the session you want, so it's the one with focus.
 2. Press **`Ctrl+F`**. A small find bar appears in the top-right of the card.
    It doesn't push anything around — the conversation stays exactly where it

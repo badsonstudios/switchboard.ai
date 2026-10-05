@@ -37,10 +37,13 @@ Read, in order:
 git status --short
 git branch --show-current
 git log --oneline -5
-# The milestone name must MATCH — a wrong one returns empty and looks like
-# "no open issues" rather than an error. Current: "Phase 2 - The Switchboard".
-# `gh api .../milestones` lists them if this ever comes back empty.
-gh issue list --milestone "Phase 2 - The Switchboard" --state open 2>/dev/null | head -5
+# ASK which milestones are open — do not type a name from memory. A wrong (or
+# CLOSED) one returns empty and looks like "no open issues" rather than an
+# error. This block hard-coded "Phase 2 - The Switchboard" for six days after
+# that milestone was closed (found 2026-10-04), and every startup in between
+# printed nothing here and read it as a quiet queue.
+gh api repos/badsonstudios/switchboard.ai/milestones --jq '.[] | "\(.title): \(.open_issues) open"'
+gh issue list --state open --limit 5
 node --version 2>/dev/null || echo "Node not found"
 claude --version 2>/dev/null || echo "claude CLI not found (required for spike work)"
 ```

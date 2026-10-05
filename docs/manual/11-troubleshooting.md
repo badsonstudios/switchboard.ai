@@ -434,6 +434,8 @@ whole period, including the part where the machine was too slow to use.
 
 ## Sending a problem report
 
+![The Report a problem box, with a subject typed in and three choices of where to send it](img/report-problem.png)
+
 **Help ▸ Report a problem…** does the collecting for you. (It is in the command
 palette too — press `Ctrl+Shift+P` and type *report*.)
 

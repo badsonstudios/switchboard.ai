@@ -9,6 +9,8 @@ rather than an accident.
 
 ## The Settings window
 
+![The Settings window, open on its Appearance section, with the Done button at the bottom](img/settings.png)
+
 Choose **File ▸ Settings…** from the menu bar, or press **`Ctrl+,`**, or open
 the command palette (**`Ctrl+Shift+P`**) and pick **Settings…**, or click the
 version number in the title bar and press **Settings…** in the About panel.

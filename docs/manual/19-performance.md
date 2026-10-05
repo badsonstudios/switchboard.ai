@@ -36,6 +36,8 @@ you can.
 
 ## The quick answer: the performance summary
 
+![The performance summary: a table of things the app timed, with how often and how slow](img/performance-summary.png)
+
 Press **`Ctrl+Shift+P`** and pick **Show performance summary**.
 
 It lists the things you do — typing a character, switching session, opening

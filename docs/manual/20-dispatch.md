@@ -20,6 +20,8 @@ else.
 
 ## Sending work off
 
+![The Dispatch box: three roles to choose from, the task the new session will be told, and the Dispatch button](img/dispatch.png)
+
 From the session whose work you want looked at:
 
 1. Click the **⋯** button in the card's header.

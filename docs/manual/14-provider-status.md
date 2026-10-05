@@ -12,6 +12,8 @@ Two things answer that question, and they're independent.
 
 ## The dot in the bottom bar
 
+![The bottom bar saying provider degraded, and the incident listed at the top of the Events drawer](img/provider-status.png)
+
 At the right-hand end of the bottom status bar there's a small dot. It reflects
 Anthropic's public status page, which switchboard checks every few minutes.
 

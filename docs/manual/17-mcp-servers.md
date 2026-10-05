@@ -24,6 +24,8 @@ says so rather than showing you an empty list — an empty list would look like
 
 ## What you're looking at
 
+![The MCP servers box, listing two servers from the project file, each waiting for approval](img/mcp-servers.png)
+
 Servers are grouped by **where they come from**, most specific first:
 
 | Group | What it means |

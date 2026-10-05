@@ -35,6 +35,8 @@ A check you asked for always tells you the answer, even when the answer is
 
 ## The "there's a new release" box
 
+![The new release box: what changed in the release, and the Skip this version, Ignore and Update buttons](img/update-box.png)
+
 When there's something newer, you get a small box naming the version and
 showing the release notes — the actual "what changed" text, read here in the
 app rather than on a web page. Long notes scroll inside the box.
