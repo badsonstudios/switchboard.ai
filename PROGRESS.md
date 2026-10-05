@@ -36,7 +36,27 @@
 >   clock itself. **Reproduced first: 5 of 80 failed with CI's exact error
 >   (eight at once); 240 of 240 pass after**, and the #785 mutant still fails
 >   it. ⚠️ "Green alone means the known flake" was never a valid all-clear for
->   this case and is no longer needed for it.
+>   this case and is no longer needed for it. **Merged as PR #1097.**
+> * ✅ **#835 — `git-service.test.ts`, the whole `diff is BOUNDED` block.** Done
+>   on `feature/835-kill-fallback-flake`. Not one case: every case in the block
+>   raced a small real budget shared across four or five `node` starts, and
+>   "the process is gone" was a pid read from a file EVERY invocation of the
+>   stand-in overwrote. Now the block holds a fake clock (children and pipes
+>   stay real), the budget is 60 s nothing real can spend, and the stand-in
+>   reports where it is over a socket it keeps for as long as it lives — the
+>   socket closing is the process dying. **12 copies at once: 57 of 72 failed
+>   before, 168 of 168 pass after; nine deliberate breakages of the code are
+>   each caught.** ⚠️ The TITLED failure (`taskkill that cannot even START`)
+>   was not reproduced here — only the budget-ceiling one was. Its likely
+>   mechanism is gone, but that is an inference.
+> * **Filed, at the owner's request:** **#1098** (the `@Name` shared-folder
+>   warning compares folders, not git working trees) and **#1099** (a refused
+>   history pick clears the search box; the "held" refusal reuses a tooltip).
+>   ⚠️ **The milestone "Phase 2 - The Switchboard" NO LONGER EXISTS on GitHub**
+>   — `gh issue list --milestone` against it returns nothing and
+>   `gh issue create` refuses. The open ones are "Phase 3 - The IDE" and
+>   "Flakes & CI health". `.claude/CLAUDE.md` and the `/startup` skill still
+>   name the old one.
 
 > # ✅ RELEASED: v0.8.113, 2026-10-04 (`d519734`, PR #1094)
 >
