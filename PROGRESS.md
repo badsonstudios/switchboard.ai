@@ -24,6 +24,19 @@
 >   desktop: ~170-220 ms before, **23-99 ms after** over 30 runs, and 32-184 ms
 >   over 16 more with four apps running at once. Review caught the first cut
 >   timing the echo of the prompt rather than the reply; fixed before it shipped.
+>   **Merged as PR #1096.** Its own CI run read the window at 273 ms on
+>   windows-latest (the failures were 500-572) and 45 ms on ubuntu-latest;
+>   every run now prints that line.
+> * ✅ **#1025 — `git-service.test.ts` "stalled capability probe".** Done on
+>   `feature/1025-stalled-probe-flake`. The guard's 250 ms budget is SHARED:
+>   the config and submodule reads spend it before the probe gets what is
+>   left, and each is a `node` start — so it sometimes ran out a step early
+>   and the refusal was the other correct sentence. The test now holds a fake
+>   clock, waits for the stand-in to say it is IN the stall, and moves the
+>   clock itself. **Reproduced first: 5 of 80 failed with CI's exact error
+>   (eight at once); 240 of 240 pass after**, and the #785 mutant still fails
+>   it. ⚠️ "Green alone means the known flake" was never a valid all-clear for
+>   this case and is no longer needed for it.
 
 > # ✅ RELEASED: v0.8.113, 2026-10-04 (`d519734`, PR #1094)
 >
