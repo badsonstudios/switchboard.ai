@@ -1,4 +1,4 @@
-import { describe, it, expect, afterAll, beforeAll, vi } from 'vitest';
+import { describe, it, expect, afterAll, afterEach, beforeAll, beforeEach, vi } from 'vitest';
 import { execFileSync, spawn, spawnSync } from 'child_process';
 
 // `spawn` is the REAL one unless a test says otherwise for one call — it is
@@ -10,8 +10,10 @@ vi.mock('child_process', async (importOriginal) => {
   return { ...real, spawn: vi.fn(real.spawn) };
 });
 import fs from 'fs';
+import net from 'net';
 import path from 'path';
 import { GitService } from './git-service';
+import { liveChildren } from '../diagnostics/live-children';
 // The guards themselves, so the pathspec cases can run git WITH them and WITHOUT
 // them in one file — a guard test that cannot fail without the guard proves
 // nothing, which is the lesson the #776 hostile-driver tests learned the hard way.
@@ -40,6 +42,7 @@ const svc = new GitService();
  * Captured at import, before any test can install a fake `setTimeout`.
  */
 const realSetTimeout = setTimeout;
+const realClearTimeout = clearTimeout;
 async function reached(what: string, check: () => boolean, ms = 20_000): Promise<void> {
   const until = performance.now() + ms;
   while (!check()) {
@@ -270,11 +273,147 @@ describe('GitService.diff is BOUNDED (#772)', () => {
   // A stand-in for git, because the only portable way to make real git hang
   // is to break a filesystem. Behaviour by mode: answer the two `rev-parse`
   // probes like a healthy repo, then do the mode's thing on the one that
-  // matters. Its PID goes to a file so the test can check it is really gone.
+  // matters.
+  //
+  // ⚠️ **NOTHING IN THIS BLOCK WAITS ON A REAL CLOCK, AND NOTHING SAMPLES A PID
+  // (#835).** It used to do both, and four of its cases reddened on a loaded
+  // Windows runner for it:
+  //
+  //   * Every case handed git a small REAL budget (400 ms, 600 ms, 1.2 s) and
+  //     asserted on what happened when it ran out. The budget is shared across
+  //     four or five invocations of the stand-in, each one a `node` start, so
+  //     under load it ran out on an EARLIER invocation than the one the case
+  //     was about — or the whole thing simply took longer than the ceiling the
+  //     case compared it with (`expected 3121 to be less than 2600`).
+  //   * "The process is gone" was read from a pid file that EVERY invocation
+  //     overwrote, and then sampled with `process.kill(pid, 0)` for three
+  //     seconds. A kill that landed before the hanging invocation had written
+  //     its pid left an earlier, already-exited one in the file — and Windows
+  //     hands a freed pid to the next process to start, of which a full-suite
+  //     run has thousands.
+  //
+  // So: the service runs on a clock the TEST moves (`setTimeout` and `Date`
+  // are faked; child processes and their pipes are real), the budget is one no
+  // real work can spend, and the stand-in reports where it has got to over a
+  // socket it holds open for as long as it lives. A case waits for "I am in
+  // the hang", moves the clock past the budget, and then waits for that
+  // socket to CLOSE — which is the operating system saying the process is
+  // gone, not a sample of a number.
+  const BUDGET = 60_000;
+
+  /** One process the stand-in started, reporting in. */
+  interface Sighting {
+    /** settles when that process no longer exists */
+    gone: Promise<void>;
+    alive: () => boolean;
+    /** a line back to it, for the modes that wait to be told */
+    say: (line: string) => void;
+  }
+
+  const open: Array<{ server: net.Server; sockets: Set<net.Socket> }> = [];
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+  });
+
+  afterEach(async () => {
+    // (the run's own net does this too; here because the teardown below awaits)
+    vi.useRealTimers();
+    // Closing these is also what ends a `holder-*` descendant: it exits when
+    // its line to the test goes away, so no case leaves one behind.
+    for (const { server, sockets } of open.splice(0)) {
+      for (const s of sockets) s.destroy();
+      await new Promise((r) => server.close(r));
+    }
+  });
+
+  /** A real-time bound with a sentence in it, for a wait that should not need one. */
+  function within<T>(p: Promise<T>, what: string, ms = 10_000): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const t = realSetTimeout(() => reject(new Error(`never happened: ${what}`)), ms);
+      p.then(
+        (v) => {
+          realClearTimeout(t);
+          resolve(v);
+        },
+        (e: Error) => {
+          realClearTimeout(t);
+          reject(e);
+        }
+      );
+    });
+  }
+
+  /**
+   * Somewhere for the stand-in's processes to report to. `next(role)` is the
+   * next process to announce itself as `role`, in arrival order; `seen` is the
+   * same with a bound on it.
+   */
+  async function watcher(): Promise<{
+    port: number;
+    next: (role: string) => Promise<Sighting>;
+    seen: (role: string) => Promise<Sighting>;
+  }> {
+    const arrived = new Map<string, Sighting[]>();
+    const waiting = new Map<string, Array<(s: Sighting) => void>>();
+    const sockets = new Set<net.Socket>();
+    const server = net.createServer((sock) => {
+      sockets.add(sock);
+      let alive = true;
+      let said = '';
+      const gone = new Promise<void>((r) =>
+        sock.once('close', () => {
+          alive = false;
+          sockets.delete(sock);
+          r();
+        })
+      );
+      // a killed process resets its connection; that is the event being waited for
+      sock.on('error', () => undefined);
+      const onData = (d: Buffer): void => {
+        said += d.toString('utf8');
+        const end = said.indexOf('\n');
+        if (end < 0) return;
+        sock.off('data', onData);
+        const role = said.slice(0, end);
+        const sighting: Sighting = { gone, alive: () => alive, say: (line) => sock.write(`${line}\n`) };
+        const taker = waiting.get(role)?.shift();
+        if (taker) taker(sighting);
+        else arrived.set(role, [...(arrived.get(role) ?? []), sighting]);
+      };
+      sock.on('data', onData);
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    open.push({ server, sockets });
+    const next = (role: string): Promise<Sighting> => {
+      const ready = arrived.get(role)?.shift();
+      if (ready) return Promise.resolve(ready);
+      return new Promise((r) => waiting.set(role, [...(waiting.get(role) ?? []), r]));
+    };
+    return {
+      port: (server.address() as net.AddressInfo).port,
+      next,
+      seen: (role) => within(next(role), `a "${role}" process reporting in`),
+    };
+  }
+
+  /** JS for a child: connect to the test, say who you are, and stay connected. */
+  const reportIn = (port: number, role: string): string =>
+    `require('net').connect(${port}, '127.0.0.1', function () { this.write('${role}\\n'); })`;
+
   const FAKE_GIT = `
     const fs = require('fs');
-    const [mode, pidFile, ...raw] = process.argv.slice(2);
-    fs.writeFileSync(pidFile, String(process.pid));
+    const net = require('net');
+    const path = require('path');
+    const [mode, port, ...raw] = process.argv.slice(2);
+    // Report in, then carry on. A process that HANGS never closes this from
+    // its own side: the connection lasts exactly as long as the process does,
+    // which is the point.
+    const announce = (role, then) => {
+      const s = net.connect(Number(port), '127.0.0.1', () => s.write(role + '\\n', () => then && then(s)));
+      s.on('error', () => {});
+      return s;
+    };
     // Real git consumes its own pre-subcommand options; so must the stand-in,
     // now that every invocation carries \`-c core.fsmonitor=false\` (#776).
     //
@@ -291,7 +430,10 @@ describe('GitService.diff is BOUNDED (#772)', () => {
       if (args[0] === '-c') args.splice(0, 2);
       else args.splice(0, 1);
     }
-    const hang = () => setInterval(() => {}, 60000);
+    // ...and it ends when the TEST hangs up. The timer that would have killed
+    // it is on the test's clock, so a case that fails before moving that clock
+    // would otherwise leave this running for good.
+    const hang = () => { announce('hung').on('close', () => process.exit(0)); setInterval(() => {}, 60000); };
     if (mode === 'hang-probe') return hang();
     // The #776 guard's config read: hanging in one mode, and otherwise
     // answered like a repo that configures no filter driver of its own.
@@ -300,17 +442,24 @@ describe('GitService.diff is BOUNDED (#772)', () => {
     if (args[0] === 'ls-files') return;
     if (args[0] === 'rev-parse') {
       const answer = () => process.stdout.write(args.includes('--is-inside-work-tree') ? 'true\\n' : 'deadbeef\\n');
-      if (mode === 'slow-probes') return setTimeout(answer, 600);
+      // A probe that is slow for exactly as long as the test says: it reports
+      // in and answers when it is told to, so the test can spend the budget
+      // while it waits instead of hoping 600 ms of real time lands where it should.
+      if (mode === 'slow-probes') return announce('probe', (s) => s.once('data', () => { answer(); s.destroy(); }));
       return answer();
     }
     if (mode === 'holder-hang' || mode === 'holder-exit') {
       // Something git started that outlives it and HOLDS ITS STDOUT — a hook,
       // a filter. Started through an intermediate that exits at once, so the
       // holder is orphaned out of any tree kill, as a real escapee would be.
-      require('child_process').spawn(process.execPath,
-        [require('path').join(require('path').dirname(pidFile), 'intermediate.js')], { stdio: 'inherit' });
-      if (mode === 'holder-hang') return hang();
-      return; // exit 0, with the pipe still held
+      const mid = require('child_process').spawn(process.execPath,
+        [path.join(__dirname, 'intermediate.js')], { stdio: 'inherit' });
+      // Both wait for the intermediate to have GONE first: while it lives it is
+      // the link a tree kill would follow from git down to the holder.
+      if (mode === 'holder-hang') return mid.on('exit', hang);
+      // exit 0, with the pipe still held — saying so first, so the test knows
+      // git itself is gone
+      return mid.on('exit', () => announce('exiting', () => process.exit(0)));
     }
     if (mode === 'hang-diff' || mode === 'slow-probes') return hang();
     if (mode === 'huge') {
@@ -319,47 +468,53 @@ describe('GitService.diff is BOUNDED (#772)', () => {
     }
   `;
 
-  /** How long a `holder-*` descendant keeps git's stdout open. */
-  const HOLDER_MS = 4000;
+  /**
+   * The longest a `holder-*` descendant can live. It normally ends when the
+   * case does (see `afterEach`); this is for a run that died before teardown.
+   */
+  const HOLDER_MAX_MS = 60_000;
 
-  function fakeGit(mode: string): { svc: GitService; pidFile: string } {
+  async function fakeGit(mode: string): Promise<{
+    svc: GitService;
+    seen: (role: string) => Promise<Sighting>;
+    next: (role: string) => Promise<Sighting>;
+  }> {
+    const { port, seen, next } = await watcher();
     const dir = tempDir('sb-git-fake-');
     const script = path.join(dir, 'fake-git.js');
     fs.writeFileSync(script, `(() => {${FAKE_GIT}})();`);
-    const pidFile = path.join(dir, 'pid');
-    // The pipe-holder for the `holder-*` modes: it inherits stdout and lives
-    // HOLDER_MS, then exits on its own so no test leaves it behind.
+    // The pipe-holder for the `holder-*` modes: it inherits stdout and holds it
+    // until the test hangs up on it.
+    fs.writeFileSync(
+      path.join(dir, 'holder.js'),
+      `const s = ${reportIn(port, 'holder')};
+       s.on('error', () => {});
+       s.on('close', () => process.exit(0));
+       setTimeout(() => process.exit(0), ${HOLDER_MAX_MS});`
+    );
     fs.writeFileSync(
       path.join(dir, 'intermediate.js'),
-      `require('child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, ${HOLDER_MS})'],
+      `require('child_process').spawn(process.execPath, [require('path').join(__dirname, 'holder.js')],
          { stdio: 'inherit', detached: true, windowsHide: true }).unref();`
     );
-    return { svc: new GitService({ file: process.execPath, prefixArgs: [script, mode, pidFile] }), pidFile };
+    return { svc: new GitService({ file: process.execPath, prefixArgs: [script, mode, String(port)] }), seen, next };
   }
 
-  /** Resolves true once `pid` no longer exists; false if it outlives `ms`. */
-  async function gone(pid: number, ms = 3000): Promise<boolean> {
-    const until = Date.now() + ms;
-    while (Date.now() < until) {
-      try {
-        process.kill(pid, 0);
-      } catch {
-        return true;
-      }
-      await new Promise((r) => setTimeout(r, 50));
-    }
-    return false;
-  }
+  /** `diff()` under the test's clock, with its rejection kept as a value. */
+  const reading = (svc: GitService): Promise<unknown> => svc.diff(plain, BUDGET).catch((e: unknown) => e);
 
   it('KILLS a git that runs past the budget and says so — the work ends, not just the wait', async () => {
-    const { svc: slow, pidFile } = fakeGit('hang-diff');
-    const t0 = Date.now();
-    await expect(slow.diff(plain, 400)).rejects.toThrow(/did not finish reading the changes within/);
-    expect(Date.now() - t0).toBeLessThan(5000);
+    const { svc: slow, seen } = await fakeGit('hang-diff');
+    const settled = reading(slow);
+    const git = await seen('hung');
+    vi.advanceTimersByTime(BUDGET);
+    expect(String(await within(settled, 'the read ending at its budget'))).toMatch(
+      /did not finish reading the changes within/
+    );
     // The point of a kill over an abandonment: the process is GONE. Without
     // `timeout` on the invocation the promise would still reject at the host's
     // deadline, one layer up, and this git would still be running.
-    expect(await gone(Number(fs.readFileSync(pidFile, 'utf8')))).toBe(true);
+    await within(git.gone, 'the hanging git being killed');
   });
 
   it.runIf(process.platform === 'win32')(
@@ -379,24 +534,29 @@ describe('GitService.diff is BOUNDED (#772)', () => {
       // took its child down on its own and the tree kill was never needed.
       // Git for Windows' launcher does no such thing; `detached` breaks the
       // grandchild away from the job, which is the real shape.
+      const { port, seen } = await watcher();
       const dir = tempDir('sb-git-launcher-');
-      const grandchildPid = path.join(dir, 'grandchild.pid');
+      const grandchild = path.join(dir, 'grandchild.js');
+      fs.writeFileSync(
+        grandchild,
+        `${reportIn(port, 'grandchild')}.on('error', () => {}).on('close', () => process.exit(0));
+         setInterval(() => {}, 60000);`
+      );
       const launcher = path.join(dir, 'launcher.js');
       fs.writeFileSync(
         launcher,
         `const { spawn } = require('child_process');
-         const c = spawn(process.execPath, ['-e',
-           "require('fs').writeFileSync(process.argv[1], String(process.pid)); setInterval(() => {}, 60000)",
-           ${JSON.stringify(grandchildPid)}], { stdio: 'ignore', detached: true, windowsHide: true });
+         const c = spawn(process.execPath, [${JSON.stringify(grandchild)}],
+           { stdio: 'ignore', detached: true, windowsHide: true });
          c.on('exit', (code) => process.exit(code ?? 1));`
       );
       const slow = new GitService({ file: process.execPath, prefixArgs: [launcher] });
-      const settled = slow.diff(plain, 600).catch((e: unknown) => e);
-      // wait for the grandchild to exist before judging whether it died
-      const until = Date.now() + 5000;
-      while (!fs.existsSync(grandchildPid) && Date.now() < until) await new Promise((r) => setTimeout(r, 25));
-      expect(String(await settled)).toMatch(/did not finish/);
-      expect(await gone(Number(fs.readFileSync(grandchildPid, 'utf8')))).toBe(true);
+      const settled = reading(slow);
+      // the grandchild has to exist before anyone can judge whether it died
+      const real = await seen('grandchild');
+      vi.advanceTimersByTime(BUDGET);
+      expect(String(await within(settled, 'the read ending at its budget'))).toMatch(/did not finish/);
+      await within(real.gone, 'the launcher’s child being killed with it');
     }
   );
 
@@ -405,23 +565,37 @@ describe('GitService.diff is BOUNDED (#772)', () => {
     // the pipes are closed, but `execFile` still waits for the process to exit
     // — if the fallback to killing the one process we hold were missing. And
     // `killTree` runs in a timer in Electron main, so a throw is a crash.
+    //
+    // The stub is armed only once git is IN the hang (#835): the next `spawn`
+    // in this process is then the tree kill and nothing else, so the stub
+    // cannot be spent on — or left over for — some other call.
     it('taskkill that cannot even START (a synchronous throw) falls back, and does not throw', async () => {
+      const { svc: slow, seen } = await fakeGit('hang-diff');
+      const settled = reading(slow);
+      const git = await seen('hung');
       vi.mocked(spawn).mockImplementationOnce(() => {
         throw new Error('spawn ENOMEM');
       });
-      const { svc: slow, pidFile } = fakeGit('hang-diff');
-      await expect(slow.diff(plain, 400)).rejects.toThrow(/did not finish/);
-      expect(await gone(Number(fs.readFileSync(pidFile, 'utf8')))).toBe(true);
+      vi.advanceTimersByTime(BUDGET);
+      // the stub went to the tree kill, so nothing is left armed for a later case
+      expect(vi.mocked(spawn)).toHaveBeenLastCalledWith('taskkill', expect.any(Array), expect.any(Object));
+      expect(String(await within(settled, 'the read ending at its budget'))).toMatch(/did not finish/);
+      await within(git.gone, 'the fallback kill of the one process we hold');
     });
 
     it('taskkill that starts and FAILS ("Access is denied") falls back', async () => {
       const real = (await vi.importActual<typeof import('child_process')>('child_process')).spawn;
+      const { svc: slow, seen } = await fakeGit('hang-diff');
+      const settled = reading(slow);
+      const git = await seen('hung');
       vi.mocked(spawn).mockImplementationOnce(() =>
         real(process.execPath, ['-e', 'process.exit(1)'], { stdio: 'ignore' })
       );
-      const { svc: slow, pidFile } = fakeGit('hang-diff');
-      await expect(slow.diff(plain, 400)).rejects.toThrow(/did not finish/);
-      expect(await gone(Number(fs.readFileSync(pidFile, 'utf8')))).toBe(true);
+      vi.advanceTimersByTime(BUDGET);
+      // the stub went to the tree kill, so nothing is left armed for a later case
+      expect(vi.mocked(spawn)).toHaveBeenLastCalledWith('taskkill', expect.any(Array), expect.any(Object));
+      expect(String(await within(settled, 'the read ending at its budget'))).toMatch(/did not finish/);
+      await within(git.gone, 'the fallback kill of the one process we hold');
     });
   });
 
@@ -430,11 +604,19 @@ describe('GitService.diff is BOUNDED (#772)', () => {
     // and stderr CLOSE, and a descendant that inherited them — outside the
     // tree kill's reach — keeps them open. `execFile`'s own timeout closed our
     // end of the pipes; the first version of the replacement timer did not,
-    // and a 400 ms budget became the holder's whole lifetime.
-    const { svc: slow } = fakeGit('holder-hang');
-    const t0 = Date.now();
-    await expect(slow.diff(plain, 400)).rejects.toThrow(/did not finish/);
-    expect(Date.now() - t0).toBeLessThan(HOLDER_MS - 1500);
+    // and the budget became the holder's whole lifetime.
+    const { svc: slow, seen } = await fakeGit('holder-hang');
+    const settled = reading(slow);
+    await seen('hung');
+    const holder = await seen('holder');
+    vi.advanceTimersByTime(BUDGET);
+    expect(String(await within(settled, 'the read ending while the pipe is still held'))).toMatch(
+      /did not finish/
+    );
+    // …and it ended while the holder STILL had the pipe. This used to be a
+    // stopwatch against the holder's 4 s lifetime; the holder now outlives the
+    // case, so the claim is the fact itself rather than a race with it.
+    expect(holder.alive()).toBe(true);
   });
 
   it('…and when git EXITED but its output is still held, it is a timeout after a short grace — not a wait for ever', async () => {
@@ -442,40 +624,63 @@ describe('GitService.diff is BOUNDED (#772)', () => {
     // behind. The grace lets a genuinely finished git's output drain; past it
     // the pipes are closed and the answer is a timeout, because what came
     // back may be cut short.
-    const { svc: slow } = fakeGit('holder-exit');
-    const t0 = Date.now();
-    await expect(slow.diff(plain, 400)).rejects.toThrow(/did not finish/);
-    expect(Date.now() - t0).toBeLessThan(HOLDER_MS - 1500);
+    const { svc: slow, seen } = await fakeGit('holder-exit');
+    const before = liveChildren().git;
+    const spawned = vi.mocked(spawn).mock.calls.length;
+    const settled = reading(slow);
+    const holder = await seen('holder');
+    await within((await seen('exiting')).gone, 'git itself exiting');
+    // ...and THIS process has to have seen it exit, or the timer below finds
+    // `exitCode` still null and takes the kill path the case above covers — the
+    // same answer by the wrong road. The service's own count of live children
+    // drops on the child's `exit` event, which is exactly the moment that matters.
+    await reached('node seeing git exit', () => liveChildren().git === before);
+    // the budget, then the 250 ms grace it grants a git that has already gone
+    vi.advanceTimersByTime(BUDGET + 250);
+    // nothing to kill, so nothing was: no `taskkill` at a pid that may be someone else's by now
+    expect(vi.mocked(spawn).mock.calls.length).toBe(spawned);
+    expect(String(await within(settled, 'the read ending while the pipe is still held'))).toMatch(
+      /did not finish/
+    );
+    expect(holder.alive()).toBe(true);
   });
 
   it('a timed-out PROBE is a timeout — not "not a repository"', async () => {
     // `rev-parse --is-inside-work-tree` failing is how this method answers
     // "not a repo", and a kill is a failure. Reported that way, a slow disk
     // would tell a model its sibling is not in a repository at all.
-    const { svc: slow } = fakeGit('hang-probe');
-    await expect(slow.diff(plain, 400)).rejects.toThrow(/did not finish/);
+    const { svc: slow, seen } = await fakeGit('hang-probe');
+    const settled = reading(slow);
+    await seen('hung');
+    vi.advanceTimersByTime(BUDGET);
+    expect(String(await within(settled, 'the read ending at its budget'))).toMatch(/did not finish/);
   });
 
   it('ONE budget across every call, not one each', async () => {
     // A budget each would be several times the bound `DIFF_BUDGET_MS` sets —
-    // and would put the last call past the host's own deadline. The two
-    // `rev-parse` probes take 600 ms each here (the #776 guard's config read is
-    // instant), so the split is visible: shared, the diff gets what is LEFT of
-    // 1.5 s and the call ends near 1.5 s; one budget per call would be
-    // 0.6 + 0.6 + 1.5 = 2.7 s.
-    const { svc: slow } = fakeGit('slow-probes');
-    const t0 = Date.now();
-    await expect(slow.diff(plain, 1500)).rejects.toThrow(/did not finish/);
-    // 3300 rather than 2300: the discriminator is 1.5 s versus 2.7 s, and the
-    // margin has to hold on a loaded CI runner spawning real processes (#512:
-    // 7 s there for a case that is well under a second here). Tight enough to
-    // fail the bug, loose enough not to fail the machine.
-    expect(Date.now() - t0).toBeLessThan(3300);
+    // and would put the last call past the host's own deadline. Each of the two
+    // `rev-parse` probes is held until 25 s of the 60 s budget has gone by (the
+    // #776 guard's config read is instant), so when the diff itself hangs there
+    // are 10 s left of ONE budget — or a fresh 60 s, if each call got its own.
+    const { svc: slow, seen } = await fakeGit('slow-probes');
+    const settled = reading(slow);
+    for (let i = 0; i < 2; i++) {
+      const probe = await seen('probe');
+      vi.advanceTimersByTime(25_000);
+      probe.say('answer');
+    }
+    await seen('hung');
+    // 15 s more: past what is left of a shared budget, and nowhere near the end
+    // of a private one — on which this read would simply never settle.
+    vi.advanceTimersByTime(15_000);
+    expect(
+      String(await within(settled, 'the read ending on what was LEFT of one budget, not a budget of its own'))
+    ).toMatch(/did not finish/);
   });
 
   it('a diff too large to read says THAT, not that git broke', async () => {
-    const { svc: big } = fakeGit('huge');
-    await expect(big.diff(plain, 20_000)).rejects.toThrow(/larger than the 32 MB/);
+    const { svc: big } = await fakeGit('huge');
+    await expect(big.diff(plain, BUDGET)).rejects.toThrow(/larger than the 32 MB/);
   });
 
   it('THE GUARD SPENDS THE SAME BUDGET, not one per invocation (#776 review)', async () => {
@@ -485,14 +690,26 @@ describe('GitService.diff is BOUNDED (#772)', () => {
     // alone tries the scoped listing, then `--local`, then `--worktree`: three
     // full budgets before `diff-index` has been reached at all. Sharing the
     // deadline, the first one consumes it and the rest fail immediately.
-    const { svc: slow } = fakeGit('hang-config');
-    const t0 = Date.now();
-    // 1200, not 400: the two numbers to separate are "one budget" and "one per
-    // hanging call", and at 400 they are 0.4 s against 1.2 s — close enough
-    // that widening the assertion for a loaded runner (#512) swallowed the
-    // mutant whole. At 1200 they are 1.2 s against 3.6 s.
-    await expect(slow.diff(plain, 1200)).rejects.toThrow();
-    expect(Date.now() - t0).toBeLessThan(2600);
+    const { svc: slow, seen, next } = await fakeGit('hang-config');
+    let ended = false;
+    const settled = reading(slow).finally(() => (ended = true));
+    // The first hanging read gets the whole budget, and spends it.
+    await seen('hung');
+    vi.advanceTimersByTime(BUDGET);
+    // Every one after it gets the 1 ms floor of a budget that is already gone —
+    // so 1 ms each is all this ever grants. A read holding a budget of its own
+    // would sit through that untouched, and the wait below would say so.
+    const drained = (async () => {
+      while (!ended) {
+        const more = await Promise.race([next('hung'), settled.then(() => null)]);
+        if (more) vi.advanceTimersByTime(1);
+      }
+    })();
+    await within(
+      drained,
+      'the guard’s later reads ending on the 1 ms that was left — each was handed a whole budget instead'
+    );
+    expect(await settled).toBeInstanceOf(Error);
   });
 }, 30_000);
 
