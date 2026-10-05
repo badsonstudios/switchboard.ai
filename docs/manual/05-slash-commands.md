@@ -9,6 +9,8 @@ autocomplete.
 
 ## Autocomplete
 
+![The prompt box with a slash typed in it, and the list of commands open above it](img/slash-commands.png)
+
 Type **`/`** at the start of a line and a list appears:
 
 - **↑ / ↓** to move through it.

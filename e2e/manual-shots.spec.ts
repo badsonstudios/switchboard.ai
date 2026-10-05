@@ -16,16 +16,23 @@
 import { test, expect, Locator, Page } from '@playwright/test';
 import { execFileSync } from 'child_process';
 import fs from 'fs';
+import http from 'http';
+import type { AddressInfo } from 'net';
 import os from 'os';
 import path from 'path';
 import {
+  closeSettings,
   launchApp,
   LaunchedApp,
   onTestDisplay,
+  openEventsDrawer,
+  openSettings,
   registerTempDir,
   setTheme,
   streamPrompter,
 } from './fixtures/app';
+
+const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
 
 const OUT = process.env.SWITCHBOARD_MANUAL_SHOTS_DIR ?? path.join(__dirname, '..', 'docs', 'manual', 'img');
 
@@ -71,7 +78,7 @@ function git(dir: string, args: string[]): void {
 }
 
 /** A project that looks like somebody's: history, and work in progress. */
-function storefront(parent: string): string {
+function storefront(parent: string, opts: { tooling?: boolean } = {}): string {
   const dir = path.join(parent, 'acme-storefront');
   const write = (rel: string, text: string): void => {
     fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
@@ -87,6 +94,24 @@ function storefront(parent: string): string {
   write('src/hooks/useSettings.ts', "export function useSettings() {\n  return { settings: { shippingEmails: true, theme: 'light' }, update: () => {} };\n}\n");
   write('src/components/Toggle.tsx', 'export function Toggle() {\n  return null;\n}\n');
   write('src/styles/theme.css', ':root {\n  --bg: #ffffff;\n  --ink: #1b1f24;\n}\n');
+  // The project's own MCP servers, for the one picture that is about them.
+  // Committed with the skeleton so they are not "changed files" anywhere else,
+  // and opt-in so the core pictures' file list stays what a first project has.
+  if (opts.tooling) {
+    write(
+      '.mcp.json',
+      JSON.stringify(
+        {
+          mcpServers: {
+            'orders-db': { command: 'npx', args: ['-y', '@acme/orders-mcp'] },
+            'design-tokens': { type: 'http', url: 'https://mcp.acme.example/tokens' },
+          },
+        },
+        null,
+        2
+      ) + '\n'
+    );
+  }
   git(dir, ['add', '.']);
   git(dir, ['commit', '-m', 'Storefront skeleton']);
   write('src/pages/CartPage.tsx', 'export function CartPage() {\n  return null;\n}\n');
@@ -292,9 +317,12 @@ async function shot(
   w: Page,
   name: string,
   callouts: Callout[] = [],
-  clip?: { x: number; y: number; width: number; height: number }
+  clip?: { x: number; y: number; width: number; height: number },
+  /** run after the callouts are drawn — for a surface that redraws itself after `tidy` */
+  lastMoment?: () => Promise<void>
 ): Promise<void> {
   await annotate(w, callouts);
+  await lastMoment?.();
   fs.mkdirSync(OUT, { recursive: true });
   await w.screenshot({ path: path.join(OUT, `${name}.png`), clip, animations: 'disabled' });
   await clearAnnotations(w);
@@ -337,11 +365,34 @@ async function around(w: Page, targets: Locator[], pad = 28): Promise<Clip> {
  * pictures is the app drawing data it was given; this is the one place the
  * picture is edited, and it is edited to say what the real thing says.
  */
-async function tidy(w: Page, tempParent: string): Promise<void> {
-  await w.evaluate((parent) => {
+async function tidy(w: Page, tempParent: string, also: Record<string, string> = {}): Promise<void> {
+  await w.evaluate(({ parent, swaps }) => {
+    // A streamed reply arrives in pieces, and a word can be split across text
+    // nodes — so a swap is tried on whole leaf elements first, then node by node.
+    for (const el of document.body.querySelectorAll<HTMLElement>('*')) {
+      if (el.childElementCount > 0 || el.childNodes.length < 2) continue;
+      const whole = el.textContent ?? '';
+      for (const [from, to] of Object.entries(swaps)) {
+        if (whole.includes(from)) el.textContent = whole.split(from).join(to);
+      }
+    }
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-      const text = n.nodeValue ?? '';
+      let text = n.nodeValue ?? '';
+      // `=…` swaps a text node only when it is EXACTLY that — for words too
+      // ordinary to replace wherever they appear
+      const exact = swaps[`=${text}`];
+      if (exact !== undefined) {
+        n.nodeValue = exact;
+        continue;
+      }
+      // a verb only the stand-in understands, shown as the prompt it stands for
+      for (const [from, to] of Object.entries(swaps)) {
+        if (text.includes(from)) {
+          text = text.split(from).join(to);
+          n.nodeValue = text;
+        }
+      }
       if (text.includes('claude-fake-1')) n.nodeValue = text.replace('claude-fake-1', 'opus');
       // the build stamp beside the version — a commit hash that dates the
       // picture to one developer's working tree and says nothing to a reader
@@ -350,7 +401,41 @@ async function tidy(w: Page, tempParent: string): Promise<void> {
       // whoever generated the pictures in it
       else if (text.includes(parent)) n.nodeValue = text.split(parent).join('C:\\Projects');
     }
-  }, tempParent);
+  }, { parent: tempParent, swaps: also });
+}
+
+/** The window every picture is taken in, at its size and in its theme. */
+async function staged(a: LaunchedApp, title: string): Promise<Page> {
+  const w = a.window;
+  await a.app.evaluate(
+    ({ BrowserWindow }, box) => BrowserWindow.getAllWindows()[0]?.setBounds(box),
+    onTestDisplay(a, { x: 20, y: 20, ...WINDOW })
+  );
+  await expect(w.getByText(title).first()).toBeVisible({ timeout: 25_000 });
+  // The dark theme a fresh install shows on a dark-mode machine (owner's pick).
+  await setTheme(w, 'nordic');
+  return w;
+}
+
+/** Run a command by its name, the way a user would: the palette, a few words, Enter. */
+async function runCommand(w: Page, title: string): Promise<void> {
+  await w.keyboard.press(`${MOD}+Shift+P`);
+  await expect(w.getByRole('dialog', { name: 'Command palette' })).toBeVisible();
+  await w.keyboard.type(title);
+  await w.keyboard.press('Enter');
+}
+
+/** A loopback server that answers every request with `body(url)` as JSON. */
+async function serveJson(body: (url: string) => unknown): Promise<{ url: string; stop: () => Promise<void> }> {
+  const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'max-age=10, public' });
+    res.end(JSON.stringify(body(req.url ?? '')));
+  });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  return {
+    url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+    stop: () => new Promise<void>((r) => server.close(() => r())),
+  };
 }
 
 test.describe('manual screenshots (#1082)', () => {
@@ -492,5 +577,363 @@ test.describe('manual screenshots (#1082)', () => {
       { target: w.locator('.dv-tab', { hasText: 'billing-api' }), label: 'The session you are looking at', side: 'right' },
       { target: composer, label: 'Talk to it here', side: 'top', alignEnd: true },
     ]);
+  });
+  // ── the rest of the manual ─────────────────────────────────────────────────
+  //
+  // One picture per remaining page, in three launches. The second and third
+  // exist only because the update feed and the provider-status feed are read at
+  // boot and change what every OTHER picture would show (a dialog over the
+  // window; "provider degraded" in the status bar), so each gets an app of its
+  // own rather than leaking into the rest.
+
+  test('the reference pages', async () => {
+    test.setTimeout(420_000);
+    const parent = registerTempDir(fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-shots-')));
+    const shop = storefront(parent, { tooling: true });
+    const billing = plainProject(parent, 'billing-api', '# Billing API\n\nInvoices and payments.\n');
+    const scriptFile = path.join(parent, 'script.json');
+    fs.writeFileSync(scriptFile, JSON.stringify(script(billing)), 'utf8');
+
+    a = await launchApp({
+      seedFolder: shop,
+      env: { SWITCHBOARD_FAKE_PROVIDER: 'stream', SWITCHBOARD_FAKE_SCRIPT: scriptFile },
+    });
+    const w = await staged(a, 'acme-storefront');
+
+    const newSession = w.getByRole('button', { name: '+ session' });
+    const composer = w.getByPlaceholder(/Prompt this session/);
+    const tabs = w.locator('[data-testid="view-tabs"]');
+
+    // ── slash commands — BEFORE the first turn, while the list is the app's own
+    // curated one; after it the stand-in reports a made-up command of its own
+    await composer.click();
+    await composer.pressSequentially('/');
+    const completions = w.locator('[data-completion-list]');
+    await expect(completions).toBeVisible({ timeout: 15_000 });
+    // The stand-in's list carries one command that exists only to prove the
+    // list is the stand-in's. Like `claude-fake-1` in `tidy`, it is taken out
+    // so the picture shows what a real session shows.
+    await w.evaluate(() => {
+      for (const row of document.querySelectorAll('[data-completion-row]')) {
+        if (row.textContent?.includes('curated-only')) row.remove();
+      }
+    });
+    await tidy(w, parent);
+    await shot(
+      w,
+      'slash-commands',
+      [
+        { target: composer, label: 'Type / in the prompt box…', side: 'bottom' },
+        { target: completions, label: '…and pick from what this session knows', side: 'top' },
+      ],
+      await around(w, [completions, composer], 70)
+    );
+    await w.keyboard.press('Escape');
+
+    // ── a session that has done some work ────────────────────────────────────
+    await composer.click();
+    await composer.fill(PROMPT_FEATURE);
+    await composer.press('Enter');
+    await expect(w.getByText('Want me to store it?')).toBeVisible({ timeout: 30_000 });
+
+    // ── the command palette ──────────────────────────────────────────────────
+    await w.keyboard.press(`${MOD}+Shift+P`);
+    const palette = w.getByRole('dialog', { name: 'Command palette' });
+    await expect(palette).toBeVisible();
+    await tidy(w, parent);
+    await shot(w, 'command-palette', [
+      { target: w.getByPlaceholder('Type a command or a session name…'), label: 'Type a few letters of what you want', side: 'top' },
+      { target: w.locator('[data-palette-rows]').getByRole('option').first(), label: 'Enter runs the highlighted one', side: 'right' },
+    ]);
+    await w.keyboard.press('Escape');
+    await expect(palette).toHaveCount(0);
+
+    // ── find ─────────────────────────────────────────────────────────────────
+    await w.locator('[data-feed-region]').click({ position: { x: 5, y: 5 } });
+    await w.keyboard.press(`${MOD}+f`);
+    const findInput = w.locator('[data-testid="find-input"]');
+    await findInput.fill('toggle');
+    await expect(w.locator('[data-testid="find-count"]')).toContainText(/of/, { timeout: 15_000 });
+    await tidy(w, parent);
+    await shot(w, 'find', [
+      { target: findInput, label: 'Ctrl+F, then what you are looking for', side: 'bottom' },
+      { target: w.locator('[data-testid="find-count"]'), label: 'How many, and which one you are on', side: 'bottom' },
+      { target: w.locator('mark[data-feed-match-current]').first(), label: 'The current match', side: 'right' },
+    ]);
+    await w.locator('[data-testid="find-close"]').click();
+
+    // ── choosing a model ─────────────────────────────────────────────────────
+    const model = w.locator('[data-testid="composer-model"]');
+    await model.click();
+    const modelMenu = w.locator('[data-testid="model-quick-menu"]');
+    await expect(modelMenu).toBeVisible();
+    // The stand-in's own model heads the list; it is shown as the one a real
+    // session would have ticked. The menu fills in after it opens, hence the
+    // second pass at the last moment.
+    const realNames = { 'Fake (default)': 'Opus', 'claude-fake-1': 'claude-opus-5' };
+    await expect(modelMenu.locator('[data-model]').first()).toBeVisible();
+    await w.waitForTimeout(400);
+    await tidy(w, parent, realNames);
+    await shot(
+      w,
+      'model-menu',
+      [
+        { target: model, label: 'Click the model name…', side: 'bottom' },
+        {
+          target: [modelMenu.locator('[data-model]').first(), modelMenu.locator('[data-model]').last()],
+          label: '…and pick another — the tick is the one in use',
+          side: 'right',
+        },
+      ],
+      undefined,
+      () => tidy(w, parent, realNames)
+    );
+    await w.keyboard.press('Escape');
+
+    // ── the Files tab ────────────────────────────────────────────────────────
+    await tabs.getByText(/^Files/).click();
+    const tree = w.locator('[data-testid="file-tree"]');
+    await expect(tree.getByText('README.md')).toBeVisible({ timeout: 15_000 });
+    await tree.getByText('src', { exact: true }).click();
+    await tree.getByText('pages', { exact: true }).click();
+    await expect(tree.getByText('SettingsPage.tsx')).toBeVisible({ timeout: 15_000 });
+    await tidy(w, parent);
+    await shot(w, 'files-tab', [
+      { target: tree.getByText('SettingsPage.tsx'), label: 'Click a file to read it', side: 'right' },
+      {
+        target: tree.locator('[data-testid^="file-tree-row-"]', { hasText: 'SettingsPage.tsx' }).locator('.file-vcs'),
+        label: 'M changed, U new — the letters git uses',
+        side: 'left',
+      },
+      { target: tree.getByText('.mcp.json'), label: 'Folders first, then files', side: 'right' },
+    ]);
+
+    // ── the History tab ──────────────────────────────────────────────────────
+    await tabs.locator('[data-vtab="history"]').first().click();
+    await expect(w.locator('.history-row').first()).toBeVisible({ timeout: 20_000 });
+    await tidy(w, parent);
+    await shot(w, 'history-tab', [
+      { target: w.locator('.history-search'), label: 'Filter by words, author, or hash', side: 'right' },
+      { target: w.locator('.history-row').last(), label: 'One commit — click it to see its files', side: 'bottom' },
+    ]);
+    await tabs.getByText(/^Session/).click();
+
+    // ── handing work to a fresh session ──────────────────────────────────────
+    await w.getByTitle('Session menu').click();
+    await w.getByTestId('card-menu').getByTestId('card-dispatch').click();
+    const dispatch = w.locator('[data-testid="dispatch-dialog"]');
+    await expect(dispatch).toBeVisible({ timeout: 15_000 });
+    await tidy(w, parent);
+    await shot(w, 'dispatch', [
+      { target: w.locator('[data-dispatch-template="builtin:code-reviewer"]'), label: 'What kind of help you want', side: 'left' },
+      { target: w.locator('[data-testid="dispatch-task"]'), label: 'What it will be told — read it first', side: 'left' },
+      { target: w.locator('[data-testid="dispatch-go"]'), label: 'Start it', side: 'left' },
+    ]);
+    await w.keyboard.press('Escape');
+    await expect(dispatch).toHaveCount(0);
+
+    // ── MCP servers ──────────────────────────────────────────────────────────
+    await runCommand(w, 'MCP servers');
+    const mcp = w.locator('[data-testid="mcp-manager"]');
+    await expect(mcp).toBeVisible({ timeout: 15_000 });
+    await expect(mcp.locator('[data-mcp-server]').first()).toBeVisible({ timeout: 20_000 });
+    await tidy(w, parent);
+    await shot(w, 'mcp-servers', [
+      { target: mcp.locator('[data-mcp-server]').first(), label: 'A server, and where it stands', side: 'left' },
+      { target: mcp.getByRole('button', { name: /Add server/ }), label: 'Add one without editing a file', side: 'bottom' },
+    ]);
+    await w.keyboard.press('Escape');
+    await expect(mcp).toHaveCount(0);
+
+    // ── settings ─────────────────────────────────────────────────────────────
+    const settings = await openSettings(w);
+    await tidy(w, parent);
+    await shot(w, 'settings', [
+      { target: settings.locator('[data-settings-section="appearance"]'), label: 'One section per subject', side: 'right' },
+      { target: settings.getByRole('button', { name: 'Done', exact: true }), label: 'Nothing to save — changes apply at once', side: 'left' },
+    ]);
+    await closeSettings(w);
+
+    // ── the performance summary ──────────────────────────────────────────────
+    await runCommand(w, 'Show performance summary');
+    const perf = w.getByRole('dialog', { name: 'Performance summary' });
+    await expect(perf).toBeVisible({ timeout: 15_000 });
+    await tidy(w, parent);
+    await shot(w, 'performance-summary', [
+      { target: perf.locator('[data-perf-row]').first(), label: 'One thing the app timed, and its slowest go', side: 'right' },
+    ]);
+    await w.keyboard.press('Escape');
+    await expect(perf).toHaveCount(0);
+
+    // ── reporting a problem ──────────────────────────────────────────────────
+    await runCommand(w, 'Report a problem');
+    const report = w.locator('[data-report-dialog]');
+    await expect(report).toBeVisible({ timeout: 15_000 });
+    await report.locator('[data-report-field="subject"]').fill('The Changes tab stays empty after a commit');
+    await tidy(w, parent);
+    await shot(w, 'report-problem', [
+      { target: report.locator('[data-report-field="subject"]'), label: 'Say what went wrong, in a line', side: 'right' },
+      { target: report.locator('[data-report-submit]'), label: 'Bundles the logs for you to send', side: 'left' },
+    ]);
+    await w.keyboard.press('Escape');
+    await expect(report).toHaveCount(0);
+
+    // ── the Events drawer, with something in it that needs an answer ─────────
+    await a.app.evaluate(({ dialog }, d) => {
+      dialog.showOpenDialog = () => Promise.resolve({ canceled: false, filePaths: [d] });
+    }, billing);
+    await newSession.click();
+    await expect(w.getByText('billing-api').first()).toBeVisible({ timeout: 25_000 });
+    await streamPrompter(a)('billing-api', PROMPT_BUILD);
+    await expect(w.getByRole('button', { name: 'Allow', exact: true }).first()).toBeVisible({ timeout: 30_000 });
+    await openEventsDrawer(w);
+    const drawer = w.getByTestId('events-drawer');
+    await w.waitForTimeout(600);
+    await tidy(w, parent);
+    await shot(w, 'events-drawer', [
+      { target: drawer.locator('[data-testid="events-filters"]'), label: 'Everything, or only what needs you', side: 'left' },
+      { target: drawer.locator('[data-event-held]').first(), label: 'A session waiting on you — answer it right here', side: 'left' },
+      { target: drawer.locator('.event-row[data-event-kind="done"]').first(), label: 'A session that finished its turn', side: 'left' },
+    ]);
+    await w.getByTestId('events-close').click();
+
+    // ── a reply arriving, LAST: this turn never ends ─────────────────────────
+    await w.locator('.dv-tab', { hasText: 'acme-storefront' }).click();
+    await streamPrompter(a)('acme-storefront', '!partial-md');
+    const streaming = w.locator('.feed-md[data-feed-streaming]');
+    await expect(streaming).toBeVisible({ timeout: 30_000 });
+    // The stand-in streams test words; the picture shows a reply. Nothing else
+    // about it is touched — the cursor, the half-finished bold and the working
+    // bar are the app's own.
+    const reply = {
+      '!partial-md': PROMPT_FOLLOW_UP,
+      'STREAMED-HEADING': 'Remembering the theme',
+      '=with ': 'The choice goes in ',
+      '= text': ' when the toggle changes:',
+      'BOLD-WHILE-OPEN': 'localStorage',
+      'const halfWritten = 1;': "localStorage.setItem('theme', next);",
+      'NEVER-CLOSED': 'useTheme',
+    };
+    await w.waitForTimeout(600);
+    await tidy(w, parent, reply);
+    const working = w.getByText('Claude is working').first();
+    await shot(
+      w,
+      'direct-streaming',
+      [
+        { target: streaming.last(), label: 'The reply appears as it is written', side: 'top', alignEnd: true },
+        { target: working, label: 'Still going', side: 'right' },
+      ],
+      undefined,
+      () => tidy(w, parent, reply)
+    );
+  });
+
+  test('the update box', async () => {
+    test.setTimeout(180_000);
+    const parent = registerTempDir(fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-shots-')));
+    const shop = storefront(parent);
+    const scriptFile = path.join(parent, 'script.json');
+    fs.writeFileSync(scriptFile, JSON.stringify(script(parent)), 'utf8');
+    const feed = await serveJson(() => [
+      {
+        tag_name: 'v0.9.0',
+        name: 'v0.9.0',
+        body:
+          '### Added\n\n- **Hand work to a fresh session.** Pick a role, read the task, and a new session starts on it beside yours.\n' +
+          '- The History tab shows which commits are waiting to be pushed.\n\n' +
+          '### Fixed\n\n- A narrow session no longer draws its tabs over the numbers beside them.',
+        html_url: 'https://github.com/badsonstudios/switchboard.ai/releases/tag/v0.9.0',
+        draft: false,
+        prerelease: false,
+        published_at: '2026-10-01T10:00:00Z',
+      },
+    ]);
+    try {
+      a = await launchApp({
+        seedFolder: shop,
+        env: {
+          SWITCHBOARD_FAKE_PROVIDER: 'stream',
+          SWITCHBOARD_FAKE_SCRIPT: scriptFile,
+          SWITCHBOARD_UPDATE_FEED: `${feed.url}/releases`,
+        },
+      });
+      const box = a.window.locator('[role="dialog"][data-update-state]');
+      // The box opens by itself at start-up, over everything — including the
+      // Settings window `staged` needs for the theme. Put it away, dress the
+      // window, then ask for the check again the way the page describes.
+      await expect(box).toHaveAttribute('data-update-state', 'available', { timeout: 30_000 });
+      await a.window.keyboard.press('Escape');
+      await expect(box).toHaveCount(0);
+      const w = await staged(a, 'acme-storefront');
+      const composer = w.getByPlaceholder(/Prompt this session/);
+      await composer.click();
+      await composer.fill(PROMPT_FEATURE);
+      await composer.press('Enter');
+      await expect(w.getByText('Want me to store it?')).toBeVisible({ timeout: 30_000 });
+      await runCommand(w, 'Check for updates');
+      await expect(box).toHaveAttribute('data-update-state', 'available', { timeout: 30_000 });
+      await tidy(w, parent);
+      await shot(w, 'update-box', [
+        { target: box.locator('.feed-md'), label: 'What is new in it', side: 'right' },
+        { target: box.getByRole('button', { name: 'Update', exact: true }), label: 'Download, check, and install it', side: 'bottom', alignEnd: true },
+        { target: box.getByRole('button', { name: 'Skip this version' }), label: 'Never offer this one again', side: 'left' },
+      ]);
+    } finally {
+      await feed.stop();
+    }
+  });
+
+  test('the provider status dot', async () => {
+    test.setTimeout(180_000);
+    const parent = registerTempDir(fs.mkdtempSync(path.join(os.tmpdir(), 'sb-e2e-shots-')));
+    const shop = storefront(parent);
+    const scriptFile = path.join(parent, 'script.json');
+    fs.writeFileSync(scriptFile, JSON.stringify(script(parent)), 'utf8');
+    const status = await serveJson((url) => {
+      const page = { id: 'stub', name: 'Claude', url: 'https://status.claude.com' };
+      return url.includes('incidents')
+        ? {
+            page,
+            incidents: [
+              {
+                id: 'inc-1',
+                name: 'Elevated error rates on Claude Code',
+                status: 'investigating',
+                impact: 'minor',
+                shortlink: 'https://stspg.io/inc-1',
+              },
+            ],
+          }
+        : { page, status: { indicator: 'minor', description: 'Degraded Performance' } };
+    });
+    try {
+      a = await launchApp({
+        seedFolder: shop,
+        env: {
+          SWITCHBOARD_FAKE_PROVIDER: 'stream',
+          SWITCHBOARD_FAKE_SCRIPT: scriptFile,
+          SWITCHBOARD_STATUS_FEED: status.url,
+        },
+      });
+      const w = await staged(a, 'acme-storefront');
+      const composer = w.getByPlaceholder(/Prompt this session/);
+      await composer.click();
+      await composer.fill(PROMPT_FEATURE);
+      await composer.press('Enter');
+      await expect(w.getByText('Want me to store it?')).toBeVisible({ timeout: 30_000 });
+      const dot = w.locator('[data-testid="service-health"]');
+      await expect(dot).toHaveAttribute('data-state', 'degraded', { timeout: 30_000 });
+      await openEventsDrawer(w);
+      const incident = w.locator('[data-events-notice="incident"]');
+      await expect(incident).toBeVisible({ timeout: 15_000 });
+      await tidy(w, parent);
+      await shot(w, 'provider-status', [
+        { target: dot, label: 'The provider is having trouble — it is not you', side: 'top' },
+        { target: incident, label: 'What they have said about it', side: 'left' },
+      ]);
+    } finally {
+      await status.stop();
+    }
   });
 });

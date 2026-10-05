@@ -250,6 +250,8 @@ decide it again.
 
 ## Replies arrive as they're written
 
+![A reply part-way through being written, with the cursor at the end of it and the Claude is working bar underneath](img/direct-streaming.png)
+
 Claude's reply appears **a word at a time**, with a small block cursor at the
 end while it's still being written — the same way it looks in a terminal. (The
 old Terminal mode instead waited for each message to be finished and written to

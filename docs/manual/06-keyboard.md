@@ -24,6 +24,8 @@ editor's own find. Full details: [Finding something in a session](16-find.md).
 
 ## The command palette — everything, in one list
 
+![The command palette open over a session: a search box, and every command with its shortcut](img/command-palette.png)
+
 Press **`Ctrl+Shift+P`** (or click **▸ commands** in the title bar) to open the
 command palette: a searchable list of everything switchboard can do, each with
 its shortcut shown next to it. Start typing to narrow it down, `↑`/`↓` to move,

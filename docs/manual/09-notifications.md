@@ -9,6 +9,8 @@ nagged about the ones that don't.
 
 ## The Events drawer
 
+![The Events drawer open on the right, with one session waiting for permission and one that has finished](img/events-drawer.png)
+
 On the right-hand edge of the workspace there's a narrow **tab** with a number
 on it. That number is how many sessions are waiting on you. Click it and a
 drawer slides out over the workspace with one entry per session, showing its

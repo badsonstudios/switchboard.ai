@@ -9,6 +9,8 @@
 
 ## What it is
 
+![The History tab: the branch name and a filter box, then one row per commit](img/history-tab.png)
+
 Every session's card has a **History** tab beside **Changes** and **Files**. It
 shows the commits in that session's project: what each one was called, who made
 it, when, how many lines it touched, and which branches and tags point at it.

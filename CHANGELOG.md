@@ -96,6 +96,14 @@ on the floor, and say so in your PR.
 
 ## 0.8.114 — unreleased
 
+### Added
+
+- **Every page of the manual now has a picture.** The fifteen pages that had
+  none — slash commands, the command palette, Events, Settings, reporting a
+  problem, updates, provider status, find, MCP servers, choosing a model, the
+  performance summary, Dispatch, Files, History and replies arriving as they are
+  written — each open with an annotated screenshot of the thing they describe.
+
 ### Fixed
 
 - **A narrow session no longer draws its tabs over the numbers beside them.**
