@@ -103,6 +103,9 @@ on the floor, and say so in your PR.
   to-do counter, and the branch and cost readouts wrapped onto a second line.
   The tabs now keep their size; the branch name shortens to make room, and the
   readouts stay on one line.
+- **The bar at the bottom of the window no longer counts an open document as
+  a session.** One session with one document open beside it said "2 sessions"
+  there while the Sessions list said 1. Both now count sessions.
 
 ## 0.8.113 — 2026-10-04
 

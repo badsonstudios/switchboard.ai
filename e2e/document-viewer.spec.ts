@@ -225,6 +225,22 @@ test.describe('document viewer (P2-E16-02)', () => {
     expect(await rendered(w).locator('a[href]').count()).toBe(0);
   });
 
+  test('an open document is not counted as a session (#1084)', async () => {
+    // The status bar counted dockview PANELS, and a document is a panel: one
+    // session beside one README read "2 sessions" at the bottom of the window
+    // and "1 session" at the bottom of the rail.
+    const { folder, doc } = seededProject();
+    a = await launchApp({ seedFolder: folder, seedDocument: doc });
+    const w = a.window;
+    await expect(rendered(w).locator('h1')).toBeVisible();
+    const statusBar = w.locator('footer').last();
+    // the premise: this IS the bar with the count in it, and the document is open
+    await expect(statusBar).toContainText(/[0-9]+ sessions?/);
+    await expect(viewer(w)).toBeVisible();
+    await expect(statusBar).toContainText('1 session');
+    await expect(statusBar).not.toContainText('2 sessions');
+  });
+
   test('the toggle round-trips to a real, read-only Monaco and back', async () => {
     const { folder, doc } = seededProject();
     a = await launchApp({ seedFolder: folder, seedDocument: doc });
