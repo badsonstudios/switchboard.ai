@@ -96,6 +96,14 @@ on the floor, and say so in your PR.
 
 ## 0.8.114 — unreleased
 
+### Fixed
+
+- **A narrow session no longer draws its tabs over the numbers beside them.**
+  With a document open next to a session, the **History** tab ran into the
+  to-do counter, and the branch and cost readouts wrapped onto a second line.
+  The tabs now keep their size; the branch name shortens to make room, and the
+  readouts stay on one line.
+
 ## 0.8.113 — 2026-10-04
 
 ### Changed
