@@ -3,7 +3,7 @@
 > Live state. Updated the moment an item starts, finishes, or hits a blocker.
 > A fresh session reads this file and knows exactly where things stand.
 
-> # 🚧 2026-10-04 (later): **the flake batch, then the rough edges — owner's list**
+> # ✅ 2026-10-04 (later): **the flake batch, the rough edges, the manual's pictures — owner's list, all nine merged**
 >
 > The owner's order for this session: the three flaky tests first (#1079,
 > #1025, #835), then #1083, #1084, two issues still to be filed (the `@Name`
@@ -84,7 +84,8 @@
 >   pictures regenerate from `npm run manual:shots`. **Filed from what the
 >   pictures showed, not fixed:** #1104 (white scrollbar in Settings and the
 >   palette under a dark theme) and #1105 (the Events edge tab covers the git
->   letter in the Files tab).
+>   letter in the Files tab). **PR #1108**, which also corrects the stale
+>   milestone name in `.claude/CLAUDE.md` and the `/startup` skill.
 >
 > **THE OWNER'S LIST FOR THIS SESSION IS DONE. Next up: nothing is claimed.**
 > Still waiting on him: the three decisions under v0.8.113 below. Nothing here
